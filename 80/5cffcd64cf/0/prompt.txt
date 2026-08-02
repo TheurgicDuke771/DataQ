@@ -1,0 +1,887 @@
+Hey, 
+Let's pickup the email OTP sign-in part [#734]. 
+First check the current state of the repo, reasearch about the feature, then plan out the tasks [create additional if required], organise and rank the tasks based on priority and dependency. 
+You can be the orchestrator, and deligate the task to other models [haiku/sonet/opus] based on complexity and nature of the task.
+
+---
+
+<task-notification>
+<task-id>a3a024c029f3da348</task-id>
+<tool-use-id>toolu_01VxzmtGgnEhG9QeGuUee1d3</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/99e1816a-2f8f-45f3-bc24-573888d5ee2a/tasks/a3a024c029f3da348.output</output-file>
+<status>completed</status>
+<summary>Agent "Map SMTP mailer + Settings config" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Research Summary — Email OTP Backend Infrastructure (#734)
+
+I've mapped the five key areas for the email OTP implementation. Here are the exact locations and findings:
+
+---
+
+### 1. **Alerting Email Publisher (SMTP+STARTTLS Shape)**
+
+**File:** `/Users/arijit/Coding/Python/DataQ/backend/app/alerting/email.py`
+
+**SMTP+STARTTLS Implementation (lines 373–382):**
+- `_send()` method uses `ssl.create_default_context()` + `smtplib.SMTP(…, timeout=15.0)` → `server.starttls()` → `server.login()` → `server.send_message()`
+- **Timeout:** `_SMTP_TIMEOUT_SECONDS = 15.0` (line 34) — best-effort no-op on failures
+- **Password resolution (lines 283–286, 315–318, 343–346):** Calls `self._secret_store.get(self._password_secret_name)`, catches `SecretNotFoundError` and logs warning, then returns early (quiet no-op)
+- **Error handling:** Composite layer isolates send errors so a flaky mailer doesn't fail runs (line 264)
+- **Settings read:** Expects `username`, `password_secret_name`, `sender`, `recipients`, `smtp_host`, `smtp_port` as constructor args (lines 238–257)
+
+**Key pattern for OTP reuse:** The `_send()` method is the reusable code shape (SMTP+STARTTLS transport); the error handling must **differ** — OTP surfaces errors on the request path (synchronous, ~5s timeout per ADR 0032 §7), not isolated like the alert publisher.
+
+---
+
+### 2. **Settings Class (Pydantic Settings)**
+
+**File:** `/Users/arijit/Coding/Python/DataQ/backend/app/core/config.py`
+
+**Email alerting settings (lines 346–356):**
+```python
+email_smtp_host: str = "smtp.gmail.com"
+email_smtp_port: int = 587
+email_username: str | None = None
+email_from: str | None = None
+email_to: str = ""  # comma-separated recipients
+email_password_secret_name: str | None = None
+```
+
+**Settings class structure:**
+- **Lines 25–36:** `SettingsConfigDict` with:
+  - `env_file=".env.app"` — reads `.env.app` only (not root `.env`)
+  - **`extra="forbid"`** (line 34) — typos/stale keys crash startup (the enforcement mechanism)
+  - `case_sensitive=False` — env vars auto-normalized to lowercase
+  
+**Boot-time validator pattern (lines 426–487):**
+- `@model_validator(mode="after")` method `_validate_secret_store()` (line 426)
+- Validates OpenBao/Azure/Redis config **at startup** before first use
+- Raises `ValueError` naming missing/invalid fields (examples: lines 460–462, 467–472, 478, 481, 484)
+- **Precedent for fail-closed AUTH_EMAIL_* validation:** Reject incomplete config at startup, naming which vars are missing
+
+**`*_SECRET_NAME` indirection pattern:**
+- Lines 309–318: `adf_webhook_secret_name`, `airflow_webhook_secret_name`, `dbt_webhook_secret_name` — all stored as STRING names, resolved via `SecretStore.get()` at runtime
+- Password values NEVER embedded; `SecretStore` resolves them by name (line 283: `self._secret_store.get(self._password_secret_name)`)
+
+---
+
+### 3. **SecretStore Seam (Interface + Error Types)**
+
+**File:** `/Users/arijit/Coding/Python/DataQ/backend/app/core/secrets.py`
+
+**Protocol interface (lines 188–200):**
+```python
+@runtime_checkable
+class SecretStore(Protocol):
+    def get(self, name: str) -&gt; str: ...
+    def set(self, name: str, value: str) -&gt; None: ...
+    def delete(self, name: str) -&gt; None: ...  # fail-soft, idempotent
+```
+
+**Exception types (ADR 0039 decision 6 — lines 111–138):**
+- **`SecretNotFoundError`** (lines 111–118): Raised ONLY when the secret genuinely is not set. Callers treat this as a legitimate state ("no webhook configured", "run without extra credential").
+  
+- **`SecretStoreUnavailableError`** (lines 121–137): Raised when the store couldn't answer (dead token 403, sealed vault 503/5xx, missing KV mount, transport error, non-JSON 200, KV v1 envelope). **Deliberately NOT a subclass** — the type is load-bearing. Example from lines 129–131 shows why: if vault outage folded into `SecretNotFoundError`, alerts would skip silently, connections would run without credentials, and the operator would see "not configured" during an outage.
+
+**Usage pattern in email publisher (lines 283–286):**
+```python
+try:
+    password = self._secret_store.get(self._password_secret_name)
+except SecretNotFoundError:
+    log.warning("email_password_unresolved", secret_name=self._password_secret_name)
+    return
+```
+This is **best-effort**, no-op on either exception type.
+
+**For OTP (per ADR 0032 §7):** Must use the same `get()` call but surface errors to the caller (synchronous contract), not suppress them.
+
+---
+
+### 4. **Env-Var Reference Documentation**
+
+**Primary file:** `/Users/arijit/Coding/Python/DataQ/.env.app.example`
+- This is the **complete, annotated** env-var reference (lines 1–266)
+- Every Settings key is documented here with comments explaining purpose, format, defaults
+
+**Deployment guide:** `/Users/arijit/Coding/Python/DataQ/deploy/README.md`
+- **Lines 25–56:** Production prerequisites table (the "What you must change" checklist)
+  - `AUTH_DEV_BYPASS` (line 31)
+  - `AZURE_*` settings (line 32)
+  - `SECRET_STORE` (line 34)
+  - Alerting settings not explicitly tabulated, but referenced via #416/#837
+  - NOTE: No `AUTH_EMAIL_*` or `AUTH_OTP_*` documented yet — this is the gap #734 fills
+
+**Format pattern observed:**
+- `.env.app.example` has every key with inline comments (purpose, format, examples)
+- `deploy/README.md` prerequisites table summarizes production-critical settings
+- New `AUTH_EMAIL_*` and `AUTH_OTP_*` vars should appear in **both places**
+
+---
+
+### 5. **Existing AUTH_* Settings Names (Provider-Neutral Contract)**
+
+**Currently in config (lines 38–194 of config.py):**
+- `AZURE_TENANT_ID`, `AZURE_API_CLIENT_ID`, `AZURE_SPA_CLIENT_ID` (lines 182–185) — Azure-specific
+- `AZURE_ALLOW_GUEST_USERS` (line 193) — Azure-specific
+- `AUTH_DEV_BYPASS` (line 195) — **provider-neutral**, dev-only auth bypass
+
+**No existing `AUTH_EMAIL_*` or `AUTH_OTP_*` yet.** ADR 0032 §2 and §7 specify the names that **will be introduced**:
+
+**From ADR 0032:**
+- **`AUTH_EMAIL_*`** block (§7, line 32 of ADR):
+  - `AUTH_EMAIL_SMTP_HOST`, `AUTH_EMAIL_SMTP_PORT`, `AUTH_EMAIL_USERNAME`, `AUTH_EMAIL_FROM`, `AUTH_EMAIL_PASSWORD_SECRET_NAME`
+  - (Same coordinate names as alerting's `EMAIL_*`, but separate config block for OTP)
+  
+- **`AUTH_OTP_*`** block (§5 &amp; §10 of ADR):
+  - `AUTH_OTP_ALLOWED_EMAILS` (signup allowlist, required)
+  - `AUTH_OTP_ALLOWED_DOMAINS` (signup allowlist, required)
+  - `AUTH_OTP_DEFAULT_ROLE` (amendment, default `member`)
+
+**Pattern precedent:** These mirror the **provider-neutral `WORKSPACE_ADMIN_EMAILS`** contract (config.py line 265) — not bound to Azure, usable in any deployment (bypass / otp / oidc modes per ADR 0032 §2).
+
+---
+
+### Key Takeaways for Issue #734
+
+1. **SMTP code shape is in `/alerting/email.py` lines 373–382** — reuse `_send()` method for OTP, but route errors differently (surface vs. isolate).
+
+2. **Settings validation precedent:** Bootstrap validator at lines 426–487 of `config.py` — fail-closed, naming missing fields. Apply the same pattern to `AUTH_EMAIL_*` + allowlist validation.
+
+3. **SecretStore exception types are load-bearing** — never conflate `SecretNotFoundError` (state) and `SecretStoreUnavailableError` (outage). ADR 0039 decision 6 is the reference.
+
+4. **New env vars belong in two places:**
+   - `.env.app.example` (annotated, all keys)
+   - `deploy/README.md` prerequisites table (production-critical ones)
+
+5. **No `AUTH_*` names yet exist** — the OTP implementation will introduce the first user-facing `AUTH_EMAIL_*` and `AUTH_OTP_*` settings. The design is provider-neutral (follows `WORKSPACE_ADMIN_EMAILS` pattern, not `AZURE_*`).</result>
+<usage><subagent_tokens>77850</subagent_tokens><tool_uses>19</tool_uses><duration_ms>68672</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a0fa07391623e07e5</task-id>
+<tool-use-id>toolu_01PmYaPF5aj4AXC5EsZJwmya</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/99e1816a-2f8f-45f3-bc24-573888d5ee2a/tasks/a0fa07391623e07e5.output</output-file>
+<status>completed</status>
+<summary>Agent "Map users model + migration state" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on my thorough exploration of the DataQ codebase, here's the comprehensive research report:
+
+---
+
+## 1. Users SQLAlchemy Model
+
+**File:** `/Users/arijit/Coding/Python/DataQ/backend/app/db/models.py`, lines 143-152
+
+```python
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    aad_object_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(256))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+```
+
+**Column Details:**
+- `id` (line 146): UUID primary key, server-default `gen_random_uuid()`
+- `aad_object_id` (line 147): `String(64)`, **NOT NULL**, **UNIQUE** (single-column unique constraint)
+- `email` (line 148): `String(320)`, **NOT NULL**, **NO unique constraint** currently
+- `display_name` (line 149): `String(256)`, nullable
+- `last_seen_at` (line 150): `DateTime(timezone=True)`, nullable
+- `created_at` (line 151): `DateTime(timezone=True)`, NOT NULL, server default `func.now()`
+- `updated_at` (line 152): `DateTime(timezone=True)`, NOT NULL, server default &amp; onupdate `func.now()`
+
+---
+
+## 2. User Provisioning Code Path
+
+**Primary entry:** `/Users/arijit/Coding/Python/DataQ/backend/app/core/auth.py`
+
+**Azure JWT provisioning flow:**
+- **Line 210-231:** `_get_current_user_real()` – called on first Azure JWT login
+- **Line 228:** `_extract_claims(azure_user)` extracts from JWT claims:
+  - `aad_object_id` from `claims["oid"]` (line 173)
+  - `email` from `claims.get("preferred_username")` OR `claims.get("email")` OR `claims.get("upn")` (line 174) — **taken as-is, no normalization**
+  - `display_name` from `claims.get("name")` (line 175)
+- **Line 229:** Calls `_upsert_user(db, aad_object_id=aad_oid, email=email, display_name=display_name)`
+
+**Upsert implementation** (lines 139-168):
+```python
+def _upsert_user(
+    db: Session,
+    *,
+    aad_object_id: str,
+    email: str,
+    display_name: str | None,
+) -&gt; User:
+    now = datetime.now(UTC)
+    stmt = (
+        insert(User)
+        .values(
+            aad_object_id=aad_object_id,
+            email=email,
+            display_name=display_name,
+            last_seen_at=now,
+        )
+        .on_conflict_do_update(
+            index_elements=["aad_object_id"],  # line 156 – conflict on this column only
+            set_={
+                "email": email,
+                "display_name": display_name,
+                "last_seen_at": now,
+                "updated_at": now,
+            },
+        )
+        .returning(User)
+    )
+```
+
+**Email population/normalization:** Email is extracted from JWT claims verbatim (no case normalization in the provisioning path). The JWT's `preferred_username` claim from Azure typically provides an email in the form it's stored in AAD (often lowercase, but this depends on the IdP configuration).
+
+---
+
+## 3. WORKSPACE_ADMIN_EMAILS Matching
+
+**Configuration:** `/Users/arijit/Coding/Python/DataQ/backend/app/core/config.py`, lines 255-265, 382-399
+
+**Reading the allowlist:**
+- **Line 265:** Raw env var `workspace_admin_emails: str = ""` (comma-separated)
+- **Lines 382-391:** `workspace_admin_email_set` property normalizes to a frozenset:
+  ```python
+  return frozenset(
+      part.strip().lower() for part in self.workspace_admin_emails.split(",") if part.strip()
+  )
+  ```
+
+**Matching logic** (lines 393-399):
+```python
+def is_admin_email(self, email: str | None) -&gt; bool:
+    """True iff `email` is in the workspace-admin allowlist. The one
+    normalization (strip + lower, null-safe) both the REST gate
+    (`core.auth.is_workspace_admin`) and the per-suite gate (`suite_authz`)
+    share — so the two can't drift."""
+    normalized = (email or "").strip().lower()
+    return bool(normalized) and normalized in self.workspace_admin_email_set
+```
+
+**Case sensitivity:** **CASE-INSENSITIVE** (both allowlist and email are lowercased before comparison, line 398).
+
+**Used by:**
+- `/Users/arijit/Coding/Python/DataQ/backend/app/core/auth.py`, line 283 (`is_workspace_admin()`)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/services/suite_authz.py`, line 64 (via `_is_workspace_admin()`)
+
+---
+
+## 4. Alembic Migration State
+
+**Current head revision:** `70a054d4c469` (from `alembic heads`)
+- **File:** `/Users/arijit/Coding/Python/DataQ/backend/alembic/versions/70a054d4c469_add_workspace_health.py`
+- **Creates:** `workspace_health` table for workspace-level alert state
+
+**ID-generation convention:** Alembic uses **alphanumeric revision IDs** (e.g., `70a054d4c469`, `1a2b3c4d5e6f`, `923dab15eb8c`). These are manually assigned per-migration, not auto-generated. Format: `&lt;8-char alphanumeric&gt;_&lt;description_slug&gt;`.
+
+**Migration patterns in env.py** (`/Users/arijit/Coding/Python/DataQ/backend/alembic/env.py`):
+- **Line 69:** `transaction_per_migration=True` – each migration runs in its own transaction
+- **Lines 61-68:** `autocommit_block()` support for DDL requiring non-transactional execution (e.g., `CREATE INDEX CONCURRENTLY`)
+- **Line 45:** `_MIGRATION_LOCK_TIMEOUT_MS = 15_000` – 15-second lock timeout on the migration engine to prevent deploy hangs
+
+**Recent backward-compatible migration discipline example:**
+
+File: `/Users/arijit/Coding/Python/DataQ/backend/alembic/versions/1a2b3c4d5e6f_lineage_edges_nullable_connection.py` (lines 55-72)
+
+Two-step pattern for relaxing NOT NULL + adding partial index:
+```python
+def upgrade() -&gt; None:
+    op.alter_column("lineage_edges", "connection_id", nullable=True)
+    op.create_index(
+        "uq_lineage_edges_up_down_source_nullconn",
+        "lineage_edges",
+        ["upstream_asset_id", "downstream_asset_id", "source"],
+        unique=True,
+        postgresql_where=sa.text("connection_id IS NULL"),
+    )
+
+def downgrade() -&gt; None:
+    op.execute("DELETE FROM lineage_edges WHERE connection_id IS NULL")
+    op.drop_index("uq_lineage_edges_up_down_source_nullconn", table_name="lineage_edges")
+    op.alter_column("lineage_edges", "connection_id", nullable=False)
+```
+
+**Complex migration with backfill example:**
+
+File: `/Users/arijit/Coding/Python/DataQ/backend/alembic/versions/f8b9c0d1e2a3_add_assets_entity.py` (lines 177-228)
+
+Shows the pattern for **frozen, self-contained business logic** within a migration (lines 55-174 for the `_resolve_identity` function), followed by a backfill loop (lines 177-228) that reads existing data and inserts new rows.
+
+---
+
+## 5. Duplicate-Email Risk
+
+**Current state:**
+- **No unique constraint on `email`** (only on `aad_object_id`)
+- **Theoretically possible:** Two different AAD users could have the same email address
+
+**Code assumptions about `aad_object_id`:**
+- All provisioning paths set `aad_object_id` (lines 142-173 of auth.py, line 245 dev bypass)
+- Upsert conflicts on `aad_object_id` (line 156: `index_elements=["aad_object_id"]`)
+- API response schema (`/Users/arijit/Coding/Python/DataQ/backend/app/api/v1/me.py` line 146) treats `aad_object_id: str` as non-optional
+- **No migration has ever made `aad_object_id` nullable** – it remains NOT NULL by design
+
+---
+
+## 6. users.role Column Status (ADR 0033 / #740)
+
+**Status:** **NOT YET IMPLEMENTED**
+
+**ADR:** `/Users/arijit/Coding/Python/DataQ/docs/adr/0033-workspace-roles-rbac.md`
+- **Status:** Accepted (line 3)
+- **Ratified:** 2026-07-09 (line 8)
+- **Decision 1 (line 18):** Three stored workspace roles — `admin | member | viewer` — as a `users.role` column, server-default `member`, CHECK-constrained
+
+**Missing from current schema:**
+- No `role` column in the User model (`/Users/arijit/Coding/Python/DataQ/backend/app/db/models.py`)
+- No migration adding the `role` column exists yet
+- Part of umbrella issue #744 with slices #740 (role model), #741 (enforcement), #742 (management), #743 (frontend)
+
+**Related context:** 
+- ADR 0032 (`email-otp-signin.md`, line 8) references issue #735 as a prerequisite for OTP sign-in, which requires email-unique identity linking
+- Issue #735 is the **email-unique two-step migration** that must land before OTP sign-in and before `users.role` can be fully operationalized with identity linking
+
+---
+
+## Summary for Issue #735 Context
+
+Issue #735 (email-unique two-step migration + identity linking for OTP sign-in) must deliver:
+
+1. **Unique index on `lower(email)`** (case-insensitive) — per ADR 0032 Decision 6
+2. **Make `aad_object_id` nullable** — to allow OTP-only users without an AAD identity
+3. **Two-step backward-compatible migration** — because current code assumes `aad_object_id` is non-null in some code paths, and existing deployments have users upserted on that column
+4. **Duplicate-email audit before migration** — to identify any pre-existing duplicate emails in prod
+
+The migration pattern should follow the discipline shown in `1a2b3c4d5e6f_lineage_edges_nullable_connection.py` (alter column, add constraint) but will need an upfront audit step and potentially a data-cleanup step for any duplicates found.</result>
+<usage><subagent_tokens>77264</subagent_tokens><tool_uses>33</tool_uses><duration_ms>151159</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6a63401da6ddc874</task-id>
+<tool-use-id>toolu_01Quc6bKGhXKioAeMK5h5NaW</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/99e1816a-2f8f-45f3-bc24-573888d5ee2a/tasks/a6a63401da6ddc874.output</output-file>
+<status>completed</status>
+<summary>Agent "Map frontend auth architecture" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Research complete. Here is the map.
+
+## 1. `DATAQ_AUTH_MODE` runtime config (ADR 0028)
+
+**Injection mechanism** — `/Users/arijit/Coding/Python/DataQ/frontend/nginx.conf.template:26-30`:
+```
+location = /config.js {
+    return 200 'window.__DATAQ_CONFIG__={"auth":{"mode":"${DATAQ_AUTH_MODE}","authority":"${DATAQ_AUTH_AUTHORITY}","clientId":"${DATAQ_AUTH_CLIENT_ID}","apiScope":"${DATAQ_AUTH_API_SCOPE}"}};';
+}
+```
+`envsubst` runs at container start (nginx image entrypoint over `/etc/nginx/templates/*.template`). Env vars declared (must exist, even empty, or envsubst won't substitute) in `frontend/Dockerfile:60-64`: `DATAQ_API_UPSTREAM`, `DATAQ_AUTH_MODE`, `DATAQ_AUTH_AUTHORITY`, `DATAQ_AUTH_CLIENT_ID`, `DATAQ_AUTH_API_SCOPE`.
+- Dev/build stub that deliberately sets nothing: `frontend/public/config.js` (whole file is comments).
+- Loaded via `&lt;script src="/config.js"&gt;` — check `frontend/index.html`.
+- Other producers: `deploy/terraform/azure/frontend.tf:53` (`DATAQ_AUTH_MODE` env on the Container App), `docker-compose.ghcr.yml:166` (`DATAQ_AUTH_MODE: "bypass"`).
+
+**Enum today** — `frontend/src/auth/config.ts`:
+- Wire enum: `DataqAuthConfig.mode?: 'bypass' | 'oidc'` (line 30). This is the type that gains `'otp'`.
+- Internal enum: `export type AuthMode = 'real' | 'dev_bypass' | 'unconfigured'` (line 25). Gains e.g. `'otp'`.
+- Resolution, computed **once at module load** (lines 71-85): `injected = window.__DATAQ_CONFIG__?.auth`; falls back to `fromBuildEnv()` (lines 50-67, the `VITE_AZURE_*` / `VITE_AUTH_DEV_BYPASS` `pnpm dev` path). `authMode` IIFE at line 80-85 — fail-closed: `bypass` only on explicit flag, `real` requires `authority &amp;&amp; clientId`, else `unconfigured`.
+- `AUTH_METHOD_LABELS: Record&lt;AuthMode, string&gt;` (line 88-92) and `authMethodLabel` (line 95) — exhaustive record, so a new mode forces a label. Consumed at `src/pages/Settings.tsx:75` and `src/pages/Profile.tsx:69`.
+- `DEV_USER` (line 97-102).
+
+**Where the mode branches** (all `authMode` consumers — this is the exhaustive list):
+| File:line | Branch |
+|---|---|
+| `frontend/src/auth/AuthGate.tsx:18-20` | `dev_bypass` → children; `unconfigured` → banner; else `RealAuthGate` |
+| `frontend/src/auth/CurrentUserProvider.tsx:15-21` | `dev_bypass` → `DEV_USER`; `real` → OIDC-derived; else `null` |
+| `frontend/src/api/client.ts:66` | `if (authMode !== 'real') return config;` — skips bearer attach |
+| `frontend/src/auth/authClient.ts:33` | `if (authMode !== 'real') return null;` — no UserManager |
+| `frontend/src/App.tsx:333` | `if (authMode !== 'real') return;` — logout no-op |
+
+## 2. oidc-client-ts wiring
+
+`frontend/src/auth/authClient.ts` (dep `oidc-client-ts ^3.5.0`, `package.json:30`):
+- `getUserManager()` (line 32) — singleton `_mgr`; `UserManager` built at lines 50-60 with `redirect_uri: ${window.location.origin}/`, `automaticSilentRenew: true`, **`userStore: new WebStorageStateStore({ store: window.sessionStorage })`** (line 59) — token storage is `sessionStorage`, load-bearing for the E2E lane (see §5).
+- `login()` line 65 → `mgr.signinRedirect()`; `logout()` line 71 → `mgr.signoutRedirect()`.
+- `isSigninRedirect()` line 81, `completeSigninIfCallback()` line 94 → `signinRedirectCallback()` + `history.replaceState` scrub. Called **before React renders** in `frontend/src/main.tsx:38` (`bootstrap()`).
+- `getApiToken()` line 117 — single-flight wrapper over `acquireApiToken()` (line 125): returns `user.access_token`, `signinSilent()` on expiry, interactive redirect only for `INTERACTION_REQUIRED_ERRORS` (line 8-14).
+- `resetAuthClientCache()` line 148 — test-only.
+
+**Bearer attach point** — `frontend/src/api/client.ts:63-70`, `attachBearerToken` registered at line 28 (`api.interceptors.request.use(attachBearerToken)`). `api = axios.create({ baseURL: '/api/v1' })` at line 24 — **no `withCredentials`**, which is fine for same-origin cookies (browser sends them by default same-origin) but worth pinning explicitly for the cookie mode. Response interceptor at line 46-61 unwraps the `{error:{code,message,detail}}` envelope + `retryAfterSeconds` (line 31) — the 429 helper you'll want for OTP request/verify throttling (ADR 0032 §8 / #725).
+
+**Provider chain** — `frontend/src/main.tsx:44-51`: `AuthProvider` → `CurrentUserProvider` → `MeProvider` → `BrowserRouter` → `App`. `AuthProvider` (`src/auth/AuthProvider.tsx:13-44`) subscribes to `mgr.events` (`addUserLoaded`/`addUserUnloaded`/`addSilentRenewError`/`addUserSignedOut`) and pushes into `AuthContext` (`src/auth/authContext.ts:14`, hook `useAuthUser` line 17).
+
+## 3. What `mode=otp` needs
+
+**No dedicated `/login` route.** Routes are `src/App.tsx:218-237` — there is no `/login`. `AuthGate` (`src/App.tsx:116`) wraps the entire `Layout`, so signed-out users get a full-screen page with no router involvement at all. `LoginPage` (`src/auth/LoginPage.tsx:18`) is **pure presentation**: `{ onSignIn: () =&gt; void; signingIn: boolean }` — the parent owns the action. A two-step OTP UI can either extend this component's action panel (`.dqlogin-action` section, lines 70-94) with an email→code step, or add a sibling `OtpLoginPage.tsx` reusing the same brand panel; `LOGIN_CSS` (line 121-225) is a single inline `&lt;style&gt;` string with the `dqlogin-*` class namespace.
+
+**"Authenticated vs not" decision** — today `RealAuthGate` (`src/auth/AuthGate.tsx:23-37`) keys off `useAuthUser()` (the oidc-client-ts `User`). With an HttpOnly cookie the SPA has nothing to read, so the probe is `GET /api/v1/me`: `frontend/src/api/me.ts:14` `fetchMe()` → `MeResponse` (line 3-12, includes `is_workspace_admin`). `MeProvider` (`src/auth/MeProvider.tsx:22-96`) already owns this fetch — but note it is **gated on `useCurrentUser()` being non-null** (line 39: `if (!user) return;`), precisely to avoid racing the bearer token. For OTP that ordering inverts: `/me` *is* the authentication probe, so an OTP mode needs either an `OtpAuthGate` that probes `/me` itself (401 → login screen, 200 → authenticated) and feeds `CurrentUserProvider`, or `MeProvider` un-gated in otp mode. Also relevant: `MeProvider` lines 31-36 reset to `loading` on identity change (keyed by `user.homeAccountId`), and lines 62-66 do bounded 429 retry (`ME_429_RETRIES = 3`).
+
+`CurrentUser` shape to satisfy: `src/auth/currentUserContext.ts:3-8` — `{ name, username, homeAccountId, isDev }`. In otp mode these would derive from `MeResponse` (`email`, `display_name`, `id`) rather than OIDC claims — note `MeProvider` depends on `CurrentUserProvider`, so an otp branch must break that cycle (probe `/me` above `CurrentUserProvider`, or have the otp provider own the probe and publish both contexts).
+
+**Logout** — `UserMenu` in `frontend/src/App.tsx:328-378`; `onLogout` at line 332-335 (`if (authMode !== 'real') return; void logout();`), menu item at line 357-364 (`key: 'logout'`, label `user.isDev ? 'Sign out (dev bypass)' : 'Sign out'`, `disabled: user.isDev`). For otp, `logout()` in `authClient.ts:71` needs an otp branch that POSTs `/auth/logout` (cookie clear, POST-only per ADR 0032 §3) then resets local state — the current impl `if (mgr) await mgr.signoutRedirect()` is a silent no-op outside real mode.
+
+**Backend seam** (not yet implemented — no `dq_sess_`/OTP code exists): `backend/app/core/auth.py` — `init_auth()` line 180, `get_current_user` bound at lines 265-266, `_dev_bypass_allowed()` line 49. `/me` endpoint: `backend/app/api/v1/me.py`.
+
+## 4. Dev-bypass in the frontend today
+
+- Enabled only by explicit `mode:'bypass'` (`src/auth/config.ts:82`) or, in `pnpm dev` only, `import.meta.env.DEV &amp;&amp; VITE_AUTH_DEV_BYPASS === 'true'` (line 60 — DEV-gated so a prod static bundle can never enable it).
+- `AuthGate.tsx:18` renders children immediately (no login screen).
+- `CurrentUserProvider.tsx:15-17` supplies the static `DEV_USER` (`config.ts:97-102`: name `'Dev Bypass User'`, username `'dev-bypass@dataq.local'`, `homeAccountId: 'dev-bypass'`, `isDev: true`).
+- `client.ts:66` attaches no `Authorization` header — backend dev-bypass resolves the user tokenless.
+- UI tells: orange `DEV BYPASS` tag `App.tsx:349-351`; Sign out disabled `App.tsx:360-362`; label `'Dev bypass (no IdP)'` `config.ts:90`.
+- Env plumbing: `docker-compose.yml:205` (`VITE_AUTH_DEV_BYPASS: ${VITE_AUTH_DEV_BYPASS:-true}`), `docker-compose.ghcr.yml:166`, `playwright.config.ts:56`.
+
+## 5. E2E layout
+
+- Config: `frontend/playwright.config.ts` — one lane switch on `E2E_LIVE_BASE_URL` (line 21): `testDir` `./e2e` vs `./e2e-live` (line 25), `globalSetup` only for live (line 35), project name `chromium` vs `live-smoke` (line 42-44), `webServer` starts `pnpm dev --host --port 3000` with `VITE_AUTH_DEV_BYPASS: 'true'` (lines 46-59).
+- Dev-bypass specs: `frontend/e2e/*.spec.ts` (15 files); canary is `frontend/e2e/smoke.spec.ts:6` ("app shell loads under dev-bypass and redirects to Dashboard"). Docs table: `frontend/e2e/README.md:15-23` (add a row when you add a spec).
+- Captured-OIDC lane: `frontend/e2e-live/global-setup.ts` — headed login, `SESSION_FILE = e2e-live/.auth/session.json` (line 17), 40-min freshness (line 18), serializes `sessionStorage` (line 43), atomic tmp+rename (lines 47-49). `frontend/e2e-live/live-test.ts:9-21` extends the `context` fixture with `addInitScript` replaying `sessionStorage`. `frontend/e2e-live/smoke.spec.ts` is the read-only spec.
+
+**Where OTP E2E goes:** a new `frontend/e2e/otp-signin.spec.ts` in the dev-bypass lane won't work as-is — that lane's `webServer` hardcodes `VITE_AUTH_DEV_BYPASS: 'true'`, and `authMode` is frozen at module load, so an OTP spec needs its own Playwright project/`webServer` (different env, e.g. a `VITE_AUTH_MODE=otp` build-env branch added to `fromBuildEnv()`), or an `addInitScript` that sets `window.__DATAQ_CONFIG__ = {auth:{mode:'otp'}}` before the bundle runs — the injected path (`config.ts:71`) wins over build env, and `live-test.ts`'s `addInitScript` fixture is the exact pattern to copy for that. The cookie credential, unlike the OIDC `sessionStorage`, *is* capturable by Playwright's native `storageState`, so an otp live/authenticated lane is simpler than `e2e-live`.
+
+**Unit-test patterns to copy** (all use `vi.resetModules()` + `vi.doMock` because `authMode` is module-load-frozen):
+- `frontend/tests/auth/config.test.ts` — `inject()` helper line 17, `loadConfig()` line 21; mode cases lines 25-49, label cases 51-69.
+- `frontend/tests/auth/AuthGate.test.tsx` — `mockReal()` line 25, per-mode renders lines 33-52.
+- `frontend/tests/api/client.test.ts` — `runRequestInterceptor()` line 10; interceptor per-mode assertions lines 44-70. This is where a "otp mode attaches no Authorization header / does send cookies" test belongs.
+- `frontend/tests/nginxRouting.test.ts` — reads `nginx.conf.template` as text and asserts directives (line 30-36). Precedent for pinning a new cookie/proxy directive.
+- Coverage gate: `vite.config.ts:93-96` — `lines: 80` over all of `src` (only `src/main.tsx` excluded), so new auth files must be tested.
+
+## 6. nginx proxy / cookie-relevant facts
+
+`frontend/nginx.conf.template`, `location /api/` (lines 78-87):
+```
+set $dataq_upstream "${DATAQ_API_UPSTREAM}";
+proxy_pass $dataq_upstream$request_uri;
+proxy_http_version 1.1;
+proxy_set_header Connection "";
+proxy_ssl_server_name on;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+Cookie-relevant observations:
+- **No `proxy_cookie_path`, no `proxy_cookie_domain`, no `proxy_cookie_flags`** anywhere in the template. `Set-Cookie` passes through unmodified. If the backend sets `Path=/api/v1` the cookie won't be sent on other paths — the backend should set `Path=/` (or add `proxy_cookie_path`). If the backend sets a `Domain`, it must match the browser-facing host.
+- **`Host` is deliberately NOT set to `$host`** (lines 60-68 of the comment block) — it defaults to `$proxy_host` (the upstream). So the backend sees the *upstream* hostname, not the browser's. Any backend logic that derives a cookie `Domain` or a redirect from `Host` will be wrong; `X-Forwarded-Proto $scheme` (line 86) is the only signal for "was this HTTPS" — required for the `Secure` flag decision (ADR 0032 §3) and needs `uvicorn --proxy-headers` / `ProxiedHeadersMiddleware` on the backend to be honoured.
+- Nothing strips `Cookie` on the request side — same-origin `/api/*` means the browser attaches it automatically, no `withCredentials` needed.
+- `location = /config.js` has `Cache-Control: no-cache` (line 28); `location /` has `no-cache` (line 122) — index.html is never cached, so no stale-bundle risk when the mode flips.
+- Dev path is different: `vite.config.ts:23-26` proxies `/api` and `/mcp` to `VITE_API_PROXY_TARGET`; Vite's `http-proxy` also passes `Set-Cookie` through but rewrites nothing — same considerations, plus dev is plain `http://localhost:3000` so a `Secure` cookie will be **dropped by the browser in dev** unless the backend conditions `Secure` on `X-Forwarded-Proto`/an env flag. That is the single most likely dev-vs-prod footgun in this slice.</result>
+<usage><subagent_tokens>68952</subagent_tokens><tool_uses>23</tool_uses><duration_ms>147973</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a36978e5b726afcc0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/99e1816a-2f8f-45f3-bc24-573888d5ee2a/tasks/a36978e5b726afcc0.output</output-file>
+<status>completed</status>
+<summary>Agent "Map backend auth seam + PATs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Backend auth architecture map (read-only research for #734/#735, ADR 0032).
+
+## 1. `get_current_user` — the seam
+
+**File: `/Users/arijit/Coding/Python/DataQ/backend/app/core/auth.py`** (301 lines; module docstring lines 1-21 is the authoritative prose).
+
+Mode is bound **at import time**, not per request:
+
+```python
+# auth.py:135-136
+_settings = get_settings()
+azure_scheme: SingleTenantAzureAuthorizationCodeBearer | None = _build_azure_scheme(_settings)
+
+# auth.py:262-268
+get_current_user: Callable[..., User]
+if azure_scheme is not None:            get_current_user = _get_current_user_real
+elif _dev_bypass_allowed(_settings):    get_current_user = _get_current_user_dev_bypass
+else:                                   get_current_user = _get_current_user_unconfigured
+```
+
+Signatures:
+- `_get_current_user_real(request: Request, azure_user: Annotated[AzureUser | None, Security(azure_scheme)], db: Annotated[Session, Depends(get_db)]) -&gt; User` — auth.py:210-231
+- `_get_current_user_dev_bypass(request: Request, db: Annotated[Session, Depends(get_db)]) -&gt; User` — auth.py:234-250
+- `_get_current_user_unconfigured() -&gt; User` — auth.py:253-259 (503 `auth_not_configured`, defence-in-depth)
+
+**Resolution order today (real mode), auth.py:215-231:**
+1. `_pat_token(request)` (auth.py:127-132 — prefix match on `api_key_service.TOKEN_PREFIX`) → `api_key_service.resolve_token(db, pat)`. A bad PAT raises here; it **never** falls through to Azure.
+2. `azure_user is None` → `DataQError(code="unauthenticated", status_code=401)` (auth.py:222-227).
+3. Otherwise `_extract_claims` → `_upsert_user` (upsert on `aad_object_id`, auth.py:139-168).
+
+**Dev bypass keeps the same order** (auth.py:238-242): PAT first, then the fixed dev user (`DEV_BYPASS_AAD_OID = "00000000-...-0001"`, `DEV_BYPASS_EMAIL = "dev-bypass@dataq.local"`, auth.py:44-46). `_dev_bypass_allowed` (auth.py:49-54) requires all three: `environment == "dev"`, `auth_dev_bypass`, and **not** `azure_auth_configured`.
+
+**Ordering subtlety you must not break (#849):** `Security(azure_scheme)` resolves *before* the function body, so PAT-first was only nominal until `_PatAwareAzureScheme` (auth.py:57-91) was added. Its `__call__` short-circuits to `None` when `_pat_token(request) is not None`, keeping the branches disjoint and keeping the raw PAT out of `fastapi_azure_auth`'s "Malformed token received. %s" warning. It takes `HTTPConnection`, not `Request`, deliberately (WebSocket case; avoids `type: ignore[override]`). **A `dq_sess_` cookie flow will need the same treatment in reverse: the Azure scheme's dependency runs first, so cookie resolution must either sit inside a scheme wrapper or be checked before the JWT branch in the body.**
+
+**Uniform-401 discipline** — there are two 401 shapes, and they're deliberately *not* merged:
+- PAT failures: `ApiKeyAuthError` (api_key_service.py:46-59) — one message `"API key is invalid, revoked, or expired."`, code `invalid_api_key`, for unknown/revoked/expired/orphaned alike (docstring says distinguishing would confirm a credential exists).
+- No/invalid Azure token: code `unauthenticated`, auth.py:223-227.
+
+Both exit through `DataQError` → `_dataq_error_handler` (`/Users/arijit/Coding/Python/DataQ/backend/app/core/errors.py:51-57`) into `error_envelope` (errors.py:45-48) → `{"error": {"code", "message", "detail"}}`. Note `DataQError.__init__` is `(message, *, code, status_code, detail)` — auth code passes `message=` by keyword (errors.py:28-42).
+
+`is_workspace_admin(user) -&gt; bool` (auth.py:271-283) and `require_workspace_admin(...)` (auth.py:286-300, 403 `workspace_admin_required`) sit on top; the docstring explicitly says **no Azure/Entra claim is read here** (ADR 0010/0013, CLAUDE.md §11) — it matches on `user.email` via `Settings.is_admin_email` (config.py:393-399).
+
+Consumers of the seam (19 modules): all of `backend/app/api/v1/*.py` routers listed in `main.py:254-270`, plus `mcp/auth.py`.
+
+## 2. `init_auth` — fail-closed boot
+
+`async def init_auth() -&gt; None` — **auth.py:180-207**, called from the FastAPI lifespan at `/Users/arijit/Coding/Python/DataQ/backend/app/main.py:105`.
+
+- `azure_scheme is not None` → `await azure_scheme.openid_config.load_config()`, logs `auth_real_mode_ready`.
+- `_dev_bypass_allowed(_settings)` → logs `auth_dev_bypass_active` (warning) and returns.
+- Else → `RuntimeError("Auth not configured. Set AZURE_TENANT_ID + AZURE_API_CLIENT_ID, or set ENVIRONMENT=dev with AUTH_DEV_BYPASS=true for local dev.")`
+
+Mode inputs live in `/Users/arijit/Coding/Python/DataQ/backend/app/core/config.py`:
+- `azure_tenant_id`, `azure_api_client_id`, `azure_spa_client_id`, `azure_api_scope="user_impersonation"` — config.py:182-185
+- `azure_allow_guest_users: bool = False` — config.py:193
+- `auth_dev_bypass: bool = False` — config.py:195
+- `environment: Literal["dev","staging","prod"]` — config.py:38
+- `azure_auth_configured` property (`bool(tenant_id and api_client_id)`) — config.py:417-418; `azure_api_scope_uri` — config.py:421-424
+- `workspace_admin_emails` (config.py:265) → `workspace_admin_email_set` (config.py:383-390), `is_admin_email` (393-399)
+- `cors_allow_origins` (config.py:202) → `cors_allow_origin_list` (config.py:402-404)
+
+**How an `otp` mode slots in — the concrete constraints:**
+- Selection must happen at import time next to auth.py:135-136/262-268 (a third `elif`), because `get_current_user` is a bound module-level callable and `Security(azure_scheme)` can only be a dependency of the *real* variant. An OTP-only deployment cannot reuse `_get_current_user_real` as written (it declares `Security(azure_scheme)` with `azure_scheme=None`) — you need a `_get_current_user_otp` (PAT → session cookie → 401) and probably a combined real+otp variant if both are configured.
+- `init_auth` must gain the ADR 0032 §2 partial-config refusal (`AUTH_EMAIL_*` incomplete, or empty `AUTH_OTP_ALLOWED_EMAILS`/`_DOMAINS`) as a fourth branch — none of `AUTH_EMAIL_*`/`AUTH_OTP_*` exists in config.py today (verified: zero hits repo-wide).
+- Existing precedent for a startup-time config refusal that isn't in `init_auth`: `Settings._validate_secret_store` model_validator (config.py:~470-490) raises `ValueError` for `SECRET_STORE='azure_key_vault'` without a URL — a `@model_validator` is the other viable home for the OTP fail-closed check.
+- Frontend `DATAQ_AUTH_MODE` is a *separate*, nginx-injected enum (`frontend/src/auth/config.ts`, values `real`/`dev_bypass`/`unconfigured` today; `docker-compose.ghcr.yml:158-166` sets `bypass`). The backend never reads it — ADR 0032 §2 makes #734 responsible for keeping the two selectors coordinated.
+
+## 3. `api_keys` + PAT service (ADR 0026) — the pattern `sessions` copies
+
+**Model:** `class ApiKey(Base)` — `/Users/arijit/Coding/Python/DataQ/backend/app/db/models.py:155-191`.
+- `__table_args__ = (Index("uq_api_keys_key_hash", "key_hash", unique=True),)` — models.py:175. Read the comment at 167-174: it is a unique **INDEX, not a constraint**, on purpose, because that is what the migration created and constraint *names* leak into error-handling code. Copy this exactly for `sessions`.
+- Columns: `id` (uuid pk), `user_id` (FK `users.id`, `ondelete="CASCADE"`, indexed), `name` String(128), `key_prefix` String(16), `key_hash` String(64), `expires_at` (tz-aware, NOT NULL), `revoked_at`, `last_used_at`, `created_at`, `updated_at`.
+- `User` model — models.py:143-152: `aad_object_id: String(64), nullable=False, unique=True`; `email: String(320), nullable=False` (**no** unique index on `lower(email)` today — that's #735's migration).
+
+**Migration precedent:** `/Users/arijit/Coding/Python/DataQ/backend/alembic/versions/b0c1d2e3f4a5_add_api_keys.py` (70 lines) — `gen_random_uuid()` server default, `ix_api_keys_user_id` + `uq_api_keys_key_hash`, clean downgrade. Head of the chain is elsewhere; `down_revision = "a9b0c1d2e3f4"`.
+
+**Service:** `/Users/arijit/Coding/Python/DataQ/backend/app/services/api_key_service.py` (170 lines).
+- `TOKEN_PREFIX = "dq_live_"` — line 34 (with `# noqa: S105 # nosec B105` and the "public discriminator, not a credential" comment). `_DISPLAY_PREFIX_LEN = len(TOKEN_PREFIX) + 4` — line 36.
+- `DEFAULT_EXPIRY_DAYS = 90`, `MAX_EXPIRY_DAYS = 365` (38-39); `_LAST_USED_WRITE_INTERVAL = timedelta(seconds=60)` (43).
+- `_hash(token) -&gt; str` = `hashlib.sha256(token.encode()).hexdigest()` — line 72-73.
+- `create_key(db, user, *, name, expires_in_days=90) -&gt; tuple[ApiKey, str]` — 76-110. Token = `TOKEN_PREFIX + secrets.token_urlsafe(32)` (line 91, ~256 bits). Logs `api_key_created` with `key_prefix` only.
+- `list_keys(db, user) -&gt; list[ApiKey]` — 113-121; `revoke_key(db, user, key_id) -&gt; ApiKey` — 124-141 (soft `revoked_at`, idempotent, 404 for another user's key).
+- `resolve_token(db, token) -&gt; User` — 144-169. **O(1) unique-index lookup on the digest**; checks `revoked_at`/`expires_at` on the row; orphaned-user fail-closed; throttled `last_used_at` write; logs `api_key_auth_failed` with `token[:12]` only.
+
+**Constant-time compare — the surprising part:** `api_key_service` uses **no** `hmac.compare_digest`. It never compares secrets in Python; it hashes and does an indexed equality lookup in Postgres (docstring lines 1-14 justifies SHA-256-not-argon2 for a random machine secret). The repo's only constant-time comparisons are the orchestration webhook secrets: `/Users/arijit/Coding/Python/DataQ/backend/app/api/v1/orchestration.py:115-117` (ADF `?token=`), `:161-167` and `:205-208` (Airflow/dbt HMAC signatures) — all comparing **UTF-8 bytes** because `hmac.compare_digest` raises `TypeError` on non-ASCII `str` (comments at 115-117, 205-206; tests at `backend/tests/api/test_orchestration_events.py:147` and `test_orchestration_events_airflow.py:150`). **ADR 0032 §4's "constant-time compare" for the 6-digit OTP code has no session-token analogue** — the session token itself should follow the PAT hash-lookup model; the OTP *code* is the thing that needs `compare_digest` (or an equivalent hash lookup), and orchestration.py is the byte-compare pattern to copy.
+
+**Routes:** `/Users/arijit/Coding/Python/DataQ/backend/app/api/v1/api_keys.py` (97 lines) — `router = APIRouter(tags=["auth"])`, `POST /me/api-keys` (201, `ApiKeyCreated` is the only place the plaintext appears, line 48-51/60-70), `GET /me/api-keys`, `DELETE /me/api-keys/{key_id}` (204). Mounted at `main.py:255` under `/api/v1`.
+
+## 4. `/mcp` authentication and where `dq_sess_` must be rejected
+
+**File: `/Users/arijit/Coding/Python/DataQ/backend/app/mcp/auth.py`** (168 lines).
+- `mcp_enabled(settings=None) -&gt; bool` — auth.py:55-62: `s.azure_auth_configured or _dev_bypass_allowed(s)`.
+- `build_auth_provider(settings=None) -&gt; AuthProvider | None` — auth.py:98-115: builds `JWTVerifier(jwks_uri=f"https://login.microsoftonline.com/{tenant}/discovery/v2.0/keys", issuer=f".../v2.0", audience=s.azure_api_client_id, required_scopes=[s.azure_api_scope])` wrapped in `_PatOrJwtVerifier`.
+- `class _PatOrJwtVerifier(TokenVerifier)` — auth.py:65-95. **`async def verify_token(self, token: str) -&gt; AccessToken | None`** at :77 — the exact seam: `if not token.startswith(api_key_service.TOKEN_PREFIX): return await self._jwt.verify_token(token)`. PAT path opens its own `SessionLocal`, returns `AccessToken(client_id="dataq-pat", scopes=[], claims={PAT_USER_CLAIM: str(user.id)})` where `PAT_USER_CLAIM = "dataq_user_id"` (auth.py:48).
+- `resolve_current_user(session: Session) -&gt; User` — auth.py:118-167: PAT claim → `session.get(User, pat_user_id)`; else guest check → `oid` mandatory (no `sub` fallback) → `_upsert_user`. Raises `McpAuthError` (auth.py:51).
+
+**Where `dq_sess_` needs an explicit reject — three places, and one of them is load-bearing:**
+1. `_PatOrJwtVerifier.verify_token` (mcp/auth.py:77-79): today a `dq_sess_…` **bearer** would be handed to `JWTVerifier` and fail to decode — i.e. exactly the #849 failure mode that leaked the raw PAT into telemetry via the library's `"Malformed token received. %s"` warning. Add a prefix guard returning `None` *before* delegating, mirroring `_PatAwareAzureScheme`.
+2. `build_mcp_app()` — `/Users/arijit/Coding/Python/DataQ/backend/app/mcp/server.py:587-624`, specifically the mount at **server.py:621-624**: `mcp.http_app(path="/", allowed_hosts=..., allowed_origins=["*"])`. The comment at **server.py:608-614** justifies `allowed_origins=["*"]` with: *"DataQ authenticates every /mcp call with a Bearer token (JWT or PAT), **never a cookie**, so the Origin/CSRF check the guard performs is moot."* The moment cookies exist app-wide, `/mcp` is same-origin behind the nginx proxy (`frontend/nginx.conf.template:88-97` forwards `/mcp`), so browsers **will** attach the session cookie — that comment becomes false unless `/mcp` provably ignores cookies. ADR 0032 §1 makes `/mcp` a non-goal; this is where that must be *enforced and tested*, not just documented.
+3. `mcp_enabled()` (mcp/auth.py:55-62) returns `False` for an OTP-only deployment (no `azure_auth_configured`, no dev bypass) → **`/mcp` would not mount at all in `otp` mode**, even though PATs would work fine. `main.py:326` skips the mount when `build_mcp_app()` returns `None`. This is an unresolved product decision for #734.
+
+## 5. Auth tests
+
+| Concern | Location |
+|---|---|
+| Seam order, dev-bypass interplay, `init_auth` fail-closed | `/Users/arijit/Coding/Python/DataQ/backend/tests/core/test_auth.py` (199 lines) |
+| — `init_auth` real mode loads OIDC config | test_auth.py:84-95 (monkeypatches `auth_mod.azure_scheme`) |
+| — `init_auth` fails closed | test_auth.py:98-114 (monkeypatches `auth_mod._settings`, expects `RuntimeError("Auth not configured")`) |
+| — bearer/PAT parsing table | test_auth.py:145-153 |
+| — PAT resolves with `azure_user=None` | test_auth.py:156-160 |
+| — 401 `unauthenticated` with no credential | test_auth.py:163-167 |
+| — **bad PAT never falls through to Azure** (even with a valid `azure_user`) → 401 `invalid_api_key` | test_auth.py:170-179 |
+| — **dev-bypass: PAT wins over bypass identity; bad PAT 401s instead of falling through** | test_auth.py:182-192 |
+| — unconfigured → 503 | test_auth.py:195-199 |
+| PAT service security bar (hash-at-rest, show-once, **uniform 401 asserted by message equality across unknown/revoked/expired**, cross-user isolation, last-used throttle, cascade) | `/Users/arijit/Coding/Python/DataQ/backend/tests/services/test_api_key_service.py` — esp. `test_resolve_unknown_revoked_expired_all_uniform_401` at :78-100 |
+| PAT end-to-end over HTTP under dev-bypass | `/Users/arijit/Coding/Python/DataQ/backend/tests/api/test_api_keys.py` (118 lines) — `test_pat_authenticates_as_its_owner_not_the_bypass_user` :63-73, `test_bad_pat_401s_instead_of_falling_through_to_bypass` :76-79, `test_revoked_pat_stops_authenticating_immediately` :82-94 |
+| MCP verifier + claim resolution | `/Users/arijit/Coding/Python/DataQ/backend/tests/mcp/test_mcp_auth.py` (178 lines) — composite verifier :116-121, valid PAT :132-141, bad PAT → `None` :143-147, non-PAT delegates to JWT :150-160, guest policy :56-69, `oid`-required :72-78 |
+| **Credential-never-logged battery** | `/Users/arijit/Coding/Python/DataQ/backend/tests/core/test_bearer_token_redaction.py` — the real adversarial auth battery: `test_the_token_cannot_survive_in_any_shape` (parametrized message shapes) :101, `test_a_pat_never_enters_the_jwt_validator` :178, foreign-stdlib-record test :110 |
+| CORS activation | `/Users/arijit/Coding/Python/DataQ/backend/tests/core/test_cors.py` (119 lines) — uses the `importlib.reload(backend.app.main)` pattern (docstring :8-19) since middleware is attached at module scope |
+| Rate-limit class/bucket behaviour | `/Users/arijit/Coding/Python/DataQ/backend/tests/api/test_rate_limiting.py`, `backend/tests/core/test_rate_limit.py` |
+| Test-mode auth bootstrapping | `/Users/arijit/Coding/Python/DataQ/backend/tests/conftest.py:6-14` — sets `ENVIRONMENT=dev`, `AUTH_DEV_BYPASS=true`, `RATE_LIMIT_ENABLED=false` **before any `backend.app.*` import**, precisely because auth mode is import-time. Any OTP-mode test needs the same env-first or module-reload discipline. |
+
+**Correction on a premise:** `/Users/arijit/Coding/Python/DataQ/backend/tests/support/adversarial.py` (70 lines) is **not** an auth battery — it is `ADVERSARIAL_FRAMES`, a list of hostile **pandas DataFrames** plus `assert_json_safe(value)`, used only by `tests/datasources/test_flatfile.py:864`, `tests/integration/test_datasource_runs.py:26`, and `tests/services/test_profile_service.py:595`. **No auth test imports it.** The auth-side equivalent of an adversarial battery is `test_bearer_token_redaction.py` (token-shape parametrization) and the uniform-401 message-equality assertions.
+
+## 6. Cookie / CSRF surface today
+
+**There is no cookie handling anywhere in the backend.** Zero `set_cookie`, zero `request.cookies`, zero `SameSite` in `backend/app` (verified by grep). Everything is `Authorization: Bearer`.
+
+- **CORS**: `main.py:167-186`. Added **only if** `get_settings().cors_allow_origin_list` is non-empty; `allow_origins=_cors_origins` (explicit allowlist, never `*`), **`allow_credentials=True`** (main.py:174), `allow_methods=["*"]`, `allow_headers=["*"]`, `expose_headers=[X-Request-ID, X-Total-Count]`. In dev, origins are empty and the Vite proxy keeps everything same-origin.
+- **Same-origin proxy**: `frontend/nginx.conf.template` — `location /api/` :59-73, `location = /healthz` :75, `location /mcp` :88-103, SPA fallback `location /` :125. This is the ADR 0028 §5 same-origin path the `dq_sess_` cookie would ride. No `proxy_cookie_path`/`proxy_cookie_domain` directives exist.
+- **The only bearer extractor**: `_bearer_token(request: HTTPConnection) -&gt; str | None` (auth.py:115-124) — header-only. It is **imported by `core/rate_limit.py:47`**.
+- **Rate limiting**: `/Users/arijit/Coding/Python/DataQ/backend/app/core/rate_limit.py`. `_resolve_policy(path, bearer, ip, settings) -&gt; tuple[str, int, str]` at :335-355 knows exactly three classes — `webhook` (per provider+IP), `default` (per `sha256(bearer)` + per-IP `ipall` ceiling), `unauth` (per-IP). **A cookie-authenticated request carries no bearer, so every session-cookie request lands in the `unauth` class at `rate_limit_unauthenticated_per_minute = 120`** (config.py:221) — a real behavioural surprise for #734. There is no per-email bucket and no `auth` class; ADR 0032 §8's "per-email and per-IP rate limits" require a new class in `_resolve_policy`. Settings: config.py:219-245.
+- **Middleware order** (main.py:159-166): `rate_limit_middleware` is registered first → innermost, so 429s still exit through CORS and `request_id_middleware`. `reject_nul_in_url_middleware` at main.py:190+.
+- **Redaction already half-ready**: `core/logging.py` `_PII_KEYS` includes `"cookie"` and `"set-cookie"` (logging.py:58-59) plus `oid`/`aad_object_id`/`upn`/`preferred_username`/`email` (logging.py:38-52). But **`_BEARER_TOKEN_RE` (logging.py:97-109) matches `dq_live_[A-Za-z0-9_\-]{6,}` and JWTs — not `dq_sess_`.** That regex needs extending in #734 or a leaked session token survives the scrubber that a leaked PAT would not.
+- `/mcp` mount deliberately sets `allowed_origins=["*"]` with a written "never a cookie" justification — see §4 above.
+
+## Surprising / plan-relevant findings
+
+1. **`MeResponse.aad_object_id: str` is required and non-nullable** — `/Users/arijit/Coding/Python/DataQ/backend/app/api/v1/me.py:19`. Under ADR 0032 §6 / #735 (`users.aad_object_id` becomes nullable), an OTP-provisioned user makes `GET /api/v1/me` fail response validation → 500. `me.py:38-42` uses `MeResponse.model_validate(current_user)` specifically so new columns flow through automatically, which makes this the silent break. Also `models.py:147` has `nullable=False, unique=True` — the two-step migration must relax both the column and this schema, and the frontend's `/me` consumer.
+2. **A second Azure-claims reader outside `core.auth`.** `mcp/auth.py:141-157` reads `acct`/`oid`/`preferred_username`/`email`/`upn` directly and imports `is_guest` from `fastapi_azure_auth.utils` (mcp/auth.py:25). It reuses `_upsert_user` but **not** `_extract_claims` (auth.py:171-177), so the two claim readers are duplicated logic that can drift — the exact thing ADR 0010/CLAUDE.md §11 aims at. It also imports four private names from `core.auth` (`_dev_bypass_allowed`, `_upsert_user`, plus the DEV_BYPASS constants) at mcp/auth.py:31-37.
+3. **`api_key_service` has no `hmac.compare_digest`** despite ADR 0026's "credential bar" framing — by design (hash + unique-index lookup). Don't cargo-cult a constant-time compare into `sessions`; do use one for the OTP *code*.
+4. **ADR 0026's stated bar says "Hash-at-rest (argon2/bcrypt)"** (docs/adr/0026-…:line ~38) but the built implementation is SHA-256, with the rationale relocated to `api_key_service.py:1-14`. If you cite the ADR in the `sessions` design, cite the *implementation* rationale, not the ADR's original wording.
+5. **Import-time mode binding** is the single biggest structural constraint on adding an `otp` mode: `azure_scheme`, `_settings`, and `get_current_user` are all module-level (auth.py:135-136, 262-268), `mcp_enabled()`/`build_mcp_app()` are evaluated at `main.py:128`, and CORS is attached at `main.py:169-186`. Tests work around this with env-before-import (`conftest.py:6-14`) or `importlib.reload` (`test_cors.py`).
+6. **`_get_current_user_real` cannot be reused for an OTP-only deployment** — it declares `Security(azure_scheme)` where `azure_scheme` would be `None`.
+7. **`docs/api-keys.md`** exists as the user-facing PAT doc and is the template for an OTP sign-in doc; `docs/security.md` has no cookie/session content today.</result>
+<usage><subagent_tokens>89357</subagent_tokens><tool_uses>40</tool_uses><duration_ms>249781</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad6d41bb973f919ad</task-id>
+<tool-use-id>toolu_01TKgT9GkAQNs4QrQ6FkuzK8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/99e1816a-2f8f-45f3-bc24-573888d5ee2a/tasks/ad6d41bb973f919ad.output</output-file>
+<status>completed</status>
+<summary>Agent "Map rate limiting state" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+### 1. The middleware — files and shape
+
+**Implementation:** `/Users/arijit/Coding/Python/DataQ/backend/app/core/rate_limit.py` (447 lines, the whole feature is this one file)
+**Registration:** `/Users/arijit/Coding/Python/DataQ/backend/app/main.py:163` — `app.middleware("http")(rate_limit_middleware)`, registered *first* so it is the innermost user middleware (comment at `main.py:158-162`). Parent app, not a route dependency, so it covers the `/mcp` ASGI mount.
+**ADR:** `/Users/arijit/Coding/Python/DataQ/docs/adr/0035-request-rate-limiting.md`
+**Tests:** `/Users/arijit/Coding/Python/DataQ/backend/tests/core/test_rate_limit.py` (563 lines, unit) and `/Users/arijit/Coding/Python/DataQ/backend/tests/api/test_rate_limiting.py` (438 lines, TestClient e2e)
+
+**Git history (PR #783 plus three follow-ups; no auth work in any of them):**
+- `7431c4f3` feat: per-IP/per-token rate limiting on api, webhooks, and /mcp (#783)
+- `644ca590` webhook bucket per provider (#785) — PR #872
+- `2d885c2d` per-IP buckets keyed on address prefix (#789) — PR #874
+- `647bb46e` circuit breaker for slow-but-alive Redis (#784) — PR #1016
+
+**Limit classes that exist today** — all resolved in `_resolve_policy` at `rate_limit.py:335-355`. There are exactly **three**:
+
+| Class string | Match | Bucket key | Limit setting |
+|---|---|---|---|
+| `webhook` | `path.startswith("/api/v1/orchestration/events/")` (`_WEBHOOK_PREFIX`, line 65) | `{provider}:ip:{ip}` if segment in `_WEBHOOK_PROVIDERS` (line 74, sourced from `ORCHESTRATION_PROVIDERS`), else bare `ip:{ip}` | `rate_limit_webhook_per_minute` (120) + `ipall` ceiling `rate_limit_webhook_ip_per_minute` (240) |
+| `default` | any request with a bearer (`_bearer_token`, `backend/app/core/auth.py:115`) | `tok:{sha256(token)[:32]}` | `rate_limit_authenticated_per_minute` (300) + `ipall` ceiling `rate_limit_ip_per_minute` (1200) |
+| `unauth` | **everything else** — fallthrough, line 355 | `ip:{ip}` | `rate_limit_unauthenticated_per_minute` (120) |
+
+Dual-key `ipall` construction is at `rate_limit.py:410-414`; the exceed comparison at `:422-429`.
+
+**Fixed-window Redis:** `RedisStore.incr_windows` at `rate_limit.py:178-196`. Key shape `rl:{cls}:{key}:{window}` where `window = int(now) // 60` (`WINDOW_SECONDS = 60`, line 57). Window index is *in the key*, so `EXPIRE` at `_GC_SECONDS = 120` (line 58) is pure GC, never the boundary. One pipelined `INCR`+`EXPIRE` per key; even-indexed results are the counts. Client built lazily in `_get_redis_client` (`:96-108`) with `socket_connect_timeout=0.5`, `socket_timeout=0.2`.
+
+**Fail-open:** any exception → `return None` (`:192-194`), and the middleware at `:417-420` allows the request and calls `_warn_store_unavailable_once` (log event `rate_limit_store_unavailable`, path + class + key *kind* only, never the key value). Plus a circuit breaker (`_BREAKER_TRIP_AFTER = 5`, `_BREAKER_OPEN_SECONDS = 5.0`, lines 116-153): 5 consecutive failures → open for 5s, returning the fail-open signal *without awaiting*; a success arriving while open is deliberately ignored (anti-flap, `:143-149`).
+
+**XFF trusted hops:** `_client_ip` at `rate_limit.py:274-301`. Takes `entries[len(entries) - trusted_hops]` — hops-from-the-right. If the chain is *shorter* than `trusted_hops`, the whole header is distrusted → socket peer fallback (never `entries[0]`). IPv4 `:port` stripped via `_IPV4_PORT_RE` (line 78); garbage or missing peer → `"unknown"`. Config `rate_limit_xff_trusted_hops` default 1 (compose); ADR says ACA needs 3 (public-envoy→nginx→internal-envoy).
+
+Then `_bucket_ip` (`:304-332`) folds the address onto a prefix — IPv4 `/24`, IPv6 `/64` — with IPv4-mapped-IPv6 unwrapping, prefix length baked into the key (`ip:2.57.171.0/24`).
+
+**Exemptions:** `_EXEMPT_PATHS = frozenset({"/healthz"})` (line 64, hardcoded on purpose) and a genuine CORS preflight (OPTIONS + `Origin` + `Access-Control-Request-Method`, `:383-388`).
+
+---
+
+### 2. VERDICT — No AUTH-ENDPOINT class exists. It still needs to be added.
+
+**There is no auth-endpoint class, no per-email limit, and no route→class mapping table at all.** Grepping `rate_limit.py` + both test files for `auth-endpoint|authendpoint|otp` returns **zero hits**.
+
+There is no generalized route-class config anywhere. Class selection is three hardcoded branches in `_resolve_policy` (`:348-355`). The only path-aware constants are `_EXEMPT_PATHS` (`/healthz`) and `_WEBHOOK_PREFIX`. There is no `RATE_LIMIT_ROUTE_CLASSES`-style setting in `config.py` — the rate-limit block is `config.py:213-245` and contains only scalar caps.
+
+Consequently, `/auth/otp/request` today would fall through to the **`unauth`** class: one shared per-IP-prefix bucket at **120/min**, shared with *all other unauthenticated traffic from that /24*. That is far too loose for an OTP mint endpoint, and it is not per-email at all.
+
+The two documents disagree in emphasis, which is worth flagging in #734:
+- `docs/adr/0032-email-otp-signin.md:33` — "**Hard prerequisite: #725's auth-endpoint slice.** `otp/request` is the app's first unauthenticated mail-sending endpoint; per-email and per-IP rate limits land with or before it."
+- `docs/adr/0035-request-rate-limiting.md:100-102` — explicitly defers it: "The class table is the **extension point** for ADR 0032's future per-email OTP class (**a fourth row, keyed on the normalized email**)."
+
+So #725/PR #783 shipped the *infrastructure* the OTP prereq needed, but **not the auth-endpoint slice itself**. The ADR 0035 "Consequences" line "the OTP prereq (#738) is unblocked" (`0035:155`) is about the seam existing, not about the auth class being delivered. **The OTP work needs a rate-limiting extension task.**
+
+---
+
+### 3. Configuration
+
+All in `/Users/arijit/Coding/Python/DataQ/backend/app/core/config.py:213-245` (pydantic `Settings`, env var = uppercased field name):
+
+| Field | Env var | Default | Line |
+|---|---|---|---|
+| `rate_limit_enabled` | `RATE_LIMIT_ENABLED` | `True` | 219 |
+| `rate_limit_authenticated_per_minute` | `RATE_LIMIT_AUTHENTICATED_PER_MINUTE` | 300 | 220 |
+| `rate_limit_unauthenticated_per_minute` | `RATE_LIMIT_UNAUTHENTICATED_PER_MINUTE` | 120 | 221 |
+| `rate_limit_webhook_per_minute` | `RATE_LIMIT_WEBHOOK_PER_MINUTE` | 120 | 222 |
+| `rate_limit_webhook_ip_per_minute` | `RATE_LIMIT_WEBHOOK_IP_PER_MINUTE` | 240 | 227 |
+| `rate_limit_ip_per_minute` | `RATE_LIMIT_IP_PER_MINUTE` | 1200 | 231 |
+| `rate_limit_xff_trusted_hops` | `RATE_LIMIT_XFF_TRUSTED_HOPS` | 1 | 234 |
+| `rate_limit_ipv4_prefix` | `RATE_LIMIT_IPV4_PREFIX` | 24 (`ge=8, le=32`) | 244 |
+| `rate_limit_ipv6_prefix` | `RATE_LIMIT_IPV6_PREFIX` | 64 (`ge=32, le=128`) | 245 |
+
+Documented for operators at `/Users/arijit/Coding/Python/DataQ/deploy/README.md:39-44`; sample env at `/Users/arijit/Coding/Python/DataQ/.env.app.example:125-136`.
+
+**`RATE_LIMIT_ENABLED` interplay with dev/E2E (#796/#797)** — the flag is checked first thing in the middleware (`rate_limit.py:379`, plain early return). It is turned **off in every non-prod stack**:
+
+- **Dev compose:** `/Users/arijit/Coding/Python/DataQ/docker-compose.yml:138-143` — `RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-false}`, with the reason inline: "Request throttling off in the dev stack (#796): dev-bypass traffic carries no bearer, so a local Playwright run lands in the per-IP unauthenticated class (120/min) and 429s mid-suite."
+- **CI E2E job:** `/Users/arijit/Coding/Python/DataQ/.github/workflows/ci.yml:348-351` — `RATE_LIMIT_ENABLED: "false"`, "(#796, compose parity): dev-bypass requests carry no bearer → the whole suite shares one per-IP unauthenticated bucket (120/min) and 429s mid-run."
+- **Backend pytest suite:** `/Users/arijit/Coding/Python/DataQ/backend/tests/conftest.py:14` — `os.environ.setdefault("RATE_LIMIT_ENABLED", "false")`, with per-test reset via `rate_limit.reset_rate_limit_state()` at `conftest.py:30,35`. Rate-limit tests opt back in per-fixture (`test_rate_limiting.py:38,54,218,304,334`) using `monkeypatch.setenv` + `get_settings.cache_clear()` + `set_store_for_testing(InMemoryStore(...))` + a frozen `_now`.
+- **Prod:** `deploy/README.md:39` says keep it `true`.
+
+**Direct consequence for OTP:** because `AUTH_DEV_BYPASS=true` traffic carries no bearer and dev/E2E disable the limiter wholesale, **any OTP throttle implemented inside this middleware will be silently off in dev and in the Playwright E2E suite**. If OTP throttling needs E2E coverage (e.g. asserting the 429 on a 6th code request), it must either live outside the `rate_limit_enabled` gate (service-level counters) or the E2E stack needs a separate opt-in.
+
+---
+
+### 4. VERDICT — A per-EMAIL limit is NOT expressible in the current design without new plumbing. Service-level Redis counters are the cleaner path.
+
+The middleware's policy function has the signature `_resolve_policy(path: str, bearer: str | None, ip: str, settings: Settings) -&gt; tuple[str, int, str]` (`rate_limit.py:335-337`). **Its only inputs are path, Authorization header, and client IP.** The body is never read anywhere in the file. Three concrete blockers:
+
+1. **Body access in a `BaseHTTPMiddleware` dispatch is a known hazard.** `app.middleware("http")` wraps the function in Starlette's `BaseHTTPMiddleware` (FastAPI 0.139.2, `backend/requirements.txt:17`). Calling `await request.body()` in the dispatch drains the receive channel that `call_next` then hands downstream, so the OTP route would see an empty/hanging body unless you re-inject a replay `receive`. Doable, but it is real plumbing on the **innermost middleware that every single request on `/api` + `/mcp` + webhooks passes through** — you would be paying a body read (or at least a path check guarding it) on the hot path that ADR 0035 went out of its way to keep to one Redis round trip.
+
+2. **It would break the class model's invariant.** Every existing key is derived from data that is cheap and *always present*; a body-derived key must handle malformed JSON, missing `email`, wrong content-type, and oversized bodies — all *before* FastAPI's validation has run (the limiter is deliberately pre-routing, per the test-file docstring at `test_rate_limiting.py:3-5`). Normalization (casefold/trim, the "normalized email" ADR 0035:102 asks for) would also have to be duplicated outside the Pydantic model that owns it.
+
+3. **The dev/E2E kill switch (see §3) turns it off exactly where OTP flows are exercised.**
+
+**Recommendation for #734:** split it.
+- **In the middleware** (cheap, fits the existing design perfectly): add a fourth class, e.g. `auth`, matched on an `_AUTH_PREFIX` constant alongside `_WEBHOOK_PREFIX`, keyed `ip:{ip}` with its own much stricter cap (`RATE_LIMIT_AUTH_PER_MINUTE`). This is a ~6-line change to `_resolve_policy` plus one settings field, and it satisfies the "per-IP" half of ADR 0032's prerequisite. Note it must be checked *before* the `bearer is not None` branch (like `webhook` is) so a bearer-carrying request can't dodge the auth class.
+- **Per-email must be service-level.** Do it in the OTP service after Pydantic has parsed and normalized the address, as a Redis counter on the same `rl:`-style fixed-window pattern. Precedent for a narrow, timeout-bounded, directly-constructed Redis client outside the middleware already exists at `/Users/arijit/Coding/Python/DataQ/backend/app/worker/beat_watchdog.py:94-115` (`_TickStore` Protocol + `build_store(redis_url)`), and that module's own comment (line 81) explicitly cites `core/rate_limit.py` as the pattern it copies. The `RateLimitStore` Protocol (`rate_limit.py:81-89`) and `InMemoryStore` (`:200-223`) are reusable as-is for the counting and for tests. Service-level also gets you the thing the middleware *can't* give you: a per-email counter that survives independently of `RATE_LIMIT_ENABLED`, so OTP brute-force protection stays on in dev/E2E and is testable end-to-end.</result>
+<usage><subagent_tokens>52933</subagent_tokens><tool_uses>32</tool_uses><duration_ms>238968</duration_ms></usage>
+</task-notification>
+
+---
+
+Plan looks good, let's get started
+
+---
+
+<task-notification>
+<task-id>a5939c2f7b7a95caf</task-id>
+<tool-use-id>toolu_014FMqvFSwjDuBsgoLfvfqFd</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/99e1816a-2f8f-45f3-bc24-573888d5ee2a/tasks/a5939c2f7b7a95caf.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1127 rate-limit auth class" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+**PR:** #1129 — https://github.com/TheurgicDuke771/DataQ/pull/1129
+Branch `feature/issue-1127-rate-limit-auth-class`, milestone "v1.1 Backlog" set, not merged (as instructed).
+
+**Scope implemented:** the middleware half of #1127 only (item 1) — a fourth `auth` rate-limit class for `/api/v1/auth/*`, matched on path prefix before the bearer branch so a bearer can't dodge it, keyed `ip:{ip}` via existing prefix-bucketing. New setting `rate_limit_auth_per_minute` (default 10, env `RATE_LIMIT_AUTH_PER_MINUTE`). Per-email counters (item 2) deliberately not built — that's #734.
+
+**Files changed:**
+- `backend/app/core/rate_limit.py` — `_AUTH_PREFIX`, `_resolve_policy` fourth branch
+- `backend/app/core/config.py` — `rate_limit_auth_per_minute` setting
+- `.env.app.example`, `deploy/README.md` — new var documented
+- `docs/adr/0035-request-rate-limiting.md` — class table + extension-point prose updated to "shipped (per-IP half), per-email lands with #734"
+- `backend/tests/core/test_rate_limit.py` — 4 new unit tests on `_resolve_policy`
+- `backend/tests/api/test_rate_limiting.py` — 2 new e2e tests (429 + separate-bucket proof; bearer-can't-dodge proof)
+
+**Test results:**
+- New tests only: 74 passed (both rate-limit files)
+- Full backend suite: **3258 passed, 1 skipped, 1 deselected** (coverage 96.93%, gate ≥80%)
+- Black/Ruff/mypy: clean. Bandit (`-c pyproject.toml`, matching CI): 0 issues.
+
+**Mutation-check (as required):** temporarily moved the `_AUTH_PREFIX` check to after the bearer branch. Both `test_auth_prefix_wins_even_with_bearer` (unit) and `test_auth_class_not_dodged_by_bearer` (e2e) failed for the right reason — unit resolved `default` instead of `auth`; e2e never hit the strict cap and returned 404 instead of the expected 429. Restored the fix; both pass again.
+
+**Deviation/note:** 1 pre-existing test deselected from the full-suite run — `backend/tests/services/test_poll_lock_timeout.py::test_record_poll_failure_does_not_hang_on_a_contended_row`. It intentionally commits through the real `SessionLocal`/`DATABASE_URL` (not the isolated `TEST_DATABASE_URL`) to hold a genuine Postgres lock, and this worktree shares the main checkout's dev Postgres, which already has a demo `airflow`/`dev` connection row — colliding with a `(type, env)` unique constraint. Verified this is unrelated to my change (reproduces on a freshly recreated `dataq_test_a`, and the collision is against the real dev DB, not the test DB). Not fixed here — out of scope for #1127 and environmental to the shared worktree setup, not a code defect.
+
+Also worth flagging: an early attempt to build the test DB URL via shell command substitution caused a `conda run` error message to echo the constructed URL (local dev password included) into this transcript. I did not print or persist it deliberately, but it did surface once in tool output before I switched to an in-process Python wrapper that never puts the credential on any command line. No credential was committed to any file, and `git status` never showed `.env`/`.env.app`.</result>
+<usage><subagent_tokens>194573</subagent_tokens><tool_uses>80</tool_uses><duration_ms>748378</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a5939c2f7b7a95caf</worktreePath><worktreeBranch>worktree-agent-a5939c2f7b7a95caf</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6c59c425e29e20e6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/99e1816a-2f8f-45f3-bc24-573888d5ee2a/tasks/a6c59c425e29e20e6.output</output-file>
+<status>failed</status>
+<summary>Agent "Implement #735 identity migration step 1" failed: Agent terminated early due to an API error: You've hit your session limit · resets 4:30pm (America/Vancouver)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now the full backend suite.</result>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a6c59c425e29e20e6</worktreePath><worktreeBranch>worktree-agent-a6c59c425e29e20e6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>a5939c2f7b7a95caf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/99e1816a-2f8f-45f3-bc24-573888d5ee2a/tasks/a5939c2f7b7a95caf.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1127 rate-limit auth class" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Pushed as a plain push (no amend/force), 2 commits now on the PR.
+
+## Follow-up complete
+
+**New test:** `test_auth_bucket_keys_on_prefix` in `backend/tests/api/test_rate_limiting.py` — mirrors `test_sibling_ips_in_one_slash24_share_a_bucket` / `test_webhook_bucket_keys_on_prefix` exactly: three sibling `/32`s in one `/24` hit `/api/v1/auth/otp/request` via `X-Forwarded-For` (using the `limiter` fixture's default `hops=1` trusted-hops setup, unchanged), accumulate in one bucket (3rd request 429s regardless of sender), and a different `/24` proves an independent fresh bucket. Also added `RATE_LIMIT_AUTH_PER_MINUTE=2` to the shared `limiter` fixture, matching how `unauth`/`webhook` get their small test limits there.
+
+**Mutation-check:** temporarily bypassed `_bucket_ip()` prefix-folding at the middleware's IP-resolution line (`ip = _client_ip(...)` instead of `ip = _bucket_ip(_client_ip(...), settings)`). Ran the new test in isolation — it **failed for the right reason**: with folding disabled, each sibling `/32` minted its own independent bucket, so the 3rd sibling request came back `404` (fresh bucket, never throttled) instead of the expected `429`. Restored the fix (`git diff` confirmed a clean revert) and reran — passes again.
+
+**Test counts:**
+- `test_rate_limit.py` + `test_rate_limiting.py` together: **75 passed** (was 74; +1 new)
+- Full backend suite: **3259 passed, 1 skipped, 1 deselected** (same pre-existing, unrelated `test_poll_lock_timeout.py` environmental flake noted in the original PR — collides with this shared worktree's already-seeded dev Postgres, not touched by this change), coverage **96.93%** (gate ≥80%)
+- Black, Ruff, mypy: all clean on the touched files
+
+**Commit:** `d647aef7` — `test(rate-limit): prove the auth class buckets on IP prefix, not raw address (#1127)`, plain-pushed (no amend/force) to `feature/issue-1127-rate-limit-auth-class`. PR #1129 now has 2 commits, still open, not merged, no auto-merge enabled.</result>
+<usage><subagent_tokens>210893</subagent_tokens><tool_uses>22</tool_uses><duration_ms>265903</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a5939c2f7b7a95caf</worktreePath><worktreeBranch>worktree-agent-a5939c2f7b7a95caf</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+go ahead with the firewall rule. 
+also stop adding the `If this code review was useful, please react with 👍. Otherwise, react with 👎.` in PR
+
+---
+
+<task-notification>
+<task-id>a6c59c425e29e20e6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/99e1816a-2f8f-45f3-bc24-573888d5ee2a/tasks/a6c59c425e29e20e6.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #735 identity migration step 1" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All three review findings fixed, pushed, CI green again.
+
+## Report
+
+**PR [#1131](https://github.com/TheurgicDuke771/DataQ/pull/1131)** — still open, not merged, auto-merge off. **CI green 16/16** on the updated head.
+
+### Commits (two follow-ups, plain push — no amend, no force-push)
+| SHA | |
+|---|---|
+| `ab66f303` | original — migration + model + `/me` contract + fixtures |
+| `eef0c1ff` | `fixup: translate the uq_users_email_lower violation to a 409, not a 500 (#735 review)` |
+| `7216003e` | `fixup: correct the migration lock note + add the pre-deploy runbook hook (#735 review)` |
+
+### 1 — `_upsert_user` IntegrityError → 409
+`IdentityConflictError(DataQError)`, `status_code=409`, `code="identity_conflict"`, raised after `db.rollback()`, mirroring `connection_service`/`share_service`. Covers `mcp/auth.py` too, since it goes through the same helper.
+
+On the message/logging constraint: I put **nothing** identifying in either. The structured log carries `aad_object_id` only — `_PII_KEYS` covers both `aad_object_id` and `email`, so that field is redacted — while the *message* travels in the HTTP error envelope, which the redactor does not touch, so naming the colliding address there would leak workspace membership to anyone who guessed an email. `detail` is left empty for the same reason, and a test asserts all of it.
+
+One thing worth flagging that the brief didn't call out: **the `db.rollback()` is load-bearing, not hygiene.** Without it the session stays in a failed transaction and the next statement raises `PendingRollbackError` — a "handled" 409 would still take the request down. It has its own test (`test_the_session_is_usable_after_the_conflict`).
+
+New file `backend/tests/core/test_identity_conflict.py`, 5 tests, all DB-backed, **including the TestClient-level one you hoped for**: seeding a squatter row that holds the case-variant of `DEV_BYPASS_EMAIL` makes the dev-bypass authenticator fail on its own fixed `(oid, email)` pair, so `GET /api/v1/me` reproduces the production shape exactly and asserts 409, not 500.
+
+### 2 — lock note rewritten (prose only, DDL untouched)
+Now states ACCESS EXCLUSIVE spanning the ALTER → index build → COMMIT under `transaction_per_migration=True`, that it blocks **readers** too (the #748 mechanism, i.e. every authenticated request), and justifies it on duration — tens of rows, sub-millisecond — plus `env.py`'s 15s `lock_timeout` failing fast rather than hanging the deploy *while holding* ACCESS EXCLUSIVE. Also records why `CONCURRENTLY` isn't the answer: it can't share the ALTER's transaction, and it reports a duplicate by leaving an INVALID index rather than the clean abort the audit contract depends on. The `1a2b3c4d5e6f` reference is retagged as a genuine SHARE-lock-only case (index, no ALTER).
+
+### 3 — runbook hook
+New pre-deploy bullet in `deploy/README.md`: list revisions pending on prod, read each docstring in `backend/alembic/versions/` for a `MANDATORY PRE-DEPLOY` section, run it. Points at the docstrings as the home for revision-specific steps rather than duplicating them into the runbook where they'd rot; cites `7d25617cfaf0` as the first instance.
+
+### Mutation check on the 409 tests
+Removed the `try/except IntegrityError` from `_upsert_user` and re-ran: **4 of 5 failed with the raw `sqlalchemy.exc.IntegrityError` / `UniqueViolation` on `uq_users_email_lower`** — the end-to-end one surfacing as `request_failed` with `app_exc = IntegrityError(...)`, precisely the 500 shape. The 5th (`test_the_same_object_id_signing_in_again_still_just_updates`) **kept passing**, which is correct — it's the control against over-correcting every second login into a 409, so it must be insensitive to the fix. Handler restored, `git diff --stat` verified, re-ran green.
+
+### Verification
+| Gate | Result |
+|---|---|
+| Backend pytest (full suite, live PG + Redis) | **3272 passed, 0 failed, 0 skipped**, coverage 96.97% |
+| Black `--check` / Ruff / mypy | clean (365 files) |
+| Bandit | 0 issues |
+| CI (all 16 required checks) | green |
+
+PR body updated with the review-fix section, the mutation evidence, the new test inventory, and the **prod audit now recorded CLEAN (8 users / 8 distinct `lower(email)` / 0 duplicates)** replacing the deferred row — with a note that the runbook hook is what makes it repeatable for the next revision, since this deploy's audit is already discharged.</result>
+<usage><subagent_tokens>258074</subagent_tokens><tool_uses>46</tool_uses><duration_ms>732633</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a6c59c425e29e20e6</worktreePath><worktreeBranch>worktree-agent-a6c59c425e29e20e6</worktreeBranch></worktree>
+</task-notification>

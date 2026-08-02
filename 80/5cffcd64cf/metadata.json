@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "805cffcd64cf",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-otp-kickoff",
+  "checkpoints_count": 10,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/80/5cffcd64cf/0/metadata.json",
+      "transcript": "/80/5cffcd64cf/0/full.jsonl",
+      "compact_transcript": "/80/5cffcd64cf/0/transcript.jsonl",
+      "content_hash": "/80/5cffcd64cf/0/content_hash.txt",
+      "prompt": "/80/5cffcd64cf/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3050,
+    "cache_creation_tokens": 414591,
+    "cache_read_tokens": 16695346,
+    "output_tokens": 86495,
+    "api_call_count": 93
+  }
+}
