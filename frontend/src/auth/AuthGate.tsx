@@ -53,7 +53,7 @@ function OtpAuthGate({ children }: { children: ReactNode }) {
       <Alert
         type="error"
         showIcon
-        message="Could not check your sign-in status"
+        title="Could not check your sign-in status"
         description={
           <Flex vertical gap={12} align="flex-start">
             <span>{state.message}</span>

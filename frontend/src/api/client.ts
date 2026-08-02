@@ -66,12 +66,19 @@ api.interceptors.response.use(
  * A 401 that means "your session is gone", as opposed to one that is a normal
  * answer on the sign-in path (ADR 0032, #736).
  *
- * The exclusion is the whole point. `POST /auth/otp/verify` answers 401 for a
- * wrong code — treating that as session loss would knock the user back to the
- * email step every time they fat-finger a digit, destroying the code they were
- * mid-way through entering. `/auth/*` is where 401 is an expected outcome;
- * everywhere else it means the cookie expired, was revoked, or was cleared, and
- * the app must drop to the sign-in screen on the next navigation.
+ * `/auth/*` is where a 401 is an EXPECTED answer — `POST /auth/otp/verify` returns
+ * one for a wrong code. Everywhere else it means the cookie expired, was revoked,
+ * or was cleared, and the app must drop to the sign-in screen.
+ *
+ * Honesty about the exclusion: it is **defence in depth, not an observable fix
+ * today**. The only listener is `OtpSessionProvider`, and a wrong-code 401 can
+ * only happen while it is *already* signed-out, so firing the event there is
+ * currently a no-op — a Playwright spec written to "prove" the exclusion passed
+ * with it removed, which is precisely the kind of test that proves nothing. It is
+ * kept because the event is a broadcast: the moment a second listener exists (or
+ * the provider resets more than a status field), a wrong digit would start
+ * clearing the user's half-entered code. The behaviour is pinned by the unit test
+ * in tests/api/client.test.ts, which DOES fail when this exclusion is removed.
  *
  * Scoped to `otp` mode: an OIDC 401 belongs to the token layer (silent renew /
  * interactive redirect in `authClient.ts`), and dev-bypass has no session at all.

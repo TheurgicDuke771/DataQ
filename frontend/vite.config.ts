@@ -74,10 +74,12 @@ export default defineConfig({
     // fails fast during development.
     testTimeout: process.env.CI ? 15_000 : 5_000,
     setupFiles: ['./tests/setup.ts'],
-    // Playwright specs live in e2e/ + e2e-live/ and run under `pnpm e2e`, not
-    // Vitest — they import @playwright/test and drive a browser, so keep Vitest
-    // out of them.
-    exclude: [...configDefaults.exclude, 'e2e/**', 'e2e-live/**'],
+    // Playwright specs live in e2e/ + e2e-otp/ + e2e-live/ and run under
+    // `pnpm e2e`, not Vitest — they import @playwright/test and drive a browser,
+    // so keep Vitest out of them. (Miss one and it fails with Playwright's
+    // "did not expect test() to be called here", which reads like a version
+    // conflict and is really just the wrong runner.)
+    exclude: [...configDefaults.exclude, 'e2e/**', 'e2e-otp/**', 'e2e-live/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

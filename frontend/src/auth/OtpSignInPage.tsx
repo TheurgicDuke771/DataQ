@@ -146,7 +146,7 @@ export function OtpSignInPage({
         <Alert
           type="error"
           showIcon
-          message={error}
+          title={error}
           style={{ marginBottom: 16, textAlign: 'left' }}
           role="alert"
         />

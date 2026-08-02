@@ -31,7 +31,65 @@ to a fixed demo user; no sign-in). API + Swagger at `http://localhost:8000/docs`
   `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
 - **Reset:** `docker compose -f docker-compose.ghcr.yml down -v` (drops the seeded DB).
 
-### Self-hosting with your own Azure AD
+## Choosing an auth mode
+
+DataQ ships **three** ways to log a human in. They are a ladder — pick the lowest rung
+that fits, because each one up costs you a piece of infrastructure:
+
+| Mode | For | You must bring | Sign-in looks like |
+|---|---|---|---|
+| **`bypass`** | Solo evaluation on your own machine | nothing | no sign-in at all — every request resolves to one fixed demo user |
+| **`otp`** | A small team with no identity provider | an **SMTP relay** (a mailbox to send from) | you type your address, DataQ emails a 6-digit code, you type it back |
+| **`oidc`** | An organisation that already has an IdP | an **OIDC app registration** (Azure AD, Okta, Keycloak, Cognito, …) | your normal SSO redirect |
+
+The mode is **never inferred**. Anything unrecognised or half-configured renders an
+"authentication not configured" banner rather than quietly falling back to something
+permissive — and the backend refuses to boot on a half-configured OTP block rather than
+coming up unable to log anybody in.
+
+**Two selectors, set them together.** The frontend's `DATAQ_AUTH_MODE` (injected at
+runtime by nginx — ADR 0028) and the backend's own mode (inferred from its `AZURE_*` or
+`AUTH_EMAIL_*` settings) are separate contracts, and **neither can derive the other**.
+Backend OTP on with the frontend on `oidc` shows an SSO flow against an IdP that isn't
+configured; the reverse shows a code form whose endpoints 503.
+
+### `otp` — email one-time codes (ADR [0032](adr/0032-email-otp-signin.md))
+
+The middle rung, for teams that have email but no IdP. Frontend:
+
+```
+DATAQ_AUTH_MODE=otp
+```
+
+Backend — all four mailer values plus **at least one allowlist entry** (there is no open
+registration; DataQ holds failing-row samples, which are PII):
+
+```
+AUTH_EMAIL_SMTP_HOST=smtp.example.com
+AUTH_EMAIL_SMTP_PORT=587
+AUTH_EMAIL_USERNAME=dataq@example.com
+AUTH_EMAIL_FROM=dataq@example.com
+AUTH_EMAIL_PASSWORD_SECRET_NAME=dataq-smtp     # the VALUE lives in your secret store
+AUTH_OTP_ALLOWED_DOMAINS=example.com           # and/or AUTH_OTP_ALLOWED_EMAILS=...
+WORKSPACE_ADMIN_EMAILS=you@example.com         # bootstrap: your own address
+```
+
+First sign-in: put your own address in **both** the allowlist and `WORKSPACE_ADMIN_EMAILS`,
+then sign in to your own mailbox. There is no seeded password to rotate.
+
+Read [Security & data handling](security.md) before enabling it — under OTP **the mailbox
+is the credential**, so mailbox compromise is account compromise. The session is an
+HttpOnly cookie with a fixed 24 h life and no refresh token; signing in again is the
+refresh. Codes expire in 10 minutes, are single-use, and allow 5 attempts.
+
+Note that the mailer requires **SMTP + STARTTLS on a publicly-trusted certificate**. An
+internal relay signed by a private CA needs that CA in the container's whole-process
+trust store (`SSL_CERT_FILE`) today; a per-mailer CA bundle and an implicit-TLS (:465)
+option are tracked in
+[#1146](https://github.com/TheurgicDuke771/DataQ/issues/1146). There is no
+plaintext-SMTP option.
+
+### `oidc` — self-hosting with your own identity provider
 
 The compose eval runs the frontend with `DATAQ_AUTH_MODE=bypass` — auth is bypassed, so
 it's for evaluation, not a real multi-user deployment. The frontend is **one generic
