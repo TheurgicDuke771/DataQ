@@ -184,6 +184,57 @@ def test_an_invalid_tls_mode_is_rejected() -> None:
         Settings(auth_email_tls_mode="ssl")
 
 
+@pytest.mark.parametrize("blank", ["", "  "])
+def test_a_blank_transport_pair_falls_back_to_the_defaults_not_a_boot_failure(
+    blank: str,
+) -> None:
+    """Blank `AUTH_EMAIL_SMTP_PORT=` / `AUTH_EMAIL_TLS_MODE=` mean "default" (#1150).
+
+    Every other key in this block is `str | None`, where blank already reads as
+    "unset" — these two were the odd pair out, raising "unable to parse string as
+    an integer" and a bare `Literal` error at BOOT. The local stack switches its
+    whole OTP block on and off from one variable, which blanks every `AUTH_EMAIL_*`
+    at once, so without this the documented dev-bypass downgrade would fail to
+    start on exactly these two keys.
+    """
+    s = Settings(auth_email_smtp_port=blank, auth_email_tls_mode=blank)
+    assert s.auth_email_smtp_port == 587
+    assert s.auth_email_tls_mode == "starttls"
+
+
+def test_a_blank_transport_pair_does_NOT_make_a_partial_block_look_complete() -> None:
+    """The fallback must not soften the fail-closed contract: neither field is in
+    `_AUTH_EMAIL_REQUIRED`, so defaulting them can never turn a half-configured
+    mailer into a bootable one."""
+    with pytest.raises(ValueError, match="AUTH_EMAIL_PASSWORD_SECRET_NAME"):
+        Settings(
+            auth_email_smtp_host="smtp.example.com",
+            auth_email_username="dataq@example.com",
+            auth_email_from="dataq@example.com",
+            auth_email_smtp_port="",
+            auth_email_tls_mode="",
+            auth_otp_allowed_domains="acme.io",
+        )
+
+
+def test_a_blanked_mailer_block_boots_as_dev_bypass() -> None:
+    """The #1150 downgrade, end to end at the config layer: the compose switch
+    renders EVERY `AUTH_EMAIL_*` and the allowlist as empty strings, and that has
+    to be an inert block (dev-bypass), not a partial one (refuses to boot)."""
+    s = Settings(
+        auth_email_smtp_host="",
+        auth_email_smtp_port="",
+        auth_email_tls_mode="",
+        auth_email_username="",
+        auth_email_from="",
+        auth_email_password_secret_name="",
+        auth_otp_allowed_emails="",
+        auth_dev_bypass=True,
+    )
+    assert s.otp_auth_configured is False
+    assert s.auth_email_configured is False
+
+
 def test_an_unset_ca_bundle_boots_normally() -> None:
     assert Settings().auth_email_ca_bundle is None
 

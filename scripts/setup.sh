@@ -118,6 +118,54 @@ fi
 # the migration path, and silently changing someone's configured mode is worse.
 set_env_kv .env.app OPENBAO_ADDR "http://localhost:8200"
 set_env_kv .env.app OPENBAO_MOUNT "secret"
+
+# ── Sign-in mode (#1150) ──────────────────────────────────────────────────────
+# The local stack boots into email one-time codes (ADR 0032) against the bundled
+# `mailpit` catcher — no SMTP relay to bring, codes readable at localhost:8025.
+# That needs ONE input we cannot invent: which address may sign in. The allowlist
+# is mandatory and the app refuses to boot with it empty (ADR 0032 decision 5), so
+# this prompt is what makes an OTP default viable at all.
+#
+# Written to the GITIGNORED .env (compose substitutes ${DATAQ_SIGNIN_EMAIL} from
+# it) — an address is personal data, and tracked files carry neither credentials
+# nor identities. Answering blank is the explicit downgrade to dev-bypass; the
+# variable is still written, empty, because compose distinguishes "set and empty"
+# (a decision) from "unset" (an omission, which stops the stack).
+if ! grep -qE '^DATAQ_SIGNIN_EMAIL=' .env; then
+  step "Choosing a sign-in mode"
+  echo "  DataQ signs you in with a 6-digit code emailed to a local inbox"
+  echo "  (http://localhost:8025) — nothing leaves this machine, and no real"
+  echo "  mailbox is needed. Which address should be allowed to sign in?"
+  echo ""
+  echo "  Leave BLANK to opt out into dev-bypass instead: no sign-in at all,"
+  echo "  every request resolves to one fixed user, and anyone who can reach"
+  echo "  the port is a workspace admin."
+  echo ""
+  signin_email=""
+  # `|| true` so a non-interactive run (CI, a piped installer) takes the blank
+  # answer instead of dying on a closed stdin — set DATAQ_SIGNIN_EMAIL in the
+  # environment beforehand to choose OTP without a TTY.
+  if [ -n "${DATAQ_SIGNIN_EMAIL-}" ]; then
+    signin_email="${DATAQ_SIGNIN_EMAIL}"
+    echo "  Using DATAQ_SIGNIN_EMAIL from the environment."
+  elif [ -t 0 ]; then
+    printf '  Your email address (blank = dev-bypass): '
+    read -r signin_email || true
+  else
+    echo "  No TTY — defaulting to dev-bypass. Set DATAQ_SIGNIN_EMAIL and re-run"
+    echo "  (or edit .env) to switch to email sign-in."
+  fi
+  # Trim: a stray space would land in the allowlist and never match the address
+  # the user then types into the sign-in form.
+  signin_email="$(printf '%s' "${signin_email}" | tr -d '[:space:]')"
+  set_env_kv .env DATAQ_SIGNIN_EMAIL "${signin_email}"
+  if [ -n "${signin_email}" ]; then
+    ok "Email sign-in enabled for ${signin_email}"
+  else
+    ok "Dev-bypass selected (no sign-in) — set DATAQ_SIGNIN_EMAIL in .env to change"
+  fi
+fi
+
 set -a
 # shellcheck disable=SC1091
 . ./.env
@@ -200,4 +248,9 @@ echo "    conda activate dataq"
 echo "    docker compose up          # start all services"
 echo "    # API: http://localhost:8000/docs"
 echo "    # UI:  http://localhost:3000"
+if [ -n "${DATAQ_SIGNIN_EMAIL-}" ]; then
+echo ""
+echo "  Signing in: enter ${DATAQ_SIGNIN_EMAIL} on the UI, then read the"
+echo "  6-digit code in the local inbox at http://localhost:8025."
+fi
 echo ""
