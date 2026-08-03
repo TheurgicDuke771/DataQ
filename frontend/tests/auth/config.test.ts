@@ -151,6 +151,31 @@ describe('build-time fallback (pnpm dev, no injected config)', () => {
     expect(authMode).toBe('otp');
   });
 
+  it('lets VITE_AUTH_MODE=otp win over a leftover VITE_AUTH_DEV_BYPASS=true', async () => {
+    // The local compose stack carries the bypass flag as a long-standing dev
+    // default and switches to OTP by setting the mode (#1150). If the boolean
+    // won, that stack would render "no sign-in at all" against a backend that
+    // was serving email codes — the split-brain the two-selector contract
+    // exists to prevent. Only ever upgrades: bypass → a real authenticator.
+    vi.stubEnv('VITE_AZURE_TENANT_ID', '');
+    vi.stubEnv('VITE_AZURE_SPA_CLIENT_ID', '');
+    vi.stubEnv('VITE_AUTH_DEV_BYPASS', 'true');
+    vi.stubEnv('VITE_AUTH_MODE', 'otp');
+    const { authMode } = await loadConfig();
+    expect(authMode).toBe('otp');
+  });
+
+  it('still bypasses when VITE_AUTH_MODE is blank (the downgrade path)', async () => {
+    // The compose switch renders an EMPTY VITE_AUTH_MODE when the operator opts
+    // into dev-bypass, so blank must not become "unconfigured".
+    vi.stubEnv('VITE_AZURE_TENANT_ID', '');
+    vi.stubEnv('VITE_AZURE_SPA_CLIENT_ID', '');
+    vi.stubEnv('VITE_AUTH_DEV_BYPASS', 'true');
+    vi.stubEnv('VITE_AUTH_MODE', '');
+    const { authMode } = await loadConfig();
+    expect(authMode).toBe('dev_bypass');
+  });
+
   it('ignores a VITE_AUTH_MODE it does not recognise (fail-closed)', async () => {
     vi.stubEnv('VITE_AZURE_TENANT_ID', '');
     vi.stubEnv('VITE_AZURE_SPA_CLIENT_ID', '');

@@ -12,35 +12,57 @@ tenant.
 
 ```bash
 curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
-export OPENBAO_TOKEN=$(openssl rand -hex 16)   # root token for the bundled vault
+export OPENBAO_TOKEN=$(openssl rand -hex 16)     # root token for the bundled vault
+export DATAQ_SIGNIN_EMAIL=you@example.com        # the address allowed to sign in
 docker compose -f docker-compose.ghcr.yml up
 ```
 
 This pulls the published images from GHCR and brings up Postgres + Redis + the API +
-Celery worker + the UI, runs migrations, and seeds demo data. Open
-**`http://localhost:3000`** — you're in, on **dev-bypass auth** (every request resolves
-to a fixed demo user; no sign-in). API + Swagger at `http://localhost:8000/docs`.
+Celery worker + the UI + a local mail catcher, runs migrations, and seeds demo data.
+Open **`http://localhost:3000`**, type the address you exported, and read the 6-digit
+code in the bundled inbox at **`http://localhost:8025`**. API + Swagger at
+`http://localhost:8000/docs`.
 
+- **Sign-in works with no SMTP relay.** The stack bundles its own mailbox
+  ([Mailpit](https://mailpit.axllent.org), MIT), so DataQ's real mailer runs its real
+  SMTP path and the message lands in a web inbox on your machine instead of the
+  internet. No mailbox has to exist; nothing leaves the host.
 - **Multi-arch:** the images are `linux/amd64` + `linux/arm64`, so Apple Silicon runs
   native (not emulated).
 - **Loopback-only:** every port binds to `127.0.0.1` — the stack is reachable from your
-  own machine but never the LAN (it deliberately disables auth and runs a passwordless
-  DB, so it must not be network-exposed). **Not for production** — a real deploy uses the
-  OpenTofu stack (`deploy/terraform/azure`, ADR 0024).
+  own machine but never the LAN. That matters more than usual for `:8025`, which serves
+  live sign-in codes to anyone who can reach it. **Not for production** — a real deploy
+  uses the OpenTofu stack (`deploy/terraform/azure`, ADR 0024).
 - **Pin a release** instead of the moving stable tags:
   `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
 - **Reset:** `docker compose -f docker-compose.ghcr.yml down -v` (drops the seeded DB).
+- **Downgrade to no sign-in at all** — deliberate, not a default:
+  `DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up`.
+  Every request then resolves to one fixed user and anyone who can reach the port is a
+  workspace admin. Omitting `DATAQ_SIGNIN_EMAIL` entirely does **not** get you this —
+  compose stops and names both options, because a permissive auth posture should be a
+  decision somebody made rather than the one they got by not reading.
 
 ## Choosing an auth mode
 
-DataQ ships **three** ways to log a human in. They are a ladder — pick the lowest rung
-that fits, because each one up costs you a piece of infrastructure:
+DataQ ships **three** ways to log a human in. They are a ladder — pick the rung that
+fits, but note where the default sits:
 
 | Mode | For | You must bring | Sign-in looks like |
 |---|---|---|---|
-| **`bypass`** | Solo evaluation on your own machine | nothing | no sign-in at all — every request resolves to one fixed demo user |
-| **`otp`** | A small team with no identity provider | an **SMTP relay** (a mailbox to send from) | you type your address, DataQ emails a 6-digit code, you type it back |
+| **`otp`** ← *the default* | A small team, or anyone evaluating locally | an **SMTP relay** in production — **nothing locally**, the compose stacks bundle a mailbox | you type your address, DataQ emails a 6-digit code, you type it back |
 | **`oidc`** | An organisation that already has an IdP | an **OIDC app registration** (Azure AD, Okta, Keycloak, Cognito, …) | your normal SSO redirect |
+| **`bypass`** ← *an explicit downgrade* | Throwaway solo work on a machine only you can reach | nothing | no sign-in at all — every request resolves to one fixed demo user, who is a workspace admin |
+
+**`otp` is what you boot into; `bypass` is the explicit downgrade.** Both compose stacks
+used to start in `bypass`, which meant anyone who could reach the port administered a
+tool that stores warehouse credentials — and an eval stack's defaults are the security
+posture people actually run (the same reasoning that moved the default secret store off
+the plaintext one, ADR [0039](adr/0039-openbao-self-hosted-secret-backend.md)). What made
+`otp` unusable as a default was the SMTP relay it used to require; the bundled catcher
+removes that, so the only thing left to supply is *who* is allowed in — one variable,
+`DATAQ_SIGNIN_EMAIL`, which `scripts/setup.sh` asks for. Setting it empty is the
+downgrade; leaving it unset stops the stack rather than picking for you.
 
 The mode is **never inferred**. Anything unrecognised or half-configured renders an
 "authentication not configured" banner rather than quietly falling back to something
@@ -55,7 +77,19 @@ configured; the reverse shows a code form whose endpoints 503.
 
 ### `otp` — email one-time codes (ADR [0032](adr/0032-email-otp-signin.md))
 
-The middle rung, for teams that have email but no IdP. Frontend:
+The default, and the rung for teams that have email but no IdP.
+
+**Locally there is nothing to configure but your address.** Both compose stacks run a
+[Mailpit](https://mailpit.axllent.org) container (MIT) as the mailbox: DataQ performs a
+real SMTP submission against it — the same `connect → AUTH → send` path a production
+relay gets — and the message appears in a web inbox at `http://localhost:8025`. The
+mailer runs with `AUTH_EMAIL_TLS_MODE=none` there, which is the plaintext downgrade
+`none` exists for and is logged loudly on every send: it is correct against a container
+you started on your own machine and wrong against anything else.
+
+**In production you still bring your own relay** — bundling an outbound mailer is a
+deliberate non-goal (direct-to-MX from an arbitrary self-hosted IP gets sign-in codes
+spam-foldered, and a vendor relay would leak sign-in metadata to a third party). Frontend:
 
 ```
 DATAQ_AUTH_MODE=otp
@@ -110,11 +144,11 @@ is the answer to "my relay's cert isn't publicly trusted", not a way around chec
 
 ### `oidc` — self-hosting with your own identity provider
 
-The compose eval runs the frontend with `DATAQ_AUTH_MODE=bypass` — auth is bypassed, so
-it's for evaluation, not a real multi-user deployment. The frontend is **one generic
-image** whose auth config is injected at **runtime** (nginx serves `/config.js` from the
-`DATAQ_AUTH_*` env), so the same image goes from eval to real SSO with **no rebuild**
-(ADR 0028):
+The compose eval runs the frontend with `DATAQ_AUTH_MODE=otp` against the bundled
+mailbox, which is fine for evaluation and for a team on a trusted network, but is not an
+IdP. The frontend is **one generic image** whose auth config is injected at **runtime**
+(nginx serves `/config.js` from the `DATAQ_AUTH_*` env), so the same image goes from eval
+to real SSO with **no rebuild** (ADR 0028):
 
 - As-pulled with no auth env it shows an "authentication not configured" banner. For real
   SSO, run the same image with `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY`
@@ -125,8 +159,10 @@ image** whose auth config is injected at **runtime** (nginx serves `/config.js` 
   resolving it via the DNS server it **detects from the container's `/etc/resolv.conf`** at
   startup — so the one image works on Docker's embedded DNS (Compose) **and** cluster DNS
   (Kubernetes / Container Apps) without a rebuild.
-- **MCP** (`/mcp`) is Azure-AD-protected and **fail-closed**, so it does not function in
-  the dev-bypass eval stack — it needs real auth configured.
+- **MCP** (`/mcp`) is **fail-closed**: it needs a working sign-in configuration. Under
+  `oidc` it validates the bearer token; under the eval stack's `otp` it is served with a
+  **PAT (`dq_live_…`) as its only credential** (there is no IdP to issue a token, and a
+  session cookie is deliberately rejected) — see [API keys](api-keys.md).
 
 ## Develop from source
 
@@ -140,11 +176,19 @@ cd DataQ
                        # images, runs DB migrations, seeds dev data, writes a local .env
 conda activate dataq
 docker-compose up      # Postgres + Redis + FastAPI (:8000) + React (:3000) + Celery
+                       #   + Mailpit (:8025), the local inbox for sign-in codes
 ```
 
-Local auth uses a **dev-bypass** (no Azure tenant needed) — every request resolves to a
-fixed dev user. Real Azure AD SSO is configured via environment variables in deployed
-environments.
+`setup.sh` asks **which address may sign in** and writes the answer to your gitignored
+`.env` as `DATAQ_SIGNIN_EMAIL`. That address is allow-listed *and* made a workspace
+admin, and you sign in by reading the code at `http://localhost:8025` — no Azure tenant,
+no SMTP relay. Answering blank is the explicit downgrade to **dev-bypass** (no sign-in;
+every request is one fixed dev user), which you can flip either way afterwards by editing
+that one variable and re-running `docker compose up`.
+
+Host-side dev (uvicorn on your own machine rather than in compose) reads `.env.app`
+instead, where `AUTH_DEV_BYPASS=true` still applies — point `AUTH_EMAIL_SMTP_HOST` at
+`localhost` if you want the catcher there too (Mailpit publishes `127.0.0.1:1025`).
 
 ## Configuration
 

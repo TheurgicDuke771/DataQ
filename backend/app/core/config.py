@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Final, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Migration message for the secret store ADR 0039 removed. Lives here (not in
@@ -16,6 +16,17 @@ _REDIS_STORE_REMOVED: Final = (
     "redis-cli --scan --pattern 'dataq:secret:*' | xargs -r redis-cli del. See "
     "docs/adr/0039-openbao-self-hosted-secret-backend.md"
 )
+
+# OTP-mailer transport defaults. Named constants (not inline literals) because
+# `_blank_email_transport_means_default` has to hand back the same values a blank
+# env var should fall through to — two copies of "587" would drift.
+AuthEmailTlsMode = Literal["starttls", "implicit", "none"]
+_DEFAULT_AUTH_EMAIL_SMTP_PORT: Final = 587
+_DEFAULT_AUTH_EMAIL_TLS_MODE: Final[AuthEmailTlsMode] = "starttls"
+_AUTH_EMAIL_TRANSPORT_DEFAULTS: Final[dict[str, object]] = {
+    "auth_email_smtp_port": _DEFAULT_AUTH_EMAIL_SMTP_PORT,
+    "auth_email_tls_mode": _DEFAULT_AUTH_EMAIL_TLS_MODE,
+}
 
 # Default MCP transport Host allowlist: the Azure Container Apps internal-ingress
 # FQDN shape the frontend nginx proxies to, plus the compose service name and
@@ -389,7 +400,7 @@ class Settings(BaseSettings):
     # `_validate_otp_auth` below refuses to boot on any partial configuration,
     # naming the missing vars — ADR 0032 decision 2's fail-closed contract.
     auth_email_smtp_host: str | None = None
-    auth_email_smtp_port: int = 587
+    auth_email_smtp_port: int = _DEFAULT_AUTH_EMAIL_SMTP_PORT
     auth_email_username: str | None = None
     auth_email_from: str | None = None
     # SecretStore *key* holding the SMTP password — never the password.
@@ -412,7 +423,7 @@ class Settings(BaseSettings):
     # Deliberately NO insecure-verify / skip-cert-checks option alongside this —
     # `AUTH_EMAIL_CA_BUNDLE` below covers the legitimate "I don't trust the public
     # CA store" case; see the #1146 PR description for the record of that call.
-    auth_email_tls_mode: Literal["starttls", "implicit", "none"] = "starttls"
+    auth_email_tls_mode: AuthEmailTlsMode = _DEFAULT_AUTH_EMAIL_TLS_MODE
 
     # Path to a PEM file of CA certificate(s) the OTP mailer's SMTP connection
     # trusts, for an internal relay signed by a private CA (#1146). Passed as
@@ -572,6 +583,36 @@ class Settings(BaseSettings):
         """
         parsed = [h.strip() for h in self.mcp_allowed_hosts.split(",") if h.strip()]
         return parsed or list(_MCP_DEFAULT_ALLOWED_HOSTS)
+
+    @field_validator("auth_email_smtp_port", "auth_email_tls_mode", mode="before")
+    @classmethod
+    def _blank_email_transport_means_default(cls, value: object, info: ValidationInfo) -> object:
+        """A BLANK `AUTH_EMAIL_SMTP_PORT=` / `AUTH_EMAIL_TLS_MODE=` means "default".
+
+        Same reasoning as `_blank_cookie_secure_means_infer` below, one field group
+        over: every other key in this block is `str | None`, where blank already
+        reads as "unset", so these two were the odd ones out — a blank port raised
+        "unable to parse string as an integer" and a blank mode raised an
+        unhelpful `Literal` error, both at BOOT, for a value the operator had
+        deliberately left empty.
+
+        It matters beyond tidiness (#1150): the local stack turns its whole OTP
+        block on and off from one switch, which blanks every `AUTH_EMAIL_*` at
+        once. Without this, the documented dev-bypass downgrade would fail to
+        boot on these two keys alone — and the "fix" an operator would reach for
+        is deleting lines from a compose file.
+
+        Does NOT weaken the fail-closed contract: neither field is in
+        `_AUTH_EMAIL_REQUIRED`, so a blank one never makes a partial block look
+        complete. It only chooses between "587 + starttls" and a parse error.
+        """
+        if isinstance(value, str) and not value.strip():
+            # `.get(..., value)` rather than `[...]`: an unmapped field name would
+            # otherwise be a KeyError raised during settings construction, i.e. a
+            # boot crash. Falling through to the ordinary parse error is a worse
+            # message but never a worse failure.
+            return _AUTH_EMAIL_TRANSPORT_DEFAULTS.get(info.field_name or "", value)
+        return value
 
     @field_validator("auth_session_cookie_secure", mode="before")
     @classmethod

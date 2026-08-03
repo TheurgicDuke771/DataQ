@@ -76,7 +76,13 @@ function fromBuildEnv(): DataqAuthConfig {
   // bundle grants nothing without a mailbox and a server-side allowlist.
   const otp = import.meta.env.VITE_AUTH_MODE === 'otp';
   return {
-    mode: bypass ? 'bypass' : otp ? 'otp' : tenantId && clientId ? 'oidc' : undefined,
+    // OTP is checked BEFORE bypass (#1150). `VITE_AUTH_DEV_BYPASS=true` is the
+    // long-standing dev default and lives in the compose file; an explicitly
+    // named mode has to win over a leftover boolean, or the local stack would
+    // render "no sign-in at all" while its backend was serving email codes —
+    // the split-brain the two-selector contract exists to prevent. Safe
+    // direction: this can only ever REPLACE a bypass with a real authenticator.
+    mode: otp ? 'otp' : bypass ? 'bypass' : tenantId && clientId ? 'oidc' : undefined,
     authority: tenantId ? `https://login.microsoftonline.com/${tenantId}/v2.0` : undefined,
     clientId: clientId || undefined,
     apiScope: apiClientId ? `api://${apiClientId}/${scope}` : undefined,
