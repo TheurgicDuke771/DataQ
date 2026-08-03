@@ -146,34 +146,40 @@ function makeSignIn(page: Page): SignIn {
       // events over the nav, so leaving it up breaks every spec's next
       // click. It depends on a SEPARATE `/me` fetch (MeProvider) than the
       // one the OTP verify response already carries, so it can render a
-      // beat after the shell above.
+      // beat after the shell above — and #1160's CI evidence (a
+      // page-snapshot artifact showing the SAME pristine, untouched modal
+      // sitting open for the whole 90s budget, on every run) points at that
+      // beat sometimes being long enough to blow past whatever fixed
+      // sub-budget this wait is given, on a slow shared runner. A
+      // page.waitForResponse() sync point on the /me fetch was tried before
+      // that and hung outright (#1153) — a network listener was never the
+      // right primitive here.
       //
-      // A page.waitForResponse() sync point on that fetch was tried here and
-      // TWICE hung for the entire test budget (#1153, CI runs 30772079151
-      // and 30772437357) despite its own explicit timeout — a network
-      // listener is one more moving part than this needs, and on this
-      // evidence not a reliable one. Poll the UI instead: locator.waitFor()
-      // already polls, so this loses nothing, and every wait below carries
-      // its OWN explicit timeout so nothing here can silently inherit (and
-      // exhaust) the whole test budget the way an untimed wait would.
+      // So: no fixed sub-budget, and no swallow. Every CURRENT caller of
+      // complete() genuinely needs this prompt to appear and be dismissed —
+      // freshEmail() and OTP_ADMIN_EMAIL both start with display_name: NULL
+      // every run — so a wait that gives up early and lets the modal ambush
+      // the test a minute later (exactly what happened) is worse than a
+      // wait that simply keeps polling until it's genuinely there.
+      // Deliberately no `timeout` option below: with no `use.actionTimeout`
+      // configured, a locator action's only bound is the test's own
+      // (otp-project) timeout — so this waits as long as the test
+      // legitimately can, and if the prompt STILL hasn't appeared by then,
+      // the failure points straight at "the profile-completion modal never
+      // rendered" instead of the misleading "blocked by ant-modal-wrap"
+      // failure a mile downstream that this was producing before.
       const skipPrompt = page.getByRole('button', { name: 'Skip for now' });
-      try {
-        await skipPrompt.waitFor({ state: 'visible', timeout: 25_000 });
-        await skipPrompt.click({ timeout: 5_000 });
-        // Wait out the close animation too: a click that fires but hasn't
-        // finished closing the modal leaves the same mask in place for
-        // whatever the spec clicks next. NOTE: clicking "Skip for now"
-        // writes `dataq:profileCompletionPrompt:skipped` to sessionStorage
-        // (by design — see the component) — a spec asserting on the
-        // sign-in flow's OWN storage footprint must pass
-        // `dismissProfilePrompt: false` instead of dismissing and then
-        // filtering the key back out, so the assertion still proves what
-        // its name says.
-        await skipPrompt.waitFor({ state: 'hidden', timeout: 5_000 });
-      } catch {
-        // Already dismissed / already has a display_name (e.g. a persisted
-        // admin user on a re-run) — nothing to skip.
-      }
+      await skipPrompt.waitFor({ state: 'visible' });
+      await skipPrompt.click();
+      // Wait out the close animation too: a click that fires but hasn't
+      // finished closing the modal leaves the same mask in place for
+      // whatever the spec clicks next. NOTE: clicking "Skip for now" writes
+      // `dataq:profileCompletionPrompt:skipped` to sessionStorage (by
+      // design — see the component) — a spec asserting on the sign-in
+      // flow's OWN storage footprint must pass `dismissProfilePrompt:
+      // false` instead of dismissing and then filtering the key back out,
+      // so the assertion still proves what its name says.
+      await skipPrompt.waitFor({ state: 'hidden' });
       return code;
     },
   };
