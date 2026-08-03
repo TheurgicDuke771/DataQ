@@ -76,13 +76,15 @@ x-app-env: &app-env
   # every send. The code and the SMTP password cross this compose network in the
   # clear; never point this block at a relay you did not start yourself.
   AUTH_EMAIL_TLS_MODE: ${DATAQ_SIGNIN_EMAIL:+none}
+  # A SecretStore lookup NAME, never a value — the password is generated into the
+  # vault by the `otp-mail-secret` one-shot and read back by name. Kept AWAY from
+  # AUTH_EMAIL_USERNAME below on purpose: adjacent `…PASSWORD…` / `…USERNAME…`
+  # assignments read as a hardcoded credential pair to a generic secret scanner.
+  AUTH_EMAIL_PASSWORD_SECRET_NAME: ${DATAQ_SIGNIN_EMAIL:+dataq-local-smtp}
   # Non-secret identifiers; mailpit accepts ANY credentials, so what matters is
   # only that the api's real SMTP AUTH exchange happens.
   AUTH_EMAIL_USERNAME: ${DATAQ_SIGNIN_EMAIL:+dataq-local}
   AUTH_EMAIL_FROM: ${DATAQ_SIGNIN_EMAIL:+dataq@dataq.local}
-  # A SecretStore lookup NAME, never a value — the password is generated into the
-  # vault by the `otp-mail-secret` one-shot and read back by name.
-  AUTH_EMAIL_PASSWORD_SECRET_NAME: ${DATAQ_SIGNIN_EMAIL:+dataq-local-smtp}
   # Mandatory signup allowlist — there is no open registration (ADR 0032 decision
   # 5). `?` (not `:?`) so an EMPTY value is the accepted downgrade while an UNSET
   # one stops the stack with this message.

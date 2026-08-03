@@ -19,6 +19,13 @@ from backend.app.core.secrets import (
 )
 from backend.scripts import seed_local_smtp_secret as script
 
+#: Stand-in for a value the operator already put in the store. Held in a constant
+#: and deliberately NOT spelled like a credential: a generic secret scanner reports
+#: a password-shaped literal next to a key name, which is how this file first
+#: failed GitGuardian. Same lesson as `scripts/e2e-otp-stack.sh` — please don't
+#: re-inline it as a plausible-looking password.
+_OPERATORS_EXISTING_VALUE = "value-the-operator-already-stored"
+
 
 class _FakeStore:
     """Minimal SecretStore double. `raise_on_get` / `raise_on_set` let a test make
@@ -96,11 +103,11 @@ def test_never_overwrites_an_existing_value(monkeypatch: pytest.MonkeyPatch) -> 
     an operator who aimed the compose stack at their own SMTP server. Clobbering
     it on every `docker compose up` would break their sign-in mailer, and seeding
     a throwaway test value is never worth that."""
-    store = _FakeStore({"dataq-local-smtp": "the-operators-real-password"})
+    store = _FakeStore({"dataq-local-smtp": _OPERATORS_EXISTING_VALUE})
     _install(monkeypatch, store, secret_name="dataq-local-smtp")
     assert script.main() == 0
     assert store.writes == []
-    assert store.values["dataq-local-smtp"] == "the-operators-real-password"
+    assert store.values["dataq-local-smtp"] == _OPERATORS_EXISTING_VALUE
 
 
 def test_no_ops_when_otp_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -143,10 +150,16 @@ def test_the_generated_password_is_never_printed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """It is a credential like any other: it goes vault → api → SMTP AUTH and is
-    never rendered anywhere a log scraper or a terminal scrollback could keep it."""
+    never rendered anywhere a log scraper or a terminal scrollback could keep it.
+
+    The secret NAME stays out of the output too — it buys nothing (the operator
+    set the key) and echoing a secret keyspace into container logs is free
+    reconnaissance."""
     store = _FakeStore()
     _install(monkeypatch, store, secret_name="dataq-local-smtp")
     assert script.main() == 0
     output = capsys.readouterr()
     assert store.writes[0] not in output.out
     assert store.writes[0] not in output.err
+    assert "dataq-local-smtp" not in output.out
+    assert "dataq-local-smtp" not in output.err

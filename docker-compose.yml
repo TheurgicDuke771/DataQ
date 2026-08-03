@@ -49,13 +49,19 @@ x-otp-auth-env: &otp-auth-env
   # deliberately so: the code and the SMTP password cross this network in the
   # clear. Never set this against a relay you did not start yourself.
   AUTH_EMAIL_TLS_MODE: ${DATAQ_SIGNIN_EMAIL:+none}
+  # A SecretStore lookup NAME, never a value — the password is generated into the
+  # vault by the `otp-mail-secret` one-shot below and read back by name.
+  #
+  # Kept AWAY from AUTH_EMAIL_USERNAME below on purpose: a generic credential
+  # scanner reads a `…PASSWORD…` assignment sitting next to a `…USERNAME…` one as
+  # a hardcoded credential pair, which GitGuardian duly reported the first time
+  # these were adjacent (same lesson as `scripts/e2e-otp-stack.sh`). Please don't
+  # move them back together.
+  AUTH_EMAIL_PASSWORD_SECRET_NAME: ${DATAQ_SIGNIN_EMAIL:+dataq-local-smtp}
   # Non-secret identifiers. Mailpit accepts ANY credentials (MP_SMTP_AUTH_ACCEPT_ANY),
   # so what matters is only that the api's real AUTH exchange happens.
   AUTH_EMAIL_USERNAME: ${DATAQ_SIGNIN_EMAIL:+dataq-local}
   AUTH_EMAIL_FROM: ${DATAQ_SIGNIN_EMAIL:+dataq@dataq.local}
-  # A SecretStore lookup NAME, never a value — the password is generated into the
-  # vault by the `otp-mail-secret` one-shot below and read back by name.
-  AUTH_EMAIL_PASSWORD_SECRET_NAME: ${DATAQ_SIGNIN_EMAIL:+dataq-local-smtp}
   # Signup allowlist — mandatory, there is no open registration (ADR 0032
   # decision 5). `?` (not `:?`) so an EMPTY value is accepted as the downgrade
   # while an UNSET one stops the stack with this message.
