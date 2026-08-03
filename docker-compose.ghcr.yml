@@ -70,21 +70,26 @@ x-app-env: &app-env
   # `auth.py`, so this is the downgrade target, not a second mode running beside it.
   AUTH_DEV_BYPASS: "true"
   # Email OTP sign-in against the bundled catcher. See the header for the switch.
-  AUTH_EMAIL_SMTP_HOST: ${DATAQ_SIGNIN_EMAIL:+mailpit}
-  AUTH_EMAIL_SMTP_PORT: ${DATAQ_SIGNIN_EMAIL:+1025}
+  # Each value defaults to the catcher and is overridable from your shell while
+  # the switch is set — `${SWITCH:+${KEY:-default}}`, so the switch still gates
+  # the whole block. (No `.env` files are read on this path, so unlike
+  # docker-compose.yml there is nothing here that could be silently shadowed.)
+  AUTH_EMAIL_SMTP_HOST: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_HOST:-mailpit}}
+  AUTH_EMAIL_SMTP_PORT: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_PORT:-1025}}
   # A local catcher speaks no TLS — the case `none` exists for (#1146), warned on
   # every send. The code and the SMTP password cross this compose network in the
-  # clear; never point this block at a relay you did not start yourself.
-  AUTH_EMAIL_TLS_MODE: ${DATAQ_SIGNIN_EMAIL:+none}
+  # clear. **If you override the host above, override this too**: pointing a
+  # `none` mailer at a real relay puts your SMTP password on the wire in plaintext.
+  AUTH_EMAIL_TLS_MODE: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_TLS_MODE:-none}}
   # A SecretStore lookup NAME, never a value — the password is generated into the
   # vault by the `otp-mail-secret` one-shot and read back by name. Kept AWAY from
   # AUTH_EMAIL_USERNAME below on purpose: adjacent `…PASSWORD…` / `…USERNAME…`
   # assignments read as a hardcoded credential pair to a generic secret scanner.
-  AUTH_EMAIL_PASSWORD_SECRET_NAME: ${DATAQ_SIGNIN_EMAIL:+dataq-local-smtp}
+  AUTH_EMAIL_PASSWORD_SECRET_NAME: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_PASSWORD_SECRET_NAME:-dataq-local-smtp}}
   # Non-secret identifiers; mailpit accepts ANY credentials, so what matters is
   # only that the api's real SMTP AUTH exchange happens.
-  AUTH_EMAIL_USERNAME: ${DATAQ_SIGNIN_EMAIL:+dataq-local}
-  AUTH_EMAIL_FROM: ${DATAQ_SIGNIN_EMAIL:+dataq@dataq.local}
+  AUTH_EMAIL_USERNAME: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_USERNAME:-dataq-local}}
+  AUTH_EMAIL_FROM: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_FROM:-dataq@dataq.local}}
   # Mandatory signup allowlist — there is no open registration (ADR 0032 decision
   # 5). `?` (not `:?`) so an EMPTY value is the accepted downgrade while an UNSET
   # one stops the stack with this message.

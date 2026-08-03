@@ -186,9 +186,22 @@ no SMTP relay. Answering blank is the explicit downgrade to **dev-bypass** (no s
 every request is one fixed dev user), which you can flip either way afterwards by editing
 that one variable and re-running `docker compose up`.
 
-Host-side dev (uvicorn on your own machine rather than in compose) reads `.env.app`
-instead, where `AUTH_DEV_BYPASS=true` still applies — point `AUTH_EMAIL_SMTP_HOST` at
-`localhost` if you want the catcher there too (Mailpit publishes `127.0.0.1:1025`).
+**Which file wins.** The compose stack sets the whole `AUTH_EMAIL_*` block in its own
+`environment:`, which beats `env_file:` unconditionally — so for the api/worker
+containers `.env.app` is **ignored for these keys in every state**, including when the
+switch is empty. Putting a real relay in `.env.app` and clearing the switch does not
+select it; it lands you in dev-bypass. To point the **compose** stack at a real relay,
+keep `DATAQ_SIGNIN_EMAIL` set and override the same key names in the **root `.env`**:
+
+```
+DATAQ_SIGNIN_EMAIL=you@example.com
+AUTH_EMAIL_SMTP_HOST=smtp.example.com
+AUTH_EMAIL_TLS_MODE=starttls          # the bundled catcher's default is `none` — plaintext
+```
+
+`.env.app` is still the file for **host-side dev** (uvicorn on your own machine, which
+reads it directly), where `AUTH_DEV_BYPASS=true` applies — point `AUTH_EMAIL_SMTP_HOST`
+at `localhost` if you want the catcher there too (Mailpit publishes `127.0.0.1:1025`).
 
 ## Configuration
 
