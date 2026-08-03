@@ -148,32 +148,40 @@ function makeSignIn(page: Page): SignIn {
       // one the OTP verify response already carries, so it can render a
       // beat after the shell above.
       //
-      // A page.waitForResponse() sync point on that fetch was tried here and
-      // TWICE hung for the entire test budget (#1153, CI runs 30772079151
-      // and 30772437357) despite its own explicit timeout — a network
-      // listener is one more moving part than this needs, and on this
-      // evidence not a reliable one. Poll the UI instead: locator.waitFor()
-      // already polls, so this loses nothing, and every wait below carries
-      // its OWN explicit timeout so nothing here can silently inherit (and
-      // exhaust) the whole test budget the way an untimed wait would.
+      // A page.waitForResponse() sync point on that fetch hung outright
+      // (#1153). A single waitFor(visible)+click+waitFor(hidden) with no
+      // sub-budget (#1160 round 1) does NOT hang on visibility — CI
+      // artifacts from round 2 (#1161, run 30786514095) show all three
+      // session specs reaching the SAME point every time: the prompt
+      // renders, gets clicked, and then `waitFor({state:'hidden'})` polls
+      // 177 times over 90s with the SAME button reported visible throughout
+      // — i.e. the click does not reliably close the modal on a shared CI
+      // runner. Retrying the click (not just the wait) is the fix that
+      // matches the evidence: `expect(...).toPass()` re-runs the whole
+      // click-then-assert body on a poll interval until the modal is
+      // OBSERVABLY gone, so a click that lands on a stale/about-to-be-
+      // replaced node gets a fresh attempt against the CURRENT DOM instead
+      // of the test waiting forever on a locator that only ever resolves
+      // the untouched original.
       const skipPrompt = page.getByRole('button', { name: 'Skip for now' });
-      try {
-        await skipPrompt.waitFor({ state: 'visible', timeout: 25_000 });
-        await skipPrompt.click({ timeout: 5_000 });
-        // Wait out the close animation too: a click that fires but hasn't
-        // finished closing the modal leaves the same mask in place for
-        // whatever the spec clicks next. NOTE: clicking "Skip for now"
-        // writes `dataq:profileCompletionPrompt:skipped` to sessionStorage
-        // (by design — see the component) — a spec asserting on the
-        // sign-in flow's OWN storage footprint must pass
-        // `dismissProfilePrompt: false` instead of dismissing and then
-        // filtering the key back out, so the assertion still proves what
-        // its name says.
-        await skipPrompt.waitFor({ state: 'hidden', timeout: 5_000 });
-      } catch {
-        // Already dismissed / already has a display_name (e.g. a persisted
-        // admin user on a re-run) — nothing to skip.
-      }
+      await skipPrompt.waitFor({ state: 'visible' });
+      // NOTE: clicking "Skip for now" writes
+      // `dataq:profileCompletionPrompt:skipped` to sessionStorage (by
+      // design — see the component) — a spec asserting on the sign-in
+      // flow's OWN storage footprint must pass `dismissProfilePrompt:
+      // false` instead of dismissing and then filtering the key back out,
+      // so the assertion still proves what its name says. Re-clicking is
+      // idempotent (dismiss() just re-sets the same two things), so a
+      // retry that lands on an ALREADY-dismissed button is harmless. The
+      // inner assertion's OWN timeout is short and deliberate: it's what
+      // makes toPass() re-click every ~500ms instead of waiting a full
+      // expect.timeout per attempt, which matters because the failure
+      // window this is defending against (a stale DOM node) looks like it
+      // is measured in a beat, not seconds.
+      await expect(async () => {
+        await skipPrompt.click();
+        await expect(skipPrompt).toBeHidden({ timeout: 500 });
+      }).toPass();
       return code;
     },
   };

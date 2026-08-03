@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Cookie, Page } from '@playwright/test';
 
 import { expect, freshEmail, SESSION_COOKIE, test } from './fixtures';
 
@@ -31,8 +31,7 @@ test('a session revoked server-side drops the app to sign-in on the next navigat
   // Revoke it server-side, exactly as a `POST /auth/logout` from another device
   // (or an admin action) would. `page.request` shares the browser context's
   // cookies, so this is the real revocation path — not a fabricated 401.
-  const logout = await page.request.post('/api/v1/auth/logout');
-  expect(logout.status()).toBe(204);
+  await revokeServerSide(page, session);
 
   // …then put the cookie BACK, so the browser still presents a credential the
   // server has already destroyed. Without this step the test would only prove
@@ -60,7 +59,7 @@ test('a revoked session drops the app WITHOUT a navigation, on the next API 401'
   await signIn.complete(email);
 
   const session = await readSessionCookie(page);
-  await page.request.post('/api/v1/auth/logout');
+  await revokeServerSide(page, session);
   await page.context().addCookies([session]);
 
   // A same-page action that hits the API. Client-side routing only — no reload.
@@ -112,4 +111,34 @@ async function readSessionCookie(page: Page) {
   // Narrowed by the assertion above; `expect` does not narrow for TypeScript.
   if (!session) throw new Error('unreachable');
   return session;
+}
+
+/**
+ * Revoke `session` server-side and don't return until the revocation is
+ * OBSERVABLE — not just inferred from the 204 (#1160).
+ *
+ * `session_service.revoke()` commits before the `204` is sent, so in
+ * practice this resolves on the very first poll; it exists so these specs
+ * never take the server's word for it and drive the UI against a revocation
+ * that might not have landed yet. `page.request.post` shares the browser
+ * context's cookies, so this is the real revocation path — not a fabricated
+ * 401 — and the poll below presents the (now dead) token directly via a
+ * `Cookie` header, independent of whatever the context's own cookie jar
+ * currently holds (the `logout` response's `Set-Cookie` already cleared it).
+ */
+async function revokeServerSide(page: Page, session: Cookie): Promise<void> {
+  const logout = await page.request.post('/api/v1/auth/logout');
+  expect(logout.status()).toBe(204);
+
+  await expect
+    .poll(
+      async () => {
+        const res = await page.request.get('/api/v1/me', {
+          headers: { Cookie: `${SESSION_COOKIE}=${session.value}` },
+        });
+        return res.status();
+      },
+      { message: 'revoked session token still authenticates GET /me' },
+    )
+    .toBe(401);
 }
