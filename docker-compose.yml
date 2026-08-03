@@ -11,6 +11,85 @@
 # than baking credentials into the file.
 x-database-url: &database-url "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
 
+# ── Sign-in mode: ONE switch, DATAQ_SIGNIN_EMAIL (#1150) ──────────────────────
+# This stack boots into **email one-time codes** (ADR 0032), not dev-bypass. The
+# bundled `mailpit` catcher below is the mailbox, so there is no SMTP relay to
+# bring: you type your address, DataQ mails a 6-digit code, and you read it in a
+# web inbox at http://localhost:8025.
+#
+#   DATAQ_SIGNIN_EMAIL=you@example.com   → OTP sign-in (the default; setup.sh
+#                                          writes it into your .env)
+#   DATAQ_SIGNIN_EMAIL=  (set, empty)    → the EXPLICIT downgrade to dev-bypass:
+#                                          no sign-in, every request is one fixed
+#                                          user, and anyone who can reach the port
+#                                          is a workspace admin
+#   unset                                → compose refuses to start, naming both
+#                                          options (the `?` guards below). A
+#                                          permissive auth posture is a decision,
+#                                          so it is never what you get by default.
+#
+# Mechanically: every AUTH_EMAIL_* value below is `${DATAQ_SIGNIN_EMAIL:+…}`, so
+# an empty address blanks the WHOLE mailer block at once. That matters — the
+# backend refuses to boot on a PARTIALLY configured block (ADR 0032 decision 2),
+# so a per-variable switch would turn the downgrade into a crash loop. With the
+# block empty the api falls back to `.env.app`'s AUTH_DEV_BYPASS.
+#
+# ⚠ These `environment:` values SHADOW `.env.app` — always, in EVERY state,
+# because a compose `environment:` key beats `env_file:` and `${VAR:+…}` still
+# EMITS the key (as "") when VAR is empty. So `.env.app` is NOT where you point
+# the compose stack at a real relay: those values would be silently discarded and
+# you would land in dev-bypass believing you had configured OTP.
+#
+# The override lives in the ROOT `.env` (or your shell) instead, on the app's own
+# key names, and each one is honoured only while the switch is set:
+#
+#     DATAQ_SIGNIN_EMAIL=you@example.com     # keep OTP on
+#     AUTH_EMAIL_SMTP_HOST=smtp.example.com  # …but use a real relay
+#     AUTH_EMAIL_TLS_MODE=starttls           # …with real TLS (see the note below)
+#
+# `.env.app` still governs host-side dev (uvicorn on your machine), which reads it
+# directly and sees none of this.
+x-otp-auth-env: &otp-auth-env
+  # Defaults to the bundled catcher; the ROOT `.env` overrides any of these while
+  # the switch is set. (`${SWITCH:+${KEY:-default}}`: the switch gates the whole
+  # block, the inner default is what you get when you don't override it.)
+  AUTH_EMAIL_SMTP_HOST: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_HOST:-mailpit}}
+  AUTH_EMAIL_SMTP_PORT: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_PORT:-1025}}
+  # A local catcher on the compose network speaks no TLS, which is exactly the
+  # case `none` exists for (#1146) — it is loudly warned on every send, and
+  # deliberately so: the code and the SMTP password cross this network in the
+  # clear. **If you override the host above, override this too** — pointing a
+  # `none` mailer at a real relay puts your SMTP password on the wire in plaintext.
+  AUTH_EMAIL_TLS_MODE: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_TLS_MODE:-none}}
+  # A SecretStore lookup NAME, never a value — the password is generated into the
+  # vault by the `otp-mail-secret` one-shot below and read back by name. Override
+  # it to a name YOU provisioned and the seeder leaves it alone (absent-only write).
+  #
+  # Kept AWAY from AUTH_EMAIL_USERNAME below on purpose: a generic credential
+  # scanner reads a `…PASSWORD…` assignment sitting next to a `…USERNAME…` one as
+  # a hardcoded credential pair, which GitGuardian duly reported the first time
+  # these were adjacent (same lesson as `scripts/e2e-otp-stack.sh`). Please don't
+  # move them back together.
+  AUTH_EMAIL_PASSWORD_SECRET_NAME: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_PASSWORD_SECRET_NAME:-dataq-local-smtp}}
+  # Non-secret identifiers. Mailpit accepts ANY credentials (MP_SMTP_AUTH_ACCEPT_ANY),
+  # so what matters is only that the api's real AUTH exchange happens.
+  AUTH_EMAIL_USERNAME: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_USERNAME:-dataq-local}}
+  AUTH_EMAIL_FROM: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_FROM:-dataq@dataq.local}}
+  # Signup allowlist — mandatory, there is no open registration (ADR 0032
+  # decision 5). `?` (not `:?`) so an EMPTY value is accepted as the downgrade
+  # while an UNSET one stops the stack with this message.
+  AUTH_OTP_ALLOWED_EMAILS: ${DATAQ_SIGNIN_EMAIL?set DATAQ_SIGNIN_EMAIL=you@example.com to sign in with an emailed code (read it at http://localhost:8025) — or set it EMPTY to opt into dev-bypass, which disables sign-in entirely}
+  # Shadowed too, and blank by default — otherwise a lone `AUTH_OTP_ALLOWED_DOMAINS`
+  # left in `.env.app` would survive the downgrade, make the allowlist non-empty
+  # while every AUTH_EMAIL_* above is blank, and the fail-closed validator would
+  # refuse to boot on a *partial* block. Blanking the whole OTP surface together
+  # is what makes "switch empty" mean inert rather than broken. Set it in the ROOT
+  # `.env` (with the switch on) to admit a whole domain.
+  AUTH_OTP_ALLOWED_DOMAINS: ${DATAQ_SIGNIN_EMAIL:+${AUTH_OTP_ALLOWED_DOMAINS:-}}
+  # Whoever booted the stack is its admin. The dev-bypass identity stays listed so
+  # the downgrade path (and the Playwright bypass lane) keeps /admin drivable.
+  WORKSPACE_ADMIN_EMAILS: ${WORKSPACE_ADMIN_EMAILS-dev-bypass@dataq.local,${DATAQ_SIGNIN_EMAIL:-}}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -84,6 +163,75 @@ services:
       timeout: 3s
       retries: 10
 
+  # ── Bundled mail catcher — the local mailbox for OTP sign-in (#1150) ─────────
+  # Mailpit (MIT — rule 40 / ADR 0031 clear) catches every message DataQ sends and
+  # serves it in a web inbox at http://localhost:8025. It is what makes email OTP
+  # the DEFAULT sign-in here instead of something you must first bring an SMTP
+  # relay for: nothing leaves this machine, and no mailbox has to be real.
+  #
+  # Chosen over MailHog (also MIT, and named in #1149) for one hard requirement:
+  # `OtpMailer` ALWAYS performs an SMTP AUTH exchange, and MailHog only advertises
+  # AUTH when given a bcrypt credential file — which would mean shipping a
+  # credential in a tracked file (CLAUDE.md §11). Mailpit's MP_SMTP_AUTH_ACCEPT_ANY
+  # takes any credentials with no file at all. MailHog is also effectively
+  # unmaintained (no release since 2020); Mailpit is current.
+  #
+  # Pinned, not :latest — same rule as the GX / redis:7 / openbao pins.
+  mailpit:
+    image: axllent/mailpit:v1.30.6
+    restart: unless-stopped
+    environment:
+      # Accept any username/password, over a plain connection. Both are required:
+      # without ACCEPT_ANY the server advertises no AUTH at all and smtplib's
+      # `login()` raises SMTPNotSupportedError; without ALLOW_INSECURE it refuses
+      # AUTH on an unencrypted socket, which is all this speaks.
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+      # Everything is in memory — this is a test inbox, and sign-in codes are
+      # single-use and expire in 10 minutes. Nothing here should outlive the stack.
+      MP_MAX_MESSAGES: "500"
+    ports:
+      # Loopback ONLY. This inbox holds live sign-in codes for every address on
+      # the allowlist, behind no authentication whatsoever — on 0.0.0.0 anyone on
+      # the LAN could read a code and take over the account it was minted for.
+      - "127.0.0.1:8025:8025"   # web inbox — open this to read your code
+      - "127.0.0.1:1025:1025"   # SMTP, for host-side dev (uvicorn on your machine)
+    healthcheck:
+      # The image is distroless-ish (no curl/wget); mailpit ships its own probe.
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot: puts a generated SMTP password in the vault under the name the api
+  # looks it up by, then exits 0 (see the module docstring for why the mailer has
+  # no "no password" path). No-ops when OTP is off. Runs on EVERY `up` because the
+  # dev-mode vault is in-memory; never overwrites a name that already has a value.
+  # If you restart the VAULT alone, this does not re-run and sign-in starts
+  # answering 503 `otp_email_not_configured` — `docker compose up -d` again fixes it.
+  otp-mail-secret:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: "no"
+    command: python -m backend.scripts.seed_local_smtp_secret
+    env_file:
+      - path: .env.app
+        required: false
+    environment:
+      SECRET_STORE: ${SECRET_STORE:-openbao}
+      OPENBAO_ADDR: http://openbao:8200
+      OPENBAO_TOKEN: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
+      # The SAME block the api gets, not just the secret name: this process builds
+      # the same `Settings`, so a subset would leave it looking half-configured and
+      # the fail-closed validator would stop the stack here.
+      <<: *otp-auth-env
+    volumes:
+      - ./backend:/workspace/backend
+    depends_on:
+      openbao:
+        condition: service_healthy
+
   # One-shot: applies Alembic migrations then exits 0. api/worker wait on it via
   # service_completed_successfully so `docker compose up` never serves an
   # un-migrated schema (#156). Mirrors setup.sh's `cd backend && alembic ...`
@@ -99,6 +247,12 @@ services:
         required: false
     environment:
       DATABASE_URL: *database-url
+      # Carries the same auth block as everything else that builds `Settings`, even
+      # though it only runs alembic: otherwise a stray OTP key in `.env.app` could
+      # make THIS service the one that trips the fail-closed validator while the
+      # rest of the stack is fine, and `docker compose up` would die at the
+      # migration step with an auth error.
+      <<: *otp-auth-env
     volumes:
       - ./backend:/workspace/backend
     depends_on:
@@ -130,11 +284,10 @@ services:
       SECRET_STORE: ${SECRET_STORE:-openbao}
       OPENBAO_ADDR: http://openbao:8200
       OPENBAO_TOKEN: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
-      # The dev-bypass identity is the workspace admin locally (non-secret dev
-      # default; ADR 0027) so /admin + /settings are drivable in dev and E2E.
-      # No-colon form: WORKSPACE_ADMIN_EMAILS="" in .env opts back OUT (to a
-      # non-admin identity, e.g. to exercise the Forbidden gate manually).
-      WORKSPACE_ADMIN_EMAILS: ${WORKSPACE_ADMIN_EMAILS-dev-bypass@dataq.local}
+      # Sign-in mode + the bundled mail catcher — see x-otp-auth-env at the top.
+      # (Carries WORKSPACE_ADMIN_EMAILS too: who the admin is depends on which
+      # identity actually signs in, so the two cannot be set independently.)
+      <<: *otp-auth-env
       # Request throttling off in the dev stack (#796): dev-bypass traffic
       # carries no bearer, so a local Playwright run lands in the per-IP
       # unauthenticated class (120/min) and 429s mid-suite. The limiter has its
@@ -152,6 +305,8 @@ services:
       openbao:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      otp-mail-secret:
         condition: service_completed_successfully
 
   worker:
@@ -173,6 +328,10 @@ services:
       SECRET_STORE: ${SECRET_STORE:-openbao}
       OPENBAO_ADDR: http://openbao:8200
       OPENBAO_TOKEN: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
+      # Same auth block as the api. The worker never sends a sign-in code, but it
+      # loads the same `.env.app` — so if the two disagreed about whether OTP is
+      # configured, one of them would hit the fail-closed startup validator.
+      <<: *otp-auth-env
     volumes:
       - ./backend:/workspace/backend
     depends_on:
@@ -183,6 +342,8 @@ services:
       openbao:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      otp-mail-secret:
         condition: service_completed_successfully
 
   # React/Vite dev server. corepack pins pnpm from package.json's packageManager.
@@ -201,7 +362,15 @@ services:
       VITE_API_PROXY_TARGET: http://api:8000
       # Pass the client-side auth vars into the Vite dev server. Only VITE_*
       # vars are forwarded (DB/secret env stays out of the node container).
-      # Substituted from the project .env; dev-bypass defaults on for local dev.
+      # Substituted from the project .env.
+      #
+      # The SECOND of the two coordinated mode selectors (ADR 0032 decision 2 —
+      # the backend cannot infer this one and vice versa), driven off the same
+      # DATAQ_SIGNIN_EMAIL switch so they cannot drift: an address here renders
+      # the code form, an empty one falls through to dev-bypass below. An explicit
+      # mode beats the bypass flag in `frontend/src/auth/config.ts`, which is what
+      # lets the flag keep its dev default without shadowing OTP.
+      VITE_AUTH_MODE: ${DATAQ_SIGNIN_EMAIL:+otp}
       VITE_AUTH_DEV_BYPASS: ${VITE_AUTH_DEV_BYPASS:-true}
       VITE_AZURE_TENANT_ID: ${VITE_AZURE_TENANT_ID:-}
       VITE_AZURE_SPA_CLIENT_ID: ${VITE_AZURE_SPA_CLIENT_ID:-}

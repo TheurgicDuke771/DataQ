@@ -61,8 +61,11 @@ Manual checklist (the mutating tail):
 **Is ADF/Airflow a datasource?** No — they're orchestration providers DataQ monitors and
 can trigger from. You never write checks against them. See **[Concepts](concepts.md)**.
 
-**Do I need Azure to run it locally?** No — local dev uses a dev-bypass auth and
-docker-compose. Azure is one deployment target behind the app's seams (ADR 0010/0013).
+**Do I need Azure to run it locally?** No. The compose stacks sign you in with an emailed
+one-time code and bundle the mailbox too (a local Mailpit inbox at `localhost:8025`), so
+there is no IdP *and* no SMTP relay to bring — `scripts/setup.sh` just asks which address
+may sign in. Dev-bypass is still there as an explicit downgrade (leave that answer blank).
+Azure is one deployment target behind the app's seams (ADR 0010/0013).
 
 **Where do failed-row samples go?** Stored with the result, **PII-redacted**, and purged
 after a retention window — never written to logs.

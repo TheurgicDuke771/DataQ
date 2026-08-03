@@ -53,13 +53,16 @@ Evaluate or self-host in ~5 minutes: **no source checkout, no Azure tenant.** Ju
 
 ```bash
 curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
-export OPENBAO_TOKEN=$(openssl rand -hex 16)   # root token for the bundled vault
+export OPENBAO_TOKEN=$(openssl rand -hex 16)     # root token for the bundled vault
+export DATAQ_SIGNIN_EMAIL=you@example.com        # the address allowed to sign in
 docker compose -f docker-compose.ghcr.yml up
 ```
 
-Open **<http://localhost:3000>** — the stack comes up migrated and seeded with demo data, on **dev-bypass auth** (every request is a fixed demo user; no sign-in). API + Swagger at `http://localhost:8000/docs`. Images are pulled from GHCR and are **multi-arch** (amd64 + arm64), so Apple-Silicon runs native. Ports bind to `127.0.0.1` only. Connection credentials go into a bundled **OpenBao** vault (ADR 0039) rather than the plaintext store it replaced, which is the one value you supply — it runs in dev mode (in-memory), so restarting the stack means re-entering connection credentials. To pin a release instead of the moving tags: `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
+Open **<http://localhost:3000>**, enter that address, and read the 6-digit code in the bundled inbox at **<http://localhost:8025>** — the stack ships its own mail catcher ([Mailpit](https://mailpit.axllent.org), MIT), so **email sign-in works with no SMTP relay and nothing leaves your machine**. It comes up migrated and seeded with demo data. API + Swagger at `http://localhost:8000/docs`. Images are pulled from GHCR and are **multi-arch** (amd64 + arm64), so Apple-Silicon runs native. Ports bind to `127.0.0.1` only. Connection credentials go into a bundled **OpenBao** vault (ADR 0039) rather than the plaintext store it replaced, which is the one value you supply — it runs in dev mode (in-memory), so restarting the stack means re-entering connection credentials. To pin a release instead of the moving tags: `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
 
-> Self-hosting with **your own** Azure AD? The published frontend is **one generic image** — the compose eval runs it with `DATAQ_AUTH_MODE=bypass` (auth off). For real SSO, **no rebuild**: run that same image with `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (auth config is injected at runtime, ADR 0028), and run the backend with `AUTH_DEV_BYPASS` off. See [Getting started](https://theurgicduke771.github.io/DataQ/getting-started/).
+> Prefer no sign-in at all? `DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up` is the explicit downgrade — every request becomes one fixed admin user. Omitting `DATAQ_SIGNIN_EMAIL` entirely stops the stack instead of choosing that for you.
+
+> Self-hosting with **your own** Azure AD? The published frontend is **one generic image** — the compose eval runs it with `DATAQ_AUTH_MODE=otp`. For real SSO, **no rebuild**: run that same image with `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (auth config is injected at runtime, ADR 0028), and run the backend with `AUTH_DEV_BYPASS` off. See [Getting started](https://theurgicduke771.github.io/DataQ/getting-started/).
 
 ### Develop DataQ — from source
 
@@ -71,7 +74,7 @@ conda activate dataq
 docker-compose up
 ```
 
-Backend at `http://localhost:8000` (Swagger at `/docs`), frontend at `http://localhost:3000`.
+Backend at `http://localhost:8000` (Swagger at `/docs`), frontend at `http://localhost:3000`. `setup.sh` asks which address may sign in and writes it to your gitignored `.env`; codes land in the bundled inbox at `http://localhost:8025`. Answering blank is the explicit downgrade to dev-bypass.
 
 ## MCP (AI assistant access)
 
