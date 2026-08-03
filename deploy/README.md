@@ -324,7 +324,11 @@ don't stop at HTTP 200s. Work top-down:
   alert delivered; the **MCP tools** answer for an AI client. If a release touched a specific
   area, exercise that area harder.
 - [ ] **Auth + guards hold** — unauthenticated API and MCP requests are rejected (`401`), and
-  the prod-docs gate is on (`/docs`, `/redoc`, `/openapi.json` → `404`, #170).
+  no Swagger/OpenAPI content is served publicly: `/docs`, `/redoc`, `/openapi.json` on the
+  public origin return the **SPA's `index.html`** (the frontend nginx catch-all — they are not
+  proxied paths since the ADR 0028 §5 cutover, so a `200` with the SPA shell is the expected
+  result, NOT Swagger UI or a JSON schema). The API's own prod-docs gate (`ENVIRONMENT=prod`
+  → `404`, #170) still applies on its internal ingress, which is unreachable from outside.
 - [ ] **Infra rolled cleanly** — api / worker / frontend are on the **deployed tag** (not the
   old image), the migrate job execution is `Succeeded`, Celery beat starts clean (#405/#407)
   and orchestration polling reads Key Vault (#406/#408), and App Insights shows no post-roll

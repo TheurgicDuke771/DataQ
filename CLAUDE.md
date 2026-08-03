@@ -14,7 +14,7 @@
 | **Orchestration providers (monitor + trigger only — NOT datasources)** | Azure Data Factory (ADF), Apache Airflow, dbt (ADR 0029) |
 | **Backend** | FastAPI + Celery + Redis + PostgreSQL + Alembic |
 | **Frontend** | React + Vite + Ant Design + Monaco editor (generic OIDC — `oidc-client-ts`) |
-| **Auth / secrets** | OIDC (Azure AD validated; provider-neutral `AUTH_*` contract) + Azure Key Vault |
+| **Auth / secrets** | Three-mode ladder (ADR 0032): dev-bypass (eval) · **email OTP** (IdP-less, default for the local stack — #1150) · OIDC (Azure AD validated; provider-neutral `AUTH_*` contract) — plus PATs (`dq_live_`) for API/MCP clients. Secrets: Azure Key Vault / OpenBao (ADR 0039) |
 | **Deploy** | Azure Container Apps (API + worker + frontend; frontend is the sole public surface, api internal — ADR 0028 §5) |
 | **Observability** | Azure Application Insights + structlog |
 | **AI integration** | FastMCP (8 curated tools mounted at `/mcp`) — Claude Desktop / Claude.ai / Copilot / Cursor |
@@ -196,7 +196,7 @@ Per-functionality workflow, in order:
 
 ## 8. Local dev quickstart
 
-> **Note:** These commands assume Week 1 scaffolding (PR 1) is in place. They will not work on a fresh clone until `scripts/setup.sh`, `environment.yml`, and `docker-compose.yml` are committed.
+> **Note:** `scripts/setup.sh` prompts for your sign-in email on first run (the local stack defaults to **email OTP** with a bundled Mailpit inbox at `http://localhost:8025` — #1150; answer blank for the explicit dev-bypass downgrade) and generates local credentials into the gitignored `.env`/`.env.app`.
 
 ```bash
 git clone <repo>
@@ -216,7 +216,7 @@ curl http://localhost:8000/api/v1/runs/<run_id>
 
 ## 9. Key design decisions (ADR index)
 
-The full decision index — one line per ADR with status, 0001–0039 to date — lives at **[docs/adr/README.md](docs/adr/README.md)** and is the **single source of truth** (this section used to duplicate it as a table and the two drifted; it no longer does). Read the index before coding and open the individual ADR whenever a decision bears on your change. The day-to-day operating rules those decisions distill into are already captured in §4–§6, §10 and §11 of this file.
+The full decision index — one line per ADR with status, 0001–0040 to date — lives at **[docs/adr/README.md](docs/adr/README.md)** and is the **single source of truth** (this section used to duplicate it as a table and the two drifted; it no longer does). Read the index before coding and open the individual ADR whenever a decision bears on your change. The day-to-day operating rules those decisions distill into are already captured in §4–§6, §10 and §11 of this file.
 
 ---
 
@@ -309,7 +309,7 @@ Update this section at the end of each week with: current week, the week's exit 
 | Database | PostgreSQL + Alembic |
 | Frontend | React + Vite + Ant Design |
 | SQL editor | Monaco |
-| Auth | Generic OIDC (`oidc-client-ts`, Azure AD validated) + backend `fastapi-azure-auth` |
+| Auth | Three modes (ADR 0032): dev-bypass · email OTP (`dq_sess_` cookie sessions, local-stack default) · generic OIDC (`oidc-client-ts`, Azure AD validated) + backend `fastapi-azure-auth`; PATs (`dq_live_`) for API/MCP |
 | Secrets | Azure Key Vault |
 | Hosting | Azure Container Apps (API + worker + frontend; frontend = sole public surface, api internal — ADR 0028 §5) |
 | Observability | Azure Application Insights + structlog |
