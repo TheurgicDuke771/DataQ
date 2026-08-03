@@ -41,6 +41,10 @@ Every check is a Great Expectations expectation in v1 (`check.kind`), authored i
   Freshness + volume are the auto-monitor kinds and run on **every** datasource: the SQL
   datasources (Snowflake / Unity Catalog), Apache Iceberg (computed natively via a
   `pyiceberg` scan rather than SQL), and ADLS Gen2 / S3 flat files.
+- **Schema-drift monitor** — flags a column added, dropped, or type-changed against a
+  stored baseline (did the shape change under you?). Also runs on **every** datasource —
+  introspection is per-store (SQL `information_schema`, a Parquet footer / CSV header
+  sample for flat files, Iceberg table metadata), never a data scan.
 - **Column profiler** — nulls, distinct count, min/max, and top values for a column, on
   any datasource — the baseline you set thresholds from.
 - **Dry-run preview** — run one check against live data **without persisting**, on every

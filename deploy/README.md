@@ -20,17 +20,21 @@ below is the how.
 
 ### 1. What you must change (never ship the eval/dev defaults)
 
-The prebuilt-image quickstart ([docs/getting-started](../docs/getting-started.md)) is a
-**dev-bypass eval stack** — it disables auth, uses a passwordless DB, and binds to
-loopback. A production deployment must flip all of the following. Values live in
+The prebuilt-image quickstart ([docs/getting-started](../docs/getting-started.md)) boots
+into **email-OTP sign-in by default** (#1150) — a bundled Mailpit catcher stands in for
+an SMTP relay, uses a passwordless DB, and binds to loopback. Dev-bypass (no
+authentication at all) is an **explicit two-variable downgrade**
+(`DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass`), not the default — and leaving
+`DATAQ_SIGNIN_EMAIL` unset entirely refuses to start rather than silently picking a
+mode for you. A production deployment must flip all of the following. Values live in
 [`deploy/.env.app.prod.example`](.env.app.prod.example) (app settings) +
 [`deploy/terraform/azure/variables.tf`](terraform/azure/variables.tf) (infra):
 
 | Setting | Eval default | Production |
 |---|---|---|
-| `AUTH_DEV_BYPASS` | `true` | **`false`** — this is the master auth switch; leaving it on means **no authentication at all**. |
+| `AUTH_DEV_BYPASS` | `true` in the compose file, but **inert by default** — email OTP (`DATAQ_SIGNIN_EMAIL`) wins over it in `auth.py` whenever OTP is configured, which it is out of the box (#1150). It only takes effect once you explicitly clear `DATAQ_SIGNIN_EMAIL` (the documented downgrade). | **`false`** — this is the master auth switch; leaving it on means **no authentication at all**. |
 | `AZURE_TENANT_ID` / `AZURE_API_CLIENT_ID` / `AZURE_SPA_CLIENT_ID` | empty | your Azure AD tenant + the two app registrations (API + SPA). |
-| **Frontend auth config** | `DATAQ_AUTH_MODE=bypass` (eval) | the **same generic image**, reconfigured at **runtime** — `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (ADR 0028). **No rebuild** — nginx injects `/config.js` from env. See [frontend/Dockerfile](../frontend/Dockerfile). |
+| **Frontend auth config** | `DATAQ_AUTH_MODE=otp` (eval default — compose sets `${DATAQ_AUTH_MODE:-otp}`) | the **same generic image**, reconfigured at **runtime** — `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (ADR 0028). **No rebuild** — nginx injects `/config.js` from env. See [frontend/Dockerfile](../frontend/Dockerfile). |
 | `SECRET_STORE` | `openbao` (local/eval — ADR 0039) | **`azure_key_vault`** + `AZURE_KEY_VAULT_URL` + the managed identity's `AZURE_CLIENT_ID` (#408). |
 | `DATABASE_URL` / `REDIS_URL` | inline, passwordless | Key Vault-backed Container Apps secrets — **never literals**; real credentials. |
 | `CORS_ALLOW_ORIGINS` | n/a (same-origin) | empty — the frontend Container App proxies `/api` same-origin (ADR 0028); set the SPA origin only if you split them. |
@@ -53,7 +57,7 @@ loopback. A production deployment must flip all of the following. Values live in
 | `AUTH_OTP_REQUEST_PER_EMAIL_PER_10MIN` | `3` | per-**mailbox** cap on code requests, 10-minute window (#1127). **Active regardless of `RATE_LIMIT_ENABLED`** — dev and E2E disable the middleware, and a mail-bomb control a test harness switches off is not a control. Fails **open** if Redis is down (logged once, never the address). A throttled request returns the same uniform `ok` as a successful one; a 429 would tell an attacker which addresses are allow-listed. |
 | `AUTH_OTP_REQUEST_MIN_SECONDS` | `1.0` | constant-time **floor** on `POST /api/v1/auth/otp/request` ([#1137](https://github.com/TheurgicDuke771/DataQ/issues/1137)) — every uniform response (sent / ineligible / throttled) is held to this minimum, so the code-mint + SMTP round trip an eligible address pays no longer stands out against an ineligible one's in-memory lookup. Error responses (502/503) are deliberately **not** padded — they are already non-uniform by design (a mail outage is operator-visible, not a per-address secret). Raise it if your relay is routinely slower than a second; **`0` disables the floor — re-opens the #1137 timing channel**. Not a constant-time guarantee: a send slower than the floor still overruns it, bounded by `AUTH_EMAIL_TIMEOUT_SECONDS`. |
 | `AUTH_OTP_VERIFY_MIN_SECONDS` | `0.5` | the same **floor** on `POST /api/v1/auth/otp/verify` ([#1141](https://github.com/TheurgicDuke771/DataQ/issues/1141)). Every rejected code answers a byte-identical 401, but an address with a **live code outstanding** pays an `UPDATE … RETURNING` + commit that an address with none never pays — and that difference is cheap to set up, because a code is minted **only for an allow-listed address**, so one `otp/request` against the address being probed (uniform `ok` either way, revealing nothing itself) creates it for the price of a per-email quota slot. Every 401 is held to this minimum. A **successful** verification is deliberately **not** padded (a 200 already separates itself, to a caller who by definition knows the code), so real sign-ins stay snappy; neither is the 503 for an unconfigured deployment. Half the request-side floor because there is no SMTP tail to clear — only two DB round trips. **`0` disables it — re-opens the #1141 timing channel.** Same caveat: a DB round trip slower than the floor overruns it. |
-| **Frontend OTP mode** | `DATAQ_AUTH_MODE=bypass` | set `DATAQ_AUTH_MODE=otp` **together with** the backend block above — these are **two coordinated selectors** (ADR 0032 decision 2) and neither can infer the other. Backend OTP on + frontend on `oidc` ⇒ the SPA shows an OIDC flow against an IdP that is not configured; frontend `otp` + backend off ⇒ the code form 503s. |
+| **Frontend OTP mode** | `DATAQ_AUTH_MODE=otp` (already the eval default, #1150) | set `DATAQ_AUTH_MODE=otp` **together with** the backend block above — these are **two coordinated selectors** (ADR 0032 decision 2) and neither can infer the other. Backend OTP on + frontend on `oidc` ⇒ the SPA shows an OIDC flow against an IdP that is not configured; frontend `otp` + backend off ⇒ the code form 503s. |
 | `COMPARISON_MAX_ROWS` | `100000` | default per-side row cap for `comparison` checks (ADR 0015) — both sides materialize in worker memory for the diff, so this is a memory guardrail; over-cap runs **fail fast** (never a silently truncated diff). A check's `config.max_rows` overrides it. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | unset | Azure Monitor / App Insights backend for spans + logs (observability, OTel — ADR 0010). |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | generic OTLP/HTTP backend for spans + logs (#589) — any OTLP consumer (Tempo/Jaeger/Datadog/Collector); set alongside App Insights for parity, or alone for a non-Azure deploy. |
@@ -147,7 +151,7 @@ api + worker run the **same** backend image ([backend/Dockerfile](../backend/Doc
 build context = repo root). The frontend is **one generic nginx image**
 ([frontend/Dockerfile](../frontend/Dockerfile)) whose auth config + `/api` proxy
 upstream are injected at **runtime** from env (ADR 0028) — the same image serves the
-eval stack (`DATAQ_AUTH_MODE=bypass`) and prod (`=oidc`).
+eval stack (`DATAQ_AUTH_MODE=otp` by default, #1150) and prod (`=oidc`).
 
 ## One-time provisioning
 
