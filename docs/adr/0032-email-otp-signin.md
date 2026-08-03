@@ -15,6 +15,17 @@
 > of **any admin-role holder** is admin compromise — not only allowlisted
 > addresses.
 
+> **Amendment (2026-08-02, #1138):** Decision 3's cookie is not *unconditionally*
+> `Secure` — when `AUTH_SESSION_COOKIE_SECURE` is unset (the default), `Secure` is
+> **inferred** from `X-Forwarded-Proto` (or a directly-HTTPS request) rather than
+> hard-coded, so the cookie keeps working on a plain-HTTP local/dev stack instead of
+> silently never being sent back by the browser. The reference frontend nginx
+> forwards the edge's real header
+> ([#1138](https://github.com/TheurgicDuke771/DataQ/issues/1138)) — before that fix
+> it substituted its own plaintext upstream scheme, so the cookie shipped
+> **without** `Secure` over HTTPS. Force `AUTH_SESSION_COOKIE_SECURE=true`/`false`
+> when your own proxy doesn't forward that header faithfully.
+
 ## Context
 
 Human sign-in today has exactly one real path: Azure AD (`fastapi-azure-auth` on the backend, generic OIDC against Azure on the frontend). PATs (ADR 0026) are headless-only and need an existing user to mint them; dev-bypass is single-user local eval. So a BYOL customer on a non-Azure cloud, and the post-wind-down local-first posture (#591), have **no way to log a human in**. ADR 0026 rejected HTTP Basic because it would make DataQ a password system (storage/hashing policy, lockout, reset flows). Email OTP is passwordless — proof of mailbox ownership is the credential — so it closes the gap without reopening that rejection. It **complements, not replaces**, the generic OIDC/JWKS backend validator (ADR 0013 Phase 2, tracked in #732): generic OIDC serves customers with an IdP; OTP serves small teams without one.

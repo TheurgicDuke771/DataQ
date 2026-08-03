@@ -134,7 +134,7 @@ column — the symptom is a **column dropdown offering a single long name** like
 1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC), a
    file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
-   then the check type, then fill its config. The four authoring paths:
+   then the check type, then fill its config. The authoring paths:
 
 ### GX expectation (all datasources)
 
@@ -177,6 +177,16 @@ band the % by which the count falls outside the range (a spike can exceed 100%),
 leave them blank for binary in-range pass/fail. On a flat file the count is over the
 **resolved batch** — the single file the target's batch pattern selects, not the
 whole prefix.
+
+### Schema-drift monitor (all datasources — ADR 0012, #592)
+
+*Did the shape change under you?* Capture a **baseline** column-name/type snapshot,
+then each run diffs the live snapshot against it and flags any add / drop /
+type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
+data scan: `information_schema` for Snowflake/Unity Catalog, the Parquet footer (or
+a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's own
+metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
+it as the new normal — it is never re-baselined for you.
 
 ### DQ dimension (ADR 0038)
 

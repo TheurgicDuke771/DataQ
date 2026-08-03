@@ -14,6 +14,7 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | Freshness from **file arrival time** (no column — catches "no new file") | — | — | ✅ | ✅ | — |
 | Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | — | — | — |
+| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -33,6 +34,15 @@ Catalog `dataq_retail.gold.feedback_sentiment` row_count=180.0 + freshness
 anomaly executor takes its own measurement over a live SQL connection, while
 Iceberg and flat files compute their monitor scalars natively inside their
 runners, which stateful kinds never reach.
+
+ᵇ **Schema drift** (ADR 0012, [#592](https://github.com/TheurgicDuke771/DataQ/issues/592))
+diffs a live column-name/type snapshot against a stored baseline and flags
+add/drop/type-change. Unlike custom SQL it never goes through a `CheckRunner`/GX at
+all, so it isn't gated to SQL datasources: introspection is per-datasource —
+`information_schema` for Snowflake/Unity Catalog, the Parquet footer or a bounded
+CSV header sample for ADLS/S3 flat files, and the loaded table's own metadata for
+Iceberg (no data scan on any of them except the CSV sample). Re-baseline explicitly
+once a drift is expected and reviewed.
 
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional

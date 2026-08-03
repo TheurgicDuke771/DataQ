@@ -20,13 +20,19 @@ Evaluate or self-host with **no source checkout and no Azure tenant** — just D
 
 ```bash
 curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
+export OPENBAO_TOKEN=$(openssl rand -hex 16)     # root token for the bundled vault
+export DATAQ_SIGNIN_EMAIL=you@example.com        # the address allowed to sign in
 docker compose -f docker-compose.ghcr.yml up
 ```
 
-Open **`http://localhost:3000`**. The stack comes up migrated and seeded with demo
-data, on **dev-bypass auth** (every request is a fixed demo user — no sign-in). API +
-Swagger at `http://localhost:8000/docs`. The GHCR images are **multi-arch** (amd64 +
-arm64, native on Apple Silicon) and all ports bind to `127.0.0.1` only.
+Open **`http://localhost:3000`**, type the address you exported, and read the 6-digit
+sign-in code in the bundled inbox at **`http://localhost:8025`** ([Mailpit](https://mailpit.axllent.org)
+— no real SMTP relay needed, nothing leaves the host). The stack comes up migrated and
+seeded with demo data. API + Swagger at `http://localhost:8000/docs`. The GHCR images
+are **multi-arch** (amd64 + arm64, native on Apple Silicon) and all ports bind to
+`127.0.0.1` only. To skip sign-in entirely (dev-bypass, a deliberate downgrade — not
+the default): `DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up`.
+See [Getting started](getting-started.md) for the full flow.
 
 ### Develop DataQ — from source
 
