@@ -1,0 +1,734 @@
+<task-notification>
+<task-id>aed101b7432691fcf</task-id>
+<tool-use-id>toolu_01PtHokLNnfasbEYZUzkmnVs</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/aed101b7432691fcf.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1139 profile completion" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR #1153 is open and CI is running; I won't block on it since the orchestrator handles the review flow. Summary of the work:
+
+## Result
+
+**PR #1153**: https://github.com/TheurgicDuke771/DataQ/pull/1153
+`feat(auth): first-login profile completion — PATCH /me display_name + skippable prompt (#1139)`, milestone `v1.1 Backlog`, `Fixes #1139`.
+
+Two commits on `feature/issue-1139-profile-completion` (branched off origin/main, merged forward once before push — no conflicts):
+
+1. **Backend** — `PATCH /api/v1/me` (`backend/app/api/v1/me.py`, `backend/app/services/user_service.py`): validates `display_name` non-empty-after-strip and ≤256 chars (matches the `String(256)` column), behind the same `get_current_user` dependency the GET handler uses — no mode branching, so it works identically for a cookie session, a PAT, or an AAD token.
+2. **Frontend** — a skippable, one-time completion prompt (`ProfileCompletionPrompt.tsx`) plus an inline edit affordance on the Profile page for every mode, sharing one hook (`useSaveDisplayName.ts`) and a new `MeUpdateContext` so a save updates state without a second `GET /me`.
+
+## Design decisions
+
+- **One-time/skip semantics**: gated on `sessionStorage` (`dataq:profileCompletionPrompt:skipped`), not React state — survives a reload of the tab but clears when it closes, which is what "session" means to a user. Closing any other way (Esc/X) counts as skip too; there's no separate "undecided" state.
+- **otp mode identity refresh**: in `otp` mode the header name comes from `OtpSessionProvider`'s own captured `/me`, not `MeContext` — so `useSaveDisplayName` also calls the existing `adopt()` (already used by verify) to keep the header in sync. It's a no-op in other modes (same pattern as `UserMenu`'s unconditional `useOtpSession()` call).
+- **Editable in every mode** (Profile page, via antd `Typography.Text editable`): an AAD user's *header* still shows the token's name (untouched), but the stored row — what shares/admin lists render — is now overridable there too.
+
+## A defect found and fixed along the way
+
+Implementing the AAD-override half of the issue surfaced a real bug: `_upsert_user`/`_claim_unlinked_user` in `backend/app/core/auth.py` ran on **every** real-mode request (no session cache) and unconditionally overwrote `display_name` from the AAD token's `name` claim — silently reverting a `PATCH /me` override on the user's very next request. Fixed both to `COALESCE` onto the existing value (seed on first login, never re-sync over a set value) rather than defer/file, since it directly broke this issue's stated AC. Updated the one pre-existing test (`test_identity_conflict.py`) that encoded the old overwrite behavior, and added regression coverage in `test_auth.py`.
+
+## Test evidence
+
+- Backend: `pytest backend/tests/` — 3532 passed, 97.06% coverage (gate 80%). `black --check` / `ruff` / `mypy` / `bandit -c pyproject.toml` all clean.
+- Frontend: `pnpm run test:coverage` — 868 passed, 91.22% lines (gate 80%). `typecheck` / `lint` / `format:check` all clean.
+- New/updated tests: backend `test_me.py` (PATCH happy/validation/PAT/cookie/401-via-bad-PAT/self-only), `test_auth.py`, `test_identity_conflict.py`; frontend `useSaveDisplayName.test.tsx`, `ProfileCompletionPrompt.test.tsx` + `.notOtp.test.tsx`, `Profile.test.tsx`, `adminMe.test.ts`, plus `App.test.tsx`/`App.otpSignOut.test.tsx` updated for the new `useMe`/`useUpdateMe` mock surface the globally-mounted prompt now requires.
+- Docs: `docs/getting-started.md` otp section now notes the first-login prompt.
+
+## Nothing deferred
+
+No follow-up issues filed — the one non-obvious risk (AAD override being silently clobbered) was fixed in this PR rather than deferred, per CONTRIBUTING's "fixed or filed, never noted" rule.</result>
+<usage><subagent_tokens>352212</subagent_tokens><tool_uses>231</tool_uses><duration_ms>1994582</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aed101b7432691fcf</worktreePath><worktreeBranch>worktree-agent-aed101b7432691fcf</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aed101b7432691fcf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/aed101b7432691fcf.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1139 profile completion" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All fixes pushed, PR is open and mergeable, review comment replied to. Summary:
+
+## Fixes pushed to PR #1153
+
+**Commit `2280299e`** (backend) — Replaced the COALESCE display-name guard with an explicit override flag:
+- **Migration `6230293aea96`** — `backend/alembic/versions/6230293aea96_add_users_display_name_override.py`: additive `users.display_name_override BOOLEAN NOT NULL DEFAULT false`. Verified up → down → up against scratch DB `dataq_test_1139`, and confirmed the parity test (`test_migration_parity.py`) passes.
+- `_upsert_user`/`_claim_unlinked_user` (`backend/app/core/auth.py`) now branch on the flag via SQL `CASE` instead of `COALESCE`: sync the AAD claim into `display_name` whenever `display_name_override` is `False`, leave it alone whenever `True`. The `IntegrityError→409 identity_conflict` path is byte-identical (verified by diff — only the `display_name` value expression changed).
+- `user_service.update_display_name` (called from `PATCH /me`) now sets `display_name_override = True`.
+- **Override-clear semantics chosen**: `PATCH /me` never resets the flag to `False` because `MeUpdate` rejects empty/whitespace-only input — there is no "clear the name" operation today, so nothing to reset it for. Documented inline in `user_service.py` for whoever adds a clear path later (should reset the flag alongside).
+- Both directions pinned in `test_auth.py` (`test_upsert_preserves_a_patch_me_override_across_relogin`, `test_upsert_syncs_an_aad_rename_when_there_is_no_override`) and `test_identity_conflict.py` (`test_an_aad_signin_does_not_overwrite_a_pre_set_otp_display_name`, `test_a_second_aad_signin_after_adoption_respects_an_override`, plus the existing tests updated to assert `display_name_override` explicitly) — including the `_claim_unlinked_user` coverage the review flagged as missing.
+
+**Commit `40dfc173`** (frontend) — Fixed `Profile.tsx`'s unchanged-value guard to compare the edited text against `name` (the rendered value — `display_name ?? email`) instead of the nullable `display_name`, which previously let a bare blur PATCH a null-display_name user's own email in as their display name. Added the regression test.
+
+## Test evidence
+- Backend: `pytest backend/tests/` — 3536 passed (was 3532; +4 new), 97.06% coverage. `black --check` / `ruff` / `mypy` / `bandit -c pyproject.toml` all clean.
+- Frontend: `pnpm run test:coverage` — 869 passed (was 868; +1 new), 91.22% lines. `typecheck` / `lint` / `format:check` all clean.
+
+Replied on the review thread (https://github.com/TheurgicDuke771/DataQ/pull/1153#issuecomment-5159878010) with the fix summary and 🤖 attribution, no reaction footer.</result>
+<usage><subagent_tokens>416825</subagent_tokens><tool_uses>73</tool_uses><duration_ms>745332</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aed101b7432691fcf</worktreePath><worktreeBranch>worktree-agent-aed101b7432691fcf</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+CI failed. 
+Are we going to close (#1139/#1141/#1146/#1147/#1149/#1150).
+
+---
+
+session about to terminate [limit reached], draft a handover note about progress and current state of the repo and rank the todo list inoder of pickup for the next session. Also get the latest state of each running agents
+
+---
+
+Session renewed, continue..
+
+---
+
+<task-notification>
+<task-id>af64ece2686368e9b</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/af64ece2686368e9b.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1146 mailer TLS options" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+Implemented issue #1146 as **PR #1155**: https://github.com/TheurgicDuke771/DataQ/pull/1155 (milestone `v1.1 Backlog`, not auto-merged).
+
+**Design decisions:**
+- `AUTH_EMAIL_TLS_MODE` (`starttls` default/unchanged, `implicit` for SMTPS `:465` via `smtplib.SMTP_SSL`, `none` plaintext test-only) and `AUTH_EMAIL_CA_BUNDLE` (PEM path, boot-time-validated to exist) added to `backend/app/core/config.py`, wired through the shared `_deliver` ladder in `backend/app/services/otp_mailer.py` used by both `send_code` and `send_preflight`.
+- **No insecure-verify option was added** — recorded in the PR body per instruction: a private CA bundle covers the legitimate case; weakening verification was rejected as a shortcut.
+- `AUTH_EMAIL_CA_BUNDLE` is scoped per-send (`ssl.create_default_context(cafile=...)` builds a fresh context each call) — never the process-wide trust store, unlike the `SSL_CERT_FILE` footgun it replaces.
+- Implicit-mode TLS/cert failures classify as the `connect` stage, not `tls`, documented in code because `smtplib.SMTP_SSL`'s constructor does connect+handshake together with no separate hook — pinned with a dedicated test.
+- Simplified the e2e-otp lane (`scripts/e2e-otp-stack.sh`, CI) from `SSL_CERT_FILE` to `AUTH_EMAIL_CA_BUNDLE`, live-verified (not just reasoned) against the real sink — genuine STARTTLS handshake, real cert verification, code retrieved via the sink's capture API.
+
+**Test evidence:** black/ruff/mypy/bandit all clean; full backend suite `3533 passed, 1 skipped`, 97.06% coverage (gate 80%); 61 tests in the two touched test files including implicit-mode/CA-bundle/none-mode/boot-failure cases, with the CA-bundle test monkeypatching `smtplib.SMTP` (the transport) rather than `ssl.create_default_context` (the seam under test), verified via a real self-signed cert and `SSLContext.get_ca_certs()`.
+
+**Docs updated:** `deploy/README.md`, `docs/security.md`, `docs/getting-started.md`, `.env.app.example`, plus `backend/scripts/e2e_otp_smtp_sink.py` and `.github/workflows/ci.yml` comments.
+
+**Found and fixed in the same PR:** the mandated `/code-review` pass (3 parallel independent agents — CLAUDE.md compliance, bug scan, git-history/prior-PR-comment check) caught one real issue — `frontend/e2e-otp/README.md` was left stale, still describing `SSL_CERT_FILE` and #1146 as unresolved. Fixed via a follow-up commit (`e177d282`) and posted to the PR. One self-caught slip along the way: my first review comment cited a fabricated commit SHA for the fix link — caught and corrected via `gh api ... -X PATCH` before reporting done.
+
+No other issues found or deferred.</result>
+<usage><subagent_tokens>266338</subagent_tokens><tool_uses>125</tool_uses><duration_ms>1375687</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-af64ece2686368e9b</worktreePath><worktreeBranch>worktree-agent-af64ece2686368e9b</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bfr140oyl</task-id>
+<summary>Monitor event: "PR 1153/1155 merge or CI-failure watch"</summary>
+<event>1155: MERGED 2026-08-02T22:54:37Z</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bfr140oyl</task-id>
+<summary>Monitor event: "PR 1153/1155 merge or CI-failure watch"</summary>
+<event>1155: MERGED 2026-08-02T22:54:37Z</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>brn1886e3</task-id>
+<summary>Monitor event: "PR 1153: merge / new-failure watch (deduped)"</summary>
+<event>1153 head=b9024203 CI FAILURE: Frontend — browser E2E (Playwright)</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>brn1886e3</task-id>
+<summary>Monitor event: "PR 1153: merge / new-failure watch (deduped)"</summary>
+<event>1153 head=206550c7 failures cleared (state=OPEN)</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2247ec5dae476161</task-id>
+<tool-use-id>toolu_01LKbZLgoqgjzbX4FYb7TkhS</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/a2247ec5dae476161.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix #1153 CI failure" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The follow-up fix is pushed (commit `206550c7`) and CI run 30771559194 is progressing well — 9 of 14 checks already green (Backend suite, CodeQL both languages, Frontend lint/audit, Secret scanning, GitGuardian, build). "Frontend — tests" and "Frontend — browser E2E (Playwright)" are still running; I'll report back once they land rather than guess at the outcome.
+
+**Root cause of the follow-up failure (session.spec.ts:51 and :71):** confirmed via the downloaded Playwright report artifact (`gh run download 30770904663 -n playwright-report`) — the `error-context.md` page snapshot at the moment of the 30s timeout showed the `dialog "Welcome to DataQ"` still open with an active "Skip for now" button. My first fix's dismissal used a flat 5-second `waitFor`, but the modal depends on `MeProvider`'s own separate `GET /api/v1/me` fetch, which under CI load sometimes takes longer than 5s — so the wait gave up before the modal ever appeared, then nothing else in the test dismissed it, and it blocked every subsequent click for the rest of the 30s test budget on all 3 retries.
+
+**Fix:** replaced the flat timeout with a real sync point — `page.waitForResponse()` armed on the exact `GET /api/v1/me` response (matched by pathname, not substring) *before* submitting the code, awaited with a generous 20s bound, then a short 3s bound for the React re-render plus waiting for the modal to actually finish closing before returning.
+
+That surfaced a second, independent bug when I reproduced the full lane locally: dismissing via "Skip for now" writes `dataq:profileCompletionPrompt:skipped` to `sessionStorage` by design, which broke `signin.spec.ts`'s "keeps no token in JS-readable storage" test (ADR 0032 decision 3). Fixed by adding an opt-out parameter (`dismissProfilePrompt: false`) that spec now passes, since it never touches the nav after sign-in anyway.
+
+**Local verification:** stood up an isolated copy of the real OTP stack (own Postgres DB `dataq_otp_e2e_a2247ec5`, migrations applied, SMTP sink + otp-mode api via `scripts/e2e-otp-stack.sh`) and ran `E2E_OTP=1 pnpm e2e:otp` twice — **11/11 green both times**. Cleaned up the scratch DB and stack processes afterward. Also re-ran `pnpm test:coverage` (88/88 files, 869/869 tests) and `pnpm typecheck`/`pnpm lint` — all clean.
+
+**Commit:** `206550c7` on `feature/issue-1139-profile-completion`. Auto-merge (squash) remains armed; it will land once this CI run finishes green.</result>
+<usage><subagent_tokens>326022</subagent_tokens><tool_uses>144</tool_uses><duration_ms>2518165</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a2247ec5dae476161</worktreePath><worktreeBranch>worktree-agent-a2247ec5dae476161</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>brn1886e3</task-id>
+<summary>Monitor event: "PR 1153: merge / new-failure watch (deduped)"</summary>
+<event>1153 head=206550c7 CI FAILURE: Frontend — tests</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>brn1886e3</task-id>
+<summary>Monitor event: "PR 1153: merge / new-failure watch (deduped)"</summary>
+<event>1153 head=206550c7 CI FAILURE: Frontend — tests,Frontend — browser E2E (Playwright)</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>brn1886e3</task-id>
+<summary>Monitor event: "PR 1153: merge / new-failure watch (deduped)"</summary>
+<event>1153 head=478b7662 failures cleared (state=OPEN)</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2247ec5dae476161</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/a2247ec5dae476161.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix #1153 CI failure" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>CI run 30772079151 is progressing well (11/14 checks green, including all the previously-fixed items). "Frontend — tests", "Backend — tests", and the Playwright E2E lane are still running. I'll report back once the background watch task completes with the final result rather than speculate.
+
+**Summary of this round's investigation and fix:**
+
+**Failing test:** `tests/auth/OtpSessionProvider.test.tsx &gt; OtpSessionProvider — other auth modes &gt; is a passthrough in dev_bypass mode and never probes /me` (job 91559474682, run 30771559194).
+
+**Determination:** Real order-dependence, not the #573/#1123 antd/userEvent slow-runner flake — evidence: (1) it's a test I already touched, not an untouched one; (2) the failure was a clean `AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times` — my previous `probeSession.mockResolvedValue(null)` default fix had converted what was previously a crash into exactly this clean assertion failure, proving `probeSession()` really was being invoked; (3) it reproduced on 2 of 2 real CI runs and never once locally across 20+ full-suite runs at varying concurrency (default, `--maxWorkers=1`, `--no-file-parallelism`).
+
+**Root cause:** `OtpSessionProvider — other auth modes` called `vi.doMock('../../src/auth/config', () =&gt; ({ authMode: mode }))` inside the test body, but the file's top-level `beforeEach` *also* `vi.doMock`s the exact same module path with `'otp'` (for every other describe block). Both registrations are real and racing each other for the same module id; under CI's timing the re-registration occasionally lost, so `ActiveOtpSessionProvider` mounted instead of the passthrough and called `probeSession()` while the mock was still reporting `authMode: 'otp'`.
+
+**Fix:** Stopped mocking `config` a second time entirely. The test now drives the *real* `config.ts` via `window.__DATAQ_CONFIG__` (ADR 0028's runtime-config contract) — the same proven pattern `CurrentUserProvider.test.tsx` already uses — with `vi.doUnmock('../../src/auth/config')` clearing the outer `beforeEach`'s registration first. There is now exactly one source of truth for `authMode` in this test, so the race is structurally eliminated rather than papered over.
+
+**Verified locally:** `pnpm typecheck`/`pnpm lint` clean; the file alone and the full suite (88/88 files, 869/869 tests) green across 3 runs, including under `--maxWorkers=1` and `--no-file-parallelism`.
+
+**Commit:** `478b7662` on `feature/issue-1139-profile-completion`, pushed plain (no amend/force). Auto-merge remains armed.</result>
+<usage><subagent_tokens>363077</subagent_tokens><tool_uses>175</tool_uses><duration_ms>3386380</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a2247ec5dae476161</worktreePath><worktreeBranch>worktree-agent-a2247ec5dae476161</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>brn1886e3</task-id>
+<summary>Monitor event: "PR 1153: merge / new-failure watch (deduped)"</summary>
+<event>1153 head=478b7662 CI FAILURE: Frontend — browser E2E (Playwright)</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>brn1886e3</task-id>
+<summary>Monitor event: "PR 1153: merge / new-failure watch (deduped)"</summary>
+<event>1153 head=67ed5c73 failures cleared (state=OPEN)</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a665af71d6872c9c9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/a665af71d6872c9c9.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1141 + #1147" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both PRs are done and green. Final report:
+
+## PR numbers
+
+- **#1154** — `security(auth): latency floor on otp/verify — close the #1141 enumeration channel` (`Fixes #1141`), branch `security/issue-1141-verify-timing`. **CI fully green** (15 pass + `deploy` skipped by design), **CLEAN / mergeable**.
+- **#1156** — `security(admin): per-admin throttle on the SMTP pre-flight endpoint (#1147)` (`Fixes #1147`), branch `security/issue-1147-preflight-throttle`. **CI fully green** (15 pass + `deploy` skipped). Both on milestone `v1.1 Backlog`. Neither merged.
+
+## #1141 — option chosen and why
+
+**Option 1** (reuse `_hold_until_floor` on its own setting, `AUTH_OTP_VERIFY_MIN_SECONDS`, default **0.5s** — half the request-side floor, since there is no SMTP tail to clear, only two DB round trips).
+
+- Option 2 (decoy-row equalization) is **worse than it looks**: it has to UPDATE *something*, so an ineligible address needs either a decoy row written for it (a DB write per probe of an arbitrary address on an unauthenticated endpoint) or a shared sentinel row (which contends under exactly the load an attacker generates). Neither equalizes the **commit**, the larger half. It trades a documented approximation for an undocumented one.
+- Option 3 (accept + document) was rejected on price: the mitigation costs a sleep only on *failed* verifications.
+
+**Only the uniform 401 is padded.** The 200 already separates itself to a caller who by definition knows the code, so padding it would tax every real sign-in and hide nothing; the 503 is deployment-wide. Both decisions are pinned by tests, not left implicit. `hmac.compare_digest` untouched.
+
+## Test evidence
+
+Local gate on both: `black --check` · `ruff` · `mypy` (329 files) · `bandit -c pyproject.toml` · full pytest on scratch DB `dataq_test_1141` — **#1154: 3528 passed / 97.05%**; **#1156: 3543 passed / 97.06%**.
+
+**Every new positive test was mutation-checked** — five mutations, each killing the intended test: removing the verify-side pad (3 fail); padding the success path (1 fail); removing the throttle call (3 fail); `limit &lt;= 0` → `&lt; 0` (1 fail); fail-closed instead of open (1 fail); dropping the window from the key (1 fail); reverting to the shared store singleton (2 fail); warning unconditionally (1 fail).
+
+## Found along the way
+
+- **The `/code-review` agent found a real doc defect in #1154**: my prose said a code is minted "for **any** address" — backwards, since minting is eligibility-gated, which is *why* the channel exists. Taken literally it argued the bug away. Fixed in all four sites (`4736ea4e`).
+- **The #1156 review found a blocker I'd walked into**: I reused `otp_service`'s counter-store **singleton**, and the instance carries the `CircuitBreaker` that #1135 made per-instance *deliberately* — so Redis errors from admin diagnostics would have tripped the shared breaker and silently failed open the per-mailbox cap on the **public** `/auth/otp/request`. Fixed with a dedicated instance, plus warn-once on fail-open, plus a **vacuous key-separation test** replaced by one that drives both paths. (`941b5b38`)
+- **`caplog` captures nothing from structlog** once `cache_logger_on_first_use` has bound a logger — my first warn-once test asserted over an empty list and would have passed vacuously. Rewritten with `capture_logs`; this trap is already documented in `test_secrets.py`.
+- **Merge-order hazard, fixed proactively**: both PRs originally inserted at the same anchor in `config.py`, `.env.app.example` and `deploy/README.md`. I moved #1156's to the `AUTH_EMAIL_*` block (a better home anyway) and *verified* with a dry-run `git merge` that the two branches now auto-merge.
+- **#1155 landed on main mid-flight** (the concurrent #1146 mailer work) and conflicted with #1156 on those same three files. Merged and resolved by keeping both (`a7b640da`); I did not touch `otp_mailer.py`.
+
+## Two things needing your attention
+
+1. **#1156 shows `BLOCKED` despite all 16 checks green** — that is the three unresolved inline review threads (the known repo gotcha). I replied to each with the fix and evidence but **deliberately left them unresolved for you**, since you're the reviewer. Resolve via GraphQL `resolveReviewThread` (IDs `PRRT_kwDOSBITx86V1H2J`/`2K`/`2L`) and merge becomes available. #1154 has no threads and is already CLEAN.
+2. **Nothing was deferred or filed** — all four review findings across both PRs ended fixed in-PR.</result>
+<usage><subagent_tokens>395707</subagent_tokens><tool_uses>323</tool_uses><duration_ms>3962611</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a665af71d6872c9c9</worktreePath><worktreeBranch>worktree-agent-a665af71d6872c9c9</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+What is the situation for #1150?
+
+---
+
+Okay, go ahead with #1150 after the current batch completed
+
+---
+
+<task-notification>
+<task-id>a2247ec5dae476161</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/a2247ec5dae476161.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix #1153 CI failure" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll wait for the background watch task to report the final result before summarizing.</result>
+<usage><subagent_tokens>394957</subagent_tokens><tool_uses>197</tool_uses><duration_ms>4470423</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a2247ec5dae476161</worktreePath><worktreeBranch>worktree-agent-a2247ec5dae476161</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>brn1886e3</task-id>
+<summary>Monitor event: "PR 1153: merge / new-failure watch (deduped)"</summary>
+<event>1153 head=21453ecc failures cleared (state=OPEN)</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2247ec5dae476161</task-id>
+<tool-use-id>toolu_01YQumWyyuXgUasgDpWXk3Gx</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/a2247ec5dae476161.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix #1153 CI failure" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**CI is fully green and the PR has merged.** `state: "MERGED"` — auto-merge (squash) fired as soon as this final run went green.
+
+## Round 5 — final report
+
+**Root cause (confirmed via downloaded artifacts, not guessed):** Downloaded `playwright-report` from run 30772437357 (`gh run download 30772437357 -n playwright-report`) and read `error-context.md` for both failing specs (`session.spec.ts:21` and `:51`). Both page snapshots showed the app **fully signed in on `/dashboard`** with the **"Welcome to DataQ" modal still open** and "Skip for now" active — execution never got past the dismiss step inside `signIn.complete()`. Critically, unlike every earlier `click()`-timeout in this PR, the error carried **no locator call log** — just `Test timeout of 90000ms exceeded.` — the signature of a hung plain `Promise`, not a retrying locator action. That pointed straight at `page.waitForResponse()`: despite its own explicit `{ timeout: 20_000 }` + `.catch(() =&gt; null)`, it never resolved within the full 90s budget, on two separate CI runs (30772079151, 30772437357), while passing every single time locally. This is the coordinator's hypothesis (3).
+
+**Fix:** Removed `page.waitForResponse()` and the `/me` network sync point entirely. Replaced it with pure UI polling: `locator.waitFor({ state: 'visible' })` achieves the same synchronization without depending on Playwright's response-event timing, and now **every** wait in the dismiss block carries its own explicit timeout (25s visible, 5s click, 5s hidden) so nothing can silently inherit and exhaust the whole project timeout.
+
+**Verified locally:** full OTP lane 11/11 green across **two consecutive runs** (own Postgres DB + SMTP sink + otp-mode api). Frontend Vitest suite 88/88 files, 869/869 tests. `typecheck`/`lint` clean.
+
+**Commit:** `21453ecc` on `feature/issue-1139-profile-completion`, pushed plain.
+
+**Final CI verdict (run 30773052591, watched to completion):** all 16 checks green — Backend tests/lint/type-check/SAST/audit, Frontend tests/lint/audit, both CodeQL languages, secret scanning, build, and **Frontend — browser E2E (Playwright) pass in 5m59s**. Auto-merge fired immediately; **PR #1153 is now merged**.</result>
+<usage><subagent_tokens>436630</subagent_tokens><tool_uses>31</tool_uses><duration_ms>758512</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a2247ec5dae476161</worktreePath><worktreeBranch>worktree-agent-a2247ec5dae476161</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7a47a9bc07d53871</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/a7a47a9bc07d53871.output</output-file>
+<status>completed</status>
+<summary>Agent "Docs batch: progress.md close-out" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR #1157 is open, milestone set correctly to "v1.1 Backlog", no auto-merge requested, as instructed.
+
+## Summary
+
+Opened **PR #1157**: https://github.com/TheurgicDuke771/DataQ/pull/1157
+
+Branch `docs/otp-followups-close` (off `origin/main`), worked entirely in the isolated worktree at `/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a7a47a9bc07d53871`.
+
+**File changed:** `/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a7a47a9bc07d53871/docs/progress.md` (also reflected at `/Users/arijit/Coding/Python/DataQ/docs/progress.md` once merged)
+
+Changes made to the ADR 0032 Backlog-track section (`### Backlog track — ADR 0032 email OTP sign-in`):
+- Updated the section header to note the follow-ups closed 2026-08-02/03 (+4 PRs, 15 total merged).
+- Added a new "Follow-ups" table with rows for PR #1153 (closes #1139 — first-login profile completion), #1154 (closes #1141 — otp/verify latency floor), #1155 (closes #1146 — mailer TLS/CA-bundle options), #1156 (closes #1147 — per-admin SMTP pre-flight throttle), plus rows for #1149 (closed as duplicate of #1150) and #1150 (in flight, no PR yet).
+- Refreshed the Snapshot table: `v1.1 Backlog` milestone open issues 31 → 26, repo-wide open issues 48 → 43 (both re-counted live via `gh issue list`/`gh pr list`, never decremented by hand), and updated the "Open PRs" row with the new merge batch.
+
+Checked CLAUDE.md §13 for staleness against these merges — found no references to #1139/#1141/#1146/#1147/#1149/#1150/#1153–#1156, and confirmed these are Backlog-track rows rather than the v1.1 cycle milestone headline, so **CLAUDE.md was left untouched**, matching the task's expectation.
+
+Also checked the open `epic`-labeled issue (#597, "v1.1 cycle") — its body doesn't reference any of these issue numbers, so no epic checklist needed ticking.
+
+Committed as `docs: progress — ADR 0032 follow-ups closed (#1153–#1156; #1149 dup-closed; #1150 in flight)` and pushed. The PR is docs-only, targets `main`, carries milestone `v1.1 Backlog`, has no auto-merge set, and its body documents the manual verification performed (gh-based recounts and PR/issue state checks) plus the checklist/N/A boxes ticked appropriately.</result>
+<usage><subagent_tokens>135164</subagent_tokens><tool_uses>58</tool_uses><duration_ms>386913</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a7a47a9bc07d53871</worktreePath><worktreeBranch>worktree-agent-a7a47a9bc07d53871</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac66d13235133760a</task-id>
+<tool-use-id>toolu_017qEhqN5W6W4xZh7upRE452</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/ac66d13235133760a.output</output-file>
+<status>failed</status>
+<summary>Agent "Implement #1150 eval OTP default" failed: Agent terminated early due to an API error: You've hit your session limit · resets 8:20pm (America/Vancouver)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>GitGuardian re-flags from branch history (a fixup can't purge it) — rebuilding the branch clean, per the recorded remedy:</result>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-ac66d13235133760a</worktreePath><worktreeBranch>worktree-agent-ac66d13235133760a</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>ac66d13235133760a</task-id>
+<tool-use-id>toolu_01W6MW47NNSKPsK7K8KCUAbF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/ac66d13235133760a.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1150 eval OTP default" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Reporting now — the three long-running CI jobs are still executing (all three pass locally); auto-merge is not armed, so nothing merges unattended.
+
+## PR: **#1159** — `feature/issue-1150-otp-default-eval-stack` (milestone `v1.1 Backlog`, auto-merge NOT armed)
+
+*(#1158 was the first attempt; closed and superseded — see "GitGuardian" below.)*
+
+### Design decisions
+
+**Mail catcher: Mailpit `v1.30.6`** (MIT, verified from `axllent/mailpit`'s own repo metadata — SPDX `MIT` — not a README claim; latest release 2026-07-28, actively maintained). Chosen over MailHog (also MIT, named in #1149) on a hard requirement: `OtpMailer` **always** performs an SMTP `AUTH` exchange, and MailHog advertises `AUTH` only when handed a bcrypt credential file — a credential in a tracked file (CLAUDE.md §11). Mailpit's `MP_SMTP_AUTH_ACCEPT_ANY` needs no file. MailHog is also unreleased since 2020.
+
+**Bypass opt-in: one switch, `DATAQ_SIGNIN_EMAIL`.** An address → OTP; **set-but-empty** → explicit dev-bypass downgrade; **unset** → compose refuses and names both (`${VAR?msg}`, not `:?`, is what distinguishes decision from omission). `setup.sh` prompts and writes it to the gitignored `.env`.
+
+**Two seams the design forced:** (1) the mailer has no "no password" path, so a one-shot `otp-mail-secret` service generates one into the in-memory vault on every `up`, **never overwriting an existing value**; (2) blank `AUTH_EMAIL_SMTP_PORT`/`TLS_MODE` now fall back to defaults instead of an int/`Literal` parse crash — the only two non-`str|None` keys in the block; fail-closed contract untouched (neither is in `_AUTH_EMAIL_REQUIRED`), pinned by test.
+
+### Live-validated vs config-validated
+
+**Live** (real stack, isolated project + remapped ports; the developer's own stack untouched): `otp/request` → code in the catcher inbox → `otp/verify` → session cookie → `/me` `is_workspace_admin: true` → `GET /suites` returns all 5 seeded suites. Downgrade path re-booted clean as `auth_dev_bypass_active`. **Security property verified rather than assumed:** with `AUTH_DEV_BYPASS=true` still set alongside a complete OTP block, `/me` with no credential answers **401** — dev-bypass does not leak through.
+
+**Config-validated:** `docker compose config` on both files across four states (OTP / empty / unset / real-relay override).
+
+### Three findings I fixed in-PR
+
+1. **Empty-workspace regression** (my own review pass; only a live sign-in could show it) — all seeded rows are owned by the dev-bypass identity, so signing in as yourself landed in an empty app against a README promising demo data. `seed_dev` now `edit`-shares each seeded suite with the allow-listed address (`edit` because admin/owner are ungrantable by design). 10 tests incl. "a suite owned by somebody else is never touched".
+2. **CodeQL 4× high** `py/clear-text-logging-sensitive-data` — the seeder printed the secret's *name*. Removed the flow rather than annotating it away.
+3. **The coordinator's finding — the real-relay escape hatch was structurally impossible.** `${VAR:+…}` still emits the key when empty and `environment:` beats `env_file:` unconditionally, so `.env.app` values were silently discarded and the operator landed in dev-bypass believing they'd configured OTP. **Fixed at the mechanism:** every value is now `${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_*:-&lt;default&gt;}}` (nesting verified against the real CLI first), so the switch still gates the whole block while the **root `.env`** genuinely overrides any key. Two adjacent holes closed in the same commit: `AUTH_OTP_ALLOWED_DOMAINS` is shadowed too (a stray value would have survived the downgrade into a *partial* block → crash, not fallback), and `migrate` now carries the same block as every other `Settings`-building service. Claim corrected in the compose header, `docker-compose.ghcr.yml`, `.env.app.example` and `docs/getting-started.md`, each with the TLS warning attached (the catcher default is `none`). Replied on the PR.
+
+### GitGuardian
+
+Flagged 1 secret and **re-fired in 1s after the fix commit** — it was reporting the earlier *commits*, not the tree. A fixup can't satisfy a history scanner and force-push is blocked, so the branch was rebuilt from `main` as a single commit under a new name (#1158 → #1159). GitGuardian now reports *"no secrets present in this pull request anymore."* Removed at source: a password-shaped literal in a test double, and the `AUTH_EMAIL_USERNAME`/`AUTH_EMAIL_PASSWORD_SECRET_NAME` adjacency in both compose files (the lesson already recorded in `scripts/e2e-otp-stack.sh`, now commented at both new sites).
+
+### Test evidence
+
+Black ✓ · Ruff ✓ · mypy 384 files ✓ · Bandit `-c pyproject.toml` 0 issues ✓ · betterleaks ✓ · pytest **3587 passed, 1 skipped, 97.07%** ✓ · ESLint ✓ · Prettier ✓ · Vitest **871 passed / 88 files** ✓ · shellcheck clean on `setup.sh` · `setup.sh` prompt exercised in a sandbox (no-TTY default, idempotent re-run, env-var input trimmed, pre-existing value preserved). CI: **12 green**, 3 long jobs (backend tests, frontend tests, Playwright) still running — all three pass locally.
+
+### Untouched, as required
+
+`.github/workflows/`, `frontend/playwright.config.ts`, `frontend/e2e-otp/`, `scripts/e2e-otp-stack.sh`, `deploy/README.md` — verified by empty diff.
+
+### Deferred / noted
+
+- Restarting the **vault alone** drops the generated SMTP password → sign-in 503 until the next `docker compose up`. Same class as the pre-existing "vault restart drops connection credentials"; called out in the compose comment.
+- `docs/progress.md` updated: ADR-0032 track row + snapshot re-count 31/48 → **25/42** (absorbing #1153–#1156, which had no rows).</result>
+<usage><subagent_tokens>417567</subagent_tokens><tool_uses>39</tool_uses><duration_ms>566902</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-ac66d13235133760a</worktreePath><worktreeBranch>worktree-agent-ac66d13235133760a</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+Hey, what the progress?
+
+---
+
+<task-notification>
+<task-id>a2247ec5dae476161</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/a2247ec5dae476161.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix #1153 CI failure" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The CI re-run of 30773569973 (OTP Playwright job) is still in progress. While waiting, I've been auditing the application code the two flaky specs exercise:
+
+- **Session revocation is synchronous and durable server-side** (`session_service.revoke()` commits before `POST /auth/logout` returns 204, and the endpoint clears the cookie in the same response) — this effectively rules out hypothesis (2) from the issue (revocation not taking effect).
+- **The axios 401 interceptor → `notifySessionInvalidated()` → `OtpSessionProvider` wiring looks sound** — no obvious app-side race.
+- **New leading hypothesis found by code review**: `complete()`'s modal-dismiss block wraps `waitFor(visible) → click → waitFor(hidden)` in a single `try/catch`. If the modal genuinely becomes visible but the click or close-wait then fails for any transient reason, the catch swallows it silently and `complete()` returns with the profile-completion modal **still open**. This is invisible to `session.spec.ts:21` (which does a full `page.goto()` reload right after, wiping any stray modal) but would directly explain `:51` and `:71`, whose first action after `complete()` is an in-DOM click (Suites link / email menu) that a leftover modal mask would block — matching the exact `ant-modal-wrap intercepts pointer events` signature seen in every prior round's artifacts.
+
+I'll confirm this against the actual run-30773569973 artifact once the job finishes, then implement the fix (tightening the dismiss so a genuine failure there isn't swallowed, plus an explicit server-side-revocation confirmation poll per the coordinator's suggestion) rather than guessing further. Waiting for the background watch task to report completion before proceeding.</result>
+<usage><subagent_tokens>459483</subagent_tokens><tool_uses>36</tool_uses><duration_ms>456621</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a2247ec5dae476161</worktreePath><worktreeBranch>worktree-agent-a2247ec5dae476161</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bf8xbef4n</task-id>
+<summary>Monitor event: "PRs 1157+1159: merge/conflict state watch"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2247ec5dae476161</task-id>
+<tool-use-id>toolu_015ey9A2XiuHqU7nb3ooHHGu</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/a2247ec5dae476161.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix #1153 CI failure" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>CI kicked off (run 30786514095). Since the task didn't require watching this one to completion (only landing the fix, no auto-merge requested), I'll report the current state.
+
+## Summary — Issue #1160, PR #1161
+
+**Root cause:** Confirmed via the CI artifact (downloaded `playwright-report` from run 30773569973, read `error-context.md` for both `session.spec.ts:51` and `:71`). Both page snapshots showed the "Welcome to DataQ" profile-completion prompt sitting **open and pristine** (empty input, untouched Skip button) for the entire 90s test budget — with `157 × ... retrying click action ... waiting 500ms` on the downstream click, confirming the modal blocked it for essentially the whole run, every time (near-100% reproduction across 4 CI runs on two different PRs, per the coordinator's update).
+
+`signIn.complete()`'s dismiss step (from PR #1153) waited only 25s for the prompt to become visible before swallowing a timeout and returning "successfully." On CI's slower/shared hardware, `MeProvider`'s separate `/me` fetch (which the prompt's visibility depends on) apparently sometimes takes longer than that — so the wait gave up *before* the prompt rendered, then the prompt appeared moments later and sat there blocking whatever the spec clicked next, a full minute downstream from the real cause. This never reproduced locally (even matching CI's exact `--workers=1` concurrency) because `/me` resolves in under a second on this hardware every time — consistent with a hardware-latency gap, not a logic bug.
+
+**Fix:**
+1. Removed the fixed sub-budget and the swallowing try/catch entirely. With no `timeout` option and no `use.actionTimeout` configured, a Playwright locator action is bounded only by the test's own 90s project timeout, so the wait now polls for as long as the test legitimately can — and a genuine failure now points straight at "the prompt never rendered" instead of a misleading downstream click failure. No sleeps, no budget raises — this removes an arbitrary early give-up rather than adding a bigger number.
+2. Added a shared `revokeServerSide()` helper in `session.spec.ts` that polls the old session token against `GET /me` until it observably 401s before either revocation spec drives the UI — defense-in-depth per the issue's suspect list, confirming the revocation is observable rather than merely inferred from the 204 (code inspection shows `session_service.revoke()` already commits synchronously before the response, so this wasn't the root cause, but it removes all residual doubt).
+
+**Verified locally:** real backend stack (own Postgres DB, migrations applied, SMTP sink + otp-mode api), matching CI's exact concurrency (`CI=1 --workers=1`) — **11/11 green across two consecutive runs**. Frontend Vitest suite unaffected (only `frontend/e2e-otp/` touched): 88/88 files, 869/869 tests. `typecheck`/`lint`/`prettier` all clean.
+
+**PR:** [#1161](https://github.com/TheurgicDuke771/DataQ/pull/1161) — `test(e2e-otp): make the session-revocation specs deterministic (#1160)`, `Fixes #1160`, milestone **v1.1 Backlog**, auto-merge **not** armed (confirmed `autoMergeRequest: null`). CI run 30786514095 just kicked off on the PR.</result>
+<usage><subagent_tokens>567869</subagent_tokens><tool_uses>58</tool_uses><duration_ms>870177</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a2247ec5dae476161</worktreePath><worktreeBranch>worktree-agent-a2247ec5dae476161</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+CI failed
+
+---
+
+why the playwright failing so many times? are you not testing it locally before CI?
+
+---
+
+<task-notification>
+<task-id>a2247ec5dae476161</task-id>
+<tool-use-id>toolu_019hA7Bo9zHMHsghdbmGQTcQ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/a2247ec5dae476161.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix #1153 CI failure" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>CI run 30788094636 kicked off on PR #1161.
+
+## Report
+
+**What the artifact actually showed (round 2, run 30786514095):** I downloaded `playwright-report` and read `error-context.md` for all 9 failure attempts (3 retries × 3 specs — `:21`, `:50`, `:70` all failed this time). **Every single one** hit the identical signature:
+
+```
+Error: locator.waitFor: Test timeout of 90000ms exceeded.
+  - waiting for getByRole('button', { name: 'Skip for now' }) to be hidden
+      177 × locator resolved to visible &lt;button ...&gt;...&lt;/button&gt;
+```
+
+This **contradicts** the coordinator's specific hypothesis. The prompt reliably *appears* (the unbounded `waitFor(visible)` from round 1 never itself times out — execution always gets past it), and the click *does* execute (we reach the `hidden`-wait line). But the same button then stays visible for the entire 90s budget, every time. I also checked the "shared identity across specs" angle directly: all three session specs already call `freshEmail('revoked')` / `freshEmail('midsession')` / `freshEmail('signout')` — distinct, uniquely-suffixed addresses — so there's no shared per-email DB state to decouple; that part of the hypothesis doesn't apply here.
+
+**Root cause (best-supported explanation, not directly reproduced locally):** the click on "Skip for now" doesn't reliably close the modal on CI's shared runner — most consistent with a stale DOM node getting swapped out from under a single click-and-wait, which a retry naturally heals but a one-shot click cannot.
+
+**Fix:** replaced the single `click()` + single `waitFor({state:'hidden'})` with a retry loop:
+```js
+await expect(async () =&gt; {
+  await skipPrompt.click();
+  await expect(skipPrompt).toBeHidden({ timeout: 500 });
+}).toPass();
+```
+This re-runs the click against the *current* DOM each attempt (not a stale locator resolution), with a short 500ms inner timeout so retries happen every beat rather than once per `expect.timeout`. Still no sleeps, still no budget raise — `toPass()` has no explicit timeout, bounded only by the test's own 90s budget, same discipline as round 1.
+
+**Verified locally:** full OTP lane run **twice back-to-back against the same database with no reset between runs** (state-persistence coupling check) — 11/11 both times, matching CI's exact `--workers=1` concurrency. A third run at default multi-worker parallelism — also 11/11. Frontend Vitest suite unaffected: 88/88 files, 869/869 tests. `typecheck`/`lint`/`prettier` all clean.
+
+**Pushed:** commit `1f736b1b` to the existing `fix/issue-1160-otp-session-spec-flake` branch (plain push, no force). CI run [30788094636](https://github.com/TheurgicDuke771/DataQ/actions/runs/30788094636) just started on PR [#1161](https://github.com/TheurgicDuke771/DataQ/pull/1161).</result>
+<usage><subagent_tokens>610315</subagent_tokens><tool_uses>28</tool_uses><duration_ms>520087</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a2247ec5dae476161</worktreePath><worktreeBranch>worktree-agent-a2247ec5dae476161</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b6aqq325s</task-id>
+<tool-use-id>toolu_01Li6VQTbJ7TUgud1xjYmHLL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/b6aqq325s.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR 1161 to merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bg6el5wbk</task-id>
+<summary>Monitor event: "Final wave: 1157+1159 merge watch"</summary>
+<event>1157=OPEN/MERGEABLE 1159=OPEN/MERGEABLE</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bg6el5wbk</task-id>
+<summary>Monitor event: "Final wave: 1157+1159 merge watch"</summary>
+<event>1157=MERGED/UNKNOWN 1159=OPEN/CONFLICTING</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac66d13235133760a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/ac66d13235133760a.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1150 eval OTP default" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Exactly the intended delta — #1157's content is preserved, only the `🟡 in flight` placeholder is replaced.
+
+## Merge reconciliation — done. Push SHA: **`ef15080f`**
+
+PR **#1159** is now `MERGEABLE` (status `BLOCKED` only because CI is rerunning; auto-merge is armed and will land it when green).
+
+### How the conflict was resolved — kept both sets of content
+
+`docs/progress.md` conflicted in two hunks:
+
+**1. The ADR-0032 track section.** #1157 added a whole new **"Follow-ups (2026-08-02/03)"** table; my branch had appended a `#1150` row plus a trailing `⬜ Track closed` row to the *previous* table. Resolution:
+- #1157's follow-ups table survives **intact** — rows for #1153/#1154/#1155/#1156 and the #1149 dup-close note, untouched.
+- Its `🟡 #1150 … in flight` placeholder row is **replaced** by my finished `✅ #1150` row, pointing at PR **#1159**. That's the only line of #1157's table that changed.
+- My trailing `⬜ Track closed` row is **dropped** — #1157's section supersedes it and already records #1139, so keeping it would have duplicated the claim.
+- **Added a row for #1160/#1161** (e2e-otp session-revocation flakes, test-only) — the table's format has a natural place for it and it landed in the same window.
+
+**2. The Snapshot.** Both PRs had rewritten the counts. Took #1157's rows as the base and appended a re-count note.
+
+### Snapshot re-counted live, not derived
+
+```
+gh issue list --milestone 'v1.1 Backlog' --state open  →  26
+gh issue list --state open                             →  43
+```
+
+**Unchanged from #1157's figures** — #1160 was filed *and* closed the same day by #1161, so it nets to zero. My branch's earlier `25 / 42` was the *post-merge* figure and was therefore wrong as a current count; it's corrected to `26 / 43` with the note that #1159 takes it to 25 / 42 on merge, and an explicit "counted with `gh issue list`, not arithmetic" marker so the next reader can tell the two apart.
+
+### Coherence verified
+
+One `**Open issues**` row, one `**Open PRs**` row, one follow-ups table, one `#1150` row, zero conflict markers. Also fixed a latent rendering bug my own row carried in: a bare `|` inside `` `str|None` `` would have split the cell into a phantom fourth column — now escaped as `str \| None`.
+
+### One wrinkle worth flagging
+
+A concurrent **"Update branch"** merge (`5941c133`) had already been pushed to the remote branch while I was resolving — it merged main *as of #1161*, i.e. **before** #1157, so it never saw the conflict. My push was rejected as non-fast-forward. I merged that remote commit into my local resolution and pushed plainly (**no force-push** — the classifier blocks it, and rewriting a branch under review is the wrong move regardless). Net result is one reconciled history; the diff of `docs/progress.md` against `origin/main` is exactly the three lines above.
+
+### Re-validated after the merge
+
+`docker compose config` green on **both** files across all four states (OTP / switch-empty / unset-refuses / real-relay override rendering `smtp.corp.com` + `starttls`); frontend ESLint + Prettier clean. Backend is untouched by this merge (the only incoming code was #1161's `frontend/e2e-otp` fixture/spec changes, which merged without conflict).</result>
+<usage><subagent_tokens>414006</subagent_tokens><tool_uses>33</tool_uses><duration_ms>319123</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-ac66d13235133760a</worktreePath><worktreeBranch>worktree-agent-ac66d13235133760a</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bg6el5wbk</task-id>
+<summary>Monitor event: "Final wave: 1157+1159 merge watch"</summary>
+<event>1157=MERGED/UNKNOWN 1159=OPEN/MERGEABLE</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bg6el5wbk</task-id>
+<summary>Monitor event: "Final wave: 1157+1159 merge watch"</summary>
+<event>1157=MERGED/UNKNOWN 1159=MERGED/UNKNOWN</event>
+</task-notification>
+
+---
+
+Deploy the latest changes to Prod and make sure all docs including github pages are up to date with the current state of the repo [latest commit on main]. 
+Also prune all dead worktrees, local and remote git branches that are not needed anymore.
+
+---
+
+<task-notification>
+<task-id>bf9wty12c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/bf9wty12c.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch Deploy workflow to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aaf0b9cc5accaeb47</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/aaf0b9cc5accaeb47.output</output-file>
+<status>completed</status>
+<summary>Agent "Docs freshness audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Audit report
+
+**Scope:** main tip `bb40f0b7` (OTP follow-up wave: PRs #1153–#1157, #1159, #1161; issues #1139/#1141/#1146/#1147/#1149/#1150/#1160 closed), plus a coordinator addendum (prod redeploy + `deploy/README.md` checklist staleness).
+
+### Findings by file
+
+- **`CLAUDE.md` §13 "Next milestone"** — 🔴 stale. Last touched 2026-08-01 (W5 close-out); had zero mentions of the ADR-0032 OTP sign-in track (umbrella #738, 11 PRs, closed 2026-08-02) or its follow-up/OTP-by-default wave (#1139–#1161). **Fixed.**
+- **`CLAUDE.md` §13 "Active blockers"** — 🔴 stale. Referenced 12 issues as "open by choice"; `gh issue view` confirmed 11 of 12 (`#563/#568/#571/#573/#372/#349/#351/#197/#199/#204/#194/#195`) are actually closed — only `#327` is genuinely open. **Fixed.**
+- **`CLAUDE.md` §13 prod-redeploy sha** — 🔴 stale per coordinator addendum. Still named `c401572d`/2026-07-26; prod redeployed again to `bb40f0b7` today (Deploy run 30789647178, verified via `gh run view` — success, matching headSha). **Fixed.**
+- **`docs/adr/README.md`** — clean. ADR 0032/0033 rows present and current; cross-links bidirectional (0026↔0032, 0027↔0033, 0028↔0032). No new ADR needed for the OTP-wave build PRs (they implement the already-Accepted ADR 0032). No dangling refs, no missing rows.
+- **`README.md`** — clean. Quickstart already matches the OTP-by-default flow from #1159.
+- **`docs/getting-started.md`** — clean. Last touched by #1159 itself; internally consistent, no stale bypass-default claims.
+- **`docs/mcp-setup.md`** — clean. PAT-only otp-mode note from #1151 present and accurate.
+- **`docs/feature-matrix.md`** — clean. MCP row states OTP/PAT-only correctly, last touched by #1151.
+- **`.github/workflows/docs.yml`** — clean. Last run on `bb40f0b7` green; publishes only `docs/**`, all verified current above.
+
+**Flagged, not fixed (outside this agent's write scope — `docs/adr/*`, `docs/adr/README.md`, CLAUDE.md §13 only, CONTRIBUTING.md append-only):**
+1. `deploy/README.md`'s post-deploy smoke checklist still says `/docs`/`/redoc`/`/openapi.json` → 404; stale since the ADR 0028 §5 cutover (those paths now hit the frontend SPA catch-all and return 200/`index.html`). Needs a docs-write-capable agent.
+2. CLAUDE.md §9 ADR count ("0001–0039") is behind the actual index (now 0040); §1/Appendix "Auth" rows omit the shipped `otp`/PAT authenticator; §8 "Local dev quickstart" is stale Week-1 boilerplate. All outside the §13-only permission.
+
+### Verdict
+
+**Block → now Conditional-fixed.** 4 hard/stale findings within scope, all corrected in one PR; 2 additional findings identified but require broader write permissions than this agent holds.
+
+**PR:** https://github.com/TheurgicDuke771/DataQ/pull/1162 — branch `docs/post-otp-wave-freshness` off `origin/main`, milestone `v1.1 Backlog`, no auto-merge, 2 commits.
+
+Relevant files: `/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aaf0b9cc5accaeb47/CLAUDE.md`, `/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aaf0b9cc5accaeb47/docs/adr/README.md`, `/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aaf0b9cc5accaeb47/README.md`, `/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aaf0b9cc5accaeb47/docs/getting-started.md`, `/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aaf0b9cc5accaeb47/docs/mcp-setup.md`, `/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aaf0b9cc5accaeb47/docs/feature-matrix.md`, `/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aaf0b9cc5accaeb47/.github/workflows/docs.yml`, `/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aaf0b9cc5accaeb47/deploy/README.md` (flagged only, not written).</result>
+<usage><subagent_tokens>173858</subagent_tokens><tool_uses>55</tool_uses><duration_ms>499733</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aaf0b9cc5accaeb47</worktreePath><worktreeBranch>worktree-agent-aaf0b9cc5accaeb47</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a576e2de35dc5d402</task-id>
+<tool-use-id>toolu_013XVXw33yr2YThweBwzJBwN</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/a576e2de35dc5d402.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix cross-doc inconsistencies" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll wait for the background review agents to report their findings before continuing.</result>
+<usage><subagent_tokens>272379</subagent_tokens><tool_uses>107</tool_uses><duration_ms>1039593</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a576e2de35dc5d402</worktreePath><worktreeBranch>worktree-agent-a576e2de35dc5d402</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a576e2de35dc5d402</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d251b586-240a-4781-b592-ea5c0d600b47/tasks/a576e2de35dc5d402.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix cross-doc inconsistencies" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Waiting for the background review agents to respond with their findings.</result>
+<usage><subagent_tokens>244631</subagent_tokens><tool_uses>115</tool_uses><duration_ms>1110729</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a576e2de35dc5d402</worktreePath><worktreeBranch>worktree-agent-a576e2de35dc5d402</worktreeBranch></worktree>
+</task-notification>
