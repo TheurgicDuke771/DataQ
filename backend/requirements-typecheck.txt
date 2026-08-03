@@ -14,7 +14,7 @@
 #     typecheck-deps-sync pre-commit hook AND in CI's backend-lint job).
 
 fastapi==0.139.2
-fastapi-azure-auth==5.2.0
+fastapi-azure-auth==5.3.0
 fastmcp==3.4.4
 psycopg2-binary==2.9.12
 pydantic==2.13.4

@@ -45,7 +45,7 @@ azure-monitor-opentelemetry-exporter==1.0.0b55   # Azure backend for spans + log
 opentelemetry-exporter-otlp-proto-http==1.43.0   # generic OTLP/HTTP backend for spans + logs (#589) — any OTLP consumer (Tempo/Jaeger/Datadog), vendor-neutral (ADR 0010)
 
 # ── Auth / secrets ──
-fastapi-azure-auth==5.2.0
+fastapi-azure-auth==5.3.0
 msal==1.37.0                      # ≥1.34 lifts the cryptography<47 cap → unblocks cryptography≥48 (#274)
 azure-keyvault-secrets==4.11.0
 azure-identity==1.25.3
