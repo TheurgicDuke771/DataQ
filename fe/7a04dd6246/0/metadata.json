@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "fe7a04dd6246",
+  "session_id": "95e0f299-cdf9-4be1-9c98-0bc57791b0bd",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-05T01:07:07.411209Z",
+  "branch": "fix/audit-gates-brace-expansion-undici-cryptography",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/package.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5",
+  "turn_id": "1a2922850189",
+  "checkpoint_transcript_start": 344,
+  "transcript_lines_at_start": 344,
+  "compact_transcript_start": 89,
+  "token_usage": {
+    "input_tokens": 23,
+    "cache_creation_tokens": 16947,
+    "cache_read_tokens": 2176205,
+    "output_tokens": 10298,
+    "api_call_count": 12
+  },
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-05T01:07:07.367361Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 1,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 1,
+    "total_lines_changed": 3,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
