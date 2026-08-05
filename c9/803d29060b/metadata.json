@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "c9803d29060b",
+  "strategy": "manual-commit",
+  "branch": "fix/audit-gates-brace-expansion-undici-cryptography",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/package.json",
+    "frontend/scripts/audit_bulk.cjs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c9/803d29060b/0/metadata.json",
+      "transcript": "/c9/803d29060b/0/full.jsonl",
+      "compact_transcript": "/c9/803d29060b/0/transcript.jsonl",
+      "content_hash": "/c9/803d29060b/0/content_hash.txt",
+      "prompt": "/c9/803d29060b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 51,
+    "cache_creation_tokens": 30990,
+    "cache_read_tokens": 4488803,
+    "output_tokens": 16325,
+    "api_call_count": 28
+  }
+}
