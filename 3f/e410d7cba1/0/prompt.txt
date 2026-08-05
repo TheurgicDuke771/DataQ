@@ -1,0 +1,78 @@
+<task-notification>
+<task-id>bzwiconqf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/95e0f299-cdf9-4be1-9c98-0bc57791b0bd/tasks/bzwiconqf.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI to finish on PR 1178" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae252df870d0779e7</task-id>
+<tool-use-id>toolu_01Jg7gwhmrToy8vuoGZxsovV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/95e0f299-cdf9-4be1-9c98-0bc57791b0bd/tasks/ae252df870d0779e7.output</output-file>
+<status>completed</status>
+<summary>Agent "Review deps audit-gate PR" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Reviewing
+
+PR #1178, branch `fix/audit-gates-brace-expansion-undici-cryptography`, commits `23d35fc1` + `039d6bf9` vs `main` `73edcdc5`:
+- `/Users/arijit/Coding/Python/DataQ/frontend/package.json`
+- `/Users/arijit/Coding/Python/DataQ/frontend/pnpm-lock.yaml`
+- `/Users/arijit/Coding/Python/DataQ/frontend/scripts/audit_bulk.cjs`
+- `/Users/arijit/Coding/Python/DataQ/backend/requirements.txt`
+
+---
+
+## Important (80–89)
+
+### 1. `brace-expansion@5` override has no ceiling — the one override in the file that lacks one, and the commit message claims otherwise (confidence 88)
+
+`/Users/arijit/Coding/Python/DataQ/frontend/package.json:68`
+
+```json
+"brace-expansion@1": "&gt;=1.1.18 &lt;2",
+"brace-expansion@5": "&gt;=5.0.9",      ← no upper bound
+"dompurify":         "&gt;=3.4.12 &lt;4",
+"js-yaml":           "&gt;=4.3.0 &lt;5",
+"undici":            "&gt;=7.29.0 &lt;8",
+```
+
+Four of the five overrides carry a ceiling; `brace-expansion@5` does not. This is exactly the #971 failure mode ("an open-ended `js-yaml: "&gt;=4.3.0"` let pnpm resolve onto the 5.x major"), and commit `23d35fc1` explicitly asserts the opposite:
+
+&gt; Bumps the bounded overrides accordingly (**ceilings kept** — an open-ended range is what let js-yaml jump a major in #971).
+
+The `@5` in the key is **not** the bound. It is a selector over the *declaring* dependency's range, not over the resolved output — which the adjacent line proves: if the key selector bounded resolution, the `&lt;2` in `"brace-expansion@1": "&gt;=1.1.18 &lt;2"` would be redundant. It isn't, and the author wrote it there but omitted the equivalent on the very next line.
+
+Blast radius is concrete, not theoretical. `minimatch@10.2.5` declares `brace-expansion: ^5.0.5` (verified on the registry); the override rewrites that edge to `&gt;=5.0.9`. When `brace-expansion@6.0.0` publishes, pnpm resolves `minimatch@10` onto a major it never declared. brace-expansion ships majors at a real cadence (1→2→3→4→5 all live, per its registry doc), and its 5.0.0 major is precisely the one that dropped the default export and produced `TypeError: expand is not a function` in `minimatch@3` — the breakage #969 was created to record.
+
+Git history confirms this is not new — `brace-expansion@5` has been unbounded since #971 (`0f1699e1`) — but per the project's "pre-existing is not a disposition" rule, and since this PR edits that exact line while re-asserting the ceiling claim, it should be closed here.
+
+**Fix:** `"brace-expansion@5": "&gt;=5.0.9 &lt;6"`. Re-run `pnpm install --lockfile-only` and `node scripts/audit_bulk.cjs --audit-level=high` to confirm the lockfile is unchanged (it should be — 5.0.9 is current `latest`).
+
+---
+
+## Verified clean
+
+**1. Security posture — correct, and verified against the endpoint the gate actually queries.** `GHSA-mh99-v99m-4gvg` does list `first_patched = 1.1.17` on the 1.x line (`gh api /advisories/GHSA-mh99-v99m-4gvg` → `{"vuln_range":"&lt; 1.1.17","patched":"1.1.17"}`), so the waiver's premise is genuinely dead. The new floors clear both advisories on both lines: mh99 (`&lt;1.1.17` / `&gt;=4.0.0,&lt;5.0.8`) and `GHSA-rgw5-rvv9-x895` (`&lt;1.1.18` / `&gt;=4.0.0,&lt;5.0.9`) are both satisfied by 1.1.18 / 5.0.9.
+
+This mattered more than the GitHub API alone shows: #969 recorded that **npm's** copy of mh99 declared one unsplit `&lt;=5.0.7` range, which semver-swallows all of 1.x (`1.1.18` satisfies `&lt;=5.0.7`). Had npm not re-split it, removing the waiver would have red-lined the gate. I POSTed the real bulk endpoint (`registry.npmjs.org/-/npm/v1/security/advisories/bulk`) with `brace-expansion` 1.1.18/5.0.9 and `undici` 7.29.0 — **zero advisories returned**. The split has landed; the removal is safe.
+
+**#968 is still valid and non-stale:** `react-router@7.18.1` is locked, the advisory range is `&gt;=7.12.0 &lt;8.3.0`, and the only patch remains 8.3.0 — still a major. The bulk endpoint returns it, so it will be matched and waived, and the stale check will pass.
+
+**2. Stale-entry mechanism — removal is required, and the comment is accurate.** With 1.1.18/5.0.9 locked, mh99 matches nothing (confirmed empirically above), so `waived` would never contain the entry, `stale` (`audit_bulk.cjs:212`) would be non-empty, and the script exits 2. The comment's "it would have exited 2" is correct, not rhetorical. Removing the entry does not affect the remaining one — `stale` is computed by object identity over `ALLOWLIST` members, and the react-router waiver still matches and is still added to `waived`.
+
+One thing worth carrying, not a defect: #969's *title* condition ("once eslint's transitive `minimatch@3` is gone") is **not** met — `minimatch@3.1.5` is still in the lockfile — and its body says "the `brace-expansion@1` override **and** the ALLOWLIST entry both become dead weight." Only the entry is removed here; the `brace-expansion@1` override is correctly retained and is what pins 1.1.18. Closing #969 is still right (its deliverable is done), but anyone reading the closed issue later could mistake the retained override for leftover dead weight and delete it. Worth one line in the closing comment.
+
+**3. Lockfile consistency — clean.** No occurrence of `1.1.16`, `5.0.8`, or `7.28.0` anywhere in `pnpm-lock.yaml` or `package.json`. The diff is exactly the three packages plus their consumers (`minimatch@3.1.5`, `minimatch@10.2.5`, jsdom's `undici`), with integrity hashes and both the `packages:` and `snapshots:` sections updated consistently. No collateral resolution changes.
+
+**4. Backend resolution — safe, and the "no pin" call is right.** I ran a real resolve (`pip install --dry-run --ignore-installed --report`) over `backend/requirements.txt`: **exit 0**, 171 packages, selecting `cryptography==50.0.0` + `pyOpenSSL==26.4.0`. Confirmed `pyOpenSSL 26.3.0` declares `cryptography&lt;50,&gt;=49.0.0` and `26.4.0` lifts it to `&lt;51`, exactly as the inline comment says. No pinned direct dep caps cryptography below 50 — `msal 1.37.0`'s `cryptography&lt;51,&gt;=2.5` is the tightest and still holds; GX, fastapi-azure-auth, azure-identity/storage-blob are all open-ended floors. Adding a `pyOpenSSL` pin would put a transitive into a file documented as the source of truth for *direct* deps, to work around a cap we don't own — the commit's reasoning for leaving it out is sound.
+
+**No `typecheck-deps-sync` impact.** `cryptography` appears in neither `backend/requirements-typecheck.txt` nor the mypy hook's `additional_dependencies` in `.pre-commit-config.yaml`, so `scripts/check-typecheck-deps.py` compares an unchanged pair. Nothing else in the repo pins cryptography or pyOpenSSL (CI's only mention is a comment noting the old ignores were retired in #553).</result>
+<usage><subagent_tokens>104084</subagent_tokens><tool_uses>25</tool_uses><duration_ms>316017</duration_ms></usage>
+</task-notification>
+
+---
+
+go ahead merge the PRs in order
