@@ -1,0 +1,6 @@
+Hey, there is a npm supply chain attach `ChainDrop`. 
+Can you check if we are impacted?
+
+---
+
+No leave it, add a entry in @docs/progress.md  similar to `Upstream 0-day triage — bikini/exploitarium (2026-07-24)`
