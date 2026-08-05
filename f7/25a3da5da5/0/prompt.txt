@@ -1,0 +1,48 @@
+<task-notification>
+<task-id>a55a98d9c1ab2dedb</task-id>
+<tool-use-id>toolu_01YRz3gdSB9afdj2oR82mavV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/95e0f299-cdf9-4be1-9c98-0bc57791b0bd/tasks/a55a98d9c1ab2dedb.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit ChainDrop doc entry" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All checks complete. Findings below.
+
+## Audit: docs/chaindrop-supply-chain-triage (PR #1177, commit 50454900)
+
+### 1. Factual claims vs repo — all verified, no defects found
+
+- `frontend/node_modules/eslint/package.json` (v9.39.4) declares `"file-entry-cache": "^8.0.0"` — confirmed.
+- `frontend/pnpm-lock.yaml` — `keyv@4.5.4` (lines 1830/4582), `flat-cache@4.0.1` (lines 1494/4236), `file-entry-cache@8.0.0` (lines 1486/4227) — confirmed. Chain also confirmed at lines 4227-4239: `eslint@9.39.4 → file-entry-cache@8.0.0 → flat-cache@4.0.1 → keyv@4.5.4`.
+- `.github/workflows/ci.yml` — three `pnpm install --frozen-lockfile` (lines 273, 302, 419) and one `npm install --prefix scripts --no-save --no-package-lock semver@7.8.5` (line 511) — confirmed. `npm view semver@7.8.5 dependencies` returns empty — "dependency-free" is accurate.
+- `git log -1 --format=%H%ad -- frontend/pnpm-lock.yaml` → `2cf4f791...` dated 2026-07-27 — confirmed exact.
+- `.mcp.json` — `@upstash/context7-mcp@1` (major pin), `@azure/mcp@3.0.0-beta.29` (exact pin) — confirmed, matches CLAUDE.md's own appendix description.
+- The 12 open PRs (#1165–#1176), the 7/5 backend-actions/frontend-npm split, and the "5 npm PRs, none touching keyv/flat-cache/file-entry-cache/cacheable, none bumping eslint" claim — all verified live against `gh pr list` and `gh pr diff` for #1168/#1172/#1173/#1175/#1176 (only unrelated `eslint`-adjacent context lines appear; no `+`/`-` diff line touches any of the named packages or bumps eslint itself).
+
+### 2. Internal consistency — no defect
+
+- Computed the actual GitHub slug for the heading `### Upstream supply-chain triage — \`ChainDrop\` npm worm (2026-08-04)` via `github-slugger` (the library GitHub's renderer uses): `upstream-supply-chain-triage--chaindrop-npm-worm-2026-08-04`. This matches the anchor used in the Snapshot row exactly (`docs/progress.md:28`).
+- The new table (`docs/progress.md:128-132`) is well-formed: header + separator + 3 data rows, each with 4 columns (6 pipe-delimited fields including the leading/trailing empty ones). No stray unescaped `|` inside cells.
+
+### 3. Cross-document staleness
+
+**CLAUDE.md §13 / Active blockers / open-issue register: no contradiction.** `CLAUDE.md:296` says "Active blockers: none" and points readers to `docs/progress.md`'s Snapshot table for the "open-issue register" (issues, not PRs). This change doesn't touch the Open-issues row or the issue count, and correctly leaves it alone — no staleness introduced.
+
+**Standing-decisions table — yes, this triage warrants a row, and its absence is a real gap.** `docs/progress.md:150-161` ("Standing decisions of record &amp; guardrails") is exactly where the *earlier* bikini/exploitarium triage put its two ongoing, re-checkable risk-acceptance items (line 159: Redis pinned to 7.x "until the RCE is fixed upstream," referencing "the 0-day triage note above"; line 160: single-role Postgres mitigation). The ChainDrop note has the identical shape of decision buried in prose instead of indexed: "the protection is a caret range, not a pin... the next ESLint major is the event to re-check this note against" plus "hardening... was considered and consciously not taken" (`docs/progress.md:142`). As written, that trigger condition is discoverable only by reading the full narrative section — it isn't indexed the way the Redis-7.x decision is, breaking the parallelism the table exists to provide. Recommend adding a row such as: `| ESLint's file-entry-cache stays on an unpinned caret (^8) until the next ESLint major bump — re-check the ChainDrop chain then (hardening: min-release-age policy, --ignore-scripts, exact-pinning were considered and declined) | #1177 + the ChainDrop triage note above |`.
+
+### 4. Markdown/link hygiene — no defects in the added lines
+
+No broken links, no malformed table syntax, no stray pipes, anchor resolves correctly (see #2).
+
+### Verdict
+
+No hard violations. One 🟡 concern: the ChainDrop triage's ongoing risk-acceptance/re-check-trigger content should be mirrored into the "Standing decisions of record &amp; guardrails" table (`docs/progress.md:150-161`) for consistency with how the bikini/exploitarium triage was indexed — not blocking, but should be added before this pattern repeats again and drifts further.
+
+**Files referenced:**
+- `/Users/arijit/Coding/Python/DataQ/docs/progress.md` (lines 27-28, 105-142, 150-161)
+- `/Users/arijit/Coding/Python/DataQ/frontend/pnpm-lock.yaml` (lines 1486, 1494, 1830, 4227-4239, 4582)
+- `/Users/arijit/Coding/Python/DataQ/frontend/node_modules/eslint/package.json`
+- `/Users/arijit/Coding/Python/DataQ/.github/workflows/ci.yml` (lines 273, 302, 419, 511)
+- `/Users/arijit/Coding/Python/DataQ/.mcp.json`
+- `/Users/arijit/Coding/Python/DataQ/CLAUDE.md` (line 296)</result>
+<usage><subagent_tokens>89941</subagent_tokens><tool_uses>30</tool_uses><duration_ms>213720</duration_ms></usage>
+</task-notification>

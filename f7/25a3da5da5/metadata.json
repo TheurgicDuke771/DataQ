@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "f725a3da5da5",
+  "strategy": "manual-commit",
+  "branch": "docs/chaindrop-supply-chain-triage",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f7/25a3da5da5/0/metadata.json",
+      "transcript": "/f7/25a3da5da5/0/full.jsonl",
+      "compact_transcript": "/f7/25a3da5da5/0/transcript.jsonl",
+      "content_hash": "/f7/25a3da5da5/0/content_hash.txt",
+      "prompt": "/f7/25a3da5da5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 24287,
+    "cache_read_tokens": 2319304,
+    "output_tokens": 13602,
+    "api_call_count": 18
+  }
+}
