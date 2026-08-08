@@ -1,5 +1,17 @@
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Dropdown, Empty, Flex, Spin, Table, Tag, Typography } from 'antd';
+import {
+  Alert,
+  Button,
+  Card,
+  Dropdown,
+  Empty,
+  Flex,
+  Spin,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -467,9 +479,31 @@ function ResultsTable({
       render: (v: number | null) => (v === null ? '—' : v),
     },
     {
+      // Bounded width + ellipsis (#1207 — #1184's "verified-benign" scope-out
+      // didn't hold for every monitor kind: schema_drift's added/removed
+      // column lists and comparison's per-column buckets both scale with
+      // column count, and ScalarValue's formatScalar JSON.stringifies
+      // whatever shape observed_value is, unbounded. `ellipsis: { showTitle:
+      // false }` suppresses antd's own native-title hover so the Tooltip
+      // below is the only one — same pattern as `ellipsisColumn` (#1184),
+      // applied manually here since this column has a custom ScalarValue
+      // render rather than a plain string field. ScalarValue's own
+      // formatting (monospace, em-dash for null) is reused unchanged in
+      // both the cell and the tooltip.
       title: 'Observed',
       dataIndex: 'observed_value',
-      render: (v: Record<string, unknown> | null) => <ScalarValue value={v} />,
+      width: 220,
+      ellipsis: { showTitle: false },
+      render: (v: Record<string, unknown> | null) =>
+        v === null || v === undefined ? (
+          <ScalarValue value={v} />
+        ) : (
+          <Tooltip title={<ScalarValue value={v} />}>
+            <span>
+              <ScalarValue value={v} />
+            </span>
+          </Tooltip>
+        ),
     },
   ];
   return (
