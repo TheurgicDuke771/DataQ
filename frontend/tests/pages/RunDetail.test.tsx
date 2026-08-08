@@ -317,7 +317,7 @@ describe('RunDetail page', () => {
     expect(region.queryByText(/values redacted/)).not.toBeInTheDocument();
   });
 
-  it('names the redacted columns when the API reports a partial mix', async () => {
+  it('names the redacted columns when the API reports a partial mix, and renders the identifier row (#1183)', async () => {
     mockGetRun.mockResolvedValue({
       ...runDetail,
       results: [
@@ -343,6 +343,128 @@ describe('RunDetail page', () => {
     expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
     expect(region.getByText(/1 column redacted/)).toBeInTheDocument();
     expect(region.queryByText(/values redacted/)).not.toBeInTheDocument();
+    // #1183: the identifier row must actually render — a masked column and a
+    // shown identifier column can both come out of `unexpected_index_list`.
+    // (antd Table renders each header twice — a visible <th> plus a hidden
+    // width-measurement node — so header assertions use the *AllBy* variant.)
+    expect(region.getAllByText('order_id').length).toBeGreaterThan(0);
+    expect(region.getByText('ORD-1')).toBeInTheDocument();
+    expect(region.getAllByText('email').length).toBeGreaterThan(0);
+    expect(region.getByText('<redacted>')).toBeInTheDocument();
+  });
+
+  // ── #1183: unexpected_index_list identifier column ─────────────────────
+
+  it('prefers unexpected_index_list over partial_unexpected_list, surfacing the identifier column (#1183)', async () => {
+    // Real prod shape (Iceberg — Purchase Orders, `supplier_id not null`):
+    // unexpected_index_list carries the identifier + failing value as a row
+    // dict; partial_unexpected_list is present too (bare nulls) but must lose
+    // to the richer, already-redacted index list.
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          sample_failures: {
+            unexpected_count: 12,
+            unexpected_percent: 1.29,
+            unexpected_index_list: [
+              { po_id: 'PO-20260727T063156-00010', supplier_id: null },
+              { po_id: 'PO-20260727T063156-00011', supplier_id: null },
+            ],
+            partial_unexpected_list: [null, null],
+          },
+          redaction: 'none',
+          redacted_columns: [],
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
+
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    // The identifier column header and a real PO value are visible — this is
+    // exactly what #1183 reported as missing (a single bare "value" column
+    // of nulls instead). (antd Table double-renders header text — see note
+    // in the previous test.)
+    expect(region.getAllByText('po_id').length).toBeGreaterThan(0);
+    expect(region.getByText('PO-20260727T063156-00010')).toBeInTheDocument();
+    expect(region.getByText('PO-20260727T063156-00011')).toBeInTheDocument();
+    // The failing column's null values em-dash rather than render "null".
+    expect(region.getAllByText('—').length).toBeGreaterThan(0);
+    expect(region.queryByText('null')).not.toBeInTheDocument();
+    // No lone "value" column from partial_unexpected_list — the index list won.
+    expect(region.queryByText('value')).not.toBeInTheDocument();
+  });
+
+  it('falls back to partial_unexpected_list (a bare "value" column) when unexpected_index_list is absent (#1183)', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          sample_failures: {
+            unexpected_count: 2,
+            unexpected_percent: 5,
+            partial_unexpected_list: [-12.5, -5.0],
+          },
+          redaction: 'none',
+          redacted_columns: [],
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
+
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(region.getAllByText('value').length).toBeGreaterThan(0);
+    expect(region.getByText('-12.5')).toBeInTheDocument();
+    expect(region.getByText('-5')).toBeInTheDocument();
+  });
+
+  it('also falls back when unexpected_index_list is present but not dict-shaped (#1183)', async () => {
+    // Defence in depth: the backend already strips a non-dict index list
+    // (`gx_runner._is_identifier_index_list`), but the frontend must not
+    // trust an unexpected shape either.
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          sample_failures: {
+            unexpected_count: 2,
+            unexpected_index_list: [1, 2],
+            partial_unexpected_list: ['<redacted>', '<redacted>'],
+          },
+          redaction: 'full',
+          redacted_columns: ['email'],
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
+
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(region.getAllByText('value').length).toBeGreaterThan(0);
+    expect(region.getAllByText('<redacted>').length).toBeGreaterThan(0);
   });
 
   it('falls back to "partially redacted" when partial has no nameable column (#1115)', async () => {

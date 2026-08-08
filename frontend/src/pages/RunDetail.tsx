@@ -302,7 +302,20 @@ function SampleFailures({
   if (!sample) return null;
   const count = typeof sample.unexpected_count === 'number' ? sample.unexpected_count : null;
   const percent = typeof sample.unexpected_percent === 'number' ? sample.unexpected_percent : null;
-  const rawList = sample.partial_unexpected_list;
+  // #1183: prefer `unexpected_index_list` when it's present and dict-shaped —
+  // those rows already carry the suite's configured identifier column(s)
+  // alongside the failing value(s), and are already API-redacted per column
+  // (the backend strips a non-dict `unexpected_index_list` before it ever
+  // reaches here — `gx_runner._is_identifier_index_list` — so dict shape is
+  // trustable). `partial_unexpected_list` (bare scalars → a single `value`
+  // column, no identifier) is the fallback for checks/engines that don't
+  // populate the index list.
+  const indexList = sample.unexpected_index_list;
+  const isIdentifierRows = (list: unknown): list is Record<string, unknown>[] =>
+    Array.isArray(list) &&
+    list.length > 0 &&
+    list.every((entry) => entry !== null && typeof entry === 'object' && !Array.isArray(entry));
+  const rawList = isIdentifierRows(indexList) ? indexList : sample.partial_unexpected_list;
   // Entries are either row dicts ({col: value}) or bare scalars; normalise both
   // to row objects so a single column-derived table renders them.
   const rows: Record<string, unknown>[] = Array.isArray(rawList)
@@ -321,8 +334,17 @@ function SampleFailures({
     render: (v: unknown) => (
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         {/* Values are already masked by the API; stringify objects so a nested
-            redacted cell shows as JSON rather than "[object Object]". */}
-        {v === undefined ? '' : typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)}
+            redacted cell shows as JSON rather than "[object Object]", and
+            em-dash an explicit null (e.g. a not-null check's own failing
+            value) rather than the literal string "null". A missing key (a
+            ragged row that lacks this column) stays blank, not em-dashed. */}
+        {v === undefined
+          ? ''
+          : v === null
+            ? '—'
+            : typeof v === 'object'
+              ? JSON.stringify(v)
+              : String(v)}
       </Typography.Text>
     ),
   }));
