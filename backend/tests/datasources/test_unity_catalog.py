@@ -164,6 +164,17 @@ def test_build_databricks_url_pins_catalog() -> None:
     assert "&catalog=main" in build_databricks_url(cfg, "t", catalog="main")
 
 
+def test_build_databricks_url_pins_schema() -> None:
+    """GX's `DatabricksDsn` refuses a URL without `schema` (#1179), so the SQL
+    batch needs it on the URL as well as on the asset."""
+    cfg = UnityCatalogConfig.model_validate(_UC_CONFIG)
+    url = build_databricks_url(cfg, "t", catalog="main", schema="go ld")
+    assert "&catalog=main" in url
+    assert "&schema=go+ld" in url  # URL-encoded like every other part
+    # Unchanged default: callers that qualify the namespace themselves get none.
+    assert "schema=" not in build_databricks_url(cfg, "t", catalog="main")
+
+
 def test_build_unity_catalog_runner_resolves_pat() -> None:
     runner = build_unity_catalog_runner(
         config=dict(_UC_CONFIG), secret_ref="kv-ref", secret_store=_FakeStore(), catalog="main"
@@ -284,6 +295,325 @@ def test_gx_read_and_monitors_share_one_engine(
     runner._read_table(table="orders", schema=None)
     assert len(created) == 2
     runner.close()
+
+
+# ───────────────────── custom SQL on Unity Catalog (#1179) ─────────────────────
+#
+# The bug: `UnexpectedRowsExpectation`'s metrics (`unexpected_rows_query.table` /
+# `.row_count`) have a SqlAlchemy provider and NO pandas one, so on this runner's
+# DataFrame batch GX raised "No provider found for unexpected_rows_query.table
+# using PandasExecutionEngine" — custom SQL had never once worked on UC.
+#
+# The fix routes those checks to a GX **SQL** batch. These tests substitute
+# **sqlite for the warehouse** at `_sql_batch_definition` — the live seam — and
+# leave everything else real: GX genuinely executes the query through a
+# SqlAlchemy execution engine and `gx_runner` genuinely maps the result. What
+# sqlite cannot prove is the Databricks half (the DSN GX accepts, the dialect,
+# the driver's own error shape), which is why #1179 also carries a live run
+# against the real warehouse — the #953 rule.
+
+
+def _sqlite_batch_seam(
+    runner: UnityCatalogCheckRunner,
+    tmp_path: Any,
+    rows: list[int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[dict[str, Any]]:
+    """Point the runner's SQL-batch seam at a real sqlite `feedback(rating)` table.
+
+    Returns a list that records each seam call's arguments, so a test can assert
+    the seam was (or was not) reached and with what target.
+
+    It also **arms the DataFrame seam to fail**, so a custom-SQL check that is
+    misrouted back to the pandas batch aborts loudly. That is load-bearing, not
+    belt-and-braces: `_read_table` builds a real `databricks://` engine, so the
+    unfixed routing makes these tests HANG on a DNS lookup for the fake
+    workspace host instead of failing — a regression this suite could then only
+    report as a CI timeout. A test that needs the frame (the mixed-suite case)
+    overrides it afterwards.
+    """
+    import sqlite3
+
+    path = tmp_path / "uc.sqlite"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE feedback (rating INTEGER)")
+    conn.executemany("INSERT INTO feedback VALUES (?)", [(r,) for r in rows])
+    conn.commit()
+    conn.close()
+
+    calls: list[dict[str, Any]] = []
+
+    def _seam(context: Any, *, table: str, schema: str) -> tuple[Any, Any]:
+        calls.append({"table": table, "schema": schema})
+        datasource = context.data_sources.add_sqlite(
+            name="uc-sql", connection_string=f"sqlite:///{path}"
+        )
+        asset = datasource.add_table_asset(name="feedback", table_name="feedback")
+        return datasource, asset.add_batch_definition_whole_table(name="whole_table")
+
+    monkeypatch.setattr(runner, "_sql_batch_definition", _seam)
+    _forbid_dataframe_read(runner, monkeypatch)
+    return calls
+
+
+def _forbid_dataframe_read(
+    runner: UnityCatalogCheckRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Make the DataFrame seam fail loudly.
+
+    Every custom-SQL test arms this, and it is load-bearing rather than
+    belt-and-braces: `_read_table` builds a real `databricks://` engine, so a
+    custom-SQL check misrouted back to the pandas batch does not fail — it HANGS
+    on a DNS lookup for the fake workspace host. Verified against the pre-fix
+    routing: without this the suite reports a CI timeout instead of a defect.
+    """
+
+    def _must_not_read(**_kwargs: Any) -> Any:
+        raise AssertionError("custom SQL must not trigger the full-table DataFrame read")
+
+    monkeypatch.setattr(runner, "_read_table", _must_not_read)
+
+
+def _uc_runner() -> UnityCatalogCheckRunner:
+    return UnityCatalogCheckRunner(
+        config=UnityCatalogConfig.model_validate(_UC_CONFIG), token="t", catalog="main"
+    )
+
+
+def _custom_sql(query: str) -> CheckSpec:
+    return CheckSpec("unexpected_rows_expectation", {"unexpected_rows_query": query})
+
+
+def test_custom_sql_passes_on_sql_batch_without_reading_a_dataframe(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The regression. A zero-row query passes — and the DataFrame read is never
+    even attempted, which is what makes this the SQL batch and not the old one."""
+    runner = _uc_runner()
+    calls = _sqlite_batch_seam(runner, tmp_path, rows=[1, 4, 5], monkeypatch=monkeypatch)
+    outcome = runner.run_checks(
+        table="feedback",
+        schema="gold",
+        checks=[_custom_sql("SELECT * FROM {batch} WHERE rating NOT BETWEEN 1 AND 5")],
+    )
+    assert outcome.success is True
+    check = outcome.checks[0]
+    assert check.errored is False, check.error_message
+    assert check.success is True
+    assert check.observed_value == {"observed_value": 0}
+    # The user's query round-trips onto the result row, as on the Snowflake path.
+    assert check.expected_value == {
+        "unexpected_rows_query": "SELECT * FROM {batch} WHERE rating NOT BETWEEN 1 AND 5"
+    }
+    assert calls == [{"table": "feedback", "schema": "gold"}]
+
+
+def test_custom_sql_failing_query_reports_the_unexpected_row_count(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rows returned = failures, and the count is the `observed_value` — the exact
+    shape `test_custom_sql_gx.py` locks for the SQL path."""
+    runner = _uc_runner()
+    _sqlite_batch_seam(runner, tmp_path, rows=[1, 4, 5], monkeypatch=monkeypatch)
+    outcome = runner.run_checks(
+        table="feedback",
+        schema="gold",
+        checks=[_custom_sql("SELECT * FROM {batch} WHERE rating >= 4")],
+    )
+    assert outcome.success is False
+    check = outcome.checks[0]
+    assert check.errored is False, check.error_message
+    assert check.success is False
+    assert check.observed_value == {"observed_value": 2}
+
+
+def test_custom_sql_query_error_is_an_operational_error_not_a_crash(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A broken query must land as `errored` (→ an `error` result, #122), never
+    raise out of the runner and fail the whole run."""
+    runner = _uc_runner()
+    _sqlite_batch_seam(runner, tmp_path, rows=[1], monkeypatch=monkeypatch)
+    outcome = runner.run_checks(
+        table="feedback",
+        schema="gold",
+        checks=[_custom_sql("SELECT * FROM {batch} WHERE no_such_column = 1")],
+    )
+    check = outcome.checks[0]
+    assert check.errored is True
+    assert check.success is False
+    assert "no_such_column" in (check.error_message or "")
+
+
+def test_mixed_suite_merges_both_batches_in_submission_order(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Custom SQL interleaved with ordinary expectations: every outcome must come
+    back at its submitted position, because `run_service` zips outcomes onto its
+    own `checks` list — a shuffle would attribute results to the wrong check."""
+    runner = _uc_runner()
+    _sqlite_batch_seam(runner, tmp_path, rows=[1, 4, 5], monkeypatch=monkeypatch)
+    monkeypatch.setattr(
+        runner, "_read_table", lambda **_kw: pd.DataFrame({"id": [1, 2, None], "amt": [10, 20, 30]})
+    )
+    outcome = runner.run_checks(
+        table="feedback",
+        schema="gold",
+        checks=[
+            CheckSpec("expect_table_row_count_to_be_between", {"min_value": 1, "max_value": 10}),
+            _custom_sql("SELECT * FROM {batch} WHERE rating >= 4"),
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+        ],
+    )
+    assert [c.expectation_type for c in outcome.checks] == [
+        "expect_table_row_count_to_be_between",
+        "unexpected_rows_expectation",
+        "expect_column_values_to_not_be_null",
+    ]
+    assert [c.success for c in outcome.checks] == [True, False, False]
+    assert outcome.checks[1].observed_value == {"observed_value": 2}
+    assert outcome.success is False
+
+
+def test_suite_without_custom_sql_never_opens_a_sql_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No custom SQL → no second warehouse session. The DataFrame path is byte-
+    for-byte what it always was."""
+    runner = _uc_runner()
+
+    def _must_not_build(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("a suite with no custom SQL must not build a SQL batch")
+
+    monkeypatch.setattr(runner, "_sql_batch_definition", _must_not_build)
+    monkeypatch.setattr(runner, "_read_table", lambda **_kw: pd.DataFrame({"id": [1, 2, 3]}))
+    outcome = runner.run_checks(
+        table="t",
+        schema="s",
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    assert outcome.success is True
+
+
+def test_custom_sql_without_a_schema_errors_only_itself(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A UC suite target may legally omit the schema, but GX's DSN cannot — and an
+    unqualified name would silently resolve against the session default, i.e. read
+    the WRONG table rather than fail. So the custom-SQL check errors; its siblings
+    on the DataFrame batch still evaluate and persist (#122)."""
+    runner = _uc_runner()
+
+    def _must_not_build(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("no schema → the DSN must never be built")
+
+    monkeypatch.setattr(runner, "_sql_batch_definition", _must_not_build)
+    monkeypatch.setattr(runner, "_read_table", lambda **_kw: pd.DataFrame({"id": [1, 2, 3]}))
+    outcome = runner.run_checks(
+        table="feedback",
+        schema=None,
+        checks=[
+            _custom_sql("SELECT * FROM {batch} WHERE rating >= 4"),
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+        ],
+    )
+    assert outcome.success is False
+    custom, sibling = outcome.checks
+    assert custom.errored is True
+    assert "schema" in (custom.error_message or "")
+    # The user's query still round-trips, so the failing result row stays diagnosable.
+    assert custom.expected_value == {
+        "unexpected_rows_query": "SELECT * FROM {batch} WHERE rating >= 4"
+    }
+    assert sibling.errored is False
+    assert sibling.success is True
+
+
+@pytest.mark.parametrize(
+    "bad", ["a; DROP TABLE x", 'a"b', "a b", "a.b", "a-b", "1col", "", "a'b", "a\n"]
+)
+def test_custom_sql_refuses_a_non_identifier_target(
+    bad: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The table/schema/catalog are interpolated into the DSN and the asset, so
+    they go through the shared #428 allowlist FIRST — a hostile identifier must
+    error the check, never reach the URL builder."""
+    runner = _uc_runner()
+
+    def _must_not_build(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("a rejected identifier must never reach the DSN")
+
+    monkeypatch.setattr(runner, "_sql_batch_definition", _must_not_build)
+    _forbid_dataframe_read(runner, monkeypatch)
+    outcome = runner.run_checks(
+        table=bad, schema="gold", checks=[_custom_sql("SELECT * FROM {batch} WHERE x = 1")]
+    )
+    assert outcome.checks[0].errored is True
+    assert "table" in (outcome.checks[0].error_message or "")
+
+
+def test_custom_sql_refuses_a_non_identifier_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The catalog is runner-held rather than per-call, so it needs its own case —
+    the loop that validates it would otherwise be provable by neither of the above."""
+    runner = UnityCatalogCheckRunner(
+        config=UnityCatalogConfig.model_validate(_UC_CONFIG),
+        token="t",
+        catalog="main; DROP TABLE x",
+    )
+
+    def _must_not_build(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("a rejected catalog must never reach the DSN")
+
+    monkeypatch.setattr(runner, "_sql_batch_definition", _must_not_build)
+    _forbid_dataframe_read(runner, monkeypatch)
+    outcome = runner.run_checks(
+        table="feedback", schema="gold", checks=[_custom_sql("SELECT * FROM {batch} WHERE x = 1")]
+    )
+    assert outcome.checks[0].errored is True
+    assert "catalog" in (outcome.checks[0].error_message or "")
+
+
+def test_gx_engine_is_disposed_after_a_sql_run(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GX owns the engine behind its own SQL datasource, so the runner's `close()`
+    can't reach it — `_run_sql_checks` must close it itself or a Celery worker
+    holds a warehouse session per run."""
+    runner = _uc_runner()
+    _sqlite_batch_seam(runner, tmp_path, rows=[1], monkeypatch=monkeypatch)
+    disposed: list[bool] = []
+    real_dispose = UnityCatalogCheckRunner._dispose_gx_engine
+
+    def _spy(datasource: Any) -> None:
+        disposed.append(True)
+        real_dispose(datasource)
+
+    monkeypatch.setattr(runner, "_dispose_gx_engine", _spy)
+    runner.run_checks(
+        table="feedback",
+        schema="gold",
+        checks=[_custom_sql("SELECT * FROM {batch} WHERE rating > 9")],
+    )
+    assert disposed == [True]
+
+
+def test_dispose_gx_engine_never_masks_the_outcome() -> None:
+    """Tidy-up runs in a `finally`; if it raised it would replace the result the
+    caller is returning (or the exception it is propagating) with a shutdown
+    error. It must swallow — and must not log the message, which can carry the
+    PAT-bearing URL (#849)."""
+
+    class _Boom:
+        def get_engine(self) -> Any:
+            raise RuntimeError("dapi-secret-in-the-url")
+
+    UnityCatalogCheckRunner._dispose_gx_engine(_Boom())  # no raise
+
+
+def test_gx_exposes_the_databricks_sql_datasource() -> None:
+    """Dependency contract, in the spirit of the dialect check above: the SQL
+    batch is `context.data_sources.add_databricks_sql`. Tests substitute sqlite
+    for it, so a GX upgrade that renamed or dropped it would otherwise surface
+    only as a failed production run. No network — attribute presence only."""
+    import great_expectations as gx
+
+    assert hasattr(gx.get_context(mode="ephemeral").data_sources, "add_databricks_sql")
 
 
 def test_supported_monitor_kinds_is_explicit() -> None:
