@@ -768,6 +768,7 @@ def test_create_iceberg_with_catalog_secret_stores_it_and_sets_config_field(
     )
     ref = conn.config.get("catalog_secret_name")
     assert ref is not None
+    assert conn.secret_ref is not None
     assert ref != conn.secret_ref  # a distinct ref from the storage credential
     assert store.data[ref] == "catalog-db-pw"
     assert store.data[conn.secret_ref] == "storage-key"
