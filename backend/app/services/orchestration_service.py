@@ -633,6 +633,24 @@ def list_pipeline_runs(
     return list(session.scalars(stmt))
 
 
+def count_pipeline_runs(
+    session: Session,
+    *,
+    provider: str | None = None,
+    status: str | None = None,
+) -> int:
+    """Total pipeline runs matching the SAME `provider`/`status` filters as
+    :func:`list_pipeline_runs`, unaffected by its `limit`/`offset` (#1108 —
+    the `/assets` `X-Total-Count` shape: a page shorter than `limit` can't by
+    itself distinguish "that's everything" from "there's more")."""
+    stmt = select(func.count()).select_from(PipelineRun)
+    if provider is not None:
+        stmt = stmt.where(PipelineRun.provider == provider)
+    if status is not None:
+        stmt = stmt.where(PipelineRun.status == status)
+    return session.scalar(stmt) or 0
+
+
 def list_pipelines(
     session: Session,
     *,

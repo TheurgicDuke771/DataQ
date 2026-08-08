@@ -104,6 +104,17 @@ export interface PipelineRun {
   created_at: string;
 }
 
+/** One page of `GET /pipeline_runs` — the body (`items`) plus the
+ *  `provider`/`status`-filtered population `total`, read off the
+ *  `X-Total-Count` header (#1108, the `/assets` `AssetListPage` shape #925).
+ *  `total` can exceed `items.length` when the fetch is capped below the true
+ *  population (e.g. the Results page's single `LIST_LIMIT`-row fetch) — that's
+ *  the truncation a caller needs to render honestly rather than silently. */
+export interface PipelineRunListPage {
+  items: PipelineRun[];
+  total: number;
+}
+
 export async function listRuns(params?: {
   suite_id?: string;
   status?: RunStatus;
@@ -152,9 +163,15 @@ export async function listPipelineRuns(params?: {
   provider?: OrchestrationProvider;
   status?: string;
   limit?: number;
-}): Promise<PipelineRun[]> {
-  const { data } = await api.get<PipelineRun[]>('/pipeline_runs', { params });
-  return data;
+  offset?: number;
+}): Promise<PipelineRunListPage> {
+  const { data, headers } = await api.get<PipelineRun[]>('/pipeline_runs', { params });
+  // axios lowercases response header keys. Fall back to the page length (never
+  // undefined/NaN) so a deploy-skew backend without the header degrades to "no
+  // known truncation" rather than breaking the page — same fallback as `listAssets`.
+  const rawTotal = headers?.['x-total-count'];
+  const total = rawTotal !== undefined ? Number(rawTotal) : data.length;
+  return { items: data, total: Number.isFinite(total) ? total : data.length };
 }
 
 /** Download a comparison result's derived report (ADR 0015 §4) — fetched with

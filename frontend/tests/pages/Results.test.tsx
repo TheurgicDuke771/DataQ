@@ -4,7 +4,13 @@ import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Connection, listConnections } from '../../src/api/connections';
-import { listPipelineRuns, listRuns, type PipelineRun, type Run } from '../../src/api/runs';
+import {
+  listPipelineRuns,
+  listRuns,
+  type PipelineRun,
+  type PipelineRunListPage,
+  type Run,
+} from '../../src/api/runs';
 import { ORCHESTRATION_PROVIDERS, PROVIDER_LABELS } from '../../src/api/triggerBindings';
 import { type Suite, listSuites } from '../../src/api/suites';
 import { WINDOW_PRESETS } from '../../src/components/shared/windowPresets';
@@ -121,6 +127,13 @@ const pipelineRun: PipelineRun = {
   created_at: '2026-06-11T00:00:00Z',
 };
 
+/** `listPipelineRuns` now resolves a page (`{ items, total }`, #1108) — this
+ *  wraps a bare fixture array as a full (untruncated) page, the shape every
+ *  test below needs unless it's exercising the truncation note itself. */
+function pipelineRunsPage(items: PipelineRun[], total = items.length): PipelineRunListPage {
+  return { items, total };
+}
+
 /** A stub for the run-detail route so a row click's navigation is observable. */
 function RunDetailStub() {
   const { runId } = useParams<{ runId: string }>();
@@ -159,7 +172,7 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue([succeededRun, failedRun]);
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
 
@@ -173,7 +186,7 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue([succeededRun]);
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -189,7 +202,7 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue([succeededRun, failedRun]);
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -209,7 +222,7 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue([succeededRun, recentEventsRun]);
     mockListSuites.mockResolvedValue([ordersSuite, eventsSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn, s3Conn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -226,7 +239,7 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue([succeededRun, recentEventsRun]);
     mockListSuites.mockResolvedValue([ordersSuite, eventsSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn, s3Conn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -244,7 +257,7 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue([succeededRun, recentEventsRun]);
     mockListSuites.mockResolvedValue([ordersSuite, eventsSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn, s3Conn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -264,7 +277,7 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue([succeededRun, recentEventsRun]);
     mockListSuites.mockResolvedValue([ordersSuite, eventsSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn, s3Conn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -281,7 +294,7 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue([]);
     mockListSuites.mockResolvedValue([]);
     mockListConnections.mockResolvedValue([]);
-    mockListPipelineRuns.mockResolvedValue([pipelineRun]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun]));
 
     renderResults();
     const user = userEvent.setup();
@@ -292,6 +305,28 @@ describe('Results page', () => {
     // Provider renders its human label (shared PROVIDER_LABELS), not the raw code.
     expect(screen.getByText('Azure Data Factory')).toBeInTheDocument();
     expect(screen.getByText('succeeded')).toBeInTheDocument();
+    // The fetched page (1 row) matches the reported total (1) — no truncation note.
+    expect(screen.queryByText(/of \d+ pipeline runs/)).not.toBeInTheDocument();
+  });
+
+  it('shows an honest truncation note when the monitored population exceeds the fetched page (#1108)', async () => {
+    // The tab fetches one capped page; a `total` bigger than that page's length
+    // means the table is silently NOT everything — #1108's actual defect on
+    // `/pipeline_runs` (and the identical gap on `/assets` before #925).
+    mockListRuns.mockResolvedValue([]);
+    mockListSuites.mockResolvedValue([]);
+    mockListConnections.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun], 211));
+
+    renderResults();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Showing the most recent 1 of 211 pipeline runs'),
+      ).toBeInTheDocument(),
+    );
   });
 
   it('offers every orchestration provider in the pipeline-runs filter and filters by it (#652)', async () => {
@@ -305,7 +340,7 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue([]);
     mockListSuites.mockResolvedValue([]);
     mockListConnections.mockResolvedValue([]);
-    mockListPipelineRuns.mockResolvedValue([pipelineRun, dbtRun]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun, dbtRun]));
 
     renderResults();
     const user = userEvent.setup();
@@ -343,7 +378,7 @@ describe('Results page', () => {
     mockListConnections.mockResolvedValue([]);
     // pipelineRun keeps its null failure_reason — covers the '—' placeholder
     // alongside the long-error row.
-    mockListPipelineRuns.mockResolvedValue([pipelineRun, failingPipelineRun]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun, failingPipelineRun]));
 
     renderResults();
     const user = userEvent.setup();
@@ -381,7 +416,7 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue([triggeredRun]);
     mockListSuites.mockResolvedValue([]);
     mockListConnections.mockResolvedValue([]);
-    mockListPipelineRuns.mockResolvedValue([pipelineRun]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun]));
 
     renderResults();
     const user = userEvent.setup();
@@ -410,7 +445,7 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue([succeededRun, triggeredRun]);
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
-    mockListPipelineRuns.mockResolvedValue([pipelineRun]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun]));
 
     renderResults();
     const user = userEvent.setup();
@@ -438,7 +473,7 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue([]);
     mockListSuites.mockResolvedValue([]);
     mockListConnections.mockResolvedValue([]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -471,7 +506,7 @@ describe('Results page', () => {
     mockListRuns.mockRejectedValueOnce(new Error('boom'));
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -501,7 +536,7 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValueOnce([succeededRun]);
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
-    mockListPipelineRuns.mockResolvedValue([pipelineRun]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun]));
 
     renderResults();
     await vi.advanceTimersByTimeAsync(0);

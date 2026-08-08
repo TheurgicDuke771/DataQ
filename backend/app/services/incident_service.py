@@ -433,3 +433,28 @@ def list_incidents(
     if state is not None:
         stmt = stmt.where(Incident.status == state)
     return list(session.scalars(stmt))
+
+
+def count_incidents(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    include_all: bool = False,
+    asset_id: uuid.UUID | None = None,
+    suite_id: uuid.UUID | None = None,
+    state: str | None = None,
+) -> int:
+    """Total incidents matching the SAME visibility + filters as
+    :func:`list_incidents`, unaffected by its `limit`/`offset` (#1108 — the
+    `/assets` `X-Total-Count` shape). Grant-scoped like the list — this is a
+    per-caller total, not a workspace-wide one (unlike `/assets`, incidents
+    stay behind suite grants per ADR 0037)."""
+    accessible = suite_service.accessible_suite_ids(user_id, include_all=include_all)
+    stmt = select(func.count()).select_from(Incident).where(Incident.suite_id.in_(accessible))
+    if asset_id is not None:
+        stmt = stmt.where(Incident.asset_id == asset_id)
+    if suite_id is not None:
+        stmt = stmt.where(Incident.suite_id == suite_id)
+    if state is not None:
+        stmt = stmt.where(Incident.status == state)
+    return session.scalar(stmt) or 0

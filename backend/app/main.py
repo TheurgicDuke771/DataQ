@@ -31,6 +31,7 @@ from backend.app.api.v1 import shares as shares_router
 from backend.app.api.v1 import suites as suites_router
 from backend.app.api.v1 import trigger_bindings as trigger_bindings_router
 from backend.app.api.v1 import users as users_router
+from backend.app.api.v1._base import TOTAL_COUNT_HEADER
 from backend.app.core.auth import init_auth
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import error_envelope, register_exception_handlers
@@ -175,12 +176,13 @@ if _cors_origins:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        # X-Total-Count (#925): the /assets list's total, over its CORS-headers
+        # X-Total-Count (#925, spread to /pipeline_runs, /incidents, /runs by
+        # #1108): every paged list endpoint's total, over its CORS-headers
         # allowlist — the browser drops any response header not listed here on a
         # cross-origin fetch, so a same-origin dev proxy can see it fine while a
         # cross-origin deploy (or the frontend's own axios client, generally)
         # would silently read `undefined` without this entry.
-        expose_headers=[REQUEST_ID_HEADER, assets_router.TOTAL_COUNT_HEADER],
+        expose_headers=[REQUEST_ID_HEADER, TOTAL_COUNT_HEADER],
     )
 
 

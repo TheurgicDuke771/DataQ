@@ -443,8 +443,16 @@ function PipelineRunsTab({
     );
   }
 
+  const { items: pipelineRuns, total } = state.data;
+  // Honest truncation (#1108): the tab fetches a single `LIST_LIMIT`-row page,
+  // so on a monitored population bigger than that the table was silently
+  // showing "everything" when it was really the most recent LIST_LIMIT rows.
+  // `total` — the real, filter-scoped population from `X-Total-Count` — makes
+  // that visible instead of guessing from the fetched page's own length.
+  const truncated = pipelineRuns.length < total;
+
   const windowDays = dateWindow === 'all' ? null : Number(dateWindow);
-  const rows = state.data.filter((p) => {
+  const rows = pipelineRuns.filter((p) => {
     if (provider !== 'all' && p.provider !== provider) return false;
     if (windowDays !== null && !isWithinWindowDays(p.started_at ?? p.created_at, windowDays))
       return false;
@@ -521,6 +529,14 @@ function PipelineRunsTab({
           showIcon
           title="Triggered DQ runs unavailable"
           description="Couldn't load DataQ runs, so the “DQ run” column can't show which runs each pipeline triggered. Pipeline runs below are still accurate."
+        />
+      )}
+      {truncated && (
+        <Alert
+          type="info"
+          showIcon
+          message={`Showing the most recent ${pipelineRuns.length} of ${total} pipeline runs`}
+          description="Narrow the provider or date filter to bring an older run into view."
         />
       )}
       <Flex gap={12} align="flex-end" wrap>

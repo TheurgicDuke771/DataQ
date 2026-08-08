@@ -319,6 +319,60 @@ def test_list_runs_respects_limit(client: TestClient, db_session: Any) -> None:
     assert resp.status_code == 422  # below ge=1
 
 
+def test_list_runs_total_count_header_matches_accessible_population(
+    client: TestClient, db_session: Any
+) -> None:
+    """#1108: `/runs` previously had `limit` only — no `offset`, no total, so a
+    page shorter than `limit` could never be told apart from "that's everything".
+    `X-Total-Count` reports the caller's ACCESSIBLE population (suite-scoped,
+    unlike the workspace-true `/assets` total), unaffected by the page size."""
+    dev = _user(db_session, "dev@ex")
+    other = _user(db_session, "other@ex")
+    mine = _suite(db_session, dev, target={"table": "T"})
+    theirs = _suite(db_session, other, target={"table": "T"})
+    for _ in range(5):
+        _run(db_session, mine)
+    _run(db_session, theirs)  # not accessible to dev — must not inflate the total
+
+    _as(dev)
+    resp = client.get("/api/v1/runs?limit=2")
+    assert resp.status_code == 200
+    assert resp.headers["x-total-count"] == "5"
+    assert len(resp.json()) == 2  # the page is still truncated to `limit`
+
+
+def test_list_runs_total_count_header_respects_filters(client: TestClient, db_session: Any) -> None:
+    """The header counts the SAME filtered population the list applies (#1108) —
+    a `status` filter narrows both, not just the page."""
+    dev = _user(db_session, "dev@ex")
+    s = _suite(db_session, dev, target={"table": "T"})
+    _run(db_session, s, status="succeeded")
+    _run(db_session, s, status="succeeded")
+    _run(db_session, s, status="failed")
+
+    _as(dev)
+    resp = client.get(f"/api/v1/runs?suite_id={s.id}&status=succeeded")
+    assert resp.headers["x-total-count"] == "2"
+    assert len(resp.json()) == 2
+
+
+def test_list_runs_pages_with_offset_no_duplicates(client: TestClient, db_session: Any) -> None:
+    """`offset` actually pages `/runs` now (#1108), mirroring the `/pipeline_runs`
+    (#928) and `/incidents` (#772) paging shape."""
+    dev = _user(db_session, "dev@ex")
+    s = _suite(db_session, dev, target={"table": "T"})
+    for _ in range(5):
+        _run(db_session, s)
+    _as(dev)
+
+    page1 = client.get("/api/v1/runs?limit=2&offset=0").json()
+    page2 = client.get("/api/v1/runs?limit=2&offset=2").json()
+    page3 = client.get("/api/v1/runs?limit=2&offset=4").json()
+    assert [len(page1), len(page2), len(page3)] == [2, 2, 1]
+    ids = [r["id"] for r in page1 + page2 + page3]
+    assert len(set(ids)) == 5, "paging returned a duplicate row"
+
+
 # ───────────────────────── GET /runs/{id} ──────────────────────────
 
 
@@ -852,6 +906,40 @@ def test_list_pipeline_runs_pages_with_offset(client: TestClient, db_session: An
     # And the pages together are the whole set, in order — no row skipped.
     everything = [p["id"] for p in client.get("/api/v1/pipeline_runs?limit=200").json()]
     assert ids == everything
+
+
+def test_pipeline_runs_total_count_header_matches_full_population(
+    client: TestClient, db_session: Any
+) -> None:
+    """#1108: `/pipeline_runs` had `offset` (#928) but no total — a page shorter
+    than `limit` couldn't be told apart from "that's everything". `X-Total-Count`
+    reports the true population regardless of the page size."""
+    owner = _user(db_session, "owner@ex")
+    _pipeline_runs_on_one_connection(db_session, owner, count=5)
+    _as(owner)
+
+    resp = client.get("/api/v1/pipeline_runs?limit=2")
+    assert resp.status_code == 200
+    assert resp.headers["x-total-count"] == "5"
+    assert len(resp.json()) == 2
+
+
+def test_pipeline_runs_total_count_header_respects_filters(
+    client: TestClient, db_session: Any
+) -> None:
+    """The header counts the SAME `provider`/`status`-filtered population the
+    list applies (#1108) — not the unfiltered table."""
+    owner = _user(db_session, "owner@ex")
+    _pipeline_run(db_session, owner, provider="adf", status="succeeded")
+    _pipeline_run(db_session, owner, provider="airflow", status="failed")
+    _as(owner)
+
+    resp = client.get("/api/v1/pipeline_runs?provider=adf")
+    assert resp.headers["x-total-count"] == "1"
+    resp = client.get("/api/v1/pipeline_runs?status=failed")
+    assert resp.headers["x-total-count"] == "1"
+    resp = client.get("/api/v1/pipeline_runs")
+    assert resp.headers["x-total-count"] == "2"
 
 
 def test_pipeline_run_ordering_is_total_so_paging_cannot_skip() -> None:

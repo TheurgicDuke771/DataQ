@@ -327,3 +327,45 @@ def test_list_pagination_limit_offset_and_truncation(
     # Bounds still validate (#570 class).
     resp = client.get("/api/v1/incidents", params={"offset": -1})
     assert resp.status_code == 422
+
+
+def test_total_count_header_matches_accessible_population(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """#1108: `/incidents` had `offset` (#772) but no total — a page shorter than
+    `limit` couldn't be told apart from "that's everything". `X-Total-Count`
+    reports the caller's ACCESSIBLE population (suite-grant-scoped, like the
+    list itself — unlike the workspace-true `/assets` total), unaffected by the
+    page size."""
+    db = client_db(client)
+    for _ in range(2):
+        _incident(db, world["suite"])  # 3 incidents total on the accessible suite
+
+    other = _user(db, "stranger@example.com")
+    other_conn = _connection(db, other)
+    other_suite = _suite(db, other, other_conn)
+    _incident(db, other_suite)  # not accessible to the owner — must not inflate the total
+
+    _as(world["owner"])
+    resp = client.get("/api/v1/incidents", params={"limit": 2})
+    assert resp.status_code == 200
+    assert resp.headers["x-total-count"] == "3"
+    assert len(resp.json()) == 2  # the page is still truncated to `limit`
+
+
+def test_total_count_header_respects_filters(client: TestClient, world: dict[str, Any]) -> None:
+    """The header counts the SAME filtered population the list applies (#1108) —
+    a `state` filter narrows both, not just the page."""
+    db = client_db(client)
+    _incident(db, world["suite"])  # a second open incident
+    _as(world["owner"])
+
+    resolve_url = f"/api/v1/incidents/{world['incident'].id}/resolve"
+    client.post(resolve_url, json={})
+
+    resp = client.get("/api/v1/incidents", params={"state": "open"})
+    assert resp.headers["x-total-count"] == "1"
+    resp = client.get("/api/v1/incidents", params={"state": "resolved"})
+    assert resp.headers["x-total-count"] == "1"
+    resp = client.get("/api/v1/incidents")
+    assert resp.headers["x-total-count"] == "2"

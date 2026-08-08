@@ -376,9 +376,12 @@ def list_runs(
     suite_id: uuid.UUID | None = None,
     status: str | None = None,
     limit: int = 50,
+    offset: int = 0,
     include_all: bool = False,
 ) -> list[Run]:
-    """Runs for suites the user can access, newest first (`created_at` desc).
+    """Runs for suites the user can access, newest first (`created_at` desc,
+    `id` desc tie-break — the same total-order paging shape `/pipeline_runs`
+    and `/incidents` use, since `created_at` alone ties within one transaction).
 
     Optionally narrowed to one ``suite_id`` and/or a ``status``. The accessible
     subquery is always applied, so passing a ``suite_id`` the user can't see
@@ -388,13 +391,37 @@ def list_runs(
     """
     accessible = suite_service.accessible_suite_ids(user_id, include_all=include_all)
     stmt = (
-        select(Run).where(Run.suite_id.in_(accessible)).order_by(Run.created_at.desc()).limit(limit)
+        select(Run)
+        .where(Run.suite_id.in_(accessible))
+        .order_by(Run.created_at.desc(), Run.id.desc())
+        .limit(limit)
+        .offset(offset)
     )
     if suite_id is not None:
         stmt = stmt.where(Run.suite_id == suite_id)
     if status is not None:
         stmt = stmt.where(Run.status == status)
     return list(session.scalars(stmt))
+
+
+def count_runs(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    suite_id: uuid.UUID | None = None,
+    status: str | None = None,
+    include_all: bool = False,
+) -> int:
+    """Total runs matching the SAME visibility + filters as :func:`list_runs`,
+    unaffected by its `limit`/`offset` (#1108 — the `/assets` `X-Total-Count`
+    shape: `/runs` had `limit` only and could not be paged at all)."""
+    accessible = suite_service.accessible_suite_ids(user_id, include_all=include_all)
+    stmt = select(func.count()).select_from(Run).where(Run.suite_id.in_(accessible))
+    if suite_id is not None:
+        stmt = stmt.where(Run.suite_id == suite_id)
+    if status is not None:
+        stmt = stmt.where(Run.status == status)
+    return session.scalar(stmt) or 0
 
 
 def check_outcome_counts(
