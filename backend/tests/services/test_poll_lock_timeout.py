@@ -336,7 +336,7 @@ def test_the_engine_bounds_the_initial_connect_too(monkeypatch: pytest.MonkeyPat
     config reaches the engine; that psycopg2 honors `connect_timeout` is the driver's own
     documented contract, not ours to re-verify.
     """
-    import backend.app.db.session as session_module
+    from backend.app.db import session as session_module
 
     captured: dict[str, Any] = {}
 
