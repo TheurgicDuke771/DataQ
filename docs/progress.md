@@ -204,6 +204,21 @@ tooltip pattern, keeping `ScalarValue`'s rendering in cell and tooltip; the `Che
 record, dispositioned in the review comment), zero code defects. **Not yet deployed** —
 prod's cut is `7018d772`; #1208 rides the next Deploy run.
 
+### Inventory-sync failure visibility (2026-08-08)
+
+[#1104](https://github.com/TheurgicDuke771/DataQ/issues/1104) (filed by the #1103 code review,
+`v1.1 Backlog`) — an opted-in inventory sync (`config.inventory_sync`, ADR 0040) whose principal
+can't read the enumeration query (UC: no `SELECT` on `system.information_schema`; Snowflake:
+revoked INFORMATION_SCHEMA access) failed every daily tick invisibly: toggle on, connection test
+green (the `SELECT 1` probe never exercises this query), zero assets ever appear, no surface says
+why — the #828 shape again. Fixed by PR
+[#1227](https://github.com/TheurgicDuke771/DataQ/pull/1227): three nullable `connections` columns
+(`inventory_sync_last_attempted_at`/`inventory_sync_last_error`/`inventory_sync_failing_since`,
+migration `c22fa93eb834`, mirroring the `lineage_last_*` pattern from #858) + a
+`classify_inventory_sync_error` classifier that names the known system schema for a permission
+failure + a connections-list "inventory sync failing" badge for opted-in, currently-failing
+connections. Migration tested up/down/up locally against a real Postgres.
+
 ### Pending design decisions
 
 | Decision | Affects | Status |
