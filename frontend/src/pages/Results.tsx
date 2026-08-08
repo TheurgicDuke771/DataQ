@@ -30,6 +30,7 @@ import {
 } from '../api/triggerBindings';
 import { Page } from '../components/layout/Page';
 import { RunNowPanel } from '../components/runs/RunNowPanel';
+import { ellipsisColumn } from '../components/shared/ellipsisColumn';
 import { useAsyncData, type AsyncState } from '../hooks/useAsyncData';
 import {
   formatDuration,
@@ -505,11 +506,7 @@ function PipelineRunsTab({
       dataIndex: 'started_at',
       render: (t: string | null) => formatTimestamp(t),
     },
-    {
-      title: 'Failure reason',
-      dataIndex: 'failure_reason',
-      render: (r: string | null) => r ?? '—',
-    },
+    ellipsisColumn<PipelineRun>('Failure reason', 'failure_reason', 260),
   ];
 
   // The DQ-run column joins against listRuns; if that fetch failed, every row
