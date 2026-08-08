@@ -28,6 +28,20 @@ _MAILER: dict[str, Any] = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _isolate_signin_email_switch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_otp_operator_emails` falls back to the ambient `DATAQ_SIGNIN_EMAIL`
+    compose switch, and `scripts/setup.sh` sets that var in the gitignored
+    `.env` for every local stack (#1150 made OTP the local default). Without
+    this, any `Settings()` built in this module without an explicit allowlist
+    would silently pick up whatever a developer's own machine happens to have
+    exported — green in CI (which never sets it), red on a correctly
+    configured dev box (#1200). Tests that need the switch set still do so
+    explicitly via their own `monkeypatch.setenv`, which simply overrides this
+    default afterwards."""
+    monkeypatch.delenv("DATAQ_SIGNIN_EMAIL", raising=False)
+
+
 def _owner_with_suite(db_session: Any) -> tuple[User, Suite]:
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"owner-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
@@ -78,10 +92,10 @@ def test_a_domain_only_allowlist_targets_nobody() -> None:
     assert _otp_operator_emails(settings) == []
 
 
-def test_neither_source_set_targets_nobody(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_neither_source_set_targets_nobody() -> None:
     """The dev-bypass downgrade: no OTP config at all, so no share and no
-    surprise user row."""
-    monkeypatch.delenv("DATAQ_SIGNIN_EMAIL", raising=False)
+    surprise user row. The `_isolate_signin_email_switch` autouse fixture
+    already clears the switch; this test just relies on that default."""
     assert _otp_operator_emails(Settings()) == []
 
 
