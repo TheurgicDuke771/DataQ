@@ -28,6 +28,7 @@ from backend.app.alerting import dispatch, registry, render
 from backend.app.alerting.base import (
     HEALTH_FAILING,
     HEALTH_RECOVERED,
+    AlertUndeliverableError,
     ConnectionHealthReport,
     HealthState,
 )
@@ -47,14 +48,24 @@ _SAS = "sig=abc%2Fdef%3D&se=2027-01-01&sp=rl"
 
 
 class _SpyHealthPublisher:
-    def __init__(self, *, boom: bool = False) -> None:
+    """Stands in for the top-level publisher `registry.get_health_publisher()` returns
+    (i.e. already past the composite's own fan-out/aggregation, which is covered
+    separately in ``test_health_publish_composite.py``). ``undeliverable`` simulates
+    every real channel quietly skipping as unconfigured — the #1101 shape: no
+    exception, nothing sent, so the composite raises ``AlertUndeliverableError``."""
+
+    def __init__(self, *, boom: bool = False, undeliverable: bool = False) -> None:
         self.reports: list[ConnectionHealthReport] = []
         self._boom = boom
+        self._undeliverable = undeliverable
 
-    def publish_health(self, session: Any, report: ConnectionHealthReport) -> None:
+    def publish_health(self, session: Any, report: ConnectionHealthReport) -> bool:
         if self._boom:
             raise RuntimeError("channel down")
+        if self._undeliverable:
+            raise AlertUndeliverableError("no alert channel is configured")
         self.reports.append(report)
+        return True
 
 
 @pytest.fixture
@@ -100,6 +111,13 @@ def _connection(db: Any, **kwargs: Any) -> Connection:
 def _raise_channel_down(*_args: Any, **_kwargs: Any) -> None:
     """A publisher whose channel is down — the quiet no-op #843 is about."""
     raise RuntimeError("channel unreachable")
+
+
+def _raise_undeliverable(*_args: Any, **_kwargs: Any) -> None:
+    """Stands in for the composite's own #1101 signal: every real channel quietly
+    skipped as unconfigured, so nothing was sent and nothing raised on its own —
+    the composite is what turns that silence into this exception."""
+    raise AlertUndeliverableError("no alert channel is configured")
 
 
 @pytest.fixture
@@ -548,16 +566,19 @@ def test_a_failed_publish_releases_its_claim_so_the_next_sweep_retries(
     conn = _connection(db_session, consecutive_poll_failures=3)
     monkeypatch.setattr(tasks, "get_session", lambda: db_session)
     monkeypatch.setattr(db_session, "close", lambda: None)
-    monkeypatch.setattr(spy, "publish_health", _raise_channel_down)
+    monkeypatch.setattr(spy, "_boom", True)
 
     assert tasks.publish_connection_health(str(conn.id), HEALTH_FAILING) is False
     db_session.refresh(conn)
     assert conn.health_alerted_at is None
 
-    # …and the retry, once the channel is back, succeeds.
-    monkeypatch.undo()
-    monkeypatch.setattr(tasks, "get_session", lambda: db_session)
-    monkeypatch.setattr(db_session, "close", lambda: None)
+    # …and the retry, once the channel is back, succeeds. Flip the spy's own flag
+    # rather than `monkeypatch.undo()` — undo() reverts EVERY patch made through
+    # this test's `monkeypatch` fixture, including the `spy` FIXTURE's own
+    # `registry.get_health_publisher` replacement (both draw from the same
+    # function-scoped instance), which would silently fall through to the REAL,
+    # unconfigured registry composite and mask this test behind #1101's own bug.
+    monkeypatch.setattr(spy, "_boom", False)
     assert tasks.publish_connection_health(str(conn.id), HEALTH_FAILING) is True
     db_session.refresh(conn)
     assert conn.health_alerted_at is not None
@@ -580,6 +601,81 @@ def test_a_failed_recovery_publish_restores_the_outstanding_alert(
 
     db_session.refresh(conn)
     assert conn.health_alerted_at is not None  # still outstanding, still retryable
+
+
+# ── #1101: a workspace with zero configured channels must not phantom-stamp ──────
+
+
+def test_a_workspace_with_no_configured_channel_never_stamps_the_flag(
+    db_session: Any, spy: _SpyHealthPublisher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bug this closes: every real channel (Teams/Slack/email) quietly returns
+    ``False`` when unconfigured, and the old composite never raised for that — so on
+    the shipped default (zero alert channels configured) this used to claim
+    `health_alerted_at` with ZERO notifications sent, permanently suppressing the
+    edge. `AlertUndeliverableError` (raised by the composite when nothing was sent)
+    must make the task treat this exactly like a failed publish: release the claim
+    so the next sweep retries."""
+    conn = _connection(db_session, consecutive_poll_failures=3)
+    monkeypatch.setattr(tasks, "get_session", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+    monkeypatch.setattr(spy, "publish_health", _raise_undeliverable)
+
+    assert tasks.publish_connection_health(str(conn.id), HEALTH_FAILING) is False
+
+    db_session.refresh(conn)
+    assert conn.health_alerted_at is None  # nobody was told — the claim was released
+    assert spy.reports == []
+
+
+def test_a_workspace_with_no_configured_channel_leaves_a_recovery_outstanding(
+    db_session: Any, spy: _SpyHealthPublisher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Symmetric to the failing edge: if every channel is unconfigured when the
+    RECOVERED edge tries to fire, the outstanding alert must stay outstanding —
+    clearing it would silently tell nobody the incident ever ended."""
+    was = datetime.now(UTC)
+    conn = _connection(db_session, health_alerted_at=was)
+    monkeypatch.setattr(tasks, "get_session", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+    monkeypatch.setattr(spy, "publish_health", _raise_undeliverable)
+
+    assert tasks.publish_connection_health(str(conn.id), HEALTH_RECOVERED) is False
+
+    db_session.refresh(conn)
+    assert conn.health_alerted_at is not None  # still outstanding, still retryable
+
+
+def test_a_workspace_with_one_configured_channel_that_sends_still_stamps_the_flag(
+    db_session: Any, spy: _SpyHealthPublisher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of the same contract: a channel that actually delivers must
+    still result in the flag being stamped — #1101 must not turn every publish
+    into a no-op, only the zero-configured one."""
+    conn = _connection(db_session, consecutive_poll_failures=3, last_poll_error="auth_failed")
+    monkeypatch.setattr(tasks, "get_session", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+
+    assert tasks.publish_connection_health(str(conn.id), HEALTH_FAILING) is True
+
+    assert [r.state for r in spy.reports] == [HEALTH_FAILING]
+    db_session.refresh(conn)
+    assert conn.health_alerted_at is not None  # the operator was actually told
+
+
+def test_dispatch_returns_false_undeliverable_without_a_full_traceback(
+    db_session: Any, spy: _SpyHealthPublisher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """At the dispatch seam (below the #842 claim), an all-unconfigured workspace
+    must come back as an ordinary `False` — not bubble up as an unexpected
+    exception the way a genuinely broken channel does."""
+    conn = _connection(db_session, consecutive_poll_failures=3)
+    monkeypatch.setattr(spy, "publish_health", _raise_undeliverable)
+
+    assert not dispatch.publish_connection_health(
+        db_session, connection_id=conn.id, state=HEALTH_FAILING
+    )
+    assert spy.reports == []
 
 
 def test_a_broken_decision_read_does_not_abort_the_sweep(

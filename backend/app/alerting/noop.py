@@ -30,13 +30,17 @@ class NoopPublisher:
             worst_severity=report.worst_severity,
         )
 
-    def publish_health(self, session: Session, report: ConnectionHealthReport) -> None:
+    def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:
         log.debug(
             "health_publish_noop",
             connection_id=str(report.connection_id),
             state=report.state,
             consecutive_failures=report.consecutive_failures,
         )
+        # The explicit test double COUNTS as delivered — it exists so tests can
+        # exercise the stamped path; the real "nothing was sent" case is a real
+        # channel returning False (#1101, mirroring publish_poll_staleness).
+        return True
 
     def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
         log.debug(

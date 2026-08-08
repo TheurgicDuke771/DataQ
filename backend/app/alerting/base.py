@@ -264,7 +264,26 @@ class HealthPublisher(Protocol):
     isolates a broken channel, exactly as on the run path.
     """
 
-    def publish_health(self, session: Session, report: ConnectionHealthReport) -> None: ...
+    def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:
+        """Deliver a connection's poll-health edge (#837); return whether a message
+        actually left this process (``False`` = quietly skipped, e.g. the channel is
+        unconfigured — a skip must never read as delivered, #1101).
+
+        The per-connection caller (``worker.tasks.publish_connection_health``) claims
+        ``connections.health_alerted_at`` with a conditional UPDATE *before* dispatching
+        the send (#842/#843), so this method's honesty is what tells it whether to keep
+        the claim or release it for the next sweep to retry.
+
+        At the COMPOSITE level this raises when **nothing was sent** — every channel
+        failed (the last error) or every channel skipped
+        (:class:`AlertUndeliverableError`) — the same delivered-first hinge as
+        :meth:`publish_poll_staleness` below. A total non-delivery recorded as
+        delivered would permanently suppress the edge: on a fresh install with zero
+        channels configured, the still-outstanding incident would never fire even
+        after an operator later wires up Slack. A partial delivery (one channel down,
+        another delivered) still returns normally.
+        """
+        ...
 
     def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
         """Deliver the workspace-wide poll-staleness edge (#1052); return whether a
@@ -276,14 +295,13 @@ class HealthPublisher(Protocol):
         mechanism — the caller is ``workspace_health_service``, which owns the
         threshold decision and the #843 delivered-first bookkeeping.
 
-        One deliberate divergence from ``publish_health`` at the COMPOSITE level:
-        this method raises when **nothing was sent** — every channel failed (the
-        last error) or every channel skipped (:class:`AlertUndeliverableError`) —
-        where the composite's other methods never raise. The caller records
-        "delivered" on return, and a total non-delivery recorded as delivered
-        would silence the one alert whose whole point is to fire when everything
-        else is silent. A partial failure (one channel down, another delivered)
-        still returns normally.
+        Shares the exact delivered-first contract with ``publish_health`` at the
+        COMPOSITE level (#1101 brought the two into line): both raise when **nothing
+        was sent** — every channel failed (the last error) or every channel skipped
+        (:class:`AlertUndeliverableError`). The caller records "delivered" only on a
+        normal return, and a total non-delivery recorded as delivered would silence
+        the one alert whose whole point is to fire when everything else is silent. A
+        partial failure (one channel down, another delivered) still returns normally.
         """
         ...
 

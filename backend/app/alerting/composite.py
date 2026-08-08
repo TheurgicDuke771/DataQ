@@ -8,7 +8,8 @@ so the composite can always hold all of them.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -22,6 +23,43 @@ from backend.app.alerting.base import (
 from backend.app.core.logging import get_logger
 
 log = get_logger(__name__)
+
+
+def _fan_out_delivered_first(
+    publishers: Sequence[AlertPublisher],
+    send: Callable[[AlertPublisher], bool],
+    *,
+    log_event: str,
+    log_context: dict[str, Any],
+    undeliverable_message: str,
+) -> bool:
+    """Shared delivered-first fan-out for the two health-family seam methods
+    (:meth:`CompositePublisher.publish_health` / ``publish_poll_staleness``): dispatch
+    ``send`` to every publisher, isolating a raising channel from the rest, and raise
+    when **nothing** went out — every channel FAILED (re-raise the last error) or every
+    channel quietly SKIPPED as unconfigured (raise :class:`AlertUndeliverableError`).
+    Partial delivery (one channel down, another delivered) counts as delivered.
+
+    Pulled out of the two near-identical loops (#1101 review finding): the two seam
+    methods diverged once already — #1101 fixed ``publish_health`` to match a contract
+    ``publish_poll_staleness`` had carried alone since #1100 — and a copy-pasted loop is
+    exactly the shape that lets a third seam (or a future channel type) repeat the same
+    omission.
+    """
+    delivered = 0
+    last_error: Exception | None = None
+    for publisher in publishers:
+        try:
+            if send(publisher):
+                delivered += 1
+        except Exception as exc:
+            last_error = exc
+            log.exception(log_event, channel=type(publisher).__name__, **log_context)
+    if delivered == 0:
+        if last_error is not None:
+            raise last_error
+        raise AlertUndeliverableError(undeliverable_message)
+    return True
 
 
 class CompositePublisher:
@@ -42,19 +80,27 @@ class CompositePublisher:
                     run_id=str(report.run_id),
                 )
 
-    def publish_health(self, session: Session, report: ConnectionHealthReport) -> None:
+    def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:
         """Fan a connection poll-health edge out to every channel, isolating failures —
-        the same contract as :meth:`publish` (#837). A broken Slack webhook must not
-        swallow the email telling you your poll has been dead for half an hour."""
-        for publisher in self._publishers:
-            try:
-                publisher.publish_health(session, report)
-            except Exception:
-                log.exception(
-                    "channel_health_publish_failed",
-                    channel=type(publisher).__name__,
-                    connection_id=str(report.connection_id),
-                )
+        the same contract as :meth:`publish` (#837), with the same delivered-first
+        hinge as :meth:`publish_poll_staleness` below (#1101): the caller claims
+        `health_alerted_at` BEFORE dispatching the send (#842/#843), so a quiet
+        "every channel is unconfigured" must not read as delivered — that would
+        permanently suppress the edge on a fresh install with zero channels
+        configured, since the flag would already be set by the time an operator
+        wires one up. Raises when nothing went out: every channel FAILED (re-raise
+        the last error) or every channel SKIPPED (raise
+        :class:`AlertUndeliverableError`). Partial delivery counts as delivered,
+        exactly like the run path's channel isolation."""
+        return _fan_out_delivered_first(
+            self._publishers,
+            lambda publisher: publisher.publish_health(session, report),
+            log_event="channel_health_publish_failed",
+            log_context={"connection_id": str(report.connection_id)},
+            undeliverable_message=(
+                "no alert channel is configured — the health edge was not delivered"
+            ),
+        )
 
     def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
         """Fan the workspace poll-staleness edge (#1052) out to every channel with the
@@ -69,23 +115,12 @@ class CompositePublisher:
         alert whose job is to fire when everything else is silent would lie).
         Partial delivery counts as delivered, exactly like the per-connection edge's
         single-channel semantics."""
-        delivered = 0
-        last_error: Exception | None = None
-        for publisher in self._publishers:
-            try:
-                if publisher.publish_poll_staleness(session, report):
-                    delivered += 1
-            except Exception as exc:
-                last_error = exc
-                log.exception(
-                    "channel_staleness_publish_failed",
-                    channel=type(publisher).__name__,
-                    state=report.state,
-                )
-        if delivered == 0:
-            if last_error is not None:
-                raise last_error
-            raise AlertUndeliverableError(
+        return _fan_out_delivered_first(
+            self._publishers,
+            lambda publisher: publisher.publish_poll_staleness(session, report),
+            log_event="channel_staleness_publish_failed",
+            log_context={"state": report.state},
+            undeliverable_message=(
                 "no alert channel is configured — the poll-staleness edge was not delivered"
-            )
-        return True
+            ),
+        )
