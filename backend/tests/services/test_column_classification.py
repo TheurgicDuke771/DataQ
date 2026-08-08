@@ -34,10 +34,13 @@ class TestNameSignal:
             "home_address",
             "phone_number",  # phone (person) wins over number (id)
             "first_name",
+            "last_name",
             "customer_name",  # bare `name` + no non-person entity → PII
             "date_of_birth",
+            "dob",
             "ssn",
             "username",
+            "ip_address",  # `address` token, no non-person entity qualifier
         ],
     )
     def test_person_columns_are_pii(self, name: str) -> None:
@@ -126,6 +129,47 @@ class TestNameSignal:
         assert classify_column("load_ts") is ColumnClass.SAFE
         assert classify_column("line_total") is ColumnClass.SAFE
         assert classify_column("status") is ColumnClass.SAFE
+
+
+class TestIssue1182FalsePositives:
+    """Regression: the auto-detect heuristic pre-filled non-PII columns (#1182) —
+    `rating`/`sentiment` on a feedback-sentiment table and `carrier`/`location_city`
+    on a logistics CSV. `rating`/`sentiment`/`carrier` had no token match at all and
+    fell through to the conservative-default PII; `location_city` matched the
+    legitimate address token `city` with no way to say "this is a place, not a
+    person"."""
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "rating",
+            "sentiment",
+            "carrier",
+            "location_city",
+            "sentiment_score",
+            "carrier_name",  # `carrier` is a non-person entity → bare `name` spared too
+            "warehouse_zip",
+            "carrier_address",
+        ],
+    )
+    def test_observed_false_positives_are_not_pii(self, name: str) -> None:
+        assert classify_column(name) is not ColumnClass.PII
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "city",  # bare address token, no entity qualifier → still PII (recall)
+            "address",
+            "customer_city",  # person-qualified → still PII
+            "billing_address",
+            "home_address",
+            "shipping_zip",
+        ],
+    )
+    def test_person_qualified_or_bare_address_stays_pii(self, name: str) -> None:
+        # The fix must not regress recall for a genuine person/customer address —
+        # only entity-qualified (location_city/warehouse_zip-shaped) columns flip.
+        assert classify_column(name) is ColumnClass.PII
 
 
 class TestValueSignal:

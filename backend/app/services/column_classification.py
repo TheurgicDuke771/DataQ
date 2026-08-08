@@ -49,8 +49,11 @@ class ColumnClass(StrEnum):
 
 
 # ── Name-token vocabularies (matched against the column's word tokens) ──────────
-# A person token → PII. Bare ``name`` is handled specially (product_name is not a
-# person), so it is NOT listed here; the person-name tokens below are explicit.
+# A person token → PII, unconditionally (no entity qualifier can un-flag these — an
+# email/phone/ssn is direct PII no matter what noun it's attached to). Bare ``name``
+# is handled specially (product_name is not a person), so it is NOT listed here; the
+# person-name tokens below are explicit. Address-class tokens (city/street/zip/…) are
+# NOT here either — see ``_ADDRESS_TOKENS``, which is entity-qualifiable (#1182).
 _PERSON_TOKENS: frozenset[str] = frozenset(
     {
         "email",
@@ -74,13 +77,6 @@ _PERSON_TOKENS: frozenset[str] = frozenset(
         "username",
         "login",
         "password",
-        "address",
-        "street",
-        "city",
-        "zip",
-        "zipcode",
-        "postal",
-        "postcode",
         "iban",
         "swift",
         "bic",
@@ -88,6 +84,17 @@ _PERSON_TOKENS: frozenset[str] = frozenset(
         "cvc",
         "aadhaar",
     }
+)
+# Address-class tokens (#1182): quasi-identifying, but context-dependent — a person's
+# ``city``/``address`` is PII, but the SAME token on a facility/geographic entity
+# (``location_city``, ``warehouse_zip``, ``carrier_address``) describes a place, not a
+# person, and over-flagging these dilutes the redaction signal (the original report:
+# ``location_city`` on a logistics CSV). Default PII (keeps recall for the common case
+# — a bare ``city``/``address``, or a person-qualified one like ``customer_city``), but
+# SAFE when paired with a ``_NON_PERSON_ENTITIES`` qualifier — the same
+# disambiguation already used for bare ``name`` below, applied here too.
+_ADDRESS_TOKENS: frozenset[str] = frozenset(
+    {"address", "street", "city", "zip", "zipcode", "postal", "postcode"}
 )
 # Financial domains whose *number* is direct PII — ``account_number`` / ``card_no`` /
 # ``routing_number``. Only the NUMBER: ``account_id`` / ``card_id`` are surrogate row
@@ -106,7 +113,8 @@ _PERSON_NAME_TOKENS: frozenset[str] = frozenset(
     {"firstname", "lastname", "fullname", "surname", "forename", "givenname", "middlename"}
 )
 # Entities that own a *non-person* ``name`` — product_name, category_name, … are labels,
-# not PII.
+# not PII. Also doubles (#1182) as the qualifier set for ``_ADDRESS_TOKENS`` above —
+# ``location_city``/``warehouse_zip`` are a place, not a person's address.
 _NON_PERSON_ENTITIES: frozenset[str] = frozenset(
     {
         "product",
@@ -131,6 +139,7 @@ _NON_PERSON_ENTITIES: frozenset[str] = frozenset(
         "step",
         "role",
         "tag",
+        "location",
     }
 )
 # Non-person *id-suffix* tokens — safe to SHOW as a row locator. Deliberately only the
@@ -158,7 +167,10 @@ _IDENTIFIER_TOKENS: frozenset[str] = frozenset(
         "slug",
     }
 )
-# Metric / time / status tokens — non-sensitive, SHOW when relevant.
+# Metric / time / status tokens — non-sensitive, SHOW when relevant. Includes
+# opinion/label/logistics tokens whose bare form is not personal data (#1182:
+# `rating`, `sentiment`, `carrier` were falling through to the conservative PII
+# default with no entity link to a person at all).
 _SAFE_TOKENS: frozenset[str] = frozenset(
     {
         "ts",
@@ -190,6 +202,8 @@ _SAFE_TOKENS: frozenset[str] = frozenset(
         "discount",
         "balance",
         "score",
+        "rating",
+        "sentiment",
         "pct",
         "percent",
         "ratio",
@@ -200,6 +214,7 @@ _SAFE_TOKENS: frozenset[str] = frozenset(
         "method",
         "currency",
         "channel",
+        "carrier",
         "enabled",
         "active",
         "valid",
@@ -218,15 +233,23 @@ def _tokens(name: str) -> list[str]:
 def _name_signal(name: str) -> ColumnClass | None:
     """Classify from the column *name* alone, or ``None`` if the name is inconclusive.
 
-    Precedence: person-PII → person-linking id (PII) → non-person identifier → safe.
+    Precedence: person-PII → address (entity-qualified) → person-linking id (PII) →
+    non-person identifier → safe.
     """
     tokens = set(_tokens(name))
     if not tokens:
         return None
 
-    # 1. Person / sensitive tokens, or an explicit person-name token → PII.
+    # 1. Person / sensitive tokens, or an explicit person-name token → PII. Always —
+    #    no entity qualifier un-flags an email/phone/ssn.
     if tokens & _PERSON_TOKENS or tokens & _PERSON_NAME_TOKENS:
         return ColumnClass.PII
+    # 1b. Address-class tokens (#1182): PII by default (keeps recall — a bare `city`/
+    #     `address`, or a person-qualified one like `customer_city`), but SAFE when
+    #     paired with a non-person entity — `location_city`/`warehouse_zip` name a
+    #     place, not a person's address.
+    if tokens & _ADDRESS_TOKENS:
+        return ColumnClass.SAFE if tokens & _NON_PERSON_ENTITIES else ColumnClass.PII
     # Bare ``name``: PII by default (a person's name), but SAFE when it labels a
     # non-person entity (product_name / category_name are labels, not personal data).
     if "name" in tokens:
