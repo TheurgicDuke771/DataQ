@@ -677,11 +677,16 @@ class _RedactionTracker:
     equal to the sentinel would misreport, and it can't see counts).
 
     ``column_state[name]`` is "was this column ever SHOWN anywhere in the sample" —
-    a column can appear in more than one bucket (e.g. both `unexpected_index_list`
-    and a comparison bucket); OR-ing keeps the summary matching what a viewer
-    actually saw. ``anonymous_masked`` covers the one path with no column name to
-    attribute to: a masked `partial_unexpected_list` with no ``tested_column``
-    context — still real masking, so it must not silently vanish from the summary.
+    a column can appear in more than one bucket (e.g. two comparison buckets, which
+    render as one table); OR-ing keeps the summary matching what a viewer actually
+    saw. ``anonymous_masked`` covers the one path with no column name to attribute
+    to: a masked `partial_unexpected_list` with no ``tested_column`` context — still
+    real masking, so it must not silently vanish from the summary.
+
+    The OR is only honest across buckets that are **all** on screen. It is *not*
+    across `unexpected_index_list` and `partial_unexpected_list`, which are two
+    renderings of the same failing rows where the UI shows exactly one (#1190) —
+    see `_displayed_sample_key` and #1197 for why only the displayed one is fed in.
     """
 
     column_state: dict[str, bool] = field(default_factory=dict)
@@ -709,6 +714,34 @@ class _RedactionTracker:
         if shown_any and not masked_any:
             return "none", redacted_columns
         return "partial", redacted_columns
+
+
+def _displayed_sample_key(sample: Mapping[str, Any]) -> str | None:
+    """Which failing-row list a viewer actually sees, or ``None`` if neither renders.
+
+    `unexpected_index_list` and `partial_unexpected_list` are two renderings of the
+    same failing rows and can both be present in one `sample_failures` payload, but
+    the run-detail table shows exactly **one** of them. This mirrors the frontend's
+    rule (`RunDetail.tsx`, #1190/#1183) byte for byte: a non-empty, all-dict
+    `unexpected_index_list` wins because its rows already carry the configured
+    identifier column; otherwise a list-shaped `partial_unexpected_list` is the
+    fallback; otherwise nothing renders.
+
+    Only the winner feeds the `_RedactionTracker` (#1197). Each list is classified
+    independently against its **own** values, and `column_classification._value_signal`
+    is ratio-based, so the same column can legitimately come out "masked" against one
+    list's sample and "shown" against the other's. `_RedactionTracker.record` ORs
+    toward "shown", so accumulating both let a column that reads ``"<redacted>"`` in
+    every displayed cell drop out of `redacted_columns` — the label understating the
+    masking on screen. That is the display-honesty class #424/#1115 exists to close;
+    the fix is to track the list the viewer is looking at, not the union.
+    """
+    index_rows = sample.get("unexpected_index_list")
+    if isinstance(index_rows, list) and index_rows and all(isinstance(r, dict) for r in index_rows):
+        return "unexpected_index_list"
+    if isinstance(sample.get("partial_unexpected_list"), list):
+        return "partial_unexpected_list"
+    return None
 
 
 def _redact_row(
@@ -746,6 +779,10 @@ def _redact_row(
             tracker.record(name, show)
     return out
 
+
+# The two interchangeable renderings of the same failing rows (#1190/#1197): GX can
+# populate both in one `sample_failures`, but the run-detail table shows exactly one.
+_FAILING_ROW_LIST_KEYS = frozenset({"unexpected_index_list", "partial_unexpected_list"})
 
 # Comparison sample buckets (ADR 0015 §4 — written by `comparison_run`).
 _COMPARISON_SAMPLE_KEYS = frozenset({"mismatched", "additional_in_source", "additional_in_target"})
@@ -874,8 +911,34 @@ def redact_sample_failures(
         return None
     index_rows = sample.get("unexpected_index_list")
     index_vbc = _values_by_column(index_rows) if isinstance(index_rows, list) else {}
+    # Of the two interchangeable failing-row lists, only the one the viewer is shown
+    # feeds the tracker (#1197) — see `_displayed_sample_key`. Redaction itself still
+    # runs over BOTH: whichever list a reader gets must have its own cells masked
+    # correctly, so this narrows only what the *label* is derived from.
+    displayed_key = _displayed_sample_key(sample)
     out: dict[str, Any] = {}
     for key, raw_value in sample.items():
+        # The tracker for THIS key: suppressed on the failing-row list that LOSES to
+        # the other one, so `summary()` describes the table on screen rather than the
+        # union of two renderings of the same rows. Deliberately narrow — it applies
+        # only when a winner exists, i.e. only to the both-lists-present case #1197
+        # describes. With one list (or neither renderable, `displayed_key is None`)
+        # nothing is suppressed and the #1115 semantics stand unchanged. Comparison
+        # buckets are a different surface (they render together), so they always
+        # accumulate.
+        #
+        # The `displayed_key is None` case (neither list renders) keeps reporting on
+        # the payload, which can leave the label describing rows the table does not
+        # draw. Assessed and left as is: reaching it needs a list-shaped but non-dict
+        # `unexpected_index_list` with no `partial_unexpected_list` beside it, and
+        # `gx_runner._extract_sample_failures` drops exactly that shape at capture
+        # (`_is_identifier_index_list`), so no result the GX path has ever written
+        # can carry it — and the comparison path uses different keys entirely.
+        key_tracker = (
+            None
+            if displayed_key is not None and key in _FAILING_ROW_LIST_KEYS and key != displayed_key
+            else tracker
+        )
         # Re-apply the sample bound at READ time (#1196). Capture-time capping only
         # protects rows written from here on; every result persisted BEFORE it — a
         # pandas-backed check that failed thousands of rows under GX's uncapped
@@ -902,7 +965,7 @@ def redact_sample_failures(
                     policy=policy,
                     tags=tags,
                     values_by_column=index_vbc,
-                    tracker=tracker,
+                    tracker=key_tracker,
                 )
                 for row in value
             ]
@@ -916,7 +979,7 @@ def redact_sample_failures(
                         policy=policy,
                         tags=tags,
                         values_by_column=vbc,
-                        tracker=tracker,
+                        tracker=key_tracker,
                     )
                     for row in value
                 ]
@@ -924,12 +987,12 @@ def redact_sample_failures(
                 tested_column, raw_value, policy, tags
             ):
                 out[key] = value  # the tested column's failing values — surfaced
-                if tracker is not None:
-                    tracker.record(tested_column, True)
+                if key_tracker is not None:
+                    key_tracker.record(tested_column, True)
             else:
                 out[key] = _redact_sample_value(value)
-                if tracker is not None:
-                    tracker.record(tested_column, False)
+                if key_tracker is not None:
+                    key_tracker.record(tested_column, False)
         elif key in _COMPARISON_SAMPLE_KEYS and isinstance(value, list):
             # Comparison buckets (ADR 0015, #794): rows carry `<col>_src` /
             # `<col>_tgt` pairs plus unsuffixed key columns. Policy/classifier

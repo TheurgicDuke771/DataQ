@@ -972,26 +972,104 @@ def test_redact_state_full_for_anonymous_masked_scalar_list_with_no_tested_colum
 
 
 def test_redact_state_partial_with_no_nameable_column_from_anonymous_mask() -> None:
-    """#1115 review: an anonymous mask (no `tested_column`) can coincide with a
-    DIFFERENT column being shown elsewhere in the same sample — both real GX
-    buckets, `unexpected_index_list` (row dicts, redacted per column) and
-    `partial_unexpected_list` (the tested column's scalar list), can be present
-    together. That combination reports "partial" with an EMPTY `redacted_columns`
-    (there is a real mask, but nothing nameable for it) — the API/frontend must
-    not read empty `redacted_columns` as "nothing was masked" when state is
-    "partial"."""
+    """#1115 review: an anonymous mask (no nameable column) can coincide with a
+    DIFFERENT column being shown in the SAME rendered list. That combination reports
+    "partial" with an EMPTY `redacted_columns` (there is a real mask, but nothing
+    nameable for it) — the API/frontend must not read empty `redacted_columns` as
+    "nothing was masked" when state is "partial".
+
+    It also pins #1197's guard. This sample renders nothing (a mixed dict/non-dict
+    `unexpected_index_list` fails the frontend's `isIdentifierRows`, and there is no
+    `partial_unexpected_list` to fall back to), so `_displayed_sample_key` returns
+    None and the displayed-list narrowing deliberately does NOT apply: with no winner
+    there is no loser to suppress, and #1115's union semantics stand unchanged. Drop
+    the `displayed_key is not None` guard and this reports None instead of "partial".
+
+    Before #1197 the property was demonstrated with the mask coming from a *different*
+    list (`partial_unexpected_list`) — which is exactly the cross-list accumulation
+    #1197 removed, since that list is not on screen when the index list is."""
     sample, state, cols = run_service.redact_sample_failures_with_state(
         {
-            "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],  # shown: identifier
-            "partial_unexpected_list": ["a@x.com"],  # masked, but no tested_column
+            "unexpected_index_list": [
+                {"ORDER_ID": "ORD-1"},  # shown: identifier
+                "not-a-row-dict",  # masked, nothing nameable
+            ],
         }
     )
     assert state == "partial"
     assert cols == []  # nothing nameable for the anonymous mask
+    assert sample == {"unexpected_index_list": [{"ORDER_ID": "ORD-1"}, "<redacted>"]}
+
+
+# ── the label describes the DISPLAYED list, not the union of both (#1197) ─────
+
+
+def test_redact_state_ignores_the_list_the_frontend_does_not_render() -> None:
+    """#1197: `unexpected_index_list` and `partial_unexpected_list` are two
+    renderings of the same failing rows, and the run-detail table shows exactly one —
+    the dict-shaped index list when present (#1190). Masking that happens only in the
+    list nobody sees must not appear in the label for the table they do see.
+
+    Displayed: one row whose `ORDER_ID` surfaces as an identifier — everything on
+    screen is shown, so the honest claim is "values shown". The scalar
+    `partial_unexpected_list` beside it masks (no `tested_column` to authorise it),
+    which used to drag the label to "partial" over a table with nothing redacted in
+    it."""
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],  # displayed, all shown
+            "partial_unexpected_list": ["a@x.com"],  # not displayed; masks
+        }
+    )
+    assert state == "none"
+    assert cols == []
+    # the list that is NOT rendered is still redacted on its own terms — narrowing
+    # the tracker must never narrow the masking.
     assert sample == {
         "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],
         "partial_unexpected_list": ["<redacted>"],
     }
+
+
+def test_redact_state_masked_column_stays_named_when_the_other_list_would_show_it() -> None:
+    """The exact undercount #1197 describes: a column that masks in the DISPLAYED
+    index list but classifies as shown from the other list's own sample must still
+    appear in `redacted_columns`. `tested_column` names it in both, so the old
+    cross-list OR flipped it to "shown" and reported "values shown" over a table
+    whose every cell for that column read "<redacted>"."""
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            # In the index list the column's own values are emails → PII → masked.
+            "unexpected_index_list": [{"CUSTOMER_REF": "a@x.com"}, {"CUSTOMER_REF": "b@x.com"}],
+            # In the scalar list the same column's sample is innocuous → shown.
+            "partial_unexpected_list": ["REF-1", "REF-2"],
+        },
+        tested_column="CUSTOMER_REF",
+    )
+    assert state == "full"
+    assert cols == ["CUSTOMER_REF"]
+    assert sample is not None
+    assert sample["unexpected_index_list"] == [
+        {"CUSTOMER_REF": "<redacted>"},
+        {"CUSTOMER_REF": "<redacted>"},
+    ]
+
+
+def test_redact_state_falls_back_to_the_partial_list_when_no_index_rows_render() -> None:
+    """Mirror of the frontend fallback: a non-dict `unexpected_index_list` renders
+    nothing, so `partial_unexpected_list` is the displayed list and sets the label."""
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "unexpected_index_list": [1, 4, 7],  # bare positional indices — not rows
+            "partial_unexpected_list": [-12.5, -5.0],
+        },
+        tested_column="LINE_TOTAL",
+    )
+    assert state == "none"  # the displayed list's values are shown
+    assert cols == []
+    assert sample is not None
+    assert sample["partial_unexpected_list"] == [-12.5, -5.0]
+    assert sample["unexpected_index_list"] == ["<redacted>"] * 3
 
 
 def test_redact_state_none_when_every_column_shown() -> None:
