@@ -33,7 +33,8 @@ from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, S
 from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
 from backend.app.datasources.sql import LazyEngine, is_sql_identifier
-from backend.app.services.custom_sql import is_custom_sql
+from backend.app.services.custom_sql import CUSTOM_SQL_EXPECTATION_TYPE, is_custom_sql
+from backend.app.services.failure_classifier import classify_failure_reason
 
 log = get_logger(__name__)
 
@@ -140,6 +141,17 @@ def build_databricks_url(
     return url
 
 
+# The expectation types that need a SQL execution engine and therefore a SQL
+# batch, not this runner's pandas one (#1179). Exactly the ADR-0019 custom-SQL
+# expectation today. Declared as data — and pinned by a canary test — so the
+# routing rule in `run_checks` is inspectable and widening it is a deliberate
+# edit rather than something that happens by accident. `is_custom_sql` stays the
+# predicate the routing uses, so `services.custom_sql` remains the one source of
+# truth for what "custom SQL" means; this set exists to make the *invariant*
+# visible to the next person, not to duplicate that decision.
+SQL_BATCH_EXPECTATION_TYPES: frozenset[str] = frozenset({CUSTOM_SQL_EXPECTATION_TYPE})
+
+
 class UnityCatalogCheckRunner:
     """GX `CheckRunner` for Unity Catalog via the Databricks SQL Warehouse.
 
@@ -173,10 +185,21 @@ class UnityCatalogCheckRunner:
         self._config = config
         self._token = token
         self._catalog = catalog
-        # The runner's ONE lazily-built engine (#427), shared by the GX read
-        # (`_read_table`) AND `run_monitors` — a mixed suite (expectations +
-        # monitors) pays a single warehouse session instead of two. Disposed by
-        # `close()`; the run path owns that lifecycle via `registry.owned_runner`.
+        # The runner's ONE **runner-owned** lazily-built engine (#427), shared by
+        # the GX read (`_read_table`) AND `run_monitors` — a mixed suite
+        # (expectations + monitors) pays a single warehouse session instead of
+        # two. Disposed by `close()`; the run path owns that lifecycle via
+        # `registry.owned_runner`.
+        #
+        # A suite containing custom-SQL checks additionally pays a SECOND engine
+        # that GX builds and owns behind its own SQL datasource (#1179). It is
+        # deliberately not folded in here: `add_databricks_sql` takes a connection
+        # string, not an engine, so it cannot be injected. `_run_sql_checks`
+        # disposes it per call — see `_sql_batch_definition` for the one residual
+        # case that seam cannot reach. `pool_pre_ping` is not set on it (unlike
+        # this one) and does not need to be: GX connects during
+        # `add_databricks_sql` and the checks run immediately after, so there is
+        # no idle window for a warehouse auto-stop to open.
         self._engine = LazyEngine(self._build_engine)
 
     def _build_engine(self) -> Any:
@@ -247,6 +270,14 @@ class UnityCatalogCheckRunner:
         suite never pays the full-table DataFrame read, and a suite with no
         custom SQL opens no second warehouse session.
         """
+        # ROUTING INVARIANT: the DataFrame batch is the DEFAULT and the SQL group
+        # is named positively, so this is a derive-by-exclusion rule — the same
+        # shape #429 removed from `supported_monitor_kinds`. Any future GX
+        # expectation whose metrics are SqlAlchemy-only would silently fall to the
+        # pandas batch and reproduce #1179's per-check "No provider found" error
+        # rather than being routed. Widening the SQL group must therefore be a
+        # CONSCIOUS act: add the type here (and to `SQL_BATCH_EXPECTATION_TYPES`,
+        # whose canary test exists to make that a deliberate edit).
         sql_positions = [i for i, spec in enumerate(checks) if is_custom_sql(spec.expectation_type)]
         frame_positions = [
             i for i, spec in enumerate(checks) if not is_custom_sql(spec.expectation_type)
@@ -324,10 +355,12 @@ class UnityCatalogCheckRunner:
         builds and owns the warehouse engine behind it, so the caller needs a
         handle to close it (`_dispose_gx_engine`).
 
-        ``create_temp_table=False``: GX's SQL datasources offer a temp-table
-        materialization we have no use for here (the custom-SQL metrics wrap the
-        batch selectable directly), and asking a SQL Warehouse for one is a
-        needless way to fail.
+        ``create_temp_table=False`` **pins GX's current default rather than
+        changing it** (`SQLDatasource.create_temp_table` is already False). It is
+        stated explicitly because the custom-SQL metrics wrap the batch selectable
+        directly and have no use for a temp table, so a future GX default flip
+        would silently start asking a SQL Warehouse to materialize one — the kind
+        of point-release drift CLAUDE.md §11 pins the GX version for.
         """
         datasource = context.data_sources.add_databricks_sql(
             name=f"uc-sql-{table}",
@@ -336,54 +369,123 @@ class UnityCatalogCheckRunner:
             ),
             create_temp_table=False,
         )
-        asset = datasource.add_table_asset(name=table, table_name=table, schema_name=schema)
-        return datasource, asset.add_batch_definition_whole_table(name="whole_table")
+        # `add_databricks_sql` has ALREADY built and tested the engine by the time
+        # it returns (GX calls `test_connection()` -> `get_engine()` before it
+        # registers the datasource), so anything that raises below leaves a live
+        # warehouse session with no owner — the caller's `finally` can't reach it,
+        # because the tuple it would have bound never got returned.
+        #
+        # KNOWN RESIDUAL, recorded rather than implied away: if `add_databricks_sql`
+        # ITSELF raises — the likeliest failure, a stopped warehouse or a dead PAT
+        # — GX has already cached the engine on a datasource object we never get a
+        # reference to, so nothing can dispose it and it survives to GC. This seam
+        # cannot fix that; only GX could. It is also why the runner's `close()`
+        # (#427, `registry.owned_runner`) does NOT cover this engine: GX owns it,
+        # and the lifecycle is hand-rolled here on purpose.
+        try:
+            # `schema_name` is deprecated in GX 1.14+ ("pass the schema in your
+            # datasource's connection configuration instead") but still
+            # load-bearing: `DatabricksSQLDatasource` does not override `schema_`,
+            # so dropping it leaves `_effective_schema_name` None. The DSN pins the
+            # same schema as the session default, so the two agree — keep both
+            # until GX gives the datasource a schema field.
+            asset = datasource.add_table_asset(name=table, table_name=table, schema_name=schema)
+            return datasource, asset.add_batch_definition_whole_table(name="whole_table")
+        except Exception:
+            self._dispose_gx_engine(datasource)
+            raise
 
     def _run_sql_checks(
         self, *, table: str, schema: str | None, checks: list[CheckSpec]
     ) -> SuiteOutcome:
         """Evaluate custom-SQL checks against a GX Databricks-SQL batch (#1179).
 
-        ``index_columns`` is deliberately **not** threaded through:
+        ``index_columns`` is deliberately **not** threaded through.
         ``UnexpectedRowsExpectation`` is a batch expectation whose `_validate`
         reads only the two query metrics and never computes an
         ``unexpected_index_list``, so `unexpected_index_column_names` cannot
-        change its result — while requesting it would arm `run_expectations`'
-        all-errored retry and bill a second warehouse round-trip for a query
-        whose only outcome is the same error.
+        change its result — passing it would be inert.
+
+        Not merely inert, though: `run_expectations` re-runs the whole group
+        without the index request whenever *every* check errored. That condition
+        is reachable here for a reason that has nothing to do with the index —
+        the user's own SQL failing — and the retry would then bill a second
+        warehouse round-trip to obtain the identical error. (The index request
+        itself never causes the error; it just makes the pointless retry
+        possible.) Not requesting it avoids both.
         """
         problem = self._sql_target_problem(table=table, schema=schema)
         if problem is not None:
-            # A target-shape problem is this group's own operational `error`,
-            # not the run's: the sibling expectations on the DataFrame batch
-            # evaluated fine and must still be persisted (#122).
-            return SuiteOutcome(
-                success=False,
-                checks=[
-                    CheckOutcome(
-                        expectation_type=spec.expectation_type,
-                        success=False,
-                        errored=True,
-                        error_message=problem,
-                        expected_value=dict(spec.kwargs) or None,
-                    )
-                    for spec in checks
-                ],
-            )
+            return self._sql_group_errored(checks, problem)
         assert schema is not None  # narrowed by `_sql_target_problem`
         context = gx.get_context(mode="ephemeral")
-        datasource, batch_definition = self._sql_batch_definition(
-            context, table=table, schema=schema
-        )
+        datasource: Any = None
         try:
+            datasource, batch_definition = self._sql_batch_definition(
+                context, table=table, schema=schema
+            )
             return run_expectations(
                 context,
                 batch_definition=batch_definition,
                 checks=checks,
                 name=f"suite-uc-sql-{table}",
             )
+        except Exception as exc:
+            # Building the SQL batch can fail on its own — GX tests the connection
+            # inside `add_databricks_sql` and validates the table inside
+            # `add_table_asset`, so an auto-stopped warehouse, an expired PAT
+            # (#954) or a missing grant raises HERE rather than inside a check.
+            #
+            # Letting that propagate would fail the whole run AND discard the
+            # DataFrame group's already-computed outcomes, which `run_checks`
+            # evaluated first — a blast radius the single-batch runner never had,
+            # and the opposite of what the target-shape branch above is careful
+            # to do. The datasource was demonstrably reachable moments earlier
+            # (the frame read succeeded), so "these checks could not be
+            # evaluated" is the honest report, not "the run died".
+            #
+            # The PERSISTED reason is classified, never the raw text: it lands
+            # verbatim in `results.observed_value` and is rendered in the UI, a
+            # sink the logger-level scrubber never sees, and a driver error can
+            # echo the PAT-bearing DSN (#849/#900).
+            #
+            # The LOG gets the full traceback, and deliberately so — that is the
+            # split #538 established. It disabled frame locals globally and added
+            # the `databricks://token:<PAT>@` userinfo scrub to `core/logging.py`
+            # precisely so tracebacks stay loggable; logging only an exception
+            # name here would leave an operator triaging a broken warehouse path
+            # with one word and no stack, and would also disguise a genuine
+            # programming error in our own code as a bland per-check failure.
+            log.exception("uc_sql_batch_unavailable", table=table)
+            return self._sql_group_errored(checks, classify_failure_reason(exc))
         finally:
-            self._dispose_gx_engine(datasource)
+            if datasource is not None:
+                self._dispose_gx_engine(datasource)
+
+    @staticmethod
+    def _sql_group_errored(checks: list[CheckSpec], reason: str) -> SuiteOutcome:
+        """One operational `error` outcome per custom-SQL check, siblings untouched.
+
+        The custom-SQL group could not be evaluated at all. That is this group's
+        own error, not the run's — the expectations on the DataFrame batch
+        evaluated fine and must still be persisted (#122) — so the failure is
+        expressed as per-check outcomes rather than an exception. ``reason`` must
+        already be safe to persist verbatim: either DataQ-authored from the
+        user's own configuration, or `classify_failure_reason` output.
+        """
+        return SuiteOutcome(
+            success=False,
+            checks=[
+                CheckOutcome(
+                    expectation_type=spec.expectation_type,
+                    success=False,
+                    errored=True,
+                    error_message=reason,
+                    expected_value=dict(spec.kwargs) or None,
+                )
+                for spec in checks
+            ],
+        )
 
     @staticmethod
     def _dispose_gx_engine(datasource: Any) -> None:

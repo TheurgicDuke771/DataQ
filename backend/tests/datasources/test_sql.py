@@ -71,6 +71,32 @@ def test_profiler_validate_identifier_routes_through_shared_allowlist(
         validate_identifier("fine_col")
 
 
+def test_uc_custom_sql_target_routes_through_shared_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The third consumer (#1179): the UC custom-SQL path interpolates
+    table/schema/catalog into GX's connection URL, so it validates them here.
+
+    Pinned as ROUTING for the same reason as the two above — a parametrized
+    battery of hostile names is only behavioral agreement, and would stay green
+    if this consumer re-grew a private regex copy, which is the exact drift #428
+    exists to prevent.
+    """
+    from backend.app.datasources import unity_catalog as unity_catalog_module
+    from backend.app.datasources.unity_catalog import UnityCatalogCheckRunner, UnityCatalogConfig
+
+    runner = UnityCatalogCheckRunner(
+        config=UnityCatalogConfig.model_validate(
+            {"workspace_url": "https://adb-1.azuredatabricks.net", "warehouse_id": "w"}
+        ),
+        token="t",
+        catalog="main",
+    )
+    assert runner._sql_target_problem(table="fine_table", schema="gold") is None
+    monkeypatch.setattr(unity_catalog_module, "is_sql_identifier", lambda name: False)
+    assert runner._sql_target_problem(table="fine_table", schema="gold") is not None
+
+
 # ───────────────────────── folding_identifier (#476) ─────────────────────────
 
 
