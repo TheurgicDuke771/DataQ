@@ -742,6 +742,101 @@ describe('RunDetail page', () => {
   });
 });
 
+describe('RunDetail — Observed column bounding (#1207)', () => {
+  // #1184's review dismissed this column as "always a compact scalar/small
+  // dict" — false for schema_drift, whose observed_value carries full
+  // added/removed column-name lists plus a type_changed entry per drifted
+  // column (backend/app/services/schema_drift.py diff_schemas()). This shape
+  // is what actually stretched a real user's table.
+  const schemaDriftCheck: Check = {
+    id: 'chk3',
+    suite_id: 's1',
+    name: 'orders schema drift',
+    kind: 'schema_drift',
+    expectation_type: 'monitor:schema_drift',
+    config: {},
+    warn_threshold: null,
+    fail_threshold: null,
+    critical_threshold: null,
+    alert_snoozed_until: null,
+  };
+
+  const longObservedValue = {
+    added: Array.from({ length: 12 }, (_, i) => `new_column_${i}`),
+    removed: ['legacy_flag'],
+    type_changed: Array.from({ length: 8 }, (_, i) => ({
+      column: `col_${i}`,
+      from: 'VARCHAR',
+      to: 'NUMBER',
+    })),
+    columns_checked: 40,
+  };
+
+  it('bounds a long structured (schema_drift-shaped) observed_value with an ellipsis column and shows the full payload on hover', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          check_id: 'chk3',
+          observed_value: longObservedValue,
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([schemaDriftCheck]);
+    renderAt('r1');
+    // Scoped (#345): the print-only RunReport also renders `formatScalar`
+    // of the same observed_value as plain text, so an unscoped screen query
+    // would match twice.
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('orders schema drift');
+
+    const expectedText = JSON.stringify(longObservedValue);
+    const trigger = region.getByText(expectedText);
+    expect(trigger.closest('td')).toHaveClass('ant-table-cell-ellipsis');
+
+    await user.hover(trigger);
+    // The custom Tooltip renders in a portal, outside the `rd-screen` region.
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(expectedText);
+  });
+
+  it('leaves a compact scalar observed_value rendering unchanged', async () => {
+    // The base `runDetail` fixture already carries a compact
+    // { unexpected_percent: 2 } observed_value on an ordinary expectation
+    // check — confirms the bounded column doesn't alter the small-payload case.
+    mockGetRun.mockResolvedValue(runDetail);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    expect(await region.findByText('{"unexpected_percent":2}')).toBeInTheDocument();
+  });
+
+  it('renders the em-dash placeholder for a null observed_value with no tooltip trigger (unchanged, no #1190 regression)', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [{ ...runDetail.results[0], observed_value: null }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    const row = region.getByText('order_id not null').closest('tr') as HTMLElement;
+    const observedCell = row.querySelector('td.ant-table-cell-ellipsis');
+    expect(observedCell).toHaveTextContent('—');
+
+    const user = userEvent.setup();
+    await user.hover(observedCell as HTMLElement);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+});
+
 describe('RunDetail — anomaly cold-start hint (#593)', () => {
   const anomalyCheck: Check = {
     id: 'chk2',
