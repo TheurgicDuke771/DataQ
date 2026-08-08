@@ -861,7 +861,9 @@ def redact_sample_failures(
     same cap capture applies — so a result persisted *before* that cap existed
     (GX's pandas engine returned `unexpected_index_list` untruncated) stops shipping
     an unbounded payload on every read. The aggregate counts are never touched, so
-    the reported failure total stays the real one.
+    the reported failure total stays the real one, and the show/mask classification
+    still runs over the **full** persisted list (see the inline note below) — the cap
+    bounds what is emitted, never what is examined.
 
     ``tracker`` is an optional accumulator (#424) — pass a fresh `_RedactionTracker`
     to also learn *which* columns were shown vs masked, via `tracker.summary()`.
@@ -871,9 +873,7 @@ def redact_sample_failures(
     if not sample:
         return None
     index_rows = sample.get("unexpected_index_list")
-    index_vbc = (
-        _values_by_column(index_rows[:SAMPLE_ROW_CAP]) if isinstance(index_rows, list) else {}
-    )
+    index_vbc = _values_by_column(index_rows) if isinstance(index_rows, list) else {}
     out: dict[str, Any] = {}
     for key, raw_value in sample.items():
         # Re-apply the sample bound at READ time (#1196). Capture-time capping only
@@ -883,6 +883,14 @@ def redact_sample_failures(
         # every run-detail load and MCP read until the retention sweep clears it.
         # Same read-time-derivation reasoning as the #1115 redaction state: old rows
         # are corrected for free, nothing to backfill.
+        #
+        # `value` is what we EMIT; every show/mask decision below still reads
+        # `raw_value` — the full persisted list. That split is load-bearing, not
+        # tidiness: `column_classification._value_signal` is *ratio*-based (emails
+        # ≥50%, id-shape ≥80% with distinct-ratio ≥80%), so judging a 5,000-row
+        # legacy sample on its first 20 rows can flip a column from PII to shown and
+        # unmask real values that were masked before the cap existed. Bounding the
+        # payload must never widen what the payload reveals.
         value = raw_value[:SAMPLE_ROW_CAP] if isinstance(raw_value, list) else raw_value
         if _is_safe_summary(key, value):
             out[key] = value
@@ -898,9 +906,9 @@ def redact_sample_failures(
                 )
                 for row in value
             ]
-        elif key == "partial_unexpected_list" and isinstance(value, list):
-            if value and all(isinstance(v, dict) for v in value):
-                vbc = _values_by_column(value)
+        elif key == "partial_unexpected_list" and isinstance(raw_value, list):
+            if raw_value and all(isinstance(v, dict) for v in raw_value):
+                vbc = _values_by_column(raw_value)
                 out[key] = [
                     _redact_row(
                         row,
@@ -913,7 +921,7 @@ def redact_sample_failures(
                     for row in value
                 ]
             elif tested_column is not None and not _known_sensitive(
-                tested_column, value, policy, tags
+                tested_column, raw_value, policy, tags
             ):
                 out[key] = value  # the tested column's failing values — surfaced
                 if tracker is not None:
@@ -928,7 +936,7 @@ def redact_sample_failures(
             # matching runs on the SUFFIX-STRIPPED name so a `pii_columns`
             # entry like `email` masks both sides — while unknown columns keep
             # the default-mask posture.
-            vbc = _values_by_column(value)
+            vbc = _values_by_column(raw_value)
             out[key] = [
                 _redact_comparison_row(
                     row, policy=policy, tags=tags, values_by_column=vbc, tracker=tracker

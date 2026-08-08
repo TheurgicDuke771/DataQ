@@ -734,6 +734,58 @@ def test_redact_bounds_oversized_lists_from_already_persisted_rows() -> None:
     assert out["unexpected_index_list"] == rows[:SAMPLE_ROW_CAP]
 
 
+def test_read_time_bound_classifies_over_the_full_list_not_the_capped_slice() -> None:
+    """#1196 review: bounding the payload must never widen what the payload reveals.
+
+    `column_classification._value_signal` is *ratio*-based (emails >= 50% of the
+    sampled values -> PII). A legacy oversized sample whose identifier-designated
+    column holds emails in 80% of 5,000 rows but only 45% of the FIRST 20 flips from
+    PII to shown the moment the classifier is fed the capped slice instead of the
+    persisted list — unmasking real addresses that were masked before the cap
+    existed. The emitted rows are capped; the classification input is not.
+    """
+    rows = [
+        {
+            # `_policy_identifier` designates this column, so it shows unless the
+            # VALUE signal proves it sensitive — exactly the ratio the slice skews.
+            # 9 of the first 20 rows are emails (0.45 — under the 0.5 threshold),
+            # but nearly the whole 5,000-row list is (0.998 — well over it).
+            "CUSTOMER_REF": (f"user{i}@example.com" if i >= 11 else f"REF-{i}"),
+            "LINE_TOTAL": -1.0 * i,
+        }
+        for i in range(5_000)
+    ]
+    # sanity: the heuristic really does disagree between the window and the whole list
+    first_window = (
+        sum("@" in str(r["CUSTOMER_REF"]) for r in rows[:SAMPLE_ROW_CAP]) / SAMPLE_ROW_CAP
+    )
+    whole_list = sum("@" in str(r["CUSTOMER_REF"]) for r in rows) / len(rows)
+    assert first_window < 0.5 <= whole_list
+
+    out = run_service.redact_sample_failures(
+        {"unexpected_index_list": rows, "unexpected_count": 5_000},
+        tested_column="LINE_TOTAL",
+        policy={"identifier_column": "CUSTOMER_REF"},
+    )
+    assert out is not None
+    emitted = out["unexpected_index_list"]
+    assert len(emitted) == SAMPLE_ROW_CAP  # still bounded
+    assert all(row["CUSTOMER_REF"] == "<redacted>" for row in emitted)
+    assert not any("@example.com" in str(row["CUSTOMER_REF"]) for row in emitted)
+
+
+def test_read_time_bound_classifies_the_full_partial_list_too() -> None:
+    """The same rule on the scalar `partial_unexpected_list` path: `_known_sensitive`
+    judges the tested column over every persisted value, not the emitted window."""
+    values = [f"user{i}@example.com" if i >= 11 else f"REF-{i}" for i in range(5_000)]
+    out = run_service.redact_sample_failures(
+        {"partial_unexpected_list": values, "unexpected_count": 5_000},
+        tested_column="CUSTOMER_REF",
+    )
+    assert out is not None
+    assert out["partial_unexpected_list"] == ["<redacted>"] * SAMPLE_ROW_CAP
+
+
 # ── column-aware redaction (#415) ─────────────────────────────────────────────
 
 
