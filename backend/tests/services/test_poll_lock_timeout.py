@@ -320,3 +320,38 @@ def test_the_engine_bounds_every_lock_wait(db_session: Any) -> None:
 
     assert setting not in ("0", "0ms"), "lock_timeout is unset — a lock can block forever"
     assert str(_LOCK_TIMEOUT_MS) in str(setting) or setting.endswith("s")
+
+
+def test_the_engine_bounds_the_initial_connect_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#1102: `lock_timeout` only bounds a statement waiting on a contended row AFTER a
+    connection is established — it says nothing about the initial TCP connect. An
+    unreachable DB (network partition, not a locked row) would otherwise block every
+    `get_session()` caller — including the #1052 staleness loop's graceful-shutdown await
+    — for however long the OS/driver default connect timeout allows (can be minutes).
+
+    Asserted by capturing the `connect_args` that `_build_engine` actually hands to
+    `create_engine`, deliberately NOT by dialing an unreachable host: that would make this
+    test itself slow/flaky by the exact amount we're trying to bound, and CI has no
+    deterministic way to guarantee a host is unreachable. What matters here is that the
+    config reaches the engine; that psycopg2 honors `connect_timeout` is the driver's own
+    documented contract, not ours to re-verify.
+    """
+    import backend.app.db.session as session_module
+    from backend.app.db.session import _CONNECT_TIMEOUT_SECONDS, _LOCK_TIMEOUT_MS
+
+    captured: dict[str, Any] = {}
+
+    def _fake_create_engine(url: Any, **kwargs: Any) -> str:
+        captured.update(kwargs)
+        return "not-a-real-engine"
+
+    monkeypatch.setattr(session_module, "create_engine", _fake_create_engine)
+
+    session_module._build_engine()
+
+    connect_args = captured.get("connect_args")
+    assert connect_args is not None, "_build_engine no longer passes connect_args at all"
+    assert connect_args.get("connect_timeout") == _CONNECT_TIMEOUT_SECONDS
+    # The existing lock_timeout posture must survive alongside the new option — this
+    # isn't a replacement, it's an addition at a different layer (statement vs. connect).
+    assert f"lock_timeout={_LOCK_TIMEOUT_MS}" in connect_args.get("options", "")
