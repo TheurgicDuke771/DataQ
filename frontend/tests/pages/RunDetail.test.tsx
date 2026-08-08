@@ -403,6 +403,69 @@ describe('RunDetail page', () => {
     expect(region.queryByText('value')).not.toBeInTheDocument();
   });
 
+  it('caps the rendered rows and shows a "not shown" count for a large unexpected_index_list (#1190 review)', async () => {
+    // Unlike partial_unexpected_list (GX-capped ~20 on every engine), GX's
+    // unexpected_index_list is NOT capped under result_format=COMPLETE on the
+    // pandas engine (flat-file/ADLS/S3/Iceberg) — gx_runner always requests
+    // COMPLETE. A check with many failing rows on those datasources can hand
+    // the frontend a much longer list than the table should ever render with
+    // pagination={false}, so the component must cap what it displays itself.
+    const bigIndexList = Array.from({ length: 45 }, (_, i) => ({
+      po_id: `PO-${String(i).padStart(5, '0')}`,
+      supplier_id: null,
+    }));
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          sample_failures: {
+            unexpected_count: 45,
+            unexpected_percent: 12.3,
+            unexpected_index_list: bigIndexList,
+          },
+          redaction: 'none',
+          redacted_columns: [],
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
+
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    // The header still reports the true total (45 rows) even though the table
+    // renders far fewer.
+    expect(region.getByText(/45 rows/)).toBeInTheDocument();
+    // Only the first 20 rows render into the DOM.
+    expect(region.getByText('PO-00000')).toBeInTheDocument();
+    expect(region.getByText('PO-00019')).toBeInTheDocument();
+    expect(region.queryByText('PO-00020')).not.toBeInTheDocument();
+    expect(region.queryByText('PO-00044')).not.toBeInTheDocument();
+    // The truncation note names how many were left out (45 total - 20 shown).
+    expect(region.getByText('+25 more rows not shown')).toBeInTheDocument();
+  });
+
+  it('does not show a "not shown" note when the sample fits within the cap (#1190 review)', async () => {
+    mockGetRun.mockResolvedValue(runDetail); // fixture sample has 2 rows, well under the cap
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
+
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(region.queryByText(/more rows? not shown/)).not.toBeInTheDocument();
+  });
+
   it('falls back to partial_unexpected_list (a bare "value" column) when unexpected_index_list is absent (#1183)', async () => {
     mockGetRun.mockResolvedValue({
       ...runDetail,

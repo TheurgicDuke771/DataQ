@@ -325,9 +325,20 @@ function SampleFailures({
           : { value: entry },
       )
     : [];
+  // #1190 review: GX caps `partial_unexpected_list` at ~20 rows
+  // (`partial_unexpected_count`) on every engine, but under `result_format:
+  // COMPLETE` (always used by `gx_runner`) the pandas engine — flat-file/ADLS/S3
+  // and Iceberg — returns `unexpected_index_list` FULL and UNTRUNCATED (only the
+  // SQLAlchemy-backed engines, Snowflake/UC, stay capped there too). Since this
+  // component now prefers that list, cap what's actually rendered ourselves so a
+  // check with thousands of failing rows on a pandas-backed datasource can't
+  // dump thousands of DOM rows into a `pagination={false}` table.
+  const MAX_SAMPLE_ROWS = 20;
+  const displayRows = rows.slice(0, MAX_SAMPLE_ROWS);
+  const hiddenRowCount = Math.max((count ?? rows.length) - displayRows.length, 0);
   // GX's partial_unexpected_list rows share one schema, but union the keys
   // defensively so a ragged sample still renders every column.
-  const colKeys = [...new Set(rows.flatMap((r) => Object.keys(r)))];
+  const colKeys = [...new Set(displayRows.flatMap((r) => Object.keys(r)))];
   const columns: ColumnsType<Record<string, unknown>> = colKeys.map((key) => ({
     title: key,
     dataIndex: key,
@@ -378,15 +389,22 @@ function SampleFailures({
           {redactionLabel !== null && ` · ${redactionLabel}`}
         </Typography.Text>
       </Typography.Text>
-      {rows.length > 0 ? (
-        <Table<Record<string, unknown>>
-          scroll={{ x: 'max-content' }}
-          rowKey={(_, i) => String(i)}
-          size="small"
-          columns={columns}
-          dataSource={rows}
-          pagination={false}
-        />
+      {displayRows.length > 0 ? (
+        <>
+          <Table<Record<string, unknown>>
+            scroll={{ x: 'max-content' }}
+            rowKey={(_, i) => String(i)}
+            size="small"
+            columns={columns}
+            dataSource={displayRows}
+            pagination={false}
+          />
+          {hiddenRowCount > 0 && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              +{hiddenRowCount} more row{hiddenRowCount === 1 ? '' : 's'} not shown
+            </Typography.Text>
+          )}
+        </>
       ) : (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           No sample rows captured.
