@@ -19,6 +19,22 @@ import { AsyncBody } from '../AsyncBody';
 import { errorMessage } from '../../utils/errors';
 
 /**
+ * Surface any #1186 advisory warnings a create/enable response carried — e.g.
+ * "this connection's URL is also configured on another env's connection, so a
+ * run there won't match this binding." Non-blocking: the binding was already
+ * saved successfully, this is purely informational (antd `message.warning`,
+ * longer duration than the success toast so it's actually readable).
+ */
+function warnAboutBinding(
+  message: ReturnType<typeof App.useApp>['message'],
+  binding: TriggerBinding,
+): void {
+  for (const warning of binding.warnings) {
+    message.warning(warning.message, 8);
+  }
+}
+
+/**
  * Suite-detail panel for the suite's run triggers: bind an orchestrator pipeline/
  * DAG so the suite runs on that pipeline's *success* (CLAUDE.md §4 — orchestration
  * providers are never a datasource; this is the one place a pipeline id meets a
@@ -100,8 +116,9 @@ function TriggerRow({
   const onToggle = async (enabled: boolean) => {
     setBusy(true);
     try {
-      await setTriggerBindingEnabled(binding.id, enabled);
+      const updated = await setTriggerBindingEnabled(binding.id, enabled);
       message.success(`${binding.pipeline_or_dag_id}: ${enabled ? 'enabled' : 'disabled'}`);
+      warnAboutBinding(message, updated);
       onChanged();
     } catch (err) {
       message.error(`Update failed: ${errorMessage(err)}`);
@@ -179,8 +196,14 @@ function AddTrigger({ suiteId, onAdded }: { suiteId: string; onAdded: () => void
     if (!provider || !env || !id) return;
     setAdding(true);
     try {
-      await createTriggerBinding({ provider, env, pipeline_or_dag_id: id, suite_id: suiteId });
+      const created = await createTriggerBinding({
+        provider,
+        env,
+        pipeline_or_dag_id: id,
+        suite_id: suiteId,
+      });
       message.success(`${id}: trigger added`);
+      warnAboutBinding(message, created);
       setProvider(undefined);
       setEnv(undefined);
       setPipelineId('');
