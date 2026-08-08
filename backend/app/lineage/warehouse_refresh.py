@@ -17,6 +17,14 @@ warehouse raises :class:`WarehouseLineageUnavailableError`; the refresh returns 
 and leaves the cache **untouched** — wiping edges on an outage is the failure this
 guard prevents (#828). A *successful* pull with zero edges is a true observation and
 DOES prune.
+
+**…and never-prune-on-PARTIAL either (#1109 review).** Total outage is not the only way
+to learn nothing: a provider that descends its ladder because a richer tier blipped
+returns a real, successful — but *degraded* — result whose missing edges are unobserved,
+not absent. `WarehouseLineageResult.prunable` carries that distinction, and a
+``prunable=False`` snapshot pull is persisted exactly like a log source for that cycle
+(upsert + accrete column pairs, no prune). The next clean pull prunes normally, so a
+genuinely removed dependency is at worst one cycle late — the cheap side of the trade.
 """
 
 from __future__ import annotations
@@ -128,6 +136,15 @@ def _persist(
     result: WarehouseLineageResult,
 ) -> WarehouseRefreshOutcome:
     source = provider.source
+    # The snapshot regime's two destructive halves — the stale-edge prune and the
+    # verbatim `columns` replace — are BOTH claims that this pull is the current truth.
+    # They therefore share one gate (#1109 review): a snapshot provider that returned a
+    # PARTIAL observation (`prunable=False` — a tier skipped or half-traversed for a
+    # transient reason) is persisted like a log source for this cycle, accreting only.
+    # Gating the prune alone would still have wiped column detail: the floor tier
+    # carries no column pairs, so a verbatim replace on a cycle where GET_LINEAGE
+    # blipped overwrites a real column mapping with NULL.
+    authoritative_snapshot = not provider.is_incremental and result.prunable
     # clock_timestamp() advances within the tx (unlike now()), captured BEFORE the edge
     # upserts stamp a strictly-later last_seen — the prune's strict `<` then keeps every
     # just-seen edge and drops only edges from an earlier refresh (the dbt discipline,
@@ -149,14 +166,14 @@ def _persist(
         id_by_name = upsert_assets(session, asset_rows, preserve_provenance=True)
         # Column-pair regime follows the EDGE regime (#911 review): an incremental
         # (log) source unions pairs with the persisted prior — its window only
-        # re-observes pairs whose queries ran inside it. A snapshot source's pull IS
-        # the current truth: pairs replace, so a mapping the warehouse no longer
-        # reports (rewritten ETL, revoked column-level grant) goes away instead of
-        # accreting forever.
+        # re-observes pairs whose queries ran inside it. An AUTHORITATIVE snapshot
+        # source's pull IS the current truth: pairs replace, so a mapping the warehouse
+        # no longer reports (rewritten ETL, revoked column-level grant) goes away
+        # instead of accreting forever. A partial snapshot is neither — it unions.
         existing_columns = (
-            _existing_columns(session, source=source, connection_id=connection.id)
-            if provider.is_incremental
-            else {}
+            {}
+            if authoritative_snapshot
+            else _existing_columns(session, source=source, connection_id=connection.id)
         )
         edge_rows = _edge_rows(
             result,
@@ -165,15 +182,16 @@ def _persist(
             connection_id=connection.id,
             existing_columns=existing_columns,
         )
-        _upsert_edges(session, edge_rows, replace_columns=not provider.is_incremental)
+        _upsert_edges(session, edge_rows, replace_columns=authoritative_snapshot)
 
-    # Prune ONLY a snapshot source (Snowflake OBJECT_DEPENDENCIES — a current-state
-    # view). A log source (UC table_lineage) is incremental: an edge absent from this
-    # window is a historical fact, not a removed dependency, so pruning it would erase
-    # real lineage. A successful empty snapshot pull prunes to zero; the unavailable
-    # case never reaches here (returned None above), so a prune is always backed by
-    # evidence we DID read the warehouse.
-    if not provider.is_incremental:
+    # Prune ONLY an authoritative snapshot source (Snowflake OBJECT_DEPENDENCIES — a
+    # current-state view — on a pull that observed current state completely enough). A
+    # log source (UC table_lineage) is incremental: an edge absent from this window is a
+    # historical fact, not a removed dependency, so pruning it would erase real lineage.
+    # A successful empty snapshot pull prunes to zero; the unavailable case never
+    # reaches here (returned None above) and a partial one is excluded by
+    # `prunable`, so a prune is always backed by evidence we DID read current state.
+    if authoritative_snapshot:
         session.execute(
             delete(LineageEdge).where(
                 LineageEdge.source == source,
@@ -196,6 +214,10 @@ def _persist(
         incremental=provider.is_incremental,
         degraded=result.degraded_reason is not None,
         skipped_tiers=list(result.skipped_tiers),
+        # A snapshot refresh that did NOT prune is the interesting one to see in the
+        # logs — it means the pull was partial, so the live count above may include
+        # edges this pull never re-observed.
+        pruned=authoritative_snapshot,
     )
     return WarehouseRefreshOutcome(
         live_edges=int(live),
@@ -257,6 +279,14 @@ def refresh_connection_lineage(
     # raw StringDataRightTruncation (the #813 class).
     reason = outcome.degraded_reason
     connection.lineage_degraded_reason = reason[:512] if reason else None
+    # Deliberately cleared even on a TRANSIENTLY degraded pull (#1109 review considered
+    # setting it): `lineage_last_error` means "the last refresh could not run" — the
+    # `_record_refresh_error` signal — and this one ran and wrote edges. Reporting it as
+    # a failure would make the two indistinguishable in `warehouse_lineage_status`,
+    # which already banners on `lineage_degraded_reason` as a first-class condition;
+    # the transient skip lands THERE, tagged `(transient — …)` by the provider so an
+    # operator can tell a blip from a permanent edition gate. Understating it would be
+    # a silent `None`; this is a named, visible, correctly-typed state.
     connection.lineage_last_error = None
     if outcome.new_watermark is not None:
         connection.lineage_watermark = outcome.new_watermark

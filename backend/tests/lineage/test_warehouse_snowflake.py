@@ -1011,6 +1011,56 @@ def test_an_unclassified_failure_on_the_first_call_now_descends_the_ladder() -> 
     assert "connection reset" not in result.degraded_reason
     # The tier aborted on the very first call — the second seed was never tried.
     assert len([sql for sql in conn.executed if "GET_LINEAGE" in sql]) == 1
+    # …and descending is only HALF the fix (#1109 review). This result is a floor-only
+    # view of a database whose GET_LINEAGE tier we simply could not read: absence of a
+    # top-tier edge here is not evidence it is gone. Marked non-prunable so the snapshot
+    # refresh accretes instead of wiping the previously-cached richer graph on a blip.
+    assert result.prunable is False
+    assert "transient" in reason  # and an operator can tell a blip from an edition gate
+
+
+def test_a_confirmed_first_call_failure_stays_prunable() -> None:
+    """The other half of #1109's review finding, and the reason `prunable` is not just
+    "did we descend": an EDITION GATE (or a missing grant) is a confirmed, structural
+    answer — this account will say the same thing next cycle, so the floor's graph IS
+    the current truth and the refresh must still prune against it. Marking every descent
+    non-prunable would freeze a genuinely-removed dependency in the cache forever.
+    """
+    conn = _GetLineageConn(
+        {},
+        raises={"GET_LINEAGE": _feature_unsupported_error()},
+        results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.tier == LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES
+    assert result.prunable is True
+    reason = next(s for s in result.skipped_tiers if s.startswith("get_lineage"))
+    assert "unsupported on this edition" in reason
+    assert "transient" not in reason
+
+
+def test_a_transient_skip_and_a_dead_floor_report_both_halves() -> None:
+    """A total denial must still raise (never read as an empty graph) — and must say
+    what happened FIRST (#1109 review): with GET_LINEAGE blipped and the floor then
+    unreadable, the GET_LINEAGE half is the more diagnostic one ("the warehouse is
+    unhappy" vs "one view is unreadable"), and it was being dropped on the way out.
+    Both halves are constructed strings, so #902 still holds for the joined message.
+    """
+    conn = _GetLineageConn(
+        {},
+        raises={
+            "GET_LINEAGE": RuntimeError("connection reset by peer"),
+            "OBJECT_DEPENDENCIES": OSError("connection reset by peer"),
+        },
+    )
+    with pytest.raises(WarehouseLineageUnavailableError) as caught:
+        SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    message = str(caught.value)
+    assert "OBJECT_DEPENDENCIES" in message and "OSError" in message  # the floor's own half
+    assert "get_lineage" in message and "RuntimeError" in message  # …and what preceded it
+    assert "connection reset" not in message  # exception TYPE only, never raw text (#902)
 
 
 def test_get_lineage_walks_both_directions_and_dedupes_across_seeds() -> None:
@@ -1154,6 +1204,35 @@ def test_a_later_seed_failure_is_skipped_not_fatal() -> None:
     result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
     assert result.tier == LineageTier.SNOWFLAKE_GET_LINEAGE
     assert len(result.edges) == 3
+    # …but a partial SUCCESS is still partial (#1109 review). Before, the ONLY trace of
+    # the lost calls was a `get_lineage_seed_failures` structlog line — a run that lost
+    # a MAJORITY of its calls returned a normal top-tier result, and the snapshot
+    # refresh then pruned every edge those calls would have re-observed. Now it says so
+    # on the result, and declines to license the prune.
+    partial = next(s for s in result.skipped_tiers if "traversal call(s) failed" in s)
+    assert "2 of 4" in partial  # both directions of the one dead seed, out of 2 seeds x 2
+    assert "transient" in partial
+    assert result.prunable is False
+    assert result.degraded_reason is not None and "partial" in result.degraded_reason
+
+
+def test_a_clean_full_traversal_is_prunable_and_undegraded() -> None:
+    """The control for the two tests above — without it, `prunable is False` proves
+    nothing (a field hard-wired to False would satisfy them both). A traversal where
+    every call landed is a complete observation of the tier: no skip note, no degrade,
+    and the snapshot prune stays armed."""
+    conn = _GetLineageConn(
+        {
+            ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
+                "gl_down_orders_header"
+            )
+        }
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+    assert result.tier == LineageTier.SNOWFLAKE_GET_LINEAGE
+    assert result.prunable is True
+    assert result.skipped_tiers == ()
+    assert result.degraded_reason is None
 
 
 def test_get_lineage_only_scratch_traversal_descends_not_a_confident_empty() -> None:

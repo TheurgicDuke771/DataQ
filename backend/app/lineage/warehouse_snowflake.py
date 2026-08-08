@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -331,6 +332,23 @@ def _stitch_ephemera(raw: _EdgeSet, *, path: str) -> tuple[LineageEdgePair, ...]
     return edges.to_edges()
 
 
+@dataclass(frozen=True)
+class _GetLineageTraversal:
+    """One GET_LINEAGE tier pass: the edges it produced, and how much of the traversal
+    actually ran (#1109 review).
+
+    ``failed_calls`` is not bookkeeping. A traversal that lost calls 2..2N produced a
+    PARTIAL view of the tier, and under the snapshot-prune regime a partial view that
+    reaches `_persist` unlabelled prunes every edge it failed to re-observe. Carrying
+    the count up is what lets `fetch_edges` mark the result non-prunable — and say so
+    in ``skipped_tiers``, where before it was a `structlog` line and nothing else.
+    """
+
+    edges: tuple[LineageEdgePair, ...]
+    calls: int
+    failed_calls: int
+
+
 class SnowflakeLineageProvider:
     """`WarehouseLineageProvider` for Snowflake. Descends the tier ladder above."""
 
@@ -350,6 +368,10 @@ class SnowflakeLineageProvider:
         namespace = self._namespace(connection_config)
         database = self._database(connection_config)
         skipped: list[str] = []
+        # Set by ANY tier that was skipped or half-traversed for a transient reason.
+        # It rides out on `prunable`, and the refresh turns it into "accrete, don't
+        # prune, this cycle" — see `WarehouseLineageResult.prunable` (#1109 review).
+        partial = False
 
         # Tier 1: GET_LINEAGE. Its absence is a clean 0A000 — descend, don't fail.
         # The reason is carried from the exception, NOT hard-coded: the tier can also
@@ -364,27 +386,40 @@ class SnowflakeLineageProvider:
         # exclusive win. GET_LINEAGE edges still win per-pair (it is the richer source),
         # but the floor is always read underneath it and unioned in.
         try:
-            top_edges = self._from_get_lineage(conn, namespace, connection_config=connection_config)
+            top = self._from_get_lineage(conn, namespace, connection_config=connection_config)
         except _FeatureUnsupportedError as exc:
-            skipped.append(f"get_lineage: {exc}")
-            top_edges = None
+            skipped.append(f"get_lineage: {_skip_reason(exc)}")
+            partial = partial or exc.transient
+            top = None
 
-        if top_edges is not None:
+        if top is not None:
+            if top.failed_calls:
+                # A partial SUCCESS is still partial (#1109 review): before this, a run
+                # that lost calls 2..2N — up to a majority of them — returned a normal
+                # top-tier result whose only trace was a `get_lineage_seed_failures`
+                # structlog line. The refresh then PRUNED every edge those calls would
+                # have re-observed, and no product surface ever said so.
+                skipped.append(
+                    f"get_lineage: {top.failed_calls} of {top.calls} traversal call(s) "
+                    f"failed — partial{_TRANSIENT_SKIP_SUFFIX}"
+                )
+                partial = True
             try:
                 floor_for_top = self._from_object_dependencies(conn, namespace, database)
             except Exception as exc:
                 raise WarehouseLineageUnavailableError(
-                    "snowflake lineage unavailable: could not read OBJECT_DEPENDENCIES "
-                    f"({type(exc).__name__})"
+                    self._unavailable_reason(exc, skipped)
                 ) from exc
             merged_top: dict[tuple[str, str], LineageEdgePair] = {
                 (e.upstream.name, e.downstream.name): e for e in floor_for_top
             }
-            merged_top.update({(e.upstream.name, e.downstream.name): e for e in top_edges})
+            merged_top.update({(e.upstream.name, e.downstream.name): e for e in top.edges})
             return WarehouseLineageResult(
                 edges=tuple(merged_top.values()),
                 tier=LineageTier.SNOWFLAKE_GET_LINEAGE,
-                skipped_tiers=(),
+                degraded_reason=("partial traversal — " + "; ".join(skipped)) if skipped else None,
+                skipped_tiers=tuple(skipped),
+                prunable=not partial,
             )
 
         # The two remaining sources are COMPLEMENTARY truths, not alternatives (#911
@@ -401,10 +436,7 @@ class SnowflakeLineageProvider:
         try:
             floor = self._from_object_dependencies(conn, namespace, database)
         except Exception as exc:  # the floor failing means we learned nothing
-            raise WarehouseLineageUnavailableError(
-                "snowflake lineage unavailable: could not read OBJECT_DEPENDENCIES "
-                f"({type(exc).__name__})"
-            ) from exc
+            raise WarehouseLineageUnavailableError(self._unavailable_reason(exc, skipped)) from exc
 
         dml: tuple[LineageEdgePair, ...] = ()
         try:
@@ -412,7 +444,8 @@ class SnowflakeLineageProvider:
         except _FeatureUnsupportedError as exc:
             # Carry the REAL reason (edition gate vs missing grant, #902) — the same
             # honesty rule the tier-1 skip already follows.
-            skipped.append(f"access_history: {exc}")
+            skipped.append(f"access_history: {_skip_reason(exc)}")
+            partial = partial or exc.transient
         if not dml and not any(s.startswith("access_history") for s in skipped):
             # Scoped-empty is a normal state (an all-COPY database, or one idle in the
             # window), NOT evidence of edition gating — the old "edition-gated or no
@@ -452,7 +485,25 @@ class SnowflakeLineageProvider:
                 else None
             ),
             skipped_tiers=tuple(skipped),
+            prunable=not partial,
         )
+
+    @staticmethod
+    def _unavailable_reason(exc: Exception, skipped: list[str]) -> str:
+        """The classified `WarehouseLineageUnavailableError` message for a floor failure.
+
+        Carries the tiers already skipped on the way down (#1109 review): when
+        GET_LINEAGE blipped AND the floor then failed, the GET_LINEAGE reason was the
+        first and more diagnostic half — "the network is unhappy" vs "one view is
+        unreadable" — and it was being dropped on the way out. Both halves are
+        constructed strings (exception TYPE + stable per-tier notes), never raw
+        connector text, so the #902 rule holds for the joined message too.
+        """
+        reason = (
+            "snowflake lineage unavailable: could not read OBJECT_DEPENDENCIES "
+            f"({type(exc).__name__})"
+        )
+        return f"{reason}; after {'; '.join(skipped)}" if skipped else reason
 
     # ── identity ──────────────────────────────────────────────────────────────
     def enumerate_tables(
@@ -741,7 +792,7 @@ class SnowflakeLineageProvider:
     # ── tier 1: GET_LINEAGE (Enterprise; clean 0A000 when absent) ───────────────
     def _from_get_lineage(
         self, conn: Any, namespace: str, *, connection_config: dict[str, object]
-    ) -> tuple[LineageEdgePair, ...]:
+    ) -> _GetLineageTraversal:
         """Per-seed ``SNOWFLAKE.CORE.GET_LINEAGE`` traversal (#892, live-captured
         2026-07-28 against prod Enterprise).
 
@@ -789,6 +840,14 @@ class SnowflakeLineageProvider:
         exclusive win either — `fetch_edges` unions it with the OBJECT_DEPENDENCIES
         floor (#1110), since the 500-seed/distance-2 bound means a >500-table database
         has real view dependencies this traversal never reached.
+
+        **Every descent above is classified transient-or-not** (#1109 review), because
+        descending is only safe if the degraded answer is not then mistaken for current
+        truth: a failed catalog read, a blipped first call and a traversal that lost
+        calls are all ``transient=True``, while an edition gate, a missing grant, an
+        empty catalog and a clean-but-empty traversal are confirmed. ``failed_calls``
+        rides back on the returned :class:`_GetLineageTraversal` for the same reason —
+        a partial SUCCESS is partial too.
         """
         cap = get_settings().warehouse_lineage_max_seeds
         try:
@@ -804,8 +863,11 @@ class SnowflakeLineageProvider:
             # No seed list → no traversal. Descend with the classified reason rather
             # than abort: the floor can still answer, and losing the whole graph
             # because a catalog read failed is the #828 failure this ladder exists for.
+            # TRANSIENT: a catalog read that failed for an unclassified reason tells us
+            # nothing about whether this tier's edges still exist, so the descent must
+            # not license a prune (#1109 review).
             raise _FeatureUnsupportedError(
-                f"seed enumeration failed ({type(exc).__name__})"
+                f"seed enumeration failed ({type(exc).__name__})", transient=True
             ) from exc
         if cap > 0 and len(seeds) > cap:
             log.warning(
@@ -849,9 +911,12 @@ class SnowflakeLineageProvider:
                         # answered fine. Skip just this tier — same shape as the
                         # seed-enumeration failure above — and let the union answer.
                         # The reason carries the exception TYPE only, never the raw
-                        # connector text (#902).
+                        # connector text (#902). TRANSIENT (#1109 review): descending
+                        # is only half the fix — an unclassified blip is not evidence
+                        # the tier's edges are gone, so the result it produces must not
+                        # license the snapshot prune that would wipe them.
                         raise _FeatureUnsupportedError(
-                            f"call failed ({type(exc).__name__})"
+                            f"call failed ({type(exc).__name__})", transient=True
                         ) from exc
                     seed_failures += 1
                     continue
@@ -877,9 +942,13 @@ class SnowflakeLineageProvider:
             # current-state authority to have answered it).
             raise _FeatureUnsupportedError(
                 f"no lineage rows for {len(seeds)} seed table(s)"
-                + (f" ({seed_failures} failed call(s))" if seed_failures else "")
+                + (f" ({seed_failures} failed call(s))" if seed_failures else ""),
+                # A CLEAN empty traversal is a confirmed observation of this tier; one
+                # with failed calls is indeterminate — "we saw nothing" and "we could
+                # not look" are different claims and only the first may prune.
+                transient=bool(seed_failures),
             )
-        return edges
+        return _GetLineageTraversal(edges=edges, calls=len(seeds) * 2, failed_calls=seed_failures)
 
     def _collect_get_lineage_rows(
         self, rows: Iterable[Any], *, namespace: str, into: _EdgeSet
@@ -925,7 +994,36 @@ class SnowflakeLineageProvider:
 class _FeatureUnsupportedError(Exception):
     """Internal: a tier could not answer — edition-gated (Snowflake 0A000), missing a
     grant, or (since #892) with nothing usable to traverse. Drives the ladder descent;
-    the message is a stable, operator-legible reason surfaced in ``skipped_tiers``."""
+    the message is a stable, operator-legible reason surfaced in ``skipped_tiers``.
+
+    ``transient`` splits the two reasons a tier can be skipped, and the split is
+    load-bearing (#1109 review), not cosmetic:
+
+    * **Confirmed** (``transient=False``) — an edition gate, a missing grant, a tier
+      that genuinely observed nothing. This account will answer the same way next
+      cycle, so the degraded result IS current truth and the snapshot refresh may
+      prune against it.
+    * **Transient** (``transient=True``) — a network blip on one call, a failed catalog
+      read, a half-finished traversal. The tier's edges are *unobserved*, not *absent*;
+      pruning them would wipe a previously-cached richer graph over a blip. The result
+      carries ``prunable=False`` so the refresh accretes instead (`lineage.warehouse`).
+    """
+
+    def __init__(self, message: str, *, transient: bool = False) -> None:
+        super().__init__(message)
+        self.transient = transient
+
+
+# Appended to a TRANSIENT skip's operator-facing reason. `warehouse_lineage_status`
+# banners on `lineage_degraded_reason` without knowing why a tier was skipped, so the
+# text is where "your account needs Enterprise" and "the network hiccuped" become
+# distinguishable to a human — otherwise both read as a flat "view-level lineage only".
+_TRANSIENT_SKIP_SUFFIX = " (transient — retried next refresh)"
+
+
+def _skip_reason(exc: _FeatureUnsupportedError) -> str:
+    """The operator-facing skip reason for a descended tier, tagged when transient."""
+    return f"{exc}{_TRANSIENT_SKIP_SUFFIX}" if exc.transient else str(exc)
 
 
 def _sqlstate(exc: BaseException) -> str | None:

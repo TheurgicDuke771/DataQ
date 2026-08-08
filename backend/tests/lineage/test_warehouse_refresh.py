@@ -189,6 +189,113 @@ def test_empty_successful_pull_prunes_to_zero(
     assert _edges_for(db_session, sf_connection) == set()
 
 
+def test_partial_pull_never_prunes_the_richer_cached_graph(
+    sf_connection: Connection, db_session: Session
+) -> None:
+    """#1109 review — the regression the descend-don't-abort fix would otherwise have
+    introduced. A transient blip inside the GET_LINEAGE tier makes the provider descend
+    and return a real, successful FLOOR-tier result. Under the snapshot regime that
+    result is normally the current truth, so `_persist` would prune every richer edge it
+    no longer mentions: one network hiccup, and the whole GET_LINEAGE half of the cached
+    graph is gone. `prunable=False` says the missing edges are UNOBSERVED, not absent.
+    """
+    refresh_warehouse_edges(
+        db_session,
+        connection=sf_connection,
+        provider=_StubProvider(
+            _result(("A", "B"), ("C", "D"), tier=LineageTier.SNOWFLAKE_GET_LINEAGE, degraded=None)
+        ),
+        conn=object(),
+    )
+    assert _edges_for(db_session, sf_connection)
+
+    partial = WarehouseLineageResult(
+        edges=(LineageEdgePair(_ident("A"), _ident("B")),),
+        tier=LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES,
+        degraded_reason="view-level lineage only — get_lineage: call failed (RuntimeError)",
+        skipped_tiers=(
+            "get_lineage: call failed (RuntimeError) (transient — retried next refresh)",
+        ),
+        prunable=False,
+    )
+    outcome = refresh_warehouse_edges(
+        db_session, connection=sf_connection, provider=_StubProvider(partial), conn=object()
+    )
+    assert outcome is not None and outcome.live_edges == 2  # (C,D) survived the blip
+    names = {(u.split(".")[-1], d.split(".")[-1]) for u, d in _edges_for(db_session, sf_connection)}
+    assert names == {("A", "B"), ("C", "D")}
+
+    # …and the NEXT clean pull prunes normally, so a genuinely removed dependency is at
+    # worst one cycle late — not frozen in the cache forever. Without this half, a
+    # `prunable` hard-wired to False would pass the assertion above.
+    outcome = refresh_warehouse_edges(
+        db_session,
+        connection=sf_connection,
+        provider=_StubProvider(_result(("A", "B"))),
+        conn=object(),
+    )
+    assert outcome is not None and outcome.live_edges == 1
+    names = {(u.split(".")[-1], d.split(".")[-1]) for u, d in _edges_for(db_session, sf_connection)}
+    assert names == {("A", "B")}
+
+
+def test_a_confirmed_degraded_pull_still_prunes(
+    sf_connection: Connection, db_session: Session
+) -> None:
+    """The counterpart: a tier skipped for a CONFIRMED reason (edition gate, missing
+    grant) is a degraded pull that is nonetheless current truth — the account will
+    answer identically next cycle. It must keep pruning, or a dependency dropped on a
+    Standard-edition account would never leave the cache.
+    """
+    refresh_warehouse_edges(
+        db_session,
+        connection=sf_connection,
+        provider=_StubProvider(_result(("A", "B"), ("C", "D"))),
+        conn=object(),
+    )
+    gated = WarehouseLineageResult(
+        edges=(LineageEdgePair(_ident("A"), _ident("B")),),
+        tier=LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES,
+        degraded_reason="view-level lineage only — get_lineage: unsupported on this edition",
+        skipped_tiers=("get_lineage: unsupported on this edition",),
+        # prunable defaults True — a confirmed skip is not a partial observation.
+    )
+    outcome = refresh_warehouse_edges(
+        db_session, connection=sf_connection, provider=_StubProvider(gated), conn=object()
+    )
+    assert outcome is not None and outcome.live_edges == 1
+    names = {(u.split(".")[-1], d.split(".")[-1]) for u, d in _edges_for(db_session, sf_connection)}
+    assert names == {("A", "B")}
+
+
+def test_partial_pull_does_not_wipe_column_pairs(
+    sf_connection: Connection, db_session: Session
+) -> None:
+    """Gating only the PRUNE would have left the other destructive half armed (#1109
+    review): a snapshot pull replaces `columns` verbatim, and the floor tier carries no
+    column pairs at all — so a cycle where GET_LINEAGE blipped would overwrite a real
+    column mapping with NULL while leaving the edge itself in place. Both halves are one
+    gate, so a partial pull accretes at column grain too.
+    """
+    rich = WarehouseLineageResult(
+        edges=(LineageEdgePair(_ident("SRC"), _ident("DST"), column_pairs=(("a", "b"),)),),
+        tier=LineageTier.SNOWFLAKE_GET_LINEAGE,
+    )
+    refresh_warehouse_edges(
+        db_session, connection=sf_connection, provider=_StubProvider(rich), conn=object()
+    )
+    partial = WarehouseLineageResult(
+        edges=(LineageEdgePair(_ident("SRC"), _ident("DST")),),  # floor grain — no pairs
+        tier=LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES,
+        prunable=False,
+    )
+    refresh_warehouse_edges(
+        db_session, connection=sf_connection, provider=_StubProvider(partial), conn=object()
+    )
+    cols = _columns_for(db_session, sf_connection)
+    assert cols[(_ident("SRC").name, _ident("DST").name)] == [["a", "b"]]
+
+
 def test_incremental_source_never_prunes(sf_connection: Connection, db_session: Session) -> None:
     # A log source (UC) is incremental: an edge from an earlier window must SURVIVE a
     # later refresh that didn't re-observe it — pruning it would erase real lineage.
