@@ -42,19 +42,38 @@ class CompositePublisher:
                     run_id=str(report.run_id),
                 )
 
-    def publish_health(self, session: Session, report: ConnectionHealthReport) -> None:
+    def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:
         """Fan a connection poll-health edge out to every channel, isolating failures —
-        the same contract as :meth:`publish` (#837). A broken Slack webhook must not
-        swallow the email telling you your poll has been dead for half an hour."""
+        the same contract as :meth:`publish` (#837), with the same delivered-first
+        hinge as :meth:`publish_poll_staleness` below (#1101): the caller claims
+        `health_alerted_at` BEFORE dispatching the send (#842/#843), so a quiet
+        "every channel is unconfigured" must not read as delivered — that would
+        permanently suppress the edge on a fresh install with zero channels
+        configured, since the flag would already be set by the time an operator
+        wires one up. Raises when nothing went out: every channel FAILED (re-raise
+        the last error) or every channel SKIPPED (raise
+        :class:`AlertUndeliverableError`). Partial delivery counts as delivered,
+        exactly like the run path's channel isolation."""
+        delivered = 0
+        last_error: Exception | None = None
         for publisher in self._publishers:
             try:
-                publisher.publish_health(session, report)
-            except Exception:
+                if publisher.publish_health(session, report):
+                    delivered += 1
+            except Exception as exc:
+                last_error = exc
                 log.exception(
                     "channel_health_publish_failed",
                     channel=type(publisher).__name__,
                     connection_id=str(report.connection_id),
                 )
+        if delivered == 0:
+            if last_error is not None:
+                raise last_error
+            raise AlertUndeliverableError(
+                "no alert channel is configured — the health edge was not delivered"
+            )
+        return True
 
     def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
         """Fan the workspace poll-staleness edge (#1052) out to every channel with the
