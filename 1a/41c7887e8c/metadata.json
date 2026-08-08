@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "1a41c7887e8c",
+  "strategy": "manual-commit",
+  "branch": "chore/remove-stale-react-router-waiver",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/scripts/audit_bulk.cjs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1a/41c7887e8c/0/metadata.json",
+      "transcript": "/1a/41c7887e8c/0/full.jsonl",
+      "compact_transcript": "/1a/41c7887e8c/0/transcript.jsonl",
+      "content_hash": "/1a/41c7887e8c/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 24363,
+    "cache_read_tokens": 4520780,
+    "output_tokens": 8169,
+    "api_call_count": 21
+  }
+}
