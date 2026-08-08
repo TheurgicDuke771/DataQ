@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { CONNECTION_KIND, type Connection, connectionOptionLabel } from '../../api/connections';
 import { createSuite, type Suite, targetString, updateSuite } from '../../api/suites';
 import {
+  asBatchStrategy,
   asFileFormat,
   assembleTarget,
   type TargetFormValues,
@@ -75,8 +76,7 @@ export function SuiteForm({
         target_mode: pattern ? 'batch' : 'single',
         target_prefix: targetString(suite.target, 'prefix'),
         target_pattern: pattern,
-        target_strategy:
-          (targetString(suite.target, 'strategy') as 'latest' | 'specific' | undefined) ?? 'latest',
+        target_strategy: asBatchStrategy(targetString(suite.target, 'strategy')) ?? 'latest',
         target_batch: targetString(suite.target, 'batch'),
       });
     }

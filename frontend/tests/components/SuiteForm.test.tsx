@@ -230,6 +230,43 @@ describe('SuiteForm — flat-file batch target (#1180)', () => {
     });
   });
 
+  it('falls back to "latest" when the stored strategy is malformed, without crashing', async () => {
+    // The suite target is untyped JSONB (a hand-edited row, or a value from an
+    // older schema) — a stray `strategy` must not prefill the Select with an
+    // option that doesn't exist (the same class of bug asFileFormat guards
+    // against for file_format, mirrored here by asBatchStrategy).
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(suite());
+    renderForm({
+      suite: suite({
+        target: {
+          pattern: 'tracking_events_([a-z_]+)\\.csv',
+          strategy: 'weekly', // not a real strategy
+        },
+      }),
+    });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Filename pattern (regex)')).toHaveValue(
+        'tracking_events_([a-z_]+)\\.csv',
+      ),
+    );
+    // Falls back to 'latest' — the Specific-only Batch key field stays hidden.
+    expect(screen.queryByLabelText('Batch key')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith('s1', {
+      name: 'logistics-suite',
+      description: null,
+      target: {
+        pattern: 'tracking_events_([a-z_]+)\\.csv',
+        strategy: 'latest',
+      },
+    });
+  });
+
   it('leaves single-file mode unchanged for a literal path target', async () => {
     const user = userEvent.setup();
     mockCreate.mockResolvedValue(suite());

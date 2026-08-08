@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ConnectionType } from '../../src/api/connections';
 import {
+  asBatchStrategy,
   asFileFormat,
   assembleTarget,
   hasCaptureGroup,
@@ -189,6 +190,18 @@ describe('assembleTarget', () => {
         }).target,
       ).toEqual({ pattern: 'tracking_events_ready.csv', strategy: 'latest' });
     });
+
+    it('flags a section started by picking "specific" alone, rather than silently discarding it', () => {
+      // Picking 'specific' with everything else blank is a deliberate action —
+      // it must not silently fall through to the all-blank targetless case the
+      // way an untouched 'latest' default does.
+      const { target, error } = assembleTarget('flatfile', {
+        target_mode: 'batch',
+        target_strategy: 'specific',
+      });
+      expect(target).toBeNull();
+      expect(error?.field).toBe('target_pattern');
+    });
   });
 });
 
@@ -254,5 +267,23 @@ describe('asFileFormat', () => {
     expect(asFileFormat('CSV')).toBeUndefined();
     expect(asFileFormat('')).toBeUndefined();
     expect(asFileFormat(undefined)).toBeUndefined();
+  });
+});
+
+describe('asBatchStrategy (#1180)', () => {
+  it('passes the two supported strategies through unchanged', () => {
+    expect(asBatchStrategy('latest')).toBe('latest');
+    expect(asBatchStrategy('specific')).toBe('specific');
+  });
+
+  it('narrows anything unsupported or absent to undefined, mirroring asFileFormat', () => {
+    // Same reasoning as asFileFormat: strategy is read out of an untyped
+    // JSONB bag, so a stray/malformed stored value (hand-edited row, an old
+    // schema) must not prefill the Strategy Select with a non-existent
+    // option — SuiteForm falls back to 'latest' when this returns undefined.
+    expect(asBatchStrategy('weekly')).toBeUndefined();
+    expect(asBatchStrategy('LATEST')).toBeUndefined();
+    expect(asBatchStrategy('')).toBeUndefined();
+    expect(asBatchStrategy(undefined)).toBeUndefined();
   });
 });

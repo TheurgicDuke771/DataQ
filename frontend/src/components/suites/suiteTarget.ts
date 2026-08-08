@@ -79,6 +79,14 @@ export function asFileFormat(value: string | undefined): 'csv' | 'parquet' | und
   return value === 'csv' || value === 'parquet' ? value : undefined;
 }
 
+/** Narrow an untyped stored `strategy` to the supported set, else `undefined`
+ *  — same reasoning as `asFileFormat`: the suite target is an untyped JSONB
+ *  bag, so a stray value must not prefill the Strategy Select with an option
+ *  that doesn't exist. */
+export function asBatchStrategy(value: string | undefined): 'latest' | 'specific' | undefined {
+  return value === 'latest' || value === 'specific' ? value : undefined;
+}
+
 export interface AssembledTarget {
   /** The target to send: `null` = leave targetless (no field was filled). */
   target: RunTarget | null;
@@ -121,7 +129,12 @@ function assembleBatchTarget(v: TargetFormValues): AssembledTarget {
   const pattern = trimmed(v.target_pattern);
   const strategy = v.target_strategy ?? 'latest';
   const batch = trimmed(v.target_batch);
-  if (!prefix && !pattern && !batch) return { target: null };
+  // An explicit non-default strategy pick counts as "the section was started"
+  // too, not just a filled prefix/pattern/batch — otherwise picking 'specific'
+  // and leaving pattern/batch blank silently discards to a targetless suite
+  // instead of flagging the missing pattern, unlike single-file mode (which
+  // already treats a format-only fill the same way).
+  if (!prefix && !pattern && !batch && strategy === 'latest') return { target: null };
   if (!pattern) {
     return {
       target: null,
