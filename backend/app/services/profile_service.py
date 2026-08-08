@@ -48,6 +48,7 @@ from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.flatfile import (
+    STREAM_CHUNK,
     RangeReader,
     download_bytes,
     format_from_path,
@@ -676,12 +677,29 @@ def _read_parquet_sample(
     `types_mapper=pd.ArrowDtype`, including the empty-file edge (an empty
     `Table` built straight from the footer's own field types, rather than an
     untyped `pd.DataFrame()`).
+
+    The reader is opened with `chunk=STREAM_CHUNK`, not `RangeReader`'s default
+    256 KiB seeking window. The default is sized for landing on a footer with a
+    couple of small reads; `iter_batches` instead walks row groups sequentially
+    (and, within a row group, jumps between the projected columns' — not
+    necessarily contiguous — byte ranges), the same access pattern
+    `csv_row_count` already uses `STREAM_CHUNK` for. On a file with many small
+    row groups the seeking default turns into a storm of small range requests —
+    measured at 6.8x the object's own size and 92 requests on a 200 row-group
+    fixture. `STREAM_CHUNK` bounds that to a small, roughly constant number of
+    requests (2-3, regardless of row-group count) with total bytes read landing
+    close to the object's own size — not always strictly under it, since a
+    single-window cache still re-fetches once a jump lands outside the current
+    window, but never the unbounded multiplier a small window produces on an
+    adversarial row-group layout.
     """
     import pandas as pd
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    reader = RangeReader(conn_type=conn_type, config=config, path=path, secret=secret)
+    reader = RangeReader(
+        conn_type=conn_type, config=config, path=path, secret=secret, chunk=STREAM_CHUNK
+    )
     parquet_file = pq.ParquetFile(reader)
     available = set(parquet_file.schema.names)
     present = [c for c in columns if c in available]

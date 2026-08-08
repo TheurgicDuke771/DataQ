@@ -487,15 +487,107 @@ def test_read_dataframe_parquet_samples_do_not_download_the_whole_object(
     )
     assert set(df.columns) == {"a", "c"}
     assert len(df) == svc._SAMPLE_ROWS  # capped, not the file's 200,000 rows
-    # The property under test: real range GETs were issued, and their total is
-    # well under the object's full size — not "some stats came back correct".
+    # The property under test: real range GETs were issued, and there were only
+    # a handful of them (`STREAM_CHUNK`'s few-large-requests shape) — not "some
+    # stats came back correct", and not one request per row group.
     assert ranges
+    assert len(ranges) <= 5
+    # Bytes land close to parity with the object's own size, not a multiple of
+    # it. `STREAM_CHUNK` (#1222 code-review fix) trades the tighter
+    # under-the-object bound this test used to pin for request-count safety on
+    # adversarial row-group layouts (see the sibling test below) — a generous
+    # 1.5x cap still catches a regression back to a storm of tiny requests.
     total_read = sum(length for _, length in ranges)
-    assert total_read < len(content)
-    # A generous bound rather than a razor-thin one: pins "a small fraction",
-    # not an exact byte count that would make the test brittle to unrelated
-    # pyarrow/footer changes.
-    assert total_read < len(content) * 0.6
+    assert total_read < len(content) * 1.5
+
+
+def test_read_dataframe_parquet_sample_uses_the_streaming_chunk_on_many_small_row_groups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Code-review finding on #1222: `RangeReader`'s *default* window (256 KiB,
+    sized for a seeking access pattern like landing on a footer) turns
+    `iter_batches` walking many small row groups into a storm of small range
+    requests — on this 200-row-group fixture it measured **6.8x** the object's
+    own size across **92** requests, i.e. the "sampler" transferred far more
+    than the whole-object download it exists to replace. The fix opens the
+    reader with `chunk=STREAM_CHUNK` (the same window `csv_row_count` already
+    uses for its own sequential walk), which on this fixture drops that to a
+    handful of requests and bytes close to the object's own size — regressing
+    back to the small seeking-sized default would blow through both bounds
+    below by an order of magnitude.
+    """
+    import io
+
+    from backend.app.services import profile_service as svc
+
+    n_row_groups = 200
+    rows_per_group = 1_000
+    total_rows = n_row_groups * rows_per_group
+    buf = io.BytesIO()
+    pd.DataFrame(
+        {
+            "a": range(total_rows),
+            "b": range(total_rows),
+            "c": [f"row-{i}" for i in range(total_rows)],
+        }
+    ).to_parquet(buf, row_group_size=rows_per_group)
+    content = buf.getvalue()
+    ranges = _patch_object(monkeypatch, content)
+
+    df = svc._read_dataframe(
+        _flatfile_conn(),
+        path="many_groups.parquet",
+        file_format="parquet",
+        columns=["a", "c"],
+        secret_store=_FakeStore(),
+    )
+    assert set(df.columns) == {"a", "c"}
+    assert len(df) == svc._SAMPLE_ROWS
+
+    total_read = sum(length for _, length in ranges)
+    # The regression this pins: with the seeking-sized default window, this
+    # fixture measured ~6.8x the object's size across 92 requests. With
+    # STREAM_CHUNK, total bytes land close to (generously, up to ~1.5x) the
+    # object's own size — an order of magnitude off the unfixed multiplier.
+    assert total_read < len(content) * 1.5
+    # Request COUNT, not just bytes — a large window that still issued one
+    # request per row group would also fail this even if coincidentally under
+    # the byte bound. STREAM_CHUNK keeps this in the single digits regardless
+    # of row-group count; the unfixed default issued 92 requests here.
+    assert len(ranges) < 10
+
+
+def test_read_dataframe_parquet_sample_of_an_empty_file_returns_typed_empty_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Code-review finding on #1222: the header-only/zero-row fallback in
+    `_read_parquet_sample` (a real, correctly-typed empty `pa.Table` built off
+    the footer's own field types) had no automated test — the PR description
+    said it was checked "by hand" only. Pins that an empty Parquet file yields
+    an empty, correctly-typed frame over the requested columns rather than
+    raising or losing dtype information.
+    """
+    import io
+
+    from backend.app.services import profile_service as svc
+
+    buf = io.BytesIO()
+    pd.DataFrame({"a": pd.array([], dtype="int64"), "b": pd.array([], dtype="int64")}).to_parquet(
+        buf
+    )
+    content = buf.getvalue()
+    _patch_object(monkeypatch, content)
+
+    df = svc._read_dataframe(
+        _flatfile_conn(),
+        path="empty.parquet",
+        file_format="parquet",
+        columns=["a"],
+        secret_store=_FakeStore(),
+    )
+    assert list(df.columns) == ["a"]
+    assert len(df) == 0
+    assert "pyarrow" in str(df.dtypes["a"])
 
 
 # ── list_file_columns (header/footer-only introspection, #474) ──
