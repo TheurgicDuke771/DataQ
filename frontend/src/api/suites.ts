@@ -57,8 +57,14 @@ export interface RunTarget {
   namespace?: string;
   path?: string;
   file_format?: 'csv' | 'parquet';
-  /** Flat-file *batch* selector (a literal `path` and `pattern` are mutually exclusive). */
+  /** Flat-file *batch* selector (a literal `path` and `pattern` are mutually exclusive):
+   *  `pattern` is a regex whose first capture group is the batch key, `strategy` is
+   *  `latest` (greatest key) or `specific` (`batch` key), `prefix` scopes the object
+   *  listing. Mirrors the backend `BatchSpec` (registry.py `_batch_spec`). */
   pattern?: string;
+  strategy?: 'latest' | 'specific';
+  batch?: string;
+  prefix?: string;
 }
 
 /** Read one string field out of the untyped run-target bag, or `undefined`. */
