@@ -171,6 +171,26 @@ class TestIssue1182FalsePositives:
         # only entity-qualified (location_city/warehouse_zip-shaped) columns flip.
         assert classify_column(name) is ColumnClass.PII
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "delivery_location_zip",
+            "customer_location_address",
+            "recipient_location_city",
+            "shipping_location_address",
+            "pickup_location_zip",
+            "customer_location_name",
+        ],
+    )
+    def test_person_context_beats_non_person_entity_qualifier(self, name: str) -> None:
+        # Review-caught regression: the entity-qualifier flip (SAFE when an address
+        # token or bare `name` is paired with a `_NON_PERSON_ENTITIES` token like
+        # `location`) must NOT fire when a person-context token (customer/delivery/
+        # shipping/recipient/pickup/…) is also present — `location` alone is
+        # ambiguous, and a co-occurring person-context token resolves that ambiguity
+        # toward the conservative PII default, not away from it.
+        assert classify_column(name) is ColumnClass.PII
+
 
 class TestValueSignal:
     def test_uuid_values_are_identifier_when_name_unknown(self) -> None:

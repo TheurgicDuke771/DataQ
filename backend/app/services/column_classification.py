@@ -112,9 +112,42 @@ _NATIONAL_ID_DOMAINS: frozenset[str] = frozenset(
 _PERSON_NAME_TOKENS: frozenset[str] = frozenset(
     {"firstname", "lastname", "fullname", "surname", "forename", "givenname", "middlename"}
 )
+# Tokens that mark the surrounding column as belonging to a SPECIFIC PERSON (a
+# customer/recipient/etc.), not a generic entity (#1182 review finding). This wins
+# over a ``_NON_PERSON_ENTITIES`` qualifier below: ``delivery_location_zip`` and
+# ``customer_location_address`` both contain the ambiguous ``location`` qualifier,
+# but the former names a facility/route while the latter is that customer's own
+# address — conservative default (PII) must win on that ambiguity, so a co-occurring
+# person-context token forces PII even in the presence of a non-person entity token.
+_PERSON_CONTEXT_TOKENS: frozenset[str] = frozenset(
+    {
+        "customer",
+        "user",
+        "member",
+        "recipient",
+        "shipper",
+        "shipping",
+        "delivery",
+        "pickup",
+        "patient",
+        "client",
+        "guest",
+        "buyer",
+        "billing",
+        "employee",
+        "resident",
+        "tenant",
+        "subscriber",
+        "passenger",
+        "applicant",
+        "owner",
+        "contact",
+    }
+)
 # Entities that own a *non-person* ``name`` — product_name, category_name, … are labels,
 # not PII. Also doubles (#1182) as the qualifier set for ``_ADDRESS_TOKENS`` above —
-# ``location_city``/``warehouse_zip`` are a place, not a person's address.
+# ``location_city``/``warehouse_zip`` are a place, not a person's address. A
+# co-occurring ``_PERSON_CONTEXT_TOKENS`` token always overrides this back to PII.
 _NON_PERSON_ENTITIES: frozenset[str] = frozenset(
     {
         "product",
@@ -244,15 +277,28 @@ def _name_signal(name: str) -> ColumnClass | None:
     #    no entity qualifier un-flags an email/phone/ssn.
     if tokens & _PERSON_TOKENS or tokens & _PERSON_NAME_TOKENS:
         return ColumnClass.PII
+
+    # A person-context qualifier (customer/delivery/shipping/…) always wins over a
+    # non-person entity qualifier below (#1182 review finding): `delivery_location_zip`
+    # and `customer_location_address` both carry the ambiguous `location` token, but
+    # only the former is a facility/route — the latter is a specific person's address.
+    # Conservative default (PII) wins whenever both are present.
+    person_qualified = bool(tokens & _PERSON_CONTEXT_TOKENS)
+
     # 1b. Address-class tokens (#1182): PII by default (keeps recall — a bare `city`/
     #     `address`, or a person-qualified one like `customer_city`), but SAFE when
-    #     paired with a non-person entity — `location_city`/`warehouse_zip` name a
-    #     place, not a person's address.
+    #     paired with a non-person entity AND no person-context token is also present
+    #     — `location_city`/`warehouse_zip` name a place, not a person's address.
     if tokens & _ADDRESS_TOKENS:
+        if person_qualified:
+            return ColumnClass.PII
         return ColumnClass.SAFE if tokens & _NON_PERSON_ENTITIES else ColumnClass.PII
     # Bare ``name``: PII by default (a person's name), but SAFE when it labels a
-    # non-person entity (product_name / category_name are labels, not personal data).
+    # non-person entity (product_name / category_name are labels, not personal data) —
+    # same person-context override as the address check above.
     if "name" in tokens:
+        if person_qualified:
+            return ColumnClass.PII
         return ColumnClass.SAFE if tokens & _NON_PERSON_ENTITIES else ColumnClass.PII
 
     # 2. A sensitive-domain identifier is itself direct PII → MASK, checked before the
