@@ -12,7 +12,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from backend.app.datasources.gx_runner import _check_errored, to_suite_outcome
+from backend.app.datasources.gx_runner import (
+    _SAMPLE_ROW_CAP,
+    _check_errored,
+    _extract_sample_failures,
+    to_suite_outcome,
+)
 
 
 def test_none_and_empty_are_not_errored() -> None:
@@ -157,3 +162,35 @@ def test_to_gx_expectation_non_dict_meta_surfaces_gx_error() -> None:
         not isinstance(excinfo.value, (ValueError, TypeError))
         or "validation" in str(excinfo.value).lower()
     ), f"expected GX's validation error, got bare {excinfo.value!r}"
+
+
+# ── sample-failure capture is bounded (#1196) ──
+
+
+def test_extract_sample_failures_caps_row_lists() -> None:
+    # Under `result_format="COMPLETE"` the pandas engine hands back an untruncated
+    # `unexpected_index_list`; capture must bound it (and any other list-shaped sample
+    # key) so `results.sample_failures` and `GET /runs/{id}` stay bounded.
+    rows: list[Any] = [{"customer_id": i, "order_number": None} for i in range(5_000)]
+    sample = _extract_sample_failures(
+        {
+            "unexpected_index_list": rows,
+            "partial_unexpected_list": [None] * 5_000,
+            "unexpected_count": 5_000,
+            "unexpected_percent": 100.0,
+        }
+    )
+    assert sample is not None
+    assert len(sample["unexpected_index_list"]) == _SAMPLE_ROW_CAP
+    assert len(sample["partial_unexpected_list"]) == _SAMPLE_ROW_CAP
+    # the cap keeps the FIRST rows (a stable, deterministic sample) and never touches
+    # the aggregate totals — the reader still learns the real failure count.
+    assert sample["unexpected_index_list"] == rows[:_SAMPLE_ROW_CAP]
+    assert sample["unexpected_count"] == 5_000
+    assert sample["unexpected_percent"] == 100.0
+
+
+def test_extract_sample_failures_leaves_short_lists_untouched() -> None:
+    rows = [{"customer_id": 1}, {"customer_id": 2}]
+    sample = _extract_sample_failures({"unexpected_index_list": rows, "unexpected_count": 2})
+    assert sample == {"unexpected_index_list": rows, "unexpected_count": 2}

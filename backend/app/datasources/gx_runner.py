@@ -37,6 +37,19 @@ _SAMPLE_KEYS = (
     "unexpected_index_list",
 )
 
+# Upper bound on the failing-row lists we persist into `results.sample_failures` (#1196).
+#
+# `gx_runner` always asks GX for `result_format="COMPLETE"`. GX keeps
+# `partial_unexpected_list` capped at `partial_unexpected_count` (20) on every
+# execution engine, but under COMPLETE the **pandas** engine (flat-file / ADLS / S3 /
+# Iceberg) returns `unexpected_index_list` FULL and untruncated — every failing row —
+# so a check failing thousands of rows persisted a proportionally huge JSONB blob and
+# shipped it on every `GET /runs/{id}`. The sample is a *sample*: the true totals live
+# in `unexpected_count`/`unexpected_percent` (kept verbatim), and the run-detail UI
+# renders at most 20 rows anyway. Applied to every list-shaped sample key so the
+# persisted sample is bounded regardless of which engine or GX version produced it.
+_SAMPLE_ROW_CAP = 20
+
 # GX injects internal bookkeeping keys into expectation_config.kwargs at run time
 # (e.g. batch_id); strip them so expected_value persists only the check's own
 # parameters.
@@ -107,9 +120,13 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
     for key in _SAMPLE_KEYS:
         if key not in result:
             continue
-        if key == "unexpected_index_list" and not _is_identifier_index_list(result[key]):
+        value = result[key]
+        if key == "unexpected_index_list" and not _is_identifier_index_list(value):
             continue
-        sample[key] = result[key]
+        # Bound the row lists at capture time (#1196) — see `_SAMPLE_ROW_CAP`. The
+        # scalar summary keys (`unexpected_count`/`unexpected_percent`) are not lists
+        # and pass through untouched, so the reported totals stay the real ones.
+        sample[key] = value[:_SAMPLE_ROW_CAP] if isinstance(value, list) else value
     return sample or None
 
 
