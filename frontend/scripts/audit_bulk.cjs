@@ -50,16 +50,15 @@ const SEVERITY_RANK = { info: 0, low: 1, moderate: 2, high: 3, critical: 4 };
  * never merely because the upgrade is inconvenient.
  */
 const ALLOWLIST = [
-  {
-    ghsa: 'GHSA-qwww-vcr4-c8h2',
-    package: 'react-router',
-    versions: '7.x',
-    reason:
-      'RSC-mode CSRF bypass. DataQ is a Vite SPA mounting the router declaratively ' +
-      'via <BrowserRouter> (src/main.tsx) — no RSC mode, no server actions, no ' +
-      'unstable_ RSC entry points. Only patch is react-router 8.x (a major bump).',
-    issue: '#968',
-  },
+  // GHSA-qwww-vcr4-c8h2 / react-router (#968) was REMOVED on 2026-08-08: the
+  // waiver's premise — "only patch is react-router 8.x, a major bump" — turned
+  // out to be wrong, or stopped being true; upstream shipped a 7.x fix and
+  // Dependabot's react-router-dom bump to 7.18.2 (#1173) pulled the transitive
+  // react-router to the same patched version. audit_bulk.cjs --audit-level=low
+  // confirms zero advisories match the locked graph. Another instance of the
+  // stale-entry check below working as designed: it flagged this waiver dead
+  // before this removal.
+  //
   // GHSA-mh99-v99m-4gvg / brace-expansion 1.x (#969) was REMOVED on 2026-08-04:
   // upstream backported the fix to the 1.x line (first_patched 1.1.17), so the
   // waiver's premise — "patched only in 5.0.8, and the 1.x line ends at 1.1.16" —
