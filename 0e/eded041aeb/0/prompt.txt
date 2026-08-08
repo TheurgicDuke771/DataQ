@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>b9cm0sg7z</task-id>
+<summary>Monitor event: "Poll CI status for PRs 1170, 1171, 1175 (post waiver-fix rebase) until all finish"</summary>
+<event>PR#1170: DONE - ALL GREEN</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bjezkp98m</task-id>
+<summary>Monitor event: "Poll CI for final PRs 1170 and 1171 until both finish"</summary>
+<event>PR#1171: DONE - ALL GREEN
+BOTH FINISHED</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9cm0sg7z</task-id>
+<summary>Monitor event: "Poll CI status for PRs 1170, 1171, 1175 (post waiver-fix rebase) until all finish"</summary>
+<event>PR#1171: DONE - ALL GREEN
+ALL 3 PRS FINISHED</event>
+</task-notification>

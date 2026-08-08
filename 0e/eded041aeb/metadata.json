@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "0eeded041aeb",
+  "strategy": "manual-commit",
+  "branch": "fix/codeql-93-import-style",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "backend/tests/mcp/test_mcp_auth.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0e/eded041aeb/0/metadata.json",
+      "transcript": "/0e/eded041aeb/0/full.jsonl",
+      "compact_transcript": "/0e/eded041aeb/0/transcript.jsonl",
+      "content_hash": "/0e/eded041aeb/0/content_hash.txt",
+      "prompt": "/0e/eded041aeb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 202,
+    "cache_creation_tokens": 370595,
+    "cache_read_tokens": 27886162,
+    "output_tokens": 35069,
+    "api_call_count": 101
+  }
+}
