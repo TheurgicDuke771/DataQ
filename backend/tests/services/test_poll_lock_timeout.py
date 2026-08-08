@@ -337,7 +337,6 @@ def test_the_engine_bounds_the_initial_connect_too(monkeypatch: pytest.MonkeyPat
     documented contract, not ours to re-verify.
     """
     import backend.app.db.session as session_module
-    from backend.app.db.session import _CONNECT_TIMEOUT_SECONDS, _LOCK_TIMEOUT_MS
 
     captured: dict[str, Any] = {}
 
@@ -351,7 +350,7 @@ def test_the_engine_bounds_the_initial_connect_too(monkeypatch: pytest.MonkeyPat
 
     connect_args = captured.get("connect_args")
     assert connect_args is not None, "_build_engine no longer passes connect_args at all"
-    assert connect_args.get("connect_timeout") == _CONNECT_TIMEOUT_SECONDS
+    assert connect_args.get("connect_timeout") == session_module._CONNECT_TIMEOUT_SECONDS
     # The existing lock_timeout posture must survive alongside the new option — this
     # isn't a replacement, it's an addition at a different layer (statement vs. connect).
-    assert f"lock_timeout={_LOCK_TIMEOUT_MS}" in connect_args.get("options", "")
+    assert f"lock_timeout={session_module._LOCK_TIMEOUT_MS}" in connect_args.get("options", "")
