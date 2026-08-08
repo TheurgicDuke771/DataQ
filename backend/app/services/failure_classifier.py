@@ -120,3 +120,38 @@ def classify_failure_reason(exc: BaseException) -> str:
     from ``_MESSAGES``, so no credential/DSN/PII fragment can ride out on it.
     """
     return _MESSAGES[classify_failure_category(exc)]
+
+
+# ── Inventory-sync grant classification (#1104) ──────────────────────────────
+# `sync_connection_inventory` always reads one FIXED, KNOWN system schema per
+# connection type (see `backend/app/lineage/warehouse_{snowflake,unity_catalog}.py`
+# `enumerate_tables`). That schema name is safe to state in the reason because
+# DataQ chose the query — it is never parsed back out of the driver's own error
+# text, which would repeat the #536 traceback-locals leak shape laundered
+# through a regex.
+_INVENTORY_SCHEMA_BY_TYPE: dict[str, str] = {
+    "unity_catalog": "`system.information_schema`",
+    "snowflake": "INFORMATION_SCHEMA in the connection's database",
+}
+
+
+def classify_inventory_sync_error(exc: BaseException, connection_type: str) -> str:
+    """The fixed, secret-free reason an inventory-sync attempt failed (#1104).
+
+    A missing grant gets a SPECIFIC message naming the system schema the sync
+    reads — this is the #828 shape the issue exists to close: toggle on,
+    connection test green (the `SELECT 1` probe never exercises this query),
+    zero assets ever appear, no surface says why. Every other failure category
+    (connectivity/config/unknown) falls back to the generic
+    :func:`classify_failure_reason` message, unchanged.
+    """
+    category = classify_failure_category(exc)
+    if category is FailureCategory.PERMISSION:
+        schema = _INVENTORY_SCHEMA_BY_TYPE.get(connection_type)
+        if schema:
+            return (
+                f"Inventory sync is missing a SELECT grant on {schema}. Grant SELECT "
+                "there (or ask your workspace admin to) and it will resolve "
+                "automatically on the next sync."
+            )
+    return classify_failure_reason(exc)

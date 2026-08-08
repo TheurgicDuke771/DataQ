@@ -12,6 +12,7 @@ from backend.app.services.failure_classifier import (
     FailureCategory,
     classify_failure_category,
     classify_failure_reason,
+    classify_inventory_sync_error,
 )
 
 
@@ -55,3 +56,57 @@ def test_reason_never_echoes_the_raw_exception_text() -> None:
     assert secret not in reason
     assert "SUPERSECRET" not in reason
     assert reason in _MESSAGES.values()
+
+
+class TestInventorySyncClassification:
+    """#1104 — a grant failure on the inventory-sync enumeration query must get a
+    SPECIFIC, connection-type-aware reason (naming the known system schema), not
+    the generic PERMISSION message every other failure gets."""
+
+    def test_uc_grant_error_names_the_schema(self) -> None:
+        exc = RuntimeError(
+            "Insufficient privileges to SELECT on Schema 'system.information_schema'"
+        )
+        reason = classify_inventory_sync_error(exc, "unity_catalog")
+        assert "system.information_schema" in reason
+        # Specific, not the generic bucket message every other permission failure gets.
+        assert reason != _MESSAGES[FailureCategory.PERMISSION]
+
+    def test_snowflake_grant_error_names_the_schema(self) -> None:
+        exc = RuntimeError(
+            "SQL access control error: Insufficient privileges to operate"
+            " on schema 'INFORMATION_SCHEMA'"
+        )
+        reason = classify_inventory_sync_error(exc, "snowflake")
+        assert "INFORMATION_SCHEMA" in reason
+        assert reason != _MESSAGES[FailureCategory.PERMISSION]
+
+    def test_uc_and_snowflake_grant_messages_differ(self) -> None:
+        exc = PermissionError("access denied")
+        assert classify_inventory_sync_error(exc, "unity_catalog") != classify_inventory_sync_error(
+            exc, "snowflake"
+        )
+
+    def test_non_permission_failure_falls_back_to_the_generic_reason(self) -> None:
+        exc = TimeoutError("connection timed out after 30s")
+        assert classify_inventory_sync_error(exc, "unity_catalog") == classify_failure_reason(exc)
+        assert (
+            classify_inventory_sync_error(exc, "unity_catalog")
+            == _MESSAGES[FailureCategory.CONNECTIVITY]
+        )
+
+    def test_unknown_connection_type_falls_back_to_the_generic_permission_message(self) -> None:
+        # No known schema mapping for this type — must not raise, must not fabricate
+        # a schema name; falls back to the generic classified reason.
+        exc = PermissionError("access denied")
+        assert (
+            classify_inventory_sync_error(exc, "some_future_type")
+            == _MESSAGES[FailureCategory.PERMISSION]
+        )
+
+    def test_never_echoes_the_raw_exception_text(self) -> None:
+        secret = "token dq_pat_SUPERSECRET"
+        exc = RuntimeError(f"access denied: {secret}")
+        reason = classify_inventory_sync_error(exc, "unity_catalog")
+        assert secret not in reason
+        assert "SUPERSECRET" not in reason

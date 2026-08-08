@@ -157,6 +157,101 @@ class TestCap:
             get_settings.cache_clear()
 
 
+class TestOutcomeState:
+    """#1104 — the sweep records its outcome ONTO the connection (mirroring the
+    `lineage_last_*` pattern), so a grant failure becomes a fact about the
+    connection rather than a line in App Insights, and a later success clears it."""
+
+    def test_success_stamps_attempted_at_and_clears_error_state(
+        self, db_session: Any, wired: Any
+    ) -> None:
+        wired["snowflake"] = _FakeProvider(_idents("DATAQ_DB.A.T"))
+        conn = _connection(db_session, opted_in=True)
+
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_attempted_at is not None
+        assert conn.inventory_sync_last_error is None
+        assert conn.inventory_sync_failing_since is None
+
+    def test_failure_records_a_classified_error_and_failing_since(
+        self, db_session: Any, wired: Any
+    ) -> None:
+        wired["unity_catalog"] = _FakeProvider((), fail=True)
+        conn = _connection(db_session, opted_in=True, conn_type="unity_catalog")
+        # Commit the setup row first: the sweep's failure branch rolls back any
+        # in-flight partial write from the failed attempt itself, and (unlike prod,
+        # where the connection is always an already-persisted row) an uncommitted
+        # test fixture would be rolled back right along with it.
+        db_session.commit()
+
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_attempted_at is not None
+        assert conn.inventory_sync_last_error is not None
+        assert conn.inventory_sync_failing_since is not None
+        # The raw exception text must never land on the connection.
+        assert "warehouse unreachable" not in conn.inventory_sync_last_error
+
+    def test_failing_since_holds_across_consecutive_failures(
+        self, db_session: Any, wired: Any
+    ) -> None:
+        wired["unity_catalog"] = _FakeProvider((), fail=True)
+        conn = _connection(db_session, opted_in=True, conn_type="unity_catalog")
+        db_session.commit()
+
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+        db_session.refresh(conn)
+        first_failing_since = conn.inventory_sync_failing_since
+        first_attempted_at = conn.inventory_sync_last_attempted_at
+        assert first_failing_since is not None
+        assert first_attempted_at is not None
+
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+        db_session.refresh(conn)
+        # attempted_at advances on every tick, but the START of the streak doesn't.
+        assert conn.inventory_sync_last_attempted_at is not None
+        assert conn.inventory_sync_last_attempted_at >= first_attempted_at
+        assert conn.inventory_sync_failing_since == first_failing_since
+
+    def test_a_subsequent_success_clears_the_failure_state(
+        self, db_session: Any, wired: Any
+    ) -> None:
+        provider = _FakeProvider((), fail=True)
+        wired["unity_catalog"] = provider
+        conn = _connection(db_session, opted_in=True, conn_type="unity_catalog")
+        db_session.commit()
+
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_error is not None
+        assert conn.inventory_sync_failing_since is not None
+
+        # The grant issue is fixed; the next tick enumerates successfully.
+        provider.fail = False
+        provider.identities = _idents("DATAQ_DB.A.T")
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_error is None
+        assert conn.inventory_sync_failing_since is None
+
+    def test_non_opted_in_connection_never_gets_outcome_state(
+        self, db_session: Any, wired: Any
+    ) -> None:
+        wired["snowflake"] = _FakeProvider(_idents("DATAQ_DB.A.T"))
+        conn = _connection(db_session, opted_in=False)
+
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_attempted_at is None
+        assert conn.inventory_sync_last_error is None
+        assert conn.inventory_sync_failing_since is None
+
+
 class TestSweepInterplay:
     """The ADR 0040 lifecycle claim, pinned: a synced table never becomes a sweep
     candidate while it exists; a dropped table freezes and ages out."""

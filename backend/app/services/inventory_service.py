@@ -23,6 +23,8 @@ the lineage refresh — one unreachable warehouse logs and never aborts the rest
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -32,6 +34,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Connection
 from backend.app.lineage.warehouse import get_warehouse_lineage_provider
 from backend.app.services.asset_service import upsert_assets
+from backend.app.services.failure_classifier import classify_inventory_sync_error
 
 log = get_logger(__name__)
 
@@ -112,6 +115,15 @@ def sync_asset_inventory(session: Session, *, secret_store: SecretStore) -> int:
     Fail-soft per connection (the lineage-refresh discipline): an unreachable
     warehouse logs a classified line and the sweep continues — and the failure
     is per-connection VISIBLE in logs rather than aborting the beat task.
+
+    Also records the outcome onto the connection itself (#1104) — mirroring the
+    `lineage_last_*` pattern (#858): `inventory_sync_last_attempted_at` is
+    stamped on EVERY attempt, `inventory_sync_last_error` holds a classified
+    reason (NULL on success), and `inventory_sync_failing_since` marks the start
+    of the current failure streak (NULL while healthy). Before these three
+    columns, a connection whose principal couldn't read the enumeration query
+    failed every tick invisibly to the user — toggle on, connection test green,
+    zero assets, no surface said why (#828 shape).
     """
     connections = (
         session.scalars(select(Connection).where(Connection.type.in_(INVENTORY_TYPES)))
@@ -122,16 +134,29 @@ def sync_asset_inventory(session: Session, *, secret_store: SecretStore) -> int:
     for connection in connections:
         if not inventory_opted_in(connection):
             continue
+        now = datetime.now(UTC)
         try:
             total += sync_connection_inventory(
                 session, connection=connection, secret_store=secret_store
             )
-        except Exception:
+        except Exception as exc:
             session.rollback()
+            reason = classify_inventory_sync_error(exc, connection.type)
+            connection.inventory_sync_last_attempted_at = now
+            connection.inventory_sync_last_error = reason
+            if connection.inventory_sync_failing_since is None:
+                connection.inventory_sync_failing_since = now
+            session.commit()
             log.warning(
                 "inventory_sync_connection_failed",
                 connection_id=str(connection.id),
                 connection_type=connection.type,
+                reason=reason,
                 exc_info=True,
             )
+        else:
+            connection.inventory_sync_last_attempted_at = now
+            connection.inventory_sync_last_error = None
+            connection.inventory_sync_failing_since = None
+            session.commit()
     return total
