@@ -268,3 +268,83 @@ class TestDeliveredFirst:
         assert svc.run_poll_staleness_check(db_session, now=NOW) == "alerted"
         assert svc.run_poll_staleness_check(db_session, now=NOW + timedelta(hours=1)) == "ok"
         assert len(publisher.reports) == 1
+
+
+# ── #1186: trigger-binding env-mismatch near-miss marker ─────────────────────
+#
+# Unit-level coverage of `record_trigger_binding_env_near_miss` itself (the
+# integration path — reached from `orchestration_service._trigger_suites` on a
+# genuine env mismatch — is covered in test_orchestration_service.py). This
+# module owns the `workspace_health` write; these tests pin its upsert/dedupe
+# contract directly against the real table.
+
+
+class TestTriggerBindingEnvNearMiss:
+    def test_first_call_creates_one_row(self, db_session: Any) -> None:
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a_snowflake_load",
+            run_env="qa",
+            binding_env="dev",
+        )
+        rows = list(db_session.scalars(select(WorkspaceHealth)))
+        assert len(rows) == 1
+        assert rows[0].key.startswith("trigger_env_near_miss:")
+
+    def test_repeated_calls_for_the_same_tuple_upsert_one_row(self, db_session: Any) -> None:
+        for _ in range(3):
+            svc.record_trigger_binding_env_near_miss(
+                db_session,
+                provider="airflow",
+                pipeline_or_dag_id="flow_a_snowflake_load",
+                run_env="qa",
+                binding_env="dev",
+            )
+        rows = list(db_session.scalars(select(WorkspaceHealth)))
+        assert len(rows) == 1  # deduped, not one row per call
+
+    def test_a_different_tuple_gets_its_own_row(self, db_session: Any) -> None:
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a_snowflake_load",
+            run_env="qa",
+            binding_env="dev",
+        )
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_b_medallion",  # different dag → different tuple
+            run_env="qa",
+            binding_env="dev",
+        )
+        rows = list(db_session.scalars(select(WorkspaceHealth)))
+        assert len(rows) == 2
+
+    def test_key_is_deterministic_and_within_the_column_length(self, db_session: Any) -> None:
+        # A long Airflow DAG id (up to 256 chars) must still fit the 64-char
+        # `workspace_health.key` column — this is why the key is hashed, not the
+        # raw tuple concatenated.
+        long_dag_id = "x" * 256
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id=long_dag_id,
+            run_env="qa",
+            binding_env="dev",
+        )
+        key_first = db_session.scalar(select(WorkspaceHealth.key))
+        assert key_first is not None
+        assert len(key_first) <= 64
+
+        # Recomputed independently for the same tuple → same key (idempotent).
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id=long_dag_id,
+            run_env="qa",
+            binding_env="dev",
+        )
+        key_second = db_session.scalar(select(WorkspaceHealth.key))
+        assert key_second == key_first

@@ -77,6 +77,24 @@ def _payload(suite_id: str, **overrides: Any) -> dict[str, Any]:
     return body
 
 
+def _adf_connection(db_session: Any, *, env: str, factory: str) -> Connection:
+    """An orchestration (ADF) connection — distinct from `_connection`'s
+    Snowflake stand-in, used for the #1186 ambiguous-URL warning tests."""
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"adf-{uuid.uuid4().hex[:8]}@example.com")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"adf-{env}-{uuid.uuid4().hex[:8]}",
+        type="adf",
+        env=env,
+        config={"factory_name": factory},
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    return conn
+
+
 def test_create_then_get_binding(client: TestClient, db_session: Any) -> None:
     suite_id = _owned_suite(client, _connection(db_session).id)
     created = client.post("/api/v1/trigger-bindings", json=_payload(suite_id))
@@ -84,10 +102,80 @@ def test_create_then_get_binding(client: TestClient, db_session: Any) -> None:
     body = created.json()
     assert body["provider"] == "adf"
     assert body["enabled"] is True
+    # No orchestration connection at all for (adf, dev) here — nothing to compare,
+    # so the #1186 warning is silent (and the response shape stays additive).
+    assert body["warnings"] == []
 
     got = client.get(f"/api/v1/trigger-bindings/{body['id']}")
     assert got.status_code == 200
     assert got.json()["suite_id"] == suite_id
+    assert got.json()["warnings"] == []  # a plain GET never recomputes warnings
+
+
+# ── #1186: creation/update-time ambiguous-orchestration-URL warning ──────────
+
+
+def test_create_warns_on_cross_env_shared_url(client: TestClient, db_session: Any) -> None:
+    # Two ADF connections share one factory_name across envs — the live #1186
+    # shape. The binding is created against "dev"; the response must warn that
+    # "qa" shares the same resource.
+    _adf_connection(db_session, env="dev", factory="shared-factory")
+    _adf_connection(db_session, env="qa", factory="shared-factory")
+    # The suite's datasource is unrelated to the ADF connections above — a
+    # binding never references a connection_id (CLAUDE.md §4: orchestration
+    # providers cannot be a suite's datasource), only (provider, dag, env).
+    suite_id = _owned_suite(client, _connection(db_session).id)
+
+    resp = client.post("/api/v1/trigger-bindings", json=_payload(suite_id, env="dev"))
+    assert resp.status_code == 201, resp.text
+    warnings = resp.json()["warnings"]
+    assert len(warnings) == 1
+    assert warnings[0]["code"] == "ambiguous_orchestration_url"
+    assert warnings[0]["other_envs"] == ["qa"]
+
+
+def test_create_does_not_warn_without_a_shared_url(client: TestClient, db_session: Any) -> None:
+    _adf_connection(db_session, env="dev", factory="factory-dev-only")
+    _adf_connection(db_session, env="qa", factory="factory-qa-only")  # distinct — no ambiguity
+    suite_id = _owned_suite(client, _connection(db_session).id)
+
+    resp = client.post("/api/v1/trigger-bindings", json=_payload(suite_id, env="dev"))
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["warnings"] == []
+
+
+def test_disabled_binding_creation_does_not_warn(client: TestClient, db_session: Any) -> None:
+    # The ambiguity is real, but a disabled binding won't fire regardless — the
+    # warning isn't actionable yet, so it's suppressed until the binding is
+    # (re-)enabled.
+    _adf_connection(db_session, env="dev", factory="shared-factory-2")
+    _adf_connection(db_session, env="qa", factory="shared-factory-2")
+    suite_id = _owned_suite(client, _connection(db_session).id)
+
+    resp = client.post(
+        "/api/v1/trigger-bindings", json=_payload(suite_id, env="dev", enabled=False)
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["warnings"] == []
+
+
+def test_reenabling_a_binding_recomputes_the_warning(client: TestClient, db_session: Any) -> None:
+    _adf_connection(db_session, env="dev", factory="shared-factory-3")
+    _adf_connection(db_session, env="qa", factory="shared-factory-3")
+    suite_id = _owned_suite(client, _connection(db_session).id)
+
+    created = client.post(
+        "/api/v1/trigger-bindings", json=_payload(suite_id, env="dev", enabled=False)
+    )
+    assert created.json()["warnings"] == []
+    bid = created.json()["id"]
+
+    reenabled = client.patch(f"/api/v1/trigger-bindings/{bid}", json={"enabled": True})
+    assert reenabled.status_code == 200
+    warnings = reenabled.json()["warnings"]
+    assert len(warnings) == 1
+    assert warnings[0]["code"] == "ambiguous_orchestration_url"
+    assert warnings[0]["other_envs"] == ["qa"]
 
 
 def test_create_rejects_unknown_provider(client: TestClient, db_session: Any) -> None:

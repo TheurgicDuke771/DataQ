@@ -18,6 +18,7 @@ raises typed `DataQError`s the envelope maps to status codes.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass, field
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
@@ -25,7 +26,15 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.db.models import ENVS, ORCHESTRATION_PROVIDERS, Share, Suite, TriggerBinding
+from backend.app.db.models import (
+    ENVS,
+    ORCHESTRATION_PROVIDERS,
+    Connection,
+    Share,
+    Suite,
+    TriggerBinding,
+)
+from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services.suite_authz import require_permission
 
 log = get_logger(__name__)
@@ -56,6 +65,85 @@ def _validate_provider_env(provider: str, env: str) -> None:
         raise TriggerBindingInvalidError(f"invalid env {env!r}", detail={"allowed": list(ENVS)})
 
 
+@dataclass(frozen=True)
+class TriggerBindingWarning:
+    """A non-blocking, advisory signal returned alongside a create/update response
+    (#1186 design option 1 — option 3, deterministic per-connection attribution,
+    was rejected as too invasive for v1.1). Never raised — the ambiguity a warning
+    names may be entirely intentional (two genuinely distinct pipelines that
+    happen to share a URL), so it informs rather than blocks.
+    """
+
+    code: str
+    message: str
+    other_envs: list[str]
+
+
+@dataclass(frozen=True)
+class BindingResult:
+    """A binding plus the advisory warnings computed for this create/update."""
+
+    binding: TriggerBinding
+    warnings: list[TriggerBindingWarning] = field(default_factory=list)
+
+
+def _ambiguous_orchestration_warnings(
+    session: Session, *, provider: str, env: str
+) -> list[TriggerBindingWarning]:
+    """Advisory warnings for a binding that will fire against `(provider, env)`.
+
+    The one check today (#1186 — confirmed live, silent trigger loss): does the
+    orchestrator connection this binding resolves to at ingest time
+    (`orchestration_service._resolve_connection`, keyed on `(type, env)`, which is
+    unique per the `uq_connections_orchestrator_type_env` partial index) share its
+    resource identity — `OrchestrationProvider.resource_config_key`, e.g. Airflow
+    `base_url`, ADF `factory_name`, dbt `project_name` — with a connection in a
+    DIFFERENT env? If so, a pipeline/DAG run reported against the OTHER
+    connection's env will never match a binding scoped to THIS env — the exact
+    live incident: two Airflow connections ("dev" / "qa") shared one `base_url`,
+    and bindings created against "dev" silently never fired while runs kept
+    attributing to "qa".
+
+    Provider-agnostic via the `resource_config_key` seam (CLAUDE.md §4/§11) — no
+    provider-specific branching. Returns `[]` when the binding's own connection
+    doesn't exist yet or carries no resource value — nothing to compare.
+    """
+    connection = session.scalar(
+        select(Connection).where(Connection.type == provider, Connection.env == env)
+    )
+    if connection is None:
+        return []
+    resource_key = get_orchestration_provider(provider).resource_config_key
+    resource_value = connection.config.get(resource_key)
+    if not resource_value:
+        return []
+    other_envs = sorted(
+        set(
+            session.scalars(
+                select(Connection.env).where(
+                    Connection.type == provider,
+                    Connection.env != env,
+                    Connection.config[resource_key].astext == str(resource_value),
+                )
+            )
+        )
+    )
+    if not other_envs:
+        return []
+    return [
+        TriggerBindingWarning(
+            code="ambiguous_orchestration_url",
+            message=(
+                f"This {provider} connection's resource ({resource_key}={resource_value!r}) is "
+                f"also configured on the {', '.join(other_envs)} connection(s). A pipeline/DAG "
+                "run reported against one of those will not match this binding's env — verify "
+                "this is the env you intend, or the trigger may silently never fire."
+            ),
+            other_envs=other_envs,
+        )
+    ]
+
+
 def create_binding(
     session: Session,
     *,
@@ -65,11 +153,13 @@ def create_binding(
     suite_id: uuid.UUID,
     user_id: uuid.UUID,
     enabled: bool = True,
-) -> TriggerBinding:
+) -> BindingResult:
     """Create a binding. Requires `edit` on the target suite (404/403 otherwise).
 
     The composite key (`provider`, `pipeline_or_dag_id`, `env`, `suite_id`) is
-    unique — a duplicate is a 409.
+    unique — a duplicate is a 409. Returns the binding plus any advisory
+    ambiguous-URL warnings (#1186), computed only when the binding is enabled —
+    a disabled binding won't fire regardless, so the ambiguity isn't yet actionable.
     """
     _validate_provider_env(provider, env)
     # Proves the suite exists (404) and the caller may automate it (403).
@@ -100,7 +190,10 @@ def create_binding(
         env=env,
         suite_id=str(suite_id),
     )
-    return binding
+    warnings = (
+        _ambiguous_orchestration_warnings(session, provider=provider, env=env) if enabled else []
+    )
+    return BindingResult(binding=binding, warnings=warnings)
 
 
 def list_bindings(
@@ -151,15 +244,25 @@ def get_binding(session: Session, binding_id: uuid.UUID, *, user_id: uuid.UUID) 
 
 def update_binding(
     session: Session, binding_id: uuid.UUID, *, user_id: uuid.UUID, enabled: bool
-) -> TriggerBinding:
+) -> BindingResult:
     """Toggle a binding's `enabled` flag. Identity fields are immutable — to
-    re-target a binding, delete it and create a new one. Requires `edit`."""
+    re-target a binding, delete it and create a new one. Requires `edit`.
+
+    Returns the same advisory warnings as `create_binding` (#1186), recomputed
+    here because re-enabling a previously-disabled binding is exactly the moment
+    the ambiguity becomes actionable again.
+    """
     binding = _get_owned(session, binding_id, user_id, minimum="edit")
     binding.enabled = enabled
     session.commit()
     session.refresh(binding)
     log.info("trigger_binding_updated", binding_id=str(binding.id), enabled=enabled)
-    return binding
+    warnings = (
+        _ambiguous_orchestration_warnings(session, provider=binding.provider, env=binding.env)
+        if enabled
+        else []
+    )
+    return BindingResult(binding=binding, warnings=warnings)
 
 
 def delete_binding(session: Session, binding_id: uuid.UUID, *, user_id: uuid.UUID) -> None:

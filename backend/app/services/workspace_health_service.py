@@ -19,6 +19,7 @@ only fires when a FAILING one was delivered, and the row is claimed
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
@@ -40,6 +41,10 @@ log = get_logger(__name__)
 
 #: The `workspace_health.key` this signal owns.
 POLL_STALENESS_KEY = "orchestration_poll_staleness"
+
+#: Prefix for the #1186 env-mismatch near-miss dedupe keys (see
+#: `record_trigger_binding_env_near_miss` below).
+_NEAR_MISS_KEY_PREFIX = "trigger_env_near_miss"
 
 
 def evaluate_poll_staleness(
@@ -186,3 +191,69 @@ def _ensure_row(session: Session) -> None:
         .values(key=POLL_STALENESS_KEY)
         .on_conflict_do_nothing(index_elements=[WorkspaceHealth.key])
     )
+
+
+# ─────────────── trigger-binding env near-miss (#1186) ───────────────
+#
+# A sibling signal to the poll-staleness one above, on the same `workspace_health`
+# table but a DIFFERENT shape: this is not a delivered-alert flag (no publisher, no
+# #843 delivered-first bookkeeping) — it is a lightweight, DB-visible "this
+# mismatch is still happening" marker, upserted every time the ingest path
+# (`orchestration_service._trigger_suites`) observes a succeeded pipeline/DAG run
+# whose (provider, pipeline_or_dag_id) matches an ENABLED binding but whose env
+# does not. The live incident (#1186): two Airflow connections shared one
+# `base_url` across envs, so runs kept attributing to "qa" while the binding was
+# scoped to "dev" — the binding was silently dead on arrival and nothing but a
+# structlog line said so.
+
+
+def _near_miss_key(
+    *, provider: str, pipeline_or_dag_id: str, run_env: str, binding_env: str
+) -> str:
+    """Deterministic, length-bounded `workspace_health.key` for one near-miss tuple.
+
+    `pipeline_or_dag_id` runs up to 256 chars (Airflow DAG ids), but
+    `workspace_health.key` is capped at 64 — so the identifying tuple is hashed
+    rather than concatenated raw. The row exists purely as a DB-visible
+    dedupe/last-seen marker; the human-readable detail (provider/dag/envs) lives
+    on the paired `trigger_binding_env_near_miss` log line emitted alongside it.
+    """
+    digest = hashlib.sha256(
+        f"{provider}|{pipeline_or_dag_id}|{run_env}|{binding_env}".encode()
+    ).hexdigest()[:16]
+    return f"{_NEAR_MISS_KEY_PREFIX}:{digest}"
+
+
+def record_trigger_binding_env_near_miss(
+    session: Session,
+    *,
+    provider: str,
+    pipeline_or_dag_id: str,
+    run_env: str,
+    binding_env: str,
+) -> None:
+    """Upsert the dedupe marker for one (provider, dag, run_env, binding_env) near-miss.
+
+    One row per distinct tuple: a repeated near-miss (e.g. the 10-min poll
+    re-observing the same stuck env mismatch) bumps `updated_at` in place rather
+    than growing the table — mirroring `_ensure_row`'s upsert shape for
+    `POLL_STALENESS_KEY`, just with an `ON CONFLICT DO UPDATE` instead of
+    `DO NOTHING` so "last seen" stays current. Commits its own transaction (the
+    caller — mid-ingest — has already committed the pipeline_run write, so this
+    is a small, isolated write, same discipline as `_upsert_pipeline_run`).
+    """
+    key = _near_miss_key(
+        provider=provider,
+        pipeline_or_dag_id=pipeline_or_dag_id,
+        run_env=run_env,
+        binding_env=binding_env,
+    )
+    session.execute(
+        pg_insert(WorkspaceHealth)
+        .values(key=key)
+        .on_conflict_do_update(
+            index_elements=[WorkspaceHealth.key],
+            set_={"updated_at": func.now()},
+        )
+    )
+    session.commit()

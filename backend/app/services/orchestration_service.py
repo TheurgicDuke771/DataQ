@@ -44,7 +44,7 @@ from backend.app.db.models import (
 )
 from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
-from backend.app.services import run_dispatch
+from backend.app.services import run_dispatch, workspace_health_service
 from backend.app.services.failure_classifier import classify_failure_reason
 
 log = get_logger(__name__)
@@ -237,6 +237,56 @@ def _maybe_enrich(
     return detailed
 
 
+def _record_env_near_misses(
+    session: Session, *, provider: str, connection: Connection, update: RunUpdate
+) -> None:
+    """Env-mismatch near-miss signal (#1186) — no binding fired for this run, but
+    one *would have* if its env matched.
+
+    Called only when `_trigger_suites` found zero bindings for this run's exact
+    (provider, pipeline_or_dag_id, env): if an ENABLED binding exists for the same
+    (provider, pipeline_or_dag_id) in a DIFFERENT env, that binding is a candidate
+    victim of the #1186 ambiguity — a pipeline/DAG run genuinely succeeded and a
+    binding genuinely exists for it, but the run's env (this connection's `env`,
+    resolved via `_resolve_connection`) doesn't match the binding's env, so
+    nothing fired and nothing said why beyond a log line. This records a
+    DB-visible, deduped marker alongside the log so the mismatch survives past
+    the log retention window (`workspace_health_service`, mirrors the #1100
+    `POLL_STALENESS_KEY` write shape).
+
+    Deliberately narrow: only reached when the exact-env match list is empty, so
+    a pipeline that already triggers correctly never logs a near-miss just
+    because an unrelated stray binding also exists in another env.
+    """
+    mismatched_envs = sorted(
+        set(
+            session.scalars(
+                select(TriggerBinding.env).where(
+                    TriggerBinding.provider == provider,
+                    TriggerBinding.pipeline_or_dag_id == update.pipeline_or_dag_id,
+                    TriggerBinding.enabled.is_(True),
+                    TriggerBinding.env != connection.env,
+                )
+            )
+        )
+    )
+    for binding_env in mismatched_envs:
+        log.warning(
+            "trigger_binding_env_near_miss",
+            provider=provider,
+            pipeline_or_dag_id=update.pipeline_or_dag_id,
+            run_env=connection.env,
+            binding_env=binding_env,
+        )
+        workspace_health_service.record_trigger_binding_env_near_miss(
+            session,
+            provider=provider,
+            pipeline_or_dag_id=update.pipeline_or_dag_id,
+            run_env=connection.env,
+            binding_env=binding_env,
+        )
+
+
 def _trigger_suites(
     session: Session, *, provider: str, connection: Connection, update: RunUpdate
 ) -> list[Run]:
@@ -262,6 +312,8 @@ def _trigger_suites(
             )
         )
     )
+    if not bindings:
+        _record_env_near_misses(session, provider=provider, connection=connection, update=update)
     created: list[Run] = []
     for binding in bindings:
         # Atomic dedup: the partial unique index `uq_runs_suite_triggered_by`
