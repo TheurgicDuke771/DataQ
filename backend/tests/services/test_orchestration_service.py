@@ -506,6 +506,43 @@ def test_near_miss_upsert_dedupes_the_same_mismatch(db_session: Any) -> None:
     assert rows[0].updated_at >= first_updated_at
 
 
+def test_near_miss_log_line_fires_only_on_first_occurrence(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The DB row dedupes via upsert regardless, but the log line must NOT fire
+    on every occurrence — a persistently misconfigured pipeline succeeds (and
+    re-triggers this check) every poll cycle, and warning every cycle forever is
+    the #852 log-amplification shape this codebase already burned itself on."""
+    import structlog
+    from structlog.testing import capture_logs
+
+    from backend.app.services import orchestration_service as svc_mod
+
+    conn = _adf_connection(db_session, env="qa")
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env="dev")
+
+    with capture_logs() as logs:
+        monkeypatch.setattr(
+            svc_mod, "log", structlog.get_logger("backend.app.services.orchestration_service")
+        )
+        ingest_event(
+            db_session,
+            provider_impl=_FakeProvider(),
+            update=_update(status="succeeded", provider_run_id="run-nm-throttle-1"),
+            secret_store=_FakeStore(),
+        )
+        ingest_event(
+            db_session,
+            provider_impl=_FakeProvider(),
+            update=_update(status="succeeded", provider_run_id="run-nm-throttle-2"),
+            secret_store=_FakeStore(),
+        )
+
+    near_miss_events = [e for e in logs if e["event"] == "trigger_binding_env_near_miss"]
+    assert len(near_miss_events) == 1  # only the first ingestion logged it
+
+
 def test_near_miss_signalled_via_the_poll_path_too(db_session: Any) -> None:
     # `_trigger_suites` is shared by both ingestion entry points — the near-miss
     # signal must fire whether the run arrived via webhook (above) or poll.

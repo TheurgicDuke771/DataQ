@@ -281,19 +281,20 @@ class TestDeliveredFirst:
 
 class TestTriggerBindingEnvNearMiss:
     def test_first_call_creates_one_row(self, db_session: Any) -> None:
-        svc.record_trigger_binding_env_near_miss(
+        first_occurrence = svc.record_trigger_binding_env_near_miss(
             db_session,
             provider="airflow",
             pipeline_or_dag_id="flow_a_snowflake_load",
             run_env="qa",
             binding_env="dev",
         )
+        assert first_occurrence is True
         rows = list(db_session.scalars(select(WorkspaceHealth)))
         assert len(rows) == 1
         assert rows[0].key.startswith("trigger_env_near_miss:")
 
     def test_repeated_calls_for_the_same_tuple_upsert_one_row(self, db_session: Any) -> None:
-        for _ in range(3):
+        occurrences = [
             svc.record_trigger_binding_env_near_miss(
                 db_session,
                 provider="airflow",
@@ -301,8 +302,14 @@ class TestTriggerBindingEnvNearMiss:
                 run_env="qa",
                 binding_env="dev",
             )
+            for _ in range(3)
+        ]
         rows = list(db_session.scalars(select(WorkspaceHealth)))
         assert len(rows) == 1  # deduped, not one row per call
+        # Only the FIRST call is a genuine insert — the caller uses this to
+        # throttle its own log line (the #852 log-amplification lesson): the
+        # row still bumps `updated_at` on every call, but repeats don't warn.
+        assert occurrences == [True, False, False]
 
     def test_a_different_tuple_gets_its_own_row(self, db_session: Any) -> None:
         svc.record_trigger_binding_env_near_miss(

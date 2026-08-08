@@ -22,7 +22,7 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -231,7 +231,7 @@ def record_trigger_binding_env_near_miss(
     pipeline_or_dag_id: str,
     run_env: str,
     binding_env: str,
-) -> None:
+) -> bool:
     """Upsert the dedupe marker for one (provider, dag, run_env, binding_env) near-miss.
 
     One row per distinct tuple: a repeated near-miss (e.g. the 10-min poll
@@ -241,6 +241,16 @@ def record_trigger_binding_env_near_miss(
     `DO NOTHING` so "last seen" stays current. Commits its own transaction (the
     caller — mid-ingest — has already committed the pipeline_run write, so this
     is a small, isolated write, same discipline as `_upsert_pipeline_run`).
+
+    Returns whether this call was the FIRST time this tuple was recorded (a
+    genuine ``INSERT``) as opposed to a repeat (``UPDATE`` via the conflict arm)
+    — the `(xmax = 0)` idiom on the returned row is the standard Postgres way to
+    tell the two apart from an `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`.
+    The DB row itself already dedupes via the upsert; this return value additionally
+    lets the caller dedupe ITS OWN log line, so a persistently misconfigured
+    pipeline that succeeds every 10 minutes doesn't warn every 10 minutes forever
+    (the #852 log-amplification lesson) — the row's `updated_at` still proves the
+    mismatch is ongoing without a matching log line on every occurrence.
     """
     key = _near_miss_key(
         provider=provider,
@@ -248,12 +258,15 @@ def record_trigger_binding_env_near_miss(
         run_env=run_env,
         binding_env=binding_env,
     )
-    session.execute(
+    result = session.execute(
         pg_insert(WorkspaceHealth)
         .values(key=key)
         .on_conflict_do_update(
             index_elements=[WorkspaceHealth.key],
             set_={"updated_at": func.now()},
         )
+        .returning(text("xmax = 0"))
     )
+    was_first_insert = bool(result.scalar_one())
     session.commit()
+    return was_first_insert

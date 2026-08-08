@@ -268,6 +268,13 @@ def _record_env_near_misses(
     the caller's retry logic for nothing); for `ingest_polled_runs` it would abort
     the whole poll batch mid-loop, silently dropping every *other* pipeline_run
     (and any trigger) the same poll cycle would otherwise have recorded.
+
+    The log line is throttled to the FIRST time a tuple is recorded, not every
+    occurrence: a persistently misconfigured pipeline succeeds (and re-triggers
+    this check) every poll cycle, and logging WARNING on every one of those is
+    exactly the log-amplification shape #852 already burned this codebase on —
+    the ongoing-ness is still provable from the `workspace_health` row's
+    `updated_at`, which the (deduped) DB write bumps every time regardless.
     """
     mismatched_envs = sorted(
         set(
@@ -282,15 +289,8 @@ def _record_env_near_misses(
         )
     )
     for binding_env in mismatched_envs:
-        log.warning(
-            "trigger_binding_env_near_miss",
-            provider=provider,
-            pipeline_or_dag_id=update.pipeline_or_dag_id,
-            run_env=connection.env,
-            binding_env=binding_env,
-        )
         try:
-            workspace_health_service.record_trigger_binding_env_near_miss(
+            first_occurrence = workspace_health_service.record_trigger_binding_env_near_miss(
                 session,
                 provider=provider,
                 pipeline_or_dag_id=update.pipeline_or_dag_id,
@@ -300,10 +300,21 @@ def _record_env_near_misses(
         except Exception:
             # The row write failed (or the session's transaction is now aborted) —
             # roll back so the caller's session is usable again, and never let a
-            # diagnostic-only failure break suite triggering itself.
+            # diagnostic-only failure break suite triggering itself. Always warn
+            # here regardless of first-vs-repeat: a write FAILURE is not the
+            # steady-state noise the throttle above guards against.
             session.rollback()
             log.warning(
                 "trigger_binding_env_near_miss_record_failed",
+                provider=provider,
+                pipeline_or_dag_id=update.pipeline_or_dag_id,
+                run_env=connection.env,
+                binding_env=binding_env,
+            )
+            continue
+        if first_occurrence:
+            log.warning(
+                "trigger_binding_env_near_miss",
                 provider=provider,
                 pipeline_or_dag_id=update.pipeline_or_dag_id,
                 run_env=connection.env,

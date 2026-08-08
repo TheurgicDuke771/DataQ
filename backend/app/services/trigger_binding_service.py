@@ -11,8 +11,11 @@ Because a binding automates a suite, management is gated on the caller's suite
 permission (`suite_authz.require_permission`): `edit` to create / change / delete,
 `view` to read — so you can't wire a pipeline to a suite you can't access.
 
-FastAPI-free (like the other services): takes a `Session`, returns ORM models,
-raises typed `DataQError`s the envelope maps to status codes.
+FastAPI-free (like the other services): takes a `Session`, raises typed
+`DataQError`s the envelope maps to status codes. `create_binding`/`update_binding`
+return a `BindingResult` (the `TriggerBinding` ORM row plus advisory #1186
+warnings, e.g. an ambiguous cross-env orchestration URL); every other read
+returns the plain ORM model.
 """
 
 from __future__ import annotations
