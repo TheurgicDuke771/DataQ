@@ -90,8 +90,13 @@ def publish_connection_health(
         if connection is None:  # deleted between the poll and the alert
             return False
         report = build_connection_health_report(connection, state=state)
-        registry.get_health_publisher().publish_health(session, report)
-        return True
+        # Propagate the publisher's own delivered/not-delivered answer rather than
+        # assuming True on a normal return (review finding, #1101): today the
+        # top-level publisher is always a CompositePublisher, which only returns
+        # normally with True or raises — but that invariant lives in registry.py,
+        # not here, and a bare `return True` would silently phantom-stamp again if
+        # a future publisher (or test double) ever returned False without raising.
+        return registry.get_health_publisher().publish_health(session, report)
     except AlertUndeliverableError:
         # Not a channel malfunction — every channel is simply unconfigured (or every
         # configured one failed). Log at warning, not a full exception traceback: this
