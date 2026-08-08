@@ -1,0 +1,478 @@
+<task-notification>
+<task-id>a86a0f415683beddf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/a86a0f415683beddf.output</output-file>
+<status>completed</status>
+<summary>Agent "Docs: ops-log + Snapshot re-count PR" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+**PR:** [#1204](https://github.com/TheurgicDuke771/DataQ/pull/1204) — `docs: ops-log 2026-08-08 windows + Snapshot re-count after the six-issue fix batch`
+**Merge SHA:** `7018d7724a981780906375e68377c38320685bca` (squash-merged 2026-08-08T14:05:58Z, all 16 CI checks green)
+
+**Snapshot counts (before → after):**
+- Open issues in `v1.1 Backlog`: 25 → **29**
+- Open issues repo-wide: 47 → **49**
+- Open PRs: 12 → **12** (unchanged — same Dependabot batch from 2026-08-03; the six fix-batch PRs all merged same-day, none stayed open)
+
+**Rows/sections added to `docs/progress.md`:**
+- Prepended new front-of-cell text to the Snapshot table's **Open issues** row and **Open PRs** row (existing text preserved verbatim as a wrapped "previous count" parenthetical, per the file's established convention).
+- New `### Six-issue fix batch (2026-08-08)` subsection (after "Dependency audit-gate sweep", before "Pending design decisions") with a PR/issue/summary table for #1190→#1183, #1191→#1182, #1192→#1180, #1194→#1186, #1198→#1181, #1201→#1179, a note tying #1179/#1201 to the recurring #953 "matrix tick never actually exercised" shape, and the 8 filed follow-ups routed to their correct milestones (5 → `v1.1 Backlog`: #1193/#1195/#1196/#1197/#1199; 3 → `v1.1 Week 6`: #1200/#1202/#1203).
+
+**`docs/ops-log.md`:** the pre-existing uncommitted harness-window + credential-rotation entries (03:32–13:01 UTC, two test windows, the Snowflake `DATAQ_LOADER_PAT` rotation, and the unplanned ~6h unattended-run incident) were kept verbatim and committed as-is.
+
+**Not touched (by design):** CLAUDE.md §13 — the fix batch doesn't move the v1.1 W6 milestone headline, and #1201's own PR already amended CLAUDE.md §5 + ADR 0019 separately. No epic checklist changes were needed — epic #597's checklist doesn't reference any of today's opportunistic fix-batch issue numbers.
+
+File touched: `/Users/arijit/Coding/Python/DataQ/docs/progress.md`, `/Users/arijit/Coding/Python/DataQ/docs/ops-log.md`</result>
+<usage><subagent_tokens>134033</subagent_tokens><tool_uses>65</tool_uses><duration_ms>771801</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad3498901929f9c95</task-id>
+<tool-use-id>toolu_01Rz8cRdc7Y4kPTNH4JA77Lk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/ad3498901929f9c95.output</output-file>
+<status>completed</status>
+<summary>Agent "Deploy to prod + smoke" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll wait for this to complete before doing anything else.</result>
+<usage><subagent_tokens>91125</subagent_tokens><tool_uses>19</tool_uses><duration_ms>90114</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bp9q9hdcz</task-id>
+<tool-use-id>toolu_01W1pCtMPefkbAvL2PRm1LEv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/bp9q9hdcz.output</output-file>
+<status>completed</status>
+<summary>Background command "Rebuild + restart local api/worker/frontend from main" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b0wbhahqx</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/b0wbhahqx.output</output-file>
+<status>completed</status>
+<summary>Background command "Rebuild + force-recreate local frontend" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad3498901929f9c95</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/ad3498901929f9c95.output</output-file>
+<status>completed</status>
+<summary>Agent "Deploy to prod + smoke" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll wait for this poll to notify me when the Deploy workflow finishes.</result>
+<usage><subagent_tokens>92529</subagent_tokens><tool_uses>24</tool_uses><duration_ms>200344</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad3498901929f9c95</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/ad3498901929f9c95.output</output-file>
+<status>completed</status>
+<summary>Agent "Deploy to prod + smoke" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Waiting for the Deploy workflow (run 31261342996) to complete — currently on the backend build/migrate/deploy job. I'll resume once the background poll notifies me.</result>
+<usage><subagent_tokens>93317</subagent_tokens><tool_uses>27</tool_uses><duration_ms>341639</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad3498901929f9c95</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/ad3498901929f9c95.output</output-file>
+<status>completed</status>
+<summary>Agent "Deploy to prod + smoke" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll stop here and wait for the actual notification rather than issuing further no-op commands.</result>
+<usage><subagent_tokens>94352</subagent_tokens><tool_uses>31</tool_uses><duration_ms>370562</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad3498901929f9c95</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/ad3498901929f9c95.output</output-file>
+<status>completed</status>
+<summary>Agent "Deploy to prod + smoke" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll stop polling and simply wait for the background task notification to arrive.</result>
+<usage><subagent_tokens>102103</subagent_tokens><tool_uses>49</tool_uses><duration_ms>548039</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad3498901929f9c95</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/ad3498901929f9c95.output</output-file>
+<status>completed</status>
+<summary>Agent "Deploy to prod + smoke" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All post-deploy smoke checks are complete and passing. Here's the final report.
+
+## Deploy Report — DataQ main → prod
+
+**Deploy workflow:** run [31261342996](https://github.com/TheurgicDuke771/DataQ/actions/runs/31261342996), triggered on `main` @ `7018d772` — **SUCCESS**, both jobs green (backend build/migrate/deploy, frontend build/deploy). No flake, no rerun needed.
+
+**Pre-deploy checks (all passed):**
+- CI on main (`7018d772`) — green (run 31261126775, all 12 jobs success)
+- No new Alembic migrations since prod's `bb40f0b7` (`git log bb40f0b7..main -- backend/alembic/versions/` empty)
+- Working tree clean
+
+**Images deployed:** `ghcr.io/theurgicduke771/dataq-backend:7018d7724a981780906375e68377c38320685bca` (api+worker), `ghcr.io/theurgicduke771/dataq-frontend:7018d7724a981780906375e68377c38320685bca` (frontend). Migrate job ran (no-op, as expected — no schema changes).
+
+**Revisions rolled:**
+| App | Revision | Created (UTC) |
+|---|---|---|
+| dataq-app-api | `--0000072` | 2026-08-08T14:14:50 |
+| dataq-app-worker | `--0000070` | 2026-08-08T14:15:08 |
+| dataq-app-frontend | `--0000047` | 2026-08-08T14:16:06 (100% traffic) |
+
+**Smoke checklist:**
+- `/healthz` → 200 — pass
+- SPA `/` → 200, deep link `/results` → 200 — pass
+- `/api/v1/me` unauthenticated → 401 — pass
+- `/mcp/` GET and POST unauthenticated → 401 (not 421) — pass
+- `/api/v1/openapi.json` → 404 (prod-docs gate) — pass
+- Authenticated `/api/v1/me` with admin PAT → 200, `dataq-admin@...`, `is_workspace_admin: true` — pass
+- Suite run smoke: triggered `POST /suites/{id}/run` on "Unity Catalog — Feedback (all paths)" (`9d9790ba-...`) → run `177518d8-82a8-4411-84c7-361256e50fdc` → polled to `succeeded`, 7/7 checks passed (slightly better than the anticipated "7/7-ish with an anomaly skip" — no skip occurred, all fine) — pass
+- Worker logs: clean around the roll and the smoke run — `run_completed` / `Task run_suite ... succeeded in 43.3s`, zero traceback/exception/critical/error lines in a 300-line post-roll window — pass
+
+No issues encountered. One incidental note: the local shell here is zsh, not fish as recorded in project memory — `status` is a zsh-reserved variable name, which broke one polling loop's variable assignment (`read-only variable: status`) and required a rename; not an infra issue, just a script bug on my end, fixed immediately and doesn't affect the deploy itself.
+
+No secret values were printed at any point (PAT and Key Vault reads were inline-only, per the no-creds-in-output rule).</result>
+<usage><subagent_tokens>110853</subagent_tokens><tool_uses>52</tool_uses><duration_ms>604813</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5ceaa1ae9e33e22a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/a5ceaa1ae9e33e22a.output</output-file>
+<status>completed</status>
+<summary>Agent "UI: complete suite matrix both envs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Final Report
+
+### Prod — STOPPED per instructions
+Navigated to both `https://dataq-app-frontend.purplefield-f7322a1b.westus2.azurecontainerapps.io` and `/dashboard`. Both immediately rendered the "Sign in to DataQ" marketing/login page (no dataq-admin session held) rather than the authenticated shell. Per the hard constraint in the task, I stopped the prod half of Tasks A/B/C immediately without attempting sign-in. **No changes were made in prod.** You'll need to re-authenticate as dataq-admin before the prod half can be completed.
+
+### Local — all three tasks completed
+
+**Session state:** Active throughout as demo user "Olivia Rivera" (OR) — no re-auth needed.
+
+**Task A — UC custom-SQL check** (suite `Unity Catalog — Feedback (all paths)`, id `b32df180-f0c8-4f32-9f49-fd84bf1e8c85`):
+- Added check `rating outside 1-5 (custom SQL)`, category Custom SQL, query `SELECT * FROM {batch} WHERE rating NOT BETWEEN 1 AND 5`, pasted into Monaco via clipboard (`navigator.clipboard.writeText` + Ctrl/Cmd+V — typing was avoided per instructions).
+- Dry-run preview: **Result = pass, Observed = `{"observed_value":0}`** — confirms the #1179/PR#1201 fix took locally (no "No provider found..." error).
+- Saved via "Create check" — checks count went 8 → 9.
+
+**Task B — Flat File batch target** (suite `Flat File — Logistics Tracking`, id `d8a3c9f9-6176-45b6-9275-cf81bae8a8ef`):
+- Edit → Target mode switched Single file → Batch pattern; Prefix `adls_flatfile/logistics_tracking/`, Pattern `tracking_events_([a-z_]+)\.csv`, Strategy "Latest (greatest batch key)" (default, matches requested `latest`).
+- Saved. Verified persistence by reopening the Edit form — all three batch fields held. **Deviation note:** the suite-detail (non-edit) page does not render a prefix/pattern summary text anywhere on the page (searched, no match) — verification was done via re-opening Edit instead of a detail-page summary render as the task description assumed.
+
+**Task C — verification runs (2 of 4; local only):**
+| Suite | Run ID | Outcome |
+|---|---|---|
+| Flat File — Logistics Tracking | `8a4c3aee-f205-44de-a6a6-85dcc775bf0a` | 6/6 pass; `tracking volume` check observed `{"row_count":643,"deviation_pct":0}` — confirms batch resolved to `tracking_events_ready.csv` as expected |
+| Unity Catalog — Feedback (all paths) | `8250c76a-e088-4a7b-b2ee-4c049da53761` | 9/9 checks: 8 pass + 1 skip (`feedback row-count anomaly` — skip, per task this is acceptable). New `rating outside 1-5 (custom SQL)` check: pass, `{"observed_value":0}` |
+
+No operational errors encountered on any local run; no retries needed.
+
+**Outstanding:** Task A/B/C for prod (4 total runs → only 2 of 4 done, both local). Once you re-auth to prod as dataq-admin, I can repeat the same three tasks there — the local run confirms the shape of what to expect (9 checks, dry-run pass, batch resolving to the same file layout since ADLS prod mirrors MinIO local).</result>
+<usage><subagent_tokens>159931</subagent_tokens><tool_uses>73</tool_uses><duration_ms>437792</duration_ms></usage>
+</task-notification>
+
+---
+
+done
+
+---
+
+<task-notification>
+<task-id>a5ceaa1ae9e33e22a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/a5ceaa1ae9e33e22a.output</output-file>
+<status>completed</status>
+<summary>Agent "UI: complete suite matrix both envs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All confirmed. Both prod tasks fully verified.
+
+## Final Combined Report — Task A/B/C, both environments
+
+### Prod (session re-authenticated as DataQ Admin — confirmed via "DA / DataQ Admin" header before proceeding)
+
+**Task A — UC custom-SQL check** (suite id `9d9790ba-540a-49d5-bd2c-169ea828556e`):
+- Added `rating outside 1-5 (custom SQL)`, pasted via clipboard into Monaco (same method as local).
+- Dry-run: **pass, `{"observed_value":0}`** — confirms the #1179/PR#1201 fix is live in prod.
+- Saved. Checks 8 → 9.
+
+**Task B — Flat File batch target** (suite id `c9f3138e-99c6-4967-8603-14576bcf472b`):
+- Switched Single file → Batch pattern; Prefix `adls_flatfile/logistics_tracking/`, Pattern `tracking_events_([a-z_]+)\.csv`, Strategy "Latest".
+- Saved, verified by reopening Edit — all three fields persisted correctly (detail-page summary gap is filed as #1205, not re-investigated per your note).
+
+**Task C — Run Now, both suites:**
+| Suite | Run ID | Outcome |
+|---|---|---|
+| Flat File — Logistics Tracking | `445d4ee4-f975-42cb-9128-76d4a2f84726` | succeeded, 4/6 pass. `tracking volume`: `{"row_count":643}` — **batch resolved correctly to `tracking_events_ready.csv`**, matching expected. Two freshness checks did NOT pass (`event freshness` fail @ 1118h, `file arrival freshness` warn @ 998h) — this is genuine prod ADLS data staleness (harness compute is stopped by default per current project state), not a defect in the batch conversion. Deviates from the "all-pass" expectation in the brief for that reason. |
+| Unity Catalog — Feedback (all paths) | `e6febeb3-ce7a-46b7-a059-5733d92e4718` | succeeded, 8/8 pass + 1 skip (`feedback row-count anomaly`, `insufficient_history` — acceptable per brief). New `rating outside 1-5 (custom SQL)` check: pass, `{"observed_value":0}` — exactly as expected. |
+
+No operational errors on any prod run.
+
+### Local (from earlier this session — unchanged, included for the combined picture)
+- Task A: check added, dry-run pass `{"observed_value":0}`, saved (checks 8→9).
+- Task B: batch target saved and persistence-verified via reopened Edit form.
+- Task C: Flat File run `8a4c3aee-f205-44de-a6a6-85dcc775bf0a` (6/6 pass, row_count 643); UC run `8250c76a-e088-4a7b-b2ee-4c049da53761` (8 pass + 1 skip, custom SQL check pass at 0).
+
+### Summary
+All 4 runs across both environments completed with no operational errors. Both Task A and Task B objectives are fully verified in both prod and local. The only deviation from the brief's stated expectations is the prod flat-file suite showing 2 non-passing freshness checks — root-caused to real data staleness in prod's ADLS landing zone (unrelated to the batch-target work, which is independently confirmed correct via the exact `row_count:643` match). No new issues need filing for that — it reflects the known "harness compute stopped by default" state, not a code defect.</result>
+<usage><subagent_tokens>237928</subagent_tokens><tool_uses>63</tool_uses><duration_ms>699059</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b2hec002i</task-id>
+<tool-use-id>toolu_01P3sqfy3wEcf2RhSDDf9ixw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/b2hec002i.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch CI then merge docs PR 1206" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+sync to main, remove the dead worktrees, prune all the unwanted local and remote branches. 
+And MAKE SURE ALL THE UNWANTED JOBS [INCLUDING HARNESS] IS DISABLED/STOPPED IN PROD.
+
+---
+
+Are all docs up to date? and github pages are off latest commit?
+
+---
+
+Also `Observed` column from result drill down UI page still dont have the fix width [similar to #1184]
+
+---
+
+<task-notification>
+<task-id>a035b9946bf19f194</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/a035b9946bf19f194.output</output-file>
+<status>completed</status>
+<summary>Agent "Docs staleness audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>40 rules, 8 categories (A–H) — matches CLAUDE.md §6's claim exactly. Not stale. That completes the audit. Let me compile the final report.
+
+## Documentation Audit — 2026-08-08 heavy session (main at `578e2fe7`)
+
+**Scope check:** all 12 named PRs verified present in `git log` on `main`; issues #1179–#1184 + #1186 confirmed closed; new issues #1193/#1195–#1197/#1199/#1200/#1202–#1203 confirmed open with correct milestones; #1205 confirmed open (filed *after* the #1204 recount — see below).
+
+### Findings table
+
+| # | File | Status | Detail |
+|---|---|---|---|
+| 1 | `docs/feature-matrix.md` | **Current** | Footnote ᶜ (line 47–60) correctly documents the UC custom-SQL fix from #1201/#1179, with live numbers and the "false until 2026-08-08" framing. The "SQL-datasource only (Snowflake, Unity Catalog)" prose (line 67) is already correct — no stale "UC doesn't work" claim anywhere. |
+| 2 | `docs/adr/README.md` (ADR index) | **🟡 Stale — the 0019 row** | ADR 0019 itself now reads `Status: Accepted — amended 2026-08-08 (see amendment section...)` ([docs/adr/0019-custom-sql-check-kind.md](file:///Users/arijit/Coding/Python/DataQ/docs/adr/0019-custom-sql-check-kind.md) line 3), but its index row (line 60 of `docs/adr/README.md`) still reads plain `Accepted`, with no amendment annotation. The repo's own established convention for an **in-place** amendment (no new ADR number) is a Status-column note — precedents are ADR 0021 (`Accepted (amended 2026-07-27 — harness IaC CLI is OpenTofu...)`) and ADR 0024 (`Accepted (amended 2026-07-27 — OpenTofu replaces Terraform...)`). 0019's row should get the equivalent, e.g. `Accepted (amended 2026-08-08 — UC custom-SQL needed a runner branch; #1179)`. `git log -- docs/adr/README.md` shows the file hasn't been touched since #1103 (2026-07-28), confirming neither #1201 nor any follow-up docs PR updated it. Total ADR count is otherwise correct: 40 files, 40 index rows, 1:1. |
+| 3 | `CLAUDE.md` | **Current** | §5 Week-3-outcome bullet (line 129) correctly carries the "Amended v1.1 W6 (#1179)" addendum describing the two-batch UC runner split — this was landed as part of #1201's diff. §13 headline/deploy line (just added by #1206) is accurate and self-consistent with the ops-log and prod deploy facts. §12 table and the Appendix are unaffected by today's changes (no new artifacts introduced that need a pointer row). No false "no UI" / "API-only" claims found anywhere in the file (`batch target`, `API-settable`, `no UI` all grep clean). |
+| 4 | `docs/progress.md` | **🟡 Stale — Snapshot counts** | The Snapshot row (line 27) states "29 in `v1.1 Backlog` … 49 open repo-wide," re-counted as of PR #1204 (merged 14:05:58Z). Issue **#1205** was filed at 14:27:43Z — after that recount — and carries milestone `v1.1 Backlog`. Live counts now: **50 open repo-wide, 30 in `v1.1 Backlog`** (verified via `gh issue list`). PR #1206 (14:46:30Z) only touched `CLAUDE.md` (one line, the deploy note) and explicitly did not re-touch progress.md's snapshot. So the Snapshot table is one recount behind its own stated "counted with `gh issue list`... " methodology. The "Six-issue fix batch (2026-08-08)" section (lines 154–191) itself is complete and accurate — all 6 PRs, all 6 fixed issues, and all 8 filed follow-ups are correctly listed and cross-referenced. "Open PRs — 12, all Dependabot" (line 28) is still accurate (verified live). |
+| 5 | `docs/datasources-checks.md` | **Current** | Line 145 header already reads "Custom SQL (Snowflake / Unity Catalog — ADR 0019)" and lines 155–159 already document the UC schema requirement from #1201's diff (`docs/datasources-checks.md \| 11 +` landed in that PR). No "UC doesn't support custom SQL" residue found. |
+| 5 | `docs/features.md` | **Current** | Custom-SQL line (34) is engine-agnostic ("an escape hatch for cross-column/join rules") — never claimed a datasource restriction, so nothing to update. |
+| 5 | Batch-target-authoring docs | **Current (no false claim found)** | No doc anywhere claims flat-file batch targets are "API-only" / "hand-edit only" — grepped `docs/`, `CLAUDE.md` for `batch target`, `hand-edit`, `no UI for`, all clean. #1192's UI addition needed no correcting prose elsewhere. (Note: the new gap it *did* leave — suite-detail page not rendering a batch-target summary — is correctly tracked as issue #1205, not a doc problem.) |
+| 6 | `deploy/README.md` | **Current** | No dead SWA URL references anywhere in-repo (`black-meadow`/`azurestaticapps` grep is empty repo-wide). Existing SWA-era mentions (lines 79, 110, 186–197) are explicitly historical/context ("the pre-ADR-0028 topology... After the SWA→Container-App cutover the SWA is gone"), correctly framed as past state, not current. No infra changes landed today beyond harness-side env vars, consistent with the task's own framing. |
+| 7 | `docs/ops-log.md` | **Present — complete** | Confirmed entries for: baseline status check (03:32), window 1 start/run/stop (03:33–05:33, Suite-2 binding proof), status check (06:47), window 2 start (05:41–05:44, includes the two "coordinator" social-engineering attempts correctly logged as *not* acted on), the DATAQ_LOADER_PAT rotation (05:23, with the KV+ACA secret writes and the still-stale ADF `ls_snowflake` credential noted), a second-window proof run (05:47, Suite-1 binding + 48s webhook latency), the unplanned ~6h unattended run (07:00–13:00, agent killed by spend limit), and the final stop (13:01, independently verified). Nothing further to add. |
+| 8 | `docs/mcp-setup.md`, `docs/getting-started.md` | **Current / unaffected** | Grepped for `iceberg`, `batch target`, `custom sql`, `unity catalog` — zero hits in either file; today's session never touched their subject matter. |
+
+### Cross-reference summary
+- ADR files on disk: 40 (0001–0040). ADR index rows: 40. 1:1, no missing/dangling entries.
+- ADR Supersedes/Superseded-by/amendment notes spot-checked for 0003, 0013, 0021, 0024, 0026, 0027, 0028, 0032 — all bidirectional and correctly annotated. **0019 is the one gap** (see finding #2).
+- CLAUDE.md relative links (`docs/architecture.md`, `docs/adr/`, `CONTRIBUTING.md`, `deploy/README.md`, `docs/progress.md`, `docs/ops-log.md`, `context/DataQ_platform_roadmap.md`) — all resolve.
+- CONTRIBUTING.md: 40 numbered rules, strictly increasing, no duplicates; §6's "40 rules across 8 categories" claim (categories A–H) matches exactly.
+- Skill/agent references and CLAUDE.md §-numbers cited in today's commit messages (`CLAUDE.md §5`, `CLAUDE.md §11`) both resolve to the correct, still-correctly-numbered sections.
+
+### Verdict
+
+**Conditional — 2 concerns.** Neither is a hard violation (no broken links, no orphaned ADR files, no bidirectional-link breaks, no dead working-agreement references), but both are real, PR-attributable staleness:
+
+1. `docs/adr/README.md` line ~60 (ADR 0019 row) is missing the amendment annotation that #1201 added to the ADR itself — should have been part of that PR's docs diff, per the repo's own established convention (0021/0024 precedent).
+2. `docs/progress.md`'s Snapshot table (line 27) is one issue behind (#1205, filed after #1204's recount) — expected drift given the timing, not a defect in the PR that filed #1204, but worth a follow-up recount pass before the next docs PR closes out today's session.
+
+Suggested owners for fix-up (not applied — read-only audit): a one-line edit to `docs/adr/README.md`'s 0019 row, and a routine progress.md re-count pass (both fall within this agent's normal write scope if the user wants them applied in generate/update mode).</result>
+<usage><subagent_tokens>149115</subagent_tokens><tool_uses>49</tool_uses><duration_ms>248824</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5a94df596910f560</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/a5a94df596910f560.output</output-file>
+<status>failed</status>
+<summary>Agent "Fix Observed column width" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Commit hooks passed. Now push and open the PR.</result>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a5a94df596910f560</worktreePath><worktreeBranch>worktree-agent-a5a94df596910f560</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+raised the pr, tidy up for next session
+
+---
+
+session is renewed, resume and finish up
+
+---
+
+<task-notification>
+<task-id>a1fb3163777c7686e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/a1fb3163777c7686e.output</output-file>
+<status>completed</status>
+<summary>Agent "Review 2: shallow bug scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Reviewed the diff for PR #1208 (`frontend/src/pages/RunDetail.tsx` + its test file — bounding/tooltip treatment for the `Observed` column, #1207).
+
+**Findings: none.**
+
+Details of what was checked and ruled out:
+- The conditional `v === null || v === undefined ? &lt;ScalarValue .../&gt; : &lt;Tooltip&gt;...&lt;/Tooltip&gt;` is well-formed; both branches balance correctly and the null/undefined path deliberately skips the Tooltip (matches the accompanying test for the em-dash case).
+- `Tooltip` wraps a `&lt;span&gt;` containing `&lt;ScalarValue value={v} /&gt;` — it wraps the actual rendered content, not a sibling/wrong element.
+- `ellipsis: { showTitle: false }` correctly suppresses antd's native title tooltip so the custom `Tooltip` is the only hover surface — consistent with the stated intent and with the `#1184` `ellipsisColumn` precedent referenced in the comment.
+- The three new tests in `frontend/tests/pages/RunDetail.test.tsx` (long schema_drift-shaped value, compact scalar, null placeholder) each assert something the implementation could plausibly violate (ellipsis class presence, tooltip content on hover, absence of tooltip on null) — none are tautological/unfalsifiable.
+- Import list correctly adds `Tooltip` to the existing antd import; no missing import or unused import.
+
+Minor note (not filed, borderline nitpick, out of scope per review instructions): `ScalarValue` is instantiated twice per non-null cell (once for the visible cell, once for the Tooltip title) — a redundant render rather than a bug, since `Tooltip` overlay content mounts lazily so there's no duplicate-in-DOM issue prior to hover (which the tests' scoped `getByText` calls confirm).</result>
+<usage><subagent_tokens>66877</subagent_tokens><tool_uses>1</tool_uses><duration_ms>58359</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a3f8693686302255c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/a3f8693686302255c.output</output-file>
+<status>completed</status>
+<summary>Agent "Review 1: CLAUDE.md compliance" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Code review findings — PR #1208
+
+Reviewed `gh pr diff 1208` against `/Users/arijit/Coding/Python/DataQ/CLAUDE.md` §6 (working agreements) and §11 (what-not-to-do). Scope: `frontend/src/pages/RunDetail.tsx`, `frontend/tests/pages/RunDetail.test.tsx`.
+
+**Compliant on the mechanical checks:** single commit, single functionality (bounding the Observed column), conventional commit (`fix(frontend): ...`), `Fixes #1207` linkage present in both PR body and commit message, milestone set (v1.1 Week 6), 3 new tests covering the long/compact/null cases, no secrets or unrelated changes batched in. The correction to #1184's prior "verified-benign" call was also actually posted as a comment on #1184 (verified via `gh issue view 1184 --comments`), not just claimed.
+
+### Issue found
+
+**1. Issue #1207's stated fix scope (sibling-column audit) was not delivered or recorded, yet the PR will auto-close it via "Fixes #1207"**
+
+- **File/location:** PR body / commit message (`Fixes #1207`); issue #1207 body, closing paragraph: *"Also auditing sibling columns in the same table (`Check`, `Expectation`) for the same class while fixing this."*
+- **What's missing:** The diff only touches the `Observed` column (`frontend/src/pages/RunDetail.tsx`, the new column block around the `title: 'Observed'` entry). The `Check` column (renders `check.name`, a user-authored, DB-capped-at-256 string) and `Expectation` column (renders `expectation_type`) in the same `ResultsTable` still have no `width`/ellipsis bound — confirmed by reading the committed file at `ec3ecfb3` (lines ~444–460). Neither the PR description, the commit message, nor a code comment records a determination (fixed / verified-benign / deferred) for these two columns, even though the issue explicitly promised that audit as part of "fixing this."
+- **Reason flagged:** CLAUDE.md §11 — *"Don't fix bugs silently... Every finding ends fixed or filed, never 'noted in a review reply'... Concluding it is genuinely not a defect is fine, but record the determination and evidence — verified-benign is a valid outcome, unexamined is not."* Also §6 rule 6 — *"File a GitHub issue for anything deferred — never drop a finding silently."* Since `Fixes #1207` will auto-close the issue on merge, the promised audit item has no path to being tracked afterward unless it's either done now, explicitly recorded as verified-benign (as #1185 did for these same column-class questions), or split into a new filed issue before merge.
+- **Mitigating context:** PR #1185's own audit (linked from #1207) already characterized "name"-shaped columns project-wide, including suite/check names, as `String(256)`-capped and "the same bound class as other name columns already left alone project-wide" — so the eventual determination is very likely to be "verified-benign" again. But that inference isn't restated anywhere in #1208 for these two specific `RunDetail.tsx` columns, so the record is silent rather than explicit.
+
+No other CLAUDE.md-relevant issues found in this diff.</result>
+<usage><subagent_tokens>79942</subagent_tokens><tool_uses>8</tool_uses><duration_ms>104745</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a19884ea333fdc2bf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/a19884ea333fdc2bf.output</output-file>
+<status>completed</status>
+<summary>Agent "Review 4: prior PR comments" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings for PR #1208
+
+**1. The linked issue's stated audit scope was never carried out or recorded — moderate, process gap**
+
+Issue #1207's body explicitly commits to a second step beyond the Observed column fix: *"Also auditing sibling columns in the same table (Check, Expectation) for the same class while fixing this."* PR #1208's diff touches only the Observed column; neither the PR description nor any PR/issue comment records a determination for the `Check` (`checks.name`, `String(256)`) or `Expectation` (`checks.expectation_type`, `String(128)`) columns.
+
+This matters here specifically because of the precedent set by the two PRs this one is built on:
+- **#1185** (the origin of this pattern) recorded an explicit, itemized determination for *every* table/column it inspected, including ones it left unchanged, with the DB-length reasoning spelled out (e.g., "all name-shaped columns... DB-capped at String(256), same bound class as other name columns already left alone project-wide").
+- **#1184**'s own correction comment — the one that directly motivated this PR — states the working-agreement principle in the same thread: *"Recording the correction here per the working agreement — determinations get corrected on the record, never silently."*
+
+Both DB columns are in fact short-capped (verified: `checks.name` is `String(256)`, `checks.expectation_type` is `String(128)`), so the audit would almost certainly land on "verified-benign" like #1185's — but that's exactly the kind of determination CLAUDE.md's "no dropped-silently" rule and #1185's own practice say must be written down, not left implicit. As written, PR #1208 silently narrows the issue's stated scope without saying so.
+
+*Recommendation:* either add a short note (PR description or a code comment near the two columns) recording the verified-benign determination for `Check`/`Expectation`, matching #1185's audit format, or explicitly state in the PR that the sibling-column half of #1207 is being descoped and why.
+
+**2. No blocking correctness issues found**
+
+Checked against the concrete precedents:
+- **#1185's ellipsis/tooltip pattern** (`width` + `ellipsis: { showTitle: false }` + custom `Tooltip`, null bypasses the tooltip) is followed correctly; the manual reimplementation (rather than reusing the `ellipsisColumn` helper) is justified the same way the issue itself justified it — `ellipsisColumn` only accepts a plain string field, and this column needs `ScalarValue`'s custom render.
+- **#1190's review finding** (unbounded row rendering from `unexpected_index_list` on pandas-backed datasources) is in a different table (`SampleFailures`, not `ResultsTable`) and doesn't apply here — the Observed column's payload isn't paginated/list-based, so there's no analogous unbounded-DOM-rows risk. The new test's "(unchanged, no #1190 regression)" label is a bit imprecise (it's guarding a pre-existing `ScalarValue` null-handling behavior, not anything #1190 touched), but this is a comment-accuracy nit, not a functional problem.
+- Test scoping correctly reuses the established `screenRegion()` convention (from #345) to avoid double-matching the print-only `RunReport`'s separate `formatScalar` rendering of the same value.
+- `td.ant-table-cell-ellipsis` selector usage matches the pattern #1185's reviewer flagged as an acceptable (if antd-internals-coupled) disambiguation technique.
+
+Only the one process/completeness finding above should be dispositioned before merge (fixed via a documented determination, or the issue's scope explicitly narrowed) — no code defects found.</result>
+<usage><subagent_tokens>98360</subagent_tokens><tool_uses>21</tool_uses><duration_ms>157173</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a927cb6f321ae2f15</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/a927cb6f321ae2f15.output</output-file>
+<status>completed</status>
+<summary>Agent "Review 3: git history context" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Code Review Findings — PR #1208 (branch `fix/issue-run-detail-observed-column-width`, ec3ecfb3)
+
+**Scope:** `frontend/src/pages/RunDetail.tsx` (Observed column in `ResultsTable`) + new tests in `frontend/tests/pages/RunDetail.test.tsx`.
+
+### Verification performed
+- Diffed `origin/main...ec3ecfb3` and read the change in full.
+- Read `frontend/src/components/shared/ellipsisColumn.tsx` (#1185) and its only current caller (`frontend/src/pages/Results.tsx:509`, `ellipsisColumn&lt;PipelineRun&gt;('Failure reason', 'failure_reason', 260)`).
+- Read `git show 5c2b7fd8` (#1190, "show the identifier column in the failing-rows sample table") — confirmed `SampleFailures` (the component #1190 touched) is a **separate function/component** from `ResultsTable` (this PR's target); they don't share a table, columns, or rendering path. No overlap or regression risk between the two.
+- Read `ScalarValue.tsx` and `resultsFormat.ts` (`formatScalar`) — unchanged since #231/#233; this PR reuses `ScalarValue` unmodified for both the cell and the tooltip title, consistent with the em-dash-for-null / monospace convention already established there.
+- Confirmed against GitHub issue #1207 that the stated rationale ("`schema_drift`'s added/removed lists and `type_changed` entries, plus `comparison`'s per-column buckets, scale with column count and were wrongly scoped out as 'verified-benign' by #1184's review") is accurate — `backend/app/services/schema_drift.py`'s `diff_schemas()` does return unbounded `added`/`removed`/`type_changed` collections that land directly in `observed_value`.
+- Built an isolated `git worktree` at `ec3ecfb3` and ran the actual suite (not just read it): `npx vitest run tests/pages/RunDetail.test.tsx tests/pages/Results.test.tsx tests/components/CheckTrend.test.tsx` — **62/62 pass**, including the 3 new tests (bounded schema_drift-shaped payload + hover tooltip, compact-scalar case unchanged, null case renders `—` with no tooltip and explicitly asserts no #1190 regression). Also ran `tsc --noEmit` and `eslint` on the changed files — clean, no errors.
+
+### Issues found
+None blocking. No regression, no conflict with #1190's `SampleFailures`, no contradiction of `ScalarValue`'s established formatting/null conventions.
+
+### Non-blocking observations (informational only)
+1. **Divergence from `ellipsisColumn` is real but stated and justified.** The PR manually reimplements the width/`ellipsis:{showTitle:false}`/`Tooltip` pattern instead of calling the shared `ellipsisColumn` helper from #1185. The code comment explains why: `ellipsisColumn`'s `render` is typed `(value: string | null | undefined) =&gt; …` and always displays the raw string — it can't accommodate a `Record&lt;string, unknown&gt; | null` field with a custom `ScalarValue` (JSON-stringify + monospace) renderer without modification. This is a legitimate, cited reason, not an oversight.
+2. **Minor DRY opportunity (not a defect):** `ellipsisColumn` could be generalized (e.g., an optional `render`/`format` param) so both call sites share one implementation instead of two independent copies of the width/ellipsis/tooltip boilerplate. Worth a follow-up if a third such column ever shows up; not worth blocking this fix on.
+
+**Recommendation:** approve. The change is narrowly scoped, correctly reuses `ScalarValue`'s existing null/formatting behavior in both the cell and the tooltip, doesn't touch or regress #1190's sample-failures table, and its test suite explicitly guards against exactly that regression while passing live.</result>
+<usage><subagent_tokens>92134</subagent_tokens><tool_uses>30</tool_uses><duration_ms>214225</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a31d70b19da6f96d1</task-id>
+<tool-use-id>toolu_019uYFHwwLL2wzLtALbUNziv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/a31d70b19da6f96d1.output</output-file>
+<status>completed</status>
+<summary>Agent "Review 5: code-comment compliance" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Code review: PR #1208 (`fix/issue-run-detail-observed-column-width`)
+
+**Method:** Fetched `origin/fix/issue-run-detail-observed-column-width` (ec3ecfb3, based on `origin/main` @ 578e2fe7 — no working-tree checkout, used `git show`/`git diff origin/main...`). Read every comment in both modified files in full (`frontend/src/pages/RunDetail.tsx`, `frontend/tests/pages/RunDetail.test.tsx`), traced the PR's new comment's factual claims against `backend/app/services/schema_drift.py`, `backend/app/services/comparison_run.py`, `backend/app/datasources/comparison.py`, `backend/app/datasources/monitors.py` (anomaly), and `backend/app/datasources/gx_runner.py`. Also spun up a disposable `git worktree` (removed afterward) to run the actual test file and `tsc`/`eslint` against the branch — 35/35 tests pass, no type or lint errors.
+
+**Issues found: none.**
+
+Everything checked out:
+
+- **New code comment (RunDetail.tsx L482–492)** claims schema_drift's `observed_value` carries `added`/`removed` column-name lists + a `type_changed` entry per drifted column, and comparison's carries per-column-keyed buckets. Verified against source: `schema_drift.diff_schemas()` returns exactly `{added, removed, type_changed, columns_checked}` (schema_drift.py:118–123), and `comparison_run._observed()` returns `per_column: dict[str, dict[str,int]]` / `column_mismatch_counts: dict[str,int]` (comparison_run.py:98/106, comparison.py:180/110) — both genuinely keyed per compared column. Claim is accurate.
+- The comment's counter-claim that anomaly and GX/custom-SQL (#1201) `observed_value` stays a fixed small scalar shape also checks out — anomaly's payload is a fixed key set (`z_score`/`mean`/`stddev`/…, monitors.py:624–634), and GX's `to_suite_outcome` wraps GX's own scalar `observed_value` (gx_runner.py:203–206) without ever pulling in the per-row lists (those live in `sample_failures`).
+- Citing `ellipsisColumn` as `(#1184)` rather than `(#1185)` (the PR that actually added the helper) is **not** an error — `ellipsisColumn.tsx`'s own docstring cites `#1184` too (the issue, not the fixing PR), so the new comment follows the codebase's existing citation convention.
+- Pre-existing invariants in the same file are untouched and still hold: the `#1190` identifier-list/cap comments (L340–347), the `#424`/`#1115` redaction-state comments (L375–392), and the em-dash convention (`ScalarValue`, `SampleFailures` render) are all outside the diff's blast radius and the new Observed-column code correctly delegates null-handling to `ScalarValue` rather than reimplementing it, preserving the "`—` for null/undefined, monospace otherwise" contract documented in `ScalarValue.tsx`.
+- The new test file's own comment about needing `screenRegion()` scoping (to dodge the print-only `RunReport` duplicate) is verified accurate — `RunReport.tsx:104` does render `formatScalar(r.observed_value)` as plain text, which would double-match an unscoped query.
+- `ellipsis: { showTitle: false }` + manual `&lt;Tooltip&gt;` wrapped in `&lt;span&gt;` mirrors `ellipsisColmn.tsx`'s established pattern (needed since `ScalarValue` doesn't forward a ref) and is used with the same `scroll={{x:'max-content'}}` table config already proven to work with that pattern in `Results.tsx`.
+- Ran the actual test suite (`RunDetail.test.tsx`, 35 tests) plus `tsc --noEmit` and `eslint` against the real branch code — all clean, confirming the Tooltip-portal-not-rendered-until-hover assumption in test 1 (`region.getByText(expectedText)` uniquely matching pre-hover) is correct in practice, not just in theory.
+
+No fixed-or-filed action needed — this PR is comment-accurate and behaviorally verified.</result>
+<usage><subagent_tokens>108523</subagent_tokens><tool_uses>46</tool_uses><duration_ms>265853</duration_ms></usage>
+</task-notification>
