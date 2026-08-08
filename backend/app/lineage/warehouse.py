@@ -107,6 +107,22 @@ class WarehouseLineageResult:
     # re-read whole each pass). An incremental result covering no new events still
     # carries the prior watermark so it never regresses.
     new_watermark: datetime | None = None
+    # Is this pull a COMPLETE-ENOUGH observation of current state for a snapshot
+    # provider's refresh to PRUNE against it (#1109 review)?
+    #
+    # ``True`` (the default) for the two honest cases: every tier answered, or a tier
+    # was skipped for a CONFIRMED, structural reason — an edition gate, a missing
+    # grant, a tier that genuinely observed nothing. Absence of an edge in such a pull
+    # is real evidence the edge is gone, so the snapshot regime may prune it.
+    #
+    # ``False`` when a tier was skipped — or only partially traversed — for a
+    # TRANSIENT/indeterminate reason (a network blip on one call, a failed catalog
+    # read). Then the missing edges are *unobserved*, not *absent*, and pruning them
+    # would wipe a previously-cached richer graph on a blip: the same #828
+    # never-prune-on-unavailable failure, one notch down from a total outage. The
+    # refresh degrades that cycle to accrete-only (upsert, never forget) and the next
+    # clean pull prunes normally.
+    prunable: bool = True
 
     @classmethod
     def empty(
@@ -187,6 +203,11 @@ class WarehouseLineageProvider(Protocol):
         :class:`WarehouseLineageResult`. Raises :class:`WarehouseLineageUnavailableError`
         only when NO tier could run — an empty-but-successful pull returns
         :meth:`WarehouseLineageResult.empty`, which the refresh may prune on.
+
+        A ladder descent driven by a TRANSIENT failure (rather than a confirmed edition
+        gate / missing grant) must set ``prunable=False`` on the result — see that
+        field. Descending is always safer than aborting, but only if the degraded answer
+        it produces is not then mistaken for current truth.
         """
         ...
 
