@@ -232,3 +232,70 @@ def test_is_readable_ref_identifies_the_legacy_shape(ref: str, readable: bool) -
     """Drives the migration's idempotency — a second run must skip what it already
     renamed, or it would churn the vault on every invocation."""
     assert is_readable_ref(ref) is readable
+
+
+# ───────────────────────── `kind` — a second credential on one row (#1181) ──────
+
+
+def test_kind_produces_a_distinct_ref_from_the_primary() -> None:
+    """An Iceberg SQL catalog needs a SECOND credential (the catalog DB password,
+    #754/#826/#1181) alongside the storage secret — both belong to the same
+    connection row, so they must not collide on the same vault key."""
+    cid = uuid.uuid4()
+    primary = connection_secret_ref(
+        connection_id=cid, env="dev", name="harness", conn_type="iceberg"
+    )
+    catalog = connection_secret_ref(
+        connection_id=cid, env="dev", name="harness", conn_type="iceberg", kind="catalog"
+    )
+    assert primary != catalog
+    assert "catalog" in catalog
+    assert KEY_VAULT_NAME.match(catalog)
+
+
+def test_kind_is_stable_and_readable() -> None:
+    cid = uuid.UUID("05c77ce3-846e-4e76-a5f7-7e12e9510c99")
+    ref = connection_secret_ref(
+        connection_id=cid, env="dev", name="harness-iceberg", conn_type="iceberg", kind="catalog"
+    )
+    assert ref == "conn-iceberg-harness-catalog-dev-05c77ce3"
+    # Recomputing from the same inputs (the "reuse the stored ref" contract) must
+    # yield byte-identical output — a second call is how `_write_extra_secret`
+    # mints the ref the FIRST time; the ref itself is then stored and reused
+    # verbatim thereafter, exactly like the primary credential.
+    assert (
+        connection_secret_ref(
+            connection_id=cid,
+            env="dev",
+            name="harness-iceberg",
+            conn_type="iceberg",
+            kind="catalog",
+        )
+        == ref
+    )
+
+
+def test_kind_blank_reproduces_the_primary_shape_unchanged() -> None:
+    """The default (`kind=""`) must be a no-op — every existing caller and every
+    already-minted primary ref must keep resolving to the same key."""
+    cid = uuid.UUID("05c77ce3-846e-4e76-a5f7-7e12e9510c99")
+    with_default = connection_secret_ref(
+        connection_id=cid, env="dev", name="harness-iceberg", conn_type="iceberg"
+    )
+    with_blank_kind = connection_secret_ref(
+        connection_id=cid, env="dev", name="harness-iceberg", conn_type="iceberg", kind=""
+    )
+    assert with_default == with_blank_kind == "conn-iceberg-harness-dev-05c77ce3"
+
+
+def test_kind_is_slugged_and_writable() -> None:
+    """`kind` is a hardcoded literal today, but the signature accepts any `str` —
+    it must not become an unwritable-name footgun if that ever changes."""
+    ref = connection_secret_ref(
+        connection_id=uuid.uuid4(),
+        env="dev",
+        name="warehouse",
+        conn_type="iceberg",
+        kind="Catalog DB!",
+    )
+    assert KEY_VAULT_NAME.match(ref), ref

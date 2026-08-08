@@ -118,15 +118,22 @@ def slugify(text: str) -> str:
 
 
 def connection_secret_ref(
-    *, connection_id: UUID | str, env: str, name: str, conn_type: str = ""
+    *, connection_id: UUID | str, env: str, name: str, conn_type: str = "", kind: str = ""
 ) -> str:
-    """Build the vault key for a connection's primary credential.
+    """Build the vault key for a connection's primary — or a second — credential.
 
-    Shape: ``conn-<type>-<qualifier>-<env>-<shortid>``, with redundant parts
-    dropped. Modelled on the names an operator had already chosen by hand for 11
-    of the 13 production secrets (`conn-snowflake-retail`, `conn-adf-qa`, …) —
-    those were curated, so the generator earns its keep only by reproducing that
-    quality automatically.
+    Shape: ``conn-<type>-<qualifier>-[<kind>-]<env>-<shortid>``, with redundant
+    parts dropped. Modelled on the names an operator had already chosen by hand
+    for 11 of the 13 production secrets (`conn-snowflake-retail`, `conn-adf-qa`,
+    …) — those were curated, so the generator earns its keep only by reproducing
+    that quality automatically.
+
+    ``kind`` distinguishes a SECOND credential stored against the same row (e.g.
+    ``"catalog"`` for an Iceberg SQL catalog's DB password, #754/#826/#1181) —
+    the same "separate refs on one row" idiom already used for the Slack/Teams
+    webhook secrets. Left blank, this reproduces the primary-credential shape
+    unchanged. Slugged like every other part, so a stray character can't make
+    the ref unwritable.
 
     Three rules do the work, and each exists because the naive version produced a
     name *worse* than what it replaced:
@@ -173,6 +180,9 @@ def connection_secret_ref(
     parts = ["conn"]
     parts += type_slug.split("-") if type_slug else []
     parts += qualifier
+    kind_slug = slugify(kind)
+    if kind_slug:
+        parts.append(kind_slug)
     env_slug = slugify(env)
     if env_slug and env_slug not in parts:
         parts.append(env_slug)
