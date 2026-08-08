@@ -38,7 +38,6 @@ import {
   rebaselineCheck,
   snoozeCheck,
   type Suite,
-  targetString,
 } from '../api/suites';
 import { AssetLink } from '../components/assets/AssetLink';
 import { isSnoozed, SnoozedTag } from '../components/checks/snooze';
@@ -50,7 +49,7 @@ import { NotificationsPanel } from '../components/suites/NotificationsPanel';
 import { SamplePolicyPanel } from '../components/suites/SamplePolicyPanel';
 import { SchedulesPanel } from '../components/suites/SchedulesPanel';
 import { SharePanel } from '../components/suites/SharePanel';
-import { summarizeTarget } from '../components/suites/suiteTarget';
+import { isBatchTarget, summarizeTarget } from '../components/suites/suiteTarget';
 import { TriggersPanel } from '../components/suites/TriggersPanel';
 import { BRAND } from '../theme';
 import { downloadJson, toFilenameStem } from '../utils/download';
@@ -385,12 +384,12 @@ function SuiteDetail({
   const { state, reload } = useAsyncData(() => listChecks(suite.id));
   const connection = connections.find((c) => c.id === suite.connection_id);
   // Batch flat-file targets (#1180) store `pattern` instead of a literal `path` —
-  // that's the signal `summarizeTarget` uses to render the configured
-  // prefix/pattern/strategy instead of a path. Detail-page display must say so
-  // explicitly (#1205): the pattern is what's SAVED, not a file that's been
-  // resolved — resolution only happens at run time.
+  // that's the signal `summarizeTarget`/`isBatchTarget` share to render the
+  // configured prefix/pattern/strategy instead of a path. Detail-page display
+  // must say so explicitly (#1205): the pattern is what's SAVED, not a file
+  // that's been resolved — resolution only happens at run time.
   const targetSummary = summarizeTarget(suite.target);
-  const isBatchTarget = Boolean(targetString(suite.target, 'pattern'));
+  const isBatchFlatFileTarget = isBatchTarget(suite.target);
 
   const [exporting, setExporting] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -450,7 +449,7 @@ function SuiteDetail({
             <Flex gap={8} align="center" wrap>
               <Typography.Text type="secondary">Target:</Typography.Text>
               <Typography.Text code>{targetSummary}</Typography.Text>
-              {isBatchTarget && (
+              {isBatchFlatFileTarget && (
                 <Tooltip title="This is the configured prefix/pattern/strategy, not a resolved file — the actual file is selected when the suite runs.">
                   <Tag color="processing">Configured, not resolved</Tag>
                 </Tooltip>

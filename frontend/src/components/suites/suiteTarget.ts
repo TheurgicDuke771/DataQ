@@ -54,6 +54,18 @@ export function summarizeTarget(target: Record<string, unknown> | null): string 
   return parts.length > 0 ? parts.join('.') : null;
 }
 
+/**
+ * Whether a stored target is a batch flat-file selector (#1180) — i.e. the
+ * same `pattern`-not-`path` signal `summarizeTarget` branches on above.
+ * Exported so callers that need to flag "this is configured, not resolved"
+ * (#1205) share the one signal instead of re-deriving it independently,
+ * which would let the two drift out of sync if the batch-detection rule
+ * ever changes.
+ */
+export function isBatchTarget(target: Record<string, unknown> | null): boolean {
+  return Boolean(targetString(target, 'pattern'));
+}
+
 /** The raw target inputs the drawer collects (all optional strings). */
 export interface TargetFormValues {
   target_table?: string;
