@@ -3,10 +3,11 @@ import { type RunTarget, targetString } from '../../api/suites';
 
 /**
  * A suite's run target (#215) is datasource-shaped: SQL warehouses identify a
- * `table` (+ optional `schema`), Unity Catalog adds a required `catalog`, and
- * flat-file stores (ADLS / S3) identify a `path` (+ optional `file_format`).
- * `targetKind` collapses the six datasource types to the three input shapes the
- * editor renders; orchestration types never reach here (they can't back a suite).
+ * `table` (+ optional `schema`), Unity Catalog adds a required `catalog`,
+ * flat-file stores (ADLS / S3) identify a `path` (+ optional `file_format`),
+ * and Iceberg identifies a `namespace.table` pair. `targetKind` collapses the
+ * five datasource types to the four input shapes the editor renders;
+ * orchestration types never reach here (they can't back a suite).
  */
 export type TargetKind = 'sql' | 'uc' | 'flatfile' | 'iceberg';
 
