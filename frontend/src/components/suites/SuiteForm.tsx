@@ -1,9 +1,10 @@
-import { App, Button, Divider, Flex, Form, Input, Select, Typography } from 'antd';
+import { App, Button, Divider, Flex, Form, Input, Radio, Select, Typography } from 'antd';
 import { useEffect } from 'react';
 
 import { CONNECTION_KIND, type Connection, connectionOptionLabel } from '../../api/connections';
 import { createSuite, type Suite, targetString, updateSuite } from '../../api/suites';
 import {
+  asBatchStrategy,
   asFileFormat,
   assembleTarget,
   type TargetFormValues,
@@ -55,9 +56,13 @@ export function SuiteForm({
   const activeConn = connections.find((c) => c.id === activeConnId);
   const kind = activeConn ? targetKind(activeConn.type) : null;
 
-  // Prefill once on mount/edit; create starts blank.
+  // Prefill once on mount/edit; create starts blank. A flat-file target is a
+  // batch selector iff it carries `pattern` (#1180) — mutually exclusive with
+  // the literal `path` per the backend `_flatfile_target` resolver, so the
+  // stored shape alone tells us which mode to reopen the form in.
   useEffect(() => {
     if (suite) {
+      const pattern = targetString(suite.target, 'pattern');
       form.setFieldsValue({
         name: suite.name,
         description: suite.description ?? undefined,
@@ -68,6 +73,11 @@ export function SuiteForm({
         target_namespace: targetString(suite.target, 'namespace'),
         target_path: targetString(suite.target, 'path'),
         target_format: asFileFormat(targetString(suite.target, 'file_format')),
+        target_mode: pattern ? 'batch' : 'single',
+        target_prefix: targetString(suite.target, 'prefix'),
+        target_pattern: pattern,
+        target_strategy: asBatchStrategy(targetString(suite.target, 'strategy')) ?? 'latest',
+        target_batch: targetString(suite.target, 'batch'),
       });
     }
   }, [suite, form]);
@@ -150,8 +160,21 @@ export function SuiteForm({
  * The datasource-shaped run-target inputs. Optional as a whole (leave blank for a
  * not-yet-runnable suite); when started, the required field for the datasource is
  * enforced at submit by `assembleTarget`. Field names match `TargetFormValues`.
+ *
+ * Flat-file connections additionally offer a Single file / Batch pattern mode
+ * toggle (#1180): Batch mode exposes the prefix/pattern/strategy inputs the
+ * backend `resolve_batch`/`BatchSpec` already supports, previously reachable
+ * only by hand-editing the stored target. There's no cheap batch-resolution
+ * preview endpoint today (see #1180's follow-up comment) — `assembleTarget`'s
+ * client-side checks are a light authoring aid, and the backend's own 422 on
+ * save is the authoritative validator.
  */
 export function TargetFields({ kind }: { kind: TargetKind }) {
+  const form = Form.useFormInstance();
+  const mode = (Form.useWatch('target_mode', form) as 'single' | 'batch' | undefined) ?? 'single';
+  const strategy =
+    (Form.useWatch('target_strategy', form) as 'latest' | 'specific' | undefined) ?? 'latest';
+
   return (
     <>
       <Divider style={{ marginTop: 4 }} />
@@ -164,19 +187,68 @@ export function TargetFields({ kind }: { kind: TargetKind }) {
 
       {kind === 'flatfile' ? (
         <>
-          <Form.Item name="target_path" label="File path">
-            <Input placeholder="container/path/to/data.csv" />
-          </Form.Item>
-          <Form.Item name="target_format" label="File format">
-            <Select
-              allowClear
-              placeholder="Infer from extension"
+          <Form.Item name="target_mode" label="Target mode" initialValue="single">
+            <Radio.Group
+              data-testid="flatfile-target-mode"
+              optionType="button"
+              size="small"
               options={[
-                { value: 'csv', label: 'CSV' },
-                { value: 'parquet', label: 'Parquet' },
+                { label: 'Single file', value: 'single' },
+                { label: 'Batch pattern', value: 'batch' },
               ]}
             />
           </Form.Item>
+          {mode === 'batch' ? (
+            <>
+              <Form.Item
+                name="target_prefix"
+                label="Prefix (optional)"
+                extra="Scopes the object listing, e.g. a container/folder path."
+              >
+                <Input placeholder="adls_flatfile/logistics_tracking/" />
+              </Form.Item>
+              <Form.Item
+                name="target_pattern"
+                label="Filename pattern (regex)"
+                extra="The first capture group is the batch key — required for the 'specific' strategy."
+              >
+                <Input placeholder="tracking_events_([a-z_]+)\.csv" />
+              </Form.Item>
+              <Form.Item name="target_strategy" label="Strategy" initialValue="latest">
+                <Select
+                  options={[
+                    { value: 'latest', label: 'Latest (greatest batch key)' },
+                    { value: 'specific', label: 'Specific batch key' },
+                  ]}
+                />
+              </Form.Item>
+              {strategy === 'specific' && (
+                <Form.Item
+                  name="target_batch"
+                  label="Batch key"
+                  extra="The exact value the pattern's capture group must match."
+                >
+                  <Input placeholder="ready" />
+                </Form.Item>
+              )}
+            </>
+          ) : (
+            <>
+              <Form.Item name="target_path" label="File path">
+                <Input placeholder="container/path/to/data.csv" />
+              </Form.Item>
+              <Form.Item name="target_format" label="File format">
+                <Select
+                  allowClear
+                  placeholder="Infer from extension"
+                  options={[
+                    { value: 'csv', label: 'CSV' },
+                    { value: 'parquet', label: 'Parquet' },
+                  ]}
+                />
+              </Form.Item>
+            </>
+          )}
         </>
       ) : kind === 'iceberg' ? (
         <>
