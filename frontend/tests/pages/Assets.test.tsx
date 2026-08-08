@@ -153,8 +153,13 @@ describe('Assets page — tree view (default)', () => {
     // leaf from page two proves the walk didn't stop after page one.
     expect(await screen.findByText('U49')).toBeInTheDocument();
     expect(mockList).toHaveBeenCalledTimes(2);
-    expect(mockList).toHaveBeenNthCalledWith(1, { limit: 200, offset: 0 });
-    expect(mockList).toHaveBeenNthCalledWith(2, { limit: 200, offset: 200 });
+    // Each call also carries the abort signal (#1107) as its second argument.
+    expect(mockList).toHaveBeenNthCalledWith(1, { limit: 200, offset: 0 }, expect.any(AbortSignal));
+    expect(mockList).toHaveBeenNthCalledWith(
+      2,
+      { limit: 200, offset: 200 },
+      expect.any(AbortSignal),
+    );
     // The walk covered the whole workspace (200 + 50 === 250) — no truncation note.
     expect(screen.queryByText(/Showing \d+ of \d+ assets/)).not.toBeInTheDocument();
   });
@@ -214,6 +219,127 @@ describe('Assets page — tree view (default)', () => {
     // walk must stop AT the bound, not one page past it.
     expect(mockList).toHaveBeenCalledTimes(10);
   }, 20_000);
+
+  // #1107: the multi-page tree walk used to survive a toggle-away — the loop had
+  // no way to hear about the unmount, so it kept firing page requests up to
+  // TREE_HARD_BOUND regardless of whether anything was still listening.
+  it('stops issuing further page requests once the tree view is toggled away mid-walk (#1107)', async () => {
+    const page1Items = Array.from({ length: 200 }, (_, i) => ({
+      ...ASSET,
+      id: `p1-${i}`,
+      name: `ANALYTICS.PUBLIC.T${i}`,
+      worst_severity: null,
+    }));
+    let resolvePage2: ((value: AssetListPage) => void) | undefined;
+    const page2Pending = new Promise<AssetListPage>((resolve) => {
+      resolvePage2 = resolve;
+    });
+
+    // A 600-row workspace forces (at least) a third page — offset 400 must
+    // never be requested once the view is toggled away while page 2 is still
+    // in flight.
+    mockList.mockImplementation(async (params) => {
+      if (params?.limit === 50) return { items: [], total: 0 }; // the table view's own independent fetch
+      if (params?.offset === 0) return { items: page1Items, total: 600 };
+      if (params?.offset === 200) return page2Pending;
+      throw new Error(`unexpected listAssets call past the abort: ${JSON.stringify(params)}`);
+    });
+
+    renderPage();
+
+    // Page 1 has resolved and the walk has already moved on to page 2 (now
+    // in flight, unresolved) — "mid-walk" per the AC.
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
+
+    // Toggle away before page 2 resolves.
+    await userEvent.click(await screen.findByText('All assets'));
+
+    // Let page 2's response land late — after the toggle-away, like a real
+    // network response racing an unmount — and let the table's own (separate,
+    // immediate) fetch settle so we know everything has had a chance to react.
+    resolvePage2?.({ items: [], total: 600 });
+    await screen.findByText(/No assets yet/);
+
+    // Exactly the two tree-walk calls (page 1 + the in-flight page 2) plus the
+    // table's own fetch — never a third tree page. If the walk had kept going
+    // after the toggle, the mock above would have thrown for the offset-400 call.
+    expect(mockList).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not re-walk when toggling back to an already-completed tree (#1107)', async () => {
+    mockList.mockResolvedValue(page([ASSET])); // total === items.length: a single-page, complete walk
+    renderPage();
+    await screen.findByText('Snowflake · acct');
+    expect(mockList).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(await screen.findByText('All assets'));
+    await screen.findByText('ANALYTICS.PUBLIC.ORDERS'); // the table's own independent fetch landed
+    const callsWithTableShown = mockList.mock.calls.length;
+
+    await userEvent.click(await screen.findByText('By source'));
+    // The tree renders immediately from the cached walk, not a fresh fetch.
+    await screen.findByText('Snowflake · acct');
+
+    expect(mockList).toHaveBeenCalledTimes(callsWithTableShown);
+  });
+
+  it('never runs more than one tree walk at a time under rapid toggling (#1107)', async () => {
+    const page1Items = Array.from({ length: 200 }, (_, i) => ({
+      ...ASSET,
+      id: `p1-${i}`,
+      name: `ANALYTICS.PUBLIC.T${i}`,
+      worst_severity: null,
+    }));
+    const page2Items = Array.from({ length: 10 }, (_, i) => ({
+      ...ASSET,
+      id: `p2-${i}`,
+      name: `ANALYTICS.PUBLIC.U${i}`,
+      worst_severity: null,
+    }));
+    // Every tree page-1 request is held open (a controllable pending promise)
+    // so several superseded walks can all have an unresolved page-1 call in
+    // flight at once — the scenario where "at most one in-flight walk" actually
+    // has teeth. Page 2 (offset 200) resolves immediately once requested, and
+    // only the walk that's still mounted when its page-1 finally lands may ever
+    // reach it.
+    const pendingPage1: Array<(value: AssetListPage) => void> = [];
+    let page1Calls = 0;
+    mockList.mockImplementation(async (params) => {
+      if (params?.limit === 50) return { items: [], total: 0 }; // the table view's own fetch
+      if (params?.offset === 0) {
+        page1Calls += 1;
+        return new Promise<AssetListPage>((resolve) => pendingPage1.push(resolve));
+      }
+      return { items: page2Items, total: 210 };
+    });
+
+    renderPage();
+    await waitFor(() => expect(page1Calls).toBe(1));
+
+    // Toggle away and back twice in quick succession — each toggle-to-tree
+    // mounts a fresh AssetsTreeView (fresh useAsyncData instance) while the
+    // PREVIOUS one's page-1 request is still unresolved.
+    await userEvent.click(await screen.findByText('All assets'));
+    await userEvent.click(await screen.findByText('By source'));
+    await waitFor(() => expect(page1Calls).toBe(2));
+    await userEvent.click(await screen.findByText('All assets'));
+    await userEvent.click(await screen.findByText('By source'));
+    await waitFor(() => expect(page1Calls).toBe(3));
+
+    // Resolve every stalled page-1 request now, oldest (superseded) first. The
+    // two superseded walks were aborted on unmount and must stay inert — never
+    // requesting page 2 — leaving only the currently-mounted (3rd) walk to
+    // actually finish.
+    pendingPage1.forEach((resolve) => resolve({ items: page1Items, total: 210 }));
+
+    // U9 only renders once the live walk's page 2 has landed and the tree
+    // re-rendered — proof exactly one walk ran to completion.
+    expect(await screen.findByText('U9')).toBeInTheDocument();
+    // 3 page-1 attempts (one per mount) + exactly ONE page-2 continuation (the
+    // live walk) + 2 independent table fetches (one per toggle-to-table) = 6.
+    // A stale walk resuming after being superseded would push this higher.
+    expect(mockList).toHaveBeenCalledTimes(6);
+  });
 });
 
 describe('Assets page — table view (#925 server-side paging)', () => {
