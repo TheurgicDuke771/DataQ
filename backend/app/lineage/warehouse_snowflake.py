@@ -771,10 +771,17 @@ class SnowflakeLineageProvider:
           Snowpark scratch, so the same collapse runs on this tier's rows.
 
         Ladder contract: the FIRST call's edition gate / missing grant descends via
-        :func:`_reraise_if_feature_unsupported` exactly as the old probe did. After one
-        call has succeeded the feature demonstrably exists, so a later seed's failure
-        is a per-object problem — skipped and counted, never an aborted pull. A
-        traversal that yields nothing (checked on the STITCHED result, not the
+        :func:`_reraise_if_feature_unsupported` exactly as the old probe did — and
+        since #1109, an UNCLASSIFIED failure on that same first call now ALSO skips
+        just this tier (a classified ``"call failed (<ExcType>)"`` reason) instead of
+        propagating and aborting the whole pull. That abort used to be the deliberate,
+        pinned behaviour of the pre-#892 single-probe shape; with the per-seed
+        traversal a call is one of up to 2xN (N = seeds), so a transient blip on call
+        1 of a thousand no longer gets to cost the floor tier that would have answered
+        fine. After one call has succeeded the feature demonstrably exists, so a
+        later seed's failure is (unchanged) a per-object problem — skipped and
+        counted, never an aborted pull. A traversal that yields nothing (checked on
+        the STITCHED result, not the
         pre-stitch raw rows — #1110 review: `raw` can be non-empty purely from
         ephemeral rows the stitch then collapses to `()`) descends too: under the
         snapshot-prune regime a confident empty at the top tier would wipe the floor's
@@ -833,7 +840,19 @@ class SnowflakeLineageProvider:
                         # Edition gate / missing grant on the very first call → the
                         # ladder descends exactly as the old preflight probe did.
                         _reraise_if_feature_unsupported(exc)
-                        raise
+                        # #1109: an UNCLASSIFIED failure on the first call descends
+                        # too now, instead of propagating and aborting the WHOLE
+                        # pull. Pre-#892 this was one preflight call, so "abort" and
+                        # "skip the tier" were the same thing; the per-seed traversal
+                        # made them different, and a transient blip on call 1 of up
+                        # to 2xN must not cost the floor tier that would have
+                        # answered fine. Skip just this tier — same shape as the
+                        # seed-enumeration failure above — and let the union answer.
+                        # The reason carries the exception TYPE only, never the raw
+                        # connector text (#902).
+                        raise _FeatureUnsupportedError(
+                            f"call failed ({type(exc).__name__})"
+                        ) from exc
                     seed_failures += 1
                     continue
                 finally:

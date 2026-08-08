@@ -977,16 +977,40 @@ def test_a_row_with_a_null_name_part_and_a_self_edge_are_both_dropped() -> None:
     ]
 
 
-def test_an_unclassified_failure_on_the_first_call_still_aborts_the_pull() -> None:
-    """Pinned as it stands (#1109 filed to revisit): an error on the FIRST GET_LINEAGE
-    call that is neither the edition gate nor a grant denial propagates, so the whole
-    pull fails rather than descending — the pre-#892 probe's contract, unchanged here
-    on purpose. It is now a sharper edge than it was (one call became 2xN), which is
-    why it is written down instead of left implicit.
+def test_an_unclassified_failure_on_the_first_call_now_descends_the_ladder() -> None:
+    """Flips the pin this test used to encode (#1109): the old body asserted that an
+    unclassified error on the FIRST GET_LINEAGE call propagates and fails the WHOLE
+    pull — a deliberate carry-over from the pre-#892 single-probe shape, where one
+    call and "the whole tier" were the same thing. #892 made the tier a per-seed
+    traversal of up to 2xN calls (N = seeds), so a transient blip on call 1 of a
+    thousand now costs a graph the floor tier would have answered fine — sharper than
+    the old contract intended, hence the flip: this tier now skips (a classified
+    reason, exception TYPE only per #902) exactly like the seed-enumeration failure
+    above, and the floor/ACCESS_HISTORY union still answers instead of the pull
+    raising.
     """
-    conn = _GetLineageConn({}, raises={"GET_LINEAGE": RuntimeError("connection reset by peer")})
-    with pytest.raises(RuntimeError, match="connection reset"):
-        SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+    conn = _GetLineageConn(
+        {},
+        raises={"GET_LINEAGE": RuntimeError("connection reset by peer")},
+        results={
+            "INFORMATION_SCHEMA.TABLES": [
+                ("RETAIL", "ORDERS_HEADER"),
+                ("RETAIL", "CUSTOMERS"),
+            ],
+            "OBJECT_DEPENDENCIES": _object_dependencies_rows(),
+        },
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.tier == LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES
+    assert len(result.edges) > 0  # the floor still answered
+    reason = next(s for s in result.skipped_tiers if s.startswith("get_lineage"))
+    assert "RuntimeError" in reason
+    assert "connection reset" not in reason  # exception TYPE only, never raw text (#902)
+    assert result.degraded_reason is not None
+    assert "connection reset" not in result.degraded_reason
+    # The tier aborted on the very first call — the second seed was never tried.
+    assert len([sql for sql in conn.executed if "GET_LINEAGE" in sql]) == 1
 
 
 def test_get_lineage_walks_both_directions_and_dedupes_across_seeds() -> None:
