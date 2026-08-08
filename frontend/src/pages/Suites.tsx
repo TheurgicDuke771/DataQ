@@ -124,8 +124,8 @@ export function Suites() {
   // survives the round-trip to the check editor; `/suites` selects nothing.
   const { suiteId } = useParams<{ suiteId: string }>();
   const selectedId = suiteId ?? null;
-  const { state, reload } = useAsyncData(listSuites);
-  const { state: connState } = useAsyncData(listConnections);
+  const { state, reload } = useAsyncData(() => listSuites());
+  const { state: connState } = useAsyncData(() => listConnections());
   const [importOpen, setImportOpen] = useState(false);
 
   const connections = connState.status === 'ok' ? connState.data : [];
