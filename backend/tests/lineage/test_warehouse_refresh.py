@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.db.models import Asset, Connection, LineageEdge, User
 from backend.app.lineage.warehouse import (
+    MAX_COLUMN_PAIRS_PER_EDGE,
     LineageEdgePair,
     LineageTier,
     WarehouseLineageResult,
@@ -294,6 +295,41 @@ def test_partial_pull_does_not_wipe_column_pairs(
     )
     cols = _columns_for(db_session, sf_connection)
     assert cols[(_ident("SRC").name, _ident("DST").name)] == [["a", "b"]]
+
+
+def test_the_accreting_column_union_is_capped(
+    sf_connection: Connection, db_session: Session
+) -> None:
+    """#1109 review: each provider caps column pairs inside its own `_EdgeSet`, which
+    bounds ONE pull — but the persisted union accretes ACROSS pulls, so an ETL reporting
+    fresh pairs every cycle grew the edge's JSONB without bound. Reachable only on the
+    incremental path before; a partial snapshot now takes the same route, which is
+    exactly the cycle where it must not balloon.
+    """
+
+    def _window(start: int) -> _StubProvider:
+        pairs = tuple((f"s{i}", f"d{i}") for i in range(start, start + MAX_COLUMN_PAIRS_PER_EDGE))
+        return _StubProvider(
+            WarehouseLineageResult(
+                edges=(LineageEdgePair(_ident("SRC"), _ident("DST"), column_pairs=pairs),),
+                tier=LineageTier.UNITY_CATALOG_SYSTEM_ACCESS,
+            ),
+            source="unity_catalog",
+            is_incremental=True,
+        )
+
+    refresh_warehouse_edges(
+        db_session, connection=sf_connection, provider=_window(0), conn=object()
+    )
+    # A second window of entirely NEW pairs would have doubled the blob uncapped.
+    refresh_warehouse_edges(
+        db_session,
+        connection=sf_connection,
+        provider=_window(MAX_COLUMN_PAIRS_PER_EDGE),
+        conn=object(),
+    )
+    cols = _columns_for(db_session, sf_connection, source="unity_catalog")
+    assert len(cols[(_ident("SRC").name, _ident("DST").name)]) == MAX_COLUMN_PAIRS_PER_EDGE
 
 
 def test_incremental_source_never_prunes(sf_connection: Connection, db_session: Session) -> None:

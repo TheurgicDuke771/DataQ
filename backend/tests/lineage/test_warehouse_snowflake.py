@@ -1216,6 +1216,48 @@ def test_a_later_seed_failure_is_skipped_not_fatal() -> None:
     assert result.degraded_reason is not None and "partial" in result.degraded_reason
 
 
+def test_a_confirmed_per_seed_denial_is_reported_but_still_prunes() -> None:
+    """The seed-level counterpart of `test_a_confirmed_first_call_failure_stays_prunable`,
+    and the sharpest edge of the whole `prunable` mechanism (#1109 review): a role that
+    cannot resolve ONE object fails that object on EVERY refresh, forever. Counting a
+    confirmed per-object denial as transient would therefore suspend the snapshot prune
+    permanently — dropped views frozen in the cache for good, a failure that never
+    self-heals, strictly worse than the blip this mechanism exists to survive.
+
+    So the denial is REPORTED (an operator wants to see it) but stays prunable, and the
+    reason says which kind it was rather than mislabelling it a blip.
+    """
+
+    class _OneSeedDenied(_GetLineageConn):
+        def execute(self, statement: Any, params: dict[str, Any] | None = None) -> _Result:
+            if params is not None and params.get("obj") == "DATAQ_DB.RETAIL.CUSTOMERS":
+                # Snowflake's real per-object blur (002003), not a generic error.
+                raise RuntimeError(
+                    "002003 (42S02): SQL compilation error:\n"
+                    "Object 'DATAQ_DB.RETAIL.CUSTOMERS' does not exist or not authorized."
+                )
+            return super().execute(statement, params)
+
+    conn = _OneSeedDenied(
+        {
+            ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
+                "gl_down_orders_header"
+            )
+        },
+        results={
+            "INFORMATION_SCHEMA.TABLES": [("RETAIL", "ORDERS_HEADER"), ("RETAIL", "CUSTOMERS")]
+        },
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.tier == LineageTier.SNOWFLAKE_GET_LINEAGE
+    assert result.prunable is True  # permanent per-object state → the prune stays armed
+    partial = next(s for s in result.skipped_tiers if "traversal call(s) failed" in s)
+    assert "2 of 4" in partial
+    assert "transient" not in partial  # not a blip, and must not read as one
+    assert "per-object denial" in partial
+
+
 def test_a_clean_full_traversal_is_prunable_and_undegraded() -> None:
     """The control for the two tests above — without it, `prunable is False` proves
     nothing (a field hard-wired to False would satisfy them both). A traversal where

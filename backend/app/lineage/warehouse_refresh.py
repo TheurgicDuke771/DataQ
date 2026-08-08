@@ -42,6 +42,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Connection, LineageEdge
 from backend.app.lineage.warehouse import (
+    MAX_COLUMN_PAIRS_PER_EDGE,
     LineageTier,
     WarehouseLineageProvider,
     WarehouseLineageResult,
@@ -198,6 +199,21 @@ def _persist(
                 LineageEdge.connection_id == connection.id,
                 LineageEdge.last_seen < refresh_started_at,
             )
+        )
+    elif not provider.is_incremental:
+        # A snapshot source that skipped its prune is a WARNING, not a detail (#1109
+        # review). The suppression is per-cycle and self-clearing by design — but
+        # nothing enforces that a clean cycle ever arrives, so a persistent transient
+        # condition would suspend pruning indefinitely with no signal beyond an `info`
+        # line. This is the trace an operator can alert on; a durable, product-visible
+        # backstop (a suspension age surfaced by `warehouse_lineage_status`) needs a
+        # persisted marker and is tracked separately.
+        log.warning(
+            "warehouse_lineage_prune_suspended",
+            connection_id=str(connection.id),
+            source=source,
+            tier=str(result.tier),
+            reason=result.degraded_reason,
         )
     live = session.execute(
         select(func.count())
@@ -358,11 +374,18 @@ def _edge_rows(
         # Column pairs accrete (union with what the edge already carries): a pair is
         # forgotten only when its whole edge is pruned. NULL (never observed) stays
         # NULL — it is not the same claim as "observed, zero pairs".
+        #
+        # CAPPED at the shared per-edge limit (#1109 review). Each provider enforces it
+        # inside its own `_EdgeSet`, which bounds ONE pull — but the union accretes
+        # across pulls, so an ETL that reports new pairs each cycle grew the edge's JSONB
+        # without bound. That was reachable only on the incremental path before; a
+        # partial snapshot now takes it too, which is exactly when it must not balloon.
+        # Deterministic: sorted, then the first N.
         merged: list[list[str]] | None = None
         prior = existing_columns.get((up, down))
         if edge.column_pairs or prior:
             union = {tuple(p) for p in (prior or [])} | set(edge.column_pairs)
-            merged = [list(p) for p in sorted(union)]
+            merged = [list(p) for p in sorted(union)[:MAX_COLUMN_PAIRS_PER_EDGE]]
         rows.append(
             {
                 "upstream_asset_id": up,

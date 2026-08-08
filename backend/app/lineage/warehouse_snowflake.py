@@ -342,11 +342,19 @@ class _GetLineageTraversal:
     reaches `_persist` unlabelled prunes every edge it failed to re-observe. Carrying
     the count up is what lets `fetch_edges` mark the result non-prunable — and say so
     in ``skipped_tiers``, where before it was a `structlog` line and nothing else.
+
+    ``unclassified_failures`` is the subset that could not be classified as a CONFIRMED
+    per-object denial, and it — not ``failed_calls`` — is what suspends the prune. A
+    role that cannot resolve one seed fails that seed on every single refresh; if that
+    counted as transient, the connection would never prune again and dropped objects
+    would be frozen in the cache permanently. Both counts are reported, because an
+    operator wants to see the failures either way.
     """
 
     edges: tuple[LineageEdgePair, ...]
     calls: int
     failed_calls: int
+    unclassified_failures: int = 0
 
 
 class SnowflakeLineageProvider:
@@ -399,11 +407,21 @@ class SnowflakeLineageProvider:
                 # top-tier result whose only trace was a `get_lineage_seed_failures`
                 # structlog line. The refresh then PRUNED every edge those calls would
                 # have re-observed, and no product surface ever said so.
+                #
+                # It suspends the prune only when a failure was UNCLASSIFIED, though: a
+                # confirmed per-object denial is a permanent property of this role, so
+                # calling it transient would suspend pruning on every refresh forever.
+                # It is still reported — an operator wants to see it either way.
+                partial = partial or bool(top.unclassified_failures)
                 skipped.append(
                     f"get_lineage: {top.failed_calls} of {top.calls} traversal call(s) "
-                    f"failed — partial{_TRANSIENT_SKIP_SUFFIX}"
+                    "failed — partial"
+                    + (
+                        _TRANSIENT_SKIP_SUFFIX
+                        if top.unclassified_failures
+                        else " (per-object denial — this role cannot read those objects)"
+                    )
                 )
-                partial = True
             try:
                 floor_for_top = self._from_object_dependencies(conn, namespace, database)
             except Exception as exc:
@@ -883,6 +901,7 @@ class SnowflakeLineageProvider:
         raw = _EdgeSet()
         first_call = True
         seed_failures = 0
+        unclassified_failures = 0
         for seed in seeds:
             for direction in ("UPSTREAM", "DOWNSTREAM"):
                 try:
@@ -919,6 +938,16 @@ class SnowflakeLineageProvider:
                             f"call failed ({type(exc).__name__})", transient=True
                         ) from exc
                     seed_failures += 1
+                    # Classify it too (#1109 review). A CONFIRMED per-object denial —
+                    # an edition gate, or Snowflake's does-not-exist/not-authorized
+                    # blur on one seed the role cannot resolve — recurs identically
+                    # every cycle. Counting it as transient would set `prunable=False`
+                    # on EVERY refresh forever, and a connection with one unreadable
+                    # object would silently never prune again: dropped views frozen in
+                    # the cache permanently. That is a worse failure than the one the
+                    # transient path exists to prevent, because it never self-heals.
+                    if _feature_unsupported_reason(exc) is None:
+                        unclassified_failures += 1
                     continue
                 finally:
                     first_call = False
@@ -929,6 +958,7 @@ class SnowflakeLineageProvider:
                 source=self.source,
                 seeds=len(seeds),
                 failed_calls=seed_failures,
+                unclassified_calls=unclassified_failures,
             )
         edges = _stitch_ephemera(raw, path="get_lineage")
         if not edges:
@@ -943,12 +973,18 @@ class SnowflakeLineageProvider:
             raise _FeatureUnsupportedError(
                 f"no lineage rows for {len(seeds)} seed table(s)"
                 + (f" ({seed_failures} failed call(s))" if seed_failures else ""),
-                # A CLEAN empty traversal is a confirmed observation of this tier; one
-                # with failed calls is indeterminate — "we saw nothing" and "we could
-                # not look" are different claims and only the first may prune.
-                transient=bool(seed_failures),
+                # A CLEAN empty traversal is a confirmed observation of this tier, and
+                # so is one whose failures were all confirmed per-object denials; only
+                # an UNCLASSIFIED failure makes it indeterminate — "we saw nothing" and
+                # "we could not look" are different claims, and only the first may prune.
+                transient=bool(unclassified_failures),
             )
-        return _GetLineageTraversal(edges=edges, calls=len(seeds) * 2, failed_calls=seed_failures)
+        return _GetLineageTraversal(
+            edges=edges,
+            calls=len(seeds) * 2,
+            failed_calls=seed_failures,
+            unclassified_failures=unclassified_failures,
+        )
 
     def _collect_get_lineage_rows(
         self, rows: Iterable[Any], *, namespace: str, into: _EdgeSet
@@ -1041,23 +1077,41 @@ _UNSUPPORTED_EDITION_MSG = "unsupported on this edition"
 _NOT_AUTHORIZED_MSG = "not authorized (role lacks the ACCOUNT_USAGE / GET_LINEAGE grant)"
 
 
-def _reraise_if_feature_unsupported(exc: BaseException) -> None:
-    """Raise :class:`_FeatureUnsupportedError` if ``exc`` is Snowflake's edition-gate 0A000,
-    matched by SQLSTATE (structured) OR the documented message text (belt-and-braces —
-    the connector surfaces both, and the SQLSTATE is the reliable one).
+def _feature_unsupported_reason(exc: BaseException) -> str | None:
+    """The stable, operator-legible reason if ``exc`` is a CONFIRMED capability or
+    authorization denial — Snowflake's edition-gate 0A000 (matched by SQLSTATE, the
+    reliable signal, OR the documented message text belt-and-braces) or the
+    does-not-exist/not-authorized blur — else ``None``.
 
-    Authorization failures descend the ladder too (#902, found live): Snowflake grants
-    are per-object — the ``SNOWFLAKE.GOVERNANCE_VIEWER`` database role authorizes
-    ACCESS_HISTORY + OBJECT_DEPENDENCIES *without* the GET_LINEAGE probe's table — so
-    an un-authorized tier is exactly as skippable as an edition-gated one. Snowflake
-    deliberately blurs missing-object and missing-grant into one message (002003
-    "does not exist or not authorized"), so that text IS the structured signal here.
-    If every tier is denied, the floor's failure already reports unavailable with a
-    classified reason — this never converts total denial into a silent empty.
+    Split out of :func:`_reraise_if_feature_unsupported` (#1109 review) because the
+    per-seed loop needs the ANSWER without the control flow: a later seed's failure must
+    not raise (that would abort the tier), but it still matters enormously whether it was
+    confirmed or unclassified. A confirmed per-object denial recurs identically every
+    cycle, so treating it as transient would suspend the snapshot prune FOREVER on any
+    connection with one unreadable object.
     """
     if _sqlstate(exc) == _FEATURE_UNSUPPORTED_SQLSTATE or "Unsupported feature" in str(exc):
         # The edition gate → a stable, operator-legible reason (NOT the raw connector
         # text, which can be noisy). The deferred-traversal path raises its own message.
-        raise _FeatureUnsupportedError(_UNSUPPORTED_EDITION_MSG) from exc
+        return _UNSUPPORTED_EDITION_MSG
+    # Snowflake deliberately blurs missing-object and missing-grant into one message
+    # (002003 "does not exist or not authorized"), so that text IS the structured signal.
     if "does not exist or not authorized" in str(exc):
-        raise _FeatureUnsupportedError(_NOT_AUTHORIZED_MSG) from exc
+        return _NOT_AUTHORIZED_MSG
+    return None
+
+
+def _reraise_if_feature_unsupported(exc: BaseException) -> None:
+    """Raise :class:`_FeatureUnsupportedError` if ``exc`` is a confirmed capability or
+    authorization denial (:func:`_feature_unsupported_reason`), so the ladder descends.
+
+    Authorization failures descend the ladder too (#902, found live): Snowflake grants
+    are per-object — the ``SNOWFLAKE.GOVERNANCE_VIEWER`` database role authorizes
+    ACCESS_HISTORY + OBJECT_DEPENDENCIES *without* the GET_LINEAGE probe's table — so
+    an un-authorized tier is exactly as skippable as an edition-gated one.
+    If every tier is denied, the floor's failure already reports unavailable with a
+    classified reason — this never converts total denial into a silent empty.
+    """
+    reason = _feature_unsupported_reason(exc)
+    if reason is not None:
+        raise _FeatureUnsupportedError(reason) from exc
