@@ -1,0 +1,102 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "fe7109a6db6c",
+  "session_id": "872b51c5-53fe-44bc-823b-5b6bbf6ce851",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-08T18:41:15.937337Z",
+  "branch": "dependabot/pip/fastmcp-3.4.5",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".pre-commit-config.yaml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "169fdbad9ed8",
+  "checkpoint_transcript_start": 313,
+  "transcript_lines_at_start": 313,
+  "compact_transcript_start": 89,
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 2903,
+    "cache_read_tokens": 792855,
+    "output_tokens": 862,
+    "api_call_count": 4
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_011GoaFMnBcZCcBuosn6cEy6",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "169fdbad9ed8",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 189,
+        "end": 190,
+        "entry_ids": [
+          "65674e9f-a658-495a-b947-2b6130b9d50d"
+        ],
+        "tool_use_id": "toolu_011GoaFMnBcZCcBuosn6cEy6"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_011GoaFMnBcZCcBuosn6cEy6"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01KBMm7Z5PFpW43hvnZto4mi",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "169fdbad9ed8",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 267,
+        "end": 268,
+        "entry_ids": [
+          "dcdfcfa1-4190-4699-a676-25bc0e49f924"
+        ],
+        "tool_use_id": "toolu_01KBMm7Z5PFpW43hvnZto4mi"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01KBMm7Z5PFpW43hvnZto4mi"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "initial_attribution": {
+    "calculated_at": "2026-08-08T18:41:15.907168Z",
+    "agent_lines": 2,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2,
+    "total_lines_changed": 4,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

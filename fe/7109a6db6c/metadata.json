@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "fe7109a6db6c",
+  "strategy": "manual-commit",
+  "branch": "dependabot/pip/fastmcp-3.4.5",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".pre-commit-config.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fe/7109a6db6c/0/metadata.json",
+      "transcript": "/fe/7109a6db6c/0/full.jsonl",
+      "compact_transcript": "/fe/7109a6db6c/0/transcript.jsonl",
+      "content_hash": "/fe/7109a6db6c/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 2903,
+    "cache_read_tokens": 792855,
+    "output_tokens": 862,
+    "api_call_count": 4
+  }
+}
