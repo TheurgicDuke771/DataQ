@@ -374,6 +374,255 @@ def test_binding_for_other_pipeline_does_not_trigger(db_session: Any) -> None:
     assert result.triggered_runs == []
 
 
+# ── #1186: env-mismatch near-miss signal ───────────────────────────────────
+#
+# Confirmed live: two orchestrator connections sharing one resource across envs
+# made a succeeded run attribute to the "wrong" env, and an enabled binding
+# scoped to the other env never fired — silently. These tests cover the ingest
+# path (`_trigger_suites`, reached by both `ingest_event` and `ingest_polled_runs`)
+# emitting a `trigger_binding_env_near_miss` log line + a deduped `workspace_health`
+# row exactly when a pipeline/DAG run matches an enabled binding on everything but
+# the env — and not otherwise.
+
+
+def test_env_mismatch_logs_near_miss_and_writes_health_row(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    import structlog
+    from structlog.testing import capture_logs
+
+    from backend.app.db.models import WorkspaceHealth
+    from backend.app.services import orchestration_service as svc_mod
+
+    conn = _adf_connection(db_session, env="qa")  # the run resolves to env=qa
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env="dev")  # scoped to dev
+
+    with capture_logs() as logs:
+        # structlog caches a bound logger on first use; rebind the module logger
+        # INSIDE the capture or `caplog`/`capture_logs` silently sees nothing
+        # (the same trap documented in test_admin.py / test_secrets.py).
+        monkeypatch.setattr(
+            svc_mod, "log", structlog.get_logger("backend.app.services.orchestration_service")
+        )
+        result = ingest_event(
+            db_session,
+            provider_impl=_FakeProvider(),
+            update=_update(status="succeeded", provider_run_id="run-nm-1"),
+            secret_store=_FakeStore(),
+        )
+
+    assert result.triggered_runs == []  # env mismatch — nothing fired
+
+    near_miss_events = [e for e in logs if e["event"] == "trigger_binding_env_near_miss"]
+    assert len(near_miss_events) == 1
+    assert near_miss_events[0]["run_env"] == "qa"
+    assert near_miss_events[0]["binding_env"] == "dev"
+    assert near_miss_events[0]["pipeline_or_dag_id"] == "load_finance"
+
+    rows = list(db_session.scalars(select(WorkspaceHealth)))
+    assert len(rows) == 1
+    assert rows[0].key.startswith("trigger_env_near_miss:")
+
+
+def test_full_match_does_not_record_a_near_miss(db_session: Any) -> None:
+    from backend.app.db.models import WorkspaceHealth
+
+    conn = _adf_connection(db_session, env="dev")
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env="dev")  # matches exactly
+
+    result = ingest_event(
+        db_session,
+        provider_impl=_FakeProvider(),
+        update=_update(status="succeeded", provider_run_id="run-nm-2"),
+        secret_store=_FakeStore(),
+    )
+    assert len(result.triggered_runs) == 1
+    assert db_session.scalars(select(WorkspaceHealth)).all() == []
+
+
+def test_no_binding_does_not_record_a_near_miss(db_session: Any) -> None:
+    from backend.app.db.models import WorkspaceHealth
+
+    _adf_connection(db_session, env="qa")  # no binding at all, in any env
+    result = ingest_event(
+        db_session,
+        provider_impl=_FakeProvider(),
+        update=_update(status="succeeded", provider_run_id="run-nm-3"),
+        secret_store=_FakeStore(),
+    )
+    assert result.triggered_runs == []
+    assert db_session.scalars(select(WorkspaceHealth)).all() == []
+
+
+def test_disabled_mismatched_binding_does_not_record_a_near_miss(db_session: Any) -> None:
+    from backend.app.db.models import WorkspaceHealth
+
+    conn = _adf_connection(db_session, env="qa")
+    suite = _suite(db_session, conn)
+    # Same shape as the main near-miss test, but the OTHER env's binding is
+    # disabled — it wouldn't fire even with the right env, so it's not a
+    # near-miss victim worth signalling.
+    _binding(db_session, suite=suite, pipeline="load_finance", env="dev", enabled=False)
+
+    result = ingest_event(
+        db_session,
+        provider_impl=_FakeProvider(),
+        update=_update(status="succeeded", provider_run_id="run-nm-4"),
+        secret_store=_FakeStore(),
+    )
+    assert result.triggered_runs == []
+    assert db_session.scalars(select(WorkspaceHealth)).all() == []
+
+
+def test_near_miss_upsert_dedupes_the_same_mismatch(db_session: Any) -> None:
+    from backend.app.db.models import WorkspaceHealth
+
+    conn = _adf_connection(db_session, env="qa")
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env="dev")
+
+    ingest_event(
+        db_session,
+        provider_impl=_FakeProvider(),
+        update=_update(status="succeeded", provider_run_id="run-nm-5"),
+        secret_store=_FakeStore(),
+    )
+    first = db_session.scalar(select(WorkspaceHealth))
+    first_key, first_updated_at = first.key, first.updated_at
+
+    # A later poll re-observes the SAME (provider, dag, run_env, binding_env)
+    # mismatch via a different run — must upsert the one row, not add a second.
+    ingest_event(
+        db_session,
+        provider_impl=_FakeProvider(),
+        update=_update(status="succeeded", provider_run_id="run-nm-6"),
+        secret_store=_FakeStore(),
+    )
+    rows = list(db_session.scalars(select(WorkspaceHealth)))
+    assert len(rows) == 1
+    assert rows[0].key == first_key
+    assert rows[0].updated_at >= first_updated_at
+
+
+def test_near_miss_log_line_fires_only_on_first_occurrence(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The DB row dedupes via upsert regardless, but the log line must NOT fire
+    on every occurrence — a persistently misconfigured pipeline succeeds (and
+    re-triggers this check) every poll cycle, and warning every cycle forever is
+    the #852 log-amplification shape this codebase already burned itself on."""
+    import structlog
+    from structlog.testing import capture_logs
+
+    from backend.app.services import orchestration_service as svc_mod
+
+    conn = _adf_connection(db_session, env="qa")
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env="dev")
+
+    with capture_logs() as logs:
+        monkeypatch.setattr(
+            svc_mod, "log", structlog.get_logger("backend.app.services.orchestration_service")
+        )
+        ingest_event(
+            db_session,
+            provider_impl=_FakeProvider(),
+            update=_update(status="succeeded", provider_run_id="run-nm-throttle-1"),
+            secret_store=_FakeStore(),
+        )
+        ingest_event(
+            db_session,
+            provider_impl=_FakeProvider(),
+            update=_update(status="succeeded", provider_run_id="run-nm-throttle-2"),
+            secret_store=_FakeStore(),
+        )
+
+    near_miss_events = [e for e in logs if e["event"] == "trigger_binding_env_near_miss"]
+    assert len(near_miss_events) == 1  # only the first ingestion logged it
+
+
+def test_near_miss_signalled_via_the_poll_path_too(db_session: Any) -> None:
+    # `_trigger_suites` is shared by both ingestion entry points — the near-miss
+    # signal must fire whether the run arrived via webhook (above) or poll.
+    from backend.app.db.models import WorkspaceHealth
+
+    conn = _adf_connection(db_session, env="qa", factory="poll-near-miss-factory")
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env="dev")
+
+    result = ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeProvider(),
+        connection=conn,
+        updates=[
+            _update(
+                status="succeeded",
+                provider_run_id="run-nm-poll-1",
+                resource_name="poll-near-miss-factory",
+            )
+        ],
+        skip_updated_since=datetime.now(UTC) - timedelta(minutes=15),
+    )
+    assert result.triggered_runs == []
+    assert len(db_session.scalars(select(WorkspaceHealth)).all()) == 1
+
+
+def test_near_miss_record_failure_is_fail_open_and_does_not_break_ingestion(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A DB error writing the diagnostic `workspace_health` row must never break
+    the ingest path itself (mirrors `_dispatch_lineage_refresh`'s fail-open
+    discipline) — otherwise a webhook whose pipeline_run was already correctly
+    upserted would 500 back to the caller (ADR 0006: ack well-formed events), or
+    a poll batch would abort mid-loop and silently drop every OTHER update it
+    still had to process.
+    """
+    from backend.app.services import workspace_health_service
+
+    def _boom(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("workspace_health write failed")
+
+    # `orchestration_service` imports the MODULE (`from ... import workspace_health_service`)
+    # and calls it via attribute access, so patching the module here reaches the call site.
+    monkeypatch.setattr(workspace_health_service, "record_trigger_binding_env_near_miss", _boom)
+
+    conn = _adf_connection(db_session, env="qa")
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env="dev")
+
+    # Webhook path: must not raise, and the pipeline_run must still land.
+    result = ingest_event(
+        db_session,
+        provider_impl=_FakeProvider(),
+        update=_update(status="succeeded", provider_run_id="run-nm-fail-1"),
+        secret_store=_FakeStore(),
+    )
+    assert result.pipeline_run is not None
+    assert result.pipeline_run.status == "succeeded"
+    assert result.triggered_runs == []
+
+    # Poll path, multi-update batch: the first update's near-miss (write fails)
+    # must not stop the SECOND, unrelated update in the same batch from being
+    # recorded — a batch-wide crash would silently drop it too.
+    poll_result = ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeProvider(),
+        connection=conn,
+        updates=[
+            _update(status="succeeded", provider_run_id="run-nm-fail-2"),  # near-miss, write fails
+            _update(
+                status="succeeded",
+                provider_run_id="run-nm-fail-3",
+                pipeline_or_dag_id="no_binding_at_all",  # unrelated — no near-miss on this one
+            ),
+        ],
+        skip_updated_since=datetime.now(UTC) - timedelta(minutes=15),
+    )
+    assert len(poll_result.pipeline_runs) == 2  # both updates recorded despite the failure
+
+
 # ── cross-provider: Airflow resolves by base_url; enrichment is skipped ──
 
 

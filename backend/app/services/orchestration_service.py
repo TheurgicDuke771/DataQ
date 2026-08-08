@@ -44,7 +44,7 @@ from backend.app.db.models import (
 )
 from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
-from backend.app.services import run_dispatch
+from backend.app.services import run_dispatch, workspace_health_service
 from backend.app.services.failure_classifier import classify_failure_reason
 
 log = get_logger(__name__)
@@ -237,6 +237,91 @@ def _maybe_enrich(
     return detailed
 
 
+def _record_env_near_misses(
+    session: Session, *, provider: str, connection: Connection, update: RunUpdate
+) -> None:
+    """Env-mismatch near-miss signal (#1186) — no binding fired for this run, but
+    one *would have* if its env matched.
+
+    Called only when `_trigger_suites` found zero bindings for this run's exact
+    (provider, pipeline_or_dag_id, env): if an ENABLED binding exists for the same
+    (provider, pipeline_or_dag_id) in a DIFFERENT env, that binding is a candidate
+    victim of the #1186 ambiguity — a pipeline/DAG run genuinely succeeded and a
+    binding genuinely exists for it, but the run's env (this connection's `env`,
+    resolved via `_resolve_connection`) doesn't match the binding's env, so
+    nothing fired and nothing said why beyond a log line. This records a
+    DB-visible, deduped marker alongside the log so the mismatch survives past
+    the log retention window (`workspace_health_service`, mirrors the #1100
+    `POLL_STALENESS_KEY` write shape).
+
+    Deliberately narrow: only reached when the exact-env match list is empty, so
+    a pipeline that already triggers correctly never logs a near-miss just
+    because an unrelated stray binding also exists in another env.
+
+    Fail-open like every other side-channel write on this ingest path (mirrors
+    `_dispatch_lineage_refresh`'s explicit try/except around `send_task`): this is
+    a bonus diagnostic, not the ingestion itself, and both callers reach here
+    AFTER the pipeline_run row is already durably upserted+committed. A DB error
+    on the `workspace_health` write (contention, a transient connection drop) must
+    never propagate — for `ingest_event` that would 500 a webhook that DataQ has
+    already correctly processed (ADR 0006 says ack well-formed events, storming
+    the caller's retry logic for nothing); for `ingest_polled_runs` it would abort
+    the whole poll batch mid-loop, silently dropping every *other* pipeline_run
+    (and any trigger) the same poll cycle would otherwise have recorded.
+
+    The log line is throttled to the FIRST time a tuple is recorded, not every
+    occurrence: a persistently misconfigured pipeline succeeds (and re-triggers
+    this check) every poll cycle, and logging WARNING on every one of those is
+    exactly the log-amplification shape #852 already burned this codebase on —
+    the ongoing-ness is still provable from the `workspace_health` row's
+    `updated_at`, which the (deduped) DB write bumps every time regardless.
+    """
+    mismatched_envs = sorted(
+        set(
+            session.scalars(
+                select(TriggerBinding.env).where(
+                    TriggerBinding.provider == provider,
+                    TriggerBinding.pipeline_or_dag_id == update.pipeline_or_dag_id,
+                    TriggerBinding.enabled.is_(True),
+                    TriggerBinding.env != connection.env,
+                )
+            )
+        )
+    )
+    for binding_env in mismatched_envs:
+        try:
+            first_occurrence = workspace_health_service.record_trigger_binding_env_near_miss(
+                session,
+                provider=provider,
+                pipeline_or_dag_id=update.pipeline_or_dag_id,
+                run_env=connection.env,
+                binding_env=binding_env,
+            )
+        except Exception:
+            # The row write failed (or the session's transaction is now aborted) —
+            # roll back so the caller's session is usable again, and never let a
+            # diagnostic-only failure break suite triggering itself. Always warn
+            # here regardless of first-vs-repeat: a write FAILURE is not the
+            # steady-state noise the throttle above guards against.
+            session.rollback()
+            log.warning(
+                "trigger_binding_env_near_miss_record_failed",
+                provider=provider,
+                pipeline_or_dag_id=update.pipeline_or_dag_id,
+                run_env=connection.env,
+                binding_env=binding_env,
+            )
+            continue
+        if first_occurrence:
+            log.warning(
+                "trigger_binding_env_near_miss",
+                provider=provider,
+                pipeline_or_dag_id=update.pipeline_or_dag_id,
+                run_env=connection.env,
+                binding_env=binding_env,
+            )
+
+
 def _trigger_suites(
     session: Session, *, provider: str, connection: Connection, update: RunUpdate
 ) -> list[Run]:
@@ -262,6 +347,8 @@ def _trigger_suites(
             )
         )
     )
+    if not bindings:
+        _record_env_near_misses(session, provider=provider, connection=connection, update=update)
     created: list[Run] = []
     for binding in bindings:
         # Atomic dedup: the partial unique index `uq_runs_suite_triggered_by`

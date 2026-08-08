@@ -32,6 +32,20 @@ export const PROVIDER_CALLBACK_NOUNS: Record<OrchestrationProvider, string> = {
   dbt: 'post-build',
 };
 
+/**
+ * Mirrors the backend `TriggerBindingWarningRead` — an advisory, non-blocking
+ * signal returned alongside a create/update response (#1186). Today's one code:
+ * `ambiguous_orchestration_url` — this binding's (provider, env) connection
+ * shares its resource (e.g. an Airflow `base_url`) with a connection in a
+ * DIFFERENT env, so a pipeline/DAG run attributed to that other env will not
+ * match this binding — it can silently never fire.
+ */
+export interface TriggerBindingWarning {
+  code: string;
+  message: string;
+  other_envs: string[];
+}
+
 /** Mirrors the backend `TriggerBindingRead`. */
 export interface TriggerBinding {
   id: string;
@@ -40,6 +54,8 @@ export interface TriggerBinding {
   env: string;
   suite_id: string;
   enabled: boolean;
+  /** Populated on create/update; always `[]` on a plain list/get read (#1186). */
+  warnings: TriggerBindingWarning[];
 }
 
 /** Mirrors `TriggerBindingCreate`. */
