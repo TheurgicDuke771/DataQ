@@ -149,6 +149,17 @@ A read-only SQL rule in the Monaco editor: **any rows returned are failures**. U
 (`SELECT * FROM {batch} WHERE amount < 0`). Single read-only statement enforced
 server-side.
 
+The query runs **in the warehouse**, so the result is a pass/fail plus the number
+of rows returned — no severity banding (a row count isn't comparable across tables).
+
+**On Unity Catalog the suite's run target must name a schema.** Custom SQL is the
+one check kind that needs it: the query is addressed as `catalog.schema.table`, and
+a two-part name would silently resolve against the session's default schema — a
+*different table*, quietly checked. A UC target without a schema therefore errors
+its custom-SQL checks (with that reason on the result) while every other check in
+the suite runs normally. Set the schema on the suite's run target to fix it.
+Snowflake is unaffected — its schema comes from the connection.
+
 ### Freshness monitor (all datasources — ADR 0012/0030)
 
 *How stale is the target?* Point it at the load/updated **timestamp column**; the check
