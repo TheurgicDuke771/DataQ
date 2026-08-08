@@ -25,6 +25,17 @@ from backend.app.core.config import get_settings
 # holding the row and we should say so, not hang.
 _LOCK_TIMEOUT_MS = 5_000
 
+# Same posture, one layer lower (#1102): `lock_timeout` bounds how long a statement waits
+# on a CONTENDED row once connected — it says nothing about the initial TCP connect. If the
+# DB is fully unreachable (network partition, not a locked row), psycopg2's connect falls
+# back to the OS/driver default, which can block for minutes. That hangs every
+# `get_session()` caller, including the #1052 staleness loop's graceful-shutdown await
+# (`staleness_stop.set(); await staleness_task`) — an unreachable DB would delay API
+# shutdown by the same unbounded amount. `connect_timeout` is a psycopg2-native
+# `connect_args` key (seconds, unlike `lock_timeout`'s milliseconds GUC), so a dead DB
+# fails fast and loudly instead of hanging every caller.
+_CONNECT_TIMEOUT_SECONDS = 10
+
 
 def _build_engine() -> Engine:
     settings = get_settings()
@@ -32,7 +43,10 @@ def _build_engine() -> Engine:
         settings.database_url,
         pool_pre_ping=True,
         future=True,
-        connect_args={"options": f"-c lock_timeout={int(_LOCK_TIMEOUT_MS)}"},
+        connect_args={
+            "options": f"-c lock_timeout={int(_LOCK_TIMEOUT_MS)}",
+            "connect_timeout": _CONNECT_TIMEOUT_SECONDS,
+        },
     )
 
 
