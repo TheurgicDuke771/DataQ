@@ -35,6 +35,14 @@ class TriggerBindingUpdate(ApiModel):
     enabled: bool
 
 
+class TriggerBindingWarningRead(ApiModel):
+    """Mirrors `trigger_binding_service.TriggerBindingWarning` (#1186)."""
+
+    code: str
+    message: str
+    other_envs: list[str]
+
+
 class TriggerBindingRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -44,6 +52,24 @@ class TriggerBindingRead(ApiModel):
     env: str
     suite_id: uuid.UUID
     enabled: bool
+    # Advisory, non-blocking warnings (#1186) — populated on create/update, always
+    # `[]` on a plain read (GET/list return the raw ORM row; `from_attributes`
+    # falls back to this default since `TriggerBinding` carries no such column).
+    warnings: list[TriggerBindingWarningRead] = Field(default_factory=list)
+
+    @classmethod
+    def from_result(cls, result: svc.BindingResult) -> TriggerBindingRead:
+        read = cls.model_validate(result.binding)
+        return read.model_copy(
+            update={
+                "warnings": [
+                    TriggerBindingWarningRead(
+                        code=w.code, message=w.message, other_envs=w.other_envs
+                    )
+                    for w in result.warnings
+                ]
+            }
+        )
 
 
 @router.post(
@@ -56,8 +82,8 @@ def create_trigger_binding(
     payload: TriggerBindingCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> TriggerBinding:
-    return svc.create_binding(
+) -> TriggerBindingRead:
+    result = svc.create_binding(
         db,
         provider=payload.provider,
         pipeline_or_dag_id=payload.pipeline_or_dag_id,
@@ -66,6 +92,7 @@ def create_trigger_binding(
         user_id=current_user.id,
         enabled=payload.enabled,
     )
+    return TriggerBindingRead.from_result(result)
 
 
 @router.get(
@@ -108,8 +135,9 @@ def update_trigger_binding(
     payload: TriggerBindingUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> TriggerBinding:
-    return svc.update_binding(db, binding_id, user_id=current_user.id, enabled=payload.enabled)
+) -> TriggerBindingRead:
+    result = svc.update_binding(db, binding_id, user_id=current_user.id, enabled=payload.enabled)
+    return TriggerBindingRead.from_result(result)
 
 
 @router.delete(

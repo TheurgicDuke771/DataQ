@@ -198,13 +198,17 @@ export async function testConnection(id: string): Promise<{ ok: boolean }> {
   return data;
 }
 
-/** Mirrors the backend `ConnectionCreate` schema (secret is write-only). */
+/** Mirrors the backend `ConnectionCreate` schema (secrets are write-only).
+ * `catalog_secret` is the SECOND credential a type may need — currently only
+ * the Iceberg SQL/hive catalog's DB password (#754/#826/#1181); every other
+ * type simply never sends it. */
 export interface ConnectionCreate {
   name: string;
   type: ConnectionType;
   env: ConnectionEnv;
   config: Record<string, unknown>;
   secret?: string;
+  catalog_secret?: string;
 }
 
 export async function createConnection(payload: ConnectionCreate): Promise<Connection> {
@@ -230,11 +234,16 @@ export async function testDraftConnection(payload: ConnectionDraftTest): Promise
   return data;
 }
 
-/** Mirrors the backend `ConnectionUpdate` schema — type/env are immutable. */
+/** Mirrors the backend `ConnectionUpdate` schema — type/env are immutable.
+ * `catalog_secret` rotates the second (catalog) credential — unlike the
+ * primary `secret` (rotation lives in the separate Re-auth flow), there is no
+ * dedicated catalog-secret reauth-with-verify endpoint, so PATCH is that
+ * credential's only rotation path (#1181). */
 export interface ConnectionUpdate {
   name?: string;
   config?: Record<string, unknown>;
   secret?: string;
+  catalog_secret?: string;
 }
 
 export async function updateConnection(id: string, payload: ConnectionUpdate): Promise<Connection> {

@@ -59,6 +59,34 @@ export interface TypeSpec {
    * with `secretLabel`.
    */
   optionalSecret?: boolean;
+  /**
+   * `config` values this type seeds even before the user touches the form —
+   * e.g. Iceberg's `catalog_name` default (mirrors the backend's own default,
+   * so a user who never opens "advanced" fields still gets it). Merged under
+   * `initialConfigForType`'s auth-mode seed, never overriding a real value.
+   */
+  defaultConfig?: Record<string, unknown>;
+  /**
+   * A free-form, NON-SECRET `config.properties` dict this type accepts (e.g.
+   * Iceberg's catalog/storage properties — `s3.endpoint`,
+   * `s3.path-style-access`, …, ADR 0030 §3). Rendered as an add/remove
+   * key-value editor; `extra` should say plainly that a credential must not go
+   * here (#1181 — the whole reason `properties` and the secret fields are
+   * separate in the first place, #754/#826).
+   */
+  propertiesField?: { label: string; extra: string };
+  /**
+   * A SECOND credential this type may need (currently only the Iceberg SQL/hive
+   * catalog's DB password, #754/#826/#1181) — a write-only field like the
+   * primary secret, but shown in BOTH create and edit (unlike the primary
+   * secret, there is no dedicated reauth flow for it, so PATCH is its only
+   * rotation path) and only when `showWhen` says the current config needs one.
+   */
+  secondSecret?: {
+    label: string;
+    extra?: string;
+    showWhen: (config: Record<string, unknown> | undefined) => boolean;
+  };
 }
 
 export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
@@ -137,11 +165,13 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     secretLabel: 'Personal access token (PAT)',
   },
   iceberg: {
-    // Native pyiceberg read (ADR 0030). The catalog `properties` dict and a named
-    // `catalog_name` are advanced (API-settable); the form covers the common
-    // REST/SQL self-hosted cases. `catalog_uri` is required for rest/sql/hive
-    // (backend-validated), optional for glue; the single secret is injected as the
-    // `secret_property` catalog property (e.g. `token`, `s3.secret-access-key`).
+    // Native pyiceberg read (ADR 0030). `catalog_uri` is required for
+    // rest/sql/hive (backend-validated), optional for glue; the single
+    // primary secret is injected as the `secret_property` catalog property
+    // (e.g. `token`, `s3.secret-access-key`). `catalog_name` matters because
+    // `SqlCatalog` scopes tables by catalog NAME — a mismatch raises
+    // NoSuchTableError (#1181); `properties` and the second (catalog)
+    // credential below close the rest of that gap.
     textFields: [
       { name: 'catalog_type', label: 'Catalog type', extra: 'rest · sql · glue · hive' },
       {
@@ -149,6 +179,14 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         label: 'Catalog URI',
         optional: true,
         extra: 'REST endpoint / SQL or metastore URI (required for rest, sql, hive)',
+      },
+      {
+        name: 'catalog_name',
+        label: 'Catalog name',
+        optional: true,
+        extra:
+          'The pyiceberg catalog name — a SQL catalog scopes tables by this name; ' +
+          'a mismatch fails every read.',
       },
       {
         name: 'warehouse',
@@ -163,8 +201,23 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         extra: 'Catalog property the credential fills, e.g. token or s3.secret-access-key',
       },
     ],
+    defaultConfig: { catalog_name: 'default' },
+    propertiesField: {
+      label: 'Catalog / storage properties',
+      extra:
+        'Extra non-secret catalog + storage options, e.g. s3.endpoint, s3.path-style-access, ' +
+        'py-io-impl. These are stored in plaintext — never put a credential in a property ' +
+        'value; use the credential fields below instead.',
+    },
     secretLabel: 'Storage / catalog credential',
     optionalSecret: true,
+    secondSecret: {
+      label: 'Catalog DB password',
+      extra:
+        'The SQL/hive catalog’s own database password (distinct from the storage ' +
+        'credential above) — never persisted in the catalog URI (#754/#826).',
+      showWhen: (config) => config?.catalog_type === 'sql' || config?.catalog_type === 'hive',
+    },
   },
   adf: {
     textFields: [
@@ -232,10 +285,12 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
   },
 };
 
-/** Initial `config` for a freshly-selected type (seeds the default auth_type). */
+/** Initial `config` for a freshly-selected type — seeds the default auth_type
+ * (if any) plus the type's own `defaultConfig` (e.g. Iceberg's `catalog_name`). */
 export function initialConfigForType(type: ConnectionType): Record<string, unknown> {
-  const auth = CONNECTION_FORM_SPECS[type].auth;
-  return auth ? { auth_type: auth[0].value } : {};
+  const spec = CONNECTION_FORM_SPECS[type];
+  const auth = spec.auth ? { auth_type: spec.auth[0].value } : {};
+  return { ...spec.defaultConfig, ...auth };
 }
 
 /** The auth mode a connection's config selects (undefined for single-secret types). */

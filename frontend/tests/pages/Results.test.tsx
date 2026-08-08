@@ -327,6 +327,49 @@ describe('Results page', () => {
     expect(screen.getByText('analytics_build')).toBeInTheDocument();
   });
 
+  it('bounds the Failure-reason column with an ellipsis + hover tooltip for long errors, and shows — for null (#1184)', async () => {
+    const longReason =
+      "ErrorCode=UserErrorOdbcInvalidQueryString,'Type=Microsoft.DataTransfer.Common.Shared.HybridDeliveryException," +
+      "Message=ERROR [42S02] [Snowflake][Snowflake] (4) SQL compilation error: Object 'RETAIL.ORDERS_STAGING' does not exist or not authorized. " +
+      'A'.repeat(300);
+    const failingPipelineRun: PipelineRun = {
+      ...pipelineRun,
+      id: 'p3',
+      pipeline_or_dag_id: 'nightly_orders_retry',
+      failure_reason: longReason,
+    };
+    mockListRuns.mockResolvedValue([]);
+    mockListSuites.mockResolvedValue([]);
+    mockListConnections.mockResolvedValue([]);
+    // pipelineRun keeps its null failure_reason — covers the '—' placeholder
+    // alongside the long-error row.
+    mockListPipelineRuns.mockResolvedValue([pipelineRun, failingPipelineRun]);
+
+    renderResults();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
+    await waitFor(() => expect(screen.getByText('nightly_orders_retry')).toBeInTheDocument());
+
+    // The null-reason row (pipelineRun) shows the usual em-dash placeholder in
+    // its Failure-reason cell — scoped via antd's own ellipsis-column class
+    // (`ant-table-cell-ellipsis`, unique to this column) since the row's "DQ
+    // run" cell also renders a '—' placeholder.
+    const nullRow = screen.getByText('daily_orders_load').closest('tr') as HTMLElement;
+    const nullReasonCell = nullRow.querySelector('td.ant-table-cell-ellipsis');
+    expect(nullReasonCell).toHaveTextContent('—');
+
+    // The long reason is present in the DOM as a whole string — the ellipsis
+    // is CSS-only (text-overflow), antd never clips the actual text node —
+    // wrapped in the tooltip's trigger element.
+    const trigger = screen.getByText(longReason);
+    await user.hover(trigger);
+
+    // Hovering reveals the FULL string via antd's custom tooltip (not the
+    // native `title` one, which `ellipsis: { showTitle: false }` suppresses).
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(longReason);
+  });
+
   it('correlates a pipeline run to the DQ run it triggered', async () => {
     // A DQ run stamped with the pipeline run's marker (provider:dag:run_id).
     const triggeredRun: Run = {

@@ -724,6 +724,18 @@ class OpenBaoSecretStore:
         A 403 that survives the retry falls through to the caller's existing status
         handling, which logs `openbao_permission_denied` and raises
         `SecretStoreUnavailableError` — never `SecretNotFoundError`.
+
+        CodeQL flags both `client.request()` calls below as py/partial-ssrf
+        (alerts #91/#92) because `path` carries a secret name that ultimately
+        traces back to `Connection.secret_ref`. Verified not exploitable and
+        left as-is rather than restructured: `client`'s `base_url` is
+        `self._addr`, set once in `__init__` from operator config, never from
+        a request; every caller reaches this through `_path()`, which prefixes
+        the hardcoded `/v1/{mount}/...` literal before the one variable
+        segment, so `path` can never be (or become, via `quote(name, safe="")`
+        percent-encoding every `/`, `:`, `@` etc.) an absolute URL that would
+        make httpx address a different host. Dismissed on GitHub as false
+        positive with this same evidence.
         """
         token, fresh = self._current_token()
         client = self._client_lazy()

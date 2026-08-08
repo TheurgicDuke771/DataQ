@@ -122,9 +122,17 @@ _OWNER_COLUMNS = (
 # JSONB-held refs, which no column-level scan can see. `IcebergConfig.catalog_secret_name`
 # names a SecretStore entry holding the SQL-catalog password (#754/#826 moved it out of
 # `catalog_uri` for exactly the right reasons) and lives inside `Connection.config`,
-# not in a column of its own. It is also never written by `connection_service` — an
-# operator provisions it out of band — so it is invisible to every "what did we write"
-# audit as well. Prefix scoping alone would not save it: an operator may name it `conn-…`.
+# not in a column of its own — so it needs THIS registry entry even though
+# `connection_service.create_connection`/`update_connection` (#1181) write and rotate it
+# exactly like the primary `secret_ref`, and `delete_connection` deletes it on the same
+# best-effort terms. What still makes it reachable only here, not by a column-level scan:
+# it is a value INSIDE a JSONB blob, not a column of its own, so `test_every_secret_ref_
+# column_is_registered`'s column introspection cannot see it — and this module's own
+# top-of-file rationale (a credential write that is not part of the owning row's DB
+# transaction) still applies to it precisely as it does to `secret_ref`: a crash between
+# `_write_extra_secret`'s store write and the enclosing commit leaves a real, live,
+# unreferenced credential exactly like the create-path race this whole sweep exists for.
+# Prefix scoping alone would not save it either way: an operator may name it `conn-…`.
 #
 # Scanned by CONVENTION (any `*_secret_name` key), not by listing the one key that
 # exists today, because `connection_service._extra_secrets` resolves them generically

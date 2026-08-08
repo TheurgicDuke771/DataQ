@@ -74,6 +74,29 @@ _URI_REQUIRED: frozenset[str] = frozenset({"rest", "sql", "hive"})
 # Account-scoped in practice (``adls.sas-token.<account>``), so this is a prefix.
 _SAS_PROPERTY_PREFIX = "adls.sas-token"
 
+# `properties` KEYS pyiceberg documents as holding a credential directly (not a
+# reference to one) — a literal value here is exactly the #754/#826 leak, now
+# reachable through the connection editor's properties table (#1181). Matched
+# case-insensitively, mirroring the rest of this validator family.
+_CREDENTIAL_PROPERTY_KEYS: frozenset[str] = frozenset({"s3.secret-access-key", "adls.account-key"})
+# Generic name-based hints — anything that reads as a password/token by NAME,
+# not just the two known keys above (a future catalog/storage backend's property
+# family is unknowable in advance). Identifier-class keys that happen to contain
+# these substrings (an access key ID is an identifier, not a secret) are exempt.
+_CREDENTIAL_NAME_HINTS: tuple[str, ...] = ("password", "token")
+_CREDENTIAL_NAME_EXEMPTIONS: frozenset[str] = frozenset({"s3.access-key-id"})
+
+
+def _looks_like_a_credential_property(key: str) -> bool:
+    """True when `key` names something pyiceberg treats as (or that reads like)
+    a literal credential, rather than a non-secret identifier or option."""
+    lowered = key.lower()
+    if lowered in _CREDENTIAL_NAME_EXEMPTIONS:
+        return False
+    if lowered in _CREDENTIAL_PROPERTY_KEYS or lowered.startswith(_SAS_PROPERTY_PREFIX):
+        return True
+    return any(hint in lowered for hint in _CREDENTIAL_NAME_HINTS)
+
 
 class IcebergConfig(BaseModel):
     """Non-secret Iceberg catalog + storage config (the credential is the secret).
@@ -133,6 +156,38 @@ class IcebergConfig(BaseModel):
                 "catalog credential in the secret store and name it via "
                 "'catalog_secret_name'; keep the username in the URI."
             )
+        return self
+
+    @model_validator(mode="after")
+    def _properties_carry_no_credential(self) -> IcebergConfig:
+        """Reject a credential smuggled into `properties` (#754/#826, extended to
+        the properties dict by #1181's editor exposure).
+
+        `properties` is freeform and NON-secret by contract (the class docstring
+        above) — stored in plaintext JSONB, returned by the read API, and (since
+        #1181) editable directly through a UI key-value table. A credential value
+        here leaks exactly like one in `catalog_uri` would, so — like
+        `_uri_carries_no_password` — this validates at the door rather than
+        redacting on the way out. Two independent checks, since a credential can
+        leak by KEY (a well-known credential-bearing property name holding a
+        literal value, e.g. `s3.secret-access-key`) or by VALUE (a URI-shaped
+        string carrying its own embedded password, the same shape guarded on
+        `catalog_uri` itself).
+        """
+        for key, value in self.properties.items():
+            if _looks_like_a_credential_property(key):
+                raise ValueError(
+                    f"properties[{key!r}] looks like a credential-bearing property and "
+                    "must not carry a literal value (config is stored and returned in "
+                    "plaintext). Use 'secret_property' for the storage credential or "
+                    "'catalog_secret_name' for the catalog password instead."
+                )
+            if uri_password(value):
+                raise ValueError(
+                    f"properties[{key!r}] must not embed a password in a URI-shaped "
+                    "value (config is stored and returned in plaintext). Put the "
+                    "credential in the secret store instead."
+                )
         return self
 
     def catalog_properties(

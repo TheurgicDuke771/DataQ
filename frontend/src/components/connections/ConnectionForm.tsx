@@ -25,6 +25,9 @@ interface FormValues {
   config?: Record<string, unknown>;
   secret?: string;
   secretPassphrase?: string;
+  /** The second (catalog) credential, e.g. an Iceberg SQL catalog's DB
+   * password (#1181) — write-only, shown in both create and edit. */
+  catalogSecret?: string;
 }
 
 /** Inline result of the "Test connection" button — a card-free version of the
@@ -110,6 +113,7 @@ export function ConnectionForm({
         ? await updateConnection(connection.id, {
             name: values.name,
             config: values.config ?? {},
+            catalog_secret: values.catalogSecret || undefined,
           })
         : await createConnection({
             name: values.name,
@@ -117,6 +121,7 @@ export function ConnectionForm({
             env: values.env,
             config: values.config ?? {},
             secret: buildSecret(values),
+            catalog_secret: values.catalogSecret || undefined,
           });
       message.success(`Connection “${values.name}” ${isEdit ? 'updated' : 'created'}`);
       onSaved(saved);
@@ -155,6 +160,7 @@ export function ConnectionForm({
         env: values.env,
         config: values.config ?? {},
         secret: buildSecret(values),
+        catalog_secret: values.catalogSecret || undefined,
       });
       setTestState(ok ? 'ok' : 'failed');
     } catch (err) {

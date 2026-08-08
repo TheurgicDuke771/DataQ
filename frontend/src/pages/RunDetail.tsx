@@ -1,5 +1,17 @@
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Dropdown, Empty, Flex, Spin, Table, Tag, Typography } from 'antd';
+import {
+  Alert,
+  Button,
+  Card,
+  Dropdown,
+  Empty,
+  Flex,
+  Spin,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -302,7 +314,20 @@ function SampleFailures({
   if (!sample) return null;
   const count = typeof sample.unexpected_count === 'number' ? sample.unexpected_count : null;
   const percent = typeof sample.unexpected_percent === 'number' ? sample.unexpected_percent : null;
-  const rawList = sample.partial_unexpected_list;
+  // #1183: prefer `unexpected_index_list` when it's present and dict-shaped —
+  // those rows already carry the suite's configured identifier column(s)
+  // alongside the failing value(s), and are already API-redacted per column
+  // (the backend strips a non-dict `unexpected_index_list` before it ever
+  // reaches here — `gx_runner._is_identifier_index_list` — so dict shape is
+  // trustable). `partial_unexpected_list` (bare scalars → a single `value`
+  // column, no identifier) is the fallback for checks/engines that don't
+  // populate the index list.
+  const indexList = sample.unexpected_index_list;
+  const isIdentifierRows = (list: unknown): list is Record<string, unknown>[] =>
+    Array.isArray(list) &&
+    list.length > 0 &&
+    list.every((entry) => entry !== null && typeof entry === 'object' && !Array.isArray(entry));
+  const rawList = isIdentifierRows(indexList) ? indexList : sample.partial_unexpected_list;
   // Entries are either row dicts ({col: value}) or bare scalars; normalise both
   // to row objects so a single column-derived table renders them.
   const rows: Record<string, unknown>[] = Array.isArray(rawList)
@@ -312,17 +337,37 @@ function SampleFailures({
           : { value: entry },
       )
     : [];
+  // #1190 review: GX caps `partial_unexpected_list` at ~20 rows
+  // (`partial_unexpected_count`) on every engine, but under `result_format:
+  // COMPLETE` (always used by `gx_runner`) the pandas engine — flat-file/ADLS/S3
+  // and Iceberg — returns `unexpected_index_list` FULL and UNTRUNCATED (only the
+  // SQLAlchemy-backed engines, Snowflake/UC, stay capped there too). Since this
+  // component now prefers that list, cap what's actually rendered ourselves so a
+  // check with thousands of failing rows on a pandas-backed datasource can't
+  // dump thousands of DOM rows into a `pagination={false}` table.
+  const MAX_SAMPLE_ROWS = 20;
+  const displayRows = rows.slice(0, MAX_SAMPLE_ROWS);
+  const hiddenRowCount = Math.max((count ?? rows.length) - displayRows.length, 0);
   // GX's partial_unexpected_list rows share one schema, but union the keys
   // defensively so a ragged sample still renders every column.
-  const colKeys = [...new Set(rows.flatMap((r) => Object.keys(r)))];
+  const colKeys = [...new Set(displayRows.flatMap((r) => Object.keys(r)))];
   const columns: ColumnsType<Record<string, unknown>> = colKeys.map((key) => ({
     title: key,
     dataIndex: key,
     render: (v: unknown) => (
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         {/* Values are already masked by the API; stringify objects so a nested
-            redacted cell shows as JSON rather than "[object Object]". */}
-        {v === undefined ? '' : typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)}
+            redacted cell shows as JSON rather than "[object Object]", and
+            em-dash an explicit null (e.g. a not-null check's own failing
+            value) rather than the literal string "null". A missing key (a
+            ragged row that lacks this column) stays blank, not em-dashed. */}
+        {v === undefined
+          ? ''
+          : v === null
+            ? '—'
+            : typeof v === 'object'
+              ? JSON.stringify(v)
+              : String(v)}
       </Typography.Text>
     ),
   }));
@@ -356,15 +401,22 @@ function SampleFailures({
           {redactionLabel !== null && ` · ${redactionLabel}`}
         </Typography.Text>
       </Typography.Text>
-      {rows.length > 0 ? (
-        <Table<Record<string, unknown>>
-          scroll={{ x: 'max-content' }}
-          rowKey={(_, i) => String(i)}
-          size="small"
-          columns={columns}
-          dataSource={rows}
-          pagination={false}
-        />
+      {displayRows.length > 0 ? (
+        <>
+          <Table<Record<string, unknown>>
+            scroll={{ x: 'max-content' }}
+            rowKey={(_, i) => String(i)}
+            size="small"
+            columns={columns}
+            dataSource={displayRows}
+            pagination={false}
+          />
+          {hiddenRowCount > 0 && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              +{hiddenRowCount} more row{hiddenRowCount === 1 ? '' : 's'} not shown
+            </Typography.Text>
+          )}
+        </>
       ) : (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           No sample rows captured.
@@ -427,9 +479,31 @@ function ResultsTable({
       render: (v: number | null) => (v === null ? '—' : v),
     },
     {
+      // Bounded width + ellipsis (#1207 — #1184's "verified-benign" scope-out
+      // didn't hold for every monitor kind: schema_drift's added/removed
+      // column lists and comparison's per-column buckets both scale with
+      // column count, and ScalarValue's formatScalar JSON.stringifies
+      // whatever shape observed_value is, unbounded. `ellipsis: { showTitle:
+      // false }` suppresses antd's own native-title hover so the Tooltip
+      // below is the only one — same pattern as `ellipsisColumn` (#1184),
+      // applied manually here since this column has a custom ScalarValue
+      // render rather than a plain string field. ScalarValue's own
+      // formatting (monospace, em-dash for null) is reused unchanged in
+      // both the cell and the tooltip.
       title: 'Observed',
       dataIndex: 'observed_value',
-      render: (v: Record<string, unknown> | null) => <ScalarValue value={v} />,
+      width: 220,
+      ellipsis: { showTitle: false },
+      render: (v: Record<string, unknown> | null) =>
+        v === null || v === undefined ? (
+          <ScalarValue value={v} />
+        ) : (
+          <Tooltip title={<ScalarValue value={v} />}>
+            <span>
+              <ScalarValue value={v} />
+            </span>
+          </Tooltip>
+        ),
     },
   ];
   return (

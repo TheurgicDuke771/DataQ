@@ -38,12 +38,22 @@ class ConnectionCreate(ApiModel):
     env: str
     config: dict[str, Any] = Field(default_factory=dict)
     secret: str | None = Field(default=None, description="Credential; write-only, never returned")
+    catalog_secret: str | None = Field(
+        default=None,
+        description=(
+            "Second credential a connection type may need (currently the Iceberg "
+            "SQL-catalog DB password, #1181); write-only, never returned"
+        ),
+    )
 
 
 class ConnectionUpdate(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     config: dict[str, Any] | None = None
     secret: str | None = Field(default=None, description="Rotate the credential; write-only")
+    catalog_secret: str | None = Field(
+        default=None, description="Rotate the second (catalog) credential; write-only"
+    )
 
 
 class ConnectionRead(ApiModel):
@@ -133,6 +143,9 @@ class ConnectionDraftTest(ApiModel):
     env: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     secret: str | None = Field(default=None, description="Credential to test; write-only")
+    catalog_secret: str | None = Field(
+        default=None, description="Second (catalog) credential to test; write-only"
+    )
 
 
 @router.post(
@@ -156,6 +169,7 @@ def create_connection(
         secret=payload.secret,
         created_by=current_user.id,
         secret_store=secret_store,
+        catalog_secret=payload.catalog_secret,
     )
     return ConnectionRead.from_model(conn)
 
@@ -189,6 +203,7 @@ def test_draft_connection(
         config=payload.config,
         secret=payload.secret,
         secret_store=secret_store,
+        catalog_secret=payload.catalog_secret,
     )
     return ConnectionTestResult(ok=True)
 
@@ -245,6 +260,7 @@ def update_connection(
         secret=payload.secret,
         secret_store=secret_store,
         actor_id=current_user.id,
+        catalog_secret=payload.catalog_secret,
     )
     return ConnectionRead.from_model(conn)
 

@@ -26,6 +26,11 @@ _PII_KEYS: frozenset[str] = frozenset(
         "access_key",
         "private_key",
         "passphrase",
+        # The Iceberg SQL/hive catalog's SECOND credential (#1181) — an exact-match
+        # key alongside "secret", since "catalog_secret" is a distinct string a
+        # bare "secret" entry does not catch. #849's lesson applies here too: don't
+        # rely on no call site ever logging it, redact by key regardless.
+        "catalog_secret",
         # Vault/OpenBao (ADR 0039, #1054). The key set is the sturdier of the two
         # mechanisms here — it cannot be fooled by a token SHAPE nobody anticipated —
         # and an OpenBao token (`hvs.…` / `s.…`) matches none of the bare-token
