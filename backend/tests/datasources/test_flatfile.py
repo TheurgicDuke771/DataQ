@@ -13,8 +13,8 @@ from typing import Any
 import pandas as pd
 import pytest
 
-from backend.app.datasources import flatfile, gx_runner
-from backend.app.datasources.base import CheckSpec
+from backend.app.datasources import flatfile
+from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckSpec
 
 
 class _FakeStore:
@@ -676,8 +676,8 @@ def test_run_checks_index_list_is_capped_at_capture(monkeypatch: pytest.MonkeyPa
     )
     sample = outcome.checks[0].sample_failures
     assert sample is not None
-    assert len(sample["unexpected_index_list"]) == gx_runner._SAMPLE_ROW_CAP
-    assert len(sample["partial_unexpected_list"]) <= gx_runner._SAMPLE_ROW_CAP
+    assert len(sample["unexpected_index_list"]) == SAMPLE_ROW_CAP
+    assert len(sample["partial_unexpected_list"]) <= SAMPLE_ROW_CAP
     # the cap trims the sample, never the reported totals
     assert sample["unexpected_count"] == failing
     assert sample["unexpected_percent"] == 100.0

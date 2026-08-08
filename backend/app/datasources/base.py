@@ -21,6 +21,16 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
+# One bound for every failing-row sample that lands in `Result.sample_failures`
+# (#1196). It lives on the datasource seam because *both* producers write that one
+# column — the GX path (`gx_runner._extract_sample_failures`) and the comparison
+# path (`comparison.SAMPLE_LIMIT`) — and the read path (`run_service`) re-applies it
+# so already-persisted oversized rows stop shipping unbounded payloads too. Keeping
+# a single constant means raising it can't leave two result paths disagreeing.
+# 20 matches GX's own `partial_unexpected_count` default and what the run-detail UI
+# renders (`RunDetail.tsx` `MAX_SAMPLE_ROWS`).
+SAMPLE_ROW_CAP = 20
+
 
 @dataclass(frozen=True)
 class CheckSpec:

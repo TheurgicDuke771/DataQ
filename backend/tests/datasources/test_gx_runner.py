@@ -12,8 +12,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+from backend.app.datasources.base import SAMPLE_ROW_CAP
 from backend.app.datasources.gx_runner import (
-    _SAMPLE_ROW_CAP,
     _check_errored,
     _extract_sample_failures,
     to_suite_outcome,
@@ -181,11 +181,11 @@ def test_extract_sample_failures_caps_row_lists() -> None:
         }
     )
     assert sample is not None
-    assert len(sample["unexpected_index_list"]) == _SAMPLE_ROW_CAP
-    assert len(sample["partial_unexpected_list"]) == _SAMPLE_ROW_CAP
+    assert len(sample["unexpected_index_list"]) == SAMPLE_ROW_CAP
+    assert len(sample["partial_unexpected_list"]) == SAMPLE_ROW_CAP
     # the cap keeps the FIRST rows (a stable, deterministic sample) and never touches
     # the aggregate totals — the reader still learns the real failure count.
-    assert sample["unexpected_index_list"] == rows[:_SAMPLE_ROW_CAP]
+    assert sample["unexpected_index_list"] == rows[:SAMPLE_ROW_CAP]
     assert sample["unexpected_count"] == 5_000
     assert sample["unexpected_percent"] == 100.0
 

@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.datasources.base import (
+    SAMPLE_ROW_CAP,
     CheckOutcome,
     CheckRunner,
     CheckSpec,
@@ -856,6 +857,12 @@ def redact_sample_failures(
       PII + unclassified masked;
     * everything else default-masks. ``None`` sample passes through unchanged.
 
+    Every list-shaped entry is also bounded to `SAMPLE_ROW_CAP` rows (#1196) — the
+    same cap capture applies — so a result persisted *before* that cap existed
+    (GX's pandas engine returned `unexpected_index_list` untruncated) stops shipping
+    an unbounded payload on every read. The aggregate counts are never touched, so
+    the reported failure total stays the real one.
+
     ``tracker`` is an optional accumulator (#424) — pass a fresh `_RedactionTracker`
     to also learn *which* columns were shown vs masked, via `tracker.summary()`.
     Internal (leading underscore); external callers use
@@ -864,9 +871,19 @@ def redact_sample_failures(
     if not sample:
         return None
     index_rows = sample.get("unexpected_index_list")
-    index_vbc = _values_by_column(index_rows) if isinstance(index_rows, list) else {}
+    index_vbc = (
+        _values_by_column(index_rows[:SAMPLE_ROW_CAP]) if isinstance(index_rows, list) else {}
+    )
     out: dict[str, Any] = {}
-    for key, value in sample.items():
+    for key, raw_value in sample.items():
+        # Re-apply the sample bound at READ time (#1196). Capture-time capping only
+        # protects rows written from here on; every result persisted BEFORE it — a
+        # pandas-backed check that failed thousands of rows under GX's uncapped
+        # `unexpected_index_list` — would otherwise keep shipping the whole list on
+        # every run-detail load and MCP read until the retention sweep clears it.
+        # Same read-time-derivation reasoning as the #1115 redaction state: old rows
+        # are corrected for free, nothing to backfill.
+        value = raw_value[:SAMPLE_ROW_CAP] if isinstance(raw_value, list) else raw_value
         if _is_safe_summary(key, value):
             out[key] = value
         elif key == "unexpected_index_list" and isinstance(value, list):

@@ -13,7 +13,13 @@ from typing import cast
 import pytest
 from sqlalchemy.orm import Session
 
-from backend.app.datasources.base import CheckOutcome, CheckRunner, CheckSpec, SuiteOutcome
+from backend.app.datasources.base import (
+    SAMPLE_ROW_CAP,
+    CheckOutcome,
+    CheckRunner,
+    CheckSpec,
+    SuiteOutcome,
+)
 from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.db.models import Check, Result, Run
 from backend.app.services import run_service
@@ -698,6 +704,34 @@ def test_redact_sample_failures_masks_unknown_keys_and_nested_values() -> None:
         {"unexpected_index_list": [{"row": {"name": "Alice"}}]}
     )
     assert out == {"unexpected_index_list": [{"row": {"name": "<redacted>"}}]}
+
+
+# ── the sample bound is re-applied at read time (#1196) ───────────────────────
+
+
+def test_redact_bounds_oversized_lists_from_already_persisted_rows() -> None:
+    """#1196: capture-time capping only protects NEW rows. Every result written
+    before it — a pandas-backed check that failed thousands of rows under GX's
+    uncapped `unexpected_index_list` — must stop shipping the whole list on every
+    run-detail load, so the read path re-applies the same bound (the #1115
+    read-time-derivation pattern: old rows corrected for free, nothing to backfill)."""
+    rows = [{"ORDER_NUMBER": f"ORD-{i}", "LINE_TOTAL": -1.0 * i} for i in range(5_000)]
+    out = run_service.redact_sample_failures(
+        {
+            "unexpected_index_list": rows,
+            "partial_unexpected_list": [-1.0 * i for i in range(5_000)],
+            "unexpected_count": 5_000,
+        },
+        tested_column="LINE_TOTAL",
+        policy={"identifier_column": "ORDER_NUMBER"},
+    )
+    assert out is not None
+    assert len(out["unexpected_index_list"]) == SAMPLE_ROW_CAP
+    assert len(out["partial_unexpected_list"]) == SAMPLE_ROW_CAP
+    # bounded, never falsified: the aggregate total still reports the real count,
+    # and the retained rows are the first ones (unchanged apart from redaction).
+    assert out["unexpected_count"] == 5_000
+    assert out["unexpected_index_list"] == rows[:SAMPLE_ROW_CAP]
 
 
 # ── column-aware redaction (#415) ─────────────────────────────────────────────
