@@ -532,6 +532,60 @@ def test_near_miss_signalled_via_the_poll_path_too(db_session: Any) -> None:
     assert len(db_session.scalars(select(WorkspaceHealth)).all()) == 1
 
 
+def test_near_miss_record_failure_is_fail_open_and_does_not_break_ingestion(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A DB error writing the diagnostic `workspace_health` row must never break
+    the ingest path itself (mirrors `_dispatch_lineage_refresh`'s fail-open
+    discipline) — otherwise a webhook whose pipeline_run was already correctly
+    upserted would 500 back to the caller (ADR 0006: ack well-formed events), or
+    a poll batch would abort mid-loop and silently drop every OTHER update it
+    still had to process.
+    """
+    from backend.app.services import workspace_health_service
+
+    def _boom(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("workspace_health write failed")
+
+    # `orchestration_service` imports the MODULE (`from ... import workspace_health_service`)
+    # and calls it via attribute access, so patching the module here reaches the call site.
+    monkeypatch.setattr(workspace_health_service, "record_trigger_binding_env_near_miss", _boom)
+
+    conn = _adf_connection(db_session, env="qa")
+    suite = _suite(db_session, conn)
+    _binding(db_session, suite=suite, pipeline="load_finance", env="dev")
+
+    # Webhook path: must not raise, and the pipeline_run must still land.
+    result = ingest_event(
+        db_session,
+        provider_impl=_FakeProvider(),
+        update=_update(status="succeeded", provider_run_id="run-nm-fail-1"),
+        secret_store=_FakeStore(),
+    )
+    assert result.pipeline_run is not None
+    assert result.pipeline_run.status == "succeeded"
+    assert result.triggered_runs == []
+
+    # Poll path, multi-update batch: the first update's near-miss (write fails)
+    # must not stop the SECOND, unrelated update in the same batch from being
+    # recorded — a batch-wide crash would silently drop it too.
+    poll_result = ingest_polled_runs(
+        db_session,
+        provider_impl=_FakeProvider(),
+        connection=conn,
+        updates=[
+            _update(status="succeeded", provider_run_id="run-nm-fail-2"),  # near-miss, write fails
+            _update(
+                status="succeeded",
+                provider_run_id="run-nm-fail-3",
+                pipeline_or_dag_id="no_binding_at_all",  # unrelated — no near-miss on this one
+            ),
+        ],
+        skip_updated_since=datetime.now(UTC) - timedelta(minutes=15),
+    )
+    assert len(poll_result.pipeline_runs) == 2  # both updates recorded despite the failure
+
+
 # ── cross-provider: Airflow resolves by base_url; enrichment is skipped ──
 
 

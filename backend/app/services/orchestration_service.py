@@ -257,6 +257,17 @@ def _record_env_near_misses(
     Deliberately narrow: only reached when the exact-env match list is empty, so
     a pipeline that already triggers correctly never logs a near-miss just
     because an unrelated stray binding also exists in another env.
+
+    Fail-open like every other side-channel write on this ingest path (mirrors
+    `_dispatch_lineage_refresh`'s explicit try/except around `send_task`): this is
+    a bonus diagnostic, not the ingestion itself, and both callers reach here
+    AFTER the pipeline_run row is already durably upserted+committed. A DB error
+    on the `workspace_health` write (contention, a transient connection drop) must
+    never propagate — for `ingest_event` that would 500 a webhook that DataQ has
+    already correctly processed (ADR 0006 says ack well-formed events, storming
+    the caller's retry logic for nothing); for `ingest_polled_runs` it would abort
+    the whole poll batch mid-loop, silently dropping every *other* pipeline_run
+    (and any trigger) the same poll cycle would otherwise have recorded.
     """
     mismatched_envs = sorted(
         set(
@@ -278,13 +289,26 @@ def _record_env_near_misses(
             run_env=connection.env,
             binding_env=binding_env,
         )
-        workspace_health_service.record_trigger_binding_env_near_miss(
-            session,
-            provider=provider,
-            pipeline_or_dag_id=update.pipeline_or_dag_id,
-            run_env=connection.env,
-            binding_env=binding_env,
-        )
+        try:
+            workspace_health_service.record_trigger_binding_env_near_miss(
+                session,
+                provider=provider,
+                pipeline_or_dag_id=update.pipeline_or_dag_id,
+                run_env=connection.env,
+                binding_env=binding_env,
+            )
+        except Exception:
+            # The row write failed (or the session's transaction is now aborted) —
+            # roll back so the caller's session is usable again, and never let a
+            # diagnostic-only failure break suite triggering itself.
+            session.rollback()
+            log.warning(
+                "trigger_binding_env_near_miss_record_failed",
+                provider=provider,
+                pipeline_or_dag_id=update.pipeline_or_dag_id,
+                run_env=connection.env,
+                binding_env=binding_env,
+            )
 
 
 def _trigger_suites(
