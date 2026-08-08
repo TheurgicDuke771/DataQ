@@ -167,9 +167,11 @@ def test_slack_webhook_ref_is_registered(db_session: Session) -> None:
 
 def test_iceberg_catalog_secret_in_jsonb_is_registered(db_session: Session) -> None:
     """`catalog_secret_name` names a SecretStore entry but lives in `Connection.config`
-    JSONB, so no column-level audit can see it — and it is provisioned out of band,
-    so no "what did we write" audit sees it either. Prefix scoping would not save it:
-    an operator may name it `conn-…`."""
+    JSONB, so no COLUMN-level audit can see it — `connection_service` writes and
+    rotates it exactly like the primary `secret_ref` (#1181), but that alone doesn't
+    make it visible to `test_every_secret_ref_column_is_registered`'s introspection,
+    since it is a value inside a JSON blob, not a column. Prefix scoping would not
+    save it either: an operator may name it `conn-…`."""
     _connection(
         db_session,
         secret_ref=None,

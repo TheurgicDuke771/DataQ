@@ -299,3 +299,44 @@ def test_kind_is_slugged_and_writable() -> None:
         kind="Catalog DB!",
     )
     assert KEY_VAULT_NAME.match(ref), ref
+
+
+def test_kind_survives_truncation_on_a_long_name_no_collision_with_the_primary() -> None:
+    """A long-but-legal `name` (well under the API's 128-char cap) must not
+    truncate `kind` away — the naive version spent the WHOLE `_MAX_SLUG` budget
+    on one joined string, so a long enough qualifier pushed `kind` (and even
+    `env`) past the cutoff entirely, and the primary/catalog refs for the SAME
+    connection came out byte-identical — `_write_extra_secret` would then
+    silently overwrite the primary credential with the catalog one in the vault
+    (empirically reproduced pre-fix with the exact name below)."""
+    cid = uuid.UUID("05c77ce3-846e-4e76-a5f7-7e12e9510c99")
+    name = (
+        "Connection with a genuinely quite long descriptive display name "
+        "that a real operator might type"
+    )
+    primary = connection_secret_ref(connection_id=cid, env="dev", name=name, conn_type="iceberg")
+    catalog = connection_secret_ref(
+        connection_id=cid, env="dev", name=name, conn_type="iceberg", kind="catalog"
+    )
+    assert primary != catalog
+    assert catalog.endswith("-catalog-dev-05c77ce3")
+    assert primary.endswith("-dev-05c77ce3")
+    assert KEY_VAULT_NAME.match(primary) and KEY_VAULT_NAME.match(catalog)
+
+
+def test_kind_and_env_survive_truncation_even_at_the_max_input_bound() -> None:
+    """The absolute worst case: a `name` at the (pre-API-cap) `_MAX_INPUT`
+    bound. `kind` and `env` must still land intact and the two refs must still
+    differ, and the whole ref must stay within Key Vault's 127-char limit."""
+    cid = uuid.uuid4()
+    name = "connection " * 30  # far longer than any single API-reachable name
+    primary = connection_secret_ref(connection_id=cid, env="prod", name=name, conn_type="iceberg")
+    catalog = connection_secret_ref(
+        connection_id=cid, env="prod", name=name, conn_type="iceberg", kind="catalog"
+    )
+    assert primary != catalog
+    assert primary.endswith("-prod-" + str(cid).replace("-", "")[:8])
+    assert catalog.endswith("-catalog-prod-" + str(cid).replace("-", "")[:8])
+    for ref in (primary, catalog):
+        assert KEY_VAULT_NAME.match(ref)
+        assert len(ref) <= KEY_VAULT_MAX

@@ -152,6 +152,16 @@ def connection_secret_ref(
     authoritative and must be reused verbatim — recomputing it after a rename
     would point at a key that does not exist, and the credential would read as
     missing (the #954 shape again, self-inflicted).
+
+    **`kind`/`env` are truncation-protected, not merely appended.** The naive
+    version built one long token list (`conn` + type + qualifier + kind + env)
+    and truncated the WHOLE joined string to `_MAX_SLUG` — so a sufficiently
+    long connection `name` pushed `kind` (and even `env`) past the cutoff
+    entirely, and the primary and catalog refs for the SAME connection came out
+    byte-identical (`_write_extra_secret` would then silently overwrite the
+    primary credential with the catalog one). The budget is now spent on the
+    free-text `qualifier` alone; `kind` and `env` are reserved space and always
+    survive, however long `name` is.
     """
     # The ONE input that never passes through `slugify`, while the signature invites
     # `str`. An empty or dash-only id would emit `conn-…-dev-` — a trailing dash, which
@@ -177,20 +187,27 @@ def connection_secret_ref(
         # (#954) this module exists to remove. Fall back to the parenthetical content.
         qualifier = _qualify(inside)
 
-    parts = ["conn"]
-    parts += type_slug.split("-") if type_slug else []
-    parts += qualifier
-    kind_slug = slugify(kind)
-    if kind_slug:
-        parts.append(kind_slug)
-    env_slug = slugify(env)
-    if env_slug and env_slug not in parts:
-        parts.append(env_slug)
+    # `head` is free text and TRUNCATABLE; `tail` is the identity-bearing
+    # `kind`/`env` pair and must survive intact. Global order-preserving dedupe
+    # (matching the pre-#1181 behaviour exactly when `kind` is blank): a `tail`
+    # token already present in `head` — e.g. env "qa" already sitting inside the
+    # qualifier from "Azure Data Factory — QA" — is dropped rather than doubled.
+    head = list(dict.fromkeys(["conn"] + (type_slug.split("-") if type_slug else []) + qualifier))
+    tail: list[str] = []
+    seen = set(head)
+    for token in (slugify(kind), slugify(env)):
+        if token and token not in seen:
+            tail.append(token)
+            seen.add(token)
 
-    # Dedupe while preserving order, then bound the readable half — the id is what
-    # guarantees uniqueness, so truncation costs readability, never correctness.
-    ordered = list(dict.fromkeys(parts))  # dedupe, order-preserving
-    slug = "-".join(ordered)[:_MAX_SLUG].strip("-")
+    tail_str = "-".join(tail)
+    # Reserve the tail's exact width (+1 for its join dash) out of the shared
+    # budget; whatever's left goes to the truncatable head. `max(..., 0)` is a
+    # safety floor only — `kind`/`env` are short, controlled words in practice,
+    # never long enough to threaten it.
+    head_budget = max(_MAX_SLUG - len(tail_str) - (1 if tail_str else 0), 0)
+    head_str = "-".join(head)[:head_budget].strip("-")
+    slug = "-".join(part for part in (head_str, tail_str) if part)
     # `.strip("-")` on the JOINED result, not on the halves: an id that filtered down
     # to nothing would otherwise leave a trailing dash, and Key Vault rejects that at
     # the API — a 500 on save rather than a test failure.

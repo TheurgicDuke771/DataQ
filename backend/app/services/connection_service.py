@@ -146,6 +146,33 @@ def _write_extra_secret(
     conn.config = {**conn.config, name_key: ref}
 
 
+def _carry_over_secret_name_keys(
+    old_config: Mapping[str, Any], new_config: dict[str, Any]
+) -> dict[str, Any]:
+    """Preserve every `*_secret_name` key `old_config` has that `new_config` omits.
+
+    `update_connection`'s `config` parameter is a wholesale REPLACE, not a merge —
+    exactly like the primary credential's own `secret_ref` column is untouched by
+    it. A second credential's ref (#1181) has no column of its own, though; it
+    lives inside `config`, so a config-only PATCH that doesn't re-send it (e.g.
+    changing just `warehouse`) would otherwise silently drop it — the connection
+    would then read as having no catalog credential, while the credential itself
+    sits live and unreferenced in the store (the #954 shape, self-inflicted: a
+    real secret nobody can find because nothing points at it anymore).
+
+    These keys are server-owned bookkeeping — minted by `_write_extra_secret`,
+    never authored by a caller — so a caller is never expected to round-trip them,
+    and there is no legitimate "I want to unset this" case: rotation goes through
+    `catalog_secret`, not by omitting the key from `config`.
+    """
+    carried = {
+        key: value
+        for key, value in old_config.items()
+        if key.endswith("_secret_name") and key not in new_config
+    }
+    return {**new_config, **carried} if carried else new_config
+
+
 def _validated_config(conn_type: str, config: dict[str, Any]) -> None:
     """Reject an unknown type or a config that fails its adapter's schema."""
     try:
@@ -615,7 +642,7 @@ def update_connection(
 
     if config is not None:
         _validated_config(conn.type, config)
-        conn.config = config
+        conn.config = _carry_over_secret_name_keys(conn.config or {}, config)
     if catalog_secret is not None:
         # After the `config is not None` branch above, so an invalid CONFIG
         # 422s with the accurate reason rather than the catalog-support probe
@@ -630,6 +657,30 @@ def update_connection(
     # `config.catalog_secret_name` — is not counted as config history (a
     # secret-only update records no version).
     versioned_change = session.is_modified(conn)
+    # Catalog secret FIRST, primary secret LAST — deliberately, not incidentally.
+    # Neither store write is part of the DB transaction (a `SecretStore.set` is
+    # live the instant it returns; `session.rollback()` below can undo the ORM
+    # state but never that), so on a two-secret PATCH the write ORDER decides
+    # which failure mode is possible. The catalog secret's ref is fresh far more
+    # often than not (most connections set it once, at creation) — a failure here
+    # leaves at worst a stranded ref the orphan sweep already covers (#372/#1059),
+    # and the PRIMARY credential — the one everything else depends on — is never
+    # touched. Doing it the other way round would let a primary rotation succeed
+    # in the vault, then a catalog-write failure roll back only the DB's belief
+    # about it while the live credential has already changed underneath — the
+    # rollback can't put the old value back, so the connection would be silently
+    # running on an unverified new primary secret the caller was told 502'd.
+    if catalog_secret is not None:
+        try:
+            _write_extra_secret(conn, catalog_secret, secret_store, field="catalog")
+        except SecretWriteError as exc:
+            session.rollback()
+            log.warning("connection_catalog_secret_write_failed", connection_id=str(connection_id))
+            raise ConnectionSecretWriteError(
+                "failed to store connection credential",
+                detail={"connection_id": str(connection_id)},
+            ) from exc
+
     if secret is not None:
         # `or` — not a recompute. An existing ref is authoritative: the row may have
         # been renamed since, and rebuilding the name from the CURRENT name would
@@ -650,17 +701,6 @@ def update_connection(
         # The rotated credential has its own lifetime — including "none", which
         # must clear the previous date rather than leave a stale warning (#838).
         _refresh_credential_expiry(conn, secret)
-
-    if catalog_secret is not None:
-        try:
-            _write_extra_secret(conn, catalog_secret, secret_store, field="catalog")
-        except SecretWriteError as exc:
-            session.rollback()
-            log.warning("connection_catalog_secret_write_failed", connection_id=str(connection_id))
-            raise ConnectionSecretWriteError(
-                "failed to store connection credential",
-                detail={"connection_id": str(connection_id)},
-            ) from exc
 
     try:
         # Snapshot the post-update state, atomic with the update (same commit).
@@ -883,6 +923,15 @@ def delete_connection(
             detail=checks_detail,
         )
     secret_ref = conn.secret_ref
+    # Every SECOND credential's ref too (#1181) — `*_secret_name` by convention,
+    # same as `_extra_secrets`/`_write_extra_secret` — captured before the row
+    # goes away. Deleting the row alone would otherwise leave a real, live
+    # credential permanently orphaned in the store (the #372/#1059 convention
+    # this mirrors: an entity delete removes what it owns; the orphan sweep
+    # only REPORTS by default, so nothing else would ever clean this up).
+    extra_secret_refs = [
+        v for k, v in (conn.config or {}).items() if k.endswith("_secret_name") and v
+    ]
     session.delete(conn)
     try:
         session.commit()
@@ -914,11 +963,13 @@ def delete_connection(
             )
             or {"connection_id": str(connection_id)},
         ) from exc
-    # Best-effort remove the orphaned credential from the store (#372) — after the
-    # row is gone, and fail-soft (delete never raises), so a store hiccup can't 500
-    # a successful delete.
+    # Best-effort remove the orphaned credential(s) from the store (#372, #1181) —
+    # after the row is gone, and fail-soft (delete never raises), so a store
+    # hiccup can't 500 a successful delete.
     if secret_ref:
         secret_store.delete(secret_ref)
+    for ref in extra_secret_refs:
+        secret_store.delete(ref)
     log.info("connection_deleted", connection_id=str(connection_id))
 
 
@@ -1017,6 +1068,11 @@ def test_draft_connection(
     _validated_config(conn_type, config)
     if env is not None:
         _validate_env(env)
+    if catalog_secret is not None:
+        # Same guard `create_connection`/`update_connection` run — a draft for a
+        # type whose config model has no `catalog_secret_name` field must 422
+        # the same way a real create would, not silently swallow the value.
+        _validate_extra_secret_supported(conn_type, config, "catalog")
     adapter = get_connection_adapter(conn_type)
     secret_optional = getattr(adapter, "secret_optional", False)
 

@@ -214,10 +214,17 @@ export function PropertiesEditor({
  * password, #1181) — shown in both create and edit, since unlike the primary
  * credential there is no dedicated reauth flow for it; PATCH is its only
  * rotation path. Always optional: not every sql/hive catalog needs one
- * (e.g. a local sqlite catalog). */
+ * (e.g. a local sqlite catalog).
+ *
+ * `preserve={false}` (same idiom as `PassphraseField` above, #602): the field
+ * is conditionally rendered — gated on `catalog_type` being sql/hive. Verified
+ * empirically that this antd version already drops an unmounted Form.Item's
+ * value on submit even without it, but explicit `preserve={false}` matches
+ * the codebase's established convention for a conditionally-shown secret
+ * field and removes any dependence on that (undocumented-here) default. */
 export function CatalogSecretField({ label, extra }: { label: string; extra?: string }) {
   return (
-    <Form.Item name="catalogSecret" label={label} extra={extra}>
+    <Form.Item name="catalogSecret" label={label} extra={extra} preserve={false}>
       <Input.Password autoComplete="off" />
     </Form.Item>
   );

@@ -38,6 +38,14 @@ def test_redacts_credentials_and_personal_contact() -> None:
     assert out["event"] == "auth_attempt"  # safe key
 
 
+def test_redacts_the_iceberg_catalog_secret_key() -> None:
+    """The Iceberg SQL/hive catalog's SECOND credential (#1181) — a distinct key
+    from "secret", so it needs its own exact-match entry (the #849 lesson: don't
+    rely on no call site ever logging it, redact by key regardless)."""
+    out = _redact({"event": "connection_update", "catalog_secret": "hunter2-catalog"})
+    assert out["catalog_secret"] == "<redacted>"
+
+
 def test_redacts_azure_ad_claim_fields() -> None:
     """Per security audit 2026-05-28: AAD identifiers are GDPR personal data."""
     out = _redact(

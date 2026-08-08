@@ -298,4 +298,35 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
     const [, payload] = mockUpdate.mock.calls[0];
     expect(payload.catalog_secret).toBeUndefined();
   });
+
+  it('does not resubmit a stale catalog password typed before switching catalog_type away (preserve={false})', async () => {
+    // Mirrors PassphraseField's own stale-value regression (#602): a
+    // conditionally-rendered antd Form.Item defaults `preserve` to true, so an
+    // unmounted field's value survives in the form store unless told not to.
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue(icebergConnection);
+
+    render(
+      <AntApp>
+        <ConnectionForm type="iceberg" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'harness-iceberg');
+    await selectOption(user, 'DEV');
+    const catalogType = screen.getByLabelText('Catalog type');
+    await user.type(catalogType, 'sql');
+    await user.type(await screen.findByLabelText(CATALOG_PASSWORD), 'stale-pw');
+
+    // Switch away from sql — the password field unmounts.
+    await user.clear(catalogType);
+    await user.type(catalogType, 'rest');
+    expect(screen.queryByLabelText(CATALOG_PASSWORD)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.catalog_secret).toBeUndefined();
+  });
 });

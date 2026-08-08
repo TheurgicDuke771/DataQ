@@ -919,6 +919,171 @@ def test_create_catalog_secret_write_failure_rolls_back(db_session: Any) -> None
     assert db_session.scalars(select(Connection)).all() == []
 
 
+def test_update_writes_catalog_secret_before_the_primary_secret(db_session: Any) -> None:
+    """On a two-secret PATCH, the catalog write must happen BEFORE the primary
+    rotation: neither store write is part of the DB transaction, so if the
+    CATALOG write fails after the primary already succeeded, the connection
+    would be silently running on an unverified new primary credential the
+    caller was told 502'd (no rollback can undo an already-live vault write).
+    Ordering catalog-first means a catalog failure leaves the primary
+    untouched — the worse corruption is structurally impossible."""
+    conn = svc.create_connection(
+        db_session,
+        name="harness-iceberg",
+        conn_type="iceberg",
+        env="dev",
+        config=dict(_ICEBERG_SQL_CONFIG),
+        secret="storage-key-v1",
+        created_by=_user(db_session).id,
+        secret_store=FakeStore(),
+    )
+    assert conn.secret_ref is not None
+
+    class _CatalogFailsStore(FakeStore):
+        def set(self, name: str, value: str) -> None:
+            if "catalog" in name:
+                raise SecretWriteError("key vault unreachable")
+            super().set(name, value)
+
+    fail_store = _CatalogFailsStore()
+    fail_store.data[conn.secret_ref] = "storage-key-v1"
+    with pytest.raises(ConnectionSecretWriteError):
+        svc.update_connection(
+            db_session,
+            conn.id,
+            secret="storage-key-v2",
+            catalog_secret="pw",
+            secret_store=fail_store,
+        )
+    # The primary credential must be UNTOUCHED — still the original value, not
+    # the submitted-but-unverified rotation.
+    assert fail_store.data[conn.secret_ref] == "storage-key-v1"
+
+
+# ────────── config-only PATCH must not orphan the catalog secret (#1181 review) ──
+
+
+def test_config_only_update_preserves_catalog_secret_name(db_session: Any) -> None:
+    """`update_connection`'s `config` param wholesale-REPLACES `conn.config` — the
+    catalog secret's ref lives INSIDE config (no column of its own), so a
+    config-only PATCH that doesn't re-send `catalog_secret_name` must not drop
+    it: that key is server-owned bookkeeping, never something a caller is
+    expected to round-trip, exactly like `secret_ref` (its own column) is never
+    touched by a config-only PATCH."""
+    store = FakeStore()
+    conn = svc.create_connection(
+        db_session,
+        name="harness-iceberg",
+        conn_type="iceberg",
+        env="dev",
+        config=dict(_ICEBERG_SQL_CONFIG),
+        secret=None,
+        catalog_secret="catalog-pw",
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+    ref = conn.config["catalog_secret_name"]
+
+    # A config-only update that changes something unrelated and does NOT
+    # resend catalog_secret_name — the realistic caller shape (the frontend
+    # seeds the whole `connection.config`, but a direct API caller need not).
+    svc.update_connection(
+        db_session,
+        conn.id,
+        config={**_ICEBERG_SQL_CONFIG, "warehouse": "s3://bucket/warehouse"},
+        secret_store=store,
+    )
+
+    assert conn.config["catalog_secret_name"] == ref
+    assert conn.config["warehouse"] == "s3://bucket/warehouse"
+    # …and the credential itself is still resolvable — the actual stake here.
+    assert store.data[ref] == "catalog-pw"
+
+
+def test_config_only_update_still_honors_an_explicitly_resent_catalog_secret_name(
+    db_session: Any,
+) -> None:
+    """If a caller DOES resend `catalog_secret_name` (e.g. echoing back a prior
+    GET), the explicit value wins — carry-over only fills a GAP, never overrides."""
+    store = FakeStore()
+    conn = svc.create_connection(
+        db_session,
+        name="harness-iceberg",
+        conn_type="iceberg",
+        env="dev",
+        config=dict(_ICEBERG_SQL_CONFIG),
+        secret=None,
+        catalog_secret="catalog-pw",
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+    original_ref = conn.config["catalog_secret_name"]
+
+    svc.update_connection(
+        db_session,
+        conn.id,
+        config={**_ICEBERG_SQL_CONFIG, "catalog_secret_name": "some-other-ref"},
+        secret_store=store,
+    )
+    assert conn.config["catalog_secret_name"] == "some-other-ref"
+    assert conn.config["catalog_secret_name"] != original_ref
+
+
+# ────────── delete removes the catalog secret too (#372/#1059 convention) ───────
+
+
+def test_delete_removes_the_catalog_secret_alongside_the_primary(db_session: Any) -> None:
+    store = FakeStore()
+    conn = svc.create_connection(
+        db_session,
+        name="harness-iceberg",
+        conn_type="iceberg",
+        env="dev",
+        config=dict(_ICEBERG_SQL_CONFIG),
+        secret="storage-key",
+        catalog_secret="catalog-pw",
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+    catalog_ref = conn.config["catalog_secret_name"]
+    primary_ref = conn.secret_ref
+    assert catalog_ref in store.data and primary_ref in store.data
+
+    svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=conn.created_by)
+
+    assert primary_ref not in store.data
+    assert catalog_ref not in store.data  # #1181: was previously left orphaned
+
+
+def test_delete_without_a_catalog_secret_does_not_choke(db_session: Any) -> None:
+    """A connection with no second credential (the common case) must delete
+    exactly as it always has — no `catalog_secret_name` key to even look for."""
+    store = FakeStore()
+    conn = _create(db_session, store)  # plain snowflake, no catalog_secret
+    svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=conn.created_by)
+    assert db_session.scalars(select(Connection)).all() == []
+
+
+# ────────── draft test 422s for an unsupported type too (#1116 path symmetry) ───
+
+
+def test_draft_test_catalog_secret_unsupported_type_raises_config_invalid(
+    db_session: Any,
+) -> None:
+    """`test_draft_connection` must reject a `catalog_secret` for a type with no
+    `catalog_secret_name` field exactly like `create_connection` does — a draft
+    is nothing MORE permissive than a real create just because nothing persists."""
+    with pytest.raises(ConnectionConfigInvalidError):
+        svc.test_draft_connection(
+            "snowflake",
+            env="dev",
+            config=dict(_SF_CONFIG),
+            secret="p@ss",
+            catalog_secret="should-422",
+            secret_store=FakeStore(),
+        )
+
+
 # ───────────────────────── version history ─────────────────────────
 
 
