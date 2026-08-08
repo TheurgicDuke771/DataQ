@@ -386,14 +386,16 @@ describe('Assets page — table view (#925 server-side paging)', () => {
     renderPage();
     await switchToTable();
     await screen.findByText('ANALYTICS.PUBLIC.A0');
-    expect(mockList).toHaveBeenCalledWith({ limit: 50, offset: 0 });
+    // Each call also carries the abort signal (#1107 review) as its second
+    // argument — the table view forwards it just like the tree walk does.
+    expect(mockList).toHaveBeenCalledWith({ limit: 50, offset: 0 }, expect.any(AbortSignal));
 
     // antd renders page-number items with title="2"; go to page 2.
     await userEvent.click(screen.getByTitle('2'));
 
     expect(await screen.findByText('ANALYTICS.PUBLIC.B0')).toBeInTheDocument();
     expect(screen.queryByText('ANALYTICS.PUBLIC.A0')).not.toBeInTheDocument();
-    expect(mockList).toHaveBeenCalledWith({ limit: 50, offset: 50 });
+    expect(mockList).toHaveBeenCalledWith({ limit: 50, offset: 50 }, expect.any(AbortSignal));
   });
 
   it('shows an empty state when there are no assets', async () => {

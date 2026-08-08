@@ -196,8 +196,12 @@ const TABLE_PAGE_SIZE = 50;
 
 function AssetsTableView({ onOpen }: { onOpen: (id: string) => void }) {
   const [page, setPage] = useState(1);
-  const { state, reload } = useAsyncData(() =>
-    listAssets({ limit: TABLE_PAGE_SIZE, offset: (page - 1) * TABLE_PAGE_SIZE }),
+  // Forward the abort signal (#1107 review) so switching pages quickly — or
+  // toggling away from the table entirely — cancels the superseded request at
+  // the network layer, the same treatment the tree walk got, instead of just
+  // leaving it to run to completion while nothing is listening for it.
+  const { state, reload } = useAsyncData((signal) =>
+    listAssets({ limit: TABLE_PAGE_SIZE, offset: (page - 1) * TABLE_PAGE_SIZE }, signal),
   );
   // useAsyncData only re-fetches on `reload()` (its effect keys off a nonce, not
   // the fetcher identity — see its doc), so a page change must bump it
