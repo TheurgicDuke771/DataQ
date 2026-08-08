@@ -458,4 +458,37 @@ describe('Suites', () => {
 
     expect(screen.queryByRole('button', { name: /Run/ })).not.toBeInTheDocument();
   });
+
+  it('shows the batch target summary on the detail panel, marked configured-not-resolved (#1205)', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([
+      suite({ target: { prefix: 'raw/', pattern: 'orders_(.*)\\.csv', strategy: 'latest' } }),
+    ]);
+    mockListChecks.mockResolvedValue([check()]);
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+
+    // summarizeTarget renders the configured prefix/pattern/strategy, not a
+    // resolved filename — and the detail page must say so (#1205), unlike the
+    // single-file case below.
+    expect(await screen.findByText('raw/orders_(.*)\\.csv (latest)')).toBeInTheDocument();
+    expect(screen.getByText('Configured, not resolved')).toBeInTheDocument();
+  });
+
+  it('shows a single-file target summary with no configured-not-resolved marker (#1205)', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite({ target: { path: 'raw/orders.csv' } })]);
+    mockListChecks.mockResolvedValue([check()]);
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+
+    // A single-file target's path IS the exact target — no "not resolved"
+    // ambiguity, so the batch marker must not appear.
+    expect(await screen.findByText('raw/orders.csv')).toBeInTheDocument();
+    expect(screen.queryByText('Configured, not resolved')).not.toBeInTheDocument();
+  });
 });
