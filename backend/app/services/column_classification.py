@@ -24,6 +24,10 @@ Design (adapted from a name-pattern + entropy/hash value heuristic — not lifte
 * **Value shape refines an otherwise-unknown column.** UUID/hash-shaped,
   high-cardinality values look like identifiers; high-entropy encrypted/hashed blobs
   are treated as sensitive.
+* **An address/name token can be entity-qualified to SAFE** (#1182) — ``location_city``
+  and ``carrier_name`` describe a *place*/label, not a person — but a co-occurring
+  person-context token (``customer``/``delivery``/``shipping``/…) always overrides
+  that back to PII, since the entity-qualifier alone is ambiguous.
 * **Conservative default.** Anything not confidently IDENTIFIER or SAFE is PII, so the
   redactor's default-mask posture (security can't regress, #415) is preserved.
 
@@ -266,8 +270,8 @@ def _tokens(name: str) -> list[str]:
 def _name_signal(name: str) -> ColumnClass | None:
     """Classify from the column *name* alone, or ``None`` if the name is inconclusive.
 
-    Precedence: person-PII → address (entity-qualified) → person-linking id (PII) →
-    non-person identifier → safe.
+    Precedence: person-PII → address/name (entity-qualified, person-context-guarded)
+    → sensitive-domain id (PII) → person-linking id (IDENTIFIER) → safe.
     """
     tokens = set(_tokens(name))
     if not tokens:
@@ -318,7 +322,7 @@ def _name_signal(name: str) -> ColumnClass | None:
     #    tag can always overrule for a stricter compliance posture.
     if tokens & _IDENTIFIER_TOKENS:
         return ColumnClass.IDENTIFIER
-    # 3. Metric / time / status → safe.
+    # 4. Metric / time / status → safe.
     if tokens & _SAFE_TOKENS:
         return ColumnClass.SAFE
     return None
