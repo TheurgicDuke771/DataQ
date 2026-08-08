@@ -19,14 +19,17 @@ from sqlalchemy.orm import Session
 from backend.app.api.v1._base import ApiModel
 from backend.app.api.v1.runs import RunRead
 from backend.app.core.auth import get_current_user, is_workspace_admin
+from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
+from backend.app.datasources.flatfile import BatchListingTooLargeError, BatchNotFoundError
 from backend.app.db.models import Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.services import profile_service as profile
 from backend.app.services import run_dispatch, run_target
 from backend.app.services import suite_io_service as suite_io
 from backend.app.services import suite_service as svc
+from backend.app.services.failure_classifier import classify_failure_reason
 from backend.app.services.suite_authz import (
     OWNER,
     effective_permission,
@@ -506,6 +509,91 @@ def list_columns(
         secret_store=secret_store,
     )
     return ColumnsRead(columns=columns)
+
+
+# ── flat-file batch-target preview (#1193) ──────────────────────────
+
+
+class BatchPreviewNoDataError(DataQError):
+    status_code = 422
+    code = "batch_preview_no_data"
+
+
+class BatchPreviewInvalidError(DataQError):
+    status_code = 422
+    code = "batch_preview_invalid"
+
+
+class BatchPreviewFailedError(DataQError):
+    status_code = 502
+    code = "batch_preview_failed"
+
+
+class BatchPreviewRead(ApiModel):
+    """The concrete file path a batch-target spec resolves to right now — the same
+    live resolution `run_target.materialize_path` performs at run time, run early
+    and without persisting anything (#1193). Callers re-request on every field
+    change to keep the "resolves to" hint live while authoring."""
+
+    path: str
+
+
+@router.get(
+    "/suites/{suite_id}/batch-preview",
+    response_model=BatchPreviewRead,
+    summary="Resolve a flat-file batch pattern against the live listing (no persistence)",
+)
+def preview_batch_target(
+    suite_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+    pattern: Annotated[str, Query(min_length=1, max_length=1024)],
+    strategy: Annotated[Literal["latest", "specific"], Query()] = "latest",
+    batch: Annotated[str | None, Query(max_length=255)] = None,
+    prefix: Annotated[str, Query(max_length=1024)] = "",
+) -> BatchPreviewRead:
+    # sync def → threadpool; the object listing is blocking.
+    # Authoring aid → 'edit', same gate as the profiler/columns/policy-suggest.
+    suite = require_permission(db, suite_id, current_user.id, minimum="edit")
+    connection = db.get(Connection, suite.connection_id)
+    assert connection is not None
+    try:
+        path = run_target.preview_batch(
+            connection.type,
+            connection.config,
+            prefix=prefix,
+            pattern=pattern,
+            strategy=strategy,
+            batch=batch,
+            secret_ref=connection.secret_ref,
+            secret_store=secret_store,
+        )
+    except BatchNotFoundError as exc:
+        # "no data yet" — the same meaning a run gives it (#122) — not a shape
+        # problem, so it stays distinct from the SuiteTargetInvalidError below.
+        raise BatchPreviewNoDataError(
+            "no file currently matches this batch pattern",
+            detail={"connection_type": connection.type},
+        ) from exc
+    except (BatchListingTooLargeError, ValueError) as exc:
+        raise BatchPreviewInvalidError(
+            str(exc), detail={"connection_type": connection.type}
+        ) from exc
+    except DataQError:
+        # SuiteTargetInvalidError (422) — a non-flat-file connection type or a
+        # malformed spec (bad regex, 'specific' with no capture group, ...) —
+        # already carries the right status/code/message; keep it as-is.
+        raise
+    except Exception as exc:
+        log.warning(
+            "batch_preview_failed", connection_type=connection.type, error_type=type(exc).__name__
+        )
+        raise BatchPreviewFailedError(
+            "batch preview could not list the datasource store",
+            detail={"reason": classify_failure_reason(exc)},
+        ) from exc
+    return BatchPreviewRead(path=path)
 
 
 # ── failing-sample redaction policy (#415) ──────────────────────────────────

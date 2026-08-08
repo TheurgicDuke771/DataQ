@@ -123,3 +123,47 @@ def materialize_path(
         strategy=spec.strategy,
         batch=spec.batch,
     )
+
+
+#: Batch-target preview (#1193) only applies to flat-file connections — duplicated
+#: from `flatfile._FILE_TYPES` rather than imported so this module's write-time
+#: validation path stays GX-free (see the lazy-import note on `materialize_path`).
+_FLATFILE_TYPES = {"adls_gen2", "s3"}
+
+
+def preview_batch(
+    conn_type: str,
+    config: dict[str, Any],
+    *,
+    prefix: str,
+    pattern: str,
+    strategy: str,
+    batch: str | None,
+    secret_ref: str | None,
+    secret_store: SecretStore,
+) -> str:
+    """Resolve a batch spec against the live listing, without saving it (#1193).
+
+    Reuses `resolve_target`'s shape validation (regex compiles, ``specific`` has a
+    capture group, ...) and `materialize_path`'s live resolution — the exact path a
+    saved batch-target suite takes at run time — so the preview an author sees
+    before saving can never drift from what a real run would do.
+
+    Raises `SuiteTargetInvalidError` (422) for a non-flat-file connection type or a
+    malformed spec (via `resolve_target`), and propagates
+    `flatfile.BatchNotFoundError` / `flatfile.BatchListingTooLargeError` (both
+    `ValueError`) for the caller to map — the same contract `materialize_path`
+    already has.
+    """
+    if conn_type not in _FLATFILE_TYPES:
+        raise SuiteTargetInvalidError(
+            f"batch preview is only supported for flat-file connections, not {conn_type!r}",
+            detail={"connection_type": conn_type},
+        )
+    target: dict[str, Any] = {"pattern": pattern, "strategy": strategy, "prefix": prefix}
+    if batch is not None:
+        target["batch"] = batch
+    resolved = resolve_target(conn_type, target)
+    return materialize_path(
+        conn_type, config, resolved, secret_ref=secret_ref, secret_store=secret_store
+    )

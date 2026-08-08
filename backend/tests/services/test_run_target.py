@@ -257,3 +257,135 @@ def test_an_orchestration_provider_still_has_no_run_path() -> None:
         with pytest.raises(SuiteTargetInvalidError) as exc:
             resolve_target(provider, {"table": "x"})
         assert "no run path" in str(exc.value)
+
+
+# ───────────────────────── preview_batch (#1193) ────────────────────
+
+
+def test_preview_batch_resolves_via_the_live_seam(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Threads through resolve_target (shape validation) + materialize_path (the
+    # live listing) exactly like a saved batch-target suite would at run time.
+    captured: dict[str, Any] = {}
+
+    def _fake_resolve(**kwargs: Any) -> str:
+        captured.update(kwargs)
+        return "orders/orders_20260601.csv"
+
+    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", _fake_resolve)
+    out = run_target.preview_batch(
+        "s3",
+        {"bucket": "b"},
+        prefix="orders/",
+        pattern=r"orders_(\d+)\.csv",
+        strategy="latest",
+        batch=None,
+        secret_ref="kv-ref",
+        secret_store=_FakeStore(),
+    )
+    assert out == "orders/orders_20260601.csv"
+    assert captured["prefix"] == "orders/" and captured["strategy"] == "latest"
+    assert captured["secret"] == "secret-value" and captured["conn_type"] == "s3"
+
+
+@pytest.mark.parametrize("conn_type", ["adls_gen2", "s3"])
+def test_preview_batch_accepts_flatfile_types(
+    conn_type: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "backend.app.datasources.flatfile.resolve_batch_file", lambda **_: "x/orders_1.csv"
+    )
+    out = run_target.preview_batch(
+        conn_type,
+        {},
+        prefix="",
+        pattern=r"orders_(\d+)\.csv",
+        strategy="latest",
+        batch=None,
+        secret_ref="kv-ref",
+        secret_store=_FakeStore(),
+    )
+    assert out == "x/orders_1.csv"
+
+
+@pytest.mark.parametrize("conn_type", ["snowflake", "unity_catalog", "iceberg", "adf", "airflow"])
+def test_preview_batch_rejects_non_flatfile_connections(conn_type: str) -> None:
+    with pytest.raises(SuiteTargetInvalidError) as exc:
+        run_target.preview_batch(
+            conn_type,
+            {},
+            prefix="",
+            pattern=r"(\d+)\.csv",
+            strategy="latest",
+            batch=None,
+            secret_ref="kv-ref",
+            secret_store=_FakeStore(),
+        )
+    assert "flat-file" in str(exc.value)
+
+
+def test_preview_batch_invalid_regex_raises_before_any_listing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(**_: Any) -> str:  # pragma: no cover - must never be reached
+        raise AssertionError("resolve_batch_file must not be called for a bad pattern")
+
+    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", _boom)
+    with pytest.raises(SuiteTargetInvalidError):
+        run_target.preview_batch(
+            "s3",
+            {},
+            prefix="",
+            pattern=r"orders_([0-9.csv",  # unbalanced group
+            strategy="latest",
+            batch=None,
+            secret_ref="kv-ref",
+            secret_store=_FakeStore(),
+        )
+
+
+def test_preview_batch_specific_without_capture_group_raises() -> None:
+    with pytest.raises(SuiteTargetInvalidError):
+        run_target.preview_batch(
+            "s3",
+            {},
+            prefix="",
+            pattern=r"orders\.csv",
+            strategy="specific",
+            batch="x",
+            secret_ref="kv-ref",
+            secret_store=_FakeStore(),
+        )
+
+
+def test_preview_batch_propagates_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.datasources.flatfile import BatchNotFoundError
+
+    def _raise(**_: Any) -> str:
+        raise BatchNotFoundError("no files matched")
+
+    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", _raise)
+    with pytest.raises(BatchNotFoundError):
+        run_target.preview_batch(
+            "s3",
+            {},
+            prefix="orders/",
+            pattern=r"orders_(\d+)\.csv",
+            strategy="latest",
+            batch=None,
+            secret_ref="kv-ref",
+            secret_store=_FakeStore(),
+        )
+
+
+def test_preview_batch_without_secret_raises() -> None:
+    with pytest.raises(SuiteTargetInvalidError):
+        run_target.preview_batch(
+            "s3",
+            {},
+            prefix="",
+            pattern=r"(\d+)\.csv",
+            strategy="latest",
+            batch=None,
+            secret_ref=None,
+            secret_store=_FakeStore(),
+        )
