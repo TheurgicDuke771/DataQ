@@ -54,11 +54,21 @@ Status: **Accepted.** The decision above stands for Snowflake exactly as written
 
 **What changed.** `UnityCatalogCheckRunner.run_checks` now partitions: custom-SQL checks run against a GX **Databricks-SQL** batch over the same table; every other expectation keeps the DataFrame batch; outcomes merge back in submission order. Deliberately GX's own SQL datasource rather than a hand-rolled COUNT/LIMIT, so the semantics are identical to the Snowflake path *by construction* — and so no new SQL-string interpolation is introduced, leaving the guardrails in §Decision 1–3 inherited unchanged rather than re-implemented.
 
-**What did not change.** The persisted shape (`kind='expectation'`, `expectation_type='unexpected_rows_expectation'`, `config={"unexpected_rows_query": …}`), the guardrail module and every authoring path that calls it, `gx_runner`, and §Decision 4's binary pass/fail (the row count is still not a bandable metric; count-based severity remains the deferred enhancement, now tracked as [#1202](https://github.com/TheurgicDuke771/DataQ/issues/1202)).
+**What did not change.** The persisted shape (`kind='expectation'`, `expectation_type='unexpected_rows_expectation'`, `config={"unexpected_rows_query": …}`), the guardrail module and every authoring path that calls it, `gx_runner`, and §Decision 4's binary pass/fail for a no-threshold check (count-based severity for a check WITH thresholds landed separately — see the 2026-08-08 amendment below, [#1202](https://github.com/TheurgicDuke771/DataQ/issues/1202)).
 
 **One new constraint, UC only.** GX's `DatabricksDsn` requires `catalog` *and* `schema` on the connection URL, and an unqualified name would resolve against the session default — a wrong table read rather than an error. So a UC suite target with **no schema** makes its custom-SQL checks error (its other checks are unaffected). Snowflake is unchanged: its schema comes from the connection config.
 
 **The lesson, which is the reason this amendment exists rather than a silent fix:** the original validation section below records a de-risk run "against the dev Postgres" and calls it confirmation of the decision. It confirmed the decision for *a* SQL backend. The gating list it justified named two datasources, and only one of them had ever been executed. That is the #953 shape — a capability declared from reasoning about a connection rather than from running the code path. See `docs/feature-matrix.md` footnote ᶜ for the live numbers that now back the UC tick.
+
+## Amendment — 2026-08-08 ([#1202](https://github.com/TheurgicDuke771/DataQ/issues/1202)): count-based severity landed
+
+Status: **Accepted.** §Decision 4's binary pass/fail is unchanged for a check with no thresholds configured (still exactly ADR 0005's binary fallback) — this only fills in the deferred half: `metric_value` is now populated for `unexpected_rows_expectation`, additively in `severity.extract_metric`, exactly as §Consequences predicted ("no schema change").
+
+**The bandable quantity is the raw unexpected row COUNT, not a percentage of the batch.** A percentage was the other option on the table (row count isn't comparable across differently-sized tables in the abstract), but it was rejected for two reasons: it would need a second aggregate query issued by the runner for the batch's total row count, which `severity.py` — deliberately pure, no DB/GX access — cannot issue itself and which this ADR's "additive... no schema change" framing never anticipated; and, more fundamentally, the cross-table comparability a percentage buys isn't needed by either consumer. Both the severity thresholds and the anomaly baseline (#593) evaluate a check's metric against *that same check's own history* on the same query/table — never against a different check's metric — so a raw count trends and baselines exactly as a percentage would, at zero extra query cost.
+
+**No schema change, no backfill.** The `results.metric_value` column already existed (Week-3 threshold migration). Existing result rows keep `metric_value = NULL` — nothing backfills a value GX never measured for them.
+
+**Unchanged, on purpose:** a custom-SQL check with no thresholds configured still resolves as a plain `pass`/`fail` — `derive_status`'s no-thresholds branch is checked before any metric comparison, so populating `metric_value` cannot make an unbanded check start banding.
 
 ## Validation
 
