@@ -576,6 +576,110 @@ def test_test_endpoint_secret_optional_saved_connection_succeeds(
     assert resp.json() == {"ok": True}
 
 
+# ────────── a SECOND credential — the Iceberg catalog secret (#1181) ─────────
+
+_ICEBERG_SQL_CONFIG = {"catalog_type": "sql", "catalog_uri": "sqlite:///w"}
+
+
+def test_create_iceberg_with_catalog_secret_hides_both_secrets(
+    client: tuple[TestClient, FakeStore],
+) -> None:
+    api, store = client
+    resp = api.post(
+        "/api/v1/connections",
+        json={
+            "name": "harness-iceberg",
+            "type": "iceberg",
+            "env": "dev",
+            "config": dict(_ICEBERG_SQL_CONFIG),
+            "secret": "storage-key",
+            "catalog_secret": "catalog-db-pw",
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert "catalog_secret" not in body
+    assert "catalog-db-pw" not in str(body)
+    assert "storage-key" not in str(body)
+    ref = body["config"]["catalog_secret_name"]
+    assert ref != body["config"].get("secret_ref")  # distinct from the storage credential
+    assert store.data[ref] == "catalog-db-pw"
+
+
+def test_create_catalog_secret_unsupported_type_returns_422(
+    client: tuple[TestClient, FakeStore],
+) -> None:
+    """Snowflake's config model has no `catalog_secret_name` field to point at —
+    the write must be rejected before anything is persisted."""
+    api, store = client
+    resp = api.post("/api/v1/connections", json=_create_payload(catalog_secret="nope"))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "connection_config_invalid"
+    assert store.data == {}
+
+
+def test_patch_rotates_catalog_secret_reusing_the_same_ref(
+    client: tuple[TestClient, FakeStore],
+) -> None:
+    api, store = client
+    created = api.post(
+        "/api/v1/connections",
+        json={
+            "name": "harness-iceberg",
+            "type": "iceberg",
+            "env": "dev",
+            "config": dict(_ICEBERG_SQL_CONFIG),
+            "catalog_secret": "pw-v1",
+        },
+    )
+    assert created.status_code == 201
+    cid = created.json()["id"]
+    ref = created.json()["config"]["catalog_secret_name"]
+
+    resp = api.patch(f"/api/v1/connections/{cid}", json={"catalog_secret": "pw-v2"})
+    assert resp.status_code == 200
+    assert resp.json()["config"]["catalog_secret_name"] == ref
+    assert store.data[ref] == "pw-v2"
+
+
+def test_draft_test_iceberg_sql_catalog_with_catalog_secret_injects_password(
+    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end against the REAL `IcebergConnectionAdapter` (only
+    `pyiceberg.catalog.load_catalog` mocked out): a draft's `catalog_secret` —
+    the raw value, since nothing is stored yet to name via `_secret_name` — must
+    reach the adapter and get injected into the catalog URI's userinfo."""
+    api, _ = client
+    captured: dict[str, Any] = {}
+
+    class _FakeCatalog:
+        def list_namespaces(self) -> list[str]:
+            return []
+
+    def fake_load_catalog(name: str, **props: Any) -> _FakeCatalog:
+        captured.update(props)
+        return _FakeCatalog()
+
+    monkeypatch.setattr("pyiceberg.catalog.load_catalog", fake_load_catalog)
+    resp = api.post(
+        "/api/v1/connections/test",
+        json={
+            "type": "iceberg",
+            "env": "dev",
+            "config": {
+                "catalog_type": "sql",
+                "catalog_uri": "postgresql://catalog_user@localhost:5432/catalog",
+            },
+            "secret": None,
+            "catalog_secret": "db-pw",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert captured["uri"] == "postgresql://catalog_user:db-pw@localhost:5432/catalog"
+    assert "db-pw" not in resp.text
+
+
 def test_draft_test_unknown_type_returns_422(client: tuple[TestClient, FakeStore]) -> None:
     api, _ = client
     resp = api.post("/api/v1/connections/test", json=_draft_payload(type="mssql"))

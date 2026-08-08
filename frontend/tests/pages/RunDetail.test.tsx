@@ -317,7 +317,7 @@ describe('RunDetail page', () => {
     expect(region.queryByText(/values redacted/)).not.toBeInTheDocument();
   });
 
-  it('names the redacted columns when the API reports a partial mix', async () => {
+  it('names the redacted columns when the API reports a partial mix, and renders the identifier row (#1183)', async () => {
     mockGetRun.mockResolvedValue({
       ...runDetail,
       results: [
@@ -343,6 +343,191 @@ describe('RunDetail page', () => {
     expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
     expect(region.getByText(/1 column redacted/)).toBeInTheDocument();
     expect(region.queryByText(/values redacted/)).not.toBeInTheDocument();
+    // #1183: the identifier row must actually render — a masked column and a
+    // shown identifier column can both come out of `unexpected_index_list`.
+    // (antd Table renders each header twice — a visible <th> plus a hidden
+    // width-measurement node — so header assertions use the *AllBy* variant.)
+    expect(region.getAllByText('order_id').length).toBeGreaterThan(0);
+    expect(region.getByText('ORD-1')).toBeInTheDocument();
+    expect(region.getAllByText('email').length).toBeGreaterThan(0);
+    expect(region.getByText('<redacted>')).toBeInTheDocument();
+  });
+
+  // ── #1183: unexpected_index_list identifier column ─────────────────────
+
+  it('prefers unexpected_index_list over partial_unexpected_list, surfacing the identifier column (#1183)', async () => {
+    // Real prod shape (Iceberg — Purchase Orders, `supplier_id not null`):
+    // unexpected_index_list carries the identifier + failing value as a row
+    // dict; partial_unexpected_list is present too (bare nulls) but must lose
+    // to the richer, already-redacted index list.
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          sample_failures: {
+            unexpected_count: 12,
+            unexpected_percent: 1.29,
+            unexpected_index_list: [
+              { po_id: 'PO-20260727T063156-00010', supplier_id: null },
+              { po_id: 'PO-20260727T063156-00011', supplier_id: null },
+            ],
+            partial_unexpected_list: [null, null],
+          },
+          redaction: 'none',
+          redacted_columns: [],
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
+
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    // The identifier column header and a real PO value are visible — this is
+    // exactly what #1183 reported as missing (a single bare "value" column
+    // of nulls instead). (antd Table double-renders header text — see note
+    // in the previous test.)
+    expect(region.getAllByText('po_id').length).toBeGreaterThan(0);
+    expect(region.getByText('PO-20260727T063156-00010')).toBeInTheDocument();
+    expect(region.getByText('PO-20260727T063156-00011')).toBeInTheDocument();
+    // The failing column's null values em-dash rather than render "null".
+    expect(region.getAllByText('—').length).toBeGreaterThan(0);
+    expect(region.queryByText('null')).not.toBeInTheDocument();
+    // No lone "value" column from partial_unexpected_list — the index list won.
+    expect(region.queryByText('value')).not.toBeInTheDocument();
+  });
+
+  it('caps the rendered rows and shows a "not shown" count for a large unexpected_index_list (#1190 review)', async () => {
+    // Unlike partial_unexpected_list (GX-capped ~20 on every engine), GX's
+    // unexpected_index_list is NOT capped under result_format=COMPLETE on the
+    // pandas engine (flat-file/ADLS/S3/Iceberg) — gx_runner always requests
+    // COMPLETE. A check with many failing rows on those datasources can hand
+    // the frontend a much longer list than the table should ever render with
+    // pagination={false}, so the component must cap what it displays itself.
+    const bigIndexList = Array.from({ length: 45 }, (_, i) => ({
+      po_id: `PO-${String(i).padStart(5, '0')}`,
+      supplier_id: null,
+    }));
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          sample_failures: {
+            unexpected_count: 45,
+            unexpected_percent: 12.3,
+            unexpected_index_list: bigIndexList,
+          },
+          redaction: 'none',
+          redacted_columns: [],
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
+
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    // The header still reports the true total (45 rows) even though the table
+    // renders far fewer.
+    expect(region.getByText(/45 rows/)).toBeInTheDocument();
+    // Only the first 20 rows render into the DOM.
+    expect(region.getByText('PO-00000')).toBeInTheDocument();
+    expect(region.getByText('PO-00019')).toBeInTheDocument();
+    expect(region.queryByText('PO-00020')).not.toBeInTheDocument();
+    expect(region.queryByText('PO-00044')).not.toBeInTheDocument();
+    // The truncation note names how many were left out (45 total - 20 shown).
+    expect(region.getByText('+25 more rows not shown')).toBeInTheDocument();
+  });
+
+  it('does not show a "not shown" note when the sample fits within the cap (#1190 review)', async () => {
+    mockGetRun.mockResolvedValue(runDetail); // fixture sample has 2 rows, well under the cap
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
+
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(region.queryByText(/more rows? not shown/)).not.toBeInTheDocument();
+  });
+
+  it('falls back to partial_unexpected_list (a bare "value" column) when unexpected_index_list is absent (#1183)', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          sample_failures: {
+            unexpected_count: 2,
+            unexpected_percent: 5,
+            partial_unexpected_list: [-12.5, -5.0],
+          },
+          redaction: 'none',
+          redacted_columns: [],
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
+
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(region.getAllByText('value').length).toBeGreaterThan(0);
+    expect(region.getByText('-12.5')).toBeInTheDocument();
+    expect(region.getByText('-5')).toBeInTheDocument();
+  });
+
+  it('also falls back when unexpected_index_list is present but not dict-shaped (#1183)', async () => {
+    // Defence in depth: the backend already strips a non-dict index list
+    // (`gx_runner._is_identifier_index_list`), but the frontend must not
+    // trust an unexpected shape either.
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          sample_failures: {
+            unexpected_count: 2,
+            unexpected_index_list: [1, 2],
+            partial_unexpected_list: ['<redacted>', '<redacted>'],
+          },
+          redaction: 'full',
+          redacted_columns: ['email'],
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
+
+    expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
+    expect(region.getAllByText('value').length).toBeGreaterThan(0);
+    expect(region.getAllByText('<redacted>').length).toBeGreaterThan(0);
   });
 
   it('falls back to "partially redacted" when partial has no nameable column (#1115)', async () => {
@@ -554,6 +739,101 @@ describe('RunDetail page', () => {
       expect(document.title).toContain('Orders quality');
       expect(document.title).toContain('r1');
     });
+  });
+});
+
+describe('RunDetail — Observed column bounding (#1207)', () => {
+  // #1184's review dismissed this column as "always a compact scalar/small
+  // dict" — false for schema_drift, whose observed_value carries full
+  // added/removed column-name lists plus a type_changed entry per drifted
+  // column (backend/app/services/schema_drift.py diff_schemas()). This shape
+  // is what actually stretched a real user's table.
+  const schemaDriftCheck: Check = {
+    id: 'chk3',
+    suite_id: 's1',
+    name: 'orders schema drift',
+    kind: 'schema_drift',
+    expectation_type: 'monitor:schema_drift',
+    config: {},
+    warn_threshold: null,
+    fail_threshold: null,
+    critical_threshold: null,
+    alert_snoozed_until: null,
+  };
+
+  const longObservedValue = {
+    added: Array.from({ length: 12 }, (_, i) => `new_column_${i}`),
+    removed: ['legacy_flag'],
+    type_changed: Array.from({ length: 8 }, (_, i) => ({
+      column: `col_${i}`,
+      from: 'VARCHAR',
+      to: 'NUMBER',
+    })),
+    columns_checked: 40,
+  };
+
+  it('bounds a long structured (schema_drift-shaped) observed_value with an ellipsis column and shows the full payload on hover', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          check_id: 'chk3',
+          observed_value: longObservedValue,
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([schemaDriftCheck]);
+    renderAt('r1');
+    // Scoped (#345): the print-only RunReport also renders `formatScalar`
+    // of the same observed_value as plain text, so an unscoped screen query
+    // would match twice.
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('orders schema drift');
+
+    const expectedText = JSON.stringify(longObservedValue);
+    const trigger = region.getByText(expectedText);
+    expect(trigger.closest('td')).toHaveClass('ant-table-cell-ellipsis');
+
+    await user.hover(trigger);
+    // The custom Tooltip renders in a portal, outside the `rd-screen` region.
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(expectedText);
+  });
+
+  it('leaves a compact scalar observed_value rendering unchanged', async () => {
+    // The base `runDetail` fixture already carries a compact
+    // { unexpected_percent: 2 } observed_value on an ordinary expectation
+    // check — confirms the bounded column doesn't alter the small-payload case.
+    mockGetRun.mockResolvedValue(runDetail);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    expect(await region.findByText('{"unexpected_percent":2}')).toBeInTheDocument();
+  });
+
+  it('renders the em-dash placeholder for a null observed_value with no tooltip trigger (unchanged, no #1190 regression)', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [{ ...runDetail.results[0], observed_value: null }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    const row = region.getByText('order_id not null').closest('tr') as HTMLElement;
+    const observedCell = row.querySelector('td.ant-table-cell-ellipsis');
+    expect(observedCell).toHaveTextContent('—');
+
+    const user = userEvent.setup();
+    await user.hover(observedCell as HTMLElement);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 });
 

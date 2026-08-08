@@ -9,7 +9,7 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | Check kind | Snowflake | Unity Catalog | ADLS Gen2 (files) | S3 (files)ˢ | Iceberg |
 |---|:-:|:-:|:-:|:-:|:-:|
 | GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Custom SQL (rows returned = failures) | ✅ | ✅ | — | — | — |
+| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | — | — | — |
 | Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Freshness from **file arrival time** (no column — catches "no new file") | — | — | ✅ | ✅ | — |
 | Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -43,6 +43,21 @@ all, so it isn't gated to SQL datasources: introspection is per-datasource —
 CSV header sample for ADLS/S3 flat files, and the loaded table's own metadata for
 Iceberg (no data scan on any of them except the CSV sample). Re-baseline explicitly
 once a drift is expected and reviewed.
+
+ᶜ **The Unity Catalog tick was false until 2026-08-08** ([#1179](https://github.com/TheurgicDuke771/DataQ/issues/1179)).
+ADR 0019 declared custom SQL for both SQL datasources, but the UC runner validates a
+pandas DataFrame, and `UnexpectedRowsExpectation`'s metrics have no pandas provider —
+so every UC custom-SQL check, in a run *and* in a dry-run, failed with `No provider
+found for unexpected_rows_query.table using PandasExecutionEngine`. It had never once
+worked. Custom-SQL checks now run against a GX Databricks-SQL batch over the same
+table (ordinary expectations keep the DataFrame batch). **Live-verified against the
+real warehouse** on `dataq_retail.gold.feedback_sentiment` (195 rows) — this is the
+same standing rule the anomaly note above records: a zero-row query passed with
+`observed_value=0`, `WHERE rating >= 4` failed with `observed_value=74`, and an
+unresolvable column came back as an operational `error` carrying the Databricks
+message rather than crashing the run. Snowflake was always genuinely ✅ and is
+unchanged. Custom SQL stays binary pass/fail on both (ADR 0019 §4 — a row count is
+not a bandable metric), so `metric_value` is null by design, not by omission.
 
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional

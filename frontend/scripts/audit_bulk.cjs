@@ -60,18 +60,12 @@ const ALLOWLIST = [
       'unstable_ RSC entry points. Only patch is react-router 8.x (a major bump).',
     issue: '#968',
   },
-  {
-    ghsa: 'GHSA-mh99-v99m-4gvg',
-    package: 'brace-expansion',
-    versions: '1.x',
-    reason:
-      'OOM DoS on unbounded expansion. Patched only in 5.0.8, and the 1.x line ends ' +
-      'at 1.1.16 — but minimatch@3 (dev-only: eslint, config-array, eslint-plugin-react) ' +
-      'declares ^1.1.7 and calls the default export that v5 dropped, so forcing v5 ' +
-      'breaks lint outright. Never bundled, never runs in prod, and the only globs it ' +
-      'expands are our own eslint.config.js patterns. Our 5.x line IS on patched 5.0.8.',
-    issue: '#969',
-  },
+  // GHSA-mh99-v99m-4gvg / brace-expansion 1.x (#969) was REMOVED on 2026-08-04:
+  // upstream backported the fix to the 1.x line (first_patched 1.1.17), so the
+  // waiver's premise — "patched only in 5.0.8, and the 1.x line ends at 1.1.16" —
+  // stopped being true. The override now pins >=1.1.18, which clears this advisory
+  // AND GHSA-rgw5-rvv9-x895 without the v5 jump that broke lint. This is the
+  // stale-entry check below working as designed: it would have exited 2.
 ];
 
 /** The GHSA id for an advisory, from its id field or its /advisories/<id> url. */

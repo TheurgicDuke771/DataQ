@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ConnectionType } from '../../src/api/connections';
-import { asFileFormat, assembleTarget, targetKind } from '../../src/components/suites/suiteTarget';
+import {
+  asBatchStrategy,
+  asFileFormat,
+  assembleTarget,
+  hasCaptureGroup,
+  summarizeTarget,
+  targetKind,
+} from '../../src/components/suites/suiteTarget';
 
 describe('targetKind', () => {
   it('maps each datasource type to its input shape; orchestration → null', () => {
@@ -98,6 +105,153 @@ describe('assembleTarget', () => {
     });
     expect(assembleTarget('sql', { target_table: '   ' }).target).toBeNull();
   });
+
+  describe('flat-file batch mode (#1180)', () => {
+    it('returns a null target AND no error when the batch section is untouched', () => {
+      const { target, error } = assembleTarget('flatfile', { target_mode: 'batch' });
+      expect(target).toBeNull();
+      expect(error).toBeUndefined();
+    });
+
+    it('builds a "latest" batch target, defaulting the strategy and omitting an empty prefix', () => {
+      expect(
+        assembleTarget('flatfile', {
+          target_mode: 'batch',
+          target_pattern: 'tracking_events_([a-z_]+)\\.csv',
+        }).target,
+      ).toEqual({ pattern: 'tracking_events_([a-z_]+)\\.csv', strategy: 'latest' });
+
+      expect(
+        assembleTarget('flatfile', {
+          target_mode: 'batch',
+          target_prefix: 'adls_flatfile/logistics_tracking/',
+          target_pattern: 'tracking_events_([a-z_]+)\\.csv',
+          target_strategy: 'latest',
+        }).target,
+      ).toEqual({
+        prefix: 'adls_flatfile/logistics_tracking/',
+        pattern: 'tracking_events_([a-z_]+)\\.csv',
+        strategy: 'latest',
+      });
+    });
+
+    it('builds a "specific" batch target carrying the batch key', () => {
+      expect(
+        assembleTarget('flatfile', {
+          target_mode: 'batch',
+          target_pattern: 'tracking_events_([a-z_]+)\\.csv',
+          target_strategy: 'specific',
+          target_batch: 'ready',
+        }).target,
+      ).toEqual({
+        pattern: 'tracking_events_([a-z_]+)\\.csv',
+        strategy: 'specific',
+        batch: 'ready',
+      });
+    });
+
+    it('flags a batch section started without the required pattern', () => {
+      const { target, error } = assembleTarget('flatfile', {
+        target_mode: 'batch',
+        target_prefix: 'adls_flatfile/logistics_tracking/',
+      });
+      expect(target).toBeNull();
+      expect(error?.field).toBe('target_pattern');
+    });
+
+    it('flags a "specific" strategy with no batch key', () => {
+      const { target, error } = assembleTarget('flatfile', {
+        target_mode: 'batch',
+        target_pattern: 'tracking_events_([a-z_]+)\\.csv',
+        target_strategy: 'specific',
+      });
+      expect(target).toBeNull();
+      expect(error?.field).toBe('target_batch');
+    });
+
+    it('flags a "specific" strategy whose pattern has no capture group', () => {
+      const { target, error } = assembleTarget('flatfile', {
+        target_mode: 'batch',
+        target_pattern: 'tracking_events_ready.csv',
+        target_strategy: 'specific',
+        target_batch: 'ready',
+      });
+      expect(target).toBeNull();
+      expect(error?.field).toBe('target_pattern');
+    });
+
+    it('does not require a capture group for the default "latest" strategy', () => {
+      // latest picks the greatest key lexically over the whole match — no
+      // capture group needed, unlike 'specific' which must extract one.
+      expect(
+        assembleTarget('flatfile', {
+          target_mode: 'batch',
+          target_pattern: 'tracking_events_ready.csv',
+        }).target,
+      ).toEqual({ pattern: 'tracking_events_ready.csv', strategy: 'latest' });
+    });
+
+    it('flags a section started by picking "specific" alone, rather than silently discarding it', () => {
+      // Picking 'specific' with everything else blank is a deliberate action —
+      // it must not silently fall through to the all-blank targetless case the
+      // way an untouched 'latest' default does.
+      const { target, error } = assembleTarget('flatfile', {
+        target_mode: 'batch',
+        target_strategy: 'specific',
+      });
+      expect(target).toBeNull();
+      expect(error?.field).toBe('target_pattern');
+    });
+  });
+});
+
+describe('hasCaptureGroup', () => {
+  it('detects a plain capturing group', () => {
+    expect(hasCaptureGroup('tracking_events_([a-z_]+)\\.csv')).toBe(true);
+  });
+
+  it('detects Python and JS named capturing groups', () => {
+    expect(hasCaptureGroup('tracking_events_(?P<key>[a-z_]+)\\.csv')).toBe(true);
+    expect(hasCaptureGroup('tracking_events_(?<key>[a-z_]+)\\.csv')).toBe(true);
+  });
+
+  it('rejects a pattern with no parentheses at all', () => {
+    expect(hasCaptureGroup('tracking_events_ready.csv')).toBe(false);
+  });
+
+  it('does not count a non-capturing group or a lookaround as a capture group', () => {
+    expect(hasCaptureGroup('tracking_events_(?:[a-z_]+)\\.csv')).toBe(false);
+    expect(hasCaptureGroup('tracking_events_(?=ready)\\.csv')).toBe(false);
+    expect(hasCaptureGroup('tracking_events_(?!ready)\\.csv')).toBe(false);
+    expect(hasCaptureGroup('tracking_events_(?<=ready)\\.csv')).toBe(false);
+    expect(hasCaptureGroup('tracking_events_(?<!ready)\\.csv')).toBe(false);
+  });
+
+  it('does not count an escaped literal paren as a capture group', () => {
+    expect(hasCaptureGroup('tracking_events_\\(ready\\).csv')).toBe(false);
+  });
+});
+
+describe('summarizeTarget (#1180)', () => {
+  it('summarizes a batch target by prefix + pattern + strategy, not a resolved file', () => {
+    expect(
+      summarizeTarget({
+        prefix: 'adls_flatfile/logistics_tracking/',
+        pattern: 'tracking_events_([a-z_]+)\\.csv',
+        strategy: 'latest',
+      }),
+    ).toBe('adls_flatfile/logistics_tracking/tracking_events_([a-z_]+)\\.csv (latest)');
+  });
+
+  it('summarizes a batch target with no prefix', () => {
+    expect(
+      summarizeTarget({ pattern: 'tracking_events_([a-z_]+)\\.csv', strategy: 'specific' }),
+    ).toBe('tracking_events_([a-z_]+)\\.csv (specific)');
+  });
+
+  it('still prefers a literal path over a pattern (mutually exclusive, but path wins if both present)', () => {
+    expect(summarizeTarget({ path: 'c/data.csv', pattern: 'ignored_(x)' })).toBe('c/data.csv');
+  });
 });
 
 describe('asFileFormat', () => {
@@ -113,5 +267,23 @@ describe('asFileFormat', () => {
     expect(asFileFormat('CSV')).toBeUndefined();
     expect(asFileFormat('')).toBeUndefined();
     expect(asFileFormat(undefined)).toBeUndefined();
+  });
+});
+
+describe('asBatchStrategy (#1180)', () => {
+  it('passes the two supported strategies through unchanged', () => {
+    expect(asBatchStrategy('latest')).toBe('latest');
+    expect(asBatchStrategy('specific')).toBe('specific');
+  });
+
+  it('narrows anything unsupported or absent to undefined, mirroring asFileFormat', () => {
+    // Same reasoning as asFileFormat: strategy is read out of an untyped
+    // JSONB bag, so a stray/malformed stored value (hand-edited row, an old
+    // schema) must not prefill the Strategy Select with a non-existent
+    // option — SuiteForm falls back to 'latest' when this returns undefined.
+    expect(asBatchStrategy('weekly')).toBeUndefined();
+    expect(asBatchStrategy('LATEST')).toBeUndefined();
+    expect(asBatchStrategy('')).toBeUndefined();
+    expect(asBatchStrategy(undefined)).toBeUndefined();
   });
 });

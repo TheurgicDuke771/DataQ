@@ -1,6 +1,6 @@
 # ADR 0019 — Custom-SQL checks ride `kind='expectation'` via GX `UnexpectedRowsExpectation`
 
-- **Status:** Accepted
+- **Status:** Accepted — **amended 2026-08-08** (see the amendment section below: the Unity Catalog half of the gating decision had never worked and needed a runner branch, [#1179](https://github.com/TheurgicDuke771/DataQ/issues/1179))
 - **Date:** 2026-06-14
 - **Deciders:** @TheurgicDuke771
 - **Related:** ADR [0003](0003-gx-only-for-v1.md) (GX-only v1), [0012](0012-monitor-kind-seam.md) (the `check.kind` seam — and why custom-SQL is *not* a new kind), [0016](0016-severity-derivation-semantics.md) (binary fallback when there's no bandable metric), [0010](0010-provider-agnostic-infrastructure-seams.md) (least-privilege connection roles)
@@ -41,6 +41,24 @@ What v1 **does** add — guardrails, because this is the first path that execute
 - `expectation_type` stays free-form (no server allowlist), so the SQL guardrail — not a type allowlist — is the control for this path. A general `expectation_type` allowlist is noted as optional later hardening (it would also catch typo'd expectation types).
 - App-layer read-only parsing can be fooled by exotic SQL; we accept that and lean on the least-privilege role. We do **not** claim the parser is a security boundary.
 - `{batch}` is a GX-owned placeholder; the editor/docs must teach it, and a query that forgets it (a bare table name) runs against whatever the author typed, not the suite's run target — a correctness footgun the dry-run preview helps surface.
+
+## Amendment — 2026-08-08 ([#1179](https://github.com/TheurgicDuke771/DataQ/issues/1179)): the Unity Catalog half needed a runner branch after all
+
+Status: **Accepted.** The decision above stands for Snowflake exactly as written. Two of its claims were wrong for Unity Catalog, and stayed wrong from this ADR's date until #1179 — every UC custom-SQL check errored, in a run *and* in a dry-run, for the whole of that period. Nobody noticed because no test paired the two: the round-trip test (`test_custom_sql_gx.py`) stands Postgres in "for the warehouse (which has no live connect in CI)", and every UC runner test used ordinary expectations, which work fine on a DataFrame.
+
+**What was wrong.**
+
+1. §Decision says *"no `gx_runner` change"* and §Consequences says *"no runner branch"*. True of `gx_runner` — it is still untouched — but **not** of the runners. It holds for Snowflake because `SnowflakeCheckRunner` already builds a **SQL** batch (`add_snowflake` → `add_table_asset`). `UnityCatalogCheckRunner` builds a **pandas DataFrame** batch (the DQX swap-in shape, CLAUDE.md §5), and `UnexpectedRowsExpectation` depends on `unexpected_rows_query.table` / `.row_count`, both declared `@metric_value(engine=SqlAlchemyExecutionEngine)` with **no pandas provider**. So GX raised `No provider found for unexpected_rows_query.table using PandasExecutionEngine` before any query ran.
+
+2. §Decision 2 (*datasource gating*) reasons that custom SQL is offered on "SQL-queryable datasources — Snowflake and Unity Catalog", because "flat-file stores are GX DataFrame assets, not SQL". The premise was applied to the **connection** when the thing that decides is the **batch the runner builds**. By that test UC was, at the time, in the same position as ADLS/S3.
+
+**What changed.** `UnityCatalogCheckRunner.run_checks` now partitions: custom-SQL checks run against a GX **Databricks-SQL** batch over the same table; every other expectation keeps the DataFrame batch; outcomes merge back in submission order. Deliberately GX's own SQL datasource rather than a hand-rolled COUNT/LIMIT, so the semantics are identical to the Snowflake path *by construction* — and so no new SQL-string interpolation is introduced, leaving the guardrails in §Decision 1–3 inherited unchanged rather than re-implemented.
+
+**What did not change.** The persisted shape (`kind='expectation'`, `expectation_type='unexpected_rows_expectation'`, `config={"unexpected_rows_query": …}`), the guardrail module and every authoring path that calls it, `gx_runner`, and §Decision 4's binary pass/fail (the row count is still not a bandable metric; count-based severity remains the deferred enhancement, now tracked as [#1202](https://github.com/TheurgicDuke771/DataQ/issues/1202)).
+
+**One new constraint, UC only.** GX's `DatabricksDsn` requires `catalog` *and* `schema` on the connection URL, and an unqualified name would resolve against the session default — a wrong table read rather than an error. So a UC suite target with **no schema** makes its custom-SQL checks error (its other checks are unaffected). Snowflake is unchanged: its schema comes from the connection config.
+
+**The lesson, which is the reason this amendment exists rather than a silent fix:** the original validation section below records a de-risk run "against the dev Postgres" and calls it confirmation of the decision. It confirmed the decision for *a* SQL backend. The gating list it justified named two datasources, and only one of them had ever been executed. That is the #953 shape — a capability declared from reasoning about a connection rather than from running the code path. See `docs/feature-matrix.md` footnote ᶜ for the live numbers that now back the UC tick.
 
 ## Validation
 

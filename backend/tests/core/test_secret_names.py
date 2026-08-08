@@ -232,3 +232,111 @@ def test_is_readable_ref_identifies_the_legacy_shape(ref: str, readable: bool) -
     """Drives the migration's idempotency — a second run must skip what it already
     renamed, or it would churn the vault on every invocation."""
     assert is_readable_ref(ref) is readable
+
+
+# ───────────────────────── `kind` — a second credential on one row (#1181) ──────
+
+
+def test_kind_produces_a_distinct_ref_from_the_primary() -> None:
+    """An Iceberg SQL catalog needs a SECOND credential (the catalog DB password,
+    #754/#826/#1181) alongside the storage secret — both belong to the same
+    connection row, so they must not collide on the same vault key."""
+    cid = uuid.uuid4()
+    primary = connection_secret_ref(
+        connection_id=cid, env="dev", name="harness", conn_type="iceberg"
+    )
+    catalog = connection_secret_ref(
+        connection_id=cid, env="dev", name="harness", conn_type="iceberg", kind="catalog"
+    )
+    assert primary != catalog
+    assert "catalog" in catalog
+    assert KEY_VAULT_NAME.match(catalog)
+
+
+def test_kind_is_stable_and_readable() -> None:
+    cid = uuid.UUID("05c77ce3-846e-4e76-a5f7-7e12e9510c99")
+    ref = connection_secret_ref(
+        connection_id=cid, env="dev", name="harness-iceberg", conn_type="iceberg", kind="catalog"
+    )
+    assert ref == "conn-iceberg-harness-catalog-dev-05c77ce3"
+    # Recomputing from the same inputs (the "reuse the stored ref" contract) must
+    # yield byte-identical output — a second call is how `_write_extra_secret`
+    # mints the ref the FIRST time; the ref itself is then stored and reused
+    # verbatim thereafter, exactly like the primary credential.
+    assert (
+        connection_secret_ref(
+            connection_id=cid,
+            env="dev",
+            name="harness-iceberg",
+            conn_type="iceberg",
+            kind="catalog",
+        )
+        == ref
+    )
+
+
+def test_kind_blank_reproduces_the_primary_shape_unchanged() -> None:
+    """The default (`kind=""`) must be a no-op — every existing caller and every
+    already-minted primary ref must keep resolving to the same key."""
+    cid = uuid.UUID("05c77ce3-846e-4e76-a5f7-7e12e9510c99")
+    with_default = connection_secret_ref(
+        connection_id=cid, env="dev", name="harness-iceberg", conn_type="iceberg"
+    )
+    with_blank_kind = connection_secret_ref(
+        connection_id=cid, env="dev", name="harness-iceberg", conn_type="iceberg", kind=""
+    )
+    assert with_default == with_blank_kind == "conn-iceberg-harness-dev-05c77ce3"
+
+
+def test_kind_is_slugged_and_writable() -> None:
+    """`kind` is a hardcoded literal today, but the signature accepts any `str` —
+    it must not become an unwritable-name footgun if that ever changes."""
+    ref = connection_secret_ref(
+        connection_id=uuid.uuid4(),
+        env="dev",
+        name="warehouse",
+        conn_type="iceberg",
+        kind="Catalog DB!",
+    )
+    assert KEY_VAULT_NAME.match(ref), ref
+
+
+def test_kind_survives_truncation_on_a_long_name_no_collision_with_the_primary() -> None:
+    """A long-but-legal `name` (well under the API's 128-char cap) must not
+    truncate `kind` away — the naive version spent the WHOLE `_MAX_SLUG` budget
+    on one joined string, so a long enough qualifier pushed `kind` (and even
+    `env`) past the cutoff entirely, and the primary/catalog refs for the SAME
+    connection came out byte-identical — `_write_extra_secret` would then
+    silently overwrite the primary credential with the catalog one in the vault
+    (empirically reproduced pre-fix with the exact name below)."""
+    cid = uuid.UUID("05c77ce3-846e-4e76-a5f7-7e12e9510c99")
+    name = (
+        "Connection with a genuinely quite long descriptive display name "
+        "that a real operator might type"
+    )
+    primary = connection_secret_ref(connection_id=cid, env="dev", name=name, conn_type="iceberg")
+    catalog = connection_secret_ref(
+        connection_id=cid, env="dev", name=name, conn_type="iceberg", kind="catalog"
+    )
+    assert primary != catalog
+    assert catalog.endswith("-catalog-dev-05c77ce3")
+    assert primary.endswith("-dev-05c77ce3")
+    assert KEY_VAULT_NAME.match(primary) and KEY_VAULT_NAME.match(catalog)
+
+
+def test_kind_and_env_survive_truncation_even_at_the_max_input_bound() -> None:
+    """The absolute worst case: a `name` at the (pre-API-cap) `_MAX_INPUT`
+    bound. `kind` and `env` must still land intact and the two refs must still
+    differ, and the whole ref must stay within Key Vault's 127-char limit."""
+    cid = uuid.uuid4()
+    name = "connection " * 30  # far longer than any single API-reachable name
+    primary = connection_secret_ref(connection_id=cid, env="prod", name=name, conn_type="iceberg")
+    catalog = connection_secret_ref(
+        connection_id=cid, env="prod", name=name, conn_type="iceberg", kind="catalog"
+    )
+    assert primary != catalog
+    assert primary.endswith("-prod-" + str(cid).replace("-", "")[:8])
+    assert catalog.endswith("-catalog-prod-" + str(cid).replace("-", "")[:8])
+    for ref in (primary, catalog):
+        assert KEY_VAULT_NAME.match(ref)
+        assert len(ref) <= KEY_VAULT_MAX

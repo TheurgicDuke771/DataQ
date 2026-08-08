@@ -38,6 +38,7 @@ const BINDING: TriggerBinding = {
   env: 'prod',
   suite_id: 's1',
   enabled: true,
+  warnings: [],
 };
 
 function renderPanel(props: Partial<Parameters<typeof TriggersPanel>[0]> = {}) {
@@ -120,6 +121,74 @@ describe('TriggersPanel', () => {
     await user.click(screen.getByRole('switch', { name: 'Enable nightly-load' }));
 
     await waitFor(() => expect(mockToggle).toHaveBeenCalledWith('b1', false));
+  });
+
+  // ── #1186: ambiguous-orchestration-URL advisory warning ──────────────────
+
+  it('surfaces a #1186 ambiguous-URL warning after creating a binding', async () => {
+    mockList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({
+      ...BINDING,
+      warnings: [
+        {
+          code: 'ambiguous_orchestration_url',
+          message: 'This adf connection shares its resource with the qa connection.',
+          other_envs: ['qa'],
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText(/No triggers/);
+
+    await selectOption(user, 'Azure Data Factory', { index: 0, by: 'text' });
+    await user.type(screen.getByPlaceholderText('Pipeline / DAG id'), 'nightly-load');
+    await selectOption(user, 'PROD', { index: 1, by: 'text' });
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(
+      await screen.findByText('This adf connection shares its resource with the qa connection.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows no warning toast when create returns none', async () => {
+    mockList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue(BINDING); // warnings: []
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText(/No triggers/);
+
+    await selectOption(user, 'Azure Data Factory', { index: 0, by: 'text' });
+    await user.type(screen.getByPlaceholderText('Pipeline / DAG id'), 'nightly-load');
+    await selectOption(user, 'PROD', { index: 1, by: 'text' });
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    expect(screen.queryByText(/ambiguous/i)).not.toBeInTheDocument();
+  });
+
+  it('surfaces a #1186 warning after re-enabling a binding', async () => {
+    mockList.mockResolvedValue([{ ...BINDING, enabled: false }]);
+    mockToggle.mockResolvedValue({
+      ...BINDING,
+      enabled: true,
+      warnings: [
+        {
+          code: 'ambiguous_orchestration_url',
+          message: 'Re-enabling this binding is now ambiguous across envs.',
+          other_envs: ['dev'],
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText('nightly-load');
+
+    await user.click(screen.getByRole('switch', { name: 'Enable nightly-load' }));
+
+    expect(
+      await screen.findByText('Re-enabling this binding is now ambiguous across envs.'),
+    ).toBeInTheDocument();
   });
 
   it('removes a binding', async () => {

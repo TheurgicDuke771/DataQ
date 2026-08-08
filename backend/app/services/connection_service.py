@@ -100,6 +100,79 @@ def _extra_secrets(config: Mapping[str, Any], secret_store: SecretStore) -> dict
     return out
 
 
+def _validate_extra_secret_supported(conn_type: str, config: Mapping[str, Any], field: str) -> None:
+    """Reject a `<field>_secret` a connection TYPE's config model can't receive.
+
+    `_extra_secrets` resolves any `*_secret_name` field generically, by
+    convention — but only `IcebergConfig` currently declares
+    `catalog_secret_name` (#754/#826/#1181). Every config model is
+    `extra="forbid"`, so handing e.g. a Snowflake connection a `catalog_secret`
+    would otherwise write a live credential into the store and only THEN find
+    out, on the next config read, that nothing can ever reference it back out
+    — the write already happened. Probing the adapter's own schema (rather than
+    branching on `conn_type == "iceberg"`) keeps this generic, like
+    `_extra_secrets` itself: any future type that adds a second credential slot
+    is covered automatically, no new `if` here.
+    """
+    adapter = get_connection_adapter(conn_type)
+    try:
+        adapter.validate_config({**config, f"{field}_secret_name": "probe"})
+    except ValidationError as exc:
+        raise ConnectionConfigInvalidError(
+            f"{conn_type!r} connections do not accept a {field!r} credential",
+            detail={"errors": exc.errors()},
+        ) from exc
+
+
+def _write_extra_secret(
+    conn: Connection, value: str, secret_store: SecretStore, *, field: str
+) -> None:
+    """Write a connection's SECOND credential through the store and point
+    `config.<field>_secret_name` at it — the create/update-time counterpart to
+    `_extra_secrets` resolving it back out.
+
+    Mirrors the primary `secret_ref` idiom exactly: an already-stored ref is
+    reused verbatim (recomputing after a rename would point at a key that no
+    longer matches anything live), and a new one is minted with `kind=field`
+    only the first time. The ref lives IN `config` — there is no second column
+    for it — but the credential itself never does; only the SecretStore holds
+    that.
+    """
+    name_key = f"{field}_secret_name"
+    ref = (conn.config or {}).get(name_key) or connection_secret_ref(
+        connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type, kind=field
+    )
+    secret_store.set(ref, value)
+    conn.config = {**conn.config, name_key: ref}
+
+
+def _carry_over_secret_name_keys(
+    old_config: Mapping[str, Any], new_config: dict[str, Any]
+) -> dict[str, Any]:
+    """Preserve every `*_secret_name` key `old_config` has that `new_config` omits.
+
+    `update_connection`'s `config` parameter is a wholesale REPLACE, not a merge —
+    exactly like the primary credential's own `secret_ref` column is untouched by
+    it. A second credential's ref (#1181) has no column of its own, though; it
+    lives inside `config`, so a config-only PATCH that doesn't re-send it (e.g.
+    changing just `warehouse`) would otherwise silently drop it — the connection
+    would then read as having no catalog credential, while the credential itself
+    sits live and unreferenced in the store (the #954 shape, self-inflicted: a
+    real secret nobody can find because nothing points at it anymore).
+
+    These keys are server-owned bookkeeping — minted by `_write_extra_secret`,
+    never authored by a caller — so a caller is never expected to round-trip them,
+    and there is no legitimate "I want to unset this" case: rotation goes through
+    `catalog_secret`, not by omitting the key from `config`.
+    """
+    carried = {
+        key: value
+        for key, value in old_config.items()
+        if key.endswith("_secret_name") and key not in new_config
+    }
+    return {**new_config, **carried} if carried else new_config
+
+
 def _validated_config(conn_type: str, config: dict[str, Any]) -> None:
     """Reject an unknown type or a config that fails its adapter's schema."""
     try:
@@ -302,17 +375,27 @@ def create_connection(
     secret: str | None,
     created_by: uuid.UUID,
     secret_store: SecretStore,
+    catalog_secret: str | None = None,
 ) -> Connection:
-    """Validate, persist, and (if a secret is given) write its credential.
+    """Validate, persist, and (if given) write the credential(s).
 
     The secret_ref is a READABLE, STORED name (``conn-<type>-<qualifier>-<env>-<id>``,
     ADR 0039) — minted once here and never recomputed, since a later rename would
     otherwise repoint at a key that does not exist. Unique
     and safe as a Key Vault secret name. The credential is written through the
     store; only the ref is persisted on the row.
+
+    ``catalog_secret`` is the SECOND credential a type may need (currently only
+    the Iceberg SQL-catalog DB password, #754/#826/#1181) — written the same
+    way, through `_write_extra_secret`, with `config.catalog_secret_name`
+    pointing at it rather than a dedicated column (`_extra_secrets` resolves it
+    back out generically). Rejected up front, before any row or secret write,
+    for a type whose config model has nowhere to put it.
     """
     _validated_config(conn_type, config)
     _validate_env(env)
+    if catalog_secret is not None:
+        _validate_extra_secret_supported(conn_type, config, "catalog")
 
     conn = Connection(
         name=name,
@@ -334,6 +417,8 @@ def create_connection(
             # Read the credential's own expiry while it is in hand (#838) — the
             # sweep would otherwise leave a brand-new connection unknown for a day.
             _refresh_credential_expiry(conn, secret)
+        if catalog_secret is not None:
+            _write_extra_secret(conn, catalog_secret, secret_store, field="catalog")
         # v1 snapshot — atomic with the insert (same commit).
         record_connection_version(session, conn, actor_id=created_by)
         session.commit()
@@ -539,12 +624,16 @@ def update_connection(
     secret: str | None = None,
     secret_store: SecretStore,
     actor_id: uuid.UUID | None = None,
+    catalog_secret: str | None = None,
 ) -> Connection:
-    """Partial update of name / config / secret. Type and env are immutable.
+    """Partial update of name / config / secret(s). Type and env are immutable.
 
     Records a new `ConnectionVersion` only when a snapshotted field (name/config)
     changed — a secret-only update (credential rotation) is not config history and
-    records no version (mirrors `reauth_connection`).
+    records no version (mirrors `reauth_connection`). ``catalog_secret`` rotates the
+    connection's SECOND credential (currently only the Iceberg SQL-catalog DB
+    password, #754/#826/#1181) the same way — this is that type's rotation path,
+    since there is no dedicated catalog-secret reauth-with-verify endpoint.
     """
     conn = get_connection(session, connection_id)
     # Capture before commit: a unique violation rolls back and expires the
@@ -553,15 +642,45 @@ def update_connection(
 
     if config is not None:
         _validated_config(conn.type, config)
-        conn.config = config
+        conn.config = _carry_over_secret_name_keys(conn.config or {}, config)
+    if catalog_secret is not None:
+        # After the `config is not None` branch above, so an invalid CONFIG
+        # 422s with the accurate reason rather than the catalog-support probe
+        # tripping first over a field that was never the actual problem.
+        _validate_extra_secret_supported(conn.type, conn.config, "catalog")
     if name is not None:
         conn.name = name
     # Snapshot only a *real* name/config change. `is_modified` reports net changes,
     # so a no-op PATCH (fields re-sent at their current values) doesn't mint a
     # duplicate version (mirrors `check_service.update_check`). Captured **before**
-    # the secret write so a credential rotation — which dirties `secret_ref` — is
-    # not counted as config history (a secret-only update records no version).
+    # the secret write(s) so a credential rotation — which dirties `secret_ref` /
+    # `config.catalog_secret_name` — is not counted as config history (a
+    # secret-only update records no version).
     versioned_change = session.is_modified(conn)
+    # Catalog secret FIRST, primary secret LAST — deliberately, not incidentally.
+    # Neither store write is part of the DB transaction (a `SecretStore.set` is
+    # live the instant it returns; `session.rollback()` below can undo the ORM
+    # state but never that), so on a two-secret PATCH the write ORDER decides
+    # which failure mode is possible. The catalog secret's ref is fresh far more
+    # often than not (most connections set it once, at creation) — a failure here
+    # leaves at worst a stranded ref the orphan sweep already covers (#372/#1059),
+    # and the PRIMARY credential — the one everything else depends on — is never
+    # touched. Doing it the other way round would let a primary rotation succeed
+    # in the vault, then a catalog-write failure roll back only the DB's belief
+    # about it while the live credential has already changed underneath — the
+    # rollback can't put the old value back, so the connection would be silently
+    # running on an unverified new primary secret the caller was told 502'd.
+    if catalog_secret is not None:
+        try:
+            _write_extra_secret(conn, catalog_secret, secret_store, field="catalog")
+        except SecretWriteError as exc:
+            session.rollback()
+            log.warning("connection_catalog_secret_write_failed", connection_id=str(connection_id))
+            raise ConnectionSecretWriteError(
+                "failed to store connection credential",
+                detail={"connection_id": str(connection_id)},
+            ) from exc
+
     if secret is not None:
         # `or` — not a recompute. An existing ref is authoritative: the row may have
         # been renamed since, and rebuilding the name from the CURRENT name would
@@ -804,6 +923,15 @@ def delete_connection(
             detail=checks_detail,
         )
     secret_ref = conn.secret_ref
+    # Every SECOND credential's ref too (#1181) — `*_secret_name` by convention,
+    # same as `_extra_secrets`/`_write_extra_secret` — captured before the row
+    # goes away. Deleting the row alone would otherwise leave a real, live
+    # credential permanently orphaned in the store (the #372/#1059 convention
+    # this mirrors: an entity delete removes what it owns; the orphan sweep
+    # only REPORTS by default, so nothing else would ever clean this up).
+    extra_secret_refs = [
+        v for k, v in (conn.config or {}).items() if k.endswith("_secret_name") and v
+    ]
     session.delete(conn)
     try:
         session.commit()
@@ -835,11 +963,13 @@ def delete_connection(
             )
             or {"connection_id": str(connection_id)},
         ) from exc
-    # Best-effort remove the orphaned credential from the store (#372) — after the
-    # row is gone, and fail-soft (delete never raises), so a store hiccup can't 500
-    # a successful delete.
+    # Best-effort remove the orphaned credential(s) from the store (#372, #1181) —
+    # after the row is gone, and fail-soft (delete never raises), so a store
+    # hiccup can't 500 a successful delete.
     if secret_ref:
         secret_store.delete(secret_ref)
+    for ref in extra_secret_refs:
+        secret_store.delete(ref)
     log.info("connection_deleted", connection_id=str(connection_id))
 
 
@@ -901,6 +1031,7 @@ def test_draft_connection(
     config: dict[str, Any],
     secret: str | None,
     secret_store: SecretStore,
+    catalog_secret: str | None = None,
 ) -> None:
     """Probe connectivity for an UNSAVED draft (#351) — no `connections` row, no
     `SecretStore` write, ever.
@@ -917,10 +1048,14 @@ def test_draft_connection(
     constraint, not a connectivity fact), so a caller that hasn't picked one yet
     still gets a full connectivity check.
 
-    `_extra_secrets` still resolves `config`'s `_secret_name` fields — those
-    name EXISTING secrets already in the store (e.g. an Iceberg catalog
-    password), not something this call writes; `secret_store.set` is never
-    called anywhere on this path.
+    `_extra_secrets` still resolves `config`'s `_secret_name` fields — those name
+    EXISTING secrets already in the store, not something this call writes.
+    ``catalog_secret``, in contrast, is the RAW value straight off the draft
+    request (#1181): a draft has no row and nothing stored yet to name, so it
+    cannot flow through `_secret_name` resolution the way a saved connection's
+    catalog credential does post-#1181 — it is handed to the adapter directly,
+    under the same `catalog_secret` kwarg `_extra_secrets` would have produced.
+    `secret_store.set` is never called anywhere on this path, for either secret.
 
     Raises `ConnectionConfigInvalidError` (422) for an unknown type or invalid
     config, and `ConnectionTestFailedError` (502) for a missing credential —
@@ -933,6 +1068,11 @@ def test_draft_connection(
     _validated_config(conn_type, config)
     if env is not None:
         _validate_env(env)
+    if catalog_secret is not None:
+        # Same guard `create_connection`/`update_connection` run — a draft for a
+        # type whose config model has no `catalog_secret_name` field must 422
+        # the same way a real create would, not silently swallow the value.
+        _validate_extra_secret_supported(conn_type, config, "catalog")
     adapter = get_connection_adapter(conn_type)
     secret_optional = getattr(adapter, "secret_optional", False)
 
@@ -945,8 +1085,12 @@ def test_draft_connection(
     # "no credential", and the adapter (Iceberg/dbt) only branches on `is None`.
     secret = secret or None
 
+    extra_secrets = _extra_secrets(config, secret_store)
+    if catalog_secret:
+        extra_secrets["catalog_secret"] = catalog_secret
+
     try:
-        adapter.test(dict(config), secret, **_extra_secrets(config, secret_store))
+        adapter.test(dict(config), secret, **extra_secrets)
     except Exception as exc:
         log.warning(
             "connection_draft_test_failed",
