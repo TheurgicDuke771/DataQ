@@ -1,8 +1,16 @@
+import { LoadingOutlined } from '@ant-design/icons';
 import { App, Button, Divider, Flex, Form, Input, Radio, Select, Typography } from 'antd';
-import { useEffect } from 'react';
+import axios from 'axios';
+import { useEffect, useRef, useState } from 'react';
 
 import { CONNECTION_KIND, type Connection, connectionOptionLabel } from '../../api/connections';
-import { createSuite, type Suite, targetString, updateSuite } from '../../api/suites';
+import {
+  createSuite,
+  previewBatchTarget,
+  type Suite,
+  targetString,
+  updateSuite,
+} from '../../api/suites';
 import {
   asBatchStrategy,
   asFileFormat,
@@ -12,6 +20,7 @@ import {
   targetKind,
 } from './suiteTarget';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { errorMessage } from '../../utils/errors';
 
 interface SuiteFormValues extends TargetFormValues {
   name: string;
@@ -145,7 +154,7 @@ export function SuiteForm({
           }))}
         />
       </Form.Item>
-      {kind && <TargetFields kind={kind} />}
+      {kind && <TargetFields kind={kind} suiteId={isEdit ? suite.id : undefined} />}
       <Flex justify="end" gap={8}>
         <Button onClick={onCancel}>Cancel</Button>
         <Button type="primary" htmlType="submit" loading={submitting}>
@@ -164,12 +173,14 @@ export function SuiteForm({
  * Flat-file connections additionally offer a Single file / Batch pattern mode
  * toggle (#1180): Batch mode exposes the prefix/pattern/strategy inputs the
  * backend `resolve_batch`/`BatchSpec` already supports, previously reachable
- * only by hand-editing the stored target. There's no cheap batch-resolution
- * preview endpoint today (see #1180's follow-up comment) — `assembleTarget`'s
- * client-side checks are a light authoring aid, and the backend's own 422 on
- * save is the authoritative validator.
+ * only by hand-editing the stored target. `assembleTarget`'s client-side checks
+ * are a light authoring aid and the backend's own 422 on save is still the
+ * authoritative validator, but editing an existing suite additionally gets a
+ * live "resolves to: `<path>`" hint (#1193, `BatchPreviewHint` below) against
+ * the connection's real object listing — create mode has no suite id yet to
+ * preview against, so it stays summary-only there.
  */
-export function TargetFields({ kind }: { kind: TargetKind }) {
+export function TargetFields({ kind, suiteId }: { kind: TargetKind; suiteId?: string }) {
   const form = Form.useFormInstance();
   const mode = (Form.useWatch('target_mode', form) as 'single' | 'batch' | undefined) ?? 'single';
   const strategy =
@@ -231,6 +242,7 @@ export function TargetFields({ kind }: { kind: TargetKind }) {
                   <Input placeholder="ready" />
                 </Form.Item>
               )}
+              <BatchPreviewHint suiteId={suiteId} />
             </>
           ) : (
             <>
@@ -278,5 +290,126 @@ export function TargetFields({ kind }: { kind: TargetKind }) {
         </>
       )}
     </>
+  );
+}
+
+/** The `error.code` values `preview_batch_target` (backend `suites.py`) can 422
+ *  with — only `batch_preview_no_data` gets its own canned copy below; every
+ *  other 422 (a malformed pattern, `specific` with no capture group, a
+ *  non-flat-file connection) already carries a helpful backend message. */
+const BATCH_PREVIEW_NO_DATA_CODE = 'batch_preview_no_data';
+
+type BatchPreviewState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'resolved'; path: string }
+  | { status: 'no-match' }
+  | { status: 'error'; message: string };
+
+/**
+ * Live "resolves to: `<path>`" hint next to the batch fields (#1193): debounces
+ * `GET /suites/{id}/batch-preview` as prefix/pattern/strategy/batch change, so an
+ * author gets the same before-you-save confidence a literal file path already
+ * has, instead of finding out at the next scheduled run whether the pattern
+ * actually matches anything. Mirrors `SharePanel`'s directory-search debounce
+ * (a monotonic token so a slow earlier request can never overwrite a newer
+ * one's result).
+ *
+ * Renders nothing without a `suiteId` (create mode — no suite to preview
+ * against yet), without a pattern, or while `specific` is picked with no batch
+ * key — those are exactly the states `assembleTarget` would also refuse to
+ * resolve client-side, so there is nothing worth calling the backend for yet.
+ *
+ * All `setState` calls happen inside the debounce timer's callback or the
+ * fetch's `.then`/`.catch` — never synchronously in the effect body — so this
+ * never trips `react-hooks/set-state-in-effect`, and render only ever reads
+ * `state` (never a ref), so it never trips `react-hooks/refs`. The one
+ * consequence: while a new debounce is ticking, the hint keeps showing the
+ * previous fields' outcome (if any) until the timer fires — the same "stale
+ * results until the next answer" behaviour any debounced search box has.
+ */
+function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
+  const form = Form.useFormInstance();
+  const prefix = (Form.useWatch('target_prefix', form) as string | undefined)?.trim();
+  const pattern = (Form.useWatch('target_pattern', form) as string | undefined)?.trim();
+  const strategy =
+    (Form.useWatch('target_strategy', form) as 'latest' | 'specific' | undefined) ?? 'latest';
+  const batch = (Form.useWatch('target_batch', form) as string | undefined)?.trim();
+  const active = Boolean(suiteId && pattern && !(strategy === 'specific' && !batch));
+
+  const [state, setState] = useState<BatchPreviewState>({ status: 'idle' });
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Monotonic token so a slow earlier request can't overwrite a newer one's
+  // result (mirrors SharePanel's directory-search debounce); only ever read
+  // inside a callback (never during render), so it's exempt from the
+  // refs-during-render rule.
+  const token = useRef(0);
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      token.current = -1;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    clearTimeout(timer.current);
+    if (!active) return;
+    const current = (token.current += 1);
+    timer.current = setTimeout(() => {
+      if (current !== token.current) return; // superseded before the debounce even fired
+      setState({ status: 'loading' });
+      previewBatchTarget(suiteId as string, {
+        pattern: pattern as string,
+        strategy,
+        ...(strategy === 'specific' ? { batch: batch as string } : {}),
+        ...(prefix ? { prefix } : {}),
+      })
+        .then((path) => {
+          if (current !== token.current) return;
+          setState({ status: 'resolved', path });
+        })
+        .catch((err: unknown) => {
+          if (current !== token.current) return;
+          const code = axios.isAxiosError(err)
+            ? (err.response?.data as { error?: { code?: string } } | undefined)?.error?.code
+            : undefined;
+          setState(
+            code === BATCH_PREVIEW_NO_DATA_CODE
+              ? { status: 'no-match' }
+              : { status: 'error', message: errorMessage(err) },
+          );
+        });
+    }, 400);
+  }, [active, suiteId, prefix, pattern, strategy, batch]);
+
+  if (!active || state.status === 'idle') return null;
+
+  if (state.status === 'loading') {
+    return (
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        <LoadingOutlined style={{ marginRight: 4 }} />
+        Checking the live listing…
+      </Typography.Text>
+    );
+  }
+  if (state.status === 'resolved') {
+    return (
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        Resolves to: <Typography.Text code>{state.path}</Typography.Text>
+      </Typography.Text>
+    );
+  }
+  if (state.status === 'no-match') {
+    return (
+      <Typography.Text type="warning" style={{ fontSize: 12 }}>
+        No file currently matches this pattern.
+      </Typography.Text>
+    );
+  }
+  return (
+    <Typography.Text type="danger" style={{ fontSize: 12 }}>
+      {state.message}
+    </Typography.Text>
   );
 }
