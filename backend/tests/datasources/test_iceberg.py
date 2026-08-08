@@ -10,7 +10,7 @@ catalog/scan I/O is faked. The adapter is DB-free, so these are pure unit tests.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import pandas as pd
 import pyarrow as pa
@@ -561,6 +561,72 @@ class TestCatalogCredential:
         uri = cfg.catalog_properties(None, "pw@evil-host/")
         assert "@real-host:5432/cat" in uri["uri"]
         assert "evil-host" not in uri["uri"].split("@")[-1]
+
+
+# ── `properties` must stay non-secret too, same #754/#826 rule (#1181) ──────
+
+
+class TestPropertiesCredential:
+    """The connection editor now exposes `properties` as a plain key-value table
+    (#1181) — a credential typed into a value there leaks exactly like one in
+    `catalog_uri` (stored/returned in plaintext), so the model rejects it at
+    validation time rather than relying on a UI hint."""
+
+    _REST_BASE: ClassVar[dict[str, str]] = {
+        "catalog_type": "rest",
+        "catalog_uri": "https://catalog.example.com",
+    }
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("s3.secret-access-key", "AKIAEXAMPLESECRET"),
+            ("adls.account-key", "base64keymaterial=="),
+            ("adls.sas-token.myaccount", "sv=2020-08-04&se=..."),
+            ("catalog.password", "hunter2"),
+            ("oauth2-server-token", "abc.def.ghi"),
+            ("S3.SECRET-ACCESS-KEY", "case-insensitive-match"),  # matched case-insensitively
+        ],
+    )
+    def test_a_known_credential_shaped_key_is_rejected(self, key: str, value: str) -> None:
+        with pytest.raises(ValidationError) as exc:
+            IcebergConfig(**self._REST_BASE, properties={key: value})
+        assert key.lower() in str(exc.value).lower() or "secret_property" in str(exc.value)
+
+    def test_a_uri_shaped_value_with_an_embedded_password_is_rejected(self) -> None:
+        """Even under an innocuous-looking key, a URI-shaped VALUE that carries
+        its own password is the same #754/#826 leak by a different route."""
+        with pytest.raises(ValidationError) as exc:
+            IcebergConfig(**self._REST_BASE, properties={"jdbc.url": "postgresql://u:pw@h/db"})
+        assert "jdbc.url" in str(exc.value)
+
+    def test_identifier_class_keys_that_merely_contain_a_hint_word_are_allowed(self) -> None:
+        """`s3.access-key-id` reads like it might match a name-hint but is an
+        IDENTIFIER, not a secret — explicitly exempt."""
+        cfg = IcebergConfig(**self._REST_BASE, properties={"s3.access-key-id": "AKIAEXAMPLE"})
+        assert cfg.properties["s3.access-key-id"] == "AKIAEXAMPLE"
+
+    def test_the_real_minio_properties_from_1181_validate_cleanly(self) -> None:
+        """The concrete blocked case from #1181: non-secret catalog/storage
+        properties for a self-hosted MinIO warehouse must all pass."""
+        cfg = IcebergConfig(
+            catalog_type="sql",
+            catalog_uri="postgresql://catalog_user@host:5432/catalog",
+            catalog_name="harness",
+            properties={
+                "py-io-impl": "pyiceberg.io.pyarrow.PyArrowFileIO",
+                "s3.endpoint": "http://minio:9000",
+                "s3.access-key-id": "minioadmin",
+                "s3.path-style-access": "true",
+            },
+        )
+        assert cfg.properties["s3.endpoint"] == "http://minio:9000"
+
+    def test_non_credential_properties_are_unaffected(self) -> None:
+        cfg = IcebergConfig(
+            **self._REST_BASE, properties={"s3.region": "us-east-1", "glue.region": "us-east-1"}
+        )
+        assert cfg.properties == {"s3.region": "us-east-1", "glue.region": "us-east-1"}
 
 
 class TestEveryReadPathGetsTheCatalogCredential:
