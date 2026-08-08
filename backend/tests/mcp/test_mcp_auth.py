@@ -569,9 +569,9 @@ def test_an_otp_signed_in_user_can_mint_the_pat_that_mcp_then_accepts(
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    import backend.app.core.auth as core_auth
     import backend.app.db.session as db_session_mod
     from backend.app.api.v1 import api_keys as api_keys_api
+    from backend.app.core.auth import _get_current_user_otp, get_current_user
     from backend.app.core.errors import register_exception_handlers
     from backend.app.db.models import User
     from backend.app.services import session_service
@@ -584,7 +584,7 @@ def test_an_otp_signed_in_user_can_mint_the_pat_that_mcp_then_accepts(
     app = FastAPI()
     register_exception_handlers(app)
     app.include_router(api_keys_api.router, prefix="/api/v1")
-    app.dependency_overrides[core_auth.get_current_user] = core_auth._get_current_user_otp
+    app.dependency_overrides[get_current_user] = _get_current_user_otp
     app.dependency_overrides[db_session_mod.get_db] = lambda: db_session
 
     with TestClient(app) as client:
