@@ -1,0 +1,238 @@
+<task-notification>
+<task-id>a86a0f415683beddf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/a86a0f415683beddf.output</output-file>
+<status>completed</status>
+<summary>Agent "Docs: ops-log + Snapshot re-count PR" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+**PR:** [#1204](https://github.com/TheurgicDuke771/DataQ/pull/1204) — `docs: ops-log 2026-08-08 windows + Snapshot re-count after the six-issue fix batch`
+**Merge SHA:** `7018d7724a981780906375e68377c38320685bca` (squash-merged 2026-08-08T14:05:58Z, all 16 CI checks green)
+
+**Snapshot counts (before → after):**
+- Open issues in `v1.1 Backlog`: 25 → **29**
+- Open issues repo-wide: 47 → **49**
+- Open PRs: 12 → **12** (unchanged — same Dependabot batch from 2026-08-03; the six fix-batch PRs all merged same-day, none stayed open)
+
+**Rows/sections added to `docs/progress.md`:**
+- Prepended new front-of-cell text to the Snapshot table's **Open issues** row and **Open PRs** row (existing text preserved verbatim as a wrapped "previous count" parenthetical, per the file's established convention).
+- New `### Six-issue fix batch (2026-08-08)` subsection (after "Dependency audit-gate sweep", before "Pending design decisions") with a PR/issue/summary table for #1190→#1183, #1191→#1182, #1192→#1180, #1194→#1186, #1198→#1181, #1201→#1179, a note tying #1179/#1201 to the recurring #953 "matrix tick never actually exercised" shape, and the 8 filed follow-ups routed to their correct milestones (5 → `v1.1 Backlog`: #1193/#1195/#1196/#1197/#1199; 3 → `v1.1 Week 6`: #1200/#1202/#1203).
+
+**`docs/ops-log.md`:** the pre-existing uncommitted harness-window + credential-rotation entries (03:32–13:01 UTC, two test windows, the Snowflake `DATAQ_LOADER_PAT` rotation, and the unplanned ~6h unattended-run incident) were kept verbatim and committed as-is.
+
+**Not touched (by design):** CLAUDE.md §13 — the fix batch doesn't move the v1.1 W6 milestone headline, and #1201's own PR already amended CLAUDE.md §5 + ADR 0019 separately. No epic checklist changes were needed — epic #597's checklist doesn't reference any of today's opportunistic fix-batch issue numbers.
+
+File touched: `/Users/arijit/Coding/Python/DataQ/docs/progress.md`, `/Users/arijit/Coding/Python/DataQ/docs/ops-log.md`</result>
+<usage><subagent_tokens>134033</subagent_tokens><tool_uses>65</tool_uses><duration_ms>771801</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad3498901929f9c95</task-id>
+<tool-use-id>toolu_01Rz8cRdc7Y4kPTNH4JA77Lk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/ad3498901929f9c95.output</output-file>
+<status>completed</status>
+<summary>Agent "Deploy to prod + smoke" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll wait for this to complete before doing anything else.</result>
+<usage><subagent_tokens>91125</subagent_tokens><tool_uses>19</tool_uses><duration_ms>90114</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bp9q9hdcz</task-id>
+<tool-use-id>toolu_01W1pCtMPefkbAvL2PRm1LEv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/bp9q9hdcz.output</output-file>
+<status>completed</status>
+<summary>Background command "Rebuild + restart local api/worker/frontend from main" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b0wbhahqx</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/b0wbhahqx.output</output-file>
+<status>completed</status>
+<summary>Background command "Rebuild + force-recreate local frontend" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad3498901929f9c95</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/ad3498901929f9c95.output</output-file>
+<status>completed</status>
+<summary>Agent "Deploy to prod + smoke" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll wait for this poll to notify me when the Deploy workflow finishes.</result>
+<usage><subagent_tokens>92529</subagent_tokens><tool_uses>24</tool_uses><duration_ms>200344</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad3498901929f9c95</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/ad3498901929f9c95.output</output-file>
+<status>completed</status>
+<summary>Agent "Deploy to prod + smoke" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Waiting for the Deploy workflow (run 31261342996) to complete — currently on the backend build/migrate/deploy job. I'll resume once the background poll notifies me.</result>
+<usage><subagent_tokens>93317</subagent_tokens><tool_uses>27</tool_uses><duration_ms>341639</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad3498901929f9c95</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/ad3498901929f9c95.output</output-file>
+<status>completed</status>
+<summary>Agent "Deploy to prod + smoke" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll stop here and wait for the actual notification rather than issuing further no-op commands.</result>
+<usage><subagent_tokens>94352</subagent_tokens><tool_uses>31</tool_uses><duration_ms>370562</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad3498901929f9c95</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/ad3498901929f9c95.output</output-file>
+<status>completed</status>
+<summary>Agent "Deploy to prod + smoke" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll stop polling and simply wait for the background task notification to arrive.</result>
+<usage><subagent_tokens>102103</subagent_tokens><tool_uses>49</tool_uses><duration_ms>548039</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad3498901929f9c95</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/ad3498901929f9c95.output</output-file>
+<status>completed</status>
+<summary>Agent "Deploy to prod + smoke" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All post-deploy smoke checks are complete and passing. Here's the final report.
+
+## Deploy Report — DataQ main → prod
+
+**Deploy workflow:** run [31261342996](https://github.com/TheurgicDuke771/DataQ/actions/runs/31261342996), triggered on `main` @ `7018d772` — **SUCCESS**, both jobs green (backend build/migrate/deploy, frontend build/deploy). No flake, no rerun needed.
+
+**Pre-deploy checks (all passed):**
+- CI on main (`7018d772`) — green (run 31261126775, all 12 jobs success)
+- No new Alembic migrations since prod's `bb40f0b7` (`git log bb40f0b7..main -- backend/alembic/versions/` empty)
+- Working tree clean
+
+**Images deployed:** `ghcr.io/theurgicduke771/dataq-backend:7018d7724a981780906375e68377c38320685bca` (api+worker), `ghcr.io/theurgicduke771/dataq-frontend:7018d7724a981780906375e68377c38320685bca` (frontend). Migrate job ran (no-op, as expected — no schema changes).
+
+**Revisions rolled:**
+| App | Revision | Created (UTC) |
+|---|---|---|
+| dataq-app-api | `--0000072` | 2026-08-08T14:14:50 |
+| dataq-app-worker | `--0000070` | 2026-08-08T14:15:08 |
+| dataq-app-frontend | `--0000047` | 2026-08-08T14:16:06 (100% traffic) |
+
+**Smoke checklist:**
+- `/healthz` → 200 — pass
+- SPA `/` → 200, deep link `/results` → 200 — pass
+- `/api/v1/me` unauthenticated → 401 — pass
+- `/mcp/` GET and POST unauthenticated → 401 (not 421) — pass
+- `/api/v1/openapi.json` → 404 (prod-docs gate) — pass
+- Authenticated `/api/v1/me` with admin PAT → 200, `dataq-admin@...`, `is_workspace_admin: true` — pass
+- Suite run smoke: triggered `POST /suites/{id}/run` on "Unity Catalog — Feedback (all paths)" (`9d9790ba-...`) → run `177518d8-82a8-4411-84c7-361256e50fdc` → polled to `succeeded`, 7/7 checks passed (slightly better than the anticipated "7/7-ish with an anomaly skip" — no skip occurred, all fine) — pass
+- Worker logs: clean around the roll and the smoke run — `run_completed` / `Task run_suite ... succeeded in 43.3s`, zero traceback/exception/critical/error lines in a 300-line post-roll window — pass
+
+No issues encountered. One incidental note: the local shell here is zsh, not fish as recorded in project memory — `status` is a zsh-reserved variable name, which broke one polling loop's variable assignment (`read-only variable: status`) and required a rename; not an infra issue, just a script bug on my end, fixed immediately and doesn't affect the deploy itself.
+
+No secret values were printed at any point (PAT and Key Vault reads were inline-only, per the no-creds-in-output rule).</result>
+<usage><subagent_tokens>110853</subagent_tokens><tool_uses>52</tool_uses><duration_ms>604813</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5ceaa1ae9e33e22a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/a5ceaa1ae9e33e22a.output</output-file>
+<status>completed</status>
+<summary>Agent "UI: complete suite matrix both envs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Final Report
+
+### Prod — STOPPED per instructions
+Navigated to both `https://dataq-app-frontend.purplefield-f7322a1b.westus2.azurecontainerapps.io` and `/dashboard`. Both immediately rendered the "Sign in to DataQ" marketing/login page (no dataq-admin session held) rather than the authenticated shell. Per the hard constraint in the task, I stopped the prod half of Tasks A/B/C immediately without attempting sign-in. **No changes were made in prod.** You'll need to re-authenticate as dataq-admin before the prod half can be completed.
+
+### Local — all three tasks completed
+
+**Session state:** Active throughout as demo user "Olivia Rivera" (OR) — no re-auth needed.
+
+**Task A — UC custom-SQL check** (suite `Unity Catalog — Feedback (all paths)`, id `b32df180-f0c8-4f32-9f49-fd84bf1e8c85`):
+- Added check `rating outside 1-5 (custom SQL)`, category Custom SQL, query `SELECT * FROM {batch} WHERE rating NOT BETWEEN 1 AND 5`, pasted into Monaco via clipboard (`navigator.clipboard.writeText` + Ctrl/Cmd+V — typing was avoided per instructions).
+- Dry-run preview: **Result = pass, Observed = `{"observed_value":0}`** — confirms the #1179/PR#1201 fix took locally (no "No provider found..." error).
+- Saved via "Create check" — checks count went 8 → 9.
+
+**Task B — Flat File batch target** (suite `Flat File — Logistics Tracking`, id `d8a3c9f9-6176-45b6-9275-cf81bae8a8ef`):
+- Edit → Target mode switched Single file → Batch pattern; Prefix `adls_flatfile/logistics_tracking/`, Pattern `tracking_events_([a-z_]+)\.csv`, Strategy "Latest (greatest batch key)" (default, matches requested `latest`).
+- Saved. Verified persistence by reopening the Edit form — all three batch fields held. **Deviation note:** the suite-detail (non-edit) page does not render a prefix/pattern summary text anywhere on the page (searched, no match) — verification was done via re-opening Edit instead of a detail-page summary render as the task description assumed.
+
+**Task C — verification runs (2 of 4; local only):**
+| Suite | Run ID | Outcome |
+|---|---|---|
+| Flat File — Logistics Tracking | `8a4c3aee-f205-44de-a6a6-85dcc775bf0a` | 6/6 pass; `tracking volume` check observed `{"row_count":643,"deviation_pct":0}` — confirms batch resolved to `tracking_events_ready.csv` as expected |
+| Unity Catalog — Feedback (all paths) | `8250c76a-e088-4a7b-b2ee-4c049da53761` | 9/9 checks: 8 pass + 1 skip (`feedback row-count anomaly` — skip, per task this is acceptable). New `rating outside 1-5 (custom SQL)` check: pass, `{"observed_value":0}` |
+
+No operational errors encountered on any local run; no retries needed.
+
+**Outstanding:** Task A/B/C for prod (4 total runs → only 2 of 4 done, both local). Once you re-auth to prod as dataq-admin, I can repeat the same three tasks there — the local run confirms the shape of what to expect (9 checks, dry-run pass, batch resolving to the same file layout since ADLS prod mirrors MinIO local).</result>
+<usage><subagent_tokens>159931</subagent_tokens><tool_uses>73</tool_uses><duration_ms>437792</duration_ms></usage>
+</task-notification>
+
+---
+
+done
+
+---
+
+<task-notification>
+<task-id>a5ceaa1ae9e33e22a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d1774ae3-4367-4695-8df7-86060bc85534/tasks/a5ceaa1ae9e33e22a.output</output-file>
+<status>completed</status>
+<summary>Agent "UI: complete suite matrix both envs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All confirmed. Both prod tasks fully verified.
+
+## Final Combined Report — Task A/B/C, both environments
+
+### Prod (session re-authenticated as DataQ Admin — confirmed via "DA / DataQ Admin" header before proceeding)
+
+**Task A — UC custom-SQL check** (suite id `9d9790ba-540a-49d5-bd2c-169ea828556e`):
+- Added `rating outside 1-5 (custom SQL)`, pasted via clipboard into Monaco (same method as local).
+- Dry-run: **pass, `{"observed_value":0}`** — confirms the #1179/PR#1201 fix is live in prod.
+- Saved. Checks 8 → 9.
+
+**Task B — Flat File batch target** (suite id `c9f3138e-99c6-4967-8603-14576bcf472b`):
+- Switched Single file → Batch pattern; Prefix `adls_flatfile/logistics_tracking/`, Pattern `tracking_events_([a-z_]+)\.csv`, Strategy "Latest".
+- Saved, verified by reopening Edit — all three fields persisted correctly (detail-page summary gap is filed as #1205, not re-investigated per your note).
+
+**Task C — Run Now, both suites:**
+| Suite | Run ID | Outcome |
+|---|---|---|
+| Flat File — Logistics Tracking | `445d4ee4-f975-42cb-9128-76d4a2f84726` | succeeded, 4/6 pass. `tracking volume`: `{"row_count":643}` — **batch resolved correctly to `tracking_events_ready.csv`**, matching expected. Two freshness checks did NOT pass (`event freshness` fail @ 1118h, `file arrival freshness` warn @ 998h) — this is genuine prod ADLS data staleness (harness compute is stopped by default per current project state), not a defect in the batch conversion. Deviates from the "all-pass" expectation in the brief for that reason. |
+| Unity Catalog — Feedback (all paths) | `e6febeb3-ce7a-46b7-a059-5733d92e4718` | succeeded, 8/8 pass + 1 skip (`feedback row-count anomaly`, `insufficient_history` — acceptable per brief). New `rating outside 1-5 (custom SQL)` check: pass, `{"observed_value":0}` — exactly as expected. |
+
+No operational errors on any prod run.
+
+### Local (from earlier this session — unchanged, included for the combined picture)
+- Task A: check added, dry-run pass `{"observed_value":0}`, saved (checks 8→9).
+- Task B: batch target saved and persistence-verified via reopened Edit form.
+- Task C: Flat File run `8a4c3aee-f205-44de-a6a6-85dcc775bf0a` (6/6 pass, row_count 643); UC run `8250c76a-e088-4a7b-b2ee-4c049da53761` (8 pass + 1 skip, custom SQL check pass at 0).
+
+### Summary
+All 4 runs across both environments completed with no operational errors. Both Task A and Task B objectives are fully verified in both prod and local. The only deviation from the brief's stated expectations is the prod flat-file suite showing 2 non-passing freshness checks — root-caused to real data staleness in prod's ADLS landing zone (unrelated to the batch-target work, which is independently confirmed correct via the exact `row_count:643` match). No new issues need filing for that — it reflects the known "harness compute stopped by default" state, not a code defect.</result>
+<usage><subagent_tokens>237928</subagent_tokens><tool_uses>63</tool_uses><duration_ms>699059</duration_ms></usage>
+</task-notification>
