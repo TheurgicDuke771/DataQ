@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "1d221d0c0db6",
+  "strategy": "manual-commit",
+  "branch": "chore/codeql-triage-2026-08-08",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/secrets.py",
+    "backend/tests/mcp/test_mcp_auth.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1d/221d0c0db6/0/metadata.json",
+      "transcript": "/1d/221d0c0db6/0/full.jsonl",
+      "compact_transcript": "/1d/221d0c0db6/0/transcript.jsonl",
+      "content_hash": "/1d/221d0c0db6/0/content_hash.txt",
+      "prompt": "/1d/221d0c0db6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 86,
+    "cache_creation_tokens": 127504,
+    "cache_read_tokens": 5437491,
+    "output_tokens": 33233,
+    "api_call_count": 43
+  }
+}

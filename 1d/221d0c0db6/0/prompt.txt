@@ -1,0 +1,4 @@
+Hey, 
+Triage the the open dependabot PRs and the CodeQL issues. 
+Then plan out the fixing details [consider the open CVEs and similar things to #1177 while planning]. 
+Create a TODO list and start execution
