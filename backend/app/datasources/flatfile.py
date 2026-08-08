@@ -82,10 +82,13 @@ _DEFAULT_DELIMITER = ","
 # plenty and keeps the decode bounded on a large file.
 _SNIFF_BYTES = 64 * 1024
 
-#: Window size for a reader that walks an object sequentially (the CSV row
-#: count). Bounded memory is the goal, not a tiny footprint — one buffer of this
-#: size beats both a full download and a storm of small requests.
-_STREAM_CHUNK = 8 * 1024 * 1024
+#: Window size for a reader that walks an object sequentially — the CSV row
+#: count, and the Parquet profiler sample (#1001), both stream row-group/batch
+#: data rather than seeking to a footer. Bounded memory is the goal, not a tiny
+#: footprint — one buffer of this size beats both a full download and a storm
+#: of small requests. Public (not `_`-prefixed): `profile_service` reuses it
+#: for exactly the same reason `csv_row_count` below does.
+STREAM_CHUNK = 8 * 1024 * 1024
 
 #: Head bytes fetched to type/name a CSV's columns. Comfortably covers a header
 #: plus the type sample on any realistic row width, and is what keeps schema
@@ -402,7 +405,7 @@ def csv_row_count(*, conn_type: str, config: dict[str, Any], path: str, secret: 
     # A big window: this reader walks the object end to end, and at the seeking
     # default a multi-GB CSV would become thousands of range requests.
     reader = RangeReader(
-        conn_type=conn_type, config=config, path=path, secret=secret, chunk=_STREAM_CHUNK
+        conn_type=conn_type, config=config, path=path, secret=secret, chunk=STREAM_CHUNK
     )
     sep = sniff_delimiter(
         read_range(
