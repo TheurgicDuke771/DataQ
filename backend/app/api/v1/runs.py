@@ -378,6 +378,52 @@ def list_pipelines(
     return [PipelineRunRead.model_validate(p) for p in pipelines]
 
 
+class NearMissRead(ApiModel):
+    """A currently-active #1186 trigger-binding env mismatch (#1199).
+
+    Decoded from the `workspace_health` dedupe row: a succeeded pipeline/DAG run
+    keeps landing in `run_env`, but the only ENABLED binding for this
+    `(provider, pipeline_or_dag_id)` is scoped to `binding_env` — so the binding
+    has never fired and never will until one of the two envs is corrected.
+    """
+
+    provider: str
+    pipeline_or_dag_id: str
+    run_env: str
+    binding_env: str
+    updated_at: datetime
+
+
+@router.get(
+    "/orchestration/near-misses",
+    response_model=list[NearMissRead],
+    summary="List current trigger-binding env-mismatch near-misses (#1186/#1199)",
+)
+def list_near_misses(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[NearMissRead]:
+    """Surfaces the `workspace_health` `trigger_env_near_miss:*` rows #1194 already
+    writes on every ingest-time env mismatch, decoded back to their
+    `(provider, pipeline_or_dag_id, run_env, binding_env)` tuple. Before this route
+    the only way to see one was `psql` (#1199). Auth-only gated like
+    `/orchestration/pipelines`: this is orchestration monitoring data, not
+    suite-scoped — the same mismatch can be relevant to bindings on multiple
+    suites owned by different users, and the Suite Triggers panel (any `view`+
+    user) is exactly where the frontend consumes this.
+    """
+    return [
+        NearMissRead(
+            provider=r.provider,
+            pipeline_or_dag_id=r.pipeline_or_dag_id,
+            run_env=r.run_env,
+            binding_env=r.binding_env,
+            updated_at=r.updated_at,
+        )
+        for r in orchestration_service.list_env_near_misses(db)
+    ]
+
+
 # ───────────────────────── comparison report download (ADR 0015 §4) ──
 
 

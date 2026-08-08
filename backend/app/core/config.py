@@ -133,6 +133,17 @@ class Settings(BaseSettings):
     #   POLL_STALENESS_ALERT_AFTER_S=1800
     poll_staleness_alert_after_s: int = 1800
 
+    # #1199 — how far back a #1186 `trigger_env_near_miss` `workspace_health` row
+    # counts as "current" for `GET /orchestration/near-misses`. The row's
+    # `updated_at` is bumped every time the ingest path (webhook or the 10-min
+    # poll) re-observes the same mismatch, so a row older than this window has
+    # gone quiet — the binding may have been re-pointed, the connection deleted,
+    # or the pipeline simply stopped running — and is treated as resolved rather
+    # than shown as an ongoing incident. Comfortably longer than a daily pipeline
+    # schedule (same posture as `lineage_stale_after_hours`) so a once-a-day DAG's
+    # mismatch doesn't flicker in and out between its runs.
+    trigger_env_near_miss_recent_hours: int = 48
+
     sample_failures_retention_days: int = 30
 
     # OTP-code retention sweep (#1136). `otp_codes.email` is stored in plaintext

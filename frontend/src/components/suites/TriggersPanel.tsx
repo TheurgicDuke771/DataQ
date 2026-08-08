@@ -1,5 +1,17 @@
-import { DeleteOutlined } from '@ant-design/icons';
-import { App, Button, Card, Empty, Flex, Input, Select, Switch, Tag, Typography } from 'antd';
+import { DeleteOutlined, WarningOutlined } from '@ant-design/icons';
+import {
+  App,
+  Button,
+  Card,
+  Empty,
+  Flex,
+  Input,
+  Select,
+  Switch,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd';
 import SimpleList from '../SimpleList';
 import { useState } from 'react';
 
@@ -7,12 +19,14 @@ import { CONNECTION_ENVS, type ConnectionEnv, ENV_COLORS, envLabel } from '../..
 import {
   createTriggerBinding,
   deleteTriggerBinding,
+  listEnvNearMisses,
   listTriggerBindings,
   ORCHESTRATION_PROVIDERS,
   type OrchestrationProvider,
   PROVIDER_LABELS,
   setTriggerBindingEnabled,
   type TriggerBinding,
+  type TriggerEnvNearMiss,
 } from '../../api/triggerBindings';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { AsyncBody } from '../AsyncBody';
@@ -43,6 +57,12 @@ function warnAboutBinding(
  */
 export function TriggersPanel({ suiteId, canManage }: { suiteId: string; canManage: boolean }) {
   const { state, reload } = useAsyncData(() => listTriggerBindings(suiteId));
+  // Best-effort (#1199): a currently-active #1186 env near-miss for one of this
+  // suite's bindings. Fetched separately from the bindings list — a failure here
+  // must never block the bindings themselves from rendering, so only the 'ok'
+  // case is used; loading/error silently render no badges.
+  const { state: nearMissState } = useAsyncData(() => listEnvNearMisses());
+  const nearMisses = nearMissState.status === 'ok' ? nearMissState.data : [];
 
   return (
     <Card
@@ -56,7 +76,13 @@ export function TriggersPanel({ suiteId, canManage }: { suiteId: string; canMana
         </Flex>
       }
     >
-      <TriggersBody state={state} suiteId={suiteId} canManage={canManage} onChanged={reload} />
+      <TriggersBody
+        state={state}
+        suiteId={suiteId}
+        canManage={canManage}
+        onChanged={reload}
+        nearMisses={nearMisses}
+      />
     </Card>
   );
 }
@@ -66,11 +92,13 @@ function TriggersBody({
   suiteId,
   canManage,
   onChanged,
+  nearMisses,
 }: {
   state: ReturnType<typeof useAsyncData<TriggerBinding[]>>['state'];
   suiteId: string;
   canManage: boolean;
   onChanged: () => void;
+  nearMisses: TriggerEnvNearMiss[];
 }) {
   return (
     <AsyncBody state={state} loadingText="Loading triggers…" errorTitle="Failed to load triggers">
@@ -91,6 +119,12 @@ function TriggersBody({
                   binding={binding}
                   canManage={canManage}
                   onChanged={onChanged}
+                  nearMiss={nearMisses.find(
+                    (nm) =>
+                      nm.provider === binding.provider &&
+                      nm.pipeline_or_dag_id === binding.pipeline_or_dag_id &&
+                      nm.binding_env === binding.env,
+                  )}
                 />
               )}
             />
@@ -105,10 +139,14 @@ function TriggerRow({
   binding,
   canManage,
   onChanged,
+  nearMiss,
 }: {
   binding: TriggerBinding;
   canManage: boolean;
   onChanged: () => void;
+  /** A #1186 env near-miss currently observed for this exact binding (#1199) —
+   *  runs keep landing in `nearMiss.run_env`, not this binding's `env`. */
+  nearMiss?: TriggerEnvNearMiss;
 }) {
   const { message } = App.useApp();
   const [busy, setBusy] = useState(false);
@@ -179,6 +217,15 @@ function TriggerRow({
             {PROVIDER_LABELS[binding.provider]}
           </Typography.Text>
         </Flex>
+        {nearMiss && (
+          <Tooltip
+            title={`Runs keep landing in "${envLabel(nearMiss.run_env as ConnectionEnv)}", not "${envLabel(nearMiss.binding_env as ConnectionEnv)}" — this binding has not fired and won't until the env matches (#1186).`}
+          >
+            <Tag color="warning" icon={<WarningOutlined />} aria-label="Env mismatch near-miss">
+              env mismatch
+            </Tag>
+          </Tooltip>
+        )}
       </Flex>
     </SimpleList.Item>
   );

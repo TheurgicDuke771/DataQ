@@ -20,6 +20,7 @@ only fires when a FAILING one was delivered, and the row is claimed
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select, text
@@ -35,7 +36,13 @@ from backend.app.alerting.base import (
 from backend.app.alerting.registry import get_health_publisher
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
-from backend.app.db.models import ORCHESTRATION_PROVIDERS, Connection, WorkspaceHealth
+from backend.app.db.models import (
+    ENVS,
+    ORCHESTRATION_PROVIDERS,
+    Connection,
+    TriggerBinding,
+    WorkspaceHealth,
+)
 
 log = get_logger(__name__)
 
@@ -270,3 +277,101 @@ def record_trigger_binding_env_near_miss(
     was_first_insert = bool(result.scalar_one())
     session.commit()
     return was_first_insert
+
+
+# ─────────────── trigger-binding env near-miss — read side (#1199) ───────────────
+#
+# `record_trigger_binding_env_near_miss` above is write-only by design: the row's
+# `key` is a hash (the identifying tuple can run to 256 chars — Airflow DAG ids —
+# against a 64-char column) and there is no sibling detail column, so nothing can
+# SELECT a tuple back out of the table directly. #1199 is exactly that gap: the
+# signal was recorded but nothing could read it back except `psql`.
+
+
+@dataclass(frozen=True)
+class NearMissRecord:
+    """One decoded, currently-active #1186 env-mismatch tuple."""
+
+    provider: str
+    pipeline_or_dag_id: str
+    run_env: str
+    binding_env: str
+    updated_at: datetime
+
+
+def list_current_env_near_misses(
+    session: Session, *, since_hours: int | None = None
+) -> list[NearMissRecord]:
+    """Decode current near-miss rows back to `(provider, pipeline_or_dag_id, run_env,
+    binding_env, updated_at)`, newest first.
+
+    Since the stored key is an opaque hash, this re-derives CANDIDATE tuples the
+    same way `record_trigger_binding_env_near_miss`'s caller
+    (`orchestration_service._record_env_near_misses`) would have produced them:
+    every ENABLED `trigger_binding`'s `(provider, pipeline_or_dag_id, env)`,
+    crossed with every OTHER value in the closed `ENVS` vocabulary as a candidate
+    `run_env` (a pipeline run is always attributed to *some* orchestration
+    connection's env, and `ENVS` is the closed set every connection's `env` is
+    drawn from). Each candidate tuple is hashed with the exact same `_near_miss_key`
+    the write side uses, and only the hashes that actually exist as a row — i.e.
+    were actually recorded by a real mismatched ingest event, not merely
+    hypothesised here — come back. `ENVS` has 4 members, so this is
+    O(enabled bindings x 3) hash computations, not a table scan.
+
+    A binding that has since been deleted or re-pointed to the correct env no
+    longer contributes candidates, so its old near-miss row (if any) simply can't
+    be found here — it ages out of view without needing its own cleanup.
+
+    `since_hours` bounds "current": a row whose `updated_at` has aged past the
+    window is excluded — the mismatch may have gone quiet (fixed, or the pipeline
+    stopped running) since it was last recorded, so it should read as resolved
+    rather than an ongoing incident. Defaults to
+    `settings.trigger_env_near_miss_recent_hours`.
+    """
+    window_hours = (
+        get_settings().trigger_env_near_miss_recent_hours if since_hours is None else since_hours
+    )
+    cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
+
+    enabled_bindings = session.execute(
+        select(TriggerBinding.provider, TriggerBinding.pipeline_or_dag_id, TriggerBinding.env)
+        .where(TriggerBinding.enabled.is_(True))
+        .distinct()
+    ).all()
+
+    # key -> the tuple it was derived from, so a hit can be decoded back.
+    candidates: dict[str, tuple[str, str, str, str]] = {}
+    for provider, pipeline_or_dag_id, binding_env in enabled_bindings:
+        for run_env in ENVS:
+            if run_env == binding_env:
+                continue  # not a mismatch — the binding's own env
+            key = _near_miss_key(
+                provider=provider,
+                pipeline_or_dag_id=pipeline_or_dag_id,
+                run_env=run_env,
+                binding_env=binding_env,
+            )
+            candidates[key] = (provider, pipeline_or_dag_id, run_env, binding_env)
+
+    if not candidates:
+        return []
+
+    rows = session.execute(
+        select(WorkspaceHealth.key, WorkspaceHealth.updated_at).where(
+            WorkspaceHealth.key.in_(candidates.keys()),
+            WorkspaceHealth.updated_at >= cutoff,
+        )
+    ).all()
+
+    records = [
+        NearMissRecord(
+            provider=candidates[key][0],
+            pipeline_or_dag_id=candidates[key][1],
+            run_env=candidates[key][2],
+            binding_env=candidates[key][3],
+            updated_at=updated_at,
+        )
+        for key, updated_at in rows
+    ]
+    records.sort(key=lambda r: r.updated_at, reverse=True)
+    return records

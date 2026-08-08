@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from backend.app.core.auth import get_current_user
+from backend.app.core.config import get_settings
 from backend.app.db.models import (
     Asset,
     Check,
@@ -28,11 +29,13 @@ from backend.app.db.models import (
     Run,
     Share,
     Suite,
+    TriggerBinding,
     User,
+    WorkspaceHealth,
 )
 from backend.app.db.session import get_db
 from backend.app.main import app
-from backend.app.services import run_dispatch
+from backend.app.services import run_dispatch, workspace_health_service
 
 
 @pytest.fixture
@@ -1179,6 +1182,138 @@ def test_list_pipelines_requires_auth(db_session: Any) -> None:
     app.dependency_overrides[get_current_user] = _reject
     try:
         resp = TestClient(app).get("/api/v1/orchestration/pipelines")
+        assert resp.status_code == 401
+    finally:
+        app.dependency_overrides.clear()
+
+
+# ─────────────────────── GET /orchestration/near-misses (#1199) ───────────────
+
+
+def _binding(
+    db_session: Any, suite: Suite, *, provider: str, pipeline: str, env: str, enabled: bool = True
+) -> TriggerBinding:
+    binding = TriggerBinding(
+        provider=provider,
+        pipeline_or_dag_id=pipeline,
+        env=env,
+        suite_id=suite.id,
+        enabled=enabled,
+    )
+    db_session.add(binding)
+    db_session.commit()
+    return binding
+
+
+def _record_near_miss(
+    db_session: Any,
+    *,
+    provider: str,
+    pipeline: str,
+    run_env: str,
+    binding_env: str,
+    updated_at: datetime | None = None,
+) -> None:
+    workspace_health_service.record_trigger_binding_env_near_miss(
+        db_session,
+        provider=provider,
+        pipeline_or_dag_id=pipeline,
+        run_env=run_env,
+        binding_env=binding_env,
+    )
+    if updated_at is not None:
+        # Backdate the row directly, bypassing the write path's `func.now()`, so
+        # the "aged out of the recency window" case can be exercised without a
+        # real clock wait.
+        key = workspace_health_service._near_miss_key(
+            provider=provider,
+            pipeline_or_dag_id=pipeline,
+            run_env=run_env,
+            binding_env=binding_env,
+        )
+        row = db_session.get(WorkspaceHealth, key)
+        assert row is not None
+        row.updated_at = updated_at
+        db_session.commit()
+
+
+def test_list_near_misses_decodes_a_current_row(client: TestClient, db_session: Any) -> None:
+    owner = _user(db_session, "owner@ex")
+    suite = _suite(db_session, owner)
+    _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+    _record_near_miss(
+        db_session, provider="airflow", pipeline="flow_a", run_env="qa", binding_env="dev"
+    )
+
+    _as(owner)
+    rows = client.get("/api/v1/orchestration/near-misses").json()
+
+    assert len(rows) == 1
+    assert rows[0]["provider"] == "airflow"
+    assert rows[0]["pipeline_or_dag_id"] == "flow_a"
+    assert rows[0]["run_env"] == "qa"
+    assert rows[0]["binding_env"] == "dev"
+
+
+def test_list_near_misses_excludes_a_stale_row(client: TestClient, db_session: Any) -> None:
+    """A near-miss whose `updated_at` has aged past the recency window reads as
+    resolved (fixed, or the pipeline stopped running) rather than ongoing."""
+    owner = _user(db_session, "owner@ex")
+    suite = _suite(db_session, owner)
+    _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+    stale = datetime.now(UTC) - timedelta(
+        hours=get_settings().trigger_env_near_miss_recent_hours + 1
+    )
+    _record_near_miss(
+        db_session,
+        provider="airflow",
+        pipeline="flow_a",
+        run_env="qa",
+        binding_env="dev",
+        updated_at=stale,
+    )
+
+    _as(owner)
+    rows = client.get("/api/v1/orchestration/near-misses").json()
+
+    assert rows == []
+
+
+def test_list_near_misses_excludes_a_disabled_binding(client: TestClient, db_session: Any) -> None:
+    """No ENABLED binding for the (provider, pipeline) → nothing to re-derive the
+    candidate hash from, so a stray row (e.g. left over from before the binding
+    was disabled) can never be matched back to a tuple here."""
+    owner = _user(db_session, "owner@ex")
+    suite = _suite(db_session, owner)
+    _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev", enabled=False)
+    _record_near_miss(
+        db_session, provider="airflow", pipeline="flow_a", run_env="qa", binding_env="dev"
+    )
+
+    _as(owner)
+    rows = client.get("/api/v1/orchestration/near-misses").json()
+
+    assert rows == []
+
+
+def test_list_near_misses_no_bindings_returns_empty(client: TestClient, db_session: Any) -> None:
+    owner = _user(db_session, "owner@ex")
+    _as(owner)
+    rows = client.get("/api/v1/orchestration/near-misses").json()
+    assert rows == []
+
+
+def test_list_near_misses_requires_auth(db_session: Any) -> None:
+    from fastapi import HTTPException
+
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    def _reject() -> None:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    app.dependency_overrides[get_current_user] = _reject
+    try:
+        resp = TestClient(app).get("/api/v1/orchestration/near-misses")
         assert resp.status_code == 401
     finally:
         app.dependency_overrides.clear()

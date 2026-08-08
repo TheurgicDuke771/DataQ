@@ -22,7 +22,7 @@ from sqlalchemy import select
 
 from backend.app.alerting.base import AlertUndeliverableError, PollStalenessReport
 from backend.app.core.config import get_settings
-from backend.app.db.models import Connection, User, WorkspaceHealth
+from backend.app.db.models import Connection, Suite, TriggerBinding, User, WorkspaceHealth
 from backend.app.services import workspace_health_service as svc
 
 
@@ -355,3 +355,156 @@ class TestTriggerBindingEnvNearMiss:
         )
         key_second = db_session.scalar(select(WorkspaceHealth.key))
         assert key_second == key_first
+
+
+# ── #1199: read side — decoding current near-misses back to their tuple ─────
+
+
+def _suite(db_session: Any, owner: User) -> Suite:
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "ab12345.eu-west-1"},
+        secret_ref="kv-x",
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name="s", connection_id=conn.id, created_by=owner.id)
+    db_session.add(suite)
+    db_session.commit()
+    return suite
+
+
+def _binding(
+    db_session: Any, suite: Suite, *, provider: str, pipeline: str, env: str, enabled: bool = True
+) -> TriggerBinding:
+    binding = TriggerBinding(
+        provider=provider,
+        pipeline_or_dag_id=pipeline,
+        env=env,
+        suite_id=suite.id,
+        enabled=enabled,
+    )
+    db_session.add(binding)
+    db_session.commit()
+    return binding
+
+
+class TestListCurrentEnvNearMisses:
+    def test_no_enabled_bindings_returns_empty_without_querying_workspace_health(
+        self, db_session: Any
+    ) -> None:
+        # A near-miss row could theoretically still exist from a since-deleted
+        # binding — with zero candidates to hash there is nothing to match it
+        # against, so it correctly can't be decoded back.
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a",
+            run_env="qa",
+            binding_env="dev",
+        )
+        assert svc.list_current_env_near_misses(db_session) == []
+
+    def test_decodes_a_recorded_row_for_an_enabled_binding(self, db_session: Any) -> None:
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a",
+            run_env="qa",
+            binding_env="dev",
+        )
+
+        records = svc.list_current_env_near_misses(db_session)
+
+        assert len(records) == 1
+        assert records[0].provider == "airflow"
+        assert records[0].pipeline_or_dag_id == "flow_a"
+        assert records[0].run_env == "qa"
+        assert records[0].binding_env == "dev"
+
+    def test_a_disabled_binding_yields_no_candidates(self, db_session: Any) -> None:
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev", enabled=False)
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a",
+            run_env="qa",
+            binding_env="dev",
+        )
+        assert svc.list_current_env_near_misses(db_session) == []
+
+    def test_a_binding_with_no_recorded_mismatch_yields_nothing(self, db_session: Any) -> None:
+        # An enabled binding generates candidate hashes, but none of them exist as
+        # a real workspace_health row unless the ingest path actually observed
+        # that exact mismatch.
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+        assert svc.list_current_env_near_misses(db_session) == []
+
+    def test_a_stale_row_past_the_recency_window_is_excluded(self, db_session: Any) -> None:
+        """Mirrors the #1199 acceptance criterion: a near-miss that stopped
+        recurring (fixed, or the pipeline stopped running) must not read as
+        still-current forever just because the row was never deleted."""
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a",
+            run_env="qa",
+            binding_env="dev",
+        )
+        key = svc._near_miss_key(
+            provider="airflow", pipeline_or_dag_id="flow_a", run_env="qa", binding_env="dev"
+        )
+        row = db_session.get(WorkspaceHealth, key)
+        assert row is not None
+        row.updated_at = datetime.now(UTC) - timedelta(days=30)
+        db_session.commit()
+
+        assert svc.list_current_env_near_misses(db_session, since_hours=48) == []
+        # A wider window still finds it — proves the exclusion is the recency
+        # filter, not a bug in the candidate derivation.
+        assert len(svc.list_current_env_near_misses(db_session, since_hours=24 * 31)) == 1
+
+    def test_multiple_current_rows_sort_newest_first(self, db_session: Any) -> None:
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+        _binding(db_session, suite, provider="airflow", pipeline="flow_b", env="dev")
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a",
+            run_env="qa",
+            binding_env="dev",
+        )
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_b",
+            run_env="qa",
+            binding_env="dev",
+        )
+        # Push flow_a's row further into the past so flow_b is unambiguously newer.
+        key_a = svc._near_miss_key(
+            provider="airflow", pipeline_or_dag_id="flow_a", run_env="qa", binding_env="dev"
+        )
+        row_a = db_session.get(WorkspaceHealth, key_a)
+        assert row_a is not None
+        row_a.updated_at = datetime.now(UTC) - timedelta(hours=1)
+        db_session.commit()
+
+        records = svc.list_current_env_near_misses(db_session)
+
+        assert [r.pipeline_or_dag_id for r in records] == ["flow_b", "flow_a"]

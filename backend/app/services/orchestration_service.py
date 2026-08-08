@@ -684,6 +684,17 @@ def list_pipelines(
     return list(session.scalars(stmt))
 
 
+def list_env_near_misses(session: Session) -> list[workspace_health_service.NearMissRecord]:
+    """Current #1186 env-mismatch near-misses (#1199) — thin pass-through to
+    `workspace_health_service.list_current_env_near_misses`, kept here so the API
+    layer reaches orchestration reads through this module like every other
+    orchestration read (`list_pipeline_runs`, `list_pipelines`), not by importing
+    `workspace_health_service` directly. Auth-only gated at the route, same as
+    those: monitoring data, not suite-scoped.
+    """
+    return workspace_health_service.list_current_env_near_misses(session)
+
+
 # ─────────────────────────── poll health (#828) ────────────────────────────
 #
 # A poll that fails every 10 minutes used to be visible only in the logs. These two
