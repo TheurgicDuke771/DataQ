@@ -88,7 +88,14 @@ async function pickConnection(user: ReturnType<typeof userEvent.setup>, name: Re
   await user.click(await screen.findByText(name));
 }
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  // `clearAllMocks` clears recorded calls but NOT queued `…Once` implementations,
+  // and the preview is debounced — a test can legitimately finish before its
+  // 400ms timer fires, leaving an unconsumed queue entry that the NEXT test's
+  // mount call would pick up instead of its own. Drain it explicitly.
+  mockPreview.mockReset();
+});
 
 describe('SuiteForm — flat-file batch target (#1180)', () => {
   it('offers the single/batch mode toggle only for flat-file connections', async () => {
@@ -307,6 +314,23 @@ describe('SuiteForm — flat-file batch target (#1180)', () => {
   });
 });
 
+/** Assert the hint stops claiming a resolved path *before* the 400ms debounce
+ *  fires. The window matters: once the timer fires the component sets `loading`
+ *  on its own, so an unbounded `findByText`/`waitFor` would pass whether or not
+ *  render drops a stale answer. A timer can fire late but never early, so the
+ *  ceiling is what makes this discriminating; the floor only has to cover one
+ *  antd `useWatch` flush + re-render (sub-millisecond in practice). */
+async function expectStaleAnswerDropped(path: string) {
+  await waitFor(
+    () => {
+      expect(screen.queryByText(path)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Resolves to:/)).not.toBeInTheDocument();
+      expect(screen.getByText('Checking the live listing…')).toBeInTheDocument();
+    },
+    { timeout: 150, interval: 10 },
+  );
+}
+
 describe('SuiteForm — batch preview hint (#1193)', () => {
   it('shows "Resolves to: <path>" once the live preview resolves, and re-fetches on a field change', async () => {
     mockPreview.mockResolvedValueOnce('orders/orders_20260601.csv');
@@ -417,6 +441,52 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
     await new Promise((r) => setTimeout(r, 600));
     expect(mockPreview).not.toHaveBeenCalled();
     expect(screen.queryByText(/Resolves to:/)).not.toBeInTheDocument();
+  });
+
+  it('drops the previous answer the moment the spec changes, rather than relabelling it', async () => {
+    // The hint's whole point is before-you-save confidence, so it must never
+    // present an answer about spec A as the resolution of spec B. The 400ms
+    // debounce after an edit used to do exactly that: the old path stayed on
+    // screen, unlabelled as stale, describing a pattern the form no longer had.
+    mockPreview.mockResolvedValueOnce('orders/orders_20260601.csv');
+    renderForm({
+      suite: suite({
+        id: 's1',
+        target: { pattern: 'orders_(\\d+)\\.csv', strategy: 'latest' },
+      }),
+    });
+    expect(await screen.findByText('orders/orders_20260601.csv')).toBeInTheDocument();
+
+    // Never resolves: the hint has only the STALE answer to fall back on.
+    mockPreview.mockReturnValueOnce(new Promise<string>(() => {}));
+    fireEvent.change(screen.getByLabelText('Filename pattern (regex)'), {
+      target: { value: 'shipments_(\\d+)\\.csv' },
+    });
+
+    await expectStaleAnswerDropped('orders/orders_20260601.csv');
+  });
+
+  it('does not re-show a previous answer when the batch key is cleared and re-entered', async () => {
+    // The active=false→true flip: emptying the batch key hides the hint, and
+    // typing a new one used to bring the OLD batch's path straight back —
+    // labelled as the resolution of a batch key it was never asked about.
+    mockPreview.mockResolvedValueOnce('orders/orders_20260601.csv');
+    renderForm({
+      suite: suite({
+        id: 's1',
+        target: { pattern: 'orders_(\\d+)\\.csv', strategy: 'specific', batch: '20260601' },
+      }),
+    });
+    expect(await screen.findByText('orders/orders_20260601.csv')).toBeInTheDocument();
+
+    // Clearing the key makes the spec un-previewable, so the hint hides entirely.
+    fireEvent.change(screen.getByLabelText('Batch key'), { target: { value: '' } });
+    await waitFor(() => expect(screen.queryByText(/Resolves to:/)).not.toBeInTheDocument());
+
+    mockPreview.mockReturnValueOnce(new Promise<string>(() => {}));
+    fireEvent.change(screen.getByLabelText('Batch key'), { target: { value: '20260615' } });
+
+    await expectStaleAnswerDropped('orders/orders_20260601.csv');
   });
 
   it('withholds the preview call for a "specific" strategy until a batch key is entered', async () => {

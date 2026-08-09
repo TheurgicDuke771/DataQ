@@ -301,12 +301,22 @@ export function TargetFields({ kind, suiteId }: { kind: TargetKind; suiteId?: st
  *  exception verbatim — anything it can't classify becomes a generic 502. */
 const BATCH_PREVIEW_NO_DATA_CODE = 'batch_preview_no_data';
 
+/** Every non-idle state carries the exact spec it describes, so render can tell
+ *  "this answer is about what the form says now" from "this answer is about what
+ *  the form said 300ms ago". Without it the hint keeps asserting `Resolves to:
+ *  <path>` through the whole debounce window after the author edits the pattern
+ *  — and worse, re-shows a `latest` answer as if it were the resolution of a
+ *  newly-entered `specific` batch key when `active` flips false→true. A preview
+ *  whose entire purpose is before-you-save confidence must never label a stale
+ *  answer as the current one. */
+type BatchPreviewSpec = string;
+
 type BatchPreviewState =
   | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'resolved'; path: string }
-  | { status: 'no-match' }
-  | { status: 'error'; message: string };
+  | { status: 'loading'; spec: BatchPreviewSpec }
+  | { status: 'resolved'; spec: BatchPreviewSpec; path: string }
+  | { status: 'no-match'; spec: BatchPreviewSpec }
+  | { status: 'error'; spec: BatchPreviewSpec; message: string };
 
 /**
  * Live "resolves to: `<path>`" hint next to the batch fields (#1193): debounces
@@ -325,10 +335,11 @@ type BatchPreviewState =
  * All `setState` calls happen inside the debounce timer's callback or the
  * fetch's `.then`/`.catch` — never synchronously in the effect body — so this
  * never trips `react-hooks/set-state-in-effect`, and render only ever reads
- * `state` (never a ref), so it never trips `react-hooks/refs`. The one
- * consequence: while a new debounce is ticking, the hint keeps showing the
- * previous fields' outcome (if any) until the timer fires — the same "stale
- * results until the next answer" behaviour any debounced search box has.
+ * `state` (never a ref), so it never trips `react-hooks/refs`. That would
+ * otherwise leave a stale answer on screen for the whole debounce window, so
+ * every answer carries the spec it is about and render falls back to
+ * "Checking…" whenever that spec is no longer the form's — the deferred write
+ * costs nothing as long as the display never mislabels what it is showing.
  */
 function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
   const form = Form.useFormInstance();
@@ -338,6 +349,9 @@ function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
     (Form.useWatch('target_strategy', form) as 'latest' | 'specific' | undefined) ?? 'latest';
   const batch = (Form.useWatch('target_batch', form) as string | undefined)?.trim();
   const active = Boolean(suiteId && pattern && !(strategy === 'specific' && !batch));
+  // JSON so the four fields can't collide across boundaries (a prefix ending in
+  // the separator vs a pattern starting with it).
+  const spec: BatchPreviewSpec = JSON.stringify([prefix, pattern, strategy, batch]);
 
   const [state, setState] = useState<BatchPreviewState>({ status: 'idle' });
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -360,7 +374,7 @@ function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
     const current = (token.current += 1);
     timer.current = setTimeout(() => {
       if (current !== token.current) return; // superseded before the debounce even fired
-      setState({ status: 'loading' });
+      setState({ status: 'loading', spec });
       previewBatchTarget(suiteId as string, {
         pattern: pattern as string,
         strategy,
@@ -369,7 +383,7 @@ function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
       })
         .then((path) => {
           if (current !== token.current) return;
-          setState({ status: 'resolved', path });
+          setState({ status: 'resolved', spec, path });
         })
         .catch((err: unknown) => {
           if (current !== token.current) return;
@@ -378,16 +392,18 @@ function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
             : undefined;
           setState(
             code === BATCH_PREVIEW_NO_DATA_CODE
-              ? { status: 'no-match' }
-              : { status: 'error', message: errorMessage(err) },
+              ? { status: 'no-match', spec }
+              : { status: 'error', spec, message: errorMessage(err) },
           );
         });
     }, 400);
-  }, [active, suiteId, prefix, pattern, strategy, batch]);
+  }, [active, suiteId, prefix, pattern, strategy, batch, spec]);
 
   if (!active || state.status === 'idle') return null;
 
-  if (state.status === 'loading') {
+  // The stored answer is about an older spec — a debounce is still ticking for
+  // the current one. Show that, rather than a stale claim wearing a fresh label.
+  if (state.spec !== spec || state.status === 'loading') {
     return (
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         <LoadingOutlined style={{ marginRight: 4 }} />
