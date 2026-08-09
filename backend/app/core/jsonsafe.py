@@ -13,10 +13,18 @@ Catalog) execution engine returns **numpy** scalars in some payloads — notably
 ``unexpected_index_list`` identifier rows (#415), whose ``numpy.int64`` values are
 not JSON-serializable and would fail the JSONB insert. ``.item()`` coerces any numpy
 scalar to its Python equivalent before the finite-float check.
+
+The warehouse (SQLAlchemy/Snowflake) execution engine returns ``decimal.Decimal``
+for NUMERIC columns. A *passing* check never surfaces one (the failing-sample list
+is empty), so this only fires when a range/threshold check on a NUMERIC column
+genuinely fails — the observed-value/failing-sample payload then carries the raw
+column values, and an unhandled ``Decimal`` crashes the whole result's JSONB insert
+(#1273), silently discarding the run's results.
 """
 
 from __future__ import annotations
 
+import decimal
 import math
 from typing import Any
 
@@ -47,6 +55,10 @@ def sanitize_json(value: Any) -> Any:
     # profile_service._to_native (found live in the #751 review).
     if hasattr(value, "isoformat"):
         return value.isoformat()
+    # Warehouse NUMERIC columns (#1273) — `float()` then falls through to the
+    # finite check below, so a Decimal NaN/Infinity is nulled the same as a float one.
+    if isinstance(value, decimal.Decimal):
+        value = float(value)
     if isinstance(value, float):
         return value if math.isfinite(value) else None
     if isinstance(value, dict):

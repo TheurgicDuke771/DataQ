@@ -94,6 +94,37 @@ def test_pandas_na_and_nat_become_none() -> None:
     json.dumps(cleaned, allow_nan=False)  # round-trips cleanly
 
 
+def test_decimal_becomes_float() -> None:
+    import decimal
+
+    # Warehouse (SQLAlchemy/Snowflake) NUMERIC columns surface as decimal.Decimal in
+    # a failing check's observed-value/failing-sample payload (#1273, reproduced live
+    # on a Snowflake range check that genuinely failed — a passing check never
+    # surfaces one, which is why this went unnoticed).
+    cleaned = sanitize_json({"observed_value": decimal.Decimal("1234.56")})
+    assert cleaned == {"observed_value": 1234.56}
+    assert type(cleaned["observed_value"]) is float
+    json.dumps(cleaned, allow_nan=False)  # round-trips cleanly
+
+
+def test_decimal_nan_and_infinity_become_none() -> None:
+    import decimal
+
+    assert sanitize_json(decimal.Decimal("NaN")) is None
+    assert sanitize_json(decimal.Decimal("Infinity")) is None
+    assert sanitize_json(decimal.Decimal("-Infinity")) is None
+
+
+def test_nested_decimal_list_is_sanitized() -> None:
+    import decimal
+
+    # Mirrors the real crash: a failing_sample list of raw NUMERIC column values.
+    payload = {"partial_unexpected_list": [decimal.Decimal("100.00"), decimal.Decimal("250.5")]}
+    cleaned = sanitize_json(payload)
+    assert cleaned == {"partial_unexpected_list": [100.00, 250.5]}
+    json.dumps(cleaned, allow_nan=False)
+
+
 def test_timestamps_and_dates_become_isoformat() -> None:
     import datetime
 
