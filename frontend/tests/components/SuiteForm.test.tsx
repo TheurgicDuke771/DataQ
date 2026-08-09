@@ -26,12 +26,17 @@ const mockPreview = vi.mocked(previewBatchTarget);
 /** An axios error shaped like what the API client actually rejects with — the
  *  response interceptor has already swapped the envelope message onto
  *  `error.message` by the time a caller sees it (mirrors utils/errors.test.ts). */
-function batchPreviewFailure(status: number, code: string, message: string): AxiosError {
+function batchPreviewFailure(
+  status: number,
+  code: string,
+  message: string,
+  detail: Record<string, unknown> = {},
+): AxiosError {
   const err = new AxiosError(message);
   err.response = {
     status,
     statusText: '',
-    data: { error: { code, message } },
+    data: { error: { code, message, detail } },
     headers: new AxiosHeaders(),
     config: { headers: new AxiosHeaders() },
   };
@@ -391,12 +396,19 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
     expect(screen.queryByText(/currently matches this batch pattern/)).not.toBeInTheDocument();
   });
 
-  it('surfaces the backend message for a non-no-data error (e.g. a listing failure)', async () => {
+  it('surfaces the classified reason alongside the generic message on a 502', async () => {
+    // The 502 message is deliberately generic (the backend never echoes an
+    // adapter exception); `detail.reason` is the classified half that says what
+    // to fix. Rendering only the message discards it.
     mockPreview.mockRejectedValueOnce(
       batchPreviewFailure(
         502,
         'batch_preview_failed',
         'batch preview could not list the datasource store',
+        {
+          reason:
+            'The datasource rejected the credentials, or a required grant/permission is missing.',
+        },
       ),
     );
     renderForm({
@@ -407,8 +419,25 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
     });
 
     expect(
-      await screen.findByText('batch preview could not list the datasource store'),
+      await screen.findByText(
+        'batch preview could not list the datasource store The datasource rejected the ' +
+          'credentials, or a required grant/permission is missing.',
+      ),
     ).toBeInTheDocument();
+  });
+
+  it('still shows the message when the envelope carries no classified reason', async () => {
+    mockPreview.mockRejectedValueOnce(
+      batchPreviewFailure(422, 'batch_preview_invalid', 'batch prefix lists more than 500000'),
+    );
+    renderForm({
+      suite: suite({
+        id: 's1',
+        target: { pattern: 'orders_(\\d+)\\.csv', strategy: 'latest' },
+      }),
+    });
+
+    expect(await screen.findByText('batch prefix lists more than 500000')).toBeInTheDocument();
   });
 
   it('never calls the preview endpoint in create mode (no suite id yet)', async () => {

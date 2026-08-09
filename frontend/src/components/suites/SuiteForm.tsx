@@ -301,6 +301,10 @@ export function TargetFields({ kind, suiteId }: { kind: TargetKind; suiteId?: st
  *  exception verbatim — anything it can't classify becomes a generic 502. */
 const BATCH_PREVIEW_NO_DATA_CODE = 'batch_preview_no_data';
 
+interface BatchPreviewErrorEnvelope {
+  error?: { code?: string; detail?: { reason?: unknown } };
+}
+
 /** Every non-idle state carries the exact spec it describes, so render can tell
  *  "this answer is about what the form says now" from "this answer is about what
  *  the form said 300ms ago". Without it the hint keeps asserting `Resolves to:
@@ -387,14 +391,22 @@ function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
         })
         .catch((err: unknown) => {
           if (current !== token.current) return;
-          const code = axios.isAxiosError(err)
-            ? (err.response?.data as { error?: { code?: string } } | undefined)?.error?.code
+          const envelope = axios.isAxiosError(err)
+            ? (err.response?.data as BatchPreviewErrorEnvelope | undefined)?.error
             : undefined;
-          setState(
-            code === BATCH_PREVIEW_NO_DATA_CODE
-              ? { status: 'no-match', spec }
-              : { status: 'error', spec, message: errorMessage(err) },
-          );
+          if (envelope?.code === BATCH_PREVIEW_NO_DATA_CODE) {
+            setState({ status: 'no-match', spec });
+            return;
+          }
+          // The 502's own message is deliberately generic ("could not list the
+          // datasource store") because the backend must never echo an adapter
+          // exception; the actionable half is the classified `detail.reason`
+          // (`failure_classifier` — bad credential vs unreachable vs
+          // misconfigured). Showing only the message throws away the only part
+          // that tells the author what to go fix.
+          const reason = typeof envelope?.detail?.reason === 'string' ? envelope.detail.reason : '';
+          const message = [errorMessage(err), reason].filter(Boolean).join(' ');
+          setState({ status: 'error', spec, message });
         });
     }, 400);
   }, [active, suiteId, prefix, pattern, strategy, batch, spec]);
