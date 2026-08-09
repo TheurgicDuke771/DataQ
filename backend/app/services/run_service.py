@@ -23,6 +23,7 @@ from typing import Any, Literal, cast
 from sqlalchemy import CursorResult, func, null, select, update
 from sqlalchemy.orm import Session
 
+from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.datasources.base import (
@@ -379,6 +380,51 @@ def skip_run(session: Session, *, run: Run, checks: list[Check], reason: str) ->
 # a list query can never leak a run from a suite the caller can't see.
 
 
+class RunFilterInvalidError(DataQError):
+    status_code = 422
+    code = "run_filter_invalid"
+
+
+def validate_read_filters(status: str | None = None) -> None:
+    """422 on a `/runs` filter value outside its closed vocabulary.
+
+    Mirrors `orchestration_service.validate_read_filters` (#306) and the
+    `/incidents` `state` gate: an unrecognised ``status`` used to flow straight
+    into the `WHERE`, so `?status=succeded` (or the wrong-case `Succeeded` —
+    the column stores lower-case) answered `200 []` with `X-Total-Count: 0`,
+    indistinguishable from "no runs are in that status". That is the
+    confidently-empty-answer class (#828) this codebase guards everywhere else.
+    ``None`` means "no filter" and is left alone; only a *supplied* value is
+    checked.
+    """
+    if status is not None and status not in RUN_STATUSES:
+        raise RunFilterInvalidError(
+            f"invalid run status {status!r}", detail={"allowed": list(RUN_STATUSES)}
+        )
+
+
+def _run_filters(
+    *,
+    user_id: uuid.UUID,
+    suite_id: uuid.UUID | None,
+    status: str | None,
+    include_all: bool,
+) -> list[Any]:
+    """The ONE `WHERE` chain shared by :func:`list_runs` and :func:`count_runs`.
+
+    Derived once rather than hand-rolled twice, so a future filter cannot land on
+    the list without the total — which would make `X-Total-Count` quietly
+    disagree with the page it describes (#1108)."""
+    conditions: list[Any] = [
+        Run.suite_id.in_(suite_service.accessible_suite_ids(user_id, include_all=include_all))
+    ]
+    if suite_id is not None:
+        conditions.append(Run.suite_id == suite_id)
+    if status is not None:
+        conditions.append(Run.status == status)
+    return conditions
+
+
 def list_runs(
     session: Session,
     *,
@@ -386,9 +432,12 @@ def list_runs(
     suite_id: uuid.UUID | None = None,
     status: str | None = None,
     limit: int = 50,
+    offset: int = 0,
     include_all: bool = False,
 ) -> list[Run]:
-    """Runs for suites the user can access, newest first (`created_at` desc).
+    """Runs for suites the user can access, newest first (`created_at` desc,
+    `id` desc tie-break — the same total-order paging shape `/pipeline_runs`
+    and `/incidents` use, since `created_at` alone ties within one transaction).
 
     Optionally narrowed to one ``suite_id`` and/or a ``status``. The accessible
     subquery is always applied, so passing a ``suite_id`` the user can't see
@@ -396,15 +445,42 @@ def list_runs(
     `require_permission`, but the filter keeps the service safe on its own).
     ``include_all`` spans every suite — the workspace-admin view (ADR 0027).
     """
-    accessible = suite_service.accessible_suite_ids(user_id, include_all=include_all)
     stmt = (
-        select(Run).where(Run.suite_id.in_(accessible)).order_by(Run.created_at.desc()).limit(limit)
+        select(Run)
+        .where(
+            *_run_filters(
+                user_id=user_id, suite_id=suite_id, status=status, include_all=include_all
+            )
+        )
+        .order_by(Run.created_at.desc(), Run.id.desc())
+        .limit(limit)
+        .offset(offset)
     )
-    if suite_id is not None:
-        stmt = stmt.where(Run.suite_id == suite_id)
-    if status is not None:
-        stmt = stmt.where(Run.status == status)
     return list(session.scalars(stmt))
+
+
+def count_runs(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    suite_id: uuid.UUID | None = None,
+    status: str | None = None,
+    include_all: bool = False,
+) -> int:
+    """Total runs matching the SAME visibility + filters as :func:`list_runs`,
+    unaffected by its `limit`/`offset` (#1108 — the `/assets` `X-Total-Count`
+    shape: `/runs` had `limit` only and could not be paged at all). Shares
+    :func:`_run_filters` with the list so the two cannot drift."""
+    stmt = (
+        select(func.count())
+        .select_from(Run)
+        .where(
+            *_run_filters(
+                user_id=user_id, suite_id=suite_id, status=status, include_all=include_all
+            )
+        )
+    )
+    return session.scalar(stmt) or 0
 
 
 def check_outcome_counts(

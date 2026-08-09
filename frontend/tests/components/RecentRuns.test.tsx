@@ -65,7 +65,7 @@ afterEach(() => {
 
 describe('RecentRuns', () => {
   it('lists recent runs with the suite name and status', async () => {
-    mockListRuns.mockResolvedValue([run]);
+    mockListRuns.mockResolvedValue({ items: [run], total: [run].length });
     mockListSuites.mockResolvedValue([suite]);
     renderWidget();
 
@@ -74,7 +74,7 @@ describe('RecentRuns', () => {
   });
 
   it('deep-links a row to the routed run detail', async () => {
-    mockListRuns.mockResolvedValue([run]);
+    mockListRuns.mockResolvedValue({ items: [run], total: [run].length });
     mockListSuites.mockResolvedValue([suite]);
     renderWidget();
     const user = userEvent.setup();
@@ -84,7 +84,7 @@ describe('RecentRuns', () => {
   });
 
   it('shows an empty state when there are no runs', async () => {
-    mockListRuns.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue({ items: [], total: [].length });
     mockListSuites.mockResolvedValue([]);
     renderWidget();
     expect(await screen.findByText('No runs yet.')).toBeInTheDocument();

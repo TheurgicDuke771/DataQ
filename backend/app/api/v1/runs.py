@@ -24,9 +24,15 @@ from pydantic import ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import TOTAL_COUNT_HEADER, ApiModel, total_count_responses
 from backend.app.core.auth import get_current_user, is_workspace_admin
-from backend.app.db.models import COMPARISON_KIND, Check, User
+from backend.app.db.models import (
+    COMPARISON_KIND,
+    PIPELINE_RUN_STATUSES,
+    RUN_STATUSES,
+    Check,
+    User,
+)
 from backend.app.db.session import get_db
 from backend.app.services import orchestration_service, run_dispatch
 from backend.app.services import run_service as svc
@@ -175,13 +181,35 @@ def _outcome_update(outcome: tuple[int, int, str | None] | None) -> dict[str, ob
     return dict(zip(_OUTCOME_FIELDS, outcome or (0, 0, None), strict=True))
 
 
-@router.get("/runs", response_model=list[RunRead], summary="List runs")
+@router.get(
+    "/runs",
+    response_model=list[RunRead],
+    summary="List runs",
+    responses=total_count_responses(
+        "Total runs visible to the caller (#1108) — the same accessible-suite-scoped "
+        "population this page's limit/offset slice into (workspace-admins see every "
+        "suite). Before this, `/runs` had `limit` only and could not be paged at all; "
+        "a page shorter than `limit` doesn't by itself prove there's no more — "
+        "compare against this header."
+    ),
+)
 def list_runs(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    response: Response,
     suite_id: uuid.UUID | None = None,
-    run_status: Annotated[str | None, Query(alias="status")] = None,
+    run_status: Annotated[
+        str | None,
+        Query(
+            alias="status",
+            description=(
+                "Filter by run execution status. Closed vocabulary — a value outside "
+                f"{list(RUN_STATUSES)} is a 422, never a silent empty page."
+            ),
+        ),
+    ] = None,
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
+    offset: int = Query(default=0, ge=0),
 ) -> list[RunRead]:
     # When a suite is named, gate on it up front so an inaccessible/unknown suite
     # 404s (existence hidden) rather than silently returning []. With no suite,
@@ -190,13 +218,31 @@ def list_runs(
     # workspace-admin `view` on a named suite, so the per-suite gate is consistent.
     if suite_id is not None:
         require_permission(db, suite_id, current_user.id, minimum="view")
+    # A `status` outside the closed vocabulary is a 422, not a confident
+    # `200 []` + `X-Total-Count: 0` that reads as "no runs in that status"
+    # (#828; the same gate `/pipeline_runs` and `/incidents` apply).
+    svc.validate_read_filters(status=run_status)
+    include_all = is_workspace_admin(current_user)
+    # The header carries the total (#1108, matching #925's /assets shape) — the
+    # response BODY stays a bare list so an existing caller keeps parsing it
+    # unchanged; only a caller that reads the header gains truncation visibility.
+    response.headers[TOTAL_COUNT_HEADER] = str(
+        svc.count_runs(
+            db,
+            user_id=current_user.id,
+            suite_id=suite_id,
+            status=run_status,
+            include_all=include_all,
+        )
+    )
     runs = svc.list_runs(
         db,
         user_id=current_user.id,
         suite_id=suite_id,
         status=run_status,
         limit=limit,
-        include_all=is_workspace_admin(current_user),
+        offset=offset,
+        include_all=include_all,
     )
     # Graft each run's data-quality outcome (total/passed/worst-severity) in one
     # grouped query, so the list can flag failing checks behind a `succeeded` run.
@@ -342,12 +388,29 @@ def cancel_run(
     "/pipeline_runs",
     response_model=list[PipelineRunRead],
     summary="List monitored orchestrator pipeline/DAG runs",
+    responses=total_count_responses(
+        "Total pipeline runs matching the `provider`/`status` filters (#1108) — the "
+        "same unfiltered-by-paging population this page's limit/offset slice into. "
+        "#928 added `offset` but shipped only that half of the /assets paging "
+        "shape; a page shorter than `limit` doesn't by itself prove there's no "
+        "more — compare against this header."
+    ),
 )
 def list_pipeline_runs(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    response: Response,
     provider: str | None = None,
-    run_status: Annotated[str | None, Query(alias="status")] = None,
+    run_status: Annotated[
+        str | None,
+        Query(
+            alias="status",
+            description=(
+                "Filter by pipeline-run status. Closed vocabulary — a value outside "
+                f"{list(PIPELINE_RUN_STATUSES)} is a 422, never a silent empty page."
+            ),
+        ),
+    ] = None,
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
 ) -> list[PipelineRunRead]:
@@ -355,9 +418,13 @@ def list_pipeline_runs(
     200 most recent runs were the only ones any client could ever see — and a
     caller passing `?offset=` got it silently discarded by FastAPI and re-read
     page 1 forever. A paging loop therefore "counted" 20,200 rows against a
-    211-row table. Matches the `/assets` paging shape.
+    211-row table. Matches the `/assets` paging shape — now including the
+    `X-Total-Count` header (#1108) that #928 left out.
     """
-    orchestration_service.validate_read_filters(provider=provider)
+    orchestration_service.validate_read_filters(provider=provider, status=run_status)
+    response.headers[TOTAL_COUNT_HEADER] = str(
+        orchestration_service.count_pipeline_runs(db, provider=provider, status=run_status)
+    )
     pipeline_runs = orchestration_service.list_pipeline_runs(
         db, provider=provider, status=run_status, limit=limit, offset=offset
     )

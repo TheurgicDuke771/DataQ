@@ -319,6 +319,125 @@ def test_list_runs_respects_limit(client: TestClient, db_session: Any) -> None:
     assert resp.status_code == 422  # below ge=1
 
 
+def test_list_runs_total_count_header_matches_accessible_population(
+    client: TestClient, db_session: Any
+) -> None:
+    """#1108: `/runs` previously had `limit` only — no `offset`, no total, so a
+    page shorter than `limit` could never be told apart from "that's everything".
+    `X-Total-Count` reports the caller's ACCESSIBLE population (suite-scoped,
+    unlike the workspace-true `/assets` total), unaffected by the page size."""
+    dev = _user(db_session, "dev@ex")
+    other = _user(db_session, "other@ex")
+    mine = _suite(db_session, dev, target={"table": "T"})
+    theirs = _suite(db_session, other, target={"table": "T"})
+    for _ in range(5):
+        _run(db_session, mine)
+    _run(db_session, theirs)  # not accessible to dev — must not inflate the total
+
+    _as(dev)
+    resp = client.get("/api/v1/runs?limit=2")
+    assert resp.status_code == 200
+    assert resp.headers["x-total-count"] == "5"
+    assert len(resp.json()) == 2  # the page is still truncated to `limit`
+
+
+def test_list_runs_total_count_header_respects_filters(client: TestClient, db_session: Any) -> None:
+    """The header counts the SAME filtered population the list applies (#1108) —
+    a `status` filter narrows both, not just the page."""
+    dev = _user(db_session, "dev@ex")
+    s = _suite(db_session, dev, target={"table": "T"})
+    _run(db_session, s, status="succeeded")
+    _run(db_session, s, status="succeeded")
+    _run(db_session, s, status="failed")
+
+    _as(dev)
+    resp = client.get(f"/api/v1/runs?suite_id={s.id}&status=succeeded")
+    assert resp.headers["x-total-count"] == "2"
+    assert len(resp.json()) == 2
+
+
+def test_list_runs_pages_with_offset_no_duplicates(client: TestClient, db_session: Any) -> None:
+    """`offset` actually pages `/runs` now (#1108), mirroring the `/pipeline_runs`
+    (#928) and `/incidents` (#772) paging shape."""
+    dev = _user(db_session, "dev@ex")
+    s = _suite(db_session, dev, target={"table": "T"})
+    for _ in range(5):
+        _run(db_session, s)
+    _as(dev)
+
+    page1 = client.get("/api/v1/runs?limit=2&offset=0").json()
+    page2 = client.get("/api/v1/runs?limit=2&offset=2").json()
+    page3 = client.get("/api/v1/runs?limit=2&offset=4").json()
+    assert [len(page1), len(page2), len(page3)] == [2, 2, 1]
+    ids = [r["id"] for r in page1 + page2 + page3]
+    assert len(set(ids)) == 5, "paging returned a duplicate row"
+
+
+def test_list_runs_rejects_an_unknown_status(client: TestClient, db_session: Any) -> None:
+    """A typo'd/wrong-case `status` must 422, not answer a confident empty page.
+
+    `/runs` validated nothing, so `?status=succeded` returned `200 []` with
+    `X-Total-Count: 0` — a total that asserts "no runs are in that status" about a
+    status that does not exist. That is the confidently-empty-answer class (#828),
+    already guarded on `/pipeline_runs`'s `provider` (#306) and `/incidents`'s
+    `state` (#570). Seed a real run first so an empty body could ONLY come from the
+    filter, never from an empty table.
+    """
+    dev = _user(db_session, "dev@ex")
+    s = _suite(db_session, dev, target={"table": "T"})
+    _run(db_session, s, status="succeeded")
+    _as(dev)
+
+    resp = client.get("/api/v1/runs?status=succeded")  # typo
+    assert resp.status_code == 422
+    assert "succeeded" in resp.json()["error"]["detail"]["allowed"]
+
+    # Right name, wrong case — the column stores lower-case, so this matched
+    # nothing and was the same silent lie.
+    resp = client.get("/api/v1/runs?status=Succeeded")
+    assert resp.status_code == 422
+
+    # The valid value still works and still returns the seeded row…
+    resp = client.get("/api/v1/runs?status=succeeded")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+    assert resp.headers["x-total-count"] == "1"
+    # …and omitting the filter is not "unknown" — it means no filter.
+    resp = client.get("/api/v1/runs")
+    assert resp.status_code == 200
+
+
+def test_list_runs_status_validated_before_the_total_header_is_computed(
+    client: TestClient, db_session: Any
+) -> None:
+    """The 422 must carry NO `X-Total-Count` at all.
+
+    A `0` alongside the error would still be an assertion about a population that
+    was never queried — the header has to be absent, not zero, when the filter is
+    rejected."""
+    dev = _user(db_session, "dev@ex")
+    _run(db_session, _suite(db_session, dev, target={"table": "T"}), status="succeeded")
+    _as(dev)
+
+    resp = client.get("/api/v1/runs?status=nope")
+    assert resp.status_code == 422
+    assert "x-total-count" not in resp.headers
+
+
+def test_list_runs_status_gate_runs_for_a_named_suite_too(
+    client: TestClient, db_session: Any
+) -> None:
+    """`?suite_id=…&status=<bogus>` 422s as well — the suite gate runs first, so
+    the status check must not be skipped on the branch that passes it."""
+    dev = _user(db_session, "dev@ex")
+    s = _suite(db_session, dev, target={"table": "T"})
+    _run(db_session, s, status="succeeded")
+    _as(dev)
+
+    resp = client.get(f"/api/v1/runs?suite_id={s.id}&status=succeded")
+    assert resp.status_code == 422
+
+
 # ───────────────────────── GET /runs/{id} ──────────────────────────
 
 
@@ -854,6 +973,40 @@ def test_list_pipeline_runs_pages_with_offset(client: TestClient, db_session: An
     assert ids == everything
 
 
+def test_pipeline_runs_total_count_header_matches_full_population(
+    client: TestClient, db_session: Any
+) -> None:
+    """#1108: `/pipeline_runs` had `offset` (#928) but no total — a page shorter
+    than `limit` couldn't be told apart from "that's everything". `X-Total-Count`
+    reports the true population regardless of the page size."""
+    owner = _user(db_session, "owner@ex")
+    _pipeline_runs_on_one_connection(db_session, owner, count=5)
+    _as(owner)
+
+    resp = client.get("/api/v1/pipeline_runs?limit=2")
+    assert resp.status_code == 200
+    assert resp.headers["x-total-count"] == "5"
+    assert len(resp.json()) == 2
+
+
+def test_pipeline_runs_total_count_header_respects_filters(
+    client: TestClient, db_session: Any
+) -> None:
+    """The header counts the SAME `provider`/`status`-filtered population the
+    list applies (#1108) — not the unfiltered table."""
+    owner = _user(db_session, "owner@ex")
+    _pipeline_run(db_session, owner, provider="adf", status="succeeded")
+    _pipeline_run(db_session, owner, provider="airflow", status="failed")
+    _as(owner)
+
+    resp = client.get("/api/v1/pipeline_runs?provider=adf")
+    assert resp.headers["x-total-count"] == "1"
+    resp = client.get("/api/v1/pipeline_runs?status=failed")
+    assert resp.headers["x-total-count"] == "1"
+    resp = client.get("/api/v1/pipeline_runs")
+    assert resp.headers["x-total-count"] == "2"
+
+
 def test_pipeline_run_ordering_is_total_so_paging_cannot_skip() -> None:
     """The paging order must be TOTAL — it ends in a unique column (#928).
 
@@ -912,6 +1065,33 @@ def test_list_pipeline_runs_rejects_an_unknown_provider(
     # Omitting the filter is not "unknown" — it means no filter.
     resp = client.get("/api/v1/pipeline_runs")
     assert resp.status_code == 200
+
+
+def test_list_pipeline_runs_rejects_an_unknown_status(client: TestClient, db_session: Any) -> None:
+    """`status` joins `provider` behind the same closed-vocabulary gate (#1108).
+
+    `provider` has 422'd since #306, but `status` flowed straight into the `WHERE`
+    — so `?status=succeded` answered `200 []` with `X-Total-Count: 0`, the exact
+    confidently-empty-answer shape (#828) the provider gate exists to prevent. The
+    422 must also carry no total: a `0` would assert something about a population
+    that was never queried."""
+    owner = _user(db_session, "owner@ex")
+    _pipeline_run(db_session, owner, provider="adf", status="succeeded")
+    _as(owner)
+
+    resp = client.get("/api/v1/pipeline_runs?status=succeded")  # typo
+    assert resp.status_code == 422
+    assert "succeeded" in resp.json()["error"]["detail"]["allowed"]
+    assert "x-total-count" not in resp.headers
+
+    resp = client.get("/api/v1/pipeline_runs?status=Succeeded")  # wrong case
+    assert resp.status_code == 422
+
+    # The valid value still works, and still returns the seeded row + its total.
+    resp = client.get("/api/v1/pipeline_runs?status=succeeded")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+    assert resp.headers["x-total-count"] == "1"
 
 
 def test_list_pipelines_rejects_unknown_provider_and_env(

@@ -33,7 +33,7 @@ vi.mock('../../src/api/assets', async (importOriginal) => {
 });
 
 const mockGet = vi.mocked(getDashboardSummary);
-vi.mocked(listRuns).mockResolvedValue([]);
+vi.mocked(listRuns).mockResolvedValue({ items: [], total: 0 });
 vi.mocked(listSuites).mockResolvedValue([]);
 vi.mocked(listAssets).mockResolvedValue({ items: [], total: 0 });
 
