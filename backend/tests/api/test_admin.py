@@ -26,6 +26,7 @@ from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Sh
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import admin_service, otp_service
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 @pytest.fixture
@@ -185,26 +186,13 @@ def test_admin_access_overview_lists_owner_and_shares(
 
 
 # ── inbound webhook config (#490) ───────────────────────────────────────────────
-
-
-class _FakeStore:
-    """Minimal SecretStore: returns a fixed token, or raises to simulate a missing secret."""
-
-    def __init__(self, *, token: str | None = "wh-tok-123") -> None:
-        self._token = token
-
-    def get(self, name: str) -> str:
-        if self._token is None:
-            from backend.app.core.secrets import SecretNotFoundError
-
-            raise SecretNotFoundError(name)
-        return self._token
-
-    def set(self, name: str, value: str) -> None:  # pragma: no cover - protocol completeness
-        raise NotImplementedError
-
-    def delete(self, name: str) -> None:
-        raise NotImplementedError
+#
+# These tests are read-only by design (webhook URL construction never writes a
+# secret), so every store below is a fixed-value `FakeSecretStore` with
+# `raise_on_write=True`: `.get()` returns the seeded token for any name asked,
+# and `.set()`/`.delete()` raise if the code under test ever tries to write —
+# `default=None` (the "missing secret" cases) makes `.get()` raise
+# `SecretNotFoundError` instead, per the shared fake's contract.
 
 
 def _orch_connection(db_session: Any, owner: User, *, ctype: str, name: str) -> Connection:
@@ -236,7 +224,7 @@ def test_admin_webhooks_adf_url_embeds_token(
     _orch_connection(db_session, owner, ctype="adf", name="prod-factory")
     db_session.commit()
     _grant_admin(monkeypatch)
-    _with_store(client, _FakeStore(token="secret-tok"))
+    _with_store(client, FakeSecretStore(default="secret-tok", raise_on_write=True))
 
     rows = {r["provider"]: r for r in client.get("/api/v1/admin/orchestration/webhooks").json()}
     adf = rows["adf"]
@@ -255,7 +243,7 @@ def test_admin_webhooks_url_encodes_token(
     _orch_connection(db_session, owner, ctype="adf", name="prod-factory")
     db_session.commit()
     _grant_admin(monkeypatch)
-    _with_store(client, _FakeStore(token="a+b&c=d"))
+    _with_store(client, FakeSecretStore(default="a+b&c=d", raise_on_write=True))
 
     [adf] = [
         r
@@ -272,7 +260,7 @@ def test_admin_webhooks_airflow_carries_no_url_token(
     _orch_connection(db_session, owner, ctype="airflow", name="airflow-prod")
     db_session.commit()
     _grant_admin(monkeypatch)
-    _with_store(client, _FakeStore())
+    _with_store(client, FakeSecretStore(default="wh-tok-123", raise_on_write=True))
 
     rows = {r["provider"]: r for r in client.get("/api/v1/admin/orchestration/webhooks").json()}
     airflow = rows["airflow"]
@@ -291,7 +279,7 @@ def test_admin_webhooks_dbt_row_is_not_mislabeled_as_airflow(
     _orch_connection(db_session, owner, ctype="dbt", name="analytics-dbt")
     db_session.commit()
     _grant_admin(monkeypatch)
-    _with_store(client, _FakeStore())
+    _with_store(client, FakeSecretStore(default="wh-tok-123", raise_on_write=True))
 
     rows = {r["provider"]: r for r in client.get("/api/v1/admin/orchestration/webhooks").json()}
     assert set(rows) == {"dbt"}
@@ -314,7 +302,7 @@ def test_admin_webhooks_every_provider_yields_its_own_row(
     _orch_connection(db_session, owner, ctype=ctype, name=f"{ctype}-conn")
     db_session.commit()
     _grant_admin(monkeypatch)
-    _with_store(client, _FakeStore())
+    _with_store(client, FakeSecretStore(default="wh-tok-123", raise_on_write=True))
 
     rows = client.get("/api/v1/admin/orchestration/webhooks").json()
     assert [r["provider"] for r in rows] == [ctype]
@@ -331,7 +319,7 @@ def test_admin_webhooks_hmac_rows_mark_missing_signing_secret(
     _orch_connection(db_session, owner, ctype=ctype, name=f"{ctype}-conn")
     db_session.commit()
     _grant_admin(monkeypatch)
-    _with_store(client, _FakeStore(token=None))  # signing key not provisioned
+    _with_store(client, FakeSecretStore(raise_on_write=True))  # signing key not provisioned
 
     [row] = client.get("/api/v1/admin/orchestration/webhooks").json()
     assert row["token_configured"] is False
@@ -344,7 +332,7 @@ def test_admin_webhooks_marks_missing_secret(
     _orch_connection(db_session, owner, ctype="adf", name="prod-factory")
     db_session.commit()
     _grant_admin(monkeypatch)
-    _with_store(client, _FakeStore(token=None))  # secret not provisioned
+    _with_store(client, FakeSecretStore(raise_on_write=True))  # secret not provisioned
 
     [adf] = [
         r
@@ -364,7 +352,7 @@ def test_admin_webhooks_omits_providers_without_connections(
     _orch_connection(db_session, owner, ctype="adf", name="only-adf")
     db_session.commit()
     _grant_admin(monkeypatch)
-    _with_store(client, _FakeStore())
+    _with_store(client, FakeSecretStore(default="wh-tok-123", raise_on_write=True))
 
     providers = {r["provider"] for r in client.get("/api/v1/admin/orchestration/webhooks").json()}
     assert providers == {"adf"}
@@ -454,7 +442,7 @@ def test_auth_email_preflight_succeeds_and_emails_the_caller(
     _set_auth_email_env(monkeypatch)
     _grant_admin(monkeypatch)
     monkeypatch.setattr(smtplib, "SMTP", _RecordingSMTP)
-    _with_store(client, _FakeStore(token="app-password"))
+    _with_store(client, FakeSecretStore(default="app-password", raise_on_write=True))
 
     resp = client.post("/api/v1/admin/auth-email/test")
     assert resp.status_code == 200
@@ -472,7 +460,7 @@ def test_auth_email_preflight_not_configured_returns_503(
     # defence-in-depth check fires before smtplib is ever touched.
     _grant_admin(monkeypatch)
     monkeypatch.setattr(smtplib, "SMTP", _RecordingSMTP)
-    _with_store(client, _FakeStore(token="app-password"))
+    _with_store(client, FakeSecretStore(default="app-password", raise_on_write=True))
 
     resp = client.post("/api/v1/admin/auth-email/test")
     assert resp.status_code == 503
@@ -521,7 +509,7 @@ def test_auth_email_preflight_reports_the_failing_stage(
     _set_auth_email_env(monkeypatch)
     _grant_admin(monkeypatch)
     monkeypatch.setattr(smtplib, "SMTP", fake_cls)
-    _with_store(client, _FakeStore(token="app-password"))
+    _with_store(client, FakeSecretStore(default="app-password", raise_on_write=True))
 
     resp = client.post("/api/v1/admin/auth-email/test")
     assert resp.status_code == 502
@@ -551,7 +539,7 @@ def _wire_working_preflight(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     _set_auth_email_env(monkeypatch)
     _grant_admin(monkeypatch)
     monkeypatch.setattr(smtplib, "SMTP", _RecordingSMTP)
-    _with_store(client, _FakeStore(token="app-password"))
+    _with_store(client, FakeSecretStore(default="app-password", raise_on_write=True))
 
 
 def test_auth_email_preflight_429s_past_the_per_admin_cap(
@@ -586,7 +574,7 @@ def test_a_failed_send_still_spends_a_preflight_slot(
     _set_auth_email_env(monkeypatch)
     _grant_admin(monkeypatch)
     monkeypatch.setattr(smtplib, "SMTP", _ConnectFailSMTP)
-    _with_store(client, _FakeStore(token="app-password"))
+    _with_store(client, FakeSecretStore(default="app-password", raise_on_write=True))
     monkeypatch.setenv("ADMIN_EMAIL_PREFLIGHT_PER_10MIN", "1")
     get_settings.cache_clear()
 

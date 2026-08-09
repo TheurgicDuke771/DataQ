@@ -18,11 +18,12 @@ from sqlalchemy import select
 
 from backend.app.core.auth import get_current_user
 from backend.app.core.secret_names import connection_secret_ref
-from backend.app.core.secrets import get_secret_store
+from backend.app.core.secrets import SecretWriteError, get_secret_store
 from backend.app.db.models import Connection
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import connection_service as svc
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 _SF_CONFIG = {
     "account": "ab12345.eu-west-1",
@@ -54,30 +55,16 @@ def _adf_payload(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
-class FakeStore:
-    def __init__(self) -> None:
-        self.data: dict[str, str] = {}
+class _WriteFailStore(FakeSecretStore):
+    """SecretStore whose set() fails — simulates Key Vault unreachable (#87).
 
-    def get(self, name: str) -> str:
-        return self.data[name]
-
-    def set(self, name: str, value: str) -> None:
-        self.data[name] = value
-
-    def delete(self, name: str) -> None:
-        self.data.pop(name, None)
-
-
-class _WriteFailStore(FakeStore):
-    """SecretStore whose set() fails — simulates Key Vault unreachable (#87)."""
+    `.delete()` is inherited from `FakeSecretStore`: a `dict.pop(name, None)`
+    against the store's always-empty `data` (nothing here ever writes
+    successfully) is already the no-op the original hand-rolled `pass` was.
+    """
 
     def set(self, name: str, value: str) -> None:
-        from backend.app.core.secrets import SecretWriteError
-
         raise SecretWriteError("key vault unreachable")
-
-    def delete(self, name: str) -> None:
-        pass
 
 
 class _PassAdapter:
@@ -108,8 +95,8 @@ class _OptionalSecretAdapter(_PassAdapter):
 
 
 @pytest.fixture
-def client(db_session: Any) -> Iterator[tuple[TestClient, FakeStore]]:
-    store = FakeStore()
+def client(db_session: Any) -> Iterator[tuple[TestClient, FakeSecretStore]]:
+    store = FakeSecretStore()
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_secret_store] = lambda: store
     try:
@@ -134,7 +121,7 @@ def _create_payload(**overrides: Any) -> dict[str, Any]:
 
 
 def test_create_returns_201_and_hides_secret(
-    client: tuple[TestClient, FakeStore], db_session: Any
+    client: tuple[TestClient, FakeSecretStore], db_session: Any
 ) -> None:
     api, store = client
     resp = api.post("/api/v1/connections", json=_create_payload())
@@ -152,7 +139,7 @@ def test_create_returns_201_and_hides_secret(
     assert store.data[conn.secret_ref] == "p@ss"
 
 
-def test_create_unknown_type_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+def test_create_unknown_type_returns_422(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = api.post("/api/v1/connections", json=_create_payload(type="mssql"))
     assert resp.status_code == 422
@@ -162,7 +149,15 @@ def test_create_unknown_type_returns_422(client: tuple[TestClient, FakeStore]) -
 def test_create_secret_write_failure_returns_502(db_session: Any) -> None:
     # Key Vault write failure must surface as a 502 envelope, not a generic 500 (#87).
     app.dependency_overrides[get_db] = lambda: db_session
-    app.dependency_overrides[get_secret_store] = _WriteFailStore
+    # A lambda, not the bare class: FastAPI's dependency-override resolution
+    # introspects the override CALLABLE's own signature (not the original
+    # dependency's), so a class whose `__init__` takes parameters — even
+    # all-defaulted ones like `FakeSecretStore`'s — gets those parameters
+    # bound as request-level params, corrupting body validation for the
+    # endpoint under test (discovered via #1251: a bare `_WriteFailStore`
+    # override made `POST /connections` 422 instead of ever reaching the
+    # route).
+    app.dependency_overrides[get_secret_store] = lambda: _WriteFailStore()
     try:
         resp = TestClient(app).post("/api/v1/connections", json=_create_payload())
         assert resp.status_code == 502
@@ -173,21 +168,21 @@ def test_create_secret_write_failure_returns_502(db_session: Any) -> None:
         app.dependency_overrides.clear()
 
 
-def test_create_invalid_config_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+def test_create_invalid_config_returns_422(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     bad = {k: v for k, v in _SF_CONFIG.items() if k != "account"}
     resp = api.post("/api/v1/connections", json=_create_payload(config=bad))
     assert resp.status_code == 422
 
 
-def test_create_invalid_env_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+def test_create_invalid_env_returns_422(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = api.post("/api/v1/connections", json=_create_payload(env="staging"))
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "connection_config_invalid"
 
 
-def test_create_duplicate_returns_409(client: tuple[TestClient, FakeStore]) -> None:
+def test_create_duplicate_returns_409(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     first = api.post("/api/v1/connections", json=_create_payload(name="dup"))
     assert first.status_code == 201
@@ -199,7 +194,7 @@ def test_create_duplicate_returns_409(client: tuple[TestClient, FakeStore]) -> N
 # ───────────────────────── ADF connection (#72) ────────────────────
 
 
-def test_create_adf_returns_201(client: tuple[TestClient, FakeStore]) -> None:
+def test_create_adf_returns_201(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = api.post("/api/v1/connections", json=_adf_payload())
     assert resp.status_code == 201
@@ -209,7 +204,7 @@ def test_create_adf_returns_201(client: tuple[TestClient, FakeStore]) -> None:
     assert body["has_secret"] is True
 
 
-def test_second_adf_same_env_returns_409(client: tuple[TestClient, FakeStore]) -> None:
+def test_second_adf_same_env_returns_409(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     first = api.post("/api/v1/connections", json=_adf_payload(name="adf-a"))
     assert first.status_code == 201
@@ -220,14 +215,14 @@ def test_second_adf_same_env_returns_409(client: tuple[TestClient, FakeStore]) -
     assert "adf" in resp.json()["error"]["message"]
 
 
-def test_adf_second_env_returns_201(client: tuple[TestClient, FakeStore]) -> None:
+def test_adf_second_env_returns_201(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     api.post("/api/v1/connections", json=_adf_payload(name="adf-dev", env="dev"))
     resp = api.post("/api/v1/connections", json=_adf_payload(name="adf-qa", env="qa"))
     assert resp.status_code == 201
 
 
-def test_list_filters_by_adf_type(client: tuple[TestClient, FakeStore]) -> None:
+def test_list_filters_by_adf_type(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     api.post("/api/v1/connections", json=_create_payload(name="sf"))
     api.post("/api/v1/connections", json=_adf_payload(name="adf"))
@@ -239,7 +234,7 @@ def test_list_filters_by_adf_type(client: tuple[TestClient, FakeStore]) -> None:
 # ───────────────────────── read / list ─────────────────────────────
 
 
-def test_list_returns_created(client: tuple[TestClient, FakeStore]) -> None:
+def test_list_returns_created(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     api.post("/api/v1/connections", json=_create_payload(name="a"))
     api.post("/api/v1/connections", json=_create_payload(name="b", env="qa"))
@@ -250,7 +245,7 @@ def test_list_returns_created(client: tuple[TestClient, FakeStore]) -> None:
     assert [c["name"] for c in qa] == ["b"]
 
 
-def test_get_returns_connection(client: tuple[TestClient, FakeStore]) -> None:
+def test_get_returns_connection(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
     resp = api.get(f"/api/v1/connections/{cid}")
@@ -258,7 +253,7 @@ def test_get_returns_connection(client: tuple[TestClient, FakeStore]) -> None:
     assert resp.json()["id"] == cid
 
 
-def test_get_unknown_returns_404(client: tuple[TestClient, FakeStore]) -> None:
+def test_get_unknown_returns_404(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = api.get(f"/api/v1/connections/{uuid.uuid4()}")
     assert resp.status_code == 404
@@ -268,7 +263,7 @@ def test_get_unknown_returns_404(client: tuple[TestClient, FakeStore]) -> None:
 # ───────────────────────── update / delete ─────────────────────────
 
 
-def test_patch_updates_name(client: tuple[TestClient, FakeStore]) -> None:
+def test_patch_updates_name(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
     resp = api.patch(f"/api/v1/connections/{cid}", json={"name": "renamed"})
@@ -276,7 +271,7 @@ def test_patch_updates_name(client: tuple[TestClient, FakeStore]) -> None:
     assert resp.json()["name"] == "renamed"
 
 
-def test_delete_returns_204_then_404(client: tuple[TestClient, FakeStore]) -> None:
+def test_delete_returns_204_then_404(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
     deleted = api.delete(f"/api/v1/connections/{cid}")
@@ -286,7 +281,7 @@ def test_delete_returns_204_then_404(client: tuple[TestClient, FakeStore]) -> No
 
 
 def test_delete_with_dependent_suite_is_409_envelope_not_500(
-    client: tuple[TestClient, FakeStore],
+    client: tuple[TestClient, FakeSecretStore],
 ) -> None:
     """#753 at the wire: the FK conflict surfaces as the standard 409 error
     envelope naming the dependent suites — never an unhandled 500."""
@@ -316,7 +311,7 @@ def test_delete_with_dependent_suite_is_409_envelope_not_500(
 
 
 def test_test_endpoint_ok(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     api, _ = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
@@ -327,7 +322,7 @@ def test_test_endpoint_ok(
 
 
 def test_test_endpoint_failure_returns_502(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     api, _ = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
@@ -357,7 +352,7 @@ def _ref(cid: str, payload: dict[str, object] | None = None) -> str:
 
 
 def test_reauth_rotates_credential_and_verifies(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     api, store = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
@@ -371,7 +366,7 @@ def test_reauth_rotates_credential_and_verifies(
 
 
 def test_reauth_failed_verify_returns_502_but_rotation_persists(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     api, store = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
@@ -386,25 +381,27 @@ def test_reauth_failed_verify_returns_502_but_rotation_persists(
 
 
 def test_reauth_secret_write_failure_returns_502(
-    client: tuple[TestClient, FakeStore],
+    client: tuple[TestClient, FakeSecretStore],
 ) -> None:
     api, _ = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
-    # Swap in a store whose set() fails only for the re-auth call (Key Vault down).
-    app.dependency_overrides[get_secret_store] = _WriteFailStore
+    # Swap in a store whose set() fails only for the re-auth call (Key Vault
+    # down). A lambda, not the bare class — see the comment on
+    # `test_create_secret_write_failure_returns_502` for why.
+    app.dependency_overrides[get_secret_store] = lambda: _WriteFailStore()
     resp = api.post(f"/api/v1/connections/{cid}/reauth", json={"secret": "rotated"})
     assert resp.status_code == 502
     assert resp.json()["error"]["code"] == "connection_secret_write_failed"
 
 
-def test_reauth_unknown_connection_returns_404(client: tuple[TestClient, FakeStore]) -> None:
+def test_reauth_unknown_connection_returns_404(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = api.post(f"/api/v1/connections/{uuid.uuid4()}/reauth", json={"secret": "x"})
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "connection_not_found"
 
 
-def test_reauth_requires_a_secret(client: tuple[TestClient, FakeStore]) -> None:
+def test_reauth_requires_a_secret(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
     resp = api.post(f"/api/v1/connections/{cid}/reauth", json={})
@@ -428,7 +425,7 @@ def _draft_payload(**overrides: Any) -> dict[str, Any]:
 
 
 def test_draft_test_ok(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     api, _ = client
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
@@ -438,7 +435,7 @@ def test_draft_test_ok(
 
 
 def test_draft_test_failure_returns_502(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     api, _ = client
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _FailAdapter())
@@ -448,7 +445,7 @@ def test_draft_test_failure_returns_502(
 
 
 def test_draft_test_missing_secret_returns_502(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An adapter that would happily pass never even runs — no credential means
     # nothing to probe with, same as the saved-connection contract.
@@ -460,7 +457,7 @@ def test_draft_test_missing_secret_returns_502(
 
 
 def test_draft_test_snowflake_without_secret_still_502s_with_clear_message(
-    client: tuple[TestClient, FakeStore],
+    client: tuple[TestClient, FakeSecretStore],
 ) -> None:
     """Snowflake's credential is NOT optional (#351 review) — must still 502
     with the clear "a credential is required" message rather than silently
@@ -477,7 +474,7 @@ def test_draft_test_snowflake_without_secret_still_502s_with_clear_message(
 
 
 def test_draft_test_secret_optional_adapter_allows_missing_secret(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Iceberg/dbt (`secret_optional`) — a legitimate credential-less draft
     must not 502 just because `secret` is absent, and the adapter must
@@ -495,7 +492,7 @@ def test_draft_test_secret_optional_adapter_allows_missing_secret(
 
 
 def test_draft_test_iceberg_glue_catalog_with_no_secret_succeeds(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """End-to-end against the REAL `IcebergConnectionAdapter` (only the
     network-touching `pyiceberg.catalog.load_catalog` call mocked out, the
@@ -522,7 +519,7 @@ def test_draft_test_iceberg_glue_catalog_with_no_secret_succeeds(
 
 
 def test_draft_test_dbt_file_scheme_with_no_secret_succeeds(
-    client: tuple[TestClient, FakeStore],
+    client: tuple[TestClient, FakeSecretStore],
 ) -> None:
     """End-to-end against the REAL `DbtConnectionAdapter` — a local `file://`
     artifacts path needs no credential (the connection docstring); a
@@ -547,7 +544,7 @@ def test_draft_test_dbt_file_scheme_with_no_secret_succeeds(
 
 
 def test_test_endpoint_secret_optional_saved_connection_succeeds(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Saved-path parity: a connection saved with NO credential (a legitimate
     credential-less catalog) must still test green via `/connections/{id}/test`,
@@ -582,7 +579,7 @@ _ICEBERG_SQL_CONFIG = {"catalog_type": "sql", "catalog_uri": "sqlite:///w"}
 
 
 def test_create_iceberg_with_catalog_secret_hides_both_secrets(
-    client: tuple[TestClient, FakeStore],
+    client: tuple[TestClient, FakeSecretStore],
 ) -> None:
     api, store = client
     resp = api.post(
@@ -607,7 +604,7 @@ def test_create_iceberg_with_catalog_secret_hides_both_secrets(
 
 
 def test_create_catalog_secret_unsupported_type_returns_422(
-    client: tuple[TestClient, FakeStore],
+    client: tuple[TestClient, FakeSecretStore],
 ) -> None:
     """Snowflake's config model has no `catalog_secret_name` field to point at —
     the write must be rejected before anything is persisted."""
@@ -619,7 +616,7 @@ def test_create_catalog_secret_unsupported_type_returns_422(
 
 
 def test_patch_rotates_catalog_secret_reusing_the_same_ref(
-    client: tuple[TestClient, FakeStore],
+    client: tuple[TestClient, FakeSecretStore],
 ) -> None:
     api, store = client
     created = api.post(
@@ -643,7 +640,7 @@ def test_patch_rotates_catalog_secret_reusing_the_same_ref(
 
 
 def test_draft_test_iceberg_sql_catalog_with_catalog_secret_injects_password(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """End-to-end against the REAL `IcebergConnectionAdapter` (only
     `pyiceberg.catalog.load_catalog` mocked out): a draft's `catalog_secret` —
@@ -680,14 +677,14 @@ def test_draft_test_iceberg_sql_catalog_with_catalog_secret_injects_password(
     assert "db-pw" not in resp.text
 
 
-def test_draft_test_unknown_type_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+def test_draft_test_unknown_type_returns_422(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = api.post("/api/v1/connections/test", json=_draft_payload(type="mssql"))
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "connection_config_invalid"
 
 
-def test_draft_test_invalid_config_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+def test_draft_test_invalid_config_returns_422(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     bad = {k: v for k, v in _SF_CONFIG.items() if k != "account"}
     resp = api.post("/api/v1/connections/test", json=_draft_payload(config=bad))
@@ -696,7 +693,7 @@ def test_draft_test_invalid_config_returns_422(client: tuple[TestClient, FakeSto
 
 
 def test_draft_test_env_is_optional(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # env plays no role in the probe itself — a caller that hasn't picked one
     # yet still gets a full connectivity check, not a 422.
@@ -709,7 +706,7 @@ def test_draft_test_env_is_optional(
     assert resp.json() == {"ok": True}
 
 
-def test_draft_test_invalid_env_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+def test_draft_test_invalid_env_returns_422(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = api.post("/api/v1/connections/test", json=_draft_payload(env="staging"))
     assert resp.status_code == 422
@@ -717,7 +714,7 @@ def test_draft_test_invalid_env_returns_422(client: tuple[TestClient, FakeStore]
 
 
 def test_draft_test_persists_nothing(
-    client: tuple[TestClient, FakeStore], db_session: Any, monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The whole point of the endpoint: no `connections` row, no SecretStore
     write — a failed OR a successful probe must leave both untouched."""
@@ -735,7 +732,7 @@ def test_draft_test_persists_nothing(
 
 
 def test_draft_test_requires_auth(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_secret_store] = lambda: store
 
@@ -751,7 +748,7 @@ def test_draft_test_requires_auth(db_session: Any) -> None:
 
 
 def test_both_test_routes_resolve(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The static `/connections/test` and the parameterized
     `/connections/{connection_id}/test` are different path shapes (two segments
@@ -774,7 +771,7 @@ def test_both_test_routes_resolve(
 
 
 def test_create_requires_auth(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_secret_store] = lambda: store
 
@@ -795,7 +792,7 @@ def test_create_requires_auth(db_session: Any) -> None:
 
 
 def test_list_versions_returns_history_newest_first(
-    client: tuple[TestClient, FakeStore],
+    client: tuple[TestClient, FakeSecretStore],
 ) -> None:
     api, _ = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
@@ -810,7 +807,7 @@ def test_list_versions_returns_history_newest_first(
     assert all("secret" not in v for v in body)  # credential never surfaced
 
 
-def test_list_versions_unknown_connection_404(client: tuple[TestClient, FakeStore]) -> None:
+def test_list_versions_unknown_connection_404(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = api.get(f"/api/v1/connections/{uuid.uuid4()}/versions")
     assert resp.status_code == 404
@@ -838,7 +835,7 @@ _ADLS_SAS = "sv=2022-11-02&ss=b&sp=rl&se=2026-07-29T05:59:59Z&sig=notarealsignat
 
 
 def test_credential_expiry_is_served_on_create_and_list(
-    client: tuple[TestClient, FakeStore],
+    client: tuple[TestClient, FakeSecretStore],
 ) -> None:
     """The date the UI badges on has to actually cross the API.
 
@@ -863,7 +860,7 @@ def test_credential_expiry_is_served_on_create_and_list(
 
 
 def test_a_credential_with_no_stated_expiry_serves_null_not_a_guess(
-    client: tuple[TestClient, FakeStore],
+    client: tuple[TestClient, FakeSecretStore],
 ) -> None:
     # NULL is "unknown", and the UI renders unknown as silence. A fabricated date
     # here would be a reassurance the credential never gave us.

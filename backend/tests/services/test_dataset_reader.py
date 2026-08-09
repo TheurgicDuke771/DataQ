@@ -24,17 +24,13 @@ from backend.app.services.dataset_reader import (
     DatasetTooLargeError,
     read_dataset,
 )
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
-
-class FakeSecretStore:
-    def __init__(self, secret: str | None = "s3cret") -> None:
-        self._secret = secret
-        self.requested: list[str] = []
-
-    def get(self, ref: str) -> str:
-        self.requested.append(ref)
-        assert self._secret is not None
-        return self._secret
+# This file's shape: every ref resolves to the same fixed value regardless of
+# name (`FakeSecretStore(default="s3cret")`), and `.requested` (built into the
+# shared fake) tracks every name asked — `_conn`'s connections all carry
+# `secret_ref="conn-x"`, so a test below asserts `store.requested ==
+# ["conn-x"]` to pin exactly which ref was resolved.
 
 
 def _conn(conn_type: str, *, secret_ref: str | None = "conn-x", **config: Any) -> Connection:
@@ -94,7 +90,7 @@ def test_orchestration_type_has_no_reader() -> None:
             _conn("airflow"),
             DatasetSpec(table="t"),
             max_rows=10,
-            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+            secret_store=FakeSecretStore(default="s3cret"),
         )
 
 
@@ -104,7 +100,7 @@ def test_non_positive_cap_rejected() -> None:
             _conn("snowflake"),
             DatasetSpec(table="t", schema="s"),
             max_rows=0,
-            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+            secret_store=FakeSecretStore(default="s3cret"),
         )
 
 
@@ -121,7 +117,7 @@ def test_sql_table_read_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
         _conn("snowflake"),
         DatasetSpec(table="ORDERS", schema="RETAIL"),
         max_rows=10,
-        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        secret_store=FakeSecretStore(default="s3cret"),
     )
     assert len(df) == 3
     # COUNT preflight ran before the read.
@@ -147,7 +143,7 @@ def test_sql_count_preflight_fails_fast_without_reading(
             _conn("unity_catalog"),
             DatasetSpec(table="t", schema="s", catalog="c"),
             max_rows=10,
-            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+            secret_store=FakeSecretStore(default="s3cret"),
         )
 
 
@@ -160,7 +156,7 @@ def test_sql_post_read_race_guard(monkeypatch: pytest.MonkeyPatch) -> None:
             _conn("snowflake"),
             DatasetSpec(table="t", schema="s"),
             max_rows=10,
-            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+            secret_store=FakeSecretStore(default="s3cret"),
         )
 
 
@@ -170,7 +166,7 @@ def test_sql_query_spec_wraps_and_limits(monkeypatch: pytest.MonkeyPatch) -> Non
         _conn("snowflake"),
         DatasetSpec(query="SELECT id FROM RETAIL.ORDERS;"),
         max_rows=10,
-        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        secret_store=FakeSecretStore(default="s3cret"),
     )
     assert len(df) == 2
     assert "SELECT COUNT(*) FROM (\nSELECT id FROM RETAIL.ORDERS\n) __dataq_src" in (
@@ -190,7 +186,7 @@ def test_sql_query_with_trailing_comment_and_semicolons_wraps_safely(
         _conn("snowflake"),
         DatasetSpec(query="SELECT id FROM T -- latest snapshot"),
         max_rows=10,
-        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        secret_store=FakeSecretStore(default="s3cret"),
     )
     assert "-- latest snapshot\n) __dataq_src" in fake.statements[0]
 
@@ -199,7 +195,7 @@ def test_sql_query_with_trailing_comment_and_semicolons_wraps_safely(
         _conn("snowflake"),
         DatasetSpec(query="SELECT 1; ;"),
         max_rows=10,
-        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        secret_store=FakeSecretStore(default="s3cret"),
     )
     assert "SELECT 1;" not in fake2.statements[0]
     assert "SELECT 1\n" in fake2.statements[0]
@@ -213,7 +209,7 @@ def test_sql_requires_secret_table_and_uc_catalog(monkeypatch: pytest.MonkeyPatc
             _conn("snowflake", secret_ref=None),
             DatasetSpec(table="t", schema="s"),
             max_rows=10,
-            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+            secret_store=FakeSecretStore(default="s3cret"),
         )
     # Neither query nor table → comparison-branded 422, not a profiler error.
     with pytest.raises(DatasetReadUnsupportedError, match="table"):
@@ -221,7 +217,7 @@ def test_sql_requires_secret_table_and_uc_catalog(monkeypatch: pytest.MonkeyPatc
             _conn("snowflake"),
             DatasetSpec(schema="s"),
             max_rows=10,
-            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+            secret_store=FakeSecretStore(default="s3cret"),
         )
     # UC without a catalog would silently resolve against the session default
     # catalog (the engine URL pins none) — refuse instead.
@@ -230,7 +226,7 @@ def test_sql_requires_secret_table_and_uc_catalog(monkeypatch: pytest.MonkeyPatc
             _conn("unity_catalog"),
             DatasetSpec(table="t", schema="s"),
             max_rows=10,
-            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+            secret_store=FakeSecretStore(default="s3cret"),
         )
 
 
@@ -245,7 +241,7 @@ def test_sql_query_revalidated_read_only_at_read_time(
             _conn("snowflake"),
             DatasetSpec(query="DELETE FROM ORDERS"),
             max_rows=10,
-            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+            secret_store=FakeSecretStore(default="s3cret"),
         )
 
 
@@ -254,12 +250,12 @@ def test_sql_query_revalidated_read_only_at_read_time(
 
 def test_flatfile_read_and_cap(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(dataset_reader, "read_flatfile_dataframe", lambda **kw: _frame(5))
-    store = FakeSecretStore()
+    store = FakeSecretStore(default="s3cret")
     df = read_dataset(
         _conn("s3", bucket="b"),
         DatasetSpec(path="orders.csv"),
         max_rows=5,
-        secret_store=store,  # type: ignore[arg-type]
+        secret_store=store,
     )
     assert len(df) == 5 and store.requested == ["conn-x"]
 
@@ -269,7 +265,7 @@ def test_flatfile_read_and_cap(monkeypatch: pytest.MonkeyPatch) -> None:
             _conn("adls_gen2"),
             DatasetSpec(path="orders.csv"),
             max_rows=5,
-            secret_store=store,  # type: ignore[arg-type]
+            secret_store=store,
         )
 
 
@@ -279,14 +275,14 @@ def test_flatfile_requires_secret_and_path() -> None:
             _conn("s3", secret_ref=None),
             DatasetSpec(path="orders.csv"),
             max_rows=5,
-            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+            secret_store=FakeSecretStore(default="s3cret"),
         )
     with pytest.raises(DatasetReadUnsupportedError, match="path"):
         read_dataset(
             _conn("s3"),
             DatasetSpec(),
             max_rows=5,
-            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+            secret_store=FakeSecretStore(default="s3cret"),
         )
 
 
@@ -327,7 +323,7 @@ def test_iceberg_count_preflight_and_read(monkeypatch: pytest.MonkeyPatch) -> No
         _conn("iceberg", secret_ref=None, **_ICEBERG_CONFIG),
         DatasetSpec(table="retail.orders"),
         max_rows=10,
-        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        secret_store=FakeSecretStore(default="s3cret"),
     )
     assert len(df) == 4
 
@@ -350,7 +346,7 @@ def test_iceberg_over_cap_fails_before_materializing(
             _conn("iceberg", secret_ref=None, **_ICEBERG_CONFIG),
             DatasetSpec(table="retail.orders"),
             max_rows=10,
-            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+            secret_store=FakeSecretStore(default="s3cret"),
         )
 
 
@@ -360,5 +356,5 @@ def test_iceberg_requires_identifier() -> None:
             _conn("iceberg", secret_ref=None, **_ICEBERG_CONFIG),
             DatasetSpec(),
             max_rows=10,
-            secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+            secret_store=FakeSecretStore(default="s3cret"),
         )
