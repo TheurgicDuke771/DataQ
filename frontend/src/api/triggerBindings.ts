@@ -110,11 +110,14 @@ export interface TriggerEnvNearMiss {
 }
 
 /**
- * `GET /orchestration/near-misses` — auth-only gated like `/orchestration/pipelines`
- * (monitoring data, not suite-scoped), so any signed-in user can fetch it,
- * matching who can already see the Triggers panel.
+ * `GET /orchestration/near-misses` — suite-scoped like `GET /trigger-bindings`
+ * (near-misses are derived from suite-owned binding rows, so the backend restricts
+ * them to owned-or-shared suites), NOT auth-only like `/orchestration/pipelines`.
+ * Pass `suiteId` to narrow to one suite's bindings.
  */
-export async function listEnvNearMisses(): Promise<TriggerEnvNearMiss[]> {
-  const { data } = await api.get<TriggerEnvNearMiss[]>('/orchestration/near-misses');
+export async function listEnvNearMisses(suiteId?: string): Promise<TriggerEnvNearMiss[]> {
+  const { data } = await api.get<TriggerEnvNearMiss[]>('/orchestration/near-misses', {
+    params: suiteId ? { suite_id: suiteId } : undefined,
+  });
   return data;
 }

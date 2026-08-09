@@ -730,15 +730,26 @@ def list_pipelines(
     return list(session.scalars(stmt))
 
 
-def list_env_near_misses(session: Session) -> list[workspace_health_service.NearMissRecord]:
+def list_env_near_misses(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    include_all: bool = False,
+    suite_id: uuid.UUID | None = None,
+) -> list[workspace_health_service.NearMissRecord]:
     """Current #1186 env-mismatch near-misses (#1199) — thin pass-through to
     `workspace_health_service.list_current_env_near_misses`, kept here so the API
     layer reaches orchestration reads through this module like every other
     orchestration read (`list_pipeline_runs`, `list_pipelines`), not by importing
-    `workspace_health_service` directly. Auth-only gated at the route, same as
-    those: monitoring data, not suite-scoped.
+    `workspace_health_service` directly.
+
+    Unlike those two, this read is **suite-scoped**: a near-miss is derived from
+    `trigger_binding` rows, which are suite-owned config (`pipeline_runs` are not),
+    so it obeys the same owned-or-shared rule `GET /trigger-bindings` does.
     """
-    return workspace_health_service.list_current_env_near_misses(session)
+    return workspace_health_service.list_current_env_near_misses(
+        session, user_id=user_id, include_all=include_all, suite_id=suite_id
+    )
 
 
 # ─────────────────────────── poll health (#828) ────────────────────────────

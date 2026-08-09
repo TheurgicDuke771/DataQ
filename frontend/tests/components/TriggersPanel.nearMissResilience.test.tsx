@@ -63,6 +63,6 @@ describe('TriggersPanel — near-miss fetch resilience (#1199)', () => {
     );
 
     expect(await screen.findByText('nightly-load')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Env mismatch near-miss')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Env mismatch near-miss/)).not.toBeInTheDocument();
   });
 });

@@ -20,6 +20,7 @@ only fires when a FAILING one was delivered, and the row is claimed
 from __future__ import annotations
 
 import hashlib
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -43,6 +44,7 @@ from backend.app.db.models import (
     TriggerBinding,
     WorkspaceHealth,
 )
+from backend.app.services.suite_service import accessible_suite_ids
 
 log = get_logger(__name__)
 
@@ -300,10 +302,27 @@ class NearMissRecord:
 
 
 def list_current_env_near_misses(
-    session: Session, *, since_hours: int | None = None
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    include_all: bool = False,
+    suite_id: uuid.UUID | None = None,
+    since_hours: int | None = None,
 ) -> list[NearMissRecord]:
     """Decode current near-miss rows back to `(provider, pipeline_or_dag_id, run_env,
     binding_env, updated_at)`, newest first.
+
+    **Suite-scoped.** A near-miss is derived entirely from `trigger_binding` rows,
+    which are suite-owned config — the sibling `GET /trigger-bindings` read
+    (`trigger_binding_service.list_bindings`) already restricts them to owned-or-shared
+    suites, so this read applies the same `suite_service.accessible_suite_ids` filter.
+    Without it any signed-in user could enumerate the `(provider, pipeline_or_dag_id,
+    binding_env)` of bindings on suites they have no access to. `include_all=True` is
+    the workspace-admin view (ADR 0027), resolved at the API layer exactly as
+    `run_service.list_runs` does it. `suite_id` narrows further to one suite's
+    bindings — never a substitute for the access filter, always on top of it — so
+    the Suite Triggers panel fetches only the rows it can actually render instead
+    of the whole accessible workspace on every suite switch.
 
     Since the stored key is an opaque hash, this re-derives CANDIDATE tuples the
     same way `record_trigger_binding_env_near_miss`'s caller
@@ -333,11 +352,17 @@ def list_current_env_near_misses(
     )
     cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
 
-    enabled_bindings = session.execute(
+    binding_stmt = (
         select(TriggerBinding.provider, TriggerBinding.pipeline_or_dag_id, TriggerBinding.env)
-        .where(TriggerBinding.enabled.is_(True))
+        .where(
+            TriggerBinding.enabled.is_(True),
+            TriggerBinding.suite_id.in_(accessible_suite_ids(user_id, include_all=include_all)),
+        )
         .distinct()
-    ).all()
+    )
+    if suite_id is not None:
+        binding_stmt = binding_stmt.where(TriggerBinding.suite_id == suite_id)
+    enabled_bindings = session.execute(binding_stmt).all()
 
     # key -> the tuple it was derived from, so a hit can be decoded back.
     candidates: dict[str, tuple[str, str, str, str]] = {}
@@ -373,5 +398,20 @@ def list_current_env_near_misses(
         )
         for key, updated_at in rows
     ]
-    records.sort(key=lambda r: r.updated_at, reverse=True)
+    # Ordered in Python, not SQL: the fetched rows are keyed by an opaque hash, so
+    # the fields worth ordering on only exist after the decode above. The sort is
+    # TOTAL (identity fields break the `updated_at` tie) rather than merely
+    # newest-first — two mismatches recorded in the same ingest batch share a
+    # `func.now()` transaction timestamp to the microsecond, and a tie resolved by
+    # whatever order Postgres happened to return would make the list — and the
+    # per-binding badges built from it — flicker between refreshes.
+    records.sort(
+        key=lambda r: (
+            -r.updated_at.timestamp(),
+            r.provider,
+            r.pipeline_or_dag_id,
+            r.binding_env,
+            r.run_env,
+        )
+    )
     return records

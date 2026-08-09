@@ -240,8 +240,10 @@ describe('TriggersPanel — env near-miss badge (#1199)', () => {
     ]);
     renderPanel();
 
-    expect(await screen.findByLabelText('Env mismatch near-miss')).toBeInTheDocument();
-    expect(screen.getByText('env mismatch')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Env mismatch near-miss: qa')).toBeInTheDocument();
+    // The badge names the env runs are actually landing in — without it a user
+    // staring at two badges on one binding can't tell them apart.
+    expect(screen.getByText(/env mismatch: QA/)).toBeInTheDocument();
   });
 
   it('shows no badge when there is no near-miss for any binding', async () => {
@@ -250,7 +252,7 @@ describe('TriggersPanel — env near-miss badge (#1199)', () => {
     renderPanel();
 
     await screen.findByText('nightly-load');
-    expect(screen.queryByLabelText('Env mismatch near-miss')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Env mismatch near-miss/)).not.toBeInTheDocument();
   });
 
   it('does not badge a binding whose (provider, pipeline_or_dag_id) matches but env does not', async () => {
@@ -270,7 +272,73 @@ describe('TriggersPanel — env near-miss badge (#1199)', () => {
     renderPanel();
 
     await screen.findByText('nightly-load');
-    expect(screen.queryByLabelText('Env mismatch near-miss')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Env mismatch near-miss/)).not.toBeInTheDocument();
+  });
+
+  it('badges EVERY current mismatch on one binding, not just the first', async () => {
+    // The #1186 root case this feature exists to catch: two orchestrator
+    // connections reporting the same DAG id against two different wrong envs.
+    // Rendering only the first would silently hide a second live mismatch.
+    mockList.mockResolvedValue([BINDING]); // env: 'prod'
+    mockNearMisses.mockResolvedValue([
+      {
+        provider: 'adf',
+        pipeline_or_dag_id: 'nightly-load',
+        run_env: 'qa',
+        binding_env: 'prod',
+        updated_at: '2026-08-08T00:00:00Z',
+      },
+      {
+        provider: 'adf',
+        pipeline_or_dag_id: 'nightly-load',
+        run_env: 'uat',
+        binding_env: 'prod',
+        updated_at: '2026-08-07T00:00:00Z',
+      },
+    ]);
+    renderPanel();
+
+    expect(await screen.findByLabelText('Env mismatch near-miss: qa')).toBeInTheDocument();
+    expect(screen.getByLabelText('Env mismatch near-miss: uat')).toBeInTheDocument();
+  });
+
+  it('refetches near-misses after a binding is disabled, not just the bindings list', async () => {
+    // Disabling the binding resolves its near-miss server-side (the candidate set
+    // is re-derived from ENABLED bindings only). Reloading just the bindings would
+    // leave a warning badge sitting on a binding the user has already switched off.
+    mockList.mockResolvedValue([BINDING]);
+    mockToggle.mockResolvedValue({ ...BINDING, enabled: false });
+    mockNearMisses.mockResolvedValue([
+      {
+        provider: 'adf',
+        pipeline_or_dag_id: 'nightly-load',
+        run_env: 'qa',
+        binding_env: 'prod',
+        updated_at: '2026-08-08T00:00:00Z',
+      },
+    ]);
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByLabelText('Env mismatch near-miss: qa');
+    // Baseline is read, not asserted as 1 — StrictMode double-invokes the mount
+    // effect, and what matters is that the toggle causes a FURTHER fetch.
+    const onMount = mockNearMisses.mock.calls.length;
+
+    mockNearMisses.mockResolvedValue([]);
+    await user.click(screen.getByRole('switch', { name: 'Enable nightly-load' }));
+
+    await waitFor(() => expect(mockNearMisses.mock.calls.length).toBeGreaterThan(onMount));
+    await waitFor(() =>
+      expect(screen.queryByLabelText(/^Env mismatch near-miss/)).not.toBeInTheDocument(),
+    );
+  });
+
+  it('scopes the fetch to this suite rather than pulling the whole workspace', async () => {
+    mockList.mockResolvedValue([]);
+    renderPanel();
+    await screen.findByText(/No triggers/);
+
+    expect(mockNearMisses).toHaveBeenCalledWith('s1');
   });
 
   // The "near-miss fetch fails without blocking the bindings list" case is

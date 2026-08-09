@@ -1483,6 +1483,82 @@ def test_list_near_misses_no_bindings_returns_empty(client: TestClient, db_sessi
     assert rows == []
 
 
+def test_list_near_misses_omits_bindings_on_inaccessible_suites(
+    client: TestClient, db_session: Any
+) -> None:
+    """The authz gate this endpoint hangs on (#1199 review). A trigger binding is
+    suite-owned config — `GET /trigger-bindings` never shows a stranger someone
+    else's binding, and neither may this route, or it becomes a workspace-wide
+    enumeration of (provider, pipeline_or_dag_id, binding_env) tuples."""
+    owner = _user(db_session, "owner@ex")
+    stranger = _user(db_session, "stranger@ex")
+    suite = _suite(db_session, owner)
+    _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+    _record_near_miss(
+        db_session, provider="airflow", pipeline="flow_a", run_env="qa", binding_env="dev"
+    )
+
+    _as(owner)
+    assert len(client.get("/api/v1/orchestration/near-misses").json()) == 1
+
+    _as(stranger)
+    assert client.get("/api/v1/orchestration/near-misses").json() == []
+
+
+def test_list_near_misses_includes_shared_suites(client: TestClient, db_session: Any) -> None:
+    owner = _user(db_session, "owner@ex")
+    sharee = _user(db_session, "sharee@ex")
+    suite = _suite(db_session, owner)
+    db_session.add(Share(suite_id=suite.id, user_id=sharee.id, permission="view"))
+    db_session.commit()
+    _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+    _record_near_miss(
+        db_session, provider="airflow", pipeline="flow_a", run_env="qa", binding_env="dev"
+    )
+
+    _as(sharee)
+    assert len(client.get("/api/v1/orchestration/near-misses").json()) == 1
+
+
+def test_list_near_misses_suite_id_narrows_to_one_suite(
+    client: TestClient, db_session: Any
+) -> None:
+    owner = _user(db_session, "owner@ex")
+    suite_a = _suite(db_session, owner)
+    suite_b = _suite(db_session, owner)
+    _binding(db_session, suite_a, provider="airflow", pipeline="flow_a", env="dev")
+    _binding(db_session, suite_b, provider="airflow", pipeline="flow_b", env="dev")
+    for pipeline in ("flow_a", "flow_b"):
+        _record_near_miss(
+            db_session, provider="airflow", pipeline=pipeline, run_env="qa", binding_env="dev"
+        )
+
+    _as(owner)
+    assert len(client.get("/api/v1/orchestration/near-misses").json()) == 2
+    scoped = client.get(f"/api/v1/orchestration/near-misses?suite_id={suite_a.id}").json()
+    assert [r["pipeline_or_dag_id"] for r in scoped] == ["flow_a"]
+
+
+def test_list_near_misses_returns_every_current_mismatch_on_one_binding(
+    client: TestClient, db_session: Any
+) -> None:
+    """The #1186 root case: one DAG id reported by two orchestrator connections in
+    two different wrong envs. Both are live and both must surface — a UI that
+    showed only the first would hide a real mismatch behind another."""
+    owner = _user(db_session, "owner@ex")
+    suite = _suite(db_session, owner)
+    _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+    for run_env in ("qa", "uat"):
+        _record_near_miss(
+            db_session, provider="airflow", pipeline="flow_a", run_env=run_env, binding_env="dev"
+        )
+
+    _as(owner)
+    rows = client.get("/api/v1/orchestration/near-misses").json()
+
+    assert sorted(r["run_env"] for r in rows) == ["qa", "uat"]
+
+
 def test_list_near_misses_requires_auth(db_session: Any) -> None:
     from fastapi import HTTPException
 

@@ -477,15 +477,27 @@ class NearMissRead(ApiModel):
 def list_near_misses(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    suite_id: Annotated[
+        uuid.UUID | None,
+        Query(description="Narrow to near-misses on one suite's trigger bindings."),
+    ] = None,
 ) -> list[NearMissRead]:
     """Surfaces the `workspace_health` `trigger_env_near_miss:*` rows #1194 already
     writes on every ingest-time env mismatch, decoded back to their
     `(provider, pipeline_or_dag_id, run_env, binding_env)` tuple. Before this route
-    the only way to see one was `psql` (#1199). Auth-only gated like
-    `/orchestration/pipelines`: this is orchestration monitoring data, not
-    suite-scoped — the same mismatch can be relevant to bindings on multiple
-    suites owned by different users, and the Suite Triggers panel (any `view`+
-    user) is exactly where the frontend consumes this.
+    the only way to see one was `psql` (#1199).
+
+    **Suite-scoped**, unlike its `/orchestration/pipelines` neighbour: a near-miss
+    is derived wholly from `trigger_binding` rows, which are suite-owned config, so
+    it obeys the same owned-or-shared rule `GET /trigger-bindings` applies (a
+    workspace-admin sees the lot, per ADR 0027). `pipeline_runs` — what
+    `/pipelines` and `/pipeline_runs` return — genuinely have no suite-ownership
+    concept, which is why those two are auth-only; borrowing that gate here would
+    have let any signed-in user enumerate the bindings on suites they cannot see.
+
+    Optional `suite_id` narrows to one suite's bindings — layered on top of the
+    access filter, never in place of it — so the Suite Triggers panel doesn't pull
+    the whole accessible workspace to render one suite's badges.
     """
     return [
         NearMissRead(
@@ -495,7 +507,12 @@ def list_near_misses(
             binding_env=r.binding_env,
             updated_at=r.updated_at,
         )
-        for r in orchestration_service.list_env_near_misses(db)
+        for r in orchestration_service.list_env_near_misses(
+            db,
+            user_id=current_user.id,
+            include_all=is_workspace_admin(current_user),
+            suite_id=suite_id,
+        )
     ]
 
 
