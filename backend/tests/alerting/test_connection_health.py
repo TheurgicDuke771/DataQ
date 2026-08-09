@@ -23,6 +23,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+import structlog
+from structlog.testing import capture_logs
 
 from backend.app.alerting import dispatch, registry, render
 from backend.app.alerting.base import (
@@ -34,6 +36,7 @@ from backend.app.alerting.base import (
 )
 from backend.app.alerting.builder import build_connection_health_report
 from backend.app.alerting.card import render_teams_health_message
+from backend.app.alerting.composite import CompositePublisher
 from backend.app.alerting.email import render_health_html_body, render_health_text_body
 from backend.app.alerting.slack import render_slack_health_message
 from backend.app.core.config import get_settings
@@ -342,6 +345,86 @@ def test_a_broken_channel_never_breaks_the_poll(
     assert not dispatch.publish_connection_health(
         db_session, connection_id=conn.id, state=HEALTH_FAILING
     )
+
+
+# ── #1226: total-channel-failure must not log the same traceback twice ──────────
+
+
+class _AllFailingChannel:
+    """A real channel double that RAISES from `publish_health` — routed through the
+    REAL `CompositePublisher`, unlike `_SpyHealthPublisher` above (which stands in
+    for the composite itself and so never exercises its own logging/marking)."""
+
+    def publish(self, session: Any, report: Any) -> None: ...
+
+    def publish_health(self, session: Any, report: ConnectionHealthReport) -> bool:
+        raise RuntimeError("channel down")
+
+    def publish_poll_staleness(self, session: Any, report: Any) -> bool:
+        raise RuntimeError("channel down")
+
+
+def test_every_channel_failing_logs_the_last_traceback_once_not_twice(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bug (#1226): when EVERY channel fails, the composite already logs a full
+    traceback per failing channel (including the last, whose error it re-raises).
+    Before this fix, `dispatch.publish_connection_health`'s own `except Exception:
+    log.exception(...)` logged that same last-channel traceback a SECOND time. Now
+    it must downgrade to a warning — no `exc_info` — while the composite's own
+    per-channel logs (one per channel, real bugs it wants surfaced) are untouched."""
+    monkeypatch.setattr(
+        registry,
+        "get_health_publisher",
+        lambda: CompositePublisher([_AllFailingChannel(), _AllFailingChannel()]),
+    )
+    conn = _connection(db_session)
+
+    with capture_logs() as logs:
+        monkeypatch.setattr(dispatch, "log", structlog.get_logger("backend.app.alerting.dispatch"))
+        assert not dispatch.publish_connection_health(
+            db_session, connection_id=conn.id, state=HEALTH_FAILING
+        )
+
+    channel_events = [e for e in logs if e["event"] == "channel_health_publish_failed"]
+    dispatch_events = [e for e in logs if e["event"] == "connection_health_publish_failed"]
+
+    # The composite still logs one full traceback per failing channel — that part
+    # of the contract is unchanged and must stay that way (two channels, two logs).
+    assert len(channel_events) == 2
+    assert all(e["log_level"] == "error" and e.get("exc_info") for e in channel_events)
+
+    # dispatch.py's own log for the SAME failure downgrades to a warning with no
+    # traceback, instead of duplicating the last channel's.
+    assert len(dispatch_events) == 1
+    assert dispatch_events[0]["log_level"] == "warning"
+    assert "exc_info" not in dispatch_events[0]
+
+
+def test_an_exception_the_composite_never_saw_still_gets_a_full_traceback(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The downgrade must be narrow: a bug that has nothing to do with the composite
+    fan-out (here, `registry.get_health_publisher()` itself blowing up) is NOT
+    pre-marked, so it must still surface with its full traceback — the fix must not
+    accidentally silence genuinely new failures."""
+
+    def _boom() -> Any:
+        raise RuntimeError("registry misconfigured")
+
+    monkeypatch.setattr(registry, "get_health_publisher", _boom)
+    conn = _connection(db_session)
+
+    with capture_logs() as logs:
+        monkeypatch.setattr(dispatch, "log", structlog.get_logger("backend.app.alerting.dispatch"))
+        assert not dispatch.publish_connection_health(
+            db_session, connection_id=conn.id, state=HEALTH_FAILING
+        )
+
+    events = [e for e in logs if e["event"] == "connection_health_publish_failed"]
+    assert len(events) == 1
+    assert events[0]["log_level"] == "error"
+    assert events[0].get("exc_info")
 
 
 def test_recovery_report_carries_no_reason(db_session: Any, spy: _SpyHealthPublisher) -> None:

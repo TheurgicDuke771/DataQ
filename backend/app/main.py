@@ -13,6 +13,7 @@ from fastmcp.utilities.lifespan import combine_lifespans
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from backend.app.alerting.base import was_already_logged
 from backend.app.api.v1 import admin as admin_router
 from backend.app.api.v1 import api_keys as api_keys_router
 from backend.app.api.v1 import assets as assets_router
@@ -85,8 +86,17 @@ async def _poll_staleness_loop(stop: asyncio.Event, interval_s: float) -> None:
         try:
             outcome = await asyncio.to_thread(_poll_staleness_tick)
             logger.debug("poll_staleness_tick", outcome=outcome)
-        except Exception:  # pragma: no cover - defensive; the loop must survive
-            logger.exception("poll_staleness_tick_failed")
+        except Exception as exc:  # pragma: no cover - defensive; the loop must survive
+            # When every alert channel fails, the composite already logged this exact
+            # traceback once per channel, including this one (the last), before
+            # re-raising it up through run_poll_staleness_check (#1226) — a bare
+            # logger.exception here would log the same traceback again. Downgrade to
+            # a warning in that case; anything the composite never saw (a DB error,
+            # a bug in evaluate_poll_staleness) still gets the full traceback.
+            if was_already_logged(exc):
+                logger.warning("poll_staleness_tick_failed")
+            else:
+                logger.exception("poll_staleness_tick_failed")
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval_s)
         except TimeoutError:

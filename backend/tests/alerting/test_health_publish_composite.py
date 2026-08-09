@@ -21,6 +21,7 @@ from backend.app.alerting.base import (
     HEALTH_FAILING,
     AlertUndeliverableError,
     ConnectionHealthReport,
+    was_already_logged,
 )
 from backend.app.alerting.composite import CompositePublisher
 
@@ -79,6 +80,23 @@ class TestCompositeHealthContract:
             CompositePublisher([_Channel(fail=True), _Channel(fail=True)]).publish_health(
                 _SESSION, _report()
             )
+
+    def test_the_reraised_error_is_marked_already_logged(self) -> None:
+        """#1226: the loop above already logs a full traceback for EVERY failing
+        channel (including the last one, whose exception is what gets re-raised
+        here) — so a caller's own `except Exception: log.exception(...)` would log
+        that same traceback again unless it can tell it was already reported."""
+        with pytest.raises(RuntimeError) as exc_info:
+            CompositePublisher([_Channel(fail=True), _Channel(fail=True)]).publish_health(
+                _SESSION, _report()
+            )
+        assert was_already_logged(exc_info.value)
+
+    def test_a_freshly_raised_error_is_not_marked(self) -> None:
+        """Sanity check on the marker itself, so the positive test above isn't
+        trivially true — an ordinary exception nobody has marked must read as NOT
+        already logged."""
+        assert not was_already_logged(RuntimeError("never touched the composite"))
 
     def test_all_channels_unconfigured_raises_undeliverable(self) -> None:
         """The fresh-install trap (#1101): every real channel quietly no-ops when
