@@ -1204,6 +1204,39 @@ def _is_safe_summary(key: str, value: Any) -> bool:
 # ── retention sweep (configurable PII purge of old result samples) ────────────
 
 
+def _purge_column(
+    session: Session, *, cutoff: datetime, extra_where: Sequence[Any], values: dict[str, Any]
+) -> int:
+    """One bulk UPDATE against `results`, scoped to `created_at < cutoff` plus
+    the caller's own column-specific guard (#1253 — shared by both halves of
+    `purge_expired_sample_failures` so the two purges stay mechanically
+    identical). Returns the affected-row count.
+
+    Fire-and-forget bulk DML on a fresh, short-lived worker session with no
+    loaded Result identities — `synchronize_session=False` skips the ORM
+    identity-map sync, which under the default 'auto'/'fetch' would emit an
+    extra SELECT of every matching PK before the UPDATE (every caller's WHERE
+    uses `jsonb_typeof`, so the in-Python 'evaluate' strategy can't apply
+    anyway). Deliberately still two separate UPDATEs rather than one combined
+    pass with per-column CASE/SET expressions: a single UPDATE's rowcount
+    would tell us how many ROWS matched `cond1 OR cond2`, not how many
+    *column values* were scrubbed on each side — the per-column visibility
+    `purge_expired_sample_failures` reports (and logs) needs the two counts
+    kept apart. The daily 01:17 UTC cadence and indexed `created_at` cutoff
+    make the extra scan pass cheap relative to that.
+    """
+    result = cast(
+        CursorResult[Any],
+        session.execute(
+            update(Result)
+            .where(Result.created_at < cutoff, *extra_where)
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    return result.rowcount
+
+
 def purge_expired_sample_failures(
     session: Session, *, retention_days: int, now: datetime | None = None
 ) -> int:
@@ -1265,53 +1298,41 @@ def purge_expired_sample_failures(
         return 0
     moment = now or _now()
     cutoff = moment - timedelta(days=retention_days)
+
     sample_typeof = func.jsonb_typeof(Result.sample_failures)
-    # session.execute(<DML>) returns a CursorResult; the typed overload widens it
-    # to Result (no rowcount), so cast to read the affected-row count.
-    sample_purge_result = cast(
-        CursorResult[Any],
-        session.execute(
-            update(Result)
-            .where(
-                Result.created_at < cutoff,
-                Result.sample_failures_purged_at.is_(None),
-                sample_typeof.isnot(None),
-                sample_typeof != "null",
-            )
-            .values(sample_failures=null(), sample_failures_purged_at=moment)
-            # Fire-and-forget bulk DML on a fresh, short-lived worker session with
-            # no loaded Result identities — skip the ORM identity-map sync, which
-            # under the default 'auto'/'fetch' would emit an extra SELECT of every
-            # matching PK before the UPDATE (the WHERE uses jsonb_typeof, so the
-            # in-Python 'evaluate' strategy can't apply).
-            .execution_options(synchronize_session=False)
-        ),
+    sample_purged = _purge_column(
+        session,
+        cutoff=cutoff,
+        extra_where=[
+            Result.sample_failures_purged_at.is_(None),
+            sample_typeof.isnot(None),
+            sample_typeof != "null",
+        ],
+        values={"sample_failures": null(), "sample_failures_purged_at": moment},
     )
-    sample_purged = sample_purge_result.rowcount
 
     # #1253: observed_value's sibling half of the same PII-minimisation gap —
     # see the docstring above for why only the list-shaped case is touched and
     # why no *_purged_at stamp/migration is needed here.
     observed_inner_typeof = func.jsonb_typeof(Result.observed_value["observed_value"])
-    observed_purge_result = cast(
-        CursorResult[Any],
-        session.execute(
-            update(Result)
-            .where(
-                Result.created_at < cutoff,
-                observed_inner_typeof == "array",
-            )
-            .values(observed_value=null())
-            .execution_options(synchronize_session=False)
-        ),
+    observed_purged = _purge_column(
+        session,
+        cutoff=cutoff,
+        extra_where=[observed_inner_typeof == "array"],
+        values={"observed_value": null()},
     )
-    observed_purged = observed_purge_result.rowcount
 
     session.commit()
+    # `purged` names the historical (sample_failures-only) field for anyone
+    # already keying an alert/dashboard off this event's shape; the new
+    # per-column + total fields disambiguate the now-two-column sweep so
+    # nothing downstream has to infer which column moved a count.
     log.info(
         "sample_failures_purged",
         purged=sample_purged,
+        sample_failures_purged=sample_purged,
         observed_value_purged=observed_purged,
+        total_purged=sample_purged + observed_purged,
         retention_days=retention_days,
         cutoff=cutoff.isoformat(),
     )

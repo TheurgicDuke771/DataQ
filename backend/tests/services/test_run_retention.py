@@ -121,12 +121,18 @@ def test_idempotent_already_purged(db_session: Any) -> None:
 
 
 def test_disabled_when_retention_non_positive(db_session: Any) -> None:
-    old = _result(db_session, age_days=400)
+    """Covers BOTH sibling columns: the early `retention_days <= 0` return must
+    guard the observed_value half too, not just sample_failures — a row with a
+    list-shaped observed_value seeded here would catch a future refactor that
+    splits the single early-return into two per-column guards and gets the
+    observed_value one wrong."""
+    old = _result(db_session, age_days=400, observed={"observed_value": ["still@here.example"]})
 
     assert run_service.purge_expired_sample_failures(db_session, retention_days=0, now=NOW) == 0
     assert run_service.purge_expired_sample_failures(db_session, retention_days=-1, now=NOW) == 0
     db_session.refresh(old)
     assert old.sample_failures is not None  # nothing scrubbed
+    assert old.observed_value == {"observed_value": ["still@here.example"]}
 
 
 # ── #1253: observed_value's sibling sweep ────────────────────────────────────

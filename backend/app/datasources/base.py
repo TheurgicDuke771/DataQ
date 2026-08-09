@@ -27,8 +27,11 @@ from pydantic import BaseModel
 # datasource seam because multiple producers write these columns — the GX path
 # writes both (`gx_runner._extract_sample_failures` for `sample_failures`,
 # `gx_runner._bounded_observed_value` for `observed_value`), while the comparison
-# path (`comparison.SAMPLE_LIMIT`) bounds only `sample_failures` (a comparison
-# result's `observed_value` is always a dict of scalar counts, never a list) —
+# path (`comparison.SAMPLE_LIMIT`) bounds only `sample_failures`: a comparison
+# result's `observed_value` dict (`comparison_run._observed`) carries no raw
+# cell/row values — only scalar counts, plus two `list[str]` fields of compared
+# COLUMN NAMES (`columns_only_in_source`/`_target`, identifiers, not subject
+# data), so this cap doesn't apply to it either way —
 # and the read path (`run_service`) re-applies it so already-persisted oversized
 # rows stop shipping unbounded payloads too. Keeping a single constant means
 # raising it can't leave result paths disagreeing. 20 matches GX's own
