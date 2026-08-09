@@ -113,13 +113,23 @@ export interface PipelineRun {
  *  the truncation a caller needs to render honestly rather than silently. */
 export type PipelineRunListPage = ListPage<PipelineRun>;
 
+/** One page of `GET /runs` — the body (`items`) plus the caller-accessible
+ *  population `total` from `X-Total-Count` (#1108). The total is scoped to the
+ *  suites the caller can see (unlike `/assets`, which is workspace-true), and is
+ *  the population the `limit`/`offset` slice into — so `items.length < total` is
+ *  the only reliable way to know the page is truncated. */
+export type RunListPage = ListPage<Run>;
+
 export async function listRuns(params?: {
   suite_id?: string;
+  /** Closed vocabulary — the backend 422s anything outside `RUN_STATUSES`
+   *  rather than answering a confidently-empty page (#828). */
   status?: RunStatus;
   limit?: number;
-}): Promise<Run[]> {
-  const { data } = await api.get<Run[]>('/runs', { params });
-  return data;
+  offset?: number;
+}): Promise<RunListPage> {
+  const { data, headers } = await api.get<Run[]>('/runs', { params });
+  return toListPage(data, headers);
 }
 
 export async function getRun(runId: string): Promise<RunDetail> {
