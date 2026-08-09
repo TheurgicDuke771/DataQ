@@ -47,6 +47,37 @@ Portability, auto-monitors, and polish on top of v1:
   on the way down and once on recovery, never once per poll. The reason is always the
   **classified** one, never raw error text (the real failure carried a SAS token in its
   message).
+- **Email OTP sign-in** — a third authenticator alongside dev-bypass and OIDC (ADR 0032):
+  a one-time code emailed to an allow-listed address, `dq_sess_` cookie sessions, no
+  Identity Provider required. Now the default for the local/eval stack (bundled Mailpit
+  mail catcher), gated by one switch.
+- **Workspace roles (Admin / Member / Viewer)** — stored, in-app-managed roles (ADR 0033)
+  replace the old email-allowlist-only admin model; connection mutations are now
+  Admin-only. `WORKSPACE_ADMIN_EMAILS` is a bootstrap/break-glass allowlist, not the
+  primary mechanism.
+- **`schema_drift` monitor kind** — flags added/removed/type-changed columns against a
+  captured baseline, with a one-click re-baseline.
+- **`comparison` checks** — cross-dataset reconciliation (row counts, column-level
+  mismatch detection) between a suite's target and a second dataset (ADR 0015).
+- **`anomaly` monitor kind** — a rolling z-score baseline with optional seasonality over a
+  check's `metric_value` history; skips on cold start rather than false-alerting.
+- **DQ-dimension classification** — every check carries a dimension (accuracy /
+  completeness / consistency / integrity / timeliness / uniqueness / validity, ADR 0038),
+  derived by default and overridable, feeding the new **asset DQ scorecard** — coverage by
+  dimension, not just a pass rate.
+- **Metric trend view** — a per-check history chart with threshold bands and an
+  anomaly-baseline overlay.
+- **Self-hosted secret store (OpenBao)** — a `SecretStore` backend speaking the KV v2 HTTP
+  API (ADR 0039), alongside Azure Key Vault, for a non-Azure or self-hosted deployment.
+- **Request rate limiting** — a fixed-window throttle across REST, webhooks, and `/mcp`
+  (ADR 0035), with separate per-token / per-IP / per-webhook-provider classes.
+- **S3-compatible endpoints** — the `s3` datasource and the `dbt` orchestration provider
+  both accept an optional `endpoint_url` (+ addressing style), unlocking MinIO / Ceph / R2
+  / Wasabi / Backblaze alongside AWS S3 (#1063).
+- **Warehouse inventory sync** — an opt-in per-connection sweep (ADR 0040) that enumerates
+  every table in a database, so a table with no suite/run/lineage edge shows up as
+  visible-and-unmonitored instead of invisible.
+- **PDF report export** — a zero-dependency, one-click PDF of a run's results.
 
 ### Fixed
 
