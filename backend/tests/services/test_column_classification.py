@@ -364,3 +364,21 @@ class TestValueSignalSummary:
             "distinct_count": 2_000,  # > n — internally inconsistent
         }
         assert classify_column("ext_val", window, value_signal_summary=bogus) == baseline
+
+    def test_classify_column_falls_back_when_a_count_overflows_int(self) -> None:
+        # Review finding: a persisted JSONB number can be a syntactically-valid but
+        # huge float (Postgres jsonb stores it fine; Python's json decoder parses it
+        # as `inf`), and `int(float('inf'))` raises `OverflowError` — a different
+        # exception than the KeyError/TypeError/ValueError already caught, so an
+        # unguarded except would 500 the run-detail read API on a malformed row
+        # instead of degrading to "no summary" like every other malformed shape.
+        window = ["ref-1", "ref-2", "ref-3"]
+        baseline = classify_column("ext_val", window)
+        overflowing = {
+            "n": 1e400,  # parses to float('inf')
+            "email_count": 0,
+            "id_shaped_count": 0,
+            "encoded_count": 0,
+            "distinct_count": 0,
+        }
+        assert classify_column("ext_val", window, value_signal_summary=overflowing) == baseline

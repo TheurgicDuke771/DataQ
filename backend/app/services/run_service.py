@@ -1180,12 +1180,26 @@ def redact_sample_failures(
                         policy=policy,
                         tags=tags,
                         values_by_column=vbc,
+                        # `summary_by_column` (#1230) is sourced from the sibling
+                        # `unexpected_index_list`'s full pre-cap population, keyed by
+                        # column name — the same population these dict rows are drawn
+                        # from, so it's valid evidence here too. Without this, a
+                        # column judged PII via the summary on the other list stays
+                        # unmasked here, reappearing through the sibling field.
+                        summary_by_column=summary_by_column,
                         tracker=key_tracker,
                     )
                     for row in value
                 ]
             elif tested_column is not None and not _known_sensitive(
-                tested_column, raw_value, policy, tags
+                tested_column,
+                raw_value,
+                policy,
+                tags,
+                # Same reasoning as above: the summary describes the COLUMN, not
+                # `partial_unexpected_list`'s own (always-capped-by-GX) contents, so
+                # it's valid evidence for the tested column's scalar values too.
+                value_signal_summary=(summary_by_column or {}).get(tested_column),
             ):
                 out[key] = value  # the tested column's failing values — surfaced
                 if key_tracker is not None:

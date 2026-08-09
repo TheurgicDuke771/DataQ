@@ -484,7 +484,11 @@ def _valid_summary(summary: Mapping[str, Any] | None) -> dict[str, int] | None:
         return None
     try:
         counts = {key: int(summary[key]) for key in _SUMMARY_COUNT_KEYS}
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, OverflowError):
+        # OverflowError: a persisted JSONB number can be a huge float (e.g.
+        # 1e400 -> inf) that `int()` cannot convert — malformed the same way an
+        # out-of-range value is, so it falls back to "no summary" like the rest
+        # of this except clause, not an uncaught 500 on every read of the row.
         return None
     if counts["n"] <= 0 or any(v < 0 for v in counts.values()):
         return None
