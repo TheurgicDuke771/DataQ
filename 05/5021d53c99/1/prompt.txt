@@ -1,0 +1,6 @@
+hey the local [OTP based] login is not wrking using `royarijit1995@gmail.com` gives 500 internal error and for other email ids no email is captured by mailpit, can you check once [preferably using playwright]. 
+don't make any code changes [other sessions are running]. if required raise an issue
+
+---
+
+Also should we file an issue for - if the email is not present in allow list it shols show an error message [something like email id not registered, ask your admin to add it], not mislead user by saying OTP is send.
