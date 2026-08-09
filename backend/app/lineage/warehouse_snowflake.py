@@ -458,7 +458,14 @@ class SnowflakeLineageProvider:
                     tier=LineageTier.SNOWFLAKE_GET_LINEAGE,
                     degraded_reason="floor unavailable — " + "; ".join(skipped),
                     skipped_tiers=tuple(skipped),
-                    prunable=reason is not None,
+                    # `partial` (#1109) folds in a confirmed-vs-unclassified GET_LINEAGE
+                    # blip from EARLIER in this same call (review finding on #1263: the
+                    # first version of this branch dropped it, so a traversal already
+                    # known-incomplete from its own per-seed failures could still be
+                    # marked prunable just because the floor's SEPARATE failure happened
+                    # to classify as confirmed). Both must be clean for the pull to be
+                    # trusted to prune.
+                    prunable=reason is not None and not partial,
                 )
             merged_top: dict[tuple[str, str], LineageEdgePair] = {
                 (e.upstream.name, e.downstream.name): e for e in floor_for_top

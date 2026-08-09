@@ -526,6 +526,40 @@ def test_a_confirmed_floor_denial_after_a_successful_traversal_stays_prunable() 
     assert "transient" not in result.degraded_reason
 
 
+def test_a_confirmed_floor_denial_stays_non_prunable_if_the_traversal_was_already_partial() -> None:
+    """Review finding on #1263 (caught live, reproduced independently by multiple
+    review passes): the fix above folded in the floor's OWN classification but
+    dropped `partial` — the flag `fetch_edges` already set moments earlier from
+    an UNCLASSIFIED failure on a different seed's GET_LINEAGE call. A traversal
+    that is itself known-incomplete must stay non-prunable no matter how the
+    unrelated floor failure classifies — combining "confirmed floor denial" with
+    "already-partial top tier" must NOT cancel out to prunable=True."""
+
+    class _OneSeedUnclassifiedFails(_GetLineageConn):
+        def execute(self, statement: Any, params: dict[str, Any] | None = None) -> _Result:
+            if params is not None and params.get("obj") == "DATAQ_DB.RETAIL.CUSTOMERS":
+                raise RuntimeError("connection reset")  # UNCLASSIFIED — sets `partial`
+            return super().execute(statement, params)
+
+    conn = _OneSeedUnclassifiedFails(
+        {
+            ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
+                "gl_down_orders_header"
+            )
+        },
+        results={
+            "INFORMATION_SCHEMA.TABLES": [("RETAIL", "ORDERS_HEADER"), ("RETAIL", "CUSTOMERS")]
+        },
+        raises={"OBJECT_DEPENDENCIES": _not_authorized_error()},  # CONFIRMED floor denial
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.edges  # the traversal's edges are still returned
+    assert result.prunable is False  # the already-partial top tier must dominate
+    assert result.degraded_reason is not None
+    assert "not authorized" in result.degraded_reason  # the floor's own reason is still named
+
+
 def test_missing_account_is_unavailable() -> None:
     with pytest.raises(WarehouseLineageUnavailableError, match="no account"):
         SnowflakeLineageProvider().fetch_edges(_FakeConn(), connection_config={})
