@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bbgwsp1lh</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/cbd37765-c527-407d-9cb1-823dcf443ce0/tasks/bbgwsp1lh.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch CI on ops-log PR" completed (exit code 0)</summary>
+</task-notification>
