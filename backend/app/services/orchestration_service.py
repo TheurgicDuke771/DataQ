@@ -19,7 +19,6 @@ FastAPI-free by design (like `connection_service` / `run_service`): takes a
 
 from __future__ import annotations
 
-import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -27,7 +26,6 @@ from typing import Any
 
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, aliased
 
 from backend.app.core.errors import DataQError
@@ -36,6 +34,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.db.models import (
     ENVS,
     ORCHESTRATION_PROVIDERS,
+    PIPELINE_RUN_STATUSES,
     Connection,
     PipelineRun,
     Run,
@@ -45,6 +44,7 @@ from backend.app.db.models import (
 from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import run_dispatch, workspace_health_service
+from backend.app.services.connection_lock import lock_connection as _lock_connection
 from backend.app.services.failure_classifier import classify_failure_reason
 
 log = get_logger(__name__)
@@ -55,17 +55,24 @@ class OrchestrationFilterInvalidError(DataQError):
     code = "orchestration_filter_invalid"
 
 
-def validate_read_filters(provider: str | None = None, env: str | None = None) -> None:
+def validate_read_filters(
+    provider: str | None = None, env: str | None = None, status: str | None = None
+) -> None:
     """422 on a filter value outside its closed vocabulary (#306).
 
-    An unrecognised `provider`/`env` used to flow straight into the `WHERE`, so a
-    typo returned `200 []` — indistinguishable from "this provider genuinely has no
-    runs", which is the confidently-empty-answer class (#828). `None` means "no
-    filter" and is left alone; only a *supplied* value is checked.
+    An unrecognised `provider`/`env`/`status` used to flow straight into the
+    `WHERE`, so a typo returned `200 []` — indistinguishable from "this provider
+    genuinely has no runs", which is the confidently-empty-answer class (#828).
+    `None` means "no filter" and is left alone; only a *supplied* value is checked.
+
+    ``status`` joined the gate with `X-Total-Count` (#1108): the header made the
+    silence louder, since `?status=succeded` now answers a confident
+    `X-Total-Count: 0` alongside the empty page. The column stores lower-case, so
+    a wrong-case `Succeeded` matches nothing too and is rejected the same way.
 
     Mirrors `trigger_binding_service._validate_provider_env`, which guards the write
     path against the same vocabularies. Kept separate because that one requires both
-    values while a read filter may supply either, neither, or both.
+    values while a read filter may supply any subset.
     """
     if provider is not None and provider not in ORCHESTRATION_PROVIDERS:
         raise OrchestrationFilterInvalidError(
@@ -75,6 +82,11 @@ def validate_read_filters(provider: str | None = None, env: str | None = None) -
     if env is not None and env not in ENVS:
         raise OrchestrationFilterInvalidError(
             f"invalid env {env!r}", detail={"allowed": list(ENVS)}
+        )
+    if status is not None and status not in PIPELINE_RUN_STATUSES:
+        raise OrchestrationFilterInvalidError(
+            f"invalid pipeline run status {status!r}",
+            detail={"allowed": list(PIPELINE_RUN_STATUSES)},
         )
 
 
@@ -604,6 +616,19 @@ def pipeline_run_order_by() -> tuple[Any, ...]:
     return (PipelineRun.created_at.desc(), PipelineRun.id.desc())
 
 
+def _pipeline_run_filters(*, provider: str | None, status: str | None) -> list[Any]:
+    """The ONE `WHERE` chain shared by :func:`list_pipeline_runs` and
+    :func:`count_pipeline_runs`. Derived once rather than hand-rolled twice, so a
+    future filter cannot land on the list without the total — which would make
+    `X-Total-Count` quietly disagree with the page it describes (#1108)."""
+    conditions: list[Any] = []
+    if provider is not None:
+        conditions.append(PipelineRun.provider == provider)
+    if status is not None:
+        conditions.append(PipelineRun.status == status)
+    return conditions
+
+
 def list_pipeline_runs(
     session: Session,
     *,
@@ -625,12 +650,33 @@ def list_pipeline_runs(
     paging: it looks complete and silently isn't (the same nondeterminism #889
     fixed for latest-run-per-suite).
     """
-    stmt = select(PipelineRun).order_by(*pipeline_run_order_by()).limit(limit).offset(offset)
-    if provider is not None:
-        stmt = stmt.where(PipelineRun.provider == provider)
-    if status is not None:
-        stmt = stmt.where(PipelineRun.status == status)
+    stmt = (
+        select(PipelineRun)
+        .where(*_pipeline_run_filters(provider=provider, status=status))
+        .order_by(*pipeline_run_order_by())
+        .limit(limit)
+        .offset(offset)
+    )
     return list(session.scalars(stmt))
+
+
+def count_pipeline_runs(
+    session: Session,
+    *,
+    provider: str | None = None,
+    status: str | None = None,
+) -> int:
+    """Total pipeline runs matching the SAME `provider`/`status` filters as
+    :func:`list_pipeline_runs`, unaffected by its `limit`/`offset` (#1108 —
+    the `/assets` `X-Total-Count` shape: a page shorter than `limit` can't by
+    itself distinguish "that's everything" from "there's more"). Shares
+    :func:`_pipeline_run_filters` with the list so the two cannot drift."""
+    stmt = (
+        select(func.count())
+        .select_from(PipelineRun)
+        .where(*_pipeline_run_filters(provider=provider, status=status))
+    )
+    return session.scalar(stmt) or 0
 
 
 def list_pipelines(
@@ -703,63 +749,10 @@ def list_env_near_misses(session: Session) -> list[workspace_health_service.Near
 
 
 # A poll's health bookkeeping takes a ROW LOCK (#837, so two overlapping sweeps can't both
-# fire the same alert). The *unbounded wait* on that lock is what took prod down (#854) —
-# see `db.session`, where `lock_timeout` is now set on the ENGINE so no statement anywhere
-# can block forever. This module only has to decide what to DO when the lock is contended.
-#
-# Postgres SQLSTATE for "could not obtain lock within the timeout".
-_LOCK_NOT_AVAILABLE = "55P03"
-
-# How many times to try for the lock before giving up. Contention here is transient by
-# nature (the lock is held across two statements), so one retry converts almost every
-# collision into a normal write — which matters, because SKIPPING the write leaves
-# `last_polled_at` stale and the UI then reports a HEALTHY poll as failing: the confident
-# -and-wrong health display #828 exists to prevent (#855 review).
-_LOCK_ATTEMPTS = 2
-_LOCK_RETRY_SECONDS = 0.25
-
-
-def _is_lock_timeout(exc: OperationalError) -> bool:
-    """Whether this is lock contention, as opposed to a real database fault.
-
-    `OperationalError` also covers a dropped connection, a server restart, an
-    admin-terminated backend. Treating those as "the row was busy" would report a genuine
-    DB outage as routine contention and send the next debugger down the wrong path — and
-    the entire lesson of #854 is what an invisible failure costs. Anything that is not
-    `lock_not_available` is re-raised.
-    """
-    return getattr(getattr(exc, "orig", None), "pgcode", None) == _LOCK_NOT_AVAILABLE
-
-
-def _lock_connection(session: Session, connection_id: uuid.UUID) -> Connection | None:
-    """Row-lock a connection for the health write; ``None`` if it is gone or contended.
-
-    The wait is bounded by the engine-level `lock_timeout`, so this can never hang. A
-    contended row is retried once (contention is brief) and only then given up on — the
-    caller treats the bookkeeping as best-effort, because blocking a SHARED beat task is
-    never worth a health field.
-
-    NOTE: on contention this **rolls the session back** — a lock timeout aborts the
-    transaction, so it must be. Both callers reach here with nothing uncommitted pending
-    (`ingest_polled_runs` commits first; the failure path has already rolled back), which
-    is why that is safe. Do not add an uncommitted write before calling this (#855 review).
-    """
-    for attempt in range(_LOCK_ATTEMPTS):
-        try:
-            return session.get(Connection, connection_id, with_for_update=True)
-        except OperationalError as exc:
-            session.rollback()
-            if not _is_lock_timeout(exc):
-                raise  # a real DB fault must never masquerade as lock contention
-            if attempt + 1 < _LOCK_ATTEMPTS:
-                time.sleep(_LOCK_RETRY_SECONDS)
-                continue
-            log.warning(
-                "orchestration_poll_health_lock_contended",
-                connection_id=str(connection_id),
-                attempts=_LOCK_ATTEMPTS,
-            )
-    return None
+# fire the same alert). The mechanism — bounded wait, one retry, give up rather than block
+# a shared beat task (#854/#855) — lives in `services/connection_lock.py`, because the
+# inventory sync (#1104) needs the identical read-modify-write guard on the same table and
+# a second implementation would be a second set of bugs.
 
 
 def record_poll_success(session: Session, *, connection: Connection) -> int:

@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import TOTAL_COUNT_HEADER, ApiModel, total_count_responses
 from backend.app.core.auth import get_current_user, is_workspace_admin, require_workspace_admin
 from backend.app.db.models import User
 from backend.app.db.session import get_db
@@ -265,28 +265,17 @@ class AssetMetadataUpdate(ApiModel):
 _LIST_LIMIT_DEFAULT = 200
 _LIST_LIMIT_MAX = 200
 
-TOTAL_COUNT_HEADER = "X-Total-Count"
-
 
 @router.get(
     "/assets",
     response_model=list[AssetSummaryRead],
     summary="List assets",
-    responses={
-        200: {
-            "headers": {
-                TOTAL_COUNT_HEADER: {
-                    "description": (
-                        "Total assets in the workspace (#925) — the same "
-                        "unfiltered population this page's limit/offset slice "
-                        "into. A page shorter than `limit` doesn't by itself "
-                        "prove there's no more; compare against this header."
-                    ),
-                    "schema": {"type": "integer"},
-                }
-            }
-        }
-    },
+    responses=total_count_responses(
+        "Total assets in the workspace (#925) — the same "
+        "unfiltered population this page's limit/offset slice "
+        "into. A page shorter than `limit` doesn't by itself "
+        "prove there's no more; compare against this header."
+    ),
 )
 def list_assets(
     current_user: Annotated[User, Depends(get_current_user)],

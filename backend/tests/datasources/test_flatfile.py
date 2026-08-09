@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 
 from backend.app.datasources import flatfile
-from backend.app.datasources.base import CheckSpec
+from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckSpec
 
 
 class _FakeStore:
@@ -651,6 +651,36 @@ def test_run_checks_index_columns_capture_identifier(monkeypatch: pytest.MonkeyP
     # the two null rows, each dict carrying the identifier + the (null) tested value
     assert {r["customer_id"] for r in rows} == {8823, 20455}
     assert all("order_number" in r for r in rows)
+
+
+def test_run_checks_index_list_is_capped_at_capture(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#1196: the pandas execution engine returns `unexpected_index_list` FULL under
+    `result_format="COMPLETE"` (unlike `partial_unexpected_list`, capped at 20 on every
+    engine). Real GX end to end over a frame with hundreds of failing rows: the captured
+    sample must be bounded, while the aggregate counts still report the true totals.
+    A unit test over `_extract_sample_failures` alone could not prove GX really hands us
+    the untruncated list — that shape comes from the engine, not from our model."""
+    failing = 500
+    df = pd.DataFrame(
+        {
+            "order_number": [None] * failing,
+            "customer_id": list(range(failing)),
+        }
+    )
+    runner = _runner_over(df, monkeypatch)
+    outcome = runner.run_checks(
+        table="data/orders.parquet",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "order_number"})],
+        index_columns=["customer_id"],
+    )
+    sample = outcome.checks[0].sample_failures
+    assert sample is not None
+    assert len(sample["unexpected_index_list"]) == SAMPLE_ROW_CAP
+    assert len(sample["partial_unexpected_list"]) <= SAMPLE_ROW_CAP
+    # the cap trims the sample, never the reported totals
+    assert sample["unexpected_count"] == failing
+    assert sample["unexpected_percent"] == 100.0
 
 
 def test_run_checks_bad_index_column_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:

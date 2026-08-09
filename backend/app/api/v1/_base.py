@@ -20,9 +20,30 @@ walk only descends str/dict/list/tuple/set; DB data cannot contain NUL).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final
 
 from pydantic import BaseModel, model_validator
+
+# The one paging-total header name for every list endpoint that carries one
+# (#925 introduced it on `/assets`; #1108 spread it to `/pipeline_runs`,
+# `/incidents`, and `/runs` rather than each endpoint inventing its own
+# convention). Defined here — not re-declared per router — so every caller
+# imports the SAME constant object; `main.py`'s CORS `expose_headers` and every
+# endpoint's response both reference it.
+TOTAL_COUNT_HEADER: Final = "X-Total-Count"
+
+
+def total_count_responses(description: str) -> dict[int | str, dict[str, Any]]:
+    """The OpenAPI `responses=` fragment documenting `TOTAL_COUNT_HEADER` on a
+    200, shared verbatim by every list endpoint that sets it — one Swagger
+    shape instead of four independently-worded copies."""
+    return {
+        200: {
+            "headers": {
+                TOTAL_COUNT_HEADER: {"description": description, "schema": {"type": "integer"}}
+            }
+        }
+    }
 
 
 def contains_nul(value: Any) -> bool:

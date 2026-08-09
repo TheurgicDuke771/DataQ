@@ -245,9 +245,11 @@ class _Ok:
 
     def publish_health(self, session, report):  # type: ignore[no-untyped-def]
         self._calls.append("ok")
+        return True  # #1101: the composite counts a channel as delivered only if it says so
 
     def publish_poll_staleness(self, session, report):  # type: ignore[no-untyped-def]
         self._calls.append("ok")
+        return True
 
 
 def test_composite_isolates_a_failing_child(db_session: Any) -> None:

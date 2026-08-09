@@ -133,6 +133,43 @@ describe('Connections', () => {
     expect(await screen.findByText('expiry unknown')).toBeInTheDocument();
   });
 
+  it('flags a connection whose inventory sync is failing, only when opted in (#1104)', async () => {
+    // A connection opted into inventory sync whose principal can't read the
+    // enumeration query used to fail every daily tick invisibly: toggle on,
+    // connection test green, zero assets, no surface said why (#828 shape).
+    mockList.mockResolvedValue([
+      conn({
+        id: 'c1',
+        name: 'uc-catalog',
+        type: 'unity_catalog',
+        config: { inventory_sync: true },
+        inventory_sync_failing_since: '2026-08-01T00:00:00Z',
+        inventory_sync_last_error:
+          'Inventory sync is missing a SELECT grant on `system.information_schema`.',
+      }),
+      // Opted in but currently healthy — no badge.
+      conn({
+        id: 'c2',
+        name: 'uc-healthy',
+        type: 'unity_catalog',
+        config: { inventory_sync: true },
+      }),
+      // NOT opted in, even though failing_since happens to be set — must stay
+      // unbadged, since the badge is scoped to opted-in connections only.
+      conn({
+        id: 'c3',
+        name: 'uc-not-opted-in',
+        type: 'unity_catalog',
+        inventory_sync_failing_since: '2026-08-01T00:00:00Z',
+      }),
+    ]);
+
+    renderPage();
+
+    await screen.findByText('uc-catalog');
+    expect(screen.getAllByText('inventory sync failing')).toHaveLength(1);
+  });
+
   it('stays silent once checked and the credential states no expiry', async () => {
     // A Snowflake PAT or S3 key genuinely has no readable lifetime. Having looked,
     // silence is the correct and permanent answer — not a nag we cannot resolve.

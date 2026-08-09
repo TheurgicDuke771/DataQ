@@ -19,6 +19,7 @@ import {
   listRuns,
   type PipelineRun,
   type Run,
+  type RunListPage,
   type RunStatus,
   RUN_STATUSES,
 } from '../api/runs';
@@ -97,7 +98,7 @@ export function Results() {
   // error contract for every one of its other consumers. RunsTab uses this to
   // keep showing the table (with an inline warning) instead of blanking to a
   // full-page error on a background hiccup.
-  const [lastGoodRuns, setLastGoodRuns] = useState<Run[] | null>(null);
+  const [lastGoodRuns, setLastGoodRuns] = useState<RunListPage | null>(null);
   // Adjust state during render (React's documented pattern for "remember the
   // latest X"), not in an effect — an effect would commit the stale render
   // first and only fix it up a tick later; this lint-clean form updates before
@@ -153,11 +154,11 @@ function RunsTab({
   lastGoodRuns,
   reloadRuns,
 }: {
-  runsState: AsyncState<Run[]>;
+  runsState: AsyncState<RunListPage>;
   /** The last successfully-loaded runs page, tracked by the parent (#1114) —
    *  non-null once any fetch has ever succeeded, regardless of `state`'s
    *  current status. */
-  lastGoodRuns: Run[] | null;
+  lastGoodRuns: RunListPage | null;
   reloadRuns: () => void;
 }) {
   // Runs come from the parent (shared with PipelineRunsTab, #349); fetch the
@@ -165,7 +166,7 @@ function RunsTab({
   // datasource of each suite), then filter everything client-side — cheap at
   // this volume and avoids a refetch per filter change.
   const navigate = useNavigate();
-  const { state: suitesState } = useAsyncData(listSuites);
+  const { state: suitesState } = useAsyncData(() => listSuites());
   const { state: connectionsState } = useAsyncData(() => listConnections());
 
   const [status, setStatus] = useState<RunStatus | 'all'>('all');
@@ -209,6 +210,13 @@ function RunsTab({
   // above and `runsJoinFailed` on the Pipeline tab.
   const runsData = state.status === 'ok' ? state.data : lastGoodRuns;
   const backgroundRunsFailed = state.status === 'error' && runsData !== null;
+  // Honest truncation (#1108) — the same disclosure the Pipeline tab makes, and
+  // the reason `/runs` gained `X-Total-Count` at all. The tab fetches ONE
+  // `LIST_LIMIT`-row page, so beyond that the table showed the most recent
+  // LIST_LIMIT runs while the footer counted them as the whole story. `total` is
+  // the caller's accessible population, unfiltered — so this describes the
+  // FETCH, not the filtered rows below it.
+  const runsTruncated = runsData !== null && runsData.items.length < runsData.total;
 
   if (state.status === 'loading') return <Spin description="Loading runs…" size="large" />;
   if (state.status === 'error' && runsData === null) {
@@ -224,7 +232,7 @@ function RunsTab({
   }
 
   const windowDays = dateWindow === 'all' ? null : Number(dateWindow);
-  const runs = (runsData ?? []).filter((r) => {
+  const runs = (runsData?.items ?? []).filter((r: Run) => {
     if (status !== 'all' && r.status !== status) return false;
     if (suiteId !== 'all' && r.suite_id !== suiteId) return false;
     // Keep runs with unknown env/datasource visible under any filter — a
@@ -304,6 +312,14 @@ function RunsTab({
           showIcon
           title="Environment / datasource filters unavailable"
           description="Couldn't load suites or connections, so runs can't be filtered by environment or datasource. All runs are still shown."
+        />
+      )}
+      {runsTruncated && runsData !== null && (
+        <Alert
+          type="info"
+          showIcon
+          title={`Loaded the ${runsData.items.length} most recent of ${runsData.total} runs`}
+          description="The filters below only narrow what's already loaded, so older runs can't be reached from this page."
         />
       )}
       <Flex gap={16} align="flex-end" wrap="wrap">
@@ -393,7 +409,7 @@ function PipelineRunsTab({
   reloadRuns,
   pollMs = PIPELINE_POLL_MS,
 }: {
-  runsState: AsyncState<Run[]>;
+  runsState: AsyncState<RunListPage>;
   reloadRuns: () => void;
   pollMs?: number;
 }) {
@@ -421,7 +437,7 @@ function PipelineRunsTab({
   const runsByMarker = useMemo(() => {
     const map = new Map<string, Run[]>();
     if (runsState.status !== 'ok') return map;
-    for (const r of runsState.data) {
+    for (const r of runsState.data.items) {
       if (!r.triggered_by) continue;
       const list = map.get(r.triggered_by);
       if (list) list.push(r);
@@ -443,8 +459,17 @@ function PipelineRunsTab({
     );
   }
 
+  const { items: pipelineRuns, total } = state.data;
+  // Honest truncation (#1108): the tab fetches a single `LIST_LIMIT`-row page,
+  // so on a monitored population bigger than that the table was silently
+  // showing "everything" when it was really the most recent LIST_LIMIT rows.
+  // `total` is the WHOLE monitored population from `X-Total-Count` — the request
+  // sends no provider/date filter, so it is deliberately not filter-scoped, and
+  // the note below must therefore describe the FETCH, never the filtered table.
+  const truncated = pipelineRuns.length < total;
+
   const windowDays = dateWindow === 'all' ? null : Number(dateWindow);
-  const rows = state.data.filter((p) => {
+  const rows = pipelineRuns.filter((p) => {
     if (provider !== 'all' && p.provider !== provider) return false;
     if (windowDays !== null && !isWithinWindowDays(p.started_at ?? p.created_at, windowDays))
       return false;
@@ -521,6 +546,17 @@ function PipelineRunsTab({
           showIcon
           title="Triggered DQ runs unavailable"
           description="Couldn't load DataQ runs, so the “DQ run” column can't show which runs each pipeline triggered. Pipeline runs below are still accurate."
+        />
+      )}
+      {truncated && (
+        <Alert
+          type="info"
+          showIcon
+          title={`Loaded the ${pipelineRuns.length} most recent of ${total} pipeline runs`}
+          // Deliberately NOT "narrow the filters to see older runs": the provider
+          // and date selects below are client-side over this already-loaded page,
+          // so no filter choice can reach the runs that were never fetched.
+          description="The filters below only narrow what's already loaded, so older pipeline runs can't be reached from this page."
         />
       )}
       <Flex gap={12} align="flex-end" wrap>

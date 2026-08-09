@@ -26,8 +26,11 @@ const RECENT_LIMIT = 8;
 
 export function RecentRuns() {
   const navigate = useNavigate();
-  const { state } = useAsyncData(() => listRuns({ limit: RECENT_LIMIT }));
-  const { state: suitesState } = useAsyncData(listSuites);
+  // Only `items` — this widget is deliberately a "most recent N" view, so its
+  // truncation is the feature, not a silence to disclose (#1108). The Results
+  // page's Runs tab is the surface that must report the population total.
+  const { state } = useAsyncData(async () => (await listRuns({ limit: RECENT_LIMIT })).items);
+  const { state: suitesState } = useAsyncData(() => listSuites());
 
   const suiteNames = useMemo(() => {
     const map = new Map<string, string>();

@@ -156,6 +156,16 @@ export interface Connection {
    *  must render as "unknown" rather than as silence — silence reads as
    *  reassurance, and before this field the two were indistinguishable. */
   credential_expiry_checked_at?: string | null;
+  /** Inventory-sync outcome (#1104) — opted-in snowflake/unity_catalog connections
+   *  only (config.inventory_sync, ADR 0040). A sync whose principal can't read the
+   *  enumeration query used to fail every tick invisibly: toggle on, connection test
+   *  green (the `SELECT 1` probe never exercises this query), zero assets ever
+   *  appear, no surface said why. `inventory_sync_last_error` is a classified
+   *  reason, never raw exception text; NULL means the last attempt succeeded.
+   *  `inventory_sync_failing_since` is NULL whenever currently healthy. */
+  inventory_sync_last_attempted_at?: string | null;
+  inventory_sync_last_error?: string | null;
+  inventory_sync_failing_since?: string | null;
 }
 
 /** Human-readable labels for the connection types, for grouping + display. */

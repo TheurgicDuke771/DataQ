@@ -8,11 +8,12 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import StatementError
 
 from backend.app.datasources import monitors as monitors_module
 from backend.app.datasources.base import MonitorSpec
 from backend.app.datasources.monitors import run_monitors_over_engine
-from backend.app.datasources.sql import is_sql_identifier
+from backend.app.datasources.sql import is_sql_identifier, strip_statement_echo
 from backend.app.services import profile_service
 
 # ───────────────────────── identifier allowlist ─────────────────────────
@@ -255,3 +256,80 @@ def test_lazy_engine_close_before_use_never_builds() -> None:
     lazy = LazyEngine(factory)
     lazy.close()
     assert built == []
+
+
+# ───────────────── statement-echo strip (#1203) ─────────────────
+
+
+def _statement_error(*, message: str, statement: str, params: dict[str, object]) -> StatementError:
+    """A real SQLAlchemy `StatementError`, so the tests read its ACTUAL rendering.
+
+    Hand-writing the expected string would test our idea of the format rather than
+    SQLAlchemy's — precisely the fixture-encodes-our-model trap that hid #953. Every
+    SQL datasource reaches DataQ through this wrapper: the Snowflake and Databricks
+    dialects both raise driver errors wrapped in it, which is why one strip covers
+    both without a per-datasource branch.
+    """
+    return StatementError(message, statement, params, Exception("orig"))
+
+
+def test_strip_statement_echo_removes_the_statement_and_its_bound_parameters() -> None:
+    exc = _statement_error(
+        message=(
+            "(snowflake.connector.errors.ProgrammingError) 100038 (22018): "
+            "Numeric value 'ORD-9' is not recognized"
+        ),
+        statement="SELECT * FROM RETAIL.ORDERS WHERE CUSTOMER_REF = %(ref)s",
+        params={"ref": "alice@example.com"},
+    )
+    rendered = str(exc)
+    # Guard the premise: SQLAlchemy really does echo both, so a green assertion
+    # below cannot be an artefact of nothing having been there.
+    assert "[SQL:" in rendered and "[parameters:" in rendered
+    assert "alice@example.com" in rendered
+
+    stripped = strip_statement_echo(rendered)
+
+    assert stripped is not None
+    assert "[SQL:" not in stripped
+    assert "[parameters:" not in stripped
+    assert "alice@example.com" not in stripped
+    assert "RETAIL.ORDERS" not in stripped
+    # …and the driver's own diagnostic, the reason we don't blanket-classify, stays.
+    assert stripped == (
+        "(snowflake.connector.errors.ProgrammingError) 100038 (22018): "
+        "Numeric value 'ORD-9' is not recognized"
+    )
+
+
+def test_strip_statement_echo_keeps_a_multi_line_driver_message() -> None:
+    # `_message()` is joined into the same string as the echo, so the cut must be at
+    # the marker, not "the first line" — a driver that wraps its message would
+    # otherwise lose half its diagnostic.
+    exc = _statement_error(
+        message="(databricks.sql.exc.ServerOperationError) [CAST_INVALID_INPUT]\ncannot cast 'x'",
+        statement="SELECT 1",
+        params={"p": "secret-cell"},
+    )
+    stripped = strip_statement_echo(str(exc))
+    assert (
+        stripped
+        == "(databricks.sql.exc.ServerOperationError) [CAST_INVALID_INPUT]\ncannot cast 'x'"
+    )
+    assert "secret-cell" not in stripped
+
+
+def test_strip_statement_echo_is_idempotent_and_passes_other_messages_through() -> None:
+    exc = _statement_error(message="(x.Error) boom", statement="SELECT 1", params={"p": "cell"})
+    once = strip_statement_echo(str(exc))
+    assert strip_statement_echo(once) == once
+    # A non-SQL runner's message, a DataQ-authored one, and the empty cases are
+    # untouched — the strip must never edit a message it does not recognise.
+    assert strip_statement_echo("unknown freshness column 'nope'") == (
+        "unknown freshness column 'nope'"
+    )
+    assert strip_statement_echo("[SQL: not a marker without the newline]") == (
+        "[SQL: not a marker without the newline]"
+    )
+    assert strip_statement_echo(None) is None
+    assert strip_statement_echo("") == ""

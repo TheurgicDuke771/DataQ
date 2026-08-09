@@ -19,11 +19,11 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import TOTAL_COUNT_HEADER, ApiModel, total_count_responses
 from backend.app.core.auth import get_current_user, is_workspace_admin
 from backend.app.core.errors import DataQError
 from backend.app.db.models import INCIDENT_STATUSES, Incident, Suite, User
@@ -169,10 +169,22 @@ def _load_visible_incident(
 # ── endpoints ─────────────────────────────────────────────────────────────────
 
 
-@router.get("/incidents", response_model=list[IncidentRead], summary="List visible incidents")
+@router.get(
+    "/incidents",
+    response_model=list[IncidentRead],
+    summary="List visible incidents",
+    responses=total_count_responses(
+        "Total incidents visible to the caller matching the `asset_id`/`suite_id`/"
+        "`state` filters (#1108) — the same accessible-suite-scoped population "
+        "this page's limit/offset slice into. #772 added `offset` but shipped only "
+        "that half of the /assets paging shape; a page shorter than `limit` "
+        "doesn't by itself prove there's no more — compare against this header."
+    ),
+)
 def list_incidents(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    response: Response,
     asset_id: uuid.UUID | None = None,
     suite_id: uuid.UUID | None = None,
     state: str | None = Query(default=None, description="Filter by lifecycle status"),
@@ -188,10 +200,21 @@ def list_incidents(
             status_code=422,
             detail={"state": state, "allowed": list(INCIDENT_STATUSES)},
         )
+    include_all = is_workspace_admin(current_user)
+    response.headers[TOTAL_COUNT_HEADER] = str(
+        incident_service.count_incidents(
+            db,
+            user_id=current_user.id,
+            include_all=include_all,
+            asset_id=asset_id,
+            suite_id=suite_id,
+            state=state,
+        )
+    )
     incidents = incident_service.list_incidents(
         db,
         user_id=current_user.id,
-        include_all=is_workspace_admin(current_user),
+        include_all=include_all,
         asset_id=asset_id,
         suite_id=suite_id,
         state=state,

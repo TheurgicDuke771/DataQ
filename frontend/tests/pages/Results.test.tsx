@@ -4,7 +4,14 @@ import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Connection, listConnections } from '../../src/api/connections';
-import { listPipelineRuns, listRuns, type PipelineRun, type Run } from '../../src/api/runs';
+import {
+  listPipelineRuns,
+  listRuns,
+  type PipelineRun,
+  type PipelineRunListPage,
+  type Run,
+  type RunListPage,
+} from '../../src/api/runs';
 import { ORCHESTRATION_PROVIDERS, PROVIDER_LABELS } from '../../src/api/triggerBindings';
 import { type Suite, listSuites } from '../../src/api/suites';
 import { WINDOW_PRESETS } from '../../src/components/shared/windowPresets';
@@ -121,6 +128,19 @@ const pipelineRun: PipelineRun = {
   created_at: '2026-06-11T00:00:00Z',
 };
 
+/** `listPipelineRuns` now resolves a page (`{ items, total }`, #1108) — this
+ *  wraps a bare fixture array as a full (untruncated) page, the shape every
+ *  test below needs unless it's exercising the truncation note itself. */
+function pipelineRunsPage(items: PipelineRun[], total = items.length): PipelineRunListPage {
+  return { items, total };
+}
+
+/** Same for `listRuns` (#1108) — a bare fixture array as a full, untruncated
+ *  page. Pass an explicit `total` to exercise the Runs tab's truncation note. */
+function runsPage(items: Run[], total = items.length): RunListPage {
+  return { items, total };
+}
+
 /** A stub for the run-detail route so a row click's navigation is observable. */
 function RunDetailStub() {
   const { runId } = useParams<{ runId: string }>();
@@ -156,10 +176,10 @@ afterEach(() => {
 
 describe('Results page', () => {
   it('lists runs with the suite name and a status tag', async () => {
-    mockListRuns.mockResolvedValue([succeededRun, failedRun]);
+    mockListRuns.mockResolvedValue(runsPage([succeededRun, failedRun]));
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
 
@@ -170,10 +190,10 @@ describe('Results page', () => {
   });
 
   it('navigates to the routed run-detail page on row click', async () => {
-    mockListRuns.mockResolvedValue([succeededRun]);
+    mockListRuns.mockResolvedValue(runsPage([succeededRun]));
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -186,10 +206,10 @@ describe('Results page', () => {
   });
 
   it('filters the runs table by status', async () => {
-    mockListRuns.mockResolvedValue([succeededRun, failedRun]);
+    mockListRuns.mockResolvedValue(runsPage([succeededRun, failedRun]));
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -206,10 +226,10 @@ describe('Results page', () => {
   });
 
   it('filters the runs table by suite', async () => {
-    mockListRuns.mockResolvedValue([succeededRun, recentEventsRun]);
+    mockListRuns.mockResolvedValue(runsPage([succeededRun, recentEventsRun]));
     mockListSuites.mockResolvedValue([ordersSuite, eventsSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn, s3Conn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -223,10 +243,10 @@ describe('Results page', () => {
   });
 
   it('filters the runs table by environment', async () => {
-    mockListRuns.mockResolvedValue([succeededRun, recentEventsRun]);
+    mockListRuns.mockResolvedValue(runsPage([succeededRun, recentEventsRun]));
     mockListSuites.mockResolvedValue([ordersSuite, eventsSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn, s3Conn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -241,10 +261,10 @@ describe('Results page', () => {
   });
 
   it('filters the runs table by datasource category', async () => {
-    mockListRuns.mockResolvedValue([succeededRun, recentEventsRun]);
+    mockListRuns.mockResolvedValue(runsPage([succeededRun, recentEventsRun]));
     mockListSuites.mockResolvedValue([ordersSuite, eventsSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn, s3Conn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -261,10 +281,10 @@ describe('Results page', () => {
   it('filters the runs table by date window', async () => {
     // succeededRun started 2026-06-11 (>7d before the 2026-06-22 fixture date);
     // recentEventsRun started now → only the recent run is inside "Last 7 days".
-    mockListRuns.mockResolvedValue([succeededRun, recentEventsRun]);
+    mockListRuns.mockResolvedValue(runsPage([succeededRun, recentEventsRun]));
     mockListSuites.mockResolvedValue([ordersSuite, eventsSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn, s3Conn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -278,10 +298,10 @@ describe('Results page', () => {
   });
 
   it('shows monitored pipeline runs on the Pipeline runs tab', async () => {
-    mockListRuns.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue(runsPage([]));
     mockListSuites.mockResolvedValue([]);
     mockListConnections.mockResolvedValue([]);
-    mockListPipelineRuns.mockResolvedValue([pipelineRun]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun]));
 
     renderResults();
     const user = userEvent.setup();
@@ -292,6 +312,86 @@ describe('Results page', () => {
     // Provider renders its human label (shared PROVIDER_LABELS), not the raw code.
     expect(screen.getByText('Azure Data Factory')).toBeInTheDocument();
     expect(screen.getByText('succeeded')).toBeInTheDocument();
+    // The fetched page (1 row) matches the reported total (1) — no truncation note.
+    expect(screen.queryByText(/of \d+ pipeline runs/)).not.toBeInTheDocument();
+  });
+
+  it('shows an honest truncation note when the monitored population exceeds the fetched page (#1108)', async () => {
+    // The tab fetches one capped page; a `total` bigger than that page's length
+    // means the table is silently NOT everything — #1108's actual defect on
+    // `/pipeline_runs` (and the identical gap on `/assets` before #925).
+    mockListRuns.mockResolvedValue(runsPage([]));
+    mockListSuites.mockResolvedValue([]);
+    mockListConnections.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun], 211));
+
+    renderResults();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Loaded the 1 most recent of 211 pipeline runs')).toBeInTheDocument(),
+    );
+    // The advice must not send the user to filters that cannot possibly help:
+    // both selects are client-side over the page already fetched, so no choice
+    // reaches the 210 runs that were never loaded.
+    expect(screen.queryByText(/Narrow the provider or date filter/)).not.toBeInTheDocument();
+    expect(screen.getByText(/filters below only narrow what's already loaded/)).toBeInTheDocument();
+  });
+
+  it('counts the FETCH, not the filtered table, in the pipeline truncation note (#1108)', async () => {
+    // The note sits above a client-side-filtered table. If it counted the
+    // filtered rows it would read "Loaded the 0 most recent of 211" over an
+    // empty table — or vanish — the moment a filter excluded everything. It
+    // describes the fetch, so it stays put and stays true.
+    mockListRuns.mockResolvedValue(runsPage([]));
+    mockListSuites.mockResolvedValue([]);
+    mockListConnections.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun], 211));
+
+    renderResults();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
+    await waitFor(() =>
+      expect(screen.getByText('Loaded the 1 most recent of 211 pipeline runs')).toBeInTheDocument(),
+    );
+
+    // Filter to a provider the single loaded row is NOT — the table empties.
+    await user.click(screen.getByRole('combobox', { name: 'Provider' }));
+    await user.click(await screen.findByTitle(PROVIDER_LABELS.dbt));
+    await waitFor(() => expect(screen.queryByText('daily_orders_load')).not.toBeInTheDocument());
+    // The note is unchanged: still the fetch's numbers, still on screen.
+    expect(screen.getByText('Loaded the 1 most recent of 211 pipeline runs')).toBeInTheDocument();
+  });
+
+  it('discloses truncation on the Runs tab too, not only the Pipeline tab (#1108)', async () => {
+    // `/runs` gained `X-Total-Count` in #1108, but the Runs tab — the PRIMARY
+    // runs surface — ignored it, so a 500-run workspace rendered its capped
+    // 200-row fetch as if complete. That is the exact silence #1108 names.
+    mockListRuns.mockResolvedValue(runsPage([succeededRun], 500));
+    mockListSuites.mockResolvedValue([]);
+    mockListConnections.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
+
+    renderResults();
+
+    await waitFor(() =>
+      expect(screen.getByText('Loaded the 1 most recent of 500 runs')).toBeInTheDocument(),
+    );
+  });
+
+  it('shows no runs truncation note when the page IS the whole population (#1108)', async () => {
+    // The note must be driven by the header, not printed unconditionally — a
+    // complete page has nothing to disclose.
+    mockListRuns.mockResolvedValue(runsPage([succeededRun]));
+    mockListSuites.mockResolvedValue([]);
+    mockListConnections.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
+
+    renderResults();
+
+    await waitFor(() => expect(screen.getByText('succeeded')).toBeInTheDocument());
+    expect(screen.queryByText(/most recent of \d+ runs/)).not.toBeInTheDocument();
   });
 
   it('offers every orchestration provider in the pipeline-runs filter and filters by it (#652)', async () => {
@@ -302,10 +402,10 @@ describe('Results page', () => {
       provider_run_id: 'inv-0001',
       pipeline_or_dag_id: 'analytics_build',
     };
-    mockListRuns.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue(runsPage([]));
     mockListSuites.mockResolvedValue([]);
     mockListConnections.mockResolvedValue([]);
-    mockListPipelineRuns.mockResolvedValue([pipelineRun, dbtRun]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun, dbtRun]));
 
     renderResults();
     const user = userEvent.setup();
@@ -338,12 +438,12 @@ describe('Results page', () => {
       pipeline_or_dag_id: 'nightly_orders_retry',
       failure_reason: longReason,
     };
-    mockListRuns.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue(runsPage([]));
     mockListSuites.mockResolvedValue([]);
     mockListConnections.mockResolvedValue([]);
     // pipelineRun keeps its null failure_reason — covers the '—' placeholder
     // alongside the long-error row.
-    mockListPipelineRuns.mockResolvedValue([pipelineRun, failingPipelineRun]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun, failingPipelineRun]));
 
     renderResults();
     const user = userEvent.setup();
@@ -378,10 +478,10 @@ describe('Results page', () => {
       suite_id: 's1',
       triggered_by: 'adf:daily_orders_load:seed-adf-0001',
     };
-    mockListRuns.mockResolvedValue([triggeredRun]);
+    mockListRuns.mockResolvedValue(runsPage([triggeredRun]));
     mockListSuites.mockResolvedValue([]);
     mockListConnections.mockResolvedValue([]);
-    mockListPipelineRuns.mockResolvedValue([pipelineRun]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun]));
 
     renderResults();
     const user = userEvent.setup();
@@ -407,10 +507,10 @@ describe('Results page', () => {
       suite_id: 's1',
       triggered_by: 'adf:daily_orders_load:seed-adf-0001',
     };
-    mockListRuns.mockResolvedValue([succeededRun, triggeredRun]);
+    mockListRuns.mockResolvedValue(runsPage([succeededRun, triggeredRun]));
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
-    mockListPipelineRuns.mockResolvedValue([pipelineRun]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun]));
 
     renderResults();
     const user = userEvent.setup();
@@ -435,10 +535,10 @@ describe('Results page', () => {
   });
 
   it('shares date-window presets with the Dashboard (#349)', async () => {
-    mockListRuns.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue(runsPage([]));
     mockListSuites.mockResolvedValue([]);
     mockListConnections.mockResolvedValue([]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -471,7 +571,7 @@ describe('Results page', () => {
     mockListRuns.mockRejectedValueOnce(new Error('boom'));
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
-    mockListPipelineRuns.mockResolvedValue([]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
 
     renderResults();
     const user = userEvent.setup();
@@ -482,7 +582,7 @@ describe('Results page', () => {
 
     // The retry action isn't a dead end — it re-runs the shared fetch.
     expect(mockListRuns).toHaveBeenCalledTimes(1);
-    mockListRuns.mockResolvedValueOnce([succeededRun]);
+    mockListRuns.mockResolvedValueOnce(runsPage([succeededRun]));
     await user.click(retry);
     await waitFor(() => expect(mockListRuns).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('Orders quality')).toBeInTheDocument();
@@ -498,10 +598,10 @@ describe('Results page', () => {
     // table+filters on a transient background hiccup that used to be cosmetic.
     vi.useFakeTimers();
 
-    mockListRuns.mockResolvedValueOnce([succeededRun]);
+    mockListRuns.mockResolvedValueOnce(runsPage([succeededRun]));
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
-    mockListPipelineRuns.mockResolvedValue([pipelineRun]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun]));
 
     renderResults();
     await vi.advanceTimersByTimeAsync(0);

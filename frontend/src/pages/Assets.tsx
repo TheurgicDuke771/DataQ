@@ -8,8 +8,8 @@ import {
 import { Alert, Empty, Flex, Segmented, Table, Tag, Tooltip, Tree, Typography } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import type { DataNode } from 'antd/es/tree';
-import type { ReactNode } from 'react';
-import { useMemo, useState } from 'react';
+import type { MutableRefObject, ReactNode } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { type AssetListPage, type AssetSummary, listAssets } from '../api/assets';
@@ -45,6 +45,15 @@ export function Assets() {
   const navigate = useNavigate();
   const [view, setView] = useState<'tree' | 'table'>('tree');
   const onOpen = (id: string) => navigate(`/assets/${id}`);
+  // The completed tree walk (#1107), held by the parent so it survives the
+  // tree view unmounting/remounting on every Segmented toggle. `AssetsTreeView`
+  // reads it on mount and skips the fetch entirely when a complete walk is
+  // already there; a walk cut short by an abort never writes here (see
+  // `fetchAllAssetsForTree`), so a partial result can never be served as if it
+  // were the whole workspace. Reset only by remounting `Assets` itself
+  // (navigating away and back), which is the intended scope — one walk per
+  // page visit, exactly like the pre-#925 shared fetch.
+  const treeCache = useRef<AssetListPage | null>(null);
 
   return (
     <Page>
@@ -65,7 +74,11 @@ export function Assets() {
             { label: 'All assets', value: 'table' },
           ]}
         />
-        {view === 'tree' ? <AssetsTreeView onOpen={onOpen} /> : <AssetsTableView onOpen={onOpen} />}
+        {view === 'tree' ? (
+          <AssetsTreeView onOpen={onOpen} cacheRef={treeCache} />
+        ) : (
+          <AssetsTableView onOpen={onOpen} />
+        )}
       </Flex>
     </Page>
   );
@@ -86,8 +99,17 @@ const TREE_PAGE_SIZE = 200;
 
 /** Walk `/assets` pages until every asset is fetched, `TREE_HARD_BOUND` is hit,
  *  or the server stops returning rows — whichever comes first. The last guard
- *  is defensive: a `total` that the walk can never reach must not spin forever. */
-async function fetchAllAssetsForTree(): Promise<AssetListPage> {
+ *  is defensive: a `total` that the walk can never reach must not spin forever.
+ *
+ *  `signal` (#1107) is checked at the top of every iteration, so an
+ *  unmount/toggle-away stops the walk from issuing any further page requests
+ *  — before #1107 the loop had no way to hear about it and kept firing all
+ *  the way to `TREE_HARD_BOUND` regardless of whether anything was still
+ *  listening. It's also handed to `listAssets` so the axios layer aborts
+ *  whichever request is actually in flight, not just the ones still queued.
+ *  A walk cut short this way THROWS rather than returning the partial map —
+ *  callers must never mistake "we stopped early" for "we fetched everything". */
+async function fetchAllAssetsForTree(signal: AbortSignal): Promise<AssetListPage> {
   // Offset paging over a live population races concurrent writes (review
   // finding): a delete below the cursor shifts later rows down (one is
   // skipped), an insert shifts them up (one repeats), and a shrinking total
@@ -102,18 +124,40 @@ async function fetchAllAssetsForTree(): Promise<AssetListPage> {
   let total: number | null = null;
   let offset = 0;
   while (byId.size < TREE_HARD_BOUND) {
-    const page = await listAssets({ limit: TREE_PAGE_SIZE, offset });
+    if (signal.aborted) break;
+    const page = await listAssets({ limit: TREE_PAGE_SIZE, offset }, signal);
     total = total ?? page.total;
     for (const item of page.items) byId.set(item.id, item);
     if (page.items.length === 0) break;
     offset += page.items.length;
     if (byId.size >= total) break;
   }
+  if (signal.aborted) {
+    throw new DOMException('Asset tree walk aborted', 'AbortError');
+  }
   return { items: [...byId.values()], total: total ?? byId.size };
 }
 
-function AssetsTreeView({ onOpen }: { onOpen: (id: string) => void }) {
-  const { state, reload } = useAsyncData(fetchAllAssetsForTree);
+function AssetsTreeView({
+  onOpen,
+  cacheRef,
+}: {
+  onOpen: (id: string) => void;
+  /** Held by the parent (`Assets`) — see its comment. */
+  cacheRef: MutableRefObject<AssetListPage | null>;
+}) {
+  const { state, reload } = useAsyncData<AssetListPage>((signal) => {
+    // A complete walk from an earlier mount of this view (a prior toggle to
+    // "By source" in this same page visit) is still good — nothing about the
+    // workspace population is invalidated by switching Segmented tabs, so
+    // re-walking every page from scratch would just be wasted round trips
+    // (the #1107 regression this whole cache exists to undo).
+    if (cacheRef.current) return Promise.resolve(cacheRef.current);
+    return fetchAllAssetsForTree(signal).then((data) => {
+      cacheRef.current = data;
+      return data;
+    });
+  });
   return (
     <AsyncBody
       state={state}
@@ -152,8 +196,12 @@ const TABLE_PAGE_SIZE = 50;
 
 function AssetsTableView({ onOpen }: { onOpen: (id: string) => void }) {
   const [page, setPage] = useState(1);
-  const { state, reload } = useAsyncData(() =>
-    listAssets({ limit: TABLE_PAGE_SIZE, offset: (page - 1) * TABLE_PAGE_SIZE }),
+  // Forward the abort signal (#1107 review) so switching pages quickly — or
+  // toggling away from the table entirely — cancels the superseded request at
+  // the network layer, the same treatment the tree walk got, instead of just
+  // leaving it to run to completion while nothing is listening for it.
+  const { state, reload } = useAsyncData((signal) =>
+    listAssets({ limit: TABLE_PAGE_SIZE, offset: (page - 1) * TABLE_PAGE_SIZE }, signal),
   );
   // useAsyncData only re-fetches on `reload()` (its effect keys off a nonce, not
   // the fetcher identity — see its doc), so a page change must bump it
