@@ -264,7 +264,7 @@ UI decision, not a bug fix.
 ### Zero-table enumeration honesty (2026-08-09)
 
 [#1242](https://github.com/TheurgicDuke771/DataQ/issues/1242) — the deferred half of #1104 above.
-Fixed by PR #1257 (`fix/issue-1242-inventory-zero-table-enumeration`): the design decision left
+Fixed by PR #1258 (`fix/issue-1242-inventory-zero-table-enumeration`): the design decision left
 open by the issue is implemented as the combined option — a persisted zero-table state **plus** a
 transition signal, not reporting-only. Two more nullable `connections` columns (migration
 `5ffa2405f9e8`, additive, tested up/down/up locally): `inventory_sync_last_table_count` (the row
@@ -279,7 +279,7 @@ mode to the opposite polarity. A genuine drop renders as a distinct "tables drop
 badge, gated on the sync currently NOT failing (so a stale count from before the sync started
 erroring can't be read as the current state). `_record_sync_outcome` and `_has_sync_state`/
 `_clear_opted_out_state` (the opt-out reset path) extend the existing #1104 bookkeeping rather than
-duplicating it — same row lock, same never-raises contract. 9 new backend tests + 3 new frontend
+duplicating it — same row lock, same never-raises contract. 8 new backend tests + 3 new frontend
 tests, all mutation-checked (the fix reverted locally, the new tests confirmed to fail for the
 right reason, the fix restored) per CONTRIBUTING discipline.
 
