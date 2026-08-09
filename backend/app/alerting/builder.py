@@ -129,6 +129,7 @@ def build_run_report(session: Session, run: Run) -> RunReport:
                 ),
                 observed_value=run_service.redact_observed_value(
                     result.observed_value,
+                    tested_column=(check.config.get("column") if check is not None else None),
                     policy=suite.column_policy if suite is not None else None,
                 ),
                 expected_value=result.expected_value,

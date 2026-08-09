@@ -278,7 +278,9 @@ def _result_read(
         status=result.status,
         metric_value=result.metric_value,
         duration_ms=result.duration_ms,
-        observed_value=svc.redact_observed_value(result.observed_value, policy=policy),
+        observed_value=svc.redact_observed_value(
+            result.observed_value, tested_column=tested_column, policy=policy
+        ),
         expected_value=result.expected_value,
         sample_failures=sample,
         redaction=redaction,

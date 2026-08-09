@@ -127,6 +127,29 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
     return sample or None
 
 
+def _bounded_observed_value(detail: dict[str, Any]) -> dict[str, Any] | None:
+    """Copy `observed_value` out of a GX result, bounded to `SAMPLE_ROW_CAP` (#1229).
+
+    Most expectations report a scalar `observed_value` (a row count, a mean, a
+    ratio) — that case passes through untouched. **Set-oriented** expectations
+    (`expect_column_distinct_values_to_be_in_set`, `..._to_equal_set`,
+    `expect_column_values_to_be_in_set`, and similar) instead report the full
+    *observed distinct-value set* — raw cell values, with no upper bound under
+    ``result_format="COMPLETE"``. Left uncapped, a high-cardinality column (an
+    email column, a customer reference) persists every distinct value it ever
+    saw. Same cap, same reasoning as `_extract_sample_failures`'s
+    `unexpected_index_list` truncation (#1196) — this is the adjacent column
+    that fix missed. Redaction/classification of the surviving list happens at
+    read time in `run_service.redact_observed_value`.
+    """
+    if "observed_value" not in detail:
+        return None
+    value = detail["observed_value"]
+    if isinstance(value, list):
+        value = value[:SAMPLE_ROW_CAP]
+    return {"observed_value": value}
+
+
 def _check_errored(exception_info: Any) -> tuple[bool, str | None]:
     """Did this expectation raise while being evaluated? (GX `exception_info`).
 
@@ -216,9 +239,7 @@ def to_suite_outcome(gx_result: Any) -> SuiteOutcome:
     for check_result in _in_submission_order(list(gx_result.results)):
         config = check_result.expectation_config
         detail: dict[str, Any] = check_result.result or {}
-        observed = (
-            {"observed_value": detail["observed_value"]} if "observed_value" in detail else None
-        )
+        observed = _bounded_observed_value(detail)
         errored, error_message = _check_errored(getattr(check_result, "exception_info", None))
         outcomes.append(
             CheckOutcome(
