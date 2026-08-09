@@ -1676,6 +1676,31 @@ def test_batch_preview_connectivity_failure_returns_502(
     assert resp.json()["error"]["code"] == "batch_preview_failed"
 
 
+def test_batch_preview_never_echoes_an_adapter_message(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # End-to-end proof for the whole envelope, not just the exception: the
+    # frontend hint renders `error.message` verbatim for every code except
+    # `batch_preview_no_data`, so an adapter's own text — which can carry a DSN,
+    # an account URL or a token — must not reach the response at all. A bare
+    # `ValueError` is the trap: it is a *superclass* of the two flat-file batch
+    # signals, so catching it alongside them would surface any driver ValueError.
+    sid = _s3_suite(client, db_session)
+    leaky = "invalid credentials for https://acct.blob.core.windows.net/c?sig=SECRETTOKEN"
+
+    def _raise(**_: Any) -> str:
+        raise ValueError(leaky)
+
+    _patch_resolve_batch_file(monkeypatch, _raise)
+    resp = client.get(
+        f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
+    )
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "batch_preview_failed"
+    assert "SECRETTOKEN" not in resp.text
+    assert "blob.core.windows.net" not in resp.text
+
+
 def test_batch_preview_invalid_regex_returns_422_before_listing(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

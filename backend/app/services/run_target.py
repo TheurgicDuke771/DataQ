@@ -38,9 +38,13 @@ from __future__ import annotations
 from typing import Any
 
 from backend.app.core.errors import DataQError
+from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import ResolvedTarget, TargetShapeError
 from backend.app.datasources.registry import resolve_target_shape
+from backend.app.services.failure_classifier import classify_failure_reason
+
+log = get_logger(__name__)
 
 
 class SuiteTargetInvalidError(DataQError):
@@ -125,10 +129,26 @@ def materialize_path(
     )
 
 
-#: Batch-target preview (#1193) only applies to flat-file connections — duplicated
-#: from `flatfile._FILE_TYPES` rather than imported so this module's write-time
-#: validation path stays GX-free (see the lazy-import note on `materialize_path`).
-_FLATFILE_TYPES = {"adls_gen2", "s3"}
+# ── batch-target preview (#1193) ────────────────────────────────────
+#
+# The error taxonomy lives here, beside the logic that raises it, the same way
+# `dryrun_service` owns `DryRunNoDataError`/`DryRunFailedError` — the router is a
+# thin pass-through.
+
+
+class BatchPreviewNoDataError(DataQError):
+    status_code = 422
+    code = "batch_preview_no_data"
+
+
+class BatchPreviewInvalidError(DataQError):
+    status_code = 422
+    code = "batch_preview_invalid"
+
+
+class BatchPreviewFailedError(DataQError):
+    status_code = 502
+    code = "batch_preview_failed"
 
 
 def preview_batch(
@@ -149,21 +169,49 @@ def preview_batch(
     saved batch-target suite takes at run time — so the preview an author sees
     before saving can never drift from what a real run would do.
 
-    Raises `SuiteTargetInvalidError` (422) for a non-flat-file connection type or a
-    malformed spec (via `resolve_target`), and propagates
-    `flatfile.BatchNotFoundError` / `flatfile.BatchListingTooLargeError` (both
-    `ValueError`) for the caller to map — the same contract `materialize_path`
-    already has.
+    Raises `SuiteTargetInvalidError` (422) for a malformed spec **and** for a
+    connection type that has no flat-file batch shape at all (a batch spec carries
+    no ``table``/``path``, so every SQL datasource rejects it, and an orchestration
+    provider has no run path) — the type gate is `resolve_target`'s job, not a
+    second hardcoded type set here. `BatchPreviewNoDataError` (422) when nothing
+    has landed yet, `BatchPreviewInvalidError` (422) when the prefix is too broad
+    to scan, and `BatchPreviewFailedError` (502) for anything else — with a
+    *classified* reason, never the adapter's own message, which can carry
+    DSN/credential/PII fragments (`failure_classifier`).
     """
-    if conn_type not in _FLATFILE_TYPES:
-        raise SuiteTargetInvalidError(
-            f"batch preview is only supported for flat-file connections, not {conn_type!r}",
-            detail={"connection_type": conn_type},
-        )
+    # Lazy import for the same reason `materialize_path` has one — and because the
+    # two flat-file errors are only meaningful once we're on the listing path.
+    from backend.app.datasources.flatfile import BatchListingTooLargeError, BatchNotFoundError
+
     target: dict[str, Any] = {"pattern": pattern, "strategy": strategy, "prefix": prefix}
     if batch is not None:
         target["batch"] = batch
     resolved = resolve_target(conn_type, target)
-    return materialize_path(
-        conn_type, config, resolved, secret_ref=secret_ref, secret_store=secret_store
-    )
+    try:
+        return materialize_path(
+            conn_type, config, resolved, secret_ref=secret_ref, secret_store=secret_store
+        )
+    except BatchNotFoundError as exc:
+        # "no data yet" — the same meaning a run gives it (#122) — not a shape
+        # problem, so it stays distinct from SuiteTargetInvalidError.
+        raise BatchPreviewNoDataError(
+            "no file currently matches this batch pattern",
+            detail={"connection_type": conn_type},
+        ) from exc
+    except BatchListingTooLargeError as exc:
+        # The only exception whose text is safe to echo: a fixed sentence built
+        # from the caller's own prefix and our own limit (`flatfile._counted`).
+        raise BatchPreviewInvalidError(str(exc), detail={"connection_type": conn_type}) from exc
+    except DataQError:
+        # SuiteTargetInvalidError (422) — e.g. a batch target on a connection with
+        # no stored credential to list with — already carries the right
+        # status/code/message; keep it as-is.
+        raise
+    except Exception as exc:
+        log.warning(
+            "batch_preview_failed", connection_type=conn_type, error_type=type(exc).__name__
+        )
+        raise BatchPreviewFailedError(
+            "batch preview could not list the datasource store",
+            detail={"reason": classify_failure_reason(exc)},
+        ) from exc

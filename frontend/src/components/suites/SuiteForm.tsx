@@ -293,10 +293,12 @@ export function TargetFields({ kind, suiteId }: { kind: TargetKind; suiteId?: st
   );
 }
 
-/** The `error.code` values `preview_batch_target` (backend `suites.py`) can 422
- *  with — only `batch_preview_no_data` gets its own canned copy below; every
- *  other 422 (a malformed pattern, `specific` with no capture group, a
- *  non-flat-file connection) already carries a helpful backend message. */
+/** The `error.code` values the batch preview (backend `services/run_target.py`)
+ *  can 422 with — only `batch_preview_no_data` gets its own canned copy below;
+ *  every other 422 (a malformed pattern, `specific` with no capture group, a
+ *  non-flat-file connection, a prefix too broad to scan) carries a backend
+ *  message that is safe to render, because the backend never echoes an adapter
+ *  exception verbatim — anything it can't classify becomes a generic 502. */
 const BATCH_PREVIEW_NO_DATA_CODE = 'batch_preview_no_data';
 
 type BatchPreviewState =
