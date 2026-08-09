@@ -425,9 +425,28 @@ class SnowflakeLineageProvider:
             try:
                 floor_for_top = self._from_object_dependencies(conn, namespace, database)
             except Exception as exc:
-                raise WarehouseLineageUnavailableError(
-                    self._unavailable_reason(exc, skipped)
-                ) from exc
+                # #1228: this used to raise WarehouseLineageUnavailableError here,
+                # discarding a SUCCESSFUL GET_LINEAGE traversal — `top.edges` — over
+                # a floor read that failed AFTER it. The floor is the current-state
+                # authority, so a result missing it is a genuine judgement call, not
+                # an obvious bug (unlike the two other #1228 sites); but
+                # `prunable=False` (#1220) exists precisely to express "this is
+                # real, observed lineage — do not trust it to prune a snapshot",
+                # which is what makes descending safe here in a way it was not
+                # before that machinery existed. Losing an already-successful
+                # traversal to an unrelated floor blip is a worse failure than
+                # returning the traversal's own edges, degraded and non-prunable.
+                skipped.append(
+                    f"object_dependencies: could not read floor ({type(exc).__name__})"
+                    + _TRANSIENT_SKIP_SUFFIX
+                )
+                return WarehouseLineageResult(
+                    edges=top.edges,
+                    tier=LineageTier.SNOWFLAKE_GET_LINEAGE,
+                    degraded_reason="floor unavailable — " + "; ".join(skipped),
+                    skipped_tiers=tuple(skipped),
+                    prunable=False,
+                )
             merged_top: dict[tuple[str, str], LineageEdgePair] = {
                 (e.upstream.name, e.downstream.name): e for e in floor_for_top
             }
@@ -695,7 +714,14 @@ class SnowflakeLineageProvider:
         Returns the (possibly empty) scoped DML edges — the caller unions them with
         the OBJECT_DEPENDENCIES floor, so empty here never asserts an empty graph.
         Raises `_FeatureUnsupportedError` (via the reraise helper) when the view is
-        edition-gated or unauthorized."""
+        edition-gated or unauthorized — and, since #1228, also when the failure is
+        UNCLASSIFIED: the bare `raise` this used to end on propagated a raw,
+        untyped exception straight out of `fetch_edges`'s
+        `except _FeatureUnsupportedError` handler, discarding the floor's already-
+        successful OBJECT_DEPENDENCIES read and aborting the whole pull over a
+        transient blip on the DML half alone. TRANSIENT (mirrors the #1109 shape
+        on the GET_LINEAGE ladder): a blip here says nothing about whether the DML
+        edges still exist, so the descent must not license a snapshot prune."""
         try:
             rows = conn.execute(
                 text(
@@ -721,7 +747,9 @@ class SnowflakeLineageProvider:
             ).all()
         except Exception as exc:
             _reraise_if_feature_unsupported(exc)
-            raise
+            raise _FeatureUnsupportedError(
+                f"call failed ({type(exc).__name__})", transient=True
+            ) from exc
         raw = _EdgeSet()
         # The bo x om cross-join repeats each statement's columns blob once per base
         # object, and repeated statements repeat it again — parse each distinct blob

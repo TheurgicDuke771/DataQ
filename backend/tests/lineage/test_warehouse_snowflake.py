@@ -431,6 +431,77 @@ def test_floor_failure_is_unavailable_not_empty() -> None:
         SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
 
 
+# ── #1228: two remaining abort-instead-of-descend sites ────────────────────────
+
+
+def test_an_unclassified_access_history_failure_skips_just_that_tier() -> None:
+    """Before #1228, `_from_access_history`'s bare `raise` on an unclassified
+    failure propagated a RAW exception type straight out of `fetch_edges`'s
+    `except _FeatureUnsupportedError` handler — discarding the floor's already-
+    successful OBJECT_DEPENDENCIES read and aborting the whole pull over a blip
+    on the DML-only half. It must now descend: the floor's edges are returned,
+    non-prunable, with a classified (exception-type-only, #902) skip reason."""
+    conn = _FakeConn(
+        results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
+        raises={
+            "GET_LINEAGE": _feature_unsupported_error(),  # top tier out → floor path
+            "ACCESS_HISTORY": RuntimeError("SELECT privilege missing on SNOWFLAKE db"),
+        },
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.edges  # the floor's real edges, not discarded
+    assert result.tier == LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES
+    assert result.prunable is False  # unclassified — must not license a prune
+    access_history_skips = [s for s in result.skipped_tiers if s.startswith("access_history")]
+    assert len(access_history_skips) == 1
+    assert "RuntimeError" in access_history_skips[0]  # exception TYPE only
+    assert "SELECT privilege missing" not in access_history_skips[0]  # never raw text (#902)
+    assert "transient" in access_history_skips[0]
+
+
+def test_an_access_history_confirmed_denial_stays_prunable() -> None:
+    """The other half of the same descent: a CONFIRMED per-object denial (edition
+    gate / missing grant) recurs identically every cycle, so it must stay
+    prunable — only the UNCLASSIFIED case above suspends the prune."""
+    conn = _FakeConn(
+        results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
+        raises={
+            "GET_LINEAGE": _feature_unsupported_error(),
+            "ACCESS_HISTORY": _feature_unsupported_error(),
+        },
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.edges
+    assert result.prunable is True
+
+
+def test_a_floor_failure_after_a_successful_traversal_returns_the_traversal() -> None:
+    """Before #1228, a floor failure AFTER a successful GET_LINEAGE traversal
+    raised `WarehouseLineageUnavailableError`, discarding `top.edges` outright.
+    `prunable=False` (#1220) exists precisely so this can descend instead: the
+    traversal's own edges are real, observed lineage — losing them to an
+    unrelated floor blip is worse than returning them degraded."""
+    conn = _GetLineageConn(
+        {
+            ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
+                "gl_down_orders_header"
+            )
+        },
+        raises={"OBJECT_DEPENDENCIES": RuntimeError("SELECT privilege missing on SNOWFLAKE db")},
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.edges  # the traversal's edges, not discarded
+    assert result.tier == LineageTier.SNOWFLAKE_GET_LINEAGE
+    assert result.prunable is False
+    assert result.degraded_reason is not None
+    assert "object_dependencies" in result.degraded_reason
+    assert "RuntimeError" in result.degraded_reason
+    assert "SELECT privilege missing" not in result.degraded_reason  # never raw text (#902)
+
+
 def test_missing_account_is_unavailable() -> None:
     with pytest.raises(WarehouseLineageUnavailableError, match="no account"):
         SnowflakeLineageProvider().fetch_edges(_FakeConn(), connection_config={})
