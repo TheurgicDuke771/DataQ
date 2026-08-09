@@ -291,6 +291,10 @@ async def test_poll_staleness_loop_downgrades_an_error_the_composite_already_log
     assert len(ticks) == 1
     assert ticks[0]["log_level"] == "warning"
     assert "exc_info" not in ticks[0]
+    # No exc_info and no per-tick correlation id in this background loop, so
+    # error_type is the only thing left to match this line back to the composite's
+    # own per-channel log (review finding on #1260).
+    assert ticks[0]["error_type"] == "RuntimeError"
 
 
 async def test_poll_staleness_loop_still_logs_a_full_traceback_for_anything_else(

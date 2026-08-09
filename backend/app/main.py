@@ -88,13 +88,18 @@ async def _poll_staleness_loop(stop: asyncio.Event, interval_s: float) -> None:
             logger.debug("poll_staleness_tick", outcome=outcome)
         except Exception as exc:  # pragma: no cover - defensive; the loop must survive
             # When every alert channel fails, the composite already logged this exact
-            # traceback once per channel, including this one (the last), before
-            # re-raising it up through run_poll_staleness_check (#1226) — a bare
-            # logger.exception here would log the same traceback again. Downgrade to
-            # a warning in that case; anything the composite never saw (a DB error,
-            # a bug in evaluate_poll_staleness) still gets the full traceback.
+            # traceback once per channel, including this one (the last) — and
+            # run_poll_staleness_check only catches AlertUndeliverableError, so this
+            # marked exception propagates straight through it, uncaught, to here
+            # (#1226). A bare logger.exception would log the same traceback again.
+            # Downgrade to a warning in that case; anything the composite never saw
+            # (a DB error, a bug in evaluate_poll_staleness) still gets the full
+            # traceback. error_type is included on the downgraded path too — with no
+            # exc_info and no per-tick correlation id in this background loop, it is
+            # the only thing left to match this line back to the composite's own
+            # per-channel `channel_staleness_publish_failed` log.
             if was_already_logged(exc):
-                logger.warning("poll_staleness_tick_failed")
+                logger.warning("poll_staleness_tick_failed", error_type=type(exc).__name__)
             else:
                 logger.exception("poll_staleness_tick_failed")
         try:
