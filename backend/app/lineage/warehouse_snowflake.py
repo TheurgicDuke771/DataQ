@@ -47,7 +47,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, NoReturn
 
 from sqlalchemy import text
 
@@ -436,16 +436,29 @@ class SnowflakeLineageProvider:
                 # before that machinery existed. Losing an already-successful
                 # traversal to an unrelated floor blip is a worse failure than
                 # returning the traversal's own edges, degraded and non-prunable.
-                skipped.append(
-                    f"object_dependencies: could not read floor ({type(exc).__name__})"
-                    + _TRANSIENT_SKIP_SUFFIX
-                )
+                #
+                # CLASSIFIED exactly like every other tier (#902/#1109 — review
+                # finding on this PR): a CONFIRMED per-object denial on
+                # OBJECT_DEPENDENCIES (a role permanently missing that one grant)
+                # recurs identically every cycle, and marking it transient would
+                # suspend the snapshot prune FOREVER — the same "frozen in the
+                # cache permanently" failure the per-seed loop above already
+                # guards against. Only an UNCLASSIFIED failure is indeterminate
+                # enough to mark non-prunable.
+                reason = _feature_unsupported_reason(exc)
+                if reason is not None:
+                    skipped.append(f"object_dependencies: {reason}")
+                else:
+                    skipped.append(
+                        f"object_dependencies: could not read floor ({type(exc).__name__})"
+                        + _TRANSIENT_SKIP_SUFFIX
+                    )
                 return WarehouseLineageResult(
                     edges=top.edges,
                     tier=LineageTier.SNOWFLAKE_GET_LINEAGE,
                     degraded_reason="floor unavailable — " + "; ".join(skipped),
                     skipped_tiers=tuple(skipped),
-                    prunable=False,
+                    prunable=reason is not None,
                 )
             merged_top: dict[tuple[str, str], LineageEdgePair] = {
                 (e.upstream.name, e.downstream.name): e for e in floor_for_top
@@ -746,10 +759,7 @@ class SnowflakeLineageProvider:
                 {"db": database, "lookback": _ACCESS_HISTORY_LOOKBACK_DAYS},
             ).all()
         except Exception as exc:
-            _reraise_if_feature_unsupported(exc)
-            raise _FeatureUnsupportedError(
-                f"call failed ({type(exc).__name__})", transient=True
-            ) from exc
+            _reraise_confirmed_or_transient(exc, "call failed")
         raw = _EdgeSet()
         # The bo x om cross-join repeats each statement's columns blob once per base
         # object, and repeated statements repeat it again — parse each distinct blob
@@ -905,16 +915,10 @@ class SnowflakeLineageProvider:
                 limit=(cap + 1) if cap > 0 else None,
             )
         except Exception as exc:
-            _reraise_if_feature_unsupported(exc)
             # No seed list → no traversal. Descend with the classified reason rather
             # than abort: the floor can still answer, and losing the whole graph
             # because a catalog read failed is the #828 failure this ladder exists for.
-            # TRANSIENT: a catalog read that failed for an unclassified reason tells us
-            # nothing about whether this tier's edges still exist, so the descent must
-            # not license a prune (#1109 review).
-            raise _FeatureUnsupportedError(
-                f"seed enumeration failed ({type(exc).__name__})", transient=True
-            ) from exc
+            _reraise_confirmed_or_transient(exc, "seed enumeration failed")
         if cap > 0 and len(seeds) > cap:
             log.warning(
                 "get_lineage_seeds_truncated",
@@ -947,24 +951,16 @@ class SnowflakeLineageProvider:
                 except Exception as exc:
                     if first_call:
                         # Edition gate / missing grant on the very first call → the
-                        # ladder descends exactly as the old preflight probe did.
-                        _reraise_if_feature_unsupported(exc)
-                        # #1109: an UNCLASSIFIED failure on the first call descends
-                        # too now, instead of propagating and aborting the WHOLE
-                        # pull. Pre-#892 this was one preflight call, so "abort" and
-                        # "skip the tier" were the same thing; the per-seed traversal
-                        # made them different, and a transient blip on call 1 of up
-                        # to 2xN must not cost the floor tier that would have
-                        # answered fine. Skip just this tier — same shape as the
+                        # ladder descends exactly as the old preflight probe did. An
+                        # UNCLASSIFIED failure on the first call descends too now,
+                        # instead of propagating and aborting the WHOLE pull.
+                        # Pre-#892 this was one preflight call, so "abort" and "skip
+                        # the tier" were the same thing; the per-seed traversal made
+                        # them different, and a transient blip on call 1 of up to
+                        # 2xN must not cost the floor tier that would have answered
+                        # fine. Skip just this tier — same shape as the
                         # seed-enumeration failure above — and let the union answer.
-                        # The reason carries the exception TYPE only, never the raw
-                        # connector text (#902). TRANSIENT (#1109 review): descending
-                        # is only half the fix — an unclassified blip is not evidence
-                        # the tier's edges are gone, so the result it produces must not
-                        # license the snapshot prune that would wipe them.
-                        raise _FeatureUnsupportedError(
-                            f"call failed ({type(exc).__name__})", transient=True
-                        ) from exc
+                        _reraise_confirmed_or_transient(exc, "call failed")
                     seed_failures += 1
                     # Classify it too (#1109 review). A CONFIRMED per-object denial —
                     # an edition gate, or Snowflake's does-not-exist/not-authorized
@@ -1143,3 +1139,19 @@ def _reraise_if_feature_unsupported(exc: BaseException) -> None:
     reason = _feature_unsupported_reason(exc)
     if reason is not None:
         raise _FeatureUnsupportedError(reason) from exc
+
+
+def _reraise_confirmed_or_transient(exc: BaseException, label: str) -> NoReturn:
+    """Descend a tier on ANY failure, never abort the pull (#1109/#1228 — review
+    finding on #1263: the same three-line pattern had drifted into three call
+    sites with no shared definition).
+
+    Re-raises via :func:`_reraise_if_feature_unsupported` when ``exc`` is a
+    CONFIRMED capability/authorization denial — the caller's own descent message
+    wins. Otherwise raises an UNCLASSIFIED, ``transient=True``
+    :class:`_FeatureUnsupportedError` carrying only ``label`` and the exception
+    TYPE name (#902 — never raw connector text), so an indeterminate blip skips
+    the tier without licensing a snapshot prune of edges that may still exist.
+    """
+    _reraise_if_feature_unsupported(exc)
+    raise _FeatureUnsupportedError(f"{label} ({type(exc).__name__})", transient=True) from exc

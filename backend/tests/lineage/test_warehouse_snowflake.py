@@ -502,6 +502,30 @@ def test_a_floor_failure_after_a_successful_traversal_returns_the_traversal() ->
     assert "SELECT privilege missing" not in result.degraded_reason  # never raw text (#902)
 
 
+def test_a_confirmed_floor_denial_after_a_successful_traversal_stays_prunable() -> None:
+    """Review finding on #1263: the first #1228 fix for this site marked EVERY
+    floor failure transient unconditionally. A CONFIRMED per-object denial on
+    OBJECT_DEPENDENCIES (a role permanently missing that one grant) recurs
+    identically every cycle, so treating it as transient would suspend the
+    snapshot prune FOREVER — the same failure the per-seed loop already guards
+    against. Only an UNCLASSIFIED failure (the sibling test above) may do that."""
+    conn = _GetLineageConn(
+        {
+            ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
+                "gl_down_orders_header"
+            )
+        },
+        raises={"OBJECT_DEPENDENCIES": _not_authorized_error()},
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.edges
+    assert result.prunable is True
+    assert result.degraded_reason is not None
+    assert "not authorized" in result.degraded_reason
+    assert "transient" not in result.degraded_reason
+
+
 def test_missing_account_is_unavailable() -> None:
     with pytest.raises(WarehouseLineageUnavailableError, match="no account"):
         SnowflakeLineageProvider().fetch_edges(_FakeConn(), connection_config={})
