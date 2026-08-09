@@ -24,8 +24,15 @@ export type AsyncState<T> =
  *
  * `reload` re-runs the fetcher (e.g. after a mutation) while keeping the current
  * data visible until the refetch resolves — no flash back to the loading state.
+ *
+ * The fetcher receives an `AbortSignal` (#1107) that fires on unmount AND on
+ * every `reload()` (a fresh nonce aborts whatever the previous one started) —
+ * a multi-request fetcher (e.g. a paged walk) can check it per iteration to
+ * stop issuing further requests once the caller has moved on, instead of
+ * relying solely on the `cancelled` guard below to suppress the eventual
+ * `setState`. Callers that don't need it can just ignore the parameter.
  */
-export function useAsyncData<T>(fetcher: () => Promise<T>): {
+export function useAsyncData<T>(fetcher: (signal: AbortSignal) => Promise<T>): {
   state: AsyncState<T>;
   reload: () => void;
 } {
@@ -34,7 +41,8 @@ export function useAsyncData<T>(fetcher: () => Promise<T>): {
 
   useEffect(() => {
     let cancelled = false;
-    fetcher()
+    const controller = new AbortController();
+    fetcher(controller.signal)
       .then((data) => {
         if (!cancelled) setState({ status: 'ok', data });
       })
@@ -52,6 +60,7 @@ export function useAsyncData<T>(fetcher: () => Promise<T>): {
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
     // Re-run on mount and whenever `reload` bumps the nonce; the fetcher identity
     // is intentionally not a dependency.

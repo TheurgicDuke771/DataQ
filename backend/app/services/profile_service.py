@@ -48,6 +48,7 @@ from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.flatfile import (
+    STREAM_CHUNK,
     RangeReader,
     download_bytes,
     format_from_path,
@@ -612,46 +613,124 @@ def _read_dataframe(
     columns: list[str],
     secret_store: SecretStore,
 ) -> Any:
-    """Download `path` from the flat-file datasource into a sampled dataframe.
+    """Read `path` from the flat-file datasource into a sampled dataframe.
 
-    The live I/O seam (download + parse) — monkeypatched in tests. Applies the two
-    "load less data" levers from the pandas scaling guide:
+    The live I/O seam (download/range-read + parse) — monkeypatched in tests.
+    Applies the two "load less data" levers from the pandas scaling guide:
 
     * **column projection** — only the requested `columns` are parsed (CSV
       `usecols`, Parquet `columns=`), so profiling 3 of 200 columns doesn't read
       all 200. Unknown names are simply not selected; `profile_dataframe` then
       reports genuinely-missing ones as a clean 422.
-    * **row sampling** — at most `_SAMPLE_ROWS` rows (CSV pushes the cap into the
-      parser; Parquet is sliced after the projected read).
+    * **row sampling** — at most `_SAMPLE_ROWS` rows.
 
-    Not done (deliberate, for an authoring-time sampler): streaming/range reads —
-    the whole object is still downloaded before parsing — and out-of-core engines
-    (Dask). Both are future work if a profiling-cost problem actually shows up.
+    **Parquet** (#1001) goes through the `RangeReader` seam #882 gave column
+    listing, rather than downloading the whole object — see
+    `_read_parquet_sample` below.
+
+    **CSV stays on whole-object download**, deliberately. A CSV has no footer
+    and no fixed row width, so a bounded head range can only bound *bytes*, not
+    rows — on a wide file that silently caps the sample below `_SAMPLE_ROWS`
+    with no signal that it happened, changing reported distinct counts / top
+    values / min-max (the #839 lesson: a quietly-shrunk statistic is worse than
+    the egress it saves). Parquet has no such trap because its row groups are
+    self-describing, which is exactly why it's the format fixed here.
     """
-    import pandas as pd
-
     if not connection.secret_ref:
         raise ValueError("connection requires secret_ref for the credential")
     secret = secret_store.get(connection.secret_ref)
+
+    if file_format == "parquet":
+        return _read_parquet_sample(
+            conn_type=connection.type,
+            config=connection.config,
+            path=path,
+            secret=secret,
+            columns=columns,
+        )
+
     wanted = set(columns)
     raw = io.BytesIO(
         download_bytes(
             conn_type=connection.type, config=connection.config, path=path, secret=secret
         )
     )
-    if file_format == "csv":
-        return read_csv_bytes(raw, nrows=_SAMPLE_ROWS, usecols=lambda name: name in wanted)
+    return read_csv_bytes(raw, nrows=_SAMPLE_ROWS, usecols=lambda name: name in wanted)
 
+
+def _read_parquet_sample(
+    *, conn_type: str, config: dict[str, Any], path: str, secret: str, columns: list[str]
+) -> Any:
+    """Sample a Parquet file's projected columns without downloading it (#1001).
+
+    Same `RangeReader` seam #882 gave column listing: `pq.ParquetFile` lands on
+    the footer with a couple of small range GETs regardless of object size, then
+    `iter_batches(columns=present)` streams row groups off the object — not the
+    file's other columns, and not its later rows once the sample is met. A row
+    group's batches are merged/split to fill up to `batch_size` (`_SAMPLE_ROWS`),
+    so the loop reliably stops after the first batch (rarely a second, for a
+    file whose row groups are much smaller than the sample) — "roughly one row
+    group's worth", never the whole object.
+
+    `dtype_backend="pyarrow"` parity with the old whole-object read is kept by
+    assembling the sample as a pyarrow `Table` and converting with
+    `types_mapper=pd.ArrowDtype`, including the empty-file edge (an empty
+    `Table` built straight from the footer's own field types, rather than an
+    untyped `pd.DataFrame()`).
+
+    The reader is opened with `chunk=STREAM_CHUNK`, not `RangeReader`'s default
+    256 KiB seeking window. The default is sized for landing on a footer with a
+    couple of small reads; `iter_batches` instead walks row groups sequentially
+    (and, within a row group, jumps between the projected columns' — not
+    necessarily contiguous — byte ranges), the same access pattern
+    `csv_row_count` already uses `STREAM_CHUNK` for. On a file with many small
+    row groups the seeking default turns into a storm of small range requests —
+    measured at 6.8x the object's own size and 92 requests on a 200 row-group
+    fixture. `STREAM_CHUNK` bounds that to a small, roughly constant number of
+    requests (2-3, regardless of row-group count) with total bytes read landing
+    close to the object's own size — not always strictly under it, since a
+    single-window cache still re-fetches once a jump lands outside the current
+    window, but never the unbounded multiplier a small window produces on an
+    adversarial row-group layout.
+    """
+    import pandas as pd
+    import pyarrow as pa
     import pyarrow.parquet as pq
 
-    available = set(pq.ParquetFile(raw).schema.names)
-    raw.seek(0)
+    reader = RangeReader(
+        conn_type=conn_type, config=config, path=path, secret=secret, chunk=STREAM_CHUNK
+    )
+    parquet_file = pq.ParquetFile(reader)
+    available = set(parquet_file.schema.names)
     present = [c for c in columns if c in available]
+    if not present:
+        # No requested column exists in the file — `profile_dataframe` reports
+        # the missing names as a clean 422 off `columns`, not off this frame, so
+        # what's returned here only needs to be an empty, columnless frame (the
+        # same shape a whole-object `pd.read_parquet(path, columns=[])` gives).
+        return pd.DataFrame()
+
+    schema = parquet_file.schema_arrow
+    batches = []
+    rows = 0
+    for batch in parquet_file.iter_batches(batch_size=_SAMPLE_ROWS, columns=present):
+        batches.append(batch)
+        rows += batch.num_rows
+        if rows >= _SAMPLE_ROWS:
+            break
+
+    if batches:
+        table = pa.Table.from_batches(batches)
+    else:
+        # A real, correctly-typed empty table (e.g. a header-only file) rather
+        # than an untyped `pd.DataFrame(columns=present)` — matches what the old
+        # whole-object `pd.read_parquet` produced for the same input.
+        table = pa.table({c: pa.array([], type=schema.field(c).type) for c in present})
     # Parquet is already Arrow on disk; dtype_backend="pyarrow" keeps the buffers
     # zero-copy instead of materialising a numpy copy. The stat helpers + the
     # _to_native coercion are Arrow-scalar-safe (min/max → Python int/str,
     # timestamps → Timestamp.isoformat, NA dropped before reductions).
-    return pd.read_parquet(raw, columns=present, dtype_backend="pyarrow").head(_SAMPLE_ROWS)
+    return table.to_pandas(types_mapper=pd.ArrowDtype).head(_SAMPLE_ROWS)
 
 
 def profile_file(

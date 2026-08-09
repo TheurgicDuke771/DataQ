@@ -84,7 +84,8 @@ class CheckOutcome:
     # — age-hours, % volume deviation. `severity.extract_metric` prefers this when
     # set, so monitor kinds band the same way (higher = worse, ADR 0016) without
     # abusing the GX unexpected-% sample shape. None for GX expectations, whose
-    # metric is parsed from the sample.
+    # metric is parsed from the sample (or, for custom-SQL, from `observed_value`
+    # — see `severity.py`).
     metric_value: float | None = None
 
 
