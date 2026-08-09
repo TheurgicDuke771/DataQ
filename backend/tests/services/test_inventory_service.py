@@ -252,6 +252,219 @@ class TestOutcomeState:
         assert conn.inventory_sync_failing_since is None
 
 
+class TestOutcomeRobustness:
+    """The bookkeeping must never be able to kill the sweep (#1227 review).
+
+    `sync_asset_inventory` documents "one broken connection never starves the
+    rest" — but the outcome write itself sat OUTSIDE that guarantee: an
+    unguarded `session.commit()` in the failure branch, a read-modify-write with
+    no row lock, and attribute reads on an ORM instance the preceding rollback
+    had already expired. Each of those turns a per-connection problem into a
+    per-SWEEP one, silently skipping every remaining connection.
+    """
+
+    def test_the_sweep_survives_a_failing_bookkeeping_commit(
+        self, db_session: Any, wired: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A transient DB error on the outcome commit must not abort the sweep."""
+        wired["snowflake"] = _FakeProvider(_idents("DATAQ_DB.A.SNOW"))
+        wired["unity_catalog"] = _FakeProvider(_idents("DATAQ_DB.A.UC"))
+        target = _connection(db_session, opted_in=True)
+        other = _connection(db_session, opted_in=True, conn_type="unity_catalog")
+        db_session.commit()
+
+        real_commit = db_session.commit
+        blown: list[bool] = []
+
+        def flaky_commit() -> None:
+            # Fire ONLY on the bookkeeping write for `target` — identified by the
+            # connection row being the dirty object — so the asset upsert's own
+            # commit still lands and the assertion below is about the right commit.
+            if not blown and any(
+                isinstance(obj, Connection) and obj.id == target.id for obj in db_session.dirty
+            ):
+                blown.append(True)
+                raise RuntimeError("transient failure committing the outcome")
+            real_commit()
+
+        monkeypatch.setattr(db_session, "commit", flaky_commit)
+        total = inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+        monkeypatch.undo()
+
+        assert blown, "the bookkeeping commit never failed — this test would prove nothing"
+        # Both connections were still enumerated: the failure stayed local to the
+        # bookkeeping of ONE connection.
+        assert total == 2
+        assert set(db_session.scalars(select(Asset.name)).all()) == {
+            "DATAQ_DB.A.SNOW",
+            "DATAQ_DB.A.UC",
+        }
+        # And the healthy sibling's outcome was still recorded.
+        db_session.refresh(other)
+        assert other.inventory_sync_last_attempted_at is not None
+
+    def test_the_outcome_write_takes_a_row_lock(self, db_session: Any, wired: Any) -> None:
+        """`inventory_sync_failing_since` is a read-modify-write, so it needs the same
+        `FOR UPDATE` guard `orchestration_service.record_poll_failure` takes: two
+        overlapping sweeps would otherwise both read NULL and both write their own
+        "now", walking the START of a failure streak forward and under-reporting how
+        long the connection has been broken.
+
+        Asserted on the SQL Postgres actually receives, not on a kwarg or on the
+        helper being called — a lock test that only checks we called the locking
+        function proves nothing about the statement.
+        """
+        from sqlalchemy import event
+
+        wired["unity_catalog"] = _FakeProvider((), fail=True)
+        _connection(db_session, opted_in=True, conn_type="unity_catalog")
+        db_session.commit()
+
+        statements: list[str] = []
+
+        def record(conn: Any, cursor: Any, statement: str, *args: Any) -> None:
+            statements.append(statement)
+
+        event.listen(db_session.bind, "before_cursor_execute", record)
+        try:
+            inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+        finally:
+            event.remove(db_session.bind, "before_cursor_execute", record)
+
+        locking = [
+            s
+            for s in statements
+            if "FOR UPDATE" in s.upper() and "FROM connections" in s.replace("\n", " ")
+        ]
+        assert locking, (
+            "the outcome write never issued a locking SELECT — "
+            f"failing_since can be lost-updated by a concurrent sweep. Saw: {statements}"
+        )
+
+    def test_a_connection_deleted_mid_sweep_does_not_abort_it(
+        self, db_session: Any, wired: Any
+    ) -> None:
+        """Connection deletion mid-sweep is a real, reachable path — and the failure
+        branch rolls the session back, which EXPIRES every attribute on every
+        instance the loop is holding. Reading `connection.type` (or re-reading the
+        opt-in config) after that raises `ObjectDeletedError` for a row that is gone,
+        taking the whole beat task with it."""
+        from sqlalchemy import delete as sa_delete
+
+        doomed_a = _connection(db_session, opted_in=True, conn_type="unity_catalog")
+        doomed_b = _connection(db_session, opted_in=True, conn_type="unity_catalog")
+        healthy = _connection(db_session, opted_in=True)
+        db_session.commit()
+
+        class _SelfDeletingProvider:
+            """Deletes BOTH UC connections, then fails — so whichever the sweep
+            reaches first exercises the "row vanished before the outcome write"
+            path and the other exercises "vanished before we even fetched it"."""
+
+            def enumerate_tables(self, conn: object, **kwargs: Any) -> tuple[AssetIdentity, ...]:
+                # `synchronize_session=False` on purpose: it reproduces the PROD
+                # shape, where the delete happens in someone else's session (an
+                # admin removing the connection through the API) and ours is left
+                # holding a persistent-but-expired instance. The default
+                # ("auto") would EXPUNGE the objects here, and a detached
+                # instance keeps its last-loaded values — so `connection.type`
+                # would answer happily from memory and the test would pass
+                # against the very bug it exists to catch.
+                db_session.execute(
+                    sa_delete(Connection)
+                    .where(Connection.id.in_([doomed_a.id, doomed_b.id]))
+                    .execution_options(synchronize_session=False)
+                )
+                db_session.commit()
+                raise RuntimeError("warehouse unreachable")
+
+        wired["unity_catalog"] = _SelfDeletingProvider()
+        wired["snowflake"] = _FakeProvider(_idents("DATAQ_DB.A.STILL_HERE"))
+
+        total = inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        assert total == 1, "the sweep did not reach the surviving connection"
+        assert db_session.scalars(select(Asset.name)).all() == ["DATAQ_DB.A.STILL_HERE"]
+        db_session.refresh(healthy)
+        assert healthy.inventory_sync_last_attempted_at is not None
+
+    def test_opting_out_clears_the_stale_outcome_state(self, db_session: Any, wired: Any) -> None:
+        """State describes the LAST ATTEMPT; with the toggle off there are no more
+        attempts, so it must go blank rather than freeze. Otherwise re-enabling the
+        sync months later renders "failing since <old date>" for a sync that has not
+        run since."""
+        wired["unity_catalog"] = _FakeProvider((), fail=True)
+        conn = _connection(db_session, opted_in=True, conn_type="unity_catalog")
+        db_session.commit()
+
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+        db_session.refresh(conn)
+        assert conn.inventory_sync_failing_since is not None
+
+        conn.config = {k: v for k, v in conn.config.items() if k != "inventory_sync"}
+        db_session.commit()
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_attempted_at is None
+        assert conn.inventory_sync_last_error is None
+        assert conn.inventory_sync_failing_since is None
+
+
+class TestFailurePhase:
+    """A permission-shaped failure is only a missing GRANT if it happened while the
+    enumeration query was running (#1227 review). The classifier's markers are broad
+    substrings, so a secret-store 403 or an expired token matches PERMISSION just as
+    well — and telling an admin to grant SELECT on a system schema for one of those
+    sends them to fix something that was never broken while the real fault stays
+    undiagnosed."""
+
+    def _reason(self, db_session: Any, conn: Connection) -> str:
+        db_session.refresh(conn)
+        reason = conn.inventory_sync_last_error
+        assert reason is not None, "the sweep recorded no failure reason at all"
+        return reason
+
+    def test_a_grant_failure_during_enumeration_names_the_system_schema(
+        self, db_session: Any, wired: Any
+    ) -> None:
+        class _DeniedProvider:
+            def enumerate_tables(self, conn: object, **kwargs: Any) -> tuple[AssetIdentity, ...]:
+                raise RuntimeError("Insufficient privileges to SELECT on system.information_schema")
+
+        wired["unity_catalog"] = _DeniedProvider()
+        conn = _connection(db_session, opted_in=True, conn_type="unity_catalog")
+        db_session.commit()
+
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        assert "information_schema" in self._reason(db_session, conn)
+
+    def test_a_permission_failure_before_the_warehouse_is_touched_does_not(
+        self, db_session: Any, wired: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The credential never resolved — the warehouse was never asked anything, so
+        no statement of ours was rejected and no grant can be the cause."""
+        from backend.app.services import profile_service
+
+        @contextmanager
+        def _boom(connection: Connection, secret_store: Any) -> Any:
+            raise RuntimeError("HTTP 403 reading the credential from the secret store")
+            yield  # pragma: no cover - unreachable, keeps this a generator
+
+        monkeypatch.setattr(profile_service, "_open_connection", _boom)
+        wired["unity_catalog"] = _FakeProvider(())
+        conn = _connection(db_session, opted_in=True, conn_type="unity_catalog")
+        db_session.commit()
+
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        reason = self._reason(db_session, conn)
+        assert reason, "the failure was not recorded at all"
+        assert "information_schema" not in reason.lower()
+        assert "grant select" not in reason.lower()
+
+
 class TestSweepInterplay:
     """The ADR 0040 lifecycle claim, pinned: a synced table never becomes a sweep
     candidate while it exists; a dropped table freezes and ages out."""

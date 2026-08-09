@@ -61,13 +61,19 @@ def test_reason_never_echoes_the_raw_exception_text() -> None:
 class TestInventorySyncClassification:
     """#1104 — a grant failure on the inventory-sync enumeration query must get a
     SPECIFIC, connection-type-aware reason (naming the known system schema), not
-    the generic PERMISSION message every other failure gets."""
+    the generic PERMISSION message every other failure gets.
+
+    The specific claim is gated on the PHASE (`during_enumeration`), because the
+    category markers are broad substrings: a secret-store 403 or an IdP handshake
+    rejection matches PERMISSION exactly as well as a missing grant does, and
+    naming a warehouse grant for one of those sends an admin to fix something
+    that was never broken (the #1227 review finding)."""
 
     def test_uc_grant_error_names_the_schema(self) -> None:
         exc = RuntimeError(
             "Insufficient privileges to SELECT on Schema 'system.information_schema'"
         )
-        reason = classify_inventory_sync_error(exc, "unity_catalog")
+        reason = classify_inventory_sync_error(exc, "unity_catalog", during_enumeration=True)
         assert "system.information_schema" in reason
         # Specific, not the generic bucket message every other permission failure gets.
         assert reason != _MESSAGES[FailureCategory.PERMISSION]
@@ -77,36 +83,66 @@ class TestInventorySyncClassification:
             "SQL access control error: Insufficient privileges to operate"
             " on schema 'INFORMATION_SCHEMA'"
         )
-        reason = classify_inventory_sync_error(exc, "snowflake")
+        reason = classify_inventory_sync_error(exc, "snowflake", during_enumeration=True)
         assert "INFORMATION_SCHEMA" in reason
         assert reason != _MESSAGES[FailureCategory.PERMISSION]
 
     def test_uc_and_snowflake_grant_messages_differ(self) -> None:
         exc = PermissionError("access denied")
-        assert classify_inventory_sync_error(exc, "unity_catalog") != classify_inventory_sync_error(
-            exc, "snowflake"
-        )
+        assert classify_inventory_sync_error(
+            exc, "unity_catalog", during_enumeration=True
+        ) != classify_inventory_sync_error(exc, "snowflake", during_enumeration=True)
 
     def test_non_permission_failure_falls_back_to_the_generic_reason(self) -> None:
         exc = TimeoutError("connection timed out after 30s")
-        assert classify_inventory_sync_error(exc, "unity_catalog") == classify_failure_reason(exc)
-        assert (
-            classify_inventory_sync_error(exc, "unity_catalog")
-            == _MESSAGES[FailureCategory.CONNECTIVITY]
-        )
+        reason = classify_inventory_sync_error(exc, "unity_catalog", during_enumeration=True)
+        assert reason == classify_failure_reason(exc)
+        assert reason == _MESSAGES[FailureCategory.CONNECTIVITY]
 
     def test_unknown_connection_type_falls_back_to_the_generic_permission_message(self) -> None:
         # No known schema mapping for this type — must not raise, must not fabricate
         # a schema name; falls back to the generic classified reason.
         exc = PermissionError("access denied")
         assert (
-            classify_inventory_sync_error(exc, "some_future_type")
+            classify_inventory_sync_error(exc, "some_future_type", during_enumeration=True)
             == _MESSAGES[FailureCategory.PERMISSION]
         )
 
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            # A sealed/again-403 secret store, reading the credential BEFORE the
+            # warehouse is ever contacted — the driver never ran a query at all.
+            RuntimeError("HTTP 403 from the secret store while reading conn-uc-prod"),
+            # The driver handshake itself: the warehouse is reachable, the
+            # credential is not accepted. Still not a missing SELECT grant.
+            RuntimeError("failed to authenticate: token expired"),
+        ],
+    )
+    def test_a_permission_failure_before_enumeration_never_claims_a_missing_grant(
+        self, exc: Exception
+    ) -> None:
+        """The misdiagnosis this gate exists to prevent: an admin granting SELECT on
+        a system schema that was never the problem, while the real fault (a sealed
+        vault, an expired token) stays undiagnosed."""
+        reason = classify_inventory_sync_error(exc, "unity_catalog", during_enumeration=False)
+        assert reason == _MESSAGES[FailureCategory.PERMISSION]
+        assert "information_schema" not in reason.lower()
+        assert "grant select" not in reason.lower()
+
+    def test_the_enumeration_message_hedges_rather_than_asserting_the_cause(self) -> None:
+        """Even in the right phase the driver's own text is only a substring match, so
+        the reason must read as the most likely cause plus a next step — never as a
+        certainty that leaves the reader with nowhere to go if the grant is present."""
+        exc = PermissionError("access denied")
+        reason = classify_inventory_sync_error(exc, "snowflake", during_enumeration=True)
+        assert "most likely" in reason.lower()
+        assert "credential" in reason.lower()
+
     def test_never_echoes_the_raw_exception_text(self) -> None:
-        secret = "token dq_pat_SUPERSECRET"
+        secret = "token dq_pat_SUPERSECRET"  # a marker string, not a real credential
         exc = RuntimeError(f"access denied: {secret}")
-        reason = classify_inventory_sync_error(exc, "unity_catalog")
-        assert secret not in reason
-        assert "SUPERSECRET" not in reason
+        for phase in (True, False):
+            reason = classify_inventory_sync_error(exc, "unity_catalog", during_enumeration=phase)
+            assert secret not in reason
+            assert "SUPERSECRET" not in reason

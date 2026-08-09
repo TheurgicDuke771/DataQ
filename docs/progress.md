@@ -219,6 +219,32 @@ migration `c22fa93eb834`, mirroring the `lineage_last_*` pattern from #858) + a
 failure + a connections-list "inventory sync failing" badge for opted-in, currently-failing
 connections. Migration tested up/down/up locally against a real Postgres.
 
+The `/code-review` pass on the PR found four real robustness defects in the bookkeeping — all
+fixed in-PR, all mutation-checked (each new regression test was re-run against the un-fixed code
+to prove it fails for the right reason). Every one turned a **per-connection** failure into a
+**per-sweep** one, i.e. the fix for an invisible failure had itself acquired an invisible failure:
+(1) the outcome `session.commit()` sat unguarded inside the per-connection `except`, so a
+transient Postgres error on the bookkeeping write propagated out of the loop and skipped every
+remaining connection; (2) `inventory_sync_failing_since` was a read-modify-write with no row lock,
+so two overlapping sweeps both read NULL and both wrote their own "now", walking the START of a
+failure streak forward and under-reporting how long a connection had been broken; (3) the except
+block read `connection.type` and wrote back to the ORM instance immediately after
+`session.rollback()` had expired it — a connection deleted mid-sweep (reachable: an admin deleting
+it through the API) raised `ObjectDeletedError` and killed the task. (1)–(3) are the same shape
+`orchestration_service.record_poll_failure` already solved for `consecutive_poll_failures`, so the
+lock mechanism moved into a shared `services/connection_lock.py` rather than being written twice,
+and the outcome write now re-fetches by id under `FOR UPDATE` and never raises. (4) the
+PERMISSION classification was a broad substring match applied regardless of *when* the failure
+happened, so a secret-store 403 or an expired token — failures that never reached the warehouse —
+were reported as "missing SELECT grant on the system schema", sending an admin to fix a privilege
+that was never the problem while the real fault stayed undiagnosed (a confident wrong answer, the
+exact #828 shape this feature exists to end). The specific message is now gated on PHASE: only a
+failure raised by the enumeration query itself (`InventorySyncEnumerationError`, wrapping nothing
+but the phase) can claim a grant, and it hedges ("most likely … if the grant is already in place,
+re-check the credentials"). Plus a minor: the three columns are now cleared when a connection opts
+OUT of `inventory_sync`, so re-enabling it later can't render "failing since <old date>" for a
+sync that hasn't run since.
+
 ### Pending design decisions
 
 | Decision | Affects | Status |

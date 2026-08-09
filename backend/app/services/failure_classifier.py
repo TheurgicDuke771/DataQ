@@ -135,7 +135,9 @@ _INVENTORY_SCHEMA_BY_TYPE: dict[str, str] = {
 }
 
 
-def classify_inventory_sync_error(exc: BaseException, connection_type: str) -> str:
+def classify_inventory_sync_error(
+    exc: BaseException, connection_type: str, *, during_enumeration: bool
+) -> str:
     """The fixed, secret-free reason an inventory-sync attempt failed (#1104).
 
     A missing grant gets a SPECIFIC message naming the system schema the sync
@@ -144,14 +146,29 @@ def classify_inventory_sync_error(exc: BaseException, connection_type: str) -> s
     zero assets ever appear, no surface says why. Every other failure category
     (connectivity/config/unknown) falls back to the generic
     :func:`classify_failure_reason` message, unchanged.
+
+    ``during_enumeration`` is REQUIRED, and is the phase the failure actually
+    happened in — ``True`` only once the warehouse connection is open and the
+    enumeration query itself is running (`InventorySyncEnumerationError` in
+    `inventory_service`). The category markers are broad substrings, so a
+    failure that never reached the warehouse at all — a sealed vault or a 403
+    from the secret store while resolving the credential, an IdP rejecting the
+    token during the driver handshake — matches PERMISSION just as readily as a
+    missing `SELECT`. Naming a warehouse grant for one of those sends an admin
+    to fix a privilege that was never the problem while the real fault stays
+    undiagnosed, which is a *worse* failure than the generic message: a
+    confident wrong answer, the exact #828 shape this feature exists to end.
+    Phase is the one thing we know for certain, so it gates the specific claim;
+    everything else falls back to the hedged generic reason.
     """
     category = classify_failure_category(exc)
-    if category is FailureCategory.PERMISSION:
+    if during_enumeration and category is FailureCategory.PERMISSION:
         schema = _INVENTORY_SCHEMA_BY_TYPE.get(connection_type)
         if schema:
             return (
-                f"Inventory sync is missing a SELECT grant on {schema}. Grant SELECT "
-                "there (or ask your workspace admin to) and it will resolve "
-                "automatically on the next sync."
+                f"The inventory-sync query against {schema} was rejected — most likely a "
+                "missing SELECT grant there. Grant SELECT (or ask your workspace admin "
+                "to) and it will resolve automatically on the next sync; if the grant is "
+                "already in place, re-check the connection's credentials."
             )
     return classify_failure_reason(exc)
