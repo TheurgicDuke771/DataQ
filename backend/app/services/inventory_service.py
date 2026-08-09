@@ -157,6 +157,7 @@ def _record_sync_outcome(
     connection_type: str,
     attempted_at: datetime,
     reason: str | None,
+    table_count: int | None,
 ) -> None:
     """Best-effort bookkeeping: stamp one connection's sync outcome. Never raises.
 
@@ -181,6 +182,17 @@ def _record_sync_outcome(
     must not be lost-updated by an overlapping sweep (two sweeps would both read
     NULL and both write their own "now", walking the start of a failure streak
     forward and under-reporting how long the connection has been broken).
+
+    ``table_count`` is the enumerated row count on a SUCCESSFUL attempt, or
+    ``None`` on a failed one (#1242) — a failure has no count to report, so
+    `inventory_sync_last_table_count`/`inventory_sync_zero_since` are left
+    exactly as they were rather than overwritten with a non-answer. On success,
+    the transition rule is: dropping from a previously-recorded N>0 to 0 stamps
+    `inventory_sync_zero_since` (the privilege-loss/dropped-database signal);
+    staying at 0 leaves it untouched (so it still reads "since the drop", not
+    "since the latest zero tick"); going back above 0 clears it. A connection
+    that has never recorded anything but 0 never sets it — that is the neutral,
+    "empty by design" state, not a failure.
     """
     try:
         connection = lock_connection(session, connection_id)
@@ -206,6 +218,15 @@ def _record_sync_outcome(
             # left untouched by every later failure, so the UI can say "failing
             # since <ts>" rather than merely "failing".
             connection.inventory_sync_failing_since = attempted_at
+
+        if table_count is not None:  # only a SUCCESSFUL attempt has a count to record
+            previous_count = connection.inventory_sync_last_table_count
+            if previous_count is not None and previous_count > 0 and table_count == 0:
+                connection.inventory_sync_zero_since = attempted_at
+            elif table_count > 0:
+                connection.inventory_sync_zero_since = None
+            connection.inventory_sync_last_table_count = table_count
+
         session.commit()
     except Exception:
         log.warning(
@@ -222,6 +243,8 @@ def _has_sync_state(connection: Connection) -> bool:
         connection.inventory_sync_last_attempted_at is not None
         or connection.inventory_sync_last_error is not None
         or connection.inventory_sync_failing_since is not None
+        or connection.inventory_sync_last_table_count is not None
+        or connection.inventory_sync_zero_since is not None
     )
 
 
@@ -245,6 +268,8 @@ def _clear_opted_out_state(session: Session, stale: Sequence[uuid.UUID]) -> None
                 inventory_sync_last_attempted_at=None,
                 inventory_sync_last_error=None,
                 inventory_sync_failing_since=None,
+                inventory_sync_last_table_count=None,
+                inventory_sync_zero_since=None,
             )
         )
         session.commit()
@@ -296,7 +321,7 @@ def sync_asset_inventory(session: Session, *, secret_store: SecretStore) -> int:
             continue
         now = datetime.now(UTC)
         try:
-            total += sync_connection_inventory(
+            synced = sync_connection_inventory(
                 session, connection=connection, secret_store=secret_store
             )
         except Exception as exc:
@@ -322,13 +347,16 @@ def sync_asset_inventory(session: Session, *, secret_store: SecretStore) -> int:
                 connection_type=connection_type,
                 attempted_at=now,
                 reason=reason,
+                table_count=None,  # the attempt never produced a count — leave it be
             )
         else:
+            total += synced
             _record_sync_outcome(
                 session,
                 connection_id=connection_id,
                 connection_type=connection_type,
                 attempted_at=now,
                 reason=None,
+                table_count=synced,
             )
     return total

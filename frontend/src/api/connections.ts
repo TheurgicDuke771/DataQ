@@ -166,6 +166,19 @@ export interface Connection {
   inventory_sync_last_attempted_at?: string | null;
   inventory_sync_last_error?: string | null;
   inventory_sync_failing_since?: string | null;
+  /** Zero-table enumeration state (#1242) — a SUCCESSFUL sync that enumerates zero
+   *  tables is not an error (Snowflake's INFORMATION_SCHEMA is privilege-filtered,
+   *  not access-denied, so a role with no grants gets an empty result set rather
+   *  than an exception; a genuinely empty database also legitimately enumerates
+   *  zero). `inventory_sync_last_table_count` is the row count from the last
+   *  successful sync: NULL = never successfully synced, 0 = synced but nothing
+   *  visible, >0 = synced N tables — untouched by a failed attempt.
+   *  `inventory_sync_zero_since` is set only when the count DROPS from a
+   *  previously-recorded N>0 to 0 (the privilege-loss/dropped-database signal); a
+   *  connection that has always enumerated zero never sets it, so that renders as
+   *  a neutral informational note rather than a flagged one. */
+  inventory_sync_last_table_count?: number | null;
+  inventory_sync_zero_since?: string | null;
 }
 
 /** Human-readable labels for the connection types, for grouping + display. */

@@ -109,6 +109,20 @@ class ConnectionRead(ApiModel):
     inventory_sync_last_error: str | None = None
     inventory_sync_failing_since: datetime | None = None
 
+    # Zero-table enumeration state (#1242) — a SUCCESSFUL sync that enumerates
+    # zero tables is not an error (Snowflake's INFORMATION_SCHEMA is
+    # privilege-filtered, not access-denied, so a role with no grants gets an
+    # empty result set rather than an exception; a genuinely empty database also
+    # legitimately enumerates zero). `inventory_sync_last_table_count` is the row
+    # count from the last SUCCESSFUL sync (NULL = never successfully synced, 0 =
+    # synced but nothing visible, >0 = synced N tables) — untouched by a failed
+    # attempt. `inventory_sync_zero_since` is set only when the count DROPS from a
+    # previously-recorded N>0 to 0 (the privilege-loss/dropped-database signal);
+    # a connection that has always enumerated zero never sets it, so that state
+    # renders as a neutral informational note rather than a flagged one.
+    inventory_sync_last_table_count: int | None = None
+    inventory_sync_zero_since: datetime | None = None
+
     @classmethod
     def from_model(
         cls, conn: Connection, health: svc.DatasourceHealth | None = None
@@ -136,6 +150,8 @@ class ConnectionRead(ApiModel):
             inventory_sync_last_attempted_at=conn.inventory_sync_last_attempted_at,
             inventory_sync_last_error=conn.inventory_sync_last_error,
             inventory_sync_failing_since=conn.inventory_sync_failing_since,
+            inventory_sync_last_table_count=conn.inventory_sync_last_table_count,
+            inventory_sync_zero_since=conn.inventory_sync_zero_since,
         )
 
 

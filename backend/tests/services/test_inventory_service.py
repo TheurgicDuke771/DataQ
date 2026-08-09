@@ -252,6 +252,152 @@ class TestOutcomeState:
         assert conn.inventory_sync_failing_since is None
 
 
+class TestZeroTableEnumeration:
+    """#1242 — a SUCCESSFUL sync that enumerates zero tables must be honestly
+    distinguishable from "never synced" and from "synced, N>0", and a DROP from
+    N>0 to 0 (the privilege-loss/dropped-database signal) must be flagged —
+    without treating an always-empty database as a failure."""
+
+    def test_never_synced_has_no_table_count(self, db_session: Any, wired: Any) -> None:
+        conn = _connection(db_session, opted_in=True)
+        db_session.commit()
+
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_table_count is None
+        assert conn.inventory_sync_zero_since is None
+
+    def test_zero_row_success_is_healthy_but_recorded(self, db_session: Any, wired: Any) -> None:
+        """An empty-by-design database enumerating zero tables must NOT read as a
+        sync failure (no error, no failing_since) — but the zero must be visible
+        as its own recorded state, distinguishable from never having synced."""
+        wired["snowflake"] = _FakeProvider(())
+        conn = _connection(db_session, opted_in=True)
+
+        total = inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        assert total == 0
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_attempted_at is not None
+        assert conn.inventory_sync_last_error is None
+        assert conn.inventory_sync_failing_since is None
+        assert conn.inventory_sync_last_table_count == 0
+        # Never having seen N>0 before means this is the neutral "always empty"
+        # state, not the flagged drop signal.
+        assert conn.inventory_sync_zero_since is None
+
+    def test_nonzero_sync_records_the_count(self, db_session: Any, wired: Any) -> None:
+        wired["snowflake"] = _FakeProvider(_idents("DATAQ_DB.A.T1", "DATAQ_DB.A.T2"))
+        conn = _connection(db_session, opted_in=True)
+
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_table_count == 2
+        assert conn.inventory_sync_zero_since is None
+
+    def test_drop_from_nonzero_to_zero_is_flagged(self, db_session: Any, wired: Any) -> None:
+        """This is the privilege-loss/dropped-database signal — worth flagging,
+        unlike a database that has always been empty."""
+        provider = _FakeProvider(_idents("DATAQ_DB.A.T1"))
+        wired["snowflake"] = provider
+        conn = _connection(db_session, opted_in=True)
+
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_table_count == 1
+        assert conn.inventory_sync_zero_since is None
+
+        # The role loses its grant (or the table is dropped) — the enumeration
+        # query still runs fine, it just answers with nothing now.
+        provider.identities = ()
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_error is None  # still not a "failure"
+        assert conn.inventory_sync_last_table_count == 0
+        assert conn.inventory_sync_zero_since is not None
+
+    def test_zero_since_holds_across_consecutive_zero_ticks(
+        self, db_session: Any, wired: Any
+    ) -> None:
+        """Like `inventory_sync_failing_since`, the streak START must not walk
+        forward on every subsequent zero tick."""
+        provider = _FakeProvider(_idents("DATAQ_DB.A.T1"))
+        wired["snowflake"] = provider
+        conn = _connection(db_session, opted_in=True)
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        provider.identities = ()
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+        db_session.refresh(conn)
+        first_zero_since = conn.inventory_sync_zero_since
+        assert first_zero_since is not None
+
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+        db_session.refresh(conn)
+        assert conn.inventory_sync_zero_since == first_zero_since
+
+    def test_recovery_above_zero_clears_the_flag(self, db_session: Any, wired: Any) -> None:
+        provider = _FakeProvider(_idents("DATAQ_DB.A.T1"))
+        wired["snowflake"] = provider
+        conn = _connection(db_session, opted_in=True)
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        provider.identities = ()
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+        db_session.refresh(conn)
+        assert conn.inventory_sync_zero_since is not None
+
+        # The grant is restored (or the table recreated) — the next sync sees it.
+        provider.identities = _idents("DATAQ_DB.A.T1")
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_table_count == 1
+        assert conn.inventory_sync_zero_since is None
+
+    def test_a_failed_attempt_leaves_the_table_count_untouched(
+        self, db_session: Any, wired: Any
+    ) -> None:
+        """A failed attempt has no count to report — it must not clobber the last
+        KNOWN count (or the zero-drop flag) with a non-answer."""
+        provider = _FakeProvider(_idents("DATAQ_DB.A.T1"))
+        wired["unity_catalog"] = provider
+        conn = _connection(db_session, opted_in=True, conn_type="unity_catalog")
+        db_session.commit()
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_table_count == 1
+
+        provider.fail = True
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_error is not None
+        # The count from the last SUCCESSFUL sync survives the failed attempt.
+        assert conn.inventory_sync_last_table_count == 1
+        assert conn.inventory_sync_zero_since is None
+
+    def test_opting_out_clears_the_table_count_state(self, db_session: Any, wired: Any) -> None:
+        provider = _FakeProvider(_idents("DATAQ_DB.A.T1"))
+        wired["snowflake"] = provider
+        conn = _connection(db_session, opted_in=True)
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        provider.identities = ()
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+        db_session.refresh(conn)
+        assert conn.inventory_sync_zero_since is not None
+
+        conn.config = {k: v for k, v in conn.config.items() if k != "inventory_sync"}
+        db_session.commit()
+        inventory_service.sync_asset_inventory(db_session, secret_store=_store())
+
+        db_session.refresh(conn)
+        assert conn.inventory_sync_last_table_count is None
+        assert conn.inventory_sync_zero_since is None
+
+
 class TestOutcomeRobustness:
     """The bookkeeping must never be able to kill the sweep (#1227 review).
 

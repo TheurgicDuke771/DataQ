@@ -112,6 +112,23 @@ runs, so its scorecard shows coverage gaps, never a score.
   permission-shaped failure from the secret store or the driver handshake gets
   the generic reason, because naming a grant for one of those would send an
   admin to fix something that was never broken.
+- **Zero-row enumeration is not a failure — but it isn't silent either
+  ([#1242](https://github.com/TheurgicDuke771/DataQ/issues/1242)):** the failure
+  path above only covers the enumeration QUERY erroring. Snowflake's
+  `INFORMATION_SCHEMA` is privilege-filtered, not access-denied — a role missing
+  every grant on the objects gets an empty result set, not an exception — so a
+  role with zero visibility "succeeds" at zero rows and reads identically to a
+  genuinely empty database. Two more nullable columns:
+  `inventory_sync_last_table_count` (the row count from the last SUCCESSFUL sync
+  only — NULL = never synced, 0 = synced but nothing visible, >0 = synced N
+  tables) and `inventory_sync_zero_since` (set only when the count DROPS from a
+  previously-recorded N>0 to 0 — the privilege-loss/dropped-database signal;
+  left untouched while it stays at 0; cleared on recovery). A connection that
+  has *always* enumerated zero never sets `_zero_since`, so it renders as a
+  neutral informational note on the connections list ("0 tables found"), not an
+  error or warning — reusing `inventory_sync_last_error` for this would just
+  move the #828 "confident wrong answer" failure mode to the opposite polarity.
+  A drop from N>0 renders as a distinct warning badge ("tables dropped to 0").
 
 ## 6. S3-compatible namespace (#1064, decided here)
 
