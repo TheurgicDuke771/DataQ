@@ -9,10 +9,17 @@ the malformed / mixed payloads the run path must not crash on.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
-from backend.app.datasources.gx_runner import _check_errored, to_suite_outcome
+from backend.app.datasources.base import SAMPLE_ROW_CAP
+from backend.app.datasources.gx_runner import (
+    _check_errored,
+    _extract_sample_failures,
+    to_suite_outcome,
+)
+from backend.app.services.severity import extract_metric
 
 
 def test_none_and_empty_are_not_errored() -> None:
@@ -106,6 +113,39 @@ def test_to_suite_outcome_all_pass_preserves_order() -> None:
     assert [c.expectation_type for c in outcome.checks] == ["expect_a", "expect_b"]
 
 
+def test_to_suite_outcome_reads_custom_sql_row_count_as_observed_value() -> None:
+    """The shape `UnexpectedRowsExpectation` reports (ADR 0019): `observed_value`
+    carries the unexpected row COUNT. This is the exact `CheckOutcome` shape the
+    SNOWFLAKE path produces — a plain GX SQL table batch through this same
+    `to_suite_outcome`, no runner branch (ADR 0019 §Decision) — which is what
+    makes `severity.extract_metric`'s custom-SQL fallback (#1202) datasource-
+    agnostic: it only ever sees this one shape, from any SQL-queryable
+    datasource. The Unity Catalog SQL-batch path is proven separately in
+    `test_unity_catalog.py::test_custom_sql_row_count_feeds_severity_metric_value`.
+    """
+    gx_result = SimpleNamespace(
+        success=False,
+        results=[
+            SimpleNamespace(
+                success=False,
+                expectation_config=SimpleNamespace(
+                    type="unexpected_rows_expectation",
+                    kwargs={"unexpected_rows_query": "SELECT * FROM {batch} WHERE n > 0"},
+                    meta={"dataq_index": 0},
+                ),
+                result={"observed_value": 74},
+                exception_info=None,
+            )
+        ],
+    )
+    outcome = to_suite_outcome(gx_result)
+    check = outcome.checks[0]
+    assert check.observed_value == {"observed_value": 74}
+    # The full round trip: what the runner produces is exactly what severity's
+    # custom-SQL fallback needs (#1202) — no adapter code required in between.
+    assert extract_metric(check) == Decimal("74")
+
+
 def test_to_suite_outcome_without_markers_falls_back_to_gx_order() -> None:
     # Legacy / manually-constructed results (no meta marker) keep GX's list order —
     # backward-compatible with the existing constructed-result tests.
@@ -157,3 +197,35 @@ def test_to_gx_expectation_non_dict_meta_surfaces_gx_error() -> None:
         not isinstance(excinfo.value, (ValueError, TypeError))
         or "validation" in str(excinfo.value).lower()
     ), f"expected GX's validation error, got bare {excinfo.value!r}"
+
+
+# ── sample-failure capture is bounded (#1196) ──
+
+
+def test_extract_sample_failures_caps_row_lists() -> None:
+    # Under `result_format="COMPLETE"` the pandas engine hands back an untruncated
+    # `unexpected_index_list`; capture must bound it (and any other list-shaped sample
+    # key) so `results.sample_failures` and `GET /runs/{id}` stay bounded.
+    rows: list[Any] = [{"customer_id": i, "order_number": None} for i in range(5_000)]
+    sample = _extract_sample_failures(
+        {
+            "unexpected_index_list": rows,
+            "partial_unexpected_list": [None] * 5_000,
+            "unexpected_count": 5_000,
+            "unexpected_percent": 100.0,
+        }
+    )
+    assert sample is not None
+    assert len(sample["unexpected_index_list"]) == SAMPLE_ROW_CAP
+    assert len(sample["partial_unexpected_list"]) == SAMPLE_ROW_CAP
+    # the cap keeps the FIRST rows (a stable, deterministic sample) and never touches
+    # the aggregate totals — the reader still learns the real failure count.
+    assert sample["unexpected_index_list"] == rows[:SAMPLE_ROW_CAP]
+    assert sample["unexpected_count"] == 5_000
+    assert sample["unexpected_percent"] == 100.0
+
+
+def test_extract_sample_failures_leaves_short_lists_untouched() -> None:
+    rows = [{"customer_id": 1}, {"customer_id": 2}]
+    sample = _extract_sample_failures({"unexpected_index_list": rows, "unexpected_count": 2})
+    assert sample == {"unexpected_index_list": rows, "unexpected_count": 2}

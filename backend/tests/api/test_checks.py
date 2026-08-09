@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import StatementError
 
 from backend.app.core.auth import get_current_user
 from backend.app.datasources.base import CheckOutcome, SuiteOutcome
@@ -1672,6 +1673,44 @@ def test_dryrun_previews_error_for_unevaluable_check(
     assert body["status"] == "error"
     assert body["metric_value"] is None
     assert body["observed_value"] == {"error": "column does not exist"}
+
+
+def test_dryrun_error_preview_carries_no_statement_or_parameter_echo(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1203 on the authoring path: the dry-run preview surfaces the runner's error
+    message straight to the check editor, so it needs the same strip the persisted
+    path got. A broken custom-SQL check errors HERE first — leaving this raw would
+    have kept the leak alive on the surface a user hits before ever saving."""
+    statement_error = StatementError(
+        "(snowflake.connector.errors.ProgrammingError) invalid identifier 'NOPE'",
+        "SELECT * FROM RETAIL.ORDERS WHERE CUSTOMER_REF = %(ref)s",
+        {"ref": "alice@example.com"},
+        Exception("orig"),
+    )
+    assert "alice@example.com" in str(statement_error)  # the premise, not an artefact
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    _patch_runner(
+        monkeypatch,
+        _FakeRunner(
+            SuiteOutcome(
+                success=False,
+                checks=[
+                    CheckOutcome(
+                        "x", success=False, errored=True, error_message=str(statement_error)
+                    )
+                ],
+            )
+        ),
+    )
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 200
+    observed = resp.json()["observed_value"]
+    assert "alice@example.com" not in observed["error"]
+    assert "[SQL:" not in observed["error"] and "[parameters:" not in observed["error"]
+    assert observed == {
+        "error": "(snowflake.connector.errors.ProgrammingError) invalid identifier 'NOPE'"
+    }
 
 
 def test_dryrun_sanitizes_nan_observed_value(

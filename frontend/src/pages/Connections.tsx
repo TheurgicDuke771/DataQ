@@ -54,7 +54,7 @@ interface ConnectionActions {
 export function Connections() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const { state, reload } = useAsyncData(listConnections);
+  const { state, reload } = useAsyncData(() => listConnections());
   const [reauthing, setReauthing] = useState<Connection | null>(null);
   // Per-connection live connectivity status (the bulk health view).
   const [health, setHealth] = useState<Record<string, HealthState>>({});

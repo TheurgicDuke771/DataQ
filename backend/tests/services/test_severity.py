@@ -1,8 +1,11 @@
-"""Severity derivation unit tests (ADR 0016) — pure, no DB / no GX.
+"""Severity derivation unit tests (ADR 0016). Pure, no DB / no GX (`custom_sql`,
+imported for its `CUSTOM_SQL_EXPECTATION_TYPE` constant, is FastAPI-error-shape-
+only — no DB/GX import of its own).
 
-Covers `extract_metric` (GX unexpected-% → Decimal | None) and `derive_status`
-(thresholds band the metric, higher = worse; thresholds override GX success;
-binary fallback when no thresholds or no metric).
+Covers `extract_metric` (GX unexpected-% → Decimal | None, plus the custom-SQL
+unexpected row COUNT fallback, #1202) and `derive_status` (thresholds band the
+metric, higher = worse; thresholds override GX success; binary fallback when no
+thresholds or no metric).
 """
 
 from decimal import Decimal
@@ -11,11 +14,20 @@ from typing import Any
 import pytest
 
 from backend.app.datasources.base import CheckOutcome
+from backend.app.services.custom_sql import CUSTOM_SQL_EXPECTATION_TYPE
 from backend.app.services.severity import derive_status, extract_metric, resolve_status
 
 
 def _outcome(sample: dict[str, Any] | None) -> CheckOutcome:
     return CheckOutcome(expectation_type="x", success=False, sample_failures=sample)
+
+
+def _custom_sql_outcome(*, success: bool, observed_value: dict[str, Any] | None) -> CheckOutcome:
+    return CheckOutcome(
+        expectation_type=CUSTOM_SQL_EXPECTATION_TYPE,
+        success=success,
+        observed_value=observed_value,
+    )
 
 
 # ── extract_metric ──
@@ -56,6 +68,55 @@ def test_extract_metric_rejects_non_finite(bad: float) -> None:
     # GX can yield NaN (empty table 0/0); Decimal(str(nan)) parses, so it must be
     # filtered or derive_status silently 'pass'es / raises mid-run.
     assert extract_metric(_outcome({"unexpected_percent": bad})) is None
+
+
+# ── extract_metric: custom-SQL row count fallback (ADR 0019, #1202) ──
+# `UnexpectedRowsExpectation` has no `unexpected_percent`; its badness scalar is
+# the unexpected row COUNT in `observed_value`. Datasource-agnostic by
+# construction: `gx_runner.to_suite_outcome` produces this exact `CheckOutcome`
+# shape for BOTH Snowflake (a plain SQL table batch) and Unity Catalog (the
+# Databricks-SQL batch, ADR 0019 amendment) — see
+# `test_gx_runner.py::test_to_suite_outcome_reads_custom_sql_row_count_as_observed_value`
+# and `test_unity_catalog.py::test_custom_sql_row_count_feeds_severity_metric_value`
+# for the two runner-level proofs that this function's input actually arrives in
+# this shape from each datasource.
+
+
+def test_extract_metric_reads_custom_sql_row_count() -> None:
+    outcome = _custom_sql_outcome(success=False, observed_value={"observed_value": 74})
+    assert extract_metric(outcome) == Decimal("74")
+
+
+def test_extract_metric_custom_sql_zero_is_kept_not_treated_as_missing() -> None:
+    # a passing custom-SQL check (0 unexpected rows) must measure 0, not "no metric"
+    outcome = _custom_sql_outcome(success=True, observed_value={"observed_value": 0})
+    assert extract_metric(outcome) == Decimal("0")
+
+
+@pytest.mark.parametrize(
+    "observed_value",
+    [None, {}, {"observed_value": None}],
+)
+def test_extract_metric_custom_sql_returns_none_when_observed_value_absent(
+    observed_value: dict[str, Any] | None,
+) -> None:
+    outcome = _custom_sql_outcome(success=False, observed_value=observed_value)
+    assert extract_metric(outcome) is None
+
+
+def test_extract_metric_does_not_read_observed_value_for_other_expectation_types() -> None:
+    """The `observed_value` fallback is scoped to `unexpected_rows_expectation`
+    ONLY. Plenty of ordinary GX expectations (e.g. `expect_table_row_count_to_equal`)
+    also set `observed_value`, and their observed value is a measured fact, not a
+    badness scalar — reading it here would silently start banding severity for
+    every expectation type that happens to report one, well beyond this issue's
+    scope."""
+    outcome = CheckOutcome(
+        expectation_type="expect_table_row_count_to_equal",
+        success=True,
+        observed_value={"observed_value": 42},
+    )
+    assert extract_metric(outcome) is None
 
 
 # ── derive_status: binary fallback ──
@@ -205,3 +266,43 @@ def test_resolve_status_bands_a_monitor_metric_normally() -> None:
     assert resolve_status(
         outcome, warn_threshold=Decimal("2"), fail_threshold=Decimal("3"), critical_threshold=None
     ) == ("fail", Decimal("4.5"))
+
+
+# ── resolve_status: custom-SQL row count (ADR 0019, #1202) ──
+
+
+def test_resolve_status_bands_a_custom_sql_check_with_thresholds() -> None:
+    """A custom-SQL check WITH thresholds now bands on the unexpected row count,
+    exactly like a monitor metric or an unexpected-percent metric."""
+    outcome = _custom_sql_outcome(success=False, observed_value={"observed_value": 74})
+    assert resolve_status(
+        outcome,
+        warn_threshold=Decimal("10"),
+        fail_threshold=Decimal("50"),
+        critical_threshold=Decimal("100"),
+    ) == ("fail", Decimal("74"))
+
+
+def test_resolve_status_custom_sql_without_thresholds_stays_binary_despite_populated_metric() -> (
+    None
+):
+    """CRITICAL constraint: thresholds are optional, and populating `metric_value`
+    must NOT turn today's binary (no-threshold) custom-SQL checks into something
+    that bands unexpectedly. A no-threshold check with 74 unexpected rows must
+    still resolve as a plain 'fail' (GX's own success/failure, ADR 0005's binary
+    fallback) — not 'warn'/'fail'/'critical' from some implicit banding — even
+    though `metric_value` is now populated and available for the trend view /
+    anomaly baseline to read later."""
+    outcome = _custom_sql_outcome(success=False, observed_value={"observed_value": 74})
+    status, metric = resolve_status(
+        outcome, warn_threshold=None, fail_threshold=None, critical_threshold=None
+    )
+    assert status == "fail"  # binary — not banded, despite metric_value now being set
+    assert metric == Decimal("74")  # but the scalar IS persisted, for #594 / #593
+
+
+def test_resolve_status_custom_sql_zero_rows_without_thresholds_is_plain_pass() -> None:
+    outcome = _custom_sql_outcome(success=True, observed_value={"observed_value": 0})
+    assert resolve_status(
+        outcome, warn_threshold=None, fail_threshold=None, critical_threshold=None
+    ) == ("pass", Decimal("0"))

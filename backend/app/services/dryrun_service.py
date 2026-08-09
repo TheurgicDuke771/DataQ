@@ -36,6 +36,7 @@ from backend.app.datasources.registry import (
     build_check_runner,
     owned_runner,
 )
+from backend.app.datasources.sql import strip_statement_echo
 from backend.app.db.models import Connection
 from backend.app.services import run_target
 from backend.app.services.check_service import validate_threshold_ordering
@@ -220,11 +221,14 @@ def dry_run_check(
             critical_threshold=critical_threshold,
         )
         # Preview exactly what a persisted run would record: an unevaluable check
-        # (#122) is 'error', not a misleading 'fail' tag, and surfaces the GX message.
+        # (#122) is 'error', not a misleading 'fail' tag, and surfaces the GX message
+        # — with the same SQL/parameter echo stripped (#1203). "Exactly what a
+        # persisted run would record" is the contract, and a dry-run is the FIRST
+        # place a broken custom-SQL check errors, so leaving it raw here would have
+        # kept the leak alive on the authoring path after `_build_result` closed it.
         if check_outcome.errored:
-            observed = (
-                {"error": check_outcome.error_message} if check_outcome.error_message else None
-            )
+            error_message = strip_statement_echo(check_outcome.error_message)
+            observed = {"error": error_message} if error_message else None
         else:
             observed = sanitize_json(check_outcome.observed_value)
         return DryRunOutcome(
