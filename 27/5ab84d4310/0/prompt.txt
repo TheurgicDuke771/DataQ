@@ -1,0 +1,25 @@
+go ahead with password read, just don't print it here
+
+---
+
+password pasted
+
+---
+
+Check whether the local Airflow DAG flow_a_snowflake_load completed, whether its webhook callback fired successfully into DataQ's pipeline_runs, and whether the trigger binding dispatched the Snowflake Orders Header Suite. Then proceed to dbt orchestration testing.
+
+---
+
+Check whether the local Airflow DAG flow_a_snowflake_load completed, whether its webhook callback fired successfully into DataQ's pipeline_runs, and whether the trigger binding dispatched the Snowflake Orders Header Suite. Then proceed to dbt orchestration testing.
+
+---
+
+update the credential for DATAQ_LOADER in  secrets.sh [read from prod kv] and complete the test.
+
+---
+
+Check whether the local Airflow DAGs (flow_a_snowflake_load, flow_a_uc_reference, flow_b_medallion) completed successfully with the fixed DATAQ_LOADER credential, whether the webhook callback fired into DataQ's pipeline_runs, and whether the trigger binding dispatched the Snowflake Orders Header Suite. Then finalize the orchestration section of the report.
+
+---
+
+Check the worker logs for the poll_orchestration_runs task around 23:20:57 UTC — confirm it recorded the succeeded flow_a_snowflake_load DAG run and triggered the bound Snowflake Orders Header Suite. Check pipeline_runs and runs tables to confirm. Then finalize the orchestration section and republish the QA report artifact with the complete orchestration findings.
