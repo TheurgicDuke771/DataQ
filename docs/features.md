@@ -127,8 +127,12 @@ Four ways a suite runs (all the same authz — [feature matrix](feature-matrix.m
   `error` (evaluation threw) and `skip` (precondition unmet) kept distinct from failures.
 - **Failure reasons** — a run that fails to execute shows a redaction-safe reason
   (config / connectivity / permission), not a bare "failed".
-- **Metric trends** — the numeric `metric_value` per check is kept for trend/baseline even
-  after samples are purged by the retention sweep.
+- **Metric trend view** — a per-check history chart of `metric_value` over time, with
+  threshold bands and (for `anomaly` checks) a rolling z-score baseline overlay; the
+  numeric history is kept for trend/baseline even after samples are purged by the
+  retention sweep.
+- **PDF report export** — a one-click, zero-dependency PDF of a run's results, for sharing
+  outside the app.
 - **Usable on a phone** — the whole app, not just the dashboard. On a narrow viewport the
   sidebar becomes an overlay drawer (it never squeezes the page), tables scroll inside
   their own container rather than the page, the lineage graph scrolls inside its card, and
@@ -172,12 +176,20 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 
 ## Access & auth
 
-- **OIDC SSO** — provider-neutral (Azure AD validated); the web UI signs in via your IdP.
+- **Three sign-in modes** — dev-bypass (local eval only), **email OTP** (a one-time code,
+  no Identity Provider required — the local/eval default, ADR 0032), and **OIDC SSO**
+  (provider-neutral, Azure AD validated). Exactly one is active per deployment.
 - **Personal access tokens (PATs)** — `dq_live_` tokens for headless / AI-client use, same
   authz as the user, on REST **and** `/mcp` ([API keys](api-keys.md), ADR 0026).
-- **Suite sharing** — per-suite view / edit grants.
-- **Workspace admin** — an allowlisted superuser role with workspace-wide visibility over
-  every suite, its results, and schedules (ADR 0027) — keep the allowlist minimal.
+- **Suite sharing** — per-suite view / edit grants, capped by workspace role (below).
+- **Workspace roles — Admin / Member / Viewer** — a stored, in-app-managed role per user
+  (ADR 0033), not just an env allowlist. Admin has workspace-wide visibility over every
+  suite/result/schedule and is the only role that can create, edit, delete, re-auth, or
+  test a **connection** — connections are shared infrastructure holding credentials, so
+  Members consume them but don't manage them. Member can create/own suites and receive
+  `edit` shares; Viewer is capped at `view` everywhere, including on any share. Roles are
+  managed under `/admin` by an existing Admin; `WORKSPACE_ADMIN_EMAILS` still works as a
+  bootstrap/break-glass allowlist for a fresh or locked-out workspace.
 
 ## AI assistants (MCP)
 

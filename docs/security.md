@@ -103,11 +103,19 @@ are the reason this mode is opt-in rather than the default:
 
 - **Per-suite authorization.** Access is granted per suite (**view / edit**); a caller only
   ever sees suites they own or are shared on. There are no ambient "see everything" reads
-  except the workspace-admin role below.
-- **Workspace admins.** An allowlisted role (`WORKSPACE_ADMIN_EMAILS`) with workspace-wide
-  visibility over every suite, its results, and schedules (ADR 0027). Because that includes
-  failing-row samples (the one place PII can appear), **keep the allowlist minimal** and treat
-  a data-access audit trail as a prerequisite before granting it in a regulated deployment.
+  except the Admin role below.
+- **Workspace roles — Admin / Member / Viewer.** A stored `users.role` (ADR 0033), not just
+  an env allowlist. **Admin** has workspace-wide visibility over every suite, its results,
+  and schedules, and is the *only* role that can create, edit, delete, re-auth, or test a
+  **connection** — a Member can reference and run against an existing connection but cannot
+  mutate or re-credential it (closes the earlier hole where any authenticated user could
+  delete or re-point the Snowflake connection every suite ran on). **Viewer** is capped at
+  `view` everywhere, including on any share it receives. Because Admin visibility includes
+  failing-row samples (the one place PII can appear), **grant it sparingly** and treat a
+  data-access audit trail as a prerequisite before granting it in a regulated deployment.
+  `WORKSPACE_ADMIN_EMAILS` still resolves to Admin on sign-in as a **bootstrap / break-glass**
+  path for a fresh or locked-out workspace — keep that allowlist minimal too, and prefer
+  in-app role management (`/admin` → Users) once at least one Admin exists.
 
 ## Network exposure
 
