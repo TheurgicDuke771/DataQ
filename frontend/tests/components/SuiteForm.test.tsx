@@ -199,6 +199,14 @@ describe('SuiteForm — flat-file batch target (#1180)', () => {
   it('reopens an existing batch target in batch mode with its fields populated', async () => {
     const user = userEvent.setup();
     mockUpdate.mockResolvedValue(suite());
+    // This target is already `active` (a suiteId + pattern) on first render, so
+    // the 400ms preview debounce (#1193) WILL fire — normally cancelled by
+    // unmount before it does, but that's a race, not a guarantee (#1254: an
+    // unmocked call resolves `undefined` from the bare `vi.fn()`, and `.then()`
+    // on `undefined` throws if the timer wins). Mock it like the "batch preview
+    // hint" describe block below does, since this test isn't asserting on the
+    // preview outcome anyway.
+    mockPreview.mockResolvedValue('adls_flatfile/logistics_tracking/irrelevant.csv');
     renderForm({
       suite: suite({
         target: {
@@ -238,6 +246,9 @@ describe('SuiteForm — flat-file batch target (#1180)', () => {
   it('reopens an existing specific-strategy batch target with its batch key', async () => {
     const user = userEvent.setup();
     mockUpdate.mockResolvedValue(suite());
+    // Same #1254 debounce race as the test above: this target is active from
+    // first render, so mock the preview call the debounce will make.
+    mockPreview.mockResolvedValue('adls_flatfile/logistics_tracking/irrelevant.csv');
     renderForm({
       suite: suite({
         target: {
@@ -271,6 +282,9 @@ describe('SuiteForm — flat-file batch target (#1180)', () => {
     // against for file_format, mirrored here by asBatchStrategy).
     const user = userEvent.setup();
     mockUpdate.mockResolvedValue(suite());
+    // Same #1254 debounce race: 'weekly' falls back to 'latest', which is
+    // still an active target, so the debounce still fires.
+    mockPreview.mockResolvedValue('adls_flatfile/logistics_tracking/irrelevant.csv');
     renderForm({
       suite: suite({
         target: {
