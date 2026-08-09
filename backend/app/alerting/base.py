@@ -40,6 +40,8 @@ __all__ = [
     "PollStalenessReport",
     "ResultPublisher",
     "RunReport",
+    "mark_already_logged",
+    "was_already_logged",
 ]
 
 # The two connection-health transitions worth telling someone about (#837). Both are
@@ -59,6 +61,38 @@ class AlertUndeliverableError(RuntimeError):
     every channel either failed or quietly skipped as unconfigured. Callers doing
     #843 delivered-first bookkeeping catch this to leave the flag unset (retry next
     tick) instead of recording a delivery that never happened."""
+
+
+# #1226: when EVERY channel fails, the composite's fan-out logs each failing
+# channel with a full traceback (`log.exception`) before re-raising the LAST one
+# so the caller can tell "genuinely undelivered" from "delivered". Without this
+# marker, the caller's own `except Exception: log.exception(...)` logs that same
+# last channel's traceback a second time — doubling log volume on exactly the
+# correlated-outage edge case #852/the 2026-07-13 exporter-loop incident warns
+# against. A plain attribute (not a wrapper exception type) so `isinstance`/type
+# checks on the original exception, and any exception-message classification
+# (#902), are untouched.
+#
+# Caveat: the marker rides on the exception OBJECT, not on `__cause__`/`__context__`
+# chaining, so it does not survive being wrapped (`raise SomeError(...) from exc`)
+# between the composite's `raise last_error` and a caller's except block. Neither
+# current caller re-wraps it — verified by `/code-review` on #1260 — but a future
+# error-classification or retry layer inserted in between would need to propagate
+# the marker onto its own wrapper explicitly, or this bug quietly reappears.
+_ALREADY_LOGGED_ATTR = "_dataq_alerting_already_logged"
+
+
+def mark_already_logged(exc: BaseException) -> None:
+    """Tag ``exc`` as already logged with a full traceback by the composite
+    fan-out, so a caller's own except-block can downgrade to ``log.warning``
+    instead of re-logging the same traceback with ``log.exception`` (#1226)."""
+    setattr(exc, _ALREADY_LOGGED_ATTR, True)
+
+
+def was_already_logged(exc: BaseException) -> bool:
+    """Whether ``exc`` was already logged with a full traceback by the composite
+    fan-out (see :func:`mark_already_logged`)."""
+    return bool(getattr(exc, _ALREADY_LOGGED_ATTR, False))
 
 
 HEALTH_FAILING: Final[HealthState] = "failing"

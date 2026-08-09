@@ -19,6 +19,7 @@ from backend.app.alerting.base import (
     ConnectionHealthReport,
     PollStalenessReport,
     RunReport,
+    mark_already_logged,
 )
 from backend.app.core.logging import get_logger
 
@@ -57,6 +58,10 @@ def _fan_out_delivered_first(
             log.exception(log_event, channel=type(publisher).__name__, **log_context)
     if delivered == 0:
         if last_error is not None:
+            # Already logged above with a full traceback — mark it so the caller's
+            # own except-block downgrades to a warning instead of logging the same
+            # traceback a second time (#1226).
+            mark_already_logged(last_error)
             raise last_error
         raise AlertUndeliverableError(undeliverable_message)
     return True

@@ -3,12 +3,17 @@
 Per 2026-05-28 security audit + observability work (#50, #51).
 """
 
+import asyncio
 import logging
 from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from structlog.testing import capture_logs
+from structlog.typing import EventDict
 
+from backend.app import main as main_module
+from backend.app.alerting.base import mark_already_logged
 from backend.app.core.config import Settings
 from backend.app.main import REQUEST_ID_HEADER, app, docs_kwargs
 
@@ -242,3 +247,66 @@ def test_readyz_never_echoes_the_database_error(client: TestClient) -> None:
 
     assert "hunter2" not in response.text
     assert "postgresql://" not in response.text
+
+
+# ───────────── poll-staleness watchdog: no duplicate traceback (#1226) ─────────────
+#
+# When every alert channel fails, `CompositePublisher._fan_out_delivered_first`
+# already logs a full traceback per failing channel before re-raising the last
+# one. `_poll_staleness_loop`'s own `except Exception: logger.exception(...)` used
+# to log that SAME last-channel traceback a second time. It now downgrades to a
+# warning for an error the composite already reported, while anything else (a DB
+# error, a bug in `evaluate_poll_staleness`) still gets its full traceback.
+
+
+async def _run_one_tick(monkeypatch: pytest.MonkeyPatch, tick_error: Exception) -> list[EventDict]:
+    """Drive exactly one iteration of `_poll_staleness_loop` whose tick raises
+    ``tick_error``, and return the structlog events captured during it.
+
+    The tick itself sets `stop` before raising, so the loop's own `while not
+    stop.is_set()` guard exits after logging — no timing-dependent second tick.
+    """
+    stop = asyncio.Event()
+
+    def _boom() -> str:
+        stop.set()
+        raise tick_error
+
+    monkeypatch.setattr(main_module, "_poll_staleness_tick", _boom)
+
+    with capture_logs() as logs:
+        await main_module._poll_staleness_loop(stop, interval_s=60)
+    return list(logs)
+
+
+async def test_poll_staleness_loop_downgrades_an_error_the_composite_already_logged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exc = RuntimeError("every alert channel failed")
+    mark_already_logged(exc)
+
+    events = await _run_one_tick(monkeypatch, exc)
+
+    ticks = [e for e in events if e["event"] == "poll_staleness_tick_failed"]
+    assert len(ticks) == 1
+    assert ticks[0]["log_level"] == "warning"
+    assert "exc_info" not in ticks[0]
+    # No exc_info and no per-tick correlation id in this background loop, so
+    # error_type is the only thing left to match this line back to the composite's
+    # own per-channel log (review finding on #1260).
+    assert ticks[0]["error_type"] == "RuntimeError"
+
+
+async def test_poll_staleness_loop_still_logs_a_full_traceback_for_anything_else(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The downgrade must be narrow: an ordinary, unmarked exception (a DB error,
+    a bug elsewhere in the tick) is NOT the composite's already-logged error, so it
+    must still surface with a full traceback — the fix must not go blind to new
+    failures in this watchdog, which exists precisely to catch a dead worker."""
+    events = await _run_one_tick(monkeypatch, RuntimeError("db connection reset"))
+
+    ticks = [e for e in events if e["event"] == "poll_staleness_tick_failed"]
+    assert len(ticks) == 1
+    assert ticks[0]["log_level"] == "error"
+    assert ticks[0].get("exc_info")
