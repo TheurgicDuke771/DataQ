@@ -354,3 +354,53 @@ def test_the_engine_bounds_the_initial_connect_too(monkeypatch: pytest.MonkeyPat
     # The existing lock_timeout posture must survive alongside the new option — this
     # isn't a replacement, it's an addition at a different layer (statement vs. connect).
     assert f"lock_timeout={session_module._LOCK_TIMEOUT_MS}" in connect_args.get("options", "")
+
+
+def test_the_engine_bounds_a_warm_pooled_connection_too(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1221: `connect_timeout` (#1102, above) only bounds establishing a BRAND-NEW
+    connection. It does nothing for a connection that was already open and pooled when a
+    network partition happens LATER — route drops silently, no TCP RST. A caller's
+    `get_session()` then checks out that already-connected pooled socket,
+    `pool_pre_ping=True` issues `SELECT 1` on it, and that read can hang indefinitely with
+    no timeout — including inside the same #1052 graceful-shutdown await #1102 was
+    protecting.
+
+    TCP keepalives make the OS-level stack detect and reap a dead/black-holed socket
+    instead of hanging a read with no data ever arriving — the suggested direction in
+    #1221, deliberately NOT `statement_timeout` (rejected in `session.py`'s own comments:
+    a long-running GX query is legitimate).
+
+    Asserted the same way as the `connect_timeout` test above — by capturing the
+    `connect_args` `_build_engine` hands to `create_engine`, NOT by dialing a
+    black-holed connection: that needs a firewall rule dropping packets silently, which
+    this environment cannot simulate and which would make the test itself exactly as
+    slow/flaky as the hang we're bounding. What matters here is that the configuration
+    reaches the engine; that psycopg2/libpq honors these keys is the driver's own
+    documented contract, not ours to re-verify. A LIVE black-holed-connection
+    verification remains an explicitly open gap — see #1221.
+    """
+    from backend.app.db import session as session_module
+
+    captured: dict[str, Any] = {}
+
+    def _fake_create_engine(url: Any, **kwargs: Any) -> str:
+        captured.update(kwargs)
+        return "not-a-real-engine"
+
+    monkeypatch.setattr(session_module, "create_engine", _fake_create_engine)
+
+    session_module._build_engine()
+
+    connect_args = captured.get("connect_args")
+    assert connect_args is not None, "_build_engine no longer passes connect_args at all"
+    assert connect_args.get("keepalives") == 1, "TCP keepalives are not enabled at all"
+    assert connect_args.get("keepalives_idle") == session_module._KEEPALIVES_IDLE_SECONDS
+    assert connect_args.get("keepalives_interval") == session_module._KEEPALIVES_INTERVAL_SECONDS
+    assert connect_args.get("keepalives_count") == session_module._KEEPALIVES_COUNT
+    # The connect_timeout (#1102) and lock_timeout (#855) postures must survive
+    # alongside the new keepalive options — this is an addition at a third layer
+    # (warm-pooled-connection read), not a replacement of either.
+    assert connect_args.get("connect_timeout") == session_module._CONNECT_TIMEOUT_SECONDS
+    assert f"lock_timeout={session_module._LOCK_TIMEOUT_MS}" in connect_args.get("options", "")

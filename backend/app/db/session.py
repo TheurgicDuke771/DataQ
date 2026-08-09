@@ -36,6 +36,30 @@ _LOCK_TIMEOUT_MS = 5_000
 # fails fast and loudly instead of hanging every caller.
 _CONNECT_TIMEOUT_SECONDS = 10
 
+# One layer lower still (#1221, follow-up to #1102's review): `connect_timeout` only
+# bounds establishing a BRAND-NEW connection. It does nothing for a connection that was
+# already open and pooled when a network partition happens LATER — route drops silently,
+# no TCP RST. `pool_pre_ping=True` then checks out that already-connected pooled socket
+# and issues `SELECT 1` on it; with no data ever arriving, that read can hang
+# indefinitely, including inside the same #1052 graceful-shutdown await #1102 was
+# protecting. TCP keepalives make the OS detect and reap a dead socket instead of
+# hanging a read forever. Deliberately NOT `statement_timeout` (see the module-level
+# comment above `_LOCK_TIMEOUT_MS`): a long-running query is legitimate here.
+#
+# `keepalives_idle` (30s) + `keepalives_interval` (10s) * `keepalives_count` (3) bounds
+# worst-case detection at ~60s after the last successful exchange — an OS-level floor
+# under `pool_pre_ping`'s own read, not a substitute for it. These are psycopg2-native
+# `connect_args` keys (like `connect_timeout`), passed straight to libpq.
+#
+# NOT verified against a live black-holed connection (firewall rule dropping packets
+# silently) — that crosses the same "only a live/real-network test is evidence" class as
+# the driver-boundary lesson in CLAUDE.md, and this environment has no way to simulate
+# it. What's tested is that the configuration reaches the engine; see
+# `test_poll_lock_timeout.py`.
+_KEEPALIVES_IDLE_SECONDS = 30
+_KEEPALIVES_INTERVAL_SECONDS = 10
+_KEEPALIVES_COUNT = 3
+
 
 def _build_engine() -> Engine:
     settings = get_settings()
@@ -46,6 +70,10 @@ def _build_engine() -> Engine:
         connect_args={
             "options": f"-c lock_timeout={int(_LOCK_TIMEOUT_MS)}",
             "connect_timeout": _CONNECT_TIMEOUT_SECONDS,
+            "keepalives": 1,
+            "keepalives_idle": _KEEPALIVES_IDLE_SECONDS,
+            "keepalives_interval": _KEEPALIVES_INTERVAL_SECONDS,
+            "keepalives_count": _KEEPALIVES_COUNT,
         },
     )
 
