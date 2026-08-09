@@ -134,6 +134,25 @@ _INVENTORY_SCHEMA_BY_TYPE: dict[str, str] = {
     "snowflake": "INFORMATION_SCHEMA in the connection's database",
 }
 
+# The generic messages are written for a RUN, and an inventory sync has neither a
+# run nor a run target — `CONFIG` points the reader at "the suite's run target"
+# (there isn't one) and `UNKNOWN` says "the run failed to execute. See the server
+# logs", which is exactly the answer #1104 exists to replace. Categories whose
+# generic text is already datasource-centric (`CONNECTIVITY`) are left alone
+# rather than reworded for its own sake.
+_INVENTORY_MESSAGES: dict[FailureCategory, str] = {
+    FailureCategory.CONFIG: (
+        "The inventory-sync query could not resolve what it was asked to read — e.g. a "
+        "missing warehouse or role, or a database/catalog that no longer exists. Check "
+        "the connection's settings."
+    ),
+    FailureCategory.UNKNOWN: (
+        "The inventory sync failed for a reason DataQ could not classify. The rest of the "
+        "connection may still be healthy — re-test it, and check the worker logs for the "
+        "underlying error."
+    ),
+}
+
 
 def classify_inventory_sync_error(
     exc: BaseException, connection_type: str, *, during_enumeration: bool
@@ -165,10 +184,16 @@ def classify_inventory_sync_error(
     if during_enumeration and category is FailureCategory.PERMISSION:
         schema = _INVENTORY_SCHEMA_BY_TYPE.get(connection_type)
         if schema:
+            # Phase narrows this to "the warehouse rejected OUR query", which is as
+            # far as the evidence goes: a Snowflake role that lost USAGE on its
+            # warehouse is rejected here too, and reads identically. So the message
+            # names the most likely cause and the two other privileges worth
+            # checking, rather than asserting one of them.
             return (
                 f"The inventory-sync query against {schema} was rejected — most likely a "
-                "missing SELECT grant there. Grant SELECT (or ask your workspace admin "
-                "to) and it will resolve automatically on the next sync; if the grant is "
-                "already in place, re-check the connection's credentials."
+                "missing SELECT grant there, or a role/warehouse privilege the query "
+                "needs. Grant SELECT (or ask your workspace admin to) and it will resolve "
+                "automatically on the next sync; if the grants are already in place, "
+                "re-check the connection's role and credentials."
             )
-    return classify_failure_reason(exc)
+    return _INVENTORY_MESSAGES.get(category) or classify_failure_reason(exc)

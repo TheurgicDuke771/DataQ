@@ -139,6 +139,44 @@ class TestInventorySyncClassification:
         assert "most likely" in reason.lower()
         assert "credential" in reason.lower()
 
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            RuntimeError("Object 'DATAQ_DB' does not exist or not authorized"),
+            ValueError("something entirely unexpected"),
+        ],
+    )
+    def test_the_reason_never_describes_the_failure_as_a_run(self, exc: Exception) -> None:
+        """The generic messages are written for a RUN — `CONFIG` sends the reader to
+        "the suite's run target" (an inventory sync has none) and `UNKNOWN` says "the
+        run failed to execute. See the server logs", which is the answer #1104 was
+        filed to replace. Rendering either in the connection's tooltip would describe
+        a run that does not exist."""
+        reason = classify_inventory_sync_error(exc, "snowflake", during_enumeration=True)
+        assert "run target" not in reason
+        assert "The run failed to execute" not in reason
+        assert "inventory" in reason.lower()
+
+    def test_connectivity_keeps_the_shared_datasource_wording(self) -> None:
+        """Not every category needs its own copy — `CONNECTIVITY` already describes the
+        datasource rather than the run, so it stays shared (one message to keep true)."""
+        exc = TimeoutError("connection timed out after 30s")
+        assert (
+            classify_inventory_sync_error(exc, "snowflake", during_enumeration=True)
+            == _MESSAGES[FailureCategory.CONNECTIVITY]
+        )
+
+    def test_the_grant_message_also_points_at_role_and_warehouse_privileges(self) -> None:
+        """Phase narrows the claim to "the warehouse rejected OUR query" — no further.
+        A Snowflake role that lost USAGE on its warehouse is rejected at exactly the
+        same point and reads identically, so the message must not assert the SELECT
+        grant as the cause and leave that reader with nowhere to go."""
+        reason = classify_inventory_sync_error(
+            PermissionError("access denied"), "snowflake", during_enumeration=True
+        )
+        assert "role" in reason.lower()
+        assert "warehouse" in reason.lower()
+
     def test_never_echoes_the_raw_exception_text(self) -> None:
         secret = "token dq_pat_SUPERSECRET"  # a marker string, not a real credential
         exc = RuntimeError(f"access denied: {secret}")
