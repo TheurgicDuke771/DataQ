@@ -54,3 +54,26 @@ def test_the_migration_engine_bounds_the_initial_connect_too() -> None:
         "time would hang `alembic upgrade head` (and the whole deploy) on the "
         "OS/driver connect default instead of failing fast (#1102)"
     )
+
+
+def test_the_migration_engine_bounds_a_warm_connection_too() -> None:
+    """#1221 mirrored onto the migrate-job engine (review finding on the #1221 PR): the
+    app engine's `connect_timeout` gap (#1102, above) has a sibling — it bounds only the
+    initial connect, not a connection that's already open when a network partition
+    happens silently later. `NullPool` means this engine never reuses a connection
+    across migrations, but it still holds ONE connection open for an entire migration's
+    duration, long enough for a mid-migration partition to hang a read forever and block
+    the whole deploy. TCP keepalives make the OS detect and reap a dead socket instead.
+
+    Same AST approach as the test above, for the same reason: `env.py` runs migrations
+    unconditionally at import time via Alembic's `context`, so it can't be imported and
+    exercised directly in a unit test.
+    """
+    connect_args = _connect_args_dict_node()
+    keys = [k.value for k in connect_args.keys if isinstance(k, ast.Constant)]
+
+    for key in ("keepalives", "keepalives_idle", "keepalives_interval", "keepalives_count"):
+        assert key in keys, (
+            f"the migrate-job engine has no {key} — a network partition mid-migration "
+            "would hang the whole deploy with no way to detect the dead connection (#1221)"
+        )

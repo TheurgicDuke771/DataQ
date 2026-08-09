@@ -52,6 +52,20 @@ _MIGRATION_LOCK_TIMEOUT_MS = 15_000
 # Same 10s value as the app engine — reachability has no reason to differ by caller.
 _MIGRATION_CONNECT_TIMEOUT_SECONDS = 10
 
+# Same gap #1221 closed on the app engine, mirrored here for the same reason
+# _MIGRATION_CONNECT_TIMEOUT_SECONDS mirrors #1102: `connect_timeout` only bounds the
+# initial connect, not a connection that's already open and running a migration
+# statement when a network partition happens silently (route drops, no TCP RST).
+# `NullPool` means this engine never reuses a connection across migrations, but it
+# still holds ONE connection open for the whole migration's duration — long enough for
+# a mid-migration partition to leave a read hanging forever with no timeout, again
+# blocking the whole deploy. TCP keepalives make the OS detect and reap a dead socket
+# instead. Same values as the app engine (`backend/app/db/session.py`) — detection
+# latency has no reason to differ by caller.
+_MIGRATION_KEEPALIVES_IDLE_SECONDS = 30
+_MIGRATION_KEEPALIVES_INTERVAL_SECONDS = 10
+_MIGRATION_KEEPALIVES_COUNT = 3
+
 
 def run_migrations_online() -> None:
     connectable = engine_from_config(
@@ -61,6 +75,10 @@ def run_migrations_online() -> None:
         connect_args={
             "options": f"-c lock_timeout={int(_MIGRATION_LOCK_TIMEOUT_MS)}",
             "connect_timeout": _MIGRATION_CONNECT_TIMEOUT_SECONDS,
+            "keepalives": 1,
+            "keepalives_idle": _MIGRATION_KEEPALIVES_IDLE_SECONDS,
+            "keepalives_interval": _MIGRATION_KEEPALIVES_INTERVAL_SECONDS,
+            "keepalives_count": _MIGRATION_KEEPALIVES_COUNT,
         },
     )
     with connectable.connect() as connection:
