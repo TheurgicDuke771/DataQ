@@ -13,7 +13,7 @@ import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
  */
 export function SuiteNew() {
   const navigate = useNavigate();
-  const { state } = useAsyncData(listConnections);
+  const { state } = useAsyncData(() => listConnections());
 
   return (
     <Page width={'form'}>

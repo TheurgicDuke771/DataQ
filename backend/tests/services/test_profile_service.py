@@ -365,6 +365,27 @@ def _conn(*, conn_type: str, config: dict[str, Any], secret_ref: str | None = "r
     return SimpleNamespace(type=conn_type, config=config, secret_ref=secret_ref)
 
 
+def _patch_object(monkeypatch: pytest.MonkeyPatch, content: bytes) -> list[tuple[int, int]]:
+    """Serve ``content`` over the BOUNDED read seam (#882) and record the ranges.
+
+    Parquet column listing (#882) and Parquet sampling (#1001) both go through
+    `RangeReader`/`read_range` rather than pulling the object. Stubbing the range
+    seam — and NOT `download_bytes` — is what makes "it only read what it
+    needed" observable instead of assumed.
+    """
+    from backend.app.datasources import flatfile
+
+    ranges: list[tuple[int, int]] = []
+
+    def _read_range(*, start: int, length: int, **_k: object) -> bytes:
+        ranges.append((start, length))
+        return content[start : start + length]
+
+    monkeypatch.setattr(flatfile, "object_size", lambda **k: len(content))
+    monkeypatch.setattr(flatfile, "read_range", _read_range)
+    return ranges
+
+
 def test_read_dataframe_csv_projects_only_requested_columns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -405,13 +426,16 @@ def test_read_dataframe_csv_projects_columns_from_a_semicolon_file(
 def test_read_dataframe_parquet_projects_only_requested_columns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """#1001: Parquet sampling reads via `RangeReader`, not `download_bytes` — the
+    projection/dtype correctness this test pins holds over the range-read path
+    the same way it held over the old whole-object one."""
     import io
 
     from backend.app.services import profile_service as svc
 
     buf = io.BytesIO()
     pd.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]}).to_parquet(buf)
-    monkeypatch.setattr(svc, "download_bytes", lambda **k: buf.getvalue())
+    _patch_object(monkeypatch, buf.getvalue())
     df = svc._read_dataframe(
         _flatfile_conn(),
         path="x.parquet",
@@ -425,28 +449,150 @@ def test_read_dataframe_parquet_projects_only_requested_columns(
     assert all("pyarrow" in str(dt) for dt in df.dtypes)
 
 
-# ── list_file_columns (header/footer-only introspection, #474) ──
+def test_read_dataframe_parquet_samples_do_not_download_the_whole_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1001: the profiler's Parquet SAMPLER must stop paying for the whole
+    object. A correctness-only assertion (right columns, right row count) would
+    pass whether the read came off a `RangeReader` sample or a full download —
+    it's the same answer either way — so this pins the actual BYTES READ, which
+    is the one thing a regression back to whole-object download would break.
 
-
-def _patch_object(monkeypatch: pytest.MonkeyPatch, content: bytes) -> list[tuple[int, int]]:
-    """Serve ``content`` over the BOUNDED read seam (#882) and record the ranges.
-
-    Column listing reads a Parquet footer or a CSV header, so it goes through
-    `RangeReader`/`read_range` rather than pulling the object. Stubbing the range
-    seam — and NOT `download_bytes` — is what makes "it only read what it needed"
-    observable instead of assumed.
+    Four 50,000-row groups, two columns of three requested: `_SAMPLE_ROWS`
+    (100,000) is met by the first batch (which merges the first two row
+    groups), so the unwanted third/fourth row groups AND the unwanted 'b'
+    column are never fetched at all.
     """
-    from backend.app.datasources import flatfile
+    import io
 
-    ranges: list[tuple[int, int]] = []
+    from backend.app.services import profile_service as svc
 
-    def _read_range(*, start: int, length: int, **_k: object) -> bytes:
-        ranges.append((start, length))
-        return content[start : start + length]
+    buf = io.BytesIO()
+    pd.DataFrame(
+        {
+            "a": range(200_000),
+            "b": range(200_000),
+            "c": [f"row-{i}" for i in range(200_000)],
+        }
+    ).to_parquet(buf, row_group_size=50_000)
+    content = buf.getvalue()
+    ranges = _patch_object(monkeypatch, content)
 
-    monkeypatch.setattr(flatfile, "object_size", lambda **k: len(content))
-    monkeypatch.setattr(flatfile, "read_range", _read_range)
-    return ranges
+    df = svc._read_dataframe(
+        _flatfile_conn(),
+        path="x.parquet",
+        file_format="parquet",
+        columns=["a", "c"],
+        secret_store=_FakeStore(),
+    )
+    assert set(df.columns) == {"a", "c"}
+    assert len(df) == svc._SAMPLE_ROWS  # capped, not the file's 200,000 rows
+    # The property under test: real range GETs were issued, and there were only
+    # a handful of them (`STREAM_CHUNK`'s few-large-requests shape) — not "some
+    # stats came back correct", and not one request per row group.
+    assert ranges
+    assert len(ranges) <= 5
+    # Bytes land close to parity with the object's own size, not a multiple of
+    # it. `STREAM_CHUNK` (#1222 code-review fix) trades the tighter
+    # under-the-object bound this test used to pin for request-count safety on
+    # adversarial row-group layouts (see the sibling test below) — a generous
+    # 1.5x cap still catches a regression back to a storm of tiny requests.
+    total_read = sum(length for _, length in ranges)
+    assert total_read < len(content) * 1.5
+
+
+def test_read_dataframe_parquet_sample_uses_the_streaming_chunk_on_many_small_row_groups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Code-review finding on #1222: `RangeReader`'s *default* window (256 KiB,
+    sized for a seeking access pattern like landing on a footer) turns
+    `iter_batches` walking many small row groups into a storm of small range
+    requests — on this 200-row-group fixture it measured **6.8x** the object's
+    own size across **92** requests, i.e. the "sampler" transferred far more
+    than the whole-object download it exists to replace. The fix opens the
+    reader with `chunk=STREAM_CHUNK` (the same window `csv_row_count` already
+    uses for its own sequential walk), which on this fixture drops that to a
+    handful of requests and bytes close to the object's own size — regressing
+    back to the small seeking-sized default would blow through both bounds
+    below by an order of magnitude.
+    """
+    import io
+
+    from backend.app.services import profile_service as svc
+
+    n_row_groups = 200
+    rows_per_group = 1_000
+    total_rows = n_row_groups * rows_per_group
+    buf = io.BytesIO()
+    pd.DataFrame(
+        {
+            "a": range(total_rows),
+            "b": range(total_rows),
+            "c": [f"row-{i}" for i in range(total_rows)],
+        }
+    ).to_parquet(buf, row_group_size=rows_per_group)
+    content = buf.getvalue()
+    ranges = _patch_object(monkeypatch, content)
+
+    df = svc._read_dataframe(
+        _flatfile_conn(),
+        path="many_groups.parquet",
+        file_format="parquet",
+        columns=["a", "c"],
+        secret_store=_FakeStore(),
+    )
+    assert set(df.columns) == {"a", "c"}
+    assert len(df) == svc._SAMPLE_ROWS
+
+    total_read = sum(length for _, length in ranges)
+    # The regression this pins: with the seeking-sized default window, this
+    # fixture measured ~6.8x the object's size across 92 requests. With
+    # STREAM_CHUNK, total bytes land close to (generously, up to ~1.5x) the
+    # object's own size — an order of magnitude off the unfixed multiplier.
+    assert total_read < len(content) * 1.5
+    # Request COUNT, not just bytes — a large window that still issued one
+    # request per row group would also fail this even if coincidentally under
+    # the byte bound. STREAM_CHUNK keeps this in the single digits regardless
+    # of row-group count; the unfixed default issued 92 requests here.
+    assert len(ranges) < 10
+
+
+def test_read_dataframe_parquet_sample_of_an_empty_file_returns_typed_empty_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Code-review finding on #1222: the header-only/zero-row fallback in
+    `_read_parquet_sample` (a real, correctly-typed empty `pa.Table` built off
+    the footer's own field types) had no automated test — the PR description
+    said it was checked "by hand" only. Pins that an empty Parquet file yields
+    an empty, correctly-typed frame over the requested columns rather than
+    raising or losing dtype information.
+    """
+    import io
+
+    from backend.app.services import profile_service as svc
+
+    buf = io.BytesIO()
+    pd.DataFrame({"a": pd.array([], dtype="int64"), "b": pd.array([], dtype="int64")}).to_parquet(
+        buf
+    )
+    content = buf.getvalue()
+    _patch_object(monkeypatch, content)
+
+    df = svc._read_dataframe(
+        _flatfile_conn(),
+        path="empty.parquet",
+        file_format="parquet",
+        columns=["a"],
+        secret_store=_FakeStore(),
+    )
+    assert list(df.columns) == ["a"]
+    assert len(df) == 0
+    assert "pyarrow" in str(df.dtypes["a"])
+
+
+# ── list_file_columns (header/footer-only introspection, #474) ──
+# `_patch_object` (defined above, alongside the `_read_dataframe` tests it now
+# shares with the #1001 Parquet-sampling tests) covers this section too.
 
 
 def test_list_file_columns_csv_reads_header_only(monkeypatch: pytest.MonkeyPatch) -> None:

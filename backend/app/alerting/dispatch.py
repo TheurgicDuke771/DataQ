@@ -14,7 +14,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from backend.app.alerting import dedup, registry, suppression
-from backend.app.alerting.base import HealthState
+from backend.app.alerting.base import AlertUndeliverableError, HealthState
 from backend.app.alerting.builder import build_connection_health_report, build_run_report
 from backend.app.alerting.routing import ALWAYS
 from backend.app.core.logging import get_logger
@@ -76,14 +76,33 @@ def publish_connection_health(
     scheduled suite re-alerts on every run; this is dispatched only on a *transition*
     (the crossing, and the recovery), so a dead connection alerts once — not 144 times a
     day until someone mutes it, which would recreate the very invisibility #828 fixed.
+
+    Returns whether the edge was actually DELIVERED, not just attempted (#1101): the
+    caller (``worker.tasks.publish_connection_health``) claimed `health_alerted_at`
+    with a conditional UPDATE before calling this, and releases that claim on a
+    ``False`` return so the next sweep retries. The composite raises
+    :class:`AlertUndeliverableError` when every channel either failed or quietly
+    skipped as unconfigured — a workspace with zero alert channels configured (the
+    shipped default) must never read as "the operator was told".
     """
     try:
         connection = session.get(Connection, connection_id)
         if connection is None:  # deleted between the poll and the alert
             return False
         report = build_connection_health_report(connection, state=state)
-        registry.get_health_publisher().publish_health(session, report)
-        return True
+        # Propagate the publisher's own delivered/not-delivered answer rather than
+        # assuming True on a normal return (review finding, #1101): today the
+        # top-level publisher is always a CompositePublisher, which only returns
+        # normally with True or raises — but that invariant lives in registry.py,
+        # not here, and a bare `return True` would silently phantom-stamp again if
+        # a future publisher (or test double) ever returned False without raising.
+        return registry.get_health_publisher().publish_health(session, report)
+    except AlertUndeliverableError:
+        # Not a channel malfunction — every channel is simply unconfigured (or every
+        # configured one failed). Log at warning, not a full exception traceback: this
+        # is the expected shape on a fresh install, not a bug.
+        log.warning("connection_health_publish_undeliverable", connection_id=str(connection_id))
+        return False
     except Exception:
         log.exception("connection_health_publish_failed", connection_id=str(connection_id))
         return False

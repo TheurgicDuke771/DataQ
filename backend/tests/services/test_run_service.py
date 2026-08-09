@@ -8,12 +8,19 @@ under test independent of Postgres and Snowflake.
 
 import uuid
 from decimal import Decimal
-from typing import cast
+from typing import Any, cast
 
 import pytest
+from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Session
 
-from backend.app.datasources.base import CheckOutcome, CheckRunner, CheckSpec, SuiteOutcome
+from backend.app.datasources.base import (
+    SAMPLE_ROW_CAP,
+    CheckOutcome,
+    CheckRunner,
+    CheckSpec,
+    SuiteOutcome,
+)
 from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.db.models import Check, Result, Run
 from backend.app.services import run_service
@@ -513,6 +520,104 @@ def test_errored_check_maps_to_error_status_without_failing_siblings() -> None:
     assert by_check[checks[1].id].status == "pass"  # sibling unaffected
 
 
+def test_errored_sql_check_persists_no_statement_or_parameter_echo() -> None:
+    """#1203: a SQL engine's error message must not carry target data into
+    `observed_value`.
+
+    GX hands `to_suite_outcome` `exception_info.exception_message`, which on a SQL
+    execution engine is the rendering of a SQLAlchemy `StatementError` — the driver
+    message followed by `[SQL: …]` and `[parameters: …]`. Those bound values are
+    cells DataQ sent to the warehouse, and `observed_value` is outside both the
+    `sample_failures` retention sweep and the suite's column policy, so it reaches
+    the run-detail API, the UI, alerts and MCP output unmasked.
+
+    Built from a REAL `StatementError` (not a hand-written string) so the test
+    tracks SQLAlchemy's actual rendering rather than our idea of it. The same
+    wrapper covers Snowflake and Unity Catalog — `_build_result` is the one choke
+    point both reach, so neither can diverge."""
+    statement_error = StatementError(
+        "(snowflake.connector.errors.ProgrammingError) 100038 (22018): "
+        "Numeric value 'ORD-9' is not recognized",
+        "SELECT * FROM RETAIL.ORDERS WHERE CUSTOMER_REF = %(ref)s",
+        {"ref": "alice@example.com"},
+        Exception("orig"),
+    )
+    assert "alice@example.com" in str(statement_error)  # the premise, not an artefact
+
+    session = FakeSession()
+    run = _run()
+    check = _checks(1)[0]
+    outcome = SuiteOutcome(
+        success=False,
+        checks=[
+            CheckOutcome(
+                "unexpected_rows_expectation",
+                success=False,
+                errored=True,
+                error_message=str(statement_error),
+            )
+        ],
+    )
+
+    run_service.execute_run(
+        _sess(session), run=run, checks=[check], runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    persisted = session.added[0]
+    assert persisted.status == "error"
+    assert persisted.observed_value is not None
+    stored = persisted.observed_value["error"]
+    assert "alice@example.com" not in stored  # the bound parameter — target data
+    assert "[SQL:" not in stored
+    assert "[parameters:" not in stored
+    assert "RETAIL.ORDERS" not in stored
+    # The driver's own diagnostic survives — blanket-classifying it would make a bad
+    # cast undiagnosable from the UI (the `SafeMonitorError` trade-off).
+    assert stored == (
+        "(snowflake.connector.errors.ProgrammingError) 100038 (22018): "
+        "Numeric value 'ORD-9' is not recognized"
+    )
+
+
+def test_redact_observed_value_strips_the_echo_from_an_already_persisted_row() -> None:
+    """#1203 read side: rows written before the fix still hold the echo, and
+    `observed_value` has no retention sweep to age them out. `redact_observed_value`
+    is what the run-detail API, the MCP tools and the alert builder all call, so
+    stripping there corrects the whole history in one place."""
+    legacy = {
+        "error": (
+            "(databricks.sql.exc.ServerOperationError) cannot cast\n"
+            "[SQL: SELECT * FROM gold.feedback WHERE email = %(e)s]\n"
+            "[parameters: {'e': 'bob@example.com'}]"
+        )
+    }
+
+    out = run_service.redact_observed_value(legacy)
+
+    assert out is not None
+    assert out["error"] == "(databricks.sql.exc.ServerOperationError) cannot cast"
+    assert "bob@example.com" not in out["error"]
+    assert legacy["error"].count("[SQL:") == 1  # the caller's dict is not mutated
+
+
+def test_redact_observed_value_strips_the_echo_alongside_an_unparsed_cell() -> None:
+    """The two redactions compose: the #989 cell keeps its column-policy treatment
+    while the #1203 echo goes, so neither fix can shadow the other."""
+    out = run_service.redact_observed_value(
+        {
+            "error": "(x.Error) boom\n[SQL: SELECT 1]\n[parameters: {'p': 'leaked'}]",
+            "unparsed_value": "not-a-timestamp",
+            "column": "EMAIL",
+        },
+        policy={"pii_columns": ["EMAIL"]},
+    )
+
+    assert out is not None
+    assert out["error"] == "(x.Error) boom"
+    assert "leaked" not in out["error"]
+    assert out["unparsed_value"] == "<redacted>"  # known-sensitive column, still masked
+
+
 def test_errored_check_with_thresholds_is_still_error_not_banded() -> None:
     """Thresholds don't apply to an errored check — there's no metric to band, so
     it must resolve to `error`, not slip through severity derivation as a tier."""
@@ -698,6 +803,86 @@ def test_redact_sample_failures_masks_unknown_keys_and_nested_values() -> None:
         {"unexpected_index_list": [{"row": {"name": "Alice"}}]}
     )
     assert out == {"unexpected_index_list": [{"row": {"name": "<redacted>"}}]}
+
+
+# ── the sample bound is re-applied at read time (#1196) ───────────────────────
+
+
+def test_redact_bounds_oversized_lists_from_already_persisted_rows() -> None:
+    """#1196: capture-time capping only protects NEW rows. Every result written
+    before it — a pandas-backed check that failed thousands of rows under GX's
+    uncapped `unexpected_index_list` — must stop shipping the whole list on every
+    run-detail load, so the read path re-applies the same bound (the #1115
+    read-time-derivation pattern: old rows corrected for free, nothing to backfill)."""
+    rows = [{"ORDER_NUMBER": f"ORD-{i}", "LINE_TOTAL": -1.0 * i} for i in range(5_000)]
+    out = run_service.redact_sample_failures(
+        {
+            "unexpected_index_list": rows,
+            "partial_unexpected_list": [-1.0 * i for i in range(5_000)],
+            "unexpected_count": 5_000,
+        },
+        tested_column="LINE_TOTAL",
+        policy={"identifier_column": "ORDER_NUMBER"},
+    )
+    assert out is not None
+    assert len(out["unexpected_index_list"]) == SAMPLE_ROW_CAP
+    assert len(out["partial_unexpected_list"]) == SAMPLE_ROW_CAP
+    # bounded, never falsified: the aggregate total still reports the real count,
+    # and the retained rows are the first ones (unchanged apart from redaction).
+    assert out["unexpected_count"] == 5_000
+    assert out["unexpected_index_list"] == rows[:SAMPLE_ROW_CAP]
+
+
+def test_read_time_bound_classifies_over_the_full_list_not_the_capped_slice() -> None:
+    """#1196 review: bounding the payload must never widen what the payload reveals.
+
+    `column_classification._value_signal` is *ratio*-based (emails >= 50% of the
+    sampled values -> PII). A legacy oversized sample whose identifier-designated
+    column holds emails in 80% of 5,000 rows but only 45% of the FIRST 20 flips from
+    PII to shown the moment the classifier is fed the capped slice instead of the
+    persisted list — unmasking real addresses that were masked before the cap
+    existed. The emitted rows are capped; the classification input is not.
+    """
+    rows = [
+        {
+            # `_policy_identifier` designates this column, so it shows unless the
+            # VALUE signal proves it sensitive — exactly the ratio the slice skews.
+            # 9 of the first 20 rows are emails (0.45 — under the 0.5 threshold),
+            # but nearly the whole 5,000-row list is (0.998 — well over it).
+            "CUSTOMER_REF": (f"user{i}@example.com" if i >= 11 else f"REF-{i}"),
+            "LINE_TOTAL": -1.0 * i,
+        }
+        for i in range(5_000)
+    ]
+    # sanity: the heuristic really does disagree between the window and the whole list
+    first_window = (
+        sum("@" in str(r["CUSTOMER_REF"]) for r in rows[:SAMPLE_ROW_CAP]) / SAMPLE_ROW_CAP
+    )
+    whole_list = sum("@" in str(r["CUSTOMER_REF"]) for r in rows) / len(rows)
+    assert first_window < 0.5 <= whole_list
+
+    out = run_service.redact_sample_failures(
+        {"unexpected_index_list": rows, "unexpected_count": 5_000},
+        tested_column="LINE_TOTAL",
+        policy={"identifier_column": "CUSTOMER_REF"},
+    )
+    assert out is not None
+    emitted = out["unexpected_index_list"]
+    assert len(emitted) == SAMPLE_ROW_CAP  # still bounded
+    assert all(row["CUSTOMER_REF"] == "<redacted>" for row in emitted)
+    assert not any("@example.com" in str(row["CUSTOMER_REF"]) for row in emitted)
+
+
+def test_read_time_bound_classifies_the_full_partial_list_too() -> None:
+    """The same rule on the scalar `partial_unexpected_list` path: `_known_sensitive`
+    judges the tested column over every persisted value, not the emitted window."""
+    values = [f"user{i}@example.com" if i >= 11 else f"REF-{i}" for i in range(5_000)]
+    out = run_service.redact_sample_failures(
+        {"partial_unexpected_list": values, "unexpected_count": 5_000},
+        tested_column="CUSTOMER_REF",
+    )
+    assert out is not None
+    assert out["partial_unexpected_list"] == ["<redacted>"] * SAMPLE_ROW_CAP
 
 
 # ── column-aware redaction (#415) ─────────────────────────────────────────────
@@ -886,26 +1071,134 @@ def test_redact_state_full_for_anonymous_masked_scalar_list_with_no_tested_colum
 
 
 def test_redact_state_partial_with_no_nameable_column_from_anonymous_mask() -> None:
-    """#1115 review: an anonymous mask (no `tested_column`) can coincide with a
-    DIFFERENT column being shown elsewhere in the same sample — both real GX
-    buckets, `unexpected_index_list` (row dicts, redacted per column) and
-    `partial_unexpected_list` (the tested column's scalar list), can be present
-    together. That combination reports "partial" with an EMPTY `redacted_columns`
-    (there is a real mask, but nothing nameable for it) — the API/frontend must
-    not read empty `redacted_columns` as "nothing was masked" when state is
-    "partial"."""
+    """#1115 review: an anonymous mask (no nameable column) can coincide with a
+    DIFFERENT column being shown in the SAME rendered list. That combination reports
+    "partial" with an EMPTY `redacted_columns` (there is a real mask, but nothing
+    nameable for it) — the API/frontend must not read empty `redacted_columns` as
+    "nothing was masked" when state is "partial".
+
+    It also pins #1197's guard. This sample renders nothing (a mixed dict/non-dict
+    `unexpected_index_list` fails the frontend's `isIdentifierRows`, and there is no
+    `partial_unexpected_list` to fall back to), so `_displayed_sample_key` returns
+    None and the displayed-list narrowing deliberately does NOT apply: with no winner
+    there is no loser to suppress, and #1115's union semantics stand unchanged. Drop
+    the `displayed_key is not None` guard and this reports None instead of "partial".
+
+    Before #1197 the property was demonstrated with the mask coming from a *different*
+    list (`partial_unexpected_list`) — which is exactly the cross-list accumulation
+    #1197 removed, since that list is not on screen when the index list is."""
     sample, state, cols = run_service.redact_sample_failures_with_state(
         {
-            "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],  # shown: identifier
-            "partial_unexpected_list": ["a@x.com"],  # masked, but no tested_column
+            "unexpected_index_list": [
+                {"ORDER_ID": "ORD-1"},  # shown: identifier
+                "not-a-row-dict",  # masked, nothing nameable
+            ],
         }
     )
     assert state == "partial"
     assert cols == []  # nothing nameable for the anonymous mask
+    assert sample == {"unexpected_index_list": [{"ORDER_ID": "ORD-1"}, "<redacted>"]}
+
+
+# ── the label describes the DISPLAYED list, not the union of both (#1197) ─────
+
+
+def test_redact_state_ignores_the_list_the_frontend_does_not_render() -> None:
+    """#1197: `unexpected_index_list` and `partial_unexpected_list` are two
+    renderings of the same failing rows, and the run-detail table shows exactly one —
+    the dict-shaped index list when present (#1190). Masking that happens only in the
+    list nobody sees must not appear in the label for the table they do see.
+
+    Displayed: one row whose `ORDER_ID` surfaces as an identifier — everything on
+    screen is shown, so the honest claim is "values shown". The scalar
+    `partial_unexpected_list` beside it masks (no `tested_column` to authorise it),
+    which used to drag the label to "partial" over a table with nothing redacted in
+    it."""
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],  # displayed, all shown
+            "partial_unexpected_list": ["a@x.com"],  # not displayed; masks
+        }
+    )
+    assert state == "none"
+    assert cols == []
+    # the list that is NOT rendered is still redacted on its own terms — narrowing
+    # the tracker must never narrow the masking.
     assert sample == {
         "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],
         "partial_unexpected_list": ["<redacted>"],
     }
+
+
+def test_redact_state_masked_column_stays_named_when_the_other_list_would_show_it() -> None:
+    """The exact undercount #1197 describes: a column that masks in the DISPLAYED
+    index list but classifies as shown from the other list's own sample must still
+    appear in `redacted_columns`. `tested_column` names it in both, so the old
+    cross-list OR flipped it to "shown" and reported "values shown" over a table
+    whose every cell for that column read "<redacted>"."""
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            # In the index list the column's own values are emails → PII → masked.
+            "unexpected_index_list": [{"CUSTOMER_REF": "a@x.com"}, {"CUSTOMER_REF": "b@x.com"}],
+            # In the scalar list the same column's sample is innocuous → shown.
+            "partial_unexpected_list": ["REF-1", "REF-2"],
+        },
+        tested_column="CUSTOMER_REF",
+    )
+    assert state == "full"
+    assert cols == ["CUSTOMER_REF"]
+    assert sample is not None
+    assert sample["unexpected_index_list"] == [
+        {"CUSTOMER_REF": "<redacted>"},
+        {"CUSTOMER_REF": "<redacted>"},
+    ]
+
+
+def test_redact_state_falls_back_to_the_partial_list_when_no_index_rows_render() -> None:
+    """Mirror of the frontend fallback: a non-dict `unexpected_index_list` renders
+    nothing, so `partial_unexpected_list` is the displayed list and sets the label."""
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "unexpected_index_list": [1, 4, 7],  # bare positional indices — not rows
+            "partial_unexpected_list": [-12.5, -5.0],
+        },
+        tested_column="LINE_TOTAL",
+    )
+    assert state == "none"  # the displayed list's values are shown
+    assert cols == []
+    assert sample is not None
+    assert sample["partial_unexpected_list"] == [-12.5, -5.0]
+    assert sample["unexpected_index_list"] == ["<redacted>"] * 3
+
+
+def test_displayed_list_is_decided_on_the_capped_rows_the_frontend_receives() -> None:
+    """#1238 review: the winner must be picked from the same rows the UI tests.
+
+    The read path re-applies `SAMPLE_ROW_CAP` (#1196), so a payload whose first
+    `SAMPLE_ROW_CAP` `unexpected_index_list` entries are dicts but which carries a
+    non-dict beyond the cap ships an ALL-dict list to the frontend — which therefore
+    renders it. Deciding on the uncapped list would call `partial_unexpected_list`
+    the displayed one and suppress the tracker on the table actually on screen: this
+    fix's own bug, inverted.
+
+    Here the displayed index list masks `CUSTOMER_REF` (its values are emails) while
+    the scalar list would show it, so the two answers are distinguishable."""
+    rows: list[Any] = [{"CUSTOMER_REF": f"a{i}@x.com"} for i in range(SAMPLE_ROW_CAP)]
+    rows.append("not-a-row")  # beyond the cap — never reaches the frontend
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "unexpected_index_list": rows,
+            "partial_unexpected_list": ["REF-1", "REF-2"],
+        },
+        tested_column="CUSTOMER_REF",
+    )
+    assert sample is not None
+    # The emitted list is all-dict, i.e. exactly what the frontend renders.
+    assert len(sample["unexpected_index_list"]) == SAMPLE_ROW_CAP
+    assert all(isinstance(row, dict) for row in sample["unexpected_index_list"])
+    # …so the label describes it, not the scalar fallback (which would give "none").
+    assert state == "full"
+    assert cols == ["CUSTOMER_REF"]
 
 
 def test_redact_state_none_when_every_column_shown() -> None:

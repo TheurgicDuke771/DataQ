@@ -52,10 +52,12 @@ from typing import Any
 
 from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
+from backend.app.datasources.base import SAMPLE_ROW_CAP
 
 # Cap on rows carried per sample bucket (→ `Result.sample_failures`, which is
-# retention-swept and redacted downstream; samples must stay small).
-SAMPLE_LIMIT = 20
+# retention-swept and redacted downstream; samples must stay small). Aliases the
+# one shared bound (#1196) so this path and the GX one can never drift apart.
+SAMPLE_LIMIT = SAMPLE_ROW_CAP
 
 # Cap on offending keys echoed in a duplicate-key error message.
 _DUP_KEY_ECHO = 10

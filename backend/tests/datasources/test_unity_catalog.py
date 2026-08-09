@@ -130,6 +130,8 @@ def test_test_raises_and_closes_when_query_fails(monkeypatch: pytest.MonkeyPatch
 
 # ───────────────────────── GX runner (build_databricks_url, runner) ─
 
+from decimal import Decimal  # noqa: E402
+
 import great_expectations as gx_module  # noqa: E402
 import pandas as pd  # noqa: E402
 
@@ -142,6 +144,7 @@ from backend.app.datasources.unity_catalog import (  # noqa: E402
 )
 from backend.app.services.custom_sql import is_custom_sql  # noqa: E402
 from backend.app.services.failure_classifier import classify_failure_reason  # noqa: E402
+from backend.app.services.severity import extract_metric  # noqa: E402
 
 
 class _FakeStore:
@@ -430,6 +433,26 @@ def test_custom_sql_failing_query_reports_the_unexpected_row_count(
     assert check.errored is False, check.error_message
     assert check.success is False
     assert check.observed_value == {"observed_value": 2}
+
+
+def test_custom_sql_row_count_feeds_severity_metric_value(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Unity Catalog half of #1202: the UC SQL-batch outcome's `observed_value`
+    feeds `severity.extract_metric` the same way the Snowflake-shaped path does
+    (`test_gx_runner.py::test_to_suite_outcome_reads_custom_sql_row_count_as_observed_value`)
+    — proving the metric is populated identically regardless of which datasource
+    ran the check, per the issue's "no per-datasource divergence" requirement."""
+    runner = _uc_runner()
+    _sqlite_batch_seam(runner, tmp_path, rows=[1, 4, 5], monkeypatch=monkeypatch)
+    outcome = runner.run_checks(
+        table="feedback",
+        schema="gold",
+        checks=[_custom_sql("SELECT * FROM {batch} WHERE rating >= 4")],
+    )
+    check = outcome.checks[0]
+    assert check.observed_value == {"observed_value": 2}
+    assert extract_metric(check) == Decimal("2")
 
 
 def test_custom_sql_query_error_is_an_operational_error_not_a_crash(
