@@ -112,10 +112,12 @@ def create_celery_app() -> Celery:
                 "task": "dispatch_due_schedules",
                 "schedule": 60.0,  # 1 minute
             },
-            # Result retention sweep: once a day, scrub `sample_failures` (the only
-            # potentially-PII result column) from results past the configured
-            # retention window. Keeps the row + `metric_value` so dashboard trends
-            # survive (ADR 0012); this is PII minimisation, not a history delete.
+            # Result retention sweep: once a day, scrub `sample_failures` and
+            # list-shaped `observed_value` (the two potentially-PII result
+            # columns — #1253 extended this to the `observed_value` sibling)
+            # from results past the configured retention window. Keeps the row +
+            # `metric_value` so dashboard trends survive (ADR 0012); this is PII
+            # minimisation, not a history delete.
             "purge-sample-failures": {
                 "task": "purge_sample_failures",
                 "schedule": crontab(hour="1", minute="17"),  # daily, 01:17 UTC

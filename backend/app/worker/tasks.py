@@ -874,9 +874,12 @@ def dispatch_due_schedules() -> dict[str, int]:
 def purge_sample_failures() -> int:
     """Celery-beat entry point — daily PII-retention sweep.
 
-    Scrubs `sample_failures` from results older than the configured
-    ``sample_failures_retention_days`` window (keeping the row + `metric_value` so
-    trends survive — ADR 0012). Returns the number of rows scrubbed.
+    Scrubs `sample_failures` and list-shaped `observed_value` (#1253 — its
+    sibling column, only the raw-cell-bearing set-oriented-expectation shape;
+    scalar aggregates are left untouched) from results older than the
+    configured ``sample_failures_retention_days`` window (keeping the row +
+    `metric_value` so trends survive — ADR 0012). Returns the total number of
+    column values scrubbed across both columns.
     """
     session = get_session()
     try:
