@@ -1,9 +1,11 @@
 """Tests for the result retention sweep (`purge_expired_sample_failures`).
 
 DB-backed (real Postgres): the sweep is a bulk UPDATE keyed on `created_at` +
-the JSONB `sample_failures` column, which can't be faithfully faked. Verifies it
-scrubs only old, unpurged rows that still carry samples, keeps `metric_value`
-(trends survive — ADR 0012), is idempotent, and honours the disable sentinel.
+the JSONB `sample_failures`/`observed_value` columns, which can't be faithfully
+faked. Verifies it scrubs only old, unpurged rows that still carry samples,
+keeps `metric_value` (trends survive — ADR 0012), is idempotent, and honours
+the disable sentinel — plus (#1253) that `observed_value`'s sweep touches ONLY
+the list-shaped set-oriented-expectation case and never a scalar aggregate.
 Skips without TEST_DATABASE_URL.
 """
 
@@ -52,6 +54,7 @@ def _result(
     sample: Any = _UNSET,
     purged_at: datetime | None = None,
     metric: Decimal | None = None,
+    observed: Any = None,
 ) -> Result:
     check, run = _check_and_run(db_session)
     row = Result(
@@ -61,6 +64,7 @@ def _result(
         metric_value=metric,
         sample_failures={"rows": [{"id": 1}]} if sample is _UNSET else sample,
         sample_failures_purged_at=purged_at,
+        observed_value=observed,
         created_at=NOW - timedelta(days=age_days),
     )
     db_session.add(row)
@@ -117,9 +121,128 @@ def test_idempotent_already_purged(db_session: Any) -> None:
 
 
 def test_disabled_when_retention_non_positive(db_session: Any) -> None:
-    old = _result(db_session, age_days=400)
+    """Covers BOTH sibling columns: the early `retention_days <= 0` return must
+    guard the observed_value half too, not just sample_failures — a row with a
+    list-shaped observed_value seeded here would catch a future refactor that
+    splits the single early-return into two per-column guards and gets the
+    observed_value one wrong."""
+    old = _result(db_session, age_days=400, observed={"observed_value": ["still@here.example"]})
 
     assert run_service.purge_expired_sample_failures(db_session, retention_days=0, now=NOW) == 0
     assert run_service.purge_expired_sample_failures(db_session, retention_days=-1, now=NOW) == 0
     db_session.refresh(old)
     assert old.sample_failures is not None  # nothing scrubbed
+    assert old.observed_value == {"observed_value": ["still@here.example"]}
+
+
+# ── #1253: observed_value's sibling sweep ────────────────────────────────────
+
+
+def test_scrubs_old_list_shaped_observed_value(db_session: Any) -> None:
+    """The set-oriented-expectation shape (#1229/#1252) — a raw distinct-value
+    list — is the one PII-bearing `observed_value` shape, and it's nulled past
+    the retention window same as `sample_failures`."""
+    old = _result(
+        db_session,
+        age_days=40,
+        sample=None,
+        observed={"observed_value": ["alice@example.com", "bob@example.com"]},
+    )
+
+    purged = run_service.purge_expired_sample_failures(db_session, retention_days=30, now=NOW)
+
+    assert purged == 1
+    db_session.refresh(old)
+    assert old.observed_value is None
+
+
+def test_keeps_scalar_observed_value(db_session: Any) -> None:
+    """The critical negative case — a scalar aggregate (row count, mean)
+    sharing the same wrapper shape as the PII-bearing list case must survive
+    the sweep untouched, since it's what `metric_value` trends and anomaly
+    baselines read from (ADR 0012). Getting this backwards would silently
+    destroy legitimate metric data."""
+    old = _result(
+        db_session,
+        age_days=40,
+        sample=None,
+        observed={"observed_value": 34680},
+    )
+
+    purged = run_service.purge_expired_sample_failures(db_session, retention_days=30, now=NOW)
+
+    assert purged == 0
+    db_session.refresh(old)
+    assert old.observed_value == {"observed_value": 34680}
+
+
+def test_keeps_recent_list_shaped_observed_value(db_session: Any) -> None:
+    """Inside the retention window: even the PII-bearing shape is untouched."""
+    recent = _result(db_session, age_days=5, sample=None, observed={"observed_value": ["a@x.com"]})
+
+    purged = run_service.purge_expired_sample_failures(db_session, retention_days=30, now=NOW)
+
+    assert purged == 0
+    db_session.refresh(recent)
+    assert recent.observed_value == {"observed_value": ["a@x.com"]}
+
+
+def test_leaves_error_and_reason_shapes_untouched(db_session: Any) -> None:
+    """`{"error": ...}` / `{"unparsed_value": ..., "column": ...}` / `{"reason":
+    ...}` never nest a top-level `observed_value` key, so the sweep's
+    `jsonb_typeof(observed_value -> 'observed_value') = 'array'` condition
+    can't match them — confirmed here rather than assumed."""
+    error_row = _result(db_session, age_days=40, sample=None, observed={"error": "boom"})
+    unparsed_row = _result(
+        db_session,
+        age_days=40,
+        sample=None,
+        observed={"unparsed_value": "not-a-date", "column": "created_at"},
+    )
+    skip_row = _result(db_session, age_days=40, sample=None, observed={"reason": "no baseline yet"})
+
+    purged = run_service.purge_expired_sample_failures(db_session, retention_days=30, now=NOW)
+
+    assert purged == 0
+    for row in (error_row, unparsed_row, skip_row):
+        db_session.refresh(row)
+    assert error_row.observed_value == {"error": "boom"}
+    assert unparsed_row.observed_value == {"unparsed_value": "not-a-date", "column": "created_at"}
+    assert skip_row.observed_value == {"reason": "no baseline yet"}
+
+
+def test_purges_both_sibling_columns_independently_and_sums(db_session: Any) -> None:
+    """A row whose `sample_failures` AND `observed_value` are both scrubbable
+    counts as 2 in the return value — independent UPDATEs, not one row-count."""
+    old = _result(
+        db_session,
+        age_days=40,
+        sample={"rows": [{"id": 1}]},
+        observed={"observed_value": ["x@example.com"]},
+        metric=Decimal("12.0"),
+    )
+
+    purged = run_service.purge_expired_sample_failures(db_session, retention_days=30, now=NOW)
+
+    assert purged == 2
+    db_session.refresh(old)
+    assert old.sample_failures is None
+    assert old.observed_value is None
+    assert old.sample_failures_purged_at == NOW
+    assert old.metric_value == Decimal("12.0")  # trend scalar survives (ADR 0012)
+
+
+def test_idempotent_second_sweep_observed_value(db_session: Any) -> None:
+    """No dedicated `observed_value_purged_at` column: idempotency relies on the
+    column itself going SQL NULL, so a second sweep must not error or re-count."""
+    old = _result(
+        db_session, age_days=40, sample=None, observed={"observed_value": ["x@example.com"]}
+    )
+
+    first = run_service.purge_expired_sample_failures(db_session, retention_days=30, now=NOW)
+    second = run_service.purge_expired_sample_failures(db_session, retention_days=30, now=NOW)
+
+    assert first == 1
+    assert second == 0
+    db_session.refresh(old)
+    assert old.observed_value is None

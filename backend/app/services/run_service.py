@@ -1204,25 +1204,91 @@ def _is_safe_summary(key: str, value: Any) -> bool:
 # ── retention sweep (configurable PII purge of old result samples) ────────────
 
 
+def _purge_column(
+    session: Session, *, cutoff: datetime, extra_where: Sequence[Any], values: dict[str, Any]
+) -> int:
+    """One bulk UPDATE against `results`, scoped to `created_at < cutoff` plus
+    the caller's own column-specific guard (#1253 — shared by both halves of
+    `purge_expired_sample_failures` so the two purges stay mechanically
+    identical). Returns the affected-row count.
+
+    Fire-and-forget bulk DML on a fresh, short-lived worker session with no
+    loaded Result identities — `synchronize_session=False` skips the ORM
+    identity-map sync, which under the default 'auto'/'fetch' would emit an
+    extra SELECT of every matching PK before the UPDATE (every caller's WHERE
+    uses `jsonb_typeof`, so the in-Python 'evaluate' strategy can't apply
+    anyway). Deliberately still two separate UPDATEs rather than one combined
+    pass with per-column CASE/SET expressions: a single UPDATE's rowcount
+    would tell us how many ROWS matched `cond1 OR cond2`, not how many
+    *column values* were scrubbed on each side — the per-column visibility
+    `purge_expired_sample_failures` reports (and logs) needs the two counts
+    kept apart. The daily 01:17 UTC cadence and indexed `created_at` cutoff
+    make the extra scan pass cheap relative to that.
+    """
+    result = cast(
+        CursorResult[Any],
+        session.execute(
+            update(Result)
+            .where(Result.created_at < cutoff, *extra_where)
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    return result.rowcount
+
+
 def purge_expired_sample_failures(
     session: Session, *, retention_days: int, now: datetime | None = None
 ) -> int:
-    """Scrub `sample_failures` from results older than ``retention_days``.
+    """Scrub `sample_failures` and list-shaped `observed_value` from results
+    older than ``retention_days``.
 
-    ``sample_failures`` is the only result column that can carry real (possibly
-    PII-bearing) data rows; after the retention window we null it out (to a true
-    SQL NULL) and stamp ``sample_failures_purged_at`` so the purge is auditable.
-    The result row itself — and crucially ``metric_value`` — is **kept**, so
-    dashboard trends / anomaly baselines survive the purge (ADR 0012); this is a
-    PII-minimisation sweep, not a run-history delete. Returns the rows scrubbed.
+    ``sample_failures`` and ``observed_value`` are the two result columns that
+    can carry real (possibly PII-bearing) cell values: ``sample_failures`` from
+    a failing-row sample, ``observed_value`` from a **set-oriented** expectation
+    (`expect_column_distinct_values_to_be_in_set` and siblings) reporting its
+    full observed distinct-value list (#1229/#1252). After the retention window
+    both are nulled out (to a true SQL NULL) — ``sample_failures_purged_at`` is
+    stamped so that half is auditable (see below for why ``observed_value``
+    doesn't need its own stamp). The result row itself — and crucially
+    ``metric_value`` — is **kept**, so dashboard trends / anomaly baselines
+    survive the purge (ADR 0012); this is a PII-minimisation sweep, not a
+    run-history delete. Returns the total number of column values scrubbed
+    across both columns (a row whose ``sample_failures`` AND ``observed_value``
+    are both scrubbed counts twice — they're independent UPDATEs over
+    independent conditions, not one row-count).
 
     Only rows that actually hold a sample *object* are touched: the JSONB column
-    stores Python ``None`` as JSON ``'null'`` (``none_as_null`` defaults False),
-    and passing/errored checks write that — so ``IS NOT NULL`` would over-match
-    millions of empty rows. ``jsonb_typeof`` excludes both SQL NULL (→ NULL) and
-    JSON ``'null'`` (→ ``'null'``), leaving only real ``object``/``array``
-    samples. Naturally idempotent (a scrubbed row is SQL NULL → typeof NULL →
-    excluded); the ``purged_at IS NULL`` guard makes that intent explicit.
+    stores Python ``None`` as SQL NULL (``JSONB(none_as_null=True)`` since #909),
+    but rows written before that fix — or by any future writer that regresses
+    it — could still carry a literal JSON ``'null'``, so the guard checks for
+    both. ``jsonb_typeof`` excludes SQL NULL (→ NULL) and JSON ``'null'`` (→
+    ``'null'``) alike, leaving only real ``object``/``array`` samples. Naturally
+    idempotent (a scrubbed row is SQL NULL → typeof NULL → excluded); the
+    ``purged_at IS NULL`` guard makes that intent explicit.
+
+    ``observed_value``'s sweep (#1253) uses the identical scalar-vs-list
+    distinction `redact_observed_value` already draws at read time: only a
+    literal ``{"observed_value": [...]}`` shape — the one
+    `gx_runner._bounded_observed_value` produces for set-oriented expectations
+    — has an *array* at that JSON path. Every other shape this column takes
+    (a scalar aggregate — a row count, a mean — from an ordinary expectation or
+    any monitor kind's own payload; ``{"error": ...}``; ``{"unparsed_value":
+    ..., "column": ...}``; ``{"reason": ...}`` for a skip) either has no
+    ``observed_value`` key at all or a non-list value there, so
+    ``jsonb_typeof(observed_value -> 'observed_value') = 'array'`` isolates
+    exactly the PII-bearing case and leaves every scalar metric untouched — the
+    thing this sweep must never destroy (a scalar `observed_value` is presumed
+    non-PII and `metric_value` is the durable trend/anomaly-baseline mirror of
+    it, ADR 0012).
+
+    No dedicated ``observed_value_purged_at`` column (no migration needed):
+    nulling the *whole* column makes ``observed_value -> 'observed_value'``
+    itself SQL NULL on the next sweep, so the same typeof check is naturally
+    idempotent without a stamp — unlike ``sample_failures``, which still needs
+    ``sample_failures_purged_at`` because a row that starts with no sample at
+    all (JSON/SQL null) is deliberately never touched, so nulling alone can't
+    distinguish "already purged" from "never had one" for that column.
 
     ``retention_days <= 0`` disables the sweep (returns 0 without touching the DB)
     — a clean off-switch rather than purging everything. The cutoff is anchored on
@@ -1232,37 +1298,45 @@ def purge_expired_sample_failures(
         return 0
     moment = now or _now()
     cutoff = moment - timedelta(days=retention_days)
+
     sample_typeof = func.jsonb_typeof(Result.sample_failures)
-    # session.execute(<DML>) returns a CursorResult; the typed overload widens it
-    # to Result (no rowcount), so cast to read the affected-row count.
-    purge_result = cast(
-        CursorResult[Any],
-        session.execute(
-            update(Result)
-            .where(
-                Result.created_at < cutoff,
-                Result.sample_failures_purged_at.is_(None),
-                sample_typeof.isnot(None),
-                sample_typeof != "null",
-            )
-            .values(sample_failures=null(), sample_failures_purged_at=moment)
-            # Fire-and-forget bulk DML on a fresh, short-lived worker session with
-            # no loaded Result identities — skip the ORM identity-map sync, which
-            # under the default 'auto'/'fetch' would emit an extra SELECT of every
-            # matching PK before the UPDATE (the WHERE uses jsonb_typeof, so the
-            # in-Python 'evaluate' strategy can't apply).
-            .execution_options(synchronize_session=False)
-        ),
+    sample_purged = _purge_column(
+        session,
+        cutoff=cutoff,
+        extra_where=[
+            Result.sample_failures_purged_at.is_(None),
+            sample_typeof.isnot(None),
+            sample_typeof != "null",
+        ],
+        values={"sample_failures": null(), "sample_failures_purged_at": moment},
     )
+
+    # #1253: observed_value's sibling half of the same PII-minimisation gap —
+    # see the docstring above for why only the list-shaped case is touched and
+    # why no *_purged_at stamp/migration is needed here.
+    observed_inner_typeof = func.jsonb_typeof(Result.observed_value["observed_value"])
+    observed_purged = _purge_column(
+        session,
+        cutoff=cutoff,
+        extra_where=[observed_inner_typeof == "array"],
+        values={"observed_value": null()},
+    )
+
     session.commit()
-    purged = purge_result.rowcount
+    # `purged` names the historical (sample_failures-only) field for anyone
+    # already keying an alert/dashboard off this event's shape; the new
+    # per-column + total fields disambiguate the now-two-column sweep so
+    # nothing downstream has to infer which column moved a count.
     log.info(
         "sample_failures_purged",
-        purged=purged,
+        purged=sample_purged,
+        sample_failures_purged=sample_purged,
+        observed_value_purged=observed_purged,
+        total_purged=sample_purged + observed_purged,
         retention_days=retention_days,
         cutoff=cutoff.isoformat(),
     )
-    return purged
+    return sample_purged + observed_purged
 
 
 def reap_stuck_runs(
