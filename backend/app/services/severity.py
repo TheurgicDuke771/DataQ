@@ -16,6 +16,24 @@ Model (ADR 0016, approach A):
 - No thresholds set, or no metric to band (aggregate checks like row_count that
   produce no unexpected fraction) → binary `pass`/`fail` from GX success
   (ADR 0005 binary fallback).
+
+Custom-SQL checks (ADR 0019, #1202): `UnexpectedRowsExpectation` isn't a column
+map expectation, so it never reports `unexpected_percent` — but it *does* report
+the unexpected **row count** via `observed_value` (0 on success, the count on
+failure). That count is read as the bandable metric instead, deliberately as a
+raw count and NOT a percentage of the batch:
+
+- a percentage would need a second aggregate query (the batch's total row count)
+  issued by the runner — `severity.py` is pure (no DB/GX access) and ADR 0019
+  §Consequences already scoped this as "additive... no schema change", which
+  reads as no new runner query either;
+- more importantly, the usual argument for a percentage — comparability across
+  tables of different sizes — doesn't apply to how this metric is consumed: the
+  severity thresholds and the anomaly baseline (#593) are always evaluated
+  per-CHECK, against that same check's own history on the same query/table,
+  never against a different check's metric. A raw count trends and baselines
+  exactly as well as a percentage would for that one check, at zero extra query
+  cost.
 """
 
 from __future__ import annotations
@@ -24,10 +42,16 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from backend.app.datasources.base import CheckOutcome
+from backend.app.services.custom_sql import CUSTOM_SQL_EXPECTATION_TYPE
 
 # GX key carrying the violated-row fraction (0-100), copied into sample_failures
 # by the runner. This is the badness scalar the thresholds band.
 _UNEXPECTED_PERCENT_KEY = "unexpected_percent"
+
+# GX result key carrying the unexpected row COUNT for a custom-SQL check
+# (`UnexpectedRowsExpectation` has no `unexpected_percent`) — the fallback
+# badness scalar for that one expectation type only (#1202).
+_OBSERVED_VALUE_KEY = "observed_value"
 
 
 def extract_metric(outcome: CheckOutcome) -> Decimal | None:
@@ -35,21 +59,29 @@ def extract_metric(outcome: CheckOutcome) -> Decimal | None:
 
     A *monitor* (freshness/volume, ADR 0012) computes its metric directly, so its
     ``outcome.metric_value`` is preferred when set. Otherwise this reads the GX
-    unexpected-percent from the outcome's sample detail. Computed at run time and
-    persisted to `results.metric_value`, so it survives the later sample-failures
-    retention purge (the durable scalar the dashboard trends). Uses
-    ``Decimal(str(...))`` so a float like ``0.5`` lands as exact ``0.5`` in the
-    NUMERIC column rather than its binary expansion.
+    unexpected-percent from the outcome's sample detail; a custom-SQL check (ADR
+    0019, #1202) carries no unexpected-percent, so it falls through to the
+    unexpected row COUNT in ``observed_value`` instead (see the module docstring
+    for why count, not percentage). Computed at run time and persisted to
+    `results.metric_value`, so it survives the later sample-failures retention
+    purge (the durable scalar the dashboard trends). Uses ``Decimal(str(...))``
+    so a float like ``0.5`` lands as exact ``0.5`` in the NUMERIC column rather
+    than its binary expansion.
     """
     raw: Any
     if outcome.metric_value is not None:
         raw = outcome.metric_value
     else:
         sample: dict[str, Any] | None = outcome.sample_failures
-        if not sample or _UNEXPECTED_PERCENT_KEY not in sample:
-            return None
-        raw = sample[_UNEXPECTED_PERCENT_KEY]
-        if raw is None:
+        if sample and sample.get(_UNEXPECTED_PERCENT_KEY) is not None:
+            raw = sample[_UNEXPECTED_PERCENT_KEY]
+        elif outcome.expectation_type == CUSTOM_SQL_EXPECTATION_TYPE:
+            observed = outcome.observed_value
+            observed_count = observed.get(_OBSERVED_VALUE_KEY) if observed else None
+            if observed_count is None:
+                return None
+            raw = observed_count
+        else:
             return None
     try:
         metric = Decimal(str(raw))
