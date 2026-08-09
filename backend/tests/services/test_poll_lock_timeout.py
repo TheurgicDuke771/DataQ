@@ -288,9 +288,9 @@ def test_a_real_db_fault_is_not_mislabelled_as_lock_contention(
     def _boom(*args: Any, **kwargs: Any) -> None:
         raise OperationalError("SELECT 1", {}, _Dead())  # type: ignore[arg-type]  # orig is duck-typed
 
-    monkeypatch.setattr(
-        orchestration_service, "_lock_connection", orchestration_service._lock_connection
-    )
+    # (The lock helper itself now lives in `services/connection_lock.py`, shared with
+    # the #1104 inventory sync — `record_poll_failure` still reaches it through
+    # `orchestration_service._lock_connection`, which is what this test drives.)
     session = db_session
     monkeypatch.setattr(type(session), "get", lambda *a, **k: _boom())
 
