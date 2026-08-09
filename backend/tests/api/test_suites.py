@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from backend.app.core.auth import get_current_user
+from backend.app.core.secrets import get_secret_store
 from backend.app.db.models import Asset, Check, Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
@@ -1598,17 +1599,46 @@ def test_column_policy_suggest_profiles_and_classifies(
 # ── batch-target preview (#1193) ─────────────────────────────────────
 
 
+class _FakeBatchPreviewSecretStore:
+    """Any ref resolves to a fixed value — these tests care about
+    `resolve_batch_file`'s mocked behaviour, not the credential itself.
+
+    `materialize_path` calls `secret_store.get(secret_ref)` *before* it ever
+    reaches `resolve_batch_file` (#1248): stubbing the listing alone left the
+    secret read pointed at whatever `SecretStore` backend the developer's
+    environment configures (`SECRET_STORE=env` in CI, `openbao` on the local
+    stack since #1159), so under `openbao` every one of these tests 502'd on
+    `SecretNotFoundError` before the mock below was ever consulted. Overriding
+    the `get_secret_store` FastAPI dependency — the same pattern
+    `test_connections.py`/`test_admin.py` use — makes the secret read
+    succeed regardless of ambient config, so the assertions exercise the
+    intended code path instead of an accidental one. `set`/`delete` are
+    real no-ops (not `NotImplementedError`) since nothing here exercises a
+    write — same shape as a real store's fire-and-forget cleanup path.
+    """
+
+    def get(self, name: str) -> str:
+        return "test-secret"
+
+    def set(self, name: str, value: str) -> None:
+        pass
+
+    def delete(self, name: str) -> None:
+        pass
+
+
 def _patch_resolve_batch_file(monkeypatch: pytest.MonkeyPatch, fn: Any) -> None:
     # `run_target.materialize_path` lazy-imports `flatfile` on every call (to keep
     # the write-time path GX-free) and reads `resolve_batch_file` off the module at
     # call time, so patching the module attribute reaches it — the same seam
     # `test_run_target.py`'s `materialize_path` tests patch. `materialize_path`
     # also resolves the connection's credential itself (before ever calling the
-    # lister), so the `_s3_suite` connection's `secret_ref="kv-test"` needs a
-    # value in the (test-mode, env-backed) SecretStore too, or it 502s before the
-    # mock above is even reached.
+    # lister), so the `_s3_suite` connection's `secret_ref="kv-test"` needs to
+    # resolve too, or it 502s before the mock above is even reached — see
+    # `_FakeBatchPreviewSecretStore` for why this is a dependency override, not
+    # an env var.
     monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", fn)
-    monkeypatch.setenv("KV_SECRET_KV_TEST", "test-secret")
+    app.dependency_overrides[get_secret_store] = _FakeBatchPreviewSecretStore
 
 
 def test_batch_preview_returns_resolved_path(
