@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "5307fbd0c0c9",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1273-decimal-json-sanitize",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "backend/app/core/jsonsafe.py",
+    "backend/tests/core/test_jsonsafe.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/53/07fbd0c0c9/0/metadata.json",
+      "transcript": "/53/07fbd0c0c9/0/full.jsonl",
+      "compact_transcript": "/53/07fbd0c0c9/0/transcript.jsonl",
+      "content_hash": "/53/07fbd0c0c9/0/content_hash.txt",
+      "prompt": "/53/07fbd0c0c9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2537,
+    "cache_creation_tokens": 432021,
+    "cache_read_tokens": 24890948,
+    "output_tokens": 79846,
+    "api_call_count": 137
+  }
+}
