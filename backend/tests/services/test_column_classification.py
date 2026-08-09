@@ -6,6 +6,8 @@ from backend.app.services.column_classification import (
     ColumnClass,
     _tokens,
     classify_column,
+    is_sensitive,
+    value_signal_summary,
 )
 
 
@@ -245,3 +247,138 @@ class TestDefault:
 
     def test_null_only_values_fall_back_to_name(self) -> None:
         assert classify_column("order_number", [None, "NULL", ""]) is ColumnClass.IDENTIFIER
+
+
+class TestValueSignalSummary:
+    """The persisted full-population counts summary (#1230) — see the module note
+    above `_value_signal_counts`. A 20-row capped sample is a much noisier estimator
+    of the value-signal ratios than the full population it was capped from; a
+    caller with the full, pre-cap values can persist these raw counts so
+    `classify_column`/`is_sensitive` can restore the true ratio at read time."""
+
+    def test_basic_counts(self) -> None:
+        summary = value_signal_summary(["a@x.com", "b@x.com", "not-an-email", None, ""])
+        assert summary == {
+            "n": 3,
+            "email_count": 2,
+            "id_shaped_count": 0,
+            "encoded_count": 0,
+            "distinct_count": 3,
+        }
+
+    def test_none_when_every_value_is_null(self) -> None:
+        assert value_signal_summary([None, "", "NULL"]) is None
+
+    def test_classify_column_prefers_summary_email_ratio_over_the_capped_window(self) -> None:
+        # `user_id` is an id-NAMED column — the value signal is the ONLY thing that
+        # can override an id-shaped name back to PII (the natural-key-holding-emails
+        # guard, see `TestValueSignal.test_natural_key_holding_emails_is_pii`). The
+        # real population is 60% email (well over the 0.5 PII threshold — a natural
+        # key genuinely leaking emails), but ONLY 8 of these 20 sampled/capped values
+        # are emails (0.40) — judged on the window alone the override never fires and
+        # the column reads "identifier, show it". This is the exact #1230 scenario: a
+        # column that's 60% email overall but under 50% in the first 20 rows.
+        window = [f"user{i}@x.com" for i in range(8)] + [f"ref-{i}" for i in range(12)]
+        assert len(window) == 20
+        window_ratio = sum("@" in v for v in window) / len(window)
+        assert window_ratio < 0.5  # sanity: the window alone really does disagree
+
+        without_summary = classify_column("user_id", window)
+        assert without_summary is ColumnClass.IDENTIFIER  # the bug #1230 describes: shown
+
+        summary = {
+            "n": 5_000,
+            "email_count": 3_000,  # 60% of the real, pre-cap population
+            "id_shaped_count": 0,
+            "encoded_count": 0,
+            "distinct_count": 5_000,
+        }
+        with_summary = classify_column("user_id", window, value_signal_summary=summary)
+        assert with_summary is ColumnClass.PII  # restored by the full-population summary: masked
+
+    def test_classify_column_summary_corrects_a_low_distinct_hash_column(self) -> None:
+        # The real population: 1,000 hash-shaped values but only 100 DISTINCT ones
+        # (each repeated 10x) — distinct-ratio 0.1, well under the 0.8 IDENTIFIER
+        # threshold, so the real population is correctly PII/masked. A 20-row window
+        # that happens to sample 20 distinct hashes reads distinct-ratio 1.0 and
+        # flips to IDENTIFIER (shown) — the #1230 "repeated hash column" scenario.
+        window = [("a" * 62) + format(i, "02x") for i in range(20)]  # 20 distinct sha256-shaped
+        assert len(window) == len(set(window)) == 20
+
+        without_summary = classify_column("token_blob", window)
+        assert without_summary is ColumnClass.IDENTIFIER  # the bug: window looks all-distinct
+
+        summary = {
+            "n": 1_000,
+            "email_count": 0,
+            "id_shaped_count": 1_000,
+            "encoded_count": 0,
+            "distinct_count": 100,  # 0.1 distinct-ratio over the real population
+        }
+        with_summary = classify_column("token_blob", window, value_signal_summary=summary)
+        assert with_summary is ColumnClass.PII  # restored: the real population repeats heavily
+
+    def test_is_sensitive_prefers_the_summary_too(self) -> None:
+        window = [f"user{i}@x.com" for i in range(8)] + [f"ref-{i}" for i in range(12)]
+        summary = {
+            "n": 5_000,
+            "email_count": 3_000,
+            "id_shaped_count": 0,
+            "encoded_count": 0,
+            "distinct_count": 5_000,
+        }
+        assert is_sensitive("ext_val", window) is False
+        assert is_sensitive("ext_val", window, value_signal_summary=summary) is True
+
+    def test_classify_column_falls_back_when_the_summary_is_malformed(self) -> None:
+        # A corrupt/hand-edited summary (missing keys, zero population) must not
+        # crash or be trusted — it falls back to deriving from `sampled_values`
+        # exactly as if no summary had been given at all (old-row compatibility).
+        window = ["ref-1", "ref-2", "ref-3"]
+        baseline = classify_column("ext_val", window)
+        assert classify_column("ext_val", window, value_signal_summary={"n": 0}) == baseline
+        assert (
+            classify_column("ext_val", window, value_signal_summary={"n": "not-an-int"}) == baseline
+        )
+        assert classify_column("ext_val", window, value_signal_summary=None) == baseline
+
+    def test_classify_column_with_no_summary_and_no_values_stays_the_conservative_default(
+        self,
+    ) -> None:
+        assert classify_column("ext_val", None, value_signal_summary=None) is ColumnClass.PII
+
+    def test_classify_column_rejects_a_summary_with_a_sub_count_over_n(self) -> None:
+        # Review finding: `_classify_counts` divides each sub-count by `n` unguarded,
+        # so an internally-inconsistent summary (corrupted JSONB, a future writer
+        # bug, a hand-edited row) with a sub-count INFLATED past `n` must be rejected
+        # rather than trusted — otherwise a bogus id_shaped_count/distinct_count
+        # both > n forces a >=0.8 ratio no matter what the real population looked
+        # like, which could flip a genuinely-PII column to IDENTIFIER and show it.
+        window = ["ref-1", "ref-2", "ref-3"]
+        baseline = classify_column("ext_val", window)
+        bogus = {
+            "n": 1_000,
+            "email_count": 0,
+            "id_shaped_count": 2_000,  # > n — internally inconsistent
+            "encoded_count": 0,
+            "distinct_count": 2_000,  # > n — internally inconsistent
+        }
+        assert classify_column("ext_val", window, value_signal_summary=bogus) == baseline
+
+    def test_classify_column_falls_back_when_a_count_overflows_int(self) -> None:
+        # Review finding: a persisted JSONB number can be a syntactically-valid but
+        # huge float (Postgres jsonb stores it fine; Python's json decoder parses it
+        # as `inf`), and `int(float('inf'))` raises `OverflowError` — a different
+        # exception than the KeyError/TypeError/ValueError already caught, so an
+        # unguarded except would 500 the run-detail read API on a malformed row
+        # instead of degrading to "no summary" like every other malformed shape.
+        window = ["ref-1", "ref-2", "ref-3"]
+        baseline = classify_column("ext_val", window)
+        overflowing = {
+            "n": 1e400,  # parses to float('inf')
+            "email_count": 0,
+            "id_shaped_count": 0,
+            "encoded_count": 0,
+            "distinct_count": 0,
+        }
+        assert classify_column("ext_val", window, value_signal_summary=overflowing) == baseline

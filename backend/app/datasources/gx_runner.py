@@ -15,13 +15,21 @@ canned DataFrame — no live datasource required.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
 import great_expectations as gx
 import great_expectations.expectations as gxe
 
 from backend.app.core.logging import get_logger
-from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckOutcome, CheckSpec, SuiteOutcome
+from backend.app.datasources.base import (
+    SAMPLE_ROW_CAP,
+    VALUE_SIGNAL_SUMMARY_KEY,
+    CheckOutcome,
+    CheckSpec,
+    SuiteOutcome,
+)
+from backend.app.services.column_classification import value_signal_summary
 
 log = get_logger(__name__)
 
@@ -36,6 +44,18 @@ _SAMPLE_KEYS = (
     "unexpected_percent",
     "unexpected_index_list",
 )
+
+# Upper bound on how many `unexpected_index_list` rows `_value_signal_summary_by_column`
+# examines (#1230 review) — the untruncated list can carry tens or hundreds of
+# thousands of rows on a badly-failing pandas-backed check, and each cell costs a
+# handful of regex matches plus a Shannon-entropy pass (`column_classification`'s
+# email/UUID/hash/encoded checks). Unbounded, that is O(rows x columns) of CPU
+# synchronously inside the Celery run path — the same "thousands of failing rows"
+# case #1196 itself calls out, just moved from an O(1) truncation to O(rows) work.
+# 5,000 rows is already a vastly better ratio estimate than the 20-row window this
+# fix exists to correct, while keeping worst-case cost bounded and predictable
+# regardless of how large the real failing population is.
+_VALUE_SIGNAL_SUMMARY_ROW_CAP = 5_000
 
 # GX injects internal bookkeeping keys into expectation_config.kwargs at run time
 # (e.g. batch_id); strip them so expected_value persists only the check's own
@@ -102,6 +122,45 @@ def _is_identifier_index_list(value: Any) -> bool:
     )
 
 
+def _value_signal_summary_by_column(rows: list[Any]) -> dict[str, dict[str, int]]:
+    """Per-column `column_classification.value_signal_summary` over `rows` (#1230).
+
+    Called on `unexpected_index_list` BEFORE it gets truncated to `SAMPLE_ROW_CAP`
+    below, so the counts reflect the FULL failing population — the evidence window
+    the #1196 cap otherwise narrows to 20 rows for good, since the cap is applied
+    before this result ever reaches the database. Only `unexpected_index_list` gets
+    this treatment: `partial_unexpected_list` is capped by GX ITSELF at 20 on every
+    execution engine, so no full-population evidence for it ever existed to lose —
+    it is unaffected by, and out of scope for, #1230.
+
+    Groups `rows` (a list of ``{column: value}`` dicts) by column, then summarises
+    each column that has at least one non-null value. A column with none (e.g. every
+    row happened to have that identifier column NULL) is simply omitted — nothing
+    to prefer over the read-time fallback for that column.
+
+    Caller-gated on `len(rows) > SAMPLE_ROW_CAP` (see `_extract_sample_failures`):
+    below the cap nothing is lost by truncation, so persisting a summary would be
+    redundant with the rows already being stored in full.
+
+    `rows` is itself bounded to `_VALUE_SIGNAL_SUMMARY_ROW_CAP` first (#1230 review) —
+    without it, a badly-failing check's untruncated row count drives unbounded
+    per-cell regex/entropy work synchronously in the run path. 5,000 rows is still a
+    vastly better ratio estimate than the 20-row window this summary exists to fix.
+    """
+    bounded_rows = rows[:_VALUE_SIGNAL_SUMMARY_ROW_CAP]
+    by_column: dict[str, list[Any]] = defaultdict(list)
+    for row in bounded_rows:
+        if isinstance(row, dict):
+            for col, val in row.items():
+                by_column[str(col)].append(val)
+    summary: dict[str, dict[str, int]] = {}
+    for col, values in by_column.items():
+        col_summary = value_signal_summary(values)
+        if col_summary is not None:
+            summary[col] = col_summary
+    return summary
+
+
 def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
     """Copy the failing-row keys out of a GX result, bounded to `SAMPLE_ROW_CAP` (#1196).
 
@@ -115,6 +174,16 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
     pass through untouched, so the reported totals stay the real ones. The cap is
     applied to every list-shaped sample key (not just `unexpected_index_list`) so the
     persisted sample is bounded regardless of which engine or GX version produced it.
+
+    Before `unexpected_index_list` is truncated, and only when it is actually LONGER
+    than `SAMPLE_ROW_CAP` (below the cap nothing is lost — the persisted rows already
+    are the full population, so a summary would be redundant), `_value_signal_summary_by_column`
+    (#1230) captures a compact per-column value-signal summary over the (up to
+    `_VALUE_SIGNAL_SUMMARY_ROW_CAP`) untruncated rows and stores it under
+    `VALUE_SIGNAL_SUMMARY_KEY` alongside the capped rows — bounding storage to
+    O(columns), not O(rows), while letting read-time redaction classify from a much
+    larger population's ratios instead of the 20-row window the cap alone would
+    leave it with.
     """
     sample: dict[str, Any] = {}
     for key in _SAMPLE_KEYS:
@@ -123,6 +192,14 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
         value = result[key]
         if key == "unexpected_index_list" and not _is_identifier_index_list(value):
             continue
+        if (
+            key == "unexpected_index_list"
+            and isinstance(value, list)
+            and len(value) > SAMPLE_ROW_CAP
+        ):
+            summary = _value_signal_summary_by_column(value)
+            if summary:
+                sample[VALUE_SIGNAL_SUMMARY_KEY] = summary
         sample[key] = value[:SAMPLE_ROW_CAP] if isinstance(value, list) else value
     return sample or None
 

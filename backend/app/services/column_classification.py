@@ -34,14 +34,24 @@ Design (adapted from a name-pattern + entropy/hash value heuristic — not lifte
 Pure, dependency-light, DB-free — unit-testable in isolation and reused by the
 policy-derivation path (a later step wires it to auto-fill
 ``Suite.column_policy``).
+
+**Full-population value signal (#1230):** the value signal is ratio-based, so it's
+only as accurate as the population it sees. A capped sample (`gx_runner`'s
+`SAMPLE_ROW_CAP`, #1196) is a much noisier estimator than the full failing
+population it was capped from. `value_signal_summary` lets a capture-time writer
+persist the exact counts those ratios need — computed over the full, pre-cap
+population — as a small per-column summary; `classify_column`/`is_sensitive` accept
+that summary and prefer it over re-deriving from the (now-capped) persisted rows.
+See the comment above `_value_signal_counts` for the full mechanics.
 """
 
 from __future__ import annotations
 
 import math
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from enum import StrEnum
+from typing import Any
 
 
 class ColumnClass(StrEnum):
@@ -384,31 +394,140 @@ def _clean_values(values: Iterable[object]) -> list[str]:
     return out
 
 
-def _value_signal(values: Sequence[object]) -> ColumnClass | None:
+# ── Full-population value-signal summary (#1230) ────────────────────────────────
+#
+# `_value_signal`'s ratios (email ≥50%, id-shaped ≥80% + distinct-ratio ≥80%,
+# encoded ≥50%) are only as good as the population they're computed over. Read-time
+# redaction classifies each column from whatever values persisted alongside the
+# result — and since #1196 capped every list-shaped sample key (incl.
+# `unexpected_index_list`) to `SAMPLE_ROW_CAP` (20) *at capture time*, a column's
+# full-population ratio (e.g. 60% email over thousands of rows) can no longer be
+# reconstructed from the persisted rows alone for the pandas-backed datasources
+# where that list used to arrive untruncated (flat-file / ADLS / S3 / Iceberg) — a
+# 20-row window is a much noisier estimator, and can flip a genuinely-PII column to
+# "not PII" or a genuinely-masked hash column to "identifier, show it".
+#
+# The fix: the *raw counts* behind those ratios are O(1) per column (not O(rows)),
+# so a caller with the FULL, pre-cap value list — `gx_runner._extract_sample_failures`,
+# before it truncates — can compute and persist them via `value_signal_summary`
+# alongside the capped rows. `classify_column`/`is_sensitive` then prefer that
+# summary (via `value_signal_summary=`) over re-deriving from the (now-capped)
+# persisted rows, when a valid summary is present — restoring the full-population
+# ratio without storing the full population itself. Old rows persisted before this
+# existed carry no summary key, so they keep classifying from the capped rows they
+# actually have (the only evidence there is), same as before.
+_SUMMARY_COUNT_KEYS = ("n", "email_count", "id_shaped_count", "encoded_count", "distinct_count")
+
+
+def _value_signal_counts(values: Iterable[object]) -> dict[str, int] | None:
+    """The raw counts `_value_signal`'s ratios are computed from — total non-null
+    values (``n``), plus how many looked like an email / id-shaped / encoded value,
+    and the distinct count. ``None`` when there are no non-null values (mirrors
+    `_value_signal`'s own empty-sample contract)."""
+    cleaned = _clean_values(values)
+    if not cleaned:
+        return None
+    return {
+        "n": len(cleaned),
+        "email_count": sum(_looks_like_email(v) for v in cleaned),
+        "id_shaped_count": sum(_looks_like_uuid(v) or _looks_like_hash(v) for v in cleaned),
+        "encoded_count": sum(_looks_encoded(v) for v in cleaned),
+        "distinct_count": len(set(cleaned)),
+    }
+
+
+def value_signal_summary(values: Iterable[object]) -> dict[str, int] | None:
+    """Public counts summary for persistence (#1230).
+
+    Identical to `_value_signal_counts` — a public name because this is meant to be
+    called from OUTSIDE this module, by a capture-time writer (`gx_runner`) that has
+    the full, pre-cap value population and wants to persist the summary alongside
+    the capped rows it stores. See the module note above `_SUMMARY_COUNT_KEYS` for
+    why this exists. ``None`` when there are no non-null values to summarise (the
+    caller should then simply omit the summary for that column).
+    """
+    return _value_signal_counts(values)
+
+
+def _classify_counts(counts: Mapping[str, int]) -> ColumnClass | None:
+    """`_value_signal`'s ratio logic, applied to pre-computed counts (either freshly
+    derived from a sample, or a persisted `value_signal_summary`) rather than raw
+    values directly — the shared tail both paths funnel through."""
+    n = counts["n"]
+    if n <= 0:
+        return None
+    if counts["email_count"] / n >= 0.5:
+        return ColumnClass.PII
+    if counts["id_shaped_count"] / n >= 0.8 and counts["distinct_count"] / n >= 0.8:
+        return ColumnClass.IDENTIFIER
+    if counts["encoded_count"] / n >= 0.5:
+        return ColumnClass.PII
+    return None
+
+
+def _valid_summary(summary: Mapping[str, Any] | None) -> dict[str, int] | None:
+    """Coerce/validate a persisted `value_signal_summary` sub-dict, or ``None`` if
+    it's absent or malformed — an on-disk JSONB shape is never trusted blindly.
+    Every count key must be present and coerce to an ``int``; ``n`` must be
+    positive, no count may be negative (a zero/negative-population summary carries
+    no signal — same as `_value_signal_counts`'s own ``None``-when-empty contract),
+    and no sub-count may exceed ``n`` — a summary can't have more emails than total
+    values. That cross-field check matters because `_classify_counts` divides each
+    sub-count by ``n`` unguarded: an internally-inconsistent summary (corrupted
+    JSONB, a future writer bug, a hand-edited row) with an inflated sub-count would
+    otherwise pass the earlier checks and be trusted as real evidence, which could
+    flip a genuinely-PII column to shown — precisely the regression this whole
+    feature exists to prevent, reached through a bad summary instead of a capped
+    window. A corrupt or hand-edited value can't be classified as if it were real
+    evidence."""
+    if not isinstance(summary, Mapping):
+        return None
+    try:
+        counts = {key: int(summary[key]) for key in _SUMMARY_COUNT_KEYS}
+    except (KeyError, TypeError, ValueError, OverflowError):
+        # OverflowError: a persisted JSONB number can be a huge float (e.g.
+        # 1e400 -> inf) that `int()` cannot convert — malformed the same way an
+        # out-of-range value is, so it falls back to "no summary" like the rest
+        # of this except clause, not an uncaught 500 on every read of the row.
+        return None
+    if counts["n"] <= 0 or any(v < 0 for v in counts.values()):
+        return None
+    n = counts["n"]
+    if any(counts[key] > n for key in _SUMMARY_COUNT_KEYS if key != "n"):
+        return None
+    return counts
+
+
+def _value_signal(
+    values: Sequence[object], *, value_signal_summary: Mapping[str, Any] | None = None
+) -> ColumnClass | None:
     """Classify from a column's sampled *values*, or ``None`` if inconclusive.
 
     Email values → PII (a direct identifier, even in a column *named* like a key —
     the natural-key-as-PII guard). UUID/hash-shaped, near-unique values look like a
     machine identifier; high-entropy encoded blobs are treated as sensitive. A ratio
-    (not all-or-nothing) tolerates a few odd values in the sample."""
-    cleaned = _clean_values(values)
-    if not cleaned:
+    (not all-or-nothing) tolerates a few odd values in the sample.
+
+    When a valid ``value_signal_summary`` (#1230) is given, its counts are preferred
+    over re-deriving ratios from ``values`` — the summary was computed over the FULL
+    pre-cap value population by the writer, so it is strictly more evidence than a
+    capped sample can offer. Falls back to deriving from ``values`` when the summary
+    is absent or fails validation (e.g. a result persisted before this existed).
+    """
+    counts = _valid_summary(value_signal_summary)
+    if counts is None:
+        counts = _value_signal_counts(values)
+    if counts is None:
         return None
-    n = len(cleaned)
-    if sum(_looks_like_email(v) for v in cleaned) / n >= 0.5:
-        return ColumnClass.PII
-    id_shaped = sum(_looks_like_uuid(v) or _looks_like_hash(v) for v in cleaned)
-    encoded = sum(_looks_encoded(v) for v in cleaned)
-    distinct_ratio = len(set(cleaned)) / n
-
-    if id_shaped / n >= 0.8 and distinct_ratio >= 0.8:
-        return ColumnClass.IDENTIFIER
-    if encoded / n >= 0.5:
-        return ColumnClass.PII
-    return None
+    return _classify_counts(counts)
 
 
-def classify_column(name: str, sampled_values: Sequence[object] | None = None) -> ColumnClass:
+def classify_column(
+    name: str,
+    sampled_values: Sequence[object] | None = None,
+    *,
+    value_signal_summary: Mapping[str, Any] | None = None,
+) -> ColumnClass:
     """Classify a column as IDENTIFIER / PII / SAFE for sample redaction (#415).
 
     Precedence:
@@ -421,12 +540,14 @@ def classify_column(name: str, sampled_values: Sequence[object] | None = None) -
     5. Otherwise **PII** — conservative default-mask, so security never regresses.
 
     ``sampled_values`` are a small profile sample (a few rows); ``None``/empty falls
-    back to the name signal only.
+    back to the name signal only. ``value_signal_summary`` (#1230), when given and
+    valid, is preferred over deriving the value signal from ``sampled_values`` — see
+    `_value_signal`.
     """
     by_name = _name_signal(name)
     if by_name is ColumnClass.PII:
         return ColumnClass.PII
-    by_value = _value_signal(sampled_values or [])
+    by_value = _value_signal(sampled_values or [], value_signal_summary=value_signal_summary)
     if by_value is ColumnClass.PII:  # sensitive values override a name-based identifier
         return ColumnClass.PII
     if by_name is not None:  # IDENTIFIER or SAFE
@@ -436,7 +557,12 @@ def classify_column(name: str, sampled_values: Sequence[object] | None = None) -
     return ColumnClass.PII
 
 
-def is_sensitive(name: str, sampled_values: Sequence[object] | None = None) -> bool:
+def is_sensitive(
+    name: str,
+    sampled_values: Sequence[object] | None = None,
+    *,
+    value_signal_summary: Mapping[str, Any] | None = None,
+) -> bool:
     """Whether a column is **affirmatively** PII — a person/sensitive name token or a
     directly-sensitive value signal (emails, encoded blobs) — as opposed to the
     conservative *default* mask.
@@ -446,8 +572,11 @@ def is_sensitive(name: str, sampled_values: Sequence[object] | None = None) -> b
     it *unless it is affirmatively sensitive*. Distinct from :func:`classify_column`,
     which default-masks an unrecognised column — appropriate for *incidental* columns,
     not for one the user deliberately checked or named.
+
+    ``value_signal_summary`` (#1230): see `_value_signal`.
     """
     return (
         _name_signal(name) is ColumnClass.PII
-        or _value_signal(list(sampled_values or [])) is ColumnClass.PII
+        or _value_signal(list(sampled_values or []), value_signal_summary=value_signal_summary)
+        is ColumnClass.PII
     )

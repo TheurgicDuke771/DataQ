@@ -28,6 +28,7 @@ from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.datasources.base import (
     SAMPLE_ROW_CAP,
+    VALUE_SIGNAL_SUMMARY_KEY,
     CheckOutcome,
     CheckRunner,
     CheckSpec,
@@ -658,6 +659,13 @@ _SAMPLE_SAFE_KEYS = frozenset({"unexpected_count", "unexpected_percent"})
 # two redactors stay deliberately separate (key-based for logs, value-based here).
 _REDACTED_VALUE = "<redacted>"
 
+# Capture-time full-population value-signal summary (#1230) — `VALUE_SIGNAL_SUMMARY_KEY`
+# is shared with `gx_runner` (the writer) via `datasources.base`, so a future rename
+# can't silently desync the two sides; consumed below via `_redact_row`'s
+# ``summary_by_column`` (the reader). Internal DataQ-derived metadata, not a
+# rendered sample: consumed to improve classification, then dropped from the
+# redacted output rather than re-emitted or run back through the show/mask logic.
+
 
 def _redact_sample_value(value: Any) -> Any:
     """Mask data values while preserving container shape and dict keys.
@@ -708,13 +716,22 @@ def _known_sensitive(
     values: Sequence[Any],
     policy: Mapping[str, Any] | None,
     tags: Mapping[str, str] | None,
+    *,
+    value_signal_summary: Mapping[str, Any] | None = None,
 ) -> bool:
     """Whether a column is **known** sensitive — a governance tag (floor), an explicit
     override, or an *affirmative* name/value PII signal (not the conservative default).
     Gates the **tested** and **identifier** columns: those are shown *unless* known
-    sensitive (seeing the failing value / locating the row is the point)."""
+    sensitive (seeing the failing value / locating the row is the point).
+
+    ``value_signal_summary`` (#1230), when given, is the capture-time full-population
+    counts summary for THIS column — preferred over deriving the value signal from
+    the (possibly capped) ``values`` alone; see `column_classification._value_signal`.
+    """
     return (
-        _tag_sensitive(column, tags) or _policy_pii(column, policy) or is_sensitive(column, values)
+        _tag_sensitive(column, tags)
+        or _policy_pii(column, policy)
+        or is_sensitive(column, values, value_signal_summary=value_signal_summary)
     )
 
 
@@ -723,18 +740,26 @@ def _may_show_incidental(
     values: Sequence[Any],
     policy: Mapping[str, Any] | None,
     tags: Mapping[str, str] | None,
+    *,
+    value_signal_summary: Mapping[str, Any] | None = None,
 ) -> bool:
     """Whether an *incidental* column (not the tested / identifier one) may be shown:
     only when it's affirmatively an IDENTIFIER or SAFE value — everything else
     default-masks (#415), so security can't regress. A governance tag / override-PII
     always masks; an override-named identifier shows **unless it is affirmatively PII**
     (a designated locator can't un-mask a column whose name/values are direct PII —
-    e.g. an ``EMAIL`` set as identifier, or a natural key holding emails)."""
+    e.g. an ``EMAIL`` set as identifier, or a natural key holding emails).
+
+    ``value_signal_summary`` (#1230): see `_known_sensitive`.
+    """
     if _tag_sensitive(column, tags) or _policy_pii(column, policy):
         return False
     if _policy_identifier(column, policy):
-        return not is_sensitive(column, values)
-    return classify_column(column, list(values)) is not ColumnClass.PII
+        return not is_sensitive(column, values, value_signal_summary=value_signal_summary)
+    return (
+        classify_column(column, list(values), value_signal_summary=value_signal_summary)
+        is not ColumnClass.PII
+    )
 
 
 def _values_by_column(rows: Sequence[Any]) -> dict[str, list[Any]]:
@@ -856,11 +881,20 @@ def _redact_row(
     policy: Mapping[str, Any] | None,
     tags: Mapping[str, str] | None,
     values_by_column: Mapping[str, list[Any]],
+    summary_by_column: Mapping[str, Mapping[str, Any]] | None = None,
     tracker: _RedactionTracker | None = None,
 ) -> Any:
     """Mask a failing-row dict per column: the tested column shows unless *known*
     sensitive; every other column shows only if affirmatively identifier/safe
-    (default-mask). Non-dict rows fall back to full masking."""
+    (default-mask). Non-dict rows fall back to full masking.
+
+    ``summary_by_column`` (#1230) is the capture-time `value_signal_summary` — a
+    ``{column: counts}`` map computed over the FULL pre-cap population, keyed the
+    same way as ``values_by_column``. When a column has an entry, it is preferred
+    over deriving the value signal from ``values_by_column``'s (possibly capped)
+    values; a column with no entry (old rows with no summary at all, or a column
+    the summary omitted for having no non-null values) falls back unchanged.
+    """
     if not isinstance(row, dict):
         if tracker is not None:
             # No column identity for a malformed/non-dict row shape — still a real
@@ -875,10 +909,11 @@ def _redact_row(
     for col, val in row.items():
         name = str(col)
         vals = values_by_column.get(name, [val])
+        col_summary = (summary_by_column or {}).get(name)
         if tested and name.strip().lower() == tested:
-            show = not _known_sensitive(name, vals, policy, tags)
+            show = not _known_sensitive(name, vals, policy, tags, value_signal_summary=col_summary)
         else:
-            show = _may_show_incidental(name, vals, policy, tags)
+            show = _may_show_incidental(name, vals, policy, tags, value_signal_summary=col_summary)
         out[col] = val if show else _redact_sample_value(val)
         if tracker is not None:
             tracker.record(name, show)
@@ -1045,6 +1080,16 @@ def redact_sample_failures(
     still runs over the **full** persisted list (see the inline note below) — the cap
     bounds what is emitted, never what is examined.
 
+    For a result written *since* #1196's capture-time cap, though, "full persisted
+    list" is only 20 rows — the cap is applied before the row ever reaches the
+    database, so there is no larger list here to fall back to. `gx_runner` now also
+    persists a compact `value_signal_summary` sub-key (#1230) — per-column counts
+    computed over the FULL pre-cap population — precisely to cover that gap: per
+    `unexpected_index_list` row, `_redact_row` prefers that summary's counts over
+    deriving the value signal from the capped rows, when present. A result with no
+    summary key (written before #1230, or from a non-pandas engine that never had a
+    full population to begin with) classifies exactly as it always has.
+
     ``tracker`` is an optional accumulator (#424) — pass a fresh `_RedactionTracker`
     to also learn *which* columns were shown vs masked, via `tracker.summary()`.
     Internal (leading underscore); external callers use
@@ -1054,6 +1099,12 @@ def redact_sample_failures(
         return None
     index_rows = sample.get("unexpected_index_list")
     index_vbc = _values_by_column(index_rows) if isinstance(index_rows, list) else {}
+    # The capture-time full-population summary (#1230), when present — a result
+    # written before this existed simply has no such key, and `.get` returns `None`,
+    # so every classification call below falls back to `index_vbc`'s (capped) values
+    # exactly as it did before this change.
+    raw_summary = sample.get(VALUE_SIGNAL_SUMMARY_KEY)
+    summary_by_column = raw_summary if isinstance(raw_summary, dict) else None
     # Of the two interchangeable failing-row lists, only the one the viewer is shown
     # feeds the tracker (#1197) — see `_displayed_sample_key`. Redaction itself still
     # runs over BOTH: whichever list a reader gets must have its own cells masked
@@ -1061,6 +1112,12 @@ def redact_sample_failures(
     displayed_key = _displayed_sample_key(sample)
     out: dict[str, Any] = {}
     for key, raw_value in sample.items():
+        if key == VALUE_SIGNAL_SUMMARY_KEY:
+            # Internal capture-time metadata (#1230), already consumed above as
+            # `summary_by_column` — never re-emitted, and not a data-bearing key
+            # (it carries counts, not cell values), so it must not register with
+            # the tracker either.
+            continue
         # The tracker for THIS key: suppressed on the failing-row list that LOSES to
         # the other one, so `summary()` describes the table on screen rather than the
         # union of two renderings of the same rows. Deliberately narrow — it applies
@@ -1108,6 +1165,7 @@ def redact_sample_failures(
                     policy=policy,
                     tags=tags,
                     values_by_column=index_vbc,
+                    summary_by_column=summary_by_column,
                     tracker=key_tracker,
                 )
                 for row in value
@@ -1122,12 +1180,26 @@ def redact_sample_failures(
                         policy=policy,
                         tags=tags,
                         values_by_column=vbc,
+                        # `summary_by_column` (#1230) is sourced from the sibling
+                        # `unexpected_index_list`'s full pre-cap population, keyed by
+                        # column name — the same population these dict rows are drawn
+                        # from, so it's valid evidence here too. Without this, a
+                        # column judged PII via the summary on the other list stays
+                        # unmasked here, reappearing through the sibling field.
+                        summary_by_column=summary_by_column,
                         tracker=key_tracker,
                     )
                     for row in value
                 ]
             elif tested_column is not None and not _known_sensitive(
-                tested_column, raw_value, policy, tags
+                tested_column,
+                raw_value,
+                policy,
+                tags,
+                # Same reasoning as above: the summary describes the COLUMN, not
+                # `partial_unexpected_list`'s own (always-capped-by-GX) contents, so
+                # it's valid evidence for the tested column's scalar values too.
+                value_signal_summary=(summary_by_column or {}).get(tested_column),
             ):
                 out[key] = value  # the tested column's failing values — surfaced
                 if key_tracker is not None:

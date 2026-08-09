@@ -885,6 +885,139 @@ def test_read_time_bound_classifies_the_full_partial_list_too() -> None:
     assert out["partial_unexpected_list"] == ["<redacted>"] * SAMPLE_ROW_CAP
 
 
+# ── persisted value-signal summary restores the full-population ratio (#1230) ──
+
+
+def test_redact_prefers_persisted_value_signal_summary_over_the_capped_window() -> None:
+    """Since #1196, `unexpected_index_list` is ALREADY capped to `SAMPLE_ROW_CAP` at
+    CAPTURE time for new rows — unlike the #1196-era legacy-row scenario above, there
+    is no larger persisted list here to fall back to; the 20 rows in the DB are all
+    there ever was. `gx_runner` now also persists a `value_signal_summary` alongside
+    those capped rows (#1230), computed over the FULL pre-cap population, so the read
+    path can still classify correctly.
+
+    Only 6 of these 20 capped rows are emails (30%, under the classifier's 50%
+    threshold) — judged on the capped window alone this column would misread as
+    "not PII" and get shown. The persisted summary says the true population was 60%
+    email, which must win.
+    """
+    capped_rows = [
+        {"CUSTOMER_REF": (f"user{i}@x.com" if i < 6 else f"REF-{i}"), "QTY": -i}
+        for i in range(SAMPLE_ROW_CAP)
+    ]
+    window_ratio = sum("@" in str(row["CUSTOMER_REF"]) for row in capped_rows) / SAMPLE_ROW_CAP
+    assert window_ratio < 0.5  # sanity: the capped window alone reads "not PII"
+    summary = {
+        "CUSTOMER_REF": {
+            "n": 5000,
+            "email_count": 3000,  # 60% of the real, pre-cap population
+            "id_shaped_count": 0,
+            "encoded_count": 0,
+            "distinct_count": 5000,
+        }
+    }
+    out = run_service.redact_sample_failures(
+        {
+            "unexpected_index_list": capped_rows,
+            "unexpected_count": 5000,
+            "value_signal_summary": summary,
+        },
+        policy={"identifier_column": "CUSTOMER_REF"},
+    )
+    assert out is not None
+    # internal capture-time metadata, consumed above but never re-emitted to a reader
+    assert "value_signal_summary" not in out
+    assert all(row["CUSTOMER_REF"] == "<redacted>" for row in out["unexpected_index_list"])
+
+
+def test_redact_prefers_the_persisted_summary_for_the_scalar_partial_unexpected_list_too() -> None:
+    """Review finding on #1230: the persisted `value_signal_summary` describes the
+    COLUMN, not `unexpected_index_list`'s own contents — so it's equally valid
+    evidence for the sibling scalar `partial_unexpected_list` (GX caps that list to
+    ~20 on every engine; that fact only means the LIST'S OWN population can't grow
+    the summary, not that the summary shouldn't be consulted when redacting it).
+
+    Only 6 of these 20 values are emails (30%, under the 50% threshold) — judged on
+    `partial_unexpected_list` alone this column reads "not PII" and would be shown.
+    The persisted summary (from the sibling `unexpected_index_list`'s full
+    pre-cap population) says the true population was 60% email, which must still
+    win here, exactly as it does for `unexpected_index_list` itself.
+    """
+    scalar_values = [(f"user{i}@x.com" if i < 6 else f"REF-{i}") for i in range(SAMPLE_ROW_CAP)]
+    window_ratio = sum("@" in v for v in scalar_values) / SAMPLE_ROW_CAP
+    assert window_ratio < 0.5  # sanity: the capped window alone reads "not PII"
+    summary = {
+        "CUSTOMER_REF": {
+            "n": 5000,
+            "email_count": 3000,  # 60% of the real, pre-cap population
+            "id_shaped_count": 0,
+            "encoded_count": 0,
+            "distinct_count": 5000,
+        }
+    }
+    out = run_service.redact_sample_failures(
+        {"partial_unexpected_list": scalar_values, "value_signal_summary": summary},
+        tested_column="CUSTOMER_REF",
+    )
+    assert out is not None
+    assert all(v == "<redacted>" for v in out["partial_unexpected_list"])
+
+
+def test_redact_prefers_the_persisted_summary_for_dict_shaped_partial_unexpected_list_too() -> None:
+    """Same gap, the dict-row branch of `partial_unexpected_list` (multicolumn-style
+    expectations)."""
+    dict_rows = [
+        {"CUSTOMER_REF": (f"user{i}@x.com" if i < 6 else f"REF-{i}")} for i in range(SAMPLE_ROW_CAP)
+    ]
+    summary = {
+        "CUSTOMER_REF": {
+            "n": 5000,
+            "email_count": 3000,
+            "id_shaped_count": 0,
+            "encoded_count": 0,
+            "distinct_count": 5000,
+        }
+    }
+    out = run_service.redact_sample_failures(
+        {"partial_unexpected_list": dict_rows, "value_signal_summary": summary},
+        tested_column="CUSTOMER_REF",
+    )
+    assert out is not None
+    assert all(row["CUSTOMER_REF"] == "<redacted>" for row in out["partial_unexpected_list"])
+
+
+def test_redact_falls_back_to_the_capped_window_when_no_summary_is_persisted() -> None:
+    """Old rows — written before #1230, or from a non-pandas engine that never had a
+    full population to summarise — carry no `value_signal_summary` key at all.
+    Classification must fall back to the capped rows exactly as it did before this
+    change, not error and not silently over-mask."""
+    capped_rows = [{"CUSTOMER_REF": f"REF-{i}", "QTY": -i} for i in range(SAMPLE_ROW_CAP)]
+    out = run_service.redact_sample_failures(
+        {"unexpected_index_list": capped_rows, "unexpected_count": SAMPLE_ROW_CAP},
+        policy={"identifier_column": "CUSTOMER_REF"},
+    )
+    assert out is not None
+    assert "value_signal_summary" not in out
+    assert all(row["CUSTOMER_REF"] != "<redacted>" for row in out["unexpected_index_list"])
+
+
+def test_redact_ignores_a_malformed_persisted_summary() -> None:
+    """A corrupt/hand-edited `value_signal_summary` (missing keys, wrong types) must
+    not crash the read path or be trusted as evidence — it falls back to the capped
+    rows exactly like the no-summary case, per `column_classification._valid_summary`."""
+    capped_rows = [{"CUSTOMER_REF": f"REF-{i}", "QTY": -i} for i in range(SAMPLE_ROW_CAP)]
+    out = run_service.redact_sample_failures(
+        {
+            "unexpected_index_list": capped_rows,
+            "unexpected_count": SAMPLE_ROW_CAP,
+            "value_signal_summary": {"CUSTOMER_REF": {"n": 0}},  # malformed: missing keys, n<=0
+        },
+        policy={"identifier_column": "CUSTOMER_REF"},
+    )
+    assert out is not None
+    assert all(row["CUSTOMER_REF"] != "<redacted>" for row in out["unexpected_index_list"])
+
+
 # ── column-aware redaction (#415) ─────────────────────────────────────────────
 
 

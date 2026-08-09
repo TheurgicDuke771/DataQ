@@ -15,9 +15,11 @@ from typing import Any
 
 from backend.app.datasources.base import SAMPLE_ROW_CAP
 from backend.app.datasources.gx_runner import (
+    _VALUE_SIGNAL_SUMMARY_ROW_CAP,
     _bounded_observed_value,
     _check_errored,
     _extract_sample_failures,
+    _value_signal_summary_by_column,
     to_suite_outcome,
 )
 from backend.app.services.severity import extract_metric
@@ -287,3 +289,82 @@ def test_extract_sample_failures_leaves_short_lists_untouched() -> None:
     rows = [{"customer_id": 1}, {"customer_id": 2}]
     sample = _extract_sample_failures({"unexpected_index_list": rows, "unexpected_count": 2})
     assert sample == {"unexpected_index_list": rows, "unexpected_count": 2}
+
+
+# ── capture-time value-signal summary (#1230) ──
+
+
+def test_extract_sample_failures_adds_a_value_signal_summary_when_truncating() -> None:
+    # The #1196 cap narrows `unexpected_index_list` to SAMPLE_ROW_CAP rows for good —
+    # once persisted, there is no larger list left to derive ratios from at read time.
+    # When truncation actually happens, capture must ALSO persist a per-column
+    # value-signal summary computed over the FULL, pre-cap population (#1230).
+    rows: list[Any] = [
+        {
+            "customer_email": (f"user{i}@example.com" if i < 3_000 else f"REF-{i}"),
+            "qty": -i,
+        }
+        for i in range(5_000)
+    ]
+    sample = _extract_sample_failures({"unexpected_index_list": rows, "unexpected_count": 5_000})
+    assert sample is not None
+    summary = sample["value_signal_summary"]
+    # counts reflect the FULL 5,000-row population, not the 20 emitted rows.
+    assert summary["customer_email"] == {
+        "n": 5_000,
+        "email_count": 3_000,
+        "id_shaped_count": 0,
+        "encoded_count": 0,
+        "distinct_count": 5_000,
+    }
+    assert summary["qty"]["n"] == 5_000
+    # the summary rides alongside the still-capped rows, not instead of them.
+    assert len(sample["unexpected_index_list"]) == SAMPLE_ROW_CAP
+
+
+def test_extract_sample_failures_omits_the_summary_when_nothing_is_truncated() -> None:
+    # Below the cap, the persisted rows already ARE the full population — a summary
+    # would be redundant, so capture must not add one (also pins the pre-#1230
+    # exact-equality contract `test_extract_sample_failures_leaves_short_lists_untouched`
+    # relies on).
+    rows = [{"customer_email": "a@x.com"}, {"customer_email": "b@x.com"}]
+    sample = _extract_sample_failures({"unexpected_index_list": rows, "unexpected_count": 2})
+    assert sample is not None
+    assert "value_signal_summary" not in sample
+
+
+def test_extract_sample_failures_omits_a_column_with_no_non_null_values() -> None:
+    # A column that's NULL in every failing row (however many) has no value signal
+    # to persist — same "no evidence" contract as `_value_signal_counts`/
+    # `value_signal_summary` returning `None` for an all-null column.
+    rows: list[Any] = [{"customer_email": None, "qty": -i} for i in range(5_000)]
+    sample = _extract_sample_failures({"unexpected_index_list": rows, "unexpected_count": 5_000})
+    assert sample is not None
+    summary = sample["value_signal_summary"]
+    assert "customer_email" not in summary
+    assert summary["qty"]["n"] == 5_000
+
+
+def test_value_signal_summary_by_column_groups_and_skips_non_dict_rows() -> None:
+    rows: list[Any] = [
+        {"a": "x@y.com", "b": 1},
+        "not-a-row-dict",  # malformed row — must not raise, just be skipped
+        {"a": "z@y.com", "b": 2},
+    ]
+    summary = _value_signal_summary_by_column(rows)
+    assert summary["a"]["n"] == 2
+    assert summary["a"]["email_count"] == 2
+    assert summary["b"]["n"] == 2
+
+
+def test_value_signal_summary_by_column_bounds_cpu_cost_on_a_huge_failing_population() -> None:
+    """Review finding: an unbounded scan here means a badly-failing pandas-backed
+    check (tens/hundreds of thousands of rows — #1196's own "thousands of failing
+    rows" case, just moved from an O(1) truncation to O(rows) regex/entropy work)
+    pays unbounded CPU synchronously in the Celery run path. The summary must be
+    computed over at most `_VALUE_SIGNAL_SUMMARY_ROW_CAP` rows, not the real
+    (potentially enormous) failing-row count."""
+    huge_row_count = _VALUE_SIGNAL_SUMMARY_ROW_CAP * 4
+    rows: list[Any] = [{"col": f"v{i}@x.com"} for i in range(huge_row_count)]
+    summary = _value_signal_summary_by_column(rows)
+    assert summary["col"]["n"] == _VALUE_SIGNAL_SUMMARY_ROW_CAP  # bounded, not huge_row_count
