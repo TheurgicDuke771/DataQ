@@ -170,6 +170,76 @@ describe('Connections', () => {
     expect(screen.getAllByText('inventory sync failing')).toHaveLength(1);
   });
 
+  it('shows a neutral note for a database that has always enumerated zero tables (#1242)', async () => {
+    // Snowflake's INFORMATION_SCHEMA is privilege-filtered, not access-denied, so
+    // a role with no grants "succeeds" at zero rows — indistinguishable from a
+    // genuinely empty database. This must read as informational, not an error.
+    mockList.mockResolvedValue([
+      conn({
+        id: 'c1',
+        name: 'sf-empty-db',
+        config: { inventory_sync: true },
+        inventory_sync_last_table_count: 0,
+        inventory_sync_zero_since: null,
+      }),
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('0 tables found')).toBeInTheDocument();
+    expect(screen.queryByText('tables dropped to 0')).not.toBeInTheDocument();
+  });
+
+  it('flags a drop from N>0 to 0 tables distinctly from the neutral zero state (#1242)', async () => {
+    // The privilege-loss/dropped-database signal: a connection that USED TO see
+    // tables and now sees none is worth flagging, unlike one that always did.
+    mockList.mockResolvedValue([
+      conn({
+        id: 'c1',
+        name: 'sf-dropped',
+        config: { inventory_sync: true },
+        inventory_sync_last_table_count: 0,
+        inventory_sync_zero_since: '2026-08-01T00:00:00Z',
+      }),
+      // Currently N>0 — neither badge shows.
+      conn({
+        id: 'c2',
+        name: 'sf-healthy-count',
+        config: { inventory_sync: true },
+        inventory_sync_last_table_count: 12,
+      }),
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('tables dropped to 0')).toBeInTheDocument();
+    expect(screen.queryByText('0 tables found')).not.toBeInTheDocument();
+    expect(screen.getAllByText('tables dropped to 0')).toHaveLength(1);
+  });
+
+  it('never shows a zero-table badge for a connection currently failing to sync (#1242)', async () => {
+    // A stale `inventory_sync_last_table_count` from before the sync started
+    // erroring must not render as if it were the current state — the failing
+    // badge above already covers "something is wrong here".
+    mockList.mockResolvedValue([
+      conn({
+        id: 'c1',
+        name: 'uc-failing-with-stale-count',
+        type: 'unity_catalog',
+        config: { inventory_sync: true },
+        inventory_sync_failing_since: '2026-08-01T00:00:00Z',
+        inventory_sync_last_error: 'Inventory sync is missing a SELECT grant.',
+        inventory_sync_last_table_count: 0,
+      }),
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('inventory sync failing')).toBeInTheDocument();
+    expect(screen.queryByText('0 tables found')).not.toBeInTheDocument();
+    expect(screen.queryByText('tables dropped to 0')).not.toBeInTheDocument();
+  });
+
   it('stays silent once checked and the credential states no expiry', async () => {
     // A Snowflake PAT or S3 key genuinely has no readable lifetime. Having looked,
     // silence is the correct and permanent answer — not a nag we cannot resolve.

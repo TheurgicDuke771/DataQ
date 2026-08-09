@@ -493,6 +493,29 @@ class Connection(Base):
     # cleared back to NULL on the next success.
     inventory_sync_failing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # ── Zero-table enumeration state (#1242) ─────────────────────────────────────
+    # A SUCCESSFUL sync that enumerates zero tables is not an error — Snowflake's
+    # INFORMATION_SCHEMA is privilege-filtered, not access-denied, so a role missing
+    # every grant gets an empty result set, and a genuinely empty database enumerates
+    # zero tables legitimately too. Reusing `inventory_sync_last_error` for this would
+    # be a false alarm in the OTHER direction (the #828 "confident wrong answer" shape,
+    # mirrored). These two columns give "0 tables" its own honest state instead.
+    #
+    # The row count from the last SUCCESSFUL sync only — stamped alongside
+    # `inventory_sync_last_attempted_at` on success, left UNTOUCHED on a failed
+    # attempt (a failure has no count to report). NULL means never successfully
+    # synced, which is what makes "synced, 0 visible" (0) distinguishable from
+    # "never synced" (NULL) and from "synced, N>0" (>0).
+    inventory_sync_last_table_count: Mapped[int | None] = mapped_column(Integer)
+    # The privilege-loss / dropped-database signal: set the moment the count
+    # transitions from a previously-recorded N>0 down to 0, left untouched while
+    # it stays at 0 (so it reads "since <the drop>", not "since the most recent
+    # zero tick"), and cleared back to NULL the moment the count is >0 again. A
+    # connection that has ALWAYS enumerated zero never sets this — that stays the
+    # neutral, non-alarming "empty by design" state. Mirrors the
+    # `inventory_sync_failing_since` streak pattern above.
+    inventory_sync_zero_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
 
 class ConnectionVersion(Base):
     """An immutable snapshot of a connection's editable, **non-secret** state,

@@ -384,6 +384,30 @@ function ConnectionCard({
                   <Badge status="error" text="inventory sync failing" />
                 </Tooltip>
               )}
+            {/* A SUCCESSFUL sync that enumerates zero tables (#1242) — distinct
+                from the error badge above, which only covers the sync itself
+                failing to run. Snowflake's INFORMATION_SCHEMA is
+                privilege-filtered, not access-denied: a role with no grants on
+                the objects gets an empty result set, not an exception, so a
+                sync that "succeeds" at zero rows used to look identical to a
+                healthy one. Gated on the sync currently NOT failing, so
+                `inventory_sync_last_table_count` (only ever stamped on a
+                success) is describing the CURRENT state, not a stale reading
+                left over from before the sync started erroring. */}
+            {Boolean(connection.config?.inventory_sync) &&
+              !connection.inventory_sync_failing_since &&
+              connection.inventory_sync_last_table_count === 0 &&
+              (connection.inventory_sync_zero_since ? (
+                <Tooltip
+                  title={`This connection previously synced tables, but the last sync — and every one since ${formatTimestamp(connection.inventory_sync_zero_since)} — found none. This usually means a grant was revoked or the database was dropped/renamed; it is not reported as a sync failure because the enumeration query itself ran without error.`}
+                >
+                  <Badge status="warning" text="tables dropped to 0" />
+                </Tooltip>
+              ) : (
+                <Tooltip title="The last inventory sync ran successfully but found no tables. If this database is empty by design, no action is needed.">
+                  <Badge status="default" text="0 tables found" />
+                </Tooltip>
+              ))}
           </Flex>
           <Button
             size="small"
