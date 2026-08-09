@@ -1612,17 +1612,19 @@ class _FakeBatchPreviewSecretStore:
     the `get_secret_store` FastAPI dependency — the same pattern
     `test_connections.py`/`test_admin.py` use — makes the secret read
     succeed regardless of ambient config, so the assertions exercise the
-    intended code path instead of an accidental one.
+    intended code path instead of an accidental one. `set`/`delete` are
+    real no-ops (not `NotImplementedError`) since nothing here exercises a
+    write — same shape as a real store's fire-and-forget cleanup path.
     """
 
     def get(self, name: str) -> str:
         return "test-secret"
 
-    def set(self, name: str, value: str) -> None:  # pragma: no cover - unused
-        raise NotImplementedError
+    def set(self, name: str, value: str) -> None:
+        pass
 
-    def delete(self, name: str) -> None:  # pragma: no cover - unused
-        raise NotImplementedError
+    def delete(self, name: str) -> None:
+        pass
 
 
 def _patch_resolve_batch_file(monkeypatch: pytest.MonkeyPatch, fn: Any) -> None:
