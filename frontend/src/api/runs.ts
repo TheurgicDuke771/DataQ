@@ -1,4 +1,5 @@
 import { api } from './client';
+import { toListPage, type ListPage } from './listPage';
 import type { OrchestrationProvider } from './triggerBindings';
 
 /**
@@ -110,10 +111,7 @@ export interface PipelineRun {
  *  `total` can exceed `items.length` when the fetch is capped below the true
  *  population (e.g. the Results page's single `LIST_LIMIT`-row fetch) — that's
  *  the truncation a caller needs to render honestly rather than silently. */
-export interface PipelineRunListPage {
-  items: PipelineRun[];
-  total: number;
-}
+export type PipelineRunListPage = ListPage<PipelineRun>;
 
 export async function listRuns(params?: {
   suite_id?: string;
@@ -166,12 +164,7 @@ export async function listPipelineRuns(params?: {
   offset?: number;
 }): Promise<PipelineRunListPage> {
   const { data, headers } = await api.get<PipelineRun[]>('/pipeline_runs', { params });
-  // axios lowercases response header keys. Fall back to the page length (never
-  // undefined/NaN) so a deploy-skew backend without the header degrades to "no
-  // known truncation" rather than breaking the page — same fallback as `listAssets`.
-  const rawTotal = headers?.['x-total-count'];
-  const total = rawTotal !== undefined ? Number(rawTotal) : data.length;
-  return { items: data, total: Number.isFinite(total) ? total : data.length };
+  return toListPage(data, headers);
 }
 
 /** Download a comparison result's derived report (ADR 0015 §4) — fetched with

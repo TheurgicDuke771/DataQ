@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -399,6 +400,30 @@ def get_incident(session: Session, incident_id: uuid.UUID) -> Incident | None:
     return session.get(Incident, incident_id)
 
 
+def _incident_filters(
+    *,
+    user_id: uuid.UUID,
+    include_all: bool,
+    asset_id: uuid.UUID | None,
+    suite_id: uuid.UUID | None,
+    state: str | None,
+) -> list[Any]:
+    """The ONE `WHERE` chain shared by :func:`list_incidents` and
+    :func:`count_incidents`. Derived once rather than hand-rolled twice, so a
+    future filter cannot land on the list without the total — which would make
+    `X-Total-Count` quietly disagree with the page it describes (#1108)."""
+    conditions: list[Any] = [
+        Incident.suite_id.in_(suite_service.accessible_suite_ids(user_id, include_all=include_all))
+    ]
+    if asset_id is not None:
+        conditions.append(Incident.asset_id == asset_id)
+    if suite_id is not None:
+        conditions.append(Incident.suite_id == suite_id)
+    if state is not None:
+        conditions.append(Incident.status == state)
+    return conditions
+
+
 def list_incidents(
     session: Session,
     *,
@@ -418,20 +443,21 @@ def list_incidents(
     can't see yields an empty list. ``include_all`` spans every suite (workspace
     admin). ``state`` narrows by lifecycle status.
     """
-    accessible = suite_service.accessible_suite_ids(user_id, include_all=include_all)
     stmt = (
         select(Incident)
-        .where(Incident.suite_id.in_(accessible))
+        .where(
+            *_incident_filters(
+                user_id=user_id,
+                include_all=include_all,
+                asset_id=asset_id,
+                suite_id=suite_id,
+                state=state,
+            )
+        )
         .order_by(Incident.created_at.desc(), Incident.id.desc())
         .limit(limit)
         .offset(offset)
     )
-    if asset_id is not None:
-        stmt = stmt.where(Incident.asset_id == asset_id)
-    if suite_id is not None:
-        stmt = stmt.where(Incident.suite_id == suite_id)
-    if state is not None:
-        stmt = stmt.where(Incident.status == state)
     return list(session.scalars(stmt))
 
 
@@ -448,13 +474,19 @@ def count_incidents(
     :func:`list_incidents`, unaffected by its `limit`/`offset` (#1108 — the
     `/assets` `X-Total-Count` shape). Grant-scoped like the list — this is a
     per-caller total, not a workspace-wide one (unlike `/assets`, incidents
-    stay behind suite grants per ADR 0037)."""
-    accessible = suite_service.accessible_suite_ids(user_id, include_all=include_all)
-    stmt = select(func.count()).select_from(Incident).where(Incident.suite_id.in_(accessible))
-    if asset_id is not None:
-        stmt = stmt.where(Incident.asset_id == asset_id)
-    if suite_id is not None:
-        stmt = stmt.where(Incident.suite_id == suite_id)
-    if state is not None:
-        stmt = stmt.where(Incident.status == state)
+    stay behind suite grants per ADR 0037). Shares :func:`_incident_filters`
+    with the list so the two cannot drift."""
+    stmt = (
+        select(func.count())
+        .select_from(Incident)
+        .where(
+            *_incident_filters(
+                user_id=user_id,
+                include_all=include_all,
+                asset_id=asset_id,
+                suite_id=suite_id,
+                state=state,
+            )
+        )
+    )
     return session.scalar(stmt) or 0

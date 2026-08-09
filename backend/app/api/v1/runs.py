@@ -26,7 +26,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import TOTAL_COUNT_HEADER, ApiModel, total_count_responses
 from backend.app.core.auth import get_current_user, is_workspace_admin
-from backend.app.db.models import COMPARISON_KIND, Check, User
+from backend.app.db.models import (
+    COMPARISON_KIND,
+    PIPELINE_RUN_STATUSES,
+    RUN_STATUSES,
+    Check,
+    User,
+)
 from backend.app.db.session import get_db
 from backend.app.services import orchestration_service, run_dispatch
 from backend.app.services import run_service as svc
@@ -192,7 +198,16 @@ def list_runs(
     db: Annotated[Session, Depends(get_db)],
     response: Response,
     suite_id: uuid.UUID | None = None,
-    run_status: Annotated[str | None, Query(alias="status")] = None,
+    run_status: Annotated[
+        str | None,
+        Query(
+            alias="status",
+            description=(
+                "Filter by run execution status. Closed vocabulary — a value outside "
+                f"{list(RUN_STATUSES)} is a 422, never a silent empty page."
+            ),
+        ),
+    ] = None,
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
 ) -> list[RunRead]:
@@ -203,6 +218,10 @@ def list_runs(
     # workspace-admin `view` on a named suite, so the per-suite gate is consistent.
     if suite_id is not None:
         require_permission(db, suite_id, current_user.id, minimum="view")
+    # A `status` outside the closed vocabulary is a 422, not a confident
+    # `200 []` + `X-Total-Count: 0` that reads as "no runs in that status"
+    # (#828; the same gate `/pipeline_runs` and `/incidents` apply).
+    svc.validate_read_filters(status=run_status)
     include_all = is_workspace_admin(current_user)
     # The header carries the total (#1108, matching #925's /assets shape) — the
     # response BODY stays a bare list so an existing caller keeps parsing it
@@ -382,7 +401,16 @@ def list_pipeline_runs(
     db: Annotated[Session, Depends(get_db)],
     response: Response,
     provider: str | None = None,
-    run_status: Annotated[str | None, Query(alias="status")] = None,
+    run_status: Annotated[
+        str | None,
+        Query(
+            alias="status",
+            description=(
+                "Filter by pipeline-run status. Closed vocabulary — a value outside "
+                f"{list(PIPELINE_RUN_STATUSES)} is a 422, never a silent empty page."
+            ),
+        ),
+    ] = None,
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
 ) -> list[PipelineRunRead]:
@@ -393,7 +421,7 @@ def list_pipeline_runs(
     211-row table. Matches the `/assets` paging shape — now including the
     `X-Total-Count` header (#1108) that #928 left out.
     """
-    orchestration_service.validate_read_filters(provider=provider)
+    orchestration_service.validate_read_filters(provider=provider, status=run_status)
     response.headers[TOTAL_COUNT_HEADER] = str(
         orchestration_service.count_pipeline_runs(db, provider=provider, status=run_status)
     )

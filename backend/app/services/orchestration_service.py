@@ -34,6 +34,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.db.models import (
     ENVS,
     ORCHESTRATION_PROVIDERS,
+    PIPELINE_RUN_STATUSES,
     Connection,
     PipelineRun,
     Run,
@@ -54,17 +55,24 @@ class OrchestrationFilterInvalidError(DataQError):
     code = "orchestration_filter_invalid"
 
 
-def validate_read_filters(provider: str | None = None, env: str | None = None) -> None:
+def validate_read_filters(
+    provider: str | None = None, env: str | None = None, status: str | None = None
+) -> None:
     """422 on a filter value outside its closed vocabulary (#306).
 
-    An unrecognised `provider`/`env` used to flow straight into the `WHERE`, so a
-    typo returned `200 []` — indistinguishable from "this provider genuinely has no
-    runs", which is the confidently-empty-answer class (#828). `None` means "no
-    filter" and is left alone; only a *supplied* value is checked.
+    An unrecognised `provider`/`env`/`status` used to flow straight into the
+    `WHERE`, so a typo returned `200 []` — indistinguishable from "this provider
+    genuinely has no runs", which is the confidently-empty-answer class (#828).
+    `None` means "no filter" and is left alone; only a *supplied* value is checked.
+
+    ``status`` joined the gate with `X-Total-Count` (#1108): the header made the
+    silence louder, since `?status=succeded` now answers a confident
+    `X-Total-Count: 0` alongside the empty page. The column stores lower-case, so
+    a wrong-case `Succeeded` matches nothing too and is rejected the same way.
 
     Mirrors `trigger_binding_service._validate_provider_env`, which guards the write
     path against the same vocabularies. Kept separate because that one requires both
-    values while a read filter may supply either, neither, or both.
+    values while a read filter may supply any subset.
     """
     if provider is not None and provider not in ORCHESTRATION_PROVIDERS:
         raise OrchestrationFilterInvalidError(
@@ -74,6 +82,11 @@ def validate_read_filters(provider: str | None = None, env: str | None = None) -
     if env is not None and env not in ENVS:
         raise OrchestrationFilterInvalidError(
             f"invalid env {env!r}", detail={"allowed": list(ENVS)}
+        )
+    if status is not None and status not in PIPELINE_RUN_STATUSES:
+        raise OrchestrationFilterInvalidError(
+            f"invalid pipeline run status {status!r}",
+            detail={"allowed": list(PIPELINE_RUN_STATUSES)},
         )
 
 
@@ -603,6 +616,19 @@ def pipeline_run_order_by() -> tuple[Any, ...]:
     return (PipelineRun.created_at.desc(), PipelineRun.id.desc())
 
 
+def _pipeline_run_filters(*, provider: str | None, status: str | None) -> list[Any]:
+    """The ONE `WHERE` chain shared by :func:`list_pipeline_runs` and
+    :func:`count_pipeline_runs`. Derived once rather than hand-rolled twice, so a
+    future filter cannot land on the list without the total — which would make
+    `X-Total-Count` quietly disagree with the page it describes (#1108)."""
+    conditions: list[Any] = []
+    if provider is not None:
+        conditions.append(PipelineRun.provider == provider)
+    if status is not None:
+        conditions.append(PipelineRun.status == status)
+    return conditions
+
+
 def list_pipeline_runs(
     session: Session,
     *,
@@ -624,11 +650,13 @@ def list_pipeline_runs(
     paging: it looks complete and silently isn't (the same nondeterminism #889
     fixed for latest-run-per-suite).
     """
-    stmt = select(PipelineRun).order_by(*pipeline_run_order_by()).limit(limit).offset(offset)
-    if provider is not None:
-        stmt = stmt.where(PipelineRun.provider == provider)
-    if status is not None:
-        stmt = stmt.where(PipelineRun.status == status)
+    stmt = (
+        select(PipelineRun)
+        .where(*_pipeline_run_filters(provider=provider, status=status))
+        .order_by(*pipeline_run_order_by())
+        .limit(limit)
+        .offset(offset)
+    )
     return list(session.scalars(stmt))
 
 
@@ -641,12 +669,13 @@ def count_pipeline_runs(
     """Total pipeline runs matching the SAME `provider`/`status` filters as
     :func:`list_pipeline_runs`, unaffected by its `limit`/`offset` (#1108 —
     the `/assets` `X-Total-Count` shape: a page shorter than `limit` can't by
-    itself distinguish "that's everything" from "there's more")."""
-    stmt = select(func.count()).select_from(PipelineRun)
-    if provider is not None:
-        stmt = stmt.where(PipelineRun.provider == provider)
-    if status is not None:
-        stmt = stmt.where(PipelineRun.status == status)
+    itself distinguish "that's everything" from "there's more"). Shares
+    :func:`_pipeline_run_filters` with the list so the two cannot drift."""
+    stmt = (
+        select(func.count())
+        .select_from(PipelineRun)
+        .where(*_pipeline_run_filters(provider=provider, status=status))
+    )
     return session.scalar(stmt) or 0
 
 
