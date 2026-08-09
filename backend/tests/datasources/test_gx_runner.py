@@ -15,6 +15,7 @@ from typing import Any
 
 from backend.app.datasources.base import SAMPLE_ROW_CAP
 from backend.app.datasources.gx_runner import (
+    _VALUE_SIGNAL_SUMMARY_ROW_CAP,
     _bounded_observed_value,
     _check_errored,
     _extract_sample_failures,
@@ -354,3 +355,16 @@ def test_value_signal_summary_by_column_groups_and_skips_non_dict_rows() -> None
     assert summary["a"]["n"] == 2
     assert summary["a"]["email_count"] == 2
     assert summary["b"]["n"] == 2
+
+
+def test_value_signal_summary_by_column_bounds_cpu_cost_on_a_huge_failing_population() -> None:
+    """Review finding: an unbounded scan here means a badly-failing pandas-backed
+    check (tens/hundreds of thousands of rows — #1196's own "thousands of failing
+    rows" case, just moved from an O(1) truncation to O(rows) regex/entropy work)
+    pays unbounded CPU synchronously in the Celery run path. The summary must be
+    computed over at most `_VALUE_SIGNAL_SUMMARY_ROW_CAP` rows, not the real
+    (potentially enormous) failing-row count."""
+    huge_row_count = _VALUE_SIGNAL_SUMMARY_ROW_CAP * 4
+    rows: list[Any] = [{"col": f"v{i}@x.com"} for i in range(huge_row_count)]
+    summary = _value_signal_summary_by_column(rows)
+    assert summary["col"]["n"] == _VALUE_SIGNAL_SUMMARY_ROW_CAP  # bounded, not huge_row_count

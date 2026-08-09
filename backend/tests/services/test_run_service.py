@@ -905,7 +905,7 @@ def test_redact_prefers_persisted_value_signal_summary_over_the_capped_window() 
         {"CUSTOMER_REF": (f"user{i}@x.com" if i < 6 else f"REF-{i}"), "QTY": -i}
         for i in range(SAMPLE_ROW_CAP)
     ]
-    window_ratio = sum("@" in row["CUSTOMER_REF"] for row in capped_rows) / SAMPLE_ROW_CAP
+    window_ratio = sum("@" in str(row["CUSTOMER_REF"]) for row in capped_rows) / SAMPLE_ROW_CAP
     assert window_ratio < 0.5  # sanity: the capped window alone reads "not PII"
     summary = {
         "CUSTOMER_REF": {

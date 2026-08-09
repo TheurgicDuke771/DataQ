@@ -469,10 +469,17 @@ def _valid_summary(summary: Mapping[str, Any] | None) -> dict[str, int] | None:
     """Coerce/validate a persisted `value_signal_summary` sub-dict, or ``None`` if
     it's absent or malformed — an on-disk JSONB shape is never trusted blindly.
     Every count key must be present and coerce to an ``int``; ``n`` must be
-    positive and no count may be negative (a zero/negative-population summary
-    carries no signal — same as `_value_signal_counts`'s own ``None``-when-empty
-    contract), so a corrupt or hand-edited value can't be classified as if it were
-    real evidence."""
+    positive, no count may be negative (a zero/negative-population summary carries
+    no signal — same as `_value_signal_counts`'s own ``None``-when-empty contract),
+    and no sub-count may exceed ``n`` — a summary can't have more emails than total
+    values. That cross-field check matters because `_classify_counts` divides each
+    sub-count by ``n`` unguarded: an internally-inconsistent summary (corrupted
+    JSONB, a future writer bug, a hand-edited row) with an inflated sub-count would
+    otherwise pass the earlier checks and be trusted as real evidence, which could
+    flip a genuinely-PII column to shown — precisely the regression this whole
+    feature exists to prevent, reached through a bad summary instead of a capped
+    window. A corrupt or hand-edited value can't be classified as if it were real
+    evidence."""
     if not isinstance(summary, Mapping):
         return None
     try:
@@ -480,6 +487,9 @@ def _valid_summary(summary: Mapping[str, Any] | None) -> dict[str, int] | None:
     except (KeyError, TypeError, ValueError):
         return None
     if counts["n"] <= 0 or any(v < 0 for v in counts.values()):
+        return None
+    n = counts["n"]
+    if any(counts[key] > n for key in _SUMMARY_COUNT_KEYS if key != "n"):
         return None
     return counts
 

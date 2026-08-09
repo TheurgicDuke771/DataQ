@@ -36,6 +36,16 @@ from pydantic import BaseModel
 # (`RunDetail.tsx` `MAX_SAMPLE_ROWS`).
 SAMPLE_ROW_CAP = 20
 
+# Sub-key inside a persisted `sample_failures` payload holding the capture-time,
+# full-population value-signal summary (#1230) — see
+# `gx_runner._value_signal_summary_by_column` (the writer) and
+# `run_service.redact_sample_failures`'s ``summary_by_column`` (the reader). Shared
+# here, not defined once per side, so a future rename can't silently desynchronise
+# the write/read contract — each side's own unit tests would stay green even though
+# the key stopped matching, exactly the failure mode a shared constant closes off.
+# Not a GX result field and never rendered to a viewer — see the redaction docstring.
+VALUE_SIGNAL_SUMMARY_KEY = "value_signal_summary"
+
 
 @dataclass(frozen=True)
 class CheckSpec:

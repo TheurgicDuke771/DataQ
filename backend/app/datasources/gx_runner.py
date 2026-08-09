@@ -22,7 +22,13 @@ import great_expectations as gx
 import great_expectations.expectations as gxe
 
 from backend.app.core.logging import get_logger
-from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckOutcome, CheckSpec, SuiteOutcome
+from backend.app.datasources.base import (
+    SAMPLE_ROW_CAP,
+    VALUE_SIGNAL_SUMMARY_KEY,
+    CheckOutcome,
+    CheckSpec,
+    SuiteOutcome,
+)
 from backend.app.services.column_classification import value_signal_summary
 
 log = get_logger(__name__)
@@ -39,11 +45,17 @@ _SAMPLE_KEYS = (
     "unexpected_index_list",
 )
 
-# Sub-key holding the capture-time, full-population value-signal summary (#1230) —
-# see `_value_signal_summary_by_column` below. Not one of `_SAMPLE_KEYS`: it isn't a
-# GX result field, it's DataQ-derived metadata consumed by
-# `run_service.redact_sample_failures` and never rendered to a viewer.
-_VALUE_SIGNAL_SUMMARY_KEY = "value_signal_summary"
+# Upper bound on how many `unexpected_index_list` rows `_value_signal_summary_by_column`
+# examines (#1230 review) — the untruncated list can carry tens or hundreds of
+# thousands of rows on a badly-failing pandas-backed check, and each cell costs a
+# handful of regex matches plus a Shannon-entropy pass (`column_classification`'s
+# email/UUID/hash/encoded checks). Unbounded, that is O(rows x columns) of CPU
+# synchronously inside the Celery run path — the same "thousands of failing rows"
+# case #1196 itself calls out, just moved from an O(1) truncation to O(rows) work.
+# 5,000 rows is already a vastly better ratio estimate than the 20-row window this
+# fix exists to correct, while keeping worst-case cost bounded and predictable
+# regardless of how large the real failing population is.
+_VALUE_SIGNAL_SUMMARY_ROW_CAP = 5_000
 
 # GX injects internal bookkeeping keys into expectation_config.kwargs at run time
 # (e.g. batch_id); strip them so expected_value persists only the check's own
@@ -129,9 +141,15 @@ def _value_signal_summary_by_column(rows: list[Any]) -> dict[str, dict[str, int]
     Caller-gated on `len(rows) > SAMPLE_ROW_CAP` (see `_extract_sample_failures`):
     below the cap nothing is lost by truncation, so persisting a summary would be
     redundant with the rows already being stored in full.
+
+    `rows` is itself bounded to `_VALUE_SIGNAL_SUMMARY_ROW_CAP` first (#1230 review) —
+    without it, a badly-failing check's untruncated row count drives unbounded
+    per-cell regex/entropy work synchronously in the run path. 5,000 rows is still a
+    vastly better ratio estimate than the 20-row window this summary exists to fix.
     """
+    bounded_rows = rows[:_VALUE_SIGNAL_SUMMARY_ROW_CAP]
     by_column: dict[str, list[Any]] = defaultdict(list)
-    for row in rows:
+    for row in bounded_rows:
         if isinstance(row, dict):
             for col, val in row.items():
                 by_column[str(col)].append(val)
@@ -160,11 +178,12 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
     Before `unexpected_index_list` is truncated, and only when it is actually LONGER
     than `SAMPLE_ROW_CAP` (below the cap nothing is lost — the persisted rows already
     are the full population, so a summary would be redundant), `_value_signal_summary_by_column`
-    (#1230) captures a compact per-column value-signal summary over the FULL,
-    untruncated rows and stores it under `_VALUE_SIGNAL_SUMMARY_KEY` alongside the
-    capped rows — bounding storage to O(columns), not O(rows), while letting
-    read-time redaction classify from the full-population ratios instead of the
-    20-row window the cap alone would leave it with.
+    (#1230) captures a compact per-column value-signal summary over the (up to
+    `_VALUE_SIGNAL_SUMMARY_ROW_CAP`) untruncated rows and stores it under
+    `VALUE_SIGNAL_SUMMARY_KEY` alongside the capped rows — bounding storage to
+    O(columns), not O(rows), while letting read-time redaction classify from a much
+    larger population's ratios instead of the 20-row window the cap alone would
+    leave it with.
     """
     sample: dict[str, Any] = {}
     for key in _SAMPLE_KEYS:
@@ -180,7 +199,7 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
         ):
             summary = _value_signal_summary_by_column(value)
             if summary:
-                sample[_VALUE_SIGNAL_SUMMARY_KEY] = summary
+                sample[VALUE_SIGNAL_SUMMARY_KEY] = summary
         sample[key] = value[:SAMPLE_ROW_CAP] if isinstance(value, list) else value
     return sample or None
 

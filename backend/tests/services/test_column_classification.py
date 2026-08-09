@@ -346,3 +346,21 @@ class TestValueSignalSummary:
         self,
     ) -> None:
         assert classify_column("ext_val", None, value_signal_summary=None) is ColumnClass.PII
+
+    def test_classify_column_rejects_a_summary_with_a_sub_count_over_n(self) -> None:
+        # Review finding: `_classify_counts` divides each sub-count by `n` unguarded,
+        # so an internally-inconsistent summary (corrupted JSONB, a future writer
+        # bug, a hand-edited row) with a sub-count INFLATED past `n` must be rejected
+        # rather than trusted — otherwise a bogus id_shaped_count/distinct_count
+        # both > n forces a >=0.8 ratio no matter what the real population looked
+        # like, which could flip a genuinely-PII column to IDENTIFIER and show it.
+        window = ["ref-1", "ref-2", "ref-3"]
+        baseline = classify_column("ext_val", window)
+        bogus = {
+            "n": 1_000,
+            "email_count": 0,
+            "id_shaped_count": 2_000,  # > n — internally inconsistent
+            "encoded_count": 0,
+            "distinct_count": 2_000,  # > n — internally inconsistent
+        }
+        assert classify_column("ext_val", window, value_signal_summary=bogus) == baseline

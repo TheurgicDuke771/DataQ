@@ -28,6 +28,7 @@ from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.datasources.base import (
     SAMPLE_ROW_CAP,
+    VALUE_SIGNAL_SUMMARY_KEY,
     CheckOutcome,
     CheckRunner,
     CheckSpec,
@@ -658,12 +659,12 @@ _SAMPLE_SAFE_KEYS = frozenset({"unexpected_count", "unexpected_percent"})
 # two redactors stay deliberately separate (key-based for logs, value-based here).
 _REDACTED_VALUE = "<redacted>"
 
-# Capture-time full-population value-signal summary (#1230) — see
-# `gx_runner._VALUE_SIGNAL_SUMMARY_KEY` (the writer) and `_redact_row`'s
+# Capture-time full-population value-signal summary (#1230) — `VALUE_SIGNAL_SUMMARY_KEY`
+# is shared with `gx_runner` (the writer) via `datasources.base`, so a future rename
+# can't silently desync the two sides; consumed below via `_redact_row`'s
 # ``summary_by_column`` (the reader). Internal DataQ-derived metadata, not a
 # rendered sample: consumed to improve classification, then dropped from the
 # redacted output rather than re-emitted or run back through the show/mask logic.
-_VALUE_SIGNAL_SUMMARY_KEY = "value_signal_summary"
 
 
 def _redact_sample_value(value: Any) -> Any:
@@ -1102,7 +1103,7 @@ def redact_sample_failures(
     # written before this existed simply has no such key, and `.get` returns `None`,
     # so every classification call below falls back to `index_vbc`'s (capped) values
     # exactly as it did before this change.
-    raw_summary = sample.get(_VALUE_SIGNAL_SUMMARY_KEY)
+    raw_summary = sample.get(VALUE_SIGNAL_SUMMARY_KEY)
     summary_by_column = raw_summary if isinstance(raw_summary, dict) else None
     # Of the two interchangeable failing-row lists, only the one the viewer is shown
     # feeds the tracker (#1197) — see `_displayed_sample_key`. Redaction itself still
@@ -1111,7 +1112,7 @@ def redact_sample_failures(
     displayed_key = _displayed_sample_key(sample)
     out: dict[str, Any] = {}
     for key, raw_value in sample.items():
-        if key == _VALUE_SIGNAL_SUMMARY_KEY:
+        if key == VALUE_SIGNAL_SUMMARY_KEY:
             # Internal capture-time metadata (#1230), already consumed above as
             # `summary_by_column` — never re-emitted, and not a data-bearing key
             # (it carries counts, not cell values), so it must not register with
