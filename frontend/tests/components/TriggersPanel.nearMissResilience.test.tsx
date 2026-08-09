@@ -52,7 +52,13 @@ const BINDING: TriggerBinding = {
 afterEach(() => vi.clearAllMocks());
 
 describe('TriggersPanel — near-miss fetch resilience (#1199)', () => {
-  it('does not block rendering the bindings list when the near-miss fetch fails', async () => {
+  // Deliberately ONE `it`, asserting the whole failure contract in a single
+  // render — the file docstring above explains why a second one cannot live here,
+  // and CI proved it: splitting these assertions into two tests passed locally but
+  // failed the shared run with `TypeError: Cannot read properties of undefined
+  // (reading 'then')` after all 92 files reported green, i.e. a late effect from
+  // the first test re-firing the (now cleared) mock.
+  it('keeps the bindings list and says the warnings are unavailable, rather than looking clean', async () => {
     mockList.mockResolvedValue([BINDING]);
     mockNearMisses.mockRejectedValue(new Error('network error'));
 
@@ -62,23 +68,12 @@ describe('TriggersPanel — near-miss fetch resilience (#1199)', () => {
       </AntApp>,
     );
 
+    // The bindings themselves still render — the near-miss fetch is an overlay.
     expect(await screen.findByText('nightly-load')).toBeInTheDocument();
     expect(screen.queryByLabelText(/^Env mismatch near-miss/)).not.toBeInTheDocument();
-  });
-
-  it('says the warnings are unavailable rather than showing a clean panel', async () => {
-    // An outage must never be reportable as a state (the ADR-0039 lesson): with no
-    // notice, a failed fetch looks exactly like "no mismatch", so a live #1186
-    // mismatch would read as healthy on the very screen built to surface it.
-    mockList.mockResolvedValue([BINDING]);
-    mockNearMisses.mockRejectedValue(new Error('network error'));
-
-    render(
-      <AntApp>
-        <TriggersPanel suiteId="s1" canManage />
-      </AntApp>,
-    );
-
+    // …but an outage must never be reportable as a state (the ADR-0039 lesson):
+    // silent zero badges look exactly like "no mismatch", so a live #1186 mismatch
+    // would read as healthy on the very screen built to surface it.
     expect(await screen.findByText(/Env-mismatch warnings are unavailable/)).toBeInTheDocument();
   });
 });
