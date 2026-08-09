@@ -469,6 +469,30 @@ class Connection(Base):
     # `last_poll_error` — never raw exception text). NULL means the last refresh ran.
     lineage_last_error: Mapped[str | None] = mapped_column(String(512))
 
+    # ── Inventory-sync outcome state (#1104) ─────────────────────────────────────
+    # An opted-in connection (`config.inventory_sync`, ADR 0040) whose principal
+    # can't read the enumeration query fails every daily tick — caught fail-soft and
+    # logged, correctly, so the sweep never aborts. But the USER-facing state before
+    # these columns was: toggle on, connection test green (the `SELECT 1` probe never
+    # exercises this query), zero assets ever appear, no surface says why — the #828
+    # shape again. These three columns mirror the `lineage_last_*` pattern above so a
+    # sync failure becomes a fact about the connection, not a line in App Insights.
+    #
+    # Stamped on EVERY attempt (success or failure); NULL means never attempted.
+    inventory_sync_last_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    # A CLASSIFIED, redaction-safe reason (never raw exception text — the
+    # `last_poll_error`/`lineage_last_error` precedent). NULL means the last
+    # attempt succeeded.
+    inventory_sync_last_error: Mapped[str | None] = mapped_column(String(512))
+    # When the CURRENT failure streak started; NULL whenever the connection is
+    # currently healthy (last attempt succeeded, or it has never been attempted).
+    # Set on the first failure after a success and left untouched by subsequent
+    # failures, so the UI can say "failing since <ts>" instead of just "failing" —
+    # cleared back to NULL on the next success.
+    inventory_sync_failing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
 
 class ConnectionVersion(Base):
     """An immutable snapshot of a connection's editable, **non-secret** state,

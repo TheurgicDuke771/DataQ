@@ -94,14 +94,24 @@ runs, so its scorecard shows coverage gaps, never a score.
   overflow loudly (`inventory_sync_truncated`, with counts) — a silent cap
   reads as "covered everything" (the no-silent-caps rule).
 - **Fail-soft per connection**, like the lineage refresh: one unreachable
-  warehouse logs and never aborts the sweep of the others.
+  warehouse logs and never aborts the sweep of the others. *(Amended #1104: the
+  guarantee explicitly covers the outcome BOOKKEEPING too — that write is
+  row-locked, re-fetches the connection by id rather than trusting an
+  instance the preceding rollback expired, and can never raise. Each of those
+  three, unguarded, turned a per-connection failure into a per-sweep one.)*
 - **UC grant prerequisite:** `system.information_schema` is not implicitly
   readable — the connection's PAT needs an explicit `SELECT` grant on it (the
   same class of prerequisite as the lineage pull's `system.access` grant). The
-  toggle's form hint and deploy/README say so; a failed sync today is visible
-  only in worker logs (`inventory_sync_connection_failed`) — a user-facing
-  per-connection inventory health signal is filed as a follow-up, not silently
-  absent.
+  toggle's form hint and deploy/README say so. **The user-facing health signal
+  this section filed as a follow-up shipped in [#1104](https://github.com/TheurgicDuke771/DataQ/issues/1104):**
+  `connections.inventory_sync_last_attempted_at` / `_last_error` / `_failing_since`
+  (mirroring `lineage_last_*`) drive an "inventory sync failing" badge on the
+  connections list. The stored reason is classified, never raw exception text,
+  and the SPECIFIC "missing SELECT grant on <system schema>" wording is gated on
+  the failure having been raised by the enumeration query itself — a
+  permission-shaped failure from the secret store or the driver handshake gets
+  the generic reason, because naming a grant for one of those would send an
+  admin to fix something that was never broken.
 
 ## 6. S3-compatible namespace (#1064, decided here)
 

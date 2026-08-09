@@ -228,6 +228,52 @@ def test_update_changes_name_and_config(db_session: Any) -> None:
     assert updated.config["warehouse"] == "WH_BIG"
 
 
+def test_turning_inventory_sync_off_clears_its_outcome_state(db_session: Any) -> None:
+    """#1104: the three `inventory_sync_*` columns describe the last sync ATTEMPT, so
+    when the toggle goes off they must go blank — a failing state must never outlive
+    its cause. Cleared here rather than only in the daily sweep because the sweep
+    cannot see the window: toggled off at 09:00 and back on at 09:05 never presents an
+    opted-out row to the next tick, and every reader would meanwhile be told the
+    connection is "failing since <old date>" for a sync nobody has attempted since."""
+    from datetime import UTC, datetime
+
+    conn = _create(db_session, FakeStore(), config={**_SF_CONFIG, "inventory_sync": True})
+    conn.inventory_sync_last_attempted_at = datetime.now(UTC)
+    conn.inventory_sync_last_error = "Inventory sync was rejected."
+    conn.inventory_sync_failing_since = datetime.now(UTC)
+    db_session.flush()
+
+    updated = svc.update_connection(
+        db_session, conn.id, config=dict(_SF_CONFIG), secret_store=FakeStore()
+    )
+
+    assert updated.config.get("inventory_sync") is None
+    assert updated.inventory_sync_last_attempted_at is None
+    assert updated.inventory_sync_last_error is None
+    assert updated.inventory_sync_failing_since is None
+
+
+def test_an_unrelated_config_edit_keeps_the_inventory_sync_state(db_session: Any) -> None:
+    """The clear is bound to the toggle going OFF, not to "config changed" — wiping
+    the state on any edit would hide a live, still-failing sync."""
+    from datetime import UTC, datetime
+
+    conn = _create(db_session, FakeStore(), config={**_SF_CONFIG, "inventory_sync": True})
+    conn.inventory_sync_failing_since = datetime.now(UTC)
+    conn.inventory_sync_last_error = "Inventory sync was rejected."
+    db_session.flush()
+
+    updated = svc.update_connection(
+        db_session,
+        conn.id,
+        config={**_SF_CONFIG, "inventory_sync": True, "warehouse": "WH_OTHER"},
+        secret_store=FakeStore(),
+    )
+
+    assert updated.inventory_sync_failing_since is not None
+    assert updated.inventory_sync_last_error is not None
+
+
 def test_update_config_reresolves_bound_suite_assets(db_session: Any) -> None:
     """A config change that moves the OpenLineage identity re-points every targeted
     suite on the connection at the new asset (ADR 0034) — never a stale asset_id."""
