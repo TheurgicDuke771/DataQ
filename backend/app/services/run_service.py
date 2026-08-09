@@ -38,6 +38,7 @@ from backend.app.datasources.monitors import (
     SCALAR_MONITOR_KINDS,
     STATEFUL_MONITOR_KINDS,
 )
+from backend.app.datasources.sql import strip_statement_echo
 from backend.app.db.models import (
     COMPARISON_KIND,
     RESULT_OPERATIONAL_STATUSES,
@@ -74,9 +75,13 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
     referencing a missing column) is an operational ``error`` result (#122), not a
     data failure: no severity tier, no `metric_value`. It's orthogonal to the
     health score (ADR 0005 weights only the four tiers), so it must never be
-    banded as `fail`. The error message lands in `observed_value` for debugging —
-    GX exception messages are schema-level (no row data), so they don't go through
-    the `sample_failures` retention/PII path.
+    banded as `fail`. The error message lands in `observed_value` for debugging.
+    That field is outside the `sample_failures` retention/PII path, so the message
+    is put through `strip_statement_echo` first (#1203): on a SQL engine the
+    runner's message is a SQLAlchemy `StatementError` rendering, whose
+    `[SQL: …] [parameters: …]` tail echoes the statement and every bound value —
+    target data — straight into a field the read layer's column policy does not
+    cover. The driver's own message survives; only the echo goes.
 
     A check whose *precondition* wasn't met (`outcome.skipped`, #593) is the other
     operational status, ``skip`` — resolved in `severity.resolve_status` so the
@@ -92,8 +97,12 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
     )
     if outcome.errored:
         # An errored check has no observed metric and no failing-row sample; surface
-        # the (schema-level, row-data-free) GX message for debugging instead.
-        observed = {"error": outcome.error_message} if outcome.error_message else None
+        # the runner's message for debugging instead — minus the SQL/parameter echo
+        # a SQL engine appends to it (#1203). This is the one place every kind and
+        # every datasource funnels through on the way to `observed_value`, so the
+        # strip cannot diverge per runner (Snowflake and Unity Catalog share it).
+        error_message = strip_statement_echo(outcome.error_message)
+        observed = {"error": error_message} if error_message else None
         # An errored monitor may also carry the target cell that provoked it
         # (#989). It rides here rather than inside the message so the read layer
         # can redact it under the suite's column policy — the errored branch
@@ -862,11 +871,20 @@ def redact_observed_value(
     """Redact an errored result's `observed_value` for the read API (#989).
 
     An errored check stores ``{"error": <message>}``, and a monitor that choked on
-    a target cell adds ``{"unparsed_value": <cell>, "column": <name>}``. The
-    message is safe by construction — it never interpolates the cell — so only the
-    cell needs masking, under the same authority the failing-sample path uses:
-    show it unless the column is **known** sensitive (a governance tag or an
-    explicit policy entry).
+    a target cell adds ``{"unparsed_value": <cell>, "column": <name>}``. The cell
+    is masked under the same authority the failing-sample path uses: show it
+    unless the column is **known** sensitive (a governance tag or an explicit
+    policy entry).
+
+    The message gets `strip_statement_echo` (#1203). `_build_result` already
+    strips before persisting, so a row written from now on arrives clean; this
+    second pass is for the rows ALREADY in the database — every SQL-engine check
+    that errored between ADR 0019 and #1203 persisted the statement and its bound
+    parameters verbatim, and `observed_value` has no retention sweep to age them
+    out. Deriving at read time corrects that history for free, the same way the
+    #1115 redaction state does, and covers all three sinks at once: this function
+    is what the run-detail API, the MCP tools and the alert builder all call. The
+    strip is idempotent, so applying it on both sides costs nothing.
 
     Deliberately the *known*-sensitive test, not the default-mask one used for
     incidental columns: this cell is from the column the user pointed the monitor
@@ -876,7 +894,12 @@ def redact_observed_value(
 
     ``None``/absent keys pass through unchanged.
     """
-    if not observed or "unparsed_value" not in observed:
+    if not observed:
+        return observed
+    error = observed.get("error")
+    if isinstance(error, str):
+        observed = {**observed, "error": strip_statement_echo(error)}
+    if "unparsed_value" not in observed:
         return observed
     column = str(observed.get("column") or "")
     value = observed.get("unparsed_value")

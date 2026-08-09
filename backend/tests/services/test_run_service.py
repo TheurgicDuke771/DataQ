@@ -11,6 +11,7 @@ from decimal import Decimal
 from typing import Any, cast
 
 import pytest
+from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Session
 
 from backend.app.datasources.base import (
@@ -517,6 +518,104 @@ def test_errored_check_maps_to_error_status_without_failing_siblings() -> None:
     assert errored.metric_value is None
     assert errored.observed_value == {"error": outcome.checks[0].error_message}
     assert by_check[checks[1].id].status == "pass"  # sibling unaffected
+
+
+def test_errored_sql_check_persists_no_statement_or_parameter_echo() -> None:
+    """#1203: a SQL engine's error message must not carry target data into
+    `observed_value`.
+
+    GX hands `to_suite_outcome` `exception_info.exception_message`, which on a SQL
+    execution engine is the rendering of a SQLAlchemy `StatementError` — the driver
+    message followed by `[SQL: …]` and `[parameters: …]`. Those bound values are
+    cells DataQ sent to the warehouse, and `observed_value` is outside both the
+    `sample_failures` retention sweep and the suite's column policy, so it reaches
+    the run-detail API, the UI, alerts and MCP output unmasked.
+
+    Built from a REAL `StatementError` (not a hand-written string) so the test
+    tracks SQLAlchemy's actual rendering rather than our idea of it. The same
+    wrapper covers Snowflake and Unity Catalog — `_build_result` is the one choke
+    point both reach, so neither can diverge."""
+    statement_error = StatementError(
+        "(snowflake.connector.errors.ProgrammingError) 100038 (22018): "
+        "Numeric value 'ORD-9' is not recognized",
+        "SELECT * FROM RETAIL.ORDERS WHERE CUSTOMER_REF = %(ref)s",
+        {"ref": "alice@example.com"},
+        Exception("orig"),
+    )
+    assert "alice@example.com" in str(statement_error)  # the premise, not an artefact
+
+    session = FakeSession()
+    run = _run()
+    check = _checks(1)[0]
+    outcome = SuiteOutcome(
+        success=False,
+        checks=[
+            CheckOutcome(
+                "unexpected_rows_expectation",
+                success=False,
+                errored=True,
+                error_message=str(statement_error),
+            )
+        ],
+    )
+
+    run_service.execute_run(
+        _sess(session), run=run, checks=[check], runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    persisted = session.added[0]
+    assert persisted.status == "error"
+    assert persisted.observed_value is not None
+    stored = persisted.observed_value["error"]
+    assert "alice@example.com" not in stored  # the bound parameter — target data
+    assert "[SQL:" not in stored
+    assert "[parameters:" not in stored
+    assert "RETAIL.ORDERS" not in stored
+    # The driver's own diagnostic survives — blanket-classifying it would make a bad
+    # cast undiagnosable from the UI (the `SafeMonitorError` trade-off).
+    assert stored == (
+        "(snowflake.connector.errors.ProgrammingError) 100038 (22018): "
+        "Numeric value 'ORD-9' is not recognized"
+    )
+
+
+def test_redact_observed_value_strips_the_echo_from_an_already_persisted_row() -> None:
+    """#1203 read side: rows written before the fix still hold the echo, and
+    `observed_value` has no retention sweep to age them out. `redact_observed_value`
+    is what the run-detail API, the MCP tools and the alert builder all call, so
+    stripping there corrects the whole history in one place."""
+    legacy = {
+        "error": (
+            "(databricks.sql.exc.ServerOperationError) cannot cast\n"
+            "[SQL: SELECT * FROM gold.feedback WHERE email = %(e)s]\n"
+            "[parameters: {'e': 'bob@example.com'}]"
+        )
+    }
+
+    out = run_service.redact_observed_value(legacy)
+
+    assert out is not None
+    assert out["error"] == "(databricks.sql.exc.ServerOperationError) cannot cast"
+    assert "bob@example.com" not in out["error"]
+    assert legacy["error"].count("[SQL:") == 1  # the caller's dict is not mutated
+
+
+def test_redact_observed_value_strips_the_echo_alongside_an_unparsed_cell() -> None:
+    """The two redactions compose: the #989 cell keeps its column-policy treatment
+    while the #1203 echo goes, so neither fix can shadow the other."""
+    out = run_service.redact_observed_value(
+        {
+            "error": "(x.Error) boom\n[SQL: SELECT 1]\n[parameters: {'p': 'leaked'}]",
+            "unparsed_value": "not-a-timestamp",
+            "column": "EMAIL",
+        },
+        policy={"pii_columns": ["EMAIL"]},
+    )
+
+    assert out is not None
+    assert out["error"] == "(x.Error) boom"
+    assert "leaked" not in out["error"]
+    assert out["unparsed_value"] == "<redacted>"  # known-sensitive column, still masked
 
 
 def test_errored_check_with_thresholds_is_still_error_not_banded() -> None:

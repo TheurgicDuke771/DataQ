@@ -1,5 +1,5 @@
-"""Shared SQL-datasource primitives: the identifier allowlist (#428) and the
-lazy engine lifecycle (#427).
+"""Shared SQL-datasource primitives: the identifier allowlist (#428), the
+lazy engine lifecycle (#427), and the statement-echo strip (#1203).
 
 SQL identifiers have no bind-parameter slot, so every path that interpolates a
 user-supplied table/schema/column into a query string (monitor config, the
@@ -13,6 +13,11 @@ shape.
 runner, so lifecycle fixes (pre-ping, dispose semantics, guards) land in one
 place instead of drifting between copies. No import cycle: this module knows
 nothing about monitors or runners.
+
+`strip_statement_echo` lives here for the same reason: the tail SQLAlchemy
+appends to a failed statement is a property of the SQL engine, not of any one
+datasource, so Snowflake and Unity Catalog (and any future SQL type) get the
+identical treatment from one implementation.
 """
 
 from __future__ import annotations
@@ -40,6 +45,57 @@ def is_sql_identifier(name: object) -> bool:
     one trailing ``\\n``, which has no business in an identifier.
     """
     return isinstance(name, str) and bool(_SQL_IDENTIFIER_RE.fullmatch(name))
+
+
+# Where `sqlalchemy.exc.StatementError._sql_message` stops reporting the error and
+# starts echoing `.statement` / `.params`. Its rendering is fixed:
+#
+#     (snowflake.connector.errors.ProgrammingError) 100038 (22018): Numeric value
+#     'ORD-9-not-a-number' is not recognized
+#     [SQL: SELECT ... WHERE customer_ref = %(ref)s]
+#     [parameters: {'ref': 'a@example.com'}]
+#     (Background on this error at: https://sqlalche.me/e/20/f405)
+#
+# — the driver's own message first, then `"[SQL: %s]" % self.statement`, then
+# `"[parameters: %r]"` (only ever emitted when the statement was), then the doc
+# link, joined with newlines. So the marker is SQLAlchemy's own delimiter between
+# "what went wrong" and "here is the query and its bound values": cutting at it is
+# a structural split of a known rendering, NOT a heuristic over the prose.
+_STATEMENT_ECHO_MARKER: Final = "\n[SQL: "
+
+
+def strip_statement_echo(message: str | None) -> str | None:
+    """Drop the ``[SQL: …] [parameters: …]`` tail SQLAlchemy appends to a failed
+    statement, keeping the driver's own message (#1203).
+
+    The bound parameters are **target data**: they are the cell values DataQ sent
+    back to the warehouse, and they land in ``results.observed_value``, which is
+    outside the `sample_failures` retention sweep and outside the suite's column
+    redaction policy — so from there they reach the run-detail API, the UI, alerts
+    and MCP output unmasked. The statement itself can echo the same values inline
+    (a literal in a custom-SQL check). Neither belongs in a persisted, broadly
+    readable field.
+
+    What is deliberately KEPT is the driver's own first block. That message is the
+    most actionable thing a user gets for a broken query ("Numeric value 'x' is not
+    recognized", "Table does not exist"), and blanket-classifying it the way
+    `failure_classifier` treats a connect failure would make a bad cast or a typo'd
+    column undiagnosable from the UI — the same trade-off `SafeMonitorError`'s
+    docstring records for `MonitorConfigError`. A warehouse message can quote the
+    offending cell, and that is accepted here: it is the diagnostic, it is bounded
+    to one value the driver chose to name, and removing it would leave the user
+    with nothing. What this closes is the *bulk*, mechanical echo of the statement
+    and every bound parameter, which is neither bounded nor diagnostic — the query
+    is already visible to its author in the check editor.
+
+    Idempotent, and a no-op on any message without the marker (a non-SQL engine's
+    exception, a DataQ-authored message, ``None``), so it is safe to apply both
+    where the message is persisted and where it is read back.
+    """
+    if not message:
+        return message
+    head, marker, _ = message.partition(_STATEMENT_ECHO_MARKER)
+    return head.rstrip() if marker else message
 
 
 def folding_identifier(name: str) -> Any:
