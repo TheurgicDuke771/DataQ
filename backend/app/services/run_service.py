@@ -941,32 +941,49 @@ def _redact_comparison_row(
 def redact_observed_value(
     observed: dict[str, Any] | None,
     *,
+    tested_column: str | None = None,
     policy: dict[str, Any] | None = None,
     tags: Mapping[str, str] | None = None,
 ) -> dict[str, Any] | None:
-    """Redact an errored result's `observed_value` for the read API (#989).
+    """Redact a result's `observed_value` for the read API (#989, #1229).
 
-    An errored check stores ``{"error": <message>}``, and a monitor that choked on
-    a target cell adds ``{"unparsed_value": <cell>, "column": <name>}``. The cell
-    is masked under the same authority the failing-sample path uses: show it
-    unless the column is **known** sensitive (a governance tag or an explicit
-    policy entry).
+    Three shapes reach here, each from a different failure/aggregate mode:
 
-    The message gets `strip_statement_echo` (#1203). `_build_result` already
-    strips before persisting, so a row written from now on arrives clean; this
-    second pass is for the rows ALREADY in the database — every SQL-engine check
-    that errored between ADR 0019 and #1203 persisted the statement and its bound
-    parameters verbatim, and `observed_value` has no retention sweep to age them
-    out. Deriving at read time corrects that history for free, the same way the
-    #1115 redaction state does, and covers all three sinks at once: this function
-    is what the run-detail API, the MCP tools and the alert builder all call. The
-    strip is idempotent, so applying it on both sides costs nothing.
+    * an errored check stores ``{"error": <message>}`` — the message gets
+      `strip_statement_echo` (#1203). `_build_result` already strips before
+      persisting, so a row written from now on arrives clean; this second pass is
+      for the rows ALREADY in the database — every SQL-engine check that errored
+      between ADR 0019 and #1203 persisted the statement and its bound parameters
+      verbatim, and `observed_value` has no retention sweep to age them out.
+      Deriving at read time corrects that history for free, the same way the
+      #1115 redaction state does. The strip is idempotent, so applying it on both
+      sides costs nothing.
+    * a monitor that choked on a target cell adds ``{"unparsed_value": <cell>,
+      "column": <name>}`` — the cell is masked under the same authority the
+      failing-sample path uses: show it unless the column is **known** sensitive
+      (a governance tag or an explicit policy entry). Deliberately the *known*
+      test, not the default-mask one used for incidental columns: this cell is
+      from the column the user pointed the monitor at, the analogue of
+      `partial_unexpected_list`'s tested column — the diagnostic is the whole
+      point, and masking it by default would make every "your timestamp column
+      has junk in it" error unactionable.
+    * a **set-oriented** expectation (`expect_column_distinct_values_to_be_in_set`
+      and siblings) reports ``{"observed_value": [...]}`` as the full observed
+      distinct-value set (#1229) — raw cell values from the **tested** column.
+      Same *known*-sensitive authority as `unparsed_value` above (shown unless
+      ``tested_column`` is known sensitive; no ``tested_column`` → masked, the
+      same safe default `partial_unexpected_list` uses with no tested column).
+      `gx_runner._bounded_observed_value` already caps this list to
+      `SAMPLE_ROW_CAP` at capture (#1196's fix, applied to this adjacent column),
+      but the bound is re-applied here too — same reasoning as
+      `redact_sample_failures`'s read-time re-cap: a result persisted before the
+      capture-time cap existed must not keep shipping an unbounded payload.
+      Classification runs over the **full** persisted list (bounding what is
+      emitted must never widen what is examined), only the emitted value is
+      capped.
 
-    Deliberately the *known*-sensitive test, not the default-mask one used for
-    incidental columns: this cell is from the column the user pointed the monitor
-    at, so it is the analogue of `partial_unexpected_list`'s tested column — the
-    diagnostic is the whole point, and masking it by default would make every
-    "your timestamp column has junk in it" error unactionable.
+    This function is what the run-detail API, the MCP tools and the alert
+    builder all call, so a fix here covers all three sinks at once.
 
     ``None``/absent keys pass through unchanged.
     """
@@ -975,12 +992,19 @@ def redact_observed_value(
     error = observed.get("error")
     if isinstance(error, str):
         observed = {**observed, "error": strip_statement_echo(error)}
-    if "unparsed_value" not in observed:
-        return observed
-    column = str(observed.get("column") or "")
-    value = observed.get("unparsed_value")
-    show = bool(column) and not _known_sensitive(column, [value], policy, tags)
-    return {**observed, "unparsed_value": value if show else _redact_sample_value(value)}
+    if "unparsed_value" in observed:
+        column = str(observed.get("column") or "")
+        value = observed.get("unparsed_value")
+        show = bool(column) and not _known_sensitive(column, [value], policy, tags)
+        return {**observed, "unparsed_value": value if show else _redact_sample_value(value)}
+    raw_observed_value = observed.get("observed_value")
+    if isinstance(raw_observed_value, list):
+        show = tested_column is not None and not _known_sensitive(
+            tested_column, raw_observed_value, policy, tags
+        )
+        capped = raw_observed_value[:SAMPLE_ROW_CAP]
+        return {**observed, "observed_value": capped if show else _redact_sample_value(capped)}
+    return observed
 
 
 def redact_sample_failures(

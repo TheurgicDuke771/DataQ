@@ -236,7 +236,13 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
                     "status": r.status,
                     "metric_value": _num(r.metric_value),
                     "observed_value": run_service.redact_observed_value(
-                        r.observed_value, policy=policy
+                        r.observed_value,
+                        tested_column=(
+                            checks[r.check_id].config.get("column")
+                            if r.check_id in checks
+                            else None
+                        ),
+                        policy=policy,
                     ),
                     "expected_value": r.expected_value,
                     "sample_failures": run_service.redact_sample_failures(

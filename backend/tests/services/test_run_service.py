@@ -1374,3 +1374,78 @@ def test_redact_observed_value_masks_when_the_column_is_unknown() -> None:
     no tested-column context."""
     out = run_service.redact_observed_value({"unparsed_value": "not-a-date", "column": None})
     assert out is not None and out["unparsed_value"] != "not-a-date"
+
+
+# ── #1229: a set-oriented expectation's `observed_value` list ────────────────
+
+
+def test_redact_observed_value_scalar_is_never_touched() -> None:
+    # The aggregate/metric case (row counts, means) must pass through untouched —
+    # only list/set-shaped observed_value is in scope for #1229.
+    out = run_service.redact_observed_value({"observed_value": 74}, tested_column="LINE_TOTAL")
+    assert out == {"observed_value": 74}
+
+
+def test_redact_observed_value_surfaces_a_non_pii_tested_columns_set() -> None:
+    # The whole point, same authority as `partial_unexpected_list`'s tested column.
+    out = run_service.redact_observed_value(
+        {"observed_value": [-12.5, -5.0]},
+        tested_column="LINE_TOTAL",
+    )
+    assert out == {"observed_value": [-12.5, -5.0]}
+
+
+def test_redact_observed_value_masks_a_pii_tested_columns_set_by_name_heuristic() -> None:
+    # This is the exact exposure #1229 exists to close: expect_column_distinct_
+    # values_to_be_in_set on a high-cardinality email column persisted every
+    # distinct value it ever saw, unredacted.
+    out = run_service.redact_observed_value(
+        {"observed_value": ["a@x.com", "b@y.com"]},
+        tested_column="CUSTOMER_EMAIL",
+    )
+    assert out == {"observed_value": ["<redacted>", "<redacted>"]}
+
+
+def test_redact_observed_value_masks_a_policy_pii_tested_columns_set() -> None:
+    out = run_service.redact_observed_value(
+        {"observed_value": [42, 43]},
+        tested_column="SALARY",
+        policy={"pii_columns": ["SALARY"]},
+    )
+    assert out == {"observed_value": ["<redacted>", "<redacted>"]}
+
+
+def test_redact_observed_value_masks_a_set_with_no_tested_column() -> None:
+    # No tested_column context → no basis to show it. Fail closed, same default
+    # `partial_unexpected_list` takes with no tested column.
+    out = run_service.redact_observed_value({"observed_value": ["a", "b"]})
+    assert out == {"observed_value": ["<redacted>", "<redacted>"]}
+
+
+def test_redact_observed_value_re_caps_a_legacy_uncapped_set_at_read_time() -> None:
+    # A result persisted BEFORE the capture-time cap (#1229) existed must not keep
+    # shipping an unbounded payload on every read — same read-time re-cap reasoning
+    # `redact_sample_failures` already applies (#1196).
+    values = [f"cust-{i}" for i in range(5_000)]
+    out = run_service.redact_observed_value(
+        {"observed_value": values},
+        tested_column="LINE_TOTAL",
+    )
+    assert out is not None
+    assert len(out["observed_value"]) == SAMPLE_ROW_CAP
+    assert out["observed_value"] == values[:SAMPLE_ROW_CAP]
+
+
+def test_redact_observed_value_classifies_over_the_full_list_not_just_the_cap() -> None:
+    # Bounding what is emitted must never widen what is examined: if the PII
+    # signal only shows up after the first SAMPLE_ROW_CAP entries, the column must
+    # still mask — judging a legacy oversized sample on only its first 20 rows
+    # could otherwise flip a column from PII to shown.
+    safe_prefix = [f"id-{i}" for i in range(SAMPLE_ROW_CAP)]
+    pii_tail = [f"user{i}@example.com" for i in range(500)]
+    out = run_service.redact_observed_value(
+        {"observed_value": safe_prefix + pii_tail},
+        tested_column="CUSTOMER_REF",
+    )
+    assert out is not None
+    assert out["observed_value"] == ["<redacted>"] * SAMPLE_ROW_CAP

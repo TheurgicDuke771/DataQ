@@ -15,6 +15,7 @@ from typing import Any
 
 from backend.app.datasources.base import SAMPLE_ROW_CAP
 from backend.app.datasources.gx_runner import (
+    _bounded_observed_value,
     _check_errored,
     _extract_sample_failures,
     to_suite_outcome,
@@ -197,6 +198,63 @@ def test_to_gx_expectation_non_dict_meta_surfaces_gx_error() -> None:
         not isinstance(excinfo.value, (ValueError, TypeError))
         or "validation" in str(excinfo.value).lower()
     ), f"expected GX's validation error, got bare {excinfo.value!r}"
+
+
+# ── observed_value capture is bounded (#1229) ──
+
+
+def test_bounded_observed_value_caps_a_set_oriented_expectations_list() -> None:
+    # `expect_column_distinct_values_to_be_in_set` and siblings report the FULL
+    # observed distinct-value set under result_format="COMPLETE" — no upper bound.
+    # Capture must cap it the same way #1196 capped `unexpected_index_list`.
+    values = [f"user{i}@example.com" for i in range(5_000)]
+    observed = _bounded_observed_value({"observed_value": values})
+    assert observed is not None
+    assert len(observed["observed_value"]) == SAMPLE_ROW_CAP
+    assert observed["observed_value"] == values[:SAMPLE_ROW_CAP]
+
+
+def test_bounded_observed_value_leaves_a_short_list_untouched() -> None:
+    values = ["a", "b", "c"]
+    observed = _bounded_observed_value({"observed_value": values})
+    assert observed == {"observed_value": values}
+
+
+def test_bounded_observed_value_does_not_touch_a_scalar() -> None:
+    # A row-count / mean / other aggregate metric must pass through completely
+    # unchanged — only list/set-shaped values are in scope for the #1229 cap.
+    observed = _bounded_observed_value({"observed_value": 74})
+    assert observed == {"observed_value": 74}
+
+
+def test_bounded_observed_value_absent_key_is_none() -> None:
+    assert _bounded_observed_value({}) is None
+
+
+def test_to_suite_outcome_caps_a_set_oriented_expectations_observed_value() -> None:
+    # End-to-end through `to_suite_outcome`: a distinct-value-set expectation's
+    # full result must come out bounded in the mapped `CheckOutcome`.
+    values = [f"cust-{i}" for i in range(1_000)]
+    gx_result = SimpleNamespace(
+        success=False,
+        results=[
+            SimpleNamespace(
+                success=False,
+                expectation_config=SimpleNamespace(
+                    type="expect_column_distinct_values_to_be_in_set",
+                    kwargs={"column": "customer_ref", "value_set": ["a", "b"]},
+                    meta={"dataq_index": 0},
+                ),
+                result={"observed_value": values},
+                exception_info=None,
+            )
+        ],
+    )
+    outcome = to_suite_outcome(gx_result)
+    check = outcome.checks[0]
+    assert check.observed_value is not None
+    assert len(check.observed_value["observed_value"]) == SAMPLE_ROW_CAP
+    assert check.observed_value["observed_value"] == values[:SAMPLE_ROW_CAP]
 
 
 # ── sample-failure capture is bounded (#1196) ──
