@@ -18,12 +18,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from backend.app.core.auth import get_current_user
-from backend.app.core.secrets import get_secret_store
 from backend.app.db.models import Asset, Check, Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import profile_service, run_dispatch
-from backend.tests.support.fake_secret_store import FakeSecretStore
+from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
 
 
 @pytest.fixture
@@ -1621,7 +1620,7 @@ def _patch_resolve_batch_file(monkeypatch: pytest.MonkeyPatch, fn: Any) -> None:
     # makes the secret read succeed regardless of ambient config, so the
     # assertions exercise the intended code path instead of an accidental one.
     monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", fn)
-    app.dependency_overrides[get_secret_store] = lambda: FakeSecretStore(default="test-secret")
+    override_secret_store(app, FakeSecretStore(default="test-secret"))
 
 
 def test_batch_preview_returns_resolved_path(

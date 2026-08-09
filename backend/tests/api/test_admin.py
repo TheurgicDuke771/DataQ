@@ -26,7 +26,7 @@ from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Sh
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import admin_service, otp_service
-from backend.tests.support.fake_secret_store import FakeSecretStore
+from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
 
 
 @pytest.fixture
@@ -210,10 +210,8 @@ def _orch_connection(db_session: Any, owner: User, *, ctype: str, name: str) -> 
     return conn
 
 
-def _with_store(client: TestClient, store: Any) -> TestClient:
-    from backend.app.core.secrets import get_secret_store
-
-    app.dependency_overrides[get_secret_store] = lambda: store
+def _with_store(client: TestClient, store: FakeSecretStore) -> TestClient:
+    override_secret_store(app, store)
     return client
 
 

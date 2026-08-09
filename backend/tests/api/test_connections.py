@@ -18,12 +18,12 @@ from sqlalchemy import select
 
 from backend.app.core.auth import get_current_user
 from backend.app.core.secret_names import connection_secret_ref
-from backend.app.core.secrets import SecretWriteError, get_secret_store
+from backend.app.core.secrets import SecretWriteError
 from backend.app.db.models import Connection
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import connection_service as svc
-from backend.tests.support.fake_secret_store import FakeSecretStore
+from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
 
 _SF_CONFIG = {
     "account": "ab12345.eu-west-1",
@@ -98,7 +98,7 @@ class _OptionalSecretAdapter(_PassAdapter):
 def client(db_session: Any) -> Iterator[tuple[TestClient, FakeSecretStore]]:
     store = FakeSecretStore()
     app.dependency_overrides[get_db] = lambda: db_session
-    app.dependency_overrides[get_secret_store] = lambda: store
+    override_secret_store(app, store)
     try:
         yield TestClient(app), store
     finally:
@@ -149,15 +149,9 @@ def test_create_unknown_type_returns_422(client: tuple[TestClient, FakeSecretSto
 def test_create_secret_write_failure_returns_502(db_session: Any) -> None:
     # Key Vault write failure must surface as a 502 envelope, not a generic 500 (#87).
     app.dependency_overrides[get_db] = lambda: db_session
-    # A lambda, not the bare class: FastAPI's dependency-override resolution
-    # introspects the override CALLABLE's own signature (not the original
-    # dependency's), so a class whose `__init__` takes parameters — even
-    # all-defaulted ones like `FakeSecretStore`'s — gets those parameters
-    # bound as request-level params, corrupting body validation for the
-    # endpoint under test (discovered via #1251: a bare `_WriteFailStore`
-    # override made `POST /connections` 422 instead of ever reaching the
-    # route).
-    app.dependency_overrides[get_secret_store] = lambda: _WriteFailStore()
+    # override_secret_store, not a bare `app.dependency_overrides[...] = _WriteFailStore()`
+    # assignment — see its docstring / the module docstring on fake_secret_store.py (#1251).
+    override_secret_store(app, _WriteFailStore())
     try:
         resp = TestClient(app).post("/api/v1/connections", json=_create_payload())
         assert resp.status_code == 502
@@ -385,10 +379,8 @@ def test_reauth_secret_write_failure_returns_502(
 ) -> None:
     api, _ = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
-    # Swap in a store whose set() fails only for the re-auth call (Key Vault
-    # down). A lambda, not the bare class — see the comment on
-    # `test_create_secret_write_failure_returns_502` for why.
-    app.dependency_overrides[get_secret_store] = lambda: _WriteFailStore()
+    # Swap in a store whose set() fails only for the re-auth call (Key Vault down).
+    override_secret_store(app, _WriteFailStore())
     resp = api.post(f"/api/v1/connections/{cid}/reauth", json={"secret": "rotated"})
     assert resp.status_code == 502
     assert resp.json()["error"]["code"] == "connection_secret_write_failed"
@@ -734,7 +726,7 @@ def test_draft_test_persists_nothing(
 def test_draft_test_requires_auth(db_session: Any) -> None:
     store = FakeSecretStore()
     app.dependency_overrides[get_db] = lambda: db_session
-    app.dependency_overrides[get_secret_store] = lambda: store
+    override_secret_store(app, store)
 
     def _reject() -> None:
         raise HTTPException(status_code=401, detail="unauthorized")
@@ -773,7 +765,7 @@ def test_both_test_routes_resolve(
 def test_create_requires_auth(db_session: Any) -> None:
     store = FakeSecretStore()
     app.dependency_overrides[get_db] = lambda: db_session
-    app.dependency_overrides[get_secret_store] = lambda: store
+    override_secret_store(app, store)
 
     def _reject() -> None:
         raise HTTPException(status_code=401, detail="unauthorized")
