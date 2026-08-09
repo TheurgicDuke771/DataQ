@@ -82,13 +82,15 @@ class TeamsPublisher:
             failed_checks=report.failed_checks,
         )
 
-    def publish_health(self, session: Session, report: ConnectionHealthReport) -> None:
+    def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:
         """Post a connection poll-health edge to the **workspace** webhook (#837).
 
         No per-suite config applies (a connection has no suite), so this resolves the
         workspace webhook only — `resolve_webhook(None, …)` is exactly that fallback.
         Whether to alert was already decided at the threshold crossing; here we just
-        deliver. Quiet no-op when no workspace webhook is configured.
+        deliver. Returns **whether a message was actually posted**: an unconfigured/
+        ineligible webhook is ``False``, never a quiet success (#1101 — the delivered-
+        first flag must not be stamped by a channel that sent nothing).
         """
         webhook = notification_service.resolve_webhook(
             None,
@@ -96,10 +98,10 @@ class TeamsPublisher:
             workspace_secret_name=self._workspace_secret_name,
         )
         if not webhook:
-            return
+            return False
         if not _webhook_allowed(webhook):
             log.warning("teams_webhook_host_not_allowed", connection_id=str(report.connection_id))
-            return
+            return False
         response = httpx.post(
             webhook, json=render_teams_health_message(report), timeout=self._timeout
         )
@@ -110,6 +112,7 @@ class TeamsPublisher:
             state=report.state,
             consecutive_failures=report.consecutive_failures,
         )
+        return True
 
     def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
         """Post the workspace poll-staleness edge (#1052) to the workspace webhook —

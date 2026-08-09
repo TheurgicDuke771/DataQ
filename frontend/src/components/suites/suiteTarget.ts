@@ -3,10 +3,11 @@ import { type RunTarget, targetString } from '../../api/suites';
 
 /**
  * A suite's run target (#215) is datasource-shaped: SQL warehouses identify a
- * `table` (+ optional `schema`), Unity Catalog adds a required `catalog`, and
- * flat-file stores (ADLS / S3) identify a `path` (+ optional `file_format`).
- * `targetKind` collapses the six datasource types to the three input shapes the
- * editor renders; orchestration types never reach here (they can't back a suite).
+ * `table` (+ optional `schema`), Unity Catalog adds a required `catalog`,
+ * flat-file stores (ADLS / S3) identify a `path` (+ optional `file_format`),
+ * and Iceberg identifies a `namespace.table` pair. `targetKind` collapses the
+ * five datasource types to the four input shapes the editor renders;
+ * orchestration types never reach here (they can't back a suite).
  */
 export type TargetKind = 'sql' | 'uc' | 'flatfile' | 'iceberg';
 
@@ -52,6 +53,18 @@ export function summarizeTarget(target: Record<string, unknown> | null): string 
     targetString(target, 'table'),
   ].filter((p): p is string => Boolean(p));
   return parts.length > 0 ? parts.join('.') : null;
+}
+
+/**
+ * Whether a stored target is a batch flat-file selector (#1180) — i.e. the
+ * same `pattern`-not-`path` signal `summarizeTarget` branches on above.
+ * Exported so callers that need to flag "this is configured, not resolved"
+ * (#1205) share the one signal instead of re-deriving it independently,
+ * which would let the two drift out of sync if the batch-detection rule
+ * ever changes.
+ */
+export function isBatchTarget(target: Record<string, unknown> | null): boolean {
+  return Boolean(targetString(target, 'pattern'));
 }
 
 /** The raw target inputs the drawer collects (all optional strings). */

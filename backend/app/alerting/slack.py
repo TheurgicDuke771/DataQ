@@ -230,13 +230,14 @@ class SlackPublisher:
             failed_checks=report.failed_checks,
         )
 
-    def publish_health(self, session: Session, report: ConnectionHealthReport) -> None:
+    def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:
         """Post a connection poll-health edge to the **workspace** Slack webhook (#837).
 
         A connection has no suite, so no per-suite config or threshold applies — this
         resolves the workspace webhook only (`resolve_slack_webhook(None, …)`), and the
-        send decision was already made at the threshold crossing. Quiet no-op when Slack
-        is unconfigured.
+        send decision was already made at the threshold crossing. Returns whether a
+        message was actually posted (``False`` when unconfigured/ineligible — a quiet
+        skip must not read as delivered, #1101).
         """
         webhook = notification_service.resolve_slack_webhook(
             None,
@@ -244,10 +245,10 @@ class SlackPublisher:
             workspace_secret_name=self._webhook_secret_name,
         )
         if not webhook:
-            return
+            return False
         if not self._webhook_allowed(webhook):
             log.warning("slack_webhook_not_allowed", connection_id=str(report.connection_id))
-            return
+            return False
         response = httpx.post(
             webhook, json=render_slack_health_message(report), timeout=self._timeout
         )
@@ -258,6 +259,7 @@ class SlackPublisher:
             state=report.state,
             consecutive_failures=report.consecutive_failures,
         )
+        return True
 
     def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
         """Post the workspace poll-staleness edge (#1052) to the workspace Slack

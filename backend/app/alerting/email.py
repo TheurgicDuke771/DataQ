@@ -300,22 +300,23 @@ class EmailPublisher:
             worst_severity=report.worst_severity,
         )
 
-    def publish_health(self, session: Session, report: ConnectionHealthReport) -> None:
+    def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:
         """Email a connection poll-health edge to the **workspace** recipients (#837).
 
         A connection has no suite, so there is no per-suite recipient override to
-        resolve — this goes to ``EMAIL_TO``. Quiet no-op when the SMTP transport or the
-        workspace recipient list is unconfigured.
+        resolve — this goes to ``EMAIL_TO``. Returns whether a message was actually
+        sent (``False`` on any quiet-skip gate, including an unresolvable password —
+        nothing left this process, #1101).
         """
         if not (self._username and self._password_secret_name and self._sender):
-            return
+            return False
         if not self._recipients:
-            return
+            return False
         try:
             password = self._secret_store.get(self._password_secret_name)
         except SecretNotFoundError:
             log.warning("email_password_unresolved", secret_name=self._password_secret_name)
-            return
+            return False
         message = self._message(
             subject=render_health_subject(report),
             recipients=self._recipients,
@@ -329,6 +330,7 @@ class EmailPublisher:
             state=report.state,
             recipients=len(self._recipients),
         )
+        return True
 
     def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
         """Email the workspace poll-staleness edge (#1052) to the workspace

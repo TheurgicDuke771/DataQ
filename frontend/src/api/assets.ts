@@ -193,11 +193,14 @@ export interface AssetListPage {
   total: number;
 }
 
-export async function listAssets(params?: {
-  limit?: number;
-  offset?: number;
-}): Promise<AssetListPage> {
-  const { data, headers } = await api.get<AssetSummary[]>('/assets', { params });
+export async function listAssets(
+  params?: { limit?: number; offset?: number },
+  // #1107: threaded through by the tree view's multi-page walk so an
+  // abort (unmount/toggle-away) cancels the in-flight request too, not just
+  // the ones the walk loop hasn't issued yet.
+  signal?: AbortSignal,
+): Promise<AssetListPage> {
+  const { data, headers } = await api.get<AssetSummary[]>('/assets', { params, signal });
   // axios lowercases response header keys. Fall back to the page length (never
   // undefined/NaN) so a deploy-skew backend without the header degrades to "no
   // known truncation" rather than breaking the page.
