@@ -72,6 +72,13 @@ class AlertUndeliverableError(RuntimeError):
 # against. A plain attribute (not a wrapper exception type) so `isinstance`/type
 # checks on the original exception, and any exception-message classification
 # (#902), are untouched.
+#
+# Caveat: the marker rides on the exception OBJECT, not on `__cause__`/`__context__`
+# chaining, so it does not survive being wrapped (`raise SomeError(...) from exc`)
+# between the composite's `raise last_error` and a caller's except block. Neither
+# current caller re-wraps it — verified by `/code-review` on #1260 — but a future
+# error-classification or retry layer inserted in between would need to propagate
+# the marker onto its own wrapper explicitly, or this bug quietly reappears.
 _ALREADY_LOGGED_ATTR = "_dataq_alerting_already_logged"
 
 

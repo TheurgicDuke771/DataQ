@@ -43,6 +43,7 @@ from backend.app.core.config import get_settings
 from backend.app.db.models import Connection, User
 from backend.app.worker import tasks
 from backend.app.worker.celery_app import celery_app
+from backend.tests.alerting.test_health_publish_composite import _Channel
 
 # The exact shape of the credential that leaked in #828: an ADLS SAS whose query string
 # rides in the exception message. If any renderer ever interpolates a raw exception, this
@@ -350,20 +351,6 @@ def test_a_broken_channel_never_breaks_the_poll(
 # ── #1226: total-channel-failure must not log the same traceback twice ──────────
 
 
-class _AllFailingChannel:
-    """A real channel double that RAISES from `publish_health` — routed through the
-    REAL `CompositePublisher`, unlike `_SpyHealthPublisher` above (which stands in
-    for the composite itself and so never exercises its own logging/marking)."""
-
-    def publish(self, session: Any, report: Any) -> None: ...
-
-    def publish_health(self, session: Any, report: ConnectionHealthReport) -> bool:
-        raise RuntimeError("channel down")
-
-    def publish_poll_staleness(self, session: Any, report: Any) -> bool:
-        raise RuntimeError("channel down")
-
-
 def test_every_channel_failing_logs_the_last_traceback_once_not_twice(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -372,11 +359,16 @@ def test_every_channel_failing_logs_the_last_traceback_once_not_twice(
     Before this fix, `dispatch.publish_connection_health`'s own `except Exception:
     log.exception(...)` logged that same last-channel traceback a SECOND time. Now
     it must downgrade to a warning — no `exc_info` — while the composite's own
-    per-channel logs (one per channel, real bugs it wants surfaced) are untouched."""
+    per-channel logs (one per channel, real bugs it wants surfaced) are untouched.
+
+    Routed through a REAL `CompositePublisher` with `_Channel(fail=True)` — the
+    same double `test_health_publish_composite.py` already uses to exercise the
+    composite's own fan-out — unlike `_SpyHealthPublisher` above, which stands in
+    for the composite itself and so never exercises its own logging/marking."""
     monkeypatch.setattr(
         registry,
         "get_health_publisher",
-        lambda: CompositePublisher([_AllFailingChannel(), _AllFailingChannel()]),
+        lambda: CompositePublisher([_Channel(fail=True), _Channel(fail=True)]),
     )
     conn = _connection(db_session)
 

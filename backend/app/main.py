@@ -86,7 +86,7 @@ async def _poll_staleness_loop(stop: asyncio.Event, interval_s: float) -> None:
         try:
             outcome = await asyncio.to_thread(_poll_staleness_tick)
             logger.debug("poll_staleness_tick", outcome=outcome)
-        except Exception as exc:  # pragma: no cover - defensive; the loop must survive
+        except Exception as exc:
             # When every alert channel fails, the composite already logged this exact
             # traceback once per channel, including this one (the last) — and
             # run_poll_staleness_check only catches AlertUndeliverableError, so this
