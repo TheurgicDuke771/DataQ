@@ -30,6 +30,7 @@ import {
 } from '../../api/triggerBindings';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { AsyncBody } from '../AsyncBody';
+import { formatTimestamp } from '../results/resultsFormat';
 import { errorMessage } from '../../utils/errors';
 
 /**
@@ -60,7 +61,7 @@ export function TriggersPanel({ suiteId, canManage }: { suiteId: string; canMana
   // Best-effort (#1199): the currently-active #1186 env near-misses for this
   // suite's bindings. Fetched separately from the bindings list — a failure here
   // must never block the bindings themselves from rendering, so only the 'ok'
-  // case is used; loading/error silently render no badges.
+  // case yields badges.
   const { state: nearMissState, reload: reloadNearMisses } = useAsyncData(() =>
     listEnvNearMisses(suiteId),
   );
@@ -88,13 +89,25 @@ export function TriggersPanel({ suiteId, canManage }: { suiteId: string; canMana
         </Flex>
       }
     >
-      <TriggersBody
-        state={state}
-        suiteId={suiteId}
-        canManage={canManage}
-        onChanged={onChanged}
-        nearMisses={nearMisses}
-      />
+      <Flex vertical gap={8}>
+        {/* An outage must never be reportable as a state (the ADR-0039 lesson):
+            with no notice, a failed near-miss fetch renders identically to "no
+            mismatch", so a live #1186 mismatch would read as healthy. Say so
+            instead — non-blocking, below the bindings' own error handling. */}
+        {nearMissState.status === 'error' && (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            Env-mismatch warnings are unavailable right now — a binding may have one that isn&apos;t
+            shown.
+          </Typography.Text>
+        )}
+        <TriggersBody
+          state={state}
+          suiteId={suiteId}
+          canManage={canManage}
+          onChanged={onChanged}
+          nearMisses={nearMisses}
+        />
+      </Flex>
     </Card>
   );
 }
@@ -240,7 +253,14 @@ function TriggerRow({
         {nearMisses.map((nearMiss) => (
           <Tooltip
             key={nearMiss.run_env}
-            title={`Runs keep landing in "${envLabel(nearMiss.run_env as ConnectionEnv)}", not "${envLabel(nearMiss.binding_env as ConnectionEnv)}" — this binding has not fired and won't until the env matches (#1186).`}
+            // The claim is past-tense and dated, not an unqualified present-tense
+            // assertion: the row only proves the mismatch was OBSERVED, and it
+            // stays inside the recency window for up to 48h after the last
+            // occurrence — so a binding fixed an hour ago would otherwise keep
+            // being told, flatly, that it "has not fired and won't". Showing the
+            // last-observed timestamp is what lets a user tell a live incident
+            // from one they have already resolved.
+            title={`Last observed ${formatTimestamp(nearMiss.updated_at)}: a run landed in "${envLabel(nearMiss.run_env as ConnectionEnv)}", not "${envLabel(nearMiss.binding_env as ConnectionEnv)}" — this binding did not fire, and won't for such runs until the envs match (#1186).`}
           >
             <Tag
               color="warning"

@@ -65,4 +65,20 @@ describe('TriggersPanel — near-miss fetch resilience (#1199)', () => {
     expect(await screen.findByText('nightly-load')).toBeInTheDocument();
     expect(screen.queryByLabelText(/^Env mismatch near-miss/)).not.toBeInTheDocument();
   });
+
+  it('says the warnings are unavailable rather than showing a clean panel', async () => {
+    // An outage must never be reportable as a state (the ADR-0039 lesson): with no
+    // notice, a failed fetch looks exactly like "no mismatch", so a live #1186
+    // mismatch would read as healthy on the very screen built to surface it.
+    mockList.mockResolvedValue([BINDING]);
+    mockNearMisses.mockRejectedValue(new Error('network error'));
+
+    render(
+      <AntApp>
+        <TriggersPanel suiteId="s1" canManage />
+      </AntApp>,
+    );
+
+    expect(await screen.findByText(/Env-mismatch warnings are unavailable/)).toBeInTheDocument();
+  });
 });

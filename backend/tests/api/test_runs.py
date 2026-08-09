@@ -1499,10 +1499,12 @@ def test_list_near_misses_omits_bindings_on_inaccessible_suites(
     )
 
     _as(owner)
-    assert len(client.get("/api/v1/orchestration/near-misses").json()) == 1
+    as_owner = client.get("/api/v1/orchestration/near-misses").json()
+    assert len(as_owner) == 1
 
     _as(stranger)
-    assert client.get("/api/v1/orchestration/near-misses").json() == []
+    as_stranger = client.get("/api/v1/orchestration/near-misses").json()
+    assert as_stranger == []
 
 
 def test_list_near_misses_includes_shared_suites(client: TestClient, db_session: Any) -> None:
@@ -1517,7 +1519,8 @@ def test_list_near_misses_includes_shared_suites(client: TestClient, db_session:
     )
 
     _as(sharee)
-    assert len(client.get("/api/v1/orchestration/near-misses").json()) == 1
+    rows = client.get("/api/v1/orchestration/near-misses").json()
+    assert len(rows) == 1
 
 
 def test_list_near_misses_suite_id_narrows_to_one_suite(
@@ -1534,8 +1537,10 @@ def test_list_near_misses_suite_id_narrows_to_one_suite(
         )
 
     _as(owner)
-    assert len(client.get("/api/v1/orchestration/near-misses").json()) == 2
+    unscoped = client.get("/api/v1/orchestration/near-misses").json()
     scoped = client.get(f"/api/v1/orchestration/near-misses?suite_id={suite_a.id}").json()
+
+    assert len(unscoped) == 2
     assert [r["pipeline_or_dag_id"] for r in scoped] == ["flow_a"]
 
 

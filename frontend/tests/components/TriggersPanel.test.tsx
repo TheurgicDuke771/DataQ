@@ -275,6 +275,32 @@ describe('TriggersPanel — env near-miss badge (#1199)', () => {
     expect(screen.queryByLabelText(/^Env mismatch near-miss/)).not.toBeInTheDocument();
   });
 
+  it('dates the mismatch instead of asserting it is happening right now', async () => {
+    // The row only proves the mismatch was OBSERVED, and it stays inside the 48h
+    // recency window for up to two days after the last occurrence — so an
+    // unqualified present-tense claim would keep telling a user their
+    // already-fixed binding "has not fired and won't". The last-observed
+    // timestamp is what lets them tell a live incident from a resolved one.
+    const observedAt = '2026-08-08T00:00:00Z';
+    mockList.mockResolvedValue([BINDING]);
+    mockNearMisses.mockResolvedValue([
+      {
+        provider: 'adf',
+        pipeline_or_dag_id: 'nightly-load',
+        run_env: 'qa',
+        binding_env: 'prod',
+        updated_at: observedAt,
+      },
+    ]);
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.hover(await screen.findByLabelText('Env mismatch near-miss: qa'));
+
+    const tip = await screen.findByRole('tooltip');
+    expect(tip).toHaveTextContent(`Last observed ${new Date(observedAt).toLocaleString()}`);
+  });
+
   it('badges EVERY current mismatch on one binding, not just the first', async () => {
     // The #1186 root case this feature exists to catch: two orchestrator
     // connections reporting the same DAG id against two different wrong envs.
