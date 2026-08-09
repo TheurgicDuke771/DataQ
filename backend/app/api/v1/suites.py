@@ -508,6 +508,54 @@ def list_columns(
     return ColumnsRead(columns=columns)
 
 
+# ── flat-file batch-target preview (#1193) ──────────────────────────
+
+
+class BatchPreviewRead(ApiModel):
+    """The concrete file path a batch-target spec resolves to right now — the same
+    live resolution `run_target.materialize_path` performs at run time, run early
+    and without persisting anything (#1193). Callers re-request on every field
+    change to keep the "resolves to" hint live while authoring."""
+
+    path: str
+
+
+@router.get(
+    "/suites/{suite_id}/batch-preview",
+    response_model=BatchPreviewRead,
+    summary="Resolve a flat-file batch pattern against the live listing (no persistence)",
+)
+def preview_batch_target(
+    suite_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+    pattern: Annotated[str, Query(min_length=1, max_length=1024)],
+    strategy: Annotated[Literal["latest", "specific"], Query()] = "latest",
+    batch: Annotated[str | None, Query(max_length=255)] = None,
+    prefix: Annotated[str, Query(max_length=1024)] = "",
+) -> BatchPreviewRead:
+    # sync def → threadpool; the object listing is blocking.
+    # Authoring aid → 'edit', same gate as the profiler/columns/policy-suggest.
+    suite = require_permission(db, suite_id, current_user.id, minimum="edit")
+    connection = db.get(Connection, suite.connection_id)
+    assert connection is not None
+    # Every failure mode is already a typed `DataQError` from `run_target`
+    # (batch_preview_no_data / _invalid / _failed, or suite_target_invalid), so the
+    # router stays a pass-through — same shape as the dry-run endpoint.
+    path = run_target.preview_batch(
+        connection.type,
+        connection.config,
+        prefix=prefix,
+        pattern=pattern,
+        strategy=strategy,
+        batch=batch,
+        secret_ref=connection.secret_ref,
+        secret_store=secret_store,
+    )
+    return BatchPreviewRead(path=path)
+
+
 # ── failing-sample redaction policy (#415) ──────────────────────────────────
 
 

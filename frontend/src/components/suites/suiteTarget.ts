@@ -30,9 +30,10 @@ export function targetKind(type: ConnectionType): TargetKind | null {
 /**
  * Collapse a stored run target to a one-line summary for read-only display:
  * flat files show their `path` (or, for a batch selector, the configured
- * prefix/pattern — NOT a resolved file; there's no cheap way to preview the
- * actual match without a dedicated backend endpoint, #1180); SQL / Unity
- * Catalog show the dotted `catalog.schema.table` (only the parts present).
+ * prefix/pattern — NOT a resolved file: resolving one means listing the store,
+ * which is `GET /suites/{id}/batch-preview` (#1193, `BatchPreviewHint`), far too
+ * expensive for a read-only summary rendered per row); SQL / Unity Catalog show
+ * the dotted `catalog.schema.table` (only the parts present).
  * Returns `null` for a targetless (not-yet-runnable) suite. Lives here next to
  * the other datasource-target-shape logic so a new target field has one owner.
  */

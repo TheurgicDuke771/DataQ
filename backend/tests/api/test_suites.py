@@ -1593,3 +1593,172 @@ def test_column_policy_suggest_profiles_and_classifies(
         f"/api/v1/suites/{sid}/column-policy/suggest", json={"table": "ORDERS", "schema": "RETAIL"}
     ).json()
     assert body == {"identifier_column": "ORDER_NUMBER", "pii_columns": ["EMAIL"]}
+
+
+# ── batch-target preview (#1193) ─────────────────────────────────────
+
+
+def _patch_resolve_batch_file(monkeypatch: pytest.MonkeyPatch, fn: Any) -> None:
+    # `run_target.materialize_path` lazy-imports `flatfile` on every call (to keep
+    # the write-time path GX-free) and reads `resolve_batch_file` off the module at
+    # call time, so patching the module attribute reaches it — the same seam
+    # `test_run_target.py`'s `materialize_path` tests patch. `materialize_path`
+    # also resolves the connection's credential itself (before ever calling the
+    # lister), so the `_s3_suite` connection's `secret_ref="kv-test"` needs a
+    # value in the (test-mode, env-backed) SecretStore too, or it 502s before the
+    # mock above is even reached.
+    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", fn)
+    monkeypatch.setenv("KV_SECRET_KV_TEST", "test-secret")
+
+
+def test_batch_preview_returns_resolved_path(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _s3_suite(client, db_session)
+    _patch_resolve_batch_file(monkeypatch, lambda **_: "orders/orders_20260601.csv")
+    resp = client.get(
+        f"/api/v1/suites/{sid}/batch-preview",
+        params={"prefix": "orders/", "pattern": r"orders_(\d+)\.csv", "strategy": "latest"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"path": "orders/orders_20260601.csv"}
+
+
+def test_batch_preview_no_match_returns_422(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.datasources.flatfile import BatchNotFoundError
+
+    sid = _s3_suite(client, db_session)
+
+    def _raise(**_: Any) -> str:
+        raise BatchNotFoundError("no files matched")
+
+    _patch_resolve_batch_file(monkeypatch, _raise)
+    resp = client.get(
+        f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "batch_preview_no_data"
+
+
+def test_batch_preview_listing_too_large_returns_422(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.datasources.flatfile import BatchListingTooLargeError
+
+    sid = _s3_suite(client, db_session)
+
+    def _raise(**_: Any) -> str:
+        raise BatchListingTooLargeError("too many objects")
+
+    _patch_resolve_batch_file(monkeypatch, _raise)
+    resp = client.get(
+        f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "batch_preview_invalid"
+
+
+def test_batch_preview_connectivity_failure_returns_502(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _s3_suite(client, db_session)
+
+    def _raise(**_: Any) -> str:
+        raise RuntimeError("boom")
+
+    _patch_resolve_batch_file(monkeypatch, _raise)
+    resp = client.get(
+        f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
+    )
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "batch_preview_failed"
+
+
+def test_batch_preview_never_echoes_an_adapter_message(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # End-to-end proof for the whole envelope, not just the exception: the
+    # frontend hint renders `error.message` verbatim for every code except
+    # `batch_preview_no_data`, so an adapter's own text — which can carry a DSN,
+    # an account URL or a token — must not reach the response at all. A bare
+    # `ValueError` is the trap: it is a *superclass* of the two flat-file batch
+    # signals, so catching it alongside them would surface any driver ValueError.
+    sid = _s3_suite(client, db_session)
+    leaky = "invalid credentials for https://acct.blob.core.windows.net/c?sig=SECRETTOKEN"
+
+    def _raise(**_: Any) -> str:
+        raise ValueError(leaky)
+
+    _patch_resolve_batch_file(monkeypatch, _raise)
+    resp = client.get(
+        f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
+    )
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "batch_preview_failed"
+    assert "SECRETTOKEN" not in resp.text
+    assert "blob.core.windows.net" not in resp.text
+
+
+def test_batch_preview_invalid_regex_returns_422_before_listing(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _s3_suite(client, db_session)
+
+    def _boom(**_: Any) -> str:  # pragma: no cover - must never be reached
+        raise AssertionError("resolve_batch_file must not be called for a bad pattern")
+
+    _patch_resolve_batch_file(monkeypatch, _boom)
+    resp = client.get(
+        f"/api/v1/suites/{sid}/batch-preview",
+        params={"pattern": r"orders_([0-9.csv"},  # unbalanced group
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "suite_target_invalid"
+
+
+def test_batch_preview_non_flatfile_connection_returns_422(
+    client: TestClient, db_session: Any
+) -> None:
+    conn = _connection(db_session)  # snowflake
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+    resp = client.get(
+        f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "suite_target_invalid"
+
+
+def test_batch_preview_missing_pattern_returns_422(client: TestClient, db_session: Any) -> None:
+    sid = _s3_suite(client, db_session)
+    resp = client.get(f"/api/v1/suites/{sid}/batch-preview")
+    assert resp.status_code == 422
+
+
+def test_batch_preview_requires_edit_access(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _share(client, owner, sid, b, "view")
+    _as(b)
+    resp = client.get(
+        f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
+    )
+    assert resp.status_code == 403
+
+
+def test_batch_preview_default_strategy_is_latest(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _s3_suite(client, db_session)
+    captured: dict[str, Any] = {}
+
+    def _fake(**kwargs: Any) -> str:
+        captured.update(kwargs)
+        return "orders/orders_2.csv"
+
+    _patch_resolve_batch_file(monkeypatch, _fake)
+    resp = client.get(
+        f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
+    )
+    assert resp.status_code == 200
+    assert captured["strategy"] == "latest" and captured["prefix"] == ""
