@@ -678,8 +678,9 @@ class _RedactionTracker:
 
     ``column_state[name]`` is "was this column ever SHOWN anywhere in the sample" —
     a column can appear in more than one bucket (e.g. two comparison buckets, which
-    render as one table); OR-ing keeps the summary matching what a viewer actually
-    saw. ``anonymous_masked`` covers the one path with no column name to attribute
+    render as separate tables but are all visible together in one view); OR-ing keeps
+    the summary matching what a viewer actually saw.
+    ``anonymous_masked`` covers the one path with no column name to attribute
     to: a masked `partial_unexpected_list` with no ``tested_column`` context — still
     real masking, so it must not silently vanish from the summary.
 
@@ -703,7 +704,15 @@ class _RedactionTracker:
         data-bearing was seen (e.g. only aggregate counts, or an empty sample) —
         there is nothing true to claim either way, so the caller should omit any
         redaction label rather than guess. ``redacted_columns`` lists columns that
-        were masked everywhere they appeared (never shown)."""
+        were masked everywhere they appeared (never shown).
+
+        Scope (#1197): the summary describes the failing-row list the run-detail
+        table **renders**, not the whole `sample_failures` payload. When GX populated
+        both `unexpected_index_list` and `partial_unexpected_list` — two renderings
+        of the same failing rows — only the displayed one (`_displayed_sample_key`)
+        is fed in, so the label matches the cells on screen. The redacted payload
+        still ships both lists, each masked on its own merits, so a consumer reading
+        the *other* list must judge it from its own values rather than this label."""
         shown_any = any(self.column_state.values())
         masked_any = any(not shown for shown in self.column_state.values()) or self.anonymous_masked
         redacted_columns = sorted(name for name, shown in self.column_state.items() if not shown)
@@ -735,8 +744,19 @@ def _displayed_sample_key(sample: Mapping[str, Any]) -> str | None:
     every displayed cell drop out of `redacted_columns` — the label understating the
     masking on screen. That is the display-honesty class #424/#1115 exists to close;
     the fix is to track the list the viewer is looking at, not the union.
+
+    The all-dict test runs over the `SAMPLE_ROW_CAP`-truncated list, because that is
+    the list the frontend receives (#1196 re-applies the cap on every read) and so
+    the only one it can run its own test over. Judging the *uncapped* list instead
+    would invert this fix's own bug on a payload whose first `SAMPLE_ROW_CAP` entries
+    are dicts but which carries a non-dict later on: the backend would suppress the
+    tracker on exactly the list the UI is rendering. Unreachable through `gx_runner`
+    today (`_is_identifier_index_list` drops mixed lists at capture), so this keeps
+    the mirror exact rather than fixing a live divergence.
     """
     index_rows = sample.get("unexpected_index_list")
+    if isinstance(index_rows, list):
+        index_rows = index_rows[:SAMPLE_ROW_CAP]
     if isinstance(index_rows, list) and index_rows and all(isinstance(r, dict) for r in index_rows):
         return "unexpected_index_list"
     if isinstance(sample.get("partial_unexpected_list"), list):
@@ -1034,6 +1054,9 @@ def redact_sample_failures_with_state(
       sample carried no data-bearing content at all (only aggregate counts, or
       empty) — there is nothing true to claim either way.
     * ``redacted_columns`` — the columns masked everywhere they appeared.
+
+    Both describe the failing-row list the run-detail table renders, not the whole
+    payload — see `_RedactionTracker.summary` and `_displayed_sample_key` (#1197).
 
     Redaction happens at **read time** (this is called from the API route on every
     GET, not from the run/write path), so it derives correctly for old, already

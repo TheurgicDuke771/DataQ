@@ -8,7 +8,7 @@ under test independent of Postgres and Snowflake.
 
 import uuid
 from decimal import Decimal
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from sqlalchemy.orm import Session
@@ -1070,6 +1070,36 @@ def test_redact_state_falls_back_to_the_partial_list_when_no_index_rows_render()
     assert sample is not None
     assert sample["partial_unexpected_list"] == [-12.5, -5.0]
     assert sample["unexpected_index_list"] == ["<redacted>"] * 3
+
+
+def test_displayed_list_is_decided_on_the_capped_rows_the_frontend_receives() -> None:
+    """#1238 review: the winner must be picked from the same rows the UI tests.
+
+    The read path re-applies `SAMPLE_ROW_CAP` (#1196), so a payload whose first
+    `SAMPLE_ROW_CAP` `unexpected_index_list` entries are dicts but which carries a
+    non-dict beyond the cap ships an ALL-dict list to the frontend — which therefore
+    renders it. Deciding on the uncapped list would call `partial_unexpected_list`
+    the displayed one and suppress the tracker on the table actually on screen: this
+    fix's own bug, inverted.
+
+    Here the displayed index list masks `CUSTOMER_REF` (its values are emails) while
+    the scalar list would show it, so the two answers are distinguishable."""
+    rows: list[Any] = [{"CUSTOMER_REF": f"a{i}@x.com"} for i in range(SAMPLE_ROW_CAP)]
+    rows.append("not-a-row")  # beyond the cap — never reaches the frontend
+    sample, state, cols = run_service.redact_sample_failures_with_state(
+        {
+            "unexpected_index_list": rows,
+            "partial_unexpected_list": ["REF-1", "REF-2"],
+        },
+        tested_column="CUSTOMER_REF",
+    )
+    assert sample is not None
+    # The emitted list is all-dict, i.e. exactly what the frontend renders.
+    assert len(sample["unexpected_index_list"]) == SAMPLE_ROW_CAP
+    assert all(isinstance(row, dict) for row in sample["unexpected_index_list"])
+    # …so the label describes it, not the scalar fallback (which would give "none").
+    assert state == "full"
+    assert cols == ["CUSTOMER_REF"]
 
 
 def test_redact_state_none_when_every_column_shown() -> None:
