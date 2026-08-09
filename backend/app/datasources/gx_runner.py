@@ -15,6 +15,7 @@ canned DataFrame — no live datasource required.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
 import great_expectations as gx
@@ -22,6 +23,7 @@ import great_expectations.expectations as gxe
 
 from backend.app.core.logging import get_logger
 from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckOutcome, CheckSpec, SuiteOutcome
+from backend.app.services.column_classification import value_signal_summary
 
 log = get_logger(__name__)
 
@@ -36,6 +38,12 @@ _SAMPLE_KEYS = (
     "unexpected_percent",
     "unexpected_index_list",
 )
+
+# Sub-key holding the capture-time, full-population value-signal summary (#1230) —
+# see `_value_signal_summary_by_column` below. Not one of `_SAMPLE_KEYS`: it isn't a
+# GX result field, it's DataQ-derived metadata consumed by
+# `run_service.redact_sample_failures` and never rendered to a viewer.
+_VALUE_SIGNAL_SUMMARY_KEY = "value_signal_summary"
 
 # GX injects internal bookkeeping keys into expectation_config.kwargs at run time
 # (e.g. batch_id); strip them so expected_value persists only the check's own
@@ -102,6 +110,39 @@ def _is_identifier_index_list(value: Any) -> bool:
     )
 
 
+def _value_signal_summary_by_column(rows: list[Any]) -> dict[str, dict[str, int]]:
+    """Per-column `column_classification.value_signal_summary` over `rows` (#1230).
+
+    Called on `unexpected_index_list` BEFORE it gets truncated to `SAMPLE_ROW_CAP`
+    below, so the counts reflect the FULL failing population — the evidence window
+    the #1196 cap otherwise narrows to 20 rows for good, since the cap is applied
+    before this result ever reaches the database. Only `unexpected_index_list` gets
+    this treatment: `partial_unexpected_list` is capped by GX ITSELF at 20 on every
+    execution engine, so no full-population evidence for it ever existed to lose —
+    it is unaffected by, and out of scope for, #1230.
+
+    Groups `rows` (a list of ``{column: value}`` dicts) by column, then summarises
+    each column that has at least one non-null value. A column with none (e.g. every
+    row happened to have that identifier column NULL) is simply omitted — nothing
+    to prefer over the read-time fallback for that column.
+
+    Caller-gated on `len(rows) > SAMPLE_ROW_CAP` (see `_extract_sample_failures`):
+    below the cap nothing is lost by truncation, so persisting a summary would be
+    redundant with the rows already being stored in full.
+    """
+    by_column: dict[str, list[Any]] = defaultdict(list)
+    for row in rows:
+        if isinstance(row, dict):
+            for col, val in row.items():
+                by_column[str(col)].append(val)
+    summary: dict[str, dict[str, int]] = {}
+    for col, values in by_column.items():
+        col_summary = value_signal_summary(values)
+        if col_summary is not None:
+            summary[col] = col_summary
+    return summary
+
+
 def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
     """Copy the failing-row keys out of a GX result, bounded to `SAMPLE_ROW_CAP` (#1196).
 
@@ -115,6 +156,15 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
     pass through untouched, so the reported totals stay the real ones. The cap is
     applied to every list-shaped sample key (not just `unexpected_index_list`) so the
     persisted sample is bounded regardless of which engine or GX version produced it.
+
+    Before `unexpected_index_list` is truncated, and only when it is actually LONGER
+    than `SAMPLE_ROW_CAP` (below the cap nothing is lost — the persisted rows already
+    are the full population, so a summary would be redundant), `_value_signal_summary_by_column`
+    (#1230) captures a compact per-column value-signal summary over the FULL,
+    untruncated rows and stores it under `_VALUE_SIGNAL_SUMMARY_KEY` alongside the
+    capped rows — bounding storage to O(columns), not O(rows), while letting
+    read-time redaction classify from the full-population ratios instead of the
+    20-row window the cap alone would leave it with.
     """
     sample: dict[str, Any] = {}
     for key in _SAMPLE_KEYS:
@@ -123,6 +173,14 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
         value = result[key]
         if key == "unexpected_index_list" and not _is_identifier_index_list(value):
             continue
+        if (
+            key == "unexpected_index_list"
+            and isinstance(value, list)
+            and len(value) > SAMPLE_ROW_CAP
+        ):
+            summary = _value_signal_summary_by_column(value)
+            if summary:
+                sample[_VALUE_SIGNAL_SUMMARY_KEY] = summary
         sample[key] = value[:SAMPLE_ROW_CAP] if isinstance(value, list) else value
     return sample or None
 
