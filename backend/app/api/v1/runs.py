@@ -96,7 +96,15 @@ class ResultRead(ApiModel):
     `"none"` when every one was shown, `"partial"` for a mix, and `None` when
     the sample carried no data-bearing content to redact one way or the other
     (only aggregate counts, or no sample at all). `redacted_columns` names the
-    columns masked everywhere they appeared."""
+    columns masked everywhere they appeared.
+
+    Both fields describe the failing-row list the run-detail table **renders**
+    (#1197): when `sample_failures` carries both `unexpected_index_list` and
+    `partial_unexpected_list` — two renderings of the same failing rows, of which
+    the UI shows exactly one — the label is derived from the displayed list only,
+    so it cannot understate the masking a viewer sees. Every list in the payload is
+    still redacted on its own merits, so a client that reads the *other* list should
+    judge it from its own values rather than from this label."""
 
     model_config = ConfigDict(from_attributes=True)
 

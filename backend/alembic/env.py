@@ -44,13 +44,24 @@ def run_migrations_offline() -> None:
 # may wait out a short transaction rather than fail a deploy on a brush.
 _MIGRATION_LOCK_TIMEOUT_MS = 15_000
 
+# Same gap #1102 closed on the app engine (`backend/app/db/session.py`), on the OTHER
+# engine that builds its own `connect_args`: `lock_timeout` only bounds a statement
+# waiting on a contended row once connected, not the initial TCP connect. Unbounded, an
+# unreachable DB at migrate time (the `dataq-app-migrate` job runs before the api/worker
+# roll) would hang the deploy on the OS/driver connect default instead of failing fast.
+# Same 10s value as the app engine — reachability has no reason to differ by caller.
+_MIGRATION_CONNECT_TIMEOUT_SECONDS = 10
+
 
 def run_migrations_online() -> None:
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
-        connect_args={"options": f"-c lock_timeout={int(_MIGRATION_LOCK_TIMEOUT_MS)}"},
+        connect_args={
+            "options": f"-c lock_timeout={int(_MIGRATION_LOCK_TIMEOUT_MS)}",
+            "connect_timeout": _MIGRATION_CONNECT_TIMEOUT_SECONDS,
+        },
     )
     with connectable.connect() as connection:
         context.configure(

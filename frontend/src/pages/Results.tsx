@@ -165,7 +165,7 @@ function RunsTab({
   // datasource of each suite), then filter everything client-side — cheap at
   // this volume and avoids a refetch per filter change.
   const navigate = useNavigate();
-  const { state: suitesState } = useAsyncData(listSuites);
+  const { state: suitesState } = useAsyncData(() => listSuites());
   const { state: connectionsState } = useAsyncData(() => listConnections());
 
   const [status, setStatus] = useState<RunStatus | 'all'>('all');

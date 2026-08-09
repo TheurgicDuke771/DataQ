@@ -27,7 +27,7 @@ const RECENT_LIMIT = 8;
 export function RecentRuns() {
   const navigate = useNavigate();
   const { state } = useAsyncData(() => listRuns({ limit: RECENT_LIMIT }));
-  const { state: suitesState } = useAsyncData(listSuites);
+  const { state: suitesState } = useAsyncData(() => listSuites());
 
   const suiteNames = useMemo(() => {
     const map = new Map<string, string>();

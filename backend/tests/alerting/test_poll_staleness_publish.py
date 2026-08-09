@@ -42,7 +42,8 @@ class _Channel:
 
     def publish(self, session: Any, report: Any) -> None: ...
 
-    def publish_health(self, session: Any, report: Any) -> None: ...
+    def publish_health(self, session: Any, report: Any) -> bool:
+        return True  # unused stub in this file — only publish_poll_staleness is exercised
 
     def publish_poll_staleness(self, session: Any, report: PollStalenessReport) -> bool:
         if self.fail:

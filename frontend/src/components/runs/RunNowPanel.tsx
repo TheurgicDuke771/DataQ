@@ -85,8 +85,8 @@ function RunNowForm({
   onQueued: (run: Run, suite: Suite) => void;
   onCancel: () => void;
 }) {
-  const { state: suitesState } = useAsyncData(listSuites);
-  const { state: connState } = useAsyncData(listConnections);
+  const { state: suitesState } = useAsyncData(() => listSuites());
+  const { state: connState } = useAsyncData(() => listConnections());
   const [suiteId, setSuiteId] = useState<string | null>(null);
   // Shared trigger logic (in-flight state + double-click guard + toasts).
   const { running, run } = useRunTrigger(onQueued);

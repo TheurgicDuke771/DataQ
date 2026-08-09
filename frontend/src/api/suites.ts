@@ -460,3 +460,38 @@ export async function listColumns(suiteId: string, target: ColumnTarget): Promis
   const { data } = await api.get<{ columns: string[] }>(`/suites/${suiteId}/columns`, { params });
   return data.columns;
 }
+
+/** The batch-spec inputs `previewBatchTarget` resolves — the same fields
+ *  `RunTarget`'s batch selector carries (`pattern`/`strategy`/`batch`/`prefix`). */
+export interface BatchPreviewRequest {
+  pattern: string;
+  strategy?: 'latest' | 'specific';
+  batch?: string;
+  prefix?: string;
+}
+
+/**
+ * Mirrors the backend `GET /suites/{id}/batch-preview` (#1193): resolves a
+ * flat-file batch spec against the connection's LIVE object listing right now,
+ * without saving anything, and returns the concrete file path it matches — the
+ * same resolution a saved batch-target suite gets at run time
+ * (`run_target.materialize_path`).
+ *
+ * Requires an existing suite (the connection + its credential live there), so
+ * this has no create-mode equivalent — callers gate on `suite` being defined.
+ * Rejects (422) when nothing currently matches the pattern, when the spec is
+ * malformed (bad regex, `specific` with no batch key), or when the suite's
+ * connection isn't a flat-file datasource; rejects (502) when the live listing
+ * itself fails (unreachable store, expired credential). Callers should catch
+ * and render these as an inline hint, not a toast — this fires on every field
+ * edit while authoring, not on submit.
+ */
+export async function previewBatchTarget(
+  suiteId: string,
+  params: BatchPreviewRequest,
+): Promise<string> {
+  const { data } = await api.get<{ path: string }>(`/suites/${suiteId}/batch-preview`, {
+    params,
+  });
+  return data.path;
+}

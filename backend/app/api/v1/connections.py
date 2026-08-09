@@ -96,6 +96,19 @@ class ConnectionRead(ApiModel):
     # soon" — the two were indistinguishable before this field existed.
     credential_expiry_checked_at: datetime | None = None
 
+    # Inventory-sync outcome (#1104) — opted-in `snowflake`/`unity_catalog`
+    # connections only (config.inventory_sync, ADR 0040); NULL/never-attempted on
+    # every other connection. A sync whose principal can't read the enumeration
+    # query used to fail every tick invisibly: toggle on, connection test green
+    # (the `SELECT 1` probe never exercises this query), zero assets ever appear,
+    # no surface said why. `inventory_sync_last_error` is a CLASSIFIED reason
+    # (never raw exception text); NULL means the last attempt succeeded.
+    # `inventory_sync_failing_since` is NULL whenever the connection is currently
+    # healthy (last attempt succeeded, or it has never been attempted).
+    inventory_sync_last_attempted_at: datetime | None = None
+    inventory_sync_last_error: str | None = None
+    inventory_sync_failing_since: datetime | None = None
+
     @classmethod
     def from_model(
         cls, conn: Connection, health: svc.DatasourceHealth | None = None
@@ -120,6 +133,9 @@ class ConnectionRead(ApiModel):
             consecutive_run_failures=health.consecutive_failures,
             credential_expires_at=conn.credential_expires_at,
             credential_expiry_checked_at=conn.credential_expiry_checked_at,
+            inventory_sync_last_attempted_at=conn.inventory_sync_last_attempted_at,
+            inventory_sync_last_error=conn.inventory_sync_last_error,
+            inventory_sync_failing_since=conn.inventory_sync_failing_since,
         )
 
 

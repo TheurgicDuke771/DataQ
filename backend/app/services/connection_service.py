@@ -642,7 +642,19 @@ def update_connection(
 
     if config is not None:
         _validated_config(conn.type, config)
+        was_syncing = bool((conn.config or {}).get("inventory_sync"))
         conn.config = _carry_over_secret_name_keys(conn.config or {}, config)
+        if was_syncing and not bool((conn.config or {}).get("inventory_sync")):
+            # Turning the ADR 0040 toggle OFF ends the sync, so the outcome state
+            # describes something that no longer happens (#1104). Cleared HERE, not
+            # only in the daily sweep, because the sweep can't see the intervening
+            # window: toggled off at 09:00 and back on at 09:05 never presents an
+            # opted-out row to the next tick, and every `ConnectionRead` consumer
+            # would meanwhile read "failing since <old date>" for a sync that has
+            # not been attempted since. Failing state must never outlive its cause.
+            conn.inventory_sync_last_attempted_at = None
+            conn.inventory_sync_last_error = None
+            conn.inventory_sync_failing_since = None
     if catalog_secret is not None:
         # After the `config is not None` branch above, so an invalid CONFIG
         # 422s with the accurate reason rather than the catalog-support probe
