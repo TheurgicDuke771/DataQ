@@ -15,6 +15,7 @@ from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
 from backend.app.db.models import Check, Connection
 from backend.app.services import comparison_run, run_service
 from backend.app.services.dataset_reader import DatasetTooLargeError
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 class FakeSession:
@@ -24,11 +25,6 @@ class FakeSession:
     def get(self, model: Any, pk: uuid.UUID) -> Connection | None:
         assert model is Connection
         return self._connections.get(pk)
-
-
-class FakeSecretStore:
-    def get(self, ref: str) -> str:
-        return "s3cret"
 
 
 def _conn(conn_type: str = "snowflake") -> Connection:
@@ -80,7 +76,7 @@ def _executor(
         target_table="ORDERS_COPY",
         target_schema="RETAIL",
         target_catalog=None,
-        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        secret_store=FakeSecretStore(default="s3cret"),
     )
 
 
@@ -130,7 +126,7 @@ def test_executor_reader_refusal_is_error_outcome(monkeypatch: pytest.MonkeyPatc
         target_table="T",
         target_schema=None,
         target_catalog=None,
-        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        secret_store=FakeSecretStore(default="s3cret"),
     )
     outcome = execute(_comparison_check(source_conn.id))
     assert outcome.errored
@@ -164,7 +160,7 @@ def test_executor_unexpected_exception_is_classified_not_raw(
         target_table="T",
         target_schema=None,
         target_catalog=None,
-        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        secret_store=FakeSecretStore(default="s3cret"),
     )
     outcome = execute(_comparison_check(source_conn.id))
     assert outcome.errored
@@ -178,7 +174,7 @@ def test_executor_missing_source_connection() -> None:
         target_table="T",
         target_schema=None,
         target_catalog=None,
-        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        secret_store=FakeSecretStore(default="s3cret"),
     )
     outcome = execute(_comparison_check(uuid.uuid4()))
     assert outcome.errored
@@ -203,7 +199,7 @@ def test_executor_uses_target_query_and_source_query_specs(
         target_table="ORDERS_COPY",
         target_schema="RETAIL",
         target_catalog=None,
-        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        secret_store=FakeSecretStore(default="s3cret"),
     )
     check = _comparison_check(
         source_conn.id,
@@ -293,7 +289,7 @@ def test_executor_source_batch_not_found_is_friendly_error(
         target_table="T",
         target_schema=None,
         target_catalog=None,
-        secret_store=FakeSecretStore(),  # type: ignore[arg-type]
+        secret_store=FakeSecretStore(default="s3cret"),
     )
     check = _comparison_check(
         source_conn.id, source={"pattern": r"orders_(\d+)\.csv", "strategy": "latest"}
