@@ -1,5 +1,17 @@
-import { DeleteOutlined } from '@ant-design/icons';
-import { App, Button, Card, Empty, Flex, Input, Select, Switch, Tag, Typography } from 'antd';
+import { DeleteOutlined, WarningOutlined } from '@ant-design/icons';
+import {
+  App,
+  Button,
+  Card,
+  Empty,
+  Flex,
+  Input,
+  Select,
+  Switch,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd';
 import SimpleList from '../SimpleList';
 import { useState } from 'react';
 
@@ -7,15 +19,18 @@ import { CONNECTION_ENVS, type ConnectionEnv, ENV_COLORS, envLabel } from '../..
 import {
   createTriggerBinding,
   deleteTriggerBinding,
+  listEnvNearMisses,
   listTriggerBindings,
   ORCHESTRATION_PROVIDERS,
   type OrchestrationProvider,
   PROVIDER_LABELS,
   setTriggerBindingEnabled,
   type TriggerBinding,
+  type TriggerEnvNearMiss,
 } from '../../api/triggerBindings';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { AsyncBody } from '../AsyncBody';
+import { formatTimestamp } from '../results/resultsFormat';
 import { errorMessage } from '../../utils/errors';
 
 /**
@@ -43,6 +58,24 @@ function warnAboutBinding(
  */
 export function TriggersPanel({ suiteId, canManage }: { suiteId: string; canManage: boolean }) {
   const { state, reload } = useAsyncData(() => listTriggerBindings(suiteId));
+  // Best-effort (#1199): the currently-active #1186 env near-misses for this
+  // suite's bindings. Fetched separately from the bindings list — a failure here
+  // must never block the bindings themselves from rendering, so only the 'ok'
+  // case yields badges.
+  const { state: nearMissState, reload: reloadNearMisses } = useAsyncData(() =>
+    listEnvNearMisses(suiteId),
+  );
+  const nearMisses = nearMissState.status === 'ok' ? nearMissState.data : [];
+
+  // Every mutation (add / enable-toggle / delete) invalidates BOTH reads: the
+  // near-miss candidate set is re-derived server-side from the ENABLED bindings,
+  // so disabling or deleting the mismatched binding resolves its near-miss. Only
+  // reloading the bindings would leave a warning badge sitting on a binding the
+  // user just switched off until the panel remounted.
+  const onChanged = () => {
+    reload();
+    reloadNearMisses();
+  };
 
   return (
     <Card
@@ -56,7 +89,25 @@ export function TriggersPanel({ suiteId, canManage }: { suiteId: string; canMana
         </Flex>
       }
     >
-      <TriggersBody state={state} suiteId={suiteId} canManage={canManage} onChanged={reload} />
+      <Flex vertical gap={8}>
+        {/* An outage must never be reportable as a state (the ADR-0039 lesson):
+            with no notice, a failed near-miss fetch renders identically to "no
+            mismatch", so a live #1186 mismatch would read as healthy. Say so
+            instead — non-blocking, below the bindings' own error handling. */}
+        {nearMissState.status === 'error' && (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            Env-mismatch warnings are unavailable right now — a binding may have one that isn&apos;t
+            shown.
+          </Typography.Text>
+        )}
+        <TriggersBody
+          state={state}
+          suiteId={suiteId}
+          canManage={canManage}
+          onChanged={onChanged}
+          nearMisses={nearMisses}
+        />
+      </Flex>
     </Card>
   );
 }
@@ -66,11 +117,13 @@ function TriggersBody({
   suiteId,
   canManage,
   onChanged,
+  nearMisses,
 }: {
   state: ReturnType<typeof useAsyncData<TriggerBinding[]>>['state'];
   suiteId: string;
   canManage: boolean;
   onChanged: () => void;
+  nearMisses: TriggerEnvNearMiss[];
 }) {
   return (
     <AsyncBody state={state} loadingText="Loading triggers…" errorTitle="Failed to load triggers">
@@ -91,6 +144,18 @@ function TriggersBody({
                   binding={binding}
                   canManage={canManage}
                   onChanged={onChanged}
+                  // `filter`, not `find` (#1199 review): one binding can have
+                  // several simultaneously-current near-misses — the same DAG id
+                  // reported by two orchestrator connections in two different
+                  // wrong envs is literally the #1186 ambiguity this feature
+                  // exists to catch, and showing only the first would hide a live
+                  // mismatch behind another live one.
+                  nearMisses={nearMisses.filter(
+                    (nm) =>
+                      nm.provider === binding.provider &&
+                      nm.pipeline_or_dag_id === binding.pipeline_or_dag_id &&
+                      nm.binding_env === binding.env,
+                  )}
                 />
               )}
             />
@@ -105,10 +170,16 @@ function TriggerRow({
   binding,
   canManage,
   onChanged,
+  nearMisses,
 }: {
   binding: TriggerBinding;
   canManage: boolean;
   onChanged: () => void;
+  /** Every #1186 env near-miss currently observed for this exact binding (#1199)
+   *  — runs keep landing in each entry's `run_env`, not this binding's `env`. A
+   *  binding can have more than one at a time (one per wrong env observed), and
+   *  each gets its own badge so a second live mismatch is never hidden. */
+  nearMisses: TriggerEnvNearMiss[];
 }) {
   const { message } = App.useApp();
   const [busy, setBusy] = useState(false);
@@ -179,6 +250,27 @@ function TriggerRow({
             {PROVIDER_LABELS[binding.provider]}
           </Typography.Text>
         </Flex>
+        {nearMisses.map((nearMiss) => (
+          <Tooltip
+            key={nearMiss.run_env}
+            // The claim is past-tense and dated, not an unqualified present-tense
+            // assertion: the row only proves the mismatch was OBSERVED, and it
+            // stays inside the recency window for up to 48h after the last
+            // occurrence — so a binding fixed an hour ago would otherwise keep
+            // being told, flatly, that it "has not fired and won't". Showing the
+            // last-observed timestamp is what lets a user tell a live incident
+            // from one they have already resolved.
+            title={`Last observed ${formatTimestamp(nearMiss.updated_at)}: a run landed in "${envLabel(nearMiss.run_env as ConnectionEnv)}", not "${envLabel(nearMiss.binding_env as ConnectionEnv)}" — this binding did not fire, and won't for such runs until the envs match (#1186).`}
+          >
+            <Tag
+              color="warning"
+              icon={<WarningOutlined />}
+              aria-label={`Env mismatch near-miss: ${nearMiss.run_env}`}
+            >
+              env mismatch: {envLabel(nearMiss.run_env as ConnectionEnv)}
+            </Tag>
+          </Tooltip>
+        ))}
       </Flex>
     </SimpleList.Item>
   );

@@ -1,11 +1,12 @@
 import { App as AntApp } from 'antd';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createTriggerBinding,
   deleteTriggerBinding,
+  listEnvNearMisses,
   listTriggerBindings,
   ORCHESTRATION_PROVIDERS,
   PROVIDER_LABELS,
@@ -23,6 +24,7 @@ vi.mock('../../src/api/triggerBindings', async (importOriginal) => {
     createTriggerBinding: vi.fn(),
     setTriggerBindingEnabled: vi.fn(),
     deleteTriggerBinding: vi.fn(),
+    listEnvNearMisses: vi.fn(),
   };
 });
 
@@ -30,6 +32,7 @@ const mockList = vi.mocked(listTriggerBindings);
 const mockCreate = vi.mocked(createTriggerBinding);
 const mockToggle = vi.mocked(setTriggerBindingEnabled);
 const mockDelete = vi.mocked(deleteTriggerBinding);
+const mockNearMisses = vi.mocked(listEnvNearMisses);
 
 const BINDING: TriggerBinding = {
   id: 'b1',
@@ -50,6 +53,11 @@ function renderPanel(props: Partial<Parameters<typeof TriggersPanel>[0]> = {}) {
 }
 
 afterEach(() => vi.clearAllMocks());
+
+// Every test gets an empty near-miss list by default (#1199) — only the
+// dedicated describe block below overrides it, so the pre-existing tests above
+// don't have to know this fetch exists.
+beforeEach(() => mockNearMisses.mockResolvedValue([]));
 
 describe('TriggersPanel', () => {
   it('lists bindings with pipeline id, provider, and env', async () => {
@@ -214,4 +222,157 @@ describe('TriggersPanel', () => {
     // The enabled state is shown read-only as a tag.
     expect(screen.getByText('enabled')).toBeInTheDocument();
   });
+});
+
+// ── #1199: currently-active env near-miss badge ────────────────────────────
+
+describe('TriggersPanel — env near-miss badge (#1199)', () => {
+  it('shows an env-mismatch badge for a binding with a matching near-miss', async () => {
+    mockList.mockResolvedValue([BINDING]);
+    mockNearMisses.mockResolvedValue([
+      {
+        provider: 'adf',
+        pipeline_or_dag_id: 'nightly-load',
+        run_env: 'qa',
+        binding_env: 'prod',
+        updated_at: '2026-08-08T00:00:00Z',
+      },
+    ]);
+    renderPanel();
+
+    expect(await screen.findByLabelText('Env mismatch near-miss: qa')).toBeInTheDocument();
+    // The badge names the env runs are actually landing in — without it a user
+    // staring at two badges on one binding can't tell them apart.
+    expect(screen.getByText(/env mismatch: QA/)).toBeInTheDocument();
+  });
+
+  it('shows no badge when there is no near-miss for any binding', async () => {
+    mockList.mockResolvedValue([BINDING]);
+    mockNearMisses.mockResolvedValue([]);
+    renderPanel();
+
+    await screen.findByText('nightly-load');
+    expect(screen.queryByLabelText(/^Env mismatch near-miss/)).not.toBeInTheDocument();
+  });
+
+  it('does not badge a binding whose (provider, pipeline_or_dag_id) matches but env does not', async () => {
+    // A near-miss for a DIFFERENT binding_env than this exact binding must not
+    // false-positive onto it — matching is on the full (provider,
+    // pipeline_or_dag_id, binding_env) tuple, not just provider+pipeline.
+    mockList.mockResolvedValue([BINDING]); // env: 'prod'
+    mockNearMisses.mockResolvedValue([
+      {
+        provider: 'adf',
+        pipeline_or_dag_id: 'nightly-load',
+        run_env: 'dev',
+        binding_env: 'qa', // this binding is 'prod', not 'qa'
+        updated_at: '2026-08-08T00:00:00Z',
+      },
+    ]);
+    renderPanel();
+
+    await screen.findByText('nightly-load');
+    expect(screen.queryByLabelText(/^Env mismatch near-miss/)).not.toBeInTheDocument();
+  });
+
+  it('dates the mismatch instead of asserting it is happening right now', async () => {
+    // The row only proves the mismatch was OBSERVED, and it stays inside the 48h
+    // recency window for up to two days after the last occurrence — so an
+    // unqualified present-tense claim would keep telling a user their
+    // already-fixed binding "has not fired and won't". The last-observed
+    // timestamp is what lets them tell a live incident from a resolved one.
+    const observedAt = '2026-08-08T00:00:00Z';
+    mockList.mockResolvedValue([BINDING]);
+    mockNearMisses.mockResolvedValue([
+      {
+        provider: 'adf',
+        pipeline_or_dag_id: 'nightly-load',
+        run_env: 'qa',
+        binding_env: 'prod',
+        updated_at: observedAt,
+      },
+    ]);
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.hover(await screen.findByLabelText('Env mismatch near-miss: qa'));
+
+    const tip = await screen.findByRole('tooltip');
+    expect(tip).toHaveTextContent(`Last observed ${new Date(observedAt).toLocaleString()}`);
+  });
+
+  it('badges EVERY current mismatch on one binding, not just the first', async () => {
+    // The #1186 root case this feature exists to catch: two orchestrator
+    // connections reporting the same DAG id against two different wrong envs.
+    // Rendering only the first would silently hide a second live mismatch.
+    mockList.mockResolvedValue([BINDING]); // env: 'prod'
+    mockNearMisses.mockResolvedValue([
+      {
+        provider: 'adf',
+        pipeline_or_dag_id: 'nightly-load',
+        run_env: 'qa',
+        binding_env: 'prod',
+        updated_at: '2026-08-08T00:00:00Z',
+      },
+      {
+        provider: 'adf',
+        pipeline_or_dag_id: 'nightly-load',
+        run_env: 'uat',
+        binding_env: 'prod',
+        updated_at: '2026-08-07T00:00:00Z',
+      },
+    ]);
+    renderPanel();
+
+    expect(await screen.findByLabelText('Env mismatch near-miss: qa')).toBeInTheDocument();
+    expect(screen.getByLabelText('Env mismatch near-miss: uat')).toBeInTheDocument();
+  });
+
+  it('refetches near-misses after a binding is disabled, not just the bindings list', async () => {
+    // Disabling the binding resolves its near-miss server-side (the candidate set
+    // is re-derived from ENABLED bindings only). Reloading just the bindings would
+    // leave a warning badge sitting on a binding the user has already switched off.
+    mockList.mockResolvedValue([BINDING]);
+    mockToggle.mockResolvedValue({ ...BINDING, enabled: false });
+    mockNearMisses.mockResolvedValue([
+      {
+        provider: 'adf',
+        pipeline_or_dag_id: 'nightly-load',
+        run_env: 'qa',
+        binding_env: 'prod',
+        updated_at: '2026-08-08T00:00:00Z',
+      },
+    ]);
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByLabelText('Env mismatch near-miss: qa');
+    // Baseline is read, not asserted as 1 — StrictMode double-invokes the mount
+    // effect, and what matters is that the toggle causes a FURTHER fetch.
+    const onMount = mockNearMisses.mock.calls.length;
+
+    mockNearMisses.mockResolvedValue([]);
+    await user.click(screen.getByRole('switch', { name: 'Enable nightly-load' }));
+
+    await waitFor(() => expect(mockNearMisses.mock.calls.length).toBeGreaterThan(onMount));
+    await waitFor(() =>
+      expect(screen.queryByLabelText(/^Env mismatch near-miss/)).not.toBeInTheDocument(),
+    );
+  });
+
+  it('scopes the fetch to this suite rather than pulling the whole workspace', async () => {
+    mockList.mockResolvedValue([]);
+    renderPanel();
+    await screen.findByText(/No triggers/);
+
+    expect(mockNearMisses).toHaveBeenCalledWith('s1');
+  });
+
+  // The "near-miss fetch fails without blocking the bindings list" case is
+  // covered in its own file (TriggersPanel.nearMissResilience.test.tsx): mixing
+  // a rejected `listEnvNearMisses` mock into this file's other renders of the
+  // same component trips a vitest/RTL cross-test unhandled-rejection timing
+  // false-positive (confirmed via isolated bisection — the exact same test body
+  // passes reliably alone and fails only when another test in the same file
+  // also renders `TriggersPanel`), unrelated to the component's actual
+  // behaviour, which the isolated file proves out.
 });

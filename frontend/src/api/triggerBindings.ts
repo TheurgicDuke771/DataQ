@@ -91,3 +91,33 @@ export async function setTriggerBindingEnabled(
 export async function deleteTriggerBinding(id: string): Promise<void> {
   await api.delete(`/trigger-bindings/${id}`);
 }
+
+/**
+ * Mirrors the backend `NearMissRead` (#1186/#1199) — a currently-active env
+ * mismatch: a succeeded pipeline/DAG run keeps landing in `run_env`, but the
+ * only ENABLED binding for this `(provider, pipeline_or_dag_id)` is scoped to
+ * `binding_env`, so it has never fired and never will until one of the two
+ * envs is corrected. Distinct from `TriggerBindingWarning` above: that one is
+ * advisory and fires at create/update time from a shared-URL heuristic; this is
+ * the ingest-time signal — the mismatch was actually observed happening.
+ */
+export interface TriggerEnvNearMiss {
+  provider: OrchestrationProvider;
+  pipeline_or_dag_id: string;
+  run_env: string;
+  binding_env: string;
+  updated_at: string;
+}
+
+/**
+ * `GET /orchestration/near-misses` — suite-scoped like `GET /trigger-bindings`
+ * (near-misses are derived from suite-owned binding rows, so the backend restricts
+ * them to owned-or-shared suites), NOT auth-only like `/orchestration/pipelines`.
+ * Pass `suiteId` to narrow to one suite's bindings.
+ */
+export async function listEnvNearMisses(suiteId?: string): Promise<TriggerEnvNearMiss[]> {
+  const { data } = await api.get<TriggerEnvNearMiss[]>('/orchestration/near-misses', {
+    params: suiteId ? { suite_id: suiteId } : undefined,
+  });
+  return data;
+}

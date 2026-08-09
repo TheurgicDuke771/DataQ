@@ -453,6 +453,69 @@ def list_pipelines(
     return [PipelineRunRead.model_validate(p) for p in pipelines]
 
 
+class NearMissRead(ApiModel):
+    """A currently-active #1186 trigger-binding env mismatch (#1199).
+
+    Decoded from the `workspace_health` dedupe row: a succeeded pipeline/DAG run
+    keeps landing in `run_env`, but the only ENABLED binding for this
+    `(provider, pipeline_or_dag_id)` is scoped to `binding_env` — so the binding
+    has never fired and never will until one of the two envs is corrected.
+    """
+
+    provider: str
+    pipeline_or_dag_id: str
+    run_env: str
+    binding_env: str
+    updated_at: datetime
+
+
+@router.get(
+    "/orchestration/near-misses",
+    response_model=list[NearMissRead],
+    summary="List current trigger-binding env-mismatch near-misses (#1186/#1199)",
+)
+def list_near_misses(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    suite_id: Annotated[
+        uuid.UUID | None,
+        Query(description="Narrow to near-misses on one suite's trigger bindings."),
+    ] = None,
+) -> list[NearMissRead]:
+    """Surfaces the `workspace_health` `trigger_env_near_miss:*` rows #1194 already
+    writes on every ingest-time env mismatch, decoded back to their
+    `(provider, pipeline_or_dag_id, run_env, binding_env)` tuple. Before this route
+    the only way to see one was `psql` (#1199).
+
+    **Suite-scoped**, unlike its `/orchestration/pipelines` neighbour: a near-miss
+    is derived wholly from `trigger_binding` rows, which are suite-owned config, so
+    it obeys the same owned-or-shared rule `GET /trigger-bindings` applies (a
+    workspace-admin sees the lot, per ADR 0027). `pipeline_runs` — what
+    `/pipelines` and `/pipeline_runs` return — genuinely have no suite-ownership
+    concept, which is why those two are auth-only; borrowing that gate here would
+    have let any signed-in user enumerate the bindings on suites they cannot see.
+
+    Optional `suite_id` narrows to one suite's bindings — layered on top of the
+    access filter, never in place of it — so the Suite Triggers panel doesn't pull
+    the whole accessible workspace to render one suite's badges.
+    """
+    return [
+        NearMissRead(
+            provider=r.provider,
+            pipeline_or_dag_id=r.pipeline_or_dag_id,
+            run_env=r.run_env,
+            binding_env=r.binding_env,
+            updated_at=r.updated_at,
+        )
+        for r in orchestration_service.list_env_near_misses(
+            db,
+            user_id=current_user.id,
+            include_all=is_workspace_admin(current_user),
+            suite_id=suite_id,
+        )
+    ]
+
+
 # ───────────────────────── comparison report download (ADR 0015 §4) ──
 
 

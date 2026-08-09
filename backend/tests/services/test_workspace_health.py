@@ -22,7 +22,16 @@ from sqlalchemy import select
 
 from backend.app.alerting.base import AlertUndeliverableError, PollStalenessReport
 from backend.app.core.config import get_settings
-from backend.app.db.models import Connection, User, WorkspaceHealth
+from backend.app.db.models import (
+    Connection,
+    Share,
+    Suite,
+    TriggerBinding,
+    User,
+    WorkspaceHealth,
+)
+from backend.app.orchestration.base import RunUpdate
+from backend.app.services import orchestration_service
 from backend.app.services import workspace_health_service as svc
 
 
@@ -355,3 +364,347 @@ class TestTriggerBindingEnvNearMiss:
         )
         key_second = db_session.scalar(select(WorkspaceHealth.key))
         assert key_second == key_first
+
+
+# ── #1199: read side — decoding current near-misses back to their tuple ─────
+
+
+def _suite(db_session: Any, owner: User) -> Suite:
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "ab12345.eu-west-1"},
+        secret_ref="kv-x",
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name="s", connection_id=conn.id, created_by=owner.id)
+    db_session.add(suite)
+    db_session.commit()
+    return suite
+
+
+def _binding(
+    db_session: Any, suite: Suite, *, provider: str, pipeline: str, env: str, enabled: bool = True
+) -> TriggerBinding:
+    binding = TriggerBinding(
+        provider=provider,
+        pipeline_or_dag_id=pipeline,
+        env=env,
+        suite_id=suite.id,
+        enabled=enabled,
+    )
+    db_session.add(binding)
+    db_session.commit()
+    return binding
+
+
+class TestListCurrentEnvNearMisses:
+    def test_no_enabled_bindings_returns_empty_without_querying_workspace_health(
+        self, db_session: Any
+    ) -> None:
+        # A near-miss row could theoretically still exist from a since-deleted
+        # binding — with zero candidates to hash there is nothing to match it
+        # against, so it correctly can't be decoded back.
+        owner = _user(db_session)
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a",
+            run_env="qa",
+            binding_env="dev",
+        )
+        assert svc.list_current_env_near_misses(db_session, user_id=owner.id) == []
+
+    def test_decodes_a_recorded_row_for_an_enabled_binding(self, db_session: Any) -> None:
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a",
+            run_env="qa",
+            binding_env="dev",
+        )
+
+        records = svc.list_current_env_near_misses(db_session, user_id=owner.id)
+
+        assert len(records) == 1
+        assert records[0].provider == "airflow"
+        assert records[0].pipeline_or_dag_id == "flow_a"
+        assert records[0].run_env == "qa"
+        assert records[0].binding_env == "dev"
+
+    def test_a_disabled_binding_yields_no_candidates(self, db_session: Any) -> None:
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev", enabled=False)
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a",
+            run_env="qa",
+            binding_env="dev",
+        )
+        assert svc.list_current_env_near_misses(db_session, user_id=owner.id) == []
+
+    def test_a_binding_with_no_recorded_mismatch_yields_nothing(self, db_session: Any) -> None:
+        # An enabled binding generates candidate hashes, but none of them exist as
+        # a real workspace_health row unless the ingest path actually observed
+        # that exact mismatch.
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+        assert svc.list_current_env_near_misses(db_session, user_id=owner.id) == []
+
+    def test_a_stale_row_past_the_recency_window_is_excluded(self, db_session: Any) -> None:
+        """Mirrors the #1199 acceptance criterion: a near-miss that stopped
+        recurring (fixed, or the pipeline stopped running) must not read as
+        still-current forever just because the row was never deleted."""
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a",
+            run_env="qa",
+            binding_env="dev",
+        )
+        key = svc._near_miss_key(
+            provider="airflow", pipeline_or_dag_id="flow_a", run_env="qa", binding_env="dev"
+        )
+        row = db_session.get(WorkspaceHealth, key)
+        assert row is not None
+        row.updated_at = datetime.now(UTC) - timedelta(days=30)
+        db_session.commit()
+
+        assert svc.list_current_env_near_misses(db_session, user_id=owner.id, since_hours=48) == []
+        # A wider window still finds it — proves the exclusion is the recency
+        # filter, not a bug in the candidate derivation.
+        assert (
+            len(svc.list_current_env_near_misses(db_session, user_id=owner.id, since_hours=24 * 31))
+            == 1
+        )
+
+    def test_multiple_current_rows_sort_newest_first(self, db_session: Any) -> None:
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+        _binding(db_session, suite, provider="airflow", pipeline="flow_b", env="dev")
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a",
+            run_env="qa",
+            binding_env="dev",
+        )
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_b",
+            run_env="qa",
+            binding_env="dev",
+        )
+        # Push flow_a's row further into the past so flow_b is unambiguously newer.
+        key_a = svc._near_miss_key(
+            provider="airflow", pipeline_or_dag_id="flow_a", run_env="qa", binding_env="dev"
+        )
+        row_a = db_session.get(WorkspaceHealth, key_a)
+        assert row_a is not None
+        row_a.updated_at = datetime.now(UTC) - timedelta(hours=1)
+        db_session.commit()
+
+        records = svc.list_current_env_near_misses(db_session, user_id=owner.id)
+
+        assert [r.pipeline_or_dag_id for r in records] == ["flow_b", "flow_a"]
+
+    def test_two_simultaneous_mismatches_on_one_binding_are_both_returned(
+        self, db_session: Any
+    ) -> None:
+        """The #1186 root case this whole feature exists to catch: the same DAG id
+        observed by TWO orchestrator connections in two different wrong envs. Both
+        are live mismatches on the one binding — returning only the newer would
+        hide a real one behind another."""
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+        for run_env in ("qa", "uat"):
+            svc.record_trigger_binding_env_near_miss(
+                db_session,
+                provider="airflow",
+                pipeline_or_dag_id="flow_a",
+                run_env=run_env,
+                binding_env="dev",
+            )
+
+        records = svc.list_current_env_near_misses(db_session, user_id=owner.id)
+
+        assert sorted(r.run_env for r in records) == ["qa", "uat"]
+
+    def test_ties_on_updated_at_are_ordered_deterministically(self, db_session: Any) -> None:
+        """Two mismatches recorded in the same ingest batch share a `func.now()`
+        transaction timestamp to the microsecond. Without a total sort the order
+        would be whatever Postgres happened to return, so the list — and the
+        per-binding badges built from it — could reshuffle between refreshes."""
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+        _binding(db_session, suite, provider="airflow", pipeline="flow_b", env="dev")
+        for pipeline in ("flow_a", "flow_b"):
+            svc.record_trigger_binding_env_near_miss(
+                db_session,
+                provider="airflow",
+                pipeline_or_dag_id=pipeline,
+                run_env="qa",
+                binding_env="dev",
+            )
+        # Force an exact tie — the same instant on both rows.
+        tied_at = datetime.now(UTC) - timedelta(minutes=5)
+        for pipeline in ("flow_a", "flow_b"):
+            key = svc._near_miss_key(
+                provider="airflow", pipeline_or_dag_id=pipeline, run_env="qa", binding_env="dev"
+            )
+            row = db_session.get(WorkspaceHealth, key)
+            assert row is not None
+            row.updated_at = tied_at
+        db_session.commit()
+
+        first = svc.list_current_env_near_misses(db_session, user_id=owner.id)
+        second = svc.list_current_env_near_misses(db_session, user_id=owner.id)
+
+        assert [r.pipeline_or_dag_id for r in first] == ["flow_a", "flow_b"]
+        assert first == second
+
+    def test_a_binding_on_an_inaccessible_suite_is_not_enumerable(self, db_session: Any) -> None:
+        """Trigger bindings are suite-owned config — `GET /trigger-bindings` scopes
+        them to owned-or-shared suites, so this read must too. A stranger must not
+        be able to enumerate the (provider, pipeline, env) of someone else's
+        binding by reading near-misses."""
+        owner = _user(db_session)
+        stranger = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a",
+            run_env="qa",
+            binding_env="dev",
+        )
+
+        assert len(svc.list_current_env_near_misses(db_session, user_id=owner.id)) == 1
+        assert svc.list_current_env_near_misses(db_session, user_id=stranger.id) == []
+        # …but a workspace admin (ADR 0027) sees the whole workspace.
+        assert (
+            len(svc.list_current_env_near_misses(db_session, user_id=stranger.id, include_all=True))
+            == 1
+        )
+
+    def test_a_shared_suite_is_visible_to_the_sharee(self, db_session: Any) -> None:
+        owner = _user(db_session)
+        sharee = _user(db_session)
+        suite = _suite(db_session, owner)
+        db_session.add(Share(suite_id=suite.id, user_id=sharee.id, permission="view"))
+        db_session.commit()
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+        svc.record_trigger_binding_env_near_miss(
+            db_session,
+            provider="airflow",
+            pipeline_or_dag_id="flow_a",
+            run_env="qa",
+            binding_env="dev",
+        )
+
+        assert len(svc.list_current_env_near_misses(db_session, user_id=sharee.id)) == 1
+
+    def test_suite_id_narrows_to_one_suites_bindings(self, db_session: Any) -> None:
+        owner = _user(db_session)
+        suite_a = _suite(db_session, owner)
+        suite_b = _suite(db_session, owner)
+        _binding(db_session, suite_a, provider="airflow", pipeline="flow_a", env="dev")
+        _binding(db_session, suite_b, provider="airflow", pipeline="flow_b", env="dev")
+        for pipeline in ("flow_a", "flow_b"):
+            svc.record_trigger_binding_env_near_miss(
+                db_session,
+                provider="airflow",
+                pipeline_or_dag_id=pipeline,
+                run_env="qa",
+                binding_env="dev",
+            )
+
+        both = svc.list_current_env_near_misses(db_session, user_id=owner.id)
+        just_a = svc.list_current_env_near_misses(db_session, user_id=owner.id, suite_id=suite_a.id)
+
+        assert {r.pipeline_or_dag_id for r in both} == {"flow_a", "flow_b"}
+        assert [r.pipeline_or_dag_id for r in just_a] == ["flow_a"]
+
+
+class TestNearMissWriteReadRoundTrip:
+    """Read/write coupling guard (#1199 review).
+
+    Every test above drives the write LEAF (`record_trigger_binding_env_near_miss`)
+    directly, so a change to `orchestration_service._record_env_near_misses` —
+    which is where the tuple that actually gets hashed is *chosen* — could silently
+    desync the two derivations and still ship green. This exercises the real
+    production write path end-to-end instead.
+    """
+
+    def test_the_production_write_path_produces_rows_the_read_side_decodes(
+        self, db_session: Any
+    ) -> None:
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        # Binding is scoped to dev; the run lands via a QA connection.
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
+        qa_connection = _orch_connection(db_session, conn_type="airflow", env="qa")
+        db_session.commit()
+
+        orchestration_service._record_env_near_misses(
+            db_session,
+            provider="airflow",
+            connection=qa_connection,
+            update=RunUpdate(
+                provider_run_id="r1",
+                pipeline_or_dag_id="flow_a",
+                resource_name="airflow-host",
+                status="succeeded",
+            ),
+        )
+
+        records = svc.list_current_env_near_misses(db_session, user_id=owner.id)
+
+        assert len(records) == 1
+        assert records[0].provider == "airflow"
+        assert records[0].pipeline_or_dag_id == "flow_a"
+        assert records[0].run_env == "qa"
+        assert records[0].binding_env == "dev"
+
+    def test_a_disabled_binding_is_skipped_by_the_production_write_path(
+        self, db_session: Any
+    ) -> None:
+        """The write side only considers ENABLED bindings; if that ever diverged
+        from the read side's identical filter the two would silently disagree."""
+        owner = _user(db_session)
+        suite = _suite(db_session, owner)
+        _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev", enabled=False)
+        qa_connection = _orch_connection(db_session, conn_type="airflow", env="qa")
+        db_session.commit()
+
+        orchestration_service._record_env_near_misses(
+            db_session,
+            provider="airflow",
+            connection=qa_connection,
+            update=RunUpdate(
+                provider_run_id="r1",
+                pipeline_or_dag_id="flow_a",
+                resource_name="airflow-host",
+                status="succeeded",
+            ),
+        )
+
+        assert db_session.scalars(select(WorkspaceHealth.key)).all() == []
+        assert svc.list_current_env_near_misses(db_session, user_id=owner.id) == []
