@@ -1,5 +1,17 @@
 import { PlayCircleOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Flex, Select, Spin, Table, Tabs, Tag, Typography } from 'antd';
+import {
+  Alert,
+  Button,
+  Empty,
+  Flex,
+  Select,
+  Spin,
+  Table,
+  Tabs,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -494,12 +506,18 @@ function PipelineRunsTab({
       // here for the #1282 reason — and it can't be the fix either, since it would
       // clip the copy button along with the text. Bound the id span instead and
       // leave the button outside it.
+      //
+      // The Tooltip is not decoration: two Airflow runs from the same day differ
+      // only in the tail that the bound clips, so without a hover reveal the
+      // column would identify a run less well bounded than it did unbounded.
       title: 'Provider run',
       dataIndex: 'provider_run_id',
       width: 200,
       render: (v: string) => (
         <Typography.Text code copyable={{ text: v }} style={{ fontSize: 12 }}>
-          <span style={boundedTextStyle(150)}>{v}</span>
+          <Tooltip title={v}>
+            <span style={boundedTextStyle(150)}>{v}</span>
+          </Tooltip>
         </Typography.Text>
       ),
     },

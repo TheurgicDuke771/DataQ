@@ -44,10 +44,12 @@ const SEVERITY_STATUSES = new Set<ResultStatus>(['pass', 'warn', 'fail', 'critic
 /**
  * Bound for the "Observed" cell — a structured `observed_value` payload
  * (schema_drift baselines, comparison buckets, anomaly stats) is unbounded in
- * principle. Exported so the Playwright measurement in `e2e/results.spec.ts`
- * asserts against the real number rather than a copy that can drift.
+ * principle. Deliberately NOT exported: importing this module from a Playwright
+ * spec would drag the whole React/antd page into the test process, so
+ * `e2e/results.spec.ts` restates the number and points back here. Keep the two
+ * in step.
  */
-export const OBSERVED_COLUMN_WIDTH = 220;
+const OBSERVED_COLUMN_WIDTH = 220;
 
 /**
  * Routed run-detail page (`/results/:runId`, ADR 0022) — replaces the run-detail

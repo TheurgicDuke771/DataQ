@@ -420,7 +420,15 @@ _SEED_RUN_MIXED_RESULTS: list[_SeedResult] = [
         "amount in range",
         "error",
         None,
-        {"error": 'column "amount" could not be cast to NUMERIC'},
+        # Full driver-error length on purpose: a real `error` observed_value is
+        # a whole connector traceback line, and the run-detail Observed column's
+        # bound (#1282) can only be regression-tested against a payload that
+        # actually overflows it.
+        {
+            "error": "(snowflake.connector.errors.ProgrammingError) 000904 (42000): "
+            "SQL compilation error: error line 1 at position 7 — invalid identifier "
+            "'AMOUNT'; column \"amount\" could not be cast to NUMERIC"
+        },
         None,
         None,
     ),
