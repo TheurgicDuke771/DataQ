@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "ec9022fc7d36",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-post-deploy-1285-1286",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ec/9022fc7d36/0/metadata.json",
+      "transcript": "/ec/9022fc7d36/0/full.jsonl",
+      "compact_transcript": "/ec/9022fc7d36/0/transcript.jsonl",
+      "content_hash": "/ec/9022fc7d36/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 13,
+    "cache_creation_tokens": 5320,
+    "cache_read_tokens": 2440598,
+    "output_tokens": 3927,
+    "api_call_count": 7
+  }
+}
