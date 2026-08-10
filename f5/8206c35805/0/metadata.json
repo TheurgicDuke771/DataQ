@@ -1,0 +1,77 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "f58206c35805",
+  "session_id": "4fe0dd56-e953-4f7a-9b2b-8ded6302488e",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-10T01:00:49.223874Z",
+  "branch": "fix/issue-1282-bounded-cell-text",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/scripts/demo_data.py",
+    "frontend/e2e/results.spec.ts",
+    "frontend/src/pages/Results.tsx",
+    "frontend/src/pages/RunDetail.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5",
+  "turn_id": "7648767896af",
+  "checkpoint_transcript_start": 440,
+  "transcript_lines_at_start": 440,
+  "compact_transcript_start": 136,
+  "token_usage": {
+    "input_tokens": 39,
+    "cache_creation_tokens": 16689,
+    "cache_read_tokens": 4413693,
+    "output_tokens": 10371,
+    "api_call_count": 21
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01DjTHyBCojeVZ9sFVdxaG27",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "7648767896af",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 448,
+        "end": 449,
+        "entry_ids": [
+          "16141dda-33cd-4980-b296-b7bc587f7028"
+        ],
+        "tool_use_id": "toolu_01DjTHyBCojeVZ9sFVdxaG27"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01DjTHyBCojeVZ9sFVdxaG27"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-10T01:00:49.112888Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 63,
+    "human_modified": 8,
+    "human_removed": 0,
+    "total_committed": 63,
+    "total_lines_changed": 71,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}

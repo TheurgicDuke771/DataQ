@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "f58206c35805",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1282-bounded-cell-text",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/scripts/demo_data.py",
+    "frontend/e2e/results.spec.ts",
+    "frontend/src/pages/Results.tsx",
+    "frontend/src/pages/RunDetail.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f5/8206c35805/0/metadata.json",
+      "transcript": "/f5/8206c35805/0/full.jsonl",
+      "compact_transcript": "/f5/8206c35805/0/transcript.jsonl",
+      "content_hash": "/f5/8206c35805/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 39,
+    "cache_creation_tokens": 16689,
+    "cache_read_tokens": 4413693,
+    "output_tokens": 10371,
+    "api_call_count": 21
+  }
+}
