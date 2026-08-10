@@ -45,7 +45,7 @@ from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import run_dispatch, workspace_health_service
 from backend.app.services.connection_lock import lock_connection as _lock_connection
-from backend.app.services.failure_classifier import classify_failure_reason
+from backend.app.services.failure_classifier import classify_orchestration_poll_reason
 
 log = get_logger(__name__)
 
@@ -810,14 +810,19 @@ def record_poll_failure(session: Session, *, connection_id: uuid.UUID, exc: Base
 
     The stored reason is **classified**, never the raw exception text — a transport error
     routinely carries the thing that failed to authenticate (a SAS query string, a DSN, a
-    bearer token). `classify_failure_reason` is the same redaction-safe path a failed run
-    uses (#605), so a leaked credential can't reach the API through this column.
+    bearer token). `classify_orchestration_poll_reason` shares the redaction contract of the
+    failed-run path (#605), so a leaked credential can't reach the API through this column.
+
+    It is the ORCHESTRATION variant deliberately (#1285): the run-flavoured messages talk
+    about warehouses, roles, table paths and "the suite's run target", none of which exist
+    on an ADF/Airflow/dbt connection (CLAUDE.md §4). Prod shipped for months telling
+    operators to check a warehouse when an Airflow host was simply stopped.
     """
     connection = _lock_connection(session, connection_id)
     if connection is None:  # deleted mid-sweep, or the row is contended — either way, move on
         return 0
     connection.last_polled_at = datetime.now(UTC)
-    connection.last_poll_error = classify_failure_reason(exc)[:512]
+    connection.last_poll_error = classify_orchestration_poll_reason(exc)[:512]
     connection.consecutive_poll_failures = (connection.consecutive_poll_failures or 0) + 1
     session.commit()
     return connection.consecutive_poll_failures

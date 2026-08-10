@@ -83,6 +83,26 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
             "max retries exceeded",
             "failed to establish a new connection",
             "ssl",
+            # Upstream-down HTTP statuses (#1285). A gateway reporting its backend is
+            # missing or overloaded is a connectivity fact, not a configuration one.
+            #
+            # PHRASES ONLY — never the bare numbers. This table is shared by every
+            # caller (runs, dry-runs, monitors, comparison, UC, lineage refresh,
+            # inventory sync) and CONNECTIVITY is matched before CONFIG, so a bare
+            # "503" would capture a sealed-vault error ("HTTP 503 — vault sealed"),
+            # a Snowflake "error line 1 at position 504", and a pandas "Expected 3
+            # fields in line 5031" — each then reported as "the datasource could not
+            # be reached" while the datasource is fine. The digits are redundant
+            # anyway: httpx's `raise_for_status()` text carries the reason phrase.
+            #
+            # Deliberately NOT 404: a 404 from a provider REST API is genuinely
+            # ambiguous (deleted DAG vs. stopped host answering at the ingress), so it
+            # stays in CONFIG, whose orchestration message names both causes rather
+            # than asserting the wrong one.
+            "bad gateway",
+            "service unavailable",
+            "gateway timeout",
+            "no healthy upstream",
         ),
     ),
     (
@@ -120,6 +140,68 @@ def classify_failure_reason(exc: BaseException) -> str:
     from ``_MESSAGES``, so no credential/DSN/PII fragment can ride out on it.
     """
     return _MESSAGES[classify_failure_category(exc)]
+
+
+# ── Orchestration-poll classification (#1285) ────────────────────────────────
+# Same shape as the inventory-sync case below, in a different place: the generic
+# messages are written for a RUN against a datasource, and an orchestration
+# connection (ADF / Airflow / dbt) is explicitly NOT a datasource (CLAUDE.md §4).
+# It has no warehouse, no role, no table/path and no run target, so `CONFIG`'s
+# "e.g. a missing warehouse or role … check the suite's run target" names four
+# things that do not exist on the object that failed, and `CONNECTIVITY` /
+# `PERMISSION` both say "the datasource".
+#
+# This was live in prod: both Airflow connections reported the CONFIG message
+# while the actual cause was the harness Airflow app being Stopped. A silent gap
+# makes an operator look; a confident misdirection makes them look in the wrong
+# place — the #828 shape.
+#
+# CONFIG deliberately names BOTH plausible causes rather than picking one. A
+# stopped host and a deleted DAG are genuinely indistinguishable here: the poll
+# is an httpx call ending in `raise_for_status()`, and Container Apps answers for
+# a stopped app with the same 404 shape as a real "DAG not found".
+#
+# The wording is also provider-NEUTRAL, which is not a style choice: the three
+# providers have genuinely different shapes. Airflow polls a REST host (base
+# URL), ADF polls Azure by subscription/resource-group/factory, and dbt contacts
+# no host at all — it reads a `run_results.json` artifact from ADLS/S3/file. A
+# message that says "check the connection's base URL" is the very defect this
+# fixes, one provider over. Likewise nothing here asserts that anything
+# *answered*: the exception can be raised before any request leaves DataQ (a
+# sealed secret store, an unknown provider, a config validation error).
+_ORCHESTRATION_MESSAGES: dict[FailureCategory, str] = {
+    FailureCategory.CONFIG: (
+        "DataQ could not get what it asked for from this orchestration provider — the "
+        "pipeline/DAG, or the artifact it publishes, may no longer exist, or the "
+        "connection may point somewhere that no longer holds it. Check the connection's "
+        "settings and the pipeline/DAG id on its trigger bindings."
+    ),
+    FailureCategory.CONNECTIVITY: (
+        "The orchestration provider could not be reached (network, DNS, TLS, a timeout, "
+        "or the host or storage it lives on is down). Check that it is running and "
+        "reachable from DataQ."
+    ),
+    FailureCategory.PERMISSION: (
+        "The orchestration provider rejected the credentials, or the identity is missing a "
+        "permission it needs to read runs. Re-check the connection's credentials and its "
+        "access to the pipelines/DAGs."
+    ),
+    FailureCategory.UNKNOWN: (
+        "Polling this orchestration connection failed for a reason DataQ could not "
+        "classify. Re-test the connection, and check the worker logs for the underlying "
+        "error."
+    ),
+}
+
+
+def classify_orchestration_poll_reason(exc: BaseException) -> str:
+    """The fixed, secret-free reason an orchestration poll failed (#1285).
+
+    Same redaction contract as :func:`classify_failure_reason` — ``exc`` is read
+    only to pick a category, and the returned string is a constant — but the
+    text names orchestration nouns instead of datasource ones.
+    """
+    return _ORCHESTRATION_MESSAGES[classify_failure_category(exc)]
 
 
 # ── Inventory-sync grant classification (#1104) ──────────────────────────────

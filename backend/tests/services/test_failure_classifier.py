@@ -9,10 +9,12 @@ import pytest
 
 from backend.app.services.failure_classifier import (
     _MESSAGES,
+    _ORCHESTRATION_MESSAGES,
     FailureCategory,
     classify_failure_category,
     classify_failure_reason,
     classify_inventory_sync_error,
+    classify_orchestration_poll_reason,
 )
 
 
@@ -184,3 +186,120 @@ class TestInventorySyncClassification:
             reason = classify_inventory_sync_error(exc, "unity_catalog", during_enumeration=phase)
             assert secret not in reason
             assert "SUPERSECRET" not in reason
+
+
+class TestOrchestrationPollReason:
+    """#1285 — an orchestration connection is NOT a datasource (CLAUDE.md §4), so its
+    poll failures must not be described in warehouse/role/table/run-target nouns.
+
+    This shipped to prod: both Airflow connections reported "missing warehouse or role
+    … check the suite's run target" while the real cause was the Airflow host being
+    stopped. That is the #828 confident-wrong-answer shape — worse than a silent gap,
+    because it sends an operator to fix something that doesn't exist on the object.
+    """
+
+    # The exact exception an Airflow poll raises against a stopped Container App:
+    # httpx `raise_for_status()` on the ingress's 404.
+    STOPPED_HOST = RuntimeError("Client error '404 Not Found' for url 'https://airflow.example'")
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            STOPPED_HOST,
+            RuntimeError("connection refused"),
+            PermissionError("access denied"),
+            RuntimeError("something entirely unrecognised"),
+        ],
+    )
+    def test_no_reason_uses_datasource_or_run_vocabulary(self, exc: Exception) -> None:
+        """The property that actually failed in prod, asserted over every category —
+        not just the one that happened to break."""
+        reason = classify_orchestration_poll_reason(exc).lower()
+        # "the run failed to execute" is the generic UNKNOWN text — it describes a
+        # RUN, which a poll is not, so it belongs on this list too. Without it the
+        # UNKNOWN case passes against the unfixed code and proves nothing.
+        for noun in ("warehouse", "role", "table/path", "run target", "datasource", "the run"):
+            assert noun not in reason, f"{noun!r} leaked into an orchestration reason: {reason}"
+
+    def test_every_category_has_an_orchestration_message(self) -> None:
+        """A category added later without a message here would KeyError in the poll
+        path — the one place that must never raise (it runs inside the failure
+        handler itself)."""
+        for category in FailureCategory:
+            assert category in _ORCHESTRATION_MESSAGES
+
+    def test_a_stopped_host_names_both_plausible_causes(self) -> None:
+        """A 404 cannot distinguish "DAG deleted" from "host stopped" — Container Apps
+        answers for a stopped app with the same shape. So the message must name both
+        rather than assert one, per the #1104 hedging precedent."""
+        reason = classify_orchestration_poll_reason(self.STOPPED_HOST).lower()
+        assert "pipeline/dag" in reason
+        assert "no longer" in reason  # the "it's gone" cause
+        assert "connection" in reason  # …and the "you're pointed elsewhere" cause
+
+    def test_no_message_assumes_one_provider_s_shape(self) -> None:
+        """The three providers are shaped differently: Airflow polls a REST host,
+        ADF polls Azure by subscription/resource-group/factory, and dbt contacts no
+        host at all — it reads a run_results.json artifact from ADLS/S3/file. Telling
+        a dbt operator to check a "base URL" is this very bug, one provider over."""
+        for category, reason in _ORCHESTRATION_MESSAGES.items():
+            low = reason.lower()
+            for airflow_only in ("base url", "the host answered", "rest api"):
+                assert airflow_only not in low, f"{category}: provider-specific {airflow_only!r}"
+
+    def test_no_message_claims_the_provider_answered(self) -> None:
+        """The exception can be raised before any request leaves DataQ — a sealed
+        secret store while resolving the credential, an unknown provider, a config
+        validation error. Asserting "it answered" would be unsupportable."""
+        for reason in _ORCHESTRATION_MESSAGES.values():
+            assert "answered" not in reason.lower()
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Server error '502 Bad Gateway' for url 'https://airflow.example'",
+            "Server error '503 Service Unavailable' for url 'https://airflow.example'",
+            "Server error '504 Gateway Timeout' for url 'https://airflow.example'",
+            "upstream connect error: no healthy upstream",
+        ],
+    )
+    def test_upstream_down_statuses_classify_as_connectivity_not_config(self, message: str) -> None:
+        """Unlike a 404, a gateway saying its backend is missing or overloaded is an
+        unambiguous connectivity fact. Before #1285 these fell through to CONFIG and
+        told the reader their configuration was wrong."""
+        assert classify_failure_category(RuntimeError(message)) is FailureCategory.CONNECTIVITY
+
+    @pytest.mark.parametrize(
+        ("message", "expected"),
+        [
+            # A sealed vault is not a datasource outage — this must not become
+            # "the datasource could not be reached" (ADR 0039's whole point is that
+            # an outage must never be reportable as a benign state).
+            (
+                "SecretStoreUnavailableError: could not serve 'conn-sf-dev' "
+                "(HTTP 503 — vault sealed or standby)",
+                FailureCategory.UNKNOWN,
+            ),
+            # A column position that happens to read 504.
+            (
+                "ProgrammingError: error line 1 at position 504 invalid identifier 'X'",
+                FailureCategory.CONFIG,
+            ),
+            # A CSV line number that happens to read 502.
+            ("ParserError: Expected 3 fields in line 5023, saw 5", FailureCategory.UNKNOWN),
+        ],
+    )
+    def test_bare_status_digits_do_not_capture_unrelated_errors(
+        self, message: str, expected: FailureCategory
+    ) -> None:
+        """`_MARKERS` is shared by EVERY caller — runs, dry-runs, monitors, comparison,
+        UC, lineage refresh, inventory sync — and CONNECTIVITY is matched before
+        CONFIG. Matching a bare "502"/"503"/"504" would have quietly reclassified all
+        of these as a network problem, which is why the markers are reason PHRASES."""
+        assert classify_failure_category(RuntimeError(message)) is expected
+
+    def test_never_echoes_the_raw_exception_text(self) -> None:
+        secret = "bearer dq_live_SUPERSECRET"  # a marker string, not a real credential
+        reason = classify_orchestration_poll_reason(RuntimeError(f"401 unauthorized: {secret}"))
+        assert secret not in reason
+        assert "SUPERSECRET" not in reason
