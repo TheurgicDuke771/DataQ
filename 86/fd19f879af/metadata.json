@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "86fd19f879af",
+  "strategy": "manual-commit",
+  "branch": "dependabot/pip/pydantic-settings-2.15.0",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".pre-commit-config.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/86/fd19f879af/0/metadata.json",
+      "transcript": "/86/fd19f879af/0/full.jsonl",
+      "compact_transcript": "/86/fd19f879af/0/transcript.jsonl",
+      "content_hash": "/86/fd19f879af/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 1950,
+    "cache_read_tokens": 606586,
+    "output_tokens": 692,
+    "api_call_count": 4
+  }
+}
