@@ -1,0 +1,8 @@
+You mentioned multiple times that #1184 is fixed. 
+But I'm not able to see that in live Prod. [attached screenshot]. 
+What am I missing?
+
+---
+
+go ahead with option a.
+In future, properly verify before you claim any fix is applied. Double check. and update the same in your memory. make it as a practice.

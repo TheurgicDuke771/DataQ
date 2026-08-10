@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "b03dec4beadc",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1282-bounded-cell-text",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "backend/scripts/demo_data.py",
+    "frontend/e2e/results.spec.ts",
+    "frontend/src/components/shared/ellipsisColumn.tsx",
+    "frontend/src/pages/Results.tsx",
+    "frontend/src/pages/RunDetail.tsx",
+    "frontend/tests/pages/Results.test.tsx",
+    "frontend/tests/pages/RunDetail.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b0/3dec4beadc/0/metadata.json",
+      "transcript": "/b0/3dec4beadc/0/full.jsonl",
+      "compact_transcript": "/b0/3dec4beadc/0/transcript.jsonl",
+      "content_hash": "/b0/3dec4beadc/0/content_hash.txt",
+      "prompt": "/b0/3dec4beadc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 232,
+    "cache_creation_tokens": 180625,
+    "cache_read_tokens": 17187737,
+    "output_tokens": 61362,
+    "api_call_count": 123
+  }
+}
