@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "5721c9ab667f",
+  "strategy": "manual-commit",
+  "branch": "dependabot/npm_and_yarn/frontend/typescript-eslint-8.66.0",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/package.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/57/21c9ab667f/0/metadata.json",
+      "transcript": "/57/21c9ab667f/0/full.jsonl",
+      "compact_transcript": "/57/21c9ab667f/0/transcript.jsonl",
+      "content_hash": "/57/21c9ab667f/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 11176,
+    "cache_read_tokens": 2473012,
+    "output_tokens": 3879,
+    "api_call_count": 15
+  }
+}
