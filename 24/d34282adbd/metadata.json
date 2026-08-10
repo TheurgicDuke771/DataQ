@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "24d34282adbd",
+  "strategy": "manual-commit",
+  "branch": "docs/claude-md-deploy-eba60b4d",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/24/d34282adbd/0/metadata.json",
+      "transcript": "/24/d34282adbd/0/full.jsonl",
+      "compact_transcript": "/24/d34282adbd/0/transcript.jsonl",
+      "content_hash": "/24/d34282adbd/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 18538,
+    "cache_read_tokens": 8987695,
+    "output_tokens": 11754,
+    "api_call_count": 25
+  }
+}
