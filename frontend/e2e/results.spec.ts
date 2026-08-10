@@ -127,6 +127,21 @@ test.describe('Results page', () => {
     expect(tableWidth).toBeGreaterThan(0);
     const viewport = page.viewportSize();
     expect(tableWidth).toBeLessThan((viewport?.width ?? 1280) * 1.5);
+
+    // Bounding the Provider-run id must not push its copy button onto a second
+    // line — that silently grew every row in the table from 56px to 77px when
+    // the bound was first set to 150px in a 200px cell. Another layout property
+    // jsdom cannot see, so it is asserted here.
+    const wrapped = await table.evaluate((el) => {
+      const headers = [...el.querySelectorAll('th')].map((th) => th.textContent?.trim());
+      const idx = headers.indexOf('Provider run');
+      const cell = el.querySelector('tr.ant-table-row')?.children[idx];
+      const span = cell?.querySelector('span[style*="max-width"]');
+      const copy = cell?.querySelector('.ant-typography-copy');
+      if (!span || !copy) return null;
+      return copy.getBoundingClientRect().top > span.getBoundingClientRect().bottom - 2;
+    });
+    expect(wrapped).toBe(false);
   });
 
   // The run-detail Observed column is the other half of #1282, and the half the
