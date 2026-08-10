@@ -9,10 +9,12 @@ import pytest
 
 from backend.app.services.failure_classifier import (
     _MESSAGES,
+    _ORCHESTRATION_MESSAGES,
     FailureCategory,
     classify_failure_category,
     classify_failure_reason,
     classify_inventory_sync_error,
+    classify_orchestration_poll_reason,
 )
 
 
@@ -184,3 +186,74 @@ class TestInventorySyncClassification:
             reason = classify_inventory_sync_error(exc, "unity_catalog", during_enumeration=phase)
             assert secret not in reason
             assert "SUPERSECRET" not in reason
+
+
+class TestOrchestrationPollReason:
+    """#1285 — an orchestration connection is NOT a datasource (CLAUDE.md §4), so its
+    poll failures must not be described in warehouse/role/table/run-target nouns.
+
+    This shipped to prod: both Airflow connections reported "missing warehouse or role
+    … check the suite's run target" while the real cause was the Airflow host being
+    stopped. That is the #828 confident-wrong-answer shape — worse than a silent gap,
+    because it sends an operator to fix something that doesn't exist on the object.
+    """
+
+    # The exact exception an Airflow poll raises against a stopped Container App:
+    # httpx `raise_for_status()` on the ingress's 404.
+    STOPPED_HOST = RuntimeError("Client error '404 Not Found' for url 'https://airflow.example'")
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            STOPPED_HOST,
+            RuntimeError("connection refused"),
+            PermissionError("access denied"),
+            RuntimeError("something entirely unrecognised"),
+        ],
+    )
+    def test_no_reason_uses_datasource_or_run_vocabulary(self, exc: Exception) -> None:
+        """The property that actually failed in prod, asserted over every category —
+        not just the one that happened to break."""
+        reason = classify_orchestration_poll_reason(exc).lower()
+        # "the run failed to execute" is the generic UNKNOWN text — it describes a
+        # RUN, which a poll is not, so it belongs on this list too. Without it the
+        # UNKNOWN case passes against the unfixed code and proves nothing.
+        for noun in ("warehouse", "role", "table/path", "run target", "datasource", "the run"):
+            assert noun not in reason, f"{noun!r} leaked into an orchestration reason: {reason}"
+
+    def test_every_category_has_an_orchestration_message(self) -> None:
+        """A category added later without a message here would KeyError in the poll
+        path — the one place that must never raise (it runs inside the failure
+        handler itself)."""
+        for category in FailureCategory:
+            assert category in _ORCHESTRATION_MESSAGES
+
+    def test_a_stopped_host_names_both_plausible_causes(self) -> None:
+        """A 404 cannot distinguish "DAG deleted" from "host stopped" — Container Apps
+        answers for a stopped app with the same shape. So the message must name both
+        rather than assert one, per the #1104 hedging precedent."""
+        reason = classify_orchestration_poll_reason(self.STOPPED_HOST).lower()
+        assert "pipeline/dag" in reason
+        assert "url" in reason
+        assert "stopped" in reason
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Server error '502 Bad Gateway' for url 'https://airflow.example'",
+            "Server error '503 Service Unavailable' for url 'https://airflow.example'",
+            "Server error '504 Gateway Timeout' for url 'https://airflow.example'",
+            "upstream connect error: no healthy upstream",
+        ],
+    )
+    def test_upstream_down_statuses_classify_as_connectivity_not_config(self, message: str) -> None:
+        """Unlike a 404, a gateway saying its backend is missing or overloaded is an
+        unambiguous connectivity fact. Before #1285 these fell through to CONFIG and
+        told the reader their configuration was wrong."""
+        assert classify_failure_category(RuntimeError(message)) is FailureCategory.CONNECTIVITY
+
+    def test_never_echoes_the_raw_exception_text(self) -> None:
+        secret = "bearer dq_live_SUPERSECRET"  # a marker string, not a real credential
+        reason = classify_orchestration_poll_reason(RuntimeError(f"401 unauthorized: {secret}"))
+        assert secret not in reason
+        assert "SUPERSECRET" not in reason

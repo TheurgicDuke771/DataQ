@@ -384,3 +384,32 @@ class TestWarehouseLineageStalenessSurface:
         assert len(status) == 1
         assert status[0].stale is True
         assert status[0].last_error == "The run failed to execute."
+
+
+class TestPollReasonSpeaksOrchestration:
+    """#1285 — the reason written to `last_poll_error` must describe an ORCHESTRATION
+    failure, not a datasource run.
+
+    This is the wiring test, deliberately separate from the classifier's own unit
+    tests: those pass whatever `record_poll_failure` actually calls, so pointing this
+    line back at `classify_failure_reason` would restore the prod bug with a fully
+    green classifier suite.
+    """
+
+    def test_a_stopped_host_does_not_send_the_operator_to_a_warehouse(
+        self, db_session: Any
+    ) -> None:
+        conn = _dbt_connection(db_session)
+        # The literal prod failure: httpx raise_for_status() on the 404 that Container
+        # Apps returns for a Stopped app.
+        exc = RuntimeError("Client error '404 Not Found' for url 'https://airflow.example'")
+
+        orchestration_service.record_poll_failure(db_session, connection_id=conn.id, exc=exc)
+
+        db_session.refresh(conn)
+        stored = (conn.last_poll_error or "").lower()
+        assert stored
+        for noun in ("warehouse", "role", "table/path", "run target", "datasource"):
+            assert noun not in stored, f"{noun!r} in an orchestration poll reason: {stored}"
+        # …and it still says something actionable about what DID fail.
+        assert "pipeline/dag" in stored or "url" in stored
