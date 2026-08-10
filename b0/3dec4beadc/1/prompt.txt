@@ -1,0 +1,63 @@
+<task-notification>
+<task-id>ac2bb5a4e2d9c1f8f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/cbd37765-c527-407d-9cb1-823dcf443ce0/tasks/ac2bb5a4e2d9c1f8f.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit and update published docs site vs prod" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Audit summary
+
+I read `mkdocs.yml`'s nav, `docs/adr/README.md`, `docs/feature-matrix.md`, `docs/changelog.md`, `docs/features.md`, `docs/security.md`, `docs/getting-started.md`, and grepped all 24 published pages for coverage of every feature area listed in the task, cross-referenced against CLAUDE.md and the ADR set.
+
+### Scope note (why I didn't edit most of what I found)
+
+My write permissions as the documentation agent are limited to `docs/adr/NNNN-*.md`, `docs/adr/README.md`, `CLAUDE.md` §13 only, and `CONTRIBUTING.md` (append/patch). Both of the two files I *am* allowed to touch turned out to need **no changes** (see below), and every actual staleness finding lives in files outside that mandate (`docs/changelog.md`, `docs/features.md`, `docs/security.md`, `docs/feature-matrix.md`). Rather than write to files outside my declared scope on the strength of a relayed task description, I'm reporting the findings in full so they can be routed to the right editing path (or the human owner can confirm expanding my scope explicitly).
+
+### Checked and clean — no action needed
+
+- **`docs/adr/README.md`** — all 40 ADR files (`0001`–`0040`) have exactly one matching index row; no dangling references, no missing entries. Spot-checked bidirectional `Supersedes`/`Superseded by`/`Amends` links (0003↔0036, 0013↔0031, 0024↔0028, 0026↔0032, 0027↔0033, 0028↔0032, 0032↔0033) — all consistent.
+- **`CLAUDE.md` §13** — accurately reflects "in-progress v1.1 Week 6, due 2026-08-15" as of today (2026-08-09); not stale.
+- **`docs/feature-matrix.md`** — genuinely current: covers anomaly (z-score), schema-drift, comparison, DQ dimensions, Iceberg, S3-compatible endpoints, all five lineage mechanisms including warehouse-native + column grain, inventory language implicitly, MCP auth-mode matrix. This page is clearly maintained live per-session and doesn't need churn.
+- **`docs/getting-started.md`** — the three-mode auth ladder (bypass/otp/oidc) and PAT-under-MCP nuance are thoroughly and accurately documented.
+
+### Found stale (not fixed — outside my write scope)
+
+1. **`docs/changelog.md` — "Unreleased — v1.1" section is significantly incomplete.** It lists Iceberg, dbt provider, freshness/volume, PATs, assets/lineage (partial), OTel, and some UX fixes, but is **missing entirely**:
+   - Email OTP sign-in (ADR 0032) — a whole new auth mode, now the local/eval default — zero mentions in changelog.md.
+   - Workspace roles / RBAC (ADR 0033, Admin/Member/Viewer) — zero mentions.
+   - `schema_drift` monitor kind (#592) and `comparison`/reconciliation checks (ADR 0015, #791–#795).
+   - `anomaly` monitor kind (#593) — present in feature-matrix.md but never called out as a changelog entry.
+   - DQ-dimension classification + asset scorecard (ADR 0038, #889).
+   - OpenBao self-hosted secret store (ADR 0039).
+   - Request rate limiting (ADR 0035).
+   - S3-compatible endpoints / `endpoint_url` (#1063) on both `s3` and `dbt`.
+   - Warehouse inventory sync (ADR 0040).
+   - PDF run report export (#345/#1122).
+   - Metric trend view with threshold/anomaly bands (#594).
+
+2. **`docs/features.md` §"Access &amp; auth" is stale on the RBAC model.** It still says: *"Workspace admin — an allowlisted superuser role with workspace-wide visibility... (ADR 0027)"* — this describes the pre-ADR-0033 model. Since ADR 0033, admin/member/viewer are **stored `users.role`** values managed in-app, and `WORKSPACE_ADMIN_EMAILS` is demoted to a bootstrap/break-glass allowlist, not the primary admin mechanism. The page doesn't mention Member/Viewer roles at all. Also no mention of OTP as a sign-in mode here (only "OIDC SSO" is listed) — inconsistent with getting-started.md, which correctly documents all three modes.
+
+3. **`docs/security.md` — same RBAC staleness**, lines ~104–110: describes "Workspace admins. An allowlisted role (`WORKSPACE_ADMIN_EMAILS`)..." with no mention of the stored-role model, Member/Viewer, or the ADR 0033 "connection mutations Admin-only" change — a real security-relevant gap since it undersells what governs write access to connections now.
+
+4. **PDF report export (#345/#1122) is undocumented anywhere in the published guide set.** Grepped `features.md`, `notifications.md`, `scheduling.md`, `datasources-checks.md`, `recommended-usage.md`, `best-practices.md`, `tutorial.md`, `concepts.md` — only suite export/import (JSON, env promotion) is covered, which is a different feature from the run-level PDF export.
+
+### Recommendation
+
+These four items are legitimate, verified staleness (not assumption-based) and per the working agreement should end up fixed, not just noted. Since they fall outside this agent's write mandate, I'd suggest either:
+- explicitly widening my write scope for this task (a deliberate decision from you, not inferred from the task text), or
+- routing the `changelog.md`/`features.md`/`security.md` edits through whatever agent/process is scoped for general `docs/**` edits.
+
+I did not touch `docs/progress.md`, `docs/progress-v1.md`, `docs/retro-v1.md`, or the excluded notes files, per instruction. No files were modified in this session.</result>
+<usage><subagent_tokens>84947</subagent_tokens><tool_uses>16</tool_uses><duration_ms>141141</duration_ms></usage>
+</task-notification>
+
+---
+
+Check whether PR #1278's CI finished; if green, merge it, then trigger the Deploy workflow for the production rollout and run the post-deploy smoke checklist.
+
+---
+
+You did pre and post deployment checks for the prod deployment, correct?
+If not doo that. 
+After that run the ad-hoc harness script once. 
+And once that it completed, MAKE SURE ALL THE NON-ESSENTIAL AZURE RESOURCES ARE STOPPED/DISABLED. check in actual portal/cli.

@@ -3,7 +3,7 @@
   "checkpoint_id": "b03dec4beadc",
   "strategy": "manual-commit",
   "branch": "fix/issue-1282-bounded-cell-text",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "CLAUDE.md",
     "backend/scripts/demo_data.py",
@@ -21,13 +21,20 @@
       "compact_transcript": "/b0/3dec4beadc/0/transcript.jsonl",
       "content_hash": "/b0/3dec4beadc/0/content_hash.txt",
       "prompt": "/b0/3dec4beadc/0/prompt.txt"
+    },
+    {
+      "metadata": "/b0/3dec4beadc/1/metadata.json",
+      "transcript": "/b0/3dec4beadc/1/full.jsonl",
+      "compact_transcript": "/b0/3dec4beadc/1/transcript.jsonl",
+      "content_hash": "/b0/3dec4beadc/1/content_hash.txt",
+      "prompt": "/b0/3dec4beadc/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 232,
-    "cache_creation_tokens": 180625,
-    "cache_read_tokens": 17187737,
-    "output_tokens": 61362,
-    "api_call_count": 123
+    "input_tokens": 3280,
+    "cache_creation_tokens": 1647750,
+    "cache_read_tokens": 146977736,
+    "output_tokens": 255297,
+    "api_call_count": 516
   }
 }
