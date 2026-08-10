@@ -127,6 +127,33 @@ test.describe('Results page', () => {
     expect(tableWidth).toBeGreaterThan(0);
     const viewport = page.viewportSize();
     expect(tableWidth).toBeLessThan((viewport?.width ?? 1280) * 1.5);
+
+    // Bounding the Provider-run id must not push its copy button onto a second
+    // line — that silently grew every row in the table from 56px to 77px when
+    // the bound was first set to 150px in a 200px cell (#1286). Another layout
+    // property jsdom cannot see, so it is asserted here.
+    //
+    // Scoped to the Airflow row, whose seeded run id is a real full-length
+    // `manual__<iso8601>` — a `max-width` only ever clips, so a short id makes
+    // this assertion pass at ANY bound and the guard silently goes inert. The
+    // `idClipped` assertion below is what keeps that honest: if the seed ever
+    // reverts to a tidy id, this test fails rather than quietly stops testing.
+    const idBox = await table.evaluate((el) => {
+      const headers = [...el.querySelectorAll('th')].map((th) => th.textContent?.trim());
+      const idx = headers.indexOf('Provider run');
+      const row = [...el.querySelectorAll('tr.ant-table-row')].find((r) =>
+        r.textContent?.includes('events_streaming'),
+      );
+      const cell = row?.children[idx];
+      const span = cell?.querySelector('span[style*="max-width"]');
+      const copy = cell?.querySelector('.ant-typography-copy');
+      if (!span || !copy) return null;
+      return {
+        idClipped: span.scrollWidth > Math.ceil(span.clientWidth),
+        copyWrapped: copy.getBoundingClientRect().top > span.getBoundingClientRect().bottom - 2,
+      };
+    });
+    expect(idBox).toEqual({ idClipped: true, copyWrapped: false });
   });
 
   // The run-detail Observed column is the other half of #1282, and the half the

@@ -510,13 +510,18 @@ function PipelineRunsTab({
       // The Tooltip is not decoration: two Airflow runs from the same day differ
       // only in the tail that the bound clips, so without a hover reveal the
       // column would identify a run less well bounded than it did unbounded.
+      //
+      // 120px, not 150: the id span and the copy button share this 200px cell,
+      // and above 130 the button wraps to a second line — which grew every row
+      // in the table from 56px to 77px. Measured against live prod; 120 leaves
+      // margin for font-rendering differences across platforms.
       title: 'Provider run',
       dataIndex: 'provider_run_id',
       width: 200,
       render: (v: string) => (
         <Typography.Text code copyable={{ text: v }} style={{ fontSize: 12 }}>
           <Tooltip title={v}>
-            <span style={boundedTextStyle(150)}>{v}</span>
+            <span style={boundedTextStyle(120)}>{v}</span>
           </Tooltip>
         </Typography.Text>
       ),

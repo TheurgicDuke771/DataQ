@@ -631,10 +631,15 @@ def _seed_second_suite_run(session: Session, *, suite: Suite) -> int:
 # failure_reason). provider_run_id is fixed so the upsert key dedupes re-runs.
 _SEED_PIPELINE_RUNS: list[tuple[str, tuple[str, str], str, str, str, str | None]] = [
     ("adf", ("adf-orchestrator", "prod"), "seed-adf-0001", "daily_orders_load", "succeeded", None),
+    # Airflow's own run ids are long by construction — this is the real shape
+    # (`manual__<iso8601-with-microseconds>`), not a tidy `seed-airflow-0001`.
+    # Same reasoning as the full-length failure_reason below: the Provider-run
+    # column's bound cannot be exercised, or regression-tested, by a short id —
+    # #1286 shipped a wrapping copy button precisely because the seed was tidy.
     (
         "airflow",
         ("airflow-dags", "prod"),
-        "seed-airflow-0001",
+        "manual__2026-08-08T06:49:26.080870+00:00",
         "events_streaming",
         "failed",
         "Task 'load_events' failed: upstream source timed out",
