@@ -31,7 +31,7 @@ psycopg2-binary==2.9.12           # swap for psycopg2 in the production image
 
 # ── Config / validation ──
 pydantic==2.13.4
-pydantic-settings==2.14.2
+pydantic-settings==2.15.0
 
 # ── DQ engine (PINNED — GX v1 API drifts across point releases) ──
 great-expectations==1.17.2
@@ -41,7 +41,7 @@ structlog==26.1.0
 opentelemetry-sdk==1.43.0                        # spans (A3) + logs (#524) — vendor-neutral core, ADR 0010
 opentelemetry-instrumentation-fastapi==0.64b0    # server span per request
 opentelemetry-instrumentation-celery==0.64b0     # span per task run
-azure-monitor-opentelemetry-exporter==1.0.0b55   # Azure backend for spans + logs (exporter ONLY, not the distro — it would double-configure the log pipeline)
+azure-monitor-opentelemetry-exporter==1.0.0b56   # Azure backend for spans + logs (exporter ONLY, not the distro — it would double-configure the log pipeline)
 opentelemetry-exporter-otlp-proto-http==1.43.0   # generic OTLP/HTTP backend for spans + logs (#589) — any OTLP consumer (Tempo/Jaeger/Datadog), vendor-neutral (ADR 0010)
 
 # ── Auth / secrets ──
@@ -64,7 +64,7 @@ openpyxl==3.1.5                   # XLSX comparison-report download (ADR 0015 §
 adlfs==2026.5.0                   # pyiceberg FileIO for abfss:// (ADLS) warehouses — [pyarrow] covers S3 natively but resolves ADLS via fsspec/adlfs; without it any ADLS-warehouse iceberg table load dies ModuleNotFoundError (#749). BSD-3 (rule 40)
 
 # ── Lineage (OpenLineage emission — ADR 0034 / #758) ──
-openlineage-python==1.51.0        # Apache-2.0 (rule 40); emits DQ RunEvents, dark by default. Core deps only (attrs/requests/httpx/pyyaml/python-dateutil/packaging) — no kafka/gcp extras
+openlineage-python==1.52.0        # Apache-2.0 (rule 40); emits DQ RunEvents, dark by default. Core deps only (attrs/requests/httpx/pyyaml/python-dateutil/packaging) — no kafka/gcp extras
 
 # ── MCP (Week 7) ──
-fastmcp==3.4.5                    # CVE-2025-62800/62801/64340/69196, GHSA-rcfx-77hg-w2wv, CVE-2026-27124 (was 2.8.1)
+fastmcp==3.4.6                    # CVE-2025-62800/62801/64340/69196, GHSA-rcfx-77hg-w2wv, CVE-2026-27124 (was 2.8.1)

@@ -15,10 +15,10 @@
 
 fastapi==0.141.1
 fastapi-azure-auth==5.3.0
-fastmcp==3.4.5
+fastmcp==3.4.6
 psycopg2-binary==2.9.12
 pydantic==2.13.4
-pydantic-settings==2.14.2
+pydantic-settings==2.15.0
 sqlalchemy[mypy]==2.0.51
 structlog==26.1.0
 types-redis==4.6.0.20241004
