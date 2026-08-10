@@ -5,8 +5,8 @@ import { expect, test } from '@playwright/test';
 // suite-scoped, redaction-aware surface, not Grafana). The seed lands, on the
 // "Orders quality" suite, two succeeded runs — a pass/pass/warn/fail severity
 // spread (seed:run:succeeded) and an operational-spectrum run with
-// critical/error/skip (seed:run:mixed) — plus a terminal-failed run, and two
-// monitored pipeline runs.
+// critical/error/skip (seed:run:mixed) — plus a terminal-failed run, and three
+// monitored pipeline runs (the third carrying a full-length ADF error).
 test.describe('Results page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/results');
@@ -77,9 +77,90 @@ test.describe('Results page', () => {
   test('shows the orchestration pipeline-runs monitoring feed', async ({ page }) => {
     await page.getByRole('tab', { name: 'Pipeline runs' }).click();
 
-    // Both seeded pipeline runs (ADF succeeded, Airflow failed) are listed.
+    // All three seeded pipeline runs (ADF succeeded, Airflow failed, ADF failed
+    // with a full-length provider error) are listed.
     await expect(page.getByText('daily_orders_load')).toBeVisible();
     await expect(page.getByText('events_streaming')).toBeVisible();
+    await expect(page.getByText('hourly_payments_load')).toBeVisible();
     await expect(page.getByText('upstream source timed out')).toBeVisible();
+  });
+
+  // #1282: the column `width` + `ellipsis` that #1185/#1208 shipped were inert
+  // — `scroll={{ x: 'max-content' }}` sizes the table from its content, which
+  // neuters `table-layout: fixed` and demotes the colgroup width to a hint, so
+  // a long failure reason rendered at ~1900px with no ellipsis in production.
+  //
+  // This assertion has to live in Playwright: jsdom performs no layout, so the
+  // Vitest suite happily confirmed the ellipsis CLASS was applied while the
+  // bound did nothing. Measure the rendered box, not the props.
+  test('bounds a long failure reason instead of stretching the table', async ({ page }) => {
+    await page.getByRole('tab', { name: 'Pipeline runs' }).click();
+
+    const row = page.locator('tr.ant-table-row').filter({ hasText: 'hourly_payments_load' });
+    await expect(row).toHaveCount(1);
+    const text = row.getByText(/Operation on target LoadPaymentsToSnowflake failed/);
+    await expect(text).toBeVisible();
+
+    const box = await text.evaluate((el) => ({
+      rendered: el.getBoundingClientRect().width,
+      // Overflowing content is what makes text-overflow: ellipsis actually
+      // paint an ellipsis; equal widths mean the text fit, i.e. no bound.
+      full: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }));
+
+    // `boundedTextStyle(260)` from ellipsisColumn('Failure reason', …, 260).
+    expect(box.rendered).toBeLessThanOrEqual(260);
+    expect(box.full).toBeGreaterThan(box.clientWidth);
+
+    // …and the table itself stays near the viewport rather than being dragged
+    // out to the length of the error string (the user-visible symptom: an
+    // unusably long horizontal scrollbar). Identified by its own column header
+    // rather than by position: `.ant-table table` unscoped matches the hidden
+    // Runs table first and measures 0, which passes this assertion no matter
+    // what the pipeline table does — a check that cannot fail is worse than no
+    // check.
+    const table = page
+      .locator('.ant-table table')
+      .filter({ has: page.getByRole('columnheader', { name: 'Failure reason' }) });
+    const tableWidth = await table.evaluate((el) => el.getBoundingClientRect().width);
+    expect(tableWidth).toBeGreaterThan(0);
+    const viewport = page.viewportSize();
+    expect(tableWidth).toBeLessThan((viewport?.width ?? 1280) * 1.5);
+  });
+
+  // The run-detail Observed column is the other half of #1282, and the half the
+  // fix's own argument says only a browser can validate — so it gets its own
+  // measurement rather than riding on the pipeline-runs one. The seeded `error`
+  // result carries a full-length connector error for exactly this.
+  test('bounds a long observed_value on the run-detail page', async ({ page }) => {
+    await page.locator('tr.ant-table-row').filter({ hasText: 'seed:run:mixed' }).first().click();
+    await expect(page).toHaveURL(/\/results\/[0-9a-f-]+$/);
+
+    // Scoped to the interactive region (#345): the print-only RunReport renders
+    // a parallel, unbounded copy of the same payload.
+    //
+    // Targets the BOUNDED span, not the text: `getByText` resolves to the
+    // innermost match, which here is ScalarValue's inline `<code>` — its
+    // scrollWidth/clientWidth are both 0 and its rect is the full text width, so
+    // measuring it would fail even with the bound working. Matching on the bound
+    // itself also means removing the bound makes this test fail (no match)
+    // rather than silently measure something else.
+    const observed = page
+      .getByTestId('rd-screen')
+      .locator('td span[style*="max-width"]')
+      .filter({ hasText: /snowflake\.connector\.errors\.ProgrammingError/ });
+    await expect(observed).toBeVisible();
+
+    const box = await observed.evaluate((el) => ({
+      rendered: el.getBoundingClientRect().width,
+      full: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }));
+
+    // `OBSERVED_COLUMN_WIDTH` in src/pages/RunDetail.tsx — restated rather than
+    // imported, to keep the React page out of this process.
+    expect(box.rendered).toBeLessThanOrEqual(220);
+    expect(box.full).toBeGreaterThan(box.clientWidth);
   });
 });

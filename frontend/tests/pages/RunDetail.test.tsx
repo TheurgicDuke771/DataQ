@@ -796,7 +796,19 @@ describe('RunDetail — Observed column bounding (#1207)', () => {
 
     const expectedText = JSON.stringify(longObservedValue);
     const trigger = region.getByText(expectedText);
+    // The `ant-table-cell-ellipsis` class alone proved nothing — it was present
+    // in production the whole time the column rendered unbounded (#1282), since
+    // `scroll={{ x: 'max-content' }}` makes the column `width` a non-binding
+    // hint. The bound that binds is the inline style on the span; jsdom can
+    // only see that it's applied, so the measurement lives in
+    // `e2e/results.spec.ts`.
     expect(trigger.closest('td')).toHaveClass('ant-table-cell-ellipsis');
+    expect(trigger.closest('span[style]')).toHaveStyle({
+      maxWidth: '220px',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    });
 
     await user.hover(trigger);
     // The custom Tooltip renders in a portal, outside the `rd-screen` region.

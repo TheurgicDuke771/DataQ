@@ -33,12 +33,23 @@ import {
 import { Page } from '../components/layout/Page';
 import { RunReport } from '../components/results/RunReport';
 import { ScalarValue } from '../components/results/ScalarValue';
+import { boundedTextStyle } from '../components/shared/ellipsisColumn';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { downloadCsv, downloadJson, toFilenameStem } from '../utils/download';
 import { PageError } from '../components/feedback/PageError';
 
 /** The four severity tiers that count as "evaluated" (ADR 0005) — skip/error don't. */
 const SEVERITY_STATUSES = new Set<ResultStatus>(['pass', 'warn', 'fail', 'critical']);
+
+/**
+ * Bound for the "Observed" cell — a structured `observed_value` payload
+ * (schema_drift baselines, comparison buckets, anomaly stats) is unbounded in
+ * principle. Deliberately NOT exported: importing this module from a Playwright
+ * spec would drag the whole React/antd page into the test process, so
+ * `e2e/results.spec.ts` restates the number and points back here. Keep the two
+ * in step.
+ */
+const OBSERVED_COLUMN_WIDTH = 220;
 
 /**
  * Routed run-detail page (`/results/:runId`, ADR 0022) — replaces the run-detail
@@ -490,16 +501,20 @@ function ResultsTable({
       // render rather than a plain string field. ScalarValue's own
       // formatting (monospace, em-dash for null) is reused unchanged in
       // both the cell and the tooltip.
+      //
+      // The bound that actually binds is `boundedTextStyle` on the span: the
+      // column `width` alone is inert under this table's `scroll.x =
+      // 'max-content'` (#1282 — see that helper for the why).
       title: 'Observed',
       dataIndex: 'observed_value',
-      width: 220,
+      width: OBSERVED_COLUMN_WIDTH,
       ellipsis: { showTitle: false },
       render: (v: Record<string, unknown> | null) =>
         v === null || v === undefined ? (
           <ScalarValue value={v} />
         ) : (
           <Tooltip title={<ScalarValue value={v} />}>
-            <span>
+            <span style={boundedTextStyle(OBSERVED_COLUMN_WIDTH)}>
               <ScalarValue value={v} />
             </span>
           </Tooltip>

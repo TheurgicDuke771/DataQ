@@ -420,7 +420,15 @@ _SEED_RUN_MIXED_RESULTS: list[_SeedResult] = [
         "amount in range",
         "error",
         None,
-        {"error": 'column "amount" could not be cast to NUMERIC'},
+        # Full driver-error length on purpose: a real `error` observed_value is
+        # a whole connector traceback line, and the run-detail Observed column's
+        # bound (#1282) can only be regression-tested against a payload that
+        # actually overflows it.
+        {
+            "error": "(snowflake.connector.errors.ProgrammingError) 000904 (42000): "
+            "SQL compilation error: error line 1 at position 7 — invalid identifier "
+            "'AMOUNT'; column \"amount\" could not be cast to NUMERIC"
+        },
         None,
         None,
     ),
@@ -630,6 +638,23 @@ _SEED_PIPELINE_RUNS: list[tuple[str, tuple[str, str], str, str, str, str | None]
         "events_streaming",
         "failed",
         "Task 'load_events' failed: upstream source timed out",
+    ),
+    # A realistic full-length provider error. `pipeline_runs.failure_reason` is
+    # String(2048) and ADF genuinely fills it — the seeded short reason above
+    # can't exercise (or regress-test) the column's bound, which is how #1282
+    # stayed invisible to the suite. Keep this one long.
+    (
+        "adf",
+        ("adf-orchestrator", "prod"),
+        "seed-adf-0002",
+        "hourly_payments_load",
+        "failed",
+        "Operation on target LoadPaymentsToSnowflake failed: "
+        "ErrorCode=GenericAdoNetConnectionOpenError,"
+        "'Type=Microsoft.DataTransfer.Common.Shared.HybridDeliveryException,"
+        "Message=A database operation failed with the following error: "
+        "Incorrect username or password was specified.,"
+        "Source=Microsoft.DataTransfer.ClientLibrary,'",
     ),
 ]
 

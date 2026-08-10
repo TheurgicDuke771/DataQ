@@ -463,6 +463,19 @@ describe('Results page', () => {
     // is CSS-only (text-overflow), antd never clips the actual text node —
     // wrapped in the tooltip's trigger element.
     const trigger = screen.getByText(longReason);
+
+    // The bound has to live on the rendered element, not just on the column
+    // prop: under `scroll={{ x: 'max-content' }}` the column `width` is inert
+    // and this column rendered ~1900px wide in production (#1282). jsdom does
+    // no layout, so this can only assert that the bounding style is APPLIED —
+    // that it WORKS is measured in `e2e/results.spec.ts`.
+    expect(trigger).toHaveStyle({
+      maxWidth: '260px',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    });
+
     await user.hover(trigger);
 
     // Hovering reveals the FULL string via antd's custom tooltip (not the
