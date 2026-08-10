@@ -31,7 +31,7 @@ import {
 } from '../api/triggerBindings';
 import { Page } from '../components/layout/Page';
 import { RunNowPanel } from '../components/runs/RunNowPanel';
-import { ellipsisColumn } from '../components/shared/ellipsisColumn';
+import { boundedTextStyle, ellipsisColumn } from '../components/shared/ellipsisColumn';
 import { useAsyncData, type AsyncState } from '../hooks/useAsyncData';
 import {
   formatDuration,
@@ -488,12 +488,18 @@ function PipelineRunsTab({
       // The provider's own run id — the handle for cross-referencing this run in
       // ADF / Airflow when debugging. Copyable for exactly that. Distinct from the
       // "DQ run" column, which links the DataQ run this pipeline triggered.
+      //
+      // Airflow's own run ids are long (`manual__2026-08-09T23:11:43.975220+00:00`),
+      // so this needs a real bound. `Typography`'s own `ellipsis` prop was inert
+      // here for the #1282 reason — and it can't be the fix either, since it would
+      // clip the copy button along with the text. Bound the id span instead and
+      // leave the button outside it.
       title: 'Provider run',
       dataIndex: 'provider_run_id',
       width: 200,
       render: (v: string) => (
-        <Typography.Text code copyable={{ text: v }} style={{ fontSize: 12 }} ellipsis>
-          {v}
+        <Typography.Text code copyable={{ text: v }} style={{ fontSize: 12 }}>
+          <span style={boundedTextStyle(150)}>{v}</span>
         </Typography.Text>
       ),
     },

@@ -631,6 +631,23 @@ _SEED_PIPELINE_RUNS: list[tuple[str, tuple[str, str], str, str, str, str | None]
         "failed",
         "Task 'load_events' failed: upstream source timed out",
     ),
+    # A realistic full-length provider error. `pipeline_runs.failure_reason` is
+    # String(2048) and ADF genuinely fills it — the seeded short reason above
+    # can't exercise (or regress-test) the column's bound, which is how #1282
+    # stayed invisible to the suite. Keep this one long.
+    (
+        "adf",
+        ("adf-orchestrator", "prod"),
+        "seed-adf-0002",
+        "hourly_payments_load",
+        "failed",
+        "Operation on target LoadPaymentsToSnowflake failed: "
+        "ErrorCode=GenericAdoNetConnectionOpenError,"
+        "'Type=Microsoft.DataTransfer.Common.Shared.HybridDeliveryException,"
+        "Message=A database operation failed with the following error: "
+        "Incorrect username or password was specified.,"
+        "Source=Microsoft.DataTransfer.ClientLibrary,'",
+    ),
 ]
 
 

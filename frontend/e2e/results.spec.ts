@@ -77,9 +77,55 @@ test.describe('Results page', () => {
   test('shows the orchestration pipeline-runs monitoring feed', async ({ page }) => {
     await page.getByRole('tab', { name: 'Pipeline runs' }).click();
 
-    // Both seeded pipeline runs (ADF succeeded, Airflow failed) are listed.
+    // All three seeded pipeline runs (ADF succeeded, Airflow failed, ADF failed
+    // with a full-length provider error) are listed.
     await expect(page.getByText('daily_orders_load')).toBeVisible();
     await expect(page.getByText('events_streaming')).toBeVisible();
+    await expect(page.getByText('hourly_payments_load')).toBeVisible();
     await expect(page.getByText('upstream source timed out')).toBeVisible();
+  });
+
+  // #1282: the column `width` + `ellipsis` that #1185/#1208 shipped were inert
+  // — `scroll={{ x: 'max-content' }}` sizes the table from its content, which
+  // neuters `table-layout: fixed` and demotes the colgroup width to a hint, so
+  // a long failure reason rendered at ~1900px with no ellipsis in production.
+  //
+  // This assertion has to live in Playwright: jsdom performs no layout, so the
+  // Vitest suite happily confirmed the ellipsis CLASS was applied while the
+  // bound did nothing. Measure the rendered box, not the props.
+  test('bounds a long failure reason instead of stretching the table', async ({ page }) => {
+    await page.getByRole('tab', { name: 'Pipeline runs' }).click();
+
+    const row = page.locator('tr.ant-table-row').filter({ hasText: 'hourly_payments_load' });
+    await expect(row).toHaveCount(1);
+    const text = row.getByText(/Operation on target LoadPaymentsToSnowflake failed/);
+    await expect(text).toBeVisible();
+
+    const box = await text.evaluate((el) => ({
+      rendered: el.getBoundingClientRect().width,
+      // Overflowing content is what makes text-overflow: ellipsis actually
+      // paint an ellipsis; equal widths mean the text fit, i.e. no bound.
+      full: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }));
+
+    // `boundedTextStyle(260)` from ellipsisColumn('Failure reason', …, 260).
+    expect(box.rendered).toBeLessThanOrEqual(260);
+    expect(box.full).toBeGreaterThan(box.clientWidth);
+
+    // …and the table itself stays near the viewport rather than being dragged
+    // out to the length of the error string (the user-visible symptom: an
+    // unusably long horizontal scrollbar). Identified by its own column header
+    // rather than by position: `.ant-table table` unscoped matches the hidden
+    // Runs table first and measures 0, which passes this assertion no matter
+    // what the pipeline table does — a check that cannot fail is worse than no
+    // check.
+    const table = page
+      .locator('.ant-table table')
+      .filter({ has: page.getByRole('columnheader', { name: 'Failure reason' }) });
+    const tableWidth = await table.evaluate((el) => el.getBoundingClientRect().width);
+    expect(tableWidth).toBeGreaterThan(0);
+    const viewport = page.viewportSize();
+    expect(tableWidth).toBeLessThan((viewport?.width ?? 1280) * 1.5);
   });
 });
