@@ -1,0 +1,10 @@
+Hey, 
+Can you triage the open dependabot PRs & comeup with the resolution plan.
+
+---
+
+There is no open CVE or any known issues for the versions we are going to update. Right?
+
+---
+
+Yes
