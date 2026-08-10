@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "b6bf4bc60003",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1285-orchestration-poll-reason",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/services/failure_classifier.py",
+    "backend/app/services/orchestration_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b6/bf4bc60003/0/metadata.json",
+      "transcript": "/b6/bf4bc60003/0/full.jsonl",
+      "compact_transcript": "/b6/bf4bc60003/0/transcript.jsonl",
+      "content_hash": "/b6/bf4bc60003/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 55,
+    "cache_creation_tokens": 25662,
+    "cache_read_tokens": 9289129,
+    "output_tokens": 13762,
+    "api_call_count": 29
+  }
+}
