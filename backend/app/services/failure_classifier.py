@@ -83,17 +83,24 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
             "max retries exceeded",
             "failed to establish a new connection",
             "ssl",
-            # Upstream-down HTTP statuses (#1285). These are unambiguous — a gateway
-            # reporting its backend is missing or overloaded is a connectivity fact,
-            # not a configuration one. Deliberately NOT 404: a 404 from a provider
-            # REST API is genuinely ambiguous (deleted DAG vs. stopped host answering
-            # at the ingress), so it stays in CONFIG, whose orchestration message
-            # names both causes rather than asserting the wrong one.
-            "502",
+            # Upstream-down HTTP statuses (#1285). A gateway reporting its backend is
+            # missing or overloaded is a connectivity fact, not a configuration one.
+            #
+            # PHRASES ONLY — never the bare numbers. This table is shared by every
+            # caller (runs, dry-runs, monitors, comparison, UC, lineage refresh,
+            # inventory sync) and CONNECTIVITY is matched before CONFIG, so a bare
+            # "503" would capture a sealed-vault error ("HTTP 503 — vault sealed"),
+            # a Snowflake "error line 1 at position 504", and a pandas "Expected 3
+            # fields in line 5031" — each then reported as "the datasource could not
+            # be reached" while the datasource is fine. The digits are redundant
+            # anyway: httpx's `raise_for_status()` text carries the reason phrase.
+            #
+            # Deliberately NOT 404: a 404 from a provider REST API is genuinely
+            # ambiguous (deleted DAG vs. stopped host answering at the ingress), so it
+            # stays in CONFIG, whose orchestration message names both causes rather
+            # than asserting the wrong one.
             "bad gateway",
-            "503",
             "service unavailable",
-            "504",
             "gateway timeout",
             "no healthy upstream",
         ),
@@ -153,20 +160,30 @@ def classify_failure_reason(exc: BaseException) -> str:
 # stopped host and a deleted DAG are genuinely indistinguishable here: the poll
 # is an httpx call ending in `raise_for_status()`, and Container Apps answers for
 # a stopped app with the same 404 shape as a real "DAG not found".
+#
+# The wording is also provider-NEUTRAL, which is not a style choice: the three
+# providers have genuinely different shapes. Airflow polls a REST host (base
+# URL), ADF polls Azure by subscription/resource-group/factory, and dbt contacts
+# no host at all — it reads a `run_results.json` artifact from ADLS/S3/file. A
+# message that says "check the connection's base URL" is the very defect this
+# fixes, one provider over. Likewise nothing here asserts that anything
+# *answered*: the exception can be raised before any request leaves DataQ (a
+# sealed secret store, an unknown provider, a config validation error).
 _ORCHESTRATION_MESSAGES: dict[FailureCategory, str] = {
     FailureCategory.CONFIG: (
-        "The orchestration host answered, but not with what DataQ asked for — either the "
-        "pipeline/DAG no longer exists, or the connection's base URL points somewhere "
-        "that isn't this provider (a stopped host can look the same). Check the "
-        "connection's URL and the pipeline/DAG id on its trigger bindings."
+        "DataQ could not get what it asked for from this orchestration provider — the "
+        "pipeline/DAG, or the artifact it publishes, may no longer exist, or the "
+        "connection may point somewhere that no longer holds it. Check the connection's "
+        "settings and the pipeline/DAG id on its trigger bindings."
     ),
     FailureCategory.CONNECTIVITY: (
-        "The orchestration host could not be reached (network, DNS, TLS, a timeout, or "
-        "the host is down). Check that the provider is running and reachable from DataQ."
+        "The orchestration provider could not be reached (network, DNS, TLS, a timeout, "
+        "or the host or storage it lives on is down). Check that it is running and "
+        "reachable from DataQ."
     ),
     FailureCategory.PERMISSION: (
         "The orchestration provider rejected the credentials, or the identity is missing a "
-        "permission it needs to list runs. Re-check the connection's credentials and its "
+        "permission it needs to read runs. Re-check the connection's credentials and its "
         "access to the pipelines/DAGs."
     ),
     FailureCategory.UNKNOWN: (

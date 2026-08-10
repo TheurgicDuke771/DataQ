@@ -234,8 +234,25 @@ class TestOrchestrationPollReason:
         rather than assert one, per the #1104 hedging precedent."""
         reason = classify_orchestration_poll_reason(self.STOPPED_HOST).lower()
         assert "pipeline/dag" in reason
-        assert "url" in reason
-        assert "stopped" in reason
+        assert "no longer" in reason  # the "it's gone" cause
+        assert "connection" in reason  # …and the "you're pointed elsewhere" cause
+
+    def test_no_message_assumes_one_provider_s_shape(self) -> None:
+        """The three providers are shaped differently: Airflow polls a REST host,
+        ADF polls Azure by subscription/resource-group/factory, and dbt contacts no
+        host at all — it reads a run_results.json artifact from ADLS/S3/file. Telling
+        a dbt operator to check a "base URL" is this very bug, one provider over."""
+        for category, reason in _ORCHESTRATION_MESSAGES.items():
+            low = reason.lower()
+            for airflow_only in ("base url", "the host answered", "rest api"):
+                assert airflow_only not in low, f"{category}: provider-specific {airflow_only!r}"
+
+    def test_no_message_claims_the_provider_answered(self) -> None:
+        """The exception can be raised before any request leaves DataQ — a sealed
+        secret store while resolving the credential, an unknown provider, a config
+        validation error. Asserting "it answered" would be unsupportable."""
+        for reason in _ORCHESTRATION_MESSAGES.values():
+            assert "answered" not in reason.lower()
 
     @pytest.mark.parametrize(
         "message",
@@ -251,6 +268,35 @@ class TestOrchestrationPollReason:
         unambiguous connectivity fact. Before #1285 these fell through to CONFIG and
         told the reader their configuration was wrong."""
         assert classify_failure_category(RuntimeError(message)) is FailureCategory.CONNECTIVITY
+
+    @pytest.mark.parametrize(
+        ("message", "expected"),
+        [
+            # A sealed vault is not a datasource outage — this must not become
+            # "the datasource could not be reached" (ADR 0039's whole point is that
+            # an outage must never be reportable as a benign state).
+            (
+                "SecretStoreUnavailableError: could not serve 'conn-sf-dev' "
+                "(HTTP 503 — vault sealed or standby)",
+                FailureCategory.UNKNOWN,
+            ),
+            # A column position that happens to read 504.
+            (
+                "ProgrammingError: error line 1 at position 504 invalid identifier 'X'",
+                FailureCategory.CONFIG,
+            ),
+            # A CSV line number that happens to read 502.
+            ("ParserError: Expected 3 fields in line 5023, saw 5", FailureCategory.UNKNOWN),
+        ],
+    )
+    def test_bare_status_digits_do_not_capture_unrelated_errors(
+        self, message: str, expected: FailureCategory
+    ) -> None:
+        """`_MARKERS` is shared by EVERY caller — runs, dry-runs, monitors, comparison,
+        UC, lineage refresh, inventory sync — and CONNECTIVITY is matched before
+        CONFIG. Matching a bare "502"/"503"/"504" would have quietly reclassified all
+        of these as a network problem, which is why the markers are reason PHRASES."""
+        assert classify_failure_category(RuntimeError(message)) is expected
 
     def test_never_echoes_the_raw_exception_text(self) -> None:
         secret = "bearer dq_live_SUPERSECRET"  # a marker string, not a real credential

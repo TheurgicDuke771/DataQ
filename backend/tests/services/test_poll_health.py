@@ -412,4 +412,4 @@ class TestPollReasonSpeaksOrchestration:
         for noun in ("warehouse", "role", "table/path", "run target", "datasource"):
             assert noun not in stored, f"{noun!r} in an orchestration poll reason: {stored}"
         # …and it still says something actionable about what DID fail.
-        assert "pipeline/dag" in stored or "url" in stored
+        assert "pipeline/dag" in stored
