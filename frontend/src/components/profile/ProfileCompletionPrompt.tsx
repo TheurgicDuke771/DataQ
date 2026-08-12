@@ -87,7 +87,7 @@ export function ProfileCompletionPrompt() {
       open={shouldShow}
       title="Welcome to DataQ"
       onCancel={dismiss}
-      maskClosable={false}
+      mask={{ closable: false }}
       destroyOnHidden
       footer={[
         <Button key="skip" onClick={dismiss}>

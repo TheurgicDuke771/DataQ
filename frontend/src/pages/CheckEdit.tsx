@@ -311,7 +311,7 @@ function CheckEditForm({
         title={`${check.name} — trend`}
         open={trendOpen}
         onClose={() => setTrendOpen(false)}
-        width={520}
+        size={520}
       >
         {trendOpen && <CheckTrend suiteId={suiteId} check={check} />}
       </Drawer>
