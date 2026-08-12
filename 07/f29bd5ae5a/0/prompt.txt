@@ -1,0 +1,2 @@
+Hey, I just rotated the snowflake admin PAT - `/Users/arijit/Downloads/DATAQ_ADMIN_PAT-token-secret.txt` 
+Can you check and update all the references
