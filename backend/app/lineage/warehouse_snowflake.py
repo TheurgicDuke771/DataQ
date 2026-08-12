@@ -1116,6 +1116,7 @@ _UNSUPPORTED_EDITION_MSG = "unsupported on this edition"
 
 _NOT_AUTHORIZED_MSG = "not authorized (role lacks the ACCOUNT_USAGE / GET_LINEAGE grant)"
 
+
 # #1264: the floor-after-a-successful-traversal branch in `fetch_edges` reaches
 # `_feature_unsupported_reason` only when GET_LINEAGE just succeeded, so a CONFIRMED
 # denial there can never be the GET_LINEAGE grant `_NOT_AUTHORIZED_MSG` names — reusing
