@@ -3,6 +3,7 @@ from logging.config import fileConfig
 from backend.app.core.config import get_settings
 from backend.app.db import models  # noqa: F401  (register models on Base.metadata)
 from backend.app.db.base import Base
+from backend.app.db.pg_connect_args import psycopg_connect_args
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
@@ -73,12 +74,23 @@ def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
         connect_args={
+            # Portable across drivers — see the mirrored comment in
+            # `backend/app/db/session.py`'s `_build_engine()`.
             "options": f"-c lock_timeout={int(_MIGRATION_LOCK_TIMEOUT_MS)}",
-            "connect_timeout": _MIGRATION_CONNECT_TIMEOUT_SECONDS,
-            "keepalives": 1,
-            "keepalives_idle": _MIGRATION_KEEPALIVES_IDLE_SECONDS,
-            "keepalives_interval": _MIGRATION_KEEPALIVES_INTERVAL_SECONDS,
-            "keepalives_count": _MIGRATION_KEEPALIVES_COUNT,
+            # `connect_timeout`/`keepalives*` are psycopg-only libpq params (#1266):
+            # `database_url` has no driver validator and is env-overridable, so this
+            # guard degrades to {} instead of `engine_from_config` raising
+            # `TypeError` on the first real connect if it ever resolves to a
+            # non-psycopg driver. Shared with `session.py`'s app engine so the two
+            # don't drift.
+            **psycopg_connect_args(
+                get_settings().database_url,
+                connect_timeout=_MIGRATION_CONNECT_TIMEOUT_SECONDS,
+                keepalives=1,
+                keepalives_idle=_MIGRATION_KEEPALIVES_IDLE_SECONDS,
+                keepalives_interval=_MIGRATION_KEEPALIVES_INTERVAL_SECONDS,
+                keepalives_count=_MIGRATION_KEEPALIVES_COUNT,
+            ),
         },
     )
     with connectable.connect() as connection:

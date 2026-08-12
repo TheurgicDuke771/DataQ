@@ -5,6 +5,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import get_settings
+from backend.app.db.pg_connect_args import psycopg_connect_args
 
 # No statement waits forever for a LOCK. Postgres' default (`lock_timeout = 0`) means
 # "block indefinitely", and that default took production down (#854): one contended
@@ -68,12 +69,21 @@ def _build_engine() -> Engine:
         pool_pre_ping=True,
         future=True,
         connect_args={
+            # Portable across drivers — psycopg2 AND any other DBAPI understand a
+            # bare `options` connect kwarg the same way.
             "options": f"-c lock_timeout={int(_LOCK_TIMEOUT_MS)}",
-            "connect_timeout": _CONNECT_TIMEOUT_SECONDS,
-            "keepalives": 1,
-            "keepalives_idle": _KEEPALIVES_IDLE_SECONDS,
-            "keepalives_interval": _KEEPALIVES_INTERVAL_SECONDS,
-            "keepalives_count": _KEEPALIVES_COUNT,
+            # `connect_timeout`/`keepalives*` are psycopg-only libpq params (#1266):
+            # `database_url` has no driver validator and is env-overridable, so this
+            # guard degrades to {} instead of `create_engine` raising `TypeError` on
+            # the first real connect if it ever resolves to a non-psycopg driver.
+            **psycopg_connect_args(
+                settings.database_url,
+                connect_timeout=_CONNECT_TIMEOUT_SECONDS,
+                keepalives=1,
+                keepalives_idle=_KEEPALIVES_IDLE_SECONDS,
+                keepalives_interval=_KEEPALIVES_INTERVAL_SECONDS,
+                keepalives_count=_KEEPALIVES_COUNT,
+            ),
         },
     )
 
