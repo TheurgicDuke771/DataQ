@@ -109,13 +109,19 @@ def test_build_engine_drops_psycopg_only_connect_args_for_a_non_psycopg_driver(
     env-overridable via `DATABASE_URL`. If it ever resolved to a non-psycopg driver,
     `create_engine()`'s first real connection attempt would raise `TypeError` on the
     unrecognized `connect_timeout`/`keepalives*` kwargs — not gracefully.
-    `_build_engine()` must degrade to omitting them, while keeping the portable
-    `options` (lock_timeout) key every driver understands."""
+    `_build_engine()` must degrade to omitting them.
+
+    `options` is included here too: it is NOT portable across drivers (asyncpg has no
+    `options` connect kwarg at all — it uses `server_settings` instead), so it must be
+    dropped for a non-psycopg driver exactly like the other psycopg-only keys, rather
+    than reaching `create_engine` unconditionally and raising `TypeError` on a
+    different kwarg than before."""
     connect_args = _captured_build_engine_connect_args(
         monkeypatch, "postgresql+asyncpg://user:pw@localhost:5432/dataq"
     )
 
     for key in (
+        "options",
         "connect_timeout",
         "keepalives",
         "keepalives_idle",
@@ -123,5 +129,3 @@ def test_build_engine_drops_psycopg_only_connect_args_for_a_non_psycopg_driver(
         "keepalives_count",
     ):
         assert key not in connect_args, f"{key} leaked into connect_args for a non-psycopg driver"
-    # The lock_timeout posture must survive regardless of driver — it's portable.
-    assert f"lock_timeout={session_module._LOCK_TIMEOUT_MS}" in connect_args.get("options", "")

@@ -69,15 +69,19 @@ def _build_engine() -> Engine:
         pool_pre_ping=True,
         future=True,
         connect_args={
-            # Portable across drivers — psycopg2 AND any other DBAPI understand a
-            # bare `options` connect kwarg the same way.
-            "options": f"-c lock_timeout={int(_LOCK_TIMEOUT_MS)}",
-            # `connect_timeout`/`keepalives*` are psycopg-only libpq params (#1266):
-            # `database_url` has no driver validator and is env-overridable, so this
-            # guard degrades to {} instead of `create_engine` raising `TypeError` on
-            # the first real connect if it ever resolves to a non-psycopg driver.
+            # `options` (the lock_timeout GUC) is NOT portable across drivers, despite
+            # what an earlier version of this comment claimed: asyncpg and pg8000 both
+            # have fixed `connect()` keyword signatures with no `options` parameter
+            # (asyncpg uses an entirely different `server_settings` mechanism), so it
+            # needs the same #1266 driver guard as `connect_timeout`/`keepalives*`
+            # below — otherwise a non-psycopg driver would still hit `TypeError` on
+            # the first real connect, just on a different kwarg, defeating the guard's
+            # whole purpose. `database_url` has no driver validator and is
+            # env-overridable, so this guard degrades to {} instead of `create_engine`
+            # raising `TypeError` if it ever resolves to a non-psycopg driver.
             **psycopg_connect_args(
                 settings.database_url,
+                options=f"-c lock_timeout={int(_LOCK_TIMEOUT_MS)}",
                 connect_timeout=_CONNECT_TIMEOUT_SECONDS,
                 keepalives=1,
                 keepalives_idle=_KEEPALIVES_IDLE_SECONDS,

@@ -19,6 +19,8 @@ the identical reason (guarding its own, narrower, `connect_timeout`-only probe).
 
 from sqlalchemy.engine import make_url
 
+_PSYCOPG_FAMILY_DRIVERS = frozenset({"psycopg2", "psycopg"})
+
 
 def psycopg_connect_args(database_url: str, **driver_only_args: object) -> dict[str, object]:
     """Return `driver_only_args` unchanged when `database_url` resolves to a
@@ -28,11 +30,23 @@ def psycopg_connect_args(database_url: str, **driver_only_args: object) -> dict[
     A non-psycopg driver then degrades to no keepalives/connect_timeout instead of
     `create_engine()`/`engine_from_config()` raising `TypeError` on the first real
     connection attempt.
+
+    Classifies by the DRIVER SQLAlchemy will actually instantiate
+    (`URL.get_dialect().driver`), not by a string-prefix match on `drivername`. A
+    prefix check on `drivername` returns `False` for a bare `postgresql://` URL — but
+    SQLAlchemy resolves a bare `postgresql://` scheme to the psycopg2 dialect BY
+    DEFAULT, so a prefix check silently drops these libpq params (and, historically,
+    reintroduces #1102/#1221) for the single most common `DATABASE_URL` shape.
+    `get_dialect()` only imports SQLAlchemy's own dialect wrapper class — it does not
+    require the underlying DBAPI package (`psycopg2`/`asyncpg`/`pg8000`/…) to be
+    installed, so this works standalone for a driver this environment has never
+    imported.
     """
     try:
-        is_psycopg = make_url(database_url).drivername.startswith("postgresql+psycopg")
+        is_psycopg = make_url(database_url).get_dialect().driver in _PSYCOPG_FAMILY_DRIVERS
     except Exception:
-        # An unparseable URL isn't this guard's story to tell — `create_engine`
-        # itself raises on it soon enough, with a clearer error than we'd add here.
+        # An unparseable URL, or a driver name SQLAlchemy has no dialect plugin for,
+        # isn't this guard's story to tell — `create_engine` itself raises on it soon
+        # enough, with a clearer error than we'd add here.
         is_psycopg = False
     return dict(driver_only_args) if is_psycopg else {}

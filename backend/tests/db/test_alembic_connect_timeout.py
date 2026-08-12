@@ -20,10 +20,13 @@ cannot safely execute in-process" shape as `test_assert_hygiene.py`.
 this dict literal and behind the shared `psycopg_connect_args` driver guard
 (`backend/app/db/pg_connect_args.py`, unit-tested directly in
 `test_pg_connect_args.py`) — a non-psycopg driver would otherwise hit `TypeError` on
-`engine_from_config`'s first real connect. Only `options` (portable across every
-driver) remains a literal dict key here; the guarded keys now show up as the
-KEYWORD ARGUMENTS of a `**psycopg_connect_args(...)` unpack entry, so the assertions
-below walk the AST for that call instead of for literal dict keys.
+`engine_from_config`'s first real connect. A follow-up fix moved `options` (the
+lock_timeout GUC) in alongside them: it is NOT portable across every driver either
+(asyncpg has no `options` connect kwarg at all), so it needed the same guard instead
+of staying an unconditional literal dict key. `connect_args={}` is now just the
+`**psycopg_connect_args(...)` unpack with no other literal keys, so ALL of the
+assertions below walk the AST for that call's keyword arguments rather than for
+literal dict keys.
 """
 
 from __future__ import annotations
@@ -72,10 +75,24 @@ def _psycopg_connect_args_call_node(connect_args: ast.Dict) -> ast.Call:
 
 
 def test_the_migration_engine_keeps_the_portable_lock_timeout_option() -> None:
+    """`options` (the lock_timeout GUC) must still reach the engine for a psycopg
+    driver — but as a KEYWORD ARGUMENT of the `**psycopg_connect_args(...)` unpack,
+    not as a literal `connect_args` dict key. A literal `"options": ...` key would be
+    unconditional and would raise `TypeError` on a non-psycopg driver's `connect()`
+    (asyncpg has no `options` connect kwarg at all) — the same #1266 shape as
+    `connect_timeout`/`keepalives*`."""
     connect_args = _connect_args_dict_node()
-    keys = [k.value for k in connect_args.keys if isinstance(k, ast.Constant)]
+    literal_keys = [k.value for k in connect_args.keys if isinstance(k, ast.Constant)]
+    assert "options" not in literal_keys, (
+        "options is a literal connect_args dict key again — it must route through "
+        "psycopg_connect_args() like connect_timeout/keepalives* instead, since it "
+        "is not actually portable across drivers (asyncpg has no `options` connect "
+        "kwarg at all)"
+    )
 
-    assert "options" in keys, "the pre-existing lock_timeout GUC option went missing"
+    call = _psycopg_connect_args_call_node(connect_args)
+    passed_kwargs = {kw.arg for kw in call.keywords}
+    assert "options" in passed_kwargs, "the pre-existing lock_timeout GUC option went missing"
 
 
 def test_the_migration_engine_routes_psycopg_only_keys_through_the_shared_guard() -> None:
