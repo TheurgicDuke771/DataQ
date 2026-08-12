@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "a0012dd11de1",
+  "strategy": "manual-commit",
+  "branch": "docs/ops-log-accountadmin-pat-rotation-2026-08-12",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/ops-log.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a0/012dd11de1/0/metadata.json",
+      "transcript": "/a0/012dd11de1/0/full.jsonl",
+      "compact_transcript": "/a0/012dd11de1/0/transcript.jsonl",
+      "content_hash": "/a0/012dd11de1/0/content_hash.txt",
+      "prompt": "/a0/012dd11de1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 12832,
+    "cache_read_tokens": 1061433,
+    "output_tokens": 3803,
+    "api_call_count": 8
+  }
+}
