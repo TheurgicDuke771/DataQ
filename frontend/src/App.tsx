@@ -194,7 +194,7 @@ export function App() {
               placement="left"
               open={drawerOpen}
               onClose={() => setDrawerOpen(false)}
-              width={SHELL.siderWidth}
+              size={SHELL.siderWidth}
               styles={{
                 body: { padding: 0 },
                 header: { borderBottom: `1px solid ${BRAND.border}` },

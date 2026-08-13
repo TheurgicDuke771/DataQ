@@ -167,7 +167,7 @@ function SamplePolicyForm({
           placeholder="e.g. order_number"
           value={identifier ? [identifier] : []}
           options={options}
-          onDropdownVisibleChange={(open) => open && loadColumns()}
+          onOpenChange={(open) => open && loadColumns()}
           onChange={(v) => setIdentifier(v[0] ?? null)}
         />
       </Flex>
@@ -183,7 +183,7 @@ function SamplePolicyForm({
           placeholder="e.g. email, phone"
           value={pii}
           options={options}
-          onDropdownVisibleChange={(open) => open && loadColumns()}
+          onOpenChange={(open) => open && loadColumns()}
           onChange={setPii}
         />
       </Flex>
