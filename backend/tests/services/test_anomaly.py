@@ -428,7 +428,7 @@ def test_measurement_quotes_a_mixed_case_catalog_through_the_connections_dialect
         schema="Retail",
         catalog="MyCat",
         params=_params(),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
         now=_NOW,
     )
     assert "`MyCat`.`Retail`.`Orders`" in str(seen["statement"])
