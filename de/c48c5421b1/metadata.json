@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "dec48c5421b1",
+  "strategy": "manual-commit",
+  "branch": "fix/test-anomaly-fakestore-regression",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/de/c48c5421b1/0/metadata.json",
+      "transcript": "/de/c48c5421b1/0/full.jsonl",
+      "compact_transcript": "/de/c48c5421b1/0/transcript.jsonl",
+      "content_hash": "/de/c48c5421b1/0/content_hash.txt",
+      "prompt": "/de/c48c5421b1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 354,
+    "cache_creation_tokens": 527974,
+    "cache_read_tokens": 45490314,
+    "output_tokens": 109217,
+    "api_call_count": 178
+  }
+}

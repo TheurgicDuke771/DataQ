@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "dec48c5421b1",
+  "session_id": "20b7ae5a-3a13-4448-9d08-582498322967",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-13T02:09:11.000838Z",
+  "branch": "fix/test-anomaly-fakestore-regression",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "7568966fb3bf",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 354,
+    "cache_creation_tokens": 527974,
+    "cache_read_tokens": 45490314,
+    "output_tokens": 109217,
+    "api_call_count": 178
+  },
+  "session_metrics": {
+    "turn_count": 39
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
