@@ -146,6 +146,86 @@ def _add_request_id(_logger: Any, _name: str, event_dict: EventDict) -> EventDic
     return event_dict
 
 
+def _extract_exc_info_exception(raw: Any) -> BaseException | None:
+    """Pull the exception instance out of an ``exc_info`` value, whatever shape it
+    currently has. structlog callers set ``exc_info`` to ``True`` (``BoundLogger.
+    exception()``'s default), a bare exception instance, or a ``(type, value, tb)``
+    tuple (what ``ProcessorFormatter`` copies over from a foreign stdlib
+    ``LogRecord.exc_info``) — the shape depends on where in the chain a processor
+    sits and who produced the record. Mirrors structlog's own internal
+    ``processors._figure_out_exc_info`` (used by ``format_exc_info``/
+    ``dict_tracebacks``) rather than importing that private helper directly."""
+    if isinstance(raw, BaseException):
+        return raw
+    if isinstance(raw, tuple) and len(raw) == 3 and isinstance(raw[1], BaseException):
+        return raw[1]
+    if raw:
+        # `True` (or any other truthy sentinel): "look up the exception currently
+        # being handled", the stdlib `exc_info=True` convention.
+        return sys.exc_info()[1]
+    return None
+
+
+def _downgrade_already_logged_exceptions(
+    _logger: Any, _name: str, event_dict: EventDict
+) -> EventDict:
+    """Downgrade a log record whose exception was already reported with a full
+    traceback elsewhere, so a caller never has to remember to check that itself.
+
+    #1226 fixed a real bug: when every alerting channel fails,
+    ``CompositePublisher._fan_out_delivered_first`` (``alerting/composite.py``)
+    logs a full traceback per failing channel before re-raising the last one, and
+    the caller's own ``except Exception: log.exception(...)`` logged that SAME
+    traceback a second time. The fix (#1260) added
+    ``alerting.base.mark_already_logged``/``was_already_logged`` and had each
+    caller check it before choosing ``log.warning`` over ``log.exception``. #1261:
+    that check was duplicated verbatim in both callers and opt-in per caller — a
+    future third caller that forgets it silently reintroduces the exact bug, with
+    nothing to catch the omission.
+
+    This is the same shape as PII redaction (CLAUDE.md §10 / #849): the fix
+    belongs in the processor chain, applied to EVERY log record once, not
+    repeated at every call site. Any caller's ``log.exception(...)`` — including
+    a foreign (non-structlog) ``logging.exception(...)`` bridged in via
+    ``foreign_pre_chain`` — gets the downgrade for free.
+
+    Must run AFTER ``add_log_level`` (so there is a ``level`` to overwrite) and
+    BEFORE the exception is rendered to a string (``_dict_tracebacks_no_locals``)
+    — while ``event_dict["exc_info"]`` is still the raw shape, not yet consumed.
+
+    Dropping ``exc_info`` also drops the traceback, which was the only place the
+    exception's TYPE was visible on the downgraded line (`_poll_staleness_loop`'s
+    original comment on this, #1260 review) — restored here as ``error_type`` so
+    every downgraded caller keeps that correlator, not just the ones that used to
+    remember to add it by hand. ``setdefault`` so a caller-supplied ``error_type``
+    (a different meaning in a future call site) is never clobbered.
+    """
+    exc = _extract_exc_info_exception(event_dict.get("exc_info"))
+    if exc is None:
+        return event_dict
+
+    # Lazy import: `core/logging.py` is a foundational module imported very early
+    # (module scope of `main.py`, `worker/main.py`, every datasource/alerting
+    # module for `get_logger`); `alerting/base.py` is a higher-level domain
+    # module. It has no import-time dependency back on `core.logging` itself (its
+    # only DataQ import is `db.models`, and the `alerting` package's `__init__.py`
+    # is docstring-only), so this does not actually cycle — but keeping the
+    # import inside the guarded, exception-only branch means the rest of the app
+    # never pays for or depends on the domain import at module-load time, and a
+    # future edit to `alerting/base.py` that adds its own `core.logging` import
+    # (every one of its sibling files in that package already does, for
+    # `get_logger`) can't turn this into a real cycle.
+    from backend.app.alerting.base import was_already_logged
+
+    if not was_already_logged(exc):
+        return event_dict
+
+    event_dict["level"] = "warning"
+    event_dict.setdefault("error_type", type(exc).__name__)
+    event_dict.pop("exc_info", None)
+    return event_dict
+
+
 # Traceback → dict WITHOUT frame locals (#536): `dict_tracebacks`' default
 # transformer captures every frame's locals, which can carry anything in scope —
 # connection URLs with embedded credentials (the live-smoke leak: a SQLAlchemy
@@ -281,6 +361,9 @@ def configure_logging(service_name: str = "dataq") -> None:
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         _redact_pii,
+        # Must run after `add_log_level` (there's a `level` to overwrite) and
+        # before `_dict_tracebacks_no_locals` below (exc_info must still be raw).
+        _downgrade_already_logged_exceptions,
     ]
 
     # Bridge stdlib logging (uvicorn.access, uvicorn.error, etc.) through the

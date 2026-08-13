@@ -1,13 +1,21 @@
 """Tests for the PII redactor (post-2026-05-28 security audit additions)."""
 
+import json
 import logging as std_logging
+import sys
 from collections.abc import Iterator
 from typing import Any
 
 import pytest
+import structlog
 
+from backend.app.alerting.base import mark_already_logged
 from backend.app.core.config import get_settings
-from backend.app.core.logging import _redact_pii, configure_logging
+from backend.app.core.logging import (
+    _downgrade_already_logged_exceptions,
+    _redact_pii,
+    configure_logging,
+)
 
 
 def _redact(payload: dict[str, object]) -> dict[str, object]:
@@ -329,3 +337,149 @@ def test_exception_tracebacks_drop_frame_locals_and_scrub_messages(
     assert "dapiALSONOT" not in line  # exception MESSAGE passed the scrubber
     assert "token:<redacted>@" in line
     assert "RuntimeError" in line  # the traceback itself is still there
+
+
+# ── already-logged-traceback downgrade, centralized in the chain (#1261) ──────
+#
+# #1226 fixed a real bug: when every alerting channel fails, the composite
+# (`CompositePublisher._fan_out_delivered_first`) logs a full traceback per
+# failing channel before re-raising the last one, and the CALLER's own
+# `except Exception: log.exception(...)` logged that same last-channel traceback
+# a second time. The #1260 fix downgraded that with a per-caller
+# `if was_already_logged(exc): log.warning(...) else: log.exception(...)` check —
+# duplicated verbatim in the two callers and opt-in per caller, so a future third
+# caller that forgets it silently reintroduces the bug. #1261 moves the check
+# into this processor, the same shape as `_redact_pii` above: applied once, in
+# the chain, to every log record — not repeated at every call site.
+
+
+def test_downgrade_processor_ignores_records_with_no_exception() -> None:
+    """The overwhelming majority of log calls carry no `exc_info` at all; the
+    processor must be a true no-op on them, not merely non-crashing."""
+    event = {"event": "suite_run_started", "suite_id": "abc"}
+    out = _downgrade_already_logged_exceptions(None, "info", dict(event))
+    assert out == event
+
+
+def test_downgrade_processor_leaves_an_unmarked_exception_untouched() -> None:
+    """An exception nobody has marked (a genuinely new bug) must keep its
+    `error`/`exception` level and its `exc_info`, or the watchdog this seam
+    protects goes blind to real failures."""
+    caught: BaseException | None = None
+    try:
+        raise RuntimeError("brand new bug")
+    except RuntimeError as exc:
+        caught = exc
+        out = _downgrade_already_logged_exceptions(
+            None, "exception", {"event": "x", "exc_info": exc}
+        )
+    assert out["exc_info"] is caught
+    assert "level" not in out
+
+
+def test_downgrade_processor_downgrades_a_marked_exception_instance() -> None:
+    """`exc_info` as a bare exception instance (one of the three shapes structlog
+    itself supports, per `_figure_out_exc_info`) is recognized directly."""
+    exc = RuntimeError("every alert channel failed")
+    mark_already_logged(exc)
+    out = _downgrade_already_logged_exceptions(None, "exception", {"event": "x", "exc_info": exc})
+    assert out["level"] == "warning"
+    assert "exc_info" not in out
+    assert out["error_type"] == "RuntimeError"
+
+
+def test_downgrade_processor_downgrades_a_marked_exc_info_tuple() -> None:
+    """`exc_info` as a `(type, value, tb)` tuple — the shape `ProcessorFormatter`
+    copies over from a foreign stdlib `LogRecord.exc_info` for a non-structlog
+    logger bridged through `foreign_pre_chain` — is recognized too."""
+    exc = RuntimeError("every alert channel failed")
+    mark_already_logged(exc)
+    try:
+        raise exc
+    except RuntimeError:
+        exc_info_tuple = sys.exc_info()
+    out = _downgrade_already_logged_exceptions(
+        None, "error", {"event": "x", "exc_info": exc_info_tuple}
+    )
+    assert out["level"] == "warning"
+    assert "exc_info" not in out
+
+
+def test_downgrade_processor_downgrades_a_marked_exc_info_true() -> None:
+    """`exc_info=True` — what `BoundLogger.exception()` actually sets — means
+    "look up the exception currently being handled" (`sys.exc_info()`); this is
+    the shape every real `log.exception(...)` call produces."""
+    exc = RuntimeError("every alert channel failed")
+    mark_already_logged(exc)
+    try:
+        raise exc
+    except RuntimeError:
+        out = _downgrade_already_logged_exceptions(
+            None, "exception", {"event": "x", "exc_info": True}
+        )
+    assert out["level"] == "warning"
+    assert "exc_info" not in out
+
+
+def test_downgrade_processor_never_clobbers_a_caller_supplied_error_type() -> None:
+    """`error_type` is a courtesy the processor adds to replace the correlator
+    lost when it drops `exc_info` — but if a caller already set its own
+    `error_type` (a different meaning at some future call site), that value must
+    win, not be silently overwritten."""
+    exc = RuntimeError("every alert channel failed")
+    mark_already_logged(exc)
+    out = _downgrade_already_logged_exceptions(
+        None, "exception", {"event": "x", "exc_info": exc, "error_type": "custom"}
+    )
+    assert out["error_type"] == "custom"
+
+
+def test_downgrades_a_marked_exception_from_any_caller(capsys: pytest.CaptureFixture[str]) -> None:
+    """The actual regression test for #1261: a THIRD caller — neither
+    `alerting/dispatch.py::publish_connection_health` nor
+    `main.py::_poll_staleness_loop`, and carrying no `was_already_logged` check of
+    its own — gets the exact same downgrade, because the processor is wired into
+    the REAL `configure_logging()` chain rather than opted into per call site.
+    The old per-caller-check architecture could not have passed this test without
+    editing this synthetic call site too; this one needs zero changes at the call
+    site to pick up the fix.
+
+    Goes through the full production pipeline (`configure_logging()` + stdout
+    JSON), not `structlog.testing.capture_logs()` — that helper derives its own
+    `log_level` straight from the invoked method name and cannot observe a
+    processor's level rewrite (see the #1261 note atop the caller-side tests in
+    `test_main.py` / `test_connection_health.py`), so it cannot prove this."""
+    configure_logging()
+    log = structlog.get_logger("a_totally_new_caller_nobody_special_cased")
+
+    exc = RuntimeError("every alert channel failed")
+    mark_already_logged(exc)
+    try:
+        raise exc
+    except RuntimeError:
+        log.exception("third_caller_failed")
+
+    line = capsys.readouterr().out
+    record = json.loads(line)
+    assert record["level"] == "warning"
+    assert "exception" not in record  # no rendered traceback
+    assert record["error_type"] == "RuntimeError"
+
+
+def test_an_unmarked_exception_from_the_same_new_caller_still_gets_a_traceback(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The other half of the same proof: the synthetic third caller does NOT go
+    blind to a genuinely new bug just because the processor exists."""
+    configure_logging()
+    log = structlog.get_logger("a_totally_new_caller_nobody_special_cased")
+
+    try:
+        raise RuntimeError("a bug nobody has seen before")
+    except RuntimeError:
+        log.exception("third_caller_failed_again")
+
+    line = capsys.readouterr().out
+    record = json.loads(line)
+    assert record["level"] == "error"
+    assert "exception" in record  # full traceback rendered, as normal

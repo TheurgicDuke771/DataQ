@@ -73,25 +73,41 @@ class AlertUndeliverableError(RuntimeError):
 # checks on the original exception, and any exception-message classification
 # (#902), are untouched.
 #
+# #1261: the downgrade decision itself (check this marker, log at `warning`
+# instead of `exception`) no longer lives in each caller — it moved to a shared
+# structlog processor (`_downgrade_already_logged_exceptions`, `core/logging.py`)
+# so a THIRD caller gets it automatically instead of needing its own copy of the
+# same `if was_already_logged(exc): ...` check. This module still owns only the
+# marker itself (`mark_already_logged`/`was_already_logged`) — the composite sets
+# it, the processor reads it; no caller touches it directly anymore.
+#
 # Caveat: the marker rides on the exception OBJECT, not on `__cause__`/`__context__`
 # chaining, so it does not survive being wrapped (`raise SomeError(...) from exc`)
-# between the composite's `raise last_error` and a caller's except block. Neither
+# between the composite's `raise last_error` and wherever it's finally logged. No
 # current caller re-wraps it — verified by `/code-review` on #1260 — but a future
 # error-classification or retry layer inserted in between would need to propagate
-# the marker onto its own wrapper explicitly, or this bug quietly reappears.
+# the marker onto its own wrapper explicitly, or this bug quietly reappears. This
+# now also bounds the processor: its `sys.exc_info()` fallback (for the `exc_info=
+# True` shape `log.exception()` sets) only ever sees the exception CURRENTLY being
+# handled, so a wrapper raised in between is exactly as invisible to the processor
+# as it was to the old per-caller check.
 _ALREADY_LOGGED_ATTR = "_dataq_alerting_already_logged"
 
 
 def mark_already_logged(exc: BaseException) -> None:
     """Tag ``exc`` as already logged with a full traceback by the composite
-    fan-out, so a caller's own except-block can downgrade to ``log.warning``
-    instead of re-logging the same traceback with ``log.exception`` (#1226)."""
+    fan-out, so the logging processor chain can downgrade a later
+    ``log.exception(...)`` on it to a ``warning`` instead of re-logging the same
+    traceback (#1226, centralized in the chain by #1261)."""
     setattr(exc, _ALREADY_LOGGED_ATTR, True)
 
 
 def was_already_logged(exc: BaseException) -> bool:
     """Whether ``exc`` was already logged with a full traceback by the composite
-    fan-out (see :func:`mark_already_logged`)."""
+    fan-out (see :func:`mark_already_logged`). Read by the structlog processor
+    chain (`core.logging._downgrade_already_logged_exceptions`, #1261), not by
+    callers directly — nothing in ``backend/app`` should need to import this
+    beyond the composite (which sets it)."""
     return bool(getattr(exc, _ALREADY_LOGGED_ATTR, False))
 
 
