@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
+from sqlalchemy.engine.default import DefaultDialect
 
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import Asset, Check, Connection, Suite, User
@@ -976,6 +977,13 @@ class _FakeResult:
 
 class _FakeConn:
     """Routes the aggregate query vs per-column top-values query by SQL text."""
+
+    # A real Connection exposes `.dialect` (the engine's) — `_table`/`core_table`
+    # need it whenever `catalog` is given (#936), so the fake carries a stand-in
+    # too. Any dialect will do for the UC test that uses this: `catalog="main"` /
+    # `schema="sales"` are both already lower-case, so no part actually gets
+    # quoted — it's the attribute's presence, not its identity, that matters here.
+    dialect = DefaultDialect()
 
     def __init__(self, aggregate: dict[str, Any], tops: dict[str, list[dict[str, Any]]]) -> None:
         self._aggregate = aggregate

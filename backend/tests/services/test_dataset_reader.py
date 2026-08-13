@@ -14,6 +14,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from sqlalchemy.engine.default import DefaultDialect
 
 from backend.app.db.models import Connection
 from backend.app.services import dataset_reader
@@ -51,6 +52,11 @@ def _frame(rows: int) -> pd.DataFrame:
 
 class FakeSqlConnection:
     """Stands in for the SQLAlchemy connection `_open_connection` yields."""
+
+    # A real Connection exposes `.dialect` (the engine's) — `_table`/`core_table`
+    # need it whenever `spec.catalog` is given (#936), so the fake carries a
+    # stand-in too.
+    dialect = DefaultDialect()
 
     def __init__(self, count: int) -> None:
         self._count = count

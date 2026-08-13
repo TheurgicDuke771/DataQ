@@ -12,6 +12,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from sqlalchemy.engine.default import DefaultDialect
 
 from backend.app.datasources.iceberg import IcebergConfig
 from backend.app.services.profile_service import (
@@ -105,11 +106,33 @@ def test_builders_reject_unsafe_identifiers() -> None:
 
 
 def test_builders_with_catalog_qualify_three_part_namespace() -> None:
-    # Unity Catalog: catalog.schema.table (unquoted dotted, allowlist-validated)
-    agg = _sql(build_aggregate_query("sales", "orders", ["amt"], "main"))
+    # Unity Catalog: catalog.schema.table, allowlist-validated. Both catalog and
+    # schema are already lower-case here, so they stay bare (fold exactly as
+    # before #936) — the mixed-case half is covered separately below.
+    dialect = DefaultDialect()
+    agg = _sql(build_aggregate_query("sales", "orders", ["amt"], "main", dialect))
     assert "from main.sales.orders" in agg
-    top = _sql(build_top_values_query("sales", "orders", "amt", 5, "main"))
+    top = _sql(build_top_values_query("sales", "orders", "amt", 5, "main", dialect))
     assert "from main.sales.orders" in top
+
+
+def test_builders_with_mixed_case_catalog_quote_it_too() -> None:
+    """#936: the 3-part form used to leave the catalog/schema unquoted no matter
+    their case — only the table got the #476 treatment. A mixed-case catalog or
+    schema is now quoted too, via the DIALECT's own `identifier_preparer` (never
+    a hardcoded `"`)."""
+    dialect = DefaultDialect()
+    agg = _sql(build_aggregate_query("Sales", "orders", ["amt"], "Main", dialect))
+    assert 'from "main"."sales".orders' in agg
+
+
+def test_builder_with_catalog_requires_a_dialect() -> None:
+    # A live dialect is required to quote the pre-assembled catalog.schema.table
+    # string (#936) — omitting it while a catalog is given is a caller bug, not
+    # user config, so it surfaces as a bare ValueError rather than the profiler's
+    # own 422 error shape.
+    with pytest.raises(ValueError, match="no dialect"):
+        build_aggregate_query("sales", "orders", ["amt"], "main")
 
 
 def test_builder_rejects_unsafe_catalog() -> None:
@@ -128,7 +151,7 @@ def test_columns_query_selects_star_with_limit_zero() -> None:
 
 
 def test_columns_query_with_catalog_qualifies_three_part_namespace() -> None:
-    sql = _sql(build_columns_query("sales", "orders", "main"))
+    sql = _sql(build_columns_query("sales", "orders", "main", DefaultDialect()))
     assert "from main.sales.orders" in sql
 
 

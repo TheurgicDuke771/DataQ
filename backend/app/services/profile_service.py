@@ -38,10 +38,13 @@ import math
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import column, distinct, func, literal_column, select
 from sqlalchemy.sql import Select
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine.interfaces import Dialect
 
 from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
@@ -174,7 +177,9 @@ def validate_identifier(name: str | None) -> str:
     return name
 
 
-def _table(schema: str, table_name: str, catalog: str | None = None) -> Any:
+def _table(
+    schema: str, table_name: str, catalog: str | None = None, dialect: Dialect | None = None
+) -> Any:
     """A Core table clause, optionally with a 3-level namespace (Unity Catalog).
 
     Construction is the shared `datasources.sql.core_table` (#476 — one builder
@@ -182,16 +187,24 @@ def _table(schema: str, table_name: str, catalog: str | None = None) -> Any:
     first is not redundant: it turns an odd name into a clean 422 with the
     profiler's error shape, where `core_table`'s own guard is the last-resort
     injection check and raises a bare `ValueError`.
+
+    ``dialect`` is required whenever ``catalog`` is given (#936) — it quotes the
+    3-part namespace's catalog/schema via the dialect's own identifier preparer;
+    see `datasources.sql.core_table`.
     """
     validate_identifier(schema)
     validate_identifier(table_name)
     if catalog is not None:
         validate_identifier(catalog)
-    return core_table(table=table_name, schema=schema, catalog=catalog)
+    return core_table(table=table_name, schema=schema, catalog=catalog, dialect=dialect)
 
 
 def build_aggregate_query(
-    schema: str, table_name: str, columns: list[str], catalog: str | None = None
+    schema: str,
+    table_name: str,
+    columns: list[str],
+    catalog: str | None = None,
+    dialect: Dialect | None = None,
 ) -> Select[Any]:
     """One round-trip: row count + null/distinct/min/max per column.
 
@@ -205,18 +218,23 @@ def build_aggregate_query(
         projection.append(func.count(distinct(c)).label(f"distinct_{i}"))
         projection.append(func.min(c).label(f"min_{i}"))
         projection.append(func.max(c).label(f"max_{i}"))
-    return select(*projection).select_from(_table(schema, table_name, catalog))
+    return select(*projection).select_from(_table(schema, table_name, catalog, dialect))
 
 
 def build_top_values_query(
-    schema: str, table_name: str, col: str, top_n: int, catalog: str | None = None
+    schema: str,
+    table_name: str,
+    col: str,
+    top_n: int,
+    catalog: str | None = None,
+    dialect: Dialect | None = None,
 ) -> Select[Any]:
     """Most frequent non-null values for one column (highest count first)."""
     c: Any = column(folding_identifier(validate_identifier(col)))
     freq = func.count().label("freq")
     return (
         select(c.label("value"), freq)
-        .select_from(_table(schema, table_name, catalog))
+        .select_from(_table(schema, table_name, catalog, dialect))
         .where(c.is_not(None))
         .group_by(c)
         .order_by(func.count().desc(), c)
@@ -224,7 +242,9 @@ def build_top_values_query(
     )
 
 
-def build_columns_query(schema: str, table_name: str, catalog: str | None = None) -> Select[Any]:
+def build_columns_query(
+    schema: str, table_name: str, catalog: str | None = None, dialect: Dialect | None = None
+) -> Select[Any]:
     """List a target's column names: `SELECT * FROM <target> LIMIT 0`.
 
     Returns no rows, but the cursor still exposes the column names via
@@ -235,7 +255,11 @@ def build_columns_query(schema: str, table_name: str, catalog: str | None = None
     constant, not caller input — the only caller-supplied parts go through
     `_table`'s identifier validation.
     """
-    return select(literal_column("*")).select_from(_table(schema, table_name, catalog)).limit(0)
+    return (
+        select(literal_column("*"))
+        .select_from(_table(schema, table_name, catalog, dialect))
+        .limit(0)
+    )
 
 
 def assemble_profile(
@@ -462,15 +486,23 @@ def profile_table(
 
     try:
         with _open_connection(connection, secret_store) as conn:
+            # A catalog-qualified (3-part, Unity Catalog) target needs the live
+            # connection's dialect to quote the catalog/schema (#936); a 2-part
+            # Snowflake target never reaches the code that would use it.
+            dialect = conn.dialect if catalog is not None else None
             aggregate = (
-                conn.execute(build_aggregate_query(effective_schema, table, columns, catalog))
+                conn.execute(
+                    build_aggregate_query(effective_schema, table, columns, catalog, dialect)
+                )
                 .mappings()
                 .one()
             )
             top_values = {
                 col: list(
                     conn.execute(
-                        build_top_values_query(effective_schema, table, col, top_n, catalog)
+                        build_top_values_query(
+                            effective_schema, table, col, top_n, catalog, dialect
+                        )
                     ).mappings()
                 )
                 for col in columns
@@ -1004,7 +1036,8 @@ def list_table_columns(
 
     try:
         with _open_connection(connection, secret_store) as conn:
-            result = conn.execute(build_columns_query(effective_schema, table, catalog))
+            dialect = conn.dialect if catalog is not None else None
+            result = conn.execute(build_columns_query(effective_schema, table, catalog, dialect))
             return list(result.keys())
     except Exception as exc:
         log.warning(
