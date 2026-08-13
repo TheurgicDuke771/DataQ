@@ -25,17 +25,7 @@ from backend.app.lineage.warehouse import (
     WarehouseLineageUnavailableError,
 )
 from backend.app.services.asset_identity import AssetIdentity
-
-
-class _FakeStore:
-    def get(self, name: str) -> str:
-        return "secret"
-
-    def set(self, name: str, value: str) -> None:  # pragma: no cover - read-only double
-        raise NotImplementedError
-
-    def delete(self, name: str) -> None:  # pragma: no cover
-        raise NotImplementedError
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 def _ident(name: str) -> AssetIdentity:
@@ -108,7 +98,9 @@ def test_snapshot_refresh_persists_tier_and_no_watermark(
     _patch(monkeypatch, provider)
 
     outcome = warehouse_refresh.refresh_connection_lineage(
-        db_session, connection=sf_connection, secret_store=_FakeStore()
+        db_session,
+        connection=sf_connection,
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert outcome is not None and outcome.live_edges == 1
     db_session.refresh(sf_connection)
@@ -135,7 +127,9 @@ def test_incremental_refresh_advances_watermark(
     _patch(monkeypatch, provider)
 
     warehouse_refresh.refresh_connection_lineage(
-        db_session, connection=sf_connection, secret_store=_FakeStore()
+        db_session,
+        connection=sf_connection,
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     db_session.refresh(sf_connection)
     assert sf_connection.lineage_watermark == mark
@@ -158,7 +152,9 @@ def test_open_failure_records_classified_error_not_raw(
         open_raises=RuntimeError("could not connect: password=SUPERSECRET host=acct"),
     )
     outcome = warehouse_refresh.refresh_connection_lineage(
-        db_session, connection=sf_connection, secret_store=_FakeStore()
+        db_session,
+        connection=sf_connection,
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert outcome is None
     db_session.refresh(sf_connection)
@@ -177,7 +173,9 @@ def test_unavailable_records_error_and_leaves_cache(
     )
     _patch(monkeypatch, provider)
     outcome = warehouse_refresh.refresh_connection_lineage(
-        db_session, connection=sf_connection, secret_store=_FakeStore()
+        db_session,
+        connection=sf_connection,
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert outcome is None
     db_session.refresh(sf_connection)
@@ -196,7 +194,9 @@ def test_non_warehouse_type_is_noop(db_session: Session, monkeypatch: pytest.Mon
     db_session.flush()
     assert (
         warehouse_refresh.refresh_connection_lineage(
-            db_session, connection=adls, secret_store=_FakeStore()
+            db_session,
+            connection=adls,
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         )
         is None
     )

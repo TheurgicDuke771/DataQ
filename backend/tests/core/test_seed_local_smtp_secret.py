@@ -12,12 +12,9 @@ from __future__ import annotations
 import pytest
 
 from backend.app.core.config import Settings
-from backend.app.core.secrets import (
-    SecretNotFoundError,
-    SecretStoreUnavailableError,
-    SecretWriteError,
-)
+from backend.app.core.secrets import SecretStoreUnavailableError, SecretWriteError
 from backend.scripts import seed_local_smtp_secret as script
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 #: Stand-in for a value the operator already put in the store. Held in a constant
 #: and deliberately NOT spelled like a credential: a generic secret scanner reports
@@ -25,39 +22,6 @@ from backend.scripts import seed_local_smtp_secret as script
 #: failed GitGuardian. Same lesson as `scripts/e2e-otp-stack.sh` — please don't
 #: re-inline it as a plausible-looking password.
 _OPERATORS_EXISTING_VALUE = "value-the-operator-already-stored"
-
-
-class _FakeStore:
-    """Minimal SecretStore double. `raise_on_get` / `raise_on_set` let a test make
-    the store fail the way a sealed or unreachable vault does."""
-
-    def __init__(
-        self,
-        values: dict[str, str] | None = None,
-        raise_on_get: Exception | None = None,
-        raise_on_set: Exception | None = None,
-    ) -> None:
-        self.values = dict(values or {})
-        self.raise_on_get = raise_on_get
-        self.raise_on_set = raise_on_set
-        self.writes: list[str] = []
-
-    def get(self, name: str) -> str:
-        if self.raise_on_get is not None:
-            raise self.raise_on_get
-        try:
-            return self.values[name]
-        except KeyError as exc:
-            raise SecretNotFoundError(name) from exc
-
-    def set(self, name: str, value: str) -> None:
-        if self.raise_on_set is not None:
-            raise self.raise_on_set
-        self.writes.append(value)
-        self.values[name] = value
-
-    def delete(self, name: str) -> None:  # pragma: no cover - unused by the script
-        self.values.pop(name, None)
 
 
 @pytest.fixture(autouse=True)
@@ -68,7 +32,7 @@ def _clear_settings_cache() -> None:
 
 
 def _install(
-    monkeypatch: pytest.MonkeyPatch, store: _FakeStore, *, secret_name: str | None
+    monkeypatch: pytest.MonkeyPatch, store: FakeSecretStore, *, secret_name: str | None
 ) -> None:
     """Wire the script against a real `Settings` — a complete OTP block when a
     secret name is given, an untouched one otherwise. Real Settings rather than a
@@ -91,7 +55,7 @@ def _install(
 
 
 def test_provisions_a_password_when_the_name_is_empty(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = _FakeStore()
+    store = FakeSecretStore()
     _install(monkeypatch, store, secret_name="dataq-local-smtp")
     assert script.main() == 0
     assert len(store.writes) == 1
@@ -103,17 +67,17 @@ def test_never_overwrites_an_existing_value(monkeypatch: pytest.MonkeyPatch) -> 
     an operator who aimed the compose stack at their own SMTP server. Clobbering
     it on every `docker compose up` would break their sign-in mailer, and seeding
     a throwaway test value is never worth that."""
-    store = _FakeStore({"dataq-local-smtp": _OPERATORS_EXISTING_VALUE})
+    store = FakeSecretStore(initial={"dataq-local-smtp": _OPERATORS_EXISTING_VALUE})
     _install(monkeypatch, store, secret_name="dataq-local-smtp")
     assert script.main() == 0
     assert store.writes == []
-    assert store.values["dataq-local-smtp"] == _OPERATORS_EXISTING_VALUE
+    assert store.data["dataq-local-smtp"] == _OPERATORS_EXISTING_VALUE
 
 
 def test_no_ops_when_otp_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
     """The service runs unconditionally so ONE compose file serves both sign-in
     modes; with the OTP block blanked there is simply nothing to provision."""
-    store = _FakeStore()
+    store = FakeSecretStore()
     _install(monkeypatch, store, secret_name=None)
     assert script.main() == 0
     assert store.writes == []
@@ -121,7 +85,7 @@ def test_no_ops_when_otp_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.parametrize("blank", ["", "   "])
 def test_a_whitespace_only_name_is_no_name(monkeypatch: pytest.MonkeyPatch, blank: str) -> None:
-    store = _FakeStore()
+    store = FakeSecretStore()
     _install(monkeypatch, store, secret_name=blank)
     assert script.main() == 0
     assert store.writes == []
@@ -134,14 +98,14 @@ def test_an_unreachable_store_fails_LOUDLY_and_writes_nothing(
     writing on top of a store we could not read risks clobbering a live
     credential. Non-zero exit stops the stack here, where the cause is legible,
     rather than three steps later as a 503 at somebody's first sign-in."""
-    store = _FakeStore(raise_on_get=SecretStoreUnavailableError("sealed"))
+    store = FakeSecretStore(raise_on_get=SecretStoreUnavailableError("sealed"))
     _install(monkeypatch, store, secret_name="dataq-local-smtp")
     assert script.main() == 1
     assert store.writes == []
 
 
 def test_a_failed_write_exits_non_zero(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = _FakeStore(raise_on_set=SecretWriteError("permission denied"))
+    store = FakeSecretStore(raise_on_set=SecretWriteError("permission denied"))
     _install(monkeypatch, store, secret_name="dataq-local-smtp")
     assert script.main() == 1
 
@@ -155,7 +119,7 @@ def test_the_generated_password_is_never_printed(
     The secret NAME stays out of the output too — it buys nothing (the operator
     set the key) and echoing a secret keyspace into container logs is free
     reconnaissance."""
-    store = _FakeStore()
+    store = FakeSecretStore()
     _install(monkeypatch, store, secret_name="dataq-local-smtp")
     assert script.main() == 0
     output = capsys.readouterr()

@@ -15,18 +15,7 @@ import pytest
 
 from backend.app.datasources import flatfile
 from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckSpec
-
-
-class _FakeStore:
-    def get(self, name: str) -> str:
-        return "tok"
-
-    def set(self, name: str, value: str) -> None:  # read-only test double
-        raise NotImplementedError
-
-    def delete(self, name: str) -> None:
-        raise NotImplementedError
-
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 # ── format_from_path ──
 
@@ -570,7 +559,10 @@ def test_runner_advertises_the_kinds_it_implements() -> None:
 
 def test_build_flatfile_runner_resolves_secret() -> None:
     runner = flatfile.build_flatfile_runner(
-        conn_type="s3", config={"bucket": "b"}, secret_ref="ref", secret_store=_FakeStore()
+        conn_type="s3",
+        config={"bucket": "b"},
+        secret_ref="ref",
+        secret_store=FakeSecretStore(default="tok", raise_on_write=True),
     )
     assert isinstance(runner, flatfile.FlatFileCheckRunner)
 
@@ -578,14 +570,20 @@ def test_build_flatfile_runner_resolves_secret() -> None:
 def test_build_flatfile_runner_rejects_non_flatfile_type() -> None:
     with pytest.raises(ValueError, match="not a flat-file datasource"):
         flatfile.build_flatfile_runner(
-            conn_type="snowflake", config={}, secret_ref="ref", secret_store=_FakeStore()
+            conn_type="snowflake",
+            config={},
+            secret_ref="ref",
+            secret_store=FakeSecretStore(default="tok", raise_on_write=True),
         )
 
 
 def test_build_flatfile_runner_requires_secret_ref() -> None:
     with pytest.raises(ValueError, match="requires secret_ref"):
         flatfile.build_flatfile_runner(
-            conn_type="s3", config={}, secret_ref=None, secret_store=_FakeStore()
+            conn_type="s3",
+            config={},
+            secret_ref=None,
+            secret_store=FakeSecretStore(default="tok", raise_on_write=True),
         )
 
 

@@ -34,6 +34,7 @@ from backend.app.datasources.snowflake import (
     build_snowflake_runner,
     to_suite_outcome,
 )
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 def _rsa_pem(passphrase: str | None = None) -> str:
@@ -79,23 +80,6 @@ _CONFIG = {
     "warehouse": "WH_DQ",
     "role": "DQ_ROLE",
 }
-
-
-class _FakeStore:
-    """Minimal SecretStore: records the name it was asked for, returns a token."""
-
-    def __init__(self) -> None:
-        self.asked: str | None = None
-
-    def get(self, name: str) -> str:
-        self.asked = name
-        return "s3cr3t-pw"
-
-    def set(self, name: str, value: str) -> None:  # satisfies SecretStore Protocol
-        self.asked = name
-
-    def delete(self, name: str) -> None:
-        pass
 
 
 # ───────────────────────── SnowflakeConfig ─────────────────────────
@@ -522,16 +506,18 @@ def test_to_suite_outcome_against_real_gx_result() -> None:
 
 
 def test_build_runner_resolves_secret_and_returns_check_runner() -> None:
-    store = _FakeStore()
+    store = FakeSecretStore(default="s3cr3t-pw")
     runner = build_snowflake_runner(config=_CONFIG, secret_ref="snowflake-dev", secret_store=store)
     assert isinstance(runner, SnowflakeCheckRunner)
     assert isinstance(runner, CheckRunner)  # satisfies the Protocol
-    assert store.asked == "snowflake-dev"
+    assert store.requested[-1] == "snowflake-dev"
 
 
 def test_build_runner_requires_secret_ref() -> None:
     with pytest.raises(ValueError, match="secret_ref"):
-        build_snowflake_runner(config=_CONFIG, secret_ref=None, secret_store=_FakeStore())
+        build_snowflake_runner(
+            config=_CONFIG, secret_ref=None, secret_store=FakeSecretStore(default="s3cr3t-pw")
+        )
 
 
 # ───────────────────────── ConnectionAdapter ───────────────────────

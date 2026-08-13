@@ -16,30 +16,14 @@ from typing import Any
 
 from sqlalchemy import select
 
-from backend.app.core.secrets import SecretNotFoundError
 from backend.app.db.models import Asset, Connection, LineageEdge, User
 from backend.app.lineage import dbt_manifest
 from backend.app.worker import tasks
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 _NS = "snowflake://acct"
 _ORDERS_HEADER = "DATAQ_DB.RETAIL.ORDERS_HEADER"
-
-
-class _FakeStore:
-    def __init__(self, **data: str) -> None:
-        self.data = dict(data)
-
-    def get(self, name: str) -> str:
-        if name not in self.data:
-            raise SecretNotFoundError(name)
-        return self.data[name]
-
-    def set(self, name: str, value: str) -> None:  # pragma: no cover - unused
-        self.data[name] = value
-
-    def delete(self, name: str) -> None:  # pragma: no cover - unused
-        self.data.pop(name, None)
 
 
 class _FakeDbtProvider:
@@ -83,12 +67,12 @@ def _use_provider(monkeypatch: Any, provider: Any) -> None:
     monkeypatch.setattr(tasks, "get_orchestration_provider", lambda _type: provider)
 
 
-def _run(db_session: Any, conn: Connection, *, store: _FakeStore | None = None) -> str:
+def _run(db_session: Any, conn: Connection, *, store: FakeSecretStore | None = None) -> str:
     return tasks._refresh_dbt_lineage(
         db_session,
         connection_id=conn.id,
         job="j",
-        secret_store=store or _FakeStore(**{"kv-x": "sas"}),
+        secret_store=store or FakeSecretStore({"kv-x": "sas"}),
     )
 
 
@@ -113,7 +97,7 @@ def test_task_refreshes_lineage_end_to_end(db_session: Any, monkeypatch: Any) ->
 def test_task_no_connection(db_session: Any) -> None:
     assert (
         tasks._refresh_dbt_lineage(
-            db_session, connection_id=uuid.uuid4(), job="j", secret_store=_FakeStore()
+            db_session, connection_id=uuid.uuid4(), job="j", secret_store=FakeSecretStore()
         )
         == "no_connection"
     )

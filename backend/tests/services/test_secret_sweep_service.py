@@ -23,6 +23,7 @@ from backend.app.services.secret_sweep_service import (
     find_orphan_secrets,
     sweep_orphan_secrets,
 )
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 NOW = datetime(2026, 7, 27, 12, 0, tzinfo=UTC)
 OLD = NOW - timedelta(days=90)
@@ -30,12 +31,17 @@ RECENT = NOW - timedelta(days=1)
 GRACE = timedelta(days=30)
 
 
-class _FakeStore:
-    """A store that can enumerate itself; records deletes."""
+class _EnumerableStore(FakeSecretStore):
+    """A store that can enumerate itself via `list_secrets()` — only OpenBao/AKV
+    implement this for real; the sweep duck-types via `getattr` since
+    `EnvSecretStore` and every other test double lack it. `get`/`set` are
+    guarded because the sweep must never read or write a secret VALUE, only
+    enumerate and (on purge) delete; `.deleted` (inherited from
+    `FakeSecretStore`) records every name a successful `delete()` sees."""
 
     def __init__(self, secrets: list[SecretInfo]) -> None:
+        super().__init__()
         self._secrets = secrets
-        self.deleted: list[str] = []
 
     def get(self, name: str) -> str:  # pragma: no cover - not exercised
         raise AssertionError("the sweep must never read a secret VALUE")
@@ -43,14 +49,11 @@ class _FakeStore:
     def set(self, name: str, value: str) -> None:  # pragma: no cover
         raise AssertionError("the sweep must never write")
 
-    def delete(self, name: str) -> None:
-        self.deleted.append(name)
-
     def list_secrets(self) -> list[SecretInfo]:
         return list(self._secrets)
 
 
-class _UnlistableStore(_FakeStore):
+class _UnlistableStore(_EnumerableStore):
     """Mirrors EnvSecretStore and every test double: no `list_secrets`."""
 
     list_secrets = None  # type: ignore[assignment]
@@ -328,7 +331,7 @@ def test_future_dated_secret_is_never_purged(db_session: Session) -> None:
 
 
 def test_sweep_reports_without_deleting_by_default(db_session: Session) -> None:
-    store = _FakeStore([SecretInfo("conn-dead-dev-abc123", OLD)])
+    store = _EnumerableStore([SecretInfo("conn-dead-dev-abc123", OLD)])
     result = sweep_orphan_secrets(db_session, store=store, grace_days=30, purge=False, now=NOW)
     assert result.orphans == ["conn-dead-dev-abc123"]
     assert result.purge_attempted == []
@@ -336,7 +339,7 @@ def test_sweep_reports_without_deleting_by_default(db_session: Session) -> None:
 
 
 def test_sweep_purges_only_when_enabled(db_session: Session) -> None:
-    store = _FakeStore([SecretInfo("conn-dead-dev-abc123", OLD)])
+    store = _EnumerableStore([SecretInfo("conn-dead-dev-abc123", OLD)])
     result = sweep_orphan_secrets(db_session, store=store, grace_days=30, purge=True, now=NOW)
     assert result.purge_attempted == ["conn-dead-dev-abc123"]
     assert store.deleted == ["conn-dead-dev-abc123"]
@@ -346,19 +349,18 @@ def test_purge_attempted_records_the_attempt_not_the_outcome(db_session: Session
     """`delete` is fail-soft BY CONTRACT — it swallows and logs — so the store cannot
     report success and this field must not claim to. Pinned so the name and the
     behaviour cannot drift apart again (the first version's comment claimed it
-    reflected what was actually deleted)."""
+    reflected what was actually deleted). `_EnumerableStore.delete` (inherited
+    from `FakeSecretStore`) already matches this contract exactly — it just
+    records the name and never raises, i.e. logs-and-swallows with no signal
+    out — so no dedicated failing-delete subclass is needed."""
 
-    class _FailingDeleteStore(_FakeStore):
-        def delete(self, name: str) -> None:
-            self.deleted.append(name)  # the store logs and swallows; no signal out
-
-    store = _FailingDeleteStore([SecretInfo("conn-dead-dev-abc123", OLD)])
+    store = _EnumerableStore([SecretInfo("conn-dead-dev-abc123", OLD)])
     result = sweep_orphan_secrets(db_session, store=store, grace_days=30, purge=True, now=NOW)
     assert result.purge_attempted == ["conn-dead-dev-abc123"]
 
 
 def test_sweep_disabled_by_non_positive_grace(db_session: Session) -> None:
-    store = _FakeStore([SecretInfo("conn-dead-dev-abc123", OLD)])
+    store = _EnumerableStore([SecretInfo("conn-dead-dev-abc123", OLD)])
     result = sweep_orphan_secrets(db_session, store=store, grace_days=0, purge=True, now=NOW)
     assert result == secret_sweep_service.OrphanSweepResult(0, [], [], [], [])
     assert store.deleted == []
@@ -377,7 +379,7 @@ def test_sweep_propagates_a_store_outage_instead_of_reporting_zero(db_session: S
     """A vault that cannot be listed must fail the task, never look like a clean
     vault — the #954 masquerade applied to a destructive path."""
 
-    class _BrokenStore(_FakeStore):
+    class _BrokenStore(_EnumerableStore):
         def list_secrets(self) -> list[SecretInfo]:
             raise RuntimeError("vault sealed")
 

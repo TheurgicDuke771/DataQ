@@ -23,15 +23,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.core.config import Settings, get_settings
-from backend.app.core.secrets import (
-    SecretNotFoundError,
-    SecretStoreUnavailableError,
-    get_secret_store,
-)
+from backend.app.core.secrets import SecretNotFoundError, SecretStoreUnavailableError
 from backend.app.db.models import OtpCode, User, UserSession
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import otp_service, session_service
+from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
 
 REQUEST_URL = "/api/v1/auth/otp/request"
 VERIFY_URL = "/api/v1/auth/otp/verify"
@@ -63,16 +60,6 @@ class _CapturingSMTP:
         _CapturingSMTP.sent.append(message.get_content())
 
 
-class _Store:
-    def __init__(self, value: str | Exception = "app-password") -> None:
-        self._value = value
-
-    def get(self, name: str) -> str:
-        if isinstance(self._value, Exception):
-            raise self._value
-        return self._value
-
-
 def _otp_settings(**overrides: Any) -> Settings:
     base: dict[str, Any] = {
         "auth_email_smtp_host": "smtp.example.com",
@@ -101,14 +88,22 @@ def otp_env(db_session: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[s
     SMTP transport, and an in-memory per-email counter."""
     import smtplib
 
-    state: dict[str, Any] = {"settings": _otp_settings(), "store": _Store()}
+    state: dict[str, Any] = {
+        "settings": _otp_settings(),
+        "store": FakeSecretStore(default="app-password"),
+    }
     _CapturingSMTP.sent = []
     monkeypatch.setattr(smtplib, "SMTP", _CapturingSMTP)
     otp_service.set_counter_store_for_testing(otp_service.InMemoryOtpCounterStore())
 
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_settings] = lambda: state["settings"]
-    app.dependency_overrides[get_secret_store] = lambda: state["store"]
+    # A test may swap `otp_env["store"]` mid-test (see
+    # test_a_missing_password_secret_and_a_sealed_vault_are_DIFFERENT_errors
+    # below); it re-invokes override_secret_store at the swap point to point the
+    # override at the new store, rather than this fixture reading through the
+    # dict on every call.
+    override_secret_store(app, state["store"])
     try:
         yield state
     finally:
@@ -276,10 +271,12 @@ def test_a_missing_password_secret_and_a_sealed_vault_are_DIFFERENT_errors(
 ) -> None:
     """ADR 0039 decision 6 through the HTTP layer: an outage is never reported as
     "not configured", because the fixes are different."""
-    otp_env["store"] = _Store(SecretNotFoundError("not set"))
+    otp_env["store"] = FakeSecretStore(raise_on_get=SecretNotFoundError("not set"))
+    override_secret_store(app, otp_env["store"])
     not_set = client.post(REQUEST_URL, json={"email": _address()})
 
-    otp_env["store"] = _Store(SecretStoreUnavailableError("sealed"))
+    otp_env["store"] = FakeSecretStore(raise_on_get=SecretStoreUnavailableError("sealed"))
+    override_secret_store(app, otp_env["store"])
     outage = client.post(REQUEST_URL, json={"email": _address()})
 
     assert not_set.json()["error"]["code"] == "otp_email_not_configured"

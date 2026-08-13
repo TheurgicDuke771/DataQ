@@ -9,20 +9,9 @@ from typing import Any
 
 import pytest
 
-from backend.app.core.secrets import SecretNotFoundError
 from backend.app.db.models import Connection, User
 from backend.app.worker.tasks import _poll_orchestration_runs
-
-
-class _Store:
-    def get(self, name: str) -> str:
-        raise SecretNotFoundError(name)  # short-circuits before any network
-
-    def set(self, name: str, value: str) -> None:  # pragma: no cover - unused
-        pass
-
-    def delete(self, name: str) -> None:
-        pass
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 def _seed(db_session: Any) -> None:
@@ -63,7 +52,7 @@ def test_poll_targeting_narrows_connections(
     _seed(db_session)
     summary = _poll_orchestration_runs(
         db_session,
-        secret_store=_Store(),
+        secret_store=FakeSecretStore(),
         provider=provider,
         resource_name=resource_name,
     )

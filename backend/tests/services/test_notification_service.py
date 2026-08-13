@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import select
 
-from backend.app.core.secrets import SecretNotFoundError, SecretWriteError
+from backend.app.core.secrets import SecretWriteError
 from backend.app.db.models import Connection, Suite, SuiteNotification, User
 from backend.app.services import notification_service as svc
 from backend.app.services.notification_service import (
@@ -20,23 +20,7 @@ from backend.app.services.notification_service import (
     InvalidRecipientsError,
     InvalidWebhookError,
 )
-
-
-class _FakeStore:
-    def __init__(self) -> None:
-        self.secrets: dict[str, str] = {}
-
-    def get(self, name: str) -> str:
-        try:
-            return self.secrets[name]
-        except KeyError as exc:
-            raise SecretNotFoundError(name) from exc
-
-    def set(self, name: str, value: str) -> None:
-        self.secrets[name] = value
-
-    def delete(self, name: str) -> None:
-        self.secrets.pop(name, None)
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 def _suite(db: Any) -> Suite:
@@ -66,7 +50,7 @@ def test_get_config_none_until_saved(db_session: Any) -> None:
 
 def test_upsert_creates_then_updates(db_session: Any) -> None:
     suite = _suite(db_session)
-    store = _FakeStore()
+    store = FakeSecretStore()
     created = svc.upsert_config(
         db_session,
         suite_id=suite.id,
@@ -120,7 +104,7 @@ def test_upsert_recovers_from_concurrent_first_write_race(
         enabled=True,
         alert_on="fail",
         webhook=None,
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
     )
 
     assert result.enabled is True  # the winner's row was updated, no exception
@@ -133,7 +117,7 @@ def test_upsert_recovers_from_concurrent_first_write_race(
 
 def test_upsert_writes_webhook_through_secret_store(db_session: Any) -> None:
     suite = _suite(db_session)
-    store = _FakeStore()
+    store = FakeSecretStore()
     config = svc.upsert_config(
         db_session,
         suite_id=suite.id,
@@ -147,12 +131,12 @@ def test_upsert_writes_webhook_through_secret_store(db_session: Any) -> None:
     assert config.webhook_secret_ref is not None
     assert config.webhook_secret_ref.startswith(f"suite-notif-{config.id}-")
     # The URL lives in the store, not the DB row.
-    assert store.secrets[config.webhook_secret_ref] == "https://contoso.webhook.office.com/hook"
+    assert store.data[config.webhook_secret_ref] == "https://contoso.webhook.office.com/hook"
 
 
 def test_upsert_blank_webhook_clears_ref(db_session: Any) -> None:
     suite = _suite(db_session)
-    store = _FakeStore()
+    store = FakeSecretStore()
     svc.upsert_config(
         db_session,
         suite_id=suite.id,
@@ -176,7 +160,7 @@ def test_upsert_rejects_bad_policy(db_session: Any) -> None:
             enabled=True,
             alert_on="nope",
             webhook=None,
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(),
         )
 
 
@@ -189,7 +173,7 @@ def test_upsert_rejects_non_https_webhook(db_session: Any) -> None:
             enabled=True,
             alert_on="fail",
             webhook="http://insecure",
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(),
         )
 
 
@@ -203,13 +187,13 @@ def test_upsert_rejects_non_allowlisted_host(db_session: Any) -> None:
             enabled=True,
             alert_on="fail",
             webhook="https://169.254.169.254/latest/meta-data",
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(),
         )
 
 
 def test_delete_config_removes_row_and_webhook_secret(db_session: Any) -> None:
     suite = _suite(db_session)
-    store = _FakeStore()
+    store = FakeSecretStore()
     config = svc.upsert_config(
         db_session,
         suite_id=suite.id,
@@ -219,16 +203,16 @@ def test_delete_config_removes_row_and_webhook_secret(db_session: Any) -> None:
         secret_store=store,
     )
     ref = config.webhook_secret_ref
-    assert ref in store.secrets
+    assert ref in store.data
     assert svc.delete_config(db_session, suite.id, secret_store=store) is True
     assert svc.get_config(db_session, suite.id) is None
-    assert ref not in store.secrets  # #372: orphaned webhook secret removed
+    assert ref not in store.data  # #372: orphaned webhook secret removed
     assert svc.delete_config(db_session, suite.id, secret_store=store) is False  # idempotent
 
 
 def test_clearing_webhook_removes_the_secret(db_session: Any) -> None:
     suite = _suite(db_session)
-    store = _FakeStore()
+    store = FakeSecretStore()
     config = svc.upsert_config(
         db_session,
         suite_id=suite.id,
@@ -238,7 +222,7 @@ def test_clearing_webhook_removes_the_secret(db_session: Any) -> None:
         secret_store=store,
     )
     ref = config.webhook_secret_ref
-    assert ref in store.secrets
+    assert ref in store.data
     # Clearing the webhook ("") nulls the ref AND removes the secret (#372).
     updated = svc.upsert_config(
         db_session,
@@ -249,25 +233,21 @@ def test_clearing_webhook_removes_the_secret(db_session: Any) -> None:
         secret_store=store,
     )
     assert updated.webhook_secret_ref is None
-    assert ref not in store.secrets
+    assert ref not in store.data
 
 
-class _SoftDeleteStore(_FakeStore):
+class _SoftDeleteStore(FakeSecretStore):
     """Simulates Azure Key Vault soft-delete: `set` of a previously-deleted name
-    raises (the 409 'deleted but recoverable' the app can't purge/recover past)."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._deleted: set[str] = set()
+    raises (the 409 'deleted but recoverable' the app can't purge/recover past).
+    `delete` is inherited unchanged from `FakeSecretStore` — it already pops
+    `self.data` and records the name in `self.deleted`, which doubles here as
+    the soft-delete membership check."""
 
     def set(self, name: str, value: str) -> None:
-        if name in self._deleted:
+        if name in self.deleted:
             raise SecretWriteError(f"{name} is in a deleted but recoverable state")
-        self.secrets[name] = value
-
-    def delete(self, name: str) -> None:
-        self.secrets.pop(name, None)
-        self._deleted.add(name)
+        self.writes.append(value)
+        self.data[name] = value
 
 
 def test_clear_then_reset_webhook_does_not_reuse_soft_deleted_name(db_session: Any) -> None:
@@ -291,13 +271,13 @@ def test_clear_then_reset_webhook_does_not_reuse_soft_deleted_name(db_session: A
     _save("")  # clear → soft-delete ref1
     ref2 = _save(url).webhook_secret_ref  # re-set — must not raise
     assert ref2 != ref1
-    assert ref2 in store.secrets
+    assert ref2 in store.data
 
 
 def test_resolve_webhook_prefers_suite_then_workspace(db_session: Any) -> None:
     suite = _suite(db_session)
-    store = _FakeStore()
-    store.secrets["ws"] = "https://workspace"
+    store = FakeSecretStore()
+    store.data["ws"] = "https://workspace"
     # No config → workspace fallback.
     assert (
         svc.resolve_webhook(None, secret_store=store, workspace_secret_name="ws")
@@ -319,7 +299,10 @@ def test_resolve_webhook_prefers_suite_then_workspace(db_session: Any) -> None:
 
 
 def test_resolve_webhook_none_when_nothing_set(db_session: Any) -> None:
-    assert svc.resolve_webhook(None, secret_store=_FakeStore(), workspace_secret_name=None) is None
+    assert (
+        svc.resolve_webhook(None, secret_store=FakeSecretStore(), workspace_secret_name=None)
+        is None
+    )
 
 
 # ── Per-suite Slack + email (#633) ──────────────────────────────────────────
@@ -327,7 +310,7 @@ def test_resolve_webhook_none_when_nothing_set(db_session: Any) -> None:
 
 def test_upsert_slack_webhook_stored_under_distinct_ref(db_session: Any) -> None:
     suite = _suite(db_session)
-    store = _FakeStore()
+    store = FakeSecretStore()
     config = svc.upsert_config(
         db_session,
         suite_id=suite.id,
@@ -341,9 +324,7 @@ def test_upsert_slack_webhook_stored_under_distinct_ref(db_session: Any) -> None
     assert config.slack_webhook_secret_ref is not None
     assert config.slack_webhook_secret_ref.startswith(f"suite-notif-slack-{config.id}-")
     assert config.slack_webhook_secret_ref != config.webhook_secret_ref
-    assert (
-        store.secrets[config.slack_webhook_secret_ref] == "https://hooks.slack.com/services/T/B/xyz"
-    )
+    assert store.data[config.slack_webhook_secret_ref] == "https://hooks.slack.com/services/T/B/xyz"
 
 
 def test_upsert_rejects_non_slack_host(db_session: Any) -> None:
@@ -356,13 +337,13 @@ def test_upsert_rejects_non_slack_host(db_session: Any) -> None:
             alert_on="fail",
             webhook=None,
             slack_webhook="https://evil.example.com/hook",
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(),
         )
 
 
 def test_upsert_email_recipients_inline_and_clear(db_session: Any) -> None:
     suite = _suite(db_session)
-    store = _FakeStore()
+    store = FakeSecretStore()
     config = svc.upsert_config(
         db_session,
         suite_id=suite.id,
@@ -396,7 +377,7 @@ def test_upsert_rejects_malformed_recipients(db_session: Any) -> None:
             alert_on="fail",
             webhook=None,
             email_recipients="not-an-email, also-bad",
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(),
         )
 
 
@@ -413,7 +394,7 @@ def test_upsert_rejects_recipients_with_control_chars(db_session: Any) -> None:
                 alert_on="fail",
                 webhook=None,
                 email_recipients=bad,
-                secret_store=_FakeStore(),
+                secret_store=FakeSecretStore(),
             )
 
 
@@ -428,7 +409,7 @@ def test_upsert_rejects_empty_recipient_list(db_session: Any) -> None:
             alert_on="fail",
             webhook=None,
             email_recipients=",",
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(),
         )
 
 
@@ -436,7 +417,7 @@ def test_clearing_slack_webhook_removes_the_secret(db_session: Any) -> None:
     # #372/#633 parity with Teams: clearing the Slack webhook nulls the ref AND
     # soft-deletes the secret.
     suite = _suite(db_session)
-    store = _FakeStore()
+    store = FakeSecretStore()
     config = svc.upsert_config(
         db_session,
         suite_id=suite.id,
@@ -447,7 +428,7 @@ def test_clearing_slack_webhook_removes_the_secret(db_session: Any) -> None:
         secret_store=store,
     )
     ref = config.slack_webhook_secret_ref
-    assert ref in store.secrets
+    assert ref in store.data
     cleared = svc.upsert_config(
         db_session,
         suite_id=suite.id,
@@ -458,13 +439,13 @@ def test_clearing_slack_webhook_removes_the_secret(db_session: Any) -> None:
         secret_store=store,
     )
     assert cleared.slack_webhook_secret_ref is None
-    assert ref not in store.secrets
+    assert ref not in store.data
 
 
 def test_resolve_slack_webhook_prefers_suite_then_workspace(db_session: Any) -> None:
     suite = _suite(db_session)
-    store = _FakeStore()
-    store.secrets["ws-slack"] = "https://hooks.slack.com/services/WS"
+    store = FakeSecretStore()
+    store.data["ws-slack"] = "https://hooks.slack.com/services/WS"
     # No config → workspace fallback.
     assert (
         svc.resolve_slack_webhook(None, secret_store=store, workspace_secret_name="ws-slack")
@@ -487,7 +468,7 @@ def test_resolve_slack_webhook_prefers_suite_then_workspace(db_session: Any) -> 
 
 def test_resolve_email_recipients_prefers_suite_then_workspace(db_session: Any) -> None:
     suite = _suite(db_session)
-    store = _FakeStore()
+    store = FakeSecretStore()
     ws = ("ops@x.io",)
     # No config → workspace fallback.
     assert svc.resolve_email_recipients(None, workspace_recipients=ws) == ws
@@ -508,7 +489,7 @@ def test_resolve_email_recipients_prefers_suite_then_workspace(db_session: Any) 
 
 def test_delete_config_removes_slack_secret_too(db_session: Any) -> None:
     suite = _suite(db_session)
-    store = _FakeStore()
+    store = FakeSecretStore()
     config = svc.upsert_config(
         db_session,
         suite_id=suite.id,
@@ -519,7 +500,7 @@ def test_delete_config_removes_slack_secret_too(db_session: Any) -> None:
         secret_store=store,
     )
     teams_ref, slack_ref = config.webhook_secret_ref, config.slack_webhook_secret_ref
-    assert teams_ref in store.secrets and slack_ref in store.secrets
+    assert teams_ref in store.data and slack_ref in store.data
     assert svc.delete_config(db_session, suite.id, secret_store=store) is True
     # #372: both orphaned webhook secrets removed.
-    assert teams_ref not in store.secrets and slack_ref not in store.secrets
+    assert teams_ref not in store.data and slack_ref not in store.data

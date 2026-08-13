@@ -20,6 +20,7 @@ from backend.app.services.schema_drift import (
     diff_schemas,
     introspect_columns,
 )
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 # ───────────────────────── pure diff ─────────────────────────
 
@@ -61,17 +62,6 @@ def test_diff_names_compared_exactly() -> None:
 
 
 # ───────────────────── introspection: SQL via information_schema ─────────────
-
-
-class _FakeStore:
-    def get(self, name: str) -> str:
-        return "secret"
-
-    def set(self, name: str, value: str) -> None:
-        raise NotImplementedError
-
-    def delete(self, name: str) -> None:
-        raise NotImplementedError
 
 
 def _sql_connection() -> Connection:
@@ -120,7 +110,11 @@ def test_sql_introspection_reads_information_schema(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(schema_drift, "_open_connection", fake_open)
     cols = introspect_columns(
-        _sql_connection(), table="ORDERS", schema=None, catalog=None, secret_store=_FakeStore()
+        _sql_connection(),
+        table="ORDERS",
+        schema=None,
+        catalog=None,
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert cols == [{"name": "ID", "type": "NUMBER"}, {"name": "EMAIL", "type": "TEXT"}]
     assert "information_schema.columns" in captured["sql"]
@@ -162,7 +156,11 @@ def test_sql_introspection_uc_catalog_prefix_is_validated(
         created_by=uuid.uuid4(),
     )
     cols = introspect_columns(
-        uc, table="orders", schema="retail", catalog="main", secret_store=_FakeStore()
+        uc,
+        table="orders",
+        schema="retail",
+        catalog="main",
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert cols == [{"name": "id", "type": "int"}]
     assert "main.information_schema.columns" in seen["sql"]
@@ -170,7 +168,11 @@ def test_sql_introspection_uc_catalog_prefix_is_validated(
     # an injection-shaped catalog never reaches the query string
     with pytest.raises(SchemaIntrospectionError):
         introspect_columns(
-            uc, table="orders", schema="retail", catalog="main.bad", secret_store=_FakeStore()
+            uc,
+            table="orders",
+            schema="retail",
+            catalog="main.bad",
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         )
 
 
@@ -195,7 +197,11 @@ def test_sql_introspection_empty_result_is_classified_error(
     monkeypatch.setattr(schema_drift, "_open_connection", fake_open)
     with pytest.raises(SchemaIntrospectionError, match="not found in information_schema"):
         introspect_columns(
-            _sql_connection(), table="NOPE", schema=None, catalog=None, secret_store=_FakeStore()
+            _sql_connection(),
+            table="NOPE",
+            schema=None,
+            catalog=None,
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         )
 
 
@@ -225,13 +231,21 @@ def test_sql_introspection_refuses_ambiguous_case_variants(
     monkeypatch.setattr(schema_drift, "_open_connection", fake_open)
     # The exact spelling wins when present…
     cols = introspect_columns(
-        _sql_connection(), table="ORDERS", schema=None, catalog=None, secret_store=_FakeStore()
+        _sql_connection(),
+        table="ORDERS",
+        schema=None,
+        catalog=None,
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert cols == [{"name": "ID", "type": "NUMBER"}]
     # …but a reference matching several objects with NO exact hit is refused.
     with pytest.raises(SchemaIntrospectionError, match="ambiguous"):
         introspect_columns(
-            _sql_connection(), table="orders", schema=None, catalog=None, secret_store=_FakeStore()
+            _sql_connection(),
+            table="orders",
+            schema=None,
+            catalog=None,
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         )
 
 
@@ -278,7 +292,7 @@ def test_file_introspection_csv_types_from_sample(monkeypatch: pytest.MonkeyPatc
         table="landing/orders.csv",
         schema=None,
         catalog=None,
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     by_name = {c["name"]: c["type"] for c in cols}
     assert set(by_name) == {"id", "email", "amount"}
@@ -298,7 +312,7 @@ def test_file_introspection_csv_sniffs_a_semicolon_delimiter(
         table="landing/orders.csv",
         schema=None,
         catalog=None,
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     by_name = {c["name"]: c["type"] for c in cols}
     assert set(by_name) == {"id", "email", "amount"}
@@ -322,7 +336,7 @@ def test_file_introspection_parquet_types_from_footer(monkeypatch: pytest.Monkey
         table="raw/orders.parquet",
         schema=None,
         catalog=None,
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     by_name = {c["name"]: c["type"] for c in cols}
     assert by_name == {"id": "int64", "name": "string"}
@@ -350,7 +364,11 @@ def test_iceberg_introspection_reads_schema_metadata(monkeypatch: pytest.MonkeyP
         created_by=uuid.uuid4(),
     )
     cols = introspect_columns(
-        ib, table="retail.orders", schema=None, catalog=None, secret_store=_FakeStore()
+        ib,
+        table="retail.orders",
+        schema=None,
+        catalog=None,
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert cols == [{"name": "id", "type": "long"}, {"name": "email", "type": "string"}]
 
@@ -366,7 +384,13 @@ def test_unsupported_connection_type_is_classified_error() -> None:
         created_by=uuid.uuid4(),
     )
     with pytest.raises(SchemaIntrospectionError, match="not supported"):
-        introspect_columns(orch, table="t", schema=None, catalog=None, secret_store=_FakeStore())
+        introspect_columns(
+            orch,
+            table="t",
+            schema=None,
+            catalog=None,
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+        )
 
 
 def test_introspection_failure_message_is_classified(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -380,7 +404,11 @@ def test_introspection_failure_message_is_classified(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(flatfile, "object_size", boom)
     with pytest.raises(SchemaIntrospectionError) as excinfo:
         introspect_columns(
-            _file_connection(), table="x.csv", schema=None, catalog=None, secret_store=_FakeStore()
+            _file_connection(),
+            table="x.csv",
+            schema=None,
+            catalog=None,
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         )
     assert "SECRET" not in str(excinfo.value)
 
@@ -432,7 +460,7 @@ def _executor_with_snapshot(
         target_table="ORDERS",
         target_schema=None,
         target_catalog=None,
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         persist=persist,
     )
 
@@ -541,7 +569,7 @@ def test_introspection_failure_is_per_check_error(
         target_table="ORDERS",
         target_schema=None,
         target_catalog=None,
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     outcome = executor(check)
     assert isinstance(outcome, CheckOutcome)

@@ -145,17 +145,7 @@ from backend.app.datasources.unity_catalog import (  # noqa: E402
 from backend.app.services.custom_sql import is_custom_sql  # noqa: E402
 from backend.app.services.failure_classifier import classify_failure_reason  # noqa: E402
 from backend.app.services.severity import extract_metric  # noqa: E402
-
-
-class _FakeStore:
-    def get(self, name: str) -> str:
-        return "pat-token"
-
-    def set(self, name: str, value: str) -> None:  # read-only test double
-        raise NotImplementedError
-
-    def delete(self, name: str) -> None:
-        raise NotImplementedError
+from backend.tests.support.fake_secret_store import FakeSecretStore  # noqa: E402
 
 
 def test_build_databricks_url_encodes_parts() -> None:
@@ -185,7 +175,10 @@ def test_build_databricks_url_pins_schema() -> None:
 
 def test_build_unity_catalog_runner_resolves_pat() -> None:
     runner = build_unity_catalog_runner(
-        config=dict(_UC_CONFIG), secret_ref="kv-ref", secret_store=_FakeStore(), catalog="main"
+        config=dict(_UC_CONFIG),
+        secret_ref="kv-ref",
+        secret_store=FakeSecretStore(default="pat-token", raise_on_write=True),
+        catalog="main",
     )
     assert isinstance(runner, UnityCatalogCheckRunner)
 
@@ -193,7 +186,10 @@ def test_build_unity_catalog_runner_resolves_pat() -> None:
 def test_build_unity_catalog_runner_requires_secret_ref() -> None:
     with pytest.raises(ValueError, match="secret_ref"):
         build_unity_catalog_runner(
-            config=dict(_UC_CONFIG), secret_ref=None, secret_store=_FakeStore(), catalog="main"
+            config=dict(_UC_CONFIG),
+            secret_ref=None,
+            secret_store=FakeSecretStore(default="pat-token", raise_on_write=True),
+            catalog="main",
         )
 
 

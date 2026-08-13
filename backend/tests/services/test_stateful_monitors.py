@@ -19,17 +19,7 @@ from backend.app.datasources.base import CheckOutcome
 from backend.app.datasources.monitors import STATEFUL_MONITOR_KINDS
 from backend.app.db.models import Check, Connection
 from backend.app.services import stateful_monitors
-
-
-class _FakeStore:
-    def get(self, name: str) -> str:
-        return "secret"
-
-    def set(self, name: str, value: str) -> None:
-        raise NotImplementedError
-
-    def delete(self, name: str) -> None:
-        raise NotImplementedError
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 def _check(kind: str) -> Check:
@@ -71,7 +61,7 @@ def _build(monkeypatch: pytest.MonkeyPatch, calls: list[str]) -> Any:
         target_table="T",
         target_schema=None,
         target_catalog=None,
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
 
 

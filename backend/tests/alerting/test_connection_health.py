@@ -44,6 +44,7 @@ from backend.app.db.models import Connection, User
 from backend.app.worker import tasks
 from backend.app.worker.celery_app import celery_app
 from backend.tests.alerting.test_health_publish_composite import _Channel
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 # The exact shape of the credential that leaked in #828: an ADLS SAS whose query string
 # rides in the exception message. If any renderer ever interpolates a raw exception, this
@@ -430,15 +431,6 @@ def test_recovery_report_carries_no_reason(db_session: Any, spy: _SpyHealthPubli
 # ── the wiring: drive the real poll sweep, not just the helper ───────────────────
 
 
-class _Store:
-    def get(self, name: str) -> str:
-        return "secret"
-
-    def set(self, name: str, value: str) -> None: ...
-
-    def delete(self, name: str) -> None: ...
-
-
 class _RaisingProvider:
     provider = "dbt"
     resource_config_key = "project_name"
@@ -457,7 +449,10 @@ class _HealthyProvider:
 
 def _sweep(db: Any) -> None:
     tasks._poll_orchestration_runs(
-        db, secret_store=_Store(), lookback=timedelta(minutes=15), now=datetime.now(UTC)
+        db,
+        secret_store=FakeSecretStore(default="secret"),
+        lookback=timedelta(minutes=15),
+        now=datetime.now(UTC),
     )
 
 

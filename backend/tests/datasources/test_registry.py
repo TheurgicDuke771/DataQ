@@ -13,6 +13,7 @@ from backend.app.datasources.iceberg import IcebergCheckRunner
 from backend.app.datasources.registry import UnsupportedConnectionTypeError, build_check_runner
 from backend.app.datasources.snowflake import SnowflakeCheckRunner
 from backend.app.datasources.unity_catalog import UnityCatalogCheckRunner
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 _SNOWFLAKE_CONFIG = {
     "account": "ab12345.eu-west-1",
@@ -31,25 +32,12 @@ _ICEBERG_CONFIG = {
 }
 
 
-class _FakeStore:
-    """Minimal SecretStore: returns a token regardless of name."""
-
-    def get(self, name: str) -> str:
-        return "secret"
-
-    def set(self, name: str, value: str) -> None:  # satisfies SecretStore Protocol
-        ...
-
-    def delete(self, name: str) -> None:
-        pass
-
-
 def test_dispatches_snowflake() -> None:
     runner = build_check_runner(
         conn_type="snowflake",
         config=_SNOWFLAKE_CONFIG,
         secret_ref="sf",
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret"),
     )
     assert isinstance(runner, SnowflakeCheckRunner)
 
@@ -57,7 +45,10 @@ def test_dispatches_snowflake() -> None:
 @pytest.mark.parametrize("conn_type", ["s3", "adls_gen2"])
 def test_dispatches_flatfile(conn_type: str) -> None:
     runner = build_check_runner(
-        conn_type=conn_type, config=_S3_CONFIG, secret_ref="ff", secret_store=_FakeStore()
+        conn_type=conn_type,
+        config=_S3_CONFIG,
+        secret_ref="ff",
+        secret_store=FakeSecretStore(default="secret"),
     )
     assert isinstance(runner, FlatFileCheckRunner)
 
@@ -67,7 +58,7 @@ def test_dispatches_unity_catalog_with_catalog() -> None:
         conn_type="unity_catalog",
         config=_UC_CONFIG,
         secret_ref="pat",
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret"),
         catalog="main",
     )
     assert isinstance(runner, UnityCatalogCheckRunner)
@@ -78,7 +69,7 @@ def test_dispatches_iceberg() -> None:
         conn_type="iceberg",
         config=_ICEBERG_CONFIG,
         secret_ref="iceberg-cred",
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret"),
     )
     assert isinstance(runner, IcebergCheckRunner)
 
@@ -89,7 +80,7 @@ def test_unity_catalog_without_catalog_raises() -> None:
             conn_type="unity_catalog",
             config=_UC_CONFIG,
             secret_ref="pat",
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(default="secret"),
         )
 
 
@@ -98,5 +89,8 @@ def test_non_datasource_or_unknown_type_raises(conn_type: str) -> None:
     """Orchestration providers have no runner; nor does an unknown type."""
     with pytest.raises(UnsupportedConnectionTypeError):
         build_check_runner(
-            conn_type=conn_type, config={}, secret_ref="x", secret_store=_FakeStore()
+            conn_type=conn_type,
+            config={},
+            secret_ref="x",
+            secret_store=FakeSecretStore(default="secret"),
         )

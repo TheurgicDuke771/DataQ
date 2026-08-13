@@ -28,6 +28,7 @@ from cryptography.x509.oid import NameOID
 from backend.app.core.config import Settings
 from backend.app.core.secrets import SecretNotFoundError, SecretStoreUnavailableError
 from backend.app.services import otp_mailer
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 def _settings(**overrides: Any) -> Settings:
@@ -43,20 +44,23 @@ def _settings(**overrides: Any) -> Settings:
     return Settings(**base)
 
 
-class _Store:
-    """A `SecretStore` that answers `get` with a fixed value or a fixed failure."""
+class _Store(FakeSecretStore):
+    """A `SecretStore` that answers `get` with a fixed value or a fixed failure.
+
+    Not a `FakeSecretStore(default=..., raise_on_get=...)` call site because the
+    write guard needs two DIFFERENT messages on `set` vs `delete` — the mailer
+    must only ever READ, and these fail loudly, each with its own message, if
+    it ever starts writing (a mailer that can mutate the secret store is a much
+    larger blast radius than the feature needs), unlike the single shared
+    exception `raise_on_set` gates both operations with.
+    """
 
     def __init__(self, value: str | Exception) -> None:
-        self._value = value
+        super().__init__(
+            default=value if isinstance(value, str) else None,
+            raise_on_get=value if isinstance(value, Exception) else None,
+        )
 
-    def get(self, name: str) -> str:
-        if isinstance(self._value, Exception):
-            raise self._value
-        return self._value
-
-    # The mailer must only ever READ. These complete the Protocol and fail loudly
-    # if it ever starts writing — a mailer that can mutate the secret store is a
-    # much larger blast radius than the feature needs.
     def set(self, name: str, value: str) -> None:
         raise AssertionError("the OTP mailer must never write to the secret store")
 
