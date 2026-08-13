@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "b0574a36a1fa",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-2026-08-12-quick-fruit-batch",
+  "checkpoints_count": 38,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b0/574a36a1fa/0/metadata.json",
+      "transcript": "/b0/574a36a1fa/0/full.jsonl",
+      "compact_transcript": "/b0/574a36a1fa/0/transcript.jsonl",
+      "content_hash": "/b0/574a36a1fa/0/content_hash.txt",
+      "prompt": "/b0/574a36a1fa/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 316,
+    "cache_creation_tokens": 509604,
+    "cache_read_tokens": 37621815,
+    "output_tokens": 102596,
+    "api_call_count": 159
+  }
+}
