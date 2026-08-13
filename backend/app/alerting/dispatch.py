@@ -14,7 +14,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from backend.app.alerting import dedup, registry, suppression
-from backend.app.alerting.base import AlertUndeliverableError, HealthState, was_already_logged
+from backend.app.alerting.base import AlertUndeliverableError, HealthState
 from backend.app.alerting.builder import build_connection_health_report, build_run_report
 from backend.app.alerting.routing import ALWAYS
 from backend.app.core.logging import get_logger
@@ -103,14 +103,12 @@ def publish_connection_health(
         # is the expected shape on a fresh install, not a bug.
         log.warning("connection_health_publish_undeliverable", connection_id=str(connection_id))
         return False
-    except Exception as exc:
+    except Exception:
         # The composite already logged this exact traceback once per failing channel,
-        # including this one (the last), when every channel failed (#1226) — a bare
-        # log.exception here would log the same traceback again. Downgrade to a
-        # warning in that case; anything the composite never saw (e.g. a bug in
+        # including this one (the last), when every channel failed (#1226) — the
+        # structlog processor chain (`_downgrade_already_logged_exceptions`, #1261)
+        # downgrades this to a warning when the exception was already reported that
+        # way; anything the composite never saw (e.g. a bug in
         # build_connection_health_report above) still gets the full traceback.
-        if was_already_logged(exc):
-            log.warning("connection_health_publish_failed", connection_id=str(connection_id))
-        else:
-            log.exception("connection_health_publish_failed", connection_id=str(connection_id))
+        log.exception("connection_health_publish_failed", connection_id=str(connection_id))
         return False

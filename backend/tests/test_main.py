@@ -15,6 +15,7 @@ from structlog.typing import EventDict
 from backend.app import main as main_module
 from backend.app.alerting.base import mark_already_logged
 from backend.app.core.config import Settings
+from backend.app.core.logging import _downgrade_already_logged_exceptions
 from backend.app.main import REQUEST_ID_HEADER, app, docs_kwargs
 
 
@@ -249,14 +250,27 @@ def test_readyz_never_echoes_the_database_error(client: TestClient) -> None:
     assert "postgresql://" not in response.text
 
 
-# ───────────── poll-staleness watchdog: no duplicate traceback (#1226) ─────────────
+# ───────────── poll-staleness watchdog: no duplicate traceback (#1226/#1261) ────────
 #
 # When every alert channel fails, `CompositePublisher._fan_out_delivered_first`
 # already logs a full traceback per failing channel before re-raising the last
 # one. `_poll_staleness_loop`'s own `except Exception: logger.exception(...)` used
-# to log that SAME last-channel traceback a second time. It now downgrades to a
-# warning for an error the composite already reported, while anything else (a DB
-# error, a bug in `evaluate_poll_staleness`) still gets its full traceback.
+# to log that SAME last-channel traceback a second time. #1226 fixed it with a
+# per-caller `was_already_logged` check; #1261 moved the check into the structlog
+# processor chain (`_downgrade_already_logged_exceptions`, core/logging.py) so
+# `_poll_staleness_loop` is back to an unconditional `logger.exception(...)` and
+# the downgrade happens for ANY caller, not just this one.
+#
+# `structlog.testing.capture_logs()` clears the app's configured processor list
+# for its duration (that's the point — isolate the test from unrelated chain
+# config), so it must be told about this specific processor via its `processors=`
+# param to exercise it at all. It also derives its OWN `log_level` key straight
+# from the bound-logger method name that was called (`exception` → `error`),
+# which no downstream processor can influence — so the processor's rewrite is
+# only observable on the `level` key it actually writes, not `log_level`. See
+# `test_downgrades_a_marked_exception_from_any_caller` in
+# `backend/tests/core/test_logging.py` for the real end-to-end proof (the full
+# `configure_logging()` pipeline, no `capture_logs()` involved).
 
 
 async def _run_one_tick(monkeypatch: pytest.MonkeyPatch, tick_error: Exception) -> list[EventDict]:
@@ -274,7 +288,7 @@ async def _run_one_tick(monkeypatch: pytest.MonkeyPatch, tick_error: Exception) 
 
     monkeypatch.setattr(main_module, "_poll_staleness_tick", _boom)
 
-    with capture_logs() as logs:
+    with capture_logs(processors=[_downgrade_already_logged_exceptions]) as logs:
         await main_module._poll_staleness_loop(stop, interval_s=60)
     return list(logs)
 
@@ -289,11 +303,12 @@ async def test_poll_staleness_loop_downgrades_an_error_the_composite_already_log
 
     ticks = [e for e in events if e["event"] == "poll_staleness_tick_failed"]
     assert len(ticks) == 1
-    assert ticks[0]["log_level"] == "warning"
+    assert ticks[0]["level"] == "warning"
     assert "exc_info" not in ticks[0]
     # No exc_info and no per-tick correlation id in this background loop, so
     # error_type is the only thing left to match this line back to the composite's
-    # own per-channel log (review finding on #1260).
+    # own per-channel log (review finding on #1260; now restored by the processor
+    # itself, #1261, for any caller it downgrades — not hand-added here).
     assert ticks[0]["error_type"] == "RuntimeError"
 
 

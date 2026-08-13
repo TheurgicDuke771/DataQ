@@ -40,6 +40,7 @@ from backend.app.alerting.composite import CompositePublisher
 from backend.app.alerting.email import render_health_html_body, render_health_text_body
 from backend.app.alerting.slack import render_slack_health_message
 from backend.app.core.config import get_settings
+from backend.app.core.logging import _downgrade_already_logged_exceptions
 from backend.app.db.models import Connection, User
 from backend.app.worker import tasks
 from backend.app.worker.celery_app import celery_app
@@ -348,7 +349,7 @@ def test_a_broken_channel_never_breaks_the_poll(
     )
 
 
-# ── #1226: total-channel-failure must not log the same traceback twice ──────────
+# ── #1226/#1261: total-channel-failure must not log the same traceback twice ────
 
 
 def test_every_channel_failing_logs_the_last_traceback_once_not_twice(
@@ -364,7 +365,16 @@ def test_every_channel_failing_logs_the_last_traceback_once_not_twice(
     Routed through a REAL `CompositePublisher` with `_Channel(fail=True)` — the
     same double `test_health_publish_composite.py` already uses to exercise the
     composite's own fan-out — unlike `_SpyHealthPublisher` above, which stands in
-    for the composite itself and so never exercises its own logging/marking."""
+    for the composite itself and so never exercises its own logging/marking.
+
+    #1261 moved the downgrade out of `dispatch.py` (now an unconditional
+    `log.exception(...)`) into the shared structlog processor
+    (`_downgrade_already_logged_exceptions`), so it must be passed explicitly to
+    `capture_logs()` — that helper clears the app's configured processor chain for
+    its duration and otherwise wouldn't run it. Its own `log_level` key is derived
+    from the bound-logger method name alone (`exception` → `error`, always, no
+    processor can change that), so the downgrade is asserted on the `level` key the
+    processor actually writes instead — the field the real JSON output carries."""
     monkeypatch.setattr(
         registry,
         "get_health_publisher",
@@ -372,7 +382,7 @@ def test_every_channel_failing_logs_the_last_traceback_once_not_twice(
     )
     conn = _connection(db_session)
 
-    with capture_logs() as logs:
+    with capture_logs(processors=[_downgrade_already_logged_exceptions]) as logs:
         monkeypatch.setattr(dispatch, "log", structlog.get_logger("backend.app.alerting.dispatch"))
         assert not dispatch.publish_connection_health(
             db_session, connection_id=conn.id, state=HEALTH_FAILING
@@ -383,13 +393,16 @@ def test_every_channel_failing_logs_the_last_traceback_once_not_twice(
 
     # The composite still logs one full traceback per failing channel — that part
     # of the contract is unchanged and must stay that way (two channels, two logs).
+    # Neither of these is marked at the moment it is logged (the composite only
+    # marks the LAST error, after the loop, right before re-raising it), so the
+    # processor is a no-op on both and `log_level` (method-name-derived) is enough.
     assert len(channel_events) == 2
     assert all(e["log_level"] == "error" and e.get("exc_info") for e in channel_events)
 
     # dispatch.py's own log for the SAME failure downgrades to a warning with no
     # traceback, instead of duplicating the last channel's.
     assert len(dispatch_events) == 1
-    assert dispatch_events[0]["log_level"] == "warning"
+    assert dispatch_events[0]["level"] == "warning"
     assert "exc_info" not in dispatch_events[0]
 
 
@@ -407,7 +420,7 @@ def test_an_exception_the_composite_never_saw_still_gets_a_full_traceback(
     monkeypatch.setattr(registry, "get_health_publisher", _boom)
     conn = _connection(db_session)
 
-    with capture_logs() as logs:
+    with capture_logs(processors=[_downgrade_already_logged_exceptions]) as logs:
         monkeypatch.setattr(dispatch, "log", structlog.get_logger("backend.app.alerting.dispatch"))
         assert not dispatch.publish_connection_health(
             db_session, connection_id=conn.id, state=HEALTH_FAILING

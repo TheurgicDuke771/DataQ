@@ -58,9 +58,10 @@ def _fan_out_delivered_first(
             log.exception(log_event, channel=type(publisher).__name__, **log_context)
     if delivered == 0:
         if last_error is not None:
-            # Already logged above with a full traceback — mark it so the caller's
-            # own except-block downgrades to a warning instead of logging the same
-            # traceback a second time (#1226).
+            # Already logged above with a full traceback — mark it so the logging
+            # processor chain (`_downgrade_already_logged_exceptions`, #1261)
+            # downgrades a later `log.exception(...)` on it to a warning instead
+            # of logging the same traceback a second time (#1226).
             mark_already_logged(last_error)
             raise last_error
         raise AlertUndeliverableError(undeliverable_message)
