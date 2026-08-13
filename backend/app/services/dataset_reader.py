@@ -136,8 +136,10 @@ def _sql_read(
             "connection has no stored credential",
             detail={"connection_id": str(connection.id)},
         )
-    count_stmt: Any
-    select_stmt: Any
+    count_sql: str | None = None
+    select_sql: str | None = None
+    table: str | None = None
+    schema: str | None = None
     if spec.query is not None:
         q = _wrapped_query(spec)
         # Interpolation is safe: `q` passed the read-only single-statement
@@ -153,8 +155,6 @@ def _sql_read(
             f"SELECT * FROM (\n{q}\n) __dataq_src "  # noqa: S608  # nosec B608
             f"LIMIT {int(max_rows) + 1}"
         )
-        count_stmt = sa.text(count_sql)
-        select_stmt = sa.text(select_sql)
     else:
         if not spec.table:
             raise DatasetReadUnsupportedError(
@@ -168,12 +168,25 @@ def _sql_read(
                 "a Unity Catalog comparison side needs a catalog",
                 detail={"spec": "catalog"},
             )
+        table = spec.table
         schema = resolve_effective_schema(connection, spec.schema)
-        source = _table(schema, spec.table, spec.catalog)
-        count_stmt = sa.select(sa.func.count()).select_from(source)
-        select_stmt = sa.select(sa.text("*")).select_from(source).limit(max_rows + 1)
 
+    count_stmt: Any
+    select_stmt: Any
     with _open_connection(connection, secret_store) as conn:
+        if count_sql is not None and select_sql is not None:
+            count_stmt = sa.text(count_sql)
+            select_stmt = sa.text(select_sql)
+        else:
+            # `_table` needs a live dialect only when `spec.catalog` is set
+            # (Unity Catalog's 3-part namespace, #936) — built here rather than
+            # above so the connection's own dialect is on hand; Snowflake's
+            # 2-part target never reaches the code that would use it.
+            assert table is not None and schema is not None  # set in the table branch above
+            dialect = conn.dialect if spec.catalog else None
+            source = _table(schema, table, spec.catalog, dialect)
+            count_stmt = sa.select(sa.func.count()).select_from(source)
+            select_stmt = sa.select(sa.text("*")).select_from(source).limit(max_rows + 1)
         count = int(conn.execute(count_stmt).scalar_one())
         if count > max_rows:
             raise _too_large(count, max_rows, side_hint="dataset")
