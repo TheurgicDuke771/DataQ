@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 import structlog
+from opentelemetry._logs import SeverityNumber
 
 from backend.app.alerting.base import mark_already_logged
 from backend.app.core.config import get_settings
@@ -297,6 +298,164 @@ def test_otel_setup_failure_degrades_to_stdout_never_raises(
     out = capsys.readouterr().out
     assert "otel_log_export_setup_failed" in out  # the degradation was recorded
     assert "post-failure line" in out  # stdout logging survives
+
+
+# ── OTel raw-LogRecord downgrade for already-logged exceptions (#1261 follow-up) ──
+#
+# The structlog-side downgrade (`_downgrade_already_logged_exceptions`, tested
+# below under "already-logged-traceback downgrade") only rewrites the
+# `event_dict` — the rendered stdout JSON body. It does NOT touch the raw
+# stdlib `logging.LogRecord` `log.exception()` created: `LoggingHandler.
+# _translate`/`_get_attributes` (inherited by `_RedactingOTelLogHandler`,
+# unmodified) read `record.levelno`/`record.exc_info` straight off that raw
+# record. Verified empirically (not assumed) that these two things are true at
+# once for THIS app's actual logger configuration
+# (`structlog.make_filtering_bound_logger` + `structlog.stdlib.LoggerFactory`):
+#
+# 1. `record.levelno` is ALWAYS `ERROR` for a native `log.exception(...)` call
+#    — set by which underlying stdlib method got invoked (`.error()`),
+#    decided before any processor runs, and NOT reflected in that choice by
+#    the processor chain's later rewrite of `event_dict["level"]`.
+# 2. `record.exc_info` on that SAME raw record is ALWAYS `None` for a native
+#    call, marked or not — `FilteringBoundLogger.exception()` folds
+#    `exc_info=True` into the event_dict as a plain DICT KEY (not a Python
+#    kwarg), and that key is consumed/dropped by the processor chain (either
+#    by the downgrade processor popping it, or by the traceback renderer
+#    rendering-and-popping it) before `wrap_for_formatter` ever hands
+#    anything to the real stdlib `Logger.error()` call.
+#
+# So without `_RedactingOTelLogHandler.emit`'s own downgrade, a downgraded
+# exception's OTel export keeps ERROR severity forever (reintroducing #1226's
+# duplicate-alert-noise problem on the telemetry channel) — and a naive fix
+# that only checks `record.exc_info` (the shape the original review
+# description assumed) does NOTHING for this app's real call sites, because
+# that field was never populated for them in the first place. These tests
+# assert against the EXPORTED `LogRecord` (the mocked-exporter seam used by
+# the rest of this OTel section), not stdout — the only place that can catch
+# this class of bug (the #1282 lesson: verify against the actual artifact, not
+# a proxy for it) — and the FIRST one is written to fail against a
+# `record.exc_info`-only "fix", not just against no fix at all.
+
+
+def test_otel_bridge_downgrades_a_marked_exception_to_warning(
+    in_memory_log_exporter: Any,
+) -> None:
+    """The regression test for the bug this PR fixes: a marked exception logged
+    via the real, native `log.exception(...)` path must export WARNING
+    severity — not just render `"level": "warning"` in stdout JSON, which the
+    structlog processor alone already achieved and which is exactly what let
+    this bug hide behind a green test suite. Also proves the traceback text
+    doesn't leak into the exported body."""
+    configure_logging()
+    log = structlog.get_logger("otel_downgrade_regression")
+    root = std_logging.getLogger()
+
+    exc = RuntimeError("every alert channel failed")
+    mark_already_logged(exc)
+    try:
+        raise exc
+    except RuntimeError:
+        log.exception("already_reported_elsewhere")
+
+    _flush_bridge(root)
+    logs = in_memory_log_exporter.get_finished_logs()
+    assert logs, "no log record reached the OTel exporter"
+    record = logs[-1].log_record
+
+    assert record.severity_number == SeverityNumber.WARN
+    assert record.severity_text == "WARN"
+    assert "Traceback" not in str(record.body)
+    assert "every alert channel failed" not in str(record.body)
+
+
+def test_otel_bridge_keeps_error_severity_for_an_unmarked_exception(
+    in_memory_log_exporter: Any,
+) -> None:
+    """The other half of the same proof: a genuinely NEW (unmarked) exception
+    logged natively must still export at full ERROR severity — the fix must
+    not blind the OTel channel to real, first-reported failures — and its
+    traceback must still be visible in the exported body."""
+    configure_logging()
+    log = structlog.get_logger("otel_downgrade_regression")
+    root = std_logging.getLogger()
+
+    try:
+        raise RuntimeError("a brand new bug nobody has marked")
+    except RuntimeError:
+        log.exception("first_report")
+
+    _flush_bridge(root)
+    logs = in_memory_log_exporter.get_finished_logs()
+    assert logs, "no log record reached the OTel exporter"
+    record = logs[-1].log_record
+
+    assert record.severity_number == SeverityNumber.ERROR
+    assert record.severity_text == "ERROR"
+    assert "a brand new bug nobody has marked" in str(record.body)
+
+
+def test_otel_bridge_downgrades_a_marked_exception_from_a_foreign_record(
+    in_memory_log_exporter: Any,
+) -> None:
+    """The OTHER record shape this handler must handle correctly: a bare,
+    non-structlog `logging.getLogger(x).exception(...)` call bridged in via
+    `foreign_pre_chain`. Unlike a native call, a foreign record's
+    `record.exc_info` genuinely IS the real `(type, value, tb)` stdlib set at
+    creation time (structlog never intercepted the call) — this is the shape
+    the `_already_logged_exception(record.exc_info)` branch of
+    `_record_marks_already_logged_exception` covers, and it's also the one
+    case where the base `_get_attributes` would otherwise populate
+    `exception.type`/`exception.message`/`exception.stacktrace` attributes
+    directly off `record.exc_info` — so this is the path that proves those
+    attributes actually get stripped, not just that severity changes."""
+    configure_logging()
+    root = std_logging.getLogger()
+    foreign_logger = std_logging.getLogger("some.foreign.library")
+
+    exc = RuntimeError("a foreign caller's exception, already reported")
+    mark_already_logged(exc)
+    try:
+        raise exc
+    except RuntimeError:
+        foreign_logger.exception("foreign_already_reported")
+
+    _flush_bridge(root)
+    logs = in_memory_log_exporter.get_finished_logs()
+    assert logs, "no log record reached the OTel exporter"
+    record = logs[-1].log_record
+
+    assert record.severity_number == SeverityNumber.WARN
+    attrs = dict(record.attributes or {})
+    assert "exception.type" not in attrs
+    assert "exception.message" not in attrs
+    assert "exception.stacktrace" not in attrs
+
+
+def test_otel_bridge_keeps_error_and_attributes_for_an_unmarked_foreign_record(
+    in_memory_log_exporter: Any,
+) -> None:
+    """The foreign-record counterpart of the native "don't blind real errors"
+    proof: an unmarked foreign exception must keep ERROR severity AND its
+    `exception.*` attributes (the base `LoggingHandler` behavior this handler
+    must not disturb for the normal case)."""
+    configure_logging()
+    root = std_logging.getLogger()
+    foreign_logger = std_logging.getLogger("some.other.foreign.library")
+
+    try:
+        raise RuntimeError("a brand new foreign bug nobody has marked")
+    except RuntimeError:
+        foreign_logger.exception("foreign_first_report")
+
+    _flush_bridge(root)
+    logs = in_memory_log_exporter.get_finished_logs()
+    assert logs, "no log record reached the OTel exporter"
+    record = logs[-1].log_record
+
+    assert record.severity_number == SeverityNumber.ERROR
+    attrs = dict(record.attributes or {})
+    assert attrs.get("exception.type") == "RuntimeError"
+    assert "a brand new foreign bug nobody has marked" in str(attrs.get("exception.message", ""))
 
 
 def test_scrubs_url_userinfo_credentials() -> None:

@@ -1,3 +1,4 @@
+import copy
 import logging
 import re
 import sys
@@ -166,6 +167,91 @@ def _extract_exc_info_exception(raw: Any) -> BaseException | None:
     return None
 
 
+def _already_logged_exception(raw_exc_info: Any) -> BaseException | None:
+    """Extract the exception out of *raw_exc_info* (whatever shape — see
+    ``_extract_exc_info_exception``) and return it only if
+    ``alerting.base.was_already_logged`` says it was already reported with a
+    full traceback elsewhere. Returns ``None`` when there's nothing to extract
+    OR the exception isn't marked, so callers can treat any non-``None`` result
+    as "downgrade this".
+
+    The one piece shared between the two places that need this check: the
+    structlog processor below (``_downgrade_already_logged_exceptions``, which
+    downgrades the ``event_dict`` every native/foreign structlog record goes
+    through) and ``_RedactingOTelLogHandler.emit`` (which downgrades the RAW
+    stdlib ``logging.LogRecord`` a second time — see that class's docstring for
+    why the structlog-side downgrade alone doesn't reach the OTel export path).
+    Factoring it out means the "pull the exception out of whatever shape we
+    were handed, then check the marker" logic can't drift between the two call
+    sites the way #1261 found it had drifted across the two ORIGINAL per-caller
+    checks.
+    """
+    exc = _extract_exc_info_exception(raw_exc_info)
+    if exc is None:
+        return None
+
+    # Lazy import: `core/logging.py` is a foundational module imported very early
+    # (module scope of `main.py`, `worker/main.py`, every datasource/alerting
+    # module for `get_logger`); `alerting/base.py` is a higher-level domain
+    # module. It has no import-time dependency back on `core.logging` itself (its
+    # only DataQ import is `db.models`, and the `alerting` package's `__init__.py`
+    # is docstring-only), so this does not actually cycle — but keeping the
+    # import inside the guarded, exception-only branch means the rest of the app
+    # never pays for or depends on the domain import at module-load time, and a
+    # future edit to `alerting/base.py` that adds its own `core.logging` import
+    # (every one of its sibling files in that package already does, for
+    # `get_logger`) can't turn this into a real cycle.
+    from backend.app.alerting.base import was_already_logged
+
+    if not was_already_logged(exc):
+        return None
+    return exc
+
+
+def _record_marks_already_logged_exception(record: logging.LogRecord) -> bool:
+    """True if the raw stdlib ``LogRecord`` *record* should be downgraded
+    before OTel export because its exception was already reported with a full
+    traceback elsewhere — the raw-``LogRecord`` counterpart of
+    ``_downgrade_already_logged_exceptions`` below, used by
+    ``_RedactingOTelLogHandler.emit`` (#1261 follow-up review).
+
+    Two distinct shapes reach a root handler, and — verified empirically, not
+    assumed — they carry the "already downgraded" signal completely
+    differently:
+
+    * A **foreign** record — a bare, non-structlog ``logging.getLogger(x).
+      exception(...)`` bridged in via ``foreign_pre_chain`` — carries the real
+      ``(type, value, tb)`` in ``record.exc_info``, untouched by structlog
+      (structlog never intercepted the call). ``_already_logged_exception``
+      (shared with the processor below) extracts and checks it directly.
+
+    * A **native** record — every call site in this app, via ``get_logger()``
+      — has ``record.exc_info`` equal to ``None`` even for
+      ``log.exception(...)``. The configured wrapper
+      (``structlog.make_filtering_bound_logger``) implements ``.exception()``
+      as ``self.error(event, exc_info=True, **kw)``: that ``exc_info=True``
+      becomes an ``event_dict`` KEY, not a real Python keyword argument, and
+      the processor chain consumes/drops that key (either
+      ``_downgrade_already_logged_exceptions`` popping it, or the traceback
+      renderer rendering-and-popping it) before ``wrap_for_formatter`` hands
+      the FINAL ``event_dict`` to the underlying stdlib ``Logger.error(...)``
+      call — so the raw ``LogRecord`` this handler receives was never given an
+      ``exc_info`` to read in the first place. What DOES survive onto the
+      record is ``record.msg`` itself: `wrap_for_formatter` stamps the fully
+      processed ``event_dict`` there (``"level"`` key included) before the
+      record is even constructed, so the downgrade decision is legible
+      straight off ``record.msg["level"]``. Nothing else in this app's
+      processor chain rewrites ``level`` away from the invoked method's own
+      name, so "the invoked method was ERROR-or-above but the rendered
+      ``level`` says warning" is an unambiguous fingerprint of this exact
+      processor having fired — no need to re-derive "was it marked" a second
+      time from data that's already gone.
+    """
+    if isinstance(record.msg, dict):
+        return record.msg.get("level") == "warning" and record.levelno >= logging.ERROR
+    return _already_logged_exception(record.exc_info) is not None
+
+
 def _downgrade_already_logged_exceptions(
     _logger: Any, _name: str, event_dict: EventDict
 ) -> EventDict:
@@ -187,7 +273,10 @@ def _downgrade_already_logged_exceptions(
     belongs in the processor chain, applied to EVERY log record once, not
     repeated at every call site. Any caller's ``log.exception(...)`` — including
     a foreign (non-structlog) ``logging.exception(...)`` bridged in via
-    ``foreign_pre_chain`` — gets the downgrade for free.
+    ``foreign_pre_chain`` — gets the downgrade for free *on the rendered stdout
+    body*. This alone does NOT reach the OTel/App Insights export path — see
+    ``_RedactingOTelLogHandler`` below for the raw-``LogRecord`` half of this fix
+    (#1261 follow-up review).
 
     Must run AFTER ``add_log_level`` (so there is a ``level`` to overwrite) and
     BEFORE the exception is rendered to a string (``_dict_tracebacks_no_locals``)
@@ -200,24 +289,8 @@ def _downgrade_already_logged_exceptions(
     remember to add it by hand. ``setdefault`` so a caller-supplied ``error_type``
     (a different meaning in a future call site) is never clobbered.
     """
-    exc = _extract_exc_info_exception(event_dict.get("exc_info"))
+    exc = _already_logged_exception(event_dict.get("exc_info"))
     if exc is None:
-        return event_dict
-
-    # Lazy import: `core/logging.py` is a foundational module imported very early
-    # (module scope of `main.py`, `worker/main.py`, every datasource/alerting
-    # module for `get_logger`); `alerting/base.py` is a higher-level domain
-    # module. It has no import-time dependency back on `core.logging` itself (its
-    # only DataQ import is `db.models`, and the `alerting` package's `__init__.py`
-    # is docstring-only), so this does not actually cycle — but keeping the
-    # import inside the guarded, exception-only branch means the rest of the app
-    # never pays for or depends on the domain import at module-load time, and a
-    # future edit to `alerting/base.py` that adds its own `core.logging` import
-    # (every one of its sibling files in that package already does, for
-    # `get_logger`) can't turn this into a real cycle.
-    from backend.app.alerting.base import was_already_logged
-
-    if not was_already_logged(exc):
         return event_dict
 
     event_dict["level"] = "warning"
@@ -283,11 +356,43 @@ def _configure_otel_log_export(
             could ship a secret / PII to the backend un-redacted. Run those
             attributes through the same PII/secret scrubber the formatter applies to
             the body (#494/#536). This is stricter than the old opencensus handler,
-            which only exported the formatted message."""
+            which only exported the formatted message.
+
+            Also downgrades the RAW ``LogRecord`` for an exception already logged
+            elsewhere, independent of ``_downgrade_already_logged_exceptions``
+            above (#1261 follow-up review — a real gap, not a hypothetical one).
+            The inherited ``_translate``/``_get_attributes`` read
+            ``record.levelno`` (and, for a foreign record, ``record.exc_info``)
+            directly off the raw ``LogRecord`` rather than the processed
+            ``event_dict`` — so a "downgraded" exception's rendered stdout body
+            can correctly say ``warning`` while the SAME record's raw
+            ``levelno`` still says ERROR to anything reading the record
+            directly, which is exactly what the OTel bridge does (see
+            ``_record_marks_already_logged_exception`` for exactly which field
+            carries the signal for which record shape — it is NOT uniformly
+            ``record.exc_info``, verified empirically). Left alone, that
+            silently reintroduces #1226's duplicate-alert-noise problem on the
+            telemetry channel, invisible to any test that only asserts against
+            captured stdout JSON."""
 
             @staticmethod
             def _get_attributes(record: logging.LogRecord) -> Any:
                 return _redact_pii(None, "", dict(LoggingHandler._get_attributes(record)))
+
+            def emit(self, record: logging.LogRecord) -> None:
+                if _record_marks_already_logged_exception(record):
+                    # Shallow-copy rather than mutate in place: `record` is the
+                    # SAME object every handler on `root` receives (Logger.
+                    # callHandlers hands one instance to each), so mutating it
+                    # here could leak the downgrade into another handler's view
+                    # of the record. Copying keeps this handler's rewrite fully
+                    # local regardless of handler-registration order.
+                    record = copy.copy(record)
+                    record.exc_info = None
+                    record.exc_text = None
+                    record.levelno = logging.WARNING
+                    record.levelname = logging.getLevelName(logging.WARNING)
+                super().emit(record)
 
         provider = LoggerProvider(resource=otel.build_resource(service_name))
         for exporter in exporters:
