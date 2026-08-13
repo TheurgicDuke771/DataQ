@@ -246,8 +246,7 @@ class _SoftDeleteStore(FakeSecretStore):
     def set(self, name: str, value: str) -> None:
         if name in self.deleted:
             raise SecretWriteError(f"{name} is in a deleted but recoverable state")
-        self.writes.append(value)
-        self.data[name] = value
+        super().set(name, value)
 
 
 def test_clear_then_reset_webhook_does_not_reuse_soft_deleted_name(db_session: Any) -> None:
