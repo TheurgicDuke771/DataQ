@@ -524,6 +524,11 @@ def test_a_confirmed_floor_denial_after_a_successful_traversal_stays_prunable() 
     assert result.degraded_reason is not None
     assert "not authorized" in result.degraded_reason
     assert "transient" not in result.degraded_reason
+    # #1264: this floor denial fires AFTER a successful GET_LINEAGE traversal, so
+    # the message must name the tier that actually failed, not the one that just
+    # worked.
+    assert "OBJECT_DEPENDENCIES" in result.degraded_reason
+    assert "GET_LINEAGE grant" not in result.degraded_reason
 
 
 def test_a_confirmed_floor_denial_stays_non_prunable_if_the_traversal_was_already_partial() -> None:
@@ -558,6 +563,9 @@ def test_a_confirmed_floor_denial_stays_non_prunable_if_the_traversal_was_alread
     assert result.prunable is False  # the already-partial top tier must dominate
     assert result.degraded_reason is not None
     assert "not authorized" in result.degraded_reason  # the floor's own reason is still named
+    # #1264: still the floor's own tier, not the traversal's.
+    assert "OBJECT_DEPENDENCIES" in result.degraded_reason
+    assert "GET_LINEAGE grant" not in result.degraded_reason
 
 
 def test_missing_account_is_unavailable() -> None:

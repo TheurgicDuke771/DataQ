@@ -447,7 +447,16 @@ class SnowflakeLineageProvider:
                 # enough to mark non-prunable.
                 reason = _feature_unsupported_reason(exc)
                 if reason is not None:
-                    skipped.append(f"object_dependencies: {reason}")
+                    # #1264: substitute the floor-specific message when the shared
+                    # classifier returned the generic GET_LINEAGE-grant wording — this
+                    # branch only runs after GET_LINEAGE succeeded, so that grant is
+                    # never the one actually missing here.
+                    message = (
+                        _NOT_AUTHORIZED_OBJECT_DEPENDENCIES_MSG
+                        if reason == _NOT_AUTHORIZED_MSG
+                        else reason
+                    )
+                    skipped.append(f"object_dependencies: {message}")
                 else:
                     skipped.append(
                         f"object_dependencies: could not read floor ({type(exc).__name__})"
@@ -1108,6 +1117,16 @@ _UNSUPPORTED_EDITION_MSG = "unsupported on this edition"
 _NOT_AUTHORIZED_MSG = "not authorized (role lacks the ACCOUNT_USAGE / GET_LINEAGE grant)"
 
 
+# #1264: the floor-after-a-successful-traversal branch in `fetch_edges` reaches
+# `_feature_unsupported_reason` only when GET_LINEAGE just succeeded, so a CONFIRMED
+# denial there can never be the GET_LINEAGE grant `_NOT_AUTHORIZED_MSG` names — reusing
+# it pointed an operator at a grant that demonstrably already works. Same phrasing
+# pattern, naming the tier that actually failed.
+_NOT_AUTHORIZED_OBJECT_DEPENDENCIES_MSG = (
+    "not authorized (role lacks the ACCOUNT_USAGE / OBJECT_DEPENDENCIES grant)"
+)
+
+
 def _feature_unsupported_reason(exc: BaseException) -> str | None:
     """The stable, operator-legible reason if ``exc`` is a CONFIRMED capability or
     authorization denial — Snowflake's edition-gate 0A000 (matched by SQLSTATE, the
@@ -1149,7 +1168,7 @@ def _reraise_if_feature_unsupported(exc: BaseException) -> None:
 
 
 def _reraise_confirmed_or_transient(exc: BaseException, label: str) -> NoReturn:
-    """Descend a tier on ANY failure, never abort the pull (#1109/#1228 — review
+    """Classify ``exc`` and raise accordingly — never return (#1109/#1228 — review
     finding on #1263: the same three-line pattern had drifted into three call
     sites with no shared definition).
 
