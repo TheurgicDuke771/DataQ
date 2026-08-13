@@ -46,8 +46,15 @@ def test_freshness_statement_selects_max_of_column() -> None:
 
 
 def test_volume_statement_counts_rows_with_catalog() -> None:
+    from snowflake.sqlalchemy import snowdialect
+
     statement = build_monitor_statement(
-        "volume", table="orders", schema="sales", catalog="main", config={"min_rows": 1}
+        "volume",
+        table="orders",
+        schema="sales",
+        catalog="main",
+        config={"min_rows": 1},
+        dialect=snowdialect.SnowflakeDialect(),
     )
     assert _snowflake_sql(statement) == "SELECT count(*) AS count_1 FROM main.sales.orders"
 
@@ -111,22 +118,74 @@ def test_a_lower_case_reserved_word_is_not_quoted_into_oblivion() -> None:
     assert _snowflake_sql(statement) == "SELECT max(copy) AS max_1 FROM retail.orders"
 
 
-def test_three_part_names_do_not_quote_the_catalog_or_schema() -> None:
-    """Pins a KNOWN LIMIT, so it can't be mistaken for a guarantee.
+def test_three_part_names_quote_the_catalog_and_schema_per_dialect() -> None:
+    """#936: a mixed-case catalog and schema now resolve correctly in the 3-part
+    form, not just the table.
 
-    Core's `schema=` slot takes one string, so a `catalog.schema` namespace must be
-    passed unquoted for the dialect to emit dotted parts — which suppresses quoting
-    for the catalog and schema as well. Only the table is quote-correct in the
-    3-part form. Building the namespace from pre-quoted parts would mean picking
-    the quote character ourselves, the dialect-specific mistake #476 exists to
-    avoid.
+    Core's `schema=` slot takes one string, so the `catalog.schema` namespace is
+    still pre-assembled by hand into one string — but each part now goes through
+    the SAME case-based "should I quote" decision as `folding_identifier`
+    (`sql._quote_namespace_part`), and a part that needs quoting is wrapped with
+    the DIALECT's own `identifier_preparer.quote_identifier` rather than a
+    hardcoded `"`. Was the KNOWN LIMIT pinned by this test's predecessor; inverted
+    now that the fix is in."""
+    from snowflake.sqlalchemy import snowdialect
 
-    Currently unreachable: Unity Catalog is the only caller that passes a catalog
-    and folds case-insensitively; Snowflake passes catalog=None. Tracked as #936."""
     statement = build_monitor_statement(
-        "volume", table="Orders", schema="Retail", catalog="MyCat", config={}
+        "volume",
+        table="Orders",
+        schema="Retail",
+        catalog="MyCat",
+        config={},
+        dialect=snowdialect.SnowflakeDialect(),
     )
-    assert _snowflake_sql(statement) == 'SELECT count(*) AS count_1 FROM MyCat.Retail."Orders"'
+    assert _snowflake_sql(statement) == 'SELECT count(*) AS count_1 FROM "MyCat"."Retail"."Orders"'
+
+
+def test_three_part_names_stay_bare_when_already_lower_case() -> None:
+    """The compatibility half of #936: an already-lower-case catalog/schema must
+    stay BARE so the warehouse still folds it, exactly like `folding_identifier`'s
+    rule for a plain column — quoting everything unconditionally would break every
+    existing lower-case 3-part target."""
+    from snowflake.sqlalchemy import snowdialect
+
+    statement = build_monitor_statement(
+        "volume",
+        table="orders",
+        schema="retail",
+        catalog="mycat",
+        config={},
+        dialect=snowdialect.SnowflakeDialect(),
+    )
+    sql = _snowflake_sql(statement)
+    assert '"' not in sql
+    assert sql == "SELECT count(*) AS count_1 FROM mycat.retail.orders"
+
+
+def test_three_part_names_quote_with_databricks_backticks_too() -> None:
+    """Same #936 fix, Unity Catalog's dialect: the catalog/schema quote character
+    must come from THIS dialect's `identifier_preparer`, not a hardcoded `"` —
+    Databricks reads `"..."` as a string literal, not an identifier."""
+    from databricks.sqlalchemy.base import DatabricksDialect
+
+    statement = build_monitor_statement(
+        "volume",
+        table="Orders",
+        schema="Retail",
+        catalog="MyCat",
+        config={},
+        dialect=DatabricksDialect(),
+    )
+    databricks_sql = " ".join(str(statement.compile(dialect=DatabricksDialect())).split())
+    assert databricks_sql == "SELECT count(*) AS count_1 FROM `MyCat`.`Retail`.`Orders`"
+
+
+def test_catalog_without_dialect_is_rejected() -> None:
+    # A live dialect is required to quote the pre-assembled catalog.schema string
+    # (#936) — a catalog with no dialect is a caller bug, not user config, so it
+    # is not wrapped as MonitorConfigError like the identifier-shape checks below.
+    with pytest.raises(ValueError, match="no dialect"):
+        build_monitor_statement("volume", table="orders", schema="sales", catalog="main", config={})
 
 
 def test_quoting_follows_the_dialect_not_a_hardcoded_character() -> None:

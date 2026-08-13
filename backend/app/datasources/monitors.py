@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
+    from sqlalchemy.engine.interfaces import Dialect
     from sqlalchemy.sql import Select, TableClause
 
 from backend.app.datasources.base import CheckOutcome, MonitorSpec
@@ -132,7 +133,9 @@ def _ident(name: object, *, what: str) -> str:
     return name
 
 
-def qualified_table(*, table: str, schema: str | None, catalog: str | None) -> TableClause:
+def qualified_table(
+    *, table: str, schema: str | None, catalog: str | None, dialect: Dialect | None = None
+) -> TableClause:
     """An identifier-validated Core table clause for a monitor's target.
 
     A ``catalog`` with no ``schema`` is rejected: skipping the None ``schema`` would
@@ -141,8 +144,11 @@ def qualified_table(*, table: str, schema: str | None, catalog: str | None) -> T
     requires a schema — a misqualified-name footgun raised as a clear config error
     rather than a confusing "table not found" at query time.
 
-    Validation happens here (for the `MonitorConfigError` message); construction is
-    the shared `datasources.sql.core_table`, so the dialect does the quoting."""
+    ``dialect`` is required whenever ``catalog`` is given (#936) — the 3-part form
+    quotes the catalog/schema itself via the dialect's own identifier preparer,
+    see `datasources.sql.core_table`. Validation happens here (for the
+    `MonitorConfigError` message); construction is the shared
+    `datasources.sql.core_table`, so the dialect does the quoting."""
     if catalog is not None and schema is None:
         raise MonitorConfigError(
             f"monitor target {table!r} has a catalog but no schema — "
@@ -151,11 +157,17 @@ def qualified_table(*, table: str, schema: str | None, catalog: str | None) -> T
     for part, label in ((catalog, "catalog"), (schema, "schema"), (table, "table")):
         if part is not None:
             _ident(part, what=label)
-    return core_table(table=table, schema=schema, catalog=catalog)
+    return core_table(table=table, schema=schema, catalog=catalog, dialect=dialect)
 
 
 def build_monitor_statement(
-    kind: str, *, table: str, schema: str | None, catalog: str | None, config: dict[str, Any]
+    kind: str,
+    *,
+    table: str,
+    schema: str | None,
+    catalog: str | None,
+    config: dict[str, Any],
+    dialect: Dialect | None = None,
 ) -> Select[Any]:
     """The scalar-aggregate query a SQL runner executes for this monitor.
 
@@ -170,6 +182,11 @@ def build_monitor_statement(
     this, because the quote character differs per dialect (Snowflake ``"`` vs
     Databricks backticks).
 
+    ``dialect`` is only needed for a ``catalog``-qualified (3-part) target (#936);
+    every caller with a ``catalog`` has a live dialect close at hand — the SQL
+    runner's engine (`run_monitors_over_engine`) or the anomaly measurement's open
+    connection (`services.anomaly.measure_metric`).
+
     A bad column/table raises :class:`MonitorConfigError` rather than building a
     wrong query. Dispatch is the #726 registry — a kind with no scalar form (the
     stateful kinds) refuses here.
@@ -177,7 +194,7 @@ def build_monitor_statement(
     strategy = _strategy(kind)
     if strategy.build_statement is None:
         raise MonitorConfigError(f"monitor kind {kind!r} has no scalar-SQL form")
-    target = qualified_table(table=table, schema=schema, catalog=catalog)
+    target = qualified_table(table=table, schema=schema, catalog=catalog, dialect=dialect)
     return strategy.build_statement(target, config)
 
 
@@ -757,6 +774,7 @@ def evaluate_monitors(
     schema: str | None,
     catalog: str | None,
     monitors: list[MonitorSpec],
+    dialect: Dialect | None = None,
 ) -> list[CheckOutcome]:
     """Run a list of monitors over an already-open connection via `run_monitor_specs`,
     with the scalar sourced from a SQL aggregate. ``fetch_scalar`` executes a Core
@@ -766,12 +784,20 @@ def evaluate_monitors(
 
     The statement stays uncompiled all the way to the connection so the **connection's
     own dialect** renders it (#476) — that is what makes identifier quoting correct
-    per warehouse instead of guessed here."""
+    per warehouse instead of guessed here. ``dialect`` is the same connection's
+    dialect, needed only for a ``catalog``-qualified (3-part) target (#936) — it
+    picks the quote character for the catalog/schema, which Core's ``schema=``
+    slot can't do on its own for a pre-assembled namespace."""
     now = datetime.now(UTC)
 
     def scalar_for(spec: MonitorSpec) -> Any:
         statement = build_monitor_statement(
-            spec.kind, table=table, schema=schema, catalog=catalog, config=spec.config
+            spec.kind,
+            table=table,
+            schema=schema,
+            catalog=catalog,
+            config=spec.config,
+            dialect=dialect,
         )
         return fetch_scalar(statement)
 
@@ -794,6 +820,11 @@ def run_monitors_over_engine(
     failure propagates and fails the whole run — the open happens before the
     per-monitor loop). The engine's lifecycle (build + dispose) belongs to the
     caller — the seam #427 threads a per-run shared engine through.
+
+    ``engine.dialect`` is threaded through unconditionally as `evaluate_monitors`'s
+    ``dialect`` (#936) — cheap to pass, and it's what makes a Unity Catalog
+    ``catalog``-qualified target quote-correct; Snowflake's ``catalog=None`` never
+    reaches the code path that uses it.
     """
     with engine.connect() as conn:
         return evaluate_monitors(
@@ -802,4 +833,5 @@ def run_monitors_over_engine(
             schema=schema,
             catalog=catalog,
             monitors=monitors,
+            dialect=engine.dialect,
         )

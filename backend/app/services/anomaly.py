@@ -129,17 +129,29 @@ def measure_metric(
     seam on this function, not a widened allowlist. The defence-in-depth check
     below restates that as the check's own error rather than letting a
     non-SQL connection surface as an unexplained classified failure.
+
+    The statement is built *inside* the open connection, not before it: a
+    ``catalog``-qualified (3-part, Unity Catalog) target needs a live ``dialect``
+    to quote the catalog/schema correctly (#936), and the connection's own
+    ``.dialect`` is the nearest one available — cheaper than opening a second,
+    throwaway connection just to ask its dialect.
     """
-    if params.target_metric == ROW_COUNT_METRIC:
-        statement = build_monitor_statement(
-            VOLUME, table=table, schema=schema, catalog=catalog, config={}
-        )
-    else:
-        statement = build_monitor_statement(
-            FRESHNESS, table=table, schema=schema, catalog=catalog, config={"column": params.column}
-        )
     try:
         with _open_connection(connection, secret_store) as conn:
+            dialect = conn.dialect if catalog is not None else None
+            if params.target_metric == ROW_COUNT_METRIC:
+                statement = build_monitor_statement(
+                    VOLUME, table=table, schema=schema, catalog=catalog, config={}, dialect=dialect
+                )
+            else:
+                statement = build_monitor_statement(
+                    FRESHNESS,
+                    table=table,
+                    schema=schema,
+                    catalog=catalog,
+                    config={"column": params.column},
+                    dialect=dialect,
+                )
             scalar = conn.execute(statement).scalar()
     except ProfileUnsupportedError as exc:
         raise MonitorConfigError(

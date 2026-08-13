@@ -27,6 +27,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
+    from sqlalchemy.engine.interfaces import Dialect
     from sqlalchemy.sql import TableClause
 
 # The Snowflake/Databricks unquoted-identifier set: letter/underscore lead, then
@@ -126,7 +127,31 @@ def folding_identifier(name: str) -> Any:
     return quoted_name(name, quote=name != name.lower())
 
 
-def core_table(*, table: str, schema: str | None, catalog: str | None) -> TableClause:
+def _quote_namespace_part(name: str, dialect: Dialect) -> str:
+    """Apply `folding_identifier`'s case-based decision to one namespace part
+    that is about to be hand-assembled into a pre-quoted, dotted string (the
+    3-part ``catalog.schema`` case — see `core_table`).
+
+    A plain ``quoted_name`` can't be used here: Core's own quoting decision
+    (`IdentifierPreparer.quote`) also fires on the dialect's *reserved-word*
+    set, which is exactly what `folding_identifier` exists to bypass (#476).
+    So the "should I quote" call is made here, case-only, same as
+    `folding_identifier`; only the actual wrapping — the quote *character* —
+    is delegated to the dialect, via ``identifier_preparer.quote_identifier``,
+    which just wraps + escapes and makes no quoting decision of its own.
+    """
+    if name == name.lower():
+        return name
+    return str(dialect.identifier_preparer.quote_identifier(name))
+
+
+def core_table(
+    *,
+    table: str,
+    schema: str | None,
+    catalog: str | None,
+    dialect: Dialect | None = None,
+) -> TableClause:
     """A Core table clause for ``[catalog.][schema.]table`` — the dialect quotes it.
 
     The one construction shared by the profiler's query builders and the monitor
@@ -138,24 +163,40 @@ def core_table(*, table: str, schema: str | None, catalog: str | None) -> TableC
     backticks and reads ``"..."`` as a string literal — and this module is shared
     by both.
 
-    **Known limit — the 3-part (catalog) form does not get the #476 treatment.**
-    Core's ``schema=`` slot is a single string, so a ``catalog.schema`` namespace
-    has to be passed as one *unquoted* ``quoted_name`` for the dialect to emit
-    dotted parts rather than quoting the whole thing as one identifier. That
-    suppresses quoting for the catalog and schema too, so a mixed-case *catalog or
-    schema* still folds. Only the table and column are quote-correct here.
+    **The 3-part (catalog) form needs a live ``dialect`` (#936).** Core's
+    ``schema=`` slot is a single string, so a ``catalog.schema.table`` namespace
+    has to be pre-assembled as one string for the dialect to emit dotted parts
+    rather than quoting the whole thing as one identifier — and getting each part
+    individually quote-correct then means making the "should I quote" decision
+    ourselves (`_quote_namespace_part`, `folding_identifier`'s case rule applied
+    per part) and, when a part needs quoting, wrapping it with the **dialect's
+    own** ``identifier_preparer.quote_identifier`` rather than a hardcoded ``"``
+    or backtick — so Snowflake and Unity Catalog each still get their own quote
+    character despite the hand-assembly.
 
-    Building the namespace from pre-quoted parts would mean choosing the quote
-    character ourselves, which is exactly the dialect-specific mistake this
-    function exists to avoid — so the limit is recorded rather than papered over.
-    It is currently unreachable: Unity Catalog is the only caller that passes a
-    catalog and resolves identifiers case-insensitively, and Snowflake passes
-    ``catalog=None``. Tracked as #936; pinned by a test so it reads as a recorded
-    limitation rather than a guarantee.
+    All **three** parts go through the pre-assembly, not just catalog/schema —
+    including the table, and via ``schema=None`` rather than Core's ``schema=``
+    slot. Snowflake's own SQLAlchemy dialect turns out to already special-case a
+    dotted *schema* string: ``quote_schema`` re-**splits** it back into parts and
+    re-derives each part's quote decision from the whole string's single
+    ``.quote`` flag, discarding any quote characters embedded in the parts
+    themselves — so a schema-slot ``"MyCat"."Retail"`` (quote=False) round-trips
+    back out as the *unquoted* ``MyCat.Retail``, silently undoing this fix on the
+    one dialect it exists for. The **table**-name slot has no such override
+    (``format_table``'s own name is quoted with the plain, non-splitting
+    ``IdentifierPreparer.quote``), so folding the whole pre-quoted namespace in
+    there — table included — and leaving ``schema=None`` sidesteps the
+    reinterpretation entirely, on every dialect tested (Snowflake, Databricks,
+    the SQLAlchemy default).
 
-    That unquoted namespace is also the one raw interpolation left in the module,
-    hence the allowlist check on every part here rather than trusting callers
-    (they validate first for a good error message; this is the injection
+    A ``catalog`` with no ``dialect`` is a caller bug (every production caller has
+    one available — the runner's engine, or the profiler/anomaly path's open
+    connection) and is raised as `ValueError` rather than silently under-quoting
+    again.
+
+    That pre-quoted namespace is also the one raw interpolation left in the
+    module, hence the allowlist check on every part here rather than trusting
+    callers (they validate first for a good error message; this is the injection
     guarantee, and it survives a caller forgetting to validate).
 
     A ``catalog`` with no ``schema`` is refused: dropping the ``None`` schema would
@@ -171,9 +212,17 @@ def core_table(*, table: str, schema: str | None, catalog: str | None) -> TableC
         if part is not None and not is_sql_identifier(part):
             raise ValueError(f"invalid {label} identifier: {part!r}")
 
-    namespace: Any = None if schema is None else folding_identifier(schema)
     if catalog is not None:
-        namespace = quoted_name(f"{catalog}.{schema}", quote=False)
+        if dialect is None:
+            raise ValueError(f"table {table!r} has a catalog but no dialect to quote it")
+        assert schema is not None  # guaranteed by the catalog/schema check above
+        full = quoted_name(
+            ".".join(_quote_namespace_part(part, dialect) for part in (catalog, schema, table)),
+            quote=False,
+        )
+        return table_clause(full, schema=None)
+
+    namespace: Any = None if schema is None else folding_identifier(schema)
     return table_clause(folding_identifier(table), schema=namespace)
 
 

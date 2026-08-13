@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.orm import Session
 
 from backend.app.datasources.monitors import (
@@ -271,6 +272,12 @@ def _patch_scalar(monkeypatch: pytest.MonkeyPatch, scalar: Any) -> dict[str, Any
     seen: dict[str, Any] = {}
 
     class _Conn:
+        # A real Connection exposes `.dialect` (the engine's) — `measure_metric`
+        # needs it whenever `catalog` is given (#936), so the fake carries a
+        # stand-in too; every existing test here passes `catalog=None`, which
+        # never touches it.
+        dialect = DefaultDialect()
+
         def execute(self, statement: Any) -> Any:
             seen["statement"] = statement
 
@@ -392,6 +399,49 @@ def test_measurement_quotes_a_mixed_case_column_through_the_dialect(
     )
     sql = str(seen["statement"].compile(dialect=snowdialect.SnowflakeDialect()))
     assert '"Loaded_At"' in sql
+
+
+def test_measurement_quotes_a_mixed_case_catalog_through_the_connections_dialect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#936: a `catalog`-qualified (Unity Catalog, 3-part) measurement now quotes
+    a mixed-case catalog/schema too — not just the table. Proven with Databricks'
+    BACKTICK dialect, not Snowflake's `"`, on the connection's own `.dialect`
+    (`_open_connection`'s real `Connection.dialect`, stood in here) — a
+    hardcoded quote character could not pass this."""
+    from databricks.sqlalchemy.base import DatabricksDialect
+
+    seen: dict[str, Any] = {}
+
+    class _Conn:
+        dialect = DatabricksDialect()
+
+        def execute(self, statement: Any) -> Any:
+            seen["statement"] = statement
+
+            class _Res:
+                @staticmethod
+                def scalar() -> Any:
+                    return 42
+
+            return _Res()
+
+    @contextmanager
+    def fake_open(connection: Connection, secret_store: Any) -> Any:
+        yield _Conn()
+
+    monkeypatch.setattr(anomaly, "_open_connection", fake_open)
+
+    measure_metric(
+        _sql_connection("unity_catalog"),
+        table="Orders",
+        schema="Retail",
+        catalog="MyCat",
+        params=_params(),
+        secret_store=_FakeStore(),
+        now=_NOW,
+    )
+    assert "`MyCat`.`Retail`.`Orders`" in str(seen["statement"])
 
 
 def test_measurement_on_a_non_sql_datasource_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
