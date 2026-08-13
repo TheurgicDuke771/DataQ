@@ -29,6 +29,7 @@ from backend.app.alerting.routing import route_for
 from backend.app.alerting.slack import SlackPublisher, render_slack_message
 from backend.app.db.models import Connection, Suite, SuiteNotification, User
 from backend.app.services import notification_service as svc
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 def _report(*, worst: str | None, run_status: str = "succeeded") -> RunReport:
@@ -63,26 +64,6 @@ def _report(*, worst: str | None, run_status: str = "succeeded") -> RunReport:
         ],
         finished_at=datetime.now(UTC),
     )
-
-
-class _Store:
-    """Minimal SecretStore double returning a fixed value per name."""
-
-    def __init__(self, values: dict[str, str]) -> None:
-        self._values = values
-
-    def get(self, name: str) -> str:
-        from backend.app.core.secrets import SecretNotFoundError
-
-        if name not in self._values:
-            raise SecretNotFoundError(name)
-        return self._values[name]
-
-    def set(self, name: str, value: str) -> None:  # pragma: no cover - unused here
-        self._values[name] = value
-
-    def delete(self, name: str) -> None:
-        self._values.pop(name, None)
 
 
 # ── rendering ────────────────────────────────────────────────────────────────
@@ -185,13 +166,15 @@ def test_email_text_has_deep_link_and_metadata() -> None:
 
 def test_slack_noop_when_unconfigured(db_session: Any) -> None:
     """No webhook secret name → never touches the network."""
-    pub = SlackPublisher(secret_store=_Store({}), webhook_secret_name=None, allowed_hosts=())
+    pub = SlackPublisher(
+        secret_store=FakeSecretStore({}), webhook_secret_name=None, allowed_hosts=()
+    )
     pub.publish(db_session, _report(worst="fail"))  # must not raise / post
 
 
 def test_email_noop_when_unconfigured(db_session: Any) -> None:
     pub = EmailPublisher(
-        secret_store=_Store({}),
+        secret_store=FakeSecretStore({}),
         smtp_host="smtp.example.com",
         smtp_port=587,
         username=None,
@@ -209,7 +192,7 @@ def test_slack_noop_on_clean_run_below_threshold(
     posted: list[object] = []
     monkeypatch.setattr("backend.app.alerting.slack.httpx.post", lambda *a, **k: posted.append(a))
     pub = SlackPublisher(
-        secret_store=_Store({"wh": "https://hooks.slack.com/services/x"}),
+        secret_store=FakeSecretStore({"wh": "https://hooks.slack.com/services/x"}),
         webhook_secret_name="wh",
         allowed_hosts=("hooks.slack.com",),
     )
@@ -386,7 +369,7 @@ def fake_smtp(monkeypatch: pytest.MonkeyPatch) -> list[_FakeSmtp]:
     return _FakeSmtp.instances
 
 
-def _email_publisher(store: _Store) -> EmailPublisher:
+def _email_publisher(store: FakeSecretStore) -> EmailPublisher:
     return EmailPublisher(
         secret_store=store,
         smtp_host="smtp.example.com",
@@ -401,7 +384,7 @@ def _email_publisher(store: _Store) -> EmailPublisher:
 def test_email_publish_happy_path_sends_over_starttls(
     db_session: Any, fake_smtp: list[_FakeSmtp]
 ) -> None:
-    _email_publisher(_Store({"smtp-pass": "not-a-real-password"})).publish(
+    _email_publisher(FakeSecretStore({"smtp-pass": "not-a-real-password"})).publish(
         db_session, _report(worst="fail")
     )
     (smtp,) = fake_smtp
@@ -417,7 +400,7 @@ def test_email_publish_happy_path_sends_over_starttls(
 
 def test_email_publish_noop_below_threshold(db_session: Any, fake_smtp: list[_FakeSmtp]) -> None:
     """Clean run under the default 'warn' policy must not connect at all."""
-    _email_publisher(_Store({"smtp-pass": "not-a-real-password"})).publish(
+    _email_publisher(FakeSecretStore({"smtp-pass": "not-a-real-password"})).publish(
         db_session, _report(worst=None)
     )
     assert fake_smtp == []
@@ -428,7 +411,9 @@ def test_email_publish_noop_when_suite_disabled_alerting(
 ) -> None:
     suite = _disabled_config_suite(db_session)
     report = dataclasses.replace(_report(worst="fail"), suite_id=suite.id)
-    _email_publisher(_Store({"smtp-pass": "not-a-real-password"})).publish(db_session, report)
+    _email_publisher(FakeSecretStore({"smtp-pass": "not-a-real-password"})).publish(
+        db_session, report
+    )
     assert fake_smtp == []
 
 
@@ -436,7 +421,7 @@ def test_email_publish_noop_when_password_secret_missing(
     db_session: Any, fake_smtp: list[_FakeSmtp]
 ) -> None:
     """Unresolvable password logs a warning and skips — never raises."""
-    _email_publisher(_Store({})).publish(db_session, _report(worst="fail"))
+    _email_publisher(FakeSecretStore({})).publish(db_session, _report(worst="fail"))
     assert fake_smtp == []
 
 
@@ -453,7 +438,7 @@ class _CapturePost:
         return httpx.Response(self._status_code, request=httpx.Request("POST", url))
 
 
-def _slack_publisher(store: _Store) -> SlackPublisher:
+def _slack_publisher(store: FakeSecretStore) -> SlackPublisher:
     return SlackPublisher(
         secret_store=store,
         webhook_secret_name="wh",
@@ -466,7 +451,7 @@ def test_slack_publish_happy_path_posts_payload(
 ) -> None:
     post = _CapturePost()
     monkeypatch.setattr("backend.app.alerting.slack.httpx.post", post)
-    store = _Store({"wh": "https://hooks.slack.com/services/T00/B00/xyz"})
+    store = FakeSecretStore({"wh": "https://hooks.slack.com/services/T00/B00/xyz"})
     _slack_publisher(store).publish(db_session, _report(worst="fail"))
     ((url, payload),) = post.calls
     assert url.startswith("https://hooks.slack.com/")
@@ -478,7 +463,7 @@ def test_slack_publish_raises_on_webhook_http_error(
 ) -> None:
     """A 5xx from the webhook surfaces to the composite (which isolates it)."""
     monkeypatch.setattr("backend.app.alerting.slack.httpx.post", _CapturePost(status_code=500))
-    store = _Store({"wh": "https://hooks.slack.com/services/T00/B00/xyz"})
+    store = FakeSecretStore({"wh": "https://hooks.slack.com/services/T00/B00/xyz"})
     with pytest.raises(httpx.HTTPStatusError):
         _slack_publisher(store).publish(db_session, _report(worst="fail"))
 
@@ -489,7 +474,7 @@ def test_slack_publish_blocks_non_allowlisted_webhook_host(
     """SSRF guard: a webhook secret pointing off-allowlist is never POSTed."""
     posted: list[object] = []
     monkeypatch.setattr("backend.app.alerting.slack.httpx.post", lambda *a, **k: posted.append(a))
-    store = _Store({"wh": "https://evil.example.com/exfil"})
+    store = FakeSecretStore({"wh": "https://evil.example.com/exfil"})
     _slack_publisher(store).publish(db_session, _report(worst="fail"))
     assert posted == []
 
@@ -501,7 +486,9 @@ def test_slack_publish_blocks_non_https_workspace_webhook(
     POSTed in cleartext — the send-time re-check enforces https, not just the host."""
     posted: list[object] = []
     monkeypatch.setattr("backend.app.alerting.slack.httpx.post", lambda *a, **k: posted.append(a))
-    store = _Store({"wh": "http://hooks.slack.com/services/x"})  # allowlisted host, wrong scheme
+    store = FakeSecretStore(
+        {"wh": "http://hooks.slack.com/services/x"}
+    )  # allowlisted host, wrong scheme
     _slack_publisher(store).publish(db_session, _report(worst="fail"))
     assert posted == []
 
@@ -511,7 +498,7 @@ def test_slack_publish_noop_when_webhook_secret_missing(
 ) -> None:
     posted: list[object] = []
     monkeypatch.setattr("backend.app.alerting.slack.httpx.post", lambda *a, **k: posted.append(a))
-    _slack_publisher(_Store({})).publish(db_session, _report(worst="fail"))
+    _slack_publisher(FakeSecretStore({})).publish(db_session, _report(worst="fail"))
     assert posted == []
 
 
@@ -522,7 +509,7 @@ def test_slack_publish_noop_when_suite_disabled_alerting(
     monkeypatch.setattr("backend.app.alerting.slack.httpx.post", post)
     suite = _disabled_config_suite(db_session)
     report = dataclasses.replace(_report(worst="fail"), suite_id=suite.id)
-    _slack_publisher(_Store({"wh": "https://hooks.slack.com/services/x"})).publish(
+    _slack_publisher(FakeSecretStore({"wh": "https://hooks.slack.com/services/x"})).publish(
         db_session, report
     )
     assert post.calls == []
@@ -531,7 +518,7 @@ def test_slack_publish_noop_when_suite_disabled_alerting(
 # ── per-suite override (#633) ────────────────────────────────────────────────
 
 
-def _suite_with_config(db: Any, store: _Store, **overrides: Any) -> Any:
+def _suite_with_config(db: Any, store: FakeSecretStore, **overrides: Any) -> Any:
     """A real suite whose notification config carries per-suite channel overrides
     (slack_webhook / email_recipients), written through the real service path."""
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:6]}@x.io")
@@ -570,7 +557,7 @@ def test_slack_publish_prefers_per_suite_webhook_over_workspace(
     """A suite with its own Slack webhook posts THERE, not to the workspace one (#633)."""
     post = _CapturePost()
     monkeypatch.setattr("backend.app.alerting.slack.httpx.post", post)
-    store = _Store({"ws": "https://hooks.slack.com/services/WORKSPACE"})
+    store = FakeSecretStore({"ws": "https://hooks.slack.com/services/WORKSPACE"})
     suite = _suite_with_config(
         db_session, store, slack_webhook="https://hooks.slack.com/services/SUITE"
     )
@@ -586,7 +573,7 @@ def test_email_publish_prefers_per_suite_recipients_over_workspace(
     db_session: Any, fake_smtp: list[_FakeSmtp]
 ) -> None:
     """A suite with its own recipients receives there, not the workspace EMAIL_TO (#633)."""
-    store = _Store({"smtp-pass": "not-a-real-password"})
+    store = FakeSecretStore({"smtp-pass": "not-a-real-password"})
     suite = _suite_with_config(db_session, store, email_recipients="only@suite.io, lead@suite.io")
     report = dataclasses.replace(_report(worst="fail"), suite_id=suite.id)
     # The publisher's workspace recipients are a@/b@ — the per-suite list overrides.

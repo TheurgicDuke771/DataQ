@@ -18,10 +18,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from backend.app.core.config import get_settings
-from backend.app.core.secrets import SecretNotFoundError, get_secret_store
 from backend.app.db.models import Connection, PipelineRun, Run, Suite, TriggerBinding, User
 from backend.app.db.session import get_db
 from backend.app.main import app
+from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
 
 _SIGNING_KEY = "hmac-signing-key-abc"
 _BASE_URL = "https://airflow.example.com"
@@ -36,28 +36,11 @@ _CALLBACK = {
 _URL = "/api/v1/orchestration/events/airflow"
 
 
-class FakeStore:
-    def __init__(self) -> None:
-        self.data: dict[str, str] = {}
-
-    def get(self, name: str) -> str:
-        if name not in self.data:
-            raise SecretNotFoundError(name)
-        return self.data[name]
-
-    def set(self, name: str, value: str) -> None:
-        self.data[name] = value
-
-    def delete(self, name: str) -> None:
-        self.data.pop(name, None)
-
-
 @pytest.fixture
-def client(db_session: Any) -> Iterator[tuple[TestClient, FakeStore]]:
-    store = FakeStore()
-    store.set(get_settings().airflow_webhook_secret_name, _SIGNING_KEY)
+def client(db_session: Any) -> Iterator[tuple[TestClient, FakeSecretStore]]:
+    store = FakeSecretStore(initial={get_settings().airflow_webhook_secret_name: _SIGNING_KEY})
     app.dependency_overrides[get_db] = lambda: db_session
-    app.dependency_overrides[get_secret_store] = lambda: store
+    override_secret_store(app, store)
     try:
         yield TestClient(app), store
     finally:
@@ -92,7 +75,7 @@ def _seed_airflow_connection(db_session: Any, *, base_url: str = _BASE_URL) -> C
 
 
 def test_valid_signed_event_records_run(
-    client: tuple[TestClient, FakeStore], db_session: Any
+    client: tuple[TestClient, FakeSecretStore], db_session: Any
 ) -> None:
     api, _ = client
     _seed_airflow_connection(db_session)
@@ -110,7 +93,7 @@ def test_valid_signed_event_records_run(
 
 
 def test_succeeded_event_triggers_bound_suite(
-    client: tuple[TestClient, FakeStore], db_session: Any
+    client: tuple[TestClient, FakeSecretStore], db_session: Any
 ) -> None:
     api, _ = client
     conn = _seed_airflow_connection(db_session)
@@ -131,7 +114,7 @@ def test_succeeded_event_triggers_bound_suite(
     assert run.triggered_by == "airflow:load_finance:manual__2026-05-31"
 
 
-def test_invalid_signature_returns_401(client: tuple[TestClient, FakeStore]) -> None:
+def test_invalid_signature_returns_401(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     body = json.dumps(_CALLBACK).encode()
     resp = _post(api, body, _sign(body, key="wrong-key"))
@@ -139,7 +122,7 @@ def test_invalid_signature_returns_401(client: tuple[TestClient, FakeStore]) -> 
     assert resp.json()["error"]["code"] == "webhook_unauthorized"
 
 
-def test_missing_signature_returns_401(client: tuple[TestClient, FakeStore]) -> None:
+def test_missing_signature_returns_401(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = _post(api, json.dumps(_CALLBACK).encode(), None)
     assert resp.status_code == 401
@@ -152,13 +135,12 @@ def test_non_ascii_signature_is_clean_auth_error_not_typeerror() -> None:
     # a clean WebhookAuthError, not a TypeError → 500.
     from backend.app.api.v1.orchestration import WebhookAuthError, _authenticate_airflow
 
-    store = FakeStore()
-    store.set(get_settings().airflow_webhook_secret_name, _SIGNING_KEY)
+    store = FakeSecretStore(initial={get_settings().airflow_webhook_secret_name: _SIGNING_KEY})
     with pytest.raises(WebhookAuthError):
         _authenticate_airflow(b"{}", "sïgnatüre-ñ", store)
 
 
-def test_tampered_body_fails_signature(client: tuple[TestClient, FakeStore]) -> None:
+def test_tampered_body_fails_signature(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     body = json.dumps(_CALLBACK).encode()
     sig = _sign(body)
@@ -167,7 +149,7 @@ def test_tampered_body_fails_signature(client: tuple[TestClient, FakeStore]) -> 
     assert resp.status_code == 401
 
 
-def test_malformed_event_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+def test_malformed_event_returns_422(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     bad = {k: v for k, v in _CALLBACK.items() if k != "run_id"}
     body = json.dumps(bad).encode()
@@ -176,7 +158,7 @@ def test_malformed_event_returns_422(client: tuple[TestClient, FakeStore]) -> No
     assert resp.json()["error"]["code"] == "orchestration_event_malformed"
 
 
-def test_signing_key_not_configured_returns_503(client: tuple[TestClient, FakeStore]) -> None:
+def test_signing_key_not_configured_returns_503(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, store = client
     store.data.clear()  # signing key missing
     body = json.dumps(_CALLBACK).encode()

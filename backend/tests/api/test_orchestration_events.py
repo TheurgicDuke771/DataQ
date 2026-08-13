@@ -15,10 +15,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from backend.app.core.config import get_settings
-from backend.app.core.secrets import SecretNotFoundError, get_secret_store
 from backend.app.db.models import Connection, PipelineRun, User
 from backend.app.db.session import get_db
 from backend.app.main import app
+from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
 
 _SECRET = "s3cr3t-webhook-token"
 
@@ -39,28 +39,11 @@ _EVENT = {
 }
 
 
-class FakeStore:
-    def __init__(self) -> None:
-        self.data: dict[str, str] = {}
-
-    def get(self, name: str) -> str:
-        if name not in self.data:
-            raise SecretNotFoundError(name)
-        return self.data[name]
-
-    def set(self, name: str, value: str) -> None:
-        self.data[name] = value
-
-    def delete(self, name: str) -> None:
-        self.data.pop(name, None)
-
-
 @pytest.fixture
-def client(db_session: Any) -> Iterator[tuple[TestClient, FakeStore]]:
-    store = FakeStore()
-    store.set(get_settings().adf_webhook_secret_name, _SECRET)
+def client(db_session: Any) -> Iterator[tuple[TestClient, FakeSecretStore]]:
+    store = FakeSecretStore(initial={get_settings().adf_webhook_secret_name: _SECRET})
     app.dependency_overrides[get_db] = lambda: db_session
-    app.dependency_overrides[get_secret_store] = lambda: store
+    override_secret_store(app, store)
     try:
         yield TestClient(app), store
     finally:
@@ -83,7 +66,7 @@ _URL = "/api/v1/orchestration/events/adf"
 
 
 def test_valid_event_records_pipeline_run(
-    client: tuple[TestClient, FakeStore], db_session: Any
+    client: tuple[TestClient, FakeSecretStore], db_session: Any
 ) -> None:
     api, _ = client
     _seed_adf_connection(db_session)
@@ -97,7 +80,9 @@ def test_valid_event_records_pipeline_run(
     assert row.status == "failed"
 
 
-def test_unattributable_event_acknowledged_as_ignored(client: tuple[TestClient, FakeStore]) -> None:
+def test_unattributable_event_acknowledged_as_ignored(
+    client: tuple[TestClient, FakeSecretStore],
+) -> None:
     api, _ = client  # no connection seeded → cannot attribute
     resp = api.post(_URL, params={"token": _SECRET}, json=_EVENT)
     assert resp.status_code == 200
@@ -105,7 +90,7 @@ def test_unattributable_event_acknowledged_as_ignored(client: tuple[TestClient, 
 
 
 def test_succeeded_event_triggers_bound_suite(
-    client: tuple[TestClient, FakeStore], db_session: Any
+    client: tuple[TestClient, FakeSecretStore], db_session: Any
 ) -> None:
     from backend.app.db.models import Run, Suite, TriggerBinding
 
@@ -129,21 +114,21 @@ def test_succeeded_event_triggers_bound_suite(
     assert run.triggered_by == "adf:load_finance:run-abc-123"
 
 
-def test_missing_token_returns_401(client: tuple[TestClient, FakeStore]) -> None:
+def test_missing_token_returns_401(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = api.post(_URL, json=_EVENT)
     assert resp.status_code == 401
     assert resp.json()["error"]["code"] == "webhook_unauthorized"
 
 
-def test_wrong_token_returns_401(client: tuple[TestClient, FakeStore]) -> None:
+def test_wrong_token_returns_401(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = api.post(_URL, params={"token": "wrong"}, json=_EVENT)
     assert resp.status_code == 401
     assert resp.json()["error"]["code"] == "webhook_unauthorized"
 
 
-def test_non_ascii_token_returns_401_not_500(client: tuple[TestClient, FakeStore]) -> None:
+def test_non_ascii_token_returns_401_not_500(client: tuple[TestClient, FakeSecretStore]) -> None:
     # hmac.compare_digest rejects non-ASCII str; the byte-compare must keep this
     # a clean 401 rather than a TypeError → 500.
     api, _ = client
@@ -152,7 +137,7 @@ def test_non_ascii_token_returns_401_not_500(client: tuple[TestClient, FakeStore
     assert resp.json()["error"]["code"] == "webhook_unauthorized"
 
 
-def test_malformed_event_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+def test_malformed_event_returns_422(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     bad = {k: v for k, v in _EVENT.items() if k != "runId"}
     resp = api.post(_URL, params={"token": _SECRET}, json=bad)
@@ -160,7 +145,7 @@ def test_malformed_event_returns_422(client: tuple[TestClient, FakeStore]) -> No
     assert resp.json()["error"]["code"] == "orchestration_event_malformed"
 
 
-def test_non_json_body_returns_422(client: tuple[TestClient, FakeStore]) -> None:
+def test_non_json_body_returns_422(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = api.post(
         _URL,
@@ -172,7 +157,7 @@ def test_non_json_body_returns_422(client: tuple[TestClient, FakeStore]) -> None
 
 
 def test_secret_not_configured_returns_503(
-    client: tuple[TestClient, FakeStore],
+    client: tuple[TestClient, FakeSecretStore],
 ) -> None:
     api, store = client
     store.data.clear()  # receiver secret missing
@@ -182,7 +167,7 @@ def test_secret_not_configured_returns_503(
 
 
 def test_token_in_url_not_logged_via_path(
-    client: tuple[TestClient, FakeStore], db_session: Any
+    client: tuple[TestClient, FakeSecretStore], db_session: Any
 ) -> None:
     # Sanity: the body parse path is exercised; this documents that the token
     # rides the query string (the request middleware logs path only, not query).
@@ -220,7 +205,7 @@ _COMMON_ALERT = {
 
 
 def test_common_alert_fired_acks_reconciling_and_enqueues_poll(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A fired Common-Alert-Schema event has no runId: nothing is upserted; the
     receiver enqueues an immediate poll and acks 200 (never a retry-storm 4xx)."""
@@ -241,7 +226,7 @@ def test_common_alert_fired_acks_reconciling_and_enqueues_poll(
 
 
 def test_common_alert_resolved_is_ignored_without_poll(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     api, _ = client
     sent: list[str] = []
@@ -256,14 +241,14 @@ def test_common_alert_resolved_is_ignored_without_poll(
     assert sent == []
 
 
-def test_common_alert_requires_auth(client: tuple[TestClient, FakeStore]) -> None:
+def test_common_alert_requires_auth(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = api.post(_URL, json=_COMMON_ALERT)
     assert resp.status_code == 401
 
 
 def test_common_alert_fired_acks_ignored_when_broker_down(
-    client: tuple[TestClient, FakeStore], monkeypatch: pytest.MonkeyPatch
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Honest ack: if the poll can't be enqueued, don't claim 'reconciling'."""
     api, _ = client

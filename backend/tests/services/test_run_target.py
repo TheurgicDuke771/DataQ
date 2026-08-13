@@ -22,6 +22,7 @@ from backend.app.services.run_target import (
     resolve_target,
     validate_target,
 )
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 def test_snowflake_resolves_table_and_optional_schema() -> None:
@@ -179,23 +180,16 @@ def test_flatfile_batch_specific_without_capture_group_raises() -> None:
 # ───────────────────────── materialize_path (A4 live step) ─────────
 
 
-class _FakeStore:
-    def get(self, name: str) -> str:
-        return "secret-value"
-
-    def set(self, name: str, value: str) -> None:  # pragma: no cover - protocol completeness
-        raise NotImplementedError
-
-    def delete(self, name: str) -> None:
-        raise NotImplementedError
-
-
 def test_materialize_path_passthrough_for_non_batch() -> None:
     # SQL / literal flat-file targets have no batch → table returned unchanged,
     # and the store is never consulted (no listing needed).
     resolved = ResolvedTarget(table="ORDERS", schema="SALES", catalog=None)
     out = run_target.materialize_path(
-        "snowflake", {}, resolved, secret_ref=None, secret_store=_FakeStore()
+        "snowflake",
+        {},
+        resolved,
+        secret_ref=None,
+        secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
     )
     assert out == "ORDERS"
 
@@ -210,7 +204,11 @@ def test_materialize_path_resolves_batch(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", _fake_resolve)
     out = run_target.materialize_path(
-        "s3", {"bucket": "b"}, resolved, secret_ref="kv-ref", secret_store=_FakeStore()
+        "s3",
+        {"bucket": "b"},
+        resolved,
+        secret_ref="kv-ref",
+        secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
     )
     assert out == "orders/orders_20260601.csv"
     # the resolved BatchSpec + resolved secret are threaded to the lister
@@ -221,7 +219,13 @@ def test_materialize_path_resolves_batch(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_materialize_path_batch_without_secret_raises() -> None:
     resolved = resolve_target("s3", {"pattern": r"(\d+)\.csv"})
     with pytest.raises(SuiteTargetInvalidError):
-        run_target.materialize_path("s3", {}, resolved, secret_ref=None, secret_store=_FakeStore())
+        run_target.materialize_path(
+            "s3",
+            {},
+            resolved,
+            secret_ref=None,
+            secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
+        )
 
 
 # ── #727: the registry is the single place a datasource is declared ──────────
@@ -283,7 +287,7 @@ def test_preview_batch_resolves_via_the_live_seam(monkeypatch: pytest.MonkeyPatc
         strategy="latest",
         batch=None,
         secret_ref="kv-ref",
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
     )
     assert out == "orders/orders_20260601.csv"
     assert captured["prefix"] == "orders/" and captured["strategy"] == "latest"
@@ -305,7 +309,7 @@ def test_preview_batch_accepts_flatfile_types(
         strategy="latest",
         batch=None,
         secret_ref="kv-ref",
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
     )
     assert out == "x/orders_1.csv"
 
@@ -331,7 +335,7 @@ def test_preview_batch_rejects_non_flatfile_connections(
             strategy="latest",
             batch=None,
             secret_ref="kv-ref",
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
         )
     assert exc.value.code == "suite_target_invalid"
 
@@ -352,7 +356,7 @@ def test_preview_batch_invalid_regex_raises_before_any_listing(
             strategy="latest",
             batch=None,
             secret_ref="kv-ref",
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
         )
 
 
@@ -366,7 +370,7 @@ def test_preview_batch_specific_without_capture_group_raises() -> None:
             strategy="specific",
             batch="x",
             secret_ref="kv-ref",
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
         )
 
 
@@ -385,7 +389,7 @@ def _preview_s3(monkeypatch: pytest.MonkeyPatch, exc: Exception) -> None:
         strategy="latest",
         batch=None,
         secret_ref="kv-ref",
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
     )
 
 
@@ -441,5 +445,5 @@ def test_preview_batch_without_secret_raises() -> None:
             strategy="latest",
             batch=None,
             secret_ref=None,
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
         )

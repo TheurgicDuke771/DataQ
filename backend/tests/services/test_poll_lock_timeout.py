@@ -28,6 +28,7 @@ from sqlalchemy import text
 
 from backend.app.db.models import Connection, User
 from backend.app.services import orchestration_service
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 # Generous enough that a slow CI box isn't flaky, tight enough that a genuine hang (which
 # is unbounded) can't sneak past.
@@ -228,14 +229,6 @@ def test_the_sweep_survives_a_contended_row(
     from backend.app.db.session import SessionLocal
     from backend.app.worker import tasks
 
-    class _Store:
-        def get(self, name: str) -> str:
-            return "secret"
-
-        def set(self, name: str, value: str) -> None: ...
-
-        def delete(self, name: str) -> None: ...
-
     class _Provider:
         provider = "airflow"
         resource_config_key = "base_url"
@@ -259,7 +252,7 @@ def test_the_sweep_survives_a_contended_row(
             summary.update(
                 tasks._poll_orchestration_runs(
                     session,
-                    secret_store=_Store(),
+                    secret_store=FakeSecretStore(default="secret"),
                     lookback=timedelta(minutes=15),
                     now=datetime.now(UTC),
                 )

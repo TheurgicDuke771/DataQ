@@ -17,8 +17,8 @@ import pytest
 
 from backend.app.api.v1.orchestration import WebhookAuthError, _authenticate_airflow
 from backend.app.core.config import get_settings
-from backend.app.core.secrets import SecretNotFoundError
 from backend.app.orchestration.airflow import AirflowProvider
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 _KEY = "shared-hmac-signing-key"
 
@@ -37,26 +37,8 @@ def _load_snippet() -> Any:
 snippet = _load_snippet()
 
 
-class _FakeStore:
-    """Minimal SecretStore: serves the Airflow signing key under its config name."""
-
-    def __init__(self, **data: str) -> None:
-        self.data = dict(data)
-
-    def get(self, name: str) -> str:
-        if name not in self.data:
-            raise SecretNotFoundError(name)
-        return self.data[name]
-
-    def set(self, name: str, value: str) -> None:
-        self.data[name] = value
-
-    def delete(self, name: str) -> None:
-        self.data.pop(name, None)
-
-
-def _store(key: str = _KEY) -> _FakeStore:
-    return _FakeStore(**{get_settings().airflow_webhook_secret_name: key})
+def _store(key: str = _KEY) -> FakeSecretStore:
+    return FakeSecretStore(initial={get_settings().airflow_webhook_secret_name: key})
 
 
 class _FakeDagRun:

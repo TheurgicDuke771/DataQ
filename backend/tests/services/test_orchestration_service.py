@@ -13,7 +13,6 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from backend.app.core.secrets import SecretNotFoundError
 from backend.app.db.models import Connection, PipelineRun, Run, Suite, TriggerBinding, User
 from backend.app.orchestration.base import RunUpdate
 from backend.app.services.orchestration_service import (
@@ -21,6 +20,7 @@ from backend.app.services.orchestration_service import (
     ingest_polled_runs,
     record_pipeline_event,
 )
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 _ADF_CONFIG = {
     "subscription_id": "00000000-0000-0000-0000-000000000001",
@@ -127,22 +127,6 @@ def test_ambiguous_factory_picks_first_match(db_session: Any) -> None:
 # ───────────────────── ingest_event: enrichment + trigger (PR 8) ─────────────
 
 
-class _FakeStore:
-    def __init__(self, **data: str) -> None:
-        self.data = dict(data)
-
-    def get(self, name: str) -> str:
-        if name not in self.data:
-            raise SecretNotFoundError(name)
-        return self.data[name]
-
-    def set(self, name: str, value: str) -> None:
-        self.data[name] = value
-
-    def delete(self, name: str) -> None:
-        self.data.pop(name, None)
-
-
 class _FakeProvider:
     """Stand-in OrchestrationProvider: parse_event isn't used here; fetch_run_detail
     is driven by the test (returns a canned RunUpdate or raises)."""
@@ -215,7 +199,7 @@ def test_ingest_enriches_when_connection_has_credential(db_session: Any) -> None
     _adf_connection_with_secret(db_session)
     enriched = _update(status="succeeded", failure_reason=None, provider_run_id="run-1")
     provider = _FakeProvider(detail=enriched)
-    store = _FakeStore(**{f"conn-{db_session.scalars(select(Connection)).first().id}": "sp"})
+    store = FakeSecretStore({f"conn-{db_session.scalars(select(Connection)).first().id}": "sp"})
 
     result = ingest_event(
         db_session, provider_impl=provider, update=_update(status="running"), secret_store=store
@@ -229,7 +213,7 @@ def test_ingest_fails_soft_when_enrichment_raises(db_session: Any) -> None:
     _adf_connection_with_secret(db_session)
     provider = _FakeProvider(raises=RuntimeError("ARM unreachable"))
     cid = db_session.scalars(select(Connection)).first().id
-    store = _FakeStore(**{f"conn-{cid}": "sp"})
+    store = FakeSecretStore({f"conn-{cid}": "sp"})
 
     result = ingest_event(
         db_session, provider_impl=provider, update=_update(status="failed"), secret_store=store
@@ -246,7 +230,7 @@ def test_ingest_skips_enrichment_without_credential(db_session: Any) -> None:
         db_session,
         provider_impl=provider,
         update=_update(status="failed"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert provider.calls == []
     assert result.pipeline_run is not None
@@ -258,7 +242,7 @@ def test_ingest_unattributable_returns_empty_result(db_session: Any) -> None:
         db_session,
         provider_impl=provider,
         update=_update(resource_name="unknown-factory"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert result.pipeline_run is None
     assert result.triggered_runs == []
@@ -277,7 +261,7 @@ def test_succeeded_run_triggers_bound_suite(db_session: Any) -> None:
         db_session,
         provider_impl=provider,
         update=_update(status="succeeded", provider_run_id="run-9"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert len(result.triggered_runs) == 1
     run = db_session.scalars(select(Run)).one()
@@ -293,8 +277,12 @@ def test_trigger_is_idempotent_on_replay(db_session: Any) -> None:
     provider = _FakeProvider()
     upd = _update(status="succeeded", provider_run_id="run-9")
 
-    first = ingest_event(db_session, provider_impl=provider, update=upd, secret_store=_FakeStore())
-    second = ingest_event(db_session, provider_impl=provider, update=upd, secret_store=_FakeStore())
+    first = ingest_event(
+        db_session, provider_impl=provider, update=upd, secret_store=FakeSecretStore()
+    )
+    second = ingest_event(
+        db_session, provider_impl=provider, update=upd, secret_store=FakeSecretStore()
+    )
     assert len(first.triggered_runs) == 1
     assert second.triggered_runs == []  # replay creates no second run
     assert len(db_session.scalars(select(Run)).all()) == 1
@@ -342,7 +330,7 @@ def test_failed_run_does_not_trigger(db_session: Any) -> None:
         db_session,
         provider_impl=_FakeProvider(),
         update=_update(status="failed"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert result.triggered_runs == []
     assert db_session.scalars(select(Run)).all() == []
@@ -356,7 +344,7 @@ def test_disabled_binding_does_not_trigger(db_session: Any) -> None:
         db_session,
         provider_impl=_FakeProvider(),
         update=_update(status="succeeded"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert result.triggered_runs == []
 
@@ -369,7 +357,7 @@ def test_binding_for_other_pipeline_does_not_trigger(db_session: Any) -> None:
         db_session,
         provider_impl=_FakeProvider(),
         update=_update(status="succeeded", pipeline_or_dag_id="load_finance"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert result.triggered_runs == []
 
@@ -409,7 +397,7 @@ def test_env_mismatch_logs_near_miss_and_writes_health_row(
             db_session,
             provider_impl=_FakeProvider(),
             update=_update(status="succeeded", provider_run_id="run-nm-1"),
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(),
         )
 
     assert result.triggered_runs == []  # env mismatch — nothing fired
@@ -436,7 +424,7 @@ def test_full_match_does_not_record_a_near_miss(db_session: Any) -> None:
         db_session,
         provider_impl=_FakeProvider(),
         update=_update(status="succeeded", provider_run_id="run-nm-2"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert len(result.triggered_runs) == 1
     assert db_session.scalars(select(WorkspaceHealth)).all() == []
@@ -450,7 +438,7 @@ def test_no_binding_does_not_record_a_near_miss(db_session: Any) -> None:
         db_session,
         provider_impl=_FakeProvider(),
         update=_update(status="succeeded", provider_run_id="run-nm-3"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert result.triggered_runs == []
     assert db_session.scalars(select(WorkspaceHealth)).all() == []
@@ -470,7 +458,7 @@ def test_disabled_mismatched_binding_does_not_record_a_near_miss(db_session: Any
         db_session,
         provider_impl=_FakeProvider(),
         update=_update(status="succeeded", provider_run_id="run-nm-4"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert result.triggered_runs == []
     assert db_session.scalars(select(WorkspaceHealth)).all() == []
@@ -487,7 +475,7 @@ def test_near_miss_upsert_dedupes_the_same_mismatch(db_session: Any) -> None:
         db_session,
         provider_impl=_FakeProvider(),
         update=_update(status="succeeded", provider_run_id="run-nm-5"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     first = db_session.scalar(select(WorkspaceHealth))
     first_key, first_updated_at = first.key, first.updated_at
@@ -498,7 +486,7 @@ def test_near_miss_upsert_dedupes_the_same_mismatch(db_session: Any) -> None:
         db_session,
         provider_impl=_FakeProvider(),
         update=_update(status="succeeded", provider_run_id="run-nm-6"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     rows = list(db_session.scalars(select(WorkspaceHealth)))
     assert len(rows) == 1
@@ -530,13 +518,13 @@ def test_near_miss_log_line_fires_only_on_first_occurrence(
             db_session,
             provider_impl=_FakeProvider(),
             update=_update(status="succeeded", provider_run_id="run-nm-throttle-1"),
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(),
         )
         ingest_event(
             db_session,
             provider_impl=_FakeProvider(),
             update=_update(status="succeeded", provider_run_id="run-nm-throttle-2"),
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(),
         )
 
     near_miss_events = [e for e in logs if e["event"] == "trigger_binding_env_near_miss"]
@@ -597,7 +585,7 @@ def test_near_miss_record_failure_is_fail_open_and_does_not_break_ingestion(
         db_session,
         provider_impl=_FakeProvider(),
         update=_update(status="succeeded", provider_run_id="run-nm-fail-1"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert result.pipeline_run is not None
     assert result.pipeline_run.status == "succeeded"
@@ -655,7 +643,7 @@ def test_ingest_airflow_resolves_by_base_url_and_skips_enrichment(db_session: An
         db_session,
         provider_impl=AirflowProvider(),
         update=update,
-        secret_store=_FakeStore(**{f"conn-{conn.id}": "token"}),
+        secret_store=FakeSecretStore({f"conn-{conn.id}": "token"}),
     )
     assert result.pipeline_run is not None
     assert result.pipeline_run.provider == "airflow"
@@ -891,7 +879,7 @@ def test_dbt_success_dispatches_lineage_refresh(db_session: Any, monkeypatch: An
         db_session,
         provider_impl=_FakeDbtProvider(),
         update=_dbt_update("succeeded", job="j"),
-        secret_store=_FakeStore(**{f"conn-{conn.id}": "sas"}),
+        secret_store=FakeSecretStore({f"conn-{conn.id}": "sas"}),
     )
 
     assert result.pipeline_run is not None
@@ -907,7 +895,7 @@ def test_dbt_failure_does_not_dispatch_lineage(db_session: Any, monkeypatch: Any
         db_session,
         provider_impl=_FakeDbtProvider(),
         update=_dbt_update("failed"),
-        secret_store=_FakeStore(**{f"conn-{conn.id}": "sas"}),
+        secret_store=FakeSecretStore({f"conn-{conn.id}": "sas"}),
     )
     assert spy.calls == []  # failures alert but never refresh lineage (nor trigger)
 
@@ -939,7 +927,7 @@ def test_airflow_success_does_not_dispatch_lineage(db_session: Any, monkeypatch:
             resource_name="https://airflow.example.com",
             status="succeeded",
         ),
-        secret_store=_FakeStore(**{f"conn-{conn.id}": "token"}),
+        secret_store=FakeSecretStore({f"conn-{conn.id}": "token"}),
     )
     assert spy.calls == []
 
@@ -955,7 +943,7 @@ def test_lineage_dispatch_failure_does_not_break_ingestion(
         db_session,
         provider_impl=_FakeDbtProvider(),
         update=_dbt_update("succeeded"),
-        secret_store=_FakeStore(**{f"conn-{conn.id}": "sas"}),
+        secret_store=FakeSecretStore({f"conn-{conn.id}": "sas"}),
     )
     assert result.pipeline_run is not None
     assert result.pipeline_run.status == "succeeded"

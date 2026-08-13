@@ -94,25 +94,20 @@ class TestCompositeStalenessContract:
         from backend.app.alerting.email import EmailPublisher
         from backend.app.alerting.slack import SlackPublisher
         from backend.app.alerting.teams import TeamsPublisher
+        from backend.tests.support.fake_secret_store import FakeSecretStore
 
-        class _EmptyStore:
-            def get(self, name: str) -> str:
-                from backend.app.core.secrets import SecretNotFoundError
-
-                raise SecretNotFoundError(name)
-
-        store = _EmptyStore()
+        store = FakeSecretStore()
         teams = TeamsPublisher(
-            secret_store=store,  # type: ignore[arg-type]
+            secret_store=store,
             workspace_secret_name=None,
         )
         slack = SlackPublisher(
-            secret_store=store,  # type: ignore[arg-type]
+            secret_store=store,
             webhook_secret_name=None,
             allowed_hosts=("hooks.slack.com",),
         )
         email = EmailPublisher(
-            secret_store=store,  # type: ignore[arg-type]
+            secret_store=store,
             smtp_host="localhost",
             smtp_port=25,
             username=None,

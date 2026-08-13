@@ -21,10 +21,10 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from backend.app.core.secrets import SecretNotFoundError
 from backend.app.datasources import registry
 from backend.app.db.models import Connection, User
 from backend.app.services import connection_service as svc
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 # An account SAS expiring 2026-07-29. `sig` is a made-up blob, not a credential.
 _SAS = "sv=2022-11-02&ss=b&sp=rl&se=2026-07-29T05:59:59Z&sig=notarealsignature%3D"
@@ -43,29 +43,6 @@ _SF_CONFIG = {
 }
 
 
-class FakeStore:
-    """In-memory SecretStore."""
-
-    def __init__(self, data: dict[str, str] | None = None) -> None:
-        self.data: dict[str, str] = data or {}
-
-    def get(self, name: str) -> str:
-        if name not in self.data:
-            raise SecretNotFoundError(name)
-        return self.data[name]
-
-    def set(self, name: str, value: str) -> None:
-        self.data[name] = value
-
-    def delete(self, name: str) -> None:
-        self.data.pop(name, None)
-
-
-class _UnreachableStore(FakeStore):
-    def get(self, name: str) -> str:
-        raise RuntimeError("Key Vault unreachable")
-
-
 def _user(db_session: Any) -> User:
     user = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:8]}@ex")
     db_session.add(user)
@@ -73,7 +50,7 @@ def _user(db_session: Any) -> User:
     return user
 
 
-def _adls(db_session: Any, store: FakeStore, secret: str = _SAS) -> Connection:
+def _adls(db_session: Any, store: FakeSecretStore, secret: str = _SAS) -> Connection:
     return svc.create_connection(
         db_session,
         name=f"adls-{uuid.uuid4().hex[:8]}",
@@ -154,7 +131,7 @@ class TestAdapterSeam:
 
 class TestExpiryIsReadWhenTheCredentialIsWritten:
     def test_creating_a_connection_records_its_credential_expiry(self, db_session: Any) -> None:
-        conn = _adls(db_session, FakeStore())
+        conn = _adls(db_session, FakeSecretStore())
         assert conn.credential_expires_at == _SAS_EXPIRY
 
     def test_a_credential_with_no_stated_expiry_leaves_it_unknown(self, db_session: Any) -> None:
@@ -166,14 +143,14 @@ class TestExpiryIsReadWhenTheCredentialIsWritten:
             config=dict(_SF_CONFIG),
             secret="p@ss",
             created_by=_user(db_session).id,
-            secret_store=FakeStore(),
+            secret_store=FakeSecretStore(),
         )
         assert conn.credential_expires_at is None
 
     def test_rotating_the_credential_moves_the_expiry_on_the_same_request(
         self, db_session: Any
     ) -> None:
-        store = FakeStore()
+        store = FakeSecretStore()
         conn = _adls(db_session, store)
         svc.update_connection(db_session, conn.id, secret=_LATER_SAS, secret_store=store)
         db_session.refresh(conn)
@@ -185,7 +162,7 @@ class TestExpiryIsReadWhenTheCredentialIsWritten:
         # The stale-warning failure: swap a SAS for a credential with no lifetime
         # and the product would keep counting down to a date that no longer
         # describes anything, until someone re-auths a connection that is fine.
-        store = FakeStore()
+        store = FakeSecretStore()
         conn = _adls(db_session, store)
         assert conn.credential_expires_at is not None
 
@@ -198,7 +175,7 @@ class TestExpiryIsReadWhenTheCredentialIsWritten:
     ) -> None:
         # Re-auth is the "fix the expiring token" button. If the badge survived the
         # fix, the next person would rotate an already-rotated credential.
-        store = FakeStore()
+        store = FakeSecretStore()
         conn = _adls(db_session, store)
         monkeypatch.setattr(svc, "test_connection", lambda *a, **k: None)
 
@@ -218,12 +195,12 @@ class TestSweep:
         # Every connection in prod today predates this column. Without the sweep
         # they stay unknown until someone happens to rotate them — i.e. the
         # feature would do nothing for the credentials that already exist.
-        conn = _adls(db_session, FakeStore())
+        conn = _adls(db_session, FakeSecretStore())
         conn.credential_expires_at = None
         db_session.commit()
 
         changed = svc.refresh_credential_expiry(
-            db_session, secret_store=FakeStore({str(conn.secret_ref): _SAS})
+            db_session, secret_store=FakeSecretStore({str(conn.secret_ref): _SAS})
         )
 
         db_session.refresh(conn)
@@ -233,7 +210,7 @@ class TestSweep:
     def test_it_notices_a_credential_rotated_outside_dataq(self, db_session: Any) -> None:
         # How the #828 SAS was actually replaced: in the Azure portal. DataQ never
         # saw the write, so only a re-read can move the date.
-        store = FakeStore()
+        store = FakeSecretStore()
         conn = _adls(db_session, store)
         store.data[str(conn.secret_ref)] = _LATER_SAS
 
@@ -246,10 +223,13 @@ class TestSweep:
         # "We couldn't check today" is not evidence the credential stopped
         # expiring. Blanking the date on a Key Vault outage would silence the
         # warning at the exact moment nobody can verify anything.
-        conn = _adls(db_session, FakeStore())
+        conn = _adls(db_session, FakeSecretStore())
         assert conn.credential_expires_at == _SAS_EXPIRY
 
-        svc.refresh_credential_expiry(db_session, secret_store=_UnreachableStore())
+        svc.refresh_credential_expiry(
+            db_session,
+            secret_store=FakeSecretStore(raise_on_get=RuntimeError("Key Vault unreachable")),
+        )
 
         db_session.refresh(conn)
         assert conn.credential_expires_at == _SAS_EXPIRY
@@ -264,8 +244,8 @@ class TestSweep:
         # #841 already fixed once on this table. Asserting the durable state
         # DURING the sweep is what distinguishes per-row commits from a batch;
         # asserting only the end state passes either way.
-        first = _adls(db_session, FakeStore())
-        second = _adls(db_session, FakeStore())
+        first = _adls(db_session, FakeSecretStore())
+        second = _adls(db_session, FakeSecretStore())
         for conn in (first, second):
             conn.credential_expires_at = None
         db_session.commit()
@@ -274,7 +254,7 @@ class TestSweep:
         # state can't be probed from another connection here — the `db_session`
         # fixture holds the test inside a rolled-back transaction — but the
         # commit ORDERING is exactly what separates per-row from batch.)
-        store = FakeStore({str(first.secret_ref): _SAS, str(second.secret_ref): _SAS})
+        store = FakeSecretStore({str(first.secret_ref): _SAS, str(second.secret_ref): _SAS})
         commits = 0
         commits_before_fetch: list[int] = []
         real_commit, real_get = db_session.commit, store.get
@@ -301,14 +281,14 @@ class TestSweep:
         self, db_session: Any
     ) -> None:
         # A single bad connection must not leave every later one unknown.
-        class _OneBadStore(FakeStore):
+        class _OneBadStore(FakeSecretStore):
             def get(self, name: str) -> str:
                 if name == bad_ref:
                     raise RuntimeError("Key Vault unreachable")
                 return super().get(name)
 
-        good = _adls(db_session, FakeStore())
-        bad = _adls(db_session, FakeStore())
+        good = _adls(db_session, FakeSecretStore())
+        bad = _adls(db_session, FakeSecretStore())
         bad_ref = str(bad.secret_ref)
         good.credential_expires_at = None
         db_session.commit()

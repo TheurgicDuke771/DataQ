@@ -10,14 +10,13 @@ catalog/scan I/O is faked. The adapter is DB-free, so these are pure unit tests.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
 import pandas as pd
 import pyarrow as pa
 import pytest
 from pydantic import ValidationError
 
-from backend.app.core.secrets import SecretStore
 from backend.app.datasources import iceberg as iceberg_mod
 from backend.app.datasources.base import CheckSpec, MonitorSpec
 from backend.app.datasources.iceberg import (
@@ -29,6 +28,7 @@ from backend.app.datasources.iceberg import (
     list_iceberg_columns,
     read_iceberg_dataframe,
 )
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 _REST_CONFIG = {
     "catalog_name": "prod",
@@ -199,17 +199,6 @@ def _runner_over(df: pd.DataFrame, monkeypatch: pytest.MonkeyPatch) -> IcebergCh
     return runner
 
 
-class _FakeStore:
-    def get(self, name: str) -> str:
-        return "resolved-secret"
-
-    def set(self, name: str, value: str) -> None:  # read-only double
-        raise NotImplementedError
-
-    def delete(self, name: str) -> None:
-        raise NotImplementedError
-
-
 def test_run_checks_runs_gx_on_arrow_backed_frame(monkeypatch: pytest.MonkeyPatch) -> None:
     df = pd.DataFrame({"id": [1, 2, None], "amt": [10, 20, 30]})
     runner = _runner_over(df, monkeypatch)
@@ -338,7 +327,9 @@ def test_run_monitors_bad_monitor_errors_only_itself(monkeypatch: pytest.MonkeyP
 
 def test_build_iceberg_runner_resolves_secret() -> None:
     runner = build_iceberg_runner(
-        config=dict(_REST_CONFIG), secret_ref="kv-ref", secret_store=_FakeStore()
+        config=dict(_REST_CONFIG),
+        secret_ref="kv-ref",
+        secret_store=FakeSecretStore(default="resolved-secret", raise_on_write=True),
     )
     assert isinstance(runner, IcebergCheckRunner)
     assert runner._secret == "resolved-secret"
@@ -350,7 +341,7 @@ def test_build_iceberg_runner_allows_credential_less_catalog() -> None:
     runner = build_iceberg_runner(
         config={"catalog_type": "sql", "catalog_uri": "sqlite:///w"},
         secret_ref=None,
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="resolved-secret", raise_on_write=True),
     )
     assert runner._secret is None
 
@@ -635,10 +626,6 @@ class TestEveryReadPathGetsTheCatalogCredential:
     The runner path was wired first and the profiler/comparison paths were NOT — this
     pins that every one of them goes through `iceberg_credentials`."""
 
-    class _Store:
-        def get(self, ref: str) -> str:
-            return {"kv-storage": "STORAGE_KEY", "kv-catalog": "CATALOG_PW"}[ref]
-
     def _cfg(self) -> IcebergConfig:
         return IcebergConfig(
             catalog_type="sql",
@@ -647,16 +634,17 @@ class TestEveryReadPathGetsTheCatalogCredential:
             secret_property="adls.account-key",
         )
 
+    def _store(self) -> FakeSecretStore:
+        return FakeSecretStore(initial={"kv-storage": "STORAGE_KEY", "kv-catalog": "CATALOG_PW"})
+
     def test_resolves_both_credentials(self) -> None:
-        secret, catalog_secret = iceberg_credentials(
-            self._cfg(), "kv-storage", cast(SecretStore, self._Store())
-        )
+        secret, catalog_secret = iceberg_credentials(self._cfg(), "kv-storage", self._store())
         assert secret == "STORAGE_KEY"
         assert catalog_secret == "CATALOG_PW"
 
     def test_both_are_optional(self) -> None:
         cfg = IcebergConfig(catalog_type="rest", catalog_uri="https://cat.example")
-        assert iceberg_credentials(cfg, None, cast(SecretStore, self._Store())) == (None, None)
+        assert iceberg_credentials(cfg, None, self._store()) == (None, None)
 
     def test_the_runner_actually_reaches_the_catalog_with_the_password(
         self, monkeypatch: pytest.MonkeyPatch
@@ -671,7 +659,7 @@ class TestEveryReadPathGetsTheCatalogCredential:
         runner = build_iceberg_runner(
             config=self._cfg().model_dump(),
             secret_ref="kv-storage",
-            secret_store=cast(SecretStore, self._Store()),
+            secret_store=self._store(),
         )
         with pytest.raises(RuntimeError):
             runner._load_table("retail.orders")

@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import func, select
 
 from backend.app.core.secret_names import connection_secret_ref
-from backend.app.core.secrets import SecretNotFoundError, SecretWriteError
+from backend.app.core.secrets import SecretWriteError
 from backend.app.db.models import Asset, Connection, ConnectionVersion, Run, Suite, User
 from backend.app.services import connection_service as svc
 from backend.app.services import suite_service
@@ -24,6 +24,7 @@ from backend.app.services.connection_service import (
     ConnectionSecretWriteError,
     ConnectionTestFailedError,
 )
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 _SF_CONFIG = {
     "account": "ab12345.eu-west-1",
@@ -52,24 +53,6 @@ _UC_CONFIG = {
     "workspace_url": "https://adb-1234.5.azuredatabricks.net",
     "warehouse_id": "abc123def456",
 }
-
-
-class FakeStore:
-    """In-memory SecretStore for write-through assertions."""
-
-    def __init__(self) -> None:
-        self.data: dict[str, str] = {}
-
-    def get(self, name: str) -> str:
-        if name not in self.data:
-            raise SecretNotFoundError(name)
-        return self.data[name]
-
-    def set(self, name: str, value: str) -> None:
-        self.data[name] = value
-
-    def delete(self, name: str) -> None:
-        self.data.pop(name, None)
 
 
 class _PassAdapter:
@@ -112,7 +95,7 @@ def _user(db_session: Any) -> User:
     return user
 
 
-def _create(db_session: Any, store: FakeStore, **overrides: Any) -> Connection:
+def _create(db_session: Any, store: FakeSecretStore, **overrides: Any) -> Connection:
     user = overrides.pop("user", None) or _user(db_session)
     kwargs: dict[str, Any] = {
         "name": "finance-dev",
@@ -131,7 +114,7 @@ def _create(db_session: Any, store: FakeStore, **overrides: Any) -> Connection:
 
 
 def test_create_persists_row_and_writes_secret(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(db_session, store)
 
     assert conn.id is not None
@@ -148,7 +131,7 @@ def test_create_persists_row_and_writes_secret(db_session: Any) -> None:
 
 
 def test_create_without_secret_leaves_secret_ref_null(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(db_session, store, secret=None)
     assert conn.secret_ref is None
     assert store.data == {}
@@ -156,22 +139,22 @@ def test_create_without_secret_leaves_secret_ref_null(db_session: Any) -> None:
 
 def test_create_unknown_type_raises_config_invalid(db_session: Any) -> None:
     with pytest.raises(ConnectionConfigInvalidError):
-        _create(db_session, FakeStore(), conn_type="mssql")
+        _create(db_session, FakeSecretStore(), conn_type="mssql")
 
 
 def test_create_invalid_config_raises_config_invalid(db_session: Any) -> None:
     bad = {k: v for k, v in _SF_CONFIG.items() if k != "account"}
     with pytest.raises(ConnectionConfigInvalidError):
-        _create(db_session, FakeStore(), config=bad)
+        _create(db_session, FakeSecretStore(), config=bad)
 
 
 def test_create_invalid_env_raises_config_invalid(db_session: Any) -> None:
     with pytest.raises(ConnectionConfigInvalidError, match="invalid env"):
-        _create(db_session, FakeStore(), env="staging")
+        _create(db_session, FakeSecretStore(), env="staging")
 
 
 def test_create_duplicate_name_env_raises_conflict(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     user = _user(db_session)
     _create(db_session, store, user=user, name="dup", env="dev")
     with pytest.raises(ConnectionConflictError):
@@ -179,7 +162,7 @@ def test_create_duplicate_name_env_raises_conflict(db_session: Any) -> None:
 
 
 def test_create_same_name_different_env_is_allowed(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     user = _user(db_session)
     _create(db_session, store, user=user, name="shared", env="dev")
     other = _create(db_session, store, user=user, name="shared", env="qa")
@@ -190,7 +173,7 @@ def test_create_same_name_different_env_is_allowed(db_session: Any) -> None:
 
 
 def test_get_returns_connection(db_session: Any) -> None:
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     assert svc.get_connection(db_session, conn.id).id == conn.id
 
 
@@ -200,7 +183,7 @@ def test_get_unknown_raises_not_found(db_session: Any) -> None:
 
 
 def test_list_filters_by_type_and_env(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     user = _user(db_session)
     _create(db_session, store, user=user, name="sf-dev", env="dev")
     _create(db_session, store, user=user, name="sf-qa", env="qa")
@@ -216,13 +199,13 @@ def test_list_filters_by_type_and_env(db_session: Any) -> None:
 
 
 def test_update_changes_name_and_config(db_session: Any) -> None:
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     updated = svc.update_connection(
         db_session,
         conn.id,
         name="renamed",
         config={**_SF_CONFIG, "warehouse": "WH_BIG"},
-        secret_store=FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert updated.name == "renamed"
     assert updated.config["warehouse"] == "WH_BIG"
@@ -237,14 +220,14 @@ def test_turning_inventory_sync_off_clears_its_outcome_state(db_session: Any) ->
     connection is "failing since <old date>" for a sync nobody has attempted since."""
     from datetime import UTC, datetime
 
-    conn = _create(db_session, FakeStore(), config={**_SF_CONFIG, "inventory_sync": True})
+    conn = _create(db_session, FakeSecretStore(), config={**_SF_CONFIG, "inventory_sync": True})
     conn.inventory_sync_last_attempted_at = datetime.now(UTC)
     conn.inventory_sync_last_error = "Inventory sync was rejected."
     conn.inventory_sync_failing_since = datetime.now(UTC)
     db_session.flush()
 
     updated = svc.update_connection(
-        db_session, conn.id, config=dict(_SF_CONFIG), secret_store=FakeStore()
+        db_session, conn.id, config=dict(_SF_CONFIG), secret_store=FakeSecretStore()
     )
 
     assert updated.config.get("inventory_sync") is None
@@ -258,7 +241,7 @@ def test_an_unrelated_config_edit_keeps_the_inventory_sync_state(db_session: Any
     the state on any edit would hide a live, still-failing sync."""
     from datetime import UTC, datetime
 
-    conn = _create(db_session, FakeStore(), config={**_SF_CONFIG, "inventory_sync": True})
+    conn = _create(db_session, FakeSecretStore(), config={**_SF_CONFIG, "inventory_sync": True})
     conn.inventory_sync_failing_since = datetime.now(UTC)
     conn.inventory_sync_last_error = "Inventory sync was rejected."
     db_session.flush()
@@ -267,7 +250,7 @@ def test_an_unrelated_config_edit_keeps_the_inventory_sync_state(db_session: Any
         db_session,
         conn.id,
         config={**_SF_CONFIG, "inventory_sync": True, "warehouse": "WH_OTHER"},
-        secret_store=FakeStore(),
+        secret_store=FakeSecretStore(),
     )
 
     assert updated.inventory_sync_failing_since is not None
@@ -277,7 +260,7 @@ def test_an_unrelated_config_edit_keeps_the_inventory_sync_state(db_session: Any
 def test_update_config_reresolves_bound_suite_assets(db_session: Any) -> None:
     """A config change that moves the OpenLineage identity re-points every targeted
     suite on the connection at the new asset (ADR 0034) — never a stale asset_id."""
-    conn = _create(db_session, FakeStore())  # _SF_CONFIG: database=ANALYTICS
+    conn = _create(db_session, FakeSecretStore())  # _SF_CONFIG: database=ANALYTICS
     suite = suite_service.create_suite(
         db_session,
         name="orders-suite",
@@ -293,7 +276,7 @@ def test_update_config_reresolves_bound_suite_assets(db_session: Any) -> None:
         db_session,
         conn.id,
         config={**_SF_CONFIG, "database": "WAREHOUSE"},
-        secret_store=FakeStore(),
+        secret_store=FakeSecretStore(),
     )
 
     db_session.expire_all()
@@ -303,7 +286,7 @@ def test_update_config_reresolves_bound_suite_assets(db_session: Any) -> None:
 
 
 def test_update_rotates_secret(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(db_session, store)
     svc.update_connection(db_session, conn.id, secret="rotated", secret_store=store)
     assert conn.secret_ref is not None
@@ -311,15 +294,15 @@ def test_update_rotates_secret(db_session: Any) -> None:
 
 
 def test_update_invalid_config_raises(db_session: Any) -> None:
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     with pytest.raises(ConnectionConfigInvalidError):
         svc.update_connection(
-            db_session, conn.id, config={"account": "only"}, secret_store=FakeStore()
+            db_session, conn.id, config={"account": "only"}, secret_store=FakeSecretStore()
         )
 
 
 def test_update_name_collision_raises_conflict(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     user = _user(db_session)
     _create(db_session, store, user=user, name="taken", env="dev")
     other = _create(db_session, store, user=user, name="free", env="dev")
@@ -331,7 +314,7 @@ def test_update_name_collision_raises_conflict(db_session: Any) -> None:
 
 
 def test_delete_removes_row_and_secret(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(db_session, store)
     ref = conn.secret_ref
     assert ref in store.data  # credential was written through on create
@@ -344,7 +327,7 @@ def test_delete_removes_row_and_secret(db_session: Any) -> None:
 def test_delete_unknown_raises_not_found(db_session: Any) -> None:
     with pytest.raises(ConnectionNotFoundError):
         svc.delete_connection(
-            db_session, uuid.uuid4(), secret_store=FakeStore(), actor_id=uuid.uuid4()
+            db_session, uuid.uuid4(), secret_store=FakeSecretStore(), actor_id=uuid.uuid4()
         )
 
 
@@ -353,7 +336,7 @@ def test_delete_with_dependent_suites_raises_409_not_500(db_session: Any) -> Non
     named (bounded sample + true total), never surface the raw FK violation."""
     from backend.app.services import suite_service
 
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(db_session, store)
     owner = _user(db_session)
     suite = suite_service.create_suite(
@@ -387,7 +370,7 @@ def test_delete_409_hides_suite_names_outside_the_actors_grants(db_session: Any)
     """#927 review: suite NAMES are grant-scoped (ADR 0027) — a caller with no
     grant on a dependent suite gets the count, never the name (the suite endpoint
     404-no-leaks it; this 409 must not defeat that one request over)."""
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(db_session, store)
     stranger_owner = _user(db_session)
     suite_service.create_suite(
@@ -424,7 +407,7 @@ def test_delete_orchestration_connection_cascades_pipeline_runs(db_session: Any)
     they cascade with it (migration a3b4c5d6e7f8) instead of 500ing the delete."""
     from backend.app.db.models import PipelineRun
 
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(
         db_session, store, name="af-dev", conn_type="airflow", config=dict(_AIRFLOW_CONFIG)
     )
@@ -453,7 +436,7 @@ def test_delete_orchestration_connection_cascades_pipeline_runs(db_session: Any)
 
 
 def test_test_connection_passes(db_session: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(db_session, store)
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
     svc.test_connection(db_session, conn.id, secret_store=store)  # no raise
@@ -462,7 +445,7 @@ def test_test_connection_passes(db_session: Any, monkeypatch: pytest.MonkeyPatch
 def test_test_connection_adapter_failure_raises(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(db_session, store)
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _FailAdapter())
     with pytest.raises(ConnectionTestFailedError) as excinfo:
@@ -474,18 +457,18 @@ def test_test_connection_adapter_failure_raises(
 
 
 def test_test_connection_without_secret_raises(db_session: Any) -> None:
-    conn = _create(db_session, FakeStore(), secret=None)
+    conn = _create(db_session, FakeSecretStore(), secret=None)
     with pytest.raises(ConnectionTestFailedError, match="no stored credential"):
-        svc.test_connection(db_session, conn.id, secret_store=FakeStore())
+        svc.test_connection(db_session, conn.id, secret_store=FakeSecretStore())
 
 
 def test_test_connection_missing_secret_in_store_raises(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    conn = _create(db_session, FakeStore())  # secret written to a different store
+    conn = _create(db_session, FakeSecretStore())  # secret written to a different store
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
     with pytest.raises(ConnectionTestFailedError, match="could not be resolved"):
-        svc.test_connection(db_session, conn.id, secret_store=FakeStore())
+        svc.test_connection(db_session, conn.id, secret_store=FakeSecretStore())
 
 
 # ──────── secret_optional — Iceberg/dbt credential-less configs (#351) ─────
@@ -498,7 +481,7 @@ def test_test_connection_secret_optional_no_secret_ref_succeeds(
     credential-less catalog/artifacts path) must still test green when its
     adapter is `secret_optional`, not 502 'no stored credential to test with'.
     """
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(db_session, store, secret=None)
     assert conn.secret_ref is None
     adapter = _OptionalSecretAdapter()
@@ -511,16 +494,16 @@ def test_test_connection_secret_required_adapter_unaffected(db_session: Any) -> 
     """A `secret_optional`-unaware adapter (the default) keeps the old
     behavior — this is `test_test_connection_without_secret_raises` above,
     reasserted here as the explicit negative half of the #351 parity pair."""
-    conn = _create(db_session, FakeStore(), secret=None)
+    conn = _create(db_session, FakeSecretStore(), secret=None)
     with pytest.raises(ConnectionTestFailedError, match="no stored credential"):
-        svc.test_connection(db_session, conn.id, secret_store=FakeStore())
+        svc.test_connection(db_session, conn.id, secret_store=FakeSecretStore())
 
 
 # ───────────────── draft connection test — unsaved probe (#351) ────────────
 
 
 def test_draft_test_passes(db_session: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
     svc.test_draft_connection(
         "snowflake", env="dev", config=dict(_SF_CONFIG), secret="p@ss", secret_store=store
@@ -533,7 +516,7 @@ def test_draft_test_passes(db_session: Any, monkeypatch: pytest.MonkeyPatch) -> 
 def test_draft_test_adapter_failure_raises(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _FailAdapter())
     with pytest.raises(ConnectionTestFailedError) as excinfo:
         svc.test_draft_connection(
@@ -550,7 +533,11 @@ def test_draft_test_adapter_failure_raises(
 def test_draft_test_without_secret_raises(db_session: Any) -> None:
     with pytest.raises(ConnectionTestFailedError, match="credential is required"):
         svc.test_draft_connection(
-            "snowflake", env="dev", config=dict(_SF_CONFIG), secret=None, secret_store=FakeStore()
+            "snowflake",
+            env="dev",
+            config=dict(_SF_CONFIG),
+            secret=None,
+            secret_store=FakeSecretStore(),
         )
 
 
@@ -563,7 +550,11 @@ def test_draft_test_secret_optional_adapter_allows_missing_secret(
     adapter = _OptionalSecretAdapter()
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: adapter)
     svc.test_draft_connection(
-        "iceberg", env="dev", config={"catalog_type": "glue"}, secret=None, secret_store=FakeStore()
+        "iceberg",
+        env="dev",
+        config={"catalog_type": "glue"},
+        secret=None,
+        secret_store=FakeSecretStore(),
     )  # no raise
     assert adapter.received_secret is None
 
@@ -576,7 +567,7 @@ def test_draft_test_secret_optional_adapter_normalizes_blank_string_to_none(
     adapter = _OptionalSecretAdapter()
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: adapter)
     svc.test_draft_connection(
-        "dbt", env="dev", config={}, secret="", secret_store=FakeStore()
+        "dbt", env="dev", config={}, secret="", secret_store=FakeSecretStore()
     )  # no raise
     assert adapter.received_secret is None
 
@@ -584,7 +575,7 @@ def test_draft_test_secret_optional_adapter_normalizes_blank_string_to_none(
 def test_draft_test_unknown_type_raises_config_invalid(db_session: Any) -> None:
     with pytest.raises(ConnectionConfigInvalidError):
         svc.test_draft_connection(
-            "mssql", env="dev", config={}, secret="p@ss", secret_store=FakeStore()
+            "mssql", env="dev", config={}, secret="p@ss", secret_store=FakeSecretStore()
         )
 
 
@@ -592,7 +583,7 @@ def test_draft_test_invalid_config_raises_config_invalid(db_session: Any) -> Non
     bad = {k: v for k, v in _SF_CONFIG.items() if k != "account"}
     with pytest.raises(ConnectionConfigInvalidError):
         svc.test_draft_connection(
-            "snowflake", env="dev", config=bad, secret="p@ss", secret_store=FakeStore()
+            "snowflake", env="dev", config=bad, secret="p@ss", secret_store=FakeSecretStore()
         )
 
 
@@ -603,7 +594,7 @@ def test_draft_test_invalid_env_raises_config_invalid(db_session: Any) -> None:
             env="staging",
             config=dict(_SF_CONFIG),
             secret="p@ss",
-            secret_store=FakeStore(),
+            secret_store=FakeSecretStore(),
         )
 
 
@@ -611,14 +602,18 @@ def test_draft_test_env_is_optional(db_session: Any, monkeypatch: pytest.MonkeyP
     # env plays no role in the probe itself — omitting it must not block the test.
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
     svc.test_draft_connection(
-        "snowflake", env=None, config=dict(_SF_CONFIG), secret="p@ss", secret_store=FakeStore()
+        "snowflake",
+        env=None,
+        config=dict(_SF_CONFIG),
+        secret="p@ss",
+        secret_store=FakeSecretStore(),
     )  # no raise
 
 
 # ──────────────── orchestrator (type, env) singleton guard (#72) ────────────
 
 
-def _create_adf(db_session: Any, store: FakeStore, **overrides: Any) -> Connection:
+def _create_adf(db_session: Any, store: FakeSecretStore, **overrides: Any) -> Connection:
     kwargs: dict[str, Any] = {
         "name": "adf-conn",
         "conn_type": "adf",
@@ -631,7 +626,7 @@ def _create_adf(db_session: Any, store: FakeStore, **overrides: Any) -> Connecti
 
 
 def test_second_adf_same_env_raises_conflict(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     user = _user(db_session)
     _create_adf(db_session, store, user=user, name="adf-a", env="dev")
     # different name, same (type, env) → the partial unique index must fire,
@@ -641,7 +636,7 @@ def test_second_adf_same_env_raises_conflict(db_session: Any) -> None:
 
 
 def test_adf_in_different_env_is_allowed(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     user = _user(db_session)
     _create_adf(db_session, store, user=user, name="adf-dev", env="dev")
     other = _create_adf(db_session, store, user=user, name="adf-qa", env="qa")
@@ -652,7 +647,7 @@ def test_second_airflow_same_env_raises_conflict(db_session: Any) -> None:
     # The orchestrator singleton guard covers airflow too (partial index predicate
     # is `type IN ('adf','airflow')`), so the second provider type is guarded
     # without any new code.
-    store = FakeStore()
+    store = FakeSecretStore()
     user = _user(db_session)
     kwargs = {
         "conn_type": "airflow",
@@ -668,7 +663,7 @@ def test_second_airflow_same_env_raises_conflict(db_session: Any) -> None:
 def test_adf_and_airflow_coexist_in_same_env(db_session: Any) -> None:
     # The guard is per-(type, env): one ADF *and* one Airflow in the same env is
     # fine — they're distinct provider types.
-    store = FakeStore()
+    store = FakeSecretStore()
     user = _user(db_session)
     _create_adf(db_session, store, user=user, name="adf", env="dev")
     airflow = _create(
@@ -690,7 +685,7 @@ def test_adf_and_airflow_coexist_in_same_env(db_session: Any) -> None:
 def test_create_adls_connection_validates_and_persists(db_session: Any) -> None:
     # Exercises the adls_gen2 registry entry + AdlsConfig validation through the
     # generic create path (no datasource-type branching in the service).
-    store = FakeStore()
+    store = FakeSecretStore()
     user = _user(db_session)
     conn = _create(
         db_session,
@@ -721,7 +716,7 @@ def test_create_adls_connection_validates_and_persists(db_session: Any) -> None:
 def test_create_s3_connection_validates_and_persists(db_session: Any) -> None:
     # Exercises the s3 registry entry + S3Config validation through the generic
     # create path.
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(
         db_session,
         store,
@@ -738,7 +733,7 @@ def test_create_s3_connection_validates_and_persists(db_session: Any) -> None:
 def test_create_unity_catalog_connection_validates_and_persists(db_session: Any) -> None:
     # Exercises the unity_catalog registry entry + UnityCatalogConfig validation
     # through the generic create path.
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(
         db_session,
         store,
@@ -755,7 +750,7 @@ def test_create_unity_catalog_connection_validates_and_persists(db_session: Any)
 def test_two_snowflakes_same_env_not_blocked_by_orchestrator_index(db_session: Any) -> None:
     # Datasources are excluded from the partial index: many Snowflake
     # connections per env are legitimate (distinct databases).
-    store = FakeStore()
+    store = FakeSecretStore()
     user = _user(db_session)
     _create(db_session, store, user=user, name="sf-one", env="dev")
     second = _create(db_session, store, user=user, name="sf-two", env="dev")
@@ -765,7 +760,7 @@ def test_two_snowflakes_same_env_not_blocked_by_orchestrator_index(db_session: A
 # ──────────── secret-store write failure → 502 (not 500) (#87) ───────────────
 
 
-class _WriteFailStore(FakeStore):
+class _WriteFailStore(FakeSecretStore):
     """SecretStore whose set() fails — simulates Key Vault unreachable."""
 
     def set(self, name: str, value: str) -> None:
@@ -785,7 +780,7 @@ def test_create_secret_write_failure_raises_502_and_rolls_back(db_session: Any) 
 
 
 def test_update_secret_write_failure_raises_502(db_session: Any) -> None:
-    conn = _create(db_session, FakeStore())  # created fine with a working store
+    conn = _create(db_session, FakeSecretStore())  # created fine with a working store
     with pytest.raises(ConnectionSecretWriteError) as excinfo:
         svc.update_connection(db_session, conn.id, secret="rotated", secret_store=_WriteFailStore())
     assert excinfo.value.status_code == 502
@@ -800,7 +795,7 @@ _ICEBERG_SQL_CONFIG = {"catalog_type": "sql", "catalog_uri": "sqlite:///w"}
 def test_create_iceberg_with_catalog_secret_stores_it_and_sets_config_field(
     db_session: Any,
 ) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = svc.create_connection(
         db_session,
         name="harness-iceberg",
@@ -825,7 +820,7 @@ def test_create_iceberg_catalog_secret_alone_works_credential_less_storage(
 ) -> None:
     """A credential-less catalog storage layer (Iceberg's `secret_optional`) must
     not block a catalog-only credential from being stored."""
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = svc.create_connection(
         db_session,
         name="harness-iceberg",
@@ -855,7 +850,7 @@ def test_create_response_and_config_never_carry_the_catalog_secret_value(
         secret=None,
         catalog_secret="super-secret-db-pw",
         created_by=_user(db_session).id,
-        secret_store=FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert "super-secret-db-pw" not in str(conn.config)
 
@@ -865,7 +860,7 @@ def test_create_catalog_secret_unsupported_type_raises_config_invalid(
 ) -> None:
     """Only a config model that declares `catalog_secret_name` (Iceberg today)
     can receive one — a Snowflake connection has nowhere to put it."""
-    store = FakeStore()
+    store = FakeSecretStore()
     with pytest.raises(ConnectionConfigInvalidError):
         _create(db_session, store, catalog_secret="should-not-write")
     # nothing persisted and nothing written — rejected before any DB/store I/O
@@ -874,7 +869,7 @@ def test_create_catalog_secret_unsupported_type_raises_config_invalid(
 
 
 def test_update_rotates_catalog_secret_reusing_the_same_ref(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = svc.create_connection(
         db_session,
         name="harness-iceberg",
@@ -895,7 +890,7 @@ def test_update_rotates_catalog_secret_reusing_the_same_ref(db_session: Any) -> 
 
 
 def test_update_mints_a_catalog_secret_that_did_not_exist_at_create(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = svc.create_connection(
         db_session,
         name="harness-iceberg",
@@ -915,9 +910,11 @@ def test_update_mints_a_catalog_secret_that_did_not_exist_at_create(db_session: 
 
 
 def test_update_catalog_secret_unsupported_type_raises_config_invalid(db_session: Any) -> None:
-    conn = _create(db_session, FakeStore())  # snowflake
+    conn = _create(db_session, FakeSecretStore())  # snowflake
     with pytest.raises(ConnectionConfigInvalidError):
-        svc.update_connection(db_session, conn.id, catalog_secret="nope", secret_store=FakeStore())
+        svc.update_connection(
+            db_session, conn.id, catalog_secret="nope", secret_store=FakeSecretStore()
+        )
 
 
 def test_update_catalog_secret_write_failure_raises_502(db_session: Any) -> None:
@@ -929,7 +926,7 @@ def test_update_catalog_secret_write_failure_raises_502(db_session: Any) -> None
         config=dict(_ICEBERG_SQL_CONFIG),
         secret=None,
         created_by=_user(db_session).id,
-        secret_store=FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     with pytest.raises(ConnectionSecretWriteError) as excinfo:
         svc.update_connection(
@@ -943,7 +940,7 @@ def test_create_catalog_secret_write_failure_rolls_back(db_session: Any) -> None
     """The main secret writes fine; the catalog secret fails — the whole create
     must roll back, not leave a half-written row + orphaned storage secret."""
 
-    class _CatalogFailsStore(FakeStore):
+    class _CatalogFailsStore(FakeSecretStore):
         def set(self, name: str, value: str) -> None:
             if "catalog" in name:
                 raise SecretWriteError("key vault unreachable")
@@ -981,11 +978,11 @@ def test_update_writes_catalog_secret_before_the_primary_secret(db_session: Any)
         config=dict(_ICEBERG_SQL_CONFIG),
         secret="storage-key-v1",
         created_by=_user(db_session).id,
-        secret_store=FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert conn.secret_ref is not None
 
-    class _CatalogFailsStore(FakeStore):
+    class _CatalogFailsStore(FakeSecretStore):
         def set(self, name: str, value: str) -> None:
             if "catalog" in name:
                 raise SecretWriteError("key vault unreachable")
@@ -1016,7 +1013,7 @@ def test_config_only_update_preserves_catalog_secret_name(db_session: Any) -> No
     it: that key is server-owned bookkeeping, never something a caller is
     expected to round-trip, exactly like `secret_ref` (its own column) is never
     touched by a config-only PATCH."""
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = svc.create_connection(
         db_session,
         name="harness-iceberg",
@@ -1051,7 +1048,7 @@ def test_config_only_update_still_honors_an_explicitly_resent_catalog_secret_nam
 ) -> None:
     """If a caller DOES resend `catalog_secret_name` (e.g. echoing back a prior
     GET), the explicit value wins — carry-over only fills a GAP, never overrides."""
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = svc.create_connection(
         db_session,
         name="harness-iceberg",
@@ -1079,7 +1076,7 @@ def test_config_only_update_still_honors_an_explicitly_resent_catalog_secret_nam
 
 
 def test_delete_removes_the_catalog_secret_alongside_the_primary(db_session: Any) -> None:
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = svc.create_connection(
         db_session,
         name="harness-iceberg",
@@ -1104,7 +1101,7 @@ def test_delete_removes_the_catalog_secret_alongside_the_primary(db_session: Any
 def test_delete_without_a_catalog_secret_does_not_choke(db_session: Any) -> None:
     """A connection with no second credential (the common case) must delete
     exactly as it always has — no `catalog_secret_name` key to even look for."""
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(db_session, store)  # plain snowflake, no catalog_secret
     svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=conn.created_by)
     assert db_session.scalars(select(Connection)).all() == []
@@ -1126,7 +1123,7 @@ def test_draft_test_catalog_secret_unsupported_type_raises_config_invalid(
             config=dict(_SF_CONFIG),
             secret="p@ss",
             catalog_secret="should-422",
-            secret_store=FakeStore(),
+            secret_store=FakeSecretStore(),
         )
 
 
@@ -1145,7 +1142,7 @@ def _versions(db_session: Any, conn_id: uuid.UUID) -> list[ConnectionVersion]:
 
 def test_create_records_v1_snapshot(db_session: Any) -> None:
     user = _user(db_session)
-    conn = _create(db_session, FakeStore(), user=user)
+    conn = _create(db_session, FakeSecretStore(), user=user)
     versions = _versions(db_session, conn.id)
     assert len(versions) == 1
     v1 = versions[0]
@@ -1159,7 +1156,7 @@ def test_create_records_v1_snapshot(db_session: Any) -> None:
 
 def test_snapshot_omits_credential(db_session: Any) -> None:
     """The secret must never be copied into history — only non-secret config."""
-    conn = _create(db_session, FakeStore(), secret="super-secret")
+    conn = _create(db_session, FakeSecretStore(), secret="super-secret")
     v1 = _versions(db_session, conn.id)[0]
     # the snapshot has no secret column at all; the live value never leaks into it
     assert "super-secret" not in str(v1.config)
@@ -1168,13 +1165,13 @@ def test_snapshot_omits_credential(db_session: Any) -> None:
 
 def test_update_name_or_config_records_new_version(db_session: Any) -> None:
     actor = _user(db_session)
-    conn = _create(db_session, FakeStore(), user=actor)
+    conn = _create(db_session, FakeSecretStore(), user=actor)
     svc.update_connection(
         db_session,
         conn.id,
         name="renamed",
         config={**_SF_CONFIG, "warehouse": "WH_BIG"},
-        secret_store=FakeStore(),
+        secret_store=FakeSecretStore(),
         actor_id=actor.id,
     )
     versions = _versions(db_session, conn.id)
@@ -1186,8 +1183,8 @@ def test_update_name_or_config_records_new_version(db_session: Any) -> None:
 
 def test_secret_only_update_records_no_version(db_session: Any) -> None:
     """Credential rotation is not config history — no new snapshot (mirrors reauth)."""
-    conn = _create(db_session, FakeStore())
-    store = FakeStore()
+    conn = _create(db_session, FakeSecretStore())
+    store = FakeSecretStore()
     store.set(str(conn.secret_ref), "old")
     svc.update_connection(db_session, conn.id, secret="rotated", secret_store=store)
     assert [v.version_no for v in _versions(db_session, conn.id)] == [1]  # still just the create
@@ -1196,13 +1193,13 @@ def test_secret_only_update_records_no_version(db_session: Any) -> None:
 def test_noop_update_records_no_version(db_session: Any) -> None:
     """A PATCH that re-sends the current name/config (no net change) must not mint
     a duplicate version — `is_modified` reports no change."""
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     svc.update_connection(
         db_session,
         conn.id,
         name=conn.name,  # unchanged
         config=dict(conn.config),  # equal value
-        secret_store=FakeStore(),
+        secret_store=FakeSecretStore(),
     )
     assert [v.version_no for v in _versions(db_session, conn.id)] == [1]
 
@@ -1210,7 +1207,7 @@ def test_noop_update_records_no_version(db_session: Any) -> None:
 def test_create_without_secret_still_snapshots_v1(db_session: Any) -> None:
     """The credential-less create path still records v1 (conn.id is flushed before
     the snapshot regardless of whether a secret is written)."""
-    conn = _create(db_session, FakeStore(), secret=None)
+    conn = _create(db_session, FakeSecretStore(), secret=None)
     versions = _versions(db_session, conn.id)
     assert [v.version_no for v in versions] == [1]
     assert versions[0].connection_id == conn.id
@@ -1218,9 +1215,9 @@ def test_create_without_secret_still_snapshots_v1(db_session: Any) -> None:
 
 def test_list_connection_versions_newest_first_with_author(db_session: Any) -> None:
     actor = _user(db_session)
-    conn = _create(db_session, FakeStore(), user=actor)
+    conn = _create(db_session, FakeSecretStore(), user=actor)
     svc.update_connection(
-        db_session, conn.id, name="v2", secret_store=FakeStore(), actor_id=actor.id
+        db_session, conn.id, name="v2", secret_store=FakeSecretStore(), actor_id=actor.id
     )
     versions = svc.list_connection_versions(db_session, conn.id)
     assert [v.version_no for v in versions] == [2, 1]  # newest first
@@ -1234,9 +1231,11 @@ def test_list_connection_versions_unknown_connection_404(db_session: Any) -> Non
 
 def test_delete_connection_cascades_versions(db_session: Any) -> None:
     """Cascade delete is accepted policy — history is not retained past deletion."""
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     assert len(_versions(db_session, conn.id)) == 1
-    svc.delete_connection(db_session, conn.id, secret_store=FakeStore(), actor_id=conn.created_by)
+    svc.delete_connection(
+        db_session, conn.id, secret_store=FakeSecretStore(), actor_id=conn.created_by
+    )
     assert _versions(db_session, conn.id) == []
 
 
@@ -1280,7 +1279,7 @@ def _run_on(
 
 def test_datasource_health_reports_a_failure_streak(db_session: Any) -> None:
     """A dead credential fails every run — the connection must say so (#954)."""
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     for age in (2, 1, 0):
         _run_on(
             db_session,
@@ -1304,7 +1303,7 @@ def test_datasource_health_streak_resets_after_one_success(db_session: Any) -> N
     2 for a connection that is working right now, and the badge would cry wolf
     forever after a single historical blip.
     """
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     _run_on(db_session, conn, status="failed", reason="old failure", minutes_ago=3)
     _run_on(db_session, conn, status="failed", reason="old failure", minutes_ago=2)
     _run_on(db_session, conn, status="succeeded", minutes_ago=1)  # most recent
@@ -1318,7 +1317,7 @@ def test_datasource_health_streak_resets_after_one_success(db_session: Any) -> N
 def test_datasource_health_omits_a_connection_with_no_runs(db_session: Any) -> None:
     """No runs is UNKNOWN, not healthy — absent from the mapping so the UI cannot
     render it as a green tick (the rule the poll-health columns already carry)."""
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     db_session.commit()
     assert svc.datasource_health(db_session, [conn.id]) == {}
 
@@ -1327,7 +1326,7 @@ def test_datasource_health_is_one_query_for_many_connections(db_session: Any) ->
     """Batched, not per-connection — the N+1 shape #947 just removed elsewhere."""
     from sqlalchemy import event
 
-    conns = [_create(db_session, FakeStore(), name=f"c{i}") for i in range(4)]
+    conns = [_create(db_session, FakeSecretStore(), name=f"c{i}") for i in range(4)]
     for conn in conns:
         _run_on(db_session, conn, status="failed", reason="boom")
     db_session.commit()
@@ -1369,7 +1368,7 @@ def test_datasource_health_a_cancelled_run_does_not_clear_the_streak(db_session:
     was failing. `queued`/`running` have not answered yet and `cancelled` was
     stopped by a human; none of them is evidence the credential works.
     """
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     _run_on(db_session, conn, status="failed", reason="creds rejected", minutes_ago=3)
     _run_on(db_session, conn, status="failed", reason="creds rejected", minutes_ago=2)
     _run_on(db_session, conn, status="cancelled", minutes_ago=1)  # newest, not a success
@@ -1382,7 +1381,7 @@ def test_datasource_health_a_cancelled_run_does_not_clear_the_streak(db_session:
 
 def test_datasource_health_an_in_flight_run_does_not_clear_the_streak(db_session: Any) -> None:
     """Same rule for a run that simply hasn't finished yet."""
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     _run_on(db_session, conn, status="failed", reason="creds rejected", minutes_ago=2)
     _run_on(db_session, conn, status="running", minutes_ago=1)
     db_session.commit()
@@ -1409,7 +1408,7 @@ def test_one_broken_suite_does_not_badge_a_working_connection(db_session: Any) -
     reachable, so the CONNECTION-level signal must clear even while that other
     suite stays broken (a per-suite problem belongs on the suite).
     """
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     broken = _suite_on(db_session, conn, "broken-hourly")
     healthy = _suite_on(db_session, conn, "healthy-daily")
     # The broken suite runs often and fills the head of any shared window…
@@ -1430,7 +1429,7 @@ def test_one_broken_suite_does_not_badge_a_working_connection(db_session: Any) -
 
 def test_a_connection_is_degraded_only_when_every_suite_is_failing(db_session: Any) -> None:
     """The true positive: a dead credential fails every suite on the connection."""
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     a = _suite_on(db_session, conn, "suite-a")
     b = _suite_on(db_session, conn, "suite-b")
     for age in (2, 1, 0):
@@ -1458,7 +1457,7 @@ def test_a_busy_suite_cannot_crowd_a_quiet_one_out_of_the_window(db_session: Any
     quiet suite's success entirely and the connection would read as dead. Per-suite
     windows make the quiet suite's verdict independent of the noisy one's volume.
     """
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     noisy = _suite_on(db_session, conn, "noisy")
     quiet = _suite_on(db_session, conn, "quiet")
     for age in range(0, 25):
@@ -1476,7 +1475,7 @@ def test_checked_at_is_stamped_even_when_there_is_no_readable_expiry(db_session:
     """The whole point. A Snowflake PAT states no expiry, so `credential_expires_at`
     stays NULL — but "we looked and there is none" must be distinguishable from
     "nobody has looked", or the absence of a warning reads as reassurance."""
-    conn = _create(db_session, FakeStore())  # a type with no readable expiry
+    conn = _create(db_session, FakeSecretStore())  # a type with no readable expiry
 
     assert conn.credential_expires_at is None
     assert conn.credential_expiry_checked_at is not None
@@ -1487,7 +1486,7 @@ def test_a_connection_written_before_the_feature_reads_as_unchecked(db_session: 
     #838. They must NOT claim to have been checked — the migration deliberately
     does not backfill, because stamping "checked" for rows nobody read would
     assert exactly the thing this column exists to distinguish."""
-    conn = _create(db_session, FakeStore())
+    conn = _create(db_session, FakeSecretStore())
     conn.credential_expiry_checked_at = None  # simulate a pre-feature row
     db_session.commit()
 
@@ -1511,7 +1510,7 @@ def test_renaming_a_connection_never_moves_its_secret_ref(
     or` guard from update AND reauth left all 2828 tests green; this is the test that
     fails.
     """
-    store = FakeStore()
+    store = FakeSecretStore()
     conn = _create(db_session, store)
     original_ref = conn.secret_ref
     assert original_ref is not None

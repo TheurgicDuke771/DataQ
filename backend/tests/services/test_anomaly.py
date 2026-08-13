@@ -34,6 +34,7 @@ from backend.app.services.anomaly import (
     trim,
 )
 from backend.app.services.monitor_baseline import get_baseline
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 # A Wednesday, so weekday filtering is observable.
 _NOW = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
@@ -237,17 +238,6 @@ def test_a_naive_stored_timestamp_is_read_as_utc() -> None:
 # ───────────────────── measurement (driver boundary) ─────────────────────
 
 
-class _FakeStore:
-    def get(self, name: str) -> str:
-        return "secret"
-
-    def set(self, name: str, value: str) -> None:
-        raise NotImplementedError
-
-    def delete(self, name: str) -> None:
-        raise NotImplementedError
-
-
 def _sql_connection(conn_type: str = "snowflake") -> Connection:
     return Connection(
         id=uuid.uuid4(),
@@ -306,7 +296,7 @@ def test_row_count_measurement_accepts_driver_types(
         schema="RETAIL",
         catalog=None,
         params=_params(),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         now=_NOW,
     )
     assert value == expected
@@ -324,7 +314,7 @@ def test_row_count_measurement_refuses_a_non_numeric_scalar(
             schema=None,
             catalog=None,
             params=_params(),
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
             now=_NOW,
         )
 
@@ -347,7 +337,7 @@ def test_freshness_measurement_accepts_driver_types(
         schema=None,
         catalog=None,
         params=_params(target_metric="freshness_age_hours", column="loaded_at"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         now=_NOW,
     )
     assert value == 6.0
@@ -367,7 +357,7 @@ def test_freshness_measurement_on_an_empty_table_is_an_error_not_a_zero(
             schema=None,
             catalog=None,
             params=_params(target_metric="freshness_age_hours", column="loaded_at"),
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
             now=_NOW,
         )
 
@@ -387,7 +377,7 @@ def test_measurement_quotes_a_mixed_case_column_through_the_dialect(
         schema=None,
         catalog=None,
         params=_params(target_metric="freshness_age_hours", column="Loaded_At"),
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         now=_NOW,
     )
     sql = str(seen["statement"].compile(dialect=snowdialect.SnowflakeDialect()))
@@ -413,7 +403,7 @@ def test_measurement_on_a_non_sql_datasource_says_so(monkeypatch: pytest.MonkeyP
             schema=None,
             catalog=None,
             params=_params(),
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
             now=_NOW,
         )
 
@@ -466,7 +456,7 @@ def _executor(
         target_table="ORDERS",
         target_schema=None,
         target_catalog=None,
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         persist=persist,
     )
 
@@ -626,7 +616,7 @@ def test_a_measurement_failure_is_the_checks_error_not_the_runs(
         target_table="ORDERS",
         target_schema=None,
         target_catalog=None,
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     outcome = executor(check)
     assert outcome.errored is True

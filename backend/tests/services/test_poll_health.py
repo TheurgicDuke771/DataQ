@@ -17,6 +17,7 @@ import pytest
 
 from backend.app.db.models import Connection, User
 from backend.app.services import orchestration_service
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 def _dbt_connection(db_session: Any) -> Connection:
@@ -161,14 +162,6 @@ class TestThePollWritesHealth:
 
         conn = _dbt_connection(db_session)
 
-        class _Store:
-            def get(self, name: str) -> str:
-                return "secret"
-
-            def set(self, name: str, value: str) -> None: ...
-
-            def delete(self, name: str) -> None: ...
-
         class _Provider:
             provider = "dbt"
             resource_config_key = "project_name"
@@ -180,7 +173,7 @@ class TestThePollWritesHealth:
 
         summary = tasks._poll_orchestration_runs(
             db_session,
-            secret_store=_Store(),
+            secret_store=FakeSecretStore(default="secret"),
             lookback=timedelta(minutes=15),
             now=datetime.now(UTC),
         )

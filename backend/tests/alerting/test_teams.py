@@ -16,29 +16,11 @@ import pytest
 from backend.app.alerting.base import CheckReport, RunReport
 from backend.app.alerting.teams import TeamsPublisher
 from backend.app.db.models import Connection, Suite, SuiteNotification, User
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 _WS_NAME = "teams-webhook"
 _WS_URL = "https://contoso.webhook.office.com/workspace"
 _SUITE_URL = "https://contoso.webhook.office.com/suite"
-
-
-class _FakeStore:
-    def __init__(self, secrets: dict[str, str]) -> None:
-        self._secrets = secrets
-
-    def get(self, name: str) -> str:
-        from backend.app.core.secrets import SecretNotFoundError
-
-        try:
-            return self._secrets[name]
-        except KeyError as exc:
-            raise SecretNotFoundError(name) from exc
-
-    def set(self, name: str, value: str) -> None:
-        self._secrets[name] = value
-
-    def delete(self, name: str) -> None:
-        self._secrets.pop(name, None)
 
 
 class _CapturePost:
@@ -98,7 +80,7 @@ def _report(
 
 
 def _publisher(secrets: dict[str, str], *, workspace: str | None = _WS_NAME) -> TeamsPublisher:
-    return TeamsPublisher(secret_store=_FakeStore(secrets), workspace_secret_name=workspace)
+    return TeamsPublisher(secret_store=FakeSecretStore(secrets), workspace_secret_name=workspace)
 
 
 def test_falls_back_to_workspace_webhook(db_session: Any, monkeypatch: pytest.MonkeyPatch) -> None:

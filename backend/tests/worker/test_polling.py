@@ -16,17 +16,7 @@ from sqlalchemy import select
 from backend.app.db.models import Connection, PipelineRun, User
 from backend.app.orchestration.base import RunUpdate
 from backend.app.worker import tasks
-
-
-class _FakeStore:
-    def get(self, name: str) -> str:
-        return "sp-secret"
-
-    def set(self, name: str, value: str) -> None:  # pragma: no cover - protocol completeness
-        raise NotImplementedError
-
-    def delete(self, name: str) -> None:
-        raise NotImplementedError
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 class _FakeProvider:
@@ -85,7 +75,9 @@ def test_poll_records_succeeded_runs(db_session: Any, monkeypatch: Any) -> None:
     provider = _FakeProvider(recent=[_succeeded(conn.config["factory_name"])])
     monkeypatch.setattr(tasks, "get_orchestration_provider", lambda _t: provider)
 
-    summary = tasks._poll_orchestration_runs(db_session, secret_store=_FakeStore())
+    summary = tasks._poll_orchestration_runs(
+        db_session, secret_store=FakeSecretStore(default="sp-secret", raise_on_write=True)
+    )
 
     assert summary["connections"] == 1
     assert summary["recorded"] == 1
@@ -99,7 +91,9 @@ def test_poll_is_fail_soft_per_connection(db_session: Any, monkeypatch: Any) -> 
     monkeypatch.setattr(tasks, "get_orchestration_provider", lambda _t: provider)
 
     # one bad connection must not raise — it's logged and counted
-    summary = tasks._poll_orchestration_runs(db_session, secret_store=_FakeStore())
+    summary = tasks._poll_orchestration_runs(
+        db_session, secret_store=FakeSecretStore(default="sp-secret", raise_on_write=True)
+    )
 
     assert summary["errors"] == 1
     assert summary["recorded"] == 0
@@ -132,7 +126,9 @@ def test_poll_ignores_connections_without_secret(db_session: Any, monkeypatch: A
         raise AssertionError("provider must not be resolved for a secret-less connection")
 
     monkeypatch.setattr(tasks, "get_orchestration_provider", _boom)
-    summary = tasks._poll_orchestration_runs(db_session, secret_store=_FakeStore())
+    summary = tasks._poll_orchestration_runs(
+        db_session, secret_store=FakeSecretStore(default="sp-secret", raise_on_write=True)
+    )
     assert summary["connections"] == 0
 
 
@@ -145,7 +141,9 @@ def test_default_poll_uses_15min_lookback(db_session: Any, monkeypatch: Any) -> 
     monkeypatch.setattr(tasks, "get_orchestration_provider", lambda _t: provider)
     now = datetime(2026, 6, 20, 12, 0, tzinfo=UTC)
 
-    tasks._poll_orchestration_runs(db_session, secret_store=_FakeStore(), now=now)
+    tasks._poll_orchestration_runs(
+        db_session, secret_store=FakeSecretStore(default="sp-secret", raise_on_write=True), now=now
+    )
 
     assert provider.since_arg == now - tasks._POLL_LOOKBACK  # 11:45
 
@@ -161,7 +159,7 @@ def test_gap_recovery_widens_lookback_to_one_hour(db_session: Any, monkeypatch: 
 
     summary = tasks._poll_orchestration_runs(
         db_session,
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="sp-secret", raise_on_write=True),
         now=now,
         lookback=tasks._GAP_RECOVERY_LOOKBACK,
     )
@@ -184,7 +182,7 @@ def test_recover_orchestration_gaps_task_uses_gap_lookback(monkeypatch: Any) -> 
 
     session = _Session()
     monkeypatch.setattr(tasks, "get_session", lambda: session)
-    monkeypatch.setattr(tasks, "get_secret_store", _FakeStore)
+    monkeypatch.setattr(tasks, "get_secret_store", FakeSecretStore)
 
     def _capture(
         _session: Any, *, secret_store: Any, lookback: Any = None, **_kw: Any

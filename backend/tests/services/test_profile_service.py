@@ -32,6 +32,7 @@ from backend.app.services.profile_service import (
     profile_dataframe,
     validate_identifier,
 )
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 def _sql(stmt: object) -> str:
@@ -341,17 +342,6 @@ def test_profile_dataframe_coerces_timestamps_to_iso() -> None:
 # ── _read_dataframe column projection (real parse, mocked download) ──
 
 
-class _FakeStore:
-    def get(self, name: str) -> str:
-        return "secret"
-
-    def set(self, name: str, value: str) -> None:  # read-only test double
-        raise NotImplementedError
-
-    def delete(self, name: str) -> None:
-        raise NotImplementedError
-
-
 def _flatfile_conn() -> Any:
     from types import SimpleNamespace
 
@@ -397,7 +387,7 @@ def test_read_dataframe_csv_projects_only_requested_columns(
         path="x.csv",
         file_format="csv",
         columns=["a", "c"],
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert list(df.columns) == ["a", "c"]  # 'b' is never parsed
     assert len(df) == 2
@@ -417,7 +407,7 @@ def test_read_dataframe_csv_projects_columns_from_a_semicolon_file(
         path="x.csv",
         file_format="csv",
         columns=["a", "c"],
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert list(df.columns) == ["a", "c"]
     assert len(df) == 2
@@ -441,7 +431,7 @@ def test_read_dataframe_parquet_projects_only_requested_columns(
         path="x.parquet",
         file_format="parquet",
         columns=["a", "c"],
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert set(df.columns) == {"a", "c"}  # 'b' is never read
     assert len(df) == 2
@@ -483,7 +473,7 @@ def test_read_dataframe_parquet_samples_do_not_download_the_whole_object(
         path="x.parquet",
         file_format="parquet",
         columns=["a", "c"],
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert set(df.columns) == {"a", "c"}
     assert len(df) == svc._SAMPLE_ROWS  # capped, not the file's 200,000 rows
@@ -539,7 +529,7 @@ def test_read_dataframe_parquet_sample_uses_the_streaming_chunk_on_many_small_ro
         path="many_groups.parquet",
         file_format="parquet",
         columns=["a", "c"],
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert set(df.columns) == {"a", "c"}
     assert len(df) == svc._SAMPLE_ROWS
@@ -583,7 +573,7 @@ def test_read_dataframe_parquet_sample_of_an_empty_file_returns_typed_empty_fram
         path="empty.parquet",
         file_format="parquet",
         columns=["a"],
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert list(df.columns) == ["a"]
     assert len(df) == 0
@@ -598,7 +588,10 @@ def test_read_dataframe_parquet_sample_of_an_empty_file_returns_typed_empty_fram
 def test_list_file_columns_csv_reads_header_only(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_object(monkeypatch, b"a,b,c\n1,2,3\n4,5,6\n")
     cols = list_file_columns(
-        _flatfile_conn(), path="x.csv", file_format="csv", secret_store=_FakeStore()
+        _flatfile_conn(),
+        path="x.csv",
+        file_format="csv",
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert cols == ["a", "b", "c"]  # all columns, names only
 
@@ -610,7 +603,10 @@ def test_list_file_columns_csv_sniffs_a_semicolon_delimiter(
     `;`-delimited file, which defeats the picker for that file entirely."""
     _patch_object(monkeypatch, b"a;b;c\n1;2;3\n4;5;6\n")
     cols = list_file_columns(
-        _flatfile_conn(), path="x.csv", file_format="csv", secret_store=_FakeStore()
+        _flatfile_conn(),
+        path="x.csv",
+        file_format="csv",
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert cols == ["a", "b", "c"]
 
@@ -623,7 +619,10 @@ def test_list_file_columns_parquet_reads_schema_names(monkeypatch: pytest.Monkey
     pd.DataFrame({"a": range(50_000), "b": range(50_000), "c": range(50_000)}).to_parquet(buf)
     ranges = _patch_object(monkeypatch, buf.getvalue())
     cols = list_file_columns(
-        _flatfile_conn(), path="x.parquet", file_format="parquet", secret_store=_FakeStore()
+        _flatfile_conn(),
+        path="x.parquet",
+        file_format="parquet",
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert set(cols) == {"a", "b", "c"}
     # #882: listing columns must not pay for the whole object. The names were
@@ -637,30 +636,44 @@ def test_list_file_columns_parquet_reads_schema_names(monkeypatch: pytest.Monkey
 def test_list_columns_unsupported_type_raises() -> None:
     conn = _conn(conn_type="adf", config={})
     with pytest.raises(ProfileUnsupportedError):
-        list_columns(conn, table="orders", secret_store=_FakeStore())
+        list_columns(
+            conn,
+            table="orders",
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+        )
 
 
 def test_list_columns_sql_without_table_raises() -> None:
     conn = _conn(conn_type="snowflake", config={"schema": "public"})
     with pytest.raises(ProfileTargetInvalidError):
-        list_columns(conn, secret_store=_FakeStore())
+        list_columns(conn, secret_store=FakeSecretStore(default="secret", raise_on_write=True))
 
 
 def test_list_columns_unity_catalog_without_catalog_raises() -> None:
     conn = _conn(conn_type="unity_catalog", config={"schema": "s"})
     with pytest.raises(ProfileTargetInvalidError):
-        list_columns(conn, table="orders", secret_store=_FakeStore())
+        list_columns(
+            conn,
+            table="orders",
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+        )
 
 
 def test_list_columns_flatfile_without_path_raises() -> None:
     with pytest.raises(ProfileTargetInvalidError):
-        list_columns(_flatfile_conn(), secret_store=_FakeStore())
+        list_columns(
+            _flatfile_conn(), secret_store=FakeSecretStore(default="secret", raise_on_write=True)
+        )
 
 
 def test_list_columns_without_credential_raises() -> None:
     conn = _conn(conn_type="snowflake", config={"schema": "public"}, secret_ref=None)
     with pytest.raises(ProfileTargetInvalidError):
-        list_columns(conn, table="orders", secret_store=_FakeStore())
+        list_columns(
+            conn,
+            table="orders",
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+        )
 
 
 def test_profile_dataframe_handles_arrow_backed_dtypes_with_na() -> None:
@@ -897,7 +910,7 @@ def test_profile_iceberg_computes_stats(monkeypatch: pytest.MonkeyPatch) -> None
         top_n=5,
         table="orders",
         namespace="sales",
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     # identity is the folded namespace.table (SQL/flat-file identity absent)
     assert result.table == "sales.orders"
@@ -924,7 +937,11 @@ def test_profile_iceberg_bare_table_without_namespace(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(svc, "load_iceberg_table", fake_load)
     result = svc.profile_connection(
-        _iceberg_conn(), columns=["a"], top_n=5, table="orders", secret_store=_FakeStore()
+        _iceberg_conn(),
+        columns=["a"],
+        top_n=5,
+        table="orders",
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert captured["identifier"] == "orders"  # no namespace → bare table
     assert result.table == "orders"
@@ -949,7 +966,7 @@ def test_profile_iceberg_folds_multilevel_namespace(monkeypatch: pytest.MonkeyPa
         top_n=5,
         table="orders",
         namespace="db.sales",
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert captured["identifier"] == "db.sales.orders"
 
@@ -980,7 +997,7 @@ def test_profile_iceberg_blank_namespace_folds_to_bare_table(
         top_n=5,
         table="orders",
         namespace=blank_namespace,
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert captured["identifier"] == "orders"
     assert result.table == "orders"
@@ -1008,7 +1025,7 @@ def test_profile_iceberg_credential_less_connection_does_not_422(
         columns=["a"],
         top_n=5,
         table="orders",
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert captured["secret"] is None  # no secret_ref → no credential resolved
     assert result.row_count == 2
@@ -1018,7 +1035,12 @@ def test_profile_iceberg_missing_table_returns_422() -> None:
     from backend.app.services import profile_service as svc
 
     with pytest.raises(ProfileTargetInvalidError):
-        svc.profile_connection(_iceberg_conn(), columns=["a"], top_n=5, secret_store=_FakeStore())
+        svc.profile_connection(
+            _iceberg_conn(),
+            columns=["a"],
+            top_n=5,
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+        )
 
 
 def test_profile_iceberg_missing_column_returns_422_without_scanning(
@@ -1035,7 +1057,11 @@ def test_profile_iceberg_missing_column_returns_422_without_scanning(
     )
     with pytest.raises(ProfileColumnNotFoundError) as exc:
         svc.profile_connection(
-            _iceberg_conn(), columns=["missing"], top_n=5, table="orders", secret_store=_FakeStore()
+            _iceberg_conn(),
+            columns=["missing"],
+            top_n=5,
+            table="orders",
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         )
     assert exc.value.detail == {"missing": ["missing"], "available": ["a"]}
     assert table.scan_calls == []  # rejected before any scan
@@ -1058,7 +1084,7 @@ def test_profile_iceberg_partially_missing_columns_returns_422_without_scanning(
             columns=["a", "missing"],
             top_n=5,
             table="orders",
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         )
     assert table.scan_calls == []
 
@@ -1081,7 +1107,11 @@ def test_profile_iceberg_valid_columns_load_once_and_scan_the_projection(
 
     monkeypatch.setattr(svc, "load_iceberg_table", fake_load)
     result = svc.profile_connection(
-        _iceberg_conn(), columns=["a", "c"], top_n=5, table="orders", secret_store=_FakeStore()
+        _iceberg_conn(),
+        columns=["a", "c"],
+        top_n=5,
+        table="orders",
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert loads == ["orders"]  # loaded exactly once
     assert len(table.scan_calls) == 1
@@ -1121,7 +1151,7 @@ def test_profile_iceberg_read_failure_returns_502(monkeypatch: pytest.MonkeyPatc
             top_n=5,
             table="orders",
             namespace="sales",
-            secret_store=_FakeStore(),
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         )
     # the identifier (not the adapter exception) is what surfaces in the detail
     assert exc.value.detail == {"table": "sales.orders"}
@@ -1148,7 +1178,7 @@ def test_profile_iceberg_arrow_backed_frame_matches_numpy_stats(
         columns=["amount", "city"],
         top_n=5,
         table="orders",
-        secret_store=_FakeStore(),
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     amount, city = result.columns
     assert amount.null_count == 0 and amount.distinct_count == 2
@@ -1169,7 +1199,10 @@ def test_list_columns_iceberg_returns_schema_names(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(svc, "iceberg_column_names", fake)
     cols = svc.list_columns(
-        _iceberg_conn(), table="orders", namespace="sales", secret_store=_FakeStore()
+        _iceberg_conn(),
+        table="orders",
+        namespace="sales",
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert cols == ["id", "amount", "city"]
     assert captured["identifier"] == "sales.orders"
@@ -1179,7 +1212,9 @@ def test_list_columns_iceberg_without_table_returns_422() -> None:
     from backend.app.services import profile_service as svc
 
     with pytest.raises(ProfileTargetInvalidError):
-        svc.list_columns(_iceberg_conn(), secret_store=_FakeStore())
+        svc.list_columns(
+            _iceberg_conn(), secret_store=FakeSecretStore(default="secret", raise_on_write=True)
+        )
 
 
 def test_list_columns_iceberg_read_failure_returns_502(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1190,4 +1225,8 @@ def test_list_columns_iceberg_read_failure_returns_502(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(svc, "iceberg_column_names", boom)
     with pytest.raises(svc.ProfileFailedError):
-        svc.list_columns(_iceberg_conn(), table="orders", secret_store=_FakeStore())
+        svc.list_columns(
+            _iceberg_conn(),
+            table="orders",
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+        )

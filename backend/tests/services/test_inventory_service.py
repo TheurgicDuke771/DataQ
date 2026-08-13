@@ -15,16 +15,11 @@ from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Asset, Connection, User
 from backend.app.services import asset_service, inventory_service
 from backend.app.services.asset_identity import AssetIdentity
+from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
 def _store() -> SecretStore:
-    from typing import cast
-
-    class _NoopStore:
-        def get(self, name: str) -> str:
-            return "sekret"
-
-    return cast("SecretStore", _NoopStore())
+    return FakeSecretStore(default="sekret")
 
 
 def _user(db_session: Any) -> User:
