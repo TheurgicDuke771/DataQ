@@ -281,13 +281,18 @@ def _probe_postgres() -> str | None:
     # `connect_timeout` is a libpq/psycopg option. Passing it to any other driver
     # raises at connect time, which would be swallowed below and reported as
     # "not reachable" — a false alarm about a perfectly healthy database. Only
-    # attach it when the URL actually names a psycopg driver.
-    connect_args: dict[str, object] = {}
+    # attach it when the URL actually resolves to a psycopg-family driver — shared
+    # with the real engine-building call sites' guard (`backend/app/db/session.py`,
+    # `backend/alembic/env.py`) so this probe can't drift from their classification.
+    from backend.app.db.pg_connect_args import psycopg_connect_args
+
     try:
-        if make_url(TEST_DATABASE_URL).drivername.startswith("postgresql+psycopg"):
-            connect_args["connect_timeout"] = _PROBE_TIMEOUT_S
+        make_url(TEST_DATABASE_URL)  # unparseable → not this probe's story to tell
     except Exception:
-        return None  # unparseable URL — not our story to tell
+        return None
+    connect_args: dict[str, object] = psycopg_connect_args(
+        TEST_DATABASE_URL, connect_timeout=_PROBE_TIMEOUT_S
+    )
 
     try:
         engine = create_engine(TEST_DATABASE_URL, future=True, connect_args=connect_args)

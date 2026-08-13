@@ -5,6 +5,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import get_settings
+from backend.app.db.pg_connect_args import psycopg_connect_args
 
 # No statement waits forever for a LOCK. Postgres' default (`lock_timeout = 0`) means
 # "block indefinitely", and that default took production down (#854): one contended
@@ -68,12 +69,25 @@ def _build_engine() -> Engine:
         pool_pre_ping=True,
         future=True,
         connect_args={
-            "options": f"-c lock_timeout={int(_LOCK_TIMEOUT_MS)}",
-            "connect_timeout": _CONNECT_TIMEOUT_SECONDS,
-            "keepalives": 1,
-            "keepalives_idle": _KEEPALIVES_IDLE_SECONDS,
-            "keepalives_interval": _KEEPALIVES_INTERVAL_SECONDS,
-            "keepalives_count": _KEEPALIVES_COUNT,
+            # `options` (the lock_timeout GUC) is NOT portable across drivers, despite
+            # what an earlier version of this comment claimed: asyncpg and pg8000 both
+            # have fixed `connect()` keyword signatures with no `options` parameter
+            # (asyncpg uses an entirely different `server_settings` mechanism), so it
+            # needs the same #1266 driver guard as `connect_timeout`/`keepalives*`
+            # below — otherwise a non-psycopg driver would still hit `TypeError` on
+            # the first real connect, just on a different kwarg, defeating the guard's
+            # whole purpose. `database_url` has no driver validator and is
+            # env-overridable, so this guard degrades to {} instead of `create_engine`
+            # raising `TypeError` if it ever resolves to a non-psycopg driver.
+            **psycopg_connect_args(
+                settings.database_url,
+                options=f"-c lock_timeout={int(_LOCK_TIMEOUT_MS)}",
+                connect_timeout=_CONNECT_TIMEOUT_SECONDS,
+                keepalives=1,
+                keepalives_idle=_KEEPALIVES_IDLE_SECONDS,
+                keepalives_interval=_KEEPALIVES_INTERVAL_SECONDS,
+                keepalives_count=_KEEPALIVES_COUNT,
+            ),
         },
     )
 
