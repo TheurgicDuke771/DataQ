@@ -191,9 +191,10 @@ def _already_logged_exception(raw_exc_info: Any) -> BaseException | None:
         return None
 
     # Lazy import: `core/logging.py` is a foundational module imported very early
-    # (module scope of `main.py`, `worker/main.py`, every datasource/alerting
-    # module for `get_logger`); `alerting/base.py` is a higher-level domain
-    # module. It has no import-time dependency back on `core.logging` itself (its
+    # (module scope of `main.py`, `worker/celery_app.py`, `worker/tasks.py`,
+    # every datasource/alerting module for `get_logger`); `alerting/base.py` is a
+    # higher-level domain module. It has no import-time dependency back on
+    # `core.logging` itself (its
     # only DataQ import is `db.models`, and the `alerting` package's `__init__.py`
     # is docstring-only), so this does not actually cycle — but keeping the
     # import inside the guarded, exception-only branch means the rest of the app
@@ -288,7 +289,24 @@ def _downgrade_already_logged_exceptions(
     every downgraded caller keeps that correlator, not just the ones that used to
     remember to add it by hand. ``setdefault`` so a caller-supplied ``error_type``
     (a different meaning in a future call site) is never clobbered.
+
+    Caveat (#1314): ``structlog.make_filtering_bound_logger`` gates a record on
+    the SEVERITY OF THE METHOD ACTUALLY CALLED, before any processor runs — this
+    processor can only rewrite the ``level`` FIELD after that gate has already
+    let the record through. A caller that used to choose ``log.warning`` vs
+    ``log.exception`` by hand (pre-#1261) would have its downgraded line
+    correctly suppressed under ``LOG_LEVEL=ERROR``/``CRITICAL``; centralizing
+    the choice into an unconditional ``log.exception(...)`` means a downgraded
+    line now always clears that gate and appears (correctly labeled
+    ``"warning"``) even under a stricter configured threshold. Every `LOG_LEVEL`
+    this repo actually ships is ``INFO`` (`.env.app*.example`,
+    `containerapps.tf`), so this is a documented, accepted trade-off rather than
+    a fix in progress — restoring exact pre-#1261 filtering semantics would
+    require reintroducing a per-caller method choice, undoing the very
+    centralization #1261 exists for.
     """
+    # `_already_logged_exception` already extracted the exception AND confirmed
+    # `was_already_logged(exc)` — nothing left to check here.
     exc = _already_logged_exception(event_dict.get("exc_info"))
     if exc is None:
         return event_dict
