@@ -59,7 +59,7 @@ the source of truth for issue state; this register mirrors it so nothing carried
 | ~~[#194](https://github.com/TheurgicDuke771/DataQ/issues/194)~~ | ~~Snowflake key-pair: encrypted (passphrase-protected) private keys~~ — closed by [#602](https://github.com/TheurgicDuke771/DataQ/pull/602) |
 | ~~[#195](https://github.com/TheurgicDuke771/DataQ/issues/195)~~ | ~~Snowflake key-pair: migrate off deprecated GX `connect_args` private_key path~~ — closed by [#603](https://github.com/TheurgicDuke771/DataQ/pull/603) |
 | [#197](https://github.com/TheurgicDuke771/DataQ/issues/197) / [#199](https://github.com/TheurgicDuke771/DataQ/issues/199) / [#204](https://github.com/TheurgicDuke771/DataQ/issues/204) | Week-4 frontend refactor nits (shared antd-Select test helper · `useAsyncAction` toast helper · drawer/delete dedup) |
-| [#327](https://github.com/TheurgicDuke771/DataQ/issues/327) | Column profiler N+1 query batching |
+| ~~[#327](https://github.com/TheurgicDuke771/DataQ/issues/327)~~ | ~~Column profiler N+1 query batching~~ — closed by [#1323](https://github.com/TheurgicDuke771/DataQ/pull/1323) (batched rank-join; a 50-column profile drops from 51 round-trips to 3, per-column path kept as a logged fallback) |
 | [#349](https://github.com/TheurgicDuke771/DataQ/issues/349) / [#351](https://github.com/TheurgicDuke771/DataQ/issues/351) | Week-6 results/connection-page follow-ups |
 | [#372](https://github.com/TheurgicDuke771/DataQ/issues/372) | `SecretStore` has no delete — webhook/connection secrets orphan on clear/delete |
 | ~~[#524](https://github.com/TheurgicDuke771/DataQ/issues/524)~~ | ~~opencensus → OTel log-export migration~~ — closed by [#628](https://github.com/TheurgicDuke771/DataQ/pull/628) (also landed #589, the generic OTLP endpoint) |
@@ -618,12 +618,12 @@ history (`skip` on cold start), live-verified on both Snowflake and Unity Catalo
 renders bands + baseline overlay; threshold ordering validated at authoring (#568); the
 results/connections UX batch (#345/#283/#351/#424/#349) merged.
 
-### v1.1 W6 — scale-aware execution + hardening + cycle close (due 2026-08-15) — 0/14
+### v1.1 W6 — scale-aware execution + hardening + cycle close (due 2026-08-15) — 1/14
 
 | Status | Task | Theme / gap |
 |---|---|---|
 | ⬜ | [#595](https://github.com/TheurgicDuke771/DataQ/issues/595) Sampling / partition-aware execution for flat-file + UC runners + OOM guardrail (vs the #587 pushdown baseline) | Theme 7 / G-b |
-| ⬜ | [#327](https://github.com/TheurgicDuke771/DataQ/issues/327) Batch the profiler's N+1 per-column queries | Theme 7 |
+| ✅ | [#327](https://github.com/TheurgicDuke771/DataQ/issues/327) Batch the profiler's N+1 per-column queries — [#1323](https://github.com/TheurgicDuke771/DataQ/pull/1323). Rank driver LEFT-joined to one derived table per column, chunked at 25 (measured: a single 50-way join costs 3x a 25-way one, Postgres switches to its genetic optimiser at 12 relations). The obvious `UNION ALL` shape was built first and rejected by Postgres — a union unifies branch types, and even NULL-padded per-column slots resolve pairwise left-to-right, so padding settles on `text` before the owning branch is reached. It compiled cleanly; only a live run found it. **Live Snowflake + Unity Catalog verification PENDING** (#953 — Postgres-proven only; the per-column fallback is the safety net until then) | Theme 7 |
 | ⬜ | [#323](https://github.com/TheurgicDuke771/DataQ/issues/323) Index + batch the result-retention sweep | Theme 7 |
 | ⬜ | [#563](https://github.com/TheurgicDuke771/DataQ/issues/563) Mutation-spike survivors triage | Theme 10 |
 | ⬜ | [#573](https://github.com/TheurgicDuke771/DataQ/issues/573) Flaky `SchedulesPanel` Popconfirm test | Theme 10 |
