@@ -13,8 +13,10 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from backend.app.core.config import get_settings
 from backend.app.datasources import flatfile
-from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckSpec
+from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckSpec, SampleSpec
+from backend.app.datasources.sampling import ScanTooLargeError
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
 # ── format_from_path ──
@@ -198,15 +200,25 @@ def _patch_store(
     content: bytes = b"id,load_ts\n1,2026-06-29T00:00:00\n2,2026-06-28T00:00:00\n",
     reads: list[int] | None = None,
     ranges: list[tuple[int, int]] | None = None,
+    size: int | None = None,
 ) -> None:
-    """Stub every live seam over ONE canned object: arrival time, the whole-object
-    download, and the range reads (#882/#942).
+    """Stub every live seam over ONE canned object: the metadata call (arrival time
+    + byte size), the whole-object download, and the range reads (#882/#942/#595).
 
-    All three serve the same bytes, so a test can assert *which* seam a code path
+    All of them serve the same bytes, so a test can assert *which* seam a code path
     chose — the difference between "counted the rows" and "counted the rows
     without pulling a 2 GB object" is invisible if the fake only exposes one way in.
+
+    ``size`` overrides the reported byte length independently of ``content``, so a
+    guardrail test can present a huge object without materialising one.
     """
-    monkeypatch.setattr(flatfile, "file_last_modified", lambda **k: mtime)
+    monkeypatch.setattr(
+        flatfile,
+        "file_stat",
+        lambda **k: flatfile.FileStat(
+            last_modified=mtime, size=len(content) if size is None else size
+        ),
+    )
 
     def _download(**_k: Any) -> bytes:
         if reads is not None:
@@ -309,7 +321,7 @@ def test_a_failed_download_is_attempted_once_not_once_per_monitor(
         reads.append(1)
         raise RuntimeError("connection reset")
 
-    monkeypatch.setattr(flatfile, "file_last_modified", lambda **k: _LANDED)
+    monkeypatch.setattr(flatfile, "file_stat", lambda **k: flatfile.FileStat(_LANDED, 128))
     monkeypatch.setattr(flatfile, "download_bytes", _boom)
 
     out = _monitor_runner().run_monitors(
@@ -341,7 +353,7 @@ def test_a_read_failure_message_is_classified_never_the_raw_exception(
     def _boom(**_k: Any) -> bytes:
         raise RuntimeError(f"auth failed: {detail}")
 
-    monkeypatch.setattr(flatfile, "file_last_modified", lambda **k: _LANDED)
+    monkeypatch.setattr(flatfile, "file_stat", lambda **k: flatfile.FileStat(_LANDED, 128))
     monkeypatch.setattr(flatfile, "download_bytes", _boom)
 
     out = _monitor_runner().run_monitors(
@@ -376,7 +388,7 @@ def test_an_unreachable_store_fails_the_whole_run_not_one_monitor(
     def _boom(**_k: Any) -> Any:
         raise RuntimeError("credential expired")
 
-    monkeypatch.setattr(flatfile, "file_last_modified", _boom)
+    monkeypatch.setattr(flatfile, "file_stat", _boom)
     with pytest.raises(RuntimeError, match="credential expired"):
         _monitor_runner().run_monitors(
             table="raw/orders.csv",
@@ -592,6 +604,9 @@ def test_build_flatfile_runner_requires_secret_ref() -> None:
 
 def _runner_over(df: pd.DataFrame, monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setattr(flatfile, "read_dataframe", lambda **k: df)
+    # `run_checks` probes the object's size before materialising it (#595), so the
+    # metadata seam is stubbed here too — a small object, well under any cap.
+    monkeypatch.setattr(flatfile, "file_stat", lambda **k: flatfile.FileStat(_LANDED, 4096))
     return flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
 
 
@@ -900,6 +915,7 @@ def test_flatfile_runner_survives_adversarial_frame(
 ) -> None:
     # the runner must map a real GX run over hostile data to a SuiteOutcome, not crash.
     monkeypatch.setattr(flatfile, "read_dataframe", lambda **k: frame)
+    monkeypatch.setattr(flatfile, "file_stat", lambda **k: flatfile.FileStat(_LANDED, 4096))
     runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
     outcome = runner.run_checks(
         table="f.parquet",
@@ -987,9 +1003,12 @@ def test_file_last_modified_s3_other_errors_propagate(monkeypatch: pytest.Monkey
 class _HeadBlobStub:
     """Minimal ADLS BlobServiceClient stub for get_blob_properties."""
 
-    def __init__(self, *, modified: datetime | None = _LANDED, missing: bool = False):
+    def __init__(
+        self, *, modified: datetime | None = _LANDED, missing: bool = False, size: int = 4096
+    ):
         self._modified = modified
         self._missing = missing
+        self._size = size
         self.closed = False
 
     def get_blob_client(self, *, container: str, blob: str) -> Any:
@@ -1001,7 +1020,7 @@ class _HeadBlobStub:
                     from azure.core.exceptions import ResourceNotFoundError
 
                     raise ResourceNotFoundError("nope")
-                return SimpleNamespace(last_modified=outer._modified)
+                return SimpleNamespace(last_modified=outer._modified, size=outer._size)
 
         return _Blob()
 
@@ -1658,3 +1677,537 @@ def test_resolve_batch_file_closes_the_listing_when_resolution_refuses(
         )
 
     assert stub.closed is True
+
+
+# ── sampling + the scan guardrail (#595) ─────────────────────────────────────
+
+
+def _set_cap(monkeypatch: pytest.MonkeyPatch, name: str, value: int) -> None:
+    """Point a scan cap at ``value`` for this test (cached Settings rebuild)."""
+    monkeypatch.setenv(name, str(value))
+    get_settings.cache_clear()
+
+
+def _csv_bytes(rows: int) -> bytes:
+    header = b"id,name\n"
+    body = b"".join(f"{i},n{i}\n".encode() for i in range(rows))
+    return header + body
+
+
+def _sampled(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    content: bytes,
+    path: str,
+    strategy: str,
+    rows: int,
+    seed: int | None = None,
+) -> tuple[Any, dict[str, Any]]:
+    _patch_store(monkeypatch, content=content)
+    return flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path=path,
+        secret="s",
+        sample=SampleSpec(strategy=strategy, rows=rows, seed=seed),
+    )
+
+
+@pytest.mark.parametrize("path", ["raw/big.csv", "raw/big.parquet"])
+def test_a_head_sample_returns_exactly_the_first_n_rows(
+    path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    content = _csv_bytes(500) if path.endswith(".csv") else _parquet(rows=500)
+    frame, record = _sampled(monkeypatch, content=content, path=path, strategy="head", rows=50)
+    assert len(frame) == 50
+    assert record["sampled"] is True
+    assert record["rows"] == 50
+    # A head sample deliberately does NOT pay for a count, so the population size
+    # is honestly unknown rather than guessed.
+    assert record["total_rows"] is None
+
+
+def test_a_head_sample_keeps_the_first_rows_in_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame, _ = _sampled(
+        monkeypatch,
+        content=_csv_bytes(100),
+        path="raw/big.csv",
+        strategy="head",
+        rows=5,
+    )
+    assert list(frame["id"]) == [0, 1, 2, 3, 4]
+
+
+def test_a_head_sample_larger_than_the_file_reports_a_complete_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The off-by-one that matters: reading `rows + 1` is what distinguishes "the
+    file has exactly N rows" from "the file has more". Getting this wrong puts a
+    "sampled" caveat on every small target, which trains users to ignore it."""
+    frame, record = _sampled(
+        monkeypatch,
+        content=_csv_bytes(12),
+        path="raw/small.csv",
+        strategy="head",
+        rows=1000,
+    )
+    assert len(frame) == 12
+    assert record["sampled"] is False
+    assert record["total_rows"] == 12
+
+
+def test_a_head_sample_of_exactly_the_file_length_is_not_a_sample(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The boundary the probe row exists for: 12 rows requested, 12 rows in the
+    file. Nothing was left behind, so the verdict is complete."""
+    frame, record = _sampled(
+        monkeypatch,
+        content=_csv_bytes(12),
+        path="raw/small.csv",
+        strategy="head",
+        rows=12,
+    )
+    assert len(frame) == 12
+    assert record["sampled"] is False and record["total_rows"] == 12
+
+
+def test_a_head_sample_one_row_short_of_the_file_is_a_sample(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame, record = _sampled(
+        monkeypatch,
+        content=_csv_bytes(12),
+        path="raw/small.csv",
+        strategy="head",
+        rows=11,
+    )
+    assert len(frame) == 11
+    assert record["sampled"] is True and record["total_rows"] is None
+
+
+@pytest.mark.parametrize("path", ["raw/big.csv", "raw/big.parquet"])
+def test_a_random_sample_draws_n_distinct_rows_from_across_the_file(
+    path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    content = _csv_bytes(500) if path.endswith(".csv") else _parquet(rows=500)
+    frame, record = _sampled(
+        monkeypatch, content=content, path=path, strategy="random", rows=40, seed=11
+    )
+    ids = list(frame["id"])
+    assert len(ids) == 40
+    assert len(set(ids)) == 40
+    assert record == {
+        "strategy": "random",
+        "requested_rows": 40,
+        "rows": 40,
+        "total_rows": 500,
+        "sampled": True,
+        "seed": 11,
+    }
+    # Not merely "40 rows": a head sample would give 40 too. What makes it random
+    # is that the draw reaches past the head of the file.
+    assert max(ids) > 100
+
+
+def test_a_random_sample_is_reproducible_under_a_seed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first, _ = _sampled(
+        monkeypatch,
+        content=_csv_bytes(300),
+        path="raw/big.csv",
+        strategy="random",
+        rows=20,
+        seed=5,
+    )
+    second, _ = _sampled(
+        monkeypatch,
+        content=_csv_bytes(300),
+        path="raw/big.csv",
+        strategy="random",
+        rows=20,
+        seed=5,
+    )
+    assert list(first["id"]) == list(second["id"])
+
+
+def test_a_random_sample_bigger_than_the_file_reads_it_all_and_says_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame, record = _sampled(
+        monkeypatch,
+        content=_csv_bytes(9),
+        path="raw/small.csv",
+        strategy="random",
+        rows=500,
+        seed=1,
+    )
+    assert len(frame) == 9
+    assert record["sampled"] is False and record["total_rows"] == 9
+
+
+def test_sampling_an_empty_file_yields_a_typed_empty_frame_not_a_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A header-only CSV is a real landing-zone state. The frame must keep its
+    COLUMNS, or every check errors with "column not found" instead of failing
+    honestly against zero rows."""
+    frame, record = _sampled(
+        monkeypatch,
+        content=b"id,name\n",
+        path="raw/empty.csv",
+        strategy="head",
+        rows=10,
+    )
+    assert list(frame.columns) == ["id", "name"]
+    assert len(frame) == 0
+    assert record["sampled"] is False
+
+
+def test_sampling_an_unknown_file_format_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_store(monkeypatch)
+    with pytest.raises(ValueError, match="unsupported flat-file format"):
+        flatfile.read_sampled_dataframe(
+            conn_type="s3",
+            config={},
+            path="raw/orders.txt",
+            secret="s",
+            sample=SampleSpec(strategy="head", rows=10),
+        )
+
+
+def test_a_sampled_head_read_never_pulls_the_whole_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The property the whole feature rests on. A sampled read that still
+    downloads the object would be the same OOM wearing a caveat — so this asserts
+    the SEAM (no whole-object download, bounded range bytes), not the row count,
+    which is right either way.
+
+    The object is deliberately built much larger than the head window, so "it read
+    less than the file" is a real property rather than an accident of a fixture
+    that fits in one range.
+    """
+    content = _csv_bytes(900_000)
+    assert len(content) > 4 * flatfile._CSV_HEAD_BYTES, "fixture must dwarf the head window"
+    reads: list[int] = []
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=content, reads=reads, ranges=ranges)
+
+    frame, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="head", rows=100),
+    )
+
+    assert len(frame) == 100
+    assert reads == [], "the whole object was downloaded for a 100-row sample"
+    # 100 rows live in the first kilobytes, so ONE head window covers them. The
+    # bound is the window, not the object — which is what makes this survive 2 GB.
+    assert sum(length for _, length in ranges) <= flatfile._CSV_HEAD_BYTES
+
+
+def test_a_sampled_run_stamps_every_result_with_what_it_saw(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The acceptance criterion in one test: a check that passed on a sample must
+    say so, on the result row rather than only in the run log."""
+    _patch_store(monkeypatch, content=_csv_bytes(500))
+    runner = flatfile.FlatFileCheckRunner(
+        conn_type="s3",
+        config={},
+        secret="x",
+        sampling=SampleSpec(strategy="head", rows=10),
+    )
+    outcome = runner.run_checks(
+        table="raw/big.csv",
+        schema=None,
+        checks=[
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+            CheckSpec(
+                "expect_table_row_count_to_be_between",
+                {"min_value": 0, "max_value": 10},
+            ),
+        ],
+    )
+    assert [c.success for c in outcome.checks] == [True, True]
+    assert all(c.sampling is not None and c.sampling["sampled"] is True for c in outcome.checks)
+
+
+def test_an_unsampled_run_records_no_sampling_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`None` — not a `sampled: false` record — so the read API's "complete read"
+    case is the same shape for a suite that never opted in and for every result
+    written before the feature existed."""
+    _patch_store(monkeypatch, content=_csv_bytes(20))
+    runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
+    outcome = runner.run_checks(
+        table="raw/small.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    assert outcome.checks[0].sampling is None
+
+
+def test_an_oversized_file_is_refused_before_it_is_downloaded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#755's failure mode, inverted: instead of SIGKILLing the child and leaving
+    the run `running` for an hour with no memory-attributed reason, the run ends
+    with a sentence naming the knob."""
+    reads: list[int] = []
+    _patch_store(monkeypatch, content=_csv_bytes(10), reads=reads, size=999_000_000)
+    runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
+
+    with pytest.raises(ScanTooLargeError, match="RUN_MAX_SCAN_BYTES"):
+        runner.run_checks(
+            table="raw/huge.csv",
+            schema=None,
+            checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+        )
+    assert reads == [], "the guardrail must refuse BEFORE the download, not after"
+
+
+def test_a_sampled_run_is_allowed_past_the_byte_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sampling is the sanctioned way past the size probe: the read is bounded by
+    the sample, so the object's own size stops being a memory fact. If the cap
+    still applied, the feature would be unreachable exactly where it is needed."""
+    _patch_store(monkeypatch, content=_csv_bytes(500), size=999_000_000)
+    runner = flatfile.FlatFileCheckRunner(
+        conn_type="s3",
+        config={},
+        secret="x",
+        sampling=SampleSpec(strategy="head", rows=25),
+    )
+    outcome = runner.run_checks(
+        table="raw/huge.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    assert outcome.checks[0].sampling is not None
+    assert outcome.checks[0].sampling["rows"] == 25
+
+
+def test_a_sample_over_the_row_cap_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_store(monkeypatch, content=_csv_bytes(10))
+    runner = flatfile.FlatFileCheckRunner(
+        conn_type="s3",
+        config={},
+        secret="x",
+        sampling=SampleSpec(strategy="head", rows=9_000_000),
+    )
+    with pytest.raises(ScanTooLargeError, match="sample of 9,000,000"):
+        runner.run_checks(
+            table="raw/x.csv",
+            schema=None,
+            checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+        )
+
+
+def test_a_disabled_byte_cap_lets_a_huge_file_through(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The off-switch has to actually be off — a cap of 0 read as "zero bytes
+    allowed" would refuse every run on the operator's own instruction to stop
+    checking.
+
+    It must also stop *probing*: an operator who disables the guardrail should not
+    keep paying a metadata round trip per run for a number nobody reads. Asserted
+    on the seam, because "the run succeeded" is true either way."""
+    _set_cap(monkeypatch, "RUN_MAX_SCAN_BYTES", 0)
+    _patch_store(monkeypatch, content=_csv_bytes(10), size=999_000_000)
+    stats: list[int] = []
+
+    def _stat(**_k: Any) -> Any:
+        stats.append(1)
+        return flatfile.FileStat(_LANDED, 999_000_000)
+
+    monkeypatch.setattr(flatfile, "file_stat", _stat)
+    runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
+    outcome = runner.run_checks(
+        table="raw/huge.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    assert outcome.checks[0].success is True
+    assert stats == [], "a disabled cap must skip the probe, not just ignore its answer"
+
+
+def test_a_store_that_reports_no_size_is_not_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing content-length is not evidence of a large file. Refusing on an
+    unknown size would break every run against a store that omits the header — a
+    guardrail failing closed on ignorance, which is worse than the risk it guards."""
+    monkeypatch.setattr(flatfile, "file_stat", lambda **k: flatfile.FileStat(_LANDED, None))
+    monkeypatch.setattr(flatfile, "download_bytes", lambda **k: _csv_bytes(5))
+    runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
+    outcome = runner.run_checks(
+        table="raw/x.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    assert outcome.checks[0].success is True
+
+
+def test_a_column_freshness_monitor_on_an_oversized_file_errors_only_itself(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The guardrail covers the monitor path too — a column-freshness monitor
+    pulls the same whole object a check run does. It must NOT sample instead: a
+    MAX over a sample is a *smaller* maximum, so a sampled freshness monitor
+    reports healthy data as critically stale. Arrival-time freshness never touches
+    the frame, so it stays available beside the refused one."""
+    content = b"id,load_ts\n1,2026-06-29T00:00:00\n"
+    _patch_store(monkeypatch, content=content, size=999_000_000)
+    runner = flatfile.FlatFileCheckRunner(
+        conn_type="s3",
+        config={},
+        secret="x",
+        sampling=SampleSpec(strategy="head", rows=10),
+    )
+    out = runner.run_monitors(
+        table="raw/huge.csv",
+        schema=None,
+        monitors=[_spec("freshness", column="load_ts"), _spec("freshness")],
+    )
+    assert out[0].errored is True
+    assert "RUN_MAX_SCAN_BYTES" in (out[0].error_message or "")
+    assert out[1].errored is False, "arrival-time freshness needs no data read"
+
+
+def test_the_refusal_message_survives_the_monitor_loops_classifier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`run_monitor_specs` classifies unmarked exceptions into a generic sentence,
+    because a driver message can carry a credential (#828/#900). This one is
+    DataQ-authored, so it is `SafeMonitorError`-marked and persists verbatim —
+    otherwise the most actionable error in the feature would read "the run failed
+    to execute"."""
+    _patch_store(monkeypatch, content=b"id,load_ts\n1,2026-06-29T00:00:00\n", size=999_000_000)
+    out = _monitor_runner().run_monitors(
+        table="raw/huge.csv",
+        schema=None,
+        monitors=[_spec("freshness", column="load_ts")],
+    )
+    assert "over the scan cap" in (out[0].error_message or "")
+
+
+def test_the_monitor_guardrail_costs_no_extra_metadata_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The establishment probe already asks the store for this object's metadata,
+    and it now returns the size alongside the arrival time. A second HEAD per run
+    on a per-schedule path is exactly the overhead #854 exists to remove."""
+    stats: list[int] = []
+
+    def _stat(**_k: Any) -> Any:
+        stats.append(1)
+        return flatfile.FileStat(_LANDED, 4096)
+
+    monkeypatch.setattr(flatfile, "file_stat", _stat)
+    monkeypatch.setattr(
+        flatfile, "download_bytes", lambda **k: b"id,load_ts\n1,2026-06-29T00:00:00\n"
+    )
+    _monitor_runner().run_monitors(
+        table="raw/orders.csv",
+        schema=None,
+        monitors=[_spec("freshness", column="load_ts"), _spec("freshness")],
+    )
+    assert stats == [1]
+
+
+def test_a_csv_head_window_grows_until_it_holds_the_requested_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A head sample bigger than the starting window must not come back short.
+    The failure this guards is silent: a truncated read yields FEWER rows, every
+    check still evaluates, and the run reports a clean verdict on a fraction of
+    the data it claimed."""
+    content = _csv_bytes(400_000)
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=content, ranges=ranges)
+
+    frame, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/big.csv",
+        secret="s",
+        # Comfortably more rows than one `_CSV_HEAD_BYTES` window holds.
+        sample=SampleSpec(strategy="head", rows=200_000),
+    )
+
+    assert len(frame) == 200_000
+    assert record["sampled"] is True
+    assert len(ranges) > 1, "the window never grew — this test would pass trivially"
+
+
+def test_a_csv_head_sample_keeps_the_unsampled_readers_dtypes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Turning sampling on must not change a check's verdict through a DTYPE
+    change. CSV head goes through `read_csv_bytes` exactly like a full read, so
+    the two frames must type identically over the same rows."""
+    content = _csv_bytes(50)
+    _patch_store(monkeypatch, content=content)
+    sampled, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/x.csv",
+        secret="s",
+        sample=SampleSpec(strategy="head", rows=10),
+    )
+    full = flatfile.read_dataframe(conn_type="s3", config={}, path="raw/x.csv", secret="s")
+    assert list(sampled.dtypes) == list(full.dtypes)
+
+
+def test_a_csv_head_sample_respects_a_non_comma_delimiter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#476's defect, in the new reader: a `;`-delimited file parsed with the
+    pandas default comma yields ONE column named after the whole header — and
+    every column check then errors, or worse, a row-count check passes on garbage.
+    The sampled path shares the sniffing seam precisely so it cannot regress."""
+    content = b"id;name\n" + b"".join(f"{i};n{i}\n".encode() for i in range(50))
+    _patch_store(monkeypatch, content=content)
+    frame, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/semi.csv",
+        secret="s",
+        sample=SampleSpec(strategy="head", rows=10),
+    )
+    assert list(frame.columns) == ["id", "name"]
+
+
+def test_a_csv_head_sample_never_splits_a_row_across_the_window_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A byte range almost always ends mid-row, and a half-row parses as a
+    COMPLETE row with empty trailing fields — silently changing an inferred dtype
+    (a truncated `12345` becomes `123`). The last partial line is dropped for the
+    same reason `read_csv_head` drops it."""
+    # Rows are wide enough that the first window is guaranteed to cut one.
+    wide = b"id,payload\n" + b"".join(f"{i},{'x' * 500}\n".encode() for i in range(10_000))
+    _patch_store(monkeypatch, content=wide)
+    frame, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/wide.csv",
+        secret="s",
+        sample=SampleSpec(strategy="head", rows=100),
+    )
+    assert len(frame) == 100
+    # Every retained row must be whole: same id sequence, same payload length.
+    assert list(frame["id"]) == list(range(100))
+    assert set(frame["payload"].str.len()) == {500}
