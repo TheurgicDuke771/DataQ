@@ -23,8 +23,10 @@ from backend.app.services.profile_service import (
     ProfileUnsupportedError,
     assemble_profile,
     build_aggregate_query,
+    build_batched_top_values_query,
     build_columns_query,
     build_top_values_query,
+    collect_batched_top_values,
     derive_column_policy,
     infer_file_format,
     list_columns,
@@ -96,6 +98,196 @@ def test_top_values_query_orders_and_limits() -> None:
     assert "where status is not null" in sql and "group by status" in sql
     assert "order by count(*) desc" in sql
     assert "limit 5" in sql
+
+
+# ── build_batched_top_values_query / collect_batched_top_values (#327) ──
+
+
+def test_batched_top_values_query_joins_one_derived_table_per_column() -> None:
+    sql = _sql(build_batched_top_values_query("public", "orders", ["amount", "status"], 5))
+    # One rank driver, LEFT-joined to one derived table per column …
+    assert sql.count("left outer join") == 2
+    assert "dq_ranks" in sql and "dq_top_0" in sql and "dq_top_1" in sql
+    # … each of which keeps the per-column query's own semantics …
+    assert "where amount is not null" in sql and "where status is not null" in sql
+    assert "group by amount" in sql and "group by status" in sql
+    assert sql.count("limit 5") == 2
+    # … and numbers its own rows with the identical ordering expression, which is
+    # both the join key and what restores per-column order across the join.
+    assert sql.count("row_number() over (order by count(*) desc, amount)") == 1
+    assert sql.count("row_number() over (order by count(*) desc, status)") == 1
+    assert "dq_top_0.rn = dq_ranks.rn" in sql and "dq_top_1.rn = dq_ranks.rn" in sql
+    # Each column's value keeps its OWN output column — nothing is ever unified
+    # into a shared `value` projection (the coercion #327 warned about).
+    for slot in ("v_0", "f_0", "v_1", "f_1"):
+        assert f"as {slot}" in sql
+    assert sql.rstrip().endswith("order by dq_ranks.rn")
+
+
+def test_batched_top_values_query_drives_ranks_one_to_top_n() -> None:
+    # The driver is what makes `top_n` a per-column limit rather than a limit on
+    # the joined result: `top_n` rows come back, each carrying every column's
+    # value at that rank.
+    sql = _sql(build_batched_top_values_query("public", "orders", ["amount"], 3))
+    assert "(select 1 as rn union all select 2 as rn union all select 3 as rn) as dq_ranks" in sql
+
+
+def test_batched_top_values_query_matches_the_per_column_query_it_replaces() -> None:
+    """The batched derived table must be the per-column query plus a rank — same
+    filter, grouping, ordering and limit — or the two paths can disagree on which
+    rows a column contributes, and the fallback would silently change results."""
+    batched = _sql(build_batched_top_values_query("public", "orders", ["status"], 7))
+    single = _sql(build_top_values_query("public", "orders", "status", 7))
+    for fragment in (
+        "from public.orders",
+        "where status is not null",
+        "group by status",
+        "order by count(*) desc, status",
+        "limit 7",
+    ):
+        assert fragment in single and fragment in batched
+
+
+def test_batched_top_values_query_quotes_a_mixed_case_column() -> None:
+    # #476's rule holds inside the batch too: an all-lower-case name stays bare so
+    # the warehouse folds it, a mixed-case one is only reachable quoted.
+    sql = _sql(build_batched_top_values_query("public", "orders", ["Status", "amount"], 3))
+    assert 'group by "status"' in sql and "group by amount" in sql
+    assert '"status" as value' in sql and "amount as value" in sql
+
+
+def test_batched_top_values_query_with_catalog_qualifies_three_part_namespace() -> None:
+    sql = _sql(
+        build_batched_top_values_query(
+            "sales", "orders", ["amt", "qty"], 5, "main", DefaultDialect()
+        )
+    )
+    assert sql.count("from main.sales.orders") == 2
+
+
+def test_batched_top_values_query_rejects_unsafe_identifiers() -> None:
+    for bad in ("amount; --", 'a"b', "a b", "a.b", "amount) union select"):
+        with pytest.raises(ProfileIdentifierInvalidError):
+            build_batched_top_values_query("public", "orders", ["ok", bad], 5)
+    with pytest.raises(ProfileIdentifierInvalidError):
+        build_batched_top_values_query("public", "orders; DROP TABLE x", ["amount"], 5)
+
+
+def test_batched_top_values_query_needs_at_least_one_column() -> None:
+    # Both are caller bugs the profiler short-circuits before it gets here, so a
+    # bare ValueError rather than the profiler's 422 shape — neither an empty
+    # join list nor an empty rank driver is a statement any dialect can render.
+    with pytest.raises(ValueError, match="at least one column"):
+        build_batched_top_values_query("public", "orders", [], 5)
+    with pytest.raises(ValueError, match="positive top_n"):
+        build_batched_top_values_query("public", "orders", ["amount"], 0)
+
+
+def test_collect_batched_top_values_unpivots_rank_rows_into_columns() -> None:
+    rows: list[Mapping[str, Any]] = [
+        # deliberately shuffled: a joined result has no inherent order, so the
+        # reader must sort on `rn` rather than trust arrival order.
+        {"rn": 2, "v_0": 1, "f_0": 4, "v_1": "z", "f_1": 3},
+        {"rn": 1, "v_0": 9, "f_0": 40, "v_1": "a", "f_1": 9},
+    ]
+    assert collect_batched_top_values(rows, ["amount", "status"]) == {
+        "amount": [{"value": 9, "freq": 40}, {"value": 1, "freq": 4}],
+        "status": [{"value": "a", "freq": 9}, {"value": "z", "freq": 3}],
+    }
+
+
+def test_collect_batched_top_values_keeps_native_types_per_column() -> None:
+    # The whole point of the join: an int column stays int and a text column
+    # stays text, instead of both arriving as a union's coerced VARCHAR.
+    rows: list[Mapping[str, Any]] = [{"rn": 1, "v_0": 9, "f_0": 2, "v_1": "9", "f_1": 2}]
+    collected = collect_batched_top_values(rows, ["amount", "code"])
+    assert collected["amount"][0]["value"] == 9
+    assert isinstance(collected["amount"][0]["value"], int)
+    assert collected["code"][0]["value"] == "9"
+
+
+def test_collect_batched_top_values_omits_a_column_with_no_rows() -> None:
+    # An all-null column matches no rank; `assemble_profile` renders a missing key
+    # as [], the same as the per-column path's empty result set.
+    collected = collect_batched_top_values(
+        [{"rn": 1, "v_0": 1, "f_0": 1, "v_1": None, "f_1": None}], ["amount", "all_null"]
+    )
+    assert collected == {"amount": [{"value": 1, "freq": 1}]}
+
+
+def test_collect_batched_top_values_stops_a_short_column_at_its_own_length() -> None:
+    # Columns run out of distinct values at different ranks — the LEFT JOIN pads
+    # the shorter one with NULLs, which must not become entries.
+    rows: list[Mapping[str, Any]] = [
+        {"rn": 1, "v_0": 9, "f_0": 4, "v_1": "a", "f_1": 6},
+        {"rn": 2, "v_0": 1, "f_0": 2, "v_1": None, "f_1": None},
+    ]
+    assert collect_batched_top_values(rows, ["amount", "status"]) == {
+        "amount": [{"value": 9, "freq": 4}, {"value": 1, "freq": 2}],
+        "status": [{"value": "a", "freq": 6}],
+    }
+
+
+# ── _fetch_top_values guard rails (#327) ──
+
+
+class _RecordingConn:
+    """Records the statements a top-values path issues, answering each with no rows."""
+
+    def __init__(self) -> None:
+        self.executed: list[str] = []
+
+    def execute(self, clause: Any) -> Any:
+        self.executed.append(str(clause))
+
+        class _Result:
+            def mappings(self) -> list[Any]:
+                return []
+
+        return _Result()
+
+
+def _fetch(conn: Any, columns: list[str], top_n: int) -> dict[str, Any]:
+    from backend.app.services.profile_service import _fetch_top_values
+
+    return _fetch_top_values(
+        conn,
+        schema="public",
+        table="orders",
+        columns=columns,
+        top_n=top_n,
+        catalog=None,
+        dialect=None,
+    )
+
+
+def test_fetch_top_values_issues_nothing_for_an_empty_column_list() -> None:
+    conn = _RecordingConn()
+    assert _fetch(conn, [], 5) == {}
+    assert conn.executed == []
+
+
+def test_fetch_top_values_uses_the_per_column_path_for_a_non_positive_top_n() -> None:
+    # `top_n=0` has no rank to drive the batch, and the per-column query's own
+    # `LIMIT 0` is already the right answer — so it must route there DIRECTLY,
+    # not by failing a batch and logging a fallback for an ordinary input.
+    conn = _RecordingConn()
+    assert _fetch(conn, ["amount", "status"], 0) == {"amount": [], "status": []}
+    assert len(conn.executed) == 2
+    assert not any("dq_ranks" in sql for sql in conn.executed)
+
+
+def test_fetch_top_values_does_not_retry_a_rejected_identifier() -> None:
+    """A 422 from the builder must surface, not be re-run per column.
+
+    Both builders validate identically, so falling back could only turn one clean
+    422 into two round-trips and the same 422 — and, worse, would log a batch
+    fallback for what is a user input error rather than a dialect quirk.
+    """
+    conn = _RecordingConn()
+    with pytest.raises(ProfileIdentifierInvalidError):
+        _fetch(conn, ["amount; DROP TABLE x"], 5)
+    assert conn.executed == []
 
 
 def test_builders_reject_unsafe_identifiers() -> None:
