@@ -18,10 +18,11 @@ import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from pydantic import Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -530,7 +531,12 @@ def profile_column(
     namespace: str | None = None,
     path: str | None = None,
     file_format: str | None = None,
-    top_n: int = 10,
+    # Bounded to match the REST endpoint's own `top_n` (#327 review, P4). It is
+    # not just a result-size knob any more: the batched profiler materialises one
+    # rank row per `top_n` in the statement itself, so an unbounded value from an
+    # LLM-generated argument would compile a multi-megabyte query in the request
+    # thread. The bound lives in the tool schema so the client sees it too.
+    top_n: Annotated[int, Field(ge=1, le=100)] = 10,
 ) -> dict[str, Any]:
     """Profile one or more columns of a table or file on a suite's connection.
 
