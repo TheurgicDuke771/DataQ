@@ -24,14 +24,15 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
-from sqlalchemy import CursorResult, delete, exists, func, select, tuple_
+from sqlalchemy import delete, exists, func, select, tuple_
 from sqlalchemy.dialects.postgresql import Insert as PgInsert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
+from backend.app.db.chunked_dml import CHUNK_SIZE, chunked_dml
 from backend.app.db.models import Asset, Connection
 from backend.app.services.asset_identity import resolve_asset_identity
 
@@ -39,13 +40,11 @@ log = get_logger(__name__)
 
 
 # Assets are batched into one multi-row INSERT per this many rows (the lineage
-# refresh materializes every manifest node — thousands at real scale).
+# refresh materializes every manifest node — thousands at real scale). Kept
+# separate from the shared sweep `CHUNK_SIZE` (#323 review F6) — this is a
+# multi-row INSERT batch size, not a chunked-DML sweep loop, so there's no
+# reason to couple the two even though they happen to share a value today.
 _ASSET_CHUNK = 500
-
-# Orphan-sweep deletes are batched into one DELETE per this many candidate ids —
-# mirrors _ASSET_CHUNK so a single sweep tick can't hold one giant transaction
-# open over an assets table that has grown large.
-_ORPHAN_SWEEP_CHUNK = 500
 
 # Reference guards for the orphan sweep (#770): every FK into ``assets.id`` must
 # have a ``(table, column)`` row here. This registry drives BOTH the sweep's
@@ -234,7 +233,7 @@ def sweep_orphan_assets(
     *,
     retention_days: int,
     now: datetime | None = None,
-    chunk_size: int = _ORPHAN_SWEEP_CHUNK,
+    chunk_size: int = CHUNK_SIZE,
 ) -> int:
     """Delete `assets` rows past `retention_days` that nothing still references (#770).
 
@@ -266,41 +265,45 @@ def sweep_orphan_assets(
     over-delete cannot ship unnoticed.
 
     Deletes run as chunked ``DELETE … WHERE id IN (SELECT … LIMIT n)``
-    statements that carry the FULL predicate (staleness + every guard), each
-    committed before the next — a large sweep (e.g. after a bulk lineage-source
-    removal) never holds one giant DELETE or a sweep-long transaction open, and
-    a candidate that gains a reference mid-sweep is re-checked by its own chunk's
-    subquery rather than deleted from a stale snapshot. The residual race is a
-    single statement wide (a reference committed in the same instant a ≥30-day
-    stale asset's chunk deletes it); its blast radius is bounded — suites/runs
-    go ``SET NULL`` and the next save/refresh re-creates the asset row via the
-    normal upsert path. Returns the number of assets actually swept.
+    statements that ALSO repeat the FULL predicate (staleness + every guard)
+    on the outer DELETE's own WHERE — not just via the id-subquery — each
+    committed before the next (`chunked_dml`, shared with `run_service.
+    purge_expired_sample_failures` since #323 review finding F6). A large
+    sweep (e.g. after a bulk lineage-source removal) never holds one giant
+    DELETE or a sweep-long transaction open, and a candidate that gains a
+    reference mid-sweep is re-checked by its own chunk's subquery rather than
+    deleted from a stale snapshot. Repeating the predicate on the outer
+    DELETE closes the same EPQ gap #323's review found in the sibling sweep
+    (F5): under READ COMMITTED, ``id IN (subquery)`` alone doesn't get
+    re-validated against a row's current state on a concurrent-update
+    recheck, only the fixed id membership does — this docstring claimed the
+    "full predicate" property before the code actually enforced it. The
+    residual race is a single statement wide (a reference committed in the
+    same instant a ≥30-day stale asset's chunk deletes it); its blast radius
+    is bounded — suites/runs go ``SET NULL`` and the next save/refresh
+    re-creates the asset row via the normal upsert path. Returns the number
+    of assets actually swept.
     """
     if retention_days <= 0:
         return 0
     moment = now or _now()
     cutoff = moment - timedelta(days=retention_days)
 
-    swept = 0
-    while True:
+    def _build_statement() -> Any:
         candidate_chunk = (
             select(Asset.id)
             .where(Asset.last_seen < cutoff, *_sweep_guard_clauses())
+            .order_by(Asset.last_seen)
             .limit(chunk_size)
             .scalar_subquery()
         )
-        # session.execute(<DML>) returns a CursorResult; the typed overload widens
-        # it to Result (no rowcount), so cast to read the affected-row count —
-        # same pattern as `run_service.purge_expired_sample_failures`.
-        result = cast(
-            CursorResult[Any],
-            session.execute(delete(Asset).where(Asset.id.in_(candidate_chunk))),
+        return delete(Asset).where(
+            Asset.id.in_(candidate_chunk),
+            Asset.last_seen < cutoff,
+            *_sweep_guard_clauses(),
         )
-        deleted = result.rowcount or 0
-        session.commit()
-        swept += deleted
-        if deleted < chunk_size:
-            break
+
+    swept = chunked_dml(session, _build_statement, chunk_size=chunk_size)
     log.info(
         "orphan_assets_swept",
         count=swept,

@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 
-from sqlalchemy import CursorResult, func, null, select, update
+from sqlalchemy import func, null, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
@@ -41,6 +41,7 @@ from backend.app.datasources.monitors import (
     STATEFUL_MONITOR_KINDS,
 )
 from backend.app.datasources.sql import strip_statement_echo
+from backend.app.db.chunked_dml import CHUNK_SIZE, chunked_dml
 from backend.app.db.models import (
     COMPARISON_KIND,
     RESULT_OPERATIONAL_STATUSES,
@@ -1286,12 +1287,19 @@ def _is_safe_summary(key: str, value: Any) -> bool:
 
 
 def _purge_column(
-    session: Session, *, cutoff: datetime, extra_where: Sequence[Any], values: dict[str, Any]
+    session: Session,
+    *,
+    cutoff: datetime,
+    extra_where: Sequence[Any],
+    values: dict[str, Any],
+    chunk_size: int = CHUNK_SIZE,
+    on_batch: Callable[[int], None] | None = None,
 ) -> int:
-    """One bulk UPDATE against `results`, scoped to `created_at < cutoff` plus
+    """Chunked UPDATEs against `results`, scoped to `created_at < cutoff` plus
     the caller's own column-specific guard (#1253 — shared by both halves of
     `purge_expired_sample_failures` so the two purges stay mechanically
-    identical). Returns the affected-row count.
+    identical). Returns the total affected-row count across all chunks
+    (`chunked_dml` — see its docstring for the loop/termination/EPQ contract).
 
     Fire-and-forget bulk DML on a fresh, short-lived worker session with no
     loaded Result identities — `synchronize_session=False` skips the ORM
@@ -1303,23 +1311,50 @@ def _purge_column(
     would tell us how many ROWS matched `cond1 OR cond2`, not how many
     *column values* were scrubbed on each side — the per-column visibility
     `purge_expired_sample_failures` reports (and logs) needs the two counts
-    kept apart. The daily 01:17 UTC cadence and indexed `created_at` cutoff
-    make the extra scan pass cheap relative to that.
+    kept apart. Each caller's `extra_where` is deliberately built to be
+    textually identical to its matching `#323` partial index predicate
+    (`ix_results_unpurged_created` for `sample_failures`,
+    `ix_results_unpurged_observed` for `observed_value`) so the planner can
+    prove the query implies the index and use it — see the migration
+    docstring for why this textual match is load-bearing, not cosmetic.
+
+    The candidate subquery repeats `created_at < cutoff` on the OUTER
+    UPDATE's own WHERE too (not just via `id IN (subquery)`) — #323 review
+    finding F5: under READ COMMITTED, a row a concurrent transaction is
+    updating gets EPQ (evaluate-plan-qual) rechecked against the UPDATE's own
+    WHERE, and `id IN (subquery)` alone doesn't re-validate the cutoff/guard,
+    only the fixed id membership — which could re-stamp `sample_failures_
+    purged_at` with a later timestamp on a row an overlapping sweep already
+    excluded. Ordered oldest-first (`ORDER BY created_at`, #323 review M2):
+    free given the index is on `created_at`, it's the right order for a
+    PII-retention sweep, and it removes a deadlock footgun if the
+    single-embedded-beat assumption (today: at most one sweep in flight)
+    ever changes.
     """
-    result = cast(
-        CursorResult[Any],
-        session.execute(
-            update(Result)
+
+    def _build_statement() -> Any:
+        candidate_chunk = (
+            select(Result.id)
             .where(Result.created_at < cutoff, *extra_where)
+            .order_by(Result.created_at)
+            .limit(chunk_size)
+        )
+        return (
+            update(Result)
+            .where(Result.id.in_(candidate_chunk), Result.created_at < cutoff, *extra_where)
             .values(**values)
             .execution_options(synchronize_session=False)
-        ),
-    )
-    return result.rowcount
+        )
+
+    return chunked_dml(session, _build_statement, chunk_size=chunk_size, on_batch=on_batch)
 
 
 def purge_expired_sample_failures(
-    session: Session, *, retention_days: int, now: datetime | None = None
+    session: Session,
+    *,
+    retention_days: int,
+    now: datetime | None = None,
+    chunk_size: int = CHUNK_SIZE,
 ) -> int:
     """Scrub `sample_failures` and list-shaped `observed_value` from results
     older than ``retention_days``.
@@ -1374,50 +1409,86 @@ def purge_expired_sample_failures(
     ``retention_days <= 0`` disables the sweep (returns 0 without touching the DB)
     — a clean off-switch rather than purging everything. The cutoff is anchored on
     ``Result.created_at`` (when the result landed ≈ when the run completed).
+
+    Each column's sweep runs as bounded, individually-committed ``chunk_size``
+    batches rather than one unbounded UPDATE (#323) — see `_purge_column`'s
+    docstring for why, and each has its own supporting partial index
+    (`ix_results_unpurged_created` / `ix_results_unpurged_observed`) so
+    neither half full-scans `results` per batch. Steady state (a day's worth
+    of newly-expired rows) is one or two batches, so this is unobservable
+    there; it only matters for a first-run or post-outage catch-up over a
+    large backlog.
+
+    Logs (and, on an exception, still logs — #323 review M1) the running
+    per-column totals via `on_batch`, not just the two functions' return
+    values: without this, a crash partway through either column's batch loop
+    would leave every already-committed purge in this call with no
+    accounting anywhere — the totals this function would otherwise return
+    are lost along with the exception, but the DB writes themselves are not
+    (each batch commits independently).
     """
     if retention_days <= 0:
         return 0
     moment = now or _now()
     cutoff = moment - timedelta(days=retention_days)
 
-    sample_typeof = func.jsonb_typeof(Result.sample_failures)
-    sample_purged = _purge_column(
-        session,
-        cutoff=cutoff,
-        extra_where=[
-            Result.sample_failures_purged_at.is_(None),
-            sample_typeof.isnot(None),
-            sample_typeof != "null",
-        ],
-        values={"sample_failures": null(), "sample_failures_purged_at": moment},
-    )
+    sample_progress = 0
+    observed_progress = 0
 
-    # #1253: observed_value's sibling half of the same PII-minimisation gap —
-    # see the docstring above for why only the list-shaped case is touched and
-    # why no *_purged_at stamp/migration is needed here.
-    observed_inner_typeof = func.jsonb_typeof(Result.observed_value["observed_value"])
-    observed_purged = _purge_column(
-        session,
-        cutoff=cutoff,
-        extra_where=[observed_inner_typeof == "array"],
-        values={"observed_value": null()},
-    )
+    def _on_sample_batch(n: int) -> None:
+        nonlocal sample_progress
+        sample_progress += n
 
-    session.commit()
-    # `purged` names the historical (sample_failures-only) field for anyone
-    # already keying an alert/dashboard off this event's shape; the new
-    # per-column + total fields disambiguate the now-two-column sweep so
-    # nothing downstream has to infer which column moved a count.
-    log.info(
-        "sample_failures_purged",
-        purged=sample_purged,
-        sample_failures_purged=sample_purged,
-        observed_value_purged=observed_purged,
-        total_purged=sample_purged + observed_purged,
-        retention_days=retention_days,
-        cutoff=cutoff.isoformat(),
-    )
-    return sample_purged + observed_purged
+    def _on_observed_batch(n: int) -> None:
+        nonlocal observed_progress
+        observed_progress += n
+
+    def _log_progress() -> None:
+        # `purged` names the historical (sample_failures-only) field for anyone
+        # already keying an alert/dashboard off this event's shape; the new
+        # per-column + total fields disambiguate the now-two-column sweep so
+        # nothing downstream has to infer which column moved a count.
+        log.info(
+            "sample_failures_purged",
+            purged=sample_progress,
+            sample_failures_purged=sample_progress,
+            observed_value_purged=observed_progress,
+            total_purged=sample_progress + observed_progress,
+            retention_days=retention_days,
+            cutoff=cutoff.isoformat(),
+        )
+
+    try:
+        sample_typeof = func.jsonb_typeof(Result.sample_failures)
+        _purge_column(
+            session,
+            cutoff=cutoff,
+            extra_where=[
+                Result.sample_failures_purged_at.is_(None),
+                Result.sample_failures.isnot(None),
+                sample_typeof != "null",
+            ],
+            values={"sample_failures": null(), "sample_failures_purged_at": moment},
+            chunk_size=chunk_size,
+            on_batch=_on_sample_batch,
+        )
+
+        # #1253: observed_value's sibling half of the same PII-minimisation gap —
+        # see the docstring above for why only the list-shaped case is touched
+        # and why no *_purged_at stamp/migration is needed here.
+        observed_inner_typeof = func.jsonb_typeof(Result.observed_value["observed_value"])
+        _purge_column(
+            session,
+            cutoff=cutoff,
+            extra_where=[observed_inner_typeof == "array"],
+            values={"observed_value": null()},
+            chunk_size=chunk_size,
+            on_batch=_on_observed_batch,
+        )
+    finally:
+        _log_progress()
+
+    return sample_progress + observed_progress
 
 
 def reap_stuck_runs(

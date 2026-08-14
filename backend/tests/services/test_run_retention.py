@@ -14,6 +14,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy.sql.dml import Update
+
 from backend.app.db.models import Check, Connection, Result, Run, Suite, User
 from backend.app.services import run_service
 
@@ -246,3 +248,68 @@ def test_idempotent_second_sweep_observed_value(db_session: Any) -> None:
     assert second == 0
     db_session.refresh(old)
     assert old.observed_value is None
+
+
+# ── #323: bounded batching ────────────────────────────────────────────────────
+
+
+def test_batch_count_matches_the_configured_chunk_size(db_session: Any, monkeypatch: Any) -> None:
+    """Proves the loop actually iterates in bounded chunks AND still sweeps
+    every candidate in full — not just that the end result is complete (a
+    candidate-set-larger-than-one-batch check alone would pass just the same
+    against the old single-UPDATE shape, since chunk_size doesn't change what
+    an unbounded UPDATE touches — #323 review M5 folded that check in here
+    rather than keeping it a separate, weaker test). Counts the UPDATEs
+    `_purge_column` issues against `results` by wrapping `Session.execute`.
+
+    7 eligible rows over chunk_size=3: `chunked_dml` exits on `affected == 0`
+    (#323 review F4), not `affected < chunk_size`, so the sample_failures half
+    takes FOUR UPDATE statements (3 + 3 + 1 + a trailing empty round to
+    confirm none remain) and the observed_value half (nothing eligible there)
+    takes one more — 5 total, not 4."""
+    rows = [_result(db_session, age_days=40, metric=Decimal(str(i))) for i in range(7)]
+
+    executed: list[Any] = []
+    original_execute = db_session.execute
+
+    def _counting_execute(statement: Any, *args: Any, **kwargs: Any) -> Any:
+        if isinstance(statement, Update):
+            executed.append(statement)
+        return original_execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "execute", _counting_execute)
+
+    purged = run_service.purge_expired_sample_failures(
+        db_session, retention_days=30, now=NOW, chunk_size=3
+    )
+
+    assert purged == 7
+    # sample_failures batches (3, 3, 1, 0) + observed_value batches (0, nothing
+    # eligible there) — see the docstring above for why it's 5, not 4.
+    assert len(executed) == 5
+    for row in rows:
+        db_session.refresh(row)
+        assert row.sample_failures is None
+        assert row.sample_failures_purged_at == NOW
+        # the trend scalar survives regardless of which batch a row landed in
+        assert row.metric_value is not None
+
+
+def test_chunk_size_does_not_leak_rows_outside_the_retention_window(db_session: Any) -> None:
+    """A small chunk_size must not accidentally sweep rows that are still
+    inside the retention window — the per-chunk subquery re-applies the full
+    predicate every iteration, not just on the first batch."""
+    old_rows = [_result(db_session, age_days=40, metric=Decimal(str(i))) for i in range(5)]
+    recent = _result(db_session, age_days=5, metric=Decimal("99"))
+
+    purged = run_service.purge_expired_sample_failures(
+        db_session, retention_days=30, now=NOW, chunk_size=2
+    )
+
+    assert purged == 5
+    for row in old_rows:
+        db_session.refresh(row)
+        assert row.sample_failures is None
+    db_session.refresh(recent)
+    assert recent.sample_failures == {"rows": [{"id": 1}]}
+    assert recent.sample_failures_purged_at is None
