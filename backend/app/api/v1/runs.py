@@ -110,7 +110,20 @@ class ResultRead(ApiModel):
     the UI shows exactly one — the label is derived from the displayed list only,
     so it cannot understate the masking a viewer sees. Every list in the payload is
     still redacted on its own merits, so a client that reads the *other* list should
-    judge it from its own values rather than from this label."""
+    judge it from its own values rather than from this label.
+
+    `sampling` (#595) says how much of the dataset this check actually saw:
+    `{"strategy", "requested_rows", "rows", "total_rows", "sampled", "seed"?}`.
+    `None` means a complete read — the default, and what every result written
+    before scale-aware execution means. Clients should show a "sampled" caveat
+    **only** when `sampling.sampled` is true: a sample larger than the dataset
+    covered everything, and labelling that a sample would cry wolf on every small
+    target. `total_rows` is legitimately `None` for a head sample that stopped
+    reading early rather than pay for a count, so `sampled` — not a
+    `rows < total_rows` comparison — is the field to branch on. It is per-result
+    because within one run a pushdown monitor and a sampled expectation can sit
+    side by side, and it carries no target data, so it is passed through
+    unredacted."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -124,6 +137,7 @@ class ResultRead(ApiModel):
     sample_failures: dict[str, Any] | None  # column-aware redaction (#415); see `redaction` below
     redaction: Literal["full", "partial", "none"] | None = None
     redacted_columns: list[str] = Field(default_factory=list)
+    sampling: dict[str, Any] | None = None
 
 
 class RunDetailRead(RunRead):
@@ -285,6 +299,10 @@ def _result_read(
         sample_failures=sample,
         redaction=redaction,
         redacted_columns=redacted_columns,
+        # Passed through verbatim (#595): the record holds a strategy name, three
+        # counts and an optional seed — DataQ-authored metadata about the READ, not
+        # target data — so it needs none of the redaction the sample above does.
+        sampling=result.sampling,
     )
 
 

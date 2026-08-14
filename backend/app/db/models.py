@@ -882,6 +882,14 @@ class Result(Base):
     expected_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     sample_failures: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     sample_failures_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # How much of the dataset this check actually saw (#595). NULL = a complete
+    # read (and, for rows written before the column existed, unknown-but-complete
+    # — every runner read everything back then). Set only when the suite's run
+    # target declared a sampling strategy AND this check's group honoured it, so
+    # a pushdown monitor or a UC custom-SQL check beside a sampled expectation
+    # correctly stays NULL. Not row data — strategy, counts, and an optional seed
+    # — so it is outside the `sample_failures` retention/redaction path.
+    sampling: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[datetime] = _created_at()
 
 

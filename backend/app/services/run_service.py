@@ -40,6 +40,7 @@ from backend.app.datasources.monitors import (
     SCALAR_MONITOR_KINDS,
     STATEFUL_MONITOR_KINDS,
 )
+from backend.app.datasources.sampling import ScanTooLargeError
 from backend.app.datasources.sql import strip_statement_echo
 from backend.app.db.models import (
     COMPARISON_KIND,
@@ -124,6 +125,11 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
         observed_value=observed,
         expected_value=sanitize_json(outcome.expected_value),
         sample_failures=sample,
+        # Persisted on EVERY status, including `error` (#595). The errored branch
+        # above drops the observed value and the sample because neither exists for
+        # a check that never evaluated — but "this run was reading a sample" is
+        # still true of the read that failed, and it is often the explanation.
+        sampling=sanitize_json(outcome.sampling),
     )
 
 
@@ -245,6 +251,28 @@ def _run_outcomes(
     return [cast(CheckOutcome, oc) for oc in outcomes]
 
 
+def _failure_reason(exc: BaseException) -> str:
+    """The user-facing reason for a failed run — classified, except when refused.
+
+    `classify_failure_reason` exists because a driver exception can echo a DSN, a
+    credential or a cell value, so its text is read only to pick a category (#605).
+    `ScanTooLargeError` is the one exception DataQ **authored itself**: every word
+    of it is built from the user's own run target and two integers from settings,
+    with no driver text anywhere near it. Classifying it would replace the single
+    most actionable sentence a user can get here — "this file is over the cap, set
+    a sampling strategy or raise RUN_MAX_SCAN_BYTES" — with "the run failed to
+    execute; see the server logs", which is exactly the undiagnosable outcome #755
+    already produces when the worker is OOM-killed instead.
+
+    Narrow on purpose: an `isinstance` against one DataQ-defined type, not a
+    duck-typed "trust any exception that says it's safe" marker, so the redaction
+    contract cannot be widened by accident from another module.
+    """
+    if isinstance(exc, ScanTooLargeError):
+        return str(exc)
+    return classify_failure_reason(exc)
+
+
 def _cancelled_mid_run(session: Session, run: Run) -> bool:
     """Did a cancel commit (from the API session) while this run was executing?
 
@@ -334,7 +362,7 @@ def execute_run(
         # Redaction-safe reason (#605): classify the exception into a fixed
         # message — the raw text (which can carry DSN/credential fragments) stays
         # in the server log below, never on the persisted/surfaced reason.
-        run.failure_reason = classify_failure_reason(exc)
+        run.failure_reason = _failure_reason(exc)
         session.commit()
         log.exception("run_failed", run_id=str(run.id), table=table)
         return run
