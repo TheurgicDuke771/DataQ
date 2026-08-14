@@ -35,8 +35,15 @@ there is no table lock beyond a brief ACCESS EXCLUSIVE for the catalog update).
 Code deployed before this migration keeps working unmodified — it never reads or
 writes the column.
 
+Re-parented onto `fbf4fe92e295` (the #323 retention-sweep index) rather than the
+`5ffa2405f9e8` it was written against: that revision landed on `main` while this
+branch was open and claimed the same parent, which makes two alembic heads and
+fails every `upgrade head`. The two migrations are independent (an index on
+`results` vs a nullable column on `results`), so serialising them is a
+re-parenting, not a rebase of behaviour.
+
 Revision ID: 4d23b47ee564
-Revises: 5ffa2405f9e8
+Revises: fbf4fe92e295
 Create Date: 2026-08-13 00:00:00.000000+00:00
 
 """
@@ -52,7 +59,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "4d23b47ee564"
-down_revision: str | None = "5ffa2405f9e8"
+down_revision: str | None = "fbf4fe92e295"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
