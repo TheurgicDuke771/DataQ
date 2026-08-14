@@ -296,6 +296,38 @@ class Settings(BaseSettings):
     rate_limit_ipv4_prefix: int = Field(default=24, ge=8, le=32)
     rate_limit_ipv6_prefix: int = Field(default=64, ge=32, le=128)
 
+    # ── Scale-aware execution (#595, G-b) ────────────────────────────────────
+    # Hard caps on what a run may materialise in worker memory, checked by a cheap
+    # size probe BEFORE the read (an object's byte length, a table's COUNT(*)).
+    # Over-cap ends the run `failed` with a DataQ-authored reason naming the knob —
+    # never the current behaviour, where the kernel SIGKILLs the Celery child, the
+    # run sits `running` for up to `stuck_run_threshold_minutes`, and no surface
+    # ever attributes it to memory (#755).
+    #
+    # Both defaults are read off measured numbers (docs/perf-baseline.md §W6),
+    # not guessed:
+    #
+    #   * BYTES for flat files, because a CSV's row count costs a full scan while
+    #     its length is one metadata call. The measured expansion from object bytes
+    #     to worker RSS is ~8x for CSV and ~9x for Parquet, so 128 MiB lands a
+    #     full read at roughly 1.2-1.3 GiB — under the 2 GiB deployed worker with
+    #     headroom for its ~0.9 GiB baseline. It admits every rung the W3 campaign
+    #     measured to PASS (121 MB CSV, 131 MB Parquet) and refuses every rung
+    #     measured to DIE (263 MB Parquet killed the container; 304 MB CSV killed
+    #     the child). A more generous 256 MiB was the first draft and is wrong: a
+    #     249 MB / 5M-row CSV peaked at 2,204 MiB, i.e. it passes that cap and
+    #     still OOMs the worker — a guardrail that does not guard.
+    #   * ROWS for warehouse reads that still materialise (Unity Catalog's
+    #     DataFrame batch), where COUNT(*) is exact and free. 1.5M sits between the
+    #     1M rung that passed and the 2M rung that OOM-killed the child.
+    #
+    # Neither applies to Snowflake, which pushes every expectation down as SQL and
+    # never materialises rows (200M rows, worker memory flat). 0 disables a cap —
+    # a clean off-switch, like the janitor sweeps above. `ge=0` because a negative
+    # would read as "disabled" through the `> 0` guards while looking configured.
+    run_max_scan_bytes: int = Field(default=134_217_728, ge=0)
+    run_max_scan_rows: int = Field(default=1_500_000, ge=0)
+
     # ── Comparison checks (ADR 0015) ─────────────────────────────────────────
     # Default row cap per comparison side. Both sides materialize in worker
     # memory for the diff (#793), so this is a memory guardrail, not a tuning

@@ -226,6 +226,33 @@ def core_table(
     return table_clause(folding_identifier(table), schema=namespace)
 
 
+def qualified_sql_name(
+    *, table: str, schema: str | None, catalog: str | None, dialect: Dialect
+) -> str:
+    """``[catalog.][schema.]table`` as a pre-quoted string for a `text()` statement.
+
+    `core_table` is the right tool wherever a Core `Select` can express the query;
+    this exists for the one shape Core cannot render — a dialect-specific clause
+    that attaches to the FROM item itself, like Databricks' ``TABLESAMPLE (x
+    PERCENT)`` (#595). It reuses `_quote_namespace_part`, so each part gets
+    `folding_identifier`'s case-only decision and, when it needs quoting, the
+    **dialect's own** quote character (Snowflake ``"``, Databricks backticks) —
+    never a hardcoded one, which is what made #476's hand-rolled quoting wrong on
+    Unity Catalog.
+
+    Every part is allowlist-checked here rather than trusted from the caller: this
+    string is interpolated into SQL, so the injection guarantee has to survive a
+    caller forgetting to validate first (the same reasoning `core_table` records).
+    """
+    if catalog is not None and schema is None:
+        raise ValueError(f"table {table!r} has a catalog but no schema")
+    parts = [(catalog, "catalog"), (schema, "schema"), (table, "table")]
+    for part, label in parts:
+        if part is not None and not is_sql_identifier(part):
+            raise ValueError(f"invalid {label} identifier: {part!r}")
+    return ".".join(_quote_namespace_part(part, dialect) for part, _ in parts if part is not None)
+
+
 class LazyEngine:
     """One lazily-built SQLAlchemy engine with an idempotent dispose (#427).
 
