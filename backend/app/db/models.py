@@ -858,6 +858,18 @@ class Result(Base):
         _in_check("status", RESULT_STATUSES, "status_valid"),
         Index("ix_results_run_id", "run_id"),
         Index("ix_results_check_id", "check_id"),
+        # Retention-sweep predicate support (#323) — `run_service.
+        # purge_expired_sample_failures` filters on `created_at < cutoff AND
+        # sample_failures_purged_at IS NULL`; the partial WHERE keeps the index
+        # scoped to the sweep's actual (small, shrinking) working set instead of
+        # covering every row ever written. Created CONCURRENTLY in the migration
+        # (`fbf4fe92e295`) so a plain `create_all`-built test DB and a
+        # migration-built one still agree here.
+        Index(
+            "ix_results_unpurged_created",
+            "created_at",
+            postgresql_where=text("sample_failures_purged_at IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()

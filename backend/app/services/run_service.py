@@ -1275,14 +1275,30 @@ def _is_safe_summary(key: str, value: Any) -> bool:
 
 # ── retention sweep (configurable PII purge of old result samples) ────────────
 
+# #323: bound each purge transaction to this many rows. A steady-state daily
+# sweep matches far fewer rows than this (the previous day's crop of expired
+# results), so the loop below runs its single iteration and behaves exactly
+# as the old unbounded UPDATE did; the batching only changes shape on a
+# catch-up run (first enable, or after a long outage) with a large backlog,
+# which is precisely the case the AC's "no lock-contention regression" check
+# targets. Mirrors `asset_service._ORPHAN_SWEEP_CHUNK`'s chunked-DELETE shape
+# and value — no evidence either sweep needs a different size, so one shared
+# convention beats two arbitrary ones.
+_PURGE_SWEEP_CHUNK = 500
+
 
 def _purge_column(
-    session: Session, *, cutoff: datetime, extra_where: Sequence[Any], values: dict[str, Any]
+    session: Session,
+    *,
+    cutoff: datetime,
+    extra_where: Sequence[Any],
+    values: dict[str, Any],
+    chunk_size: int = _PURGE_SWEEP_CHUNK,
 ) -> int:
-    """One bulk UPDATE against `results`, scoped to `created_at < cutoff` plus
+    """Chunked UPDATEs against `results`, scoped to `created_at < cutoff` plus
     the caller's own column-specific guard (#1253 — shared by both halves of
     `purge_expired_sample_failures` so the two purges stay mechanically
-    identical). Returns the affected-row count.
+    identical). Returns the total affected-row count across all chunks.
 
     Fire-and-forget bulk DML on a fresh, short-lived worker session with no
     loaded Result identities — `synchronize_session=False` skips the ORM
@@ -1294,23 +1310,49 @@ def _purge_column(
     would tell us how many ROWS matched `cond1 OR cond2`, not how many
     *column values* were scrubbed on each side — the per-column visibility
     `purge_expired_sample_failures` reports (and logs) needs the two counts
-    kept apart. The daily 01:17 UTC cadence and indexed `created_at` cutoff
-    make the extra scan pass cheap relative to that.
+    kept apart. The daily 01:17 UTC cadence and the `ix_results_unpurged_created`
+    partial index (#323) make the extra scan pass cheap relative to that.
+
+    Batched as `UPDATE ... WHERE id IN (SELECT id ... LIMIT chunk_size)`,
+    each chunk committed before the next (#323) — a large backlog never holds
+    one giant UPDATE or a sweep-long transaction open, which is what would
+    otherwise contend with concurrent result inserts via long row locks and
+    WAL/dead-tuple pressure (the schedule dispatcher's `FOR UPDATE SKIP
+    LOCKED` one-row-at-a-time shape exists to avoid exactly this class of
+    problem). Every caller's `extra_where` already excludes rows the update's
+    own `values` would newly satisfy (e.g. `sample_failures_purged_at IS
+    NULL` before, non-NULL after), so each chunk's subquery naturally sees a
+    shrinking candidate set and the loop terminates: same convergence argument
+    as `asset_service.sweep_orphan_assets`'s chunked DELETE.
     """
-    result = cast(
-        CursorResult[Any],
-        session.execute(
-            update(Result)
-            .where(Result.created_at < cutoff, *extra_where)
-            .values(**values)
-            .execution_options(synchronize_session=False)
-        ),
-    )
-    return result.rowcount
+    total = 0
+    while True:
+        candidate_chunk = (
+            select(Result.id).where(Result.created_at < cutoff, *extra_where).limit(chunk_size)
+        )
+        result = cast(
+            CursorResult[Any],
+            session.execute(
+                update(Result)
+                .where(Result.id.in_(candidate_chunk))
+                .values(**values)
+                .execution_options(synchronize_session=False)
+            ),
+        )
+        affected = result.rowcount
+        session.commit()
+        total += affected
+        if affected < chunk_size:
+            break
+    return total
 
 
 def purge_expired_sample_failures(
-    session: Session, *, retention_days: int, now: datetime | None = None
+    session: Session,
+    *,
+    retention_days: int,
+    now: datetime | None = None,
+    chunk_size: int = _PURGE_SWEEP_CHUNK,
 ) -> int:
     """Scrub `sample_failures` and list-shaped `observed_value` from results
     older than ``retention_days``.
@@ -1365,6 +1407,12 @@ def purge_expired_sample_failures(
     ``retention_days <= 0`` disables the sweep (returns 0 without touching the DB)
     — a clean off-switch rather than purging everything. The cutoff is anchored on
     ``Result.created_at`` (when the result landed ≈ when the run completed).
+
+    Each column's sweep runs as bounded, individually-committed ``chunk_size``
+    batches rather than one unbounded UPDATE (#323) — see `_purge_column`'s
+    docstring for why. Steady state (a day's worth of newly-expired rows) is
+    one batch, so this is unobservable there; it only matters for a first-run
+    or post-outage catch-up over a large backlog.
     """
     if retention_days <= 0:
         return 0
@@ -1381,6 +1429,7 @@ def purge_expired_sample_failures(
             sample_typeof != "null",
         ],
         values={"sample_failures": null(), "sample_failures_purged_at": moment},
+        chunk_size=chunk_size,
     )
 
     # #1253: observed_value's sibling half of the same PII-minimisation gap —
@@ -1392,8 +1441,12 @@ def purge_expired_sample_failures(
         cutoff=cutoff,
         extra_where=[observed_inner_typeof == "array"],
         values={"observed_value": null()},
+        chunk_size=chunk_size,
     )
 
+    # `_purge_column` already commits per chunk; nothing pending here, but a
+    # trailing commit costs nothing and keeps the "sweep ends committed"
+    # contract explicit even if a future edit adds an uncommitted write above.
     session.commit()
     # `purged` names the historical (sample_failures-only) field for anyone
     # already keying an alert/dashboard off this event's shape; the new

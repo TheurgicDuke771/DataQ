@@ -14,6 +14,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy.sql.dml import Update
+
 from backend.app.db.models import Check, Connection, Result, Run, Suite, User
 from backend.app.services import run_service
 
@@ -246,3 +248,83 @@ def test_idempotent_second_sweep_observed_value(db_session: Any) -> None:
     assert second == 0
     db_session.refresh(old)
     assert old.observed_value is None
+
+
+# ── #323: bounded batching ────────────────────────────────────────────────────
+
+
+def test_batches_across_multiple_chunks_purge_everything(db_session: Any) -> None:
+    """A candidate set larger than one batch must still be swept in full — not
+    just the first `chunk_size` rows. Passes a `chunk_size` far smaller than the
+    default (`_PURGE_SWEEP_CHUNK`) so a small, fast seed can still force the
+    `_purge_column` loop through several iterations: 7 eligible rows over
+    chunk_size=3 means 3 full batches (3, 3, 1) before the `affected <
+    chunk_size` sentinel fires. A regression that dropped the loop back to a
+    single UPDATE would still purge every row here (chunk_size is irrelevant
+    to a single unbounded UPDATE), so this alone doesn't prove batching
+    happened — `test_batch_count_matches_the_configured_chunk_size` below
+    proves that half via the number of UPDATE statements actually issued."""
+    rows = [_result(db_session, age_days=40, metric=Decimal(str(i))) for i in range(7)]
+
+    purged = run_service.purge_expired_sample_failures(
+        db_session, retention_days=30, now=NOW, chunk_size=3
+    )
+
+    assert purged == 7
+    for row in rows:
+        db_session.refresh(row)
+        assert row.sample_failures is None
+        assert row.sample_failures_purged_at == NOW
+        # the trend scalar survives regardless of which batch a row landed in
+        assert row.metric_value is not None
+
+
+def test_batch_count_matches_the_configured_chunk_size(db_session: Any, monkeypatch: Any) -> None:
+    """Proves the loop actually iterates in bounded chunks — not just that the
+    end result is complete (`test_batches_across_multiple_chunks_purge_everything`
+    would pass just the same against the old single-UPDATE shape, since
+    chunk_size doesn't change what a single UPDATE touches). Counts the
+    UPDATEs `_purge_column` issues against `results` by wrapping
+    `Session.execute`; 7 eligible rows over chunk_size=3 must take exactly 3
+    UPDATE statements (3 + 3 + 1), not 1."""
+    for i in range(7):
+        _result(db_session, age_days=40, metric=Decimal(str(i)))
+
+    executed: list[Any] = []
+    original_execute = db_session.execute
+
+    def _counting_execute(statement: Any, *args: Any, **kwargs: Any) -> Any:
+        if isinstance(statement, Update):
+            executed.append(statement)
+        return original_execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "execute", _counting_execute)
+
+    purged = run_service.purge_expired_sample_failures(
+        db_session, retention_days=30, now=NOW, chunk_size=3
+    )
+
+    assert purged == 7
+    # sample_failures batches (3) + observed_value batches (1, nothing eligible
+    # there — the loop still runs once and exits on `affected < chunk_size`)
+    assert len(executed) == 4
+
+
+def test_chunk_size_does_not_leak_rows_outside_the_retention_window(db_session: Any) -> None:
+    """A small chunk_size must not accidentally sweep rows that are still
+    inside the retention window — the per-chunk subquery re-applies the full
+    predicate every iteration, not just on the first batch."""
+    old_rows = [_result(db_session, age_days=40, metric=Decimal(str(i))) for i in range(5)]
+    recent = _result(db_session, age_days=5, metric=Decimal("99"))
+
+    purged = run_service.purge_expired_sample_failures(
+        db_session, retention_days=30, now=NOW, chunk_size=2
+    )
+
+    assert purged == 5
+    for row in old_rows:
+        db_session.refresh(row)
+        assert row.sample_failures is None
+    db_session.refresh(recent)
+    assert recent.sample_failures == {"rows": [{"id": 1}]}
+    assert recent.sample_failures_purged_at is None
