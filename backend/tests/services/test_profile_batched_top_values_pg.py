@@ -17,7 +17,7 @@ the slot was reached (``UNION types text and timestamp … cannot be matched``).
 amount of SQL-text assertion would have found that.
 
 The assertion is **equivalence, not plausibility**: for every column, the
-batched result must equal what the per-column query returns — same values, same
+batched result must equal what the production per-column path returns — same values, same
 Python types, same order, same tie-break, same treatment of an all-null column.
 That is the only shape that can catch the failure mode this change risks, which
 is a profile that still *looks* right while a type or an ordering quietly moved.
@@ -37,8 +37,9 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, literal_column, select, text
 
+from backend.app.datasources.sql import core_table
 from backend.app.services import profile_service
 from backend.app.services.profile_service import (
     build_batched_top_values_query,
@@ -107,16 +108,16 @@ def probe_table() -> Iterator[tuple[Any, str]]:
 
 
 def _per_column(conn: Any, table: str, columns: list[str], top_n: int) -> dict[str, list[Any]]:
-    """The pre-#327 path, run for real — the reference every assertion compares to."""
-    return {
-        col: [
-            dict(row)
-            for row in conn.execute(
-                profile_service.build_top_values_query("public", table, col, top_n)
-            ).mappings()
-        ]
-        for col in columns
-    }
+    """The pre-#327 path, run for real — the reference every assertion compares to.
+
+    Calls the **production** `_top_values_per_column` rather than re-implementing
+    it (#327 review, m3): a hand-rolled reference proves the batch matches the
+    test's idea of the old path, not the path the fallback will actually run.
+    """
+    collected = profile_service._top_values_per_column(
+        conn, schema="public", table=table, columns=columns, top_n=top_n, catalog=None, dialect=None
+    )
+    return {col: [dict(row) for row in rows] for col, rows in collected.items()}
 
 
 def _batched(conn: Any, table: str, columns: list[str], top_n: int) -> dict[str, list[Any]]:
@@ -185,15 +186,69 @@ def test_batched_keeps_numeric_and_timestamp_native(probe_table: tuple[Any, str]
     # giving each column its own joined output column is what keeps both native.
 
 
-def test_profile_table_end_to_end_matches_the_per_column_path(
-    probe_table: tuple[Any, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The whole service call over a real engine: batched vs fallback, same result.
+@pytest.fixture
+def alias_probe() -> Iterator[tuple[Any, str]]:
+    """A table whose column names collide with the query's own output labels.
 
-    `_fetch_top_values` is the seam that chooses, so forcing it to the fallback
-    is how the two paths are compared without stubbing the SQL itself.
+    `freq`, `value` and `rn` are the three names the top-values query labels
+    something as — and SQL resolves a bare name in ``ORDER BY`` against the
+    OUTPUT aliases first (#327 review, P2). Each column holds three distinct
+    values tied at count 2, inserted in DESCENDING order, so a query whose
+    tie-break collapsed to the count would keep a different pair than the one
+    ``ROW_NUMBER()`` ranked — and the rows it kept would carry ranks past
+    ``top_n``, join nothing, and vanish from the profile.
     """
-    conn, table = probe_table
+    url = TEST_DATABASE_URL
+    assert url is not None  # narrowed by the module-level skipif
+    engine = create_engine(url)
+    name = f"alias_probe_{uuid.uuid4().hex[:8]}"
+    with engine.begin() as conn:
+        conn.execute(text(f"CREATE TABLE public.{name} (freq integer, value text, rn integer)"))
+        conn.execute(
+            text(
+                f"INSERT INTO public.{name} VALUES "
+                "(30, 'c', 30), (30, 'c', 30), (20, 'b', 20),"
+                "(20, 'b', 20), (10, 'a', 10), (10, 'a', 10)"
+            )
+        )
+    try:
+        with engine.connect() as conn:
+            yield conn, name
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text(f"DROP TABLE public.{name}"))
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("col", "expected"),
+    [
+        ("freq", [10, 20]),
+        ("value", ["a", "b"]),
+        ("rn", [10, 20]),
+    ],
+)
+def test_a_column_named_like_an_output_label_still_tie_breaks_by_value(
+    alias_probe: tuple[Any, str], col: str, expected: list[Any]
+) -> None:
+    """#327 review, P2 — the whole point of the `dq_` label prefix.
+
+    With three values tied at count 2 and ``top_n=2``, the answer is decided
+    ENTIRELY by the value tie-break. If `ORDER BY count(*) DESC, freq` had
+    resolved `freq` to the count alias, the pair kept would be arbitrary while
+    the rank stayed value-ordered, and the mismatch shows up here as a missing
+    or wrong value — not as an error.
+    """
+    conn, table = alias_probe
+    batched = _batched(conn, table, [col], 2)
+    assert [row["value"] for row in batched[col]] == expected
+    assert [row["freq"] for row in batched[col]] == [2, 2]
+    # …and the per-column path, which had the same latent capture, agrees.
+    assert batched[col] == _per_column(conn, table, [col], 2)[col]
+
+
+def _profile(conn: Any, table: str, monkeypatch: pytest.MonkeyPatch, **overrides: Any) -> Any:
+    """Run the real `profile_table` against `conn` (the live-connection seam faked)."""
 
     @contextmanager
     def fake_open(connection: Any, secret_store: Any) -> Iterator[Any]:
@@ -209,15 +264,41 @@ def test_profile_table_end_to_end_matches_the_per_column_path(
         "columns": _COLUMNS,
         "top_n": 10,
         "secret_store": FakeSecretStore({"ref": "pw"}),
+        **overrides,
     }
-    batched = profile_table(connection, **kwargs)
+    return profile_table(connection, **kwargs)
+
+
+def _server_rejected_statement(*_args: Any, **_kwargs: Any) -> Any:
+    """A statement the SERVER rejects — the only way to reproduce the P1 abort.
+
+    A Python-side raise (monkeypatching the builder to throw) never reaches the
+    database, so the transaction stays clean and the fallback runs on a healthy
+    connection. That is precisely the test shape that hid the bug: this returns a
+    perfectly valid `Select` over a table that does not exist, so Postgres
+    rejects it mid-transaction and leaves the connection in the aborted state a
+    real dialect rejection would.
+    """
+    return select(literal_column("1")).select_from(
+        core_table(table="dq_no_such_table_327", schema="public", catalog=None)
+    )
+
+
+def test_profile_table_end_to_end_matches_the_per_column_path(
+    probe_table: tuple[Any, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole service call over a real engine: batched vs fallback, same result.
+
+    The fallback is forced with a statement the SERVER rejects, not a Python
+    raise — see `_server_rejected_statement`.
+    """
+    conn, table = probe_table
+    batched = _profile(conn, table, monkeypatch)
 
     monkeypatch.setattr(
-        profile_service,
-        "build_batched_top_values_query",
-        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("dialect says no")),
+        profile_service, "build_batched_top_values_query", _server_rejected_statement
     )
-    fallback = profile_table(connection, **kwargs)
+    fallback = _profile(conn, table, monkeypatch)
 
     assert batched == fallback
     amount = next(c for c in batched.columns if c.column == "amount")
@@ -227,3 +308,34 @@ def test_profile_table_end_to_end_matches_the_per_column_path(
         {"value": 3, "count": 1},
     ]
     assert next(c for c in batched.columns if c.column == "all_null").top_values == []
+
+
+def test_fallback_survives_the_transaction_the_failed_batch_aborted(
+    probe_table: tuple[Any, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#327 review, P1 — the safety net was dead code on transactional dialects.
+
+    SQLAlchemy autobegins a transaction, and Postgres marks it ABORTED the moment
+    a statement is rejected server-side: every later statement on that connection
+    raises ``InFailedSqlTransaction`` until someone rolls back. So without
+    `_recover_transaction` the per-column retry could not run at all, and the
+    profile 502'd exactly where the pre-#327 code would have succeeded — the
+    fallback failing in the only situation it exists for.
+
+    Nothing in the earlier test suite could see it: the endpoint fake raised from
+    Python before any SQL, and the pg test monkeypatched the builder to throw.
+    This one lets the database do the rejecting, then insists the profile is not
+    merely non-500 but *complete and correct*.
+    """
+    conn, table = probe_table
+    reference = _profile(conn, table, monkeypatch)
+
+    monkeypatch.setattr(
+        profile_service, "build_batched_top_values_query", _server_rejected_statement
+    )
+    recovered = _profile(conn, table, monkeypatch)
+
+    assert recovered == reference
+    assert all(col.top_values or col.column == "all_null" for col in recovered.columns)
+    # The connection is left usable, not poisoned for whatever runs next on it.
+    assert conn.execute(select(literal_column("1"))).scalar() == 1

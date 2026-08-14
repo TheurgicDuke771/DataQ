@@ -414,6 +414,28 @@ def test_profile_column_shapes_result(db_session: Any, monkeypatch: Any) -> None
     assert out["columns"][0]["null_count"] == 2
 
 
+def test_profile_column_top_n_is_bounded_like_the_rest_endpoint() -> None:
+    """#327 review, P4: `top_n` is no longer only a result-size knob.
+
+    The batched profiler materialises one rank row per `top_n` inside the
+    statement, so an unbounded value — and LLM-generated arguments are exactly
+    the ones that arrive unbounded — would compile a multi-megabyte query in the
+    request thread. Asserted on the tool's advertised schema, because that is
+    where FastMCP enforces it (and where the client reads it); calling the
+    decorated function directly from Python bypasses validation entirely.
+    """
+    import asyncio
+
+    tool = asyncio.run(server.mcp.get_tool("profile_column"))
+    assert tool is not None
+    assert tool.parameters["properties"]["top_n"] == {
+        "default": 10,
+        "minimum": 1,
+        "maximum": 100,
+        "type": "integer",
+    }
+
+
 def test_bad_uuid_is_a_clean_tool_error(db_session: Any, monkeypatch: Any) -> None:
     _as(monkeypatch, db_session, _user(db_session))
     with pytest.raises(ToolError):

@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.engine.default import DefaultDialect
+from sqlalchemy.exc import OperationalError
 
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import Asset, Check, Connection, Suite, User
@@ -977,6 +978,7 @@ class _FakeResult:
 
 
 _BATCH_SUBQUERY_RE = re.compile(r"WHERE (\S+) IS NOT NULL.*?\) AS dq_top_(\d+)", re.S)
+_FILTERED_COLUMN_RE = re.compile(r"WHERE (\S+) IS NOT NULL")
 
 
 class _FakeConn:
@@ -984,10 +986,15 @@ class _FakeConn:
 
     Answers **both** top-values shapes: the batched rank-join (#327, what
     `profile_table` actually issues) and the per-column fallback. The batched
-    branch is not optional politeness — `_fetch_top_values` swallows any
-    exception from the batched attempt and retries per-column, so a fake that
-    only understood the old shape would leave every endpoint test silently
-    green *through the fallback*, i.e. covering a path production doesn't take.
+    branch is not optional politeness — `_fetch_top_values` retries per-column on
+    a driver rejection, so a fake that only understood the old shape would leave
+    every endpoint test silently green *through the fallback*, i.e. covering a
+    path production doesn't take.
+
+    Both routes match the column against the rendered ``WHERE <col> IS NOT NULL``
+    rather than by substring (#327 review, m2): a bare ``if col in sql`` makes
+    ``c1`` match a statement about ``c10``, so a 12-column fallback would answer
+    the wrong column's rows and the test would still be green.
     """
 
     # A real Connection exposes `.dialect` (the engine's) — `_table`/`core_table`
@@ -1001,6 +1008,12 @@ class _FakeConn:
         self._aggregate = aggregate
         self._tops = tops
         self.executed: list[str] = []
+        self.rollbacks = 0
+
+    def rollback(self) -> None:
+        # A real Connection exposes this; `_recover_transaction` calls it before
+        # any per-column retry (#327 review, P1) and the count is what proves it.
+        self.rollbacks += 1
 
     def execute(self, clause: Any) -> _FakeResult:
         # Core statements render the column unquoted in str(); route the
@@ -1011,9 +1024,12 @@ class _FakeConn:
             return _FakeResult([self._aggregate])
         if "dq_ranks" in sql:
             return _FakeResult(self._batched_rows(sql))
-        for col, rows in self._tops.items():
-            if col in sql:
-                return _FakeResult(rows)
+        for col in _FILTERED_COLUMN_RE.findall(sql):
+            rows = self._tops.get(col.strip('"`'))
+            if rows is not None:
+                # The per-column query labels its output dq_value/dq_freq (#327
+                # review, P2); `_top_values_per_column` maps those back.
+                return _FakeResult([{"dq_value": r["value"], "dq_freq": r["freq"]} for r in rows])
         return _FakeResult([])
 
     def _batched_rows(self, sql: str) -> list[dict[str, Any]]:
@@ -1192,8 +1208,13 @@ def test_profile_chunks_the_batch_beyond_the_column_cap(
 def test_profile_falls_back_to_per_column_when_the_batched_query_fails(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The mandated fallback (#327): a dialect that refuses the union form must
-    degrade to the pre-#327 per-column path, not fail the profile."""
+    """The mandated fallback (#327): a dialect that refuses the batched form must
+    degrade to the pre-#327 per-column path, not fail the profile.
+
+    The refusal is a `SQLAlchemyError`, not any old exception — the catch is
+    narrow on purpose (#327 review, P3) so a bug in our own reader raises instead
+    of silently routing every profile through the N+1 path forever.
+    """
     columns = ["amount", "status"]
     fake = _patch_conn(
         monkeypatch,
@@ -1215,7 +1236,9 @@ def test_profile_falls_back_to_per_column_when_the_batched_query_fails(
     def refuse_batched(clause: Any) -> Any:
         result = inner(clause)
         if "dq_ranks" in str(clause):
-            raise RuntimeError("this dialect will not LIMIT inside a derived table")
+            raise OperationalError(
+                "this dialect will not LIMIT inside a derived table", {}, Exception("nope")
+            )
         return result
 
     monkeypatch.setattr(fake, "execute", refuse_batched)
@@ -1231,6 +1254,60 @@ def test_profile_falls_back_to_per_column_when_the_batched_query_fails(
     assert body["columns"][1]["top_values"] == [{"value": "a", "count": 60}]
     # aggregate + the refused batch + one query per column
     assert len(fake.executed) == 2 + len(columns)
+    # The aborted-transaction guard fired before the retry (#327 review, P1) —
+    # without it the per-column queries run on a dead transaction on Postgres.
+    assert fake.rollbacks == 1
+
+
+def test_profile_falls_back_only_for_the_chunk_that_failed(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#327 review, P5: one bad chunk must not discard the chunks that worked.
+
+    All-or-nothing recovery made the failure case cost MORE round-trips than the
+    N+1 code it replaced, and recomputed already-answered columns against the
+    warehouse that had just proved slow. Here chunk 2 of 3 fails: chunks 1 and 3
+    keep their single batched query each, and only chunk 2's two columns are
+    re-run individually.
+    """
+    monkeypatch.setattr(profile_service, "_TOP_VALUES_BATCH", 2)
+    columns = [f"c{i}" for i in range(6)]
+    aggregate: dict[str, Any] = {"row_count": 10}
+    for i in range(len(columns)):
+        aggregate |= {f"nulls_{i}": 0, f"distinct_{i}": 1, f"min_{i}": i, f"max_{i}": i}
+    fake = _patch_conn(
+        monkeypatch,
+        aggregate=aggregate,
+        tops={col: [{"value": col, "freq": 1}] for col in columns},
+    )
+    inner = fake.execute
+    seen_batches = 0
+
+    def refuse_second_batch(clause: Any) -> Any:
+        nonlocal seen_batches
+        if "dq_ranks" in str(clause):
+            seen_batches += 1
+            if seen_batches == 2:
+                fake.executed.append(str(clause))
+                raise OperationalError("chunk 2 upset the planner", {}, Exception("nope"))
+        return inner(clause)
+
+    monkeypatch.setattr(fake, "execute", refuse_second_batch)
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"table": "orders", "schema": "public", "columns": columns, "top_n": 5},
+    )
+    assert resp.status_code == 200
+    # Every column still profiled — the failed chunk's via the per-column path.
+    assert [c["top_values"] for c in resp.json()["columns"]] == [
+        [{"value": col, "count": 1}] for col in columns
+    ]
+    # 1 aggregate + 3 batched attempts + 2 per-column retries for the failed
+    # chunk only. All-or-nothing recovery would be 1 + 3 + 6.
+    assert len(fake.executed) == 1 + 3 + 2
+    assert fake.rollbacks == 1
 
 
 def test_profile_invalid_column_returns_422(client: TestClient, db_session: Any) -> None:
