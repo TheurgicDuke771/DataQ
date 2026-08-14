@@ -249,13 +249,27 @@ that would stamp "sampled" on a result that was not.
 ### Still open after this work
 
 - **Unity Catalog needs a live run.** The pushdown SQL is DataQ's own
-  construction and is unit-pinned, but `TABLESAMPLE (x PERCENT)`'s behaviour is a
-  Databricks fact — #953's rule says only a live run is evidence.
-- **Iceberg is not sampled yet.** `pyiceberg` offers `row_filter` and a scan
-  limit; the same `SampleSpec` would slot in behind `SAMPLING_CAPABLE_TYPES`.
+  construction and is unit-pinned, but `TABLESAMPLE (x PERCENT) REPEATABLE (seed)`
+  behaviour is a Databricks fact — #953's rule says only a live run is evidence.
+- **Iceberg has neither a cap nor sampling**
+  ([#1328](https://github.com/TheurgicDuke771/DataQ/issues/1328)). It is the third
+  runner that materialises a whole dataset, so #755 stays open there. The probe is
+  cheap (`scan().count()` is snapshot metadata); what it needs first is its **own
+  measurement** — Iceberg passed at 2M rows where UC died, so inheriting
+  `RUN_MAX_SCAN_ROWS`'s 1.5M would refuse a rung measured to work.
+- **Comparison sources cannot sample**
+  ([#1331](https://github.com/TheurgicDuke771/DataQ/issues/1331)) — refused at save
+  time rather than ignored. It needs *coherent* key-set sampling: two independent
+  draws from two 5M-row sides would share almost no keys and report everything as
+  a mismatch, which is worse than refusing.
 - **Column projection for flat-file monitors.** A column-freshness monitor still
   reads every column to compute one `MAX`. Parquet could project a single column
   off its footer, which would remove most of the remaining monitor-path memory.
+- **Efficiency and reuse batches**
+  ([#1329](https://github.com/TheurgicDuke771/DataQ/issues/1329),
+  [#1330](https://github.com/TheurgicDuke771/DataQ/issues/1330)) — the sampled CSV
+  `random` path reads the object twice, and the count and take construct their CSV
+  streams separately (consistent today by coincidence, not construction).
 - **Incremental / delta-only validation** stays out of scope by design (#595):
   sampling bounds *how much* is read, not *which part is new*. Note for whoever
   builds it — a watermark belongs on the run target beside `sampling`, and its
