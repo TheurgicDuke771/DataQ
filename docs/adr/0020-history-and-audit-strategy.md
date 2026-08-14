@@ -5,6 +5,28 @@
 - **Deciders:** @TheurgicDuke771
 - **Related:** ADR [0009](0009-flat-monorepo-layout.md), [0010](0010-provider-agnostic-infrastructure-seams.md) (least-privilege / secrets in the SecretStore), [0013](0013-marketplace-distribution-and-anti-lock-in.md) (BYOL portability); issues [#310](https://github.com/TheurgicDuke771/DataQ/issues/310) (this decision), [#308](https://github.com/TheurgicDuke771/DataQ/issues/308)/[#309](https://github.com/TheurgicDuke771/DataQ/issues/309) (the consistency-hardening follow-ups surfaced alongside it)
 
+> **Amendment (2026-08-13, [ADR 0041](0041-history-audit-strategy.md), #310):** decision **6 is
+> discharged** — the cross-entity audit log is **accepted**, as one append-only `audit_events`
+> table whose `entity_id` deliberately carries **no FK** so the row outlives the entity it
+> describes; #431/G1's data-*read* audit is phase 2 on that same table, not a second one.
+> Decisions **1 (no SCD-2)**, **4 (cascade-delete)** and **5 (no soft-delete)** are
+> **re-affirmed**, with two corrections to the reasoning here:
+> - Decision 4 said retention-past-delete would be revisited "only if an audit/compliance
+>   requirement appears." It appeared (#431/G1). It was revisited, and the answer is still
+>   *not* to retain `check_versions` past its check — the audit log's delete event carries
+>   the final state, so cascade now stands for a **positive** reason rather than as an
+>   accepted cost. Type-4 tables remain the **product** surface (version drawer, restore);
+>   the audit log is the **durable record**.
+> - Decision 5's stated limitation — "a deleted connection orphaning the *meaning* of past
+>   runs" — **is no longer true**: #753/#541 made `delete_connection` refuse with a 409 while
+>   any suite or comparison-source check depends on it. Soft-delete stays deferred, but on a
+>   narrower and better argument (ADR 0041 §2.3), not on this one.
+>
+> Decision **3 (credentials are never snapshotted)** is unchanged and extended: a credential
+> rotation now records an *audit event* naming the secret **pointer**, never a before/after of
+> the value — closing the "credential-rotation events are unrecorded" hole in *Consequences*
+> below without weakening the rule.
+
 ## Context
 
 The internal Postgres data has no general history/versioning framework. **Alembic versions the *schema* (DDL), not the *data*** — it cannot answer "what was this connection's config last Tuesday." A consistency/SCD review (2026-06-20) found:
