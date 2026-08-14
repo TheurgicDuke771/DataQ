@@ -858,17 +858,46 @@ class Result(Base):
         _in_check("status", RESULT_STATUSES, "status_valid"),
         Index("ix_results_run_id", "run_id"),
         Index("ix_results_check_id", "check_id"),
-        # Retention-sweep predicate support (#323) — `run_service.
-        # purge_expired_sample_failures` filters on `created_at < cutoff AND
-        # sample_failures_purged_at IS NULL`; the partial WHERE keeps the index
-        # scoped to the sweep's actual (small, shrinking) working set instead of
-        # covering every row ever written. Created CONCURRENTLY in the migration
+        # Retention-sweep predicate support (#323) — two partial indexes, one
+        # per independently-swept column (`run_service._purge_column` runs
+        # `sample_failures` and `observed_value` as two separate UPDATEs).
+        # Each predicate is textually identical to the matching query's own
+        # WHERE clause (see `_purge_column`'s docstring) — that textual match
+        # is load-bearing, not cosmetic: Postgres only uses a partial index
+        # when it can prove the query implies the index predicate, and it
+        # proves that by matching expression trees, not by "this looks
+        # related." Both created CONCURRENTLY in the migration
         # (`fbf4fe92e295`) so a plain `create_all`-built test DB and a
         # migration-built one still agree here.
+        #
+        # `ix_results_unpurged_created` covers the `sample_failures` sweep.
+        # #323 review finding F2: the predicate folds in `sample_failures IS
+        # NOT NULL AND jsonb_typeof(sample_failures) <> 'null'`, not just
+        # `sample_failures_purged_at IS NULL` — a passing check's `sample_
+        # failures` is SQL NULL from the day it's written and never gets
+        # stamped (there is nothing to purge), so a `purged_at IS NULL`-only
+        # predicate would keep every passing-check row in the index forever,
+        # growing ~linearly with the table instead of tracking the sweep's
+        # actual (small, shrinking) working set.
         Index(
             "ix_results_unpurged_created",
             "created_at",
-            postgresql_where=text("sample_failures_purged_at IS NULL"),
+            postgresql_where=text(
+                "sample_failures_purged_at IS NULL AND sample_failures IS NOT NULL "
+                "AND jsonb_typeof(sample_failures) <> 'null'"
+            ),
+        ),
+        # `ix_results_unpurged_observed` covers the `observed_value` sweep.
+        # #323 review finding F1: this half's predicate has no
+        # `sample_failures_purged_at` term at all, so it could never use
+        # `ix_results_unpurged_created` — without its own index it fell back
+        # to a full sequential scan on every batch (worse than the pre-#323
+        # single UPDATE, which scanned once; batching without this index
+        # would have scanned once per chunk).
+        Index(
+            "ix_results_unpurged_observed",
+            "created_at",
+            postgresql_where=text("jsonb_typeof(observed_value -> 'observed_value') = 'array'"),
         ),
     )
 

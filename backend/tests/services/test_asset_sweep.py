@@ -226,8 +226,10 @@ def test_disabled_when_retention_non_positive(db_session: Any) -> None:
 
 
 def test_chunked_delete_sweeps_all_candidates_across_multiple_chunks(db_session: Any) -> None:
-    """5 orphaned assets swept with chunk_size=2 forces 3 DELETE statements
-    (2 + 2 + 1) — every candidate is still removed and the count is exact."""
+    """5 orphaned assets swept with chunk_size=2 forces multiple DELETE
+    statements (2 + 2 + 1, plus a trailing empty round to confirm none remain
+    — `chunked_dml` exits on `affected == 0`, #323 review F4) — every
+    candidate is still removed and the count is exact."""
     orphan_ids = [_asset(db_session, last_seen=_stale(), tag=f"chunk-{i}") for i in range(5)]
     db_session.commit()
 

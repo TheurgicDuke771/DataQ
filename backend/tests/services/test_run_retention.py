@@ -253,42 +253,21 @@ def test_idempotent_second_sweep_observed_value(db_session: Any) -> None:
 # ── #323: bounded batching ────────────────────────────────────────────────────
 
 
-def test_batches_across_multiple_chunks_purge_everything(db_session: Any) -> None:
-    """A candidate set larger than one batch must still be swept in full — not
-    just the first `chunk_size` rows. Passes a `chunk_size` far smaller than the
-    default (`_PURGE_SWEEP_CHUNK`) so a small, fast seed can still force the
-    `_purge_column` loop through several iterations: 7 eligible rows over
-    chunk_size=3 means 3 full batches (3, 3, 1) before the `affected <
-    chunk_size` sentinel fires. A regression that dropped the loop back to a
-    single UPDATE would still purge every row here (chunk_size is irrelevant
-    to a single unbounded UPDATE), so this alone doesn't prove batching
-    happened — `test_batch_count_matches_the_configured_chunk_size` below
-    proves that half via the number of UPDATE statements actually issued."""
-    rows = [_result(db_session, age_days=40, metric=Decimal(str(i))) for i in range(7)]
-
-    purged = run_service.purge_expired_sample_failures(
-        db_session, retention_days=30, now=NOW, chunk_size=3
-    )
-
-    assert purged == 7
-    for row in rows:
-        db_session.refresh(row)
-        assert row.sample_failures is None
-        assert row.sample_failures_purged_at == NOW
-        # the trend scalar survives regardless of which batch a row landed in
-        assert row.metric_value is not None
-
-
 def test_batch_count_matches_the_configured_chunk_size(db_session: Any, monkeypatch: Any) -> None:
-    """Proves the loop actually iterates in bounded chunks — not just that the
-    end result is complete (`test_batches_across_multiple_chunks_purge_everything`
-    would pass just the same against the old single-UPDATE shape, since
-    chunk_size doesn't change what a single UPDATE touches). Counts the
-    UPDATEs `_purge_column` issues against `results` by wrapping
-    `Session.execute`; 7 eligible rows over chunk_size=3 must take exactly 3
-    UPDATE statements (3 + 3 + 1), not 1."""
-    for i in range(7):
-        _result(db_session, age_days=40, metric=Decimal(str(i)))
+    """Proves the loop actually iterates in bounded chunks AND still sweeps
+    every candidate in full — not just that the end result is complete (a
+    candidate-set-larger-than-one-batch check alone would pass just the same
+    against the old single-UPDATE shape, since chunk_size doesn't change what
+    an unbounded UPDATE touches — #323 review M5 folded that check in here
+    rather than keeping it a separate, weaker test). Counts the UPDATEs
+    `_purge_column` issues against `results` by wrapping `Session.execute`.
+
+    7 eligible rows over chunk_size=3: `chunked_dml` exits on `affected == 0`
+    (#323 review F4), not `affected < chunk_size`, so the sample_failures half
+    takes FOUR UPDATE statements (3 + 3 + 1 + a trailing empty round to
+    confirm none remain) and the observed_value half (nothing eligible there)
+    takes one more — 5 total, not 4."""
+    rows = [_result(db_session, age_days=40, metric=Decimal(str(i))) for i in range(7)]
 
     executed: list[Any] = []
     original_execute = db_session.execute
@@ -305,9 +284,15 @@ def test_batch_count_matches_the_configured_chunk_size(db_session: Any, monkeypa
     )
 
     assert purged == 7
-    # sample_failures batches (3) + observed_value batches (1, nothing eligible
-    # there — the loop still runs once and exits on `affected < chunk_size`)
-    assert len(executed) == 4
+    # sample_failures batches (3, 3, 1, 0) + observed_value batches (0, nothing
+    # eligible there) — see the docstring above for why it's 5, not 4.
+    assert len(executed) == 5
+    for row in rows:
+        db_session.refresh(row)
+        assert row.sample_failures is None
+        assert row.sample_failures_purged_at == NOW
+        # the trend scalar survives regardless of which batch a row landed in
+        assert row.metric_value is not None
 
 
 def test_chunk_size_does_not_leak_rows_outside_the_retention_window(db_session: Any) -> None:
