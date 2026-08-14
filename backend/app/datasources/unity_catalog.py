@@ -41,9 +41,11 @@ from backend.app.datasources.base import (
 from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
 from backend.app.datasources.sampling import (
+    SamplingDrawError,
     enforce_row_cap,
     enforce_sample_cap,
     sampling_record,
+    split_row_count_checks,
     stamp_sampling,
 )
 from backend.app.datasources.sql import (
@@ -173,18 +175,37 @@ SQL_BATCH_EXPECTATION_TYPES: frozenset[str] = frozenset({CUSTOM_SQL_EXPECTATION_
 #: How far a Bernoulli ``TABLESAMPLE`` is over-drawn before the ``LIMIT`` trims it
 #: (#595). ``TABLESAMPLE (p PERCENT)`` keeps each row with probability p, so an
 #: exactly-sized draw comes back short about half the time; asking for 20% more
-#: makes a short read vanishingly unlikely at any sample size worth taking, while
-#: the ``LIMIT`` keeps the transfer bounded either way.
+#: makes a short read unlikely to fall short at any sample size worth taking,
+#: while the ``LIMIT`` keeps the transfer bounded either way.
 _SAMPLE_OVERSHOOT = 1.2
 
-#: Floor for the computed percentage. A very small sample of a very large table
-#: rounds toward zero, and ``TABLESAMPLE (0 PERCENT)`` returns nothing — an empty
-#: frame that would read as "every check passed on no rows".
+#: Decimal places the percentage is rendered with. Load-bearing, not cosmetic:
+#: Databricks accepts only an INTEGER or DECIMAL literal in ``TABLESAMPLE``, and
+#: Python's float repr flips to scientific notation below 1e-4 — so a 100-row
+#: sample of a 200M-row table emitted ``TABLESAMPLE (6e-05 PERCENT)`` and failed
+#: with PARSE_SYNTAX_ERROR. The very-large-table case is the reason this feature
+#: exists, so it failed deterministically exactly where it mattered most.
+_SAMPLE_PERCENT_DECIMALS = 6
+
+#: Floor for the computed percentage, and it MUST survive the formatting above —
+#: ``1e-06`` renders as ``0.000001`` at six places, and anything smaller would
+#: round to ``0.000000``. ``TABLESAMPLE (0 PERCENT)`` returns nothing, which is
+#: the vacuous-green outcome this floor exists to prevent.
 _MIN_SAMPLE_PERCENT = 0.000001
+
+#: Smallest expected draw the percentage is sized for, independent of how few
+#: rows were asked for. A Bernoulli draw sized for its exact target is a coin
+#: flip at small numbers — at an expected 1.2 rows, P(zero) is ~30%, and an empty
+#: frame passes every column expectation *vacuously* with a green run. Sizing for
+#: at least this many expected rows makes an empty draw astronomically unlikely
+#: (P(0) ≈ e^-100) and costs, at worst, transferring ~100 rows instead of one.
+#: The ``LIMIT`` still trims to what the author asked for, so the sample the
+#: checks see is unchanged — only the draw is made reliable.
+_MIN_EXPECTED_DRAW_ROWS = 100
 
 
 def _sample_percent(rows: int, total: int) -> float:
-    """The ``TABLESAMPLE`` percentage that draws ~``rows`` out of ``total``.
+    """The ``TABLESAMPLE`` percentage that reliably draws at least ``rows`` of ``total``.
 
     Two cases collapse to 100. ``rows >= total`` means the sample covers the whole
     table, so there is nothing to narrow — the caller then reports ``sampled=False``
@@ -192,10 +213,26 @@ def _sample_percent(rows: int, total: int) -> float:
     that could not count) yields 100 because sampling everything of nothing is
     still nothing, and it keeps the query legal rather than emitting a zero or
     negative percentage.
+
+    Otherwise the percentage is the larger of (a) the ask plus `_SAMPLE_OVERSHOOT`
+    and (b) whatever draws `_MIN_EXPECTED_DRAW_ROWS` — see that constant for why
+    a small ask must not be taken literally.
     """
     if total <= 0 or rows >= total:
         return 100.0
-    return max(min(100.0, round(rows / total * 100.0 * _SAMPLE_OVERSHOOT, 6)), _MIN_SAMPLE_PERCENT)
+    wanted = max(rows * _SAMPLE_OVERSHOOT, float(_MIN_EXPECTED_DRAW_ROWS))
+    percent = round(wanted / total * 100.0, _SAMPLE_PERCENT_DECIMALS)
+    return max(min(100.0, percent), _MIN_SAMPLE_PERCENT)
+
+
+def format_sample_percent(percent: float) -> str:
+    """Render ``percent`` as a fixed-point DECIMAL literal Databricks will parse.
+
+    Separate from `_sample_percent` and public so the formatting — the half that
+    actually broke (see `_SAMPLE_PERCENT_DECIMALS`) — is testable on its own,
+    without a warehouse and without reconstructing the statement around it.
+    """
+    return f"{percent:.{_SAMPLE_PERCENT_DECIMALS}f}"
 
 
 class UnityCatalogCheckRunner:
@@ -320,16 +357,23 @@ class UnityCatalogCheckRunner:
           exactly N rows" (a complete read, reported ``sampled=False``) from "the
           table has more" without a second query.
         * ``random`` → ``TABLESAMPLE (p PERCENT)`` sized from a ``COUNT(*)`` probe,
-          then ``LIMIT rows``. Deliberately not ``ORDER BY rand() LIMIT n``, which
-          is a global sort of the whole table, and deliberately not
-          ``TABLESAMPLE (n ROWS)``, which Spark implements as a plain ``LIMIT`` —
-          i.e. it would silently be a head sample wearing a random label.
+          then ``LIMIT rows``, with ``REPEATABLE (seed)`` when the author set one.
+          Deliberately not ``ORDER BY rand() LIMIT n``, which is a global sort of
+          the whole table, and deliberately not ``TABLESAMPLE (n ROWS)``, which
+          Spark implements as a plain ``LIMIT`` — i.e. it would silently be a head
+          sample wearing a random label.
 
         ``TABLESAMPLE ... PERCENT`` is Bernoulli, so it returns *about* p% and can
-        come back short. The percentage is over-drawn (`_SAMPLE_OVERSHOOT`) and the
-        result trimmed by ``LIMIT``, and the row count actually obtained is what
-        `sampling_record` reports — the record states what was read, never what was
-        asked for.
+        come back short. Three things keep that honest: the percentage is
+        over-drawn and floored at `_MIN_EXPECTED_DRAW_ROWS` expected rows, the
+        ``LIMIT`` trims the excess, and an **empty** draw from a non-empty table is
+        refused outright rather than reported as a green run over zero rows. The
+        row count actually obtained is what `sampling_record` reports — the record
+        states what was read, never what was asked for.
+
+        **Live verification of the warehouse's own behaviour is pending** (#953):
+        `TABLESAMPLE`/`REPEATABLE` semantics are a Databricks fact, and only a live
+        run is evidence for them. What is pinned here is the statement DataQ emits.
         """
         import pandas as pd
         from sqlalchemy import text
@@ -354,10 +398,16 @@ class UnityCatalogCheckRunner:
             )
         else:
             total = self._count_rows(table=table, schema=schema)
-            percent = _sample_percent(sample.rows, total)
+            percent = format_sample_percent(_sample_percent(sample.rows, total))
+            # `REPEATABLE (seed)` is what makes a seeded run actually reproducible.
+            # Without it the seed was accepted, persisted on every result, and
+            # ignored — the record claiming a property the query did not have,
+            # which is worse than not offering seeds at all. `seed` is an `int`
+            # (`parse_sample_spec`), so it is safe to interpolate.
+            repeatable = f" REPEATABLE ({sample.seed})" if sample.seed is not None else ""
             statement = (
                 f"SELECT * FROM {qualified} "  # noqa: S608  # nosec B608
-                f"TABLESAMPLE ({percent} PERCENT) LIMIT {sample.rows}"
+                f"TABLESAMPLE ({percent} PERCENT){repeatable} LIMIT {sample.rows}"
             )
         frame = pd.read_sql_query(text(statement), engine)
 
@@ -370,8 +420,37 @@ class UnityCatalogCheckRunner:
                 # known for free and the read was complete.
                 total = len(frame)
         else:
+            self._require_non_empty_draw(frame, table=table, total=total)
             truncated = sample.rows < (total or 0)
         return frame, sampling_record(sample, rows=len(frame), total_rows=total, sampled=truncated)
+
+    @staticmethod
+    def _require_non_empty_draw(frame: Any, *, table: str, total: int | None) -> None:
+        """Refuse a Bernoulli draw that came back EMPTY from a non-empty table (#595).
+
+        Every column expectation passes *vacuously* on zero rows, so an empty draw
+        would produce a fully green run asserting nothing — the exact
+        confidently-wrong outcome this codebase refuses elsewhere (a monitor with
+        no baseline `skip`s rather than fabricating a pass). `_sample_percent`'s
+        expected-rows floor makes this astronomically unlikely, but "unlikely"
+        is not "impossible", and the failure mode is silent, so it is checked
+        rather than assumed.
+
+        A **short** draw is deliberately NOT refused: the record reports the true
+        row count, so nothing is overstated — the author asked for at most N rows
+        and is told exactly how many were read. Only zero is a lie, because zero
+        rows cannot support the verdict the run would print.
+
+        A genuinely empty table (``total == 0``) reads back empty and that is the
+        truth, matching what the unsampled path does; it is not refused.
+        """
+        if total and len(frame) == 0:
+            raise SamplingDrawError(
+                f"the random sample of {table!r} returned no rows from a table of "
+                f"{total:,} — every check would pass on an empty frame without "
+                "asserting anything, so DataQ refuses the run. Re-run, raise the "
+                "sample size, or use the 'head' strategy."
+            )
 
     def _load_frame(self, *, table: str, schema: str | None) -> tuple[Any, dict[str, Any] | None]:
         """The DataFrame the expectations run against, plus its sampling record.
@@ -454,6 +533,17 @@ class UnityCatalogCheckRunner:
         # list, which `run_service`'s positional zip would map onto wrong checks.
         by_position: dict[int, CheckOutcome] = {}
         success = True
+        # A THIRD group when sampling is on: a table row-count expectation against
+        # a sampled frame measures the sample and reports it as the dataset's size
+        # (#595 C6), so it is refused per check rather than mismeasured. Carved out
+        # of the frame group only — a custom-SQL check runs against the whole table
+        # and is unaffected.
+        if self._sampling is not None and frame_positions:
+            keep, refused = split_row_count_checks([checks[i] for i in frame_positions])
+            if refused:
+                by_position.update({frame_positions[i]: outcome for i, outcome in refused.items()})
+                frame_positions = [frame_positions[i] for i in keep]
+                success = False
         if frame_positions:
             frame_outcome = self._run_dataframe_checks(
                 table=table,

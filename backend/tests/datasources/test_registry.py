@@ -197,3 +197,36 @@ def test_a_pushdown_runner_ignores_a_sampling_spec_rather_than_crashing() -> Non
         sampling=SampleSpec(strategy="head", rows=10),
     )
     assert isinstance(runner, SnowflakeCheckRunner)
+
+
+def test_every_sampling_capable_type_actually_threads_the_spec() -> None:
+    """J5. `SAMPLING_CAPABLE_TYPES` (which decides what SAVES) is a different
+    thing from whether a builder actually passes `sampling` to its runner — and
+    the pushdown builders swallow the kwarg via `**_`. Adding a type to the set
+    and forgetting the builder would therefore produce exactly the silent-drop
+    this feature refuses at save time: accepted, persisted, never honoured.
+
+    Asserted over the SET rather than per type, so a new entry is covered the
+    moment it is added rather than when someone remembers to write its test.
+    """
+    spec = SampleSpec(strategy="head", rows=7)
+    config_by_type = {
+        "s3": (_S3_CONFIG, None),
+        "adls_gen2": (_S3_CONFIG, None),
+        "unity_catalog": (_UC_CONFIG, "main"),
+    }
+    assert (
+        set(config_by_type) == SAMPLING_CAPABLE_TYPES
+    ), "a sampling-capable type has no coverage here — add it to config_by_type"
+    for conn_type, (config, catalog) in config_by_type.items():
+        runner = build_check_runner(
+            conn_type=conn_type,
+            config=config,
+            secret_ref="ref",
+            secret_store=FakeSecretStore(default="secret"),
+            catalog=catalog,
+            sampling=spec,
+        )
+        assert (
+            getattr(runner, "_sampling", "MISSING") == spec
+        ), f"{conn_type} is declared sampling-capable but its builder drops the spec"

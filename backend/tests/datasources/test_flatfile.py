@@ -16,7 +16,7 @@ import pytest
 from backend.app.core.config import get_settings
 from backend.app.datasources import flatfile
 from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckSpec, SampleSpec
-from backend.app.datasources.sampling import ScanTooLargeError
+from backend.app.datasources.sampling import SamplingDrawError, ScanTooLargeError
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
 # ── format_from_path ──
@@ -1931,10 +1931,7 @@ def test_a_sampled_run_stamps_every_result_with_what_it_saw(
         schema=None,
         checks=[
             CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
-            CheckSpec(
-                "expect_table_row_count_to_be_between",
-                {"min_value": 0, "max_value": 10},
-            ),
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "name"}),
         ],
     )
     assert [c.success for c in outcome.checks] == [True, True]
@@ -2211,3 +2208,217 @@ def test_a_csv_head_sample_never_splits_a_row_across_the_window_boundary(
     # Every retained row must be whole: same id sequence, same payload length.
     assert list(frame["id"]) == list(range(100))
     assert set(frame["payload"].str.len()) == {500}
+
+
+# ── /code-review follow-ups: C4, C6, J1 (#595) ───────────────────────────────
+
+
+def _quoted_csv(rows: int) -> bytes:
+    """A CSV whose every row carries an embedded newline inside a quoted field.
+
+    The layout C4 is about: legal RFC 4180, handled perfectly by the full read,
+    and a byte-range cut at the last raw `\\n` lands *inside* the quotes.
+    """
+    body = b"".join(f'{i},"line one\nline two {i}"\n'.encode() for i in range(rows))
+    return b"id,note\n" + body
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (b"a,b\n1,2\n3,4\n", b"a,b\n1,2\n3,4"),  # trailing newline is a boundary
+        (b"a,b\n1,2\n3,", b"a,b\n1,2"),  # partial final row dropped
+        (b'a,b\n1,"x\ny"\n2,', b'a,b\n1,"x\ny"'),  # newline INSIDE quotes is not a cut
+        (b'a,b\n1,"x\ny', b"a,b"),  # cut lands mid-quote: fall back further
+        (b"one enormous line with no newline", b"one enormous line with no newline"),
+        (
+            b'a,b\n1,"he said ""hi""\nnext"\n2,',
+            b'a,b\n1,"he said ""hi""\nnext"',
+        ),  # "" escape
+    ],
+)
+def test_the_row_boundary_is_quote_aware(raw: bytes, expected: bytes) -> None:
+    """C4. A newline is NOT a row boundary — a quoted field may contain one, and
+    cutting there leaves an unterminated quote that pandas rejects outright with
+    "EOF inside string". `csv_row_count` already refuses to equate the two; this
+    is the same rule for the head path, including the ``""`` escape (which adds
+    two quotes, so parity still answers "am I inside a field")."""
+    assert flatfile.trim_to_row_boundary(raw) == expected
+
+
+def test_a_head_sample_of_a_quoted_csv_parses_instead_of_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C4 end to end. Before the quote-aware cut this raised
+    `pandas.errors.ParserError: EOF inside string` — on a file the unsampled read
+    handles perfectly, intermittently, decided by nothing but where the growing
+    window happened to land."""
+    content = _quoted_csv(60_000)
+    _patch_store(monkeypatch, content=content)
+
+    frame, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/quoted.csv",
+        secret="s",
+        sample=SampleSpec(strategy="head", rows=50),
+    )
+
+    assert len(frame) == 50
+    assert record["sampled"] is True
+    # Every retained row must be WHOLE — the embedded newline is data, not a
+    # row break, so the note column keeps both of its lines.
+    assert list(frame["id"]) == list(range(50))
+    assert all("line one\nline two" in note for note in frame["note"])
+
+
+def test_the_bounded_schema_head_read_is_quote_aware_too(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same defect lived in `read_csv_head` (#882) before #595 touched it —
+    the schema/profile read every schema-drift run and dry-run preview takes. Age
+    is not a disposition (CONTRIBUTING 3a), and both paths now share one cut."""
+    _patch_store(monkeypatch, content=_quoted_csv(200_000))
+    frame = flatfile.read_csv_head(conn_type="s3", config={}, path="raw/q.csv", secret="s", rows=5)
+    assert list(frame.columns) == ["id", "note"]
+    assert len(frame) == 5
+
+
+def test_a_row_count_expectation_is_refused_on_a_sampled_flat_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C6. The expectation would observe the SAMPLE and report it as the file's
+    size — a healthy 5M-row file with `min_value=4M` failing critically forever.
+    Per-check `error` (#122), so its siblings on the same frame still evaluate."""
+    _patch_store(monkeypatch, content=_csv_bytes(500))
+    runner = flatfile.FlatFileCheckRunner(
+        conn_type="s3",
+        config={},
+        secret="x",
+        sampling=SampleSpec(strategy="head", rows=10),
+    )
+    outcome = runner.run_checks(
+        table="raw/big.csv",
+        schema=None,
+        checks=[
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+            CheckSpec("expect_table_row_count_to_be_between", {"min_value": 400}),
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "name"}),
+        ],
+    )
+
+    assert [c.errored for c in outcome.checks] == [False, True, False]
+    assert "row-count expectation cannot run against a sampled dataset" in (
+        outcome.checks[1].error_message or ""
+    )
+    # Submission order preserved — `run_service` zips these onto its own list, so
+    # a shuffle would attribute results to the wrong checks.
+    assert [c.expectation_type for c in outcome.checks] == [
+        "expect_column_values_to_not_be_null",
+        "expect_table_row_count_to_be_between",
+        "expect_column_values_to_not_be_null",
+    ]
+    assert outcome.success is False
+
+
+def test_a_refused_row_count_check_carries_no_sampling_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The record describes a READ, and a refused check performed none — claiming
+    it saw 10 rows would be the overclaim the field exists to prevent. Its message
+    already names sampling as the cause."""
+    _patch_store(monkeypatch, content=_csv_bytes(500))
+    runner = flatfile.FlatFileCheckRunner(
+        conn_type="s3",
+        config={},
+        secret="x",
+        sampling=SampleSpec(strategy="head", rows=10),
+    )
+    outcome = runner.run_checks(
+        table="raw/big.csv",
+        schema=None,
+        checks=[
+            CheckSpec("expect_table_row_count_to_be_between", {"min_value": 400}),
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+        ],
+    )
+    assert outcome.checks[0].sampling is None
+    assert outcome.checks[1].sampling is not None
+
+
+def test_a_row_count_expectation_runs_normally_on_an_unsampled_flat_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scoped to sampling: unsampled, the count IS the file's and the expectation
+    is valid. A blanket ban would delete a working check from every suite."""
+    _patch_store(monkeypatch, content=_csv_bytes(5))
+    runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
+    outcome = runner.run_checks(
+        table="raw/small.csv",
+        schema=None,
+        checks=[
+            CheckSpec(
+                "expect_table_row_count_to_be_between",
+                {"min_value": 1, "max_value": 10},
+            )
+        ],
+    )
+    assert outcome.checks[0].success is True
+
+
+def test_a_file_that_shrank_between_the_count_and_the_take_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """J1. A random sample is inherently two passes — count, then take — and a
+    landing zone is exactly where an object is re-uploaded between them. If it
+    shrank, drawn positions fall past the new end and the take comes back short
+    while `total_rows` still reports the old population: a sample both smaller and
+    less representative than the record claims, with nothing saying so."""
+    big = _csv_bytes(1_000)
+    small = _csv_bytes(20)
+    calls: list[int] = []
+
+    def _counting_read_range(*, start: int, length: int, **_k: Any) -> bytes:
+        # First pass (the row count) sees the big file; every later read sees the
+        # replacement — the re-upload, reproduced deterministically.
+        calls.append(1)
+        content = big if len(calls) <= 2 else small
+        return content[start : start + length]
+
+    monkeypatch.setattr(flatfile, "file_stat", lambda **k: flatfile.FileStat(_LANDED, len(big)))
+    monkeypatch.setattr(flatfile, "read_range", _counting_read_range)
+    monkeypatch.setattr(flatfile, "object_size", lambda **k: len(big))
+
+    with pytest.raises(SamplingDrawError, match="changed while it was being sampled"):
+        flatfile.read_sampled_dataframe(
+            conn_type="s3",
+            config={},
+            path="raw/moving.csv",
+            secret="s",
+            sample=SampleSpec(strategy="random", rows=100, seed=1),
+        )
+
+
+def test_a_random_sample_covering_the_whole_file_never_builds_an_index_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """J4. `list(range(total))` is ~40 MB of Python ints at 1.4M rows, and
+    `take_indices` would gather-copy every batch through it purely to reproduce
+    the batches it was handed — all for a "sample" that changes nothing. Asserted
+    on the SEAM, because the returned frame is identical either way."""
+    _patch_store(monkeypatch, content=_csv_bytes(30))
+    monkeypatch.setattr(
+        flatfile,
+        "take_indices",
+        lambda *a, **k: pytest.fail("a full-coverage sample must not gather through indices"),
+    )
+
+    frame, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/small.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=500, seed=1),
+    )
+    assert len(frame) == 30
+    assert record["sampled"] is False and record["total_rows"] == 30

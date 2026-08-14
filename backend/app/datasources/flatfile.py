@@ -39,6 +39,7 @@ from typing import Any, ClassVar
 import great_expectations as gx
 
 from backend.app.core.config import get_settings
+from backend.app.core.errors import SafeMonitorError
 from backend.app.core.logging import get_logger
 from backend.app.core.s3_endpoint import addressing_config_kwargs
 from backend.app.core.secrets import SecretStore
@@ -56,17 +57,19 @@ from backend.app.datasources.monitors import (
     FRESHNESS,
     VOLUME,
     MonitorConfigError,
-    SafeMonitorError,
     freshness_column,
     run_monitor_specs,
 )
 from backend.app.datasources.s3 import S3Config
 from backend.app.datasources.sampling import (
+    SamplingDrawError,
     batches_to_frame,
     enforce_byte_cap,
     enforce_sample_cap,
+    merge_by_position,
     sample_row_indices,
     sampling_record,
+    split_row_count_checks,
     stamp_sampling,
     take_head,
     take_indices,
@@ -147,6 +150,42 @@ def sniff_delimiter(sample: bytes) -> str:
         return csv.Sniffer().sniff(text, delimiters=_CSV_DELIMITERS).delimiter
     except csv.Error:
         return _DEFAULT_DELIMITER
+
+
+def trim_to_row_boundary(raw: bytes) -> bytes:
+    """Cut ``raw`` at the last newline that is a **real row boundary** (#595 C4).
+
+    A byte range almost never ends on a row boundary, and the trailing fragment
+    has to go: a half-row parses as a *complete* row with empty trailing fields,
+    silently changing an inferred dtype (a truncated ``12345`` becomes ``123``).
+
+    But **a newline is not a row boundary** — a quoted CSV field may legally
+    contain one, and cutting there leaves an unterminated quote that pandas
+    rejects outright with "EOF inside string". That turns a file the full read
+    handles perfectly into an intermittent parse failure, depending only on where
+    the window happened to land. `csv_row_count` already refuses to equate the two
+    (it streams through pyarrow rather than counting newlines); this is the same
+    rule for the head path.
+
+    A candidate newline is a boundary iff an **even** number of double-quotes
+    precedes it: RFC 4180 escapes a quote inside a quoted field by doubling it,
+    which adds two, so parity is exactly "are we inside a quoted field". Both
+    steps run at C speed (`bytes.rfind` / `bytes.count`), and the first candidate
+    is the answer for any file without quotes, so the common case is one scan.
+
+    Returns ``raw`` unchanged when no boundary exists — one enormous line, or a
+    fragment entirely inside a quoted field. There is no complete row to keep, so
+    the parser gets what we have and fails honestly rather than being handed a
+    silently truncated row.
+    """
+    end = len(raw)
+    while True:
+        cut = raw.rfind(b"\n", 0, end)
+        if cut == -1:
+            return raw
+        if raw.count(b'"', 0, cut) % 2 == 0:
+            return raw[:cut]
+        end = cut
 
 
 def read_csv_bytes(raw: io.BytesIO, **kwargs: Any) -> Any:
@@ -451,6 +490,12 @@ def read_csv_head(
     column reads as all-null). So the trailing partial line is discarded before
     parsing, unless the range covered the whole object.
 
+    The cut is **quote-aware** (`trim_to_row_boundary`, #595 C4): a newline inside
+    a quoted field is not a row boundary, and cutting there leaves an unterminated
+    quote that pandas rejects with "EOF inside string" — turning a file the full
+    read handles into an intermittent parse failure of a schema/profile read,
+    decided by nothing but where the window landed.
+
     Returns a pandas DataFrame of at most ``rows`` rows; the caller reads names
     and dtypes off it.
     """
@@ -467,11 +512,7 @@ def read_csv_head(
         length=_CSV_HEAD_BYTES + 1,
     )
     if len(head) > _CSV_HEAD_BYTES:
-        cut = head.rfind(b"\n")
-        # No newline at all in a full window means one enormous line; there is no
-        # complete row to keep, so hand the parser what we have rather than
-        # nothing and let it fail honestly.
-        head = head[:cut] if cut != -1 else head[:_CSV_HEAD_BYTES]
+        head = trim_to_row_boundary(head)
     return read_csv_bytes(io.BytesIO(head), nrows=rows)
 
 
@@ -592,11 +633,7 @@ def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> tuple[Any, bo
         raw = read_range(**reader_args, start=0, length=span)
         reached_eof = span >= size
         if not reached_eof:
-            cut = raw.rfind(b"\n")
-            # No newline in a whole window means one enormous line: there is no
-            # complete row to keep, so hand the parser what we have and let it
-            # fail honestly rather than silently truncating a row.
-            raw = raw[:cut] if cut != -1 else raw
+            raw = trim_to_row_boundary(raw)
         frame = read_csv_bytes(io.BytesIO(raw), nrows=limit)
         if len(frame) >= limit or reached_eof:
             return frame, reached_eof
@@ -645,25 +682,35 @@ def read_sampled_dataframe(
             sample, rows=len(frame), total_rows=csv_total, sampled=truncated
         )
 
+    want_head = sample.strategy == SAMPLE_HEAD
     total: int | None = None
-    if sample.strategy == SAMPLE_HEAD:
-        limit = sample.rows + 1
-        indices: list[int] | None = None
-    else:
+    indices: list[int] | None = None
+    if not want_head:
         total = row_count(**reader_args)
+        # `None` means the sample covers the whole dataset, so there is no
+        # selection to make and the stream is read straight through — building the
+        # identity index list would cost ~40 MB at 1.4M rows and make
+        # `take_indices` gather-copy every batch to reproduce it.
         indices = sample_row_indices(total=total, rows=sample.rows, seed=sample.seed)
-        limit = 0
 
     batches, schema, arrow_backed, close = _open_batch_stream(reader_args, fmt)
     try:
-        taken = (
-            take_head(batches, limit=limit) if indices is None else take_indices(batches, indices)
-        )
+        if indices is not None:
+            taken = take_indices(batches, indices)
+        else:
+            # `rows + 1` for head (the probe row); the counted total for a random
+            # sample that turned out to cover everything.
+            taken = take_head(batches, limit=sample.rows + 1 if want_head else (total or 0))
     finally:
         close()
 
-    if indices is None:
-        read_rows = sum(batch.num_rows for batch in taken)
+    read_rows = sum(batch.num_rows for batch in taken)
+    if indices is not None:
+        # `total` is set on every path that produces indices (we just counted).
+        assert total is not None
+        _require_complete_draw(read_rows, len(indices), path=path, total=total)
+        truncated = sample.rows < (total or 0)
+    elif want_head:
         truncated = read_rows > sample.rows
         if truncated:
             taken = take_head(taken, limit=sample.rows)
@@ -672,10 +719,35 @@ def read_sampled_dataframe(
             # sample and its exact size is now known for free.
             total = read_rows
     else:
-        truncated = sample.rows < (total or 0)
+        # A random sample that covered the whole dataset: complete, not a sample.
+        truncated = False
 
     frame = batches_to_frame(taken, schema=schema, arrow_backed=arrow_backed)
     return frame, sampling_record(sample, rows=len(frame), total_rows=total, sampled=truncated)
+
+
+def _require_complete_draw(taken: int, wanted: int, *, path: str, total: int) -> None:
+    """Refuse a random sample whose object changed under it mid-read (#595 J1).
+
+    A random sample is inherently two passes — count, then take — and a landing
+    zone is exactly where an object gets re-uploaded between them. If the file
+    **shrank**, positions drawn from the old population fall past the new end and
+    the take comes back short, while ``total_rows`` still reports the count from
+    the first pass: a sample that is both smaller and less representative than the
+    record claims, with nothing on the result to say so.
+
+    Growth is deliberately NOT an error, and is not stale either: ``total_rows``
+    means "the population this sample was drawn from", which is precisely the
+    count taken at draw time. Rows appended afterwards were never in scope.
+    """
+    if taken < wanted:
+        raise SamplingDrawError(
+            f"{path!r} changed while it was being sampled — only {taken:,} of {wanted:,} "
+            f"drawn rows were still present (it held {total:,} when counted). The sample "
+            "would be short and skewed while the record still reported the old "
+            "population, so DataQ refuses the run rather than report it as "
+            "representative; re-run once the file has settled."
+        )
 
 
 class FlatFileReadError(SafeMonitorError, RuntimeError):
@@ -1062,6 +1134,15 @@ class FlatFileCheckRunner:
         checks: list[CheckSpec],
         index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
+        # A table row-count expectation against a sampled frame measures the
+        # SAMPLE and reports it as the dataset's size (#595 C6), so it is refused
+        # per check rather than mismeasured. Only when sampling is on: unsampled,
+        # the count is the dataset's and the expectation is perfectly valid.
+        refused: dict[int, CheckOutcome] = {}
+        runnable = list(range(len(checks)))
+        if self._sampling is not None:
+            runnable, refused = split_row_count_checks(checks)
+
         df, sampling = self._load_frame(table)
         context = gx.get_context(mode="ephemeral")
         asset = context.data_sources.add_pandas(name="flatfile").add_dataframe_asset(name="file")
@@ -1071,14 +1152,23 @@ class FlatFileCheckRunner:
         outcome = run_expectations(
             context,
             batch_definition=batch_definition,
-            checks=checks,
+            checks=[checks[i] for i in runnable],
             name="suite-flatfile",
             batch_parameters={"dataframe": df},
             index_columns=index_columns,
         )
         # Stamped on every outcome (#595) so a pass on a sample says so on the
-        # result row, not just in the run log.
-        return stamp_sampling(outcome, sampling)
+        # result row, not just in the run log. The REFUSALS are deliberately not
+        # stamped: the record describes a read, and a refused check performed
+        # none — claiming it saw 100k rows would be the overclaim this field
+        # exists to prevent. Its message already names sampling as the cause.
+        stamped = stamp_sampling(outcome, sampling)
+        if not refused:
+            return stamped
+        merged = merge_by_position(
+            len(checks), (runnable, stamped.checks), (list(refused), list(refused.values()))
+        )
+        return SuiteOutcome(success=False, checks=merged)
 
 
 def build_flatfile_runner(

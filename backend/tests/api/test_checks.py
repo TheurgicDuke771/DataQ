@@ -2227,3 +2227,136 @@ def test_monitor_kinds_derive_their_dimension(client: TestClient, db_session: An
     vol = client.post(f"/api/v1/suites/{sid}/checks", json=_volume_payload())
     assert fresh.json()["dimension"] == "timeliness"
     assert vol.json()["dimension"] == "completeness"
+
+
+# ── #595 C6/C7: sampling gates at author time ────────────────────────────────
+
+_SAMPLED_TARGET = {
+    "path": "raw/orders.csv",
+    "sampling": {"strategy": "head", "rows": 100},
+}
+
+
+def test_a_row_count_expectation_is_refused_on_a_sampled_suite(
+    client: TestClient, db_session: Any
+) -> None:
+    """C6, save-time half. Against a sampled frame the expectation observes the
+    SAMPLE and reports it as the dataset's size — a healthy 5M-row file with
+    `min_value=4M` failing critically forever. Refused where the author is, not
+    silently mismeasured every night."""
+    suite_id = _suite_id(client, db_session, conn_type="s3", target=_SAMPLED_TARGET)
+    resp = client.post(
+        f"/api/v1/suites/{suite_id}/checks",
+        json={
+            "name": "row count",
+            "expectation_type": "expect_table_row_count_to_be_between",
+            "config": {"min_value": 4_000_000},
+        },
+    )
+    assert resp.status_code == 422
+    assert "sampled dataset" in resp.json()["error"]["message"]
+
+
+def test_the_same_expectation_saves_fine_on_an_unsampled_suite(
+    client: TestClient, db_session: Any
+) -> None:
+    """The gate is scoped to sampling: unsampled, the count IS the dataset's."""
+    suite_id = _suite_id(client, db_session, conn_type="s3", target={"path": "raw/orders.csv"})
+    resp = client.post(
+        f"/api/v1/suites/{suite_id}/checks",
+        json={
+            "name": "row count",
+            "expectation_type": "expect_table_row_count_to_be_between",
+            "config": {"min_value": 1},
+        },
+    )
+    assert resp.status_code == 201
+
+
+def test_turning_sampling_on_under_a_row_count_check_is_refused(
+    client: TestClient, db_session: Any
+) -> None:
+    """The OTHER direction. Without this the combination is reachable simply by
+    doing it in the other order, and the check would start measuring the sample
+    while the suite still read as a healthy configuration."""
+    suite_id = _suite_id(client, db_session, conn_type="s3", target={"path": "raw/orders.csv"})
+    created = client.post(
+        f"/api/v1/suites/{suite_id}/checks",
+        json={
+            "name": "rows in range",
+            "expectation_type": "expect_table_row_count_to_be_between",
+            "config": {"min_value": 1},
+        },
+    )
+    assert created.status_code == 201
+
+    resp = client.patch(f"/api/v1/suites/{suite_id}", json={"target": _SAMPLED_TARGET})
+    assert resp.status_code == 422
+    body = resp.json()["error"]
+    assert "sampled dataset" in body["message"]
+    # The message names the obstacle — "one of your checks conflicts" would send
+    # an author hunting through a long suite.
+    assert "rows in range" in body["message"]
+
+
+def test_turning_sampling_on_is_allowed_when_no_row_count_check_exists(
+    client: TestClient, db_session: Any
+) -> None:
+    suite_id = _suite_id(client, db_session, conn_type="s3", target={"path": "raw/orders.csv"})
+    client.post(
+        f"/api/v1/suites/{suite_id}/checks",
+        json={
+            "name": "not null",
+            "expectation_type": "expect_column_values_to_not_be_null",
+            "config": {"column": "id"},
+        },
+    )
+    resp = client.patch(f"/api/v1/suites/{suite_id}", json={"target": _SAMPLED_TARGET})
+    assert resp.status_code == 200
+
+
+def test_dryrun_surfaces_a_scan_cap_refusal_verbatim(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#595 C5. The preview must refuse for the SAME reason a real run does, with
+    the same remedy. Before the shared `safe_failure_reason` policy, the dry-run's
+    blanket `except` classified it into "dry run could not execute against the
+    datasource" — no cap size, no "set a sampling strategy" — while the real run
+    on the identical target printed the actionable sentence. An author would go
+    looking for a datasource fault that does not exist."""
+    from backend.app.datasources.sampling import ScanTooLargeError
+
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    _patch_runner(
+        monkeypatch,
+        _FakeRunner(
+            raises=ScanTooLargeError(
+                "file 'raw/huge.csv' is 999,000,000 bytes, over the scan cap of "
+                "134,217,728. Set a sampling strategy, or raise RUN_MAX_SCAN_BYTES."
+            )
+        ),
+    )
+
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+
+    assert resp.status_code == 502
+    reason = resp.json()["error"]["detail"]["reason"]
+    assert "RUN_MAX_SCAN_BYTES" in reason
+    assert "sampling strategy" in reason
+
+
+def test_dryrun_still_classifies_an_ordinary_driver_error(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exemption stays narrow — a driver message can echo a DSN or a bound
+    cell value, so it is read only to pick a category."""
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    _patch_runner(
+        monkeypatch,
+        _FakeRunner(raises=RuntimeError("login failed for user 'svc' at acct.example")),
+    )
+
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+
+    reason = resp.json()["error"]["detail"]["reason"]
+    assert "svc" not in reason and "acct.example" not in reason

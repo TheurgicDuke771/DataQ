@@ -105,6 +105,7 @@ def test_a_seed_on_a_head_spec_is_refused_not_ignored() -> None:
 
 def test_indices_are_sorted_distinct_and_in_range() -> None:
     indices = sample_row_indices(total=1000, rows=50, seed=1)
+    assert indices is not None
     assert len(indices) == 50
     assert len(set(indices)) == 50
     assert indices == sorted(indices)
@@ -126,20 +127,24 @@ def test_a_seed_makes_the_draw_reproducible_and_no_seed_does_not_pin_it() -> Non
         total=10_000, rows=20, seed=42
     )
     # Unseeded draws over a large space colliding would be astronomically unlikely.
-    unseeded = {tuple(sample_row_indices(total=10_000, rows=20, seed=None)) for _ in range(5)}
+    unseeded = {tuple(sample_row_indices(total=10_000, rows=20, seed=None) or ()) for _ in range(5)}
     assert len(unseeded) > 1
 
 
-def test_a_sample_at_least_as_big_as_the_population_takes_every_row() -> None:
-    """The full-coverage case: the caller reads everything and reports
-    `sampled=False` rather than labelling a complete read a sample."""
-    assert sample_row_indices(total=5, rows=5, seed=1) == [0, 1, 2, 3, 4]
-    assert sample_row_indices(total=5, rows=99, seed=1) == [0, 1, 2, 3, 4]
+def test_a_sample_at_least_as_big_as_the_population_selects_nothing() -> None:
+    """The full-coverage case returns `None`, not the identity list (#595 J4).
+
+    `list(range(total))` is ~40 MB of Python ints at 1.4M rows, and `take_indices`
+    would then gather-copy every batch through it purely to reproduce the batches
+    it was handed. `None` tells the caller to read straight through; it still
+    reports `sampled=False`, because a complete read is not a sample."""
+    assert sample_row_indices(total=5, rows=5, seed=1) is None
+    assert sample_row_indices(total=5, rows=99, seed=1) is None
 
 
 @pytest.mark.parametrize("total", [0, -1])
-def test_an_empty_population_yields_no_indices(total: int) -> None:
-    assert sample_row_indices(total=total, rows=10, seed=1) == []
+def test_an_empty_population_selects_nothing(total: int) -> None:
+    assert sample_row_indices(total=total, rows=10, seed=1) is None
 
 
 # ── sampling_record ──
@@ -231,7 +236,7 @@ def test_the_refusal_carries_no_driver_text_so_it_can_be_persisted_verbatim() ->
     `run_service._failure_reason` surface it instead of classifying it. That is
     only sound because every word of it is DataQ-authored — this pins the marker
     so a future subclass change can't quietly widen the redaction contract."""
-    from backend.app.datasources.monitors import SafeMonitorError
+    from backend.app.core.errors import SafeMonitorError
 
     assert issubclass(ScanTooLargeError, SafeMonitorError)
 

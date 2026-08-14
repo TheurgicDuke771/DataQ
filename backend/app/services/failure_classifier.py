@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from backend.app.core.errors import SafeMonitorError
+
 
 class FailureCategory(StrEnum):
     CONFIG = "config"
@@ -140,6 +142,30 @@ def classify_failure_reason(exc: BaseException) -> str:
     from ``_MESSAGES``, so no credential/DSN/PII fragment can ride out on it.
     """
     return _MESSAGES[classify_failure_category(exc)]
+
+
+def safe_failure_reason(exc: BaseException) -> str:
+    """The user-facing reason: verbatim when SAFE-marked, classified otherwise.
+
+    **The single policy** for turning an exception into text a user sees — used
+    by the monitor loop (per-check `error_message`), the run path (a run's
+    `failure_reason`) and the dry-run preview (the 502 detail). Having one
+    implementation is the point: these three sinks are equally unprotected by the
+    logger-level scrubber, so a message safe for one is safe for all three and a
+    message unsafe for one is unsafe for all three. Three separate isinstance
+    branches is how they drift — which they had (#595: the run path grew its own
+    narrower copy and the dry-run had none, so a `ScanTooLargeError` naming the
+    file, the cap and the knob reached a real run and became "dry run could not
+    execute" in the preview of the very same target).
+
+    `SafeMonitorError` is the declared marker (see its docstring for the rule);
+    everything else goes through `classify_failure_reason`. An empty message
+    falls through to classification too — a marked exception with nothing to say
+    is worse than the generic sentence, not better.
+    """
+    if isinstance(exc, SafeMonitorError) and str(exc):
+        return str(exc)
+    return classify_failure_reason(exc)
 
 
 # ── Orchestration-poll classification (#1285) ────────────────────────────────

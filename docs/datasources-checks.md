@@ -163,11 +163,25 @@ checks run against a bounded sample instead of the whole dataset:
 Sampling **replaces** the size cap for that suite (the read is bounded by the
 sample), so it is the supported way to check a target that is otherwise too big.
 
-Two things it deliberately does **not** do. Sampling is refused on Snowflake and
-Iceberg targets rather than silently ignored — Snowflake never loads rows, so a
-sample there would change nothing while labelling every result "sampled". And
-freshness monitors are never sampled: a `MAX` over a sample is a *smaller*
-maximum, which would report healthy data as stale.
+Things it deliberately **refuses** rather than silently allowing:
+
+- **Sampling on Snowflake or Iceberg targets** — Snowflake never loads rows, so a
+  sample there would change nothing while labelling every result "sampled".
+- **Freshness monitors are never sampled** — a `MAX` over a sample is a *smaller*
+  maximum, which would report healthy data as critically stale.
+- **Table row-count expectations on a sampled suite** (`expect_table_row_count_*`)
+  — against a sample they measure the *sample* and report it as the dataset's
+  size, so a healthy 5M-row file with `min_value: 4000000` would fail critically
+  forever. Refused at author time in both directions (adding the check, and
+  turning sampling on under one), and per check at run time for suites that
+  predate the gate. Use a **volume monitor** instead: it counts the whole dataset
+  without loading it.
+- **Sampling on a comparison check's `source`** — the comparison reader
+  materialises both sides in full for the diff, so the block would be ignored.
+
+On Unity Catalog a seeded random sample is pushed down as
+`TABLESAMPLE (p PERCENT) REPEATABLE (seed)`, so the seed genuinely pins the draw
+rather than only being recorded.
 
 **Every result says whether it was sampled**, and only when it genuinely was — a
 sample larger than the dataset covered everything, and is reported as a complete

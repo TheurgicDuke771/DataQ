@@ -46,9 +46,15 @@ if TYPE_CHECKING:
     from sqlalchemy.engine.interfaces import Dialect
     from sqlalchemy.sql import Select, TableClause
 
+from backend.app.core.errors import SafeMonitorError
 from backend.app.datasources.base import CheckOutcome, MonitorSpec
 from backend.app.datasources.sql import core_table, folding_identifier, is_sql_identifier
-from backend.app.services.failure_classifier import classify_failure_reason
+from backend.app.services.failure_classifier import safe_failure_reason
+
+# `SafeMonitorError` lives in `core.errors` since #595 — the marker is an
+# error-POLICY contract, and anchoring it there is what lets one
+# `safe_failure_reason` serve the monitor loop, the run path and the dry-run
+# preview instead of three isinstance branches that drift.
 
 FRESHNESS = "freshness"
 VOLUME = "volume"
@@ -67,36 +73,6 @@ def monitor_expectation_type(kind: str) -> str:
     the author path (asserts the stored check's type matches its kind), and the
     frontend catalog — so the kind↔type pairing can't drift."""
     return f"{_EXPECTATION_PREFIX}{kind}"
-
-
-class SafeMonitorError(Exception):
-    """Marker: ``str(exc)`` is DataQ-authored and safe to persist verbatim (#900).
-
-    The monitor loop persists a failed check's message into
-    ``results.observed_value`` -> the run-detail API -> the UI, a sink the
-    logger-level scrubber never sees. Raw driver/SDK text must never reach it (an
-    Azure storage exception embeds the full SAS-signed URL — #828), so unmarked
-    exceptions are routed through ``classify_failure_reason``.
-
-    But classifying *everything* would be its own bug: it would replace
-    "unknown freshness column 'nope'" — which we wrote, which names the user's
-    actual mistake, and which contains nothing sensitive — with a generic
-    "the run failed to execute", making a config typo undiagnosable from the UI.
-
-    So safety is declared, not guessed. Subclass this **only** when every message
-    the exception can carry is built by DataQ from the user's own configuration
-    (a column name, a numeric range, a monitor kind) or from static text. If it can
-    ever interpolate a driver message, a URL, or a connection string, leave it
-    unmarked and let it be classified.
-
-    **No exceptions — the rule holds as written (#989).** `_as_aware_datetime`
-    used to truncate and echo the offending *cell value*, which is target data,
-    not configuration, and the rule was stated more strictly than it was enforced.
-    It no longer does: the value rides on ``MonitorConfigError.unparsed_value``
-    and reaches the user through the read layer under the suite's column policy,
-    so the diagnostic survives without the message carrying data. A message that
-    needs to show a cell is a message that needs a structured field instead.
-    """
 
 
 class MonitorConfigError(SafeMonitorError, ValueError):
@@ -756,11 +732,7 @@ def run_monitor_specs(
                     expectation_type=monitor_expectation_type(spec.kind),
                     success=False,
                     errored=True,
-                    error_message=(
-                        str(exc)
-                        if isinstance(exc, SafeMonitorError)
-                        else classify_failure_reason(exc)
-                    ),
+                    error_message=safe_failure_reason(exc),
                     observed_value=observed,
                 )
             )

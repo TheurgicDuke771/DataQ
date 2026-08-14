@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 from sqlalchemy.engine.default import DefaultDialect
 
+from backend.app.datasources import flatfile
 from backend.app.db.models import Connection
 from backend.app.services import dataset_reader
 from backend.app.services.custom_sql import CustomSqlInvalidError
@@ -254,7 +255,19 @@ def test_sql_query_revalidated_read_only_at_read_time(
 # ───────────────────────── flat-file path ───────────────────────────
 
 
+def _small_object(monkeypatch: pytest.MonkeyPatch, size: int = 4096) -> None:
+    """Stub the object-metadata seam the #595 byte preflight probes.
+
+    The comparison reader now refuses an over-cap object *before* downloading it
+    (J2) — without it, #755's OOM survived through any comparison against an
+    oversized file, because the whole object downloaded and expanded ~8-9x in
+    memory before the row cap could look at it.
+    """
+    monkeypatch.setattr(dataset_reader, "file_stat", lambda **kw: flatfile.FileStat(None, size))
+
+
 def test_flatfile_read_and_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    _small_object(monkeypatch)
     monkeypatch.setattr(dataset_reader, "read_flatfile_dataframe", lambda **kw: _frame(5))
     store = FakeSecretStore(default="s3cret")
     df = read_dataset(

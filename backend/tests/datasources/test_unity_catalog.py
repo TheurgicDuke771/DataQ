@@ -138,7 +138,10 @@ import pandas as pd  # noqa: E402
 from backend.app.core.config import get_settings  # noqa: E402
 from backend.app.datasources import unity_catalog  # noqa: E402
 from backend.app.datasources.base import CheckSpec, SampleSpec  # noqa: E402
-from backend.app.datasources.sampling import ScanTooLargeError  # noqa: E402
+from backend.app.datasources.sampling import (  # noqa: E402
+    SamplingDrawError,
+    ScanTooLargeError,
+)
 from backend.app.datasources.unity_catalog import (  # noqa: E402
     SQL_BATCH_EXPECTATION_TYPES,
     UnityCatalogCheckRunner,
@@ -992,7 +995,7 @@ def test_a_random_sample_pushes_tablesample_down_sized_from_the_count(
         sample=SampleSpec(strategy="random", rows=100, seed=1),
     )
 
-    assert "TABLESAMPLE (12.0 PERCENT)" in seen[0]
+    assert "TABLESAMPLE (12.000000 PERCENT)" in seen[0]
     assert "LIMIT 100" in seen[0]
     assert len(frame) == 100
     assert record["total_rows"] == 1_000 and record["sampled"] is True
@@ -1236,3 +1239,196 @@ def test_an_over_cap_count_refuses_the_run_end_to_end(
             )
     finally:
         runner.close()
+
+
+# ── /code-review follow-ups: C1, C2, C3 (#595) ───────────────────────────────
+
+
+def test_the_percentage_never_renders_in_scientific_notation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C1, the headline defect. Databricks accepts only an INTEGER or DECIMAL
+    literal in `TABLESAMPLE`, and Python's float repr flips to scientific below
+    1e-4 — so a 100-row sample of a 200M-row table emitted
+    `TABLESAMPLE (6e-05 PERCENT)` and died with PARSE_SYNTAX_ERROR. The
+    very-large-table case is the entire reason this feature exists, so it failed
+    deterministically exactly where it mattered most."""
+    runner = _sampling_runner(SampleSpec(strategy="random", rows=100))
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 200_000_000)
+    seen = _capture_query(monkeypatch, pd.DataFrame({"id": range(100)}))
+
+    runner._read_sampled_table(
+        table="orders", schema="sales", sample=SampleSpec(strategy="random", rows=100)
+    )
+
+    assert "e-" not in seen[0].lower(), f"scientific notation reached the warehouse: {seen[0]}"
+    assert "TABLESAMPLE (0.000060 PERCENT)" in seen[0]
+
+
+@pytest.mark.parametrize(
+    ("rows", "total"),
+    [(1, 200_000_000), (100, 200_000_000), (10, 10**12), (100_000, 5_000_000), (1, 2)],
+)
+def test_every_rendered_percentage_is_a_parseable_decimal_literal(rows: int, total: int) -> None:
+    """The property, not one example: whatever `_sample_percent` returns must
+    survive formatting as a plain decimal. A floor that renders as `1e-06`, or as
+    `0.000000`, is no floor at all — the first is a syntax error and the second is
+    `TABLESAMPLE (0 PERCENT)`, which returns nothing."""
+    rendered = unity_catalog.format_sample_percent(unity_catalog._sample_percent(rows, total))
+    assert "e" not in rendered.lower()
+    assert float(rendered) > 0, f"{rendered} would sample zero rows"
+
+
+def test_a_tiny_sample_of_a_huge_table_is_still_drawn_reliably() -> None:
+    """C3's root cause, fixed in the sizing rather than only caught after the
+    fact. A Bernoulli draw sized for its exact target is a coin flip at small
+    numbers — at an expected 1.2 rows, P(zero) is ~30%, and an empty frame passes
+    every column expectation vacuously with a green run. The percentage is
+    floored at `_MIN_EXPECTED_DRAW_ROWS` expected rows so that cannot happen."""
+    total = 200_000_000
+    percent = unity_catalog._sample_percent(1, total)
+    expected_rows = percent / 100.0 * total
+    assert expected_rows >= unity_catalog._MIN_EXPECTED_DRAW_ROWS
+
+
+def test_a_seed_is_emitted_as_repeatable_not_merely_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C2. The docs promise "add a seed to make a run reproducible", the parser
+    accepts it and the record persists it — but the emitted SQL had no
+    `REPEATABLE`, so consecutive runs drew different rows while every result row
+    claimed reproducibility. Recording a property the query does not have is worse
+    than not offering seeds at all."""
+    runner = _sampling_runner(SampleSpec(strategy="random", rows=10, seed=42))
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 10_000)
+    seen = _capture_query(monkeypatch, pd.DataFrame({"id": range(10)}))
+
+    _frame, record = runner._read_sampled_table(
+        table="orders",
+        schema="sales",
+        sample=SampleSpec(strategy="random", rows=10, seed=42),
+    )
+
+    assert "REPEATABLE (42)" in seen[0]
+    # The record and the query must agree — that agreement IS the fix.
+    assert record["seed"] == 42
+
+
+def test_an_unseeded_sample_emits_no_repeatable_clause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The complement: without a seed the draw must stay genuinely random, or
+    every unseeded monitor would inspect the same rows forever."""
+    runner = _sampling_runner(SampleSpec(strategy="random", rows=10))
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 10_000)
+    seen = _capture_query(monkeypatch, pd.DataFrame({"id": range(10)}))
+    runner._read_sampled_table(
+        table="orders", schema="sales", sample=SampleSpec(strategy="random", rows=10)
+    )
+    assert "REPEATABLE" not in seen[0]
+
+
+def test_an_empty_draw_from_a_non_empty_table_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C3. An empty frame passes EVERY column expectation vacuously, so the run
+    would print a full green board while asserting nothing about a 10,000-row
+    table. `_sample_percent`'s floor makes it astronomically unlikely, but the
+    failure mode is silent, so it is checked rather than assumed."""
+    runner = _sampling_runner(SampleSpec(strategy="random", rows=10))
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 10_000)
+    _capture_query(monkeypatch, pd.DataFrame({"id": []}))
+
+    with pytest.raises(SamplingDrawError, match="no rows from a table of 10,000"):
+        runner._read_sampled_table(
+            table="orders",
+            schema="sales",
+            sample=SampleSpec(strategy="random", rows=10),
+        )
+
+
+def test_an_empty_draw_from_a_GENUINELY_empty_table_is_not_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The complement, and the reason the guard reads `total` rather than just
+    the frame: an empty table really does yield an empty frame, and that is the
+    truth — the same answer the unsampled path gives. Refusing it would make
+    sampling unusable on a table that is legitimately empty today."""
+    runner = _sampling_runner(SampleSpec(strategy="random", rows=10))
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 0)
+    _capture_query(monkeypatch, pd.DataFrame({"id": []}))
+
+    frame, record = runner._read_sampled_table(
+        table="orders", schema="sales", sample=SampleSpec(strategy="random", rows=10)
+    )
+    assert len(frame) == 0
+    assert record["sampled"] is False
+
+
+def test_a_SHORT_draw_is_accepted_and_reported_honestly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deliberately NOT refused. The record reports the true row count, so nothing
+    is overstated — the author asked for at most N and is told exactly how many
+    were read. Only ZERO is a lie, because zero rows cannot support the verdict
+    the run would print."""
+    runner = _sampling_runner(SampleSpec(strategy="random", rows=100))
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 10_000)
+    _capture_query(monkeypatch, pd.DataFrame({"id": range(63)}))
+
+    _frame, record = runner._read_sampled_table(
+        table="orders", schema="sales", sample=SampleSpec(strategy="random", rows=100)
+    )
+    assert record["rows"] == 63
+    assert record["requested_rows"] == 100
+
+
+# ── C6: row-count expectations vs a sampled read ─────────────────────────────
+
+
+def test_a_row_count_expectation_is_refused_on_a_sampled_uc_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C6. Against a sampled frame this expectation deterministically observes the
+    SAMPLE and reports it as the table's size, so a healthy 5M-row table with
+    `min_value=4_000_000` fails critically forever. Refused per check (#122), so
+    the siblings on the same frame still evaluate and persist."""
+    runner = _sampling_runner(SampleSpec(strategy="head", rows=10))
+    _capture_query(monkeypatch, pd.DataFrame({"id": range(11)}))
+
+    outcome = runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[
+            CheckSpec("expect_table_row_count_to_be_between", {"min_value": 4_000_000}),
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+        ],
+    )
+
+    assert outcome.checks[0].errored is True
+    assert "row-count expectation cannot run against a sampled dataset" in (
+        outcome.checks[0].error_message or ""
+    )
+    assert outcome.checks[1].success is True, "the sibling must still evaluate"
+    # Order is submission order — `run_service` zips outcomes onto its own list.
+    assert outcome.checks[0].expectation_type == "expect_table_row_count_to_be_between"
+
+
+def test_a_row_count_expectation_runs_normally_without_sampling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refusal must be scoped to sampling: unsampled, the count IS the
+    dataset's and the expectation is perfectly valid. A blanket ban would remove
+    a working check from every unsampled suite."""
+    runner = _runner_over(pd.DataFrame({"id": [1, 2, 3]}), monkeypatch)
+    outcome = runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[
+            CheckSpec(
+                "expect_table_row_count_to_be_between",
+                {"min_value": 1, "max_value": 10},
+            )
+        ],
+    )
+    assert outcome.checks[0].success is True

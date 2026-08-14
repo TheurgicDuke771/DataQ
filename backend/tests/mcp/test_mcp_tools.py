@@ -845,3 +845,50 @@ def test_allowed_hosts_default_to_the_aca_shape_when_unset(monkeypatch: Any) -> 
         "localhost",
         "127.0.0.1",
     ]
+
+
+def test_get_suite_results_reports_whether_a_check_saw_a_sample(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """#595 C8. Without this field an AI client reads a green board drawn from a
+    2% sample and confidently reports full-dataset quality — the #424/#1115
+    overclaim class, reintroduced for every MCP consumer at once."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = Check(suite_id=suite.id, name="not null id", expectation_type="expect_x", config={})
+    db_session.add(check)
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.flush()
+    record = {
+        "strategy": "random",
+        "requested_rows": 100_000,
+        "rows": 100_000,
+        "total_rows": 5_000_000,
+        "sampled": True,
+    }
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="pass", sampling=record))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    assert server.get_suite_results(str(suite.id))["checks"][0]["sampling"] == record
+
+
+def test_get_suite_results_reports_null_sampling_for_a_complete_read(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`null`, not an object claiming `sampled: false` — the same shape a client
+    sees for every result written before scale-aware execution existed, so it can
+    branch on presence without a backfill."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
+    db_session.add(check)
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="pass"))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    assert server.get_suite_results(str(suite.id))["checks"][0]["sampling"] is None

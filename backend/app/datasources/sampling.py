@@ -35,14 +35,16 @@ from collections.abc import Iterable
 from dataclasses import replace
 from typing import Any
 
+from backend.app.core.errors import SafeMonitorError
 from backend.app.datasources.base import (
     SAMPLE_HEAD,
     SAMPLE_RANDOM,
     SAMPLING_STRATEGIES,
+    CheckOutcome,
+    CheckSpec,
     SampleSpec,
     SuiteOutcome,
 )
-from backend.app.datasources.monitors import SafeMonitorError
 
 #: Structural bound on a sample size. Not a memory guardrail (that is
 #: ``RUN_MAX_SCAN_ROWS``, applied per datasource with its own probe) — this only
@@ -74,6 +76,57 @@ class ScanTooLargeError(SafeMonitorError, RuntimeError):
     "the run failed to execute; see the server logs", which is precisely the
     outcome #755 already delivers.
     """
+
+
+class SamplingDrawError(SafeMonitorError, RuntimeError):
+    """A sampled read came back in a shape that cannot support a verdict (#595).
+
+    Today one case: a random draw that returned **zero** rows from a non-empty
+    dataset. Every column expectation passes vacuously on an empty frame, so the
+    run would print a full green board while asserting nothing — the fabricated
+    -pass outcome this codebase refuses everywhere else (an anomaly monitor with
+    no baseline `skip`s rather than inventing a verdict).
+
+    `SafeMonitorError`-marked for the same reason as `ScanTooLargeError`: the
+    message is built from the target's own name and a row count DataQ measured,
+    so it is safe to persist verbatim and useless once classified.
+    """
+
+
+#: GX expectations whose observed value IS the row count of the batch they run
+#: on — so against a sampled frame they deterministically measure the SAMPLE and
+#: report it as the dataset's size (#595). A healthy 5M-row file with
+#: ``min_value=4_000_000`` fails critically forever under a 100k sample, and the
+#: inverse (``max_value``) passes wrongly. Freshness monitors were exempted from
+#: sampling for exactly this smaller-aggregate reason; these are the expectation
+#: -side instances of it, and they are refused rather than silently mismeasured.
+#:
+#: Declared as data — and pinned by a canary test — so widening it is a
+#: deliberate edit. `expect_table_row_count_to_equal_other_table` is included:
+#: its own side is still the sampled batch, so the comparison is against a
+#: number that is not the dataset's.
+ROW_COUNT_EXPECTATION_TYPES: frozenset[str] = frozenset(
+    {
+        "expect_table_row_count_to_be_between",
+        "expect_table_row_count_to_equal",
+        "expect_table_row_count_to_equal_other_table",
+    }
+)
+
+#: The one message both the save-time gate and the run-time refusal use, so an
+#: author who somehow reaches the run (a suite that predates the gate, an
+#: imported suite) reads the same sentence the editor would have shown.
+SAMPLING_ROW_COUNT_CONFLICT = (
+    "a table row-count expectation cannot run against a sampled dataset — it would "
+    "measure the SAMPLE and report it as the dataset's size (a 100k sample of a 5M-row "
+    "table reads as 100k rows). Use a volume monitor, which counts the whole dataset "
+    "without loading it, or drop the sampling block from the suite's run target."
+)
+
+
+def is_row_count_expectation(expectation_type: str) -> bool:
+    """Whether this expectation measures the batch's row count (see the set above)."""
+    return expectation_type in ROW_COUNT_EXPECTATION_TYPES
 
 
 def parse_sample_spec(raw: Any) -> SampleSpec | None:
@@ -123,8 +176,8 @@ def _whole_number(value: Any, field: str) -> int | None:
     return value
 
 
-def sample_row_indices(*, total: int, rows: int, seed: int | None) -> list[int]:
-    """``rows`` distinct row positions drawn uniformly from ``range(total)``, sorted.
+def sample_row_indices(*, total: int, rows: int, seed: int | None) -> list[int] | None:
+    """``rows`` positions drawn uniformly from ``range(total)``, sorted — or ``None``.
 
     Sorted because every reader consuming this walks the dataset **forwards** in
     batches (a Parquet row-group iterator, a streamed CSV, a warehouse cursor) and
@@ -135,13 +188,15 @@ def sample_row_indices(*, total: int, rows: int, seed: int | None) -> list[int]:
     drawing 100k positions out of 50M costs the 100k, not the 50M — the sample
     itself never becomes the memory problem it exists to solve.
 
-    ``rows >= total`` returns every position: the caller reads the whole dataset
-    and reports ``sampled=False``, rather than pretending a full read was a sample.
+    ``rows >= total`` returns ``None``, not ``list(range(total))`` — the sample
+    covers everything, so there is no selection to make. Materialising the identity
+    list is not free: at 1.4M rows it is ~40 MB of Python ints, and `take_indices`
+    would then gather-copy every batch through it, all to reproduce the batches it
+    was handed. The caller reads the dataset straight through and reports
+    ``sampled=False``, rather than pretending a full read was a sample.
     """
-    if total <= 0:
-        return []
-    if rows >= total:
-        return list(range(total))
+    if total <= 0 or rows >= total:
+        return None
     return sorted(random.Random(seed).sample(range(total), rows))  # noqa: S311  # nosec B311
 
 
@@ -303,6 +358,57 @@ def batches_to_frame(batches: list[Any], *, schema: Any, arrow_backed: bool) -> 
     if arrow_backed:
         return table.to_pandas(types_mapper=pd.ArrowDtype)
     return table.to_pandas()
+
+
+def split_row_count_checks(
+    checks: list[CheckSpec],
+) -> tuple[list[int], dict[int, CheckOutcome]]:
+    """Partition ``checks`` into (runnable positions, refusals keyed by position).
+
+    The run-time half of the row-count/sampling refusal (#595 C6). The author-time
+    gate in `check_service`/`suite_service` catches the combination when it is
+    created, but a suite that predates the gate — or one that arrived through
+    import — still reaches a runner, and there the expectation would quietly
+    measure the sample and report it as the dataset's size.
+
+    A per-check ``error`` rather than a failed run, matching #122: the other
+    expectations on the same sampled frame are perfectly valid and must still be
+    evaluated and persisted. The refusals come back keyed by submission position
+    so a runner can merge them into its outcome list without disturbing the 1:1
+    order `run_service` zips onto its `checks`.
+    """
+    runnable: list[int] = []
+    refused: dict[int, CheckOutcome] = {}
+    for index, spec in enumerate(checks):
+        if is_row_count_expectation(spec.expectation_type):
+            refused[index] = CheckOutcome(
+                expectation_type=spec.expectation_type,
+                success=False,
+                errored=True,
+                error_message=SAMPLING_ROW_COUNT_CONFLICT,
+                expected_value=dict(spec.kwargs) or None,
+            )
+        else:
+            runnable.append(index)
+    return runnable, refused
+
+
+def merge_by_position(
+    total: int, *groups: tuple[list[int], list[CheckOutcome]]
+) -> list[CheckOutcome]:
+    """Re-key positionally-split outcome groups back into submission order.
+
+    `run_service` zips outcomes onto its own `checks` list, so a runner that
+    splits its work (sampled vs refused here; DataFrame vs SQL batch in the UC
+    runner, #1179) must return submission order regardless of which group
+    evaluated what. Keyed by position and read back by index, so a missing entry
+    is a loud `KeyError` rather than a silently short list that would map results
+    onto the wrong checks.
+    """
+    by_position: dict[int, CheckOutcome] = {}
+    for positions, outcomes in groups:
+        by_position.update(zip(positions, outcomes, strict=True))
+    return [by_position[i] for i in range(total)]
 
 
 def stamp_sampling(outcome: SuiteOutcome, record: dict[str, Any] | None) -> SuiteOutcome:

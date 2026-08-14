@@ -40,7 +40,6 @@ from backend.app.datasources.monitors import (
     SCALAR_MONITOR_KINDS,
     STATEFUL_MONITOR_KINDS,
 )
-from backend.app.datasources.sampling import ScanTooLargeError
 from backend.app.datasources.sql import strip_statement_echo
 from backend.app.db.models import (
     COMPARISON_KIND,
@@ -55,7 +54,7 @@ from backend.app.db.models import (
 )
 from backend.app.services import run_dispatch, suite_service
 from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
-from backend.app.services.failure_classifier import classify_failure_reason
+from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.rollup import status_histograms
 from backend.app.services.severity import resolve_status
 
@@ -251,28 +250,6 @@ def _run_outcomes(
     return [cast(CheckOutcome, oc) for oc in outcomes]
 
 
-def _failure_reason(exc: BaseException) -> str:
-    """The user-facing reason for a failed run — classified, except when refused.
-
-    `classify_failure_reason` exists because a driver exception can echo a DSN, a
-    credential or a cell value, so its text is read only to pick a category (#605).
-    `ScanTooLargeError` is the one exception DataQ **authored itself**: every word
-    of it is built from the user's own run target and two integers from settings,
-    with no driver text anywhere near it. Classifying it would replace the single
-    most actionable sentence a user can get here — "this file is over the cap, set
-    a sampling strategy or raise RUN_MAX_SCAN_BYTES" — with "the run failed to
-    execute; see the server logs", which is exactly the undiagnosable outcome #755
-    already produces when the worker is OOM-killed instead.
-
-    Narrow on purpose: an `isinstance` against one DataQ-defined type, not a
-    duck-typed "trust any exception that says it's safe" marker, so the redaction
-    contract cannot be widened by accident from another module.
-    """
-    if isinstance(exc, ScanTooLargeError):
-        return str(exc)
-    return classify_failure_reason(exc)
-
-
 def _cancelled_mid_run(session: Session, run: Run) -> bool:
     """Did a cancel commit (from the API session) while this run was executing?
 
@@ -359,10 +336,14 @@ def execute_run(
             return run
         run.status = "failed"
         run.finished_at = _now()
-        # Redaction-safe reason (#605): classify the exception into a fixed
-        # message — the raw text (which can carry DSN/credential fragments) stays
-        # in the server log below, never on the persisted/surfaced reason.
-        run.failure_reason = _failure_reason(exc)
+        # Redaction-safe reason (#605/#595): the ONE shared policy — a
+        # `SafeMonitorError` (a DataQ-authored message, e.g. the scan-cap refusal
+        # naming the target and the knob) surfaces verbatim; everything else is
+        # classified into a fixed message, so the raw text (which can carry
+        # DSN/credential/cell fragments) stays in the server log below and never
+        # reaches the persisted reason. Shared with the monitor loop and the
+        # dry-run preview so the three sinks cannot drift.
+        run.failure_reason = safe_failure_reason(exc)
         session.commit()
         log.exception("run_failed", run_id=str(run.id), table=table)
         return run

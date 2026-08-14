@@ -486,3 +486,37 @@ def test_db_check_constraint_enforces_presence_iff_comparison(db_session: Any) -
     with pytest.raises(IntegrityError, match="comparison_source_presence"):
         db_session.flush()
     db_session.rollback()
+
+
+def test_a_sampling_block_on_a_comparison_source_is_refused(
+    client: TestClient, db_session: Any
+) -> None:
+    """#595 C7. `config.source` goes through the same `resolve_target` a suite
+    target does, which now ACCEPTS a sampling block on a capable type — and
+    `comparison_run._source_spec` then drops it when it builds the `DatasetSpec`.
+    The author would save clean, believe the read is bounded, and get a run that
+    materialises the whole side: the silently-dropped sampling block the registry's
+    422 exists to prevent, arriving through a door that gate cannot see.
+
+    Threading sampling through the DatasetReader is real follow-up work; refusing
+    it is what keeps the gap honest in the meantime."""
+    target_conn = _connection(db_session)
+    source_conn = _connection(db_session, conn_type="s3")
+    suite_id = _suite_id(client, target_conn)
+    source_id = str(source_conn.id)
+    resp = client.post(
+        f"/api/v1/suites/{suite_id}/checks",
+        json=_payload(
+            source_id,
+            config={
+                "source": {
+                    "path": "raw/orders.csv",
+                    "sampling": {"strategy": "head", "rows": 100},
+                },
+                "keys": ["order_id"],
+            },
+        ),
+    )
+    assert resp.status_code == 422
+    assert _error_code(resp) == "check_config_invalid"
+    assert "sampling" in resp.json()["error"]["message"]

@@ -71,7 +71,6 @@ from backend.app.datasources.monitors import (
     VOLUME,
     AnomalyParams,
     MonitorConfigError,
-    SafeMonitorError,
     anomaly_params,
     build_monitor_statement,
     freshness_age_hours,
@@ -80,7 +79,7 @@ from backend.app.datasources.monitors import (
     row_count_from_scalar,
 )
 from backend.app.db.models import Check, Connection, MonitorBaseline
-from backend.app.services.failure_classifier import classify_failure_reason
+from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
 from backend.app.services.profile_service import ProfileUnsupportedError, _open_connection
 
@@ -381,9 +380,7 @@ def build_anomaly_executor(
                 expectation_type=monitor_expectation_type(ANOMALY),
                 success=False,
                 errored=True,
-                error_message=(
-                    str(exc) if isinstance(exc, SafeMonitorError) else classify_failure_reason(exc)
-                ),
+                error_message=(safe_failure_reason(exc)),
                 observed_value=observed,
             )
         # Read-modify-write: the observation list this run appends to must not be
