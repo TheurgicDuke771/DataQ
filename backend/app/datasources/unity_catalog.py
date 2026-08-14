@@ -27,12 +27,31 @@ from urllib.parse import quote_plus, urlparse
 import great_expectations as gx
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
+from backend.app.datasources.base import (
+    SAMPLE_HEAD,
+    CheckOutcome,
+    CheckSpec,
+    MonitorSpec,
+    SampleSpec,
+    SuiteOutcome,
+)
 from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
-from backend.app.datasources.sql import LazyEngine, is_sql_identifier
+from backend.app.datasources.sampling import (
+    enforce_row_cap,
+    enforce_sample_cap,
+    sampling_record,
+    stamp_sampling,
+)
+from backend.app.datasources.sql import (
+    LazyEngine,
+    core_table,
+    is_sql_identifier,
+    qualified_sql_name,
+)
 from backend.app.services.custom_sql import CUSTOM_SQL_EXPECTATION_TYPE, is_custom_sql
 from backend.app.services.failure_classifier import classify_failure_reason
 
@@ -151,6 +170,30 @@ def build_databricks_url(
 # visible to the next person, not to duplicate that decision.
 SQL_BATCH_EXPECTATION_TYPES: frozenset[str] = frozenset({CUSTOM_SQL_EXPECTATION_TYPE})
 
+#: How far a Bernoulli ``TABLESAMPLE`` is over-drawn before the ``LIMIT`` trims it
+#: (#595). ``TABLESAMPLE (p PERCENT)`` keeps each row with probability p, so an
+#: exactly-sized draw comes back short about half the time; asking for 20% more
+#: makes a short read vanishingly unlikely at any sample size worth taking, while
+#: the ``LIMIT`` keeps the transfer bounded either way.
+_SAMPLE_OVERSHOOT = 1.2
+
+#: Floor for the computed percentage. A very small sample of a very large table
+#: rounds toward zero, and ``TABLESAMPLE (0 PERCENT)`` returns nothing — an empty
+#: frame that would read as "every check passed on no rows".
+_MIN_SAMPLE_PERCENT = 0.000001
+
+
+def _sample_percent(rows: int, total: int) -> float:
+    """The ``TABLESAMPLE`` percentage that draws ~``rows`` out of ``total``.
+
+    ``total <= 0`` (an empty table, or a probe that could not count) yields 100:
+    sampling everything of nothing is still nothing, and it keeps the query legal
+    rather than emitting a zero or negative percentage.
+    """
+    if total <= 0 or rows >= total:
+        return 100.0
+    return max(min(100.0, round(rows / total * 100.0 * _SAMPLE_OVERSHOOT, 6)), _MIN_SAMPLE_PERCENT)
+
 
 class UnityCatalogCheckRunner:
     """GX `CheckRunner` for Unity Catalog via the Databricks SQL Warehouse.
@@ -181,10 +224,18 @@ class UnityCatalogCheckRunner:
     # kind must be claimed by a runner only once it actually evaluates it).
     supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
 
-    def __init__(self, *, config: UnityCatalogConfig, token: str, catalog: str) -> None:
+    def __init__(
+        self,
+        *,
+        config: UnityCatalogConfig,
+        token: str,
+        catalog: str,
+        sampling: SampleSpec | None = None,
+    ) -> None:
         self._config = config
         self._token = token
         self._catalog = catalog
+        self._sampling = sampling
         # The runner's ONE **runner-owned** lazily-built engine (#427), shared by
         # the GX read (`_read_table`) AND `run_monitors` — a mixed suite
         # (expectations + monitors) pays a single warehouse session instead of
@@ -229,6 +280,119 @@ class UnityCatalogCheckRunner:
         import pandas as pd
 
         return pd.read_sql_table(table, self._engine.get(), schema=schema)
+
+    def _count_rows(self, *, table: str, schema: str | None) -> int:
+        """``COUNT(*)`` over the target — the size probe (live seam, #595).
+
+        A Core statement over `core_table`, so the identifiers are dialect-quoted
+        rather than interpolated, exactly like the monitor aggregates. The catalog
+        is applied only when a schema is present: a 2-part ``catalog.table`` is
+        resolved by Unity Catalog as ``schema.table`` — a *different object*, not
+        an error — so a schema-less target falls back to the session defaults the
+        URL already pins, which is what the unsampled `read_sql_table` does too.
+        """
+        from sqlalchemy import func, select
+
+        engine = self._engine.get()
+        target = core_table(
+            table=table,
+            schema=schema,
+            catalog=self._catalog if schema else None,
+            dialect=engine.dialect,
+        )
+        with engine.connect() as conn:
+            return int(conn.execute(select(func.count()).select_from(target)).scalar_one())
+
+    def _read_sampled_table(
+        self, *, table: str, schema: str | None, sample: SampleSpec
+    ) -> tuple[Any, dict[str, Any]]:
+        """A bounded sample of the target, pushed down to the warehouse (#595).
+
+        Both strategies bound the transfer **at the SQL warehouse**, so the worker
+        never receives the rows it is not going to look at — the whole point, given
+        the UC read is the hungriest full-load path measured (~925 MiB for 1M rows;
+        2M OOM-killed the child — docs/perf-baseline.md).
+
+        * ``head`` → ``LIMIT rows + 1``. The extra row distinguishes "the table has
+          exactly N rows" (a complete read, reported ``sampled=False``) from "the
+          table has more" without a second query.
+        * ``random`` → ``TABLESAMPLE (p PERCENT)`` sized from a ``COUNT(*)`` probe,
+          then ``LIMIT rows``. Deliberately not ``ORDER BY rand() LIMIT n``, which
+          is a global sort of the whole table, and deliberately not
+          ``TABLESAMPLE (n ROWS)``, which Spark implements as a plain ``LIMIT`` —
+          i.e. it would silently be a head sample wearing a random label.
+
+        ``TABLESAMPLE ... PERCENT`` is Bernoulli, so it returns *about* p% and can
+        come back short. The percentage is over-drawn (`_SAMPLE_OVERSHOOT`) and the
+        result trimmed by ``LIMIT``, and the row count actually obtained is what
+        `sampling_record` reports — the record states what was read, never what was
+        asked for.
+        """
+        import pandas as pd
+        from sqlalchemy import text
+
+        engine = self._engine.get()
+        qualified = qualified_sql_name(
+            table=table,
+            schema=schema,
+            catalog=self._catalog if schema else None,
+            dialect=engine.dialect,
+        )
+        total: int | None = None
+        if sample.strategy == SAMPLE_HEAD:
+            # Interpolation is injection-safe: `qualified` is built from
+            # allowlist-checked identifiers and dialect-quoted by
+            # `qualified_sql_name`, and the limit is an `int`. Both suppressions
+            # are load-bearing (Ruff S608 and bandit B608 each flag the f-string)
+            # and carry only their test ids (#806) — trailing prose is parsed as
+            # further ids by bandit and as a malformed directive by Ruff.
+            statement = (
+                f"SELECT * FROM {qualified} LIMIT {sample.rows + 1}"  # noqa: S608  # nosec B608
+            )
+        else:
+            total = self._count_rows(table=table, schema=schema)
+            percent = _sample_percent(sample.rows, total)
+            statement = (
+                f"SELECT * FROM {qualified} "  # noqa: S608  # nosec B608
+                f"TABLESAMPLE ({percent} PERCENT) LIMIT {sample.rows}"
+            )
+        frame = pd.read_sql_query(text(statement), engine)
+
+        if sample.strategy == SAMPLE_HEAD:
+            truncated = len(frame) > sample.rows
+            if truncated:
+                frame = frame.head(sample.rows)
+            else:
+                # The table ended inside the probe row, so its exact size is now
+                # known for free and the read was complete.
+                total = len(frame)
+        else:
+            truncated = sample.rows < (total or 0)
+        return frame, sampling_record(sample, rows=len(frame), total_rows=total, sampled=truncated)
+
+    def _load_frame(self, *, table: str, schema: str | None) -> tuple[Any, dict[str, Any] | None]:
+        """The DataFrame the expectations run against, plus its sampling record.
+
+        Sampling **replaces** the row guardrail rather than stacking with it: a
+        sampled read is bounded by the sample size at the warehouse, so the table's
+        own size stops being a memory fact. What still has to fit is the sample,
+        which `enforce_sample_cap` checks.
+
+        Without a sample, the guardrail spends one ``COUNT(*)`` to refuse a table
+        that would not fit — cheap against the read it prevents, and skipped
+        entirely when the cap is disabled so an operator who turns it off pays
+        nothing for it.
+        """
+        settings = get_settings()
+        if self._sampling is not None:
+            enforce_sample_cap(self._sampling, cap=settings.run_max_scan_rows)
+            return self._read_sampled_table(table=table, schema=schema, sample=self._sampling)
+        cap = settings.run_max_scan_rows
+        if cap > 0:
+            enforce_row_cap(
+                self._count_rows(table=table, schema=schema), cap=cap, target=f"table {table!r}"
+            )
+        return self._read_table(table=table, schema=schema), None
 
     def run_checks(
         self,
@@ -312,12 +476,18 @@ class UnityCatalogCheckRunner:
         checks: list[CheckSpec],
         index_columns: list[str] | None,
     ) -> SuiteOutcome:
-        """The historical UC path: read the table into pandas, validate that frame."""
-        df = self._read_table(table=table, schema=schema)
+        """The historical UC path: read the table into pandas, validate that frame.
+
+        Bounded since #595 — by the suite target's sample where one is set, and by
+        the ``RUN_MAX_SCAN_ROWS`` probe otherwise. Only THIS group carries the
+        sampling record: the custom-SQL group next door evaluates against a SQL
+        batch over the whole table, so labelling it "sampled" would be false.
+        """
+        df, sampling = self._load_frame(table=table, schema=schema)
         context = gx.get_context(mode="ephemeral")
         asset = context.data_sources.add_pandas(name="uc").add_dataframe_asset(name="table")
         batch_definition = asset.add_batch_definition_whole_dataframe(name="whole_dataframe")
-        return run_expectations(
+        outcome = run_expectations(
             context,
             batch_definition=batch_definition,
             checks=checks,
@@ -325,6 +495,7 @@ class UnityCatalogCheckRunner:
             batch_parameters={"dataframe": df},
             index_columns=index_columns,
         )
+        return stamp_sampling(outcome, sampling)
 
     def _sql_target_problem(self, *, table: str, schema: str | None) -> str | None:
         """Why this target can't back a SQL batch, or ``None`` when it can.
@@ -526,15 +697,24 @@ class UnityCatalogCheckRunner:
 
 
 def build_unity_catalog_runner(
-    *, config: dict[str, Any], secret_ref: str | None, secret_store: SecretStore, catalog: str
+    *,
+    config: dict[str, Any],
+    secret_ref: str | None,
+    secret_store: SecretStore,
+    catalog: str,
+    sampling: SampleSpec | None = None,
 ) -> UnityCatalogCheckRunner:
     """Build a runner from a UC `Connection`'s primitives + the target `catalog`.
 
     Mirrors `build_snowflake_runner`: resolves the PAT eagerly and takes the raw
     config dict (not the ORM model) to keep the adapter decoupled from `db/`.
+    ``sampling`` is the suite target's `SampleSpec` (#595); ``None`` keeps the
+    historical whole-table read (still guardrailed by ``RUN_MAX_SCAN_ROWS``).
     """
     if not secret_ref:
         raise ValueError("Unity Catalog connection requires secret_ref for the PAT")
     uc_config = UnityCatalogConfig.model_validate(config)
     token = secret_store.get(secret_ref)
-    return UnityCatalogCheckRunner(config=uc_config, token=token, catalog=catalog)
+    return UnityCatalogCheckRunner(
+        config=uc_config, token=token, catalog=catalog, sampling=sampling
+    )

@@ -135,7 +135,10 @@ from decimal import Decimal  # noqa: E402
 import great_expectations as gx_module  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from backend.app.datasources.base import CheckSpec  # noqa: E402
+from backend.app.core.config import get_settings  # noqa: E402
+from backend.app.datasources import unity_catalog  # noqa: E402
+from backend.app.datasources.base import CheckSpec, SampleSpec  # noqa: E402
+from backend.app.datasources.sampling import ScanTooLargeError  # noqa: E402
 from backend.app.datasources.unity_catalog import (  # noqa: E402
     SQL_BATCH_EXPECTATION_TYPES,
     UnityCatalogCheckRunner,
@@ -199,6 +202,9 @@ def _runner_over(df: pd.DataFrame, monkeypatch: pytest.MonkeyPatch) -> UnityCata
     )
     # Replace the live reflect+read seam with a canned frame; GX still runs for real.
     monkeypatch.setattr(runner, "_read_table", lambda **kwargs: df)
+    # The scan guardrail (#595) probes COUNT(*) before the read; stub it to a
+    # small table so these tests keep exercising the GX path, not the probe.
+    monkeypatch.setattr(runner, "_count_rows", lambda **kwargs: len(df))
     return runner
 
 
@@ -480,6 +486,13 @@ def test_mixed_suite_merges_both_batches_in_submission_order(
     monkeypatch.setattr(
         runner, "_read_table", lambda **_kw: pd.DataFrame({"id": [1, 2, None], "amt": [10, 20, 30]})
     )
+    # The #595 size probe runs before the read; stub it too, or it opens a
+    # real warehouse connection and hangs on DNS for the fake host.
+    monkeypatch.setattr(
+        runner,
+        "_count_rows",
+        lambda **_kw: len(pd.DataFrame({"id": [1, 2, None], "amt": [10, 20, 30]})),
+    )
     outcome = runner.run_checks(
         table="feedback",
         schema="gold",
@@ -522,6 +535,9 @@ def test_mixed_suite_keeps_order_when_a_dataframe_check_errors(
     runner = _uc_runner()
     _sqlite_batch_seam(runner, tmp_path, rows=[1, 4, 5], monkeypatch=monkeypatch)
     monkeypatch.setattr(runner, "_read_table", lambda **_kw: pd.DataFrame({"id": [1, 2, 3]}))
+    # The #595 size probe runs before the read; stub it too, or it opens a
+    # real warehouse connection and hangs on DNS for the fake host.
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: len(pd.DataFrame({"id": [1, 2, 3]})))
     outcome = runner.run_checks(
         table="feedback",
         schema="gold",
@@ -555,6 +571,9 @@ def test_suite_without_custom_sql_never_opens_a_sql_batch(monkeypatch: pytest.Mo
 
     monkeypatch.setattr(runner, "_sql_batch_definition", _must_not_build)
     monkeypatch.setattr(runner, "_read_table", lambda **_kw: pd.DataFrame({"id": [1, 2, 3]}))
+    # The #595 size probe runs before the read; stub it too, or it opens a
+    # real warehouse connection and hangs on DNS for the fake host.
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: len(pd.DataFrame({"id": [1, 2, 3]})))
     outcome = runner.run_checks(
         table="t",
         schema="s",
@@ -575,6 +594,9 @@ def test_custom_sql_without_a_schema_errors_only_itself(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(runner, "_sql_batch_definition", _must_not_build)
     monkeypatch.setattr(runner, "_read_table", lambda **_kw: pd.DataFrame({"id": [1, 2, 3]}))
+    # The #595 size probe runs before the read; stub it too, or it opens a
+    # real warehouse connection and hangs on DNS for the fake host.
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: len(pd.DataFrame({"id": [1, 2, 3]})))
     outcome = runner.run_checks(
         table="feedback",
         schema=None,
@@ -657,6 +679,9 @@ def test_an_unreachable_sql_batch_errors_only_its_own_group(
 
     monkeypatch.setattr(runner, "_sql_batch_definition", _warehouse_down)
     monkeypatch.setattr(runner, "_read_table", lambda **_kw: pd.DataFrame({"id": [1, 2, 3]}))
+    # The #595 size probe runs before the read; stub it too, or it opens a
+    # real warehouse connection and hangs on DNS for the fake host.
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: len(pd.DataFrame({"id": [1, 2, 3]})))
     outcome = runner.run_checks(
         table="feedback",
         schema="gold",
@@ -857,3 +882,357 @@ def test_supported_monitor_kinds_is_explicit() -> None:
     # this set is a conscious act, done when the runner actually implements
     # the new kind.
     assert UnityCatalogCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})
+
+
+# ───────────────── scale-aware execution: sampling + guardrail (#595) ─────────
+#
+# The UC read is the hungriest full-load path measured (~925 MiB for 1M rows; 2M
+# OOM-killed the child — docs/perf-baseline.md), so both halves matter here. The
+# SQL these tests pin is DataQ's own construction, captured at the
+# `pandas.read_sql_query` seam: what a live warehouse does with `TABLESAMPLE` is
+# a driver-boundary fact and is verified by a live run, not by a mock (#953).
+
+
+def _sampling_runner(sample: Any) -> UnityCatalogCheckRunner:
+    return UnityCatalogCheckRunner(
+        config=UnityCatalogConfig.model_validate(_UC_CONFIG),
+        token="tok",
+        catalog="main",
+        sampling=sample,
+    )
+
+
+def _capture_query(monkeypatch: pytest.MonkeyPatch, frame: pd.DataFrame) -> list[str]:
+    """Capture the SQL handed to pandas, returning the canned ``frame`` instead."""
+    import pandas
+
+    seen: list[str] = []
+
+    def _read_sql_query(statement: Any, _con: Any, **_kw: Any) -> pd.DataFrame:
+        seen.append(str(statement))
+        return frame
+
+    monkeypatch.setattr(pandas, "read_sql_query", _read_sql_query)
+    return seen
+
+
+def test_sample_percent_scales_the_draw_to_the_population() -> None:
+    # 100 of 1,000 rows is 10%, over-drawn to 12% so a Bernoulli sample that
+    # comes back light still fills the LIMIT.
+    assert unity_catalog._sample_percent(100, 1_000) == pytest.approx(12.0)
+
+
+def test_sample_percent_never_rounds_a_tiny_draw_down_to_zero() -> None:
+    """`TABLESAMPLE (0 PERCENT)` returns NOTHING — an empty frame that would read
+    as "every check passed", on no rows. The floor is what stops a very small
+    sample of a very large table becoming a silent all-green run."""
+    percent = unity_catalog._sample_percent(1, 10**12)
+    assert percent > 0
+
+
+@pytest.mark.parametrize(("rows", "total"), [(10, 0), (10, -5), (500, 100), (100, 100)])
+def test_sample_percent_is_one_hundred_when_the_sample_covers_everything(
+    rows: int, total: int
+) -> None:
+    assert unity_catalog._sample_percent(rows, total) == 100.0
+
+
+def test_a_head_sample_pushes_a_limit_down_and_never_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bound is applied AT the warehouse, so the worker never receives the
+    rows it will not look at. A head sample also skips the COUNT probe entirely —
+    it does not need the population size, and a needless warehouse round trip on
+    every scheduled run is the overhead #854 exists to remove."""
+    runner = _sampling_runner(SampleSpec(strategy="head", rows=50))
+    monkeypatch.setattr(
+        runner,
+        "_count_rows",
+        lambda **_kw: pytest.fail("a head sample must not need a COUNT(*)"),
+    )
+    seen = _capture_query(monkeypatch, pd.DataFrame({"id": range(51)}))
+
+    frame, record = runner._read_sampled_table(
+        table="orders", schema="sales", sample=SampleSpec(strategy="head", rows=50)
+    )
+
+    assert len(seen) == 1
+    # `rows + 1`: the probe row is what tells "exactly 50 rows" from "more".
+    assert "LIMIT 51" in seen[0]
+    assert "TABLESAMPLE" not in seen[0]
+    assert len(frame) == 50
+    assert record["sampled"] is True and record["total_rows"] is None
+
+
+def test_a_head_sample_that_reaches_the_end_reports_a_complete_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _sampling_runner(SampleSpec(strategy="head", rows=50))
+    _capture_query(monkeypatch, pd.DataFrame({"id": range(12)}))
+    frame, record = runner._read_sampled_table(
+        table="orders", schema="sales", sample=SampleSpec(strategy="head", rows=50)
+    )
+    assert len(frame) == 12
+    assert record["sampled"] is False and record["total_rows"] == 12
+
+
+def test_a_random_sample_pushes_tablesample_down_sized_from_the_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deliberately not `ORDER BY rand() LIMIT n` (a global sort of the whole
+    table) and deliberately not `TABLESAMPLE (n ROWS)`, which Spark implements as
+    a plain LIMIT — i.e. it would be a head sample wearing a random label."""
+    runner = _sampling_runner(SampleSpec(strategy="random", rows=100, seed=1))
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 1_000)
+    seen = _capture_query(monkeypatch, pd.DataFrame({"id": range(100)}))
+
+    frame, record = runner._read_sampled_table(
+        table="orders",
+        schema="sales",
+        sample=SampleSpec(strategy="random", rows=100, seed=1),
+    )
+
+    assert "TABLESAMPLE (12.0 PERCENT)" in seen[0]
+    assert "LIMIT 100" in seen[0]
+    assert len(frame) == 100
+    assert record["total_rows"] == 1_000 and record["sampled"] is True
+
+
+def test_a_random_sample_of_a_table_smaller_than_the_sample_is_not_a_sample(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _sampling_runner(SampleSpec(strategy="random", rows=100))
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 30)
+    _capture_query(monkeypatch, pd.DataFrame({"id": range(30)}))
+    _frame, record = runner._read_sampled_table(
+        table="orders", schema="sales", sample=SampleSpec(strategy="random", rows=100)
+    )
+    assert record["sampled"] is False and record["total_rows"] == 30
+
+
+def test_the_sampled_query_uses_the_dialects_own_quoting_not_a_hardcoded_quote(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Databricks reads `"..."` as a STRING LITERAL, so a hand-rolled double
+    quote would not merely be ugly — it would silently select a constant. The
+    quote character has to come from the connection's dialect (#476)."""
+    runner = _sampling_runner(SampleSpec(strategy="head", rows=5))
+    seen = _capture_query(monkeypatch, pd.DataFrame({"id": [1]}))
+    runner._read_sampled_table(
+        table="Orders", schema="Sales", sample=SampleSpec(strategy="head", rows=5)
+    )
+    # `main` is all lower-case, so it stays BARE and folds; only the mixed-case
+    # parts are quoted — `folding_identifier`'s rule applied per namespace part.
+    assert "main.`Sales`.`Orders`" in seen[0]
+    assert '"Orders"' not in seen[0]
+
+
+def test_a_lower_case_target_stays_unquoted_so_the_warehouse_folds_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`folding_identifier`'s rule, inherited: an all-lower-case name is emitted
+    bare so it folds exactly as it did before, and only a mixed-case one is
+    quoted. Quoting everything would break names created unquoted."""
+    runner = _sampling_runner(SampleSpec(strategy="head", rows=5))
+    seen = _capture_query(monkeypatch, pd.DataFrame({"id": [1]}))
+    runner._read_sampled_table(
+        table="orders", schema="sales", sample=SampleSpec(strategy="head", rows=5)
+    )
+    assert "main.sales.orders" in seen[0]
+    assert "`" not in seen[0]
+
+
+def test_a_schema_less_target_drops_the_catalog_rather_than_misresolving(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 2-part `catalog.table` is resolved by Unity Catalog as `schema.table` —
+    a DIFFERENT OBJECT, not an error. So a schema-less target falls back to the
+    session defaults the URL already pins, exactly as `read_sql_table` does."""
+    runner = _sampling_runner(SampleSpec(strategy="head", rows=5))
+    seen = _capture_query(monkeypatch, pd.DataFrame({"id": [1]}))
+    runner._read_sampled_table(
+        table="orders", schema=None, sample=SampleSpec(strategy="head", rows=5)
+    )
+    assert "FROM orders" in seen[0]
+    assert "main." not in seen[0]
+
+
+def test_an_oversized_table_is_refused_before_the_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#755, inverted: instead of the child being SIGKILLed and the run sitting
+    `running` for an hour, the run ends with a sentence naming the knob."""
+    runner = UnityCatalogCheckRunner(
+        config=UnityCatalogConfig.model_validate(_UC_CONFIG), token="t", catalog="main"
+    )
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 9_000_000)
+    monkeypatch.setattr(
+        runner, "_read_table", lambda **_kw: pytest.fail("the table must not be read")
+    )
+    with pytest.raises(ScanTooLargeError, match="RUN_MAX_SCAN_ROWS"):
+        runner.run_checks(
+            table="orders",
+            schema="sales",
+            checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+        )
+
+
+def test_a_disabled_row_cap_skips_the_count_probe_entirely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The off-switch has to be genuinely off: an operator who disables the cap
+    should not keep paying a warehouse round trip for a number nobody reads."""
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "0")
+    get_settings.cache_clear()
+    runner = UnityCatalogCheckRunner(
+        config=UnityCatalogConfig.model_validate(_UC_CONFIG), token="t", catalog="main"
+    )
+    monkeypatch.setattr(
+        runner,
+        "_count_rows",
+        lambda **_kw: pytest.fail("no COUNT(*) when the cap is off"),
+    )
+    monkeypatch.setattr(runner, "_read_table", lambda **_kw: pd.DataFrame({"id": [1, 2]}))
+    outcome = runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    assert outcome.checks[0].success is True
+
+
+def test_a_sampled_uc_run_is_allowed_past_the_row_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sampling replaces the guardrail rather than stacking with it — the read is
+    bounded at the warehouse, so the table's own size stops being a memory fact.
+    If the cap still applied, the feature would be unreachable where it is needed."""
+    runner = _sampling_runner(SampleSpec(strategy="head", rows=10))
+    monkeypatch.setattr(
+        runner,
+        "_count_rows",
+        lambda **_kw: pytest.fail("a sampled read must not count"),
+    )
+    _capture_query(monkeypatch, pd.DataFrame({"id": range(11)}))
+    outcome = runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    assert outcome.checks[0].sampling is not None
+    assert outcome.checks[0].sampling["rows"] == 10
+
+
+def test_a_uc_sample_over_the_row_cap_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _sampling_runner(SampleSpec(strategy="head", rows=9_000_000))
+    monkeypatch.setattr(
+        runner,
+        "_read_sampled_table",
+        lambda **_kw: pytest.fail("the sample must be refused before the read"),
+    )
+    with pytest.raises(ScanTooLargeError, match="sample of 9,000,000"):
+        runner.run_checks(
+            table="orders",
+            schema="sales",
+            checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+        )
+
+
+def test_only_the_sampled_group_is_labelled_sampled_not_the_custom_sql_beside_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """The reason sampled-ness is per-CHECK and not per-run (#1179 + #595): a
+    custom-SQL check evaluates against a SQL batch over the WHOLE table while the
+    expectations beside it ran on the sample. One run-level flag would have to lie
+    about one of them."""
+    runner = _sampling_runner(SampleSpec(strategy="head", rows=2))
+    # `_sqlite_batch_seam` also arms `_read_table` to fail loudly. That stays
+    # armed on purpose: a sampled run must not fall back to the whole-table read.
+    _sqlite_batch_seam(runner, tmp_path, [1, 4, 5], monkeypatch)
+    _capture_query(monkeypatch, pd.DataFrame({"rating": [1, 4]}))
+
+    outcome = runner.run_checks(
+        table="feedback",
+        schema="sales",
+        checks=[
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "rating"}),
+            _custom_sql("SELECT * FROM {batch} WHERE rating < 0"),
+        ],
+    )
+
+    assert outcome.checks[0].sampling is not None, "the DataFrame group ran on a sample"
+    assert outcome.checks[1].sampling is None, "the custom-SQL group saw the whole table"
+
+
+def test_the_count_probe_runs_a_real_aggregate_over_the_target(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """The guardrail refuses on this number, so the query that produces it is
+    load-bearing — a probe stubbed in every test would leave the one statement the
+    refusal depends on unexecuted. Run against a real (sqlite) engine, like the
+    #427 shared-engine test: the statement is Core, so the dialect renders it.
+
+    A schema-less target is used deliberately: it is the case where `core_table`
+    must NOT apply the pinned catalog, since a 2-part `catalog.table` resolves on
+    Unity Catalog as `schema.table` — a different object rather than an error.
+    """
+    import sqlalchemy
+
+    real_create_engine = sqlalchemy.create_engine
+    db_url = f"sqlite:///{tmp_path}/uc-count.sqlite"
+    seed = real_create_engine(db_url)
+    with seed.begin() as conn:
+        conn.execute(sqlalchemy.text("CREATE TABLE orders (id INTEGER)"))
+        conn.execute(sqlalchemy.text("INSERT INTO orders (id) VALUES (1), (2), (3)"))
+    seed.dispose()
+    monkeypatch.setattr(sqlalchemy, "create_engine", lambda _url, **_kw: real_create_engine(db_url))
+
+    runner = UnityCatalogCheckRunner(
+        config=UnityCatalogConfig.model_validate(_UC_CONFIG),
+        token="tok",
+        catalog="main",
+    )
+    try:
+        assert runner._count_rows(table="orders", schema=None) == 3
+    finally:
+        runner.close()
+
+
+def test_an_over_cap_count_refuses_the_run_end_to_end(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """The probe and the refusal wired together against a real engine, with the
+    cap lowered under the seeded row count — so the guardrail is exercised on a
+    number it actually computed rather than one a stub handed it."""
+    import sqlalchemy
+
+    real_create_engine = sqlalchemy.create_engine
+    db_url = f"sqlite:///{tmp_path}/uc-cap.sqlite"
+    seed = real_create_engine(db_url)
+    with seed.begin() as conn:
+        conn.execute(sqlalchemy.text("CREATE TABLE orders (id INTEGER)"))
+        conn.execute(sqlalchemy.text("INSERT INTO orders (id) VALUES (1), (2), (3)"))
+    seed.dispose()
+    monkeypatch.setattr(sqlalchemy, "create_engine", lambda _url, **_kw: real_create_engine(db_url))
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "2")
+    get_settings.cache_clear()
+
+    runner = UnityCatalogCheckRunner(
+        config=UnityCatalogConfig.model_validate(_UC_CONFIG),
+        token="tok",
+        catalog="main",
+    )
+    monkeypatch.setattr(
+        runner, "_read_table", lambda **_kw: pytest.fail("the table must not be read")
+    )
+    try:
+        with pytest.raises(ScanTooLargeError, match="3 rows, over the scan cap of 2"):
+            runner.run_checks(
+                table="orders",
+                schema=None,
+                checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+            )
+    finally:
+        runner.close()
