@@ -186,9 +186,12 @@ _MIN_SAMPLE_PERCENT = 0.000001
 def _sample_percent(rows: int, total: int) -> float:
     """The ``TABLESAMPLE`` percentage that draws ~``rows`` out of ``total``.
 
-    ``total <= 0`` (an empty table, or a probe that could not count) yields 100:
-    sampling everything of nothing is still nothing, and it keeps the query legal
-    rather than emitting a zero or negative percentage.
+    Two cases collapse to 100. ``rows >= total`` means the sample covers the whole
+    table, so there is nothing to narrow — the caller then reports ``sampled=False``
+    off the count, not off this number. ``total <= 0`` (an empty table, or a probe
+    that could not count) yields 100 because sampling everything of nothing is
+    still nothing, and it keeps the query legal rather than emitting a zero or
+    negative percentage.
     """
     if total <= 0 or rows >= total:
         return 100.0
