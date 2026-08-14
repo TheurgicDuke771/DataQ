@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -24,11 +25,13 @@ from backend.app.datasources.base import (
     ConnectionAdapter,
     ExpiringCredentialAdapter,
     ResolvedTarget,
+    SampleSpec,
     TargetShapeError,
 )
 from backend.app.datasources.flatfile import build_flatfile_runner
 from backend.app.datasources.iceberg import IcebergConnectionAdapter, build_iceberg_runner
 from backend.app.datasources.s3 import S3ConnectionAdapter
+from backend.app.datasources.sampling import SamplingConfigError, parse_sample_spec
 from backend.app.datasources.snowflake import SnowflakeConnectionAdapter, build_snowflake_runner
 from backend.app.datasources.unity_catalog import (
     UnityCatalogConnectionAdapter,
@@ -117,12 +120,17 @@ class _RunnerBuilder(Protocol):
         secret_ref: str | None,
         secret_store: SecretStore,
         catalog: str | None,
+        sampling: SampleSpec | None,
     ) -> CheckRunner: ...
 
 
 def _snowflake_runner(
     *, config: dict[str, Any], secret_ref: str | None, secret_store: SecretStore, **_: Any
 ) -> CheckRunner:
+    # `sampling` is swallowed by `**_` on purpose: the Snowflake runner has no
+    # sampled mode because it never materialises rows, and `SAMPLING_CAPABLE_TYPES`
+    # already refuses the spec at save time — so reaching here with one set is
+    # impossible through the normal path and would be inert if it happened.
     return build_snowflake_runner(config=config, secret_ref=secret_ref, secret_store=secret_store)
 
 
@@ -132,10 +140,15 @@ def _flatfile_runner(
     config: dict[str, Any],
     secret_ref: str | None,
     secret_store: SecretStore,
+    sampling: SampleSpec | None = None,
     **_: Any,
 ) -> CheckRunner:
     return build_flatfile_runner(
-        conn_type=conn_type, config=config, secret_ref=secret_ref, secret_store=secret_store
+        conn_type=conn_type,
+        config=config,
+        secret_ref=secret_ref,
+        secret_store=secret_store,
+        sampling=sampling,
     )
 
 
@@ -145,12 +158,17 @@ def _unity_catalog_runner(
     secret_ref: str | None,
     secret_store: SecretStore,
     catalog: str | None,
+    sampling: SampleSpec | None = None,
     **_: Any,
 ) -> CheckRunner:
     if not catalog:
         raise UnsupportedConnectionTypeError("Unity Catalog run requires a catalog")
     return build_unity_catalog_runner(
-        config=config, secret_ref=secret_ref, secret_store=secret_store, catalog=catalog
+        config=config,
+        secret_ref=secret_ref,
+        secret_store=secret_store,
+        catalog=catalog,
+        sampling=sampling,
     )
 
 
@@ -178,12 +196,18 @@ def build_check_runner(
     secret_ref: str | None,
     secret_store: SecretStore,
     catalog: str | None = None,
+    sampling: SampleSpec | None = None,
 ) -> CheckRunner:
     """Build the `CheckRunner` for ``conn_type`` from a connection's primitives.
 
     Dispatches by type to the registered builder. Raises
     `UnsupportedConnectionTypeError` for a type with no runner (e.g. an
     orchestration provider, or Unity Catalog without a ``catalog``).
+
+    ``sampling`` (#595) is the suite target's `SampleSpec`, carried on
+    `ResolvedTarget`. Builders for pushdown datasources ignore it; the full-load
+    runners bound their read with it. It defaults to ``None`` so every existing
+    caller (probe, dry-run preview, tests) keeps the unsampled behaviour.
     """
     builder = _RUNNER_BUILDERS.get(conn_type)
     if builder is None:
@@ -194,6 +218,7 @@ def build_check_runner(
         secret_ref=secret_ref,
         secret_store=secret_store,
         catalog=catalog,
+        sampling=sampling,
     )
 
 
@@ -354,14 +379,56 @@ _TARGET_RESOLVERS: dict[str, Callable[[dict[str, Any], str], ResolvedTarget]] = 
 }
 
 
+#: Datasources whose runner materialises rows in the worker, and which therefore
+#: accept a ``sampling`` block on their run target (#595). Snowflake is absent on
+#: purpose, not by oversight: its runner pushes every expectation down as SQL and
+#: never holds rows (200M rows with flat worker memory — docs/perf-baseline.md),
+#: so a sampling spec there would change nothing while stamping "sampled" on every
+#: result — a claim the data does not support. Iceberg is absent because its
+#: sampled read is not built yet (`pyiceberg` scan limit/row-filter pushdown,
+#: tracked separately); accepting the spec would be the same lie.
+SAMPLING_CAPABLE_TYPES: frozenset[str] = frozenset({"adls_gen2", "s3", "unity_catalog"})
+
+
+def _target_sampling(target: dict[str, Any], conn_type: str) -> SampleSpec | None:
+    """Parse + gate the optional ``sampling`` block on a run target.
+
+    Refusing an unsupported spec at *save* time (a 422) rather than ignoring it is
+    the point: a silently-dropped sampling block leaves an author believing their
+    nightly 100M-row suite is bounded when it is not, and the first evidence would
+    be the OOM this feature exists to prevent.
+    """
+    raw = target.get("sampling")
+    if raw is None:
+        return None
+    if conn_type not in SAMPLING_CAPABLE_TYPES:
+        raise TargetShapeError(
+            f"{conn_type} targets do not take a 'sampling' block — this datasource runs "
+            "checks by pushdown and never loads rows into the worker, so sampling would "
+            f"change nothing. Supported: {', '.join(sorted(SAMPLING_CAPABLE_TYPES))}"
+        )
+    try:
+        return parse_sample_spec(raw)
+    except SamplingConfigError as exc:
+        raise TargetShapeError(str(exc)) from exc
+
+
 def resolve_target_shape(conn_type: str, target: dict[str, Any]) -> ResolvedTarget:
     """The datasource-specific half of target resolution, or raise.
 
     A type with no entry has no run path — every orchestration provider, and any
     datasource whose author forgot this registration. Raising is the point: the
     alternative is a suite that saves and then fails at run time.
+
+    The optional ``sampling`` block (#595) is grafted on afterwards rather than
+    threaded through each resolver: it is datasource-*agnostic* in shape (the same
+    strategy/rows/seed document everywhere) and datasource-*specific* only in
+    whether it is allowed at all, which `_target_sampling` decides from one set.
+    Putting it in every resolver would be five copies of one rule.
     """
     resolver = _TARGET_RESOLVERS.get(conn_type)
     if resolver is None:
         raise TargetShapeError(f"connection type {conn_type!r} has no run path (not a datasource)")
-    return resolver(target, conn_type)
+    resolved = resolver(target, conn_type)
+    sampling = _target_sampling(target, conn_type)
+    return resolved if sampling is None else replace(resolved, sampling=sampling)

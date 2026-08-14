@@ -138,6 +138,10 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
             secret_ref=connection.secret_ref,
             secret_store=get_secret_store(),
             catalog=target.catalog,
+            # The suite target's row cap (#595). Only the full-load runners act on
+            # it; `resolve_target` has already refused it on datasources that push
+            # down, so it is never silently dropped here.
+            sampling=target.sampling,
         )
     except Exception as exc:
         return _terminal_failed(

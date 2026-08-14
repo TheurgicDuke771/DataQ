@@ -146,6 +146,11 @@ def dry_run_check(
             secret_ref=connection.secret_ref,
             secret_store=secret_store,
             catalog=resolved.catalog,
+            # The suite target's row cap (#595). Threaded through so a preview
+            # reads what a real run would read — a dry-run against an over-cap
+            # target must refuse for the same reason, not quietly succeed by
+            # taking a path production never takes.
+            sampling=resolved.sampling,
         )
     except UnsupportedConnectionTypeError as exc:
         # Defensive: resolve_target already rejects non-datasource types, so this

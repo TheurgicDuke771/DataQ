@@ -8,9 +8,15 @@ concrete runner class per type plus the error paths.
 
 import pytest
 
+from backend.app.datasources.base import SampleSpec, TargetShapeError
 from backend.app.datasources.flatfile import FlatFileCheckRunner
 from backend.app.datasources.iceberg import IcebergCheckRunner
-from backend.app.datasources.registry import UnsupportedConnectionTypeError, build_check_runner
+from backend.app.datasources.registry import (
+    SAMPLING_CAPABLE_TYPES,
+    UnsupportedConnectionTypeError,
+    build_check_runner,
+    resolve_target_shape,
+)
 from backend.app.datasources.snowflake import SnowflakeCheckRunner
 from backend.app.datasources.unity_catalog import UnityCatalogCheckRunner
 from backend.tests.support.fake_secret_store import FakeSecretStore
@@ -94,3 +100,100 @@ def test_non_datasource_or_unknown_type_raises(conn_type: str) -> None:
             secret_ref="x",
             secret_store=FakeSecretStore(default="secret"),
         )
+
+
+# ── sampling on the run target (#595) ────────────────────────────────────────
+
+
+@pytest.mark.parametrize("conn_type", sorted(SAMPLING_CAPABLE_TYPES))
+def test_a_sampling_block_resolves_on_every_full_load_datasource(
+    conn_type: str,
+) -> None:
+    target = {
+        "path": "raw/orders.csv",
+        "table": "orders",
+        "schema": "sales",
+        "catalog": "main",
+        "sampling": {"strategy": "random", "rows": 1000, "seed": 3},
+    }
+    resolved = resolve_target_shape(conn_type, target)
+    assert resolved.sampling == SampleSpec(strategy="random", rows=1000, seed=3)
+
+
+def test_a_target_without_sampling_resolves_to_none() -> None:
+    """The default has to stay "read everything" — a silently-applied cap would
+    change what every existing suite validates."""
+    assert resolve_target_shape("s3", {"path": "raw/orders.csv"}).sampling is None
+
+
+@pytest.mark.parametrize("conn_type", ["snowflake", "iceberg"])
+def test_sampling_is_REFUSED_on_a_datasource_that_cannot_honour_it(
+    conn_type: str,
+) -> None:
+    """Refused at SAVE time, not ignored at run time. A silently-dropped sampling
+    block leaves an author believing their nightly 100M-row suite is bounded when
+    it is not, and the first evidence would be the OOM this feature prevents.
+
+    Snowflake is excluded because it pushes every expectation down and never
+    materialises rows (200M rows, worker flat — docs/perf-baseline.md); Iceberg
+    because its sampled read is not built yet. Both would be the same lie."""
+    target = {
+        "table": "orders",
+        "schema": "sales",
+        "sampling": {"strategy": "head", "rows": 10},
+    }
+    with pytest.raises(TargetShapeError, match="sampling"):
+        resolve_target_shape(conn_type, target)
+
+
+def test_a_malformed_sampling_block_is_a_target_shape_error() -> None:
+    """`SamplingConfigError` is translated to the target-shape error the service
+    layer maps to a 422 — so a bad spec is an author-time complaint, not a run
+    that fails every night."""
+    with pytest.raises(TargetShapeError, match="strategy"):
+        resolve_target_shape("s3", {"path": "a.csv", "sampling": {"strategy": "tail", "rows": 1}})
+
+
+def test_the_sampling_spec_reaches_the_flat_file_runner() -> None:
+    """The seam is only worth anything if the builder passes it through — a spec
+    that resolves but never reaches the runner is the silent-drop failure with
+    extra steps."""
+    sample = SampleSpec(strategy="head", rows=25)
+    runner = build_check_runner(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        secret_ref="ff",
+        secret_store=FakeSecretStore(default="secret"),
+        sampling=sample,
+    )
+    assert isinstance(runner, FlatFileCheckRunner)
+    assert runner._sampling == sample
+
+
+def test_the_sampling_spec_reaches_the_unity_catalog_runner() -> None:
+    sample = SampleSpec(strategy="random", rows=25, seed=2)
+    runner = build_check_runner(
+        conn_type="unity_catalog",
+        config=_UC_CONFIG,
+        secret_ref="pat",
+        secret_store=FakeSecretStore(default="secret"),
+        catalog="main",
+        sampling=sample,
+    )
+    assert isinstance(runner, UnityCatalogCheckRunner)
+    assert runner._sampling == sample
+
+
+def test_a_pushdown_runner_ignores_a_sampling_spec_rather_than_crashing() -> None:
+    """Belt over the braces: `SAMPLING_CAPABLE_TYPES` already refuses this at save
+    time, so it is unreachable through the normal path — but a builder that raised
+    on an unexpected keyword would turn a stale target into a failed run instead of
+    an inert field."""
+    runner = build_check_runner(
+        conn_type="snowflake",
+        config=_SNOWFLAKE_CONFIG,
+        secret_ref="sf",
+        secret_store=FakeSecretStore(default="secret"),
+        sampling=SampleSpec(strategy="head", rows=10),
+    )
+    assert isinstance(runner, SnowflakeCheckRunner)
