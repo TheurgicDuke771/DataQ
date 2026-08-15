@@ -70,5 +70,13 @@ resource "aws_elasticache_replication_group" "app" {
 locals {
   # rediss:// (TLS) scheme — transit_encryption_enabled requires TLS
   # connections; redis-py/celery both understand the scheme.
-  redis_url = "rediss://:${random_password.redis_auth.result}@${aws_elasticache_replication_group.app.primary_endpoint_address}:6379/0"
+  #
+  # ssl_cert_reqs=required is MANDATORY, not belt-and-braces (#1361): celery's
+  # redis result backend raises ValueError on any rediss:// URL that omits the
+  # parameter, so without it the worker crash-loops at boot and the api's
+  # producer dies on first dispatch. Lowercase `required` is the one spelling
+  # all three consumers accept (celery 5.6.3 → ssl.CERT_REQUIRED, redis-py
+  # 5.3.1 from_url, kombu 5.6.2), and ElastiCache serves an Amazon-CA cert so
+  # full verification works against system CAs.
+  redis_url = "rediss://:${random_password.redis_auth.result}@${aws_elasticache_replication_group.app.primary_endpoint_address}:6379/0?ssl_cert_reqs=required"
 }
