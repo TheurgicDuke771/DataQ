@@ -38,10 +38,17 @@ resource "aws_cloudfront_distribution" "app" {
       http_port  = 80
       https_port = 443
       # The ALB listener is plain HTTP :80; TLS terminates at CloudFront. The
-      # ALB is not internet-reachable in practice — its security group admits
-      # only CloudFront's origin-facing address ranges (alb.tf).
+      # ALB's security group admits only CloudFront's origin-facing address
+      # ranges (alb.tf) — see that file's note on what that does and does not
+      # guarantee (#1355).
       origin_protocol_policy = "http-only"
       origin_ssl_protocols   = ["TLSv1.2"]
+      # Long warehouse-bound API calls (column profiler, dry-run, test-
+      # connection against a cold warehouse) routinely exceed CloudFront's 30s
+      # default; match the ALB's 60s idle timeout so CloudFront isn't the
+      # tightest hop (/code-review finding).
+      origin_read_timeout      = 60
+      origin_keepalive_timeout = 60
     }
   }
 

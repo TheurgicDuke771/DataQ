@@ -6,8 +6,14 @@
 # The listener stays plain HTTP :80: TLS terminates at CloudFront (Cognito
 # requires an HTTPS redirect URI, and there is no custom domain — see
 # cloudfront.tf). The security group admits only CloudFront's origin-facing
-# ranges (AWS-managed prefix list), so the ALB cannot be reached directly —
-# which also closes the "bypass CloudFront to talk plain HTTP" hole.
+# ranges (AWS-managed prefix list), so the ALB is not reachable from an
+# arbitrary internet address. Stated honestly: those ranges are shared by ALL
+# CloudFront distributions, so a third party could still origin-point their
+# own distribution at this ALB's (discoverable) DNS name; what that yields is
+# plain-HTTP origin access through their edge — no auth bypass (the app
+# validates Cognito tokens itself) and no XFF spoofing (the trusted-hops
+# depth counts appends, which their edge also performs). Full closure is a
+# secret custom origin header verified at nginx — follow-up #1355.
 
 # AWS-managed, auto-updated list of CloudFront origin-facing IP ranges.
 data "aws_ec2_managed_prefix_list" "cloudfront_origin" {
