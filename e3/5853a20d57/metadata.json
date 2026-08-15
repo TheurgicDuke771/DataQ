@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "e35853a20d57",
+  "strategy": "manual-commit",
+  "branch": "feature/aws-secrets-manager-store",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "backend/tests/core/test_secrets.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e3/5853a20d57/0/metadata.json",
+      "transcript": "/e3/5853a20d57/0/full.jsonl",
+      "compact_transcript": "/e3/5853a20d57/0/transcript.jsonl",
+      "content_hash": "/e3/5853a20d57/0/content_hash.txt",
+      "prompt": "/e3/5853a20d57/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 58,
+    "cache_creation_tokens": 30246,
+    "cache_read_tokens": 8316323,
+    "output_tokens": 8929,
+    "api_call_count": 29
+  }
+}
