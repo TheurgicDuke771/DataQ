@@ -1,0 +1,236 @@
+name: Deploy (AWS)
+
+# Manual-only (workflow_dispatch), mirroring deploy.yml's posture: the Azure
+# stack is primary prod, so the AWS parallel deployment rolls only on an
+# explicit dispatch — never on push.
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to build + deploy (blank → aws-<commit SHA>, an immutable tag)"
+        default: ""
+
+concurrency:
+  group: deploy-aws-production
+  cancel-in-progress: false
+
+# OIDC federated login to AWS (no stored access keys — deploy/terraform/aws/
+# github_oidc.tf trusts exactly repo:<this repo>:environment:production).
+# packages:write lets the GITHUB_TOKEN push both images to GHCR (ADR 0023);
+# ECS pulls them anonymously (public packages), so no registry credential
+# exists on the AWS side.
+permissions:
+  id-token: write
+  contents: read
+  packages: write
+
+env:
+  # `aws-<sha>` — NOT the bare `<sha>` (owned by the Azure deploy.yml) and NOT
+  # `main-<sha>` (owned by publish-images.yml, which skips docs-only merges):
+  # this workflow always builds its own immutable tag so the migrate task, api,
+  # worker, and frontend all roll the exact build this run produced (#382).
+  IMAGE: ghcr.io/theurgicduke771/dataq-backend:${{ inputs.image_tag || format('aws-{0}', github.sha) }}
+  # Statically named by deploy/terraform/aws/ (the IAM policy's
+  # RegisterTaskDefinition grant is scoped to the dataq-app-* families, so
+  # these are contract, not convention).
+  API_SERVICE: dataq-app-api
+  WORKER_SERVICE: dataq-app-worker
+  FRONTEND_SERVICE: dataq-app-frontend
+  MIGRATE_FAMILY: dataq-app-migrate
+
+jobs:
+  backend:
+    name: Backend — build, migrate, deploy (API + worker)
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+
+      # Fail fast on unset repo vars/secrets (#539 post-mortem, same rule as
+      # deploy.yml): never let an empty value masquerade as a transient error
+      # three steps later.
+      - name: Preflight — required repo vars + secrets
+        env:
+          DEPLOY_ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          fail=0
+          for pair in "AWS_REGION=${{ vars.AWS_REGION }}" \
+                      "ECS_CLUSTER=${{ vars.ECS_CLUSTER }}" \
+                      "AWS_DEPLOY_ROLE_ARN=$DEPLOY_ROLE"; do
+            [[ -n "${pair#*=}" ]] || { echo "::error::${pair%%=*} is not set"; fail=1; }
+          done
+          exit $fail
+
+      - name: AWS login (OIDC)
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Retried (#539): a registry blip on the base-image pull or the GHCR push
+      # shouldn't fail the deploy — a re-run hits the local layer cache.
+      - name: Build + push backend image to GHCR
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          # && chain, not two statements: functions called from retry's
+          # condition context have errexit suppressed inside, so a plain
+          # sequence would still push after a failed build.
+          build_push() {
+            docker build -f backend/Dockerfile -t "$IMAGE" . && docker push "$IMAGE"
+          }
+          retry build_push
+
+      # Migrate BEFORE rolling the app: migrations are additive/backward-
+      # compatible (CLAUDE.md), so the running old code tolerates the new
+      # schema. Unlike ACA jobs, an ECS task definition carries no separately
+      # stored command to clobber — the migrate family's command lives IN the
+      # definition — so re-registering with only the image swapped preserves it.
+      - name: Run DB migrations (alembic upgrade head) and wait for success
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          source scripts/ci/ecs_roll.sh
+
+          # New migrate revision on the new image (shared helper — one
+          # describe→swap→register implementation for all four families).
+          ecs_register_revision "$MIGRATE_FAMILY" "$IMAGE"
+          migrate_arn=$ECS_REGISTERED_ARN
+          echo "Registered migrate task definition: $migrate_arn"
+
+          # The one-off task runs with the api service's exact network shape
+          # (same subnets/SG → same RDS reachability), read live rather than
+          # duplicated into repo vars that would drift from the Terraform.
+          netcfg=$(aws ecs describe-services --cluster "${{ vars.ECS_CLUSTER }}" \
+                     --services "$API_SERVICE" \
+                     --query 'services[0].networkConfiguration' --output json)
+
+          # run-task reports placement failures as exit-0 + failures[] with an
+          # empty tasks[] (so a bare `--query tasks[0].taskArn` yields the
+          # literal 'None' and the failure surfaces 10 minutes later as a
+          # baffling waiter timeout). Treat no-task-started as the retryable
+          # failure it is, and say why.
+          run_task() {
+            local out
+            out=$(aws ecs run-task --cluster "${{ vars.ECS_CLUSTER }}" \
+              --task-definition "$migrate_arn" \
+              --launch-type FARGATE \
+              --network-configuration "$netcfg" \
+              --output json)
+            task_arn=$(jq -r '.tasks[0].taskArn // empty' <<<"$out")
+            if [[ -z "$task_arn" ]]; then
+              echo "::warning::run-task started no task: $(jq -c '.failures' <<<"$out")"
+              return 1
+            fi
+          }
+          retry run_task
+          echo "Started migration task: $task_arn"
+
+          # Fail-closed: the rollout below must not begin until the migration
+          # has actually SUCCEEDED (exit 0). `aws ecs wait tasks-stopped` polls
+          # 6s × 100 (10 min) and exits 255 on waiter timeout.
+          aws ecs wait tasks-stopped --cluster "${{ vars.ECS_CLUSTER }}" --tasks "$task_arn"
+          state=$(aws ecs describe-tasks --cluster "${{ vars.ECS_CLUSTER }}" --tasks "$task_arn" \
+                    --query 'tasks[0].[containers[0].exitCode, stopCode, stoppedReason]' --output json)
+          exit_code=$(jq -r '.[0]' <<<"$state")
+          if [[ "$exit_code" != "0" ]]; then
+            echo "::error::Migration failed (exit=${exit_code}, $(jq -r '.[1] + ": " + .[2]' <<<"$state")) — aborting before app rollout."
+            exit 1
+          fi
+          echo "Migration succeeded."
+
+      # Register new api/worker revisions on the new image and roll both, then
+      # WAIT for the deployments to complete — the step's exit code must mean
+      # "the services are actually running the new image", not "the API call
+      # was accepted" (the deploy.yml #539 verify rule, ECS-shaped).
+      - name: Deploy API + worker
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          source scripts/ci/ecs_roll.sh
+          ecs_roll_service "${{ vars.ECS_CLUSTER }}" "$API_SERVICE" "$IMAGE"
+          ecs_roll_service "${{ vars.ECS_CLUSTER }}" "$WORKER_SERVICE" "$IMAGE"
+          ecs_wait_stable "${{ vars.ECS_CLUSTER }}" "$API_SERVICE" "$WORKER_SERVICE"
+          ecs_verify_image "${{ vars.ECS_CLUSTER }}" "$API_SERVICE" "$IMAGE"
+          ecs_verify_image "${{ vars.ECS_CLUSTER }}" "$WORKER_SERVICE" "$IMAGE"
+
+  frontend:
+    name: Frontend — build image, deploy to ECS
+    runs-on: ubuntu-latest
+    environment: production
+    # Gate on the backend (build → migrate → roll API/worker): a failed or
+    # aborted migration must stop the UI deploy, else a new SPA rolls against
+    # an un-rolled or half-migrated API — a partial deploy (#382).
+    needs: backend
+    env:
+      # Job-level so the roll step below sees the frontend image as $IMAGE and
+      # the shared roll logic stays identical to the backend job's.
+      IMAGE: ghcr.io/theurgicduke771/dataq-frontend:${{ inputs.image_tag || format('aws-{0}', github.sha) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: AWS login (OIDC)
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # One generic image (ADR 0028) — nothing baked in. Auth config + the /api
+      # proxy upstream are injected at runtime by the task definition env
+      # (DATAQ_AUTH_* / DATAQ_API_UPSTREAM in deploy/terraform/aws/ecs.tf), so
+      # there are NO VITE_* build args and no per-environment rebuild. amd64
+      # only (the Fargate tasks are amd64); the multi-arch :latest is published
+      # by publish-images.yml for the BYOL/eval path.
+      - name: Build + push frontend image to GHCR
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          build_push() {
+            docker build -f frontend/Dockerfile -t "$IMAGE" frontend && docker push "$IMAGE"
+          }
+          retry build_push
+
+      - name: Deploy frontend
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          source scripts/ci/ecs_roll.sh
+          ecs_roll_service "${{ vars.ECS_CLUSTER }}" "$FRONTEND_SERVICE" "$IMAGE"
+          ecs_wait_stable "${{ vars.ECS_CLUSTER }}" "$FRONTEND_SERVICE"
+          ecs_verify_image "${{ vars.ECS_CLUSTER }}" "$FRONTEND_SERVICE" "$IMAGE"
+
+      # Post-deploy smoke through the real public surface (CloudFront). The URL
+      # is deployment-specific and deliberately not tracked in the repo (#730),
+      # so this runs only when the optional AWS_FRONTEND_URL repo var is set —
+      # skipping is loudly logged, never silent.
+      - name: Smoke (public surface)
+        run: |
+          set -euo pipefail
+          url="${{ vars.AWS_FRONTEND_URL }}"
+          if [[ -z "$url" ]]; then
+            echo "::warning::AWS_FRONTEND_URL repo var not set — skipping the public-surface smoke."
+            exit 0
+          fi
+          for path_want in "/healthz 200" "/ 200" "/api/v1/me 401"; do
+            path=${path_want% *}; want=${path_want#* }
+            # --max-time: a black-holing connection must fail the step, not
+            # hang the job to GitHub's 6-hour default (PR #1365 review).
+            got=$(curl -s -o /dev/null --max-time 30 -w '%{http_code}' "${url%/}${path}")
+            [[ "$got" == "$want" ]] || { echo "::error::smoke: ${path} returned ${got}, wanted ${want}"; exit 1; }
+            echo "smoke: ${path} -> ${got} (ok)"
+          done
