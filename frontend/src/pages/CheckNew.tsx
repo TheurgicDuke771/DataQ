@@ -1,4 +1,4 @@
-import { App, Button, Card, Flex, Form, Input, Typography } from 'antd';
+import { Alert, App, Button, Card, Flex, Form, Input, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -22,6 +22,7 @@ import {
 } from '../components/checks/expectationCatalog';
 import { Page } from '../components/layout/Page';
 import { useAsyncAction } from '../hooks/useAsyncAction';
+import { apiFieldError } from '../utils/fieldErrors';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 /**
@@ -70,16 +71,35 @@ export function CheckNew() {
     if (expectationType) form.resetFields();
   }, [expectationType, form]);
 
+  // A save refusal that has no form field to land on (see below). Kept in state
+  // rather than shown as a toast so it stays on screen while the author reacts.
+  const [refusal, setRefusal] = useState<string | null>(null);
+
   const onFinish = (values: Record<string, unknown>) => {
+    setRefusal(null);
     if (!suiteId || !expectationType) return;
     const isComparison = EXPECTATION_BY_TYPE[expectationType]?.kind === 'comparison';
     return run(async () => {
-      await createCheck(
-        suiteId,
-        isComparison
-          ? buildComparisonPayload({ ...values, expectation_type: expectationType })
-          : buildCheckPayload({ ...values, expectation_type: expectationType }),
-      );
+      try {
+        await createCheck(
+          suiteId,
+          isComparison
+            ? buildComparisonPayload({ ...values, expectation_type: expectationType })
+            : buildCheckPayload({ ...values, expectation_type: expectationType }),
+        );
+      } catch (err) {
+        // A refusal about the *chosen expectation* (the sampling to row-count
+        // conflict, #1333 F5) has no form field to land on here — the type was
+        // picked in the previous step, not in this form — so it becomes a
+        // persistent Alert instead of a toast. What matters is that it stays on
+        // screen while the author decides what to do about it.
+        const api = apiFieldError(err);
+        if (api && typeof api.detail.field === 'string') {
+          setRefusal(api.message);
+          return;
+        }
+        throw err;
+      }
       message.success(`${values.name as string}: created`);
       backToSuite();
     });
@@ -98,6 +118,16 @@ export function CheckNew() {
           <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
             {spec.description}
           </Typography.Paragraph>
+          {refusal && (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 16 }}
+              data-testid="check-refusal"
+              title="This check can’t be added to the suite"
+              description={refusal}
+            />
+          )}
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
             <Input placeholder="e.g. order_id not null" />
           </Form.Item>

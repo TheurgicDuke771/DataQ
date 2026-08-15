@@ -6,8 +6,12 @@ import {
   asFileFormat,
   assembleTarget,
   hasCaptureGroup,
+  MAX_SAMPLE_ROWS,
+  SAMPLING_CAPABLE_TYPES,
   summarizeTarget,
+  supportsSampling,
   targetKind,
+  targetSampling,
 } from '../../src/components/suites/suiteTarget';
 
 describe('targetKind', () => {
@@ -252,6 +256,29 @@ describe('summarizeTarget (#1180)', () => {
   it('still prefers a literal path over a pattern (mutually exclusive, but path wins if both present)', () => {
     expect(summarizeTarget({ path: 'c/data.csv', pattern: 'ignored_(x)' })).toBe('c/data.csv');
   });
+
+  it('annotates a sampled target (#1333 m1)', () => {
+    // The Run Now confirmation and the Suites list would otherwise render a
+    // sampled and an unsampled suite identically — and "run this" is exactly the
+    // moment to know the run will read 100k rows of 5M.
+    expect(
+      summarizeTarget({ table: 'ORDERS', sampling: { strategy: 'head', rows: 100_000 } }),
+    ).toBe('ORDERS · sampled: head 100k');
+    expect(
+      summarizeTarget({ path: 'raw/o.csv', sampling: { strategy: 'random', rows: 1_500_000 } }),
+    ).toBe('raw/o.csv · sampled: random 1.5M');
+    expect(summarizeTarget({ table: 'T', sampling: { strategy: 'head', rows: 250 } })).toBe(
+      'T · sampled: head 250',
+    );
+  });
+
+  it('leaves an unsampled or unusable target unannotated', () => {
+    expect(summarizeTarget({ table: 'ORDERS' })).toBe('ORDERS');
+    // A malformed stored block is not carried by `storedSampling`, so the summary
+    // says nothing rather than inventing a cap it can't state.
+    expect(summarizeTarget({ table: 'ORDERS', sampling: { strategy: 'head' } })).toBe('ORDERS');
+    expect(summarizeTarget({ sampling: { strategy: 'head', rows: 10 } })).toBeNull();
+  });
 });
 
 describe('asFileFormat', () => {
@@ -285,5 +312,236 @@ describe('asBatchStrategy (#1180)', () => {
     expect(asBatchStrategy('LATEST')).toBeUndefined();
     expect(asBatchStrategy('')).toBeUndefined();
     expect(asBatchStrategy(undefined)).toBeUndefined();
+  });
+});
+
+// ── sampling (#595/#1325) ────────────────────────────────────────────
+
+describe('SAMPLING_CAPABLE_TYPES', () => {
+  it('names exactly the datasources the backend accepts a sampling block on', () => {
+    // A canary against the backend `registry.SAMPLING_CAPABLE_TYPES`. The
+    // absences are the point: Snowflake pushes every expectation down and never
+    // materialises rows (a sample there would change nothing while stamping
+    // "sampled" on every result), and Iceberg's sampled read is not built. Both
+    // are a 422 at save time server-side, so adding one here without adding it
+    // there would put a control in the editor whose only outcome is a save error.
+    expect([...SAMPLING_CAPABLE_TYPES].sort()).toEqual(['adls_gen2', 's3', 'unity_catalog']);
+    const cases: [ConnectionType, boolean][] = [
+      ['adls_gen2', true],
+      ['s3', true],
+      ['unity_catalog', true],
+      ['snowflake', false],
+      ['iceberg', false],
+      ['adf', false],
+    ];
+    for (const [type, capable] of cases) expect(supportsSampling(type)).toBe(capable);
+    expect(supportsSampling(undefined)).toBe(false);
+  });
+});
+
+describe('assembleTarget — sampling', () => {
+  const base = { target_path: 'raw/orders.csv' };
+
+  it('leaves the target untouched when sampling is off', () => {
+    expect(assembleTarget('flatfile', base, { connType: 's3' }).target).toEqual({
+      path: 'raw/orders.csv',
+    });
+  });
+
+  it('grafts a head sample onto the datasource target', () => {
+    const { target, error } = assembleTarget(
+      'flatfile',
+      { ...base, sampling_enabled: true, sampling_strategy: 'head', sampling_rows: 100_000 },
+      { connType: 's3' },
+    );
+    expect(error).toBeUndefined();
+    expect(target).toEqual({
+      path: 'raw/orders.csv',
+      sampling: { strategy: 'head', rows: 100_000 },
+    });
+  });
+
+  it('carries a seed for random', () => {
+    expect(
+      assembleTarget(
+        'uc',
+        {
+          target_catalog: 'main',
+          target_table: 'orders',
+          sampling_enabled: true,
+          sampling_strategy: 'random',
+          sampling_rows: 5_000,
+          sampling_seed: 7,
+        },
+        { connType: 'unity_catalog' },
+      ).target,
+    ).toEqual({
+      catalog: 'main',
+      table: 'orders',
+      sampling: { strategy: 'random', rows: 5_000, seed: 7 },
+    });
+  });
+
+  it('drops a stale seed when the strategy is head', () => {
+    // Switching random to head leaves the seed field populated. Sending it would
+    // be a 422 (the backend refuses a seed on head rather than let an author
+    // believe a head sample is seeded-random) — and a stored seed on a head spec
+    // would read as a reproducibility guarantee of a different kind than the one
+    // head actually gives.
+    const { target } = assembleTarget(
+      'flatfile',
+      {
+        ...base,
+        sampling_enabled: true,
+        sampling_strategy: 'head',
+        sampling_rows: 10,
+        sampling_seed: 7,
+      },
+      { connType: 's3' },
+    );
+    expect(target).toEqual({ path: 'raw/orders.csv', sampling: { strategy: 'head', rows: 10 } });
+  });
+
+  it('REFUSES rather than drops a sampling block on a pushdown datasource', () => {
+    // The silently-dropped block is the failure mode this whole feature is
+    // shaped against: an author would believe a nightly 100M-row suite is
+    // bounded when it is not, and the first evidence would be an OOM.
+    const { target, error } = assembleTarget(
+      'sql',
+      { target_table: 'ORDERS', sampling_enabled: true, sampling_rows: 100 },
+      { connType: 'snowflake' },
+    );
+    expect(target).toBeNull();
+    expect(error?.field).toBe('sampling_enabled');
+    expect(error?.message).toMatch(/pushdown/);
+  });
+
+  it('REFUSES a sampling block with no target to bound', () => {
+    // A lone `sampling` key is not a runnable target and the backend 422s it.
+    const { target, error } = assembleTarget(
+      'flatfile',
+      { sampling_enabled: true, sampling_rows: 100 },
+      { connType: 's3' },
+    );
+    expect(target).toBeNull();
+    expect(error?.field).toBe('sampling_enabled');
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['zero', 0],
+    ['negative', -1],
+    ['fractional', 1.5],
+    ['over the cap', MAX_SAMPLE_ROWS + 1],
+  ])('REFUSES a %s row count', (_label, rows) => {
+    const { target, error } = assembleTarget(
+      'flatfile',
+      { ...base, sampling_enabled: true, sampling_rows: rows as number | undefined },
+      { connType: 's3' },
+    );
+    expect(target).toBeNull();
+    expect(error?.field).toBe('sampling_rows');
+  });
+
+  it('accepts exactly the cap', () => {
+    expect(
+      assembleTarget(
+        'flatfile',
+        { ...base, sampling_enabled: true, sampling_rows: MAX_SAMPLE_ROWS },
+        { connType: 's3' },
+      ).error,
+    ).toBeUndefined();
+  });
+
+  it('reports the datasource error first when both halves are wrong', () => {
+    // A missing path is the more fundamental problem and names the field the
+    // author must fix; stacking a sampling error on top would point at the wrong
+    // input.
+    const { error } = assembleTarget(
+      'flatfile',
+      { target_format: 'csv', sampling_enabled: true, sampling_rows: 100 },
+      { connType: 's3' },
+    );
+    expect(error?.field).toBe('target_path');
+  });
+});
+
+describe('targetSampling', () => {
+  it('reads a stored block back for prefill, already typed', () => {
+    const stored = { path: 'p', sampling: { strategy: 'random', rows: 1000, seed: 3 } };
+    expect(targetSampling(stored)).toEqual({ strategy: 'random', rows: 1000, seed: 3 });
+  });
+
+  it('returns undefined when there is no block to read', () => {
+    expect(targetSampling(null)).toBeUndefined();
+    expect(targetSampling(undefined)).toBeUndefined();
+    expect(targetSampling({ path: 'p' })).toBeUndefined();
+    // Not an object → not a block. A hand-edited JSONB row can hold anything.
+    expect(targetSampling({ sampling: 'head' })).toBeUndefined();
+    expect(targetSampling({ sampling: ['head'] })).toBeUndefined();
+  });
+
+  it('narrows each field, so junk never prefills a control', () => {
+    // A present-but-malformed block still returns an object (there IS a block),
+    // with the unusable fields dropped — the Select falls back to its default
+    // rather than showing an option that does not exist.
+    expect(targetSampling({ sampling: { strategy: 'HEAD', rows: '100', seed: null } })).toEqual({
+      strategy: undefined,
+      rows: undefined,
+      seed: undefined,
+    });
+  });
+});
+
+describe('assembleTarget — sampling carry-forward (#1333 F3)', () => {
+  const stored = { strategy: 'head', rows: 100_000 } as const;
+
+  it('PRESERVES a stored block when the sampling section never mounted', () => {
+    // `validateFields()` returns registered fields only, so an unmounted section
+    // reports no `sampling_enabled` at all. Treating that as "turned off" deletes
+    // the row cap on a save that only touched the description — silently, and the
+    // nightly suite reverts to the full scan the feature exists to prevent.
+    const { target, error } = assembleTarget(
+      'flatfile',
+      { target_path: 'raw/orders.csv' }, // no sampling_* keys — section not rendered
+      { connType: 's3', stored },
+    );
+
+    expect(error).toBeUndefined();
+    expect(target).toEqual({ path: 'raw/orders.csv', sampling: stored });
+  });
+
+  it('preserves it even on a datasource the frontend list calls incapable', () => {
+    // The drift case: nothing mechanically pins the frontend capability list to
+    // the backend's, so the carry-forward must not depend on agreeing with it.
+    const { target } = assembleTarget(
+      'sql',
+      { target_table: 'ORDERS' },
+      { connType: 'snowflake', stored },
+    );
+
+    expect(target).toEqual({ table: 'ORDERS', sampling: stored });
+  });
+
+  it('still clears the block on an EXPLICIT "whole dataset" choice', () => {
+    // The counter-case: carrying forward must not make sampling impossible to
+    // turn off. `false` is the author speaking; `undefined` is the form's silence.
+    const { target } = assembleTarget(
+      'flatfile',
+      { target_path: 'raw/orders.csv', sampling_enabled: false },
+      { connType: 's3', stored },
+    );
+
+    expect(target).toEqual({ path: 'raw/orders.csv' });
+  });
+
+  it('carries nothing forward for a suite that had no block', () => {
+    const { target } = assembleTarget(
+      'flatfile',
+      { target_path: 'raw/orders.csv' },
+      { connType: 's3' },
+    );
+
+    expect(target).toEqual({ path: 'raw/orders.csv' });
   });
 });

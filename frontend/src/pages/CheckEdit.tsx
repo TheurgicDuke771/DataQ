@@ -24,6 +24,7 @@ import {
 import { PageError } from '../components/feedback/PageError';
 import { Page } from '../components/layout/Page';
 import { useAsyncAction } from '../hooks/useAsyncAction';
+import { apiFieldError } from '../utils/fieldErrors';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 /**
@@ -200,7 +201,21 @@ function CheckEditForm({
             delete u.kind;
             return u;
           })();
-      await updateCheck(suiteId, check.id, update);
+      try {
+        await updateCheck(suiteId, check.id, update);
+      } catch (err) {
+        // The backend names the field it refused on (e.g. the sampling to
+        // row-count conflict, #1333 F5). Put it there rather than in a toast that
+        // dismisses itself — this refusal is about the interaction between this
+        // check and the suite's run target, which takes a moment to read.
+        const api = apiFieldError(err);
+        const field = api?.detail.field;
+        if (api && typeof field === 'string') {
+          form.setFields([{ name: field, errors: [api.message] }]);
+          return;
+        }
+        throw err;
+      }
       message.success(`${values.name as string}: saved`);
       onSaved();
     });

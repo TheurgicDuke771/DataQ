@@ -65,7 +65,24 @@ export interface RunTarget {
   strategy?: 'latest' | 'specific';
   batch?: string;
   prefix?: string;
+  /** Scale-aware execution (#595) — bound what a run materialises. Mirrors the
+   *  backend `SuiteSampling`; accepted only on the datasources whose runners load
+   *  rows into the worker (`suiteTarget.SAMPLING_CAPABLE_TYPES`), and a **422 at
+   *  save time** anywhere else rather than a silent drop. */
+  sampling?: {
+    strategy: SampleStrategy;
+    rows: number;
+    /** `random` only — the backend refuses a seed on `head`. */
+    seed?: number;
+  };
 }
+
+/** The sampling strategies the backend accepts (`sampling.SAMPLING_STRATEGIES`).
+ *  Declared once, here beside the target it lives on, and imported by the target
+ *  editor and by `ResultSampling` — three separate spellings of a two-value union
+ *  is three places for a third value to be added to only one of them. */
+export const SAMPLE_STRATEGIES = ['head', 'random'] as const;
+export type SampleStrategy = (typeof SAMPLE_STRATEGIES)[number];
 
 /** Read one string field out of the untyped run-target bag, or `undefined`. */
 export function targetString(
