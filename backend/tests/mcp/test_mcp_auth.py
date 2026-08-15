@@ -192,8 +192,11 @@ def test_resolve_user_generic_oidc_reads_sub(db_session: Any, monkeypatch: Any) 
 def test_resolve_user_generic_oidc_has_no_guest_policy(db_session: Any, monkeypatch: Any) -> None:
     """The Azure B2B-guest concept doesn't apply to a generic provider — an
     `acct` claim (Azure's guest signal) must not be inspected in this mode."""
-    token = SimpleNamespace(claims={"sub": "cognito-sub-2", "acct": 1})
+    token = SimpleNamespace(claims={"sub": "cognito-sub-2", "acct": 1}, token="raw-jwt")
     monkeypatch.setattr(auth, "get_access_token", lambda: token)
+    # No email in the claims → the #1346 userinfo path fires; neutralize it here
+    # (its own behavior is covered by the dedicated tests below).
+    monkeypatch.setattr(auth, "fetch_userinfo", lambda issuer, tok: None)
     monkeypatch.setattr(
         auth,
         "get_settings",
@@ -646,3 +649,58 @@ def test_an_otp_signed_in_user_can_mint_the_pat_that_mcp_then_accepts(
     access = asyncio.run(_pat_only_verifier().verify_token(token))
     assert access is not None, "the PAT an OTP user just minted is rejected by /mcp"
     assert access.claims[auth.PAT_USER_CLAIM] == str(user.id)
+
+
+# ── generic_oidc userinfo fallback (#1346) ───────────────────────────────────
+
+
+def test_resolve_user_generic_oidc_fetches_userinfo_when_email_absent(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A real Cognito access token has no email claim — it comes from userinfo,
+    fetched with the SAME raw bearer the client presented."""
+    token = SimpleNamespace(claims={"sub": "cognito-sub-3", "token_use": "access"}, token="raw-jwt")
+    seen: list[tuple[str, str]] = []
+
+    def fake_fetch(issuer: str, tok: str) -> dict[str, Any]:
+        seen.append((issuer, tok))
+        return {"sub": "cognito-sub-3", "email": "mcp-user@example.com", "name": "MCP User"}
+
+    monkeypatch.setattr(auth, "get_access_token", lambda: token)
+    monkeypatch.setattr(auth, "fetch_userinfo", fake_fetch)
+    monkeypatch.setattr(auth, "get_settings", lambda: _settings(**_OIDC, environment="prod"))
+    user = auth.resolve_current_user(db_session)
+    assert user.email == "mcp-user@example.com"
+    assert user.display_name == "MCP User"
+    assert seen == [("https://example-idp.test", "raw-jwt")]
+
+
+def test_resolve_user_generic_oidc_userinfo_outage_raises(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Outage → a visible auth error, never an empty-email upsert."""
+    import httpx
+
+    token = SimpleNamespace(claims={"sub": "cognito-sub-4"}, token="raw-jwt")
+
+    def fake_fetch(issuer: str, tok: str) -> dict[str, Any]:
+        raise httpx.ConnectError("userinfo down")
+
+    monkeypatch.setattr(auth, "get_access_token", lambda: token)
+    monkeypatch.setattr(auth, "fetch_userinfo", fake_fetch)
+    monkeypatch.setattr(auth, "get_settings", lambda: _settings(**_OIDC, environment="prod"))
+    with pytest.raises(auth.McpAuthError):
+        auth.resolve_current_user(db_session)
+
+
+def test_resolve_user_generic_oidc_userinfo_sub_mismatch_raises(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    token = SimpleNamespace(claims={"sub": "cognito-sub-5"}, token="raw-jwt")
+    monkeypatch.setattr(auth, "get_access_token", lambda: token)
+    monkeypatch.setattr(
+        auth, "fetch_userinfo", lambda issuer, tok: {"sub": "someone-else", "email": "x@y.z"}
+    )
+    monkeypatch.setattr(auth, "get_settings", lambda: _settings(**_OIDC, environment="prod"))
+    with pytest.raises(auth.McpAuthError):
+        auth.resolve_current_user(db_session)
