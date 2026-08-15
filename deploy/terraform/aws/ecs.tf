@@ -30,9 +30,13 @@ resource "aws_security_group" "ecs_tasks" {
 }
 
 resource "aws_security_group_rule" "ecs_tasks_self_ingress" {
+  # Narrower than "every port" on purpose: the only task-to-task call within
+  # this security group is frontend -> api on 8000 (Cloud Map DNS). worker
+  # and frontend serve nothing another task calls, so opening the full
+  # 0-65535 range would grant blast-radius no actual traffic pattern needs.
   type                     = "ingress"
-  from_port                = 0
-  to_port                  = 65535
+  from_port                = 8000
+  to_port                  = 8000
   protocol                 = "tcp"
   security_group_id        = aws_security_group.ecs_tasks.id
   source_security_group_id = aws_security_group.ecs_tasks.id
