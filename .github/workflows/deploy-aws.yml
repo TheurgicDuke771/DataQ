@@ -98,25 +98,12 @@ jobs:
         run: |
           set -euo pipefail
           source scripts/ci/retry.sh
+          source scripts/ci/ecs_roll.sh
 
-          # Register a new migrate revision on the new image. describe → strip
-          # the register-rejected output-only fields → register.
-          td=$(aws ecs describe-task-definition --task-definition "$MIGRATE_FAMILY" \
-                 --query taskDefinition --output json)
-          new_td=$(jq --arg img "$IMAGE" \
-            '.containerDefinitions[0].image = $img
-             | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
-                   .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)' \
-            <<<"$td")
-          # Capture INSIDE the retried function: retry() echoes ::warning::
-          # lines to stdout, so `var=$(retry fn)` would swallow them into the
-          # captured value on any retried attempt. retry runs the function in
-          # the current shell, so the assignment survives.
-          register() {
-            migrate_arn=$(aws ecs register-task-definition --cli-input-json "$new_td" \
-              --query 'taskDefinition.taskDefinitionArn' --output text)
-          }
-          retry register
+          # New migrate revision on the new image (shared helper — one
+          # describe→swap→register implementation for all four families).
+          ecs_register_revision "$MIGRATE_FAMILY" "$IMAGE"
+          migrate_arn=$ECS_REGISTERED_ARN
           echo "Registered migrate task definition: $migrate_arn"
 
           # The one-off task runs with the api service's exact network shape
@@ -126,12 +113,23 @@ jobs:
                      --services "$API_SERVICE" \
                      --query 'services[0].networkConfiguration' --output json)
 
+          # run-task reports placement failures as exit-0 + failures[] with an
+          # empty tasks[] (so a bare `--query tasks[0].taskArn` yields the
+          # literal 'None' and the failure surfaces 10 minutes later as a
+          # baffling waiter timeout). Treat no-task-started as the retryable
+          # failure it is, and say why.
           run_task() {
-            task_arn=$(aws ecs run-task --cluster "${{ vars.ECS_CLUSTER }}" \
+            local out
+            out=$(aws ecs run-task --cluster "${{ vars.ECS_CLUSTER }}" \
               --task-definition "$migrate_arn" \
               --launch-type FARGATE \
               --network-configuration "$netcfg" \
-              --query 'tasks[0].taskArn' --output text)
+              --output json)
+            task_arn=$(jq -r '.tasks[0].taskArn // empty' <<<"$out")
+            if [[ -z "$task_arn" ]]; then
+              echo "::warning::run-task started no task: $(jq -c '.failures' <<<"$out")"
+              return 1
+            fi
           }
           retry run_task
           echo "Started migration task: $task_arn"
@@ -157,48 +155,12 @@ jobs:
         run: |
           set -euo pipefail
           source scripts/ci/retry.sh
-          roll() {
-            local family=$1
-            local td new_td arn
-            td=$(aws ecs describe-task-definition --task-definition "$family" \
-                   --query taskDefinition --output json)
-            new_td=$(jq --arg img "$IMAGE" \
-              '.containerDefinitions[0].image = $img
-               | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
-                     .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)' \
-              <<<"$td")
-            # Same capture-inside-the-retried-function shape as the migrate
-            # step (retry's ::warning:: lines share stdout). `arn` is roll()'s
-            # local; bash locals are dynamically scoped, so the nested
-            # function's assignment lands on it.
-            register() {
-              arn=$(aws ecs register-task-definition --cli-input-json "$new_td" \
-                --query 'taskDefinition.taskDefinitionArn' --output text)
-            }
-            retry register
-            update() {
-              aws ecs update-service --cluster "${{ vars.ECS_CLUSTER }}" \
-                --service "$family" --task-definition "$arn" \
-                --query 'service.serviceName' --output text >/dev/null
-            }
-            retry update
-            echo "$family -> $arn"
-          }
-          roll "$API_SERVICE"
-          roll "$WORKER_SERVICE"
-          # services-stable polls 15s × 40 (10 min); exits 255 on timeout, so a
-          # stuck rollout (crash-looping new revision) fails the deploy here.
-          aws ecs wait services-stable --cluster "${{ vars.ECS_CLUSTER }}" \
-            --services "$API_SERVICE" "$WORKER_SERVICE"
-          # Verify the primary deployment really is the new image (not merely
-          # stable on the OLD one after a circuit-breaker rollback).
-          for svc in "$API_SERVICE" "$WORKER_SERVICE"; do
-            live_td=$(aws ecs describe-services --cluster "${{ vars.ECS_CLUSTER }}" \
-                        --services "$svc" --query 'services[0].deployments[0].taskDefinition' --output text)
-            live_img=$(aws ecs describe-task-definition --task-definition "$live_td" \
-                         --query 'taskDefinition.containerDefinitions[0].image' --output text)
-            [[ "$live_img" == "$IMAGE" ]] || { echo "::error::$svc image mismatch after rollout: $live_img"; exit 1; }
-          done
+          source scripts/ci/ecs_roll.sh
+          ecs_roll_service "${{ vars.ECS_CLUSTER }}" "$API_SERVICE" "$IMAGE"
+          ecs_roll_service "${{ vars.ECS_CLUSTER }}" "$WORKER_SERVICE" "$IMAGE"
+          ecs_wait_stable "${{ vars.ECS_CLUSTER }}" "$API_SERVICE" "$WORKER_SERVICE"
+          ecs_verify_image "${{ vars.ECS_CLUSTER }}" "$API_SERVICE" "$IMAGE"
+          ecs_verify_image "${{ vars.ECS_CLUSTER }}" "$WORKER_SERVICE" "$IMAGE"
 
   frontend:
     name: Frontend — build image, deploy to ECS
@@ -247,31 +209,10 @@ jobs:
         run: |
           set -euo pipefail
           source scripts/ci/retry.sh
-          td=$(aws ecs describe-task-definition --task-definition "$FRONTEND_SERVICE" \
-                 --query taskDefinition --output json)
-          new_td=$(jq --arg img "$IMAGE" \
-            '.containerDefinitions[0].image = $img
-             | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
-                   .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)' \
-            <<<"$td")
-          register() {
-            arn=$(aws ecs register-task-definition --cli-input-json "$new_td" \
-              --query 'taskDefinition.taskDefinitionArn' --output text)
-          }
-          retry register
-          update() {
-            aws ecs update-service --cluster "${{ vars.ECS_CLUSTER }}" \
-              --service "$FRONTEND_SERVICE" --task-definition "$arn" \
-              --query 'service.serviceName' --output text >/dev/null
-          }
-          retry update
-          aws ecs wait services-stable --cluster "${{ vars.ECS_CLUSTER }}" \
-            --services "$FRONTEND_SERVICE"
-          live_td=$(aws ecs describe-services --cluster "${{ vars.ECS_CLUSTER }}" \
-                      --services "$FRONTEND_SERVICE" --query 'services[0].deployments[0].taskDefinition' --output text)
-          live_img=$(aws ecs describe-task-definition --task-definition "$live_td" \
-                       --query 'taskDefinition.containerDefinitions[0].image' --output text)
-          [[ "$live_img" == "$IMAGE" ]] || { echo "::error::frontend image mismatch after rollout: $live_img"; exit 1; }
+          source scripts/ci/ecs_roll.sh
+          ecs_roll_service "${{ vars.ECS_CLUSTER }}" "$FRONTEND_SERVICE" "$IMAGE"
+          ecs_wait_stable "${{ vars.ECS_CLUSTER }}" "$FRONTEND_SERVICE"
+          ecs_verify_image "${{ vars.ECS_CLUSTER }}" "$FRONTEND_SERVICE" "$IMAGE"
 
       # Post-deploy smoke through the real public surface (CloudFront). The URL
       # is deployment-specific and deliberately not tracked in the repo (#730),
@@ -287,7 +228,9 @@ jobs:
           fi
           for path_want in "/healthz 200" "/ 200" "/api/v1/me 401"; do
             path=${path_want% *}; want=${path_want#* }
-            got=$(curl -s -o /dev/null -w '%{http_code}' "${url%/}${path}")
+            # --max-time: a black-holing connection must fail the step, not
+            # hang the job to GitHub's 6-hour default (PR #1365 review).
+            got=$(curl -s -o /dev/null --max-time 30 -w '%{http_code}' "${url%/}${path}")
             [[ "$got" == "$want" ]] || { echo "::error::smoke: ${path} returned ${got}, wanted ${want}"; exit 1; }
             echo "smoke: ${path} -> ${got} (ok)"
           done
