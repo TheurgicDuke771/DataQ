@@ -384,8 +384,13 @@ def get_run_status(run_id: str) -> dict[str, Any]:
     Use this after ``trigger_suite_run`` ('is the orders run finished yet?').
     Returns the run's lifecycle status (queued / running / succeeded / failed /
     cancelled), how many of its checks have completed, a count per result status,
-    and the per-check name + current status. Requires view access to the run's
-    suite.
+    the per-check name + current status, and ``elapsed_ms`` — how long the run has
+    been going. Requires view access to the run's suite.
+
+    ``completed_checks`` can legitimately sit at 0 on a healthy, busy run: a suite
+    of ordinary expectations is validated as one atomic batch, so its checks all
+    resolve at once at the end (#318). Read a rising ``elapsed_ms`` with
+    ``status: running`` as "still working", not as "stuck".
     """
     rid = _parse_uuid(run_id, field="run_id")
     with _ctx() as (session, user), _service_errors():
@@ -400,6 +405,7 @@ def get_run_status(run_id: str) -> dict[str, Any]:
             "total_checks": progress.total_checks,
             "completed_checks": progress.completed_checks,
             "counts": progress.counts,
+            "elapsed_ms": progress.elapsed_ms,
             "checks": [{"name": c.name, "status": c.status} for c in progress.checks],
         }
 

@@ -801,6 +801,61 @@ def test_progress_failed_run_has_terminal_status_and_no_results(
     assert body["checks"][0]["status"] is None
 
 
+def test_progress_queued_run_has_no_elapsed_yet(client: TestClient, db_session: Any) -> None:
+    """`elapsed_ms` is null until the worker stamps `started_at` — a queued run has
+    not been going for 0 ms, it has not been going at all, and the drawer must be
+    able to tell those apart (#318)."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    _check(db_session, suite, "a")
+    db_session.commit()
+    run = _run(db_session, suite, status="queued")
+
+    _as(dev)
+    body = client.get(f"/api/v1/runs/{run.id}/progress").json()
+    assert body["elapsed_ms"] is None
+
+
+def test_progress_running_run_reports_server_measured_elapsed(
+    client: TestClient, db_session: Any
+) -> None:
+    """A running run with nothing resolved yet still reports how long it has been
+    going — the honest affordance for the atomic GX batch (#318). Measured on the
+    server clock, so a client with a skewed clock cannot render a run that started
+    90s ago as finishing in the future."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    _check(db_session, suite, "a")
+    db_session.commit()
+    run = _run(db_session, suite, status="running")
+    run.started_at = datetime.now(UTC) - timedelta(seconds=90)
+    db_session.commit()
+
+    _as(dev)
+    body = client.get(f"/api/v1/runs/{run.id}/progress").json()
+    assert body["completed_checks"] == 0  # the state that used to read as hung
+    assert 90_000 <= body["elapsed_ms"] < 120_000
+
+
+def test_progress_terminal_run_elapsed_stops_at_finished_at(
+    client: TestClient, db_session: Any
+) -> None:
+    """Once terminal the elapsed time freezes at the run's own duration instead of
+    growing forever against `now()`."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    _check(db_session, suite, "a")
+    db_session.commit()
+    run = _run(db_session, suite, status="succeeded")
+    run.started_at = datetime.now(UTC) - timedelta(seconds=300)
+    run.finished_at = run.started_at + timedelta(seconds=12)
+    db_session.commit()
+
+    _as(dev)
+    body = client.get(f"/api/v1/runs/{run.id}/progress").json()
+    assert body["elapsed_ms"] == 12_000
+
+
 def test_progress_unknown_run_returns_404(client: TestClient, db_session: Any) -> None:
     dev = _user(db_session, "dev@ex")
     _as(dev)

@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 
-from sqlalchemy import func, null, select, update
+from sqlalchemy import delete, func, null, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
@@ -136,6 +136,12 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
 _EXPECTATION_KIND = "expectation"
 
 
+#: One unit of execution: the check indices it resolved, and their outcomes in
+#: the same order. `_run_outcome_phases` yields one of these per unit so
+#: `execute_run` can persist as it goes (#318) rather than only at the end.
+OutcomePhase = tuple[list[int], list[CheckOutcome]]
+
+
 def _run_outcomes(
     runner: CheckRunner,
     *,
@@ -146,8 +152,59 @@ def _run_outcomes(
     comparison_executor: Callable[[Check], CheckOutcome] | None = None,
     stateful_monitor_executor: Callable[[Check], CheckOutcome] | None = None,
 ) -> list[CheckOutcome]:
-    """Run a suite's checks, dispatching by `check.kind` (ADR 0012), and return one
-    outcome per check in the **same order** (so they zip 1:1 onto result rows).
+    """Every check's outcome, in check order — `_run_outcome_phases` collected.
+
+    The whole-suite view, for callers that have nothing to do between phases.
+    `execute_run` consumes the phases directly instead, so a resolved check's
+    result row is visible to the progress poll before the next phase starts.
+    """
+    outcomes: list[CheckOutcome | None] = [None] * len(checks)
+    for indices, phase in _run_outcome_phases(
+        runner,
+        table=table,
+        schema=schema,
+        checks=checks,
+        index_columns=index_columns,
+        comparison_executor=comparison_executor,
+        stateful_monitor_executor=stateful_monitor_executor,
+    ):
+        for i, outcome in zip(indices, phase, strict=True):
+            outcomes[i] = outcome
+    # Every index is filled: the phases together cover all checks once the
+    # unsupported-kind guard inside the generator has run.
+    return [cast(CheckOutcome, oc) for oc in outcomes]
+
+
+def _run_outcome_phases(
+    runner: CheckRunner,
+    *,
+    table: str,
+    schema: str | None,
+    checks: list[Check],
+    index_columns: list[str] | None = None,
+    comparison_executor: Callable[[Check], CheckOutcome] | None = None,
+    stateful_monitor_executor: Callable[[Check], CheckOutcome] | None = None,
+) -> Iterator[OutcomePhase]:
+    """Run a suite's checks, dispatching by `check.kind` (ADR 0012), yielding each
+    unit of execution as it resolves.
+
+    **What a phase is, and why the granularity is uneven (#318).** A phase is the
+    smallest group DataQ can resolve without re-doing work, which is a property of
+    the engine underneath, not a choice made here:
+
+    * stateful monitors (``schema_drift``/``anomaly``) and ``comparison`` checks
+      run through a per-check executor, so each one is its own phase — genuine
+      per-check increments;
+    * every ``expectation`` is **one** phase, because GX validates a suite in a
+      single atomic batch and there is no partial result to observe inside it;
+    * scalar monitors (``freshness``/``volume``) are one phase, because
+      `run_monitors` loads the frame once and evaluates the whole list against it
+      — splitting them would re-read the object per monitor.
+
+    So a suite of 30 expectations still resolves in one step. That is the honest
+    shape of the underlying engines, and the consuming UI is built to say so
+    (an elapsed-time heartbeat while nothing has resolved) rather than render a
+    0% bar that reads as hung.
 
     * ``expectation`` kind → the GX `CheckRunner.run_checks`.
     * scalar monitor kinds (``freshness``/``volume``) → `run_monitors` on a
@@ -176,10 +233,9 @@ def _run_outcomes(
     if unsupported:
         raise NotImplementedError(f"no run path for check kind(s) {', '.join(unsupported)}")
 
-    outcomes: list[CheckOutcome | None] = [None] * len(checks)
     for i in stateful_idx:
         if stateful_monitor_executor is None:
-            outcomes[i] = CheckOutcome(
+            outcome = CheckOutcome(
                 expectation_type=checks[i].expectation_type,
                 success=False,
                 errored=True,
@@ -189,10 +245,11 @@ def _run_outcomes(
                 ),
             )
         else:
-            outcomes[i] = stateful_monitor_executor(checks[i])
+            outcome = stateful_monitor_executor(checks[i])
+        yield [i], [outcome]
     for i in comparison_idx:
         if comparison_executor is None:
-            outcomes[i] = CheckOutcome(
+            outcome = CheckOutcome(
                 expectation_type=checks[i].expectation_type,
                 success=False,
                 errored=True,
@@ -202,7 +259,8 @@ def _run_outcomes(
                 ),
             )
         else:
-            outcomes[i] = comparison_executor(checks[i])
+            outcome = comparison_executor(checks[i])
+        yield [i], [outcome]
     if expectation_idx:
         specs = [
             CheckSpec(expectation_type=checks[i].expectation_type, kwargs=dict(checks[i].config))
@@ -211,8 +269,10 @@ def _run_outcomes(
         suite_outcome = runner.run_checks(
             table=table, schema=schema, checks=specs, index_columns=index_columns
         )
-        for i, oc in zip(expectation_idx, suite_outcome.checks, strict=True):
-            outcomes[i] = oc
+        # One phase, not len(expectation_idx): GX resolved them in a single atomic
+        # batch, so there was never a moment where some were done and others were
+        # not. Arity is checked by the consumer's `zip(..., strict=True)`.
+        yield expectation_idx, list(suite_outcome.checks)
     if monitor_idx:
         # Capability gate (#429): the runner ADVERTISES which monitor kinds it
         # evaluates. Never `isinstance(runner, MonitorRunner)` — a
@@ -242,13 +302,10 @@ def _run_outcomes(
         monitor_outcomes = monitor_runner.run_monitors(
             table=table, schema=schema, monitors=monitors
         )
-        for i, oc in zip(monitor_idx, monitor_outcomes, strict=True):
-            outcomes[i] = oc
-
-    # Every index is filled: expectation_idx + monitor_idx + stateful_idx +
-    # comparison_idx together cover all checks once the unsupported-kind guard
-    # above has run.
-    return [cast(CheckOutcome, oc) for oc in outcomes]
+        # One phase for the same reason as the expectation batch, but a different
+        # cause: `run_monitors` loads the frame (or opens the connection) once and
+        # evaluates the whole list against it.
+        yield monitor_idx, list(monitor_outcomes)
 
 
 def _cancelled_mid_run(session: Session, run: Run) -> bool:
@@ -262,6 +319,29 @@ def _cancelled_mid_run(session: Session, run: Run) -> bool:
     """
     session.refresh(run)
     return run.status == "cancelled"
+
+
+def _discard_results(session: Session, run: Run) -> None:
+    """Drop every result row this run has written — staged **and** committed.
+
+    Incremental persistence (#318) means an earlier phase's rows are already
+    committed by the time a later phase raises or the run is cancelled. Before
+    #318 the single end-of-run commit made "a run that did not complete has no
+    results" true for free; this restores it explicitly, so no consumer
+    (dashboard rollups, the health score, alerting) has to learn a new rule about
+    partially-populated terminal runs.
+
+    Best-effort by design: if the DELETE itself fails the caller must still get to
+    record the terminal status, which is the more important of the two writes. A
+    stranded partial set is degraded, a run stuck in ``running`` is an incident.
+    """
+    session.rollback()
+    try:
+        session.execute(delete(Result).where(Result.run_id == run.id))
+        session.commit()
+    except Exception:
+        session.rollback()
+        log.exception("run_partial_results_discard_failed", run_id=str(run.id))
 
 
 def execute_run(
@@ -282,6 +362,15 @@ def execute_run(
     ``index_columns`` (the suite's identifier column, #415) is requested from GX so
     failing rows are captured with a locator; ``None`` keeps the scalar-only sample.
     Returns the same `Run`, updated to ``succeeded`` or ``failed``.
+
+    **Results are committed per execution phase (#318)**, not once at the end, so
+    `get_run_progress` observes a check as resolved as soon as it genuinely is —
+    per check for stateful-monitor and comparison kinds, per batch for the atomic
+    GX expectation group and the shared-frame scalar monitors (see
+    `_run_outcome_phases` for why the granularity is uneven). The *terminal*
+    contract is unchanged: a run that ends ``failed`` or ``cancelled`` still has
+    **no** result rows, because `_discard_results` deletes whatever earlier phases
+    committed. Only a run that reaches ``succeeded`` keeps them.
     """
     run.status = "running"
     run.started_at = _now()
@@ -298,9 +387,13 @@ def execute_run(
     # rows, and persisting them — is guarded so any failure drives the run to a
     # terminal 'failed' state. Without this, a DB error during add_all/commit (or
     # an unrunnable check kind) would leave the run stuck in 'running' forever.
-    # rollback() discards any partial result inserts before we record the failure.
+    # `_discard_results` clears every result row — staged and already-committed —
+    # before we record the failure, so the terminal contract survives #318's
+    # per-phase commits.
+    outcomes: list[CheckOutcome] = []
+    n_results = 0
     try:
-        outcomes = _run_outcomes(
+        for indices, phase in _run_outcome_phases(
             runner,
             table=table,
             schema=schema,
@@ -308,17 +401,28 @@ def execute_run(
             index_columns=index_columns,
             comparison_executor=comparison_executor,
             stateful_monitor_executor=stateful_monitor_executor,
-        )
-        rows = [
-            _build_result(run.id, check, check_outcome)
-            for check, check_outcome in zip(checks, outcomes, strict=True)
-        ]
-        session.add_all(rows)
-        # Cooperative cancellation: if a cancel committed (from the API session)
-        # while GX ran, don't overwrite it with a terminal success — drop the now-
-        # moot (still-pending, unflushed) results and leave the run 'cancelled'.
+        ):
+            rows = [
+                _build_result(run.id, checks[i], check_outcome)
+                for i, check_outcome in zip(indices, phase, strict=True)
+            ]
+            session.add_all(rows)
+            # Cooperative cancellation, checked before every commit: if a cancel
+            # committed (from the API session) while this phase ran, don't
+            # overwrite it with more results — drop this phase's staged rows AND
+            # any an earlier phase committed, and leave the run 'cancelled'.
+            if _cancelled_mid_run(session, run):
+                _discard_results(session, run)
+                log.info("run_cancelled_during_execution", run_id=str(run.id))
+                return run
+            # The commit that makes this phase visible to the progress poll.
+            session.commit()
+            outcomes.extend(phase)
+            n_results += len(rows)
+        # Same check once more before the terminal flip: the last phase's commit
+        # and this one are two transactions, and a cancel can land between them.
         if _cancelled_mid_run(session, run):
-            session.rollback()
+            _discard_results(session, run)
             log.info("run_cancelled_during_execution", run_id=str(run.id))
             return run
         run.status = "succeeded"
@@ -329,7 +433,9 @@ def execute_run(
         run.failure_reason = None
         session.commit()
     except Exception as exc:
-        session.rollback()
+        # Drops the staged phase AND any earlier phase's committed rows, so a
+        # non-succeeded run still carries no results (see `_discard_results`).
+        _discard_results(session, run)
         # Same cooperative check on the failure path: a run the user cancelled
         # mid-flight that *also* errored stays 'cancelled', not masked as 'failed'.
         if _cancelled_mid_run(session, run):
@@ -353,7 +459,7 @@ def execute_run(
         "run_completed",
         run_id=str(run.id),
         suite_success=all(o.success for o in outcomes),
-        n_results=len(rows),
+        n_results=n_results,
     )
     return run
 
@@ -582,9 +688,35 @@ def cancel_run(session: Session, run: Run) -> bool:
 
 
 def list_results(session: Session, run_id: uuid.UUID) -> list[Result]:
-    """The result rows for a run, in stable check order (`created_at`)."""
+    """The result rows for a run, in the suite's own check order.
+
+    Ordered by the **check's** ``created_at``, not the result's (#318). The
+    result's own timestamp used to be a fine proxy because every row in a run was
+    inserted in one transaction — and Postgres' ``now()`` is transaction-start, so
+    they all shared a single identical value and the order was really the physical
+    one. Per-phase commits give those timestamps real (execution-order) meaning,
+    which would silently re-sort the run-detail table by *engine* rather than by
+    the order the author wrote the checks in. Sorting by the check pins the
+    displayed order to the thing the reader recognises, and makes it deterministic
+    for the first time.
+
+    ``outerjoin`` deliberately: results are cascade-deleted with their check
+    today, so an orphan should not exist — but a read path must not silently drop
+    rows to enforce an invariant it doesn't own.
+
+    ``Check.id`` is the tie-break, and it is not decoration: a suite's checks are
+    routinely inserted in ONE transaction, and Postgres' ``now()`` is
+    transaction-start, so they genuinely share a ``created_at`` and ordering by it
+    alone leaves the result arbitrary. `_ORDERED_CHECKS` applies the identical key
+    so this list and `get_run_progress`'s per-check list agree row for row.
+    """
     return list(
-        session.scalars(select(Result).where(Result.run_id == run_id).order_by(Result.created_at))
+        session.scalars(
+            select(Result)
+            .outerjoin(Check, Check.id == Result.check_id)
+            .where(Result.run_id == run_id)
+            .order_by(Check.created_at.nulls_last(), Check.id)
+        )
     )
 
 
@@ -606,13 +738,22 @@ class CheckProgress:
 @dataclass(frozen=True)
 class RunProgress:
     """A run's live progress: lifecycle status + per-check resolution + a status
-    histogram, the compact shape the live-progress UI polls."""
+    histogram + how long it has been going, the compact shape the live-progress
+    UI polls."""
 
     run: Run
     total_checks: int
     completed_checks: int
     counts: dict[str, int]
     checks: list[CheckProgress]
+    #: Milliseconds since the run started — measured against the *server's* clock
+    #: (``finished_at`` once terminal, otherwise now), never the browser's. It is
+    #: computed here rather than left to the client because a skewed client clock
+    #: renders a negative or hours-long elapsed time on a run that started
+    #: seconds ago, and this number exists precisely to reassure someone that a
+    #: run which has resolved nothing yet is nonetheless alive (#318). ``None``
+    #: while the run is still queued (no ``started_at``).
+    elapsed_ms: int | None
 
 
 def get_run_progress(session: Session, run: Run) -> RunProgress:
@@ -624,15 +765,26 @@ def get_run_progress(session: Session, run: Run) -> RunProgress:
     same suite-scoped authz the rest of the read API uses.
 
     Each suite check maps to its result's status, or ``None`` while pending.
-    Note: because GX validates a suite in one atomic batch, all result rows land
-    together at completion — so mid-run a check reads ``pending`` and the
-    histogram fills at the terminal transition (this endpoint reports lifecycle +
-    final per-check resolution, not sub-GX incremental progress). Checks are taken
-    from the *current* suite definition; a result is matched to its check by id.
+    Checks are taken from the *current* suite definition; a result is matched to
+    its check by id.
+
+    **How incremental this actually is (#318).** `execute_run` commits per
+    execution phase, so a stateful-monitor or comparison check resolves here on
+    its own, one at a time. It cannot go finer than the engine underneath: a
+    suite of GX expectations is one atomic batch, so it goes 0 → N in a single
+    step no matter how many checks it holds. `elapsed_ms` is the honest signal
+    for that stretch — a consumer should show the run is alive and how long it
+    has been going, rather than a 0% bar that reads as hung. Restructuring the GX
+    batch into per-check validations would buy real per-check increments at the
+    cost of re-running the whole read per check, and is deliberately not done.
     """
     checks = list(
         session.scalars(
-            select(Check).where(Check.suite_id == run.suite_id).order_by(Check.created_at)
+            # `Check.id` tie-break — see `list_results`: same-transaction inserts
+            # share a `created_at`, and the two lists must agree row for row.
+            select(Check)
+            .where(Check.suite_id == run.suite_id)
+            .order_by(Check.created_at, Check.id)
         )
     )
     # One result per (run_id, check_id) in v1 (each run writes one row per check);
@@ -654,7 +806,28 @@ def get_run_progress(session: Session, run: Run) -> RunProgress:
         completed_checks=completed,
         counts=counts,
         checks=per_check,
+        elapsed_ms=_elapsed_ms(run),
     )
+
+
+def _elapsed_ms(run: Run) -> int | None:
+    """Server-measured run duration in ms, or ``None`` while still queued.
+
+    Clamped at zero: ``started_at`` is written by the worker and ``now()`` is read
+    here in the API process, so a small clock difference between the two must
+    surface as "0 ms so far", never as a negative age. Naive timestamps are read
+    as UTC — everything DataQ writes is tz-aware, but a read model must not raise
+    on a row that isn't.
+    """
+    started = run.started_at
+    if started is None:
+        return None
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=UTC)
+    end = run.finished_at or _now()
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=UTC)
+    return max(int((end - started).total_seconds() * 1000), 0)
 
 
 # ── sample-failures redaction (PII-safe surfacing on the read API) ────────────

@@ -154,7 +154,18 @@ class CheckProgressRead(ApiModel):
 
 class RunProgressRead(ApiModel):
     """Compact live-progress view for polling: run lifecycle + per-check
-    resolution + a status histogram. Lighter than the full run+results detail."""
+    resolution + a status histogram + elapsed time. Lighter than the full
+    run+results detail.
+
+    **`completed_checks == 0` on a `running` run is normal, not stuck (#318).**
+    Results are committed per execution phase, so stateful-monitor and comparison
+    checks resolve one at a time — but GX validates every ordinary expectation as
+    one atomic batch, so a 30-expectation suite genuinely goes 0 → 30 in one step.
+    `elapsed_ms` is the field to render while nothing has resolved: a percentage
+    bar pinned at 0% for the whole run reads as hung, which is the misreport this
+    view is shaped to avoid. It is measured on the **server** clock (`finished_at`
+    once terminal, else now), so it is immune to client clock skew; `None` means
+    the run is still queued and has not started."""
 
     run_id: uuid.UUID
     suite_id: uuid.UUID
@@ -165,6 +176,7 @@ class RunProgressRead(ApiModel):
     checks: list[CheckProgressRead]
     started_at: datetime | None
     finished_at: datetime | None
+    elapsed_ms: int | None = None
 
 
 class PipelineRunRead(ApiModel):
@@ -372,6 +384,7 @@ def get_run_progress(
         ],
         started_at=run.started_at,
         finished_at=run.finished_at,
+        elapsed_ms=progress.elapsed_ms,
     )
 
 

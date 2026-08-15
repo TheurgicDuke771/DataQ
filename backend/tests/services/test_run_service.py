@@ -7,6 +7,7 @@ under test independent of Postgres and Snowflake.
 """
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
 
@@ -29,7 +30,15 @@ from backend.app.services import run_service
 
 class FakeSession:
     """Records add_all'd rows; counts commits/rollbacks. `add_all_raises` simulates
-    a persistence failure (e.g. DB error) after the adapter has already run."""
+    a persistence failure (e.g. DB error) after the adapter has already run.
+
+    Since #318 `execute_run` commits **per execution phase**, so this double has to
+    tell a staged row from a committed one — a rollback discards only the former.
+    `added` is the combined "what a reader would see" view the assertions use;
+    `_staged_from` marks where the uncommitted tail starts. `execute` stands in for
+    the `DELETE FROM results WHERE run_id = …` that `_discard_results` issues to
+    clear *committed* phases, which a rollback alone can no longer reach.
+    """
 
     def __init__(
         self, *, add_all_raises: Exception | None = None, refresh_status: str | None = None
@@ -37,6 +46,8 @@ class FakeSession:
         self.added: list[Result] = []
         self.commits = 0
         self.rollbacks = 0
+        self.deletes = 0
+        self._staged_from = 0
         self._add_all_raises = add_all_raises
         # When set, refresh() stamps this onto the refreshed object's `status`,
         # simulating a concurrent cancel that committed from another session.
@@ -49,10 +60,19 @@ class FakeSession:
 
     def commit(self) -> None:
         self.commits += 1
+        self._staged_from = len(self.added)
 
     def rollback(self) -> None:
         self.rollbacks += 1
-        self.added.clear()  # discard staged-but-uncommitted rows, like a real rollback
+        # Discard staged-but-uncommitted rows, like a real rollback — committed
+        # phases survive it, which is exactly why `_discard_results` also DELETEs.
+        del self.added[self._staged_from :]
+
+    def execute(self, statement: object) -> None:
+        """Stands in for the `_discard_results` DELETE — wipes committed rows too."""
+        self.deletes += 1
+        self.added.clear()
+        self._staged_from = 0
 
     def refresh(self, obj: object) -> None:
         if self._refresh_status is not None:
@@ -220,6 +240,49 @@ def test_run_outcomes_rejects_capability_without_implementation() -> None:
             schema=None,
             checks=[_monitor_check("volume", {"min_rows": 1, "max_rows": 9})],
         )
+
+
+def test_outcome_phases_are_per_check_for_executors_and_one_batch_for_the_rest() -> None:
+    """The phase shape #318's incremental progress rests on, asserted directly.
+
+    Per-check for the executor-driven kinds; ONE phase for the whole expectation
+    batch (GX validates atomically) and ONE for the scalar monitors (`run_monitors`
+    loads the frame once). A future change that splits the GX batch per check
+    should update this test deliberately, not discover it in production.
+    """
+    checks = [
+        _monitor_check("schema_drift", {}),
+        _checks(1)[0],
+        _monitor_check("freshness", {"column": "ts"}),
+        _checks(1)[0],
+        _monitor_check("anomaly", {"column": "amt"}),
+        _monitor_check("volume", {"min_rows": 1, "max_rows": 9}),
+    ]
+    runner = FakeMonitorRunner(
+        check_outcomes=[CheckOutcome("e1", success=True), CheckOutcome("e2", success=True)],
+        monitor_outcomes=[
+            CheckOutcome("monitor:freshness", success=True),
+            CheckOutcome("monitor:volume", success=True),
+        ],
+    )
+
+    phases = list(
+        run_service._run_outcome_phases(
+            cast(CheckRunner, runner),
+            table="T",
+            schema=None,
+            checks=checks,
+            stateful_monitor_executor=lambda c: CheckOutcome(c.expectation_type, success=True),
+        )
+    )
+
+    assert [indices for indices, _ in phases] == [
+        [0],  # schema_drift — its own phase
+        [4],  # anomaly — its own phase
+        [1, 3],  # the atomic GX expectation batch
+        [2, 5],  # the shared-frame scalar monitors
+    ]
+    assert all(len(indices) == len(outcomes) for indices, outcomes in phases)
 
 
 def test_run_outcomes_stateful_kind_routes_to_injected_executor() -> None:
@@ -1697,3 +1760,29 @@ def test_every_other_exception_is_still_classified() -> None:
     assert run.failure_reason is not None
     assert "svc" not in run.failure_reason
     assert "acct.example" not in run.failure_reason
+
+
+# ───────────────────────── elapsed heartbeat (#318) ──────────────────
+
+
+def test_elapsed_ms_clamps_a_backwards_clock_to_zero() -> None:
+    """`started_at` is written by the WORKER and `now()` is read in the API
+    process, so a small clock difference between the two can put the start in the
+    future. That must read as "0 ms so far", never as a negative age the UI would
+    render as `-00:03` — the display honesty rule, applied to a clock."""
+    run = _run()
+    run.started_at = datetime.now(UTC) + timedelta(seconds=5)
+    run.finished_at = None
+
+    assert run_service._elapsed_ms(run) == 0
+
+
+def test_elapsed_ms_reads_a_naive_timestamp_as_utc_instead_of_raising() -> None:
+    """Everything DataQ writes is tz-aware, but a read model must not 500 on a row
+    that isn't (a hand-inserted row, a restore from a naive dump)."""
+    run = _run()
+    run.started_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=30)
+    run.finished_at = None
+
+    elapsed = run_service._elapsed_ms(run)
+    assert elapsed is not None and 30_000 <= elapsed < 60_000
