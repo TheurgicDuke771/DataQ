@@ -1,0 +1,14 @@
+Hey, 
+Do a very through review of the recent AWS deployment related chages - 
+* Scope [a true provided nutral application, architecture, deployment, etc.] 
+* Code changes 
+* Security 
+* Any other aspect you deemed necessary 
+
+Once the review is done and iff all looks good, go ahead for tofu plan / tofu apply for aws.
+
+do it yourself
+
+---
+
+fix all 5 [for #1 go with CloudFront], re-test, validate iff all looks good then apply

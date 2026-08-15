@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "023b36bc1992",
+  "session_id": "f91a3483-b115-4c16-b7e6-5551dde88522",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-15T17:53:25.924679Z",
+  "branch": "fix/issue-1346-oidc-userinfo-fallback",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/auth.py",
+    "backend/app/mcp/auth.py",
+    "backend/tests/core/test_auth.py",
+    "backend/tests/mcp/test_mcp_auth.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5",
+  "turn_id": "bb9d4fbec807",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 126,
+    "cache_creation_tokens": 188764,
+    "cache_read_tokens": 9668039,
+    "output_tokens": 56918,
+    "api_call_count": 63
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-15T17:53:25.892654Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 428,
+    "human_modified": 15,
+    "human_removed": 0,
+    "total_committed": 428,
+    "total_lines_changed": 443,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
