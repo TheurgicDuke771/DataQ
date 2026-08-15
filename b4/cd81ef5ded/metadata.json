@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "b4cd81ef5ded",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1349-aws-alb-health-and-images",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "deploy/terraform/aws/README.md",
+    "deploy/terraform/aws/terraform.tfvars.example",
+    "deploy/terraform/aws/variables.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b4/cd81ef5ded/0/metadata.json",
+      "transcript": "/b4/cd81ef5ded/0/full.jsonl",
+      "compact_transcript": "/b4/cd81ef5ded/0/transcript.jsonl",
+      "content_hash": "/b4/cd81ef5ded/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 8495,
+    "cache_read_tokens": 2020363,
+    "output_tokens": 3854,
+    "api_call_count": 6
+  }
+}
