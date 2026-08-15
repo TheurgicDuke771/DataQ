@@ -31,6 +31,7 @@ If nothing is configured, `init_auth` raises at startup — fail-closed.
 import asyncio
 import hashlib
 import json
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -142,6 +143,23 @@ def _build_azure_scheme(
     )
 
 
+def _json_dict(response: httpx.Response) -> dict[str, Any]:
+    """The response body as a parsed JSON object, or `ValueError`.
+
+    A 200 carrying an HTML error page (a proxy in front of the IdP), a JSON
+    scalar (`null`), or an `application/jwt` userinfo body must hit the same
+    fail-closed branch as an outage — `json.JSONDecodeError` is NOT an
+    `httpx.HTTPError`, so without this normalization it would escape the
+    outage guards as an unhandled 500 on the auth path (the #567 class).
+    `json.JSONDecodeError` subclasses `ValueError`, so callers catch
+    `(httpx.HTTPError, ValueError)` and get both shapes.
+    """
+    body = response.json()  # raises json.JSONDecodeError (a ValueError)
+    if not isinstance(body, dict):
+        raise ValueError("expected a JSON object body")
+    return body
+
+
 def discover_oidc_config(issuer: str, *, timeout: float = 5.0) -> dict[str, Any]:
     """Fetch an OIDC issuer's discovery document (parsed, unvalidated).
 
@@ -155,8 +173,7 @@ def discover_oidc_config(issuer: str, *, timeout: float = 5.0) -> dict[str, Any]
     """
     response = httpx.get(f"{issuer.rstrip('/')}/.well-known/openid-configuration", timeout=timeout)
     response.raise_for_status()
-    config: dict[str, Any] = response.json()
-    return config
+    return _json_dict(response)
 
 
 def discover_jwks_uri(issuer: str, *, timeout: float = 5.0) -> str:
@@ -178,10 +195,18 @@ def discover_jwks_uri(issuer: str, *, timeout: float = 5.0) -> str:
 _USERINFO_TTL_SECONDS = 300.0
 _USERINFO_CACHE_MAX = 1024
 _userinfo_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+#: Discovery documents are static per issuer for a process lifetime (the REST
+#: scheme resolves once at startup; this is the sync/MCP path's equivalent).
+_discovery_cache: dict[str, dict[str, Any]] = {}
+#: One lock for both caches: the REST validator mutates them from the event-loop
+#: thread while MCP tools (sync `def`s in worker threads) do the same — an
+#: unguarded eviction sweep can hit "dict changed size during iteration".
+_oidc_cache_lock = threading.Lock()
 
 
 def _userinfo_cache_get(token: str) -> dict[str, Any] | None:
-    entry = _userinfo_cache.get(hashlib.sha256(token.encode()).hexdigest())
+    with _oidc_cache_lock:
+        entry = _userinfo_cache.get(hashlib.sha256(token.encode()).hexdigest())
     if entry is None or entry[0] < time.monotonic():
         return None
     return entry[1]
@@ -189,16 +214,34 @@ def _userinfo_cache_get(token: str) -> dict[str, Any] | None:
 
 def _userinfo_cache_put(token: str, claims: dict[str, Any]) -> None:
     now = time.monotonic()
-    if len(_userinfo_cache) >= _USERINFO_CACHE_MAX:
-        for key in [k for k, (expiry, _) in _userinfo_cache.items() if expiry < now]:
-            del _userinfo_cache[key]
-        while len(_userinfo_cache) >= _USERINFO_CACHE_MAX:
-            # Still full after dropping expired entries: evict oldest-inserted.
-            del _userinfo_cache[next(iter(_userinfo_cache))]
-    _userinfo_cache[hashlib.sha256(token.encode()).hexdigest()] = (
-        now + _USERINFO_TTL_SECONDS,
-        claims,
-    )
+    with _oidc_cache_lock:
+        if len(_userinfo_cache) >= _USERINFO_CACHE_MAX:
+            for key in [k for k, (expiry, _) in _userinfo_cache.items() if expiry < now]:
+                del _userinfo_cache[key]
+            while len(_userinfo_cache) >= _USERINFO_CACHE_MAX:
+                # Still full after dropping expired entries: evict oldest-inserted.
+                del _userinfo_cache[next(iter(_userinfo_cache))]
+        _userinfo_cache[hashlib.sha256(token.encode()).hexdigest()] = (
+            now + _USERINFO_TTL_SECONDS,
+            claims,
+        )
+
+
+def _cached_discovery(issuer: str, *, timeout: float = 5.0) -> dict[str, Any]:
+    """`discover_oidc_config`, memoized per issuer for the process lifetime.
+
+    Without this, every userinfo-cache miss (and EVERY sync `fetch_userinfo`
+    call against a provider that publishes no userinfo endpoint, for which
+    nothing else is ever cached) paid a discovery round-trip on top.
+    """
+    with _oidc_cache_lock:
+        cached = _discovery_cache.get(issuer)
+    if cached is not None:
+        return cached
+    config = discover_oidc_config(issuer, timeout=timeout)
+    with _oidc_cache_lock:
+        _discovery_cache[issuer] = config
+    return config
 
 
 def _merge_userinfo(claims: dict[str, Any], userinfo: dict[str, Any]) -> dict[str, Any] | None:
@@ -222,22 +265,23 @@ def fetch_userinfo(issuer: str, token: str, *, timeout: float = 5.0) -> dict[str
 
     Returns None when the provider publishes no `userinfo_endpoint` (it is
     RECOMMENDED, not required — the caller proceeds with whatever the token
-    carried). Raises `httpx.HTTPError` on an outage: an unreachable endpoint is
-    an outage to surface, never an empty identity (the ADR 0039 decision 6
-    lesson applied to auth). The REST path (`OidcBearerScheme._verify`) does
-    the same fetch through its own async client; both share the TTL cache.
+    carried). Raises `httpx.HTTPError` on an outage and `ValueError` on a 200
+    whose body is not a JSON object (`_json_dict`): both are outages to
+    surface, never an empty identity (the ADR 0039 decision 6 lesson applied
+    to auth). The REST path (`OidcBearerScheme._verify`) does the same fetch
+    through its own async client; both share the TTL cache.
     """
     cached = _userinfo_cache_get(token)
     if cached is not None:
         return cached
-    endpoint = discover_oidc_config(issuer, timeout=timeout).get("userinfo_endpoint")
+    endpoint = _cached_discovery(issuer, timeout=timeout).get("userinfo_endpoint")
     if not endpoint:
         return None
     response = httpx.get(
         str(endpoint), headers={"Authorization": f"Bearer {token}"}, timeout=timeout
     )
     response.raise_for_status()
-    userinfo: dict[str, Any] = response.json()
+    userinfo = _json_dict(response)
     _userinfo_cache_put(token, userinfo)
     return userinfo
 
@@ -284,7 +328,7 @@ class OidcBearerScheme:
         event loop thread here rather than blocking it. `userinfo_endpoint` is
         optional (absent → tokens must carry their own identity claims).
         """
-        config = await asyncio.to_thread(discover_oidc_config, self._issuer)
+        config = await asyncio.to_thread(_cached_discovery, self._issuer)
         self._jwks_uri = str(config["jwks_uri"])
         userinfo_endpoint = config.get("userinfo_endpoint")
         self._userinfo_endpoint = str(userinfo_endpoint) if userinfo_endpoint else None
@@ -294,7 +338,7 @@ class OidcBearerScheme:
         assert self._jwks_uri is not None, "load_config() must run before any token is verified"
         response = await self._client.get(self._jwks_uri)
         response.raise_for_status()
-        jwks: dict[str, Any] = response.json()
+        jwks: dict[str, Any] = _json_dict(response)
         self._jwks_cache = jwks
         return jwks
 
@@ -331,7 +375,8 @@ class OidcBearerScheme:
                 # once and retry before giving up — mirrors OpenBao's
                 # single-retry-then-surface discipline (`_send`).
                 key = self._signing_key(kid, await self._refresh_jwks())
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, ValueError) as exc:
+            # ValueError: a 200 whose body is not a JSON object (`_json_dict`).
             log.warning("oidc_jwks_unavailable", issuer=self._issuer, error=str(exc))
             return None
         if key is None:
@@ -374,11 +419,13 @@ class OidcBearerScheme:
                         headers={"Authorization": f"Bearer {token}"},
                     )
                     response.raise_for_status()
-                    userinfo = response.json()
-                except httpx.HTTPError as exc:
+                    userinfo = _json_dict(response)
+                except (httpx.HTTPError, ValueError) as exc:
+                    # ValueError covers a 200 with a non-JSON / non-object body
+                    # (proxy error page, JSON null, signed-JWT userinfo) — same
+                    # fail-closed outcome as an outage, never a 500 (#567 class).
                     log.warning("oidc_userinfo_unavailable", issuer=self._issuer, error=str(exc))
                     return None
-                assert userinfo is not None
                 _userinfo_cache_put(token, userinfo)
             merged = _merge_userinfo(claims, userinfo)
             if merged is None:

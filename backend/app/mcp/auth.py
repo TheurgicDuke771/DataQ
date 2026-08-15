@@ -251,7 +251,10 @@ def resolve_current_user(session: Session) -> User:
                 if not claims.get("email") and settings.oidc_issuer:
                     try:
                         userinfo = fetch_userinfo(settings.oidc_issuer, token.token)
-                    except httpx.HTTPError as exc:
+                    except (httpx.HTTPError, ValueError) as exc:
+                        # ValueError: a 200 whose body is not a JSON object —
+                        # same fail-closed outcome as an outage (core.auth
+                        # `_json_dict`), never an unhandled tool crash.
                         log.warning(
                             "mcp_oidc_userinfo_unavailable",
                             issuer=settings.oidc_issuer,
