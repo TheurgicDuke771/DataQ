@@ -1,0 +1,90 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "00fc0801dbdf",
+  "session_id": "afa3b4cf-0adb-4f17-8bc9-58c7e81d5814",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-15T16:53:11.275729Z",
+  "branch": "feature/aws-terraform-scaffolding",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "d6999aa38496",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 964,
+    "cache_creation_tokens": 850843,
+    "cache_read_tokens": 209727872,
+    "output_tokens": 301523,
+    "api_call_count": 482
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Gbcf35i7jDtijLkVdNEmwo",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "d6999aa38496",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 479,
+        "end": 480,
+        "entry_ids": [
+          "35207a3d-caa6-4d21-ba38-81d242c53d63"
+        ],
+        "tool_use_id": "toolu_01Gbcf35i7jDtijLkVdNEmwo"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Gbcf35i7jDtijLkVdNEmwo"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_014Kqhdvrg6ZtAJgErMoMhKi",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "d6999aa38496",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1552,
+        "end": 1553,
+        "entry_ids": [
+          "8c74ba0d-325f-44ee-8a1e-d2074e9753d5"
+        ],
+        "tool_use_id": "toolu_014Kqhdvrg6ZtAJgErMoMhKi"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_014Kqhdvrg6ZtAJgErMoMhKi"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 22
+  }
+}

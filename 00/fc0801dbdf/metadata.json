@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "00fc0801dbdf",
+  "strategy": "manual-commit",
+  "branch": "feature/aws-terraform-scaffolding",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/00/fc0801dbdf/0/metadata.json",
+      "transcript": "/00/fc0801dbdf/0/full.jsonl",
+      "compact_transcript": "/00/fc0801dbdf/0/transcript.jsonl",
+      "content_hash": "/00/fc0801dbdf/0/content_hash.txt",
+      "prompt": "/00/fc0801dbdf/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 964,
+    "cache_creation_tokens": 850843,
+    "cache_read_tokens": 209727872,
+    "output_tokens": 301523,
+    "api_call_count": 482
+  }
+}
