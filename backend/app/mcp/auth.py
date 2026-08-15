@@ -34,7 +34,6 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-import httpx
 from fastapi_azure_auth.utils import is_guest
 from fastmcp.server.auth import AccessToken, AuthProvider, TokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier
@@ -48,6 +47,7 @@ from backend.app.core.auth import (
     DEV_BYPASS_EMAIL,
     _dev_bypass_allowed,
     _upsert_user,
+    discover_jwks_uri,
 )
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
@@ -170,23 +170,6 @@ class _PatOrJwtVerifier(TokenVerifier):
         )
 
 
-def _discover_jwks_uri(issuer: str) -> str:
-    """Resolve `jwks_uri` from the issuer's OIDC discovery document.
-
-    Synchronous and one-shot: `build_auth_provider` runs at **module import
-    time** (`mcp/server.py`'s top-level `FastMCP(..., auth=build_auth_provider())`),
-    before any async startup hook exists to call into — unlike
-    `core.auth.OidcBearerScheme.load_config`, which the FastAPI lifespan awaits.
-    A discovery failure here fails the whole import, which is the fail-closed
-    outcome: the alternative is mounting `/mcp` unable to validate a single
-    token, discovered only on the first real request.
-    """
-    response = httpx.get(f"{issuer.rstrip('/')}/.well-known/openid-configuration", timeout=5.0)
-    response.raise_for_status()
-    jwks_uri: str = response.json()["jwks_uri"]
-    return jwks_uri
-
-
 def build_auth_provider(settings: Settings | None = None) -> AuthProvider | None:
     """The fastmcp auth provider for the current ``mcp_auth_mode``.
 
@@ -222,7 +205,7 @@ def build_auth_provider(settings: Settings | None = None) -> AuthProvider | None
     if mode == "generic_oidc":
         assert s.oidc_issuer is not None
         jwt = JWTVerifier(
-            jwks_uri=_discover_jwks_uri(s.oidc_issuer),
+            jwks_uri=discover_jwks_uri(s.oidc_issuer),
             issuer=s.oidc_issuer,
             audience=s.oidc_audience,
         )

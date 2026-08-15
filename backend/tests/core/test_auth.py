@@ -320,6 +320,28 @@ def test_build_oidc_scheme_configured() -> None:
     assert scheme._audience == "dataq-client-id"
 
 
+def test_discover_jwks_uri_reads_the_oidc_discovery_document(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shared by both `OidcBearerScheme.load_config` (async, via `asyncio.to_thread`)
+    and `mcp.auth.build_auth_provider` (genuinely sync, import-time) — one
+    implementation, tested once, here."""
+
+    def fake_get(url: str, timeout: float) -> httpx.Response:
+        assert url == "https://example-idp.test/.well-known/openid-configuration"
+        return httpx.Response(
+            200,
+            json={"jwks_uri": "https://example-idp.test/jwks.json"},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    assert (
+        auth_mod.discover_jwks_uri("https://example-idp.test")
+        == "https://example-idp.test/jwks.json"
+    )
+
+
 def test_extract_oidc_claims_reads_sub_email_name() -> None:
     subject, email, name = auth_mod._extract_oidc_claims(
         {"sub": "user-123", "email": "olivia@example.com", "name": "Olivia"}
@@ -423,8 +445,6 @@ def _sign(private_key: rsa.RSAPrivateKey, claims: dict[str, Any]) -> str:
 
 def _mock_oidc_transport(jwks: dict[str, Any], issuer: str) -> httpx.MockTransport:
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/.well-known/openid-configuration":
-            return httpx.Response(200, json={"jwks_uri": f"{issuer}/jwks.json"})
         if request.url.path == "/jwks.json":
             return httpx.Response(200, json=jwks)
         return httpx.Response(404)
@@ -432,16 +452,37 @@ def _mock_oidc_transport(jwks: dict[str, Any], issuer: str) -> httpx.MockTranspo
     return httpx.MockTransport(handler)
 
 
+async def _loaded_scheme(
+    monkeypatch: pytest.MonkeyPatch, issuer: str, jwks: dict[str, Any]
+) -> auth_mod.OidcBearerScheme:
+    """An `OidcBearerScheme` with `load_config()` already run against mocked HTTP.
+
+    Discovery (`discover_jwks_uri`, shared with `mcp.auth`) is a synchronous,
+    module-level `httpx.get` call — patched here — separately from the JWKS
+    fetch itself, which goes through the scheme's own async `_client`.
+    """
+    scheme = auth_mod.OidcBearerScheme(issuer=issuer, audience="dataq-client-id")
+    # `httpx` here is the SAME module object `core.auth` imported (module identity,
+    # not a copy), so patching `.get` on it is visible to `discover_jwks_uri`
+    # inside `core.auth` too.
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda url, timeout: httpx.Response(
+            200, json={"jwks_uri": f"{issuer}/jwks.json"}, request=httpx.Request("GET", url)
+        ),
+    )
+    monkeypatch.setattr(
+        scheme, "_client", httpx.AsyncClient(transport=_mock_oidc_transport(jwks, issuer))
+    )
+    await scheme.load_config()
+    return scheme
+
+
 async def test_oidc_scheme_verifies_a_real_signed_token(monkeypatch: pytest.MonkeyPatch) -> None:
     issuer = "https://example-idp.test"
     private_key, public_jwk = _rsa_keypair()
-    scheme = auth_mod.OidcBearerScheme(issuer=issuer, audience="dataq-client-id")
-    monkeypatch.setattr(
-        scheme,
-        "_client",
-        httpx.AsyncClient(transport=_mock_oidc_transport({"keys": [public_jwk]}, issuer)),
-    )
-    await scheme.load_config()
+    scheme = await _loaded_scheme(monkeypatch, issuer, {"keys": [public_jwk]})
 
     token = _sign(
         private_key,
@@ -461,13 +502,7 @@ async def test_oidc_scheme_verifies_a_real_signed_token(monkeypatch: pytest.Monk
 async def test_oidc_scheme_rejects_a_wrong_audience(monkeypatch: pytest.MonkeyPatch) -> None:
     issuer = "https://example-idp.test"
     private_key, public_jwk = _rsa_keypair()
-    scheme = auth_mod.OidcBearerScheme(issuer=issuer, audience="dataq-client-id")
-    monkeypatch.setattr(
-        scheme,
-        "_client",
-        httpx.AsyncClient(transport=_mock_oidc_transport({"keys": [public_jwk]}, issuer)),
-    )
-    await scheme.load_config()
+    scheme = await _loaded_scheme(monkeypatch, issuer, {"keys": [public_jwk]})
 
     token = _sign(
         private_key,
@@ -488,13 +523,7 @@ async def test_oidc_scheme_accepts_cognito_style_client_id_claim(
     one deliberately provider-aware accommodation (class docstring)."""
     issuer = "https://example-idp.test"
     private_key, public_jwk = _rsa_keypair()
-    scheme = auth_mod.OidcBearerScheme(issuer=issuer, audience="dataq-client-id")
-    monkeypatch.setattr(
-        scheme,
-        "_client",
-        httpx.AsyncClient(transport=_mock_oidc_transport({"keys": [public_jwk]}, issuer)),
-    )
-    await scheme.load_config()
+    scheme = await _loaded_scheme(monkeypatch, issuer, {"keys": [public_jwk]})
 
     token = _sign(
         private_key,
@@ -518,13 +547,7 @@ async def test_oidc_scheme_rejects_a_token_signed_by_the_wrong_key(
     issuer = "https://example-idp.test"
     _legit_key, public_jwk = _rsa_keypair()
     forged_key, _forged_jwk = _rsa_keypair()
-    scheme = auth_mod.OidcBearerScheme(issuer=issuer, audience="dataq-client-id")
-    monkeypatch.setattr(
-        scheme,
-        "_client",
-        httpx.AsyncClient(transport=_mock_oidc_transport({"keys": [public_jwk]}, issuer)),
-    )
-    await scheme.load_config()
+    scheme = await _loaded_scheme(monkeypatch, issuer, {"keys": [public_jwk]})
 
     forged_token = _sign(
         forged_key,
@@ -541,13 +564,7 @@ async def test_oidc_scheme_rejects_a_token_signed_by_the_wrong_key(
 async def test_oidc_scheme_rejects_an_expired_token(monkeypatch: pytest.MonkeyPatch) -> None:
     issuer = "https://example-idp.test"
     private_key, public_jwk = _rsa_keypair()
-    scheme = auth_mod.OidcBearerScheme(issuer=issuer, audience="dataq-client-id")
-    monkeypatch.setattr(
-        scheme,
-        "_client",
-        httpx.AsyncClient(transport=_mock_oidc_transport({"keys": [public_jwk]}, issuer)),
-    )
-    await scheme.load_config()
+    scheme = await _loaded_scheme(monkeypatch, issuer, {"keys": [public_jwk]})
 
     expired = _sign(
         private_key,
@@ -626,13 +643,7 @@ async def test_oidc_scheme_call_delegates_a_bearer_to_verify(
 ) -> None:
     issuer = "https://example-idp.test"
     private_key, public_jwk = _rsa_keypair()
-    scheme = auth_mod.OidcBearerScheme(issuer=issuer, audience="dataq-client-id")
-    monkeypatch.setattr(
-        scheme,
-        "_client",
-        httpx.AsyncClient(transport=_mock_oidc_transport({"keys": [public_jwk]}, issuer)),
-    )
-    await scheme.load_config()
+    scheme = await _loaded_scheme(monkeypatch, issuer, {"keys": [public_jwk]})
     token = _sign(
         private_key,
         {"sub": "u1", "iss": issuer, "aud": "dataq-client-id", "exp": int(time.time()) + 3600},
@@ -664,13 +675,7 @@ async def test_oidc_scheme_returns_none_when_the_refreshed_jwks_still_lacks_the_
     issuer = "https://example-idp.test"
     _private_key, public_jwk = _rsa_keypair()
     other_key, _other_jwk = _rsa_keypair()
-    scheme = auth_mod.OidcBearerScheme(issuer=issuer, audience="dataq-client-id")
-    monkeypatch.setattr(
-        scheme,
-        "_client",
-        httpx.AsyncClient(transport=_mock_oidc_transport({"keys": [public_jwk]}, issuer)),
-    )
-    await scheme.load_config()
+    scheme = await _loaded_scheme(monkeypatch, issuer, {"keys": [public_jwk]})
 
     unknown_kid_token = jwt.encode(
         {"sub": "u1", "iss": issuer, "aud": "dataq-client-id", "exp": int(time.time()) + 3600},

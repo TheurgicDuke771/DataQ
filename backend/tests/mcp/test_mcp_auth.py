@@ -129,7 +129,7 @@ def test_build_auth_provider_generic_oidc_mode_is_pat_or_jwt_composite(monkeypat
     """The MCP counterpart to `core.auth.OidcBearerScheme` — reuses fastmcp's
     already-generic `JWTVerifier`, just pointed at the configured issuer instead
     of Azure's hardcoded endpoints (see `build_auth_provider`'s docstring)."""
-    monkeypatch.setattr(auth, "_discover_jwks_uri", lambda issuer: f"{issuer}/jwks.json")
+    monkeypatch.setattr(auth, "discover_jwks_uri", lambda issuer: f"{issuer}/jwks.json")
     s = _settings(**_OIDC, environment="prod")
     provider = auth.build_auth_provider(s)
     assert isinstance(provider, auth._PatOrJwtVerifier)
@@ -138,23 +138,6 @@ def test_build_auth_provider_generic_oidc_mode_is_pat_or_jwt_composite(monkeypat
     assert provider._jwt.issuer == "https://example-idp.test"
     # No required_scopes — Azure's API-scope pattern isn't universal (docstring).
     assert not provider._jwt.required_scopes
-
-
-def test_discover_jwks_uri_reads_the_oidc_discovery_document(monkeypatch: Any) -> None:
-    import httpx
-
-    def fake_get(url: str, timeout: float) -> Any:
-        assert url == "https://example-idp.test/.well-known/openid-configuration"
-        return httpx.Response(
-            200,
-            json={"jwks_uri": "https://example-idp.test/jwks.json"},
-            request=httpx.Request("GET", url),
-        )
-
-    monkeypatch.setattr(httpx, "get", fake_get)
-    assert auth._discover_jwks_uri("https://example-idp.test") == (
-        "https://example-idp.test/jwks.json"
-    )
 
 
 def test_resolve_user_from_token_claims(db_session: Any, monkeypatch: Any) -> None:

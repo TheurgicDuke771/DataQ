@@ -28,6 +28,7 @@ Modes, picked once at import time from settings:
 If nothing is configured, `init_auth` raises at startup — fail-closed.
 """
 
+import asyncio
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -139,6 +140,22 @@ def _build_azure_scheme(
     )
 
 
+def discover_jwks_uri(issuer: str, *, timeout: float = 5.0) -> str:
+    """Resolve `jwks_uri` from an OIDC issuer's discovery document.
+
+    Synchronous and shared by both callers that need it: `OidcBearerScheme.
+    load_config` below (wrapped in `asyncio.to_thread` — it must not block the
+    event loop) and `mcp.auth.build_auth_provider` (genuinely synchronous —
+    fastmcp's auth provider is built at **module import time**, before any
+    async startup hook exists to call into). One implementation, not a
+    sync/async pair that could quietly drift apart.
+    """
+    response = httpx.get(f"{issuer.rstrip('/')}/.well-known/openid-configuration", timeout=timeout)
+    response.raise_for_status()
+    jwks_uri: str = response.json()["jwks_uri"]
+    return jwks_uri
+
+
 class OidcBearerScheme:
     """Provider-neutral OIDC bearer validator (ADR 0026 amendment).
 
@@ -174,10 +191,12 @@ class OidcBearerScheme:
         Called once from `init_auth()` — fail-closed at startup, mirroring
         `azure_scheme.openid_config.load_config()`: a deployment must not report
         healthy while unable to validate a single token.
+
+        `discover_jwks_uri` is synchronous (shared with `mcp.auth`, which can
+        only call it synchronously — see its docstring), so it runs off the
+        event loop thread here rather than blocking it.
         """
-        response = await self._client.get(f"{self._issuer}/.well-known/openid-configuration")
-        response.raise_for_status()
-        self._jwks_uri = response.json()["jwks_uri"]
+        self._jwks_uri = await asyncio.to_thread(discover_jwks_uri, self._issuer)
         await self._refresh_jwks()
 
     async def _refresh_jwks(self) -> dict[str, Any]:
