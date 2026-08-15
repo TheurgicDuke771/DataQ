@@ -361,10 +361,17 @@ class Settings(BaseSettings):
     # 'redis' is REMOVED (ADR 0039 — it kept credentials in plaintext) but stays in
     # the Literal for one cycle so `_build_store` can answer with a migration path
     # instead of pydantic emitting a bare "Input should be …" that names no cause.
-    secret_store: Literal["env", "openbao", "redis", "azure_key_vault"] = (
+    secret_store: Literal["env", "openbao", "redis", "azure_key_vault", "aws_secrets_manager"] = (
         "env"  # noqa: S105 — mode selector, not a password
     )
     azure_key_vault_url: str | None = None
+
+    # AWS Secrets Manager (parallel AWS deployment). No region/credential setting —
+    # boto3 resolves both ambiently from the ECS task's IAM role, same posture as
+    # Key Vault's DefaultAzureCredential + managed identity. The prefix namespaces
+    # every secret name (e.g. "dataq/") so a shared account/region can host more
+    # than one DataQ install without their secrets colliding.
+    aws_secrets_manager_prefix: str = "dataq/"
 
     # OpenBao / Vault KV v2 (ADR 0039). The contract is the API, not the vendor —
     # OPENBAO_ADDR may point at OpenBao (what we ship), Vault Community/Enterprise,
@@ -791,6 +798,11 @@ class Settings(BaseSettings):
                 raise ValueError("OPENBAO_MOUNT must not be empty")
         elif mode == "azure_key_vault" and not self.azure_key_vault_url:
             raise ValueError("SECRET_STORE='azure_key_vault' requires AZURE_KEY_VAULT_URL")
+        elif mode == "aws_secrets_manager" and not self.aws_secrets_manager_prefix.strip():
+            # An empty prefix collapses every DataQ secret name onto the account/region's
+            # bare namespace — the same collision `OPENBAO_MOUNT must not be empty` guards
+            # against for a shared vault mount.
+            raise ValueError("AWS_SECRETS_MANAGER_PREFIX must not be empty")
         elif mode == "redis":
             raise ValueError(_REDIS_STORE_REMOVED)
         return self
