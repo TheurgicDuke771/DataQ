@@ -32,8 +32,9 @@ import { LiveRunProgress } from './LiveRunProgress';
  * readout). Distinct from the suite-detail Run button (which runs *one* suite in
  * context): here the user picks any suite they can run from the Results surface.
  * On trigger it hands off to the shared `LiveRunProgress` drawer, so the modal
- * closes and the run is watched check-by-check. Alerting is configured per suite
- * (Notifications panel), not per run.
+ * closes and the run is watched live (check-by-check where the engine resolves
+ * checks individually — see `LiveRunProgress` and #318). Alerting is configured
+ * per suite (Notifications panel), not per run.
  *
  * Self-contained (owns its own data fetch + progress drawer) so it can drop onto
  * a dedicated Execution page unchanged.

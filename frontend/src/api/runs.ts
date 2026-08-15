@@ -88,6 +88,18 @@ export interface RunProgress {
   checks: CheckProgress[];
   started_at: string | null;
   finished_at: string | null;
+  /**
+   * How long the run has been going, measured on the **server** clock (#318) —
+   * never recompute it from `started_at` against the browser's, which renders a
+   * negative or wildly wrong age whenever the two disagree. `null` while the run
+   * is still queued (it has not been going for 0 ms; it has not started).
+   *
+   * Read it whenever `completed_checks` is 0 on a live run: that is not a stalled
+   * run, it is a suite of GX expectations being validated as one atomic batch, so
+   * there is nothing to increment until it lands. Optional so a client pointed at
+   * an API that predates the field still type-checks.
+   */
+  elapsed_ms?: number | null;
 }
 
 /** Mirrors `PipelineRunRead` — a monitored orchestrator run (`pipeline_runs` ≠ `runs`). */

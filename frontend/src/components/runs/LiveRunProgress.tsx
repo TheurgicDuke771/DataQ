@@ -10,7 +10,12 @@ import {
   type RunProgress,
   type RunStatus,
 } from '../../api/runs';
-import { RESULT_STATUS_COLORS, RUN_BAR_STATUS, RUN_STATUS_COLORS } from '../results/resultsFormat';
+import {
+  formatDurationMs,
+  RESULT_STATUS_COLORS,
+  RUN_BAR_STATUS,
+  RUN_STATUS_COLORS,
+} from '../results/resultsFormat';
 import { errorMessage } from '../../utils/errors';
 
 /** Run lifecycle states past which polling stops. */
@@ -26,6 +31,15 @@ function isTerminal(status: RunStatus): boolean {
  * `GET /runs/{id}/progress` until the run is terminal, showing the run
  * lifecycle, a completed/total bar, and per-check status (a spinner while a
  * check is still pending). An editor can cancel an in-flight run.
+ *
+ * **Nothing resolved yet is not the same as no progress (#318).** Results are
+ * committed per execution phase, so monitor and comparison checks tick over one
+ * at a time — but GX validates a suite of ordinary expectations as one atomic
+ * batch, so a 30-check suite genuinely sits at `0 / 30` until it lands. A
+ * percentage bar pinned at 0% for the whole run reads as *hung*, and that
+ * misreport is the thing this component must not make. While `completed_checks`
+ * is 0 on a live run it shows the server-measured elapsed time and a spinner
+ * instead of the bar, and says in words why there is no percentage yet.
  *
  * Mounted controlled by `runId`; pass `null` to keep it closed. The body is
  * keyed by `runId` so opening a different run remounts and restarts polling
@@ -141,9 +155,18 @@ function LiveRunProgressBody({
     return <Spin description="Starting run…" size="large" />;
   }
 
-  const { status, total_checks, completed_checks, counts, checks } = progress;
+  const { status, total_checks, completed_checks, counts, checks, elapsed_ms } = progress;
   const terminal = isTerminal(status);
   const percent = total_checks > 0 ? Math.round((completed_checks / total_checks) * 100) : 0;
+  // A live run that has resolved nothing has no honest percentage to draw — see
+  // the component docstring. An empty suite is excluded: it isn't waiting on
+  // anything, and the `Empty` below already explains it.
+  const noProgressToShowYet = !terminal && completed_checks === 0 && total_checks > 0;
+  // Only render an elapsed time the server actually measured. `0` is a real
+  // reading (a run that just started), so the check is against null/undefined,
+  // not falsiness — and a queued run, which has none, correctly shows nothing.
+  const elapsed =
+    elapsed_ms === null || elapsed_ms === undefined ? null : formatDurationMs(elapsed_ms);
   // Per-status histogram of resolved checks (#316) — show only non-zero buckets;
   // an all-pending run has none yet, so the row stays empty until results land.
   const tallies = Object.entries(counts).filter(([, n]) => n > 0) as [ResultStatus, number][];
@@ -155,6 +178,11 @@ function LiveRunProgressBody({
         <Typography.Text type="secondary">
           {completed_checks} / {total_checks} checks
         </Typography.Text>
+        {elapsed !== null && (
+          <Typography.Text type="secondary" data-testid="run-elapsed">
+            {terminal ? 'took' : 'running for'} {elapsed}
+          </Typography.Text>
+        )}
         {canManage && !terminal && (
           <Button danger size="small" loading={cancelling} onClick={onCancel}>
             Cancel
@@ -162,7 +190,17 @@ function LiveRunProgressBody({
         )}
       </Flex>
 
-      <Progress percent={percent} status={RUN_BAR_STATUS[status]} />
+      {noProgressToShowYet ? (
+        <Flex gap={10} align="center" data-testid="run-heartbeat">
+          <Spin size="small" />
+          <Typography.Text type="secondary">
+            Running — no check has resolved yet. Expectations are validated as a single batch, so
+            they all report together at the end.
+          </Typography.Text>
+        </Flex>
+      ) : (
+        <Progress percent={percent} status={RUN_BAR_STATUS[status]} />
+      )}
 
       {tallies.length > 0 && (
         <Flex gap={6} wrap>

@@ -203,4 +203,85 @@ describe('LiveRunProgress', () => {
     renderDrawer();
     expect(await screen.findByText('Failed to load run progress')).toBeInTheDocument();
   });
+
+  // ── the honest-affordance half of #318 ────────────────────────────
+  //
+  // Behaviour, not markup: these assert what a viewer can *read* off the drawer
+  // (a percentage claim, an elapsed time, a spinner), because a class-name
+  // assertion in jsdom proves nothing about what is rendered (#1282).
+
+  it('shows a heartbeat instead of a 0% bar while nothing has resolved (#318)', async () => {
+    // The exact shape of a GX-expectation suite mid-run: alive, 90s in, atomic
+    // batch not landed. Before #318 this read as a bar pinned at 0% — i.e. hung.
+    mockProgress.mockResolvedValue(
+      progress('running', {
+        completed_checks: 0,
+        elapsed_ms: 90_000,
+        checks: [
+          { check_id: 'c1', name: 'not-null id', status: null },
+          { check_id: 'c2', name: 'row count', status: null },
+        ],
+      }),
+    );
+    renderDrawer();
+
+    await screen.findByText('not-null id');
+    expect(screen.getByTestId('run-heartbeat')).toBeInTheDocument();
+    expect(screen.getByTestId('run-elapsed')).toHaveTextContent('running for 1m 30s');
+    // No percentage is claimed at all — not even a 0%.
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+  });
+
+  it('switches to the real bar as soon as a check resolves', async () => {
+    mockProgress.mockResolvedValue(progress('running', { completed_checks: 1, elapsed_ms: 4_000 }));
+    renderDrawer();
+
+    await screen.findByText('not-null id');
+    // One of two resolved → a genuine 50%, so the bar is the honest rendering.
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    expect(screen.queryByTestId('run-heartbeat')).not.toBeInTheDocument();
+    expect(screen.getByTestId('run-elapsed')).toHaveTextContent('running for 4s');
+  });
+
+  it('keeps the bar on a terminal run that resolved nothing, and reads "took"', async () => {
+    // A failed run writes no results (the backend discards partial phases), so
+    // completed_checks is 0 — but it is finished, not waiting, and a heartbeat
+    // there would claim work is still happening.
+    mockProgress.mockResolvedValue(
+      progress('failed', {
+        completed_checks: 0,
+        elapsed_ms: 2_500,
+        checks: [{ check_id: 'c1', name: 'not-null id', status: null }],
+      }),
+    );
+    renderDrawer();
+
+    await screen.findByText('not-null id');
+    expect(screen.queryByTestId('run-heartbeat')).not.toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    expect(screen.getByTestId('run-elapsed')).toHaveTextContent('took 3s');
+  });
+
+  it('shows no elapsed time for a queued run that has not started', async () => {
+    // `null` means "has not started", which is not the same as 0 ms — showing
+    // "running for 0ms" on a queued run would assert work that has not begun.
+    mockProgress.mockResolvedValue(
+      progress('queued', { completed_checks: 0, elapsed_ms: null, counts: {} }),
+    );
+    renderDrawer();
+
+    await screen.findByText('not-null id');
+    expect(screen.queryByTestId('run-elapsed')).not.toBeInTheDocument();
+  });
+
+  it('renders an elapsed time of exactly zero rather than hiding it', async () => {
+    // 0 is a real reading (a run that just started) — a falsiness check here
+    // would silently drop it and re-create the "is it even going?" doubt.
+    mockProgress.mockResolvedValue(progress('running', { completed_checks: 0, elapsed_ms: 0 }));
+    renderDrawer();
+
+    await screen.findByText('not-null id');
+    expect(screen.getByTestId('run-elapsed')).toHaveTextContent('running for 0ms');
+  });
 });
