@@ -65,10 +65,28 @@ gh variable set ECS_CLUSTER --body "$(tofu output -raw ecs_cluster_name)"
 gh variable set AWS_REGION --body "$(tofu output -raw -json | jq -r .aws_region.value 2>/dev/null || echo us-east-2)"
 ```
 
-A companion `.github/workflows/deploy-aws.yml` (not yet built) will use these
-to `aws-actions/configure-aws-credentials` via OIDC, then run the same
-build→push(GHCR)→migrate(RunTask, poll-to-terminal)→`ecs update-service`
-sequence the Azure `deploy.yml` runs, adapted to the AWS CLI equivalents.
+The companion `.github/workflows/deploy-aws.yml` uses these to
+`aws-actions/configure-aws-credentials` via OIDC, then runs the same sequence
+the Azure `deploy.yml` runs, adapted to ECS:
+
+1. build + push both images to GHCR under the immutable tag `aws-<commit sha>`
+   (bare `<sha>` belongs to the Azure deploy.yml, `main-<sha>` to
+   publish-images.yml — three workflows, three disjoint tag namespaces);
+2. register a new `dataq-app-migrate` task-definition revision on the new
+   image and `run-task` it with the api service's live network configuration,
+   **waiting for exit 0** before anything rolls (fail-closed);
+3. register new api/worker/frontend revisions, `update-service`, and
+   `wait services-stable`, then verify the primary deployment's image really
+   is the new tag (a circuit-breaker rollback to the old image must fail the
+   run, not pass as "stable");
+4. optional public-surface smoke (healthz/SPA 200, `/api` 401) — runs only
+   when the `AWS_FRONTEND_URL` repo variable is set, since the CloudFront URL
+   is deployment-specific and deliberately not tracked in the repo (#730).
+   Set it with `gh variable set AWS_FRONTEND_URL --body "$(tofu output -raw frontend_url)"`.
+
+It is `workflow_dispatch`-only (Azure stays primary prod), takes an optional
+`image_tag` input (blank → `aws-<sha>`), and needs no AWS-side registry
+credential — the GHCR packages are public and ECS pulls them anonymously.
 
 ## State encryption
 
