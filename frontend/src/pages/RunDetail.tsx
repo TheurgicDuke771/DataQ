@@ -33,6 +33,7 @@ import {
 import { Page } from '../components/layout/Page';
 import { RunReport } from '../components/results/RunReport';
 import { SampledRunNotice, SampledTag } from '../components/results/sampling';
+import { isSampled } from '../components/results/samplingFormat';
 import { ScalarValue } from '../components/results/ScalarValue';
 import { boundedTextStyle } from '../components/shared/ellipsisColumn';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -253,15 +254,21 @@ function DownloadMenu({
   const expectation = (id: string) => checks.get(id)?.expectation_type ?? '';
 
   const exportCsv = () => {
+    // `sampled` rides along (#1325 review F2): a downloaded row that says `pass`
+    // without saying it was measured on 100k of 5M is the same overclaim the
+    // in-app badge exists to prevent, and a spreadsheet outlives the page that
+    // would have qualified it. A flat column rather than the nested record — CSV
+    // has one cell, and "did this verdict cover everything" is the question.
     downloadCsv(
       `${stem}.csv`,
-      ['check', 'expectation', 'status', 'metric_value', 'observed'],
+      ['check', 'expectation', 'status', 'metric_value', 'observed', 'sampled'],
       run.results.map((r) => [
         checkName(r.check_id),
         expectation(r.check_id),
         r.status,
         r.metric_value,
         exportScalar(r.observed_value),
+        isSampled(r) ? 'yes' : 'no',
       ]),
     );
   };
@@ -286,6 +293,11 @@ function DownloadMenu({
         metric_value: r.metric_value,
         observed_value: r.observed_value,
         expected_value: r.expected_value,
+        // The whole record here, not just a flag: JSON is the machine-readable
+        // artifact most likely to feed downstream reporting, and the strategy,
+        // the rows seen and the population are what let a consumer judge the
+        // verdict rather than only discount it. `null` means a complete read.
+        sampling: r.sampling ?? null,
       })),
     });
   };
@@ -463,24 +475,16 @@ function ResultsTable({
       dataIndex: 'check_id',
       render: (id: string, record: Result) => {
         const check = checks.get(id);
-        // Even for an unknown (deleted) check the sampled caveat still applies to
-        // the verdict on this row, so it is rendered on both branches.
-        const sampled = <SampledTag sampling={record.sampling} />;
-        if (!check) {
-          return (
-            <Flex gap={8} align="center" wrap>
-              <Typography.Text code>{id.slice(0, 8)}</Typography.Text>
-              {sampled}
-            </Flex>
-          );
-        }
+        // One wrapper, whether or not the check still exists: the label differs,
+        // the annotations do not. A deleted check's row still carries the sampled
+        // caveat, because the caveat is about the VERDICT, not the check.
         return (
           <Flex gap={8} align="center" wrap>
-            {check.name}
+            {check ? check.name : <Typography.Text code>{id.slice(0, 8)}</Typography.Text>}
             {/* Failure triage happens here — a muted check must say so, or the
                 operator wastes time asking why no alert arrived (#653). */}
-            <SnoozedTag check={check} />
-            {sampled}
+            {check && <SnoozedTag check={check} />}
+            <SampledTag sampling={record.sampling} />
           </Flex>
         );
       },

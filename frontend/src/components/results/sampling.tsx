@@ -1,7 +1,7 @@
 import { Alert, Tag, Tooltip } from 'antd';
 
 import type { Result, ResultSampling } from '../../api/runs';
-import { sampledCount, samplingSummary } from './samplingFormat';
+import { sampledCoverage, samplingSummary } from './samplingFormat';
 
 /**
  * Sampled-ness surfacing for scale-aware execution (#595/#1325). The honesty
@@ -31,9 +31,15 @@ export function SampledTag({ sampling }: { sampling: ResultSampling | null | und
  * pushes its `COUNT(*)` down and is exact while the expectations beside it saw a
  * sample, so "this run was sampled" would be wrong about half the table. Naming
  * the number sends the reader to the badged rows.
+ *
+ * The denominator is **evaluated** results only — the same one the "Checks
+ * passed" stat beside it uses. Counting `skip`/`error` rows here would put two
+ * different denominators for one run in one header, and would let a single
+ * skipped check permanently downgrade "Every check ran on a sample" to "3 of 4",
+ * which is the caveat getting quieter because something unrelated didn't run.
  */
-export function SampledRunNotice({ results }: { results: Pick<Result, 'sampling'>[] }) {
-  const sampled = sampledCount(results);
+export function SampledRunNotice({ results }: { results: Pick<Result, 'sampling' | 'status'>[] }) {
+  const { sampled, evaluated } = sampledCoverage(results);
   if (sampled === 0) return null;
   return (
     <Alert
@@ -41,9 +47,9 @@ export function SampledRunNotice({ results }: { results: Pick<Result, 'sampling'
       showIcon
       data-testid="sampled-run-notice"
       title={
-        sampled === results.length
+        sampled === evaluated
           ? 'Every check ran on a sample of the data'
-          : `${sampled} of ${results.length} checks ran on a sample of the data`
+          : `${sampled} of ${evaluated} checks ran on a sample of the data`
       }
       description={
         'Their verdicts describe the rows that were read, not the whole dataset — a check ' +

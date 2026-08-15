@@ -17,8 +17,11 @@ function record(overrides: Partial<ResultSampling> = {}): ResultSampling {
   };
 }
 
-function result(sampling: ResultSampling | null): Pick<Result, 'sampling'> {
-  return { sampling };
+function result(
+  sampling: ResultSampling | null,
+  status: Result['status'] = 'pass',
+): Pick<Result, 'sampling' | 'status'> {
+  return { sampling, status };
 }
 
 describe('SampledTag', () => {
@@ -126,6 +129,30 @@ describe('SampledRunNotice', () => {
     expect(screen.getByTestId('sampled-run-notice')).toHaveTextContent(
       'Every check ran on a sample',
     );
+  });
+
+  it('counts EVALUATED results only, like the "Checks passed" stat beside it', () => {
+    // A skip/error never evaluated anything and its `sampling` is always null, so
+    // counting it would put a second denominator for one run in one header — and
+    // would let one skipped check permanently downgrade the wording below.
+    render(
+      <SampledRunNotice
+        results={[result(record()), result(null, 'skip'), result(null, 'error')]}
+      />,
+    );
+    expect(screen.getByTestId('sampled-run-notice')).toHaveTextContent(
+      'Every check ran on a sample',
+    );
+  });
+
+  it('a single skip does not suppress the "Every check" wording', () => {
+    // The regression the denominator bug caused: two sampled checks and one skip
+    // read as "2 of 3", quietly weakening the caveat because of something
+    // unrelated to sampling.
+    render(
+      <SampledRunNotice results={[result(record()), result(record()), result(null, 'skip')]} />,
+    );
+    expect(screen.getByTestId('sampled-run-notice')).not.toHaveTextContent('2 of 3');
   });
 
   it('spells out that a pass on a sample is not a pass on the dataset', () => {

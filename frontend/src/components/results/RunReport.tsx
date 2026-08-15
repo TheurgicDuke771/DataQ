@@ -1,6 +1,7 @@
 import type { RunDetail as RunDetailType } from '../../api/runs';
 import type { Check } from '../../api/suites';
 import { isSnoozed } from '../checks/snooze';
+import { isSampled, sampledCoverage } from './samplingFormat';
 import { formatDuration, formatScalar, formatTimestamp } from './resultsFormat';
 
 /**
@@ -43,6 +44,12 @@ export function RunReport({
     const check = checksById.get(id);
     return check && isSnoozed(check) ? ' (snoozed)' : '';
   };
+  // The same parity rule, applied to sampled-ness (#595/#1325). This is the
+  // artifact people circulate, so a fully-sampled all-pass run printing as an
+  // unqualified clean bill is the exact overclaim the feature exists to prevent —
+  // and it is worse here than on screen, because a PDF outlives the context that
+  // would have explained it. Plain text, for the same reason as above.
+  const { sampled, evaluated } = sampledCoverage(run.results);
 
   return (
     <div className="print-only rd-report" data-testid="run-report">
@@ -69,6 +76,17 @@ export function RunReport({
             <th scope="row">Duration</th>
             <td>{formatDuration(run.started_at, run.finished_at)}</td>
           </tr>
+          {sampled > 0 && (
+            <tr>
+              <th scope="row">Coverage</th>
+              <td data-testid="report-sampled-notice">
+                {sampled === evaluated
+                  ? 'Every check ran on a SAMPLE of the data'
+                  : `${sampled} of ${evaluated} checks ran on a SAMPLE of the data`}{' '}
+                — those verdicts describe the rows that were read, not the whole dataset.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
 
@@ -97,6 +115,7 @@ export function RunReport({
                 <td>
                   {checkName(r.check_id)}
                   {snoozedSuffix(r.check_id)}
+                  {isSampled(r) ? ' (sampled)' : ''}
                 </td>
                 <td>{expectationOrKind(r.check_id)}</td>
                 <td>{r.status}</td>

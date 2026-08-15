@@ -251,7 +251,14 @@ describe('RunDetail page', () => {
     expect(downloadCsv).toHaveBeenCalledTimes(1);
     const [filename, headers, rows] = vi.mocked(downloadCsv).mock.calls[0];
     expect(filename).toBe('orders_quality_run_r1.csv');
-    expect(headers).toEqual(['check', 'expectation', 'status', 'metric_value', 'observed']);
+    expect(headers).toEqual([
+      'check',
+      'expectation',
+      'status',
+      'metric_value',
+      'observed',
+      'sampled',
+    ]);
     // check_id → name, observed scalar JSON-stringified.
     expect(rows[0]).toEqual([
       'order_id not null',
@@ -259,6 +266,7 @@ describe('RunDetail page', () => {
       'warn',
       2,
       '{"unexpected_percent":2}',
+      'no',
     ]);
   });
 
@@ -605,9 +613,70 @@ describe('RunDetail page', () => {
     expect(downloadJson).toHaveBeenCalledTimes(1);
     const [filename, payload] = vi.mocked(downloadJson).mock.calls[0];
     expect(filename).toBe('orders_quality_run_r1.json');
-    const body = payload as { run: { suite_name: string }; checks: unknown[] };
+    const body = payload as { run: { suite_name: string }; checks: { sampling: unknown }[] };
     expect(body.run.suite_name).toBe('Orders quality');
     expect(body.checks).toHaveLength(1);
+    // Explicit null, not an absent key: JSON is the machine-readable artifact
+    // most likely to feed downstream reporting, and "we looked and it was a
+    // complete read" must be distinguishable from "this export predates the
+    // field" (#1333 F2).
+    expect(body.checks[0].sampling).toBeNull();
+  });
+
+  it('carries the whole sampling record into the JSON export (#1333 F2)', async () => {
+    const sampling = {
+      strategy: 'random' as const,
+      requested_rows: 100_000,
+      rows: 100_000,
+      total_rows: 5_000_000,
+      sampled: true,
+      seed: 7,
+    };
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [{ ...runDetail.results[0], sampling }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: /download/i }));
+    await user.click(await screen.findByText('Download JSON'));
+
+    const [, payload] = vi.mocked(downloadJson).mock.calls[0];
+    const body = payload as { checks: { sampling: unknown }[] };
+    // The record, not a flag — the strategy, the rows seen and the population
+    // are what let a consumer judge the verdict instead of only discounting it.
+    expect(body.checks[0].sampling).toEqual(sampling);
+  });
+
+  it('marks a sampled row in the CSV export (#1333 F2)', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          sampling: {
+            strategy: 'head',
+            requested_rows: 100,
+            rows: 100,
+            total_rows: 5000,
+            sampled: true,
+          },
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: /download/i }));
+    await user.click(await screen.findByText('Download CSV'));
+
+    const [, , rows] = vi.mocked(downloadCsv).mock.calls[0];
+    expect(rows[0][5]).toBe('yes');
   });
 
   // ── PDF report export (#345) ───────────────────────────────────────────
@@ -694,6 +763,50 @@ describe('RunDetail page', () => {
       const report = await screen.findByTestId('run-report');
       expect(within(report).getByText('order_id not null')).toBeInTheDocument();
       expect(within(report).queryByText(/\(snoozed\)/)).not.toBeInTheDocument();
+    });
+
+    it('carries the sampled caveat into the printed report (#1333 F1)', async () => {
+      // The report is the artifact that gets circulated, and it outlives the
+      // page that would have explained it — a fully-sampled all-pass run
+      // printing as an unqualified clean bill is the overclaim the whole
+      // feature exists to prevent. Same parity rule the snooze marker follows.
+      mockGetRun.mockResolvedValue({
+        ...runDetail,
+        results: [
+          {
+            ...runDetail.results[0],
+            sampling: {
+              strategy: 'head',
+              requested_rows: 100_000,
+              rows: 100_000,
+              total_rows: 5_000_000,
+              sampled: true,
+            },
+          },
+        ],
+      });
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      renderAt('r1');
+
+      const report = await screen.findByTestId('run-report');
+      expect(within(report).getByTestId('report-sampled-notice')).toHaveTextContent(
+        'Every check ran on a SAMPLE of the data',
+      );
+      // …and per row, so a reader scanning the table sees which verdicts it
+      // applies to rather than having to hold the header in mind.
+      expect(within(report).getByText(/order_id not null \(sampled\)/)).toBeInTheDocument();
+    });
+
+    it('says nothing about sampling on an ordinary complete run', async () => {
+      mockGetRun.mockResolvedValue(runDetail);
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      renderAt('r1');
+
+      const report = await screen.findByTestId('run-report');
+      expect(within(report).queryByTestId('report-sampled-notice')).not.toBeInTheDocument();
+      expect(within(report).queryByText(/\(sampled\)/)).not.toBeInTheDocument();
     });
 
     it('em-dashes a null triggered_by / metric_value in the report', async () => {

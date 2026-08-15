@@ -20,18 +20,20 @@ export function isSampled(result: Pick<Result, 'sampling'>): boolean {
   return result.sampling?.sampled === true;
 }
 
-/** `100,000 of 5,000,000 rows`, or `100,000 rows` when the population is unknown. */
+/** `100,000 of 5,000,000 rows`, or `100,000 rows` when the population is unknown.
+ *
+ * `total_rows` is legitimately null — a head sample stops reading at the cap
+ * rather than pay for a count — so the two-branch shape is real. `rows` is not:
+ * `sampling_record` always writes it, and the only way to reach this function is
+ * `sampled === true`, which the same writer sets. An unreachable third branch
+ * would be two user-facing strings no test could ever produce, so it is gone; if
+ * the record shape ever loosens, `rows` becomes optional in `ResultSampling` and
+ * TypeScript says so here.
+ */
 function coverage(sampling: ResultSampling): string {
-  const rows = typeof sampling.rows === 'number' ? sampling.rows : null;
+  const rows = (sampling.rows ?? 0).toLocaleString();
   const total = typeof sampling.total_rows === 'number' ? sampling.total_rows : null;
-  if (rows === null) {
-    // The record always carries `rows`, but it arrives as untyped JSONB —
-    // describe what we have rather than print "null rows".
-    return total === null ? 'a subset of the rows' : `a subset of ${total.toLocaleString()} rows`;
-  }
-  return total === null
-    ? `${rows.toLocaleString()} rows`
-    : `${rows.toLocaleString()} of ${total.toLocaleString()} rows`;
+  return total === null ? `${rows} rows` : `${rows} of ${total.toLocaleString()} rows`;
 }
 
 /**
@@ -57,7 +59,25 @@ export function samplingSummary(sampling: ResultSampling): string {
   );
 }
 
-/** The run-level headline: how many of a run's results carry a sample caveat. */
-export function sampledCount(results: Pick<Result, 'sampling'>[]): number {
-  return results.filter(isSampled).length;
+/** The severity-tier statuses — the results that actually **evaluated** something.
+ *  `skip`/`error` did not, so they are not part of any "N of M checks" claim; the
+ *  run header's "Checks passed" stat has always used this denominator (ADR 0005),
+ *  and two different denominators in one header is a contradiction the reader has
+ *  to resolve. */
+const EVALUATED: ReadonlySet<string> = new Set(['pass', 'warn', 'fail', 'critical']);
+
+/**
+ * The run-level headline: how many of a run's **evaluated** results carry a
+ * sample caveat, out of how many evaluated at all.
+ *
+ * Counting over every row instead would also let a single skipped check
+ * permanently suppress the stronger "Every check ran on a sample" wording — the
+ * caveat getting quieter because something unrelated didn't run.
+ */
+export function sampledCoverage(results: Pick<Result, 'sampling' | 'status'>[]): {
+  sampled: number;
+  evaluated: number;
+} {
+  const evaluated = results.filter((r) => EVALUATED.has(r.status));
+  return { sampled: evaluated.filter(isSampled).length, evaluated: evaluated.length };
 }
