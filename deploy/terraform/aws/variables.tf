@@ -95,14 +95,6 @@ variable "aws_secrets_manager_prefix" {
   default     = "dataq"
 }
 
-# ── Cognito (generic OIDC — core/auth.py OidcBearerScheme) ─────────────────
-
-variable "cognito_callback_path" {
-  description = "Path appended to the frontend URL for the OIDC redirect callback (oidc-client-ts default)."
-  type        = string
-  default     = "/auth/callback"
-}
-
 # ── CI deploy (GitHub OIDC) ─────────────────────────────────────────────────
 
 variable "github_repo" {

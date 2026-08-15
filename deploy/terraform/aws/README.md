@@ -11,7 +11,7 @@ only for this deployment.
 |---|---|
 | VPC, 2 public subnets, IGW, route table | Networking. No NAT Gateway (decision: public-subnets-no-NAT, ~$33/mo saved — ECS tasks get no public inbound access, only the ALB→frontend path is internet-reachable) |
 | `aws_ecs_cluster.app` + 3 Fargate services (api, worker, frontend) + 1 task def (migrate) | The app itself. api is internal-only (Cloud Map DNS `api.dataq.local`); frontend is the sole public surface (behind the ALB); worker runs embedded celery-beat, `desired_count=1` always (cannot scale to zero) |
-| `aws_lb.app` (ALB, HTTP-only) | Public ingress → frontend target group only |
+| `aws_cloudfront_distribution.app` → `aws_lb.app` (ALB, HTTP :80) | Public ingress. CloudFront terminates HTTPS on its default `*.cloudfront.net` cert (#1345 — Cognito requires an HTTPS redirect URI); the ALB admits only CloudFront's origin-facing ranges and forwards to the frontend target group |
 | `aws_db_instance.app` (RDS Postgres, `db.t4g.micro`) | The app's own database — this stack creates it directly (no shared-server bootstrap dance like the Azure stack, since this account is dedicated) |
 | `aws_elasticache_replication_group.app` (`cache.t4g.micro`, TLS + auth token) | Celery broker + rate-limit store |
 | `aws_cognito_user_pool.app` + SPA client | OIDC identity provider, validated by the backend's provider-neutral `OidcBearerScheme` (ADR 0026 amendment) — not Azure AD |
@@ -85,8 +85,9 @@ suite against a live datasource to confirm the worker path.
 
 ## Known gaps in this pass (deliberately deferred, not silently skipped)
 
-- No custom domain / HTTPS — ALB DNS name, HTTP-only. Add Route53 + ACM + an
-  HTTPS listener once a domain is chosen.
+- No custom domain — the public URL is the CloudFront distribution's own
+  `*.cloudfront.net` domain (HTTPS, default cert — #1345). Once a domain is
+  chosen: Route53 + ACM cert + an `aliases` entry on the distribution.
 - No private-subnet/NAT hardening — see `main.tf`'s decision note.
 - No `.github/workflows/deploy-aws.yml` yet — this stack only provisions the
   infra the workflow will drive.

@@ -1,23 +1,36 @@
-# Internet-facing ALB — the sole public surface (ADR 0028 §5's api-goes-
-# internal cutover, mirrored here from the start rather than retrofitted).
-# Only the frontend target group exists; api/worker have no ALB listener and
-# are reached only via ECS Service Connect internal DNS (ecs.tf).
+# ALB behind CloudFront (#1345) — CloudFront is the sole public surface
+# (ADR 0028 §5's api-goes-internal posture, one hop further out). Only the
+# frontend target group exists; api/worker have no ALB listener and are
+# reached only via Cloud Map internal DNS (ecs.tf).
 #
-# HTTP-only for now (decision: no custom domain yet — see the approved plan).
-# Add an ACM cert + HTTPS listener + Route53 record once a domain is chosen;
-# that's additive, not a rework of this file.
+# The listener stays plain HTTP :80: TLS terminates at CloudFront (Cognito
+# requires an HTTPS redirect URI, and there is no custom domain — see
+# cloudfront.tf). The security group admits only CloudFront's origin-facing
+# ranges (AWS-managed prefix list), so the ALB is not reachable from an
+# arbitrary internet address. Stated honestly: those ranges are shared by ALL
+# CloudFront distributions, so a third party could still origin-point their
+# own distribution at this ALB's (discoverable) DNS name; what that yields is
+# plain-HTTP origin access through their edge — no auth bypass (the app
+# validates Cognito tokens itself) and no XFF spoofing (the trusted-hops
+# depth counts appends, which their edge also performs). Full closure is a
+# secret custom origin header verified at nginx — follow-up #1355.
+
+# AWS-managed, auto-updated list of CloudFront origin-facing IP ranges.
+data "aws_ec2_managed_prefix_list" "cloudfront_origin" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
 
 resource "aws_security_group" "alb" {
   name        = "dataq-app-alb"
-  description = "Public ALB — inbound HTTP from the internet"
+  description = "ALB — inbound HTTP from CloudFront origin-facing ranges only"
   vpc_id      = aws_vpc.app.id
 
   ingress {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description     = "HTTP from CloudFront"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront_origin.id]
   }
 
   egress {
@@ -70,11 +83,11 @@ resource "aws_lb_listener" "http" {
 }
 
 locals {
-  # No custom domain yet — the ALB's own DNS name is the deployment's URL,
-  # matching the earlier decision to start HTTP-only. Computed here (not a
-  # frontend-resource reference) so nothing later in the graph needs to wait
-  # on the ECS service itself, mirroring the Azure stack's deterministic-FQDN
-  # trick that breaks the frontend<->api circular dependency.
-  frontend_url     = "http://${aws_lb.app.dns_name}"
+  # No custom domain yet — CloudFront's own domain is the deployment's public
+  # HTTPS URL (#1345). Depends only on the distribution (which depends only on
+  # the ALB), so nothing later in the graph waits on the ECS service itself —
+  # mirroring the Azure stack's deterministic-FQDN trick that breaks the
+  # frontend<->api circular dependency.
+  frontend_url     = "https://${aws_cloudfront_distribution.app.domain_name}"
   api_internal_url = "http://api.dataq.local:8000"
 }
