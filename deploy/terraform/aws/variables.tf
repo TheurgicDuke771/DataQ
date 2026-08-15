@@ -1,0 +1,141 @@
+# Non-secret configuration. Defaults are wired for the AWS parallel-deployment
+# bring-up. Override in terraform.tfvars (gitignored) — see
+# terraform.tfvars.example. Two required inputs have no default and will hang
+# OpenTofu on stdin if missing — always pass -input=false.
+
+variable "aws_region" {
+  description = "AWS region for every resource in this stack."
+  type        = string
+  default     = "us-east-2"
+}
+
+# ── Database ──────────────────────────────────────────────────────────────
+
+variable "app_db_name" {
+  description = "The app's database name."
+  type        = string
+  default     = "dataq"
+}
+
+variable "app_db_user" {
+  description = "Least-privilege role the app connects as."
+  type        = string
+  default     = "dataq_app"
+}
+
+variable "app_db_password" {
+  description = "Password for app_db_user. Pass at apply: TF_VAR_app_db_password=... . Injected into Secrets Manager as an infra-owned secret; never committed."
+  type        = string
+  sensitive   = true
+}
+
+# ── Images (GHCR — ADR 0023, cloud-agnostic) ────────────────────────────────
+
+variable "backend_image_repo" {
+  description = "GHCR backend image repository (public package, anonymous pull)."
+  type        = string
+  default     = "ghcr.io/theurgicduke771/dataq-backend"
+}
+
+variable "frontend_image_repo" {
+  description = "GHCR frontend (nginx SPA) image repository — one generic runtime-configured image (ADR 0028)."
+  type        = string
+  default     = "ghcr.io/theurgicduke771/dataq-frontend"
+}
+
+variable "image_tag" {
+  description = "Backend image tag to deploy. Immutable tag in prod. The live image is rolled out-of-band by CI (ignore_changes on the task definition's container image), so this is only the create-time default."
+  type        = string
+  default     = "v10"
+}
+
+variable "frontend_image_tag" {
+  description = "Frontend image tag to deploy. Same out-of-band rollout note as image_tag."
+  type        = string
+  default     = "v2"
+}
+
+# ── App config (non-secret) ──────────────────────────────────────────────
+
+variable "environment" {
+  description = "ENVIRONMENT value the backend Settings read."
+  type        = string
+  default     = "prod"
+}
+
+variable "workspace_admin_emails" {
+  description = "Comma-separated workspace-admin allowlist (WORKSPACE_ADMIN_EMAILS)."
+  type        = string
+  default     = ""
+}
+
+variable "email_username" {
+  description = "SMTP login / sender for the email alert channel. Empty = channel off."
+  type        = string
+  default     = ""
+}
+
+variable "email_from" {
+  description = "From: address for email alerts (defaults to email_username when empty)."
+  type        = string
+  default     = ""
+}
+
+variable "email_to" {
+  description = "Comma-separated recipients for email alerts. Empty = email channel off."
+  type        = string
+  default     = ""
+}
+
+# ── Secrets (AWS Secrets Manager — SECRET_STORE=aws_secrets_manager) ───────
+
+variable "aws_secrets_manager_prefix" {
+  description = "Namespace prefix for datasource-credential secrets the app manages at runtime (AWS_SECRETS_MANAGER_PREFIX). Distinct from the infra-owned bootstrap secrets (DB URL etc.), which live under a separate dataq-app-infra/ prefix this stack owns directly."
+  type        = string
+  default     = "dataq"
+}
+
+# ── Cognito (generic OIDC — core/auth.py OidcBearerScheme) ─────────────────
+
+variable "cognito_callback_path" {
+  description = "Path appended to the frontend URL for the OIDC redirect callback (oidc-client-ts default)."
+  type        = string
+  default     = "/auth/callback"
+}
+
+# ── CI deploy (GitHub OIDC) ─────────────────────────────────────────────────
+
+variable "github_repo" {
+  description = "owner/repo the Deploy workflow runs from (federated-credential subject)."
+  type        = string
+  default     = "TheurgicDuke771/DataQ"
+}
+
+variable "github_environment" {
+  description = "GitHub environment the federated credential is scoped to."
+  type        = string
+  default     = "production"
+}
+
+# ── State encryption (OpenTofu) ─────────────────────────────────────────────
+
+variable "state_encryption_passphrase" {
+  description = <<-DESC
+    Passphrase for OpenTofu state encryption (versions.tf `encryption` block).
+
+    Supplied from the gitignored terraform.tfvars. This is a DATA-AT-REST KEY,
+    not a credential: it cannot be revoked and it cannot be re-minted. Losing
+    it means terraform.tfstate is unrecoverable — keep a second copy off this
+    machine. See README.md.
+  DESC
+  type        = string
+  sensitive   = true
+}
+
+# ── Sizing / retention ───────────────────────────────────────────────────
+
+variable "log_retention_days" {
+  description = "CloudWatch Logs retention for every DataQ log group."
+  type        = number
+  default     = 30
+}
