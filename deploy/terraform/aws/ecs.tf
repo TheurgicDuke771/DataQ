@@ -97,11 +97,14 @@ locals {
     { name = "OIDC_ISSUER", value = local.cognito_issuer },
     { name = "OIDC_AUDIENCE", value = aws_cognito_user_pool_client.spa.id },
     { name = "WORKSPACE_ADMIN_EMAILS", value = var.workspace_admin_emails },
-    # Rate-limit per-IP keying (ADR 0035). ALB -> ECS is a single hop, so the
-    # trusted XFF depth is 1 here — NOT the Azure stack's 3 (public-envoy +
-    # nginx + internal-envoy chain, which doesn't exist on this topology).
-    # Confirm against one logged live XFF post-deploy, same as the Azure note.
-    { name = "RATE_LIMIT_XFF_TRUSTED_HOPS", value = "1" },
+    # Rate-limit per-IP keying (ADR 0035). Three proxies append to
+    # X-Forwarded-For on the way in — CloudFront (appends the viewer IP), the
+    # ALB (appends CloudFront's edge IP), and the frontend nginx
+    # ($proxy_add_x_forwarded_for appends the ALB IP) — so the real client is
+    # 3 entries from the right, same depth as the Azure stack's
+    # envoy+nginx+envoy chain. Confirm against one logged live XFF
+    # post-deploy, same as the Azure note.
+    { name = "RATE_LIMIT_XFF_TRUSTED_HOPS", value = "3" },
     { name = "CORS_ALLOW_ORIGINS", value = "" },
     { name = "PUBLIC_BASE_URL", value = local.frontend_url },
     { name = "ADF_WEBHOOK_SECRET_NAME", value = "adf-webhook-secret" },

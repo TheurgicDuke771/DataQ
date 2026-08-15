@@ -51,8 +51,14 @@ resource "aws_cognito_user_pool_client" "spa" {
   allowed_oauth_scopes                 = ["openid", "email", "profile"]
   supported_identity_providers         = ["COGNITO"]
 
-  callback_urls = ["${local.frontend_url}${var.cognito_callback_path}"]
-  logout_urls   = [local.frontend_url]
+  # Root-with-trailing-slash, matching what the SPA actually registers:
+  # authClient.ts uses `redirect_uri: ${window.location.origin}/` (and the same
+  # for post-logout) — it has no /auth/callback route. Cognito matches redirect
+  # URIs exactly, so anything else is an instant redirect_mismatch (#1345).
+  # HTTPS is mandatory here (Cognito rejects non-localhost http://) — satisfied
+  # by fronting the ALB with CloudFront (cloudfront.tf).
+  callback_urls = ["${local.frontend_url}/"]
+  logout_urls   = ["${local.frontend_url}/"]
 
   # Access tokens are short-lived (1h) by default; the SPA relies on
   # oidc-client-ts's silent-renew via the refresh token, same pattern Azure
