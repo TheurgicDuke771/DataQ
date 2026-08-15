@@ -44,15 +44,24 @@ variable "frontend_image_repo" {
 }
 
 variable "image_tag" {
-  description = "Backend image tag to deploy. Immutable tag in prod. The live image is rolled out-of-band by CI (ignore_changes on the task definition's container image), so this is only the create-time default."
+  description = <<-DESC
+    Backend image tag the task definitions are CREATED with (immutable tag;
+    later rollouts happen out-of-band via CI, ignore_changes on the container
+    image). No default on purpose (#1349): the services genuinely RUN this
+    image from the first apply, and a stale hardcoded default (the old "v10",
+    a June image predating the generic-OIDC auth and the aws_secrets_manager
+    store) crash-loops from minute one. publish-images.yml tags main merges
+    as `main-<full sha>` — the bare `<sha>` tag belongs to the manual Azure
+    deploy.yml and usually does not exist — and skips docs-only merges, so
+    pass `main-<sha of the last image-bearing main commit>` and verify the
+    tag exists first (README.md, Apply).
+  DESC
   type        = string
-  default     = "v10"
 }
 
 variable "frontend_image_tag" {
-  description = "Frontend image tag to deploy. Same out-of-band rollout note as image_tag."
+  description = "Frontend image tag the task definition is created with. Same no-default reasoning, tag format (main-<sha>) + out-of-band rollout note as image_tag (publish-images.yml pushes backend + frontend under the SAME tag set)."
   type        = string
-  default     = "v2"
 }
 
 # ── App config (non-secret) ──────────────────────────────────────────────

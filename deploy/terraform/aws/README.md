@@ -31,9 +31,21 @@ only for this deployment.
 ```bash
 cd deploy/terraform/aws
 tofu init
+# state_encryption_passphrase comes from your terraform.tfvars — see
+# terraform.tfvars.example.
+#
+# Image tags (#1349): the services RUN these images from the first apply.
+# publish-images.yml tags main merges as `main-<full sha>` (the bare `<sha>`
+# tag is owned by the manual Azure deploy.yml and usually does NOT exist), and
+# its `paths` filter skips merges that don't change image content — so use the
+# last IMAGE-BEARING main commit, not the branch tip, and verify the tag
+# exists before applying:
+IMG_SHA=$(git log origin/main -1 --format=%H -- backend frontend pyproject.toml)
+docker manifest inspect "ghcr.io/theurgicduke771/dataq-backend:main-${IMG_SHA}" > /dev/null  # must succeed
+TF_VAR_app_db_password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
 tofu plan -input=false -out=tfplan \
-  -var="app_db_password=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
-  # state_encryption_passphrase comes from your terraform.tfvars — see terraform.tfvars.example
+  -var="image_tag=main-${IMG_SHA}" \
+  -var="frontend_image_tag=main-${IMG_SHA}"
 tofu apply -input=false tfplan
 ```
 

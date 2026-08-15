@@ -61,7 +61,14 @@ resource "aws_lb_target_group" "frontend" {
   target_type = "ip" # required for Fargate tasks (no EC2 instance id)
 
   health_check {
-    path                = "/healthz"
+    # `/` (the SPA index), NOT `/healthz` — nginx PROXIES /healthz to the api,
+    # so checking it here made frontend target health mean "the api is up":
+    # an api outage would have had the ALB recycling perfectly healthy
+    # frontend tasks in a loop, masking the real failure (#1349). `/` is
+    # served by nginx locally; frontend health now means "nginx + bundle up".
+    # The api's own health stays observable via its ECS service + /healthz
+    # through the site.
+    path                = "/"
     healthy_threshold   = 2
     unhealthy_threshold = 3
     interval            = 15
