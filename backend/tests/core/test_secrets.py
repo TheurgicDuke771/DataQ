@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import ClassVar
+from typing import ClassVar, cast
 from unittest import mock
 
 import httpx
@@ -234,7 +234,11 @@ def test_akv_store_set_reaches_sdk_through_lazy_branch(
 def _client_error(code: str) -> Exception:
     from botocore.exceptions import ClientError
 
-    return ClientError({"Error": {"Code": code, "Message": "boom"}}, "GetSecretValue")
+    # botocore is mypy-ignored (untyped, per requirements-typecheck.txt), so the
+    # constructor's return type is Any — cast to satisfy the tests-gate (#418).
+    return cast(
+        Exception, ClientError({"Error": {"Code": code, "Message": "boom"}}, "GetSecretValue")
+    )
 
 
 def test_asm_store_lazy_client_not_built_on_init() -> None:
@@ -476,9 +480,12 @@ def test_asm_client_lazy_constructs_a_secretsmanager_client(
 
 def test_asm_client_lazy_caches_client_across_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
-    monkeypatch.setattr(
-        "boto3.client", lambda service_name: calls.append(service_name) or SimpleNamespace()
-    )
+
+    def _fake_client(service_name: str) -> SimpleNamespace:
+        calls.append(service_name)
+        return SimpleNamespace()
+
+    monkeypatch.setattr("boto3.client", _fake_client)
     store = AwsSecretsManagerStore("dataq/")
     first = store._client_lazy()
     second = store._client_lazy()
