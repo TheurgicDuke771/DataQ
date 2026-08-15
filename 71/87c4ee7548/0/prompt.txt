@@ -1,0 +1,3 @@
+create 1 congnito user 
+create connection for sf and databricks in the app, create suit and checks, save the creds in aws secret manager, run the full e2e.
+then create deploy-aws.yml and test it out.

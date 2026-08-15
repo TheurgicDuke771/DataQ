@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "7187c4ee7548",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1361-rediss-ssl-cert-reqs",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/71/87c4ee7548/0/metadata.json",
+      "transcript": "/71/87c4ee7548/0/full.jsonl",
+      "compact_transcript": "/71/87c4ee7548/0/transcript.jsonl",
+      "content_hash": "/71/87c4ee7548/0/content_hash.txt",
+      "prompt": "/71/87c4ee7548/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 478,
+    "cache_creation_tokens": 808618,
+    "cache_read_tokens": 63382829,
+    "output_tokens": 153947,
+    "api_call_count": 241
+  }
+}
