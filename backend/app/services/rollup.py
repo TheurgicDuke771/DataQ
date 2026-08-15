@@ -125,6 +125,26 @@ def performance_state(score: float | None) -> str:
 
 # ── shared queries ───────────────────────────────────────────────────────────
 
+#: The run statuses whose `results` rows are a **complete, final** account of
+#: what the suite found, and therefore the only ones an aggregate may count.
+#:
+#: This used to be true implicitly and is now enforced explicitly (#318). Result
+#: rows are committed per execution phase, so a ``running`` run legitimately has
+#: a partial set — a 30-check suite whose first phase failed would otherwise
+#: render the dashboard and the asset score as critical (1/1 fail) for the entire
+#: remainder of the run. And a ``failed``/``cancelled`` run is supposed to have
+#: none at all, but the two paths that make that true are both fallible: the
+#: run path's compensating DELETE is best-effort (and is issued right after the
+#: DB error that failed the run), and the stuck-run reaper flips a dead worker's
+#: status without owning the transaction that wrote the rows. Filtering here
+#: makes both harmless instead of resting an invariant on a DELETE.
+#:
+#: Deliberately NOT applied to single-run surfaces — run progress, run detail,
+#: a run's own lineage event, the alert for the run being alerted on. Those were
+#: asked about *that run*, and hiding what it has measured so far is the opposite
+#: of what they exist to show.
+AGGREGATABLE_RUN_STATUSES: frozenset[str] = frozenset({"succeeded"})
+
 
 def latest_runs_per_suite_stmt(
     suite_scope: Select[tuple[uuid.UUID]] | Sequence[uuid.UUID],
@@ -142,10 +162,17 @@ def latest_runs_per_suite_stmt(
 
     **No status or time filter** — the latest run counts whether it succeeded,
     failed, was cancelled, or is still queued; callers that want otherwise filter
-    downstream. In particular a run that wrote no results (a hard failure rolls
-    them back) is still returned here: the dashboard drops it with an inner join,
-    the asset view keeps it to report an operational error. Encoding either
-    choice here would silently change the other.
+    downstream. That is a statement about which *run* is newest, and it stays
+    true: the asset view needs the failed one in order to report an operational
+    error at all.
+
+    What is no longer true is the reason this used to be safe. The previous
+    wording argued that a run which wrote no results (because a hard failure
+    rolled them back) is harmless to return. Since #318 a ``running`` run has a
+    genuinely partial set and a reaped one can strand rows, so the *results*
+    joined onto this must be filtered by `AGGREGATABLE_RUN_STATUSES` — which every
+    consumer that counts them now does, rather than relying on the set being
+    empty.
 
     The ``id`` tie-break is new (#889): both previous copies ordered only by
     ``created_at DESC``, so two runs on one suite sharing a timestamp resolved
@@ -160,7 +187,7 @@ def latest_runs_per_suite_stmt(
 
 
 def status_histograms(
-    session: Session, run_ids: Sequence[uuid.UUID]
+    session: Session, run_ids: Sequence[uuid.UUID], *, complete_runs_only: bool = False
 ) -> dict[uuid.UUID, dict[str, int]]:
     """``run_id -> {status: count}`` for a set of runs, in one grouped query.
 
@@ -169,17 +196,25 @@ def status_histograms(
     scorecard — is a pure fold over this, so a new consumer adds a fold rather
     than another query with its own subtly different filters.
 
+    ``complete_runs_only`` restricts the count to `AGGREGATABLE_RUN_STATUSES`, and
+    every caller that presents the numbers as *the suite's quality* passes it
+    (#318). It is opt-in rather than the default because the other caller — the
+    per-run outcome column on the runs table — is describing one named run the
+    user is looking at, where a mid-run "3 / 7 passed" is the honest answer and an
+    empty one would be a regression of #425.
+
     Runs with no results are simply absent from the mapping (rather than present
     with an empty dict); callers already treat a missing entry as "nothing
     evaluated".
     """
     if not run_ids:
         return {}
-    rows = session.execute(
-        select(Result.run_id, Result.status, func.count())
-        .where(Result.run_id.in_(run_ids))
-        .group_by(Result.run_id, Result.status)
-    ).all()
+    stmt = select(Result.run_id, Result.status, func.count()).where(Result.run_id.in_(run_ids))
+    if complete_runs_only:
+        stmt = stmt.join(Run, Run.id == Result.run_id).where(
+            Run.status.in_(AGGREGATABLE_RUN_STATUSES)
+        )
+    rows = session.execute(stmt.group_by(Result.run_id, Result.status)).all()
     by_run: dict[uuid.UUID, dict[str, int]] = defaultdict(dict)
     for run_id, status, n in rows:
         by_run[run_id][status] = n

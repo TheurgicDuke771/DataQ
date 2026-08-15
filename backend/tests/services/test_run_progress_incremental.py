@@ -1,19 +1,23 @@
 """Per-phase incremental run progress (#318) — against real, COMMITTED Postgres rows.
 
-`execute_run` commits each *execution phase* rather than the whole run at once, so
-a check that has genuinely resolved shows up in `get_run_progress` while the run is
-still going. These tests pin the three things that makes true and the one thing it
-must not change:
+`execute_run` commits each **publishable** execution phase rather than the whole
+run at once, so a check that has genuinely resolved shows up in
+`get_run_progress` while the run is still going. These tests pin the four things
+that makes true, and the one thing it must not change:
 
-1. **The increments are real.** A stateful-monitor / comparison check is its own
+1. **The increments are real.** A `comparison` check is its own publishable
    phase, so a poll *on another connection* — which is what the API process is —
    sees earlier checks resolved mid-run.
 2. **The granularity is honest.** Expectations are one phase no matter how many
    there are (GX validates them atomically), so a poll genuinely stays at 0
    through them. The test asserts that rather than pretending otherwise.
-3. **The terminal contract is unchanged.** A run that ends `failed` or
+3. **Durability outranks progress.** The stateful monitor kinds write
+   `monitor_baselines` through the run's own session, so their rows are NOT
+   published early — committing them would make a failed run's baseline
+   permanent. They run last and land with the terminal commit.
+4. **The terminal contract is unchanged.** A run that ends `failed` or
    `cancelled` still has **no** result rows, even though earlier phases had
-   already committed some — `_discard_results` deletes them.
+   already committed some — `discard_run_results` deletes them.
 
 Deliberately NOT the `db_session` fixture (the `test_poll_lock_timeout` lesson):
 that fixture wraps each test in an outer transaction it rolls back, with
@@ -37,7 +41,7 @@ from sqlalchemy import delete, event, select
 from sqlalchemy.orm import Session as SASession
 
 from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
-from backend.app.db.models import Check, Connection, Result, Run, Suite, User
+from backend.app.db.models import COMPARISON_KIND, Check, Connection, Result, Run, Suite, User
 from backend.app.services import run_service
 
 
@@ -111,6 +115,12 @@ class _Fixture:
                 expectation_type="expect_x",
                 kind=kind,
                 config={},
+                # `ck_checks_comparison_source_presence` requires a comparison
+                # check to name the connection its SOURCE side reads from (ADR
+                # 0015). Pointing it at the suite's own connection is enough for
+                # the run path here — the executor is injected, so nothing
+                # actually connects.
+                source_connection_id=conn.id if kind == COMPARISON_KIND else None,
             )
             self.session.add(check)
             # One COMMIT per check, so each gets its own `created_at` — Postgres'
@@ -167,14 +177,78 @@ def make_suite(_db_engine: Any) -> Iterator[Callable[[list[str]], _Fixture]]:
         fixture.close()
 
 
-@pytest.mark.parametrize("stateful_kind", ["schema_drift", "anomaly"])
-def test_stateful_checks_resolve_one_at_a_time_to_a_concurrent_poller(
-    make_suite: Callable[[list[str]], _Fixture], stateful_kind: str
+def test_comparison_checks_resolve_one_at_a_time_to_a_concurrent_poller(
+    make_suite: Callable[[list[str]], _Fixture],
 ) -> None:
-    """Each stateful-monitor check is its own phase, so a poller on a separate
-    connection watches `completed_checks` climb 0 → 1 during the run. This is the
-    assertion that fails against commit-once-at-the-end."""
-    fx = make_suite([stateful_kind, stateful_kind])
+    """A comparison check is its own publishable phase, so a poller on a separate
+    connection watches `completed_checks` climb 0 → 1 during the run.
+
+    This is the assertion that fails against commit-once-at-the-end, and
+    `comparison` is the kind that carries it: its executor only reads, so its rows
+    can be published the moment they exist.
+    """
+    fx = make_suite(["comparison", "comparison"])
+    seen: list[int] = []
+
+    def _compare(check: Check) -> CheckOutcome:
+        seen.append(fx.poll().completed_checks)
+        return _ok(check)
+
+    run_service.execute_run(
+        fx.session,
+        run=fx.run,
+        checks=fx.checks,
+        runner=_Runner(),
+        table="T",
+        comparison_executor=_compare,
+    )
+
+    # Before check 0: nothing resolved. Before check 1: check 0's row is COMMITTED
+    # and visible to another transaction — the whole point of #318.
+    assert seen == [0, 1]
+    assert fx.run.status == "succeeded"
+    assert fx.poll().completed_checks == 2
+
+
+def test_earlier_phases_are_visible_before_the_expectation_batch_runs(
+    make_suite: Callable[[list[str]], _Fixture],
+) -> None:
+    """A mixed suite: two comparison checks land as increments, then three
+    expectations land together. The poll taken inside `run_checks` sees exactly the
+    comparison pair — proof both that earlier phases really committed and that the
+    batch's own checks are not counted before they resolve."""
+    fx = make_suite(["comparison", "comparison", "expectation", "expectation", "expectation"])
+    at_batch: list[int] = []
+
+    runner = _Runner(before=lambda: at_batch.append(fx.poll().completed_checks))
+    run_service.execute_run(
+        fx.session,
+        run=fx.run,
+        checks=fx.checks,
+        runner=runner,
+        table="T",
+        comparison_executor=_ok,
+    )
+
+    assert at_batch == [2]  # the two comparison checks, and only those
+    final = fx.poll()
+    assert (final.completed_checks, final.total_checks) == (5, 5)
+
+
+def test_a_stateful_check_is_never_published_before_the_run_completes(
+    make_suite: Callable[[list[str]], _Fixture],
+) -> None:
+    """The durability limit (#318 G1): a `schema_drift`/`anomaly` executor writes
+    `monitor_baselines` through the run's session, so its result row must NOT be
+    committed early — publishing it would make the baseline write durable on a run
+    that may still fail.
+
+    The stateful executor is itself the probe, and it is the right one: the
+    stateful phases run LAST, so by the time it is called the expectation batch has
+    already committed. A poll from the second call must still see only that batch —
+    the first stateful check resolved, and was deliberately not published.
+    """
+    fx = make_suite(["schema_drift", "expectation", "anomaly"])
     seen: list[int] = []
 
     def _stateful(check: Check) -> CheckOutcome:
@@ -190,36 +264,10 @@ def test_stateful_checks_resolve_one_at_a_time_to_a_concurrent_poller(
         stateful_monitor_executor=_stateful,
     )
 
-    # Before check 0: nothing resolved. Before check 1: check 0's row is COMMITTED
-    # and visible to another transaction — the whole point of #318.
-    assert seen == [0, 1]
-    assert fx.run.status == "succeeded"
-    assert fx.poll().completed_checks == 2
-
-
-def test_earlier_phases_are_visible_before_the_expectation_batch_runs(
-    make_suite: Callable[[list[str]], _Fixture],
-) -> None:
-    """A mixed suite: two stateful checks land as increments, then three
-    expectations land together. The poll taken inside `run_checks` sees exactly the
-    stateful pair — proof both that earlier phases really committed and that the
-    batch's own checks are not counted before they resolve."""
-    fx = make_suite(["schema_drift", "anomaly", "expectation", "expectation", "expectation"])
-    at_batch: list[int] = []
-
-    runner = _Runner(before=lambda: at_batch.append(fx.poll().completed_checks))
-    run_service.execute_run(
-        fx.session,
-        run=fx.run,
-        checks=fx.checks,
-        runner=runner,
-        table="T",
-        stateful_monitor_executor=_ok,
-    )
-
-    assert at_batch == [2]  # the two stateful checks, and only those
-    final = fx.poll()
-    assert (final.completed_checks, final.total_checks) == (5, 5)
+    # 1 = the expectation batch, on both calls. The second `1` is the assertion:
+    # the first stateful check had resolved by then and stayed invisible.
+    assert seen == [1, 1]
+    assert fx.poll().completed_checks == 3  # all three land with the terminal commit
 
 
 def test_expectation_only_suite_stays_at_zero_until_the_atomic_batch_lands(
@@ -246,11 +294,16 @@ def test_expectation_only_suite_stays_at_zero_until_the_atomic_batch_lands(
 def test_a_failure_after_a_committed_phase_leaves_no_results(
     make_suite: Callable[[list[str]], _Fixture],
 ) -> None:
-    """The terminal contract survives per-phase commits: the stateful check's row
+    """The terminal contract survives per-phase commits: the comparison check's row
     was committed, then the expectation batch raised — the run ends `failed` with
-    ZERO results, exactly as before #318. Without `_discard_results` this run would
-    carry one orphan `pass` row into every dashboard rollup and health score."""
-    fx = make_suite(["schema_drift", "expectation"])
+    ZERO results, exactly as before #318. Without `discard_run_results` this run
+    would carry one orphan `pass` row on its own detail page.
+
+    A comparison check, because it is the kind whose phase actually publishes;
+    with a stateful one nothing would have been committed to discard and the test
+    would prove nothing.
+    """
+    fx = make_suite(["comparison", "expectation"])
 
     run_service.execute_run(
         fx.session,
@@ -258,7 +311,7 @@ def test_a_failure_after_a_committed_phase_leaves_no_results(
         checks=fx.checks,
         runner=_Runner(raises=RuntimeError("warehouse unreachable")),
         table="T",
-        stateful_monitor_executor=_ok,
+        comparison_executor=_ok,
     )
 
     assert fx.run.status == "failed"
@@ -274,10 +327,10 @@ def test_a_cancel_after_a_committed_phase_leaves_no_results(
     commits `cancelled` on its own connection while the worker is between phases.
     The worker notices at its next pre-commit check and clears the rows the earlier
     phase had already committed."""
-    fx = make_suite(["schema_drift", "schema_drift"])
+    fx = make_suite(["comparison", "comparison"])
     calls = 0
 
-    def _stateful(check: Check) -> CheckOutcome:
+    def _compare(check: Check) -> CheckOutcome:
         nonlocal calls
         calls += 1
         if calls == 2:  # the user hits Cancel between phase 1 and phase 2
@@ -290,7 +343,7 @@ def test_a_cancel_after_a_committed_phase_leaves_no_results(
         checks=fx.checks,
         runner=_Runner(),
         table="T",
-        stateful_monitor_executor=_stateful,
+        comparison_executor=_compare,
     )
 
     assert fx.run.status == "cancelled"
@@ -310,7 +363,7 @@ def test_a_cancel_between_the_last_phase_and_the_terminal_flip_is_honoured(
     deleted. The window this test is about opens only once the last phase has
     already committed: commit 1 is the `running` flip, commit 2 is the one and
     only phase, and the cancel lands right after it."""
-    fx = make_suite(["schema_drift"])
+    fx = make_suite(["comparison"])
     commits = 0
 
     @event.listens_for(fx.session, "after_commit")
@@ -327,7 +380,7 @@ def test_a_cancel_between_the_last_phase_and_the_terminal_flip_is_honoured(
             checks=fx.checks,
             runner=_Runner(),
             table="T",
-            stateful_monitor_executor=_ok,
+            comparison_executor=_ok,
         )
     finally:
         event.remove(fx.session, "after_commit", _cancel_after_the_phase_commit)
@@ -337,15 +390,63 @@ def test_a_cancel_between_the_last_phase_and_the_terminal_flip_is_honoured(
     assert fx.results() == []
 
 
+def test_a_cancel_racing_the_terminal_flip_itself_still_wins(
+    make_suite: Callable[[list[str]], _Fixture],
+) -> None:
+    """The narrower window the previous test cannot reach (#318 G4).
+
+    A check-then-set can be beaten at any distance: the cancel here commits
+    *after* the pre-flip `_cancelled_mid_run` read and *before* the flip's own
+    statement, so no amount of re-checking closes it — only the predicate
+    travelling with the write does. `_mark_succeeded` issues
+    ``UPDATE … WHERE status = 'running'``, matches nothing, and the user's
+    200-confirmed cancel survives instead of being silently overwritten with a
+    `succeeded` run holding a full set of results.
+
+    Hooked on `do_orm_execute` so the cancel lands in exactly that gap; the guard
+    at the top keeps it to the flip statement and to one firing, so the listener
+    cannot recurse through the discard DELETE that follows.
+    """
+    fx = make_suite(["comparison"])
+    fired = 0
+
+    @event.listens_for(fx.session, "do_orm_execute")
+    def _cancel_just_before_the_flip(state: Any) -> None:
+        nonlocal fired
+        if fired or not state.is_update or not state.statement.is_dml:
+            return
+        fired += 1
+        fx.cancel_from_the_api()
+
+    try:
+        run_service.execute_run(
+            fx.session,
+            run=fx.run,
+            checks=fx.checks,
+            runner=_Runner(),
+            table="T",
+            comparison_executor=_ok,
+        )
+    finally:
+        event.remove(fx.session, "do_orm_execute", _cancel_just_before_the_flip)
+
+    assert fired == 1, "the flip UPDATE never ran — this test would be vacuous"
+    assert fx.run.status == "cancelled"
+    assert fx.results() == []
+
+
 def test_results_are_listed_in_check_order_not_execution_order(
     make_suite: Callable[[list[str]], _Fixture],
 ) -> None:
     """Per-phase commits give `results.created_at` real (execution-order) meaning,
-    which would silently re-sort the run-detail table by *engine*: the stateful
-    phase runs and commits first even though its check was authored second.
-    `list_results` orders by the CHECK, so the displayed order stays the order the
-    author wrote them in, and matches the progress list row for row."""
-    fx = make_suite(["expectation", "schema_drift"])
+    which would silently re-sort the run-detail table by *engine*.
+
+    The suite is authored expectation-first, comparison-second — and the run
+    executes them the other way round, because comparison is the first phase. So
+    result `created_at` and check order genuinely disagree here, which is what
+    makes the assertion able to fail. `list_results` orders by the CHECK, so the
+    display keeps the author's order and matches the progress list row for row."""
+    fx = make_suite(["expectation", "comparison"])
 
     run_service.execute_run(
         fx.session,
@@ -353,7 +454,7 @@ def test_results_are_listed_in_check_order_not_execution_order(
         checks=fx.checks,
         runner=_Runner(),
         table="T",
-        stateful_monitor_executor=_ok,
+        comparison_executor=_ok,
     )
 
     expected = [c.id for c in fx.checks]

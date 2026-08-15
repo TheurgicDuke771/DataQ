@@ -46,6 +46,7 @@ from backend.app.datasources.sampling import (
     is_row_count_expectation,
 )
 from backend.app.db.models import (
+    CHECK_ORDER,
     COMPARISON_KIND,
     DQ_DIMENSIONS,
     ORCHESTRATION_PROVIDERS,
@@ -772,9 +773,14 @@ def create_check(
 
 
 def list_checks(session: Session, suite_id: uuid.UUID) -> list[Check]:
-    """List a suite's checks (404 if the suite does not exist)."""
+    """List a suite's checks (404 if the suite does not exist).
+
+    Ordered by the shared `CHECK_ORDER` — this is the list a user compares
+    against the run-detail and run-progress lists, so it has to sort by the same
+    key or the three disagree on which check is which (#318 G5).
+    """
     get_suite(session, suite_id)
-    stmt = select(Check).where(Check.suite_id == suite_id).order_by(Check.created_at)
+    stmt = select(Check).where(Check.suite_id == suite_id).order_by(*CHECK_ORDER)
     return list(session.scalars(stmt))
 
 

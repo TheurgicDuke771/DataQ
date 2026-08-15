@@ -177,6 +177,12 @@ class RunProgressRead(ApiModel):
     started_at: datetime | None
     finished_at: datetime | None
     elapsed_ms: int | None = None
+    #: True when at least one unresolved check belongs to a kind that resolves as
+    #: a GROUP rather than one at a time (everything but `comparison`). Lets a
+    #: client explain a stalled-looking `0 / N` from the run's real composition
+    #: instead of guessing a mechanism — the guess is wrong for a monitor-only or
+    #: comparison-first suite that is merely slow.
+    batched_pending: bool = False
 
 
 class PipelineRunRead(ApiModel):
@@ -385,6 +391,7 @@ def get_run_progress(
         started_at=run.started_at,
         finished_at=run.finished_at,
         elapsed_ms=progress.elapsed_ms,
+        batched_pending=progress.batched_pending,
     )
 
 

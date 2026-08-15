@@ -34,7 +34,15 @@ from backend.app.datasources.registry import (
     credential_expiry,
     get_connection_adapter,
 )
-from backend.app.db.models import ENVS, Check, Connection, ConnectionVersion, Run, Suite
+from backend.app.db.models import (
+    CHECK_ORDER,
+    ENVS,
+    Check,
+    Connection,
+    ConnectionVersion,
+    Run,
+    Suite,
+)
 from backend.app.services.asset_service import resolve_and_upsert_asset
 from backend.app.services.suite_service import accessible_suite_ids
 
@@ -880,7 +888,11 @@ def _dependent_source_checks_detail(
         session.execute(
             select(Check.name, Check.suite_id)
             .where(Check.source_connection_id == connection_id, Check.suite_id.in_(viewable))
-            .order_by(Check.created_at)
+            # Shared key (#318 G5): a same-transaction batch of checks ties on
+            # `created_at`, so an untie-broken LIMIT 10 could return a different
+            # sample each call — on a preview whose whole job is to tell the user
+            # what a delete would affect.
+            .order_by(*CHECK_ORDER)
             .limit(10)
         )
     )

@@ -55,6 +55,7 @@ from backend.app.db.models import (
 )
 from backend.app.lineage.edges import lineage_neighbourhood
 from backend.app.services.rollup import (
+    AGGREGATABLE_RUN_STATUSES,
     evaluated_total,
     health_score,
     latest_runs_per_suite_stmt,
@@ -388,7 +389,11 @@ def _latest_outcomes(session: Session, suites: list[Suite]) -> dict[uuid.UUID, R
     Three grouped queries total (latest runs, check outcomes, operational flags)."""
     latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
     run_ids = [r.id for r in latest_runs.values()]
-    outcomes = check_outcome_counts(session, run_ids)
+    # An asset scorecard states how the ASSET is doing, so a partial or stranded
+    # result set must not contribute (#318). The run itself is still carried
+    # below, unfiltered, so a failed latest run keeps reporting its operational
+    # error — what is filtered is the counting, not the reporting.
+    outcomes = check_outcome_counts(session, run_ids, complete_runs_only=True)
     op_flags = operational_result_flags(session, run_ids)
     by_suite: dict[uuid.UUID, RunOutcome] = {}
     for suite in suites:
@@ -444,7 +449,12 @@ def _scorecard(session: Session, suite_ids: list[uuid.UUID], run_ids: list[uuid.
             select(Check.dimension, Result.status, func.count())
             .select_from(Result)
             .join(Check, Check.id == Result.check_id)
-            .where(Result.run_id.in_(run_ids))
+            # Only runs whose result set is complete may be scored (#318) —
+            # `_latest_run_per_suite` deliberately returns the newest run whatever
+            # its status (the operational-error surface needs it), so the filter
+            # belongs on the rows being counted, not on the run being chosen.
+            .join(Run, Run.id == Result.run_id)
+            .where(Result.run_id.in_(run_ids), Run.status.in_(AGGREGATABLE_RUN_STATUSES))
             .group_by(Check.dimension, Result.status)
         ).all()
         for dimension, status, count in result_rows:

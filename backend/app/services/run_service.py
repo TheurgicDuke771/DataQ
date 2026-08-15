@@ -21,11 +21,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 
 from sqlalchemy import delete, func, null, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
+from backend.app.core.timeutil import as_utc
 from backend.app.datasources.base import (
     SAMPLE_ROW_CAP,
     VALUE_SIGNAL_SUMMARY_KEY,
@@ -43,6 +45,7 @@ from backend.app.datasources.monitors import (
 from backend.app.datasources.sql import strip_statement_echo
 from backend.app.db.chunked_dml import CHUNK_SIZE, chunked_dml
 from backend.app.db.models import (
+    CHECK_ORDER,
     COMPARISON_KIND,
     RESULT_OPERATIONAL_STATUSES,
     RESULT_STATUSES,
@@ -136,43 +139,21 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
 _EXPECTATION_KIND = "expectation"
 
 
-#: One unit of execution: the check indices it resolved, and their outcomes in
-#: the same order. `_run_outcome_phases` yields one of these per unit so
-#: `execute_run` can persist as it goes (#318) rather than only at the end.
-OutcomePhase = tuple[list[int], list[CheckOutcome]]
+@dataclass(frozen=True)
+class OutcomePhase:
+    """One unit of execution: the checks it resolved, paired with their outcomes.
 
+    ``resolved`` carries ``(check index, outcome)`` pairs rather than two parallel
+    lists, so the one arity check lives at the producer and no consumer has to
+    re-establish that the two line up.
 
-def _run_outcomes(
-    runner: CheckRunner,
-    *,
-    table: str,
-    schema: str | None,
-    checks: list[Check],
-    index_columns: list[str] | None = None,
-    comparison_executor: Callable[[Check], CheckOutcome] | None = None,
-    stateful_monitor_executor: Callable[[Check], CheckOutcome] | None = None,
-) -> list[CheckOutcome]:
-    """Every check's outcome, in check order — `_run_outcome_phases` collected.
-
-    The whole-suite view, for callers that have nothing to do between phases.
-    `execute_run` consumes the phases directly instead, so a resolved check's
-    result row is visible to the progress poll before the next phase starts.
+    ``publishable`` says whether this phase's result rows may be **committed as
+    soon as they are built** (#318's incremental progress) — see
+    `_run_outcome_phases` for the rule and why it is not merely an optimisation.
     """
-    outcomes: list[CheckOutcome | None] = [None] * len(checks)
-    for indices, phase in _run_outcome_phases(
-        runner,
-        table=table,
-        schema=schema,
-        checks=checks,
-        index_columns=index_columns,
-        comparison_executor=comparison_executor,
-        stateful_monitor_executor=stateful_monitor_executor,
-    ):
-        for i, outcome in zip(indices, phase, strict=True):
-            outcomes[i] = outcome
-    # Every index is filled: the phases together cover all checks once the
-    # unsupported-kind guard inside the generator has run.
-    return [cast(CheckOutcome, oc) for oc in outcomes]
+
+    resolved: list[tuple[int, CheckOutcome]]
+    publishable: bool
 
 
 def _run_outcome_phases(
@@ -192,9 +173,8 @@ def _run_outcome_phases(
     smallest group DataQ can resolve without re-doing work, which is a property of
     the engine underneath, not a choice made here:
 
-    * stateful monitors (``schema_drift``/``anomaly``) and ``comparison`` checks
-      run through a per-check executor, so each one is its own phase — genuine
-      per-check increments;
+    * ``comparison`` checks run through a per-check executor, so each is its own
+      phase — genuine per-check increments;
     * every ``expectation`` is **one** phase, because GX validates a suite in a
       single atomic batch and there is no partial result to observe inside it;
     * scalar monitors (``freshness``/``volume``) are one phase, because
@@ -205,6 +185,25 @@ def _run_outcome_phases(
     shape of the underlying engines, and the consuming UI is built to say so
     (an elapsed-time heartbeat while nothing has resolved) rather than render a
     0% bar that reads as hung.
+
+    **The stateful monitors are a second, independent limit: durability.** A phase
+    is ``publishable`` only when running it wrote nothing outside ``results``.
+    ``schema_drift``/``anomaly`` fail that test — their executors write
+    ``monitor_baselines`` through the caller's session, so committing their result
+    rows early would ALSO make those baseline writes durable. `monitor_baseline`'s
+    contract is explicit that a rolled-back run strands nothing, and breaking it
+    is not cosmetic: a failed run's observation would sit in the anomaly z-score
+    window forever, a retry would double-count that window, and a first
+    ``schema_drift`` capture from a run that never completed would become the
+    reference every later run is diffed against.
+
+    So they are yielded **last and unpublishable**: last because any later commit
+    would flush them anyway (a commit is transaction-wide, not phase-scoped), and
+    unpublishable so their rows ride the terminal commit with the baseline writes
+    they belong to. The cost is that a stateful check no longer ticks the progress
+    bar on its own — which is the right trade: an incremental progress bar is a
+    convenience, and a baseline poisoned by a failed run is a wrong verdict on
+    every subsequent run of that check.
 
     * ``expectation`` kind → the GX `CheckRunner.run_checks`.
     * scalar monitor kinds (``freshness``/``volume``) → `run_monitors` on a
@@ -233,34 +232,28 @@ def _run_outcome_phases(
     if unsupported:
         raise NotImplementedError(f"no run path for check kind(s) {', '.join(unsupported)}")
 
-    for i in stateful_idx:
-        if stateful_monitor_executor is None:
-            outcome = CheckOutcome(
-                expectation_type=checks[i].expectation_type,
-                success=False,
-                errored=True,
-                error_message=(
-                    "stateful monitor kinds need the baseline-diff run path (no "
-                    "executor supplied on this caller — #592)"
-                ),
-            )
-        else:
-            outcome = stateful_monitor_executor(checks[i])
-        yield [i], [outcome]
+    # The two executor-driven kinds differ only in which callable runs them and
+    # what the no-executor message says, so they share one loop (a copy-paste
+    # twin is how the two drift). Comparison is read-only, so it publishes;
+    # stateful writes baselines, so it does not — and it is deliberately yielded
+    # LAST, see the docstring.
     for i in comparison_idx:
-        if comparison_executor is None:
-            outcome = CheckOutcome(
-                expectation_type=checks[i].expectation_type,
-                success=False,
-                errored=True,
-                error_message=(
-                    "comparison checks need the comparison run path (no executor "
-                    "supplied on this caller — ADR 0015)"
-                ),
-            )
-        else:
-            outcome = comparison_executor(checks[i])
-        yield [i], [outcome]
+        yield OutcomePhase(
+            resolved=[
+                (
+                    i,
+                    _executor_outcome(
+                        comparison_executor,
+                        checks[i],
+                        missing=(
+                            "comparison checks need the comparison run path (no executor "
+                            "supplied on this caller — ADR 0015)"
+                        ),
+                    ),
+                )
+            ],
+            publishable=True,
+        )
     if expectation_idx:
         specs = [
             CheckSpec(expectation_type=checks[i].expectation_type, kwargs=dict(checks[i].config))
@@ -271,8 +264,11 @@ def _run_outcome_phases(
         )
         # One phase, not len(expectation_idx): GX resolved them in a single atomic
         # batch, so there was never a moment where some were done and others were
-        # not. Arity is checked by the consumer's `zip(..., strict=True)`.
-        yield expectation_idx, list(suite_outcome.checks)
+        # not. `strict=True` keeps a runner returning the wrong arity loud.
+        yield OutcomePhase(
+            resolved=list(zip(expectation_idx, suite_outcome.checks, strict=True)),
+            publishable=True,
+        )
     if monitor_idx:
         # Capability gate (#429): the runner ADVERTISES which monitor kinds it
         # evaluates. Never `isinstance(runner, MonitorRunner)` — a
@@ -305,43 +301,100 @@ def _run_outcome_phases(
         # One phase for the same reason as the expectation batch, but a different
         # cause: `run_monitors` loads the frame (or opens the connection) once and
         # evaluates the whole list against it.
-        yield monitor_idx, list(monitor_outcomes)
+        yield OutcomePhase(
+            resolved=list(zip(monitor_idx, monitor_outcomes, strict=True)),
+            publishable=True,
+        )
+    # LAST, and unpublishable: these write `monitor_baselines` through the
+    # caller's session, so their rows must ride the terminal commit — see the
+    # docstring. Anything yielded after them would flush those writes.
+    for i in stateful_idx:
+        yield OutcomePhase(
+            resolved=[
+                (
+                    i,
+                    _executor_outcome(
+                        stateful_monitor_executor,
+                        checks[i],
+                        missing=(
+                            "stateful monitor kinds need the baseline-diff run path (no "
+                            "executor supplied on this caller — #592)"
+                        ),
+                    ),
+                )
+            ],
+            publishable=False,
+        )
+
+
+def _executor_outcome(
+    executor: Callable[[Check], CheckOutcome] | None,
+    check: Check,
+    *,
+    missing: str,
+) -> CheckOutcome:
+    """Run an injected per-check executor, or report its absence as a check-level
+    operational ``error`` (#122) — never a raise, so siblings still run."""
+    if executor is None:
+        return CheckOutcome(
+            expectation_type=check.expectation_type,
+            success=False,
+            errored=True,
+            error_message=missing,
+        )
+    return executor(check)
 
 
 def _cancelled_mid_run(session: Session, run: Run) -> bool:
     """Did a cancel commit (from the API session) while this run was executing?
 
-    ``refresh`` issues a fresh SELECT, so under READ COMMITTED it sees the API
-    session's committed ``cancelled`` even though this (worker) session set the
-    run ``running`` earlier. Note: with ``autoflush=False`` (db/session.py) the
-    refresh does NOT flush the caller's pending result rows — they stay staged for
-    the caller to either ``commit`` (not cancelled) or ``rollback`` (cancelled).
+    Reads the status **column** rather than ``session.refresh(run)``: under READ
+    COMMITTED both see the API session's committed ``cancelled``, but a scalar
+    SELECT of one column does not expire and re-load every attribute of the ORM
+    object on a call made once per phase. It also cannot flush the caller's
+    pending rows (``autoflush=False`` in db/session.py already prevents that, but
+    a scalar read makes it structural), so they stay staged for the caller to
+    either commit or discard.
     """
+    if session.scalar(select(Run.status).where(Run.id == run.id)) != "cancelled":
+        return False
+    # Only now sync the ORM object — the caller returns it, and every consumer
+    # reads `run.status` off it. Doing this on the common (not-cancelled) path
+    # would be the per-phase re-load this scalar read exists to avoid.
     session.refresh(run)
-    return run.status == "cancelled"
+    return True
 
 
-def _discard_results(session: Session, run: Run) -> None:
-    """Drop every result row this run has written — staged **and** committed.
+def discard_run_results(session: Session, run_id: uuid.UUID) -> None:
+    """Drop every result row a run has written — staged **and** committed.
 
     Incremental persistence (#318) means an earlier phase's rows are already
     committed by the time a later phase raises or the run is cancelled. Before
     #318 the single end-of-run commit made "a run that did not complete has no
-    results" true for free; this restores it explicitly, so no consumer
-    (dashboard rollups, the health score, alerting) has to learn a new rule about
-    partially-populated terminal runs.
+    results" true for free; this restores it explicitly, so the run's own
+    surfaces (run detail, its lineage event) do not show a half-populated set for
+    a run that never completed.
 
-    Best-effort by design: if the DELETE itself fails the caller must still get to
-    record the terminal status, which is the more important of the two writes. A
-    stranded partial set is degraded, a run stuck in ``running`` is an incident.
+    It is the run path's hygiene, **not** the safety net: the readers that
+    aggregate across runs are status-aware (`rollup.AGGREGATABLE_RUN_STATUSES`),
+    so a row this fails to delete — or one the stuck-run reaper strands, since it
+    flips a status without owning the transaction that wrote them — is already
+    excluded from every score, histogram and dedup signature. That is deliberate:
+    a compensating DELETE that can itself fail is a poor place to put an
+    invariant, and the DELETE most likely to fail is the one issued right after
+    the DB error that failed the run.
+
+    Best-effort for that reason: if it fails, the caller must still get to record
+    the terminal status, which is the more important of the two writes — a
+    stranded row is now inert, whereas a run stuck in ``running`` is an incident.
     """
     session.rollback()
     try:
-        session.execute(delete(Result).where(Result.run_id == run.id))
+        session.execute(delete(Result).where(Result.run_id == run_id))
         session.commit()
     except Exception:
         session.rollback()
-        log.exception("run_partial_results_discard_failed", run_id=str(run.id))
+        log.exception("run_partial_results_discard_failed", run_id=str(run_id))
 
 
 def execute_run(
@@ -363,14 +416,20 @@ def execute_run(
     failing rows are captured with a locator; ``None`` keeps the scalar-only sample.
     Returns the same `Run`, updated to ``succeeded`` or ``failed``.
 
-    **Results are committed per execution phase (#318)**, not once at the end, so
-    `get_run_progress` observes a check as resolved as soon as it genuinely is —
-    per check for stateful-monitor and comparison kinds, per batch for the atomic
-    GX expectation group and the shared-frame scalar monitors (see
-    `_run_outcome_phases` for why the granularity is uneven). The *terminal*
-    contract is unchanged: a run that ends ``failed`` or ``cancelled`` still has
-    **no** result rows, because `_discard_results` deletes whatever earlier phases
-    committed. Only a run that reaches ``succeeded`` keeps them.
+    **Publishable results are committed per execution phase (#318)**, not once at
+    the end, so `get_run_progress` observes a check as resolved as soon as it
+    genuinely is — per check for comparison kinds, per batch for the atomic GX
+    expectation group and the shared-frame scalar monitors. The stateful monitor
+    kinds are deliberately excluded: they write `monitor_baselines` through this
+    same session, so publishing their rows early would make those writes durable
+    on a run that later fails. See `_run_outcome_phases` for both limits.
+
+    The *terminal* contract is unchanged: a run that ends ``failed`` or
+    ``cancelled`` has **no** result rows. `discard_run_results` deletes whatever
+    earlier phases committed, and — because that DELETE can itself fail, and the
+    reaper flips a status without owning this transaction at all — the readers
+    that aggregate across runs additionally ignore any run that is not
+    ``succeeded`` (`rollup.AGGREGATABLE_RUN_STATUSES`).
     """
     run.status = "running"
     run.started_at = _now()
@@ -387,13 +446,19 @@ def execute_run(
     # rows, and persisting them — is guarded so any failure drives the run to a
     # terminal 'failed' state. Without this, a DB error during add_all/commit (or
     # an unrunnable check kind) would leave the run stuck in 'running' forever.
-    # `_discard_results` clears every result row — staged and already-committed —
-    # before we record the failure, so the terminal contract survives #318's
+    # `discard_run_results` clears every result row — staged and already-committed
+    # — before we record the failure, so the terminal contract survives #318's
     # per-phase commits.
-    outcomes: list[CheckOutcome] = []
+    #
+    # Only a boolean and a count are carried across phases, never the outcomes
+    # themselves: a `CheckOutcome` holds the failing-row sample, and retaining
+    # every one of them for the whole run to feed one log line is exactly the
+    # worker memory the #595 guardrail exists to protect.
+    suite_success = True
     n_results = 0
+    published = False
     try:
-        for indices, phase in _run_outcome_phases(
+        for phase in _run_outcome_phases(
             runner,
             table=table,
             schema=schema,
@@ -404,38 +469,47 @@ def execute_run(
         ):
             rows = [
                 _build_result(run.id, checks[i], check_outcome)
-                for i, check_outcome in zip(indices, phase, strict=True)
+                for i, check_outcome in phase.resolved
             ]
             session.add_all(rows)
+            suite_success = suite_success and all(oc.success for _, oc in phase.resolved)
+            n_results += len(rows)
             # Cooperative cancellation, checked before every commit: if a cancel
             # committed (from the API session) while this phase ran, don't
             # overwrite it with more results — drop this phase's staged rows AND
             # any an earlier phase committed, and leave the run 'cancelled'.
             if _cancelled_mid_run(session, run):
-                _discard_results(session, run)
+                _discard_results_if_any(session, run, published=published)
                 log.info("run_cancelled_during_execution", run_id=str(run.id))
                 return run
+            if not phase.publishable:
+                # Its rows stay staged and ride the terminal commit, together with
+                # the `monitor_baselines` writes the phase made through this same
+                # session (#318 G1). Committing here would make those durable on a
+                # run that may still fail.
+                continue
             # The commit that makes this phase visible to the progress poll.
             session.commit()
-            outcomes.extend(phase)
-            n_results += len(rows)
-        # Same check once more before the terminal flip: the last phase's commit
-        # and this one are two transactions, and a cancel can land between them.
+            published = True
+        # A cancel can still land between the last commit and the terminal flip —
+        # two transactions — and the flip below is itself guarded against one that
+        # lands after this check.
         if _cancelled_mid_run(session, run):
-            _discard_results(session, run)
+            _discard_results_if_any(session, run, published=published)
             log.info("run_cancelled_during_execution", run_id=str(run.id))
             return run
-        run.status = "succeeded"
-        run.finished_at = _now()
-        # Clear any reason a prior reap stamped: a slow-but-alive worker whose run
-        # was reaped (failed + REAPED_REASON) can still finish and commit success
-        # here — it must not surface as succeeded-with-a-failure-reason (#605).
-        run.failure_reason = None
-        session.commit()
+        if not _mark_succeeded(session, run):
+            # Lost the race: a cancel committed between the check above and this
+            # UPDATE. The conditional WHERE is what makes the user's confirmed
+            # cancel authoritative instead of silently overwritten (#318 G4).
+            _discard_results_if_any(session, run, published=published)
+            session.refresh(run)
+            log.info("run_cancelled_during_execution", run_id=str(run.id))
+            return run
     except Exception as exc:
         # Drops the staged phase AND any earlier phase's committed rows, so a
-        # non-succeeded run still carries no results (see `_discard_results`).
-        _discard_results(session, run)
+        # non-succeeded run still carries no results (see `discard_run_results`).
+        _discard_results_if_any(session, run, published=published)
         # Same cooperative check on the failure path: a run the user cancelled
         # mid-flight that *also* errored stays 'cancelled', not masked as 'failed'.
         if _cancelled_mid_run(session, run):
@@ -458,10 +532,61 @@ def execute_run(
     log.info(
         "run_completed",
         run_id=str(run.id),
-        suite_success=all(o.success for o in outcomes),
+        suite_success=suite_success,
         n_results=n_results,
     )
     return run
+
+
+def _mark_succeeded(session: Session, run: Run) -> bool:
+    """Flip a still-``running`` run to ``succeeded``; return whether it won (#318 G4).
+
+    A conditional ``UPDATE ... WHERE status = 'running'`` rather than an ORM
+    attribute set, so a cancel that commits between the last `_cancelled_mid_run`
+    check and this statement loses instead of being silently overwritten. The
+    check-then-set shape cannot close that window at any distance — only the
+    predicate travelling with the write can — and the run's own docstring states
+    the terminal contract absolutely, so the window has to be closed rather than
+    narrowed.
+
+    ``failure_reason`` is cleared in the same statement: a slow-but-alive worker
+    whose run was already reaped (failed + REAPED_REASON) can still finish and win
+    here, and must not surface as succeeded-with-a-failure-reason (#605).
+    """
+    finished = _now()
+    result = session.execute(
+        update(Run)
+        .where(Run.id == run.id, Run.status == "running")
+        .values(status="succeeded", finished_at=finished, failure_reason=None)
+    )
+    # `rowcount` is on `CursorResult`, which is what a DML `execute` always
+    # returns; the declared `Result` supertype does not carry it.
+    won = cast("CursorResult[Any]", result).rowcount == 1
+    session.commit()
+    if not won:
+        return False
+    # Mirror the write onto the in-memory object: the Core UPDATE bypassed the
+    # ORM and callers read `run.status` straight after this returns. These are the
+    # values we just wrote, so the two cannot diverge, and it saves the re-SELECT
+    # a `refresh` would cost on the hot path.
+    run.status = "succeeded"
+    run.finished_at = finished
+    run.failure_reason = None
+    return True
+
+
+def _discard_results_if_any(session: Session, run: Run, *, published: bool) -> None:
+    """`discard_run_results`, skipped when no phase ever committed.
+
+    The common failure — an expectation-only suite whose GX batch raises — has
+    published nothing, so the staged rows die with the rollback and a DELETE +
+    COMMIT round trip would be pure overhead on the path that is already
+    handling an error.
+    """
+    if published:
+        discard_run_results(session, run.id)
+    else:
+        session.rollback()
 
 
 def skip_run(session: Session, *, run: Run, checks: list[Check], reason: str) -> Run:
@@ -601,11 +726,19 @@ def count_runs(
 
 
 def check_outcome_counts(
-    session: Session, run_ids: Sequence[uuid.UUID]
+    session: Session,
+    run_ids: Sequence[uuid.UUID],
+    *,
+    complete_runs_only: bool = False,
 ) -> dict[uuid.UUID, tuple[int, int, str | None]]:
     """Per-run ``(checks_total, checks_passed, worst_severity)`` for a set of runs,
     in a single grouped query (no N+1). ``worst_severity`` is the highest of
     warn/fail/critical present, else ``None`` (all passed / only operational).
+
+    ``complete_runs_only`` forwards to `rollup.status_histograms` and is for
+    callers presenting these numbers as a **suite's** standing rather than as one
+    named run's outcome — the asset view passes it, the runs table does not (a
+    live run legitimately reads ``3 / 7`` there).
 
     ``checks_total``/``checks_passed`` count **evaluated** checks — the four
     severity tiers (pass/warn/fail/critical) — and **exclude** operational
@@ -619,7 +752,9 @@ def check_outcome_counts(
     # A fold over the ONE shared histogram query (#889) — this used to build the
     # same `{status: count}` mapping itself and then discard it, which is exactly
     # the shape the health score needs.
-    for run_id, by_status in status_histograms(session, run_ids).items():
+    for run_id, by_status in status_histograms(
+        session, run_ids, complete_runs_only=complete_runs_only
+    ).items():
         passed = by_status.get("pass", 0)
         # Worst check outcome via the single shared severity helper (#655); skip/error
         # aren't failing tiers, so they never rank.
@@ -688,34 +823,38 @@ def cancel_run(session: Session, run: Run) -> bool:
 
 
 def list_results(session: Session, run_id: uuid.UUID) -> list[Result]:
-    """The result rows for a run, in the suite's own check order.
+    """The result rows for a run, ordered by the **check**, not by the result.
 
-    Ordered by the **check's** ``created_at``, not the result's (#318). The
-    result's own timestamp used to be a fine proxy because every row in a run was
-    inserted in one transaction — and Postgres' ``now()`` is transaction-start, so
-    they all shared a single identical value and the order was really the physical
-    one. Per-phase commits give those timestamps real (execution-order) meaning,
-    which would silently re-sort the run-detail table by *engine* rather than by
-    the order the author wrote the checks in. Sorting by the check pins the
-    displayed order to the thing the reader recognises, and makes it deterministic
-    for the first time.
+    The result's own ``created_at`` used to be a fine proxy: every row in a run
+    was inserted in one transaction, and Postgres' ``now()`` is transaction-start,
+    so they shared one identical value and the ordering was really the physical
+    row order. Per-phase commits (#318) give those timestamps real
+    *execution*-order meaning, which would silently re-sort the run-detail table
+    by engine — a `schema_drift` check authored second now runs last, a
+    comparison check first.
+
+    `CHECK_ORDER` is the shared key, applied here and by `get_run_progress` and
+    `check_service.list_checks`, so all three lists agree row for row and are
+    **deterministic**, which none of them were before.
+
+    What that order *is*, honestly: `CHECK_ORDER`'s leading term is the check's
+    ``created_at``, so it is authoring order only where the checks were authored
+    at distinguishable times. A suite created by import or by the demo seed
+    inserts every check in one transaction, so they tie and the stable-but-
+    arbitrary ``id`` tie-break decides. That is a real limitation rather than a
+    hidden one, and giving checks an explicit ordinal is the fix —
+    [#1334](https://github.com/TheurgicDuke771/DataQ/issues/1334).
 
     ``outerjoin`` deliberately: results are cascade-deleted with their check
     today, so an orphan should not exist — but a read path must not silently drop
     rows to enforce an invariant it doesn't own.
-
-    ``Check.id`` is the tie-break, and it is not decoration: a suite's checks are
-    routinely inserted in ONE transaction, and Postgres' ``now()`` is
-    transaction-start, so they genuinely share a ``created_at`` and ordering by it
-    alone leaves the result arbitrary. `_ORDERED_CHECKS` applies the identical key
-    so this list and `get_run_progress`'s per-check list agree row for row.
     """
     return list(
         session.scalars(
             select(Result)
             .outerjoin(Check, Check.id == Result.check_id)
             .where(Result.run_id == run_id)
-            .order_by(Check.created_at.nulls_last(), Check.id)
+            .order_by(*CHECK_ORDER)
         )
     )
 
@@ -754,6 +893,18 @@ class RunProgress:
     #: run which has resolved nothing yet is nonetheless alive (#318). ``None``
     #: while the run is still queued (no ``started_at``).
     elapsed_ms: int | None
+    #: Whether any UNRESOLVED check belongs to a kind that resolves as a group
+    #: rather than one at a time (#318 G6). Everything except ``comparison`` does:
+    #: GX validates its expectations in one atomic batch, `run_monitors` evaluates
+    #: the scalar monitors against one loaded frame, and the stateful kinds ride
+    #: the terminal commit with their baseline writes.
+    #:
+    #: It exists so the UI can explain a stalled-looking `0 / N` **from the run's
+    #: actual composition** instead of inferring a reason from the count. Inferred
+    #: copy was wrong on every clause for a monitor-only or comparison-first suite
+    #: that is merely slow — asserting a mechanism the reader can't verify is the
+    #: same confidently-wrong shape this whole issue is about.
+    batched_pending: bool
 
 
 def get_run_progress(session: Session, run: Run) -> RunProgress:
@@ -769,23 +920,21 @@ def get_run_progress(session: Session, run: Run) -> RunProgress:
     its check by id.
 
     **How incremental this actually is (#318).** `execute_run` commits per
-    execution phase, so a stateful-monitor or comparison check resolves here on
-    its own, one at a time. It cannot go finer than the engine underneath: a
-    suite of GX expectations is one atomic batch, so it goes 0 → N in a single
-    step no matter how many checks it holds. `elapsed_ms` is the honest signal
-    for that stretch — a consumer should show the run is alive and how long it
-    has been going, rather than a 0% bar that reads as hung. Restructuring the GX
-    batch into per-check validations would buy real per-check increments at the
-    cost of re-running the whole read per check, and is deliberately not done.
+    execution phase, so a comparison check resolves here on its own. It cannot go
+    finer than the engine underneath — a suite of GX expectations is one atomic
+    batch, so it goes 0 → N in a single step however many checks it holds — nor
+    finer than durability allows, which is why the stateful monitor kinds ride the
+    terminal commit (they write `monitor_baselines`, see `_run_outcome_phases`).
+
+    `elapsed_ms` + `batched_pending` are the honest signals for those stretches: a
+    consumer should show that the run is alive, how long it has been going, and —
+    only when the composition supports the claim — that the remaining checks
+    report together. Restructuring the GX batch into per-check validations would
+    buy real per-check increments at the cost of re-reading the dataset per check,
+    and is deliberately not done.
     """
     checks = list(
-        session.scalars(
-            # `Check.id` tie-break — see `list_results`: same-transaction inserts
-            # share a `created_at`, and the two lists must agree row for row.
-            select(Check)
-            .where(Check.suite_id == run.suite_id)
-            .order_by(Check.created_at, Check.id)
-        )
+        session.scalars(select(Check).where(Check.suite_id == run.suite_id).order_by(*CHECK_ORDER))
     )
     # One result per (run_id, check_id) in v1 (each run writes one row per check);
     # keyed by check_id to join against the suite's current checks.
@@ -793,6 +942,7 @@ def get_run_progress(session: Session, run: Run) -> RunProgress:
     counts: dict[str, int] = dict.fromkeys(RESULT_STATUSES, 0)
     per_check: list[CheckProgress] = []
     completed = 0
+    batched_pending = False
     for check in checks:
         result = results.get(check.id)
         status = result.status if result is not None else None
@@ -800,6 +950,8 @@ def get_run_progress(session: Session, run: Run) -> RunProgress:
         if status is not None:
             completed += 1
             counts[status] = counts.get(status, 0) + 1
+        elif check.kind != COMPARISON_KIND:
+            batched_pending = True
     return RunProgress(
         run=run,
         total_checks=len(checks),
@@ -807,6 +959,7 @@ def get_run_progress(session: Session, run: Run) -> RunProgress:
         counts=counts,
         checks=per_check,
         elapsed_ms=_elapsed_ms(run),
+        batched_pending=batched_pending,
     )
 
 
@@ -819,14 +972,10 @@ def _elapsed_ms(run: Run) -> int | None:
     as UTC — everything DataQ writes is tz-aware, but a read model must not raise
     on a row that isn't.
     """
-    started = run.started_at
-    if started is None:
+    if run.started_at is None:
         return None
-    if started.tzinfo is None:
-        started = started.replace(tzinfo=UTC)
-    end = run.finished_at or _now()
-    if end.tzinfo is None:
-        end = end.replace(tzinfo=UTC)
+    started = as_utc(run.started_at)
+    end = as_utc(run.finished_at) if run.finished_at is not None else _now()
     return max(int((end - started).total_seconds() * 1000), 0)
 
 
@@ -1708,16 +1857,25 @@ def reap_stuck_runs(
         )
     )
     reaped_ids = [str(run.id) for run in stuck]  # capture before commit expires attrs
+    # Runs that had begun executing may hold result rows an incremental phase
+    # committed (#318). The aggregate readers already ignore them
+    # (`rollup.AGGREGATABLE_RUN_STATUSES`), so this is hygiene rather than the
+    # invariant — but a reaped run's OWN detail page would otherwise show a
+    # half-populated set for a run that never completed, and the terminal lineage
+    # event below would carry it.
+    discard_ids = [run.id for run in stuck if run.status == "running"]
     # A `running` run emitted an OpenLineage START (the worker got that far before
     # dying); a `queued` one never did. Capture the started set before the flip so
     # the post-commit terminal emit only fires for runs that actually opened a run
     # in Marquez — a queued reap gets none (there's no dangling START to close).
-    started_ids = [run.id for run in stuck if run.status == "running"]
+    started_ids = list(discard_ids)
     for run in stuck:
         # Canonical terminal-failed shape, one shared `moment` across the batch.
         run_dispatch.mark_dispatch_failed(run, at=moment, reason=run_dispatch.REAPED_REASON)
     if stuck:
         session.commit()
+        for run_id in discard_ids:
+            discard_run_results(session, run_id)
         log.warning(
             "stuck_runs_reaped",
             count=len(stuck),
@@ -1766,6 +1924,12 @@ def fail_run_worker_lost(
     was_running = run.status == "running"
     run_dispatch.mark_dispatch_failed(run, at=moment, reason=run_dispatch.WORKER_LOST_REASON)
     session.commit()
+    if was_running:
+        # The SIGKILLed child ran no `except` and no `finally`, so nothing cleared
+        # the phases it had already committed (#318). Same reasoning as the
+        # reaper: the aggregates already exclude them, this keeps the run's own
+        # surfaces honest.
+        discard_run_results(session, run_id)
     log.warning("run_failed_worker_lost", run_id=str(run_id), was_running=was_running)
     # Same contract as the reaper: a `running` run emitted an OpenLineage START that
     # would otherwise dangle forever; a `queued` one never did. Lazy import breaks

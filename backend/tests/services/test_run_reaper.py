@@ -13,7 +13,9 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from backend.app.db.models import Connection, Run, Suite, User
+from sqlalchemy import select
+
+from backend.app.db.models import Check, Connection, Result, Run, Suite, User
 from backend.app.services import run_dispatch, run_service
 
 NOW = datetime(2026, 6, 29, 12, 0, tzinfo=UTC)
@@ -151,3 +153,43 @@ def test_reap_emits_terminal_lineage_only_for_started_runs(
     assert {r.id for r in reaped} == {was_running.id, was_queued.id}
     # Only the run that had actually started (→ had a START) gets the closing FAIL.
     assert emitted == [was_running.id]
+
+
+def test_reaping_a_running_run_discards_the_phases_it_had_committed(db_session: Any) -> None:
+    """A worker that died after an incremental phase committed leaves result rows
+    behind (#318 G2): nothing inside the task runs when it is SIGKILLed, so the
+    run path's own discard never happens and the reaper is the only thing left.
+
+    The aggregate readers already ignore a non-`succeeded` run's rows, so this is
+    hygiene rather than the invariant — but the reaped run's OWN detail page would
+    otherwise show a half-populated set for a run that never completed, and its
+    terminal lineage event would carry those rows outward.
+    """
+    stuck = _run(db_session, status="running", created_min_ago=120, started_min_ago=90)
+    check = Check(suite_id=stuck.suite_id, name="c", expectation_type="e", config={})
+    db_session.add(check)
+    db_session.flush()
+    db_session.add(Result(run_id=stuck.id, check_id=check.id, status="pass"))
+    db_session.commit()
+
+    _reap(db_session)
+
+    db_session.refresh(stuck)
+    assert stuck.status == "failed"
+    assert db_session.scalars(select(Result).where(Result.run_id == stuck.id)).all() == []
+
+
+def test_reaping_a_queued_run_touches_no_results(db_session: Any) -> None:
+    """The control: a `queued` run never executed, so there is nothing of its own
+    to discard — and the discard must not reach for another run's rows."""
+    other = _run(db_session, status="succeeded", created_min_ago=5)
+    check = Check(suite_id=other.suite_id, name="c", expectation_type="e", config={})
+    db_session.add(check)
+    db_session.flush()
+    db_session.add(Result(run_id=other.id, check_id=check.id, status="pass"))
+    _run(db_session, status="queued", created_min_ago=90)
+    db_session.commit()
+
+    _reap(db_session)
+
+    assert len(db_session.scalars(select(Result).where(Result.run_id == other.id)).all()) == 1

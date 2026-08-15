@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from backend.app.db.models import Result, Run, Suite
 from backend.app.services import suite_service
 from backend.app.services.rollup import (
+    AGGREGATABLE_RUN_STATUSES,
     health_score,
     latest_runs_per_suite_stmt,
     pass_rate,
@@ -100,11 +101,22 @@ def _status_counts(
     until: datetime | None = None,
 ) -> dict[str, int]:
     """Histogram of result statuses across accessible suites in ``[since, until)``
-    (open-ended when ``until`` is None)."""
+    (open-ended when ``until`` is None).
+
+    Counts only runs in `AGGREGATABLE_RUN_STATUSES` (#318). This restores what the
+    query used to mean rather than changing it: before per-phase commits, a run
+    that was still going or had failed contributed no rows here, so "every result
+    in the window" and "every result of a completed run" were the same set. They
+    are not any more, and the KPI cards and health score want the second.
+    """
     stmt = (
         select(Result.status, func.count())
         .join(Run, Result.run_id == Run.id)
-        .where(Run.suite_id.in_(accessible), Result.created_at >= since)
+        .where(
+            Run.suite_id.in_(accessible),
+            Run.status.in_(AGGREGATABLE_RUN_STATUSES),
+            Result.created_at >= since,
+        )
         .group_by(Result.status)
     )
     if until is not None:
@@ -160,8 +172,12 @@ def _suite_performance(
 ) -> list[SuitePerformance]:
     """Per-suite health from each suite's **latest** run, worst (lowest) first.
 
-    A suite with no run, or whose latest run wrote no results (a hard-failed run
-    rolls back its results), is omitted — there is no health to show.
+    A suite whose latest run has no *countable* results is omitted — there is no
+    health to show. Since #318 that means the latest run is not in
+    `AGGREGATABLE_RUN_STATUSES`: still running (a partial set), or failed/
+    cancelled (which should have none, and whose stragglers must not be scored).
+    Without the status predicate a 30-check suite would render `critical` off its
+    first committed phase for the whole rest of the run.
     """
     # The shared latest-run-per-suite statement (#889) — kept in SQL here and
     # inner-joined, which is what drops a suite whose latest run wrote no results.
@@ -180,6 +196,8 @@ def _suite_performance(
         .select_from(latest)
         .join(Suite, Suite.id == latest.c.suite_id)
         .join(Result, Result.run_id == latest.c.id)
+        .join(Run, Run.id == latest.c.id)
+        .where(Run.status.in_(AGGREGATABLE_RUN_STATUSES))
         .group_by(Suite.id, Suite.name, Result.status)
     )
     counts: dict[uuid.UUID, dict[str, int]] = {}

@@ -109,6 +109,18 @@ def _run_with_results(
     age_days: float = 0.0,
     duration_s: float | None = None,
 ) -> Run:
+    """Seed a run plus its result rows.
+
+    ``run_status`` is the run's **execution** status, which is orthogonal to
+    whether its checks passed — a run whose every check came back ``critical``
+    still executed fine and is ``succeeded`` (the module docstring's own
+    distinction). Several of these fixtures used to pass ``failed`` together with
+    result rows, which is a state the system cannot produce: a failed run's
+    results are discarded, and since #318 the aggregates additionally refuse to
+    count rows from any run outside `AGGREGATABLE_RUN_STATUSES`. Passing an
+    impossible combination here would assert against a world the app never
+    creates.
+    """
     when = datetime.now(UTC) - timedelta(days=age_days)
     run = Run(suite_id=suite.id, status=run_status, created_at=when)
     if duration_s is not None:
@@ -132,7 +144,9 @@ def test_summary_scopes_to_accessible_suites(db_session: Any) -> None:
     mine = _suite(db_session, alice, name="mine")
     theirs = _suite(db_session, bob, name="theirs")
     _run_with_results(db_session, mine, run_status="succeeded", result_statuses=["pass", "pass"])
-    _run_with_results(db_session, theirs, run_status="failed", result_statuses=["critical", "fail"])
+    _run_with_results(
+        db_session, theirs, run_status="succeeded", result_statuses=["critical", "fail"]
+    )
 
     summary = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
 
@@ -148,7 +162,7 @@ def test_summary_includes_shared_suite(db_session: Any) -> None:
     suite = _suite(db_session, owner, name="shared")
     db_session.add(Share(suite_id=suite.id, user_id=viewer.id, permission="view"))
     db_session.commit()
-    _run_with_results(db_session, suite, run_status="failed", result_statuses=["fail", "fail"])
+    _run_with_results(db_session, suite, run_status="succeeded", result_statuses=["fail", "fail"])
 
     summary = svc.dashboard_summary(db_session, user_id=viewer.id, window_days=7)
     assert summary.kpis.health_score == 50.0
@@ -162,7 +176,7 @@ def test_window_excludes_old_results(db_session: Any) -> None:
         db_session, suite, run_status="succeeded", result_statuses=["pass"], age_days=1
     )
     _run_with_results(
-        db_session, suite, run_status="failed", result_statuses=["critical"], age_days=40
+        db_session, suite, run_status="succeeded", result_statuses=["critical"], age_days=40
     )
 
     summary = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
@@ -177,7 +191,9 @@ def test_run_trend_is_contiguous_and_zero_filled(db_session: Any) -> None:
     _run_with_results(
         db_session, suite, run_status="succeeded", result_statuses=["pass"], age_days=0
     )
-    _run_with_results(db_session, suite, run_status="failed", result_statuses=["fail"], age_days=2)
+    # A genuinely FAILED run — which by contract wrote no results — so the trend
+    # has one of each status to be contiguous about.
+    _run_with_results(db_session, suite, run_status="failed", result_statuses=[], age_days=2)
 
     summary = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
     trend = summary.trend
@@ -198,13 +214,13 @@ def test_suite_performance_uses_latest_run_worst_first(db_session: Any) -> None:
     broken = _suite(db_session, alice, name="broken")
     # An older bad run on `healthy` that must be ignored in favour of the latest.
     _run_with_results(
-        db_session, healthy, run_status="failed", result_statuses=["critical"], age_days=2
+        db_session, healthy, run_status="succeeded", result_statuses=["critical"], age_days=2
     )
     _run_with_results(
         db_session, healthy, run_status="succeeded", result_statuses=["pass", "pass"], age_days=0
     )
     _run_with_results(
-        db_session, broken, run_status="failed", result_statuses=["fail", "critical"], age_days=0
+        db_session, broken, run_status="succeeded", result_statuses=["fail", "critical"], age_days=0
     )
 
     summary = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
@@ -279,11 +295,12 @@ def test_avg_duration_none_when_nothing_finished(db_session: Any) -> None:
 def test_deltas_compare_against_previous_equivalent_window(db_session: Any) -> None:
     alice = _user(db_session)
     suite = _suite(db_session, alice)
-    # Previous window (7-14 days ago): all-fail, 1 run, 4s.
+    # Previous window (7-14 days ago): all-fail, 1 run, 4s. `succeeded` because
+    # every check FAILING is still a run that EXECUTED — see `_run_with_results`.
     _run_with_results(
         db_session,
         suite,
-        run_status="failed",
+        run_status="succeeded",
         result_statuses=["fail", "fail"],
         age_days=10,
         duration_s=4.0,
@@ -327,7 +344,7 @@ def test_previous_window_does_not_leak_into_current_kpis(db_session: Any) -> Non
     alice = _user(db_session)
     suite = _suite(db_session, alice)
     _run_with_results(
-        db_session, suite, run_status="failed", result_statuses=["critical"], age_days=10
+        db_session, suite, run_status="succeeded", result_statuses=["critical"], age_days=10
     )
     _run_with_results(db_session, suite, run_status="succeeded", result_statuses=["pass"])
 

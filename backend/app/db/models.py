@@ -852,6 +852,23 @@ class Run(Base):
     created_at: Mapped[datetime] = _created_at()
 
 
+#: The ONE ordering key for a suite's checks, and for anything listed *per check*.
+#:
+#: The ``id`` tie-break is load-bearing, not decoration: a suite's checks are
+#: routinely inserted in a single transaction (the check editor's bulk add, suite
+#: import, the demo seed), and Postgres' ``now()`` is transaction-start — so they
+#: genuinely share a ``created_at`` and ordering by it alone leaves the answer to
+#: the physical row order, which can change under the reader's feet.
+#:
+#: ``nulls_last`` matters only where this is used across an OUTER join
+#: (`run_service.list_results` keeps a result whose check was deleted rather than
+#: silently dropping the row); on the plain checks query Postgres already sorts
+#: ASC NULLS LAST, so the same key is correct in both places — which is the point
+#: of there being one key. Every surface a user compares against another must
+#: sort by this, or two views of the same checks disagree on refresh.
+CHECK_ORDER = (Check.created_at.nulls_last(), Check.id)
+
+
 class Result(Base):
     __tablename__ = "results"
     __table_args__ = (

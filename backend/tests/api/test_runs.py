@@ -856,6 +856,67 @@ def test_progress_terminal_run_elapsed_stops_at_finished_at(
     assert body["elapsed_ms"] == 12_000
 
 
+def test_progress_reports_batched_pending_for_grouped_kinds(
+    client: TestClient, db_session: Any
+) -> None:
+    """`batched_pending` is what lets the drawer explain a stalled-looking 0/N from
+    the run's real composition (#318 G6). An unresolved expectation resolves with
+    its whole GX batch, so the claim holds."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    _check(db_session, suite, "a")  # kind defaults to `expectation`
+    db_session.commit()
+    run = _run(db_session, suite, status="running")
+
+    _as(dev)
+    body = client.get(f"/api/v1/runs/{run.id}/progress").json()
+    assert body["batched_pending"] is True
+
+
+def test_progress_withholds_batched_pending_for_a_comparison_only_suite(
+    client: TestClient, db_session: Any
+) -> None:
+    """A comparison check resolves on its own, so the "they report together"
+    explanation would be false — the whole point of sending this from the server
+    rather than inferring it from `completed_checks == 0`."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    conn_id = db_session.get(Suite, suite.id).connection_id
+    check = Check(
+        suite_id=suite.id,
+        name="recon",
+        kind="comparison",
+        expectation_type="",
+        config={},
+        source_connection_id=conn_id,
+    )
+    db_session.add(check)
+    db_session.commit()
+    run = _run(db_session, suite, status="running")
+
+    _as(dev)
+    body = client.get(f"/api/v1/runs/{run.id}/progress").json()
+    assert body["completed_checks"] == 0  # the state the copy is about
+    assert body["batched_pending"] is False
+
+
+def test_progress_withholds_batched_pending_once_everything_resolved(
+    client: TestClient, db_session: Any
+) -> None:
+    """Only *unresolved* checks can be pending — a finished run claims nothing."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = _check(db_session, suite, "a")
+    db_session.commit()
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="pass"))
+    db_session.commit()
+
+    _as(dev)
+    body = client.get(f"/api/v1/runs/{run.id}/progress").json()
+    assert body["batched_pending"] is False
+
+
 def test_progress_unknown_run_returns_404(client: TestClient, db_session: Any) -> None:
     dev = _user(db_session, "dev@ex")
     _as(dev)

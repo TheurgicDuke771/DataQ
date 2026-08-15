@@ -210,6 +210,11 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     critical (or skip/error) status, the observed vs expected value, and any
     sample failing rows (PII-redacted). Returns an empty result set if the suite
     has never run. Requires at least view access to the suite.
+
+    If the latest run has not finished successfully, `checks` is empty and
+    `run.results_final` is false — the run is still executing, or it failed and
+    never produced a complete account. Report the run's status in that case; do
+    not describe the suite's quality from it.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
@@ -220,7 +225,14 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
         latest = session.scalars(rollup.latest_runs_per_suite_stmt([sid])).first()
         if latest is None:
             return {"suite_id": suite_id, "run": None, "checks": []}
-        results = run_service.list_results(session, latest.id)
+        # Result rows are committed per phase (#318), so a `running` run has a
+        # genuine partial set and a failed one can carry stragglers. An LLM asked
+        # "what failed in orders today?" will summarise whatever list it is given
+        # as the answer — it has no way to know the list is one phase of thirty —
+        # so an incomplete run yields no checks at all and says why, rather than a
+        # confident report built from a fraction of the suite.
+        final = latest.status in rollup.AGGREGATABLE_RUN_STATUSES
+        results = run_service.list_results(session, latest.id) if final else []
         checks = {c.id: c for c in session.scalars(select(Check).where(Check.suite_id == sid))}
         policy = suite.column_policy
         return {
@@ -230,6 +242,9 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
                 "status": latest.status,
                 "started_at": latest.started_at.isoformat() if latest.started_at else None,
                 "finished_at": latest.finished_at.isoformat() if latest.finished_at else None,
+                # Explicit, so a client branches on a field rather than inferring
+                # "no checks" means "nothing failed" (#318).
+                "results_final": final,
             },
             "checks": [
                 {
@@ -406,6 +421,7 @@ def get_run_status(run_id: str) -> dict[str, Any]:
             "completed_checks": progress.completed_checks,
             "counts": progress.counts,
             "elapsed_ms": progress.elapsed_ms,
+            "batched_pending": progress.batched_pending,
             "checks": [{"name": c.name, "status": c.status} for c in progress.checks],
         }
 

@@ -7,6 +7,7 @@ item (Postgres test fixtures).
 """
 
 import uuid
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -34,6 +35,7 @@ class FakeSession:
         self.added: list[Any] = []
         self.commits = 0
         self.rollbacks = 0
+        self.executed: list[Any] = []
         self.closed = False
 
     def get(self, model: type, pk: Any) -> Any:
@@ -41,6 +43,21 @@ class FakeSession:
 
     def scalars(self, _stmt: Any) -> Any:
         return iter(self._checks)
+
+    def scalar(self, _stmt: Any) -> Any:
+        """`run_service._cancelled_mid_run` reads the status column (#318). This
+        double never simulates a concurrent cancel, so the run stays running."""
+        run = self._objs.get(Run)
+        return getattr(run, "status", None)
+
+    def execute(self, _stmt: Any) -> Any:
+        """Stands in for the two Core statements the run path issues (#318): the
+        conditional succeeded-flip UPDATE and the discard DELETE. Reporting
+        ``rowcount=1`` means the flip always wins here, which matches `scalar`
+        above never reporting a cancel — the two must agree or the double
+        describes a state the DB could not be in."""
+        self.executed.append(_stmt)
+        return SimpleNamespace(rowcount=1)
 
     def add_all(self, rows: list[Any]) -> None:
         self.added.extend(rows)
