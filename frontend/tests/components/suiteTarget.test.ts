@@ -4,10 +4,16 @@ import type { ConnectionType } from '../../src/api/connections';
 import {
   asBatchStrategy,
   asFileFormat,
+  asSampleStrategy,
   assembleTarget,
   hasCaptureGroup,
+  MAX_SAMPLE_ROWS,
+  SAMPLING_CAPABLE_TYPES,
+  samplingNumber,
   summarizeTarget,
+  supportsSampling,
   targetKind,
+  targetSampling,
 } from '../../src/components/suites/suiteTarget';
 
 describe('targetKind', () => {
@@ -285,5 +291,176 @@ describe('asBatchStrategy (#1180)', () => {
     expect(asBatchStrategy('LATEST')).toBeUndefined();
     expect(asBatchStrategy('')).toBeUndefined();
     expect(asBatchStrategy(undefined)).toBeUndefined();
+  });
+});
+
+// ── sampling (#595/#1325) ────────────────────────────────────────────
+
+describe('SAMPLING_CAPABLE_TYPES', () => {
+  it('names exactly the datasources the backend accepts a sampling block on', () => {
+    // A canary against the backend `registry.SAMPLING_CAPABLE_TYPES`. The
+    // absences are the point: Snowflake pushes every expectation down and never
+    // materialises rows (a sample there would change nothing while stamping
+    // "sampled" on every result), and Iceberg's sampled read is not built. Both
+    // are a 422 at save time server-side, so adding one here without adding it
+    // there would put a control in the editor whose only outcome is a save error.
+    expect([...SAMPLING_CAPABLE_TYPES].sort()).toEqual(['adls_gen2', 's3', 'unity_catalog']);
+    const cases: [ConnectionType, boolean][] = [
+      ['adls_gen2', true],
+      ['s3', true],
+      ['unity_catalog', true],
+      ['snowflake', false],
+      ['iceberg', false],
+      ['adf', false],
+    ];
+    for (const [type, capable] of cases) expect(supportsSampling(type)).toBe(capable);
+    expect(supportsSampling(undefined)).toBe(false);
+  });
+});
+
+describe('assembleTarget — sampling', () => {
+  const base = { target_path: 'raw/orders.csv' };
+
+  it('leaves the target untouched when sampling is off', () => {
+    expect(assembleTarget('flatfile', base, 's3').target).toEqual({ path: 'raw/orders.csv' });
+  });
+
+  it('grafts a head sample onto the datasource target', () => {
+    const { target, error } = assembleTarget(
+      'flatfile',
+      { ...base, sampling_enabled: true, sampling_strategy: 'head', sampling_rows: 100_000 },
+      's3',
+    );
+    expect(error).toBeUndefined();
+    expect(target).toEqual({
+      path: 'raw/orders.csv',
+      sampling: { strategy: 'head', rows: 100_000 },
+    });
+  });
+
+  it('carries a seed for random', () => {
+    expect(
+      assembleTarget(
+        'uc',
+        {
+          target_catalog: 'main',
+          target_table: 'orders',
+          sampling_enabled: true,
+          sampling_strategy: 'random',
+          sampling_rows: 5_000,
+          sampling_seed: 7,
+        },
+        'unity_catalog',
+      ).target,
+    ).toEqual({
+      catalog: 'main',
+      table: 'orders',
+      sampling: { strategy: 'random', rows: 5_000, seed: 7 },
+    });
+  });
+
+  it('drops a stale seed when the strategy is head', () => {
+    // Switching random to head leaves the seed field populated. Sending it would
+    // be a 422 (the backend refuses a seed on head rather than let an author
+    // believe a head sample is seeded-random) — and a stored seed on a head spec
+    // would read as a reproducibility guarantee of a different kind than the one
+    // head actually gives.
+    const { target } = assembleTarget(
+      'flatfile',
+      {
+        ...base,
+        sampling_enabled: true,
+        sampling_strategy: 'head',
+        sampling_rows: 10,
+        sampling_seed: 7,
+      },
+      's3',
+    );
+    expect(target).toEqual({ path: 'raw/orders.csv', sampling: { strategy: 'head', rows: 10 } });
+  });
+
+  it('REFUSES rather than drops a sampling block on a pushdown datasource', () => {
+    // The silently-dropped block is the failure mode this whole feature is
+    // shaped against: an author would believe a nightly 100M-row suite is
+    // bounded when it is not, and the first evidence would be an OOM.
+    const { target, error } = assembleTarget(
+      'sql',
+      { target_table: 'ORDERS', sampling_enabled: true, sampling_rows: 100 },
+      'snowflake',
+    );
+    expect(target).toBeNull();
+    expect(error?.field).toBe('sampling_enabled');
+    expect(error?.message).toMatch(/pushdown/);
+  });
+
+  it('REFUSES a sampling block with no target to bound', () => {
+    // A lone `sampling` key is not a runnable target and the backend 422s it.
+    const { target, error } = assembleTarget(
+      'flatfile',
+      { sampling_enabled: true, sampling_rows: 100 },
+      's3',
+    );
+    expect(target).toBeNull();
+    expect(error?.field).toBe('sampling_enabled');
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['zero', 0],
+    ['negative', -1],
+    ['fractional', 1.5],
+    ['over the cap', MAX_SAMPLE_ROWS + 1],
+  ])('REFUSES a %s row count', (_label, rows) => {
+    const { target, error } = assembleTarget(
+      'flatfile',
+      { ...base, sampling_enabled: true, sampling_rows: rows as number | undefined },
+      's3',
+    );
+    expect(target).toBeNull();
+    expect(error?.field).toBe('sampling_rows');
+  });
+
+  it('accepts exactly the cap', () => {
+    expect(
+      assembleTarget(
+        'flatfile',
+        { ...base, sampling_enabled: true, sampling_rows: MAX_SAMPLE_ROWS },
+        's3',
+      ).error,
+    ).toBeUndefined();
+  });
+
+  it('reports the datasource error first when both halves are wrong', () => {
+    // A missing path is the more fundamental problem and names the field the
+    // author must fix; stacking a sampling error on top would point at the wrong
+    // input.
+    const { error } = assembleTarget(
+      'flatfile',
+      { target_format: 'csv', sampling_enabled: true, sampling_rows: 100 },
+      's3',
+    );
+    expect(error?.field).toBe('target_path');
+  });
+});
+
+describe('targetSampling / samplingNumber / asSampleStrategy', () => {
+  it('reads a stored block back for prefill', () => {
+    const stored = { path: 'p', sampling: { strategy: 'random', rows: 1000, seed: 3 } };
+    const sampling = targetSampling(stored);
+    expect(asSampleStrategy(sampling?.strategy)).toBe('random');
+    expect(samplingNumber(sampling, 'rows')).toBe(1000);
+    expect(samplingNumber(sampling, 'seed')).toBe(3);
+  });
+
+  it('narrows a malformed stored block to undefined instead of prefilling junk', () => {
+    // The target is an untyped JSONB bag, so a hand-edited row can hold anything.
+    expect(targetSampling(null)).toBeUndefined();
+    expect(targetSampling({ path: 'p' })).toBeUndefined();
+    expect(targetSampling({ sampling: 'head' })).toBeUndefined();
+    expect(targetSampling({ sampling: ['head'] })).toBeUndefined();
+    expect(asSampleStrategy('HEAD')).toBeUndefined();
+    expect(asSampleStrategy(undefined)).toBeUndefined();
+    expect(samplingNumber({ rows: '100' }, 'rows')).toBeUndefined();
+    expect(samplingNumber(undefined, 'seed')).toBeUndefined();
   });
 });

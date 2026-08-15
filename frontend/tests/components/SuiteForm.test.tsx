@@ -559,3 +559,181 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
     );
   });
 });
+
+// ── sampling authoring (#595/#1325) ──────────────────────────────────
+
+describe('SuiteForm — sampling', () => {
+  const ucConnection: Connection = {
+    id: 'conn-uc',
+    name: 'uc-prod',
+    type: 'unity_catalog',
+    env: 'prod',
+    config: {},
+    has_secret: true,
+    created_by: 'u1',
+  };
+
+  it('offers the section only on datasources that accept a sampling block', async () => {
+    // Snowflake pushes every expectation down and never loads rows, so the
+    // backend answers a spec there with a 422 — a control whose only outcome is
+    // a save error is worse than no control.
+    const { rerender } = render(
+      <AntApp>
+        <SuiteForm
+          suite={suite({ connection_id: 'conn-adls', target: { path: 'raw/o.csv' } })}
+          connections={[adlsConnection, snowflakeConnection]}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+    expect(await screen.findByTestId('sampling-enabled')).toBeInTheDocument();
+
+    rerender(
+      <AntApp>
+        <SuiteForm
+          suite={suite({ connection_id: 'conn-sf', target: { table: 'ORDERS' } })}
+          connections={[adlsConnection, snowflakeConnection]}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+    await waitFor(() => expect(screen.queryByTestId('sampling-enabled')).not.toBeInTheDocument());
+  });
+
+  it('round-trips a stored sampling block: prefills it, and saves it back', async () => {
+    // The round trip is the assertion that matters. #1325's review found the API
+    // silently DROPPING this key (`SuiteTarget` is a closed model), which made
+    // the whole feature configurable only by writing the database by hand — so
+    // an editor that renders the block but loses it on save would reproduce that
+    // failure one layer up.
+    const user = userEvent.setup();
+    const stored = {
+      catalog: 'main',
+      table: 'orders',
+      sampling: { strategy: 'random', rows: 5000, seed: 7 },
+    };
+    mockUpdate.mockResolvedValue(suite({ connection_id: 'conn-uc', target: stored }));
+    render(
+      <AntApp>
+        <SuiteForm
+          suite={suite({ connection_id: 'conn-uc', target: stored })}
+          connections={[ucConnection]}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    // Prefilled from the stored block — the block's presence IS the toggle.
+    expect(await screen.findByTestId('sampling-rows')).toHaveValue('5000');
+    expect(screen.getByTestId('sampling-seed')).toHaveValue('7');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith('s1', {
+        name: 'logistics-suite',
+        description: null,
+        target: {
+          catalog: 'main',
+          table: 'orders',
+          sampling: { strategy: 'random', rows: 5000, seed: 7 },
+        },
+      }),
+    );
+  });
+
+  it('sends no sampling key at all when the suite reads the whole dataset', async () => {
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(suite());
+    render(
+      <AntApp>
+        <SuiteForm
+          suite={suite({ connection_id: 'conn-adls', target: { path: 'raw/o.csv' } })}
+          connections={[adlsConnection]}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+    await screen.findByTestId('sampling-enabled');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][1].target).toEqual({ path: 'raw/o.csv' });
+  });
+
+  it('hides the seed when the strategy switches to head, and saves the head spec', async () => {
+    // A head sample always reads the first rows in storage order and cannot be
+    // seeded; the backend 422s a seed there rather than let an author believe
+    // otherwise.
+    //
+    // Scope note, established by mutation-checking this test: it does NOT prove
+    // the stale-seed guard. Unmounting the seed `Form.Item` unregisters it, so
+    // `validateFields()` stops returning the value and there is no stale seed to
+    // drop at this layer — deleting `assembleTarget`'s `strategy === 'random'`
+    // condition leaves this test green. That guard is pinned in
+    // `suiteTarget.test.ts` ("drops a stale seed when the strategy is head"),
+    // which kills the mutant. What this test does prove is the visible
+    // behaviour: the field disappears and a head spec is what reaches the API.
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(suite());
+    render(
+      <AntApp>
+        <SuiteForm
+          suite={suite({
+            connection_id: 'conn-adls',
+            target: { path: 'raw/o.csv', sampling: { strategy: 'random', rows: 100, seed: 7 } },
+          })}
+          connections={[adlsConnection]}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+    expect(await screen.findByTestId('sampling-seed')).toHaveValue('7');
+
+    await user.click(screen.getByLabelText('Sample strategy'));
+    await user.click(
+      await screen.findByText('Head — the first rows in storage order (cheapest)', {
+        selector: '.ant-select-item-option-content',
+      }),
+    );
+    await waitFor(() => expect(screen.queryByTestId('sampling-seed')).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][1].target).toEqual({
+      path: 'raw/o.csv',
+      sampling: { strategy: 'head', rows: 100 },
+    });
+  });
+
+  it('flags a sampling block with no row count inline instead of saving it', async () => {
+    const user = userEvent.setup();
+    render(
+      <AntApp>
+        <SuiteForm
+          suite={suite({ connection_id: 'conn-adls', target: { path: 'raw/o.csv' } })}
+          connections={[adlsConnection]}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+    await screen.findByTestId('sampling-enabled');
+
+    // The label, not the input — antd's button-style radio leaves the input
+    // `pointer-events: none` (same idiom as the target-mode toggle above).
+    await user.click(screen.getByText('A sample'));
+    await screen.findByTestId('sampling-rows');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText(/whole number of rows between 1 and/)).toBeInTheDocument();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});

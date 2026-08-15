@@ -1,5 +1,16 @@
 import { LoadingOutlined } from '@ant-design/icons';
-import { App, Button, Divider, Flex, Form, Input, Radio, Select, Typography } from 'antd';
+import {
+  App,
+  Button,
+  Divider,
+  Flex,
+  Form,
+  Input,
+  InputNumber,
+  Radio,
+  Select,
+  Typography,
+} from 'antd';
 import axios from 'axios';
 import { useEffect, useRef, useState } from 'react';
 
@@ -14,10 +25,15 @@ import {
 import {
   asBatchStrategy,
   asFileFormat,
+  asSampleStrategy,
   assembleTarget,
+  MAX_SAMPLE_ROWS,
+  samplingNumber,
+  supportsSampling,
   type TargetFormValues,
   type TargetKind,
   targetKind,
+  targetSampling,
 } from './suiteTarget';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errors';
@@ -72,6 +88,7 @@ export function SuiteForm({
   useEffect(() => {
     if (suite) {
       const pattern = targetString(suite.target, 'pattern');
+      const sampling = targetSampling(suite.target);
       form.setFieldsValue({
         name: suite.name,
         description: suite.description ?? undefined,
@@ -87,6 +104,13 @@ export function SuiteForm({
         target_pattern: pattern,
         target_strategy: asBatchStrategy(targetString(suite.target, 'strategy')) ?? 'latest',
         target_batch: targetString(suite.target, 'batch'),
+        // A stored block IS the toggle — there is no separate "enabled" flag on
+        // the target, so its presence is the only truth about whether this suite
+        // samples (#595).
+        sampling_enabled: sampling !== undefined,
+        sampling_strategy: asSampleStrategy(sampling?.strategy) ?? 'head',
+        sampling_rows: samplingNumber(sampling, 'rows'),
+        sampling_seed: samplingNumber(sampling, 'seed'),
       });
     }
   }, [suite, form]);
@@ -100,7 +124,9 @@ export function SuiteForm({
     }
     // Assemble the datasource-shaped target; flag a partially-filled section
     // inline rather than letting the backend 422 on save.
-    const { target, error } = kind ? assembleTarget(kind, values) : { target: null };
+    const { target, error } = kind
+      ? assembleTarget(kind, values, activeConn?.type)
+      : { target: null };
     if (error) {
       form.setFields([{ name: error.field, errors: [error.message] }]);
       return;
@@ -154,7 +180,13 @@ export function SuiteForm({
           }))}
         />
       </Form.Item>
-      {kind && <TargetFields kind={kind} suiteId={isEdit ? suite.id : undefined} />}
+      {kind && (
+        <TargetFields
+          kind={kind}
+          suiteId={isEdit ? suite.id : undefined}
+          canSample={supportsSampling(activeConn?.type)}
+        />
+      )}
       <Flex justify="end" gap={8}>
         <Button onClick={onCancel}>Cancel</Button>
         <Button type="primary" htmlType="submit" loading={submitting}>
@@ -180,7 +212,19 @@ export function SuiteForm({
  * the connection's real object listing — create mode has no suite id yet to
  * preview against, so it stays summary-only there.
  */
-export function TargetFields({ kind, suiteId }: { kind: TargetKind; suiteId?: string }) {
+export function TargetFields({
+  kind,
+  suiteId,
+  canSample = false,
+}: {
+  kind: TargetKind;
+  suiteId?: string;
+  /** Whether this connection's datasource accepts a `sampling` block (#595).
+   *  When false the section is not rendered at all, because the backend answers
+   *  a spec there with a 422 — offering a control whose only outcome is a save
+   *  error would be worse than not offering it. */
+  canSample?: boolean;
+}) {
   const form = Form.useFormInstance();
   const mode = (Form.useWatch('target_mode', form) as 'single' | 'batch' | undefined) ?? 'single';
   const strategy =
@@ -287,6 +331,104 @@ export function TargetFields({ kind, suiteId }: { kind: TargetKind; suiteId?: st
           <Form.Item name="target_table" label="Table">
             <Input placeholder={kind === 'uc' ? 'orders' : 'ANALYTICS.ORDERS'} />
           </Form.Item>
+        </>
+      )}
+
+      {canSample && <SamplingFields />}
+    </>
+  );
+}
+
+/**
+ * The `sampling` authoring block (#595/#1325) — rendered only for the datasources
+ * whose runners materialise rows (ADLS Gen2 / S3 / Unity Catalog).
+ *
+ * Off by default and framed as what it is: sampling changes what a verdict
+ * *means*, so the copy says so at the point of the decision rather than leaving
+ * the reader to discover it from a "Sampled" tag on the results page. The
+ * strategy names carry the same honesty — `head` is "the first N rows in storage
+ * order", not "a sample", because it is systematically biased toward whatever
+ * the writer wrote first.
+ *
+ * Seed is shown for `random` only, mirroring the backend's refusal of a seed on
+ * `head`: a head sample always reads the same first rows and cannot be seeded, so
+ * offering the field there would promise reproducibility of a different kind than
+ * the one it delivers.
+ */
+function SamplingFields() {
+  const form = Form.useFormInstance();
+  const enabled = Boolean(Form.useWatch('sampling_enabled', form));
+  const strategy =
+    (Form.useWatch('sampling_strategy', form) as 'head' | 'random' | undefined) ?? 'head';
+
+  return (
+    <>
+      <Divider style={{ marginTop: 4 }} />
+      <Flex vertical gap={2} style={{ marginBottom: 12 }}>
+        <Typography.Text strong>Sampling (optional)</Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          Run this suite’s checks against a bounded sample instead of the whole dataset. Keeps a
+          large target inside the worker’s memory — but every verdict then describes the sample, so
+          a check can pass while failing rows sit outside it.
+        </Typography.Text>
+      </Flex>
+
+      <Form.Item name="sampling_enabled" label="Read" initialValue={false}>
+        <Radio.Group
+          data-testid="sampling-enabled"
+          optionType="button"
+          size="small"
+          options={[
+            { label: 'Whole dataset', value: false },
+            { label: 'A sample', value: true },
+          ]}
+        />
+      </Form.Item>
+
+      {enabled && (
+        <>
+          {/* "Sample strategy", not "Strategy" — the flat-file batch selector
+              above already owns a field called Strategy, and two identically
+              labelled controls in one form is an ambiguity for a screen reader
+              and for anyone reading the saved target back. */}
+          <Form.Item name="sampling_strategy" label="Sample strategy" initialValue="head">
+            <Select
+              data-testid="sampling-strategy"
+              options={[
+                { value: 'head', label: 'Head — the first rows in storage order (cheapest)' },
+                { value: 'random', label: 'Random — drawn uniformly across the dataset' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="sampling_rows"
+            label="Rows"
+            extra={`How many rows the checks see. Up to ${MAX_SAMPLE_ROWS.toLocaleString()}.`}
+          >
+            <InputNumber
+              data-testid="sampling-rows"
+              min={1}
+              max={MAX_SAMPLE_ROWS}
+              step={1000}
+              precision={0}
+              style={{ width: '100%' }}
+              placeholder="100000"
+            />
+          </Form.Item>
+          {strategy === 'random' && (
+            <Form.Item
+              name="sampling_seed"
+              label="Seed (optional)"
+              extra="Fixes the draw, so consecutive runs read the same rows and a change in verdict means a change in the data."
+            >
+              <InputNumber
+                data-testid="sampling-seed"
+                precision={0}
+                style={{ width: '100%' }}
+                placeholder="7"
+              />
+            </Form.Item>
+          )}
         </>
       )}
     </>

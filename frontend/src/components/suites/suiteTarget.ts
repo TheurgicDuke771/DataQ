@@ -68,6 +68,34 @@ export function isBatchTarget(target: Record<string, unknown> | null): boolean {
   return Boolean(targetString(target, 'pattern'));
 }
 
+/**
+ * Datasource types that accept a `sampling` block on their run target (#595) —
+ * mirrors the backend `registry.SAMPLING_CAPABLE_TYPES` exactly, and a canary
+ * test pins the two together.
+ *
+ * The absences are deliberate, not gaps. Snowflake pushes every expectation down
+ * as SQL and never materialises rows in the worker, so a sample there would
+ * change nothing while stamping "sampled" on every result; Iceberg's sampled read
+ * is not built. The backend refuses the block on both with a **422 at save time**
+ * rather than ignoring it, so hiding the control here is the same decision made
+ * one layer earlier — the editor must not offer a knob whose only effect is a
+ * save error.
+ */
+export const SAMPLING_CAPABLE_TYPES: ReadonlySet<ConnectionType> = new Set([
+  'adls_gen2',
+  's3',
+  'unity_catalog',
+]);
+
+export function supportsSampling(type: ConnectionType | undefined): boolean {
+  return type !== undefined && SAMPLING_CAPABLE_TYPES.has(type);
+}
+
+/** Bound on a declared sample, mirroring the backend `MAX_SAMPLE_ROWS`. Not a
+ *  memory guardrail (that is `RUN_MAX_SCAN_ROWS`, applied per datasource) — this
+ *  only keeps an obviously-nonsensical spec out of the stored target. */
+export const MAX_SAMPLE_ROWS = 10_000_000;
+
 /** The raw target inputs the drawer collects (all optional strings). */
 export interface TargetFormValues {
   target_table?: string;
@@ -84,6 +112,44 @@ export interface TargetFormValues {
   target_pattern?: string;
   target_strategy?: 'latest' | 'specific';
   target_batch?: string;
+  /** Scale-aware execution (#595). Off by default: sampling changes what a
+   *  verdict *means*, so it is opt-in per suite and never inherited. */
+  sampling_enabled?: boolean;
+  sampling_strategy?: SampleStrategy;
+  sampling_rows?: number | null;
+  /** `random` only — the backend 422s a seed on `head`, since a head sample
+   *  always reads the first rows in storage order and cannot be seeded. */
+  sampling_seed?: number | null;
+}
+
+export type SampleStrategy = 'head' | 'random';
+
+/** Narrow an untyped stored `sampling.strategy` — same reasoning as
+ *  `asFileFormat`: the target is a JSONB bag and a stray value must not prefill
+ *  the Select with an option that does not exist. */
+export function asSampleStrategy(value: unknown): SampleStrategy | undefined {
+  return value === 'head' || value === 'random' ? value : undefined;
+}
+
+/** The stored `sampling` block, narrowed for prefill. Returns `undefined` for a
+ *  target with none, or one whose block is not an object. */
+export function targetSampling(
+  target: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | undefined {
+  const raw = target?.sampling;
+  return raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : undefined;
+}
+
+/** A stored `sampling` number (`rows` / `seed`), or undefined when absent or
+ *  not a number. */
+export function samplingNumber(
+  sampling: Record<string, unknown> | undefined,
+  key: 'rows' | 'seed',
+): number | undefined {
+  const value = sampling?.[key];
+  return typeof value === 'number' ? value : undefined;
 }
 
 /** Narrow an untyped stored `file_format` to the supported set, else `undefined`
@@ -188,13 +254,93 @@ function assembleBatchTarget(v: TargetFormValues): AssembledTarget {
 }
 
 /**
+ * Fold the optional `sampling` block (#595) onto an assembled target.
+ *
+ * Three refusals rather than three silent drops, mirroring the backend's own
+ * refuse-don't-ignore stance: a dropped sampling block leaves an author believing
+ * a nightly 100M-row suite is bounded when it is not, and the first evidence
+ * would be the OOM the feature exists to prevent.
+ *
+ * * a spec on a datasource that cannot sample → error (the editor hides the
+ *   control there, so this only fires if the form state and the connection ever
+ *   disagree — which is exactly when a silent drop would be invisible);
+ * * a spec with no target to apply it to → error (`{sampling: …}` alone is not a
+ *   runnable target and the backend would 422 on save);
+ * * a spec with no row cap → error (`rows` is the whole declaration).
+ */
+function withSampling(
+  assembled: AssembledTarget,
+  v: TargetFormValues,
+  connType: ConnectionType | undefined,
+): AssembledTarget {
+  if (!v.sampling_enabled || assembled.error) return assembled;
+  if (!supportsSampling(connType)) {
+    return {
+      target: null,
+      error: {
+        field: 'sampling_enabled',
+        message:
+          'This datasource runs checks by pushdown and never loads rows into the worker, ' +
+          'so sampling would change nothing.',
+      },
+    };
+  }
+  if (assembled.target === null) {
+    return {
+      target: null,
+      error: {
+        field: 'sampling_enabled',
+        message: 'Sampling bounds a run target — set the target above first.',
+      },
+    };
+  }
+  const rows = v.sampling_rows;
+  if (typeof rows !== 'number' || !Number.isInteger(rows) || rows < 1 || rows > MAX_SAMPLE_ROWS) {
+    return {
+      target: null,
+      error: {
+        field: 'sampling_rows',
+        message: `A whole number of rows between 1 and ${MAX_SAMPLE_ROWS.toLocaleString()} is required.`,
+      },
+    };
+  }
+  const strategy: SampleStrategy = v.sampling_strategy ?? 'head';
+  // A seed only means something for `random` — the backend 422s it on `head`
+  // rather than let an author believe a head sample is seeded-random, so the
+  // form must not send one just because the field still holds a stale value
+  // from before the strategy was switched.
+  const seed =
+    strategy === 'random' && typeof v.sampling_seed === 'number' ? v.sampling_seed : null;
+  return {
+    target: {
+      ...assembled.target,
+      sampling: { strategy, rows, ...(seed !== null ? { seed } : {}) },
+    },
+  };
+}
+
+/**
  * Turn the raw inputs into a `RunTarget` for the connection's datasource, mirroring
  * the backend `run_target.resolve_target` rules so a saved target is always
  * runnable. All-blank → `null` (a valid targetless suite). Partially filled but
  * missing the datasource's required field → an `error` naming that field, so the
  * UI flags it inline rather than letting the backend 422 on save.
+ *
+ * `connType` gates the optional `sampling` block, which is accepted on some
+ * datasources and refused on others (`SAMPLING_CAPABLE_TYPES`) — see
+ * `withSampling`. Omitting it is safe for a caller that collects no sampling
+ * input; a caller that collects one and omits it gets an error, never a
+ * quietly-dropped block.
  */
-export function assembleTarget(kind: TargetKind, v: TargetFormValues): AssembledTarget {
+export function assembleTarget(
+  kind: TargetKind,
+  v: TargetFormValues,
+  connType?: ConnectionType,
+): AssembledTarget {
+  return withSampling(assembleBaseTarget(kind, v), v, connType);
+}
+
+function assembleBaseTarget(kind: TargetKind, v: TargetFormValues): AssembledTarget {
   if (kind === 'flatfile') {
     if (v.target_mode === 'batch') return assembleBatchTarget(v);
     const path = trimmed(v.target_path);
