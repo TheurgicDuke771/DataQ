@@ -618,7 +618,7 @@ history (`skip` on cold start), live-verified on both Snowflake and Unity Catalo
 renders bands + baseline overlay; threshold ordering validated at authoring (#568); the
 results/connections UX batch (#345/#283/#351/#424/#349) merged.
 
-### v1.1 W6 — scale-aware execution + hardening + cycle close (due 2026-08-15) — 13/14
+### v1.1 W6 — scale-aware execution + hardening + cycle close (due 2026-08-15) — 14/14 ✅ CLOSED 2026-08-15
 
 | Status | Task | Theme / gap |
 |---|---|---|
@@ -635,7 +635,7 @@ results/connections UX batch (#345/#283/#351/#424/#349) merged.
 | ✅ | [#318](https://github.com/TheurgicDuke771/DataQ/issues/318) **Honest incremental run progress** — [#1332](https://github.com/TheurgicDuke771/DataQ/pull/1332). `execute_run` now commits **per execution phase** instead of once at the end, so a resolved check is visible to a poll on another connection while the run is still going: per check for the executor-driven kinds (`schema_drift`/`anomaly`/`comparison`), one phase for the atomic GX expectation batch, one for the shared-frame scalar monitors. That is as fine as the engines actually go — the issue's "split the GX batch" option was **not** taken (it would re-read the dataset per check), so the other half is the issue's own honest fallback: `RunProgress.elapsed_ms` (server-measured, additive) plus a drawer that shows a heartbeat and the elapsed time *instead of* a 0% bar while nothing has resolved, because a bar pinned at 0% for a whole run reads as hung. The terminal contract is unchanged — a `failed`/`cancelled` run still carries **no** results, since `_discard_results` deletes the phases that had already committed; without it a partially-evaluated failed run would start feeding orphan `pass` rows into the health score. `list_results` now orders by the **check**, not the result: per-phase commits gave `results.created_at` real execution-order meaning, which would have silently re-sorted the run-detail table by engine | Theme 7 |
 | ✅ | [#457](https://github.com/TheurgicDuke771/DataQ/issues/457) Partial-index/predicate drift guard for a 3rd OrchestrationProvider (closed 2026-07-25, PR #991) | Theme 6 |
 | ✅ | [#310](https://github.com/TheurgicDuke771/DataQ/issues/310) History/audit strategy ADR — **ADR [0041](adr/0041-history-audit-strategy.md)** (amends 0020): cross-entity `audit_events` log **accepted** (phase-1 build [#1318](https://github.com/TheurgicDuke771/DataQ/issues/1318); #431/G1 rides the same table, phase 2), (a) rejected-need-met-by-(c), soft-delete re-deferred (narrower argument — #753/#541 killed its headline case), SCD-2 closed permanently; follow-ups [#1319](https://github.com/TheurgicDuke771/DataQ/issues/1319)/[#1320](https://github.com/TheurgicDuke771/DataQ/issues/1320) ([#1321](https://github.com/TheurgicDuke771/DataQ/pull/1321), 2026-08-13) | Theme 6 / ADR 0020 |
-| ⬜ | Cycle retro + `v1.1.0` tag + next-cycle planning input refresh | — |
+| ✅ | Cycle retro + `v1.1.0` tag + next-cycle planning input refresh — [retro-v1.1.md](retro-v1.1.md) written at the tag; `v1.1.0` tagged on this PR's merge commit; W6 milestone + epic #597 closed; the W7 stretch milestone stays open to 2026-08-22 and rolls **by name** at its close; next-cycle inputs = the retro + the open follow-up graph (#1318–#1320, #1326–#1331, #1334) + post-v1-roadmap.md | — |
 
 **Exit gate:** a deliberately oversized local file / UC table runs under the memory cap with
 sampled-ness recorded (vs the #587 baseline); perf + hardening/small-bug batches green; the

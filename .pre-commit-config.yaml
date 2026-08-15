@@ -58,6 +58,9 @@ repos:
         args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
       - id: check-yaml
+        # --unsafe = syntax-check only, no object construction: mkdocs.yml uses
+        # mkdocs-material's `!!python/name:` tag, which the default loader refuses.
+        args: [--unsafe]
       - id: check-json
       - id: check-toml
       - id: check-merge-conflict
