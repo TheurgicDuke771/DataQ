@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "e018d2851ac3",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1347-auth-scope-override",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "deploy/README.md",
+    "docs/getting-started.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e0/18d2851ac3/0/metadata.json",
+      "transcript": "/e0/18d2851ac3/0/full.jsonl",
+      "compact_transcript": "/e0/18d2851ac3/0/transcript.jsonl",
+      "content_hash": "/e0/18d2851ac3/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 14136,
+    "cache_read_tokens": 1806860,
+    "output_tokens": 2432,
+    "api_call_count": 6
+  }
+}
