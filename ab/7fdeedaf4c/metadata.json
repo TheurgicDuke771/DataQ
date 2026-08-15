@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "ab7fdeedaf4c",
+  "strategy": "manual-commit",
+  "branch": "docs/aws-terraform-progress-update",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ab/7fdeedaf4c/0/metadata.json",
+      "transcript": "/ab/7fdeedaf4c/0/full.jsonl",
+      "compact_transcript": "/ab/7fdeedaf4c/0/transcript.jsonl",
+      "content_hash": "/ab/7fdeedaf4c/0/content_hash.txt",
+      "prompt": "/ab/7fdeedaf4c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1006,
+    "cache_creation_tokens": 879356,
+    "cache_read_tokens": 225334870,
+    "output_tokens": 309385,
+    "api_call_count": 503
+  }
+}
