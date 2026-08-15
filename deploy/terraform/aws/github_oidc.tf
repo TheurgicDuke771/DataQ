@@ -51,13 +51,16 @@ resource "aws_iam_role" "github_deploy" {
 # account-wide. iam:PassRole is scoped to only the task/execution roles this
 # stack created, so the CI principal cannot pass an arbitrary role to a task.
 data "aws_iam_policy_document" "github_deploy" {
+  # Two statements, split by whether the action populates the `ecs:cluster`
+  # condition key (#1348). Task-definition actions are not cluster-scoped and
+  # never set the key, so putting them under the ArnEquals condition made the
+  # condition evaluate against a MISSING key — an implicit deny that would
+  # have failed the workflow's first `register-task-definition`.
   statement {
-    sid = "EcsDeploy"
+    sid = "EcsDeployClusterScoped"
     actions = [
       "ecs:UpdateService",
       "ecs:DescribeServices",
-      "ecs:DescribeTaskDefinition",
-      "ecs:RegisterTaskDefinition",
       "ecs:RunTask",
       "ecs:DescribeTasks",
     ]
@@ -67,6 +70,21 @@ data "aws_iam_policy_document" "github_deploy" {
       variable = "ecs:cluster"
       values   = [aws_ecs_cluster.app.arn]
     }
+  }
+
+  statement {
+    sid = "EcsTaskDefinitions"
+    actions = [
+      "ecs:RegisterTaskDefinition",
+      "ecs:DescribeTaskDefinition",
+    ]
+    # `*` is the best available scoping: the task-definition action family
+    # supports no resource-level restriction (registration creates a NEW
+    # revision ARN). The blast radius stays contained by the PassTaskRoles
+    # statement below — a registered definition is inert unless it can be run,
+    # and running it needs a role this policy will only pass for this stack's
+    # own task/execution roles, on this stack's cluster.
+    resources = ["*"]
   }
 
   statement {
