@@ -28,14 +28,19 @@ Modes, picked once at import time from settings:
 If nothing is configured, `init_auth` raises at startup — fail-closed.
 """
 
+import asyncio
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
+import httpx
+import jwt
 from fastapi import Depends, Request, Security
 from fastapi.security import SecurityScopes
 from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
 from fastapi_azure_auth.user import User as AzureUser
+from jwt.algorithms import RSAAlgorithm
 from sqlalchemy import case, func, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
@@ -62,6 +67,7 @@ def _dev_bypass_allowed(settings: Settings) -> bool:
         settings.environment == "dev"
         and settings.auth_dev_bypass
         and not settings.azure_auth_configured
+        and not settings.generic_oidc_configured
     )
 
 
@@ -134,6 +140,146 @@ def _build_azure_scheme(
     )
 
 
+def discover_jwks_uri(issuer: str, *, timeout: float = 5.0) -> str:
+    """Resolve `jwks_uri` from an OIDC issuer's discovery document.
+
+    Synchronous and shared by both callers that need it: `OidcBearerScheme.
+    load_config` below (wrapped in `asyncio.to_thread` — it must not block the
+    event loop) and `mcp.auth.build_auth_provider` (genuinely synchronous —
+    fastmcp's auth provider is built at **module import time**, before any
+    async startup hook exists to call into). One implementation, not a
+    sync/async pair that could quietly drift apart.
+    """
+    response = httpx.get(f"{issuer.rstrip('/')}/.well-known/openid-configuration", timeout=timeout)
+    response.raise_for_status()
+    jwks_uri: str = response.json()["jwks_uri"]
+    return jwks_uri
+
+
+class OidcBearerScheme:
+    """Provider-neutral OIDC bearer validator (ADR 0026 amendment).
+
+    Same PAT/OTP short-circuit discipline as `_PatAwareAzureScheme`, and the same
+    "never raise, return None on failure" contract as `auto_error=False` — but
+    speaks the *standard* (OIDC discovery + JWKS) instead of a vendor SDK
+    hardcoded to Microsoft's endpoints. `httpx` does the HTTP (this codebase's
+    established client, e.g. `OpenBaoSecretStore`); `PyJWT` does signature
+    verification (already an installed transitive of `fastapi-azure-auth`,
+    promoted to a direct pin since this class now imports it directly).
+
+    Returns the token's raw claims dict — there is no shared wrapper type to
+    mirror `AzureUser` with, and none is needed; `_extract_oidc_claims` reads it
+    the same way `_extract_claims` reads `AzureUser.claims`.
+
+    **RS256 only.** Every provider this was built against (Cognito, and RS256 is
+    the near-universal default for GCP Identity Platform/Okta/Auth0/Keycloak)
+    signs with RSA; a provider that signs with something else fails closed
+    (`_verify` returns `None`, i.e. the standard 401) rather than silently
+    accepting an unverified token — extend `_signing_key` if that's ever needed.
+    """
+
+    def __init__(self, issuer: str, audience: str, *, timeout: float = 5.0) -> None:
+        self._issuer = issuer.rstrip("/")
+        self._audience = audience
+        self._client = httpx.AsyncClient(timeout=timeout)
+        self._jwks_uri: str | None = None
+        self._jwks_cache: dict[str, Any] | None = None
+
+    async def load_config(self) -> None:
+        """Resolve `jwks_uri` from OIDC discovery and pre-warm the JWKS cache.
+
+        Called once from `init_auth()` — fail-closed at startup, mirroring
+        `azure_scheme.openid_config.load_config()`: a deployment must not report
+        healthy while unable to validate a single token.
+
+        `discover_jwks_uri` is synchronous (shared with `mcp.auth`, which can
+        only call it synchronously — see its docstring), so it runs off the
+        event loop thread here rather than blocking it.
+        """
+        self._jwks_uri = await asyncio.to_thread(discover_jwks_uri, self._issuer)
+        await self._refresh_jwks()
+
+    async def _refresh_jwks(self) -> dict[str, Any]:
+        assert self._jwks_uri is not None, "load_config() must run before any token is verified"
+        response = await self._client.get(self._jwks_uri)
+        response.raise_for_status()
+        jwks: dict[str, Any] = response.json()
+        self._jwks_cache = jwks
+        return jwks
+
+    def _signing_key(self, kid: str, jwks: dict[str, Any]) -> Any:
+        for key in jwks.get("keys", []):
+            if key.get("kid") == kid and key.get("kty") == "RSA":
+                return RSAAlgorithm.from_jwk(json.dumps(key))
+        return None
+
+    async def __call__(self, request: HTTPConnection) -> dict[str, Any] | None:
+        if _pat_token(request) is not None:
+            return None
+        if _otp_enabled and _session_token(request) is not None:
+            return None
+        token = _bearer_token(request)
+        if token is None:
+            return None
+        return await self._verify(token)
+
+    async def _verify(self, token: str) -> dict[str, Any] | None:
+        try:
+            header = jwt.get_unverified_header(token)
+        except jwt.PyJWTError:
+            return None
+        kid = header.get("kid")
+        if not isinstance(kid, str):
+            return None
+        jwks = self._jwks_cache
+        try:
+            key = self._signing_key(kid, jwks) if jwks is not None else None
+            if key is None:
+                # Absent from the cache: either a genuinely unknown key, or the
+                # provider rotated its signing keys since the last fetch. Refresh
+                # once and retry before giving up — mirrors OpenBao's
+                # single-retry-then-surface discipline (`_send`).
+                key = self._signing_key(kid, await self._refresh_jwks())
+        except httpx.HTTPError as exc:
+            log.warning("oidc_jwks_unavailable", issuer=self._issuer, error=str(exc))
+            return None
+        if key is None:
+            return None
+        try:
+            claims: dict[str, Any] = jwt.decode(
+                token,
+                key=key,
+                algorithms=["RS256"],
+                issuer=self._issuer,
+                # Audience is checked manually below, not via PyJWT's own
+                # `audience=` kwarg — see the docstring's Cognito note.
+                options={"verify_aud": False},
+            )
+        except jwt.PyJWTError:
+            return None
+        aud = claims.get("aud")
+        aud_values = aud if isinstance(aud, list) else [aud] if aud else []
+        # Standard OIDC puts the client id in `aud`. AWS Cognito's ACCESS token —
+        # what the SPA actually sends as the bearer, matching how the Azure path
+        # also validates an access token — carries it as `client_id` instead;
+        # its ID token does carry `aud`, but that is not what arrives here. This
+        # is the one deliberately provider-aware line in an otherwise generic
+        # implementation; it needs confirming against a real Cognito token once
+        # one exists (this codebase's own rule for anything crossing a
+        # third-party token-shape boundary — code review alone cannot settle it).
+        if self._audience not in aud_values and claims.get("client_id") != self._audience:
+            return None
+        return claims
+
+
+def _build_oidc_scheme(settings: Settings) -> OidcBearerScheme | None:
+    if not settings.generic_oidc_configured:
+        return None
+    assert settings.oidc_issuer is not None
+    assert settings.oidc_audience is not None
+    return OidcBearerScheme(issuer=settings.oidc_issuer, audience=settings.oidc_audience)
+
+
 def _bearer_token(request: HTTPConnection) -> str | None:
     """The raw bearer token from the Authorization header, if any.
 
@@ -170,6 +316,17 @@ def _session_token(request: HTTPConnection) -> str | None:
 
 _settings = get_settings()
 azure_scheme: SingleTenantAzureAuthorizationCodeBearer | None = _build_azure_scheme(_settings)
+#: The deterministic Azure AD v2 issuer URL, written to `users.oidc_issuer` on
+#: every real-mode login (self-healing pre-existing rows — see the model
+#: docstring). Same coordinates `fastapi_azure_auth` itself validates against.
+_AZURE_ISSUER: str | None = (
+    f"https://login.microsoftonline.com/{_settings.azure_tenant_id}/v2.0"
+    if _settings.azure_tenant_id
+    else None
+)
+#: The generic-OIDC counterpart to `azure_scheme` — mutually exclusive with it
+#: (`Settings._validate_generic_oidc`), so exactly one of the two is non-None.
+oidc_scheme: OidcBearerScheme | None = _build_oidc_scheme(_settings)
 #: Whether email OTP sign-in is configured — read once at import, like the Azure
 #: scheme, because the whole mode ladder is bound at import time (12-factor: change
 #: the env and restart).
@@ -207,6 +364,7 @@ def _claim_unlinked_user(
     email: str,
     display_name: str | None,
     now: datetime,
+    oidc_issuer: str | None = None,
 ) -> User | None:
     """Attach an AAD identity to an existing OTP-provisioned row, or return None.
 
@@ -251,6 +409,7 @@ def _claim_unlinked_user(
         )
         .values(
             aad_object_id=aad_object_id,
+            oidc_issuer=oidc_issuer,
             email=email,
             display_name=case(
                 (User.display_name_override.is_(True), User.display_name),
@@ -277,6 +436,7 @@ def _upsert_user(
     aad_object_id: str,
     email: str,
     display_name: str | None,
+    oidc_issuer: str | None = None,
     _retrying: bool = False,
 ) -> User:
     now = datetime.now(UTC)
@@ -284,6 +444,7 @@ def _upsert_user(
         insert(User)
         .values(
             aad_object_id=aad_object_id,
+            oidc_issuer=oidc_issuer,
             email=email,
             display_name=display_name,
             last_seen_at=now,
@@ -292,6 +453,7 @@ def _upsert_user(
             index_elements=["aad_object_id"],
             set_={
                 "email": email,
+                "oidc_issuer": oidc_issuer,
                 # Branches on `display_name_override` (#1139, migration
                 # 6230293aea96), not a plain overwrite AND not a bare COALESCE.
                 # This upsert runs on EVERY real-mode request (no session cache
@@ -342,6 +504,7 @@ def _upsert_user(
                 email=email,
                 display_name=display_name,
                 now=now,
+                oidc_issuer=oidc_issuer,
             )
             if linked is not None:
                 return linked
@@ -355,6 +518,7 @@ def _upsert_user(
                 aad_object_id=aad_object_id,
                 email=email,
                 display_name=display_name,
+                oidc_issuer=oidc_issuer,
                 _retrying=True,
             )
         # Deliberately no email in the message or the log. The redactor covers
@@ -378,6 +542,21 @@ def _extract_claims(azure_user: AzureUser) -> tuple[str, str, str | None]:
     display_name_raw = claims.get("name")
     display_name = str(display_name_raw) if display_name_raw is not None else None
     return aad_oid, email, display_name
+
+
+def _extract_oidc_claims(claims: dict[str, Any]) -> tuple[str, str, str | None]:
+    """The generic-OIDC counterpart to `_extract_claims`.
+
+    `sub` — RFC 7519's REQUIRED subject claim — not Azure's non-standard `oid`;
+    bare `claims["sub"]` on purpose, so a token missing it (a malformed/misissued
+    token, since every compliant OIDC provider sets it) fails loudly rather than
+    silently keying a row on an empty string.
+    """
+    subject = str(claims["sub"])
+    email = str(claims.get("email") or "")
+    display_name_raw = claims.get("name")
+    display_name = str(display_name_raw) if display_name_raw is not None else None
+    return subject, email, display_name
 
 
 def _log_otp_mode_ready() -> None:
@@ -409,12 +588,24 @@ async def init_auth() -> None:
         await azure_scheme.openid_config.load_config()
         log.info(
             "auth_real_mode_ready",
+            provider="azure_ad",
             tenant_id=_settings.azure_tenant_id,
             client_id=_settings.azure_api_client_id,
             scope=_settings.azure_api_scope_uri,
         )
         # Both may be on at once (ADR 0032 decision 1's "real + otp"): AAD for the
         # org's own identities, OTP for the people it has no directory entry for.
+        if _otp_enabled:
+            _log_otp_mode_ready()
+        return
+    if oidc_scheme is not None:
+        await oidc_scheme.load_config()
+        log.info(
+            "auth_real_mode_ready",
+            provider="generic_oidc",
+            issuer=_settings.oidc_issuer,
+            audience=_settings.oidc_audience,
+        )
         if _otp_enabled:
             _log_otp_mode_ready()
         return
@@ -433,6 +624,8 @@ async def init_auth() -> None:
         return
     raise RuntimeError(
         "Auth not configured. Set AZURE_TENANT_ID + AZURE_API_CLIENT_ID, "
+        "or OIDC_ISSUER + OIDC_AUDIENCE for a generic OIDC provider (Cognito, "
+        "GCP Identity Platform, Okta, Keycloak, ...), "
         "or configure email OTP sign-in (AUTH_EMAIL_SMTP_HOST + AUTH_EMAIL_USERNAME "
         "+ AUTH_EMAIL_FROM + AUTH_EMAIL_PASSWORD_SECRET_NAME, plus "
         "AUTH_OTP_ALLOWED_EMAILS and/or AUTH_OTP_ALLOWED_DOMAINS), "
@@ -465,7 +658,9 @@ def _get_current_user_real(
             status_code=401,
         )
     aad_oid, email, display_name = _extract_claims(azure_user)
-    user = _upsert_user(db, aad_object_id=aad_oid, email=email, display_name=display_name)
+    user = _upsert_user(
+        db, aad_object_id=aad_oid, email=email, display_name=display_name, oidc_issuer=_AZURE_ISSUER
+    )
     log.info("auth_user_resolved", mode="real", aad_oid=aad_oid, user_id=str(user.id))
     return user
 
@@ -499,8 +694,68 @@ def _get_current_user_real_or_otp(
             status_code=401,
         )
     aad_oid, email, display_name = _extract_claims(azure_user)
-    user = _upsert_user(db, aad_object_id=aad_oid, email=email, display_name=display_name)
+    user = _upsert_user(
+        db, aad_object_id=aad_oid, email=email, display_name=display_name, oidc_issuer=_AZURE_ISSUER
+    )
     log.info("auth_user_resolved", mode="real", aad_oid=aad_oid, user_id=str(user.id))
+    return user
+
+
+def _get_current_user_generic_oidc(
+    request: Request,
+    oidc_claims: Annotated[dict[str, Any] | None, Security(oidc_scheme)],
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
+    """The generic-OIDC counterpart to `_get_current_user_real`."""
+    pat = _pat_token(request)
+    if pat is not None:
+        return api_key_service.resolve_token(db, pat)
+    if oidc_claims is None:
+        raise DataQError(
+            code="unauthenticated",
+            message=_UNAUTHENTICATED_MESSAGE,
+            status_code=401,
+        )
+    subject, email, display_name = _extract_oidc_claims(oidc_claims)
+    user = _upsert_user(
+        db,
+        aad_object_id=subject,
+        email=email,
+        display_name=display_name,
+        oidc_issuer=_settings.oidc_issuer,
+    )
+    log.info("auth_user_resolved", mode="generic_oidc", user_id=str(user.id))
+    return user
+
+
+def _get_current_user_generic_oidc_or_otp(
+    request: Request,
+    oidc_claims: Annotated[dict[str, Any] | None, Security(oidc_scheme)],
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
+    """Generic OIDC **and** email OTP both configured — the counterpart to
+    `_get_current_user_real_or_otp`."""
+    pat = _pat_token(request)
+    if pat is not None:
+        return api_key_service.resolve_token(db, pat)
+    cookie = _session_token(request)
+    if cookie is not None:
+        return session_service.resolve_token(db, cookie)
+    if oidc_claims is None:
+        raise DataQError(
+            code="unauthenticated",
+            message=_UNAUTHENTICATED_MESSAGE_OTP,
+            status_code=401,
+        )
+    subject, email, display_name = _extract_oidc_claims(oidc_claims)
+    user = _upsert_user(
+        db,
+        aad_object_id=subject,
+        email=email,
+        display_name=display_name,
+        oidc_issuer=_settings.oidc_issuer,
+    )
+    log.info("auth_user_resolved", mode="generic_oidc", user_id=str(user.id))
     return user
 
 
@@ -575,6 +830,10 @@ def _get_current_user_unconfigured() -> User:
 get_current_user: Callable[..., User]
 if azure_scheme is not None:
     get_current_user = _get_current_user_real_or_otp if _otp_enabled else _get_current_user_real
+elif oidc_scheme is not None:
+    get_current_user = (
+        _get_current_user_generic_oidc_or_otp if _otp_enabled else _get_current_user_generic_oidc
+    )
 elif _otp_enabled:
     get_current_user = _get_current_user_otp
 elif _dev_bypass_allowed(_settings):

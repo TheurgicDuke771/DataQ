@@ -13,6 +13,45 @@
 > per normalized email across authenticators (ADR 0032 Decision 6, #735).
 > Service-account principals remain deferred phase-2 scope.
 
+> **Amendment (2026-08-15, provider-neutral OIDC):** the same open question is now
+> **answered for a second real-IdP slice — generic OIDC** (closes the "Lock-in"
+> paragraph in Context below for the auth-validation half; service-account
+> principals are still deferred). ADR 0028 had already made the frontend
+> provider-neutral (`oidc-client-ts`, the `DATAQ_AUTH_*` runtime contract); the
+> backend validator (`fastapi_azure_auth`, hardcoded to Microsoft's discovery/JWKS
+> shape and Entra-specific claim names — `oid`/`preferred_username`/`upn`) was the
+> coupling left. Built rather than deferred again: a customer on AWS (Cognito) or
+> GCP is the concrete non-Azure BYOL case this ADR names, and the AWS deployment
+> work that surfaced the gap made it not-hypothetical.
+>
+> **Shape, not a "generic principal" rewrite.** `users.aad_object_id` is
+> **unchanged** — not renamed, not re-typed — its bare `UNIQUE` constraint already
+> gives cross-issuer uniqueness (real IdPs mint opaque/random subject ids; a
+> collision between two different issuers' values is not a realistic risk). A new
+> nullable `users.oidc_issuer` column disambiguates *which* issuer authenticated a
+> row; both the Azure and the new generic-OIDC login paths write it on every
+> login (self-healing — no backfill migration). A second, standards-based
+> validator (`core.auth.OidcBearerScheme`) does OIDC discovery
+> (`/.well-known/openid-configuration`) + JWKS signature verification via `PyJWT`
+> against **any** configured issuer, keyed on the RFC 7519 `sub` claim (not
+> Azure's non-standard `oid`) — mutually exclusive with Azure by config validation
+> (one real-IdP mode per deployment; OTP still layers on either). The MCP layer
+> needed less: `fastmcp.JWTVerifier` was already a generic JWKS verifier, only
+> ever *configured* with Azure's endpoints — it gained a `generic_oidc` branch,
+> not new verification code.
+>
+> **One provider-specific accommodation, documented rather than hidden:**
+> Cognito's OAuth *access* token (what the SPA sends as the bearer, matching how
+> the Azure path also validates an access token) carries the client id as
+> `client_id`, not the standard `aud` — `OidcBearerScheme` accepts a match on
+> either claim. Everything else in the validator is provider-agnostic; this line
+> is the one exception, and it needs confirming against a real Cognito token once
+> the AWS deployment's Cognito user pool exists (this codebase's "#953 rule" —
+> anything crossing a third-party token-shape boundary needs a live check, not
+> just a spec read).
+>
+> Service-account principals remain deferred phase-2 scope, unaffected by this.
+
 > **Stub — Proposed, not yet designed in full.** Captures the direction while it's fresh; to be fleshed out when Theme 3 (access/identity) is picked up post-v1.
 
 ## Context

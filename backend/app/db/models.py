@@ -147,6 +147,20 @@ class User(Base):
     user has no Azure AD identity. Its unique constraint stays — Postgres treats
     NULLs as distinct, so any number of OTP users coexist while AAD users remain
     one row per object id.
+
+    Despite the name, `aad_object_id` now holds the stable subject claim from
+    **any** configured OIDC issuer, not only Azure AD (ADR 0026 amendment,
+    provider-neutral auth) — kept as-is rather than renamed, since a rename would
+    be a backward-incompatible schema change for zero behavioral gain (its bare
+    `UNIQUE` constraint already gives cross-issuer uniqueness; real IdPs mint
+    opaque/random subject ids, so a collision between two different issuers'
+    values is not a realistic risk). `oidc_issuer` disambiguates *which* issuer
+    authenticated this row — nullable, and self-healing: both the Azure and the
+    generic-OIDC login paths write it on every login, so pre-existing rows pick
+    it up on their next sign-in rather than needing a backfill. A `NULL` issuer
+    on a row with a non-`NULL` `aad_object_id` reads as "a legacy Azure row that
+    has not yet re-logged-in" — not migrated, and not ambiguous with an OTP row
+    (which has `aad_object_id IS NULL` too, so it's covered by the same read).
     """
 
     __tablename__ = "users"
@@ -167,6 +181,11 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     aad_object_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    # The OIDC issuer that authenticated this row (e.g. the Azure AD v2 tenant
+    # issuer, or a generic OIDC provider's `iss` claim) — see the class docstring.
+    # No uniqueness/index of its own; it's a descriptive pairing with
+    # `aad_object_id`, not an identity key by itself.
+    oidc_issuer: Mapped[str | None] = mapped_column(String(512), nullable=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(256))
     # True once a human has explicitly set their own name via `PATCH /me`
