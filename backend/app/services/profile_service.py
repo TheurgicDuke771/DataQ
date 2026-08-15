@@ -9,9 +9,11 @@ on table/file select" panel).
 `profile_connection` dispatches on the connection type:
 
 * **SQL datasources** (Snowflake + Unity Catalog) — aggregate the stats
-  in-warehouse with one round-trip + a top-values query per column, via the
-  datasource's SQLAlchemy dialect. Unity Catalog adds a `catalog` so the table is
-  qualified `catalog.schema.table` (3-level namespace); Snowflake is `schema.table`.
+  in-warehouse in one round-trip, plus one *batched* top-values round-trip per
+  `_TOP_VALUES_BATCH` columns (#327 — it used to be one query per column, so a
+  50-column profile cost 51 sequential round-trips and now costs 3), via the
+  datasource's SQLAlchemy dialect. Unity Catalog adds a `catalog` so the table is qualified
+  `catalog.schema.table` (3-level namespace); Snowflake is `schema.table`.
 * **Flat-file datasources** (ADLS Gen2, S3) — download a *sample* of the file
   (`_SAMPLE_ROWS` rows) into Pandas and compute the same stats locally. CSV and
   Parquet are supported; stats are therefore over the sample, not the whole file.
@@ -40,7 +42,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import column, distinct, func, literal_column, select
+from sqlalchemy import column, distinct, func, literal_column, select, union_all
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql import Select
 
 if TYPE_CHECKING:
@@ -85,6 +88,20 @@ log = get_logger(__name__)
 _SUPPORTED_FORMATS = {"csv", "parquet"}
 # Flat-file profiling reads at most this many rows — stats are over the sample.
 _SAMPLE_ROWS = 100_000
+# How many columns share one batched top-values round-trip (#327). The batched
+# query joins one derived table per column (see `build_batched_top_values_query`),
+# and past a couple of dozen relations a planner stops enumerating join orders
+# exhaustively — Postgres switches to its genetic optimiser at 12 — so the batch
+# is bounded here rather than left to grow with the caller's column list.
+#
+# 25 is measured, not guessed. On a 50-column / 50k-row local Postgres the whole
+# top-values pass took ~270 ms at every chunk size from 8 to 25 and jumped to
+# ~820 ms as a single 50-way join, while round-trips fall monotonically with the
+# chunk size. 25 sits at the last point before that cliff, which puts the profile
+# endpoint's own 50-column cap at exactly TWO batched round-trips (previously 50)
+# and still bounds `suggest_policy_for_target` — the one caller that profiles
+# every column a target has — to a round-trip per 25 columns instead of per 1.
+_TOP_VALUES_BATCH = 25
 
 
 # Connector timeouts (seconds): fail fast rather than hang the request thread.
@@ -221,6 +238,37 @@ def build_aggregate_query(
     return select(*projection).select_from(_table(schema, table_name, catalog, dialect))
 
 
+# Output labels for the top-values query. Deliberately `dq_`-prefixed rather than
+# the obvious `value` / `freq` (#327 review, P2): SQL resolves a bare name in
+# `ORDER BY` against the **output** aliases first, so a table with a column
+# literally named `freq` turned `ORDER BY count(*) DESC, freq` into
+# `ORDER BY count(*) DESC, count(*)` — the tie-break silently vanished, and in
+# the batched form the query's LIMIT then kept a different tie-set than the
+# `ROW_NUMBER()` ranked (whose `freq` still means the input column, since a
+# window in the SELECT list sees input columns), so kept rows could carry a rank
+# past `top_n`, join nothing, and disappear from the profile with no error.
+#
+# This was **pre-existing** in the per-column query, not introduced by the batch;
+# it is fixed here for both. The residual is a column literally named `dq_value`
+# or `dq_freq`, which the pg suite pins as still-correct because the tie-break
+# then resolves to that column either way (the alias and the input column are the
+# same expression) — the `freq` case was the one where they differed.
+_VALUE_LABEL = "dq_value"
+_FREQ_LABEL = "dq_freq"
+_RANK_LABEL = "dq_rn"
+
+
+def _grouped_column(col: str) -> tuple[Any, list[Any]]:
+    """The validated column expression + the ordering every top-values query uses.
+
+    One definition shared by `build_top_values_query` and the batched builder's
+    ``ROW_NUMBER()`` window, so the rank and the ``LIMIT`` can never be ordered by
+    subtly different expressions.
+    """
+    c: Any = column(folding_identifier(validate_identifier(col)))
+    return c, [func.count().desc(), c]
+
+
 def build_top_values_query(
     schema: str,
     table_name: str,
@@ -229,17 +277,134 @@ def build_top_values_query(
     catalog: str | None = None,
     dialect: Dialect | None = None,
 ) -> Select[Any]:
-    """Most frequent non-null values for one column (highest count first)."""
-    c: Any = column(folding_identifier(validate_identifier(col)))
-    freq = func.count().label("freq")
+    """Most frequent non-null values for one column (highest count first).
+
+    Emits ``dq_value`` / ``dq_freq``, not ``value`` / ``freq`` — see `_VALUE_LABEL`.
+    `_top_values_per_column` maps them back to the ``value``/``freq`` keys
+    `assemble_profile` consumes, so the label choice stays inside this module.
+    """
+    c, ordering = _grouped_column(col)
     return (
-        select(c.label("value"), freq)
+        select(c.label(_VALUE_LABEL), func.count().label(_FREQ_LABEL))
         .select_from(_table(schema, table_name, catalog, dialect))
         .where(c.is_not(None))
         .group_by(c)
-        .order_by(func.count().desc(), c)
+        .order_by(*ordering)
         .limit(int(top_n))
     )
+
+
+def build_batched_top_values_query(
+    schema: str,
+    table_name: str,
+    columns: list[str],
+    top_n: int,
+    catalog: str | None = None,
+    dialect: Dialect | None = None,
+) -> Select[Any]:
+    """Every column's top values in **one** round-trip (#327).
+
+    Shape: a rank driver (``1..top_n``) LEFT-joined to one derived table per
+    column, each of which is **literally `build_top_values_query`'s own statement**
+    with a ``ROW_NUMBER()`` added — not a re-implementation of it. Composing
+    rather than copying is what makes "same ``WHERE``, ``GROUP BY``, ``ORDER BY``
+    and ``LIMIT``" true by construction, so the batched and fallback paths cannot
+    drift apart in a later edit::
+
+        SELECT r.rn, t0.dq_value AS v_0, t0.dq_freq AS f_0, t1.dq_value AS v_1, …
+        FROM (SELECT 1 AS rn UNION ALL SELECT 2 AS rn …) AS dq_ranks r
+        LEFT JOIN (SELECT c0 AS dq_value, count(*) AS dq_freq,
+                          ROW_NUMBER() OVER (ORDER BY count(*) DESC, c0) AS dq_rn
+                   FROM tbl WHERE c0 IS NOT NULL GROUP BY c0
+                   ORDER BY count(*) DESC, c0 LIMIT n) AS t0 ON t0.dq_rn = r.rn
+        LEFT JOIN (…same for c1…) AS t1 ON t1.dq_rn = r.rn
+        ORDER BY r.rn
+
+    **Why a join and not the obvious ``UNION ALL`` of per-column selects.** That
+    was tried first and it is the trap #327 itself flagged. A union has to unify
+    the branches' column types, so every column's values land in one ``value``
+    projection: Postgres refuses ``integer``/``text`` outright, Snowflake
+    silently coerces the lot to ``VARCHAR``, and the profile's numbers come back
+    as strings on one dialect and not the other. Giving each column its own slot
+    and padding the other branches with ``NULL`` does not rescue it either — an
+    untyped ``NULL`` is resolved *pairwise, left to right*, so in a left-deep
+    union tree two ``NULL`` padding slots resolve to ``text`` before the branch
+    that owns the slot is ever reached, and Postgres then rejects the whole
+    statement (verified: ``UNION types text and timestamp … cannot be matched``).
+    A join never unifies anything: each column's value stays in its own output
+    column with its own type, so a NUMERIC arrives as a ``Decimal`` and a
+    TIMESTAMP as a datetime, exactly as the per-column path delivered them.
+
+    It is also the *small* shape — ``top_n`` rows of ``2N+1`` columns, rather
+    than the union's N-by-N projection over ``N * top_n`` rows. What it costs
+    instead is join planning, which is why `_TOP_VALUES_BATCH` caps N.
+
+    ``ROW_NUMBER()`` carries the per-column ordering across the join: a joined
+    result has no inherent order, and re-sorting *values* in Python would not
+    reproduce the warehouse's collation for a count tie. The outer ``ORDER BY``
+    plus the rank key make the emitted order the per-column query's order,
+    ties included.
+
+    Built with the Core expression language throughout, so the dialect quotes
+    every identifier and renders the joins/derived tables itself — no string SQL.
+    """
+    if not columns:
+        raise ValueError("build_batched_top_values_query needs at least one column")
+    limit = int(top_n)
+    if limit < 1:
+        raise ValueError("build_batched_top_values_query needs a positive top_n")
+    # Ranks are loop counters, not caller input — `literal_column` keeps them out
+    # of the bind-parameter set and makes the driver a plain integer union, which
+    # has nothing to unify.
+    ranks = union_all(
+        *[select(literal_column(str(rank)).label("rn")) for rank in range(1, limit + 1)]
+    ).subquery("dq_ranks")
+
+    joined: Any = ranks
+    projection: list[Any] = [ranks.c.rn.label("rn")]
+    for i, col in enumerate(columns):
+        _, ordering = _grouped_column(col)
+        top = (
+            build_top_values_query(schema, table_name, col, limit, catalog, dialect)
+            .add_columns(func.row_number().over(order_by=ordering).label(_RANK_LABEL))
+            .subquery(f"dq_top_{i}")
+        )
+        joined = joined.join(top, top.c[_RANK_LABEL] == ranks.c.rn, isouter=True)
+        projection.extend([top.c[_VALUE_LABEL].label(f"v_{i}"), top.c[_FREQ_LABEL].label(f"f_{i}")])
+    return select(*projection).select_from(joined).order_by(ranks.c.rn)
+
+
+def collect_batched_top_values(
+    rows: list[Mapping[str, Any]], columns: list[str]
+) -> dict[str, list[Mapping[str, Any]]]:
+    """Un-pivot `build_batched_top_values_query`'s rows into the per-column shape
+    `assemble_profile` consumes — ``{column: [{"value": …, "freq": int}, …]}``.
+
+    One row is one *rank*: column *i*'s rank-``rn`` value sits in ``v_i`` with its
+    count in ``f_i``. A column with fewer distinct values than ``top_n`` — or an
+    all-null column, which contributes nothing — simply has no match at that rank,
+    so the LEFT JOIN leaves both slots NULL. ``f_i`` is the presence marker rather
+    than ``v_i`` because it is the one that cannot be NULL for a real row (the
+    per-column query filters ``IS NOT NULL``, and a COUNT is never null).
+
+    Rows are re-sorted by ``rn`` rather than trusted in arrival order: the outer
+    ``ORDER BY`` already asks for it, and paying one sort makes the reader
+    independent of whether a given driver honours it.
+
+    Columns that contributed no rows at all are simply absent from the result —
+    `assemble_profile` renders a missing key as ``[]``, which is what the
+    per-column path's empty result set produced.
+    """
+    by_index: dict[int, list[Mapping[str, Any]]] = {}
+    for row in sorted(rows, key=lambda item: int(item["rn"])):
+        for index in range(len(columns)):
+            freq = row[f"f_{index}"]
+            if freq is None:
+                continue
+            by_index.setdefault(index, []).append({"value": row[f"v_{index}"], "freq": freq})
+    # Keyed by index then remapped, so a repeated column name collapses to one
+    # entry exactly as the per-column path's dict comprehension did.
+    return {columns[index]: entries for index, entries in by_index.items()}
 
 
 def build_columns_query(
@@ -456,6 +621,135 @@ def resolve_effective_schema(connection: Connection, schema: str | None) -> str:
     return effective_schema
 
 
+def _top_values_per_column(
+    conn: Any,
+    *,
+    schema: str,
+    table: str,
+    columns: list[str],
+    top_n: int,
+    catalog: str | None,
+    dialect: Dialect | None,
+) -> dict[str, list[Mapping[str, Any]]]:
+    """The original path: one grouped-and-limited query per column, N round-trips.
+
+    Kept as an explicit, reachable fallback (#327's own instruction), not as dead
+    code — see `_fetch_top_values`.
+
+    The driver's ``dq_value``/``dq_freq`` labels (see `_VALUE_LABEL`) are mapped
+    to the ``value``/``freq`` keys `assemble_profile` consumes, so both fetch
+    paths hand it the identical plain-dict shape and the SQL label choice stays
+    an implementation detail of this module.
+    """
+    return {
+        col: [
+            {"value": row[_VALUE_LABEL], "freq": row[_FREQ_LABEL]}
+            for row in conn.execute(
+                build_top_values_query(schema, table, col, top_n, catalog, dialect)
+            ).mappings()
+        ]
+        for col in columns
+    }
+
+
+def _recover_transaction(conn: Any) -> None:
+    """Roll back so the fallback can run on a usable connection (#327 review, P1).
+
+    A server-side rejection of the batched statement leaves SQLAlchemy's autobegun
+    transaction **aborted** on Postgres-family engines: every subsequent statement
+    on that connection raises ``InFailedSqlTransaction`` until it is rolled back.
+    Without this the fallback was dead code exactly when it was needed — the
+    profile 502'd where the pre-#327 per-column path would have succeeded. Not
+    theoretical: reproduced against a live Postgres, and pinned by a test that
+    executes a genuinely failing statement rather than raising from Python.
+
+    Best-effort by design. The profiler only ever reads, so there is nothing to
+    lose by rolling back, and a connection object that cannot (a test double, an
+    autocommit-only driver) must not turn a recoverable batch failure into a hard
+    one — hence the broad catch and the log instead of a raise.
+    """
+    try:
+        conn.rollback()
+    except Exception as exc:
+        log.warning("profile_top_values_rollback_failed", error_type=type(exc).__name__)
+
+
+def _fetch_top_values(
+    conn: Any,
+    *,
+    schema: str,
+    table: str,
+    columns: list[str],
+    top_n: int,
+    catalog: str | None,
+    dialect: Dialect | None,
+) -> dict[str, list[Mapping[str, Any]]]:
+    """Top values for every column, batched, with the per-column path as fallback.
+
+    Runs `build_batched_top_values_query` in chunks of `_TOP_VALUES_BATCH` — the
+    #327 win, turning 1 + N round-trips into 1 + ceil(N / `_TOP_VALUES_BATCH`).
+
+    **Failure is handled per chunk, not per call** (#327 review, P5). A chunk that
+    the engine rejects is retried column-by-column *for that chunk's columns only*;
+    chunks that already succeeded are kept. Re-running everything would have made
+    the failure case cost more round-trips than the code this replaced (53 vs 51
+    on a 50-column, 2-chunk profile) and would recompute against the very
+    warehouse that just proved slow.
+
+    What is caught is deliberately narrow — ``SQLAlchemyError`` (whose subtree
+    includes ``DBAPIError``, i.e. every wrapped driver rejection) around the
+    ``execute`` only. A dialect disagreeing about the rank-join is what the
+    fallback exists for; a bug in `collect_batched_top_values` is *ours*, and a
+    broad catch spanning it would silently route every profile through the N+1
+    path forever behind one warning nobody alerts on — #327 un-fixed in practice,
+    with every test still green. Builder errors (a rejected identifier) are raised
+    outside the ``try`` for the same reason: retrying per column would only turn
+    one clean 422 into two round-trips and the same 422.
+
+    The fallback is also not silent: it logs ``profile_top_values_batch_fallback``
+    with the exception type and the chunk width, so a warehouse that always falls
+    back is visible in telemetry rather than merely slow. And it rolls the
+    connection back first — see `_recover_transaction`.
+    """
+    if not columns:
+        return {}
+    if int(top_n) < 1:
+        # No top values were asked for. Both API surfaces bound `top_n` at >= 1 so
+        # this is unreachable in practice; answering in Python rather than issuing
+        # N `LIMIT 0` round-trips that can only return nothing (#327 review, m1).
+        return {col: [] for col in columns}
+
+    collected: dict[str, list[Mapping[str, Any]]] = {}
+    for start in range(0, len(columns), _TOP_VALUES_BATCH):
+        batch = columns[start : start + _TOP_VALUES_BATCH]
+        # Built outside the try: a builder failure is a rejected identifier (422),
+        # not a dialect disagreement, and must not be retried per column.
+        statement = build_batched_top_values_query(schema, table, batch, top_n, catalog, dialect)
+        try:
+            rows = list(conn.execute(statement).mappings())
+        except SQLAlchemyError as exc:
+            log.warning(
+                "profile_top_values_batch_fallback",
+                error_type=type(exc).__name__,
+                batch_columns=len(batch),
+            )
+            _recover_transaction(conn)
+            collected.update(
+                _top_values_per_column(
+                    conn,
+                    schema=schema,
+                    table=table,
+                    columns=batch,
+                    top_n=top_n,
+                    catalog=catalog,
+                    dialect=dialect,
+                )
+            )
+            continue
+        collected.update(collect_batched_top_values(rows, batch))
+    return collected
+
+
 def profile_table(
     connection: Connection,
     *,
@@ -497,16 +791,15 @@ def profile_table(
                 .mappings()
                 .one()
             )
-            top_values = {
-                col: list(
-                    conn.execute(
-                        build_top_values_query(
-                            effective_schema, table, col, top_n, catalog, dialect
-                        )
-                    ).mappings()
-                )
-                for col in columns
-            }
+            top_values = _fetch_top_values(
+                conn,
+                schema=effective_schema,
+                table=table,
+                columns=columns,
+                top_n=top_n,
+                catalog=catalog,
+                dialect=dialect,
+            )
     except Exception as exc:
         log.warning(
             "column_profile_failed", connection_type=connection.type, error_type=type(exc).__name__
