@@ -154,7 +154,11 @@ to real SSO with **no rebuild** (ADR 0028):
   SSO, run the same image with `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY`
   (e.g. `https://login.microsoftonline.com/<tenant>/v2.0`) + `DATAQ_AUTH_CLIENT_ID` (your
   SPA app registration) + `DATAQ_AUTH_API_SCOPE` (`api://<api-client-id>/<scope>`), and run
-  the **backend** with `AUTH_DEV_BYPASS` off + the matching `AZURE_*` settings.
+  the **backend** with `AUTH_DEV_BYPASS` off + the matching `AZURE_*` settings. For a
+  non-Azure IdP whose scope vocabulary differs, the optional `DATAQ_AUTH_SCOPE` (#1347)
+  replaces the requested scope string entirely — AWS Cognito rejects the default list's
+  `offline_access`, so a Cognito deployment sets `DATAQ_AUTH_SCOPE="openid email profile"`
+  (with the backend's `OIDC_ISSUER` + `OIDC_AUDIENCE` instead of `AZURE_*`).
 - The frontend reverse-proxies `/api` + `/mcp` to the backend at `DATAQ_API_UPSTREAM`,
   resolving it via the DNS server it **detects from the container's `/etc/resolv.conf`** at
   startup — so the one image works on Docker's embedded DNS (Compose) **and** cluster DNS
