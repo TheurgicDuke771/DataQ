@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "9969ec2fe0b5",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1347-auth-scope-override",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/Dockerfile",
+    "frontend/nginx.conf.template",
+    "frontend/src/auth/authClient.ts",
+    "frontend/src/auth/config.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/99/69ec2fe0b5/0/metadata.json",
+      "transcript": "/99/69ec2fe0b5/0/full.jsonl",
+      "compact_transcript": "/99/69ec2fe0b5/0/transcript.jsonl",
+      "content_hash": "/99/69ec2fe0b5/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 17267,
+    "cache_read_tokens": 2658701,
+    "output_tokens": 7255,
+    "api_call_count": 12
+  }
+}

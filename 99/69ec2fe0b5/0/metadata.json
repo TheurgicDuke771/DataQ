@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "9969ec2fe0b5",
+  "session_id": "f91a3483-b115-4c16-b7e6-5551dde88522",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-15T17:56:20.209316Z",
+  "branch": "fix/issue-1347-auth-scope-override",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/nginx.conf.template",
+    "frontend/Dockerfile",
+    "frontend/src/auth/config.ts",
+    "frontend/src/auth/authClient.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5",
+  "turn_id": "bb9d4fbec807",
+  "checkpoint_transcript_start": 239,
+  "transcript_lines_at_start": 239,
+  "compact_transcript_start": 70,
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 17267,
+    "cache_read_tokens": 2658701,
+    "output_tokens": 7255,
+    "api_call_count": 12
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-15T17:56:20.169808Z",
+    "agent_lines": 19,
+    "agent_removed": 6,
+    "human_added": 53,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 72,
+    "total_lines_changed": 78,
+    "agent_percentage": 32.05128205128205,
+    "metric_version": 2
+  }
+}
