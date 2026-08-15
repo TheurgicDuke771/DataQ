@@ -274,6 +274,11 @@ resource "aws_ecs_task_definition" "frontend" {
         { name = "DATAQ_AUTH_MODE", value = "oidc" },
         { name = "DATAQ_AUTH_AUTHORITY", value = local.cognito_issuer },
         { name = "DATAQ_AUTH_CLIENT_ID", value = aws_cognito_user_pool_client.spa.id },
+        # Scope override (#1347): Cognito has no offline_access scope and errors
+        # (invalid_scope) on the SPA's default list; refresh tokens are issued
+        # on the code grant regardless. Must match cognito.tf's
+        # allowed_oauth_scopes.
+        { name = "DATAQ_AUTH_SCOPE", value = "openid email profile" },
       ]
       logConfiguration = {
         logDriver = "awslogs"
