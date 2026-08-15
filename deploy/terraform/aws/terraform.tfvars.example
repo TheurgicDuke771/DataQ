@@ -21,10 +21,13 @@
 
 #   3+4. image_tag + frontend_image_tag — REQUIRED, no default (#1349): the
 #      services run these images from the first apply, so a stale default would
-#      crash-loop from minute one. Use a current main commit SHA — that's what
-#      publish-images.yml tags both images with on every merge:
-#        image_tag          = "<git rev-parse origin/main>"
-#        frontend_image_tag = "<same SHA>"
+#      crash-loop from minute one. publish-images.yml tags main merges as
+#      `main-<full sha>` (the bare `<sha>` tag belongs to the manual Azure
+#      deploy.yml and usually does NOT exist), and its `paths` filter skips
+#      docs-only merges — so use the last IMAGE-BEARING main commit and verify
+#      the tag exists (see README.md's Apply section):
+#        image_tag          = "main-<sha of the last main commit touching backend/frontend/pyproject.toml>"
+#        frontend_image_tag = "<same value>"
 
 # aws_region = "us-east-2"
 
