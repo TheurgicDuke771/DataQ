@@ -1,5 +1,6 @@
 import { api } from './client';
 import { toListPage, type ListPage } from './listPage';
+import type { SampleStrategy } from './suites';
 import type { OrchestrationProvider } from './triggerBindings';
 
 /**
@@ -79,7 +80,7 @@ export interface Result {
  */
 export interface ResultSampling {
   /** `head` (first N rows in storage order) or `random`. */
-  strategy: string;
+  strategy: SampleStrategy;
   /** The row cap the suite's target asked for. */
   requested_rows?: number | null;
   /** What the check engine actually saw. */

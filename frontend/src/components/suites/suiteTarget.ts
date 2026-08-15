@@ -1,5 +1,10 @@
 import type { ConnectionType } from '../../api/connections';
-import { type RunTarget, targetString } from '../../api/suites';
+import {
+  type RunTarget,
+  SAMPLE_STRATEGIES,
+  type SampleStrategy,
+  targetString,
+} from '../../api/suites';
 
 /**
  * A suite's run target (#215) is datasource-shaped: SQL warehouses identify a
@@ -36,8 +41,31 @@ export function targetKind(type: ConnectionType): TargetKind | null {
  * the dotted `catalog.schema.table` (only the parts present).
  * Returns `null` for a targetless (not-yet-runnable) suite. Lives here next to
  * the other datasource-target-shape logic so a new target field has one owner.
+ *
+ * A **sampled** target is annotated (`… · sampled: head 100k`), following the
+ * batch selector's precedent of saying what the summary is rather than showing a
+ * bare name. Without it the Run Now confirmation and the Suites list render a
+ * sampled and an unsampled suite identically — and "run this" is exactly the
+ * moment to know the run will read 100k rows of 5M.
  */
 export function summarizeTarget(target: Record<string, unknown> | null): string | null {
+  const base = summarizeTargetBase(target);
+  if (base === null) return null;
+  const sampling = storedSampling(target);
+  return sampling === undefined
+    ? base
+    : `${base} · sampled: ${sampling.strategy} ${compactRows(sampling.rows)}`;
+}
+
+/** `100k` / `1.5M` / `250` — a row cap belongs in a one-line summary at a glance,
+ *  not as `100,000` competing with the target name for the reader's attention. */
+function compactRows(rows: number): string {
+  if (rows >= 1_000_000) return `${Number((rows / 1_000_000).toFixed(1))}M`;
+  if (rows >= 1_000) return `${Number((rows / 1_000).toFixed(1))}k`;
+  return String(rows);
+}
+
+function summarizeTargetBase(target: Record<string, unknown> | null): string | null {
   if (!target) return null;
   const path = targetString(target, 'path');
   if (path) return path;
@@ -122,50 +150,56 @@ export interface TargetFormValues {
   sampling_seed?: number | null;
 }
 
-export type SampleStrategy = 'head' | 'random';
-
-/** Narrow an untyped stored `sampling.strategy` — same reasoning as
- *  `asFileFormat`: the target is a JSONB bag and a stray value must not prefill
- *  the Select with an option that does not exist. */
-export function asSampleStrategy(value: unknown): SampleStrategy | undefined {
-  return value === 'head' || value === 'random' ? value : undefined;
+/**
+ * Narrow an untyped value to one of a closed set, else `undefined`.
+ *
+ * The suite target is a JSONB bag, so every stored value reaching a Select has to
+ * be narrowed or a stray one (a hand-edited row, an older schema) prefills an
+ * option that does not exist. There were three hand-rolled copies of this, and
+ * they had already drifted in signature (`string | undefined` vs `unknown`) — the
+ * kind of drift that decides whether a non-string value is narrowed or crashes.
+ */
+function asOneOf<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
+  return allowed.includes(value as T) ? (value as T) : undefined;
 }
 
-/** The stored `sampling` block, narrowed for prefill. Returns `undefined` for a
- *  target with none, or one whose block is not an object. */
+/** The stored `sampling` block, narrowed field by field for prefill.
+ *
+ * Returns the typed shape rather than a bag, so callers read `.strategy` and
+ * `.rows` directly instead of each re-narrowing an `unknown` — which is what the
+ * separate `asSampleStrategy` / `samplingNumber` helpers made them do, and what
+ * put two more narrowers on the public surface.
+ */
 export function targetSampling(
   target: Record<string, unknown> | null | undefined,
-): Record<string, unknown> | undefined {
+): { strategy?: SampleStrategy; rows?: number; seed?: number } | undefined {
   const raw = target?.sampling;
-  return raw !== null && typeof raw === 'object' && !Array.isArray(raw)
-    ? (raw as Record<string, unknown>)
-    : undefined;
-}
-
-/** A stored `sampling` number (`rows` / `seed`), or undefined when absent or
- *  not a number. */
-export function samplingNumber(
-  sampling: Record<string, unknown> | undefined,
-  key: 'rows' | 'seed',
-): number | undefined {
-  const value = sampling?.[key];
-  return typeof value === 'number' ? value : undefined;
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const bag = raw as Record<string, unknown>;
+  return {
+    strategy: asOneOf(bag.strategy, SAMPLE_STRATEGIES),
+    rows: typeof bag.rows === 'number' ? bag.rows : undefined,
+    seed: typeof bag.seed === 'number' ? bag.seed : undefined,
+  };
 }
 
 /** Narrow an untyped stored `file_format` to the supported set, else `undefined`
  *  — the suite target is an untyped JSONB bag, so a stray value (e.g. `json`)
  *  must not prefill the Select with an option that doesn't exist. */
-export function asFileFormat(value: string | undefined): 'csv' | 'parquet' | undefined {
-  return value === 'csv' || value === 'parquet' ? value : undefined;
+export function asFileFormat(value: unknown): 'csv' | 'parquet' | undefined {
+  return asOneOf(value, FILE_FORMATS);
 }
 
 /** Narrow an untyped stored `strategy` to the supported set, else `undefined`
  *  — same reasoning as `asFileFormat`: the suite target is an untyped JSONB
  *  bag, so a stray value must not prefill the Strategy Select with an option
  *  that doesn't exist. */
-export function asBatchStrategy(value: string | undefined): 'latest' | 'specific' | undefined {
-  return value === 'latest' || value === 'specific' ? value : undefined;
+export function asBatchStrategy(value: unknown): 'latest' | 'specific' | undefined {
+  return asOneOf(value, BATCH_STRATEGIES);
 }
+
+const FILE_FORMATS = ['csv', 'parquet'] as const;
+const BATCH_STRATEGIES = ['latest', 'specific'] as const;
 
 export interface AssembledTarget {
   /** The target to send: `null` = leave targetless (no field was filled). */
@@ -256,14 +290,31 @@ function assembleBatchTarget(v: TargetFormValues): AssembledTarget {
 /**
  * Fold the optional `sampling` block (#595) onto an assembled target.
  *
- * Three refusals rather than three silent drops, mirroring the backend's own
- * refuse-don't-ignore stance: a dropped sampling block leaves an author believing
- * a nightly 100M-row suite is bounded when it is not, and the first evidence
- * would be the OOM the feature exists to prevent.
+ * **The carry-forward is the important part.** A suite's target is replaced
+ * wholesale on save, and `validateFields()` returns only *registered* fields — so
+ * when the sampling section is not mounted, `sampling_enabled` is `undefined` and
+ * this function has no way to distinguish "the author turned sampling off" from
+ * "the author never saw the control". Treating the second as the first deletes a
+ * stored row cap on a save that only touched the description: no error, no
+ * warning, and the nightly suite quietly reverts to a full scan — the OOM this
+ * whole feature exists to prevent.
  *
- * * a spec on a datasource that cannot sample → error (the editor hides the
- *   control there, so this only fires if the form state and the connection ever
- *   disagree — which is exactly when a silent drop would be invisible);
+ * So `undefined` carries `stored` forward and only an explicit `false` clears the
+ * block. That kills the data-loss class **independently of list drift**, which
+ * matters because nothing mechanically pins `SAMPLING_CAPABLE_TYPES` to the
+ * backend's copy — a canary test can only assert the frontend list against
+ * itself.
+ *
+ * Otherwise it refuses rather than drops, mirroring the backend's own
+ * refuse-don't-ignore stance:
+ *
+ * * a spec on a datasource that cannot sample → error. **Not reachable from
+ *   `SuiteForm`**, which derives both the control's visibility and the `connType`
+ *   it passes from the same `supportsSampling` call, so the two cannot disagree.
+ *   It guards the *exported* function against a second caller that collects
+ *   sampling input without that coupling, and is exercised directly by its unit
+ *   test — an honest description of a defensive branch, rather than the claim it
+ *   carried before, which implied `SuiteForm` could trip it.
  * * a spec with no target to apply it to → error (`{sampling: …}` alone is not a
  *   runnable target and the backend would 422 on save);
  * * a spec with no row cap → error (`rows` is the whole declaration).
@@ -271,9 +322,16 @@ function assembleBatchTarget(v: TargetFormValues): AssembledTarget {
 function withSampling(
   assembled: AssembledTarget,
   v: TargetFormValues,
-  connType: ConnectionType | undefined,
+  { connType, stored }: AssembleOptions,
 ): AssembledTarget {
-  if (!v.sampling_enabled || assembled.error) return assembled;
+  if (assembled.error) return assembled;
+  if (v.sampling_enabled === undefined) {
+    // The section never mounted — preserve whatever the suite already had.
+    return stored && assembled.target
+      ? { target: { ...assembled.target, sampling: stored } }
+      : assembled;
+  }
+  if (!v.sampling_enabled) return assembled;
   if (!supportsSampling(connType)) {
     return {
       target: null,
@@ -326,18 +384,48 @@ function withSampling(
  * missing the datasource's required field → an `error` naming that field, so the
  * UI flags it inline rather than letting the backend 422 on save.
  *
- * `connType` gates the optional `sampling` block, which is accepted on some
- * datasources and refused on others (`SAMPLING_CAPABLE_TYPES`) — see
- * `withSampling`. Omitting it is safe for a caller that collects no sampling
- * input; a caller that collects one and omits it gets an error, never a
- * quietly-dropped block.
+ * `opts.connType` gates the optional `sampling` block (accepted on some
+ * datasources, refused on others) and `opts.stored` is the suite's existing
+ * block, carried forward when the author was never shown the control — see
+ * `withSampling` for both, and for why the carry-forward is the load-bearing one.
  */
 export function assembleTarget(
   kind: TargetKind,
   v: TargetFormValues,
-  connType?: ConnectionType,
+  opts: AssembleOptions = {},
 ): AssembledTarget {
-  return withSampling(assembleBaseTarget(kind, v), v, connType);
+  return withSampling(assembleBaseTarget(kind, v), v, opts);
+}
+
+/**
+ * The stored block in the shape the API round-trips, or `undefined` when the
+ * suite has none *or* what it has could not be saved anyway.
+ *
+ * Separate from `targetSampling` (which narrows field by field, for prefilling
+ * controls) because the carry-forward has a different job: it re-sends a block
+ * the backend already accepted. Reconstructing it from partially-narrowed fields
+ * could turn a malformed stored block into a *differently* malformed one; here a
+ * block missing either required field is simply not carried, so the save proceeds
+ * without it rather than with a guess.
+ */
+export function storedSampling(
+  target: Record<string, unknown> | null | undefined,
+): RunTarget['sampling'] | undefined {
+  const sampling = targetSampling(target);
+  if (sampling?.strategy === undefined || sampling.rows === undefined) return undefined;
+  return {
+    strategy: sampling.strategy,
+    rows: sampling.rows,
+    ...(sampling.seed !== undefined ? { seed: sampling.seed } : {}),
+  };
+}
+
+export interface AssembleOptions {
+  /** The active connection's datasource type — gates the `sampling` block. */
+  connType?: ConnectionType;
+  /** The suite's stored `sampling` block, if it has one. Preserved when the
+   *  sampling section was not rendered, so an unrelated edit cannot delete it. */
+  stored?: RunTarget['sampling'];
 }
 
 function assembleBaseTarget(kind: TargetKind, v: TargetFormValues): AssembledTarget {

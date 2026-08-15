@@ -25,10 +25,9 @@ import {
 import {
   asBatchStrategy,
   asFileFormat,
-  asSampleStrategy,
   assembleTarget,
   MAX_SAMPLE_ROWS,
-  samplingNumber,
+  storedSampling,
   supportsSampling,
   type TargetFormValues,
   type TargetKind,
@@ -37,6 +36,7 @@ import {
 } from './suiteTarget';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errors';
+import { apiFieldError, detailNames } from '../../utils/fieldErrors';
 
 interface SuiteFormValues extends TargetFormValues {
   name: string;
@@ -108,9 +108,9 @@ export function SuiteForm({
         // the target, so its presence is the only truth about whether this suite
         // samples (#595).
         sampling_enabled: sampling !== undefined,
-        sampling_strategy: asSampleStrategy(sampling?.strategy) ?? 'head',
-        sampling_rows: samplingNumber(sampling, 'rows'),
-        sampling_seed: samplingNumber(sampling, 'seed'),
+        sampling_strategy: sampling?.strategy ?? 'head',
+        sampling_rows: sampling?.rows,
+        sampling_seed: sampling?.seed,
       });
     }
   }, [suite, form]);
@@ -124,8 +124,15 @@ export function SuiteForm({
     }
     // Assemble the datasource-shaped target; flag a partially-filled section
     // inline rather than letting the backend 422 on save.
+    // `stored` is the carry-forward that stops an unrelated edit from deleting a
+    // saved row cap: when the sampling section was never rendered, the form has
+    // no `sampling_enabled` to report and `assembleTarget` would otherwise build
+    // a target without it (#1333 F3).
     const { target, error } = kind
-      ? assembleTarget(kind, values, activeConn?.type)
+      ? assembleTarget(kind, values, {
+          connType: activeConn?.type,
+          stored: storedSampling(suite?.target),
+        })
       : { target: null };
     if (error) {
       form.setFields([{ name: error.field, errors: [error.message] }]);
@@ -140,20 +147,43 @@ export function SuiteForm({
       return;
     }
     await run(async () => {
-      const saved = isEdit
-        ? await updateSuite(suite.id, {
-            name: values.name,
-            description: values.description ?? null,
-            target,
-          })
-        : await createSuite({
-            name: values.name,
-            description: values.description ?? null,
-            connection_id: values.connection_id,
-            target,
-          });
-      message.success(`${values.name}: ${isEdit ? 'saved' : 'created'}`);
-      onSaved(saved);
+      try {
+        const saved = isEdit
+          ? await updateSuite(suite.id, {
+              name: values.name,
+              description: values.description ?? null,
+              target,
+            })
+          : await createSuite({
+              name: values.name,
+              description: values.description ?? null,
+              connection_id: values.connection_id,
+              target,
+            });
+        message.success(`${values.name}: ${isEdit ? 'saved' : 'created'}`);
+        onSaved(saved);
+      } catch (err) {
+        // The sampling ↔ row-count refusal names two things that conflict, and a
+        // toast makes the reader hold one of them in their head while going to
+        // look at the other. Put it on the control that caused it, with the
+        // conflicting checks named (#1333 F5); everything else keeps the generic
+        // handler.
+        const api = apiFieldError(err);
+        const blocked = api ? detailNames(api.detail, 'checks') : [];
+        if (api?.code === 'suite_target_invalid' && blocked.length > 0) {
+          form.setFields([
+            {
+              name: 'sampling_enabled',
+              errors: [
+                `${api.message.split(' Conflicting checks:')[0]} Conflicting ` +
+                  `${blocked.length === 1 ? 'check' : 'checks'}: ${blocked.join(', ')}.`,
+              ],
+            },
+          ]);
+          return;
+        }
+        throw err;
+      }
     });
   };
 
