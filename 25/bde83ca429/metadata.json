@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "25bde83ca429",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-aws-preapply-batch",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/25/bde83ca429/0/metadata.json",
+      "transcript": "/25/bde83ca429/0/full.jsonl",
+      "compact_transcript": "/25/bde83ca429/0/transcript.jsonl",
+      "content_hash": "/25/bde83ca429/0/content_hash.txt",
+      "prompt": "/25/bde83ca429/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 347190,
+    "cache_read_tokens": 6320468,
+    "output_tokens": 7267,
+    "api_call_count": 21
+  }
+}
