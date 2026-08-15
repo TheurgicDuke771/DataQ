@@ -1,0 +1,177 @@
+<task-notification>
+<task-id>ab1898d2a212c8133</task-id>
+<tool-use-id>toolu_01CgeMrR9HQbRhrooqyn3rVc</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/afa3b4cf-0adb-4f17-8bc9-58c7e81d5814/tasks/ab1898d2a212c8133.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle C - cross-file tracer" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Findings review complete.
+
+## Findings
+
+**1. `backend/app/services/secret_sweep_service.py:277` (duck-typed `getattr(store, "list_secrets", None)`) + `secrets.py` `AwsSecretsManagerStore`** — no `list_secrets()` method defined.
+Summary: `AwsSecretsManagerStore` doesn't implement `list_secrets()` (unlike `AzureKeyVaultStore`, `secrets.py:305`), even though AWS Secrets Manager's `ListSecrets` API supports exactly this.
+Failure scenario: on the AWS deployment, `sweep_orphan_secrets` silently no-ops forever (`log.info("secret_orphan_sweep_skipped", ...)`) — the ADR-0039 orphan-secret leak protection that exists for the Azure store is a permanent gap on AWS, not a crash but a quietly-missing safety net for a real credential-leak class the code explicitly calls "live warehouse credentials."
+
+**2. `backend/app/core/secrets.py:401-416` `AwsSecretsManagerStore.get`** — bare `except Exception` after the `ClientError` branch.
+Summary: catches `Exception` broadly (matches the `AzureKeyVaultStore` pattern deliberately, per the docstring), so this is consistent with existing discipline — not a new risk, but worth noting the same masquerade risk exists in both: a non-`ClientError` boto3/botocore exception (e.g. `NoCredentialsError`, `EndpointConnectionError`) is folded into `SecretStoreUnavailableError`, which callers correctly treat as "unavailable" not "not found" (verified in `admin_service.py:181-191` — narrowly catches only `SecretNotFoundError`). No caller breaks here.
+
+**3. `deploy/README.md:38`, `.env.app.example:213`, `deploy/.env.app.prod.example:70`** — none list `aws_secrets_manager` or document `AWS_SECRETS_MANAGER_PREFIX`.
+Summary: the env-var reference table in `deploy/README.md` and both `.env*.example` templates only enumerate `openbao`/`azure_key_vault`; the new Literal value and its required setting are undocumented.
+Failure scenario: an operator following the deploy runbook for an AWS install has no reference for `SECRET_STORE=aws_secrets_manager` or the prefix var's format/behavior — purely a docs-staleness gap, not a code defect, and explicitly out of scope of this diff.
+
+**4. `backend/app/core/secrets.py` `AwsSecretsManagerStore.set` (~line 427-440)** — `create_secret` on first write has no tag/description and doesn't set `ForceOverwriteReplicaSecret` or handle `InvalidRequestException` (e.g. secret scheduled for deletion within the recovery window).
+Summary: if a secret was deleted (soft-delete, `delete()` at line ~452) and then re-created via `set()` before the ~30-day recovery window elapses, AWS raises `InvalidRequestException`, which falls into the trailing bare `except Exception` and raises `SecretWriteError` — correct type-wise, but the caller (e.g. `connection_service.py`) has no way to recover/force it, unlike Key Vault where a purged/soft-deleted name is handled by the SDK differently. This is a narrower edge case, not a broken contract, flagged for awareness rather than as a hard bug.
+
+No caller assumes an exhaustive exception set beyond `SecretNotFoundError`/`SecretStoreUnavailableError`/`SecretWriteError`, no caller invokes AWS-specific methods off the generic `SecretStore` type, and `AwsSecretsManagerStore` structurally satisfies the `Protocol` (`get`/`set`/`delete` present, `@runtime_checkable`) — the mypy `backend/tests` gate (#418) covers this via structural typing, same as the 32 existing test doubles. `_build_store()` wiring and the config validator (empty-prefix guard) are consistent with the `openbao`/`azure_key_vault` patterns.</result>
+<usage><subagent_tokens>91845</subagent_tokens><tool_uses>13</tool_uses><duration_ms>52413</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ab4e0906254a1d568</task-id>
+<tool-use-id>toolu_012FCiw1qcJ6S1swn2nWpnk5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/afa3b4cf-0adb-4f17-8bc9-58c7e81d5814/tasks/ab4e0906254a1d568.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle B - removed-behavior auditor" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+**1. Missing `list_secrets()` on `AwsSecretsManagerStore` — orphan sweep silently no-ops**
+- `file`: `backend/app/core/secrets.py`, new `AwsSecretsManagerStore` class (~lines 359-475)
+- `summary`: Both sibling stores (`AzureKeyVaultStore` line 305, `OpenBaoSecretStore` line 573) implement `list_secrets()` for the orphan-secret sweep (`secret_sweep_service.py`). `AwsSecretsManagerStore` implements only `get`/`set`/`delete`/`close`, dropping this duck-typed capability. This is caught gracefully (`getattr(store, "list_secrets", None)` → skip, per the "absence must never read as empty" rule), so it's not a crash — but it's a real capability gap the docstring's "mirrors AzureKeyVaultStore deliberately" claim doesn't disclose.
+- `failure_scenario`: On an `aws_secrets_manager`-backed deployment, deleting a connection leaves its Secrets Manager entry orphaned forever — the nightly sweep logs `secret_orphan_sweep_skipped` and reports zero orphans indefinitely, with no operator-visible signal that AWS coverage differs from Azure/OpenBao. Stale warehouse credentials accumulate silently, the exact "credential rot with no visible state" class this codebase has hit before (#828/#954 pattern).
+
+**2. `get_secret_value` outage branch is unreachable dead code for `botocore` errors (minor, not a real defect)**
+- Checked: `except ClientError` then a separate `except Exception` both build identical `SecretStoreUnavailableError` messages — functionally fine, just duplicated. Not filing since there's no failure scenario (behavior is correct either way).
+
+**3. Verified correct — no findings:**
+- **Literal line** (`config.py` line ~364): correctly preserves `"env", "openbao", "redis", "azure_key_vault"` and appends `"aws_secrets_manager"`; the `redis` removed-but-kept shim and its `elif mode == "redis": raise ValueError(_REDIS_STORE_REMOVED)` branch are untouched. Line is 98 chars, under the project's 100-char Black limit.
+- **`requirements.txt`**: comment-only change (`# S3` → `# S3, AWS Secrets Manager (SecretStore)`); the `boto3==1.43.46` pin itself is unchanged.
+- **Exception-type discipline**: `AwsSecretsManagerStore.get()` correctly distinguishes `ResourceNotFoundException` (→ `SecretNotFoundError`) from every other `ClientError`/`Exception` (→ `SecretStoreUnavailableError`), matching the ADR 0039 "an outage must never read as not-found" invariant both siblings enforce.
+- **Locking**: `_client_lazy()` uses the identical double-checked-locking shape as `AzureKeyVaultStore`/`OpenBaoSecretStore`.
+- **`close()`**: duck-typed, guarded with `getattr`/`callable`, correctly picked up by `reset_secret_store_cache()` without any change needed there (it's already generic).
+- **`_build_store`**: new `aws_secrets_manager` branch validates `aws_secrets_manager_prefix` before construction, mirroring the AKV/OpenBao branches' pre-flight checks.
+
+No modified/deleted lines in this diff broke an existing invariant; the one real gap (list_secrets) is an omission in new code rather than a regression, but it does mean AWS deployments get weaker orphan-secret coverage than Azure/OpenBao ones without that being called out anywhere — worth filing as a follow-up issue per CLAUDE.md's "fixed or filed, never noted only in prose" rule.</result>
+<usage><subagent_tokens>81462</subagent_tokens><tool_uses>12</tool_uses><duration_ms>68779</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a20dfee53dd416f35</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/afa3b4cf-0adb-4f17-8bc9-58c7e81d5814/tasks/a20dfee53dd416f35.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle A - line-by-line diff scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed. Report follows.
+
+## Findings
+
+- **File:** `backend/app/core/secrets.py`, line 425 (`client = self._client_lazy()` in `AwsSecretsManagerStore.set`)
+  **Summary:** `_client_lazy()` is called *outside* the `try` block in `set()`, unlike `get()` and `delete()` which chain it inside their `try`.
+  **Failure scenario:** On cold start (client not yet built), any failure inside `boto3.client("secretsmanager")` — e.g. no region resolvable (`NoRegionError`), malformed boto3 config — propagates as a raw, unwrapped exception instead of `SecretWriteError`. Callers such as `connection_service` branch on exception type to map `SecretWriteError` → HTTP 502; an unexpected exception type bypasses that mapping and surfaces as a bare 500, the exact regression the file's own OpenBao comments (lines ~964-970) warn against.
+
+- **File:** `backend/app/core/secrets.py`, lines 428-438 (`set`, create-on-first-write fallback)
+  **Summary:** TOCTOU race between the failed `put_secret_value` (ResourceNotFoundException) and the fallback `create_secret` call.
+  **Failure scenario:** Two concurrent first-writes for the same secret name (e.g. two Celery workers both provisioning the same connection's credential) both hit `ResourceNotFoundException` on `put_secret_value` and both attempt `create_secret`; the loser gets `ResourceExistsException` from AWS, which the inner `except Exception` wraps into a generic `SecretWriteError` instead of retrying via `put_secret_value`. A legitimate concurrent write fails where AKV's single-call upsert (`set_secret`) would have succeeded.
+
+- **File:** `backend/app/core/secrets.py` `_full_name` (line 391-392) + `backend/app/core/config.py` line 801 (validator)
+  **Summary:** The validator only checks `aws_secrets_manager_prefix.strip()` is non-empty; it never requires a trailing separator, and `_full_name` does plain string concatenation (`f"{self._prefix}{name}"`).
+  **Failure scenario:** Two DataQ installs sharing one AWS account/region with prefixes `"team1"` and `"team1x"` can collide: install A's secret `"xsecret"` becomes `"team1xsecret"`, identical to install B's secret `"secret"` (`"team1x" + "secret"`) — exactly the collision the prefix feature's docstring claims to prevent.
+
+- **File:** `backend/app/core/config.py` line 801 / `secrets.py` `_full_name`
+  **Summary:** The prefix is validated with `.strip()` for truthiness but stored/used un-stripped.
+  **Failure scenario:** `AWS_SECRETS_MANAGER_PREFIX=" dataq/"` (leading space, e.g. from a copy-paste in an env file) passes validation but is used verbatim, producing secret IDs like `" dataq/conn-x"` — a leading-space AWS secret name that silently diverges from what an operator or IaC tool expects, unlike OpenBao's mount handling which explicitly strips (`self._mount = mount.strip("/")`).
+
+Both `config.py` hunks (Literal addition, elif branch) and the `get`/`delete` methods checked clean — their exception-order and null/falsy handling correctly mirror `AzureKeyVaultStore`.</result>
+<usage><subagent_tokens>113961</subagent_tokens><tool_uses>7</tool_uses><duration_ms>100678</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a564facc76fccf295</task-id>
+<tool-use-id>toolu_01WkyS7D6SR9ZuxBusx2o2qq</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/afa3b4cf-0adb-4f17-8bc9-58c7e81d5814/tasks/a564facc76fccf295.output</output-file>
+<status>completed</status>
+<summary>Agent "Angles altitude + conventions" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+**ALTITUDE — 1 finding**
+
+- `backend/app/core/secrets.py:3` — Module docstring still reads "Three backends are supported, picked from `settings.secret_store`" while the enumerated list below it (env/OpenBao/AzureKeyVault/AwsSecretsManager) now has four. `failure_scenario`: a future reader trusts the docstring's count over the code and assumes AWS isn't really a peer backend, or a fifth backend gets added without anyone noticing this line needs a bump again. Minor, but it's the one place `aws_secrets_manager` was NOT made a first-class citizen — everywhere else (Literal, `_build_store`, the validator, the per-backend prose list, `_ASM_MODE` constant, class docstring) treats it as a full peer of `azure_key_vault`/`openbao`.
+
+- **Namespacing mechanism — not a violation, explicitly checked.** `aws_secrets_manager_prefix` is a plain string prepended in `_full_name()` (`secrets.py:391-392`); `openbao_mount` is a URL path segment consumed via `_path()` (`secrets.py:877`); `env`'s `ENV_PREFIX` is an env-var prefix (`secrets.py:58,204`). All three backends already namespace independently in their own idiom — this is the established pattern (one field per store, no shared "namespace" abstraction exists anywhere in the file), so a new per-backend prefix field is the right level of abstraction, not duplication that should have been unified.
+
+**CONVENTIONS — 0 confirmed violations**
+
+- **Dependency pinning** (CLAUDE.md §6, "Don't track GX Core at latest... Pin the version"): `backend/requirements.txt:58` keeps `boto3==1.43.46` exact-pinned; `botocore` (the new transitive pull the ASM client needs) is not separately listed anywhere in `requirements.txt`/`requirements-dev.txt`/`requirements-typecheck.txt` — but this matches existing convention (`azure-storage-blob`'s transitive `azure-core` isn't separately pinned either), so not a violation of a rule that only governs direct deps DataQ ships.
+- **License** (rule 40): boto3/botocore are both Apache-2.0; nothing else was added to `requirements.txt` in this diff.
+- **One functionality per commit**: config.py + secrets.py + requirements.txt changes are all one cohesive unit (add the ASM backend) — not mixed.
+- **Credentials in tracked files**: scanned `backend/tests/core/test_secrets.py` and the diff for AKIA-style keys, `arn:aws`, PEM headers, real-looking secrets — none found; test doubles use placeholder strings (`"tok"`, `"sid"`, `"vault-value"`, `"v"`), not credential-shaped values.
+- No DB/migration changes present, so the backward-compat migration rule doesn't apply.
+
+No CLAUDE.md exists under `backend/`, `backend/app/`, or `backend/app/core/` — only the repo-root one, which was checked above.</result>
+<usage><subagent_tokens>80891</subagent_tokens><tool_uses>8</tool_uses><duration_ms>68870</duration_ms></usage>
+</task-notification>
+
+---
+
+# Autonomous loop check
+
+You're being invoked on a timer while the user is away or occupied. The point is to keep work moving forward without the user driving every step — finishing things they started, maintaining PRs they're building, catching problems before they come back to find them. You're a steward, not an initiator. The user set you loose on their work, and the value you provide comes from reliably advancing things they've already set in motion, not from finding new things to do.
+
+The key tension to navigate: the user trusts you enough to run autonomously, but that trust is easily lost. Acting on what the conversation already established is safe and valuable. Inventing new work or making irreversible changes without clear authorization erodes trust fast. When you're unsure whether something falls into "continuing established work" or "inventing new work," lean toward the former only when the transcript provides clear evidence the user wanted it done. If you find yourself reaching for justifications about why a push is probably fine, that's a signal to wait.
+
+## What to act on
+
+The current conversation is your highest-signal source — re-read the transcript above, since everything there is something the user was actively engaged with. The strongest signal is an in-progress PR you've been building together: review comments to address and resolve, failing CI checks to diagnose (and re-enqueue if they're flakes), merge conflicts to fix. The goal is to get the PR into a state where it's ready to merge pending only human review — the user shouldn't come back to find a PR blocked on things you could have handled. After that, look for unfinished implementation where the last exchange left something half-done, and explicit "I'll also..." or "next I'll..." commitments the conversation made and didn't honor. Weaker but still real: dangling questions you could now answer, verification steps that were skipped, edge cases that were mentioned but not handled, and natural continuations that don't require new decisions.
+
+If you find anything in this category, act on it — actually do the work, don't describe what could be done. Run the tests, don't say "you could run the tests." The whole point of autonomous operation is that work gets done while the user is away.
+
+When the conversation transcript has nothing left, the current branch's pull/merge request on the user's SCM is the next-best place to look. This is maintenance work — valuable, but lower priority than continuing the user's active work. Find the PR/MR for the current branch via the SCM's CLI, then check three things: CI status, unresolved review threads, and whether the branch has fallen behind the base. For failing CI, pull the failing job's logs and diagnose before acting — flaky-shaped failures (timeout, runner died, transient network) can be re-enqueued; real failures need a reproduction and a minimal fix. For unresolved review threads, fetch the comment, address the feedback, push, and resolve the thread via, for example, the GitHub GraphQL `resolveReviewThread` mutation (or the equivalent for whichever SCM the project uses). Before pushing anything, check whether someone else has pushed to the branch while you were working — if so, rebase (don't merge) to keep history clean.
+
+When CI is green, threads are clear, and there's idle time, sweeping the branch for issues is a good use of that time — bug-hunt or simplification passes catch problems before reviewers do, saving everyone a round-trip.
+
+If everything is genuinely quiet — no conversation work, no PR maintenance — say so in one sentence and stop. No summary of what you checked, no list of what you might do later. The user will see your message in the transcript when they come back; three consecutive "nothing to do" results means you should scale back to a quick CI check and stop, not narrate.
+
+## Repeated invocations
+
+If you see earlier autonomous checks in this conversation, adjust your scope accordingly. If a previous check left a question the user hasn't answered, the cost of acting depends on reversibility: for reversible actions (local edits, running tests), make your best call and proceed; for irreversible ones (pushing, deleting, sending), keep waiting — the cost of acting wrongly on something irreversible is much higher than the cost of waiting one more cycle. If three or more consecutive checks have found nothing actionable, things are quiet — do one quick CI/threads check and stop in a single line. Repeated "nothing to do" messages clutter the transcript and waste the user's attention when they come back to review.
+
+Read and analyze freely — understanding the state of things has no blast radius. Make edits and run tests when you're confident they continue established work. Commit and push only when you're clearly continuing something the user authorized, or when the work pattern makes the intent obvious — like fixing CI on a PR you've been building together.
+
+---
+
+# Autonomous loop tick (dynamic pacing)
+
+Run the autonomous check using the loop instructions established earlier in this conversation. If you cannot find them, treat this as a no-op tick.
+
+You scheduled this tick via the ScheduleWakeup tool (not a recurring cron). To keep the loop alive, call ScheduleWakeup again at the end of this turn with `prompt` set to the literal sentinel `<<autonomous-loop-dynamic>>` — otherwise the loop ends after this tick.
+
+If a Monitor is armed (check TaskList), keep `delaySeconds` at 1200–1800s — the Monitor is the wake signal and this is only the fallback heartbeat. If you were woken by a `<task-notification>`, handle the event before deciding whether to re-arm. To stop the loop, call ScheduleWakeup with `stop: true` and TaskStop the monitor (use TaskList to find its task ID if no longer in context).
+
+---
+
+# Autonomous loop tick (dynamic pacing)
+
+Run the autonomous check using the loop instructions established earlier in this conversation. If you cannot find them, treat this as a no-op tick.
+
+You scheduled this tick via the ScheduleWakeup tool (not a recurring cron). To keep the loop alive, call ScheduleWakeup again at the end of this turn with `prompt` set to the literal sentinel `<<autonomous-loop-dynamic>>` — otherwise the loop ends after this tick.
+
+If a Monitor is armed (check TaskList), keep `delaySeconds` at 1200–1800s — the Monitor is the wake signal and this is only the fallback heartbeat. If you were woken by a `<task-notification>`, handle the event before deciding whether to re-arm. To stop the loop, call ScheduleWakeup with `stop: true` and TaskStop the monitor (use TaskList to find its task ID if no longer in context).
+
+---
+
+# Autonomous loop tick (dynamic pacing)
+
+Run the autonomous check using the loop instructions established earlier in this conversation. If you cannot find them, treat this as a no-op tick.
+
+You scheduled this tick via the ScheduleWakeup tool (not a recurring cron). To keep the loop alive, call ScheduleWakeup again at the end of this turn with `prompt` set to the literal sentinel `<<autonomous-loop-dynamic>>` — otherwise the loop ends after this tick.
+
+If a Monitor is armed (check TaskList), keep `delaySeconds` at 1200–1800s — the Monitor is the wake signal and this is only the fallback heartbeat. If you were woken by a `<task-notification>`, handle the event before deciding whether to re-arm. To stop the loop, call ScheduleWakeup with `stop: true` and TaskStop the monitor (use TaskList to find its task ID if no longer in context).
