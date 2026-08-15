@@ -73,17 +73,22 @@ data "aws_iam_policy_document" "github_deploy" {
   }
 
   statement {
-    sid = "EcsTaskDefinitions"
-    actions = [
-      "ecs:RegisterTaskDefinition",
-      "ecs:DescribeTaskDefinition",
+    sid     = "EcsRegisterTaskDefinitions"
+    actions = ["ecs:RegisterTaskDefinition"]
+    # Family-scoped: RegisterTaskDefinition DOES support resource-level
+    # permissions (SAR resource type `task-definition*` — /code-review
+    # finding), and this stack's four families are statically named, so the
+    # CI principal cannot register revisions under any other stack's family.
+    resources = [
+      "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/dataq-app-*"
     ]
-    # `*` is the best available scoping: the task-definition action family
-    # supports no resource-level restriction (registration creates a NEW
-    # revision ARN). The blast radius stays contained by the PassTaskRoles
-    # statement below — a registered definition is inert unless it can be run,
-    # and running it needs a role this policy will only pass for this stack's
-    # own task/execution roles, on this stack's cluster.
+  }
+
+  statement {
+    sid     = "EcsDescribeTaskDefinitions"
+    actions = ["ecs:DescribeTaskDefinition"]
+    # `*` is genuinely the only option here: DescribeTaskDefinition supports
+    # neither resource-level permissions nor any condition key.
     resources = ["*"]
   }
 
