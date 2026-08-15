@@ -16,7 +16,7 @@ resource "aws_ecs_cluster" "app" {
 # SG for the frontend's published port.
 resource "aws_security_group" "ecs_tasks" {
   name        = "dataq-app-ecs-tasks"
-  description = "DataQ ECS tasks — internal task-to-task traffic + ALB->frontend"
+  description = "DataQ ECS tasks - internal task-to-task traffic + ALB->frontend"
   vpc_id      = aws_vpc.app.id
 
   egress {
