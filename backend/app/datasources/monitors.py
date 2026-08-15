@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from sqlalchemy.sql import Select, TableClause
 
 from backend.app.core.errors import SafeMonitorError
+from backend.app.core.timeutil import as_utc
 from backend.app.datasources.base import CheckOutcome, MonitorSpec
 from backend.app.datasources.sql import core_table, folding_identifier, is_sql_identifier
 from backend.app.services.failure_classifier import safe_failure_reason
@@ -222,7 +223,7 @@ def _as_aware_datetime(scalar: object, source: str, *, column: str | None = None
             f"freshness value from {source} is not a date/timestamp "
             f"(got {type(scalar).__name__})"
         )
-    return ts if ts.tzinfo is not None else ts.replace(tzinfo=UTC)
+    return as_utc(ts)
 
 
 def freshness_age_hours(

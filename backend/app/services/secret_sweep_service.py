@@ -57,6 +57,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretInfo, SecretStore
+from backend.app.core.timeutil import as_utc
 from backend.app.db.models import Connection, SuiteNotification
 
 log = get_logger(__name__)
@@ -232,24 +233,11 @@ def find_orphan_secrets(
             unknown_age.append(info.name)
         # A future-dated secret yields a negative delta, which is < grace, so clock
         # skew on the store side also lands in `too_young` rather than purging.
-        elif moment - _as_utc(info.created_at) < grace:
+        elif moment - as_utc(info.created_at) < grace:
             too_young.append(info.name)
         else:
             orphans.append(info.name)
     return orphans, too_young, unknown_age
-
-
-def _as_utc(value: datetime) -> datetime:
-    """Normalise a store-supplied datetime to aware UTC.
-
-    A NAIVE value would raise `TypeError` on subtraction from an aware `now`, which
-    the beat task's blanket except would swallow into "0 orphans" — the janitor
-    silently stops. The OpenBao path already normalises at parse time; the Azure SDK
-    hands back whatever `created_on` it built, so normalising here covers **both**
-    drivers at the one place the value is used. Belt and braces on purpose: a test
-    that hand-builds an aware datetime asserts our model, not the driver's (#953).
-    """
-    return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
 def sweep_orphan_secrets(
