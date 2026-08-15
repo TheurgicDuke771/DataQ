@@ -155,13 +155,22 @@ function LiveRunProgressBody({
     return <Spin description="Starting run…" size="large" />;
   }
 
-  const { status, total_checks, completed_checks, counts, checks, elapsed_ms } = progress;
+  const { status, total_checks, completed_checks, counts, checks, elapsed_ms, batched_pending } =
+    progress;
   const terminal = isTerminal(status);
   const percent = total_checks > 0 ? Math.round((completed_checks / total_checks) * 100) : 0;
-  // A live run that has resolved nothing has no honest percentage to draw — see
-  // the component docstring. An empty suite is excluded: it isn't waiting on
-  // anything, and the `Empty` below already explains it.
-  const noProgressToShowYet = !terminal && completed_checks === 0 && total_checks > 0;
+  // A RUNNING run that has resolved nothing has no honest percentage to draw —
+  // see the component docstring.
+  //
+  // `queued` is excluded deliberately: it is a different state with a different
+  // cause (nothing has picked the run up yet), and showing "Running — no check
+  // has resolved yet" over it would mask exactly the never-dispatched / dead
+  // worker mode the stuck-run reaper exists to catch. It gets its own line.
+  //
+  // An empty suite is excluded too: it isn't waiting on anything, and the `Empty`
+  // below already explains it.
+  const queued = status === 'queued';
+  const noProgressToShowYet = status === 'running' && completed_checks === 0 && total_checks > 0;
   // Only render an elapsed time the server actually measured. `0` is a real
   // reading (a run that just started), so the check is against null/undefined,
   // not falsiness — and a queued run, which has none, correctly shows nothing.
@@ -190,16 +199,31 @@ function LiveRunProgressBody({
         )}
       </Flex>
 
+      {queued && (
+        <Flex gap={10} align="center" data-testid="run-queued">
+          <Spin size="small" />
+          <Typography.Text type="secondary">
+            Queued — waiting for a worker to pick this run up.
+          </Typography.Text>
+        </Flex>
+      )}
+
       {noProgressToShowYet ? (
         <Flex gap={10} align="center" data-testid="run-heartbeat">
           <Spin size="small" />
+          {/* The "why" is offered only when the server says the run's composition
+              supports it (`batched_pending`). Inferring it from
+              `completed_checks === 0` asserted a mechanism that is wrong for a
+              comparison-only suite that is merely slow — the same
+              confidently-wrong shape this component exists to avoid. */}
           <Typography.Text type="secondary">
-            Running — no check has resolved yet. Expectations are validated as a single batch, so
-            they all report together at the end.
+            {batched_pending
+              ? 'Running — no check has resolved yet. The remaining checks are evaluated in batches, so they report together rather than one by one.'
+              : 'Running — no check has resolved yet.'}
           </Typography.Text>
         </Flex>
       ) : (
-        <Progress percent={percent} status={RUN_BAR_STATUS[status]} />
+        !queued && <Progress percent={percent} status={RUN_BAR_STATUS[status]} />
       )}
 
       {tallies.length > 0 && (

@@ -100,6 +100,18 @@ export interface RunProgress {
    * an API that predates the field still type-checks.
    */
   elapsed_ms?: number | null;
+  /**
+   * True when at least one **unresolved** check belongs to a kind that resolves
+   * as a group rather than one at a time — every kind but `comparison` (#318).
+   *
+   * Show the "they report together" explanation only when this is true. The
+   * earlier copy inferred that mechanism from `completed_checks === 0`, which is
+   * wrong on every clause for a monitor-only or comparison-first suite that is
+   * simply slow. Optional so a client against an older API still type-checks, and
+   * `false` is the safe default: it withholds the claim rather than making an
+   * unsupported one.
+   */
+  batched_pending?: boolean;
 }
 
 /** Mirrors `PipelineRunRead` — a monitored orchestrator run (`pipeline_runs` ≠ `runs`). */

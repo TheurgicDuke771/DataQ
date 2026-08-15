@@ -210,6 +210,45 @@ describe('LiveRunProgress', () => {
   // (a percentage claim, an elapsed time, a spinner), because a class-name
   // assertion in jsdom proves nothing about what is rendered (#1282).
 
+  it('shows a QUEUED run as queued, not as a running heartbeat (#318)', async () => {
+    // A never-dispatched run is a different state with a different cause, and the
+    // one the stuck-run reaper exists to catch. Calling it "Running" would hide
+    // exactly the failure a user needs to see.
+    mockProgress.mockResolvedValue(
+      progress('queued', { completed_checks: 0, elapsed_ms: null, counts: {} }),
+    );
+    renderDrawer();
+
+    await screen.findByText('not-null id');
+    expect(screen.getByTestId('run-queued')).toBeInTheDocument();
+    expect(screen.queryByTestId('run-heartbeat')).not.toBeInTheDocument();
+    // And no percentage claim either — 0% would be as misleading here as anywhere.
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  });
+
+  it('explains the batch only when the server says the composition supports it', async () => {
+    // `batched_pending` comes from the run's real kinds. Inferring the mechanism
+    // from `completed_checks === 0` asserted something false for a
+    // comparison-only suite that is simply slow.
+    const running = {
+      completed_checks: 0,
+      elapsed_ms: 5_000,
+      checks: [{ check_id: 'c1', name: 'not-null id', status: null }],
+    };
+    mockProgress.mockResolvedValue(progress('running', { ...running, batched_pending: true }));
+    const { unmount } = renderDrawer();
+    expect(await screen.findByTestId('run-heartbeat')).toHaveTextContent(
+      /evaluated in batches, so they report together/,
+    );
+    unmount();
+
+    mockProgress.mockResolvedValue(progress('running', { ...running, batched_pending: false }));
+    renderDrawer();
+    const heartbeat = await screen.findByTestId('run-heartbeat');
+    expect(heartbeat).toHaveTextContent('Running — no check has resolved yet.');
+    expect(heartbeat).not.toHaveTextContent(/batches/);
+  });
+
   it('shows a heartbeat instead of a 0% bar while nothing has resolved (#318)', async () => {
     // The exact shape of a GX-expectation suite mid-run: alive, 90s in, atomic
     // batch not landed. Before #318 this read as a bar pinned at 0% — i.e. hung.
