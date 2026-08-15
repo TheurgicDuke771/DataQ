@@ -618,7 +618,7 @@ history (`skip` on cold start), live-verified on both Snowflake and Unity Catalo
 renders bands + baseline overlay; threshold ordering validated at authoring (#568); the
 results/connections UX batch (#345/#283/#351/#424/#349) merged.
 
-### v1.1 W6 — scale-aware execution + hardening + cycle close (due 2026-08-15) — 1/14
+### v1.1 W6 — scale-aware execution + hardening + cycle close (due 2026-08-15) — 3/14
 
 | Status | Task | Theme / gap |
 |---|---|---|
@@ -632,7 +632,7 @@ results/connections UX batch (#345/#283/#351/#424/#349) merged.
 | ⬜ | [#571](https://github.com/TheurgicDuke771/DataQ/issues/571) `checks_total` shows cosmetic 0 on pre-dispatch run failures (mapped from backlog 2026-07-04 — small-bug batch) | Theme 6 |
 | ⬜ | [#541](https://github.com/TheurgicDuke771/DataQ/issues/541) Audit remaining FKs without `ondelete` — delete paths may 500 like #540 (mapped from backlog 2026-07-04 — small-bug batch) | Theme 6 |
 | ⬜ | [#306](https://github.com/TheurgicDuke771/DataQ/issues/306) Validate provider/env query params on orchestration reads — silent `200 []` on typo (mapped from backlog 2026-07-04 — small-bug batch) | Theme 6 |
-| ⬜ | [#318](https://github.com/TheurgicDuke771/DataQ/issues/318) Per-check incremental run progress — natural rider on #595's partitioned execution (mapped 2026-07-04) | Theme 7 |
+| ✅ | [#318](https://github.com/TheurgicDuke771/DataQ/issues/318) **Honest incremental run progress** — [#1332](https://github.com/TheurgicDuke771/DataQ/pull/1332). `execute_run` now commits **per execution phase** instead of once at the end, so a resolved check is visible to a poll on another connection while the run is still going: per check for the executor-driven kinds (`schema_drift`/`anomaly`/`comparison`), one phase for the atomic GX expectation batch, one for the shared-frame scalar monitors. That is as fine as the engines actually go — the issue's "split the GX batch" option was **not** taken (it would re-read the dataset per check), so the other half is the issue's own honest fallback: `RunProgress.elapsed_ms` (server-measured, additive) plus a drawer that shows a heartbeat and the elapsed time *instead of* a 0% bar while nothing has resolved, because a bar pinned at 0% for a whole run reads as hung. The terminal contract is unchanged — a `failed`/`cancelled` run still carries **no** results, since `_discard_results` deletes the phases that had already committed; without it a partially-evaluated failed run would start feeding orphan `pass` rows into the health score. `list_results` now orders by the **check**, not the result: per-phase commits gave `results.created_at` real execution-order meaning, which would have silently re-sorted the run-detail table by engine | Theme 7 |
 | ⬜ | [#457](https://github.com/TheurgicDuke771/DataQ/issues/457) Partial-index/predicate drift guard for a 3rd OrchestrationProvider (mapped 2026-07-04 — small-bug batch) | Theme 6 |
 | ⬜ | [#310](https://github.com/TheurgicDuke771/DataQ/issues/310) History/audit strategy ADR (audit log + soft-delete decision) — pairs with the #596 design doc (mapped 2026-07-04; #596 itself pulled forward to W3, done 2026-07-10) | Theme 6 / ADR 0020 |
 | ⬜ | Cycle retro + `v1.1.0` tag + next-cycle planning input refresh | — |

@@ -16,6 +16,7 @@ from backend.app.db.models import Check, Connection
 from backend.app.services import comparison_run, run_service
 from backend.app.services.dataset_reader import DatasetTooLargeError
 from backend.tests.support.fake_secret_store import FakeSecretStore
+from backend.tests.support.run_phases import collect_outcomes
 
 
 class FakeSession:
@@ -244,7 +245,7 @@ def test_run_outcomes_routes_comparison_to_executor() -> None:
         calls.append(check)
         return CheckOutcome("comparison:records", success=True, metric_value=0.0)
 
-    outcomes = run_service._run_outcomes(
+    outcomes = collect_outcomes(
         _NoopRunner(),
         table="T",
         schema=None,
@@ -256,7 +257,7 @@ def test_run_outcomes_routes_comparison_to_executor() -> None:
 
 
 def test_run_outcomes_comparison_without_executor_errors() -> None:
-    outcomes = run_service._run_outcomes(
+    outcomes = collect_outcomes(
         _NoopRunner(),
         table="T",
         schema=None,

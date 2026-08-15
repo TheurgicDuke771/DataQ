@@ -7,10 +7,13 @@ under test independent of Postgres and Snowflake.
 """
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from sqlalchemy import Update
 from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Session
 
@@ -25,11 +28,26 @@ from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.datasources.sampling import ScanTooLargeError
 from backend.app.db.models import Check, Result, Run
 from backend.app.services import run_service
+from backend.tests.support.run_phases import collect_outcomes
 
 
 class FakeSession:
     """Records add_all'd rows; counts commits/rollbacks. `add_all_raises` simulates
-    a persistence failure (e.g. DB error) after the adapter has already run."""
+    a persistence failure (e.g. DB error) after the adapter has already run.
+
+    Since #318 `execute_run` commits **per execution phase**, so this double has to
+    tell a staged row from a committed one — a rollback discards only the former.
+    `added` is the combined "what a reader would see" view the assertions use;
+    `_staged_from` marks where the uncommitted tail starts.
+
+    It also serves the two Core statements the run path now issues: the
+    `DELETE FROM results` that `discard_run_results` uses to clear *committed*
+    phases (a rollback alone can no longer reach them), and the conditional
+    `UPDATE runs SET status='succeeded' WHERE status='running'` that makes a
+    concurrent cancel win instead of being overwritten. `cancelled` makes the
+    UPDATE report zero rows — the double must agree with `scalar` about the run's
+    state, or it describes a row the DB could not hold.
+    """
 
     def __init__(
         self, *, add_all_raises: Exception | None = None, refresh_status: str | None = None
@@ -37,9 +55,11 @@ class FakeSession:
         self.added: list[Result] = []
         self.commits = 0
         self.rollbacks = 0
+        self.deletes = 0
+        self._staged_from = 0
         self._add_all_raises = add_all_raises
-        # When set, refresh() stamps this onto the refreshed object's `status`,
-        # simulating a concurrent cancel that committed from another session.
+        # When set, this is what a concurrent session has committed as the run's
+        # status — read back by `scalar` (the cancel poll) and by `refresh`.
         self._refresh_status = refresh_status
 
     def add_all(self, rows: list[Result]) -> None:
@@ -49,10 +69,28 @@ class FakeSession:
 
     def commit(self) -> None:
         self.commits += 1
+        self._staged_from = len(self.added)
 
     def rollback(self) -> None:
         self.rollbacks += 1
-        self.added.clear()  # discard staged-but-uncommitted rows, like a real rollback
+        # Discard staged-but-uncommitted rows, like a real rollback — committed
+        # phases survive it, which is exactly why `discard_run_results` DELETEs.
+        del self.added[self._staged_from :]
+
+    def scalar(self, statement: object) -> Any:
+        """`_cancelled_mid_run` reads the status column rather than refreshing."""
+        return self._refresh_status or "running"
+
+    def execute(self, statement: object) -> Any:
+        """The DELETE (discard) and the UPDATE (guarded succeeded-flip)."""
+        if isinstance(statement, Update):
+            # The flip is conditional on `status = 'running'`; a committed cancel
+            # means it matches nothing.
+            return SimpleNamespace(rowcount=0 if self._refresh_status == "cancelled" else 1)
+        self.deletes += 1
+        self.added.clear()
+        self._staged_from = 0
+        return SimpleNamespace(rowcount=0)
 
     def refresh(self, obj: object) -> None:
         if self._refresh_status is not None:
@@ -153,7 +191,7 @@ class FakeMonitorRunner:
         return self._monitor_outcomes
 
 
-# ───────────────────────── kind dispatch (_run_outcomes) ─────────────
+# ───────────────────── kind dispatch (_run_outcome_phases) ───────────
 
 
 def test_run_outcomes_routes_by_kind_and_keeps_check_order() -> None:
@@ -165,9 +203,7 @@ def test_run_outcomes_routes_by_kind_and_keeps_check_order() -> None:
         monitor_outcomes=[CheckOutcome("monitor:freshness", success=True, metric_value=5.0)],
     )
 
-    outcomes = run_service._run_outcomes(
-        cast(CheckRunner, runner), table="T", schema=None, checks=checks
-    )
+    outcomes = collect_outcomes(cast(CheckRunner, runner), table="T", schema=None, checks=checks)
 
     assert [o.expectation_type for o in outcomes] == ["e1", "monitor:freshness", "e2"]
     assert runner.monitors_called_with is not None and len(runner.monitors_called_with) == 1
@@ -178,7 +214,7 @@ def test_run_outcomes_monitor_on_non_sql_runner_raises() -> None:
     # (freshness/volume need a monitor-capable datasource).
     runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
     with pytest.raises(NotImplementedError, match="monitor"):
-        run_service._run_outcomes(
+        collect_outcomes(
             runner,
             table="T",
             schema=None,
@@ -197,7 +233,7 @@ def test_run_outcomes_rejects_runner_with_unrelated_run_monitors() -> None:
 
     runner = _Impostor(outcome=SuiteOutcome(success=True, checks=[]))
     with pytest.raises(NotImplementedError, match="does not support monitor kind"):
-        run_service._run_outcomes(
+        collect_outcomes(
             runner,
             table="T",
             schema=None,
@@ -214,12 +250,67 @@ def test_run_outcomes_rejects_capability_without_implementation() -> None:
 
     runner = _AllTalk(outcome=SuiteOutcome(success=True, checks=[]))
     with pytest.raises(NotImplementedError, match="capability and implementation drifted"):
-        run_service._run_outcomes(
+        collect_outcomes(
             runner,
             table="T",
             schema=None,
             checks=[_monitor_check("volume", {"min_rows": 1, "max_rows": 9})],
         )
+
+
+def test_outcome_phases_shape_and_order() -> None:
+    """The phase shape #318's incremental progress rests on, asserted directly.
+
+    Two independent limits are encoded here and both are load-bearing:
+
+    * **granularity** — per check for the executor-driven `comparison`; ONE phase
+      for the whole expectation batch (GX validates atomically) and ONE for the
+      scalar monitors (`run_monitors` loads the frame once);
+    * **durability** — the stateful kinds are yielded LAST and `publishable=False`,
+      because their executors write `monitor_baselines` through the caller's
+      session. Committing them early would make a failed run's baseline permanent.
+      Last matters as much as unpublishable: a commit is transaction-wide, so
+      anything yielded after them would flush those writes anyway.
+
+    A future change that splits the GX batch, or that lets a stateful phase
+    publish, should update this test deliberately rather than discover it in
+    production.
+    """
+    checks = [
+        _monitor_check("schema_drift", {}),
+        _checks(1)[0],
+        _monitor_check("freshness", {"column": "ts"}),
+        _checks(1)[0],
+        _monitor_check("anomaly", {"column": "amt"}),
+        _monitor_check("volume", {"min_rows": 1, "max_rows": 9}),
+    ]
+    runner = FakeMonitorRunner(
+        check_outcomes=[CheckOutcome("e1", success=True), CheckOutcome("e2", success=True)],
+        monitor_outcomes=[
+            CheckOutcome("monitor:freshness", success=True),
+            CheckOutcome("monitor:volume", success=True),
+        ],
+    )
+
+    phases = list(
+        run_service._run_outcome_phases(
+            cast(CheckRunner, runner),
+            table="T",
+            schema=None,
+            checks=checks,
+            stateful_monitor_executor=lambda c: CheckOutcome(c.expectation_type, success=True),
+        )
+    )
+
+    assert [[i for i, _ in p.resolved] for p in phases] == [
+        [1, 3],  # the atomic GX expectation batch
+        [2, 5],  # the shared-frame scalar monitors
+        [0],  # schema_drift — last, and unpublishable
+        [4],  # anomaly — same
+    ]
+    assert [p.publishable for p in phases] == [True, True, False, False]
+    # Every check appears exactly once across the phases, in no more than one.
+    assert sorted(i for p in phases for i, _ in p.resolved) == list(range(len(checks)))
 
 
 def test_run_outcomes_stateful_kind_routes_to_injected_executor() -> None:
@@ -232,7 +323,7 @@ def test_run_outcomes_stateful_kind_routes_to_injected_executor() -> None:
         seen.append(check.kind)
         return CheckOutcome("monitor:schema_drift", success=True, metric_value=0.0)
 
-    [outcome] = run_service._run_outcomes(
+    [outcome] = collect_outcomes(
         runner,
         table="T",
         schema=None,
@@ -247,7 +338,7 @@ def test_run_outcomes_stateful_kind_without_executor_errors_per_check() -> None:
     # No executor supplied (a caller that can't reach the baseline store) → the
     # CHECK errors; siblings still run (#122), the run never raises.
     runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
-    [outcome] = run_service._run_outcomes(
+    [outcome] = collect_outcomes(
         runner,
         table="T",
         schema=None,
@@ -267,7 +358,7 @@ def test_run_outcomes_gate_is_per_kind_not_per_runner() -> None:
 
     runner = _FreshnessOnly(check_outcomes=[], monitor_outcomes=[])
     with pytest.raises(NotImplementedError, match="volume"):
-        run_service._run_outcomes(
+        collect_outcomes(
             cast(CheckRunner, runner),
             table="T",
             schema=None,
@@ -282,9 +373,7 @@ def test_run_outcomes_unsupported_kind_raises() -> None:
     # an expectation or vanish from the outcome list.
     runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
     with pytest.raises(NotImplementedError, match="not_a_kind"):
-        run_service._run_outcomes(
-            runner, table="T", schema=None, checks=[_monitor_check("not_a_kind", {})]
-        )
+        collect_outcomes(runner, table="T", schema=None, checks=[_monitor_check("not_a_kind", {})])
 
 
 def test_run_outcomes_comparison_errors_without_failing_siblings() -> None:
@@ -301,7 +390,7 @@ def test_run_outcomes_comparison_errors_without_failing_siblings() -> None:
         )
     )
 
-    outcomes = run_service._run_outcomes(runner, table="T", schema=None, checks=checks)
+    outcomes = collect_outcomes(runner, table="T", schema=None, checks=checks)
 
     assert [o.expectation_type for o in outcomes] == ["e1", "comparison:records", "e2"]
     assert outcomes[1].errored and not outcomes[1].success
@@ -1697,3 +1786,29 @@ def test_every_other_exception_is_still_classified() -> None:
     assert run.failure_reason is not None
     assert "svc" not in run.failure_reason
     assert "acct.example" not in run.failure_reason
+
+
+# ───────────────────────── elapsed heartbeat (#318) ──────────────────
+
+
+def test_elapsed_ms_clamps_a_backwards_clock_to_zero() -> None:
+    """`started_at` is written by the WORKER and `now()` is read in the API
+    process, so a small clock difference between the two can put the start in the
+    future. That must read as "0 ms so far", never as a negative age the UI would
+    render as `-00:03` — the display honesty rule, applied to a clock."""
+    run = _run()
+    run.started_at = datetime.now(UTC) + timedelta(seconds=5)
+    run.finished_at = None
+
+    assert run_service._elapsed_ms(run) == 0
+
+
+def test_elapsed_ms_reads_a_naive_timestamp_as_utc_instead_of_raising() -> None:
+    """Everything DataQ writes is tz-aware, but a read model must not 500 on a row
+    that isn't (a hand-inserted row, a restore from a naive dump)."""
+    run = _run()
+    run.started_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=30)
+    run.finished_at = None
+
+    elapsed = run_service._elapsed_ms(run)
+    assert elapsed is not None and 30_000 <= elapsed < 60_000

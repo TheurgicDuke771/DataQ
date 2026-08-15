@@ -17,6 +17,7 @@ from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import SEVERITY_RANK, Result, Run
+from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES
 
 # Dedup ranks failing checks by the single shared severity order (`SEVERITY_RANK`,
 # #386/#655) so it can't drift from the rest of the alerting layer (routing,
@@ -32,12 +33,24 @@ def _failing_ranks(session: Session, run: Run) -> dict[str, int]:
     """The failing checks of ``run`` as ``{check_id: rank}`` (escalation-aware).
 
     An executed run contributes its breaching per-check results; a run that
-    *failed to execute* (no results) contributes one suite-level signature so two
-    consecutive operational failures still dedup.
+    *failed to execute* contributes one suite-level signature so two consecutive
+    operational failures still dedup.
+
+    Only a run in `AGGREGATABLE_RUN_STATUSES` is read for per-check rows (#318).
+    A failed run is *defined* here as having no per-check signature — that is what
+    makes it collapse to the operational sentinel — and since per-phase commits it
+    can carry rows the discard failed to remove or the reaper never owned. Reading
+    those would give an operational failure a per-check signature, so two
+    consecutive dead-worker failures would look like different alerts (or, worse,
+    match a genuine prior alert and silence the always-alert path #419 exists
+    for). Deriving it from the status instead of from row *absence* is also what
+    stops the answer depending on whether a best-effort DELETE happened to win.
     """
-    rows = session.execute(
-        select(Result.check_id, Result.status).where(Result.run_id == run.id)
-    ).all()
+    rows = (
+        session.execute(select(Result.check_id, Result.status).where(Result.run_id == run.id)).all()
+        if run.status in AGGREGATABLE_RUN_STATUSES
+        else []
+    )
     ranks = {
         str(check_id): SEVERITY_RANK[status] for check_id, status in rows if status in SEVERITY_RANK
     }

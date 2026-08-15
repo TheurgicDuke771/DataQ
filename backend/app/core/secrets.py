@@ -35,7 +35,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final, Protocol, runtime_checkable
 from urllib.parse import quote
 
@@ -43,6 +43,7 @@ import httpx
 
 from backend.app.core.config import _REDIS_STORE_REMOVED, Settings, get_settings
 from backend.app.core.logging import get_logger
+from backend.app.core.timeutil import as_utc, as_utc_or_none
 
 if TYPE_CHECKING:
     from azure.keyvault.secrets import SecretClient
@@ -155,13 +156,6 @@ class SecretInfo:
     created_at: datetime | None
 
 
-def _ensure_aware(value: datetime | None) -> datetime | None:
-    """Treat a naive datetime as UTC. None passes through."""
-    if value is None or value.tzinfo is not None:
-        return value
-    return value.replace(tzinfo=UTC)
-
-
 def _parse_vault_timestamp(raw: object) -> datetime | None:
     """Parse a KV v2 `created_time` into an aware UTC datetime, or None.
 
@@ -182,7 +176,7 @@ def _parse_vault_timestamp(raw: object) -> datetime | None:
         parsed = datetime.fromisoformat(raw.strip())
     except ValueError:
         return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return as_utc(parsed)
 
 
 @runtime_checkable
@@ -324,7 +318,7 @@ class AzureKeyVaultStore:
                 # here at the boundary; the sweep normalises again where it subtracts,
                 # because a fixture that hand-builds an aware datetime asserts our
                 # model rather than the driver's (#953/#823).
-                SecretInfo(name=prop.name, created_at=_ensure_aware(prop.created_on))
+                SecretInfo(name=prop.name, created_at=as_utc_or_none(prop.created_on))
                 for prop in self._client_lazy().list_properties_of_secrets()
                 if prop.name
             ]

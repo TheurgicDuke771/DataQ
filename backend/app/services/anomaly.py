@@ -62,6 +62,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
+from backend.app.core.timeutil import as_utc
 from backend.app.datasources.base import CheckOutcome
 from backend.app.datasources.monitors import (
     ANOMALY,
@@ -207,7 +208,7 @@ def load_observations(row: MonitorBaseline | None, params: AnomalyParams) -> lis
             ts = datetime.fromisoformat(str(entry.get("ts")))
         except (TypeError, ValueError):
             continue
-        out.append(Observation(ts=ts if ts.tzinfo else ts.replace(tzinfo=UTC), value=float(value)))
+        out.append(Observation(ts=as_utc(ts), value=float(value)))
     return out
 
 

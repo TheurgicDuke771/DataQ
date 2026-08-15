@@ -401,7 +401,11 @@ function SuiteDetail({
   const canRun = canRunSuite(suite);
 
   // Open the live-progress drawer on the queued run rather than bouncing to
-  // /results — the user watches it execute check-by-check (and can cancel).
+  // /results — the user watches it execute (and can cancel). "Check-by-check" is
+  // what the drawer shows where the engine allows it (#318): monitor and
+  // comparison checks resolve individually, a GX expectation batch resolves as
+  // one, and the drawer says which it is looking at rather than implying the
+  // former everywhere.
   const { running, run } = useRunTrigger((queued) => setProgressRunId(queued.id));
 
   const onExport = async () => {
