@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "be4fcb2f8530",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1348-aws-deploy-iam-split",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "deploy/terraform/aws/github_oidc.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/be/4fcb2f8530/0/metadata.json",
+      "transcript": "/be/4fcb2f8530/0/full.jsonl",
+      "compact_transcript": "/be/4fcb2f8530/0/transcript.jsonl",
+      "content_hash": "/be/4fcb2f8530/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 11275,
+    "cache_read_tokens": 1010562,
+    "output_tokens": 2738,
+    "api_call_count": 4
+  }
+}
