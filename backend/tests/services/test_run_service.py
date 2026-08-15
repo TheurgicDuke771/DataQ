@@ -22,6 +22,7 @@ from backend.app.datasources.base import (
     SuiteOutcome,
 )
 from backend.app.datasources.monitors import MONITOR_KINDS
+from backend.app.datasources.sampling import ScanTooLargeError
 from backend.app.db.models import Check, Result, Run
 from backend.app.services import run_service
 
@@ -1582,3 +1583,117 @@ def test_redact_observed_value_classifies_over_the_full_list_not_just_the_cap() 
     )
     assert out is not None
     assert out["observed_value"] == ["<redacted>"] * SAMPLE_ROW_CAP
+
+
+# ── sampled-ness on the result row + the guardrail's reason (#595) ───────────
+
+
+def test_a_sampled_outcome_is_persisted_on_the_result_row() -> None:
+    """The acceptance criterion's storage half: a check that passed on a sample
+    must SAY so on the row a reader can query, not only in a worker log line."""
+    session = FakeSession()
+    run = _run()
+    checks = _checks(1)
+    record = {
+        "strategy": "head",
+        "requested_rows": 100,
+        "rows": 100,
+        "total_rows": None,
+        "sampled": True,
+    }
+    runner = FakeRunner(
+        SuiteOutcome(
+            success=True,
+            checks=[CheckOutcome(expectation_type="x", success=True, sampling=record)],
+        )
+    )
+
+    run_service.execute_run(_sess(session), run=run, checks=checks, runner=runner, table="T")
+
+    assert session.added[0].sampling == record
+
+
+def test_an_unsampled_outcome_leaves_the_column_null() -> None:
+    """`None`, not a `sampled: false` record — so "complete read" is one shape for
+    a suite that never opted in and for every row written before the column
+    existed, and a reader can branch on presence alone."""
+    session = FakeSession()
+    runner = FakeRunner(
+        SuiteOutcome(success=True, checks=[CheckOutcome(expectation_type="x", success=True)])
+    )
+
+    run_service.execute_run(_sess(session), run=_run(), checks=_checks(1), runner=runner, table="T")
+
+    assert session.added[0].sampling is None
+
+
+def test_an_errored_check_still_records_that_the_read_was_sampled() -> None:
+    """The errored branch drops `observed_value` and the sample because neither
+    exists for a check that never evaluated — but "this run was reading a sample"
+    is still true of the read that failed, and is often the explanation."""
+    session = FakeSession()
+    record = {
+        "strategy": "random",
+        "requested_rows": 10,
+        "rows": 10,
+        "total_rows": 99,
+        "sampled": True,
+    }
+    runner = FakeRunner(
+        SuiteOutcome(
+            success=False,
+            checks=[
+                CheckOutcome(
+                    expectation_type="x",
+                    success=False,
+                    errored=True,
+                    error_message="column not found",
+                    sampling=record,
+                )
+            ],
+        )
+    )
+
+    run_service.execute_run(_sess(session), run=_run(), checks=_checks(1), runner=runner, table="T")
+
+    assert session.added[0].status == "error"
+    assert session.added[0].sampling == record
+
+
+def test_a_scan_refusal_surfaces_its_own_message_not_the_generic_classification() -> None:
+    """`classify_failure_reason` exists because a driver exception can echo a DSN
+    or a cell value (#605). `ScanTooLargeError` is DataQ's own sentence, built
+    from the user's run target and two settings integers — classifying it would
+    replace the single most actionable message in the feature ("this file is over
+    the cap, set a sampling strategy") with "see the server logs", which is
+    exactly the undiagnosable outcome #755 already produces."""
+    session = FakeSession()
+    run = _run()
+    runner = FakeRunner(
+        raises=ScanTooLargeError(
+            "file 'raw/huge.csv' is 999,000,000 bytes, over the scan cap of 268,435,456. "
+            "Set a sampling strategy, or raise RUN_MAX_SCAN_BYTES deliberately."
+        )
+    )
+
+    run_service.execute_run(_sess(session), run=run, checks=_checks(1), runner=runner, table="T")
+
+    assert run.status == "failed"
+    assert run.failure_reason is not None
+    assert "RUN_MAX_SCAN_BYTES" in run.failure_reason
+    assert "999,000,000" in run.failure_reason
+
+
+def test_every_other_exception_is_still_classified() -> None:
+    """The narrow `isinstance` must stay narrow: a driver error keeps its fixed,
+    secret-free message. Pinned beside the exemption so widening the redaction
+    contract cannot happen silently."""
+    session = FakeSession()
+    run = _run()
+    runner = FakeRunner(raises=RuntimeError("login failed for user 'svc' at acct.example"))
+
+    run_service.execute_run(_sess(session), run=run, checks=_checks(1), runner=runner, table="T")
+
+    assert run.failure_reason is not None
+    assert "svc" not in run.failure_reason
+    assert "acct.example" not in run.failure_reason

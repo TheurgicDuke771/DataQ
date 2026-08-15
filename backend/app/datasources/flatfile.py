@@ -30,7 +30,7 @@ from __future__ import annotations
 import csv
 import io
 import re
-from collections.abc import Generator, Iterable, Iterator
+from collections.abc import Callable, Generator, Iterable, Iterator
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -38,21 +38,42 @@ from typing import Any, ClassVar
 
 import great_expectations as gx
 
+from backend.app.core.config import get_settings
+from backend.app.core.errors import SafeMonitorError
 from backend.app.core.logging import get_logger
 from backend.app.core.s3_endpoint import addressing_config_kwargs
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.adls import AdlsConfig
-from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
+from backend.app.datasources.base import (
+    SAMPLE_HEAD,
+    CheckOutcome,
+    CheckSpec,
+    MonitorSpec,
+    SampleSpec,
+    SuiteOutcome,
+)
 from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.monitors import (
     FRESHNESS,
     VOLUME,
     MonitorConfigError,
-    SafeMonitorError,
     freshness_column,
     run_monitor_specs,
 )
 from backend.app.datasources.s3 import S3Config
+from backend.app.datasources.sampling import (
+    SamplingDrawError,
+    batches_to_frame,
+    enforce_byte_cap,
+    enforce_sample_cap,
+    merge_by_position,
+    sample_row_indices,
+    sampling_record,
+    split_row_count_checks,
+    stamp_sampling,
+    take_head,
+    take_indices,
+)
 
 # Connector timeouts (seconds): fail fast rather than hang the worker thread.
 # _READ_TIMEOUT is deliberately longer than the SQL profiler's network timeout
@@ -129,6 +150,42 @@ def sniff_delimiter(sample: bytes) -> str:
         return csv.Sniffer().sniff(text, delimiters=_CSV_DELIMITERS).delimiter
     except csv.Error:
         return _DEFAULT_DELIMITER
+
+
+def trim_to_row_boundary(raw: bytes) -> bytes:
+    """Cut ``raw`` at the last newline that is a **real row boundary** (#595 C4).
+
+    A byte range almost never ends on a row boundary, and the trailing fragment
+    has to go: a half-row parses as a *complete* row with empty trailing fields,
+    silently changing an inferred dtype (a truncated ``12345`` becomes ``123``).
+
+    But **a newline is not a row boundary** — a quoted CSV field may legally
+    contain one, and cutting there leaves an unterminated quote that pandas
+    rejects outright with "EOF inside string". That turns a file the full read
+    handles perfectly into an intermittent parse failure, depending only on where
+    the window happened to land. `csv_row_count` already refuses to equate the two
+    (it streams through pyarrow rather than counting newlines); this is the same
+    rule for the head path.
+
+    A candidate newline is a boundary iff an **even** number of double-quotes
+    precedes it: RFC 4180 escapes a quote inside a quoted field by doubling it,
+    which adds two, so parity is exactly "are we inside a quoted field". Both
+    steps run at C speed (`bytes.rfind` / `bytes.count`), and the first candidate
+    is the answer for any file without quotes, so the common case is one scan.
+
+    Returns ``raw`` unchanged when no boundary exists — one enormous line, or a
+    fragment entirely inside a quoted field. There is no complete row to keep, so
+    the parser gets what we have and fails honestly rather than being handed a
+    silently truncated row.
+    """
+    end = len(raw)
+    while True:
+        cut = raw.rfind(b"\n", 0, end)
+        if cut == -1:
+            return raw
+        if raw.count(b'"', 0, cut) % 2 == 0:
+            return raw[:cut]
+        end = cut
 
 
 def read_csv_bytes(raw: io.BytesIO, **kwargs: Any) -> Any:
@@ -433,6 +490,12 @@ def read_csv_head(
     column reads as all-null). So the trailing partial line is discarded before
     parsing, unless the range covered the whole object.
 
+    The cut is **quote-aware** (`trim_to_row_boundary`, #595 C4): a newline inside
+    a quoted field is not a row boundary, and cutting there leaves an unterminated
+    quote that pandas rejects with "EOF inside string" — turning a file the full
+    read handles into an intermittent parse failure of a schema/profile read,
+    decided by nothing but where the window landed.
+
     Returns a pandas DataFrame of at most ``rows`` rows; the caller reads names
     and dtypes off it.
     """
@@ -449,11 +512,7 @@ def read_csv_head(
         length=_CSV_HEAD_BYTES + 1,
     )
     if len(head) > _CSV_HEAD_BYTES:
-        cut = head.rfind(b"\n")
-        # No newline at all in a full window means one enormous line; there is no
-        # complete row to keep, so hand the parser what we have rather than
-        # nothing and let it fail honestly.
-        head = head[:cut] if cut != -1 else head[:_CSV_HEAD_BYTES]
+        head = trim_to_row_boundary(head)
     return read_csv_bytes(io.BytesIO(head), nrows=rows)
 
 
@@ -489,6 +548,206 @@ def read_dataframe(*, conn_type: str, config: dict[str, Any], path: str, secret:
     if fmt == "csv":
         return read_csv_bytes(raw)
     return pd.read_parquet(raw, dtype_backend="pyarrow")
+
+
+#: Rows per Arrow batch while streaming a sampled read. Big enough that the
+#: per-batch Python overhead is irrelevant, small enough that peak memory stays a
+#: rounding error against the object itself — the property that makes a sampled
+#: read survive a file the unsampled one dies on.
+_SAMPLE_BATCH_ROWS = 65_536
+
+
+def _open_batch_stream(
+    reader_args: dict[str, Any], fmt: str
+) -> tuple[Any, Any, bool, Callable[[], None]]:
+    """A forward stream of Arrow record batches over a flat file (live seam, #595).
+
+    Returns ``(batches, schema, arrow_backed, close)``. Both formats are read
+    through `RangeReader` at `STREAM_CHUNK`, so the object is pulled in bounded
+    windows as the reader walks it — a sampled read that stops early never fetches
+    the tail, which is exactly what lets a 2 GB file be sampled on a 2 GiB worker.
+
+    ``arrow_backed`` mirrors what `read_dataframe` does for that format, so
+    switching a suite to sampling cannot silently change a check's verdict via a
+    dtype change: Parquet is Arrow-backed there (``dtype_backend="pyarrow"``) and
+    CSV is not (``pd.read_csv``).
+
+    Two properties of the CSV reader, measured rather than assumed, that decide
+    where this is and isn't the right tool:
+
+    * ``pv.open_csv`` **reads ahead eagerly** — on an 82 MB object it pulled 35 MB
+      before yielding its first batch. That is bounded (it does not read the whole
+      file, and it grows only as batches are consumed), so it is fine for the
+      ``random`` strategy, which has to walk the file anyway. It is far too much
+      for a ``head`` sample of a few hundred rows, which is why that case takes
+      `_csv_head_frame`'s bounded range read instead of this stream.
+    * pyarrow's CSV type inference is not pandas'. The two agree on ordinary data;
+      where they can differ (an all-empty column, an ambiguous date) the sampled
+      frame is the one the checks see. It applies only to a CSV ``random`` sample,
+      since CSV ``head`` goes through `read_csv_bytes` like every unsampled read.
+    """
+    if fmt == "csv":
+        import pyarrow.csv as pv
+
+        sep = sniff_delimiter(read_range(**reader_args, start=0, length=_SNIFF_BYTES))
+        stream = pv.open_csv(
+            RangeReader(**reader_args, chunk=STREAM_CHUNK),
+            parse_options=pv.ParseOptions(delimiter=sep),
+        )
+        return stream, stream.schema, False, stream.close
+
+    import pyarrow.parquet as pq
+
+    parquet = pq.ParquetFile(RangeReader(**reader_args, chunk=STREAM_CHUNK))
+    return (
+        parquet.iter_batches(batch_size=_SAMPLE_BATCH_ROWS),
+        parquet.schema_arrow,
+        True,
+        parquet.close,
+    )
+
+
+def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> tuple[Any, bool]:
+    """The first ``limit`` rows of a CSV, from a **growing byte range** (#595).
+
+    Returns ``(frame, reached_eof)``. This is `read_csv_head` generalised from "a
+    fixed head window" to "however much it takes", and it exists because
+    `pv.open_csv`'s read-ahead pulls tens of megabytes before its first batch —
+    an absurd price for a few hundred rows on the very files sampling is for.
+
+    The window starts at `_CSV_HEAD_BYTES` and doubles until it yields ``limit``
+    rows or reaches the end of the object, so the total bytes fetched stay within
+    2x of what the rows actually occupy. The trailing partial line is dropped
+    exactly as `read_csv_head` does and for the same reason: a half-row parses as
+    a *complete* row with empty trailing fields, silently changing an inferred
+    dtype (a truncated ``12345`` becomes ``123``).
+
+    Parsing goes through `read_csv_bytes`, so a sampled CSV gets the same
+    delimiter sniffing and the same pandas dtype inference as an unsampled one —
+    turning sampling on cannot change a check's verdict through a dtype change.
+    """
+    size = object_size(**reader_args)
+    window = _CSV_HEAD_BYTES
+    while True:
+        span = min(window, size)
+        raw = read_range(**reader_args, start=0, length=span)
+        reached_eof = span >= size
+        if not reached_eof:
+            raw = trim_to_row_boundary(raw)
+        frame = read_csv_bytes(io.BytesIO(raw), nrows=limit)
+        if len(frame) >= limit or reached_eof:
+            return frame, reached_eof
+        window *= 2
+
+
+def read_sampled_dataframe(
+    *, conn_type: str, config: dict[str, Any], path: str, secret: str, sample: SampleSpec
+) -> tuple[Any, dict[str, Any]]:
+    """A bounded sample of a flat file, plus the record of what was sampled (#595).
+
+    Returns ``(DataFrame, sampling_record)``. Peak memory is one read window plus
+    the retained rows — never the whole object, which is the entire point.
+
+    * ``head`` reads ``rows + 1`` and trims. That one extra row is what
+      distinguishes "the file has exactly N rows" (a complete read — reported
+      ``sampled=False``, no caveat shown) from "the file has more" (a real
+      sample), without paying for a second pass to count. Parquet takes it from
+      the footer plus the leading row groups; CSV from a growing byte range
+      (`_csv_head_frame`).
+    * ``random`` learns the population size first via `row_count` — a Parquet
+      footer read, or a streamed CSV scan that materialises one batch at a time —
+      draws positions uniformly, then takes them in one forward pass. The count is
+      genuinely needed: a uniform draw is not expressible without knowing the
+      population, and guessing one would make the sample quietly non-uniform.
+    """
+    fmt = format_from_path(path)
+    if fmt is None:
+        raise ValueError(f"unsupported flat-file format for path {path!r}")
+    reader_args: dict[str, Any] = {
+        "conn_type": conn_type,
+        "config": config,
+        "path": path,
+        "secret": secret,
+    }
+
+    if sample.strategy == SAMPLE_HEAD and fmt == "csv":
+        frame, reached_eof = _csv_head_frame(reader_args, limit=sample.rows + 1)
+        truncated = len(frame) > sample.rows
+        if truncated:
+            frame = frame.head(sample.rows)
+        # Not truncated can only happen once the range reached the end of the
+        # object, so the file's exact size is known for free.
+        csv_total = None if truncated else (len(frame) if reached_eof else None)
+        return frame, sampling_record(
+            sample, rows=len(frame), total_rows=csv_total, sampled=truncated
+        )
+
+    want_head = sample.strategy == SAMPLE_HEAD
+    total: int | None = None
+    indices: list[int] | None = None
+    if not want_head:
+        total = row_count(**reader_args)
+        # `None` means the sample covers the whole dataset, so there is no
+        # selection to make and the stream is read straight through — building the
+        # identity index list would cost ~40 MB at 1.4M rows and make
+        # `take_indices` gather-copy every batch to reproduce it.
+        indices = sample_row_indices(total=total, rows=sample.rows, seed=sample.seed)
+
+    batches, schema, arrow_backed, close = _open_batch_stream(reader_args, fmt)
+    try:
+        if indices is not None:
+            taken = take_indices(batches, indices)
+        else:
+            # `rows + 1` for head (the probe row); the counted total for a random
+            # sample that turned out to cover everything.
+            taken = take_head(batches, limit=sample.rows + 1 if want_head else (total or 0))
+    finally:
+        close()
+
+    read_rows = sum(batch.num_rows for batch in taken)
+    if indices is not None:
+        # `total` is set on every path that produces indices (we just counted).
+        assert total is not None
+        _require_complete_draw(read_rows, len(indices), path=path, total=total)
+        truncated = sample.rows < (total or 0)
+    elif want_head:
+        truncated = read_rows > sample.rows
+        if truncated:
+            taken = take_head(taken, limit=sample.rows)
+        else:
+            # The stream ended inside the probe row, so the whole file fits in the
+            # sample and its exact size is now known for free.
+            total = read_rows
+    else:
+        # A random sample that covered the whole dataset: complete, not a sample.
+        truncated = False
+
+    frame = batches_to_frame(taken, schema=schema, arrow_backed=arrow_backed)
+    return frame, sampling_record(sample, rows=len(frame), total_rows=total, sampled=truncated)
+
+
+def _require_complete_draw(taken: int, wanted: int, *, path: str, total: int) -> None:
+    """Refuse a random sample whose object changed under it mid-read (#595 J1).
+
+    A random sample is inherently two passes — count, then take — and a landing
+    zone is exactly where an object gets re-uploaded between them. If the file
+    **shrank**, positions drawn from the old population fall past the new end and
+    the take comes back short, while ``total_rows`` still reports the count from
+    the first pass: a sample that is both smaller and less representative than the
+    record claims, with nothing on the result to say so.
+
+    Growth is deliberately NOT an error, and is not stale either: ``total_rows``
+    means "the population this sample was drawn from", which is precisely the
+    count taken at draw time. Rows appended afterwards were never in scope.
+    """
+    if taken < wanted:
+        raise SamplingDrawError(
+            f"{path!r} changed while it was being sampled — only {taken:,} of {wanted:,} "
+            f"drawn rows were still present (it held {total:,} when counted). The sample "
+            "would be short and skewed while the record still reported the old "
+            "population, so DataQ refuses the run rather than report it as "
+            "representative; re-run once the file has settled."
+        )
 
 
 class FlatFileReadError(SafeMonitorError, RuntimeError):
@@ -570,23 +829,39 @@ def max_timestamp(series: Any, *, column: str) -> Any:
     return parsed.max()
 
 
-def file_last_modified(
-    *, conn_type: str, config: dict[str, Any], path: str, secret: str
-) -> datetime | None:
-    """The store's last-modified time for exactly ``path`` (live seam, #520).
+@dataclass(frozen=True)
+class FileStat:
+    """What one metadata call tells us about an object: when it landed, how big.
 
-    The arrival-time source for a column-less freshness monitor. A **single
-    metadata call** (`head_object` / `get_blob_properties`) rather than a prefix
-    listing: this runs on every scheduled monitor run, and both stores list by
-    prefix, so a key like `data/orders.csv` sitting among dated siblings would
-    drain the whole page set on each run — the unbounded-read-on-a-scheduled-path
-    defect from #854. It is also exact by construction, which the listing version
-    had to filter for (`orders.csv` is a prefix of `orders.csv.bak`).
+    Both fields are ``None`` when the object isn't there. ``size`` exists so the
+    #595 scan guardrail is free: the same ``head_object`` /
+    ``get_blob_properties`` that answers arrival-time freshness already carries
+    the content length, so refusing an over-cap file costs **no extra request** on
+    a path that runs on every schedule — the #854 discipline this module is built
+    around.
+    """
 
-    ``None`` when the object isn't there; the caller turns that into a per-check
-    error rather than a silent pass, because a missing file is precisely the
-    incident this monitor exists to catch. Any **other** failure (auth, network)
-    propagates — that is this call's second job, as the store-reachability probe.
+    last_modified: datetime | None = None
+    size: int | None = None
+
+
+def file_stat(*, conn_type: str, config: dict[str, Any], path: str, secret: str) -> FileStat:
+    """The store's metadata for exactly ``path`` (live seam, #520/#595).
+
+    The arrival-time source for a column-less freshness monitor, and the size
+    probe for the scan guardrail. A **single metadata call** (`head_object` /
+    `get_blob_properties`) rather than a prefix listing: this runs on every
+    scheduled monitor run, and both stores list by prefix, so a key like
+    `data/orders.csv` sitting among dated siblings would drain the whole page set
+    on each run — the unbounded-read-on-a-scheduled-path defect from #854. It is
+    also exact by construction, which the listing version had to filter for
+    (`orders.csv` is a prefix of `orders.csv.bak`).
+
+    An empty `FileStat` when the object isn't there; the caller turns that into a
+    per-check error rather than a silent pass, because a missing file is precisely
+    the incident this monitor exists to catch. Any **other** failure (auth,
+    network) propagates — that is this call's second job, as the store-reachability
+    probe.
     """
     if conn_type == "s3":
         from botocore.exceptions import ClientError
@@ -596,23 +871,30 @@ def file_last_modified(
             head = _s3_client(cfg, secret).head_object(Bucket=cfg.bucket, Key=path)
         except ClientError as exc:
             if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
-                return None
+                return FileStat()
             raise
-        modified: datetime | None = head.get("LastModified")
-        return modified
+        return FileStat(last_modified=head.get("LastModified"), size=head.get("ContentLength"))
 
     from azure.core.exceptions import ResourceNotFoundError
 
     acfg = AdlsConfig.model_validate(config)
     client_az = _blob_service(acfg, secret)
     try:
-        blob = client_az.get_blob_client(container=acfg.container, blob=path)
-        properties: datetime | None = blob.get_blob_properties().last_modified
-        return properties
+        properties = client_az.get_blob_client(
+            container=acfg.container, blob=path
+        ).get_blob_properties()
+        return FileStat(last_modified=properties.last_modified, size=properties.size)
     except ResourceNotFoundError:
-        return None
+        return FileStat()
     finally:
         client_az.close()
+
+
+def file_last_modified(
+    *, conn_type: str, config: dict[str, Any], path: str, secret: str
+) -> datetime | None:
+    """Just the arrival time from `file_stat` — the pre-#595 shape of this seam."""
+    return file_stat(conn_type=conn_type, config=config, path=path, secret=secret).last_modified
 
 
 class FlatFileCheckRunner:
@@ -625,10 +907,81 @@ class FlatFileCheckRunner:
 
     supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
 
-    def __init__(self, *, conn_type: str, config: dict[str, Any], secret: str) -> None:
+    def __init__(
+        self,
+        *,
+        conn_type: str,
+        config: dict[str, Any],
+        secret: str,
+        sampling: SampleSpec | None = None,
+    ) -> None:
         self._conn_type = conn_type
         self._config = config
         self._secret = secret
+        self._sampling = sampling
+        #: Memo of the object's metadata, keyed by path (#595). A run can reach the
+        #: guard twice — once for the expectation batch, once for a column-freshness
+        #: monitor that needs the same frame — and paying a second metadata round
+        #: trip to re-learn an answer that cannot have changed mid-run is exactly
+        #: the per-run overhead #854 exists to remove.
+        self._stats: dict[str, FileStat] = {}
+
+    def _stat(self, path: str) -> FileStat:
+        """`file_stat` for ``path``, once per runner instance."""
+        stat = self._stats.get(path)
+        if stat is None:
+            stat = file_stat(
+                conn_type=self._conn_type, config=self._config, path=path, secret=self._secret
+            )
+            self._stats[path] = stat
+        return stat
+
+    def _guard_object_size(self, path: str, *, stat: FileStat | None = None) -> None:
+        """Refuse a full-object read that would exceed ``RUN_MAX_SCAN_BYTES`` (#595).
+
+        The cap is read **first** and the probe is skipped entirely when it is
+        disabled: an operator who turns the guardrail off should not keep paying a
+        metadata round trip per run for a number nobody reads.
+
+        ``stat`` lets a caller that has already fetched the metadata hand it in —
+        the monitor path has, because the establishment probe *is* this call — so
+        the guard adds no request of its own there.
+
+        A ``None`` size means the store did not report one (or the object is
+        missing, which the caller handles on its own terms). The guardrail stays
+        silent rather than guessing: refusing on an unknown size would break every
+        run against a store that omits the header, and a missing size is not
+        evidence of a large file.
+        """
+        cap = get_settings().run_max_scan_bytes
+        if cap <= 0:
+            return
+        size = (stat or self._stat(path)).size
+        if size is not None:
+            enforce_byte_cap(size, cap=cap, target=f"file {path!r}")
+
+    def _load_frame(self, path: str) -> tuple[Any, dict[str, Any] | None]:
+        """The frame the checks run against, plus its sampling record (or ``None``).
+
+        Sampling **replaces** the byte guardrail rather than stacking with it: a
+        sampled read is bounded by the sample size by construction, so the source
+        object's own size stops being a memory fact. What still matters is that the
+        *sample* fits, which `enforce_sample_cap` checks against the row cap.
+        """
+        if self._sampling is not None:
+            enforce_sample_cap(self._sampling, cap=get_settings().run_max_scan_rows)
+            return read_sampled_dataframe(
+                conn_type=self._conn_type,
+                config=self._config,
+                path=path,
+                secret=self._secret,
+                sample=self._sampling,
+            )
+        self._guard_object_size(path)
+        frame = read_dataframe(
+            conn_type=self._conn_type, config=self._config, path=path, secret=self._secret
+        )
+        return frame, None
 
     def run_monitors(
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
@@ -664,10 +1017,11 @@ class FlatFileCheckRunner:
         reading the frame for a column-freshness monitor: then the count comes off
         that frame, so the object is still read exactly once.
         """
-        # The establishment probe: fails loudly before the per-monitor loop.
-        arrived_at = file_last_modified(
-            conn_type=self._conn_type, config=self._config, path=table, secret=self._secret
-        )
+        # The establishment probe: fails loudly before the per-monitor loop. It
+        # returns the object's SIZE alongside its arrival time (#595), so the scan
+        # guardrail below costs no second metadata call on this per-schedule path.
+        stat = self._stat(table)
+        arrived_at = stat.last_modified
         # One-slot memo of the READ ATTEMPT — not of the frame. Memoizing only
         # successes leaves a failure unmemoised, so each later monitor retries the
         # whole download: five monitors against a failing 2 GB object = five full
@@ -696,6 +1050,21 @@ class FlatFileCheckRunner:
             return memo[0]
 
         def dataframe() -> Any:
+            # The guardrail applies here too — a column-freshness monitor pulls the
+            # same whole object a check run does, and #755's OOM had no idea which
+            # code path asked for it. Raised OUTSIDE `_memoized` on purpose: its
+            # `except Exception` folds any failure into the deliberately vague
+            # `FlatFileReadError`, which would replace "this file is over the cap,
+            # here is the knob" with "could not read the file from the store".
+            #
+            # Sampling deliberately does NOT apply: a MAX over a sample is a
+            # *smaller* maximum, so a sampled freshness monitor reports data as
+            # staler than it is and fires a critical alert on healthy data. That is
+            # a confident wrong answer, which this codebase refuses in favour of an
+            # honest refusal — so an over-cap file errors these monitors even when
+            # the suite samples its expectations. Arrival-time freshness (no
+            # `column`) and volume never reach here, so both stay available.
+            self._guard_object_size(table, stat=stat)
             return _memoized(
                 attempt,
                 lambda: read_dataframe(
@@ -765,38 +1134,64 @@ class FlatFileCheckRunner:
         checks: list[CheckSpec],
         index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
-        df = read_dataframe(
-            conn_type=self._conn_type, config=self._config, path=table, secret=self._secret
-        )
+        # A table row-count expectation against a sampled frame measures the
+        # SAMPLE and reports it as the dataset's size (#595 C6), so it is refused
+        # per check rather than mismeasured. Only when sampling is on: unsampled,
+        # the count is the dataset's and the expectation is perfectly valid.
+        refused: dict[int, CheckOutcome] = {}
+        runnable = list(range(len(checks)))
+        if self._sampling is not None:
+            runnable, refused = split_row_count_checks(checks)
+
+        df, sampling = self._load_frame(table)
         context = gx.get_context(mode="ephemeral")
         asset = context.data_sources.add_pandas(name="flatfile").add_dataframe_asset(name="file")
         # The pandas asset takes its batch at run time via batch_parameters; the
         # ephemeral context makes the fixed suite/vd names safe across runs.
         batch_definition = asset.add_batch_definition_whole_dataframe(name="whole_dataframe")
-        return run_expectations(
+        outcome = run_expectations(
             context,
             batch_definition=batch_definition,
-            checks=checks,
+            checks=[checks[i] for i in runnable],
             name="suite-flatfile",
             batch_parameters={"dataframe": df},
             index_columns=index_columns,
         )
+        # Stamped on every outcome (#595) so a pass on a sample says so on the
+        # result row, not just in the run log. The REFUSALS are deliberately not
+        # stamped: the record describes a read, and a refused check performed
+        # none — claiming it saw 100k rows would be the overclaim this field
+        # exists to prevent. Its message already names sampling as the cause.
+        stamped = stamp_sampling(outcome, sampling)
+        if not refused:
+            return stamped
+        merged = merge_by_position(
+            len(checks), (runnable, stamped.checks), (list(refused), list(refused.values()))
+        )
+        return SuiteOutcome(success=False, checks=merged)
 
 
 def build_flatfile_runner(
-    *, conn_type: str, config: dict[str, Any], secret_ref: str | None, secret_store: SecretStore
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    secret_ref: str | None,
+    secret_store: SecretStore,
+    sampling: SampleSpec | None = None,
 ) -> FlatFileCheckRunner:
     """Build a runner from a flat-file `Connection`'s primitives.
 
     Mirrors `build_snowflake_runner`: resolves the secret eagerly and takes the
     raw config (not the ORM model) to keep the adapter decoupled from `db/`.
+    ``sampling`` is the suite target's `SampleSpec` (#595); ``None`` keeps the
+    historical whole-object read.
     """
     if conn_type not in _FILE_TYPES:
         raise ValueError(f"{conn_type!r} is not a flat-file datasource")
     if not secret_ref:
         raise ValueError("flat-file connection requires secret_ref for the credential")
     secret = secret_store.get(secret_ref)
-    return FlatFileCheckRunner(conn_type=conn_type, config=config, secret=secret)
+    return FlatFileCheckRunner(conn_type=conn_type, config=config, secret=secret, sampling=sampling)
 
 
 # ───────────────────────── batch resolution ────────────────────────

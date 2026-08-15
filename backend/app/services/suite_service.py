@@ -22,7 +22,11 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.db.models import ORCHESTRATION_PROVIDERS, Connection, Share, Suite
+from backend.app.datasources.sampling import (
+    SAMPLING_ROW_COUNT_CONFLICT,
+    is_row_count_expectation,
+)
+from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Share, Suite
 from backend.app.services import run_target
 from backend.app.services.asset_service import resolve_and_upsert_asset
 from backend.app.services.column_classification import is_sensitive
@@ -144,6 +148,39 @@ def get_suite(session: Session, suite_id: uuid.UUID) -> Suite:
     return suite
 
 
+def _reject_sampling_with_row_count_checks(
+    session: Session, suite_id: uuid.UUID, target: dict[str, Any], conn_type: str
+) -> None:
+    """422 if this target turns on sampling under existing row-count checks (#595 C6).
+
+    The other half of the gate. `check_service` refuses a row-count expectation on
+    a suite that already samples; this refuses sampling on a suite that already has
+    one — otherwise the combination is reachable simply by doing it in the other
+    order, and the check would start silently measuring the sample instead of the
+    dataset while still reading as a healthy configuration.
+
+    Deliberately raised as `SuiteTargetInvalidError`, the same 422 every other
+    target-shape complaint uses, so the run-target editor surfaces it where the
+    author made the change.
+    """
+    if run_target.resolve_target(conn_type, target).sampling is None:
+        return
+    # Names are read back so the message can point at the actual obstacle — "one
+    # of your checks conflicts" sends an author hunting through a long suite.
+    blocked = sorted(
+        name
+        for name, expectation_type in session.execute(
+            select(Check.name, Check.expectation_type).where(Check.suite_id == suite_id)
+        ).all()
+        if is_row_count_expectation(expectation_type)
+    )
+    if blocked:
+        raise run_target.SuiteTargetInvalidError(
+            f"{SAMPLING_ROW_COUNT_CONFLICT} Conflicting checks: {', '.join(blocked)}.",
+            detail={"checks": blocked},
+        )
+
+
 def update_suite(
     session: Session,
     suite_id: uuid.UUID,
@@ -168,6 +205,7 @@ def update_suite(
         connection = session.get(Connection, suite.connection_id)
         assert connection is not None  # FK is RESTRICT; a suite always has its connection
         run_target.validate_target(connection.type, target)
+        _reject_sampling_with_row_count_checks(session, suite_id, target, connection.type)
         # Skip the re-resolve + upsert on a no-op PATCH (target re-sent unchanged and
         # already linked) — the identity hasn't moved, so it's a wasted DB write.
         is_noop = target == suite.target and suite.asset_id is not None

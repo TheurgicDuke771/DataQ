@@ -112,6 +112,7 @@ def test_flatfile_suite_run_persists_results(
     suite, checks = _seed(db_session, conn_type="s3", config={"bucket": "b", "region": "r"})
     run = _queued_run(db_session, suite)
     monkeypatch.setattr(flatfile, "read_dataframe", lambda **k: _SAMPLE)
+    monkeypatch.setattr(flatfile, "file_stat", lambda **k: flatfile.FileStat(None, 4096))
     runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
 
     run_service.execute_run(db_session, run=run, checks=checks, runner=runner, table="data/o.csv")
@@ -141,6 +142,7 @@ def test_flatfile_run_persists_error_status_for_unevaluable_check(
     )
     run = _queued_run(db_session, suite)
     monkeypatch.setattr(flatfile, "read_dataframe", lambda **k: _SAMPLE)
+    monkeypatch.setattr(flatfile, "file_stat", lambda **k: flatfile.FileStat(None, 4096))
     runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
 
     run_service.execute_run(db_session, run=run, checks=checks, runner=runner, table="data/o.csv")
@@ -166,6 +168,12 @@ def test_unity_catalog_suite_run_persists_results(
         config=UnityCatalogConfig.model_validate(cfg), token="t", catalog="main"
     )
     monkeypatch.setattr(runner, "_read_table", lambda **k: _SAMPLE)
+    # The #595 scan guardrail counts the table before reading it. Left unstubbed
+    # this does not fail — it opens a REAL Databricks session to the fake
+    # workspace host and retries for 15 minutes, which the suite would report as
+    # a timeout rather than a defect (the same trap `_forbid_dataframe_read`
+    # records in the unit tests).
+    monkeypatch.setattr(runner, "_count_rows", lambda **k: len(_SAMPLE))
 
     run_service.execute_run(
         db_session, run=run, checks=checks, runner=runner, table="orders", schema="sales"
@@ -265,6 +273,7 @@ def test_flatfile_run_survives_adversarial_frame(
     run = _queued_run(db_session, suite)
 
     monkeypatch.setattr(flatfile, "read_dataframe", lambda **k: frame)
+    monkeypatch.setattr(flatfile, "file_stat", lambda **k: flatfile.FileStat(None, 4096))
     runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
     run_service.execute_run(db_session, run=run, checks=checks, runner=runner, table="f.parquet")
 

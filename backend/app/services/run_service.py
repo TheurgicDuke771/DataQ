@@ -55,7 +55,7 @@ from backend.app.db.models import (
 )
 from backend.app.services import run_dispatch, suite_service
 from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
-from backend.app.services.failure_classifier import classify_failure_reason
+from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.rollup import status_histograms
 from backend.app.services.severity import resolve_status
 
@@ -125,6 +125,11 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
         observed_value=observed,
         expected_value=sanitize_json(outcome.expected_value),
         sample_failures=sample,
+        # Persisted on EVERY status, including `error` (#595). The errored branch
+        # above drops the observed value and the sample because neither exists for
+        # a check that never evaluated — but "this run was reading a sample" is
+        # still true of the read that failed, and it is often the explanation.
+        sampling=sanitize_json(outcome.sampling),
     )
 
 
@@ -332,10 +337,14 @@ def execute_run(
             return run
         run.status = "failed"
         run.finished_at = _now()
-        # Redaction-safe reason (#605): classify the exception into a fixed
-        # message — the raw text (which can carry DSN/credential fragments) stays
-        # in the server log below, never on the persisted/surfaced reason.
-        run.failure_reason = classify_failure_reason(exc)
+        # Redaction-safe reason (#605/#595): the ONE shared policy — a
+        # `SafeMonitorError` (a DataQ-authored message, e.g. the scan-cap refusal
+        # naming the target and the knob) surfaces verbatim; everything else is
+        # classified into a fixed message, so the raw text (which can carry
+        # DSN/credential/cell fragments) stays in the server log below and never
+        # reaches the persisted reason. Shared with the monitor loop and the
+        # dry-run preview so the three sinks cannot drift.
+        run.failure_reason = safe_failure_reason(exc)
         session.commit()
         log.exception("run_failed", run_id=str(run.id), table=table)
         return run

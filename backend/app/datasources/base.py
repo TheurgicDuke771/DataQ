@@ -105,6 +105,14 @@ class CheckOutcome:
     # metric is parsed from the sample (or, for custom-SQL, from `observed_value`
     # — see `severity.py`).
     metric_value: float | None = None
+    # How much of the dataset this check actually saw (#595), or `None` for a
+    # complete read. Set by a runner that bounded its read under the suite
+    # target's `SampleSpec`, persisted to `results.sampling`, and surfaced by the
+    # read API so a pass on a sample says so. Deliberately per-CHECK, not
+    # per-run: within one run a volume monitor's `COUNT(*)` pushes down and is
+    # exact while the expectations beside it ran on 100k of 5M rows, and a
+    # run-level flag would have to lie about one of them.
+    sampling: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -250,6 +258,36 @@ class ExpiringCredentialAdapter(Protocol):
     ) -> datetime | None: ...
 
 
+#: Sampling strategies a run target may declare (#595). ``head`` takes the first
+#: N rows in storage order — cheap, but not representative, since flat files
+#: usually arrive sorted by load time. ``random`` draws N rows uniformly without
+#: replacement, costing one extra cheap pass (a Parquet footer, a streamed CSV
+#: count, a warehouse ``COUNT(*)``) to learn the population size.
+SAMPLE_HEAD = "head"
+SAMPLE_RANDOM = "random"
+SAMPLING_STRATEGIES: tuple[str, ...] = (SAMPLE_HEAD, SAMPLE_RANDOM)
+
+
+@dataclass(frozen=True)
+class SampleSpec:
+    """A validated sampling declaration from a suite's run target (#595).
+
+    ``rows`` is how many rows the check engine is handed. ``seed`` applies only to
+    ``random`` and makes a run reproducible — deliberately optional, because a
+    fixed seed means every run inspects the *same* rows, which is the wrong
+    default for a monitor whose job is to notice new bad data.
+
+    Lives here beside `BatchSpec` for the same reason: both are parsed from the
+    suite's target document, both ride on `ResolvedTarget`, and both must be
+    importable without pulling in the runner machinery that acts on them
+    (`datasources.sampling` holds the behaviour).
+    """
+
+    strategy: str
+    rows: int
+    seed: int | None = None
+
+
 @dataclass(frozen=True)
 class BatchSpec:
     """An unresolved flat-file batch selector (resolved live by `materialize_path`).
@@ -270,12 +308,19 @@ class ResolvedTarget:
     """The runner inputs a suite resolves to. ``table`` carries the file path for
     flat-file datasources; ``catalog`` is set only for Unity Catalog. ``batch`` is
     set only for a flat-file *batch* target, in which case ``table`` is empty until
-    `materialize_path` lists the store and resolves the concrete path."""
+    `materialize_path` lists the store and resolves the concrete path.
+
+    ``sampling`` (#595) is the suite-level row-cap declaration, parsed from the
+    target's optional ``sampling`` block. It is datasource-agnostic here but only
+    *accepted* for the full-load datasources (`registry.SAMPLING_CAPABLE_TYPES`) —
+    a spec on a pushdown datasource is refused at save time rather than silently
+    ignored, because "sampled" is a claim that ends up on every result row."""
 
     table: str
     schema: str | None
     catalog: str | None
     batch: BatchSpec | None = None
+    sampling: SampleSpec | None = None
 
 
 class TargetShapeError(ValueError):

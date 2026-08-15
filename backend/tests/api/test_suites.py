@@ -11,7 +11,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from decimal import Decimal
-from typing import Any
+from typing import Any, get_args
 
 import pandas as pd
 import pytest
@@ -44,20 +44,25 @@ _PARTIAL_SF_CONFIG = {"account": "ab12345.eu-west-1"}
 _FULL_SF_CONFIG = {"account": "ab12345.eu-west-1", "database": "ANALYTICS", "schema": "PUBLIC"}
 
 
-def _connection(db_session: Any, *, config: dict[str, Any] | None = None) -> Connection:
-    """Insert a snowflake connection (with its own owner) for suites to bind to.
+def _connection(
+    db_session: Any, *, config: dict[str, Any] | None = None, conn_type: str = "snowflake"
+) -> Connection:
+    """Insert a connection (with its own owner) for suites to bind to.
 
     ``config`` defaults to the partial (`account`-only) config, which omits
     database/schema on purpose so a target fails to resolve an asset (fail-soft NULL
-    path); pass ``_FULL_SF_CONFIG`` for the fully-resolvable case."""
+    path); pass ``_FULL_SF_CONFIG`` for the fully-resolvable case. ``conn_type``
+    picks the datasource — `s3` for the sampling cases (#595), which only the
+    full-load datasources accept."""
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"owner-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
     db_session.flush()
+    default_config = _PARTIAL_SF_CONFIG if conn_type == "snowflake" else {"bucket": "b"}
     conn = Connection(
-        name=f"sf-{uuid.uuid4().hex[:8]}",
-        type="snowflake",
+        name=f"{conn_type}-{uuid.uuid4().hex[:8]}",
+        type=conn_type,
         env="dev",
-        config=_PARTIAL_SF_CONFIG if config is None else config,
+        config=default_config if config is None else config,
         secret_ref="kv-sf",
         created_by=owner.id,
     )
@@ -2012,3 +2017,107 @@ def test_batch_preview_default_strategy_is_latest(
     )
     assert resp.status_code == 200
     assert captured["strategy"] == "latest" and captured["prefix"] == ""
+
+
+# ── #595: the sampling block must survive the API boundary ───────────────────
+
+
+def test_the_api_declares_the_same_sampling_strategies_the_core_does() -> None:
+    """`SuiteSampling.strategy` has to be spelled literally (`Literal[...]` takes
+    constants, not names), so this canary keeps the duplication from drifting —
+    a renamed strategy would otherwise 422 every valid request."""
+    from backend.app.api.v1.suites import SuiteSampling
+    from backend.app.datasources.base import SAMPLING_STRATEGIES
+
+    declared = SuiteSampling.model_fields["strategy"].annotation
+    assert set(get_args(declared)) == set(SAMPLING_STRATEGIES)
+
+
+def test_a_sampling_block_survives_the_api_and_reaches_storage(
+    client: TestClient, db_session: Any
+) -> None:
+    """`SuiteTarget` is a CLOSED pydantic model: a key it does not declare is
+    dropped on the way in, silently. Before `sampling` was declared there, the
+    whole feature was unreachable through REST — a suite could only be sampled by
+    writing `suites.target` directly in the database, and every save looked
+    successful. That is exactly the silently-dropped-block failure the registry's
+    422 exists to prevent, one layer above where that gate can see."""
+    conn = _connection(db_session, conn_type="s3")
+    resp = client.post(
+        "/api/v1/suites",
+        json={
+            "name": "sampled",
+            "connection_id": str(conn.id),
+            "target": {
+                "path": "raw/orders.csv",
+                "sampling": {"strategy": "random", "rows": 1000, "seed": 7},
+            },
+        },
+    )
+    assert resp.status_code == 201
+    stored = resp.json()["target"]
+    assert stored["sampling"] == {"strategy": "random", "rows": 1000, "seed": 7}
+
+
+def test_a_seedless_sampling_block_stores_without_a_null_seed(
+    client: TestClient, db_session: Any
+) -> None:
+    """`exclude_none` drops the unset seed rather than storing `seed: null`, so the
+    document matches what `parse_sample_spec` treats as "no seed"."""
+    conn = _connection(db_session, conn_type="s3")
+    resp = client.post(
+        "/api/v1/suites",
+        json={
+            "name": "sampled",
+            "connection_id": str(conn.id),
+            "target": {
+                "path": "raw/orders.csv",
+                "sampling": {"strategy": "head", "rows": 50},
+            },
+        },
+    )
+    assert resp.status_code == 201
+    assert resp.json()["target"]["sampling"] == {"strategy": "head", "rows": 50}
+
+
+@pytest.mark.parametrize(
+    "sampling",
+    [
+        {"strategy": "tail", "rows": 10},
+        {"strategy": "head", "rows": 0},
+        {"strategy": "head"},
+        {"rows": 10},
+    ],
+)
+def test_a_malformed_sampling_block_is_a_422_at_the_boundary(
+    client: TestClient, db_session: Any, sampling: dict[str, Any]
+) -> None:
+    conn = _connection(db_session, conn_type="s3")
+    resp = client.post(
+        "/api/v1/suites",
+        json={
+            "name": "bad",
+            "connection_id": str(conn.id),
+            "target": {"path": "raw/orders.csv", "sampling": sampling},
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_sampling_on_a_pushdown_datasource_is_refused_through_the_api(
+    client: TestClient, db_session: Any
+) -> None:
+    """The registry gate, reached the way a user reaches it. Snowflake pushes every
+    expectation down and never materialises rows, so a sample there would change
+    nothing while stamping "sampled" on every result."""
+    conn = _connection(db_session, conn_type="snowflake")
+    resp = client.post(
+        "/api/v1/suites",
+        json={
+            "name": "nope",
+            "connection_id": str(conn.id),
+            "target": {"table": "ORDERS", "sampling": {"strategy": "head", "rows": 10}},
+        },
+    )
+    assert resp.status_code == 422
+    assert "sampling" in resp.json()["error"]["message"]

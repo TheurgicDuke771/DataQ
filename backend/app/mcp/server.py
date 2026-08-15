@@ -236,6 +236,14 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
                     "name": checks[r.check_id].name if r.check_id in checks else None,
                     "status": r.status,
                     "metric_value": _num(r.metric_value),
+                    # How much of the dataset this check actually saw (#595).
+                    # `None` = a complete read. Without it an AI client reads a
+                    # green board from a 2% sample and reports full-dataset
+                    # quality with total confidence — the #424/#1115 overclaim
+                    # class, reintroduced for every MCP consumer at once. Carries
+                    # counts and a strategy name, never cell values, so it needs
+                    # none of the redaction its neighbours do.
+                    "sampling": r.sampling,
                     "observed_value": run_service.redact_observed_value(
                         r.observed_value,
                         tested_column=(

@@ -41,7 +41,7 @@ from backend.app.db.models import Connection
 from backend.app.services import run_target
 from backend.app.services.check_service import validate_threshold_ordering
 from backend.app.services.custom_sql import validate_custom_sql_check
-from backend.app.services.failure_classifier import classify_failure_reason
+from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.severity import resolve_status
 
 log = get_logger(__name__)
@@ -146,6 +146,11 @@ def dry_run_check(
             secret_ref=connection.secret_ref,
             secret_store=secret_store,
             catalog=resolved.catalog,
+            # The suite target's row cap (#595). Threaded through so a preview
+            # reads what a real run would read — a dry-run against an over-cap
+            # target must refuse for the same reason, not quietly succeed by
+            # taking a path production never takes.
+            sampling=resolved.sampling,
         )
     except UnsupportedConnectionTypeError as exc:
         # Defensive: resolve_target already rejects non-datasource types, so this
@@ -163,7 +168,7 @@ def dry_run_check(
         )
         raise DryRunFailedError(
             "dry run could not connect to the datasource",
-            detail={"reason": classify_failure_reason(exc)},
+            detail={"reason": safe_failure_reason(exc)},
         ) from exc
 
     # The runner exists from here — `owned_runner` releases its shared engine
@@ -193,7 +198,7 @@ def dry_run_check(
             )
             raise DryRunFailedError(
                 "dry run could not list the datasource store",
-                detail={"reason": classify_failure_reason(exc)},
+                detail={"reason": safe_failure_reason(exc)},
             ) from exc
 
         try:
@@ -211,7 +216,13 @@ def dry_run_check(
             )
             raise DryRunFailedError(
                 "dry run could not execute against the datasource",
-                detail={"table": table, "reason": classify_failure_reason(exc)},
+                # The SAME policy the persisted run path uses (#595): a
+                # DataQ-authored `SafeMonitorError` — the scan-cap refusal naming
+                # the target, the cap and the knob — surfaces verbatim, everything
+                # else is classified. A preview that swallowed the remedy while the
+                # real run stated it would send an author looking for a datasource
+                # fault that does not exist.
+                detail={"table": table, "reason": safe_failure_reason(exc)},
             ) from exc
 
         status, metric = resolve_status(
@@ -280,7 +291,7 @@ def _dry_run_schema_drift(
         )
         raise DryRunFailedError(
             "dry run could not list the datasource store",
-            detail={"reason": classify_failure_reason(exc)},
+            detail={"reason": safe_failure_reason(exc)},
         ) from exc
     try:
         columns = schema_drift_service.introspect_columns(
@@ -359,7 +370,7 @@ def _dry_run_anomaly(
         )
         raise DryRunFailedError(
             "dry run could not measure the anomaly target metric",
-            detail={"table": resolved.table, "reason": classify_failure_reason(exc)},
+            detail={"table": resolved.table, "reason": safe_failure_reason(exc)},
         ) from exc
     payload = anomaly_service.build_score_payload(value, [], params)
     payload["dry_run"] = True

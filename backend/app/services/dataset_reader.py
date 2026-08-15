@@ -36,6 +36,7 @@ from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
+from backend.app.datasources.flatfile import file_stat
 from backend.app.datasources.flatfile import read_dataframe as read_flatfile_dataframe
 from backend.app.datasources.iceberg import (
     IcebergConfig,
@@ -43,6 +44,7 @@ from backend.app.datasources.iceberg import (
     load_iceberg_table,
     read_iceberg_dataframe,
 )
+from backend.app.datasources.sampling import enforce_byte_cap
 from backend.app.db.models import Connection
 from backend.app.services.custom_sql import validate_query
 from backend.app.services.profile_service import (
@@ -205,6 +207,25 @@ def _sql_read(
 # ───────────────────────── flat file (adls_gen2 / s3) ───────────────
 
 
+def _enforce_object_size(connection: Connection, *, path: str, secret: str) -> None:
+    """Refuse an over-cap object before it is downloaded (#595 J2).
+
+    Deliberately the *same* `RUN_MAX_SCAN_BYTES` the run path uses, not a second
+    knob: it answers one question — how much may this worker materialise — and
+    the comparison reader materialises into the same worker as everything else.
+    A store that reports no length is not refused (see `flatfile._guard_object_size`
+    for why an unknown size must not fail closed).
+    """
+    cap = get_settings().run_max_scan_bytes
+    if cap <= 0:
+        return
+    stat = file_stat(
+        conn_type=connection.type, config=dict(connection.config), path=path, secret=secret
+    )
+    if stat.size is not None:
+        enforce_byte_cap(stat.size, cap=cap, target=f"file {path!r}")
+
+
 def _flatfile_read(
     connection: Connection, spec: DatasetSpec, max_rows: int, secret_store: SecretStore
 ) -> Any:
@@ -214,8 +235,13 @@ def _flatfile_read(
             "flat-file comparison side needs a resolved path", detail={"spec": "path"}
         )
     secret = _require_secret(connection, secret_store)
-    # No cheap preflight exists for an object read — the whole file downloads,
-    # then the cap is enforced before any diffing.
+    # A cheap preflight DOES exist now (#595 J2): the store's metadata call reports
+    # the object's byte length, so the same worker-memory guardrail the run path
+    # uses applies here too — and it must, because without it #755's OOM survived
+    # via any comparison against an oversized object: the whole file downloaded
+    # and expanded ~8-9x in memory *before* the row cap below could look at it.
+    # Refusing on size costs one HEAD; the row cap stays as the semantic bound.
+    _enforce_object_size(connection, path=path, secret=secret)
     df = read_flatfile_dataframe(
         conn_type=connection.type, config=dict(connection.config), path=path, secret=secret
     )

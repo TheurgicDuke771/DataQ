@@ -41,6 +41,10 @@ from backend.app.datasources.monitors import (
     monitor_expectation_type,
     validate_monitor_config,
 )
+from backend.app.datasources.sampling import (
+    SAMPLING_ROW_COUNT_CONFLICT,
+    is_row_count_expectation,
+)
 from backend.app.db.models import (
     COMPARISON_KIND,
     DQ_DIMENSIONS,
@@ -475,6 +479,23 @@ def validate_comparison_check(
             source_spec["query"], connection_type=source_conn.type, field="config.source.query"
         )
     else:
+        if "sampling" in source_spec:
+            # `resolve_target` below would happily ACCEPT a sampling block on a
+            # capable source type — and `comparison_run._source_spec` then drops
+            # it when it builds the `DatasetSpec` (#595 C7). The author would save
+            # clean, believe the read is bounded, and get a run that materialises
+            # the whole thing: precisely the silently-dropped sampling block the
+            # registry's own 422 exists to prevent, arriving through a door that
+            # gate does not cover. Threading sampling through the DatasetReader is
+            # real work and deliberately follow-up scope; refusing it is what keeps
+            # the gap honest in the meantime.
+            raise CheckConfigInvalidError(
+                "a comparison source does not support 'sampling' yet — the reader "
+                "materialises both sides in full for the diff, so the block would be "
+                "silently ignored. Narrow the source, or set config.max_rows "
+                "deliberately.",
+                detail={"field": "config.source.sampling"},
+            )
         try:
             resolve_target(source_conn.type, source_spec)
         except SuiteTargetInvalidError as exc:
@@ -547,6 +568,39 @@ def _find_oversized_string(value: Any, path: str = "config") -> str | None:
             if found:
                 return found
     return None
+
+
+def _reject_row_count_on_sampled_suite(
+    session: Session, suite: Suite, expectation_type: str
+) -> None:
+    """422 for a row-count expectation on a suite whose target samples (#595 C6).
+
+    Against a sampled frame these expectations deterministically observe the
+    SAMPLE and report it as the dataset's size, so a healthy 5M-row file with
+    ``min_value=4_000_000`` fails critically forever under a 100k sample (and the
+    inverse passes wrongly). It is the same smaller-aggregate hazard that got
+    freshness monitors exempted from sampling — refused at author time rather
+    than mismeasured every night.
+
+    The suite-side half (turning sampling ON under an existing row-count check)
+    lives in `suite_service`; both are needed, or the combination is reachable by
+    doing it in the other order.
+    """
+    if not is_row_count_expectation(expectation_type) or not suite.target:
+        return
+    connection_type = _connection_type(session, suite)
+    try:
+        sampling = resolve_target(connection_type, suite.target).sampling
+    except SuiteTargetInvalidError:
+        # A target that no longer resolves is its own (separate) problem, and it
+        # is not this gate's job to report it — refusing here would replace a
+        # clear target error with a confusing one about row counts.
+        return
+    if sampling is not None:
+        raise CheckConfigInvalidError(
+            SAMPLING_ROW_COUNT_CONFLICT,
+            detail={"expectation_type": expectation_type, "field": "expectation_type"},
+        )
 
 
 def validate_expectation_check(expectation_type: str, config: dict[str, Any]) -> None:
@@ -692,6 +746,7 @@ def create_check(
         )
     else:
         validate_expectation_check(expectation_type, config)
+        _reject_row_count_on_sampled_suite(session, suite, expectation_type)
 
     check = Check(
         suite_id=suite_id,
@@ -787,6 +842,7 @@ def _validate_kind_specific_config(
         )
     elif validate_expectation_config:
         validate_expectation_check(expectation_type, config)
+        _reject_row_count_on_sampled_suite(session, get_suite(session, suite_id), expectation_type)
 
 
 def _record_version_and_commit(

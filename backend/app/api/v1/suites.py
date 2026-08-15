@@ -21,6 +21,7 @@ from backend.app.api.v1.runs import RunRead
 from backend.app.core.auth import get_current_user, is_workspace_admin
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
+from backend.app.datasources.sampling import MAX_SAMPLE_ROWS
 from backend.app.db.models import Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.services import profile_service as profile
@@ -37,6 +38,31 @@ from backend.app.services.suite_authz import (
 router = APIRouter(tags=["suites"])
 
 log = get_logger(__name__)
+
+
+class SuiteSampling(ApiModel):
+    """Row-cap declaration on a run target (#595) — see `datasources.sampling`.
+
+    Declared here as a real field because `SuiteTarget` is a **closed** model:
+    anything not listed is dropped on the way in, so without this the sampling
+    block never reached the service layer and the whole feature was configurable
+    only by writing `suites.target` in the database. Silently discarding it is
+    precisely the failure the registry's own 422 exists to prevent, one layer up.
+
+    The bounds mirror `sampling.parse_sample_spec` so a malformed spec is a 422
+    from the schema where the shape is obvious; the service-layer parse stays the
+    authority (it also guards the import path and direct service callers).
+    """
+
+    # Spelled literally because `Literal[...]` needs constants, not names — a
+    # canary test asserts these two stay equal to `SAMPLE_HEAD`/`SAMPLE_RANDOM`,
+    # so the duplication cannot drift silently.
+    strategy: Literal["head", "random"]
+    rows: int = Field(ge=1, le=MAX_SAMPLE_ROWS)
+    #: `random` only — a seed makes the draw reproducible. Rejected on `head` by
+    #: the service parse, which would otherwise let an author believe their head
+    #: sample was seeded-random.
+    seed: int | None = None
 
 
 class SuiteTarget(ApiModel):
@@ -65,6 +91,10 @@ class SuiteTarget(ApiModel):
     strategy: Literal["latest", "specific"] | None = None
     batch: str | None = Field(default=None, max_length=255)
     prefix: str | None = Field(default=None, max_length=1024)
+    # Scale-aware execution (#595): bound what a run materialises. Accepted only
+    # on the full-load datasources — `run_target.resolve_target` refuses it
+    # elsewhere with a 422 rather than ignoring it.
+    sampling: SuiteSampling | None = None
 
     def to_storage(self) -> dict[str, Any]:
         """JSONB dict with the canonical `schema` key (not the `schema_` alias)."""

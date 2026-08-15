@@ -4,6 +4,7 @@ monitor-over-engine execution loop it enabled (now in `monitors.py`)."""
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine, event, text
@@ -11,6 +12,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import StatementError
 
 from backend.app.datasources import monitors as monitors_module
+from backend.app.datasources import sql
 from backend.app.datasources.base import MonitorSpec
 from backend.app.datasources.monitors import run_monitors_over_engine
 from backend.app.datasources.sql import is_sql_identifier, strip_statement_echo
@@ -333,3 +335,105 @@ def test_strip_statement_echo_is_idempotent_and_passes_other_messages_through() 
     )
     assert strip_statement_echo(None) is None
     assert strip_statement_echo("") == ""
+
+
+# ── qualified_sql_name (#595) ────────────────────────────────────────────────
+#
+# The one shape `core_table` cannot express: a dialect-specific clause that
+# attaches to the FROM item itself (Databricks' `TABLESAMPLE (x PERCENT)`), which
+# has to be interpolated into a `text()` statement. Everything about the quoting
+# decision is inherited from `core_table`'s rules, so these pin that it stayed
+# inherited rather than being re-derived.
+
+
+def _databricks_dialect() -> Any:
+    from sqlalchemy import create_engine
+
+    return create_engine("databricks://token:t@host?http_path=/x").dialect
+
+
+def _snowflake_dialect() -> Any:
+    from sqlalchemy import create_engine
+
+    return create_engine("snowflake://u:p@acct/db/sch?warehouse=w&role=r").dialect
+
+
+def test_a_lower_case_namespace_stays_bare_so_the_warehouse_folds_it() -> None:
+    """`folding_identifier`'s rule: an all-lower-case name is emitted unquoted so
+    it folds exactly as it did before #476. Quoting everything would break every
+    object created unquoted."""
+    assert (
+        sql.qualified_sql_name(
+            table="orders",
+            schema="sales",
+            catalog="main",
+            dialect=_databricks_dialect(),
+        )
+        == "main.sales.orders"
+    )
+
+
+def test_a_mixed_case_part_is_quoted_with_the_DIALECTS_quote_character() -> None:
+    """Databricks reads `"..."` as a STRING LITERAL, so a hardcoded double quote
+    would silently select a constant instead of a column. The quote character has
+    to come from the dialect — the exact reason #476 rejected hand-rolled quoting."""
+    assert (
+        sql.qualified_sql_name(
+            table="Orders",
+            schema="Sales",
+            catalog="main",
+            dialect=_databricks_dialect(),
+        )
+        == "main.`Sales`.`Orders`"
+    )
+
+
+def test_the_same_name_quotes_differently_on_snowflake() -> None:
+    """The property that makes this shared rather than per-datasource: one helper,
+    two quote characters, decided by the connection."""
+    assert (
+        sql.qualified_sql_name(
+            table="Orders", schema="Sales", catalog=None, dialect=_snowflake_dialect()
+        )
+        == '"Sales"."Orders"'
+    )
+
+
+def test_a_bare_table_needs_neither_schema_nor_catalog() -> None:
+    assert (
+        sql.qualified_sql_name(
+            table="orders", schema=None, catalog=None, dialect=_databricks_dialect()
+        )
+        == "orders"
+    )
+
+
+def test_a_catalog_without_a_schema_is_refused() -> None:
+    """A 2-part `catalog.table` is resolved by Unity Catalog as `schema.table` — a
+    WRONG OBJECT, not an error. Same guard `core_table` keeps, for the same reason."""
+    with pytest.raises(ValueError, match="catalog but no schema"):
+        sql.qualified_sql_name(
+            table="orders", schema=None, catalog="main", dialect=_databricks_dialect()
+        )
+
+
+@pytest.mark.parametrize(
+    ("table", "schema", "catalog"),
+    [
+        ("orders; DROP TABLE x", "sales", "main"),
+        ("orders", "sa les", "main"),
+        ("orders", "sales", "ma`in"),
+        ("orders`", "sales", "main"),
+        ("", "sales", "main"),
+    ],
+)
+def test_every_part_is_allowlist_checked_before_interpolation(
+    table: str, schema: str, catalog: str
+) -> None:
+    """This string goes straight into SQL, so the injection guarantee has to
+    survive a caller that forgot to validate first — the same reasoning
+    `core_table` records for its own check."""
+    with pytest.raises(ValueError, match="invalid"):
+        sql.qualified_sql_name(
+            table=table, schema=schema, catalog=catalog, dialect=_databricks_dialect()
+        )

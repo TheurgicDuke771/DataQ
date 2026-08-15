@@ -1578,3 +1578,49 @@ def test_list_near_misses_requires_auth(db_session: Any) -> None:
         assert resp.status_code == 401
     finally:
         app.dependency_overrides.clear()
+
+
+def test_get_run_surfaces_the_sampling_record_unredacted(
+    client: TestClient, db_session: Any
+) -> None:
+    """The UI half of #595's acceptance criterion: a check that passed on a sample
+    must say so on the wire. The record is DataQ-authored metadata about the READ
+    (a strategy name, three counts, an optional seed) — no target data — so unlike
+    `sample_failures` it passes through unredacted."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = _check(db_session, suite, "c")
+    run = _run(db_session, suite, status="succeeded")
+    record = {
+        "strategy": "random",
+        "requested_rows": 100_000,
+        "rows": 100_000,
+        "total_rows": 5_000_000,
+        "sampled": True,
+        "seed": 7,
+    }
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="pass", sampling=record))
+    db_session.commit()
+
+    _as(dev)
+    resp = client.get(f"/api/v1/runs/{run.id}")
+    assert resp.status_code == 200
+    assert resp.json()["results"][0]["sampling"] == record
+
+
+def test_a_result_from_a_complete_read_reports_no_sampling(
+    client: TestClient, db_session: Any
+) -> None:
+    """`null`, not a `sampled: false` object — so a client can branch on presence,
+    and every result written before scale-aware execution reads correctly for free
+    rather than needing a backfill."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = _check(db_session, suite, "c")
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="pass"))
+    db_session.commit()
+
+    _as(dev)
+    resp = client.get(f"/api/v1/runs/{run.id}")
+    assert resp.json()["results"][0]["sampling"] is None

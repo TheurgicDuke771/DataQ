@@ -129,6 +129,65 @@ If a file uses some other separator, DataQ will parse the whole header as one
 column — the symptom is a **column dropdown offering a single long name** like
 `id;email;amount`. Convert the file to one of the four separators, or to Parquet.
 
+### Very large targets: sampling and the scan cap (#595)
+
+Snowflake and Iceberg monitors answer from the warehouse or from file metadata, so
+size is not a worker concern there. **Flat files and Unity Catalog are different**:
+their expectations run against a DataFrame the worker holds, so a big enough target
+runs the worker out of memory. Two things guard that.
+
+**A hard cap, on by default.** Before a run materializes anything it checks the
+object's size (flat files) or the table's `COUNT(*)` (Unity Catalog). Over the cap
+the run ends **failed** with a message naming the target, the two numbers, and what
+to do — never a half-finished run or a silent hang. Defaults are 128 MiB and 1.5M
+rows, tuned for the reference 2 GiB worker; an operator can change them
+(`RUN_MAX_SCAN_BYTES` / `RUN_MAX_SCAN_ROWS` — see `deploy/README.md`).
+
+**Sampling, opt-in per suite.** Add a `sampling` block to the suite's target and
+checks run against a bounded sample instead of the whole dataset:
+
+```json
+{ "path": "landing/orders.csv",
+  "sampling": { "strategy": "head", "rows": 100000 } }
+```
+
+- `head` — the first N rows. Cheapest by far (a bounded read that stops early), but
+  **not representative**: files usually arrive ordered by load time, so a head
+  sample sees one slice of the key space. Good for a smoke check, not for a
+  uniqueness claim.
+- `random` — N rows drawn uniformly across the whole dataset. Representative;
+  costs one extra cheap pass to learn the population size. Add `"seed": <int>` to
+  make a run reproducible — leave it out and each run inspects different rows,
+  which is usually what you want from a monitor.
+
+Sampling **replaces** the size cap for that suite (the read is bounded by the
+sample), so it is the supported way to check a target that is otherwise too big.
+
+Things it deliberately **refuses** rather than silently allowing:
+
+- **Sampling on Snowflake or Iceberg targets** — Snowflake never loads rows, so a
+  sample there would change nothing while labelling every result "sampled".
+- **Freshness monitors are never sampled** — a `MAX` over a sample is a *smaller*
+  maximum, which would report healthy data as critically stale.
+- **Table row-count expectations on a sampled suite** (`expect_table_row_count_*`)
+  — against a sample they measure the *sample* and report it as the dataset's
+  size, so a healthy 5M-row file with `min_value: 4000000` would fail critically
+  forever. Refused at author time in both directions (adding the check, and
+  turning sampling on under one), and per check at run time for suites that
+  predate the gate. Use a **volume monitor** instead: it counts the whole dataset
+  without loading it.
+- **Sampling on a comparison check's `source`** — the comparison reader
+  materialises both sides in full for the diff, so the block would be ignored.
+
+On Unity Catalog a seeded random sample is pushed down as
+`TABLESAMPLE (p PERCENT) REPEATABLE (seed)`, so the seed genuinely pins the draw
+rather than only being recorded.
+
+**Every result says whether it was sampled**, and only when it genuinely was — a
+sample larger than the dataset covered everything, and is reported as a complete
+read. Within one run a volume monitor (pushed down, exact) and a sampled
+expectation can sit side by side, so the label is per check, not per run.
+
 ## Author a check
 
 1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC), a
