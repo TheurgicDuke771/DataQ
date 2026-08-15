@@ -259,6 +259,18 @@ def test_asm_store_namespaces_names_under_the_prefix(monkeypatch: pytest.MonkeyP
     assert seen == ["dataq/snowflake-uat-finance"]
 
 
+def test_asm_store_normalises_the_prefix_regardless_of_a_trailing_slash() -> None:
+    """`_full_name` must insert its own separator: a bare string-concat join would
+    let prefixes "team1" and "team1x" collide on secrets "xsecret"/"secret", which
+    namespacing exists specifically to prevent."""
+    assert AwsSecretsManagerStore("dataq/")._full_name("x") == "dataq/x"
+    assert AwsSecretsManagerStore("dataq")._full_name("x") == "dataq/x"
+    assert AwsSecretsManagerStore("  dataq/  ")._full_name("x") == "dataq/x"
+    team1 = AwsSecretsManagerStore("team1")
+    team1x = AwsSecretsManagerStore("team1x")
+    assert team1._full_name("xsecret") != team1x._full_name("secret")
+
+
 def test_asm_store_get_raises_not_found_for_the_resource_not_found_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -383,6 +395,70 @@ def test_asm_store_set_wraps_a_non_client_error(monkeypatch: pytest.MonkeyPatch)
         store.set("conn-snowflake-dev-finance", "p@ss")
 
 
+def test_asm_store_set_wraps_a_client_construction_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Client construction is in its OWN try in `set`, unlike `get`/`delete` which
+    already routed it through their single try. A construction failure must arrive
+    as `SecretWriteError` — not an unwrapped exception that bypasses the 502 mapping
+    `connection_service` relies on the exception TYPE for."""
+
+    def _boom() -> None:
+        raise RuntimeError("no region configured")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(store, "_client_lazy", _boom)
+    with pytest.raises(SecretWriteError, match="no region configured"):
+        store.set("conn-snowflake-dev-finance", "p@ss")
+
+
+def test_asm_store_set_retries_put_after_losing_a_create_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two concurrent first-writes for the same brand-new name both see
+    ResourceNotFoundException on `put_secret_value`; the loser's `create_secret`
+    gets ResourceExistsException from the winner. The loser must retry the put
+    rather than fail outright — AKV's single-call upsert never has this race."""
+    put_calls: list[str] = []
+
+    def _put(**kwargs: str) -> None:
+        put_calls.append(kwargs["SecretString"])
+        if len(put_calls) == 1:
+            raise _client_error("ResourceNotFoundException")
+        # second call (the retry) succeeds — no exception
+
+    def _create(**kwargs: str) -> None:
+        raise _client_error("ResourceExistsException")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(
+        store,
+        "_client_lazy",
+        lambda: SimpleNamespace(put_secret_value=_put, create_secret=_create),
+    )
+    store.set("conn-snowflake-dev-finance", "p@ss")  # must not raise
+    assert put_calls == ["p@ss", "p@ss"]
+
+
+def test_asm_store_set_wraps_a_failed_retry_after_a_create_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _put(**kwargs: str) -> None:
+        raise _client_error("ResourceNotFoundException")
+
+    def _create(**kwargs: str) -> None:
+        raise _client_error("ResourceExistsException")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(
+        store,
+        "_client_lazy",
+        lambda: SimpleNamespace(put_secret_value=_put, create_secret=_create),
+    )
+    with pytest.raises(SecretWriteError, match="ResourceNotFoundException"):
+        store.set("conn-snowflake-dev-finance", "p@ss")
+
+
 def test_asm_store_delete_calls_delete_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     store = AwsSecretsManagerStore("dataq/")
     calls: list[str] = []
@@ -493,6 +569,84 @@ def test_asm_client_lazy_caches_client_across_calls(monkeypatch: pytest.MonkeyPa
     assert len(calls) == 1
 
 
+def test_asm_list_secrets_strips_the_prefix_and_reads_created_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = datetime(2026, 5, 1, tzinfo=UTC)
+    store = AwsSecretsManagerStore("dataq/")
+
+    def _list(**kwargs: object) -> dict[str, object]:
+        assert kwargs["Filters"] == [{"Key": "name", "Values": ["dataq/"]}]
+        return {"SecretList": [{"Name": "dataq/conn-a", "CreatedDate": created}]}
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(list_secrets=_list))
+    listed = store.list_secrets()
+    assert [(i.name, i.created_at) for i in listed] == [("conn-a", created)]
+
+
+def test_asm_list_secrets_filters_out_a_substring_match_that_is_not_a_real_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Secrets Manager's name Filter is a SUBSTRING match, not a prefix match — a
+    secret from an unrelated install whose name merely contains "dataq/" somewhere
+    must not be reported as this install's, or (worse) later purged by the sweep."""
+    store = AwsSecretsManagerStore("dataq/")
+
+    def _list(**kwargs: object) -> dict[str, object]:
+        return {
+            "SecretList": [
+                {"Name": "dataq/conn-a", "CreatedDate": None},
+                {"Name": "other-team/uses-dataq/-in-the-middle", "CreatedDate": None},
+            ]
+        }
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(list_secrets=_list))
+    listed = store.list_secrets()
+    assert [i.name for i in listed] == ["conn-a"]
+
+
+def test_asm_list_secrets_follows_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = AwsSecretsManagerStore("dataq/")
+    pages: list[dict[str, object]] = [
+        {"SecretList": [{"Name": "dataq/conn-a"}], "NextToken": "page2"},
+        {"SecretList": [{"Name": "dataq/conn-b"}]},
+    ]
+    seen_tokens: list[object] = []
+
+    def _list(**kwargs: object) -> dict[str, object]:
+        seen_tokens.append(kwargs.get("NextToken"))
+        return pages.pop(0)
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(list_secrets=_list))
+    listed = store.list_secrets()
+    assert [i.name for i in listed] == ["conn-a", "conn-b"]
+    assert seen_tokens == [None, "page2"]
+
+
+def test_asm_list_secrets_raises_rather_than_returning_a_partial_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(**kwargs: object) -> None:
+        raise RuntimeError("throttled")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(list_secrets=_boom))
+    with pytest.raises(SecretStoreUnavailableError, match="throttled"):
+        store.list_secrets()
+
+
+def test_asm_list_secrets_skips_an_entry_with_no_usable_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = AwsSecretsManagerStore("dataq/")
+
+    def _list(**kwargs: object) -> dict[str, object]:
+        return {"SecretList": [{"Name": None, "CreatedDate": None}]}
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(list_secrets=_list))
+    assert store.list_secrets() == []
+
+
 # ───────────────────────── Factory + cache ─────────────────────────
 
 
@@ -578,7 +732,7 @@ def test_build_store_returns_asm_store_when_configured(monkeypatch: pytest.Monke
         )
     )
     assert isinstance(store, AwsSecretsManagerStore)
-    assert store._prefix == "dataq/"
+    assert store._prefix == "dataq"  # trailing "/" is normalised off in __init__
 
 
 def test_build_store_raises_when_asm_prefix_blank() -> None:

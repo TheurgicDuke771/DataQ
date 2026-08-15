@@ -370,11 +370,17 @@ class AwsSecretsManagerStore:
 
     `name` is namespaced under `settings.aws_secrets_manager_prefix` so more than one
     DataQ install can share an account/region without colliding — the same reason
-    `OPENBAO_MOUNT` exists for a shared vault.
+    `OPENBAO_MOUNT` exists for a shared vault. The separator is inserted HERE, not
+    left to the operator's string: a bare `f"{prefix}{name}"` join would let prefixes
+    like `"team1"` and `"team1x"` collide on secrets `"xsecret"` / `"secret"`, which
+    is exactly the collision namespacing exists to prevent. OpenBao's mount doesn't
+    have this problem because `_path()` hardcodes the `/` between mount and name;
+    normalising here gives the ASM store the same guarantee regardless of whether
+    `AWS_SECRETS_MANAGER_PREFIX` was set with or without a trailing slash.
     """
 
     def __init__(self, prefix: str) -> None:
-        self._prefix = prefix
+        self._prefix = prefix.strip().rstrip("/")
         self._client: Any = None
         self._lock = threading.Lock()
 
@@ -389,7 +395,7 @@ class AwsSecretsManagerStore:
             return self._client
 
     def _full_name(self, name: str) -> str:
-        return f"{self._prefix}{name}"
+        return f"{self._prefix}/{name}"
 
     def get(self, name: str) -> str:
         from botocore.exceptions import ClientError
@@ -422,7 +428,14 @@ class AwsSecretsManagerStore:
         from botocore.exceptions import ClientError
 
         full_name = self._full_name(name)
-        client = self._client_lazy()
+        # Built in its own try, separate from the operation below: a construction
+        # failure (e.g. no region resolvable) must not propagate unwrapped past this
+        # method — connection_service maps SecretWriteError to a 502, and anything
+        # else bypasses that mapping and surfaces as a bare 500.
+        try:
+            client = self._client_lazy()
+        except Exception as exc:
+            raise SecretWriteError(f"Secrets Manager secret {full_name!r}: {exc}") from exc
         try:
             client.put_secret_value(SecretId=full_name, SecretString=value)
         except ClientError as exc:
@@ -432,6 +445,22 @@ class AwsSecretsManagerStore:
             # must exist before `put_secret_value` can add a new version to it.
             try:
                 client.create_secret(Name=full_name, SecretString=value)
+            except ClientError as create_exc:
+                if create_exc.response.get("Error", {}).get("Code") != "ResourceExistsException":
+                    raise SecretWriteError(
+                        f"Secrets Manager secret {full_name!r}: {create_exc}"
+                    ) from create_exc
+                # Lost a create race to a concurrent first-write (two Celery workers
+                # provisioning the same brand-new connection's credential at once) —
+                # the secret exists now, so THIS write can proceed as a normal put.
+                # One retry only: a second failure here is a genuine fault, not the
+                # race this branch exists to absorb.
+                try:
+                    client.put_secret_value(SecretId=full_name, SecretString=value)
+                except Exception as retry_exc:
+                    raise SecretWriteError(
+                        f"Secrets Manager secret {full_name!r}: {retry_exc}"
+                    ) from retry_exc
             except Exception as create_exc:
                 raise SecretWriteError(
                     f"Secrets Manager secret {full_name!r}: {create_exc}"
@@ -458,6 +487,51 @@ class AwsSecretsManagerStore:
             log.warning("secret_delete_failed", name=full_name, error=str(exc))
         except Exception as exc:
             log.warning("secret_delete_failed", name=full_name, error=str(exc))
+
+    def list_secrets(self) -> list[SecretInfo]:
+        """Enumerate this install's secrets for the orphan sweep (#1059).
+
+        Without this, `sweep_orphan_secrets` duck-types its absence as "this store
+        cannot enumerate itself" and skips silently forever (see that function's
+        docstring) — on an AWS deployment that would mean the same credential-leak
+        protection Azure/OpenBao installs get never runs, with nothing surfacing the
+        gap. Secrets Manager's `ListSecrets` `Filters` do a SUBSTRING match on name,
+        not a prefix match, so a broader-than-needed server-side filter is narrowed
+        with a strict `startswith` client-side — an install whose prefix happens to
+        appear as a substring elsewhere in the account must not see (or later purge)
+        secrets it does not own. Returned names have the prefix stripped, so they
+        round-trip through `get`/`set`/`delete` exactly like every other store's.
+        """
+        client = self._client_lazy()
+        prefix_with_sep = f"{self._prefix}/"
+        found: list[SecretInfo] = []
+        next_token: str | None = None
+        try:
+            while True:
+                kwargs: dict[str, Any] = {"Filters": [{"Key": "name", "Values": [prefix_with_sep]}]}
+                if next_token:
+                    kwargs["NextToken"] = next_token
+                response = client.list_secrets(**kwargs)
+                for entry in response.get("SecretList", []):
+                    entry_name = entry.get("Name")
+                    if not isinstance(entry_name, str) or not entry_name.startswith(
+                        prefix_with_sep
+                    ):
+                        continue
+                    found.append(
+                        SecretInfo(
+                            name=entry_name[len(prefix_with_sep) :],
+                            created_at=as_utc_or_none(entry.get("CreatedDate")),
+                        )
+                    )
+                next_token = response.get("NextToken")
+                if not next_token:
+                    break
+        except Exception as exc:
+            raise SecretStoreUnavailableError(
+                f"Secrets Manager could not be listed under prefix {prefix_with_sep!r}: {exc}"
+            ) from exc
+        return found
 
     def close(self) -> None:
         """Release the pooled boto3 client (#1058 pattern). Idempotent.
