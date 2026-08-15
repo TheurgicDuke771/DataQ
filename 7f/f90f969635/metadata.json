@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "7ff90f969635",
+  "strategy": "manual-commit",
+  "branch": "docs/aws-secrets-manager-progress-update",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/7f/f90f969635/0/metadata.json",
+      "transcript": "/7f/f90f969635/0/full.jsonl",
+      "compact_transcript": "/7f/f90f969635/0/transcript.jsonl",
+      "content_hash": "/7f/f90f969635/0/content_hash.txt",
+      "prompt": "/7f/f90f969635/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 408,
+    "cache_creation_tokens": 503499,
+    "cache_read_tokens": 48547456,
+    "output_tokens": 125514,
+    "api_call_count": 204
+  }
+}
