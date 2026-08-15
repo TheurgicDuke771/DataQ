@@ -1,0 +1,29 @@
+Hey, 
+I'm thinking to host the app in aws also. 
+What are the pre-requisite? 
+What are the resources we are going to use in aws?
+And what access do you need to host it in aws?
+note: - it will be from scratch [I don't have aws account yet], and no need to change any code, just give me the details
+
+---
+
+Does aws free tier cover all the recources we need?
+
+---
+
+`AWS Free Tier now offers $200 in credits and 6-month free plan` - With this can we run atleast ~1 week full service?
+
+---
+
+I created the free tier account and get $100 credit. 
+To get the remaining credit this are the conditions [see screenshot]
+which all of these are we going to create for DataQ?
+
+---
+
+Okay I'll do all except [Aurora RDS] you can do that during DataQ setup, correct?
+
+---
+
+I've created the throwaway resources. 
+Can you check the connection [i.e.- you can connect the portal/console]

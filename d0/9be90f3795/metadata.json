@@ -3,7 +3,7 @@
   "checkpoint_id": "d09be90f3795",
   "strategy": "manual-commit",
   "branch": "docs/w6-close-out-recount",
-  "checkpoints_count": 28,
+  "checkpoints_count": 34,
   "files_touched": [
     "docs/progress.md"
   ],
@@ -14,13 +14,20 @@
       "compact_transcript": "/d0/9be90f3795/0/transcript.jsonl",
       "content_hash": "/d0/9be90f3795/0/content_hash.txt",
       "prompt": "/d0/9be90f3795/0/prompt.txt"
+    },
+    {
+      "metadata": "/d0/9be90f3795/1/metadata.json",
+      "transcript": "/d0/9be90f3795/1/full.jsonl",
+      "compact_transcript": "/d0/9be90f3795/1/transcript.jsonl",
+      "content_hash": "/d0/9be90f3795/1/content_hash.txt",
+      "prompt": "/d0/9be90f3795/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 318,
-    "cache_creation_tokens": 2184845,
-    "cache_read_tokens": 44920081,
-    "output_tokens": 133210,
-    "api_call_count": 184
+    "input_tokens": 342,
+    "cache_creation_tokens": 2332641,
+    "cache_read_tokens": 45948332,
+    "output_tokens": 146244,
+    "api_call_count": 196
   }
 }
