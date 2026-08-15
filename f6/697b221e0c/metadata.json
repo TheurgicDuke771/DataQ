@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "f6697b221e0c",
+  "strategy": "manual-commit",
+  "branch": "feature/generic-oidc-auth",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "backend/requirements.txt"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f6/697b221e0c/0/metadata.json",
+      "transcript": "/f6/697b221e0c/0/full.jsonl",
+      "compact_transcript": "/f6/697b221e0c/0/transcript.jsonl",
+      "content_hash": "/f6/697b221e0c/0/content_hash.txt",
+      "prompt": "/f6/697b221e0c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 766,
+    "cache_creation_tokens": 743283,
+    "cache_read_tokens": 142855490,
+    "output_tokens": 244963,
+    "api_call_count": 383
+  }
+}
