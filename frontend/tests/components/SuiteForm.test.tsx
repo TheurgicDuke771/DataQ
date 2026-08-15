@@ -736,4 +736,74 @@ describe('SuiteForm — sampling', () => {
     expect(await screen.findByText(/whole number of rows between 1 and/)).toBeInTheDocument();
     expect(mockUpdate).not.toHaveBeenCalled();
   });
+
+  it('PRESERVES a stored block when the section never mounted (#1333 F3)', async () => {
+    // The silent-data-loss path. A snowflake connection does not render the
+    // sampling section, so `validateFields()` reports no `sampling_enabled` — and
+    // before the carry-forward, editing only the description rebuilt the target
+    // WITHOUT the stored row cap. No error, no warning, and the nightly suite
+    // reverts to the full scan the feature exists to prevent.
+    const user = userEvent.setup();
+    const stored = { table: 'ORDERS', sampling: { strategy: 'head', rows: 100_000 } };
+    mockUpdate.mockResolvedValue(suite({ connection_id: 'conn-sf', target: stored }));
+    render(
+      <AntApp>
+        <SuiteForm
+          suite={suite({ connection_id: 'conn-sf', target: stored })}
+          connections={[snowflakeConnection]}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+    await waitFor(() => expect(screen.queryByTestId('sampling-enabled')).not.toBeInTheDocument());
+
+    await user.type(screen.getByLabelText('Description (optional)'), 'an unrelated edit');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][1].target).toEqual(stored);
+  });
+
+  it('surfaces the row-count conflict inline, naming the checks (#1333 F5)', async () => {
+    // The backend refuses sampling on a suite holding a table row-count check.
+    // A toast makes the reader hold one half of a two-part conflict in their head
+    // while going to look at the other; this puts it on the control that caused
+    // it, with the obstacles named.
+    const user = userEvent.setup();
+    const err = new AxiosError('conflict');
+    err.response = {
+      status: 422,
+      statusText: '',
+      data: {
+        error: {
+          code: 'suite_target_invalid',
+          message:
+            'a table row-count expectation cannot run against a sampled dataset. Conflicting checks: rowcount_guard.',
+          detail: { checks: ['rowcount_guard'] },
+        },
+      },
+      headers: new AxiosHeaders(),
+      config: { headers: new AxiosHeaders() },
+    };
+    mockUpdate.mockRejectedValue(err);
+    render(
+      <AntApp>
+        <SuiteForm
+          suite={suite({ connection_id: 'conn-adls', target: { path: 'raw/o.csv' } })}
+          connections={[adlsConnection]}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+    await screen.findByTestId('sampling-enabled');
+
+    await user.click(screen.getByText('A sample'));
+    await user.type(await screen.findByTestId('sampling-rows'), '1000');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    // Inline and persistent, and it names the check the author has to go fix.
+    expect(await screen.findByText(/Conflicting check: rowcount_guard\./)).toBeInTheDocument();
+  });
 });
