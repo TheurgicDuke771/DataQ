@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "f1a53ffcc2af",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1345-aws-cloudfront-https",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "deploy/terraform/aws/ecs.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f1/a53ffcc2af/0/metadata.json",
+      "transcript": "/f1/a53ffcc2af/0/full.jsonl",
+      "compact_transcript": "/f1/a53ffcc2af/0/transcript.jsonl",
+      "content_hash": "/f1/a53ffcc2af/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 9069,
+    "cache_read_tokens": 947031,
+    "output_tokens": 1258,
+    "api_call_count": 3
+  }
+}
