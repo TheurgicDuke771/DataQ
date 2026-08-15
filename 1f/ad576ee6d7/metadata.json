@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "1fad576ee6d7",
+  "strategy": "manual-commit",
+  "branch": "docs/aws-e2e-deploy-workflow-recount",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/1f/ad576ee6d7/0/metadata.json",
+      "transcript": "/1f/ad576ee6d7/0/full.jsonl",
+      "compact_transcript": "/1f/ad576ee6d7/0/transcript.jsonl",
+      "content_hash": "/1f/ad576ee6d7/0/content_hash.txt",
+      "prompt": "/1f/ad576ee6d7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 706,
+    "cache_creation_tokens": 947680,
+    "cache_read_tokens": 82542732,
+    "output_tokens": 218596,
+    "api_call_count": 355
+  }
+}
