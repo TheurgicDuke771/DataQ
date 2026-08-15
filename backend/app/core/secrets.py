@@ -24,8 +24,13 @@ Three backends are supported, picked from `settings.secret_store`:
   The production default for DataQ's own Azure deployment (ADR 0024), where
   managed identity means there is no bootstrap credential to hold at all.
 
-The Azure SDK is **lazy-imported** so deployments that don't use it don't pay
-the import cost.
+- **AwsSecretsManagerStore** — reads/writes via `boto3`'s `secretsmanager`
+  client. The production default for DataQ's parallel AWS deployment, where
+  the ECS task's IAM role is the credential — same "no bootstrap secret to
+  hold" posture as the Key Vault store, one cloud over.
+
+The Azure and AWS SDKs are **lazy-imported** so deployments that don't use
+them don't pay the import cost.
 """
 
 from __future__ import annotations
@@ -52,6 +57,7 @@ log = get_logger(__name__)
 
 ENV_PREFIX: Final = "KV_SECRET_"
 _AKV_MODE: Final = "azure_key_vault"
+_ASM_MODE: Final = "aws_secrets_manager"
 _OPENBAO_MODE: Final = "openbao"
 _REDIS_MODE: Final = "redis"  # removed — ADR 0039; retained only for the shim below
 
@@ -351,6 +357,194 @@ class AzureKeyVaultStore:
             client.close()
         if credential is not None:
             credential.close()
+
+
+class AwsSecretsManagerStore:
+    """Resolves secrets from AWS Secrets Manager via the ECS task's IAM role.
+
+    Mirrors `AzureKeyVaultStore` deliberately: same lazy-client construction, same
+    exception-type discipline (an outage raises `SecretStoreUnavailableError`, never
+    `SecretNotFoundError` — the ADR 0039 decision 6 lesson applies to every store,
+    not just OpenBao's). `boto3` resolves the region and credential ambiently from
+    the task's IAM role, so there is no bootstrap credential for this class to hold.
+
+    `name` is namespaced under `settings.aws_secrets_manager_prefix` so more than one
+    DataQ install can share an account/region without colliding — the same reason
+    `OPENBAO_MOUNT` exists for a shared vault. The separator is inserted HERE, not
+    left to the operator's string: a bare `f"{prefix}{name}"` join would let prefixes
+    like `"team1"` and `"team1x"` collide on secrets `"xsecret"` / `"secret"`, which
+    is exactly the collision namespacing exists to prevent. OpenBao's mount doesn't
+    have this problem because `_path()` hardcodes the `/` between mount and name;
+    normalising here gives the ASM store the same guarantee regardless of whether
+    `AWS_SECRETS_MANAGER_PREFIX` was set with or without a trailing slash.
+    """
+
+    def __init__(self, prefix: str) -> None:
+        self._prefix = prefix.strip().rstrip("/")
+        self._client: Any = None
+        self._lock = threading.Lock()
+
+    def _client_lazy(self) -> Any:
+        if self._client is not None:
+            return self._client
+        with self._lock:
+            if self._client is None:
+                import boto3
+
+                self._client = boto3.client("secretsmanager")
+            return self._client
+
+    def _full_name(self, name: str) -> str:
+        return f"{self._prefix}/{name}"
+
+    def get(self, name: str) -> str:
+        from botocore.exceptions import ClientError
+
+        full_name = self._full_name(name)
+        try:
+            response = self._client_lazy().get_secret_value(SecretId=full_name)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+                raise SecretNotFoundError(f"Secrets Manager secret {full_name!r} not set") from exc
+            # Throttling, an expired/unassigned task role, a network fault — none of
+            # these mean the secret is absent. Folding them into SecretNotFoundError
+            # is the exact masquerade that made the AKV store's pre-ADR-0039 shape a
+            # bug: an outage would read as "nothing configured" everywhere at once.
+            log.warning("secrets_manager_unavailable", name=full_name, error=str(exc))
+            raise SecretStoreUnavailableError(
+                f"Secrets Manager could not serve {full_name!r}: {exc}"
+            ) from exc
+        except Exception as exc:
+            log.warning("secrets_manager_unavailable", name=full_name, error=str(exc))
+            raise SecretStoreUnavailableError(
+                f"Secrets Manager could not serve {full_name!r}: {exc}"
+            ) from exc
+        value = response.get("SecretString")
+        if value is None:
+            raise SecretNotFoundError(f"Secrets Manager secret {full_name!r} has no string value")
+        return str(value)
+
+    def set(self, name: str, value: str) -> None:
+        from botocore.exceptions import ClientError
+
+        full_name = self._full_name(name)
+        # Built in its own try, separate from the operation below: a construction
+        # failure (e.g. no region resolvable) must not propagate unwrapped past this
+        # method — connection_service maps SecretWriteError to a 502, and anything
+        # else bypasses that mapping and surfaces as a bare 500.
+        try:
+            client = self._client_lazy()
+        except Exception as exc:
+            raise SecretWriteError(f"Secrets Manager secret {full_name!r}: {exc}") from exc
+        try:
+            client.put_secret_value(SecretId=full_name, SecretString=value)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") != "ResourceNotFoundException":
+                raise SecretWriteError(f"Secrets Manager secret {full_name!r}: {exc}") from exc
+            # First write for this name — Secrets Manager has no upsert; a secret
+            # must exist before `put_secret_value` can add a new version to it.
+            try:
+                client.create_secret(Name=full_name, SecretString=value)
+            except ClientError as create_exc:
+                if create_exc.response.get("Error", {}).get("Code") != "ResourceExistsException":
+                    raise SecretWriteError(
+                        f"Secrets Manager secret {full_name!r}: {create_exc}"
+                    ) from create_exc
+                # Lost a create race to a concurrent first-write (two Celery workers
+                # provisioning the same brand-new connection's credential at once) —
+                # the secret exists now, so THIS write can proceed as a normal put.
+                # One retry only: a second failure here is a genuine fault, not the
+                # race this branch exists to absorb.
+                try:
+                    client.put_secret_value(SecretId=full_name, SecretString=value)
+                except Exception as retry_exc:
+                    raise SecretWriteError(
+                        f"Secrets Manager secret {full_name!r}: {retry_exc}"
+                    ) from retry_exc
+            except Exception as create_exc:
+                raise SecretWriteError(
+                    f"Secrets Manager secret {full_name!r}: {create_exc}"
+                ) from create_exc
+        except Exception as exc:
+            raise SecretWriteError(f"Secrets Manager secret {full_name!r}: {exc}") from exc
+
+    def delete(self, name: str) -> None:
+        """Best-effort delete (#372); missing is a no-op, fail-soft.
+
+        `ForceDeleteWithoutRecovery=False` (the default) leaves the default ~30-day
+        recovery window — matching the AKV store's soft-delete, not the OpenBao
+        store's hard purge, since a vault-level purge-protection equivalent isn't
+        ours to override here either.
+        """
+        from botocore.exceptions import ClientError
+
+        full_name = self._full_name(name)
+        try:
+            self._client_lazy().delete_secret(SecretId=full_name)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+                return
+            log.warning("secret_delete_failed", name=full_name, error=str(exc))
+        except Exception as exc:
+            log.warning("secret_delete_failed", name=full_name, error=str(exc))
+
+    def list_secrets(self) -> list[SecretInfo]:
+        """Enumerate this install's secrets for the orphan sweep (#1059).
+
+        Without this, `sweep_orphan_secrets` duck-types its absence as "this store
+        cannot enumerate itself" and skips silently forever (see that function's
+        docstring) — on an AWS deployment that would mean the same credential-leak
+        protection Azure/OpenBao installs get never runs, with nothing surfacing the
+        gap. Secrets Manager's `ListSecrets` `Filters` do a SUBSTRING match on name,
+        not a prefix match, so a broader-than-needed server-side filter is narrowed
+        with a strict `startswith` client-side — an install whose prefix happens to
+        appear as a substring elsewhere in the account must not see (or later purge)
+        secrets it does not own. Returned names have the prefix stripped, so they
+        round-trip through `get`/`set`/`delete` exactly like every other store's.
+        """
+        client = self._client_lazy()
+        prefix_with_sep = f"{self._prefix}/"
+        found: list[SecretInfo] = []
+        next_token: str | None = None
+        try:
+            while True:
+                kwargs: dict[str, Any] = {"Filters": [{"Key": "name", "Values": [prefix_with_sep]}]}
+                if next_token:
+                    kwargs["NextToken"] = next_token
+                response = client.list_secrets(**kwargs)
+                for entry in response.get("SecretList", []):
+                    entry_name = entry.get("Name")
+                    if not isinstance(entry_name, str) or not entry_name.startswith(
+                        prefix_with_sep
+                    ):
+                        continue
+                    found.append(
+                        SecretInfo(
+                            name=entry_name[len(prefix_with_sep) :],
+                            created_at=as_utc_or_none(entry.get("CreatedDate")),
+                        )
+                    )
+                next_token = response.get("NextToken")
+                if not next_token:
+                    break
+        except Exception as exc:
+            raise SecretStoreUnavailableError(
+                f"Secrets Manager could not be listed under prefix {prefix_with_sep!r}: {exc}"
+            ) from exc
+        return found
+
+    def close(self) -> None:
+        """Release the pooled boto3 client (#1058 pattern). Idempotent.
+
+        Duck-typed, not on the Protocol — see `OpenBaoSecretStore.close`. Guarded by
+        `getattr`/`callable` because older botocore client builds have no `close()`.
+        """
+        with self._lock:
+            client, self._client = self._client, None
+        if client is not None:
+            close = getattr(client, "close", None)
+            if callable(close):
+                close()
 
 
 class OpenBaoSecretStore:
@@ -917,6 +1111,10 @@ def _build_store(settings: Settings) -> SecretStore:
         if not settings.azure_key_vault_url:
             raise RuntimeError(f"secret_store={_AKV_MODE!r} requires AZURE_KEY_VAULT_URL")
         return AzureKeyVaultStore(settings.azure_key_vault_url)
+    if settings.secret_store == _ASM_MODE:
+        if not settings.aws_secrets_manager_prefix.strip():
+            raise RuntimeError(f"secret_store={_ASM_MODE!r} requires AWS_SECRETS_MANAGER_PREFIX")
+        return AwsSecretsManagerStore(settings.aws_secrets_manager_prefix)
     if settings.secret_store == _OPENBAO_MODE:
         if not settings.openbao_addr:
             raise RuntimeError(f"secret_store={_OPENBAO_MODE!r} requires OPENBAO_ADDR")

@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import ClassVar
+from typing import ClassVar, cast
 from unittest import mock
 
 import httpx
@@ -19,6 +19,7 @@ from structlog.typing import EventDict
 from backend.app.core import secrets
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.secrets import (
+    AwsSecretsManagerStore,
     AzureKeyVaultStore,
     EnvSecretStore,
     OpenBaoSecretStore,
@@ -227,6 +228,425 @@ def test_akv_store_set_reaches_sdk_through_lazy_branch(
     assert client.set_calls == [("conn-snowflake-dev-finance", "p@ss")]
 
 
+# ───────────────────────── AwsSecretsManagerStore ──────────────────
+
+
+def _client_error(code: str) -> Exception:
+    from botocore.exceptions import ClientError
+
+    # botocore is mypy-ignored (untyped, per requirements-typecheck.txt), so the
+    # constructor's return type is Any — cast to satisfy the tests-gate (#418).
+    return cast(
+        Exception, ClientError({"Error": {"Code": code, "Message": "boom"}}, "GetSecretValue")
+    )
+
+
+def test_asm_store_lazy_client_not_built_on_init() -> None:
+    store = AwsSecretsManagerStore("dataq/")
+    assert store._client is None
+
+
+def test_asm_store_namespaces_names_under_the_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = AwsSecretsManagerStore("dataq/")
+    seen: list[str] = []
+
+    def _get(**kwargs: str) -> dict[str, str]:
+        seen.append(kwargs["SecretId"])
+        return {"SecretString": "vault-value"}
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(get_secret_value=_get))
+    assert store.get("snowflake-uat-finance") == "vault-value"
+    assert seen == ["dataq/snowflake-uat-finance"]
+
+
+def test_asm_store_normalises_the_prefix_regardless_of_a_trailing_slash() -> None:
+    """`_full_name` must insert its own separator: a bare string-concat join would
+    let prefixes "team1" and "team1x" collide on secrets "xsecret"/"secret", which
+    namespacing exists specifically to prevent."""
+    assert AwsSecretsManagerStore("dataq/")._full_name("x") == "dataq/x"
+    assert AwsSecretsManagerStore("dataq")._full_name("x") == "dataq/x"
+    assert AwsSecretsManagerStore("  dataq/  ")._full_name("x") == "dataq/x"
+    team1 = AwsSecretsManagerStore("team1")
+    team1x = AwsSecretsManagerStore("team1x")
+    assert team1._full_name("xsecret") != team1x._full_name("secret")
+
+
+def test_asm_store_get_raises_not_found_for_the_resource_not_found_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = AwsSecretsManagerStore("dataq/")
+
+    def _boom(**kwargs: str) -> None:
+        raise _client_error("ResourceNotFoundException")
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(get_secret_value=_boom))
+    with pytest.raises(SecretNotFoundError, match="dataq/snowflake-uat-finance"):
+        store.get("snowflake-uat-finance")
+
+
+def test_asm_store_get_wraps_other_client_errors_as_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A throttle, an unassigned task role, a network fault — NOT "secret absent".
+    Folding any of these into SecretNotFoundError is the exact masquerade ADR 0039
+    decision 6 exists to prevent, for every store, not only OpenBao's."""
+    store = AwsSecretsManagerStore("dataq/")
+
+    def _boom(**kwargs: str) -> None:
+        raise _client_error("ThrottlingException")
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(get_secret_value=_boom))
+    with pytest.raises(SecretStoreUnavailableError, match="ThrottlingException"):
+        store.get("snowflake-uat-finance")
+    assert not isinstance(SecretStoreUnavailableError("x"), SecretNotFoundError)
+
+
+def test_asm_store_get_wraps_a_non_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _boom(**kwargs: str) -> None:
+        raise RuntimeError("network down")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(get_secret_value=_boom))
+    with pytest.raises(SecretStoreUnavailableError, match="network down"):
+        store.get("snowflake-uat-finance")
+
+
+def test_asm_store_get_raises_when_secret_string_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A binary-only secret (`SecretBinary`, not `SecretString`) has no string value
+    for DataQ's model — one opaque string per name, same as the OpenBao KV field."""
+    store = AwsSecretsManagerStore("dataq/")
+    fake_client = SimpleNamespace(get_secret_value=lambda **kwargs: {})
+    monkeypatch.setattr(store, "_client_lazy", lambda: fake_client)
+    with pytest.raises(SecretNotFoundError, match="has no string value"):
+        store.get("snowflake-uat-finance")
+
+
+def test_asm_store_set_calls_put_secret_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = AwsSecretsManagerStore("dataq/")
+    calls: list[tuple[str, str]] = []
+
+    def _put(**kwargs: str) -> None:
+        calls.append((kwargs["SecretId"], kwargs["SecretString"]))
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(put_secret_value=_put))
+    store.set("conn-snowflake-dev-finance", "p@ss")
+    assert calls == [("dataq/conn-snowflake-dev-finance", "p@ss")]
+
+
+def test_asm_store_set_creates_the_secret_on_first_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Secrets Manager has no upsert: `put_secret_value` 404s a name that has never
+    been created, so the first write for any name must fall back to `create_secret`."""
+    store = AwsSecretsManagerStore("dataq/")
+    created: list[tuple[str, str]] = []
+
+    def _put(**kwargs: str) -> None:
+        raise _client_error("ResourceNotFoundException")
+
+    def _create(**kwargs: str) -> None:
+        created.append((kwargs["Name"], kwargs["SecretString"]))
+
+    fake_client = SimpleNamespace(put_secret_value=_put, create_secret=_create)
+    monkeypatch.setattr(store, "_client_lazy", lambda: fake_client)
+    store.set("conn-snowflake-dev-finance", "p@ss")
+    assert created == [("dataq/conn-snowflake-dev-finance", "p@ss")]
+
+
+def test_asm_store_set_wraps_a_non_not_found_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = AwsSecretsManagerStore("dataq/")
+
+    def _put(**kwargs: str) -> None:
+        raise _client_error("AccessDeniedException")
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(put_secret_value=_put))
+    with pytest.raises(SecretWriteError, match="AccessDeniedException"):
+        store.set("conn-snowflake-dev-finance", "p@ss")
+
+
+def test_asm_store_set_wraps_create_secret_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _put(**kwargs: str) -> None:
+        raise _client_error("ResourceNotFoundException")
+
+    def _create(**kwargs: str) -> None:
+        raise RuntimeError("create failed")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(
+        store,
+        "_client_lazy",
+        lambda: SimpleNamespace(put_secret_value=_put, create_secret=_create),
+    )
+    with pytest.raises(SecretWriteError, match="create failed"):
+        store.set("conn-snowflake-dev-finance", "p@ss")
+
+
+def test_asm_store_set_wraps_a_non_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _put(**kwargs: str) -> None:
+        raise RuntimeError("network down")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(put_secret_value=_put))
+    with pytest.raises(SecretWriteError, match="network down"):
+        store.set("conn-snowflake-dev-finance", "p@ss")
+
+
+def test_asm_store_set_wraps_a_client_construction_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Client construction is in its OWN try in `set`, unlike `get`/`delete` which
+    already routed it through their single try. A construction failure must arrive
+    as `SecretWriteError` — not an unwrapped exception that bypasses the 502 mapping
+    `connection_service` relies on the exception TYPE for."""
+
+    def _boom() -> None:
+        raise RuntimeError("no region configured")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(store, "_client_lazy", _boom)
+    with pytest.raises(SecretWriteError, match="no region configured"):
+        store.set("conn-snowflake-dev-finance", "p@ss")
+
+
+def test_asm_store_set_retries_put_after_losing_a_create_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two concurrent first-writes for the same brand-new name both see
+    ResourceNotFoundException on `put_secret_value`; the loser's `create_secret`
+    gets ResourceExistsException from the winner. The loser must retry the put
+    rather than fail outright — AKV's single-call upsert never has this race."""
+    put_calls: list[str] = []
+
+    def _put(**kwargs: str) -> None:
+        put_calls.append(kwargs["SecretString"])
+        if len(put_calls) == 1:
+            raise _client_error("ResourceNotFoundException")
+        # second call (the retry) succeeds — no exception
+
+    def _create(**kwargs: str) -> None:
+        raise _client_error("ResourceExistsException")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(
+        store,
+        "_client_lazy",
+        lambda: SimpleNamespace(put_secret_value=_put, create_secret=_create),
+    )
+    store.set("conn-snowflake-dev-finance", "p@ss")  # must not raise
+    assert put_calls == ["p@ss", "p@ss"]
+
+
+def test_asm_store_set_wraps_a_failed_retry_after_a_create_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _put(**kwargs: str) -> None:
+        raise _client_error("ResourceNotFoundException")
+
+    def _create(**kwargs: str) -> None:
+        raise _client_error("ResourceExistsException")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(
+        store,
+        "_client_lazy",
+        lambda: SimpleNamespace(put_secret_value=_put, create_secret=_create),
+    )
+    with pytest.raises(SecretWriteError, match="ResourceNotFoundException"):
+        store.set("conn-snowflake-dev-finance", "p@ss")
+
+
+def test_asm_store_delete_calls_delete_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = AwsSecretsManagerStore("dataq/")
+    calls: list[str] = []
+
+    def _delete(**kwargs: str) -> None:
+        calls.append(kwargs["SecretId"])
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(delete_secret=_delete))
+    store.delete("conn-x")
+    assert calls == ["dataq/conn-x"]
+
+
+def test_asm_store_delete_swallows_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _gone(**kwargs: str) -> None:
+        raise _client_error("ResourceNotFoundException")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(delete_secret=_gone))
+    store.delete("conn-x")  # clean no-op — must not raise
+
+
+def test_asm_store_delete_fails_soft_on_other_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(**kwargs: str) -> None:
+        raise _client_error("AccessDeniedException")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(delete_secret=_boom))
+    store.delete("conn-x")  # fail-soft: logged, never raised (#372)
+
+
+def test_asm_store_delete_fails_soft_on_a_non_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(**kwargs: str) -> None:
+        raise RuntimeError("network down")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(delete_secret=_boom))
+    store.delete("conn-x")  # fail-soft: logged, never raised (#372)
+
+
+def test_asm_store_close_releases_the_client_when_it_supports_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Patches `boto3.client` (not `_client_lazy` itself) so the real caching branch
+    that assigns `self._client` actually runs — monkeypatching the method bypasses
+    the assignment `close()` depends on, which would make this pass vacuously."""
+    fake_client = SimpleNamespace(closed=False)
+    fake_client.close = lambda: setattr(fake_client, "closed", True)
+    monkeypatch.setattr("boto3.client", lambda service_name: fake_client)
+    store = AwsSecretsManagerStore("dataq/")
+    store._client_lazy()
+    store.close()
+    assert fake_client.closed
+    assert store._client is None
+
+
+def test_asm_store_close_tolerates_a_client_with_no_close_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Older botocore client builds have no `close()` — must not AttributeError."""
+    monkeypatch.setattr("boto3.client", lambda service_name: SimpleNamespace())
+    store = AwsSecretsManagerStore("dataq/")
+    store._client_lazy()
+    store.close()  # must not raise
+    assert store._client is None
+
+
+def test_asm_store_close_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("boto3.client", lambda service_name: SimpleNamespace())
+    store = AwsSecretsManagerStore("dataq/")
+    store._client_lazy()
+    store.close()
+    store.close()  # no AttributeError on the already-cleared handle
+
+
+def test_asm_client_lazy_constructs_a_secretsmanager_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Patches `boto3.client` at module level so `_client_lazy`'s real lazy-import
+    branch runs, mirroring `stub_azure_sdk`'s rationale for the AKV store."""
+    calls: list[str] = []
+
+    def _fake_client(service_name: str) -> SimpleNamespace:
+        calls.append(service_name)
+        return SimpleNamespace(get_secret_value=lambda **kwargs: {"SecretString": "v"})
+
+    monkeypatch.setattr("boto3.client", _fake_client)
+    store = AwsSecretsManagerStore("dataq/")
+    assert store.get("x") == "v"
+    assert calls == ["secretsmanager"]
+
+
+def test_asm_client_lazy_caches_client_across_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def _fake_client(service_name: str) -> SimpleNamespace:
+        calls.append(service_name)
+        return SimpleNamespace()
+
+    monkeypatch.setattr("boto3.client", _fake_client)
+    store = AwsSecretsManagerStore("dataq/")
+    first = store._client_lazy()
+    second = store._client_lazy()
+    assert first is second
+    assert len(calls) == 1
+
+
+def test_asm_list_secrets_strips_the_prefix_and_reads_created_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = datetime(2026, 5, 1, tzinfo=UTC)
+    store = AwsSecretsManagerStore("dataq/")
+
+    def _list(**kwargs: object) -> dict[str, object]:
+        assert kwargs["Filters"] == [{"Key": "name", "Values": ["dataq/"]}]
+        return {"SecretList": [{"Name": "dataq/conn-a", "CreatedDate": created}]}
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(list_secrets=_list))
+    listed = store.list_secrets()
+    assert [(i.name, i.created_at) for i in listed] == [("conn-a", created)]
+
+
+def test_asm_list_secrets_filters_out_a_substring_match_that_is_not_a_real_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Secrets Manager's name Filter is a SUBSTRING match, not a prefix match — a
+    secret from an unrelated install whose name merely contains "dataq/" somewhere
+    must not be reported as this install's, or (worse) later purged by the sweep."""
+    store = AwsSecretsManagerStore("dataq/")
+
+    def _list(**kwargs: object) -> dict[str, object]:
+        return {
+            "SecretList": [
+                {"Name": "dataq/conn-a", "CreatedDate": None},
+                {"Name": "other-team/uses-dataq/-in-the-middle", "CreatedDate": None},
+            ]
+        }
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(list_secrets=_list))
+    listed = store.list_secrets()
+    assert [i.name for i in listed] == ["conn-a"]
+
+
+def test_asm_list_secrets_follows_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = AwsSecretsManagerStore("dataq/")
+    pages: list[dict[str, object]] = [
+        {"SecretList": [{"Name": "dataq/conn-a"}], "NextToken": "page2"},
+        {"SecretList": [{"Name": "dataq/conn-b"}]},
+    ]
+    seen_tokens: list[object] = []
+
+    def _list(**kwargs: object) -> dict[str, object]:
+        seen_tokens.append(kwargs.get("NextToken"))
+        return pages.pop(0)
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(list_secrets=_list))
+    listed = store.list_secrets()
+    assert [i.name for i in listed] == ["conn-a", "conn-b"]
+    assert seen_tokens == [None, "page2"]
+
+
+def test_asm_list_secrets_raises_rather_than_returning_a_partial_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(**kwargs: object) -> None:
+        raise RuntimeError("throttled")
+
+    store = AwsSecretsManagerStore("dataq/")
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(list_secrets=_boom))
+    with pytest.raises(SecretStoreUnavailableError, match="throttled"):
+        store.list_secrets()
+
+
+def test_asm_list_secrets_skips_an_entry_with_no_usable_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = AwsSecretsManagerStore("dataq/")
+
+    def _list(**kwargs: object) -> dict[str, object]:
+        return {"SecretList": [{"Name": None, "CreatedDate": None}]}
+
+    monkeypatch.setattr(store, "_client_lazy", lambda: SimpleNamespace(list_secrets=_list))
+    assert store.list_secrets() == []
+
+
 # ───────────────────────── Factory + cache ─────────────────────────
 
 
@@ -246,6 +666,7 @@ def _settings(**overrides: object) -> object:
     base: dict[str, object] = {
         "secret_store": "env",
         "azure_key_vault_url": None,
+        "aws_secrets_manager_prefix": "dataq/",
         "redis_url": "redis://localhost:6379/0",
         "openbao_addr": None,
         "openbao_token": None,
@@ -275,6 +696,7 @@ def _settings_from_env(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
         "OPENBAO_ROLE_ID",
         "OPENBAO_SECRET_ID",
         "AZURE_KEY_VAULT_URL",
+        "AWS_SECRETS_MANAGER_PREFIX",
     ):
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
@@ -301,6 +723,23 @@ def test_build_store_returns_akv_store_when_configured(monkeypatch: pytest.Monke
 def test_build_store_raises_when_akv_url_missing() -> None:
     with pytest.raises(RuntimeError, match="requires AZURE_KEY_VAULT_URL"):
         _build_store(_settings(secret_store="azure_key_vault"))  # type: ignore[arg-type]
+
+
+def test_build_store_returns_asm_store_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = _build_store(
+        _settings_from_env(
+            monkeypatch, SECRET_STORE="aws_secrets_manager", AWS_SECRETS_MANAGER_PREFIX="dataq/"
+        )
+    )
+    assert isinstance(store, AwsSecretsManagerStore)
+    assert store._prefix == "dataq"  # trailing "/" is normalised off in __init__
+
+
+def test_build_store_raises_when_asm_prefix_blank() -> None:
+    with pytest.raises(RuntimeError, match="requires AWS_SECRETS_MANAGER_PREFIX"):
+        _build_store(
+            _settings(secret_store="aws_secrets_manager", aws_secrets_manager_prefix="")  # type: ignore[arg-type]
+        )
 
 
 def test_build_store_returns_openbao_store_when_configured(
@@ -408,6 +847,7 @@ def _real_settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> None:
         "OPENBAO_ROLE_ID",
         "OPENBAO_SECRET_ID",
         "AZURE_KEY_VAULT_URL",
+        "AWS_SECRETS_MANAGER_PREFIX",
     ):
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
@@ -513,6 +953,24 @@ def test_settings_rejects_an_empty_mount(monkeypatch: pytest.MonkeyPatch) -> Non
             OPENBAO_ADDR="http://openbao:8200",
             OPENBAO_TOKEN="tok",
             OPENBAO_MOUNT="/",
+        )
+
+
+def test_settings_accepts_aws_secrets_manager_with_the_default_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _real_settings(monkeypatch, SECRET_STORE="aws_secrets_manager")  # must not raise
+
+
+def test_settings_rejects_aws_secrets_manager_with_a_blank_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty prefix collapses every DataQ secret name onto the account/region's
+    bare namespace — the same collision `OPENBAO_MOUNT must not be empty` guards
+    against for a shared vault mount."""
+    with pytest.raises(ValidationError, match="AWS_SECRETS_MANAGER_PREFIX"):
+        _real_settings(
+            monkeypatch, SECRET_STORE="aws_secrets_manager", AWS_SECRETS_MANAGER_PREFIX=""
         )
 
 
