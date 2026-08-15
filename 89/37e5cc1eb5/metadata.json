@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "8937e5cc1eb5",
+  "strategy": "manual-commit",
+  "branch": "docs/aws-apply-live",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/89/37e5cc1eb5/0/metadata.json",
+      "transcript": "/89/37e5cc1eb5/0/full.jsonl",
+      "compact_transcript": "/89/37e5cc1eb5/0/transcript.jsonl",
+      "content_hash": "/89/37e5cc1eb5/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 84,
+    "cache_creation_tokens": 35032,
+    "cache_read_tokens": 16582899,
+    "output_tokens": 17931,
+    "api_call_count": 42
+  }
+}
