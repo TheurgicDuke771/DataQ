@@ -165,6 +165,56 @@ def test_a_PAT_still_beats_everything(db_session: Any) -> None:
     assert resolved.id == owner.id
 
 
+# ── generic OIDC + OTP: PAT → cookie → JWT (ADR 0026 amendment) ─────────────
+
+
+def test_the_cookie_wins_over_valid_generic_oidc_claims(db_session: Any) -> None:
+    user = _user(db_session)
+    _, cookie = session_service.create_session(db_session, user)
+    resolved = auth_mod._get_current_user_generic_oidc_or_otp(
+        _request(cookie=cookie),
+        {"sub": uuid.uuid4().hex, "email": "someone.else@corp.io"},
+        db_session,
+    )
+    assert resolved.id == user.id
+
+
+def test_a_BAD_cookie_does_not_fall_through_to_the_generic_oidc_branch(db_session: Any) -> None:
+    with pytest.raises(DataQError) as caught:
+        auth_mod._get_current_user_generic_oidc_or_otp(
+            _request(cookie=session_service.TOKEN_PREFIX + "stale"),
+            {"sub": uuid.uuid4().hex, "email": "real@corp.io"},
+            db_session,
+        )
+    assert caught.value.code == "invalid_session"
+
+
+def test_generic_oidc_still_works_when_no_cookie_is_presented(db_session: Any) -> None:
+    subject = uuid.uuid4().hex
+    resolved = auth_mod._get_current_user_generic_oidc_or_otp(
+        _request(), {"sub": subject, "email": f"oidc-{subject[:8]}@corp.io"}, db_session
+    )
+    assert resolved.aad_object_id == subject
+
+
+def test_generic_oidc_401s_with_no_credential_at_all(db_session: Any) -> None:
+    with pytest.raises(DataQError) as caught:
+        auth_mod._get_current_user_generic_oidc_or_otp(_request(), None, db_session)
+    assert caught.value.status_code == 401
+
+
+def test_a_PAT_still_beats_everything_in_generic_oidc_mode(db_session: Any) -> None:
+    owner = _user(db_session)
+    _, pat = api_key_service.create_key(db_session, owner, name="seam")
+    _, cookie = session_service.create_session(db_session, _user(db_session))
+    resolved = auth_mod._get_current_user_generic_oidc_or_otp(
+        _request(authorization=f"Bearer {pat}", cookie=cookie),
+        {"sub": uuid.uuid4().hex, "email": "third@corp.io"},
+        db_session,
+    )
+    assert resolved.id == owner.id
+
+
 # ── the scheme wrapper's cookie short-circuit ────────────────────────────────
 
 

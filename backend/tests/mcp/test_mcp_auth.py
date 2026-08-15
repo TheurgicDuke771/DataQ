@@ -33,6 +33,10 @@ _OTP: dict[str, Any] = {
 }
 
 _AZURE: dict[str, Any] = {"azure_tenant_id": "tenant-1", "azure_api_client_id": "api-client"}
+_OIDC: dict[str, Any] = {
+    "oidc_issuer": "https://example-idp.test",
+    "oidc_audience": "dataq-client-id",
+}
 
 #: Nothing configured at all. Explicit about dev-bypass because the suite's own
 #: conftest exports `AUTH_DEV_BYPASS=true`, and `Settings` reads os.environ — so an
@@ -62,8 +66,10 @@ def test_build_auth_provider_is_none_only_in_dev_bypass() -> None:
     ("config", "expected"),
     [
         pytest.param({**_AZURE, "environment": "prod"}, "azure_ad", id="azure-only"),
+        pytest.param({**_OIDC, "environment": "prod"}, "generic_oidc", id="generic-oidc-only"),
         pytest.param({**_OTP, **_NOTHING}, "pat_only", id="otp-only"),
         pytest.param({**_AZURE, **_OTP, "environment": "prod"}, "azure_ad", id="both"),
+        pytest.param({**_OIDC, **_OTP, "environment": "prod"}, "generic_oidc", id="oidc-and-otp"),
         pytest.param({"environment": "dev", "auth_dev_bypass": True}, "dev_bypass", id="bypass"),
         pytest.param(_NOTHING, "disabled", id="nothing"),
         # OTP outranks dev-bypass, exactly as it does in `core.auth`'s ladder:
@@ -119,6 +125,38 @@ def test_an_unconfigured_deployment_gets_a_credential_requiring_verifier_not_non
     assert provider._jwt is None
 
 
+def test_build_auth_provider_generic_oidc_mode_is_pat_or_jwt_composite(monkeypatch: Any) -> None:
+    """The MCP counterpart to `core.auth.OidcBearerScheme` — reuses fastmcp's
+    already-generic `JWTVerifier`, just pointed at the configured issuer instead
+    of Azure's hardcoded endpoints (see `build_auth_provider`'s docstring)."""
+    monkeypatch.setattr(auth, "_discover_jwks_uri", lambda issuer: f"{issuer}/jwks.json")
+    s = _settings(**_OIDC, environment="prod")
+    provider = auth.build_auth_provider(s)
+    assert isinstance(provider, auth._PatOrJwtVerifier)
+    assert isinstance(provider._jwt, JWTVerifier)
+    assert provider._jwt.audience == "dataq-client-id"
+    assert provider._jwt.issuer == "https://example-idp.test"
+    # No required_scopes — Azure's API-scope pattern isn't universal (docstring).
+    assert not provider._jwt.required_scopes
+
+
+def test_discover_jwks_uri_reads_the_oidc_discovery_document(monkeypatch: Any) -> None:
+    import httpx
+
+    def fake_get(url: str, timeout: float) -> Any:
+        assert url == "https://example-idp.test/.well-known/openid-configuration"
+        return httpx.Response(
+            200,
+            json={"jwks_uri": "https://example-idp.test/jwks.json"},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    assert auth._discover_jwks_uri("https://example-idp.test") == (
+        "https://example-idp.test/jwks.json"
+    )
+
+
 def test_resolve_user_from_token_claims(db_session: Any, monkeypatch: Any) -> None:
     token = SimpleNamespace(
         claims={"oid": "aad-oid-123", "preferred_username": "ada@acme.io", "name": "Ada"},
@@ -153,6 +191,32 @@ def test_resolve_user_requires_oid_no_subject_fallback(db_session: Any, monkeypa
     monkeypatch.setattr(auth, "get_settings", lambda: _settings(environment="prod"))
     with pytest.raises(auth.McpAuthError):
         auth.resolve_current_user(db_session)
+
+
+def test_resolve_user_generic_oidc_reads_sub(db_session: Any, monkeypatch: Any) -> None:
+    """In `generic_oidc` mode, `sub` IS the right key — unlike Azure's pairwise
+    `sub`, generic OIDC has no `oid`-shaped stable-directory alternative; `sub`
+    is the RFC 7519 REQUIRED subject claim."""
+    token = SimpleNamespace(claims={"sub": "cognito-sub-1", "email": "u@example.com"})
+    monkeypatch.setattr(auth, "get_access_token", lambda: token)
+    monkeypatch.setattr(auth, "get_settings", lambda: _settings(**_OIDC, environment="prod"))
+    user = auth.resolve_current_user(db_session)
+    assert user.aad_object_id == "cognito-sub-1"
+    assert user.email == "u@example.com"
+    assert user.oidc_issuer == "https://example-idp.test"
+
+
+def test_resolve_user_generic_oidc_has_no_guest_policy(db_session: Any, monkeypatch: Any) -> None:
+    """The Azure B2B-guest concept doesn't apply to a generic provider — an
+    `acct` claim (Azure's guest signal) must not be inspected in this mode."""
+    token = SimpleNamespace(claims={"sub": "cognito-sub-2", "acct": 1})
+    monkeypatch.setattr(auth, "get_access_token", lambda: token)
+    monkeypatch.setattr(
+        auth,
+        "get_settings",
+        lambda: _settings(**_OIDC, environment="prod", azure_allow_guest_users=False),
+    )
+    assert auth.resolve_current_user(db_session).aad_object_id == "cognito-sub-2"
 
 
 def test_resolve_user_dev_bypass_when_no_token(db_session: Any, monkeypatch: Any) -> None:

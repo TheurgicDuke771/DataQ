@@ -237,6 +237,17 @@ class Settings(BaseSettings):
     # membership + the API scope; orthogonal to WORKSPACE_ADMIN_EMAILS.
     azure_allow_guest_users: bool = False
 
+    # Generic OIDC (ADR 0026 amendment) — a second, provider-neutral real-auth
+    # mode alongside Azure AD: any standards-compliant issuer (AWS Cognito, GCP
+    # Identity Platform, Okta, Keycloak, ...) that publishes
+    # /.well-known/openid-configuration + a JWKS. `oidc_issuer` is the token's
+    # expected `iss`; `oidc_audience` is the expected `aud` (Cognito access
+    # tokens carry `client_id` instead — `core/auth.py`'s validator accepts
+    # either). Mutually exclusive with the Azure fields above — validated in
+    # `_validate_generic_oidc` below.
+    oidc_issuer: str | None = None
+    oidc_audience: str | None = None
+
     auth_dev_bypass: bool = False
 
     # Browser origins allowed to call the API cross-origin (the Static Web App ↔
@@ -738,6 +749,46 @@ class Settings(BaseSettings):
         if not self.azure_api_client_id:
             return None
         return f"api://{self.azure_api_client_id}/{self.azure_api_scope}"
+
+    @property
+    def generic_oidc_configured(self) -> bool:
+        return bool(self.oidc_issuer and self.oidc_audience)
+
+    @model_validator(mode="after")
+    def _validate_generic_oidc(self) -> "Settings":
+        """Reject a half-configured or ambiguous generic-OIDC setup at startup.
+
+        Unlike `azure_auth_configured` (a bare `and`, so a partial Azure config
+        quietly reads as "not configured"), a partial `OIDC_ISSUER`/`OIDC_AUDIENCE`
+        pair is rejected outright — same reasoning as the OpenBao AppRole pairing
+        check: a config typo should surface as a boot-time error naming the field,
+        not as a silent fall-through to whatever mode is next on the ladder.
+
+        Mutually exclusive with Azure: running two independent real-IdP JWT
+        validators at once has no stated use case (which shape is this bearer?)
+        and neither `core.auth` nor `mcp.auth` are written to disambiguate it.
+        OTP still layers on top of *either* one, matching the existing "Real +
+        OTP" precedent (ADR 0032 decision 1) — this check is Azure-vs-generic-OIDC
+        only.
+        """
+        issuer = (self.oidc_issuer or "").strip()
+        audience = (self.oidc_audience or "").strip()
+        if bool(issuer) != bool(audience):
+            supplied, absent = (
+                ("OIDC_ISSUER", "OIDC_AUDIENCE") if issuer else ("OIDC_AUDIENCE", "OIDC_ISSUER")
+            )
+            raise ValueError(f"{supplied} is set without {absent} — both are required together.")
+        if issuer and audience:
+            if not issuer.startswith(("http://", "https://")):
+                raise ValueError(
+                    f"OIDC_ISSUER must start with http:// or https:// (got {issuer!r})"
+                )
+            if self.azure_auth_configured:
+                raise ValueError(
+                    "OIDC_ISSUER/OIDC_AUDIENCE and AZURE_TENANT_ID/AZURE_API_CLIENT_ID are "
+                    "mutually exclusive — configure one real-IdP auth mode, not both."
+                )
+        return self
 
     @model_validator(mode="after")
     def _validate_secret_store(self) -> "Settings":

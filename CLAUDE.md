@@ -14,7 +14,7 @@
 | **Orchestration providers (monitor + trigger only — NOT datasources)** | Azure Data Factory (ADF), Apache Airflow, dbt (ADR 0029) |
 | **Backend** | FastAPI + Celery + Redis + PostgreSQL + Alembic |
 | **Frontend** | React + Vite + Ant Design + Monaco editor (generic OIDC — `oidc-client-ts`) |
-| **Auth / secrets** | Three-mode ladder (ADR 0032): dev-bypass (eval) · **email OTP** (IdP-less, default for the local stack — #1150) · OIDC (Azure AD validated; provider-neutral `AUTH_*` contract) — plus PATs (`dq_live_`) for API/MCP clients. Secrets: Azure Key Vault / OpenBao (ADR 0039) |
+| **Auth / secrets** | Three-mode ladder (ADR 0032): dev-bypass (eval) · **email OTP** (IdP-less, default for the local stack — #1150) · OIDC — **now genuinely provider-neutral end-to-end** (ADR 0026 amendment): the frontend's generic `AUTH_*` contract (ADR 0028) is matched on the backend by `core.auth.OidcBearerScheme` (OIDC discovery + JWKS via `PyJWT`, any standards-compliant issuer — Azure AD validated in prod, AWS Cognito the second target) alongside the original `fastapi-azure-auth` validator; mutually exclusive per deployment. Plus PATs (`dq_live_`) for API/MCP clients. Secrets: Azure Key Vault / OpenBao / AWS Secrets Manager (ADR 0039) |
 | **Deploy** | Azure Container Apps (API + worker + frontend; frontend is the sole public surface, api internal — ADR 0028 §5) |
 | **Observability** | Azure Application Insights + structlog |
 | **AI integration** | FastMCP (8 curated tools mounted at `/mcp`) — Claude Desktop / Claude.ai / Copilot / Cursor |

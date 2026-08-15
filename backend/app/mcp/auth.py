@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+import httpx
 from fastapi_azure_auth.utils import is_guest
 from fastmcp.server.auth import AccessToken, AuthProvider, TokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier
@@ -41,6 +42,7 @@ from fastmcp.server.dependencies import get_access_token
 from sqlalchemy.orm import Session
 
 from backend.app.core.auth import (
+    _AZURE_ISSUER,
     DEV_BYPASS_AAD_OID,
     DEV_BYPASS_DISPLAY_NAME,
     DEV_BYPASS_EMAIL,
@@ -65,10 +67,10 @@ class McpAuthError(Exception):
 
 
 #: The MCP auth modes, in the order they are selected. Mirrors the
-#: ``core.auth.get_current_user`` ladder exactly (Azure → OTP → dev bypass →
-#: nothing), because REST and ``/mcp`` sharing credentials is only true if they
-#: also share the mode selection.
-McpAuthMode = Literal["azure_ad", "pat_only", "dev_bypass", "disabled"]
+#: ``core.auth.get_current_user`` ladder exactly (Azure → generic OIDC → OTP →
+#: dev bypass → nothing), because REST and ``/mcp`` sharing credentials is only
+#: true if they also share the mode selection.
+McpAuthMode = Literal["azure_ad", "generic_oidc", "pat_only", "dev_bypass", "disabled"]
 
 
 def mcp_auth_mode(settings: Settings | None = None) -> McpAuthMode:
@@ -80,14 +82,21 @@ def mcp_auth_mode(settings: Settings | None = None) -> McpAuthMode:
     from ``azure_auth_configured``, which is exactly how an OTP deployment ended
     up unmounted *and* reported as "dev_bypass".
 
+    ``generic_oidc`` sits alongside ``azure_ad`` (mutually exclusive by
+    ``Settings._validate_generic_oidc``) rather than composing with it — ``/mcp``
+    has no "azure_ad_or_otp"-shaped mode either, since a session cookie is never
+    an MCP credential (ADR 0032 decision 1); only PAT-vs-real-JWT varies.
+
     OTP outranks dev bypass for the same reason it does in ``core.auth``: an
     OTP-configured stack is a real auth configuration, and resolving it to the
     unauthenticated bypass would be a downgrade. (``_dev_bypass_allowed`` already
-    excludes an Azure-configured stack.)
+    excludes an Azure- or generic-OIDC-configured stack.)
     """
     s = settings or get_settings()
     if s.azure_auth_configured:
         return "azure_ad"
+    if s.generic_oidc_configured:
+        return "generic_oidc"
     if s.otp_auth_configured:
         return "pat_only"
     if _dev_bypass_allowed(s):
@@ -161,10 +170,32 @@ class _PatOrJwtVerifier(TokenVerifier):
         )
 
 
+def _discover_jwks_uri(issuer: str) -> str:
+    """Resolve `jwks_uri` from the issuer's OIDC discovery document.
+
+    Synchronous and one-shot: `build_auth_provider` runs at **module import
+    time** (`mcp/server.py`'s top-level `FastMCP(..., auth=build_auth_provider())`),
+    before any async startup hook exists to call into — unlike
+    `core.auth.OidcBearerScheme.load_config`, which the FastAPI lifespan awaits.
+    A discovery failure here fails the whole import, which is the fail-closed
+    outcome: the alternative is mounting `/mcp` unable to validate a single
+    token, discovered only on the first real request.
+    """
+    response = httpx.get(f"{issuer.rstrip('/')}/.well-known/openid-configuration", timeout=5.0)
+    response.raise_for_status()
+    jwks_uri: str = response.json()["jwks_uri"]
+    return jwks_uri
+
+
 def build_auth_provider(settings: Settings | None = None) -> AuthProvider | None:
     """The fastmcp auth provider for the current ``mcp_auth_mode``.
 
     - ``azure_ad`` → the PAT-or-Azure-JWT composite.
+    - ``generic_oidc`` → the same composite, JWT half pointed at the configured
+      issuer instead of Azure's hardcoded endpoints. No ``required_scopes`` —
+      Azure's API-scope pattern isn't universal, and DataQ's authorization is
+      per-suite sharing on the resolved user row, not token scopes (same
+      reasoning as ``core.auth.OidcBearerScheme``).
     - ``pat_only`` → the same composite with the JWT half absent (PAT or 401).
     - ``dev_bypass`` → ``None``, i.e. an unauthenticated server. This is the ONE
       mode that returns ``None``, and it is only ever mounted when
@@ -178,17 +209,25 @@ def build_auth_provider(settings: Settings | None = None) -> AuthProvider | None
     mode = mcp_auth_mode(s)
     if mode == "dev_bypass":
         return None
-    if mode != "azure_ad":
-        return _PatOrJwtVerifier(None)
-    tenant = s.azure_tenant_id
-    # Single-tenant v2 endpoint — same coordinates fastapi-azure-auth uses.
-    jwt = JWTVerifier(
-        jwks_uri=f"https://login.microsoftonline.com/{tenant}/discovery/v2.0/keys",
-        issuer=f"https://login.microsoftonline.com/{tenant}/v2.0",
-        audience=s.azure_api_client_id,
-        required_scopes=[s.azure_api_scope],
-    )
-    return _PatOrJwtVerifier(jwt)
+    if mode == "azure_ad":
+        tenant = s.azure_tenant_id
+        # Single-tenant v2 endpoint — same coordinates fastapi-azure-auth uses.
+        jwt = JWTVerifier(
+            jwks_uri=f"https://login.microsoftonline.com/{tenant}/discovery/v2.0/keys",
+            issuer=f"https://login.microsoftonline.com/{tenant}/v2.0",
+            audience=s.azure_api_client_id,
+            required_scopes=[s.azure_api_scope],
+        )
+        return _PatOrJwtVerifier(jwt)
+    if mode == "generic_oidc":
+        assert s.oidc_issuer is not None
+        jwt = JWTVerifier(
+            jwks_uri=_discover_jwks_uri(s.oidc_issuer),
+            issuer=s.oidc_issuer,
+            audience=s.oidc_audience,
+        )
+        return _PatOrJwtVerifier(jwt)
+    return _PatOrJwtVerifier(None)
 
 
 def resolve_current_user(session: Session) -> User:
@@ -210,27 +249,52 @@ def resolve_current_user(session: Session) -> User:
             if user is None:  # revoked/deleted between verify and tool call
                 raise McpAuthError("could not resolve the API key's user")
             return user
-        # Mirror the REST validator's guest policy: reject Azure AD guests (B2B /
-        # external) unless explicitly allowed, so /mcp can't accept an identity the
-        # REST API would 403. The JWTVerifier already validated signature / issuer /
-        # audience / scope; this is the tenant-membership policy on top.
-        if not get_settings().azure_allow_guest_users and is_guest(claims):
-            raise McpAuthError("guest users are not permitted")
-        # `oid` (the stable directory object id) is mandatory, exactly as the REST
-        # resolver treats it — never fall back to `sub` (a per-app pairwise
-        # pseudonym), which would key a divergent / duplicate users row.
-        aad_oid = claims.get("oid")
-        if aad_oid:
-            email = str(
-                claims.get("preferred_username") or claims.get("email") or claims.get("upn") or ""
-            )
-            name = claims.get("name")
-            return _upsert_user(
-                session,
-                aad_object_id=str(aad_oid),
-                email=email,
-                display_name=str(name) if name is not None else None,
-            )
+        settings = get_settings()
+        mode = mcp_auth_mode(settings)
+        if mode == "generic_oidc":
+            # `sub` — the RFC 7519 REQUIRED subject claim — not Azure's `oid`.
+            # No guest-user policy here: that concept is Azure B2B-specific, and
+            # the generic REST validator (`core.auth.OidcBearerScheme`) applies
+            # none either.
+            subject = claims.get("sub")
+            if subject:
+                email = str(claims.get("email") or "")
+                name = claims.get("name")
+                return _upsert_user(
+                    session,
+                    aad_object_id=str(subject),
+                    email=email,
+                    display_name=str(name) if name is not None else None,
+                    oidc_issuer=settings.oidc_issuer,
+                )
+        else:
+            # Mirror the REST validator's guest policy: reject Azure AD guests
+            # (B2B / external) unless explicitly allowed, so /mcp can't accept
+            # an identity the REST API would 403. The JWTVerifier already
+            # validated signature / issuer / audience / scope; this is the
+            # tenant-membership policy on top.
+            if not settings.azure_allow_guest_users and is_guest(claims):
+                raise McpAuthError("guest users are not permitted")
+            # `oid` (the stable directory object id) is mandatory, exactly as
+            # the REST resolver treats it — never fall back to `sub` (a per-app
+            # pairwise pseudonym), which would key a divergent / duplicate
+            # users row.
+            aad_oid = claims.get("oid")
+            if aad_oid:
+                email = str(
+                    claims.get("preferred_username")
+                    or claims.get("email")
+                    or claims.get("upn")
+                    or ""
+                )
+                name = claims.get("name")
+                return _upsert_user(
+                    session,
+                    aad_object_id=str(aad_oid),
+                    email=email,
+                    display_name=str(name) if name is not None else None,
+                    oidc_issuer=_AZURE_ISSUER,
+                )
     if _dev_bypass_allowed(get_settings()):
         return _upsert_user(
             session,
