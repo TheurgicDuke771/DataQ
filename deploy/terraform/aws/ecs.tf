@@ -15,8 +15,10 @@ resource "aws_ecs_cluster" "app" {
 # own SGs allowing traffic FROM this one), plus a narrow allow from the ALB
 # SG for the frontend's published port.
 resource "aws_security_group" "ecs_tasks" {
-  name        = "dataq-app-ecs-tasks"
-  description = "DataQ ECS tasks - internal task-to-task traffic + ALB->frontend"
+  name = "dataq-app-ecs-tasks"
+  # EC2 SG descriptions allow ONLY a-zA-Z0-9. _-:/()#,@[]+=&;{}!$* (#1357) —
+  # no em-dash, and no '>' either (the first fix missed that).
+  description = "DataQ ECS tasks - internal task-to-task traffic + ALB to frontend"
   vpc_id      = aws_vpc.app.id
 
   egress {
