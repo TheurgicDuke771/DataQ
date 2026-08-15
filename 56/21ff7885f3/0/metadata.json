@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "5621ff7885f3",
+  "session_id": "afa3b4cf-0adb-4f17-8bc9-58c7e81d5814",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-15T14:46:35.536548Z",
+  "branch": "feature/aws-secrets-manager-store",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "backend/app/core/secrets.py",
+    "backend/requirements.txt",
+    "backend/tests/core/test_secrets.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "88259c6daa7f",
+  "checkpoint_transcript_start": 73,
+  "transcript_lines_at_start": 73,
+  "compact_transcript_start": 21,
+  "token_usage": {
+    "input_tokens": 212,
+    "cache_creation_tokens": 238972,
+    "cache_read_tokens": 20147102,
+    "output_tokens": 69525,
+    "api_call_count": 106
+  },
+  "session_metrics": {
+    "turn_count": 11
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-15T14:46:35.432196Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 433,
+    "human_modified": 4,
+    "human_removed": 0,
+    "total_committed": 433,
+    "total_lines_changed": 437,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

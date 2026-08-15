@@ -1,0 +1,25 @@
+plan the deployment. 
+create the scoped IAM user(s). test them out. 
+remove root creds. 
+create TODO list
+start dployment
+
+---
+
+done executed 3 commands, "UserName": "dataq-deploy",
+
+---
+
+done
+
+---
+
+check this
+
+---
+
+add the aws profile to fish shell
+
+---
+
+start with the deployment plan + TODO list
