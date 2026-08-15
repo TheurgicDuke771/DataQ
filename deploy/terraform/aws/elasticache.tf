@@ -16,7 +16,7 @@ resource "aws_elasticache_subnet_group" "app" {
 
 resource "aws_security_group" "redis" {
   name        = "dataq-app-redis"
-  description = "Redis — inbound only from the ECS tasks security group"
+  description = "Redis - inbound only from the ECS tasks security group"
   vpc_id      = aws_vpc.app.id
 
   ingress {

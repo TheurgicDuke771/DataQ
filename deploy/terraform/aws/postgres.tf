@@ -9,7 +9,7 @@ resource "aws_db_subnet_group" "app" {
 
 resource "aws_security_group" "rds" {
   name        = "dataq-app-rds"
-  description = "Postgres — inbound only from the ECS tasks security group"
+  description = "Postgres - inbound only from the ECS tasks security group"
   vpc_id      = aws_vpc.app.id
 
   ingress {

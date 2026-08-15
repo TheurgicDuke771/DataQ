@@ -22,7 +22,7 @@ data "aws_ec2_managed_prefix_list" "cloudfront_origin" {
 
 resource "aws_security_group" "alb" {
   name        = "dataq-app-alb"
-  description = "ALB — inbound HTTP from CloudFront origin-facing ranges only"
+  description = "ALB - inbound HTTP from CloudFront origin-facing ranges only"
   vpc_id      = aws_vpc.app.id
 
   ingress {
