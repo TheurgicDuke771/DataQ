@@ -199,3 +199,22 @@ describe('build-time fallback (pnpm dev, no injected config)', () => {
     expect(authConfig.apiScope).toBe('api://api-1/user_impersonation');
   });
 });
+
+describe('scope override (#1347)', () => {
+  it('exposes an injected scope for authClient to use verbatim', async () => {
+    inject({
+      mode: 'oidc',
+      authority: 'https://cognito-idp.us-east-2.amazonaws.com/pool-1',
+      clientId: 'spa-1',
+      scope: 'openid email profile',
+    });
+    const { authConfig } = await loadConfig();
+    expect(authConfig.scope).toBe('openid email profile');
+  });
+
+  it('leaves scope undefined when not injected (default list applies)', async () => {
+    inject({ mode: 'oidc', authority: 'https://issuer.example/v2.0', clientId: 'spa-1' });
+    const { authConfig } = await loadConfig();
+    expect(authConfig.scope).toBeUndefined();
+  });
+});

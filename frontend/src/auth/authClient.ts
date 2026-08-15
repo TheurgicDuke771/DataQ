@@ -33,7 +33,7 @@ export function getUserManager(): UserManager | null {
   if (authMode !== 'real') return null;
   if (_mgr) return _mgr;
 
-  const { authority, clientId, apiScope } = authConfig;
+  const { authority, clientId, apiScope, scope: scopeOverride } = authConfig;
   if (!authority || !clientId) {
     // authMode='real' guarantees both are set; defensive guard satisfies the type checker.
     throw new Error(
@@ -43,9 +43,11 @@ export function getUserManager(): UserManager | null {
 
   // openid/profile/email → id token; offline_access → refresh token for silent
   // renew; apiScope (when set) makes the access token audience the DataQ API.
-  const scope = ['openid', 'profile', 'email', 'offline_access', apiScope]
-    .filter(Boolean)
-    .join(' ');
+  // DATAQ_AUTH_SCOPE replaces the whole string for providers with a different
+  // scope vocabulary — Cognito rejects offline_access outright (#1347).
+  const scope =
+    scopeOverride ||
+    ['openid', 'profile', 'email', 'offline_access', apiScope].filter(Boolean).join(' ');
 
   _mgr = new UserManager({
     authority,
