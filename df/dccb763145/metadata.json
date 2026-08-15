@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "dfdccb763145",
+  "strategy": "manual-commit",
+  "branch": "feature/deploy-aws-workflow",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/df/dccb763145/0/metadata.json",
+      "transcript": "/df/dccb763145/0/full.jsonl",
+      "compact_transcript": "/df/dccb763145/0/transcript.jsonl",
+      "content_hash": "/df/dccb763145/0/content_hash.txt",
+      "prompt": "/df/dccb763145/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 652,
+    "cache_creation_tokens": 901749,
+    "cache_read_tokens": 76272079,
+    "output_tokens": 206318,
+    "api_call_count": 328
+  }
+}
