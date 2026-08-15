@@ -58,7 +58,7 @@ server {
     location = /config.js {
         default_type application/javascript;
         add_header Cache-Control "no-cache";
-        return 200 'window.__DATAQ_CONFIG__={"auth":{"mode":"${DATAQ_AUTH_MODE}","authority":"${DATAQ_AUTH_AUTHORITY}","clientId":"${DATAQ_AUTH_CLIENT_ID}","apiScope":"${DATAQ_AUTH_API_SCOPE}"}};';
+        return 200 'window.__DATAQ_CONFIG__={"auth":{"mode":"${DATAQ_AUTH_MODE}","authority":"${DATAQ_AUTH_AUTHORITY}","clientId":"${DATAQ_AUTH_CLIENT_ID}","apiScope":"${DATAQ_AUTH_API_SCOPE}","scope":"${DATAQ_AUTH_SCOPE}"}};';
     }
 
     # Runtime DNS resolver from the running container's /etc/resolv.conf. The nginx

@@ -119,3 +119,37 @@ describe('authClient.getApiToken', () => {
     expect(await getApiToken()).toBeNull();
   });
 });
+
+describe('authClient.getUserManager scope (#1347)', () => {
+  function mockRealConfigWithScope(scope?: string) {
+    vi.doMock('../../src/auth/config', () => ({
+      authMode: 'real',
+      authConfig: {
+        authority: 'https://issuer.example/v2.0',
+        clientId: 'spa-1',
+        apiScope: 'api://x/u',
+        scope,
+      },
+    }));
+  }
+
+  async function constructedScope(): Promise<string> {
+    const { getUserManager } = await import('../../src/auth/authClient');
+    getUserManager();
+    const { UserManager } = await import('oidc-client-ts');
+    const call = vi.mocked(UserManager).mock.calls[0][0];
+    return call.scope as string;
+  }
+
+  it('requests the default scope list when no override is configured', async () => {
+    mockRealConfigWithScope(undefined);
+    mockOidc({ getUser: vi.fn(), signinSilent: vi.fn(), signinRedirect: vi.fn() });
+    expect(await constructedScope()).toBe('openid profile email offline_access api://x/u');
+  });
+
+  it('uses DATAQ_AUTH_SCOPE verbatim when set — Cognito rejects offline_access', async () => {
+    mockRealConfigWithScope('openid email profile');
+    mockOidc({ getUser: vi.fn(), signinSilent: vi.fn(), signinRedirect: vi.fn() });
+    expect(await constructedScope()).toBe('openid email profile');
+  });
+});

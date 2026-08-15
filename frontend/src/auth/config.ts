@@ -45,6 +45,15 @@ export interface DataqAuthConfig {
   clientId?: string;
   /** Full scope string requested for the API access token (Azure: api://<api-client-id>/<scope>). */
   apiScope?: string;
+  /**
+   * Complete OVERRIDE of the requested OAuth scope string (#1347). When set, it
+   * replaces the default `openid profile email offline_access [apiScope]`
+   * entirely. Needed because scope support is provider-specific: AWS Cognito
+   * rejects `offline_access` (`error=invalid_scope` — not one of its system
+   * scopes), so a Cognito deployment sets e.g. "openid email profile" here
+   * (Cognito issues refresh tokens on the code grant regardless).
+   */
+  scope?: string;
 }
 
 declare global {
@@ -98,6 +107,7 @@ export const authConfig = {
   authority: cfg.authority,
   clientId: cfg.clientId,
   apiScope: cfg.apiScope,
+  scope: cfg.scope,
 } as const;
 
 export const authMode: AuthMode = (() => {
