@@ -51,13 +51,16 @@ resource "aws_iam_role" "github_deploy" {
 # account-wide. iam:PassRole is scoped to only the task/execution roles this
 # stack created, so the CI principal cannot pass an arbitrary role to a task.
 data "aws_iam_policy_document" "github_deploy" {
+  # Two statements, split by whether the action populates the `ecs:cluster`
+  # condition key (#1348). Task-definition actions are not cluster-scoped and
+  # never set the key, so putting them under the ArnEquals condition made the
+  # condition evaluate against a MISSING key — an implicit deny that would
+  # have failed the workflow's first `register-task-definition`.
   statement {
-    sid = "EcsDeploy"
+    sid = "EcsDeployClusterScoped"
     actions = [
       "ecs:UpdateService",
       "ecs:DescribeServices",
-      "ecs:DescribeTaskDefinition",
-      "ecs:RegisterTaskDefinition",
       "ecs:RunTask",
       "ecs:DescribeTasks",
     ]
@@ -67,6 +70,26 @@ data "aws_iam_policy_document" "github_deploy" {
       variable = "ecs:cluster"
       values   = [aws_ecs_cluster.app.arn]
     }
+  }
+
+  statement {
+    sid     = "EcsRegisterTaskDefinitions"
+    actions = ["ecs:RegisterTaskDefinition"]
+    # Family-scoped: RegisterTaskDefinition DOES support resource-level
+    # permissions (SAR resource type `task-definition*` — /code-review
+    # finding), and this stack's four families are statically named, so the
+    # CI principal cannot register revisions under any other stack's family.
+    resources = [
+      "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/dataq-app-*"
+    ]
+  }
+
+  statement {
+    sid     = "EcsDescribeTaskDefinitions"
+    actions = ["ecs:DescribeTaskDefinition"]
+    # `*` is genuinely the only option here: DescribeTaskDefinition supports
+    # neither resource-level permissions nor any condition key.
+    resources = ["*"]
   }
 
   statement {
