@@ -31,9 +31,14 @@ only for this deployment.
 ```bash
 cd deploy/terraform/aws
 tofu init
+# state_encryption_passphrase comes from your terraform.tfvars — see
+# terraform.tfvars.example. image tags: publish-images.yml pushes backend +
+# frontend under every main commit SHA — the services RUN these from the
+# first apply, so always pass a current SHA (#1349).
+TF_VAR_app_db_password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
 tofu plan -input=false -out=tfplan \
-  -var="app_db_password=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
-  # state_encryption_passphrase comes from your terraform.tfvars — see terraform.tfvars.example
+  -var="image_tag=$(git rev-parse origin/main)" \
+  -var="frontend_image_tag=$(git rev-parse origin/main)"
 tofu apply -input=false tfplan
 ```
 

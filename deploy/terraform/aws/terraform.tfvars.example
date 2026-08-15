@@ -1,9 +1,10 @@
 # Copy to terraform.tfvars (gitignored) and fill in. Values here are NON-SECRET
 # (identifiers + sizing).
 #
-# TWO REQUIRED INPUTS HAVE NO DEFAULT. Miss either and OpenTofu prompts on stdin —
-# which, with stdout redirected, looks exactly like a hang. ALWAYS pass -input=false
-# so a missing value fails fast instead.
+# FOUR REQUIRED INPUTS HAVE NO DEFAULT (the two secrets below, plus
+# image_tag + frontend_image_tag — see #4). Miss one and OpenTofu prompts on
+# stdin — which, with stdout redirected, looks exactly like a hang. ALWAYS pass
+# -input=false so a missing value fails fast instead.
 #
 #   1. app_db_password — SECRET. Do NOT put it in this file; pass it at apply time:
 #        TF_VAR_app_db_password=... tofu apply
@@ -18,10 +19,14 @@
 #        python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 #   state_encryption_passphrase = "..."   # 16 chars minimum; never commit
 
-# aws_region = "us-east-2"
+#   3+4. image_tag + frontend_image_tag — REQUIRED, no default (#1349): the
+#      services run these images from the first apply, so a stale default would
+#      crash-loop from minute one. Use a current main commit SHA — that's what
+#      publish-images.yml tags both images with on every merge:
+#        image_tag          = "<git rev-parse origin/main>"
+#        frontend_image_tag = "<same SHA>"
 
-# image_tag          = "v10"   # backend  — bump per deploy (immutable tag, not "latest")
-# frontend_image_tag = "v2"    # frontend — bump per deploy (immutable tag, not "latest")
+# aws_region = "us-east-2"
 
 # workspace_admin_emails = "you@example.com"
 

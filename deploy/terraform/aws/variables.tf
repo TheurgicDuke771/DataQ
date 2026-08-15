@@ -44,15 +44,22 @@ variable "frontend_image_repo" {
 }
 
 variable "image_tag" {
-  description = "Backend image tag to deploy. Immutable tag in prod. The live image is rolled out-of-band by CI (ignore_changes on the task definition's container image), so this is only the create-time default."
+  description = <<-DESC
+    Backend image tag the task definitions are CREATED with (immutable tag —
+    a commit SHA from publish-images.yml; later rollouts happen out-of-band
+    via CI, ignore_changes on the container image). No default on purpose
+    (#1349): the services genuinely RUN this image from the first apply, and
+    a stale hardcoded default (the old "v10", a June image predating the
+    generic-OIDC auth and the aws_secrets_manager store) crash-loops from
+    minute one. Pass the current main SHA at apply:
+      -var image_tag=$(git rev-parse origin/main)
+  DESC
   type        = string
-  default     = "v10"
 }
 
 variable "frontend_image_tag" {
-  description = "Frontend image tag to deploy. Same out-of-band rollout note as image_tag."
+  description = "Frontend image tag the task definition is created with. Same no-default reasoning + out-of-band rollout note as image_tag (publish-images.yml pushes backend + frontend under the SAME commit SHA)."
   type        = string
-  default     = "v2"
 }
 
 # ── App config (non-secret) ──────────────────────────────────────────────
