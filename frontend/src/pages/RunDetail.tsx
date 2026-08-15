@@ -32,6 +32,7 @@ import {
 } from '../components/results/resultsFormat';
 import { Page } from '../components/layout/Page';
 import { RunReport } from '../components/results/RunReport';
+import { SampledRunNotice, SampledTag } from '../components/results/sampling';
 import { ScalarValue } from '../components/results/ScalarValue';
 import { boundedTextStyle } from '../components/shared/ellipsisColumn';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -191,6 +192,11 @@ function RunDetailBody({
         <Stat label="Started">{formatTimestamp(run.started_at)}</Stat>
         <Stat label="Duration">{formatDuration(run.started_at, run.finished_at)}</Stat>
       </div>
+
+      {/* Sampled-ness is a caveat on the VERDICTS below, so it sits with the
+          run header rather than inside the table — a reader who scans the
+          "6 / 7 passed" card must not walk away without it (#595/#1325). */}
+      <SampledRunNotice results={run.results} />
 
       {run.status === 'failed' && run.failure_reason && (
         <Alert
@@ -455,15 +461,26 @@ function ResultsTable({
     {
       title: 'Check',
       dataIndex: 'check_id',
-      render: (id: string) => {
+      render: (id: string, record: Result) => {
         const check = checks.get(id);
-        if (!check) return <Typography.Text code>{id.slice(0, 8)}</Typography.Text>;
+        // Even for an unknown (deleted) check the sampled caveat still applies to
+        // the verdict on this row, so it is rendered on both branches.
+        const sampled = <SampledTag sampling={record.sampling} />;
+        if (!check) {
+          return (
+            <Flex gap={8} align="center" wrap>
+              <Typography.Text code>{id.slice(0, 8)}</Typography.Text>
+              {sampled}
+            </Flex>
+          );
+        }
         return (
           <Flex gap={8} align="center" wrap>
             {check.name}
             {/* Failure triage happens here — a muted check must say so, or the
                 operator wastes time asking why no alert arrived (#653). */}
             <SnoozedTag check={check} />
+            {sampled}
           </Flex>
         );
       },

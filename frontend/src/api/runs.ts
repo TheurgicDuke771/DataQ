@@ -59,6 +59,38 @@ export interface Result {
   sample_failures: Record<string, unknown> | null;
   redaction: 'full' | 'partial' | 'none' | null;
   redacted_columns: string[];
+  /** How much of the dataset this check saw (#595); null = a complete read. */
+  sampling?: ResultSampling | null;
+}
+
+/**
+ * Mirrors the `results.sampling` record (backend `sampling.sampling_record`).
+ *
+ * **Branch on `sampled`, never on `rows < total_rows`.** `total_rows` is
+ * legitimately null for a head sample that stopped reading rather than pay for a
+ * count, and a "sample" that covered the whole dataset is not a sample —
+ * labelling one would put a caveat on every small target and train the reader to
+ * ignore the caveat that matters. The absence of the field entirely means a
+ * complete read, which is also what every result written before scale-aware
+ * execution means, so nothing needed backfilling.
+ *
+ * It is per **result**, not per run: within one run a volume monitor pushes its
+ * `COUNT(*)` down and is exact while the expectations beside it saw 100k of 5M.
+ */
+export interface ResultSampling {
+  /** `head` (first N rows in storage order) or `random`. */
+  strategy: string;
+  /** The row cap the suite's target asked for. */
+  requested_rows?: number | null;
+  /** What the check engine actually saw. */
+  rows?: number | null;
+  /** The population it was drawn from — null when learning it would have cost
+   *  the very scan the sample exists to avoid. */
+  total_rows?: number | null;
+  /** The honest headline: false means the read covered everything. */
+  sampled: boolean;
+  /** `random` only — present when the draw was made reproducible. */
+  seed?: number | null;
 }
 
 /** Mirrors `RunDetailRead` — a run plus its result rows. */

@@ -983,4 +983,82 @@ describe('RunDetail — anomaly cold-start hint (#593)', () => {
     await region.findByText('No sample rows captured.');
     expect(region.queryByText(/Collecting history/)).not.toBeInTheDocument();
   });
+
+  // ── sampled-ness (#595/#1325) ──────────────────────────────────────
+
+  it('shows no sampling surface at all for an ordinary complete run', async () => {
+    // The default fixture carries no `sampling`, which is what every result
+    // written before scale-aware execution means. Nothing may change for it.
+    mockGetRun.mockResolvedValue(runDetail);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    expect(region.queryByTestId('sampled-run-notice')).not.toBeInTheDocument();
+    expect(region.queryByTestId('sampled-tag')).not.toBeInTheDocument();
+  });
+
+  it('tags the sampled check and caveats the run header', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          sampling: {
+            strategy: 'head',
+            requested_rows: 100_000,
+            rows: 100_000,
+            total_rows: 5_000_000,
+            sampled: true,
+          },
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    expect(region.getByTestId('sampled-tag')).toBeInTheDocument();
+    // The header caveat matters most: someone who reads "0 / 1 passed" and
+    // leaves must not do so believing the verdict covered the dataset.
+    expect(region.getByTestId('sampled-run-notice')).toHaveTextContent(
+      'Every check ran on a sample',
+    );
+  });
+
+  it('does not badge a "sample" that covered the whole dataset', async () => {
+    // rows === total_rows and `sampled: false` — the read was complete, so a
+    // caveat here would be a false one. Pinned on the page, not just the
+    // component, because this is where a reader would act on it.
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          sampling: {
+            strategy: 'head',
+            requested_rows: 100_000,
+            rows: 40,
+            total_rows: 40,
+            sampled: false,
+          },
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    expect(region.queryByTestId('sampled-tag')).not.toBeInTheDocument();
+    expect(region.queryByTestId('sampled-run-notice')).not.toBeInTheDocument();
+  });
 });
