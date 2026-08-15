@@ -29,7 +29,9 @@ If nothing is configured, `init_auth` raises at startup — fail-closed.
 """
 
 import asyncio
+import hashlib
 import json
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -140,20 +142,104 @@ def _build_azure_scheme(
     )
 
 
-def discover_jwks_uri(issuer: str, *, timeout: float = 5.0) -> str:
-    """Resolve `jwks_uri` from an OIDC issuer's discovery document.
+def discover_oidc_config(issuer: str, *, timeout: float = 5.0) -> dict[str, Any]:
+    """Fetch an OIDC issuer's discovery document (parsed, unvalidated).
 
-    Synchronous and shared by both callers that need it: `OidcBearerScheme.
-    load_config` below (wrapped in `asyncio.to_thread` — it must not block the
-    event loop) and `mcp.auth.build_auth_provider` (genuinely synchronous —
-    fastmcp's auth provider is built at **module import time**, before any
-    async startup hook exists to call into). One implementation, not a
-    sync/async pair that could quietly drift apart.
+    Synchronous and shared by every caller that needs a discovery field:
+    `OidcBearerScheme.load_config` below (wrapped in `asyncio.to_thread` — it
+    must not block the event loop), `mcp.auth.build_auth_provider` (genuinely
+    synchronous — fastmcp's auth provider is built at **module import time**,
+    before any async startup hook exists to call into), and `fetch_userinfo`
+    (#1346). One implementation, not a sync/async pair that could quietly
+    drift apart.
     """
     response = httpx.get(f"{issuer.rstrip('/')}/.well-known/openid-configuration", timeout=timeout)
     response.raise_for_status()
-    jwks_uri: str = response.json()["jwks_uri"]
-    return jwks_uri
+    config: dict[str, Any] = response.json()
+    return config
+
+
+def discover_jwks_uri(issuer: str, *, timeout: float = 5.0) -> str:
+    """Resolve `jwks_uri` — the one REQUIRED endpoint — from OIDC discovery."""
+    return str(discover_oidc_config(issuer, timeout=timeout)["jwks_uri"])
+
+
+# ── userinfo fallback (#1346) ────────────────────────────────────────────────
+#
+# Cognito access tokens carry no `email`/`name` (only sub/client_id/scope/…),
+# so identity claims a token omits are resolved from the issuer's standard
+# `userinfo` endpoint instead — provider-neutral: any token that already embeds
+# `email` (Azure AD, Keycloak defaults, …) never triggers the round-trip.
+#
+# The cache is keyed by the token's SHA-256 (never the raw bearer — it must not
+# sit in a long-lived dict a heap dump could read) and bounded: userinfo is one
+# extra HTTP call per token per TTL, not per request.
+
+_USERINFO_TTL_SECONDS = 300.0
+_USERINFO_CACHE_MAX = 1024
+_userinfo_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _userinfo_cache_get(token: str) -> dict[str, Any] | None:
+    entry = _userinfo_cache.get(hashlib.sha256(token.encode()).hexdigest())
+    if entry is None or entry[0] < time.monotonic():
+        return None
+    return entry[1]
+
+
+def _userinfo_cache_put(token: str, claims: dict[str, Any]) -> None:
+    now = time.monotonic()
+    if len(_userinfo_cache) >= _USERINFO_CACHE_MAX:
+        for key in [k for k, (expiry, _) in _userinfo_cache.items() if expiry < now]:
+            del _userinfo_cache[key]
+        while len(_userinfo_cache) >= _USERINFO_CACHE_MAX:
+            # Still full after dropping expired entries: evict oldest-inserted.
+            del _userinfo_cache[next(iter(_userinfo_cache))]
+    _userinfo_cache[hashlib.sha256(token.encode()).hexdigest()] = (
+        now + _USERINFO_TTL_SECONDS,
+        claims,
+    )
+
+
+def _merge_userinfo(claims: dict[str, Any], userinfo: dict[str, Any]) -> dict[str, Any] | None:
+    """`claims` with `email`/`name` filled from `userinfo`, or None on sub mismatch.
+
+    OIDC Core §5.3.2: the client MUST verify the userinfo `sub` matches the
+    token's — a mismatch means the response describes someone else (an IdP bug
+    or a swapped response) and the sign-in must fail rather than mint a user
+    row from mixed identities.
+    """
+    if userinfo.get("sub") != claims.get("sub"):
+        return None
+    for claim in ("email", "name"):
+        if not claims.get(claim) and userinfo.get(claim):
+            claims[claim] = userinfo[claim]
+    return claims
+
+
+def fetch_userinfo(issuer: str, token: str, *, timeout: float = 5.0) -> dict[str, Any] | None:
+    """The issuer's userinfo response for `token` — sync, for `mcp.auth` (#1346).
+
+    Returns None when the provider publishes no `userinfo_endpoint` (it is
+    RECOMMENDED, not required — the caller proceeds with whatever the token
+    carried). Raises `httpx.HTTPError` on an outage: an unreachable endpoint is
+    an outage to surface, never an empty identity (the ADR 0039 decision 6
+    lesson applied to auth). The REST path (`OidcBearerScheme._verify`) does
+    the same fetch through its own async client; both share the TTL cache.
+    """
+    cached = _userinfo_cache_get(token)
+    if cached is not None:
+        return cached
+    endpoint = discover_oidc_config(issuer, timeout=timeout).get("userinfo_endpoint")
+    if not endpoint:
+        return None
+    response = httpx.get(
+        str(endpoint), headers={"Authorization": f"Bearer {token}"}, timeout=timeout
+    )
+    response.raise_for_status()
+    userinfo: dict[str, Any] = response.json()
+    _userinfo_cache_put(token, userinfo)
+    return userinfo
 
 
 class OidcBearerScheme:
@@ -184,19 +270,24 @@ class OidcBearerScheme:
         self._client = httpx.AsyncClient(timeout=timeout)
         self._jwks_uri: str | None = None
         self._jwks_cache: dict[str, Any] | None = None
+        self._userinfo_endpoint: str | None = None
 
     async def load_config(self) -> None:
-        """Resolve `jwks_uri` from OIDC discovery and pre-warm the JWKS cache.
+        """Resolve discovery endpoints and pre-warm the JWKS cache.
 
         Called once from `init_auth()` — fail-closed at startup, mirroring
         `azure_scheme.openid_config.load_config()`: a deployment must not report
         healthy while unable to validate a single token.
 
-        `discover_jwks_uri` is synchronous (shared with `mcp.auth`, which can
+        `discover_oidc_config` is synchronous (shared with `mcp.auth`, which can
         only call it synchronously — see its docstring), so it runs off the
-        event loop thread here rather than blocking it.
+        event loop thread here rather than blocking it. `userinfo_endpoint` is
+        optional (absent → tokens must carry their own identity claims).
         """
-        self._jwks_uri = await asyncio.to_thread(discover_jwks_uri, self._issuer)
+        config = await asyncio.to_thread(discover_oidc_config, self._issuer)
+        self._jwks_uri = str(config["jwks_uri"])
+        userinfo_endpoint = config.get("userinfo_endpoint")
+        self._userinfo_endpoint = str(userinfo_endpoint) if userinfo_endpoint else None
         await self._refresh_jwks()
 
     async def _refresh_jwks(self) -> dict[str, Any]:
@@ -269,6 +360,31 @@ class OidcBearerScheme:
         # third-party token-shape boundary — code review alone cannot settle it).
         if self._audience not in aud_values and claims.get("client_id") != self._audience:
             return None
+        # #1346: a token that omits `email` (Cognito access tokens carry none)
+        # gets it from the issuer's userinfo endpoint. Fail-closed on an outage:
+        # provisioning a user row with an empty email is silent data poisoning
+        # (the second such row can never sign in — `uq_users_email_lower`),
+        # whereas a 401 is a visible, retryable failure.
+        if not claims.get("email") and self._userinfo_endpoint is not None:
+            userinfo = _userinfo_cache_get(token)
+            if userinfo is None:
+                try:
+                    response = await self._client.get(
+                        self._userinfo_endpoint,
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                    response.raise_for_status()
+                    userinfo = response.json()
+                except httpx.HTTPError as exc:
+                    log.warning("oidc_userinfo_unavailable", issuer=self._issuer, error=str(exc))
+                    return None
+                assert userinfo is not None
+                _userinfo_cache_put(token, userinfo)
+            merged = _merge_userinfo(claims, userinfo)
+            if merged is None:
+                log.warning("oidc_userinfo_sub_mismatch", issuer=self._issuer)
+                return None
+            claims = merged
         return claims
 
 

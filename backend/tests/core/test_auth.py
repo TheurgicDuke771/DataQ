@@ -711,3 +711,233 @@ async def test_oidc_scheme_verify_returns_none_when_jwks_refresh_fails(
         headers={"kid": "whatever"},
     )
     assert await scheme._verify(token) is None
+
+
+# ── OidcBearerScheme: userinfo fallback (#1346) ──────────────────────────────
+#
+# Cognito access tokens carry no `email`/`name`; the scheme resolves them from
+# the issuer's userinfo endpoint. These tests drive the REAL verify path with
+# signed tokens — only HTTP is mocked.
+
+
+@pytest.fixture(autouse=True)
+def _clear_userinfo_cache() -> Any:
+    auth_mod._userinfo_cache.clear()
+    yield
+    auth_mod._userinfo_cache.clear()
+
+
+class _UserinfoTransport:
+    """Serves /jwks.json + /userinfo, counting userinfo hits (cache assertions)."""
+
+    def __init__(self, jwks: dict[str, Any], userinfo: dict[str, Any] | int) -> None:
+        self.jwks = jwks
+        self.userinfo = userinfo  # dict → 200 body; int → that status code
+        self.userinfo_calls = 0
+        self.userinfo_auth_headers: list[str] = []
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/jwks.json":
+            return httpx.Response(200, json=self.jwks)
+        if request.url.path == "/userinfo":
+            self.userinfo_calls += 1
+            self.userinfo_auth_headers.append(request.headers.get("Authorization", ""))
+            if isinstance(self.userinfo, int):
+                return httpx.Response(self.userinfo)
+            return httpx.Response(200, json=self.userinfo)
+        return httpx.Response(404)
+
+
+async def _scheme_with_userinfo(
+    monkeypatch: pytest.MonkeyPatch,
+    issuer: str,
+    jwks: dict[str, Any],
+    userinfo: dict[str, Any] | int,
+) -> tuple[auth_mod.OidcBearerScheme, _UserinfoTransport]:
+    scheme = auth_mod.OidcBearerScheme(issuer=issuer, audience="dataq-client-id")
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda url, timeout: httpx.Response(
+            200,
+            json={"jwks_uri": f"{issuer}/jwks.json", "userinfo_endpoint": f"{issuer}/userinfo"},
+            request=httpx.Request("GET", url),
+        ),
+    )
+    transport = _UserinfoTransport(jwks, userinfo)
+    monkeypatch.setattr(
+        scheme, "_client", httpx.AsyncClient(transport=httpx.MockTransport(transport.handler))
+    )
+    await scheme.load_config()
+    return scheme, transport
+
+
+def _cognito_access_token(private_key: rsa.RSAPrivateKey, issuer: str) -> str:
+    """The real Cognito access-token claim shape: client_id, no aud, NO email."""
+    return _sign(
+        private_key,
+        {
+            "sub": "cognito-sub-1",
+            "iss": issuer,
+            "client_id": "dataq-client-id",
+            "token_use": "access",
+            "exp": int(time.time()) + 3600,
+        },
+    )
+
+
+async def test_oidc_scheme_fetches_userinfo_when_token_lacks_email(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    issuer = "https://example-idp.test"
+    private_key, public_jwk = _rsa_keypair()
+    scheme, transport = await _scheme_with_userinfo(
+        monkeypatch,
+        issuer,
+        {"keys": [public_jwk]},
+        {"sub": "cognito-sub-1", "email": "olivia@example.com", "name": "Olivia"},
+    )
+    token = _cognito_access_token(private_key, issuer)
+
+    claims = await scheme._verify(token)
+    assert claims is not None
+    assert claims["email"] == "olivia@example.com"
+    assert claims["name"] == "Olivia"
+    # The userinfo call carried the SAME bearer the client presented.
+    assert transport.userinfo_auth_headers == [f"Bearer {token}"]
+
+
+async def test_oidc_scheme_userinfo_outage_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unreachable userinfo endpoint is a 401, never an empty-email upsert —
+    provisioning email='' poisons the row (uq_users_email_lower)."""
+    issuer = "https://example-idp.test"
+    private_key, public_jwk = _rsa_keypair()
+    scheme, _transport = await _scheme_with_userinfo(
+        monkeypatch, issuer, {"keys": [public_jwk]}, 503
+    )
+    assert await scheme._verify(_cognito_access_token(private_key, issuer)) is None
+
+
+async def test_oidc_scheme_userinfo_sub_mismatch_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OIDC Core 5.3.2: userinfo describing a DIFFERENT subject must fail the
+    sign-in, not mint a user row from mixed identities."""
+    issuer = "https://example-idp.test"
+    private_key, public_jwk = _rsa_keypair()
+    scheme, _transport = await _scheme_with_userinfo(
+        monkeypatch,
+        issuer,
+        {"keys": [public_jwk]},
+        {"sub": "someone-else", "email": "attacker@example.com"},
+    )
+    assert await scheme._verify(_cognito_access_token(private_key, issuer)) is None
+
+
+async def test_oidc_scheme_skips_userinfo_when_token_has_email(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Azure-style tokens that embed email never trigger the round-trip."""
+    issuer = "https://example-idp.test"
+    private_key, public_jwk = _rsa_keypair()
+    scheme, transport = await _scheme_with_userinfo(
+        monkeypatch, issuer, {"keys": [public_jwk]}, {"sub": "user-1"}
+    )
+    token = _sign(
+        private_key,
+        {
+            "sub": "user-1",
+            "email": "embedded@example.com",
+            "iss": issuer,
+            "aud": "dataq-client-id",
+            "exp": int(time.time()) + 3600,
+        },
+    )
+    claims = await scheme._verify(token)
+    assert claims is not None and claims["email"] == "embedded@example.com"
+    assert transport.userinfo_calls == 0
+
+
+async def test_oidc_scheme_userinfo_cached_across_verifies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One HTTP round-trip per token per TTL, not per request."""
+    issuer = "https://example-idp.test"
+    private_key, public_jwk = _rsa_keypair()
+    scheme, transport = await _scheme_with_userinfo(
+        monkeypatch,
+        issuer,
+        {"keys": [public_jwk]},
+        {"sub": "cognito-sub-1", "email": "olivia@example.com"},
+    )
+    token = _cognito_access_token(private_key, issuer)
+
+    first = await scheme._verify(token)
+    second = await scheme._verify(token)
+    assert first is not None and second is not None
+    assert second["email"] == "olivia@example.com"
+    assert transport.userinfo_calls == 1
+
+
+async def test_oidc_scheme_no_userinfo_endpoint_proceeds_with_token_claims(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`userinfo_endpoint` is RECOMMENDED, not required — a provider without one
+    still authenticates; the token's own claims are all there is."""
+    issuer = "https://example-idp.test"
+    private_key, public_jwk = _rsa_keypair()
+    # The original helper's discovery has NO userinfo_endpoint.
+    scheme = await _loaded_scheme(monkeypatch, issuer, {"keys": [public_jwk]})
+    claims = await scheme._verify(_cognito_access_token(private_key, issuer))
+    assert claims is not None
+    assert "email" not in claims
+
+
+def test_fetch_userinfo_returns_none_without_an_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda url, **kwargs: httpx.Response(
+            200, json={"jwks_uri": "https://x/jwks.json"}, request=httpx.Request("GET", url)
+        ),
+    )
+    assert auth_mod.fetch_userinfo("https://example-idp.test", "tok") is None
+
+
+def test_fetch_userinfo_fetches_then_serves_from_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
+        calls.append(url)
+        if "well-known" in url:
+            return httpx.Response(
+                200,
+                json={"jwks_uri": "https://x/jwks.json", "userinfo_endpoint": "https://x/userinfo"},
+                request=httpx.Request("GET", url),
+            )
+        return httpx.Response(
+            200,
+            json={"sub": "s-1", "email": "cached@example.com"},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    first = auth_mod.fetch_userinfo("https://example-idp.test", "tok-abc")
+    second = auth_mod.fetch_userinfo("https://example-idp.test", "tok-abc")
+    assert first == second == {"sub": "s-1", "email": "cached@example.com"}
+    # Second call: served from cache — no discovery, no userinfo HTTP.
+    assert len(calls) == 2
+
+
+def test_userinfo_cache_never_stores_the_raw_token() -> None:
+    """The cache key is a hash — the bearer itself must not sit in a long-lived
+    module dict (same posture as api_key_service's hashed lookup)."""
+    auth_mod._userinfo_cache_put("raw-bearer-token", {"sub": "s"})
+    assert "raw-bearer-token" not in auth_mod._userinfo_cache
+    assert auth_mod._userinfo_cache_get("raw-bearer-token") == {"sub": "s"}

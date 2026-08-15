@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+import httpx
 from fastapi_azure_auth.utils import is_guest
 from fastmcp.server.auth import AccessToken, AuthProvider, TokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier
@@ -46,8 +47,10 @@ from backend.app.core.auth import (
     DEV_BYPASS_DISPLAY_NAME,
     DEV_BYPASS_EMAIL,
     _dev_bypass_allowed,
+    _merge_userinfo,
     _upsert_user,
     discover_jwks_uri,
+    fetch_userinfo,
 )
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
@@ -241,6 +244,27 @@ def resolve_current_user(session: Session) -> User:
             # none either.
             subject = claims.get("sub")
             if subject:
+                # #1346: Cognito access tokens carry no email/name — resolve
+                # them from the issuer's userinfo endpoint, exactly as the REST
+                # validator does (shared cache in core.auth). Fail-closed on an
+                # outage: an empty-email upsert poisons the users row.
+                if not claims.get("email") and settings.oidc_issuer:
+                    try:
+                        userinfo = fetch_userinfo(settings.oidc_issuer, token.token)
+                    except httpx.HTTPError as exc:
+                        log.warning(
+                            "mcp_oidc_userinfo_unavailable",
+                            issuer=settings.oidc_issuer,
+                            error=str(exc),
+                        )
+                        raise McpAuthError(
+                            "could not resolve identity claims from the OIDC provider"
+                        ) from exc
+                    if userinfo is not None:
+                        merged = _merge_userinfo(claims, userinfo)
+                        if merged is None:
+                            raise McpAuthError("userinfo subject does not match the token")
+                        claims = merged
                 email = str(claims.get("email") or "")
                 name = claims.get("name")
                 return _upsert_user(
