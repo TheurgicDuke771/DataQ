@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "de9dcf22d295",
+  "strategy": "manual-commit",
+  "branch": "feature/rbac-741-enforcement",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/connections.py",
+    "backend/app/core/auth.py",
+    "backend/app/services/share_service.py",
+    "backend/app/services/suite_authz.py",
+    "backend/tests/api/test_role_enforcement.py",
+    "backend/tests/api/test_schedules.py",
+    "docs/changelog.md",
+    "docs/security.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/de/9dcf22d295/0/metadata.json",
+      "transcript": "/de/9dcf22d295/0/full.jsonl",
+      "compact_transcript": "/de/9dcf22d295/0/transcript.jsonl",
+      "content_hash": "/de/9dcf22d295/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 132,
+    "cache_creation_tokens": 79255,
+    "cache_read_tokens": 20511906,
+    "output_tokens": 39902,
+    "api_call_count": 66
+  }
+}

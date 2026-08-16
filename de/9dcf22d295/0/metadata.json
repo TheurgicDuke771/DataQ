@@ -1,0 +1,78 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "de9dcf22d295",
+  "session_id": "200eee08-e520-45c2-adb4-515311503f82",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-16T18:18:03.306802Z",
+  "branch": "feature/rbac-741-enforcement",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/connections.py",
+    "backend/app/services/share_service.py",
+    "backend/app/services/suite_authz.py",
+    "backend/app/core/auth.py",
+    "backend/tests/api/test_schedules.py",
+    "backend/tests/api/test_role_enforcement.py",
+    "docs/changelog.md",
+    "docs/security.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5",
+  "turn_id": "5f23f854ad17",
+  "checkpoint_transcript_start": 503,
+  "transcript_lines_at_start": 503,
+  "compact_transcript_start": 148,
+  "token_usage": {
+    "input_tokens": 132,
+    "cache_creation_tokens": 79255,
+    "cache_read_tokens": 20511906,
+    "output_tokens": 39902,
+    "api_call_count": 66
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01TFzWvpbQHfqha38hAa5AjT",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "5f23f854ad17",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 389,
+        "end": 390,
+        "entry_ids": [
+          "9c3f3765-93b8-4942-9394-f2f924c9d084"
+        ],
+        "tool_use_id": "toolu_01TFzWvpbQHfqha38hAa5AjT"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01TFzWvpbQHfqha38hAa5AjT"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "initial_attribution": {
+    "calculated_at": "2026-08-16T18:18:03.229949Z",
+    "agent_lines": 731,
+    "agent_removed": 42,
+    "human_added": 95,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 826,
+    "total_lines_changed": 891,
+    "agent_percentage": 86.75645342312009,
+    "metric_version": 2
+  }
+}
