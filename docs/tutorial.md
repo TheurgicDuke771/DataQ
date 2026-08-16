@@ -14,6 +14,12 @@ Open the app URL and sign in through your identity provider (SSO). You land on t
 
 ## 1. Connect a datasource
 
+> **This step needs the Admin role.** Connections are shared infrastructure holding
+> credentials, so only workspace **Admins** can create, edit, delete, or re-credential one
+> (ADR [0033](adr/0033-workspace-roles-rbac.md)). If you're a Member or Viewer, ask an Admin
+> to set the connection up — then pick this tutorial back up at
+> [step 2](#2-create-a-suite-and-point-it-at-a-target).
+
 1. Go to **Connections → Add connection**.
 2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, or Apache
    Iceberg). The form is spec-driven — it asks only for what that type needs.
@@ -21,6 +27,11 @@ Open the app URL and sign in through your identity provider (SSO). You land on t
    then click **Test**. A green result means DataQ can reach it.
 
 *Tip:* name it for its environment — e.g. `snowflake-prod` — so a suite's env is unambiguous.
+
+*Later:* moving an existing connection to a different host — a new Snowflake `account`, a new
+`endpoint_url` — requires re-entering the credential in the same save. The form asks for it as
+soon as you change one of those fields; a stored credential is never sent to a destination you
+changed without it.
 
 ## 2. Create a suite and point it at a target
 

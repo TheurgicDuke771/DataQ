@@ -14,6 +14,22 @@ Common problems and where to look. For deeper telemetry (logs, traces, where the
 - Use **Rotate credential** (re-auth) if the secret expired.
 - A missing/expired warehouse or role usually shows as a config/permission error.
 
+**Saving a connection returns `422 credential_redirect`, or the edit form suddenly asks for
+the credential again.**
+
+You changed a field that decides where the credential is sent — a host, URL, or URI
+(Snowflake `account`, ADLS `account_url`, S3/dbt `endpoint_url`, Unity Catalog
+`workspace_url`, Iceberg `catalog_uri` / `warehouse` / `properties`, Airflow `base_url`, dbt
+`artifacts_uri`). Re-enter the credential in the same save and it will go through;
+`detail.required` on the API error names exactly what to send. See
+[Datasources & checks](datasources-checks.md#moving-a-connection-to-a-new-host).
+
+**Creating or editing a connection returns `403`.**
+
+Connection management is **Admin-only** (ADR [0033](adr/0033-workspace-roles-rbac.md)). Ask a
+workspace Admin, or have them promote you under **Admin → Members**. A role change applies on
+your next request, including on API keys you already hold — no need to re-mint one.
+
 **A connection card shows "credential expires in Nd" / "credential expired".**
 
 Some credentials state their own expiry — an Azure SAS carries it in the token — so DataQ

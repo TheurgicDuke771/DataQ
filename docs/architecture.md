@@ -86,6 +86,7 @@ erDiagram
         string aad_object_id UK "nullable — NULL for non-AAD (email-OTP) identities"
         string email UK "unique on lower(email) — the cross-authenticator identity key"
         string display_name
+        string role "admin | member | viewer — CHECK-constrained, ADR 0033"
         timestamptz last_seen_at
     }
     api_keys {
@@ -327,7 +328,7 @@ erDiagram
 ### Reading notes
 
 - **Conventions (elided from the diagram for noise):** every table has a `gen_random_uuid()` UUID PK and `created_at`; user-editable entities also carry `updated_at` (`runs`/`results` deliberately don't — they are engine-mutated event rows whose lifecycle lives in `started_at`/`finished_at`/`sample_failures_purged_at`). Status/type columns are `TEXT` + `CHECK` constraints, **not** native PG enums (migration ergonomics).
-- **`shares.permission` grants are `view`/`edit` only.** `admin` is legal in the DB `CHECK` but never granted (`share_service.GRANTABLE_PERMISSIONS`): workspace-admin is *implicit* on every suite (config allowlist, not a share row) and `owner` is `suites.created_by`, not a share — ADR [0027](adr/0027-suite-permission-model-workspace-admin.md).
+- **`shares.permission` grants are `view`/`edit` only.** `admin` is legal in the DB `CHECK` but never granted (`share_service.GRANTABLE_PERMISSIONS`): workspace-admin is *implicit* on every suite (a stored `users.role = 'admin'`, or the `WORKSPACE_ADMIN_EMAILS` bootstrap/break-glass allowlist — ADR [0033](adr/0033-workspace-roles-rbac.md), amending ADR [0027](adr/0027-suite-permission-model-workspace-admin.md)) and `owner` is `suites.created_by`, not a share. **Authorization is two axes:** the stored workspace role gates whole resource classes (connection mutations are Admin-only), the per-suite grant gates individual suites; neither replaces the other.
 - **Cascade posture (ADR [0020](adr/0020-history-and-audit-strategy.md)):** deleting a suite cascades its checks, runs, results, shares, trigger bindings, schedules, and notification config; deleting a connection cascades its version history. History is not retained past entity deletion — accepted. Version snapshots survive their *author* (`changed_by` is `SET NULL`), not their entity.
 - **`pipeline_runs` ≠ `runs` — no FK between them.** Orchestrator pipeline executions correlate to the DQ suite runs they trigger only via the string marker `runs.triggered_by = '<provider>:<pipeline_or_dag_id>:<provider_run_id>'` (dotted lines above); `trigger_bindings` matches pipeline runs by `(provider, pipeline_or_dag_id, env)`, also without an FK. A partial unique index on `runs (suite_id, triggered_by)` dedupes orchestration-triggered runs.
 - **Singleton constraints:** at most one orchestrator connection per `(type, env)` (partial unique index over `adf`/`airflow`/`dbt` only — datasources may repeat); one `suite_notifications` row per suite; one live `shares` row per `(suite, user)`.

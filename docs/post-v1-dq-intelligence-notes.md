@@ -96,7 +96,7 @@ seams the app already has (`ConnectionAdapter`, `SecretStore`, `OrchestrationPro
 credential/endpoint.**
 
 - **Configuration scope = workspace-admin, not per-user.** Single-tenant + customer-
-  deployed (BYOL, ADR 0013): the admin (`WORKSPACE_ADMIN_EMAILS`) configures **one**
+  deployed (BYOL, ADR 0013): the admin (a stored `users.role = 'admin'`, ADR 0033) configures **one**
   provider (provider + endpoint + model + credential), credential stored in the
   **`SecretStore`** (Key Vault is one impl). Per-user keys are friction for a team tool —
   defer as an optional power-user *override*, not the primary model.

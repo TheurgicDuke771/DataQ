@@ -36,7 +36,7 @@ Two things the scorecard deliberately will not do, and you should read them the 
 - Use suite **export / import** to promote a suite between environments (author on DEV,
   import against the UAT/PROD connection) instead of re-clicking checks.
 - Share suites with **view** by default; reserve **edit** for the owning team
-  (suite-level sharing is the access model — there are no folder/workspace scopes).
+  (suite-level sharing is the access model **for suites**; connection management is gated separately by workspace role — Admin-only, ADR 0033. There are no folder scopes).
 
 ## Severity: make the tiers mean something
 

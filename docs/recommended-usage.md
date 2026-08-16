@@ -107,16 +107,31 @@ acts **as that user** — it sees exactly what the user can.
 
 ## 8. Set up access
 
-**Do:** users sign in via **SSO**. Add workspace admins via the `WORKSPACE_ADMIN_EMAILS`
-allowlist; share individual suites (**view / edit**) from the suite.
+**Do:** users sign in via **SSO**. The first admin is seeded by the `WORKSPACE_ADMIN_EMAILS`
+bootstrap allowlist; from then on manage roles under **Admin → Members**. Share individual
+suites (**view / edit**) from the suite.
+
+Access is **two independent axes** (ADR [0033](adr/0033-workspace-roles-rbac.md)):
+
+| | What it gates |
+|---|---|
+| **Workspace role** — `admin` / `member` / `viewer` | Whole resource classes. Connection create/edit/delete/re-auth is **Admin-only**; Viewers are read-only everywhere. |
+| **Per-suite grant** — `view` / `edit` | One suite at a time. A Viewer is capped at `view` even if granted `edit`. |
 
 **Recommended:**
 
 - **Share by default with `view`**; reserve `edit` for the owning team.
-- **Keep `WORKSPACE_ADMIN_EMAILS` minimal** — a workspace admin can read *every* suite's
-  results, including failing-row samples (the one place PII lands), and manage/delete any
-  suite (ADR 0027). For a regulated/PHI deployment, treat the access-audit trail as a
-  prerequisite before granting it broadly.
+- **Keep the Admin role minimal** — an Admin can read *every* suite's results, including
+  failing-row samples (the one place PII lands), manage or delete any suite (ADR 0027), and
+  manage the connections every suite runs on. For a regulated/PHI deployment, treat the
+  access-audit trail as a prerequisite before granting it broadly.
+- **Give day-to-day authors `member`.** They can build suites and checks against existing
+  connections without holding the credentials for them.
+- **`WORKSPACE_ADMIN_EMAILS` only ever grants** — it is a bootstrap seed and a lockout
+  break-glass, never a way to demote. Removing someone from it does not take their Admin role
+  away; change the role in **Admin → Members**.
+- Role changes take effect **immediately, on the next request** — including for PATs the user
+  already holds. There is no token to revoke.
 
 ---
 

@@ -51,7 +51,7 @@ Manual checklist (the mutating tail):
 
 - **GX-only** check engine (Databricks DQX deferred to v1.1); batch-oriented (not
   streaming).
-- **Single tenant**, suite-level access sharing; workspace-admin is a config allowlist.
+- **Single tenant**, suite-level access sharing **plus a stored workspace role** — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. `WORKSPACE_ADMIN_EMAILS` is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.
 - Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
   deferred — you specify targets explicitly. JSON flat files deferred (CSV/Parquet in v1).
 - Auth is one of **OIDC SSO (Azure AD or Cognito), email OTP (ADR 0032, IdP-less), or dev-bypass**,
