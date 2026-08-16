@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "3f4518b8726a",
+  "strategy": "manual-commit",
+  "branch": "feature/ses-alert-email-to",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "deploy/terraform/aws/ecs.tf",
+    "deploy/terraform/aws/ses.tf",
+    "deploy/terraform/aws/terraform.tfvars.example",
+    "deploy/terraform/aws/variables.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3f/4518b8726a/0/metadata.json",
+      "transcript": "/3f/4518b8726a/0/full.jsonl",
+      "compact_transcript": "/3f/4518b8726a/0/transcript.jsonl",
+      "content_hash": "/3f/4518b8726a/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 92,
+    "cache_creation_tokens": 34856,
+    "cache_read_tokens": 17251491,
+    "output_tokens": 21036,
+    "api_call_count": 46
+  }
+}
