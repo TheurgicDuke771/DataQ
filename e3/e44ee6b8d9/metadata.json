@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "e3e44ee6b8d9",
+  "strategy": "manual-commit",
+  "branch": "feature/rbac-741-enforcement",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/connections.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e3/e44ee6b8d9/0/metadata.json",
+      "transcript": "/e3/e44ee6b8d9/0/full.jsonl",
+      "compact_transcript": "/e3/e44ee6b8d9/0/transcript.jsonl",
+      "content_hash": "/e3/e44ee6b8d9/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 23838,
+    "cache_read_tokens": 8759559,
+    "output_tokens": 17304,
+    "api_call_count": 24
+  }
+}
