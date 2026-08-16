@@ -590,6 +590,26 @@ class Settings(BaseSettings):
     auth_otp_allowed_emails: str = ""
     auth_otp_allowed_domains: str = ""
 
+    # Workspace role a JIT-provisioned OTP signup lands on (ADR 0033 decision 8).
+    # `member` matches what an OTP signup could already do before roles existed;
+    # set `viewer` when the signup allowlist is a whole DOMAIN, where "anyone at
+    # acme.io may sign in" should not also mean "anyone at acme.io may author
+    # suites". Applies to the FIRST sign-in only — it seeds a new row's role and
+    # never re-writes an existing one, so an in-app promotion is not undone by
+    # the user simply signing in again.
+    #
+    # `admin` is deliberately NOT offered: it would make the signup allowlist a
+    # second, silent admin-minting mechanism competing with the two ADR 0033
+    # sanctions (in-app `PATCH /admin/users/{id}/role`, and the
+    # WORKSPACE_ADMIN_EMAILS break-glass).
+    #
+    # Precedence, decided in the ADR: the WORKSPACE_ADMIN_EMAILS write-through
+    # WINS over this default. An operator on both lists is stored `admin` at
+    # first sign-in, never `member`-stored-but-admin-effective — so dropping the
+    # env entry later cannot silently demote the bootstrap admin that #742's
+    # last-admin guard was counting.
+    auth_otp_default_role: Literal["member", "viewer"] = "member"
+
     # Session lifetime (ADR 0032 decision 3) — a FIXED horizon with no refresh pair;
     # re-running the OTP flow is the refresh. Bounded above so a deployment cannot
     # configure a de-facto immortal browser credential.

@@ -7,8 +7,8 @@ from pydantic import ConfigDict, field_validator
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
-from backend.app.core.auth import get_current_user, is_workspace_admin
-from backend.app.db.models import User
+from backend.app.core.auth import get_current_user, is_workspace_admin, resolve_role
+from backend.app.db.models import DEFAULT_WORKSPACE_ROLE, User
 from backend.app.db.session import get_db
 from backend.app.services import user_service
 
@@ -32,10 +32,23 @@ class MeResponse(ApiModel):
     email: str
     display_name: str | None
     last_seen_at: datetime | None
+    # The caller's EFFECTIVE workspace role (ADR 0033) — `admin | member |
+    # viewer`. Not the raw `users.role` column: it is stamped from
+    # `resolve_role`, so a break-glass allowlist admin whose stored row still
+    # says `member` reads as `admin` here, matching what every gate will
+    # actually do. Overrides the model_validate passthrough for exactly that
+    # reason (see the handler).
+    #
+    # The frontend mirrors this to decide what to RENDER (#743); the server
+    # stays the decider, same principle as the per-suite level stamping.
+    role: str = DEFAULT_WORKSPACE_ROLE
     # Whether this user may use the /admin endpoints — the frontend gates the
     # Admin nav item + route on it (server-side authz still enforces; this only
     # decides what to render). Not a User column: defaulted here so the passthrough
     # fields still load straight off the ORM object, then stamped in the handler.
+    # Redundant with `role == 'admin'` and deliberately kept: it is the contract
+    # every existing client already reads, and removing it would be a breaking
+    # API change for zero gain.
     is_workspace_admin: bool = False
 
 
@@ -51,6 +64,7 @@ def me(current_user: Annotated[User, Depends(get_current_user)]) -> MeResponse:
     # column is picked up without editing this handler); only the computed flag is
     # stamped on.
     resp = MeResponse.model_validate(current_user)
+    resp.role = resolve_role(current_user)
     resp.is_workspace_admin = is_workspace_admin(current_user)
     return resp
 
@@ -89,5 +103,6 @@ def update_me(
     """
     updated = user_service.update_display_name(db, current_user, payload.display_name)
     resp = MeResponse.model_validate(updated)
+    resp.role = resolve_role(updated)
     resp.is_workspace_admin = is_workspace_admin(updated)
     return resp

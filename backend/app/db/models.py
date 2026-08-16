@@ -98,6 +98,16 @@ DQ_DIMENSIONS = (
 PIPELINE_RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 ORCHESTRATION_PROVIDERS = ("adf", "airflow", "dbt")
 PERMISSIONS = ("view", "edit", "admin")
+# Coarse workspace roles (ADR 0033) — the axis ORTHOGONAL to `PERMISSIONS`
+# above. A role says what *kind* of user you are workspace-wide; a share says
+# what you may touch on one suite. Neither replaces the other: a Member with no
+# share on a suite still cannot see it. Deliberately a fixed enum on `users`,
+# not a roles table — groups/custom roles are recorded as deferred in the ADR.
+# Named Viewer (not Guest) because `AZURE_ALLOW_GUEST_USERS` already means
+# Entra B2B guests and two "guest" concepts would collide.
+WORKSPACE_ROLES = ("admin", "member", "viewer")
+DEFAULT_WORKSPACE_ROLE = "member"
+ADMIN_ROLE = "admin"
 ENVS = ("dev", "qa", "uat", "prod")
 # Per-suite alert delivery threshold (suite_notifications.alert_on). 'fail' =
 # fail/critical only, 'warn' = warn+, 'always' = every terminal run.
@@ -177,7 +187,10 @@ class User(Base):
     # databases and production carry the same object under the same name (the #990
     # parity check compares the two; see `ApiKey.__table_args__` below for why the
     # name — not just the enforcement — is what matters).
-    __table_args__ = (Index("uq_users_email_lower", text("lower(email)"), unique=True),)
+    __table_args__ = (
+        Index("uq_users_email_lower", text("lower(email)"), unique=True),
+        _in_check("role", WORKSPACE_ROLES, "role_valid"),
+    )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     aad_object_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
@@ -196,6 +209,24 @@ class User(Base):
     # migration 6230293aea96.
     display_name_override: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
+    )
+    # The coarse workspace role — `admin | member | viewer` (ADR 0033, #740).
+    # `server_default 'member'` is what makes the migration additive: every row
+    # that predates the column lands on the tier that matches what it could
+    # already do (see the migration's docstring for why that is the *correct*
+    # historical value and not a placeholder).
+    #
+    # This column is the STORED half of workspace-admin; the other half is the
+    # `WORKSPACE_ADMIN_EMAILS` allowlist, which ADR 0033 decision 6 demotes to a
+    # bootstrap seed + lockout break-glass. `core.auth.is_workspace_admin` reads
+    # `role == 'admin' OR allowlisted`, so an existing deployment upgrades with
+    # zero config change. The sign-in paths write `admin` through on an
+    # allowlisted email, and — deliberately — **only ever promote**: an upsert
+    # never writes a role *down*, so dropping an env entry after the in-app
+    # admin exists cannot silently demote them out from under the last-admin
+    # guard (#742), which counts stored roles only.
+    role: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text(f"'{DEFAULT_WORKSPACE_ROLE}'")
     )
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()

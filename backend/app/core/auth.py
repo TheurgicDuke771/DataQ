@@ -53,7 +53,7 @@ from starlette.requests import HTTPConnection
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.db.models import User
+from backend.app.db.models import ADMIN_ROLE, DEFAULT_WORKSPACE_ROLE, User
 from backend.app.db.session import get_db
 from backend.app.services import api_key_service, session_service
 from backend.app.services.otp_service import normalize_email
@@ -520,6 +520,42 @@ class IdentityConflictError(DataQError):
     code = "identity_conflict"
 
 
+def bootstrap_role(email: str, *, default: str = DEFAULT_WORKSPACE_ROLE) -> str:
+    """The role a sign-in should SEED a brand-new user row with (ADR 0033 dec. 6/8).
+
+    `admin` if the address is on the `WORKSPACE_ADMIN_EMAILS` allowlist, else
+    `default` (the caller's signup default — `member` for the OIDC/AAD paths,
+    `AUTH_OTP_DEFAULT_ROLE` for OTP signups). This encodes the ADR's precedence
+    rule in ONE place: **the allowlist write-through wins over any signup
+    default**, so an operator on both lists is stored `admin` at first sign-in
+    rather than `member`-stored-but-admin-effective — which is what stops a later
+    env-entry removal from silently demoting the bootstrap admin that #742's
+    last-admin guard counts.
+
+    Seeding only. `promoted_role` below is the separate rule for rows that
+    already exist.
+    """
+    return ADMIN_ROLE if get_settings().is_admin_email(email) else default
+
+
+def promoted_role(email: str, stored: str) -> str:
+    """The role an EXISTING row should carry after a sign-in — promote-only.
+
+    An allowlisted address is written up to `admin` (so an operator added to the
+    env allowlist becomes a stored admin on their next sign-in, not merely an
+    effective one). Everything else keeps whatever is stored: a sign-in must
+    never write a role *down*.
+
+    That asymmetry is load-bearing rather than cautious. If removal from the env
+    allowlist also demoted the stored row, then the break-glass path would be
+    able to *take* admin away as well as grant it — and #742's last-admin guard,
+    which deliberately counts stored-role admins only, could be talked out of its
+    invariant by an env edit plus one sign-in. Demotion has exactly one sanctioned
+    route: `PATCH /admin/users/{id}/role`, where the guard runs.
+    """
+    return ADMIN_ROLE if get_settings().is_admin_email(email) else stored
+
+
 def _claim_unlinked_user(
     db: Session,
     *,
@@ -580,6 +616,13 @@ def _claim_unlinked_user(
             ),
             last_seen_at=now,
             updated_at=now,
+            # Promote-only (see `promoted_role`): the row being claimed already
+            # exists, so its stored role is authoritative and only the allowlist
+            # may raise it. `**` rather than `role=promoted_role(...)` because
+            # the no-op branch must write NOTHING — passing the column's own
+            # value back would make a concurrent in-app role change racy against
+            # a sign-in that never intended to touch roles at all.
+            **({"role": ADMIN_ROLE} if get_settings().is_admin_email(email) else {}),
         )
         .returning(User)
     ).scalar_one_or_none()
@@ -610,6 +653,12 @@ def _upsert_user(
             oidc_issuer=oidc_issuer,
             email=email,
             display_name=display_name,
+            # Seeds a NEW row only (the conflict branch below is promote-only).
+            # No signup-default knob on this path: `AUTH_OTP_DEFAULT_ROLE` is
+            # scoped to OTP signups by ADR 0033 decision 8, because there the
+            # allowlist can be a whole domain; an OIDC issuer is already the
+            # deployment's chosen identity boundary.
+            role=bootstrap_role(email),
             last_seen_at=now,
         )
         .on_conflict_do_update(
@@ -617,6 +666,11 @@ def _upsert_user(
             set_={
                 "email": email,
                 "oidc_issuer": oidc_issuer,
+                # Promote-only — see `promoted_role`. Omitted entirely (not
+                # written back as itself) when the address is not allowlisted,
+                # so this per-request upsert never participates in a race with
+                # an in-app role change it has no opinion about.
+                **({"role": ADMIN_ROLE} if get_settings().is_admin_email(email) else {}),
                 # Branches on `display_name_override` (#1139, migration
                 # 6230293aea96), not a plain overwrite AND not a bare COALESCE.
                 # This upsert runs on EVERY real-mode request (no session cache
@@ -1097,19 +1151,55 @@ else:
     get_current_user = _get_current_user_unconfigured
 
 
-def is_workspace_admin(user: User) -> bool:
-    """True iff the user is in the workspace-admin allowlist (WORKSPACE_ADMIN_EMAILS).
+# Ordered workspace-role ranks (ADR 0033). Mirrors `suite_authz._RANK`'s shape
+# so the two authz axes report and compare a level the same way — but they are
+# deliberately SEPARATE ladders: `admin` here is workspace-admin, which the suite
+# ladder then re-expresses as an implicit per-suite `admin` (ADR 0027).
+# Written out rather than derived from `WORKSPACE_ROLES`' tuple order, which is
+# alphabetical-by-accident and would silently invert the ladder if reordered.
+# `test_role_rank_covers_every_stored_role` holds the two in sync instead.
+_ROLE_RANK = {"viewer": 1, DEFAULT_WORKSPACE_ROLE: 2, ADMIN_ROLE: 3}
 
-    Workspace admin is a single config-driven set — the whole-workspace
-    administrator, distinct from the per-suite view/edit/admin/owner ladder in
-    `suite_authz`. Matched case-insensitively on the IdP-supplied email, a
-    generic identity attribute, so no Azure/Entra claim is read here
-    (ADR 0010/0013, CLAUDE.md §11). Resolves the allowlist via `get_settings()`
-    (not the import-time `_settings` singleton) so a test can vary it with
-    `get_settings.cache_clear()`; in a running process settings are read once at
-    startup (12-factor — change the env and restart).
+
+def resolve_role(user: User) -> str:
+    """The user's effective workspace role — `admin | member | viewer` (ADR 0033).
+
+    The one place the two admin sources compose: the **stored** `users.role`
+    (the ADR's coarse axis, #740) OR the `WORKSPACE_ADMIN_EMAILS` allowlist,
+    which decision 6 demotes from *the* admin mechanism to a bootstrap seed and
+    lockout break-glass. Allowlist membership is matched case-insensitively on
+    the IdP-supplied email — a generic identity attribute, so no Azure/Entra
+    claim is read here (ADR 0010/0013, CLAUDE.md §11).
+
+    The allowlist can only ever *raise* the answer to `admin`, never lower it:
+    an operator who removes themselves from the env keeps whatever role is
+    stored, which is what makes the env path recoverable rather than a second
+    source of truth that can silently demote people.
+
+    Resolved per request, deliberately — no caching, no session material. A role
+    change therefore takes effect on the target's very next request, including
+    requests made with their PATs, since a PAT authenticates *as its user*
+    (ADR 0026): demote the user and the token demotes with them, with no token
+    revocation machinery to build or to get wrong.
+
+    Reads `get_settings()` (not the import-time `_settings` singleton) so a test
+    can vary the allowlist with `get_settings.cache_clear()`; in a running
+    process settings are read once at startup (12-factor — change env, restart).
     """
-    return get_settings().is_admin_email(user.email)
+    if user.role == ADMIN_ROLE or get_settings().is_admin_email(user.email):
+        return ADMIN_ROLE
+    return user.role
+
+
+def is_workspace_admin(user: User) -> bool:
+    """True iff the user is a workspace admin — stored role OR allowlist (ADR 0033).
+
+    Workspace admin is the whole-workspace administrator, distinct from the
+    per-suite view/edit/admin/owner ladder in `suite_authz` (on which they are
+    an implicit `admin` on every suite — ADR 0027, unchanged; only its *source*
+    moved here). Thin alias over `resolve_role` so the two can never drift.
+    """
+    return resolve_role(user) == ADMIN_ROLE
 
 
 def require_workspace_admin(
@@ -1127,3 +1217,39 @@ def require_workspace_admin(
             status_code=403,
         )
     return current_user
+
+
+def require_role(minimum: str) -> Callable[..., User]:
+    """Build a FastAPI dependency requiring at least `minimum` workspace role.
+
+    The coarse-axis sibling of `suite_authz.require_permission`: that one gates a
+    *resource*, this one gates a *capability the workspace grants at all*. Ranked
+    `viewer(1) < member(2) < admin(3)`, and the 403 carries `have`/`need` exactly
+    like the suite ladder so both axes report a denial in one shape.
+
+    Deliberately a dependency factory rather than three hand-written
+    dependencies: the enforcement points (#741) must all resolve the role through
+    `resolve_role`, and a factory makes that structural instead of a convention
+    each new call site could quietly break. Because it composes `get_current_user`,
+    the gate is identical for a browser session, an Azure AD / OIDC token, and a
+    PAT — there is no auth-mode branching to keep in sync.
+
+    Raises 403, never 404: unlike the suite ladder there is no existence to hide.
+    """
+    if minimum not in _ROLE_RANK:
+        raise ValueError(
+            f"unknown workspace role: {minimum!r}"
+        )  # pragma: no cover — programmer error
+
+    def dependency(current_user: Annotated[User, Depends(get_current_user)]) -> User:
+        role = resolve_role(current_user)
+        if _ROLE_RANK[role] < _ROLE_RANK[minimum]:
+            raise DataQError(
+                code="workspace_role_required",
+                message=f"This action requires the '{minimum}' workspace role or higher.",
+                status_code=403,
+                detail={"have": role, "need": minimum},
+            )
+        return current_user
+
+    return dependency
