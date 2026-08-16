@@ -81,10 +81,17 @@ export async function logout(): Promise<void> {
     // a raw Cognito error page with the hosted-UI session still alive (a
     // sign-in right after silently re-authenticates the old user). Build the
     // logout URL ourselves from the discovered end_session_endpoint.
-    const endSession = await mgr.metadataService.getEndSessionEndpoint();
-    // Clear the local session first either way — matching signoutRedirect,
-    // which also removes the stored user before navigating.
+    // Clear the local session BEFORE the metadata fetch: discovery needs the
+    // network, removeUser doesn't, and a failed discovery must not leave the
+    // click a silent no-op with the session still alive (PR #1367 review).
     await mgr.removeUser();
+    let endSession: string | undefined;
+    try {
+      endSession = await mgr.metadataService.getEndSessionEndpoint();
+    } catch (err) {
+      console.error('OIDC end-session discovery failed; local session cleared only', err);
+      return;
+    }
     if (!endSession) return; // nothing discoverable to redirect to; local session is gone
     const url = new URL(endSession);
     url.searchParams.set('client_id', authConfig.clientId ?? '');

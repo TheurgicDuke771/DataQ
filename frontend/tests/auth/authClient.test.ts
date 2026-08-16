@@ -221,4 +221,17 @@ describe('authClient.logout (#1364)', () => {
     expect(assignSpy).not.toHaveBeenCalled();
     expect(mgr.signoutRedirect).not.toHaveBeenCalled();
   });
+
+  it('clears the local session even when the metadata fetch REJECTS (review finding)', async () => {
+    mockRealConfigWithLogoutStyle('cognito');
+    const mgr = fakeManagerWithEndSession(undefined);
+    mgr.metadataService.getEndSessionEndpoint = vi
+      .fn()
+      .mockRejectedValue(new Error('discovery unreachable'));
+    mockOidc(mgr);
+    const { logout } = await import('../../src/auth/authClient');
+    await expect(logout()).resolves.toBeUndefined(); // must not reject — App.tsx void-discards it
+    expect(mgr.removeUser).toHaveBeenCalledOnce();
+    expect(assignSpy).not.toHaveBeenCalled();
+  });
 });
