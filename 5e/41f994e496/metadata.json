@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "5e41f994e496",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1355-origin-secret",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "deploy/README.md",
+    "deploy/terraform/aws/cloudfront.tf",
+    "deploy/terraform/aws/ecs.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5e/41f994e496/0/metadata.json",
+      "transcript": "/5e/41f994e496/0/full.jsonl",
+      "compact_transcript": "/5e/41f994e496/0/transcript.jsonl",
+      "content_hash": "/5e/41f994e496/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 11178,
+    "cache_read_tokens": 3516576,
+    "output_tokens": 5036,
+    "api_call_count": 7
+  }
+}
