@@ -35,7 +35,7 @@ mode for you. A production deployment must flip all of the following. Values liv
 | `AUTH_DEV_BYPASS` | `true` in the compose file, but **inert by default** — email OTP (`DATAQ_SIGNIN_EMAIL`) wins over it in `auth.py` whenever OTP is configured, which it is out of the box (#1150). It only takes effect once you explicitly clear `DATAQ_SIGNIN_EMAIL` (the documented downgrade). | **`false`** — this is the master auth switch; leaving it on means **no authentication at all**. |
 | `AZURE_TENANT_ID` / `AZURE_API_CLIENT_ID` / `AZURE_SPA_CLIENT_ID` | empty | your Azure AD tenant + the two app registrations (API + SPA). |
 | **Frontend auth config** | `DATAQ_AUTH_MODE=otp` (eval default — compose sets `${DATAQ_AUTH_MODE:-otp}`) | the **same generic image**, reconfigured at **runtime** — `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (ADR 0028). **No rebuild** — nginx injects `/config.js` from env. See [frontend/Dockerfile](../frontend/Dockerfile). Optional `DATAQ_AUTH_SCOPE` (#1347) **replaces** the requested OAuth scope string entirely for IdPs with a different scope vocabulary — AWS Cognito rejects the default list's `offline_access` (`invalid_scope`), so a Cognito deployment sets `openid email profile`; leave unset for Azure AD. Optional `DATAQ_AUTH_LOGOUT_STYLE` (#1364) selects the sign-out dialect: unset = standard OIDC RP-Initiated Logout (Azure AD); `cognito` = AWS Cognito's non-conformant `/logout`, which requires `client_id` + `logout_uri` and 400s on the standard parameters. Optional `DATAQ_ORIGIN_SECRET` (#1355) arms the origin-secret guard: nginx 403s any request not carrying the matching `X-DataQ-Origin-Secret` header (a fronting CDN stamps it on origin fetches — on AWS, CloudFront's custom origin header; any CDN that can set a static origin header works). **Alphanumeric values only** (the nginx map uses `:` as its delimiter); empty = guard fully open, the compose/BYOL/Azure default. The load-balancer health check must probe the guard-exempt `/_alb-health`. |
-| `SECRET_STORE` | `openbao` (local/eval — ADR 0039) | **`azure_key_vault`** + `AZURE_KEY_VAULT_URL` + the managed identity's `AZURE_CLIENT_ID` (#408). |
+| `SECRET_STORE` | `openbao` (local/eval — ADR 0039) | **`azure_key_vault`** + `AZURE_KEY_VAULT_URL` + the managed identity's `AZURE_CLIENT_ID` (#408). On AWS: **`aws_secrets_manager`** + `AWS_SECRETS_MANAGER_PREFIX` (#1337/#1338) — the app reads/writes Secrets Manager under `<prefix>/…` via the ECS task role (boto3's ambient credential chain; no stored bootstrap credential). See [AWS deployment](#aws-deployment). |
 | `DATABASE_URL` / `REDIS_URL` | inline, passwordless | Key Vault-backed Container Apps secrets — **never literals**; real credentials. A TLS redis uses the `rediss://` scheme; celery requires an explicit `ssl_cert_reqs` query parameter on it and the app defaults `ssl_cert_reqs=required` when absent (#1363 — without the default, a bare `rediss://` URL crash-loops the worker at boot with `ValueError: A rediss:// URL must have parameter ssl_cert_reqs`, the #1361 failure). An explicit value, even a weaker one, is never rewritten. |
 | `CORS_ALLOW_ORIGINS` | n/a (same-origin) | empty — the frontend Container App proxies `/api` same-origin (ADR 0028); set the SPA origin only if you split them. |
 | `PUBLIC_BASE_URL` | n/a | the public origin — used to assemble inbound webhook URLs **and** the "View run" deep links in Slack/email alerts (#416); unset → alerts omit the link. |
@@ -432,6 +432,35 @@ az postgres flexible-server restart -n <server> -g dataq-rg
 **Still your judgement:** migrations touching hot tables (`connections`, `runs`,
 `results`, `checks`) deserve an off-peak window or a quiesce. `lock_timeout` turns
 a hang into a failed deploy — better, but still a failed deploy.
+
+## AWS deployment
+
+DataQ also runs as a **parallel deployment on AWS** (live since 2026-08-15; Azure
+stays primary prod). Everything Azure-specific above has an AWS counterpart behind
+the same app seams (ADR 0010/0013/0028) — no app code differs between the clouds.
+
+- **Infra runbook:** [`deploy/terraform/aws/README.md`](terraform/aws/README.md) —
+  the OpenTofu stack (ECS Fargate api/worker/frontend + migrate task, RDS,
+  ElastiCache, Cognito, Secrets Manager, CloudFront→ALB ingress, SES alerts, ADOT
+  sidecars → X-Ray), the apply recipe, the state-encryption rules, and the
+  `-replace` procedure for rolling task-definition changes.
+- **Deploy workflow:** [`deploy-aws.yml`](../.github/workflows/deploy-aws.yml)
+  (`workflow_dispatch`) — build → GHCR (`aws-<sha>` tags) → migrate RunTask gated
+  on exit 0 → ECS rolls verified against the primary deployment's image → optional
+  CloudFront smoke.
+
+The AWS-shaped values for the production-prerequisites table above (all set by the
+Terraform, listed here so the table's Azure values aren't mistaken for the only shape):
+
+| Setting | AWS value |
+|---|---|
+| `SECRET_STORE` | `aws_secrets_manager` + `AWS_SECRETS_MANAGER_PREFIX` (default `dataq/`) — reads/writes Secrets Manager under the prefix via the **ECS task role**; no stored credential. Datasource credentials land as `<prefix>/conn-<type>-<qualifier>-<env>-<shortid>`, same naming convention as Key Vault. |
+| OIDC (backend) | `OIDC_ISSUER` = the Cognito pool issuer, `OIDC_AUDIENCE` = the SPA client id — the provider-neutral `OidcBearerScheme` (ADR 0026 amendment); Cognito access tokens carry no `email`, resolved via the userinfo endpoint (#1346). |
+| Frontend auth | `DATAQ_AUTH_SCOPE="openid email profile"` (#1347 — Cognito rejects `offline_access`) and `DATAQ_AUTH_LOGOUT_STYLE=cognito` (#1364 — Cognito's non-conformant `/logout`). |
+| `REDIS_URL` | `rediss://…?ssl_cert_reqs=required` (ElastiCache TLS; the app also defaults the parameter when absent — #1363). |
+| `RATE_LIMIT_XFF_TRUSTED_HOPS` | `3` (CloudFront → ALB → nginx each append to `X-Forwarded-For`). |
+| Email alerts | SES via `alert_email` (sender) / `alert_email_to` (recipients) Terraform vars — sandbox identities need a one-time verification click each (#1368). |
+| Observability | `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` → ADOT sidecar → X-Ray traces + CloudWatch OTel logs (#1369); container logs in CloudWatch `/dataq-app/*`. |
 
 ## Operational notes
 
