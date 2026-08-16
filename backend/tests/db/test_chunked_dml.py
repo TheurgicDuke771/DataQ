@@ -43,7 +43,7 @@ def test_chunk_size_zero_raises_before_any_query(monkeypatch: Any) -> None:
     session = _FakeSession([])  # would raise IndexError if execute() were ever called
 
     with pytest.raises(ValueError, match="chunk_size must be >= 1"):
-        chunked_dml(session, lambda: object(), chunk_size=0)  # type: ignore[arg-type, return-value]
+        chunked_dml(session, object, chunk_size=0)  # type: ignore[arg-type]
 
     assert session.execute_count == 0
 
@@ -52,7 +52,7 @@ def test_negative_chunk_size_also_raises() -> None:
     session = _FakeSession([])
 
     with pytest.raises(ValueError, match="chunk_size must be >= 1"):
-        chunked_dml(session, lambda: object(), chunk_size=-1)  # type: ignore[arg-type, return-value]
+        chunked_dml(session, object, chunk_size=-1)  # type: ignore[arg-type]
 
 
 def test_exits_on_zero_not_on_partial_batch(monkeypatch: Any) -> None:
@@ -63,7 +63,7 @@ def test_exits_on_zero_not_on_partial_batch(monkeypatch: Any) -> None:
     full-sized) followed by the confirming empty round."""
     session = _FakeSession([3, 3, 1, 0])
 
-    total = chunked_dml(session, lambda: object(), chunk_size=3)  # type: ignore[arg-type, return-value]
+    total = chunked_dml(session, object, chunk_size=3)  # type: ignore[arg-type]
 
     assert total == 7
     assert session.execute_count == 4  # the trailing empty round is required
@@ -78,7 +78,7 @@ def test_negative_rowcount_is_treated_as_zero(monkeypatch: Any) -> None:
     total nor be mistaken for a non-empty batch (which would spin forever)."""
     session = _FakeSession([5, -1])
 
-    total = chunked_dml(session, lambda: object(), chunk_size=5)  # type: ignore[arg-type, return-value]
+    total = chunked_dml(session, object, chunk_size=5)  # type: ignore[arg-type]
 
     assert total == 5  # the -1 batch contributed 0, not -1
     assert session.execute_count == 2
@@ -93,7 +93,7 @@ def test_on_batch_receives_each_batchs_affected_count() -> None:
     seen: list[int] = []
 
     total = chunked_dml(
-        session, lambda: object(), chunk_size=2, on_batch=seen.append  # type: ignore[arg-type, return-value]
+        session, object, chunk_size=2, on_batch=seen.append  # type: ignore[arg-type]
     )
 
     assert total == 5
@@ -109,7 +109,7 @@ def test_on_batch_sees_partial_progress_if_a_later_batch_raises() -> None:
     seen: list[int] = []
 
     with pytest.raises(IndexError):
-        chunked_dml(session, lambda: object(), chunk_size=2, on_batch=seen.append)  # type: ignore[arg-type, return-value]
+        chunked_dml(session, object, chunk_size=2, on_batch=seen.append)  # type: ignore[arg-type]
 
     assert seen == [2, 2]  # the two committed batches were still reported
     assert session.commit_count == 2  # both prior batches really did commit
