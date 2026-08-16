@@ -132,11 +132,41 @@ Then in a browser: sign in through Cognito end-to-end, confirm `/api` and
 `/mcp` return 401 unauthenticated without a credential, and run one real
 suite against a live datasource to confirm the worker path.
 
+## Edge protection (#1387)
+
+`waf.tf` attaches a WAFv2 Web ACL to the distribution with two rules: a per-IP
+rate ceiling (`waf_rate_limit_per_5min`, default 2000 per 5 min) and an
+oversized-body block (`waf_max_body_bytes`, default 8KB).
+
+This is **not** a duplicate of the app's own rate limiter (ADR 0035). That one
+counts in Redis inside the request path, so everything it rejects has already
+crossed CloudFront, the ALB, nginx and FastAPI — and it is deliberately
+fail-open, meaning the pressure most likely to hurt Redis is the pressure that
+switches enforcement off. The ACL sheds load *before* the origin sees it. It is
+sized an order of magnitude above the app limiter so it catches floods without
+shaping normal traffic.
+
+`/assets/*` also gets a caching behavior. Until #1387 the distribution had
+caching disabled on every path, so it shed nothing at all — a flood and a
+normal page load cost the origin the same. Only the fingerprinted build output
+is cached (a changed asset is a changed URL, so a stale bundle is impossible);
+`/api/*`, `/mcp` and `index.html` deliberately still reach the origin every
+time.
+
+Cost is roughly **$7/month plus request charges** — set `waf_enabled = false`
+to remove the ACL entirely if that is not worth it for a given deployment.
+
+The WAF ACL is created through the `aws.us_east_1` provider alias: a
+CloudFront-scoped Web ACL is a global resource and exists only in us-east-1,
+whatever `aws_region` says.
+
 ## Known gaps in this pass (deliberately deferred, not silently skipped)
 
 - No custom domain — the public URL is the CloudFront distribution's own
   `*.cloudfront.net` domain (HTTPS, default cert — #1345). Once a domain is
-  chosen: Route53 + ACM cert + an `aliases` entry on the distribution.
+  chosen: Route53 + ACM cert + an `aliases` entry on the distribution. This is
+  also what would close the cleartext **CloudFront→ALB hop** (`origin_protocol_policy
+  = http-only`, cloudfront.tf) and let HSTS mean something end-to-end.
 - No private-subnet/NAT hardening — see `main.tf`'s decision note.
 - No `.github/workflows/deploy-aws.yml` yet — this stack only provisions the
   infra the workflow will drive.

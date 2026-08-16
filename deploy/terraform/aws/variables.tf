@@ -84,6 +84,32 @@ variable "workspace_admin_emails" {
 # and is logged at WARNING on boot. Set at least one when the pool is not
 # strictly invite-only. Addresses are PII, so real values belong in the
 # gitignored terraform.tfvars, never here.
+# ── WAF (#1387) ─────────────────────────────────────────────────────────────
+variable "waf_enabled" {
+  description = "Attach a WAFv2 Web ACL to the CloudFront distribution. Costs roughly $7/month plus request charges; set false to remove it entirely."
+  type        = bool
+  default     = true
+}
+
+variable "waf_rate_limit_per_5min" {
+  description = "WAF per-IP request ceiling over a trailing 5-minute window. Deliberately well above the app's own 120/min unauthenticated class - this catches floods, it does not shape normal traffic."
+  type        = number
+  default     = 2000
+
+  validation {
+    # WAFv2's own floor for a rate-based statement. Below it the apply fails with
+    # a provider-level error that does not name the limit.
+    condition     = var.waf_rate_limit_per_5min >= 100
+    error_message = "WAF rate-based statements require a limit of at least 100."
+  }
+}
+
+variable "waf_max_body_bytes" {
+  description = "Largest request body accepted at the edge. DataQ's write surface is small JSON; anything much larger is a probe."
+  type        = number
+  default     = 8192
+}
+
 variable "oidc_allowed_emails" {
   description = "Comma-separated addresses allowed to hold a DataQ account via OIDC (OIDC_ALLOWED_EMAILS). Empty = no app-side gate."
   type        = string
