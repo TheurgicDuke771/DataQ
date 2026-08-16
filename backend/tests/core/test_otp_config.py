@@ -140,6 +140,35 @@ def test_the_allowlists_normalize_the_same_way_emails_do() -> None:
     assert s.auth_otp_allowed_domain_set == frozenset({"acme.io", "other.org"})
 
 
+def test_the_oidc_allowlists_share_the_otp_normalization_rule() -> None:
+    """#1386's allowlist parses through the same two helpers as the OTP one. Two
+    subtly different rules on the identity surface is how one human becomes two
+    accounts (ADR 0032 decision 6), so this pins them to identical behaviour."""
+    s = Settings(
+        oidc_issuer="https://idp.test",
+        oidc_audience="client-id",
+        oidc_allowed_emails=" Ada@Acme.IO , grace@acme.io ,, ",
+        oidc_allowed_domains=" @Acme.IO , Other.Org ",
+    )
+    assert s.oidc_allowed_email_set == frozenset({"ada@acme.io", "grace@acme.io"})
+    assert s.oidc_allowed_domain_set == frozenset({"acme.io", "other.org"})
+    assert s.oidc_allowlist_configured is True
+
+
+def test_the_oidc_allowlist_reads_as_unconfigured_when_blank() -> None:
+    """Whitespace-only must not read as "configured" — that would flip the gate on
+    with an empty set and lock every identity out."""
+    s = Settings(
+        oidc_issuer="https://idp.test",
+        oidc_audience="client-id",
+        oidc_allowed_emails="  ,  ",
+        oidc_allowed_domains=" @ ",
+    )
+    assert s.oidc_allowed_email_set == frozenset()
+    assert s.oidc_allowed_domain_set == frozenset()
+    assert s.oidc_allowlist_configured is False
+
+
 def test_the_session_ttl_is_bounded() -> None:
     """A deployment must not be able to configure a de-facto immortal cookie."""
     with pytest.raises(ValueError):

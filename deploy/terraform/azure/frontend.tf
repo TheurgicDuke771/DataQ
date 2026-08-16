@@ -67,6 +67,17 @@ resource "azurerm_container_app" "frontend" {
         name  = "DATAQ_AUTH_API_SCOPE"
         value = "api://${azuread_application.api.client_id}/${var.azure_api_scope}"
       }
+
+      # CSP connect-src tail (#1387). The ORIGIN only — deliberately not
+      # DATAQ_AUTH_AUTHORITY, which carries a path (`/<tenant>/v2.0`). A CSP
+      # source matches by path prefix, and Azure AD's token endpoint lives at
+      # `/<tenant>/oauth2/v2.0/token`, outside that prefix — so reusing the
+      # authority here would let discovery through and then block the code
+      # exchange. One host covers discovery, JWKS and token for Azure AD.
+      env {
+        name  = "DATAQ_CSP_CONNECT_SRC"
+        value = "https://login.microsoftonline.com"
+      }
     }
   }
 

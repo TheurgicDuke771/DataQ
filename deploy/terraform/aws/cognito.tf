@@ -17,6 +17,26 @@ resource "aws_cognito_user_pool" "app" {
 
   auto_verified_attributes = ["email"]
 
+  # NO self-service sign-up (#1386). This is the load-bearing line in this file.
+  #
+  # A Cognito pool allows self-registration by DEFAULT, and the hosted UI serves
+  # a working /signup form to anyone who finds the domain. DataQ auto-provisions
+  # a user row for any identity the configured issuer vouches for
+  # (`core/auth.py`'s `_upsert_user`), so the pool's registration policy IS the
+  # product's access policy: with sign-up open, any stranger could register,
+  # verify their own email, and land an authenticated account inside the
+  # workspace. That also dissolved the "single-tenant, workspace-trusted"
+  # premise that issue #1118 (arbitrary `*_secret_name` resolution -> warehouse-
+  # credential exfiltration) is deliberately accepted under, turning a known
+  # internal risk into a remotely reachable one.
+  #
+  # With this set, operators are created by an admin
+  # (`aws cognito-idp admin-create-user`) and the hosted /signup endpoint stops
+  # serving a form. Existing users are unaffected.
+  admin_create_user_config {
+    allow_admin_create_user_only = true
+  }
+
   password_policy {
     minimum_length    = 12
     require_lowercase = true

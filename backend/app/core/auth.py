@@ -768,7 +768,24 @@ async def init_auth() -> None:
             provider="generic_oidc",
             issuer=_settings.oidc_issuer,
             audience=_settings.oidc_audience,
+            signup_allowlist=_settings.oidc_allowlist_configured,
         )
+        if not _settings.oidc_allowlist_configured:
+            # The open state is the DEFAULT (a fail-closed default would lock a
+            # whole workspace out on upgrade), so it must at least be loud: with
+            # no app-side gate, DataQ admits every identity the issuer will
+            # issue a token for, which makes the IdP's own registration policy
+            # DataQ's access policy. That is fine for an invite-only tenant and
+            # is exactly how #1386 happened on a self-signup-enabled pool.
+            # Count + domains only, never the addresses themselves (PII) —
+            # mirrors `_log_otp_mode_ready`.
+            log.warning(
+                "auth_oidc_no_signup_allowlist",
+                issuer=_settings.oidc_issuer,
+                hint="Set OIDC_ALLOWED_EMAILS / OIDC_ALLOWED_DOMAINS unless the "
+                "issuer is invite-only; otherwise anyone who can register with "
+                "the issuer gets a DataQ account.",
+            )
         if _otp_enabled:
             _log_otp_mode_ready()
         return
@@ -864,6 +881,99 @@ def _get_current_user_real_or_otp(
     return user
 
 
+def _oidc_access_allowed(email: str, settings: Settings | None = None) -> bool:
+    """Whether `email` (already normalized) may hold a DataQ account via OIDC (#1386).
+
+    Mirrors `otp_service.is_signup_eligible`, with one deliberate difference in the
+    empty-allowlist case: OTP treats "no allowlist" as *nobody* (and refuses to
+    boot), while this returns True — see the `oidc_allowed_emails` field comment
+    in `core/config.py` for why a fail-closed default here would turn a routine
+    image bump into a workspace-wide lockout.
+
+    Checked on EVERY request, not only at first provisioning. Gating just the
+    insert would leave an already-provisioned identity in place after it is
+    removed from the allowlist, so the list would grant access but never revoke
+    it — this way it doubles as the kill-switch for an account that should no
+    longer be admitted.
+
+    `settings` is explicit (same shape as `is_signup_eligible`) because the THREE
+    callers do not share one settings source: the two REST dependencies read this
+    module's import-time `_settings`, while `mcp.auth` resolves its own via
+    `get_settings()`. They are the same object in a running process, but letting
+    each caller pass what it already holds is what keeps /mcp and /api from
+    diverging under a test override — which is precisely how the /mcp path came
+    to be missed in the first place.
+    """
+    s = settings or _settings
+    if not s.oidc_allowlist_configured:
+        return True
+    if email in s.oidc_allowed_email_set:
+        return True
+    _, _, domain = email.partition("@")
+    return bool(domain) and domain in s.oidc_allowed_domain_set
+
+
+def _denied_identity(email: str) -> dict[str, str]:
+    """Log fields naming a REJECTED identity without logging the address.
+
+    `email=` cannot be used: `email` is in `core/logging.py`'s `_PII_KEYS`, so the
+    redactor replaces it and the line says nothing. Combined with the 403 body
+    deliberately not echoing the address, that would leave a misconfigured
+    allowlist with no diagnosable surface anywhere — the operator sees "somebody
+    was denied" and cannot find out who or why.
+
+    So: the DOMAIN (an org identifier, not a person — the same call
+    `_log_otp_mode_ready` makes) plus a short salt-free digest of the full
+    address. The digest is not reversible but IS stable, so one operator can
+    correlate "the user who says they can't get in" against a specific log line
+    by hashing the address they were given, and repeated denials from one
+    identity are visibly one identity rather than many.
+    """
+    # Normalized here rather than trusted from the caller: the digest's whole
+    # purpose is that an operator can reproduce it from an address a user gives
+    # them, and `Someone@Example.com` must hash to the same value the log line
+    # carries. Both current callers already normalize, so this is belt-and-braces
+    # — but a canonical-only-by-convention digest is a correlation key that
+    # quietly stops correlating.
+    normalized = normalize_email(email)
+    _, _, domain = normalized.partition("@")
+    return {
+        "email_domain": domain or "(none)",
+        "email_digest": hashlib.sha256(normalized.encode()).hexdigest()[:12],
+    }
+
+
+def _resolve_generic_oidc_user(db: Session, oidc_claims: dict[str, Any]) -> User:
+    """Claims -> allowlist gate -> upserted `User`, for both generic-OIDC deps.
+
+    Deliberately ONE function called from both `_get_current_user_generic_oidc`
+    and `_get_current_user_generic_oidc_or_otp`: the two dependencies had byte-
+    identical bodies here, and a gate added to one and forgotten in the other
+    would leave the mode that also has OTP enabled silently ungated.
+    """
+    subject, email, display_name = _extract_oidc_claims(oidc_claims)
+    email = normalize_email(email)
+    if not _oidc_access_allowed(email):
+        # Deliberately 403, not 401: the token is VALID, so re-authenticating
+        # would loop the SPA forever. The address is not echoed back to the
+        # caller; `_denied_identity` is how an operator identifies them.
+        log.warning("auth_oidc_access_denied", mode="generic_oidc", **_denied_identity(email))
+        raise DataQError(
+            code="forbidden",
+            message="This account is not authorized for this DataQ workspace.",
+            status_code=403,
+        )
+    user = _upsert_user(
+        db,
+        aad_object_id=subject,
+        email=email,
+        display_name=display_name,
+        oidc_issuer=_settings.oidc_issuer,
+    )
+    log.info("auth_user_resolved", mode="generic_oidc", user_id=str(user.id))
+    return user
+
+
 def _get_current_user_generic_oidc(
     request: Request,
     oidc_claims: Annotated[dict[str, Any] | None, Security(oidc_scheme)],
@@ -879,16 +989,7 @@ def _get_current_user_generic_oidc(
             message=_UNAUTHENTICATED_MESSAGE,
             status_code=401,
         )
-    subject, email, display_name = _extract_oidc_claims(oidc_claims)
-    user = _upsert_user(
-        db,
-        aad_object_id=subject,
-        email=email,
-        display_name=display_name,
-        oidc_issuer=_settings.oidc_issuer,
-    )
-    log.info("auth_user_resolved", mode="generic_oidc", user_id=str(user.id))
-    return user
+    return _resolve_generic_oidc_user(db, oidc_claims)
 
 
 def _get_current_user_generic_oidc_or_otp(
@@ -910,16 +1011,7 @@ def _get_current_user_generic_oidc_or_otp(
             message=_UNAUTHENTICATED_MESSAGE_OTP,
             status_code=401,
         )
-    subject, email, display_name = _extract_oidc_claims(oidc_claims)
-    user = _upsert_user(
-        db,
-        aad_object_id=subject,
-        email=email,
-        display_name=display_name,
-        oidc_issuer=_settings.oidc_issuer,
-    )
-    log.info("auth_user_resolved", mode="generic_oidc", user_id=str(user.id))
-    return user
+    return _resolve_generic_oidc_user(db, oidc_claims)
 
 
 def _get_current_user_otp(

@@ -18,8 +18,29 @@ data "aws_cloudfront_cache_policy" "caching_disabled" {
   name = "Managed-CachingDisabled"
 }
 
+# For the fingerprinted build output only (#1388). Everything else stays
+# uncached — see the header comment.
+data "aws_cloudfront_cache_policy" "caching_optimized" {
+  name = "Managed-CachingOptimized"
+}
+
 data "aws_cloudfront_origin_request_policy" "all_viewer" {
   name = "Managed-AllViewer"
+}
+
+locals {
+  # Extensions Vite emits into dist/assets/, mirroring the nginx `location ~*`
+  # list (frontend/nginx.conf.template) so the two layers agree on what a static
+  # asset is. Anything under /assets/ NOT ending in one of these — notably the
+  # SPA's own /assets/:assetId route, whose ids are bare UUIDs — falls through to
+  # the uncached default behavior, which is what we want.
+  cacheable_asset_extensions = [
+    "js", "mjs", "css", "map",
+    "png", "jpg", "jpeg", "gif", "svg", "ico", "webp", "avif",
+    "woff", "woff2", "ttf", "eot",
+  ]
+
+  cacheable_asset_patterns = [for ext in local.cacheable_asset_extensions : "/assets/*.${ext}"]
 }
 
 resource "aws_cloudfront_distribution" "app" {
@@ -83,6 +104,51 @@ resource "aws_cloudfront_distribution" "app" {
     cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer.id
   }
+
+  # Fingerprinted build output — the ONE thing here that is safe to cache at the
+  # edge, and the only reason this distribution can absorb any load at all
+  # (#1388). With caching disabled everywhere, every asset request on every page
+  # load travelled the full CloudFront -> ALB -> nginx path, so the "CDN" in
+  # front of the app shed nothing: an L7 flood and a legitimate page load cost
+  # the origin exactly the same.
+  #
+  # Safe precisely because the filenames are content-hashed (nginx already serves
+  # them `immutable`, frontend/nginx.conf.template): a changed asset is a changed
+  # URL, so a long edge TTL can never serve a stale bundle.
+  #
+  # MATCHED BY EXTENSION, NOT BY THE `/assets/` PREFIX — deliberately, and this is
+  # the same collision that produced #802. Vite emits its bundle to `dist/assets/`,
+  # which shares a path prefix with the app's OWN `/assets/:assetId` SPA route
+  # (the ADR 0034 asset browse). A `/assets/*` behavior captures that route too
+  # and hands a *document* to a policy meant for immutable files; it happens not
+  # to break today only because `location /` sends `no-cache` and CloudFront
+  # honours it, i.e. correctness rests on an implicit dependency rather than on
+  # the routing. nginx solved this by matching the file extension
+  # (nginx.conf.template's `location ~*`), and this mirrors it. CloudFront
+  # path patterns take `*`/`?` but no regex, hence one behavior per extension.
+  #
+  # `/api/*`, `/mcp` and index.html get no behavior here at all — they must keep
+  # reaching the origin every time.
+  dynamic "ordered_cache_behavior" {
+    for_each = local.cacheable_asset_patterns
+    content {
+      path_pattern           = ordered_cache_behavior.value
+      target_origin_id       = "alb"
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+      cached_methods         = ["GET", "HEAD"]
+      compress               = true
+
+      # No origin_request_policy: AllViewer would forward every header and make
+      # the cache key so specific that almost nothing would hit. CachingOptimized's
+      # own key (URL only, plus normalized encoding) is what makes this cache work.
+      cache_policy_id = data.aws_cloudfront_cache_policy.caching_optimized.id
+    }
+  }
+
+  # Edge rate limiting + oversized-body rejection (#1388, waf.tf). Null when
+  # waf_enabled = false, which detaches the ACL without touching anything else.
+  web_acl_id = var.waf_enabled ? aws_wafv2_web_acl.app[0].arn : null
 
   restrictions {
     geo_restriction {
