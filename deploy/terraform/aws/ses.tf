@@ -5,9 +5,10 @@
 # + EMAIL_PASSWORD_SECRET_NAME are all set).
 #
 # Sandbox posture, stated honestly: a fresh SES account can only send FROM and
-# TO verified identities, so alert_email is both the sender and the sole
-# recipient — fine for a single-operator deployment; production fan-out needs
-# an SES production-access request (an AWS support form, not Terraform).
+# TO verified identities. alert_email is the sender (and the default
+# recipient); alert_email_to sets distinct recipient(s), each getting its own
+# verified identity below. Production fan-out to arbitrary addresses needs an
+# SES production-access request (an AWS support form, not Terraform).
 #
 # The identity requires a ONE-TIME human step: SES emails a verification link
 # to alert_email at create time, and sends fail with "Email address is not
@@ -18,9 +19,26 @@ locals {
   # One gate for every resource in this file (PR #1370 review — the condition
   # was copy-pasted per resource, so a future edit could invert one silently).
   ses_enabled = var.alert_email == "" ? 0 : 1
-  # Recipient defaults to the sender; a distinct alert_email_to needs its OWN
-  # verified identity while the account is in the SES sandbox.
+  # Recipients default to the sender; every distinct recipient needs its OWN
+  # verified identity while the account is in the SES sandbox. EMAIL_TO is
+  # comma-separated on the backend (config.py), so the identity set is built
+  # per address — a comma list handed to one VerifyEmailIdentity would fail
+  # the apply (PR #1372 review).
   alert_email_to = var.alert_email_to != "" ? var.alert_email_to : var.alert_email
+  alert_to_identities = local.ses_enabled == 1 ? toset([
+    for a in split(",", local.alert_email_to) : trimspace(a)
+    if trimspace(a) != "" && trimspace(a) != var.alert_email
+  ]) : toset([])
+}
+
+# The channel only turns on when the SENDER exists (config.py gates on
+# EMAIL_USERNAME, which derives from alert_email) — setting only the recipient
+# is a silent no-op, so say so at plan time (PR #1372 review).
+check "alert_email_to_requires_sender" {
+  assert {
+    condition     = var.alert_email_to == "" || var.alert_email != ""
+    error_message = "alert_email_to is set but alert_email is empty - the email channel stays OFF (no sender identity/SMTP credential is created and EMAIL_USERNAME stays empty). Set alert_email too."
+  }
 }
 
 resource "aws_ses_email_identity" "alert" {
@@ -28,12 +46,12 @@ resource "aws_ses_email_identity" "alert" {
   email = var.alert_email
 }
 
-# Sandbox rule: the RECIPIENT must be verified too, so a distinct TO address
-# gets its own identity (its own one-time verification click). Collapses to
-# nothing when alert_email_to is unset/equal to the sender.
+# Sandbox rule: every RECIPIENT must be verified too, so each distinct TO
+# address gets its own identity (its own one-time verification click).
+# Collapses to nothing when alert_email_to is unset/equal to the sender.
 resource "aws_ses_email_identity" "alert_to" {
-  count = local.ses_enabled == 1 && local.alert_email_to != var.alert_email ? 1 : 0
-  email = local.alert_email_to
+  for_each = local.alert_to_identities
+  email    = each.value
 }
 
 # Dedicated IAM user for SMTP: SES SMTP credentials ARE an IAM access key —
