@@ -153,6 +153,11 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $dataq_forwarded_proto;
+        # Verified above, stripped here (#1355 review): the origin secret must
+        # not ride into the backend request context, where a traceback-locals
+        # capture (#536 class) or a dependency's header logging (#849 class)
+        # could surface it.
+        proxy_set_header X-DataQ-Origin-Secret "";
     }
 
     # Liveness probe — the api's top-level /healthz (NOT under /api), proxied here
@@ -169,6 +174,11 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $dataq_forwarded_proto;
+        # Verified above, stripped here (#1355 review): the origin secret must
+        # not ride into the backend request context, where a traceback-locals
+        # capture (#536 class) or a dependency's header logging (#849 class)
+        # could surface it.
+        proxy_set_header X-DataQ-Origin-Secret "";
     }
 
     # MCP sub-app (FastMCP at /mcp). Streamable-HTTP/SSE needs HTTP/1.1 with no
@@ -183,6 +193,11 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $dataq_forwarded_proto;
+        # Verified above, stripped here (#1355 review): the origin secret must
+        # not ride into the backend request context, where a traceback-locals
+        # capture (#536 class) or a dependency's header logging (#849 class)
+        # could surface it.
+        proxy_set_header X-DataQ-Origin-Secret "";
     }
 
     # Long-cache the fingerprinted build output; never cache index.html (it points

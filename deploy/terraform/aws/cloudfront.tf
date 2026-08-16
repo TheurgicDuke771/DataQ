@@ -42,6 +42,14 @@ resource "aws_cloudfront_distribution" "app" {
     # the same name, so the value can't be probed through this distribution.
     # (Visible in the distribution config to anyone with CloudFront read
     # access — an origin-authentication token, not a user credential.)
+    #
+    # Residual, stated honestly (#1378 review): the edge→origin hop is plain
+    # HTTP (origin_protocol_policy http-only — no custom domain means no cert
+    # the ALB could serve), so the header transits that leg in cleartext. An
+    # on-path observer of AWS's edge→ALB path could read it; that adversary
+    # class already sees the whole session traffic on the same hop. Closing
+    # it = custom domain + ACM on the ALB + https-only, the documented
+    # follow-up in the README's known-gaps list.
     custom_header {
       name  = "X-DataQ-Origin-Secret"
       value = random_password.origin_secret.result
