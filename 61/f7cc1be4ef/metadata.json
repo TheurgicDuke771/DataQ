@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "61f7cc1be4ef",
+  "strategy": "manual-commit",
+  "branch": "docs/issue-1338-aws-runbook",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".env.app.example",
+    "deploy/.env.app.prod.example",
+    "deploy/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/61/f7cc1be4ef/0/metadata.json",
+      "transcript": "/61/f7cc1be4ef/0/full.jsonl",
+      "compact_transcript": "/61/f7cc1be4ef/0/transcript.jsonl",
+      "content_hash": "/61/f7cc1be4ef/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 18593,
+    "cache_read_tokens": 5085957,
+    "output_tokens": 5369,
+    "api_call_count": 11
+  }
+}
