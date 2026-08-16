@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "2e27f372c97d",
+  "strategy": "manual-commit",
+  "branch": "feature/rbac-740-role-model",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".env.app.example",
+    "backend/alembic/versions/f58b4bff54f7_add_users_role.py",
+    "backend/app/api/v1/auth_otp.py",
+    "backend/app/api/v1/me.py",
+    "backend/app/core/auth.py",
+    "backend/app/core/config.py",
+    "backend/app/db/models.py",
+    "backend/app/services/otp_service.py",
+    "backend/app/services/suite_authz.py",
+    "backend/tests/core/test_workspace_roles.py",
+    "backend/tests/db/test_users_role_migration.py",
+    "deploy/.env.app.prod.example",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2e/27f372c97d/0/metadata.json",
+      "transcript": "/2e/27f372c97d/0/full.jsonl",
+      "compact_transcript": "/2e/27f372c97d/0/transcript.jsonl",
+      "content_hash": "/2e/27f372c97d/0/content_hash.txt",
+      "prompt": "/2e/27f372c97d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 204,
+    "cache_creation_tokens": 191146,
+    "cache_read_tokens": 15883570,
+    "output_tokens": 54642,
+    "api_call_count": 102
+  }
+}

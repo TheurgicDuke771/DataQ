@@ -1,0 +1,59 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "2e27f372c97d",
+  "session_id": "200eee08-e520-45c2-adb4-515311503f82",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-16T17:40:43.701724Z",
+  "branch": "feature/rbac-740-role-model",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/db/models.py",
+    "backend/alembic/versions/f58b4bff54f7_add_users_role.py",
+    "backend/app/core/config.py",
+    "backend/app/core/auth.py",
+    "backend/app/services/otp_service.py",
+    "backend/app/services/suite_authz.py",
+    "backend/app/api/v1/me.py",
+    "backend/app/api/v1/auth_otp.py",
+    "backend/tests/core/test_workspace_roles.py",
+    "backend/tests/db/test_users_role_migration.py",
+    ".env.app.example",
+    "deploy/.env.app.prod.example",
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5",
+  "turn_id": "5f23f854ad17",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 204,
+    "cache_creation_tokens": 191146,
+    "cache_read_tokens": 15883570,
+    "output_tokens": 54642,
+    "api_call_count": 102
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-16T17:40:43.663704Z",
+    "agent_lines": 1133,
+    "agent_removed": 35,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1133,
+    "total_lines_changed": 1168,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}

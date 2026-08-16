@@ -1,0 +1,6 @@
+Let's pickup the RBAC work. 
+First check the current state of repo. 
+Check the filed issues, do research. 
+Plan the implementation. 
+Create a TODO list based on priority and dependencies. 
+Start execution.
