@@ -36,7 +36,7 @@ class _FakeSession:
         self.commit_count += 1
 
 
-def test_chunk_size_zero_raises_before_any_query(monkeypatch: Any) -> None:
+def test_chunk_size_zero_raises_before_any_query() -> None:
     """#323 review F4(a): the pre-fix `affected < chunk_size` exit condition
     infinite-looped on `chunk_size=0` (`0 < 0` is False, so it never breaks).
     The fix validates up front — no query is ever issued."""
@@ -55,7 +55,7 @@ def test_negative_chunk_size_also_raises() -> None:
         chunked_dml(session, object, chunk_size=-1)  # type: ignore[arg-type]
 
 
-def test_exits_on_zero_not_on_partial_batch(monkeypatch: Any) -> None:
+def test_exits_on_zero_not_on_partial_batch() -> None:
     """#323 review F4(b): a batch that returns exactly `chunk_size` (the
     candidate count is an exact multiple) or a batch shrunk by a concurrent
     delete must NOT be mistaken for "done" — only a truly empty batch ends
@@ -70,7 +70,7 @@ def test_exits_on_zero_not_on_partial_batch(monkeypatch: Any) -> None:
     assert session.commit_count == 4
 
 
-def test_negative_rowcount_is_treated_as_zero(monkeypatch: Any) -> None:
+def test_negative_rowcount_is_treated_as_zero() -> None:
     """#323 review F6: `asset_service.sweep_orphan_assets`'s own loop guards
     against a driver returning `rowcount=-1` ("unknown"); the extracted
     helper must carry the same guard, not just the id-tracking `run_service`
