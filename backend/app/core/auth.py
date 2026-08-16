@@ -53,6 +53,13 @@ from starlette.requests import HTTPConnection
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
+from backend.app.core.roles import (
+    ROLE_RANK,
+    admin_promotion_values,
+    bootstrap_role,
+    is_workspace_admin,
+    resolve_role,
+)
 from backend.app.db.models import User
 from backend.app.db.session import get_db
 from backend.app.services import api_key_service, session_service
@@ -580,6 +587,11 @@ def _claim_unlinked_user(
             ),
             last_seen_at=now,
             updated_at=now,
+            # Promote-only: the row being claimed already exists, so its stored
+            # role is authoritative and only the allowlist may raise it. See
+            # `should_promote_to_admin` for why the no-op branch writes NOTHING
+            # rather than the column's own value.
+            **admin_promotion_values(email),
         )
         .returning(User)
     ).scalar_one_or_none()
@@ -610,6 +622,12 @@ def _upsert_user(
             oidc_issuer=oidc_issuer,
             email=email,
             display_name=display_name,
+            # Seeds a NEW row only (the conflict branch below is promote-only).
+            # `AUTH_OIDC_DEFAULT_ROLE` is the OIDC twin of the OTP knob: since
+            # #1386 this path can also be gated by a whole DOMAIN allowlist, so
+            # it needs the same "admit broadly, author narrowly" answer. The
+            # allowlist write-through still wins over it (inside `bootstrap_role`).
+            role=bootstrap_role(email, default=get_settings().auth_oidc_default_role),
             last_seen_at=now,
         )
         .on_conflict_do_update(
@@ -617,6 +635,11 @@ def _upsert_user(
             set_={
                 "email": email,
                 "oidc_issuer": oidc_issuer,
+                # Promote-only — see `should_promote_to_admin`. Omitted entirely
+                # (not written back as itself) when the address is not
+                # allowlisted, so this per-request upsert never participates in a
+                # race with an in-app role change it has no opinion about.
+                **admin_promotion_values(email),
                 # Branches on `display_name_override` (#1139, migration
                 # 6230293aea96), not a plain overwrite AND not a bare COALESCE.
                 # This upsert runs on EVERY real-mode request (no session cache
@@ -1097,21 +1120,6 @@ else:
     get_current_user = _get_current_user_unconfigured
 
 
-def is_workspace_admin(user: User) -> bool:
-    """True iff the user is in the workspace-admin allowlist (WORKSPACE_ADMIN_EMAILS).
-
-    Workspace admin is a single config-driven set — the whole-workspace
-    administrator, distinct from the per-suite view/edit/admin/owner ladder in
-    `suite_authz`. Matched case-insensitively on the IdP-supplied email, a
-    generic identity attribute, so no Azure/Entra claim is read here
-    (ADR 0010/0013, CLAUDE.md §11). Resolves the allowlist via `get_settings()`
-    (not the import-time `_settings` singleton) so a test can vary it with
-    `get_settings.cache_clear()`; in a running process settings are read once at
-    startup (12-factor — change the env and restart).
-    """
-    return get_settings().is_admin_email(user.email)
-
-
 def require_workspace_admin(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
@@ -1127,3 +1135,39 @@ def require_workspace_admin(
             status_code=403,
         )
     return current_user
+
+
+def require_role(minimum: str) -> Callable[..., User]:
+    """Build a FastAPI dependency requiring at least `minimum` workspace role.
+
+    The coarse-axis sibling of `suite_authz.require_permission`: that one gates a
+    *resource*, this one gates a *capability the workspace grants at all*. Ranked
+    `viewer(1) < member(2) < admin(3)`, and the 403 carries `have`/`need` exactly
+    like the suite ladder so both axes report a denial in one shape.
+
+    Deliberately a dependency factory rather than three hand-written
+    dependencies: the enforcement points (#741) must all resolve the role through
+    `resolve_role`, and a factory makes that structural instead of a convention
+    each new call site could quietly break. Because it composes `get_current_user`,
+    the gate is identical for a browser session, an Azure AD / OIDC token, and a
+    PAT — there is no auth-mode branching to keep in sync.
+
+    Raises 403, never 404: unlike the suite ladder there is no existence to hide.
+    """
+    if minimum not in ROLE_RANK:
+        raise ValueError(
+            f"unknown workspace role: {minimum!r}"
+        )  # pragma: no cover — programmer error
+
+    def dependency(current_user: Annotated[User, Depends(get_current_user)]) -> User:
+        role = resolve_role(current_user)
+        if ROLE_RANK[role] < ROLE_RANK[minimum]:
+            raise DataQError(
+                code="workspace_role_required",
+                message=f"This action requires the '{minimum}' workspace role or higher.",
+                status_code=403,
+                detail={"have": role, "need": minimum},
+            )
+        return current_user
+
+    return dependency

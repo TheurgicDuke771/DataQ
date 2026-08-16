@@ -17,7 +17,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
-from backend.app.core.auth import get_current_user, is_workspace_admin
+from backend.app.core.auth import get_current_user
+from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import User
 from backend.app.db.session import get_db
 from backend.app.services import dashboard_service as svc

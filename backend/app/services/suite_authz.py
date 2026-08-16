@@ -8,9 +8,11 @@ or their `shares` row (`view` < `edit`). Capability ladder:
     view   — read the suite, its checks, its results
     edit   — + create/update/delete checks, update the suite, trigger runs
     admin  — + manage shares (grant/revoke) AND delete the suite. Held by the
-             workspace-admin(s) (`WORKSPACE_ADMIN_EMAILS`), implicit on every
-             suite — the governance / break-glass path. **Not grantable to normal
-             users** (a share can only be `view`/`edit`; ADR 0027).
+             workspace-admin(s) — `users.role = 'admin'`, or the
+             `WORKSPACE_ADMIN_EMAILS` break-glass allowlist (ADR 0033 moved the
+             source; the implicit-on-every-suite rule itself is unchanged) —
+             the governance path. **Not grantable to normal users** (a share can
+             only be `view`/`edit`; ADR 0027).
     owner  — same capabilities as admin, but it is the creator: cannot be
              revoked or demoted, and granting a share to the owner is rejected.
 
@@ -35,8 +37,8 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
+from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import Share, Suite, User
 from backend.app.services.suite_service import SuiteNotFoundError
 
@@ -51,17 +53,23 @@ _RANK = {"view": 1, "edit": 2, ADMIN: 3, OWNER: 4}
 
 
 def _is_workspace_admin(session: Session, user_id: uuid.UUID) -> bool:
-    """True iff `user_id` is in the workspace-admin allowlist (`WORKSPACE_ADMIN_EMAILS`).
+    """True iff `user_id` is a workspace admin — stored `users.role` OR allowlist.
 
     Resolved here — rather than threaded through every `require_permission` call
-    site — so a workspace-admin is an implicit `admin` on every suite (ADR 0027).
-    Empty allowlist short-circuits without a load; otherwise one PK fetch (usually
-    an identity-map hit, since the request already loaded the user)."""
-    settings = get_settings()
-    if not settings.workspace_admin_email_set:
-        return False
+    site — so a workspace-admin is an implicit `admin` on every suite (ADR 0027,
+    the rule itself unchanged by ADR 0033; only its *source* moved). One PK fetch,
+    usually an identity-map hit since the request already loaded the user.
+
+    Delegates to `core.auth.resolve_role` rather than re-deriving the OR, so this
+    gate and the REST gate cannot drift — the failure mode ADR 0033 is most
+    exposed to is exactly a role that means one thing at the router and another
+    at the suite ladder. The pre-#740 short-circuit on an empty allowlist is gone
+    with the same reasoning: it is no longer sound, because a stored `admin` must
+    resolve in a deployment that sets no `WORKSPACE_ADMIN_EMAILS` at all — which,
+    after in-app role management (#742), is the expected steady state.
+    """
     user = session.get(User, user_id)
-    return user is not None and settings.is_admin_email(user.email)
+    return user is not None and is_workspace_admin(user)
 
 
 class SuiteForbiddenError(DataQError):

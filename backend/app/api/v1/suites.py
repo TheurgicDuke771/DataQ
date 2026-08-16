@@ -18,8 +18,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
 from backend.app.api.v1.runs import RunRead
-from backend.app.core.auth import get_current_user, is_workspace_admin
+from backend.app.core.auth import get_current_user
 from backend.app.core.logging import get_logger
+from backend.app.core.roles import is_workspace_admin
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.datasources.sampling import MAX_SAMPLE_ROWS
 from backend.app.db.models import Connection, Suite, User

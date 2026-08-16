@@ -27,10 +27,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import contains_nul
-from backend.app.core.auth import is_workspace_admin
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
+from backend.app.core.roles import is_workspace_admin
 from backend.app.core.secrets import get_secret_store
 from backend.app.db.models import Check, Connection, Run, User
 from backend.app.db.session import get_session
