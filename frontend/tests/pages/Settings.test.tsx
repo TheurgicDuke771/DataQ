@@ -57,6 +57,7 @@ const adminMe: AsyncState<MeResponse> = {
     email: 'admin@dataq.io',
     display_name: 'Ada Admin',
     last_seen_at: null,
+    role: 'member' as const,
     is_workspace_admin: true,
   },
 };

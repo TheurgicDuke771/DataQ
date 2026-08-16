@@ -1,6 +1,7 @@
 import { AppstoreOutlined, KeyOutlined, TeamOutlined } from '@ant-design/icons';
 import { Alert, Card, Col, Flex, Row, Spin, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { useState } from 'react';
 
 import {
   type AdminAccess,
@@ -11,6 +12,7 @@ import {
   listAdminUsers,
 } from '../api/admin';
 import { useMe } from '../auth/useMe';
+import { RoleEditor } from '../components/admin/RoleEditor';
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { Forbidden } from '../components/Forbidden';
 import { Page } from '../components/layout/Page';
@@ -55,6 +57,12 @@ function AdminOverview() {
   const suites = useAsyncData(listAdminSuites);
   const users = useAsyncData(listAdminUsers);
   const access = useAsyncData(listAdminAccess);
+  // Rows the admin has just re-roled, keyed by id. Overlaid on `users.state`
+  // rather than refetching the whole list: the PATCH response is the same shape
+  // as a list row (asserted by a backend test), so the row can be replaced
+  // exactly — and a refetch would reorder nothing but would flash the table.
+  const [rerolled, setRerolled] = useState<Record<string, AdminUser>>({});
+  const userState = overlayUsers(users.state, rerolled);
 
   return (
     <Page>
@@ -100,8 +108,10 @@ function AdminOverview() {
 
       <Section title="Members & access">
         <DataTable
-          state={users.state}
-          columns={USER_COLUMNS}
+          state={userState}
+          columns={userColumns((updated) =>
+            setRerolled((prev) => ({ ...prev, [updated.id]: updated })),
+          )}
           rowKey={(u) => u.id}
           errorMessage="Failed to load members"
         />
@@ -204,11 +214,27 @@ const SUITE_COLUMNS: ColumnsType<AdminSuite> = [
   { title: 'Created', dataIndex: 'created_at', render: (v: string) => formatTimestamp(v) },
 ];
 
-const USER_COLUMNS: ColumnsType<AdminUser> = [
+/** Replace any row the admin has just re-roled with the server's own response. */
+function overlayUsers(
+  state: AsyncState<AdminUser[]>,
+  rerolled: Record<string, AdminUser>,
+): AsyncState<AdminUser[]> {
+  if (state.status !== 'ok' || Object.keys(rerolled).length === 0) return state;
+  return { ...state, data: state.data.map((u) => rerolled[u.id] ?? u) };
+}
+
+/** A factory, not a constant, because the role cell needs the update callback.
+ *  Everything else stays declarative. */
+const userColumns = (onChanged: (u: AdminUser) => void): ColumnsType<AdminUser> => [
   {
     title: 'Member',
     key: 'user',
     render: (_, u) => <Identity name={u.display_name} email={u.email} />,
+  },
+  {
+    title: 'Role',
+    key: 'role',
+    render: (_, u) => <RoleEditor user={u} onChanged={onChanged} />,
   },
   { title: 'Suites owned', dataIndex: 'owned_suite_count', align: 'right' },
   { title: 'Shared with them', dataIndex: 'shared_suite_count', align: 'right' },

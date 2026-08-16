@@ -37,6 +37,7 @@ const me: AsyncState<MeResponse> = {
     email: 'ada@dataq.io',
     display_name: 'Ada Lovelace',
     last_seen_at: '2026-06-26T10:00:00Z',
+    role: 'member' as const,
     is_workspace_admin: false,
   },
 };

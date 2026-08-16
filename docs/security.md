@@ -135,9 +135,23 @@ are the reason this mode is opt-in rather than the default:
   demoting someone to Viewer immediately downgrades any `edit` share they already hold. Because Admin visibility includes
   failing-row samples (the one place PII can appear), **grant it sparingly** and treat a
   data-access audit trail as a prerequisite before granting it in a regulated deployment.
-  `WORKSPACE_ADMIN_EMAILS` still resolves to Admin on sign-in as a **bootstrap / break-glass**
-  path for a fresh or locked-out workspace — keep that allowlist minimal too, and prefer
-  in-app role management (`/admin` → Users) once at least one Admin exists.
+  `WORKSPACE_ADMIN_EMAILS` still resolves to Admin as a **bootstrap / break-glass** path for a
+  fresh or locked-out workspace — keep that allowlist minimal, and prefer in-app role
+  management (**Admin → Users**) once at least one Admin exists. It only ever *grants*:
+  removing an address never demotes anyone, so demotion has exactly one route, where the
+  guard runs.
+- **An env-level actor can always mint an Admin.** This is the deliberate cost of keeping a
+  break-glass path, and it is worth stating rather than leaving implicit: **anyone who can set
+  environment variables on the API container can make themselves a workspace admin**, without
+  a role change, an audit line, or anyone's approval. Treat write-access to the API's
+  environment as equivalent to workspace-admin when you do access reviews. In steady state,
+  leave the allowlist empty.
+- **You cannot remove the last Admin.** A role change must leave at least one **stored-role**
+  admin; allowlist-resolved admins deliberately do not count toward that (the env entry can
+  vanish on the next deploy, which would leave the workspace with no admin and no in-app way
+  to mint one). Promote a successor first. Role changes are **logged** with actor, target and
+  old→new role; a durable, queryable audit *table* for privilege changes is not yet built —
+  see [compliance posture](compliance-posture.md).
 
 ## Network exposure
 

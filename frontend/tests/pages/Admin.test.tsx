@@ -20,6 +20,11 @@ vi.mock('../../src/api/admin', () => ({
   listAdminSuites: vi.fn(),
   listAdminUsers: vi.fn(),
   listAdminAccess: vi.fn(),
+  setAdminUserRole: vi.fn(),
+  // A VALUE export, not a function — the role editor iterates it to build its
+  // options, so omitting it from the mock takes the whole page's render down
+  // (which is exactly what it did).
+  WORKSPACE_ROLES: ['admin', 'member', 'viewer'],
 }));
 
 const mockSuites = vi.mocked(listAdminSuites);
@@ -34,6 +39,7 @@ const adminMe: AsyncState<MeResponse> = {
     email: 'admin@dataq.io',
     display_name: 'Ada Admin',
     last_seen_at: null,
+    role: 'admin',
     is_workspace_admin: true,
   },
 };
@@ -60,6 +66,8 @@ const USER: AdminUser = {
   created_at: '2026-06-01T00:00:00Z',
   owned_suite_count: 3,
   shared_suite_count: 1,
+  role: 'member' as const,
+  allowlist_admin: false,
 };
 const ACCESS: AdminAccess[] = [
   {

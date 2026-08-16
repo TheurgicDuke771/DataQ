@@ -63,6 +63,7 @@ beforeEach(() => {
         email: 'ada@acme.io',
         display_name: 'Ada L',
         last_seen_at: null,
+        role: 'member' as const,
         is_workspace_admin: false,
       },
     },

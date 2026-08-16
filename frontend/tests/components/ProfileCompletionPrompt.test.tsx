@@ -23,6 +23,7 @@ const otpUserNoName: MeResponse = {
   email: 'new@dataq.io',
   display_name: null,
   last_seen_at: null,
+  role: 'member' as const,
   is_workspace_admin: false,
 };
 

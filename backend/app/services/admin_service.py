@@ -22,11 +22,21 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.core.auth import DEV_BYPASS_AAD_OID, DEV_BYPASS_EMAIL
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretNotFoundError, SecretStore
-from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Share, Suite, User
+from backend.app.db.models import (
+    ADMIN_ROLE,
+    ORCHESTRATION_PROVIDERS,
+    WORKSPACE_ROLES,
+    Check,
+    Connection,
+    Share,
+    Suite,
+    User,
+)
 from backend.app.services import otp_service
 from backend.app.services.suite_authz import OWNER
 
@@ -65,6 +75,17 @@ class AdminUserRow:
     created_at: datetime
     owned_suite_count: int
     shared_suite_count: int
+    #: The STORED `users.role`, not the effective one. The Admin UI edits this
+    #: column, so showing the resolved value would be a lie in the one place a
+    #: lie matters most: a break-glass allowlist admin would render as `admin`,
+    #: and demoting them here would appear to fail. `allowlist_admin` below
+    #: carries the other half so the UI can say why.
+    role: str
+    #: True when `WORKSPACE_ADMIN_EMAILS` grants this user admin regardless of
+    #: their stored role. Surfaced so the UI can explain a row whose stored role
+    #: is `member` but who is nonetheless an admin — and so the last-admin guard's
+    #: refusal ("allowlist admins don't count") is legible rather than baffling.
+    allowlist_admin: bool
 
 
 @dataclass(frozen=True)
@@ -119,15 +140,34 @@ def list_all_users(session: Session) -> list[AdminUserRow]:
             User.display_name,
             User.last_seen_at,
             User.created_at,
-            func.count(func.distinct(Suite.id)),
-            func.count(func.distinct(Share.id)),
+            func.count(func.distinct(Suite.id)).label("owned_suite_count"),
+            func.count(func.distinct(Share.id)).label("shared_suite_count"),
+            User.role,
         )
         .outerjoin(Suite, Suite.created_by == User.id)
         .outerjoin(Share, Share.user_id == User.id)
         .group_by(User.id)
         .order_by(User.email)
     )
-    return [AdminUserRow(*row) for row in session.execute(stmt)]
+    settings = get_settings()
+    # Named rather than splatted: `allowlist_admin` is NOT a column — the
+    # allowlist lives in env, not in Postgres — so it cannot ride in the SELECT,
+    # and mixing a positional splat with one keyword makes the arity impossible
+    # for a type checker to verify (and easy for the next column to break).
+    return [
+        AdminUserRow(
+            id=row.id,
+            email=row.email,
+            display_name=row.display_name,
+            last_seen_at=row.last_seen_at,
+            created_at=row.created_at,
+            owned_suite_count=row.owned_suite_count,
+            shared_suite_count=row.shared_suite_count,
+            role=row.role,
+            allowlist_admin=settings.is_admin_email(row.email),
+        )
+        for row in session.execute(stmt)
+    ]
 
 
 def list_all_access(session: Session) -> list[AdminAccessRow]:
@@ -421,3 +461,115 @@ def enforce_preflight_quota(user_id: UUID, settings: Settings | None = None) -> 
             "admin_preflight_throttled", limit=limit, window_seconds=PREFLIGHT_WINDOW_SECONDS
         )
         raise PreflightThrottledError(max(1, int(window_end - now)))
+
+
+# ── In-app role management (ADR 0033 decision 7, #742) ───────────────────────
+#
+# The one sanctioned way to CHANGE a workspace role. Sign-in write-through only
+# ever promotes (`core.roles.should_promote_to_admin`), deliberately, so that an
+# env edit plus a login cannot route around the guard below.
+
+
+class RoleChangeRejectedError(DataQError):
+    """A role change the workspace's invariants forbid — 409, never a silent no-op."""
+
+    status_code = 409
+    code = "role_change_rejected"
+
+
+class UserNotFoundError(DataQError):
+    status_code = 404
+    code = "user_not_found"
+
+
+def set_user_role(
+    session: Session,
+    user_id: UUID,
+    *,
+    new_role: str,
+    actor: User,
+) -> User:
+    """Set a user's stored workspace role. Caller must already be admin-gated.
+
+    Enforces two invariants, both of which exist so that the API never returns a
+    200 for a change that will not hold:
+
+    **1. The last-admin guard.** A change must leave at least one *stored-role*
+    admin. Allowlist-resolved admins deliberately do **not** count toward it: the
+    env allowlist is the recovery mechanism, not the invariant, and an env entry
+    can disappear on the next deploy. A guard that let itself be satisfied by one
+    could be talked into emptying the workspace of real admins by an operator who
+    then removes the env var — leaving nobody who can grant admin back except
+    whoever can edit the environment.
+
+    The count is taken under `FOR UPDATE` on the admin rows, so two admins
+    demoting each other concurrently cannot both observe "there is another admin"
+    and both commit. Without the lock this is a textbook read-modify-write race
+    on an invariant, and the two transactions are individually valid.
+
+    **2. The dev-bypass identity is not manageable.** It is force-written to
+    `admin` on every request (`core.auth._get_current_user_dev_bypass`), because
+    dev bypass is a single-operator mode whose one identity IS the workspace.
+    Accepting a demotion here would return 200 and silently revert on the very
+    next request — and *succeeding* would be worse still, locking the only
+    operator out of a stack that has no other door. So it is refused, with a
+    reason.
+
+    Self-demotion is allowed when another stored admin exists — an admin stepping
+    down is legitimate; the guard already covers the case that makes it unsafe.
+    """
+    if new_role not in WORKSPACE_ROLES:
+        raise RoleChangeRejectedError(
+            f"unknown workspace role: {new_role!r}",
+            detail={"role": new_role, "allowed": list(WORKSPACE_ROLES)},
+        )
+
+    target = session.get(User, user_id)
+    if target is None:
+        raise UserNotFoundError("user not found", detail={"user_id": str(user_id)})
+
+    if target.aad_object_id == DEV_BYPASS_AAD_OID or target.email == DEV_BYPASS_EMAIL:
+        raise RoleChangeRejectedError(
+            "the local dev-bypass identity's role cannot be changed — it is the "
+            "single operator of a dev-bypass workspace and is always an admin",
+            detail={"user_id": str(user_id)},
+        )
+
+    previous = target.role
+    if previous == new_role:
+        # Idempotent, and deliberately NOT an error: a UI that re-submits the
+        # current value should not surface a failure. No audit line either —
+        # nothing changed, and a log of non-events dilutes the ones that matter.
+        return target
+
+    # Lock the stored-role admins BEFORE deciding, so a concurrent demotion
+    # serializes behind this one instead of racing it.
+    admin_ids = set(
+        session.scalars(select(User.id).where(User.role == ADMIN_ROLE).with_for_update()).all()
+    )
+    if previous == ADMIN_ROLE and admin_ids <= {target.id}:
+        raise RoleChangeRejectedError(
+            "cannot remove the last workspace admin — promote another user to "
+            "admin first. (Admins granted only by WORKSPACE_ADMIN_EMAILS do not "
+            "count: that allowlist is a recovery path, not the invariant.)",
+            detail={"user_id": str(user_id), "stored_admin_count": len(admin_ids)},
+        )
+
+    target.role = new_role
+    session.commit()
+    session.refresh(target)
+
+    # The durable audit *table* is ADR 0020's deferred cross-entity change log
+    # (#310). Until then this line is the whole guarantee that a role change is
+    # never silent — so it carries actor, target, and both ends of the change,
+    # and is emitted AFTER the commit so it can never claim a change that rolled
+    # back. Emails are omitted: ids correlate, and `_PII_KEYS` redacting an
+    # `email` key is a backstop, not a reason to hand one over.
+    log.info(
+        "workspace_role_changed",
+        actor_id=str(actor.id),
+        target_user_id=str(user_id),
+        previous_role=previous,
+        new_role=new_role,
+    )
+    return target
