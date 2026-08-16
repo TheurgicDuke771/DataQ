@@ -34,11 +34,11 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/00
 is revocable per-integration, and runs with exactly your per-suite access —
 built for always-on MCP configs.
 
-**Quick one-off — your web session's Azure token:** sign in to the DataQ web
+**Quick one-off — your web session's OIDC token:** sign in to the DataQ web
 app, open your browser's developer tools → **Application → Session Storage** →
 the `oidc.user:…` entry → copy the `access_token` value.
 
-!!! note "Azure tokens expire after ~1 hour"
+!!! note "OIDC tokens expire after ~1 hour"
     The pasted browser token is short-lived; when the client starts getting
     401s, paste a fresh one and restart the MCP server/connection — or switch
     to an [API key](api-keys.md) and stop re-pasting.
