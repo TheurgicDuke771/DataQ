@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "ced1864e7253",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1364-cognito-signout",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/src/auth/authClient.ts",
+    "frontend/tests/auth/authClient.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ce/d1864e7253/0/metadata.json",
+      "transcript": "/ce/d1864e7253/0/full.jsonl",
+      "compact_transcript": "/ce/d1864e7253/0/transcript.jsonl",
+      "content_hash": "/ce/d1864e7253/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 4157,
+    "cache_read_tokens": 1151936,
+    "output_tokens": 2333,
+    "api_call_count": 4
+  }
+}
