@@ -39,31 +39,54 @@ test.describe('Admin control centre', () => {
   // last-admin guard and the dev-bypass refusal are exercised for real rather
   // than mocked — which is the point: both are server-side decisions the UI
   // deliberately does not attempt to predict.
+  //
+  // Two locator traps this spec hit in CI, both worth keeping in mind:
+  //
+  //  - The Admin page stacks THREE tables, and an email appears in more than one
+  //    of them (the Suites table shows the owner's address, Access grants shows
+  //    the grantee's). `main.locator('tr', { hasText: email }).first()` therefore
+  //    matched a row with no role select at all, and the click timed out. Scope
+  //    to the members table by the column header only it has.
+  //  - antd renders the CURRENT selection of every select with `title=<role>`,
+  //    so `getByTitle('viewer')` matches the open dropdown option *and* any row
+  //    already showing that role. Scope to the visible dropdown.
+  const membersTable = (page: import('@playwright/test').Page) =>
+    page
+      .getByRole('main')
+      .locator('table')
+      .filter({ has: page.getByRole('columnheader', { name: 'Role', exact: true }) });
+
+  const memberRow = (page: import('@playwright/test').Page, email: string) =>
+    membersTable(page).locator('tr').filter({ hasText: email }).first();
+
+  async function chooseRole(page: import('@playwright/test').Page, role: string) {
+    await page
+      .locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')
+      .locator('.ant-select-item-option-content')
+      .filter({ hasText: new RegExp(`^${role}$`) })
+      .click();
+  }
+
   test('edits a member’s workspace role and reflects the server’s answer', async ({ page }) => {
     await page.goto('/admin');
-    const main = page.getByRole('main');
-    await expect(main.getByText('Members', { exact: true }).first()).toBeVisible();
-
     // `analyst@dataq.local` — the demo seed's non-admin member
-    // (`scripts/demo_data.py`). Picked by its email cell, then the role select
-    // within that row; indexing by position would silently follow a reorder.
-    const row = main.locator('tr', { hasText: 'analyst@dataq.local' }).first();
+    // (`scripts/demo_data.py`).
+    const row = memberRow(page, 'analyst@dataq.local');
     await expect(row).toBeVisible();
 
-    const select = row.getByRole('combobox');
-    await select.click();
-    await page.getByTitle('viewer', { exact: true }).click();
-
+    await row.getByRole('combobox').click();
+    await chooseRole(page, 'viewer');
     await expect(page.getByText(/is now viewer/i)).toBeVisible();
-    // The row shows the SERVER's value — reload to prove it persisted rather
-    // than merely rendering an optimistic local update.
-    await page.reload();
-    const reloaded = main.locator('tr', { hasText: 'analyst@dataq.local' }).first();
-    await expect(reloaded.getByRole('combobox')).toContainText('viewer');
 
-    // Put it back so the spec is re-runnable against a persistent stack.
+    // Reload to prove it PERSISTED, rather than merely rendering an optimistic
+    // local update.
+    await page.reload();
+    const reloaded = memberRow(page, 'analyst@dataq.local');
+    await expect(reloaded).toContainText('viewer');
+
+    // Put it back, so the spec is re-runnable against a persistent stack.
     await reloaded.getByRole('combobox').click();
-    await page.getByTitle('member', { exact: true }).click();
+    await chooseRole(page, 'member');
     await expect(page.getByText(/is now member/i)).toBeVisible();
   });
 
@@ -72,14 +95,13 @@ test.describe('Admin control centre', () => {
     // change would 200 and silently revert. The server refuses; the UI must
     // surface WHY rather than a generic failure.
     await page.goto('/admin');
-    const main = page.getByRole('main');
-    const row = main.locator('tr', { hasText: 'dev-bypass@dataq.local' }).first();
+    const row = memberRow(page, 'dev-bypass@dataq.local');
     await expect(row).toBeVisible();
 
     await row.getByRole('combobox').click();
-    await page.getByTitle('viewer', { exact: true }).click();
+    await chooseRole(page, 'viewer');
 
     await expect(page.getByText(/dev-bypass identity/i)).toBeVisible();
-    await expect(row.getByRole('combobox')).toContainText('admin');
+    await expect(row).toContainText('admin');
   });
 });
