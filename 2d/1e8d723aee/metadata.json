@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "2d1e8d723aee",
+  "strategy": "manual-commit",
+  "branch": "feature/rbac-742-role-management",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/api/test_admin_role_management.py",
+    "frontend/src/components/admin/RoleEditor.tsx",
+    "frontend/tests/components/RoleEditor.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2d/1e8d723aee/0/metadata.json",
+      "transcript": "/2d/1e8d723aee/0/full.jsonl",
+      "compact_transcript": "/2d/1e8d723aee/0/transcript.jsonl",
+      "content_hash": "/2d/1e8d723aee/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 152,
+    "cache_creation_tokens": 75611,
+    "cache_read_tokens": 31885094,
+    "output_tokens": 43081,
+    "api_call_count": 76
+  }
+}
