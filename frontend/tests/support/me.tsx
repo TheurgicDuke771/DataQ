@@ -17,8 +17,12 @@ import { MeContext } from '../../src/auth/meContext';
  * `admin` is the default because it is what the pre-#743 tests were implicitly
  * exercising: the dev-bypass identity every page test stands in for IS a
  * workspace admin (#741). Pass another role to assert a restricted perspective.
+ *
+ * `meAt` is deliberately NOT exported: a `.tsx` file that exports both a
+ * component and a helper trips `react-refresh/only-export-components`, which CI
+ * treats as an error. Nothing outside needs it.
  */
-export function meAt(role: WorkspaceRole = 'admin'): MeResponse {
+function meAt(role: WorkspaceRole): MeResponse {
   return {
     id: 'me-1',
     aad_object_id: 'oid-1',
