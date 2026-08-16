@@ -32,6 +32,7 @@ from backend.app.core.secrets import SecretNotFoundError, SecretStore, SecretWri
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     credential_expiry,
+    destination_fields,
     get_connection_adapter,
 )
 from backend.app.db.models import (
@@ -151,15 +152,12 @@ def _reject_foreign_secret_names(
     that "lost" its catalog credential. The error names the field so a legitimate
     client can fix its payload.
 
-    **Scope — what this does NOT close (#1401).** It governs the reference NAME,
-    not the URI the resolved credential is then sent to. An Admin can still PATCH
-    a victim connection echoing `catalog_secret_name` byte-identically (accepted,
-    by the round-trip rule) while changing `catalog_uri` to a host they control,
-    and test it. That residual is narrower than what #1118 opened with — it is
-    Admin-only, and it requires mutating the victim's row, which
-    `connection_versions` records with `changed_by`, so it is no longer the
-    trace-less variant — but it is a real privilege conversion (rotate → read)
-    and is tracked separately rather than left unstated here.
+    **Scope.** This governs the reference NAME only. The other half of the class
+    — echoing a `*_secret_name` back byte-identically (accepted here, by the
+    round-trip rule) while moving `catalog_uri` to a host you control — is closed
+    by `_reject_uncredentialed_redirect` (#1401), not here. Two guards because
+    they answer different questions: *may you name this secret* and *may this
+    secret go there*. Neither subsumes the other.
     """
     for key, value in config.items():
         if not key.endswith("_secret_name") or not isinstance(value, str):
@@ -177,6 +175,89 @@ def _reject_foreign_secret_names(
                 "client; send the credential itself (e.g. 'catalog_secret') instead",
                 detail={"field": key},
             )
+
+
+class CredentialRedirectError(DataQError):
+    """A config change that moves a credential's destination without re-supplying
+    the credential (#1401)."""
+
+    status_code = 422
+    code = "credential_redirect"
+
+
+def _reject_uncredentialed_redirect(
+    conn_type: str,
+    *,
+    stored: Mapping[str, Any],
+    incoming: Mapping[str, Any],
+    has_stored_secret: bool,
+    supplied_secret: str | None,
+    supplied_extra_secrets: Mapping[str, str | None],
+) -> None:
+    """Refuse to point a STORED credential at a new host — closes #1401.
+
+    #1400 stopped a caller introducing or repointing a `*_secret_name`. It left
+    the other half of the same class open: echo the victim's `catalog_secret_name`
+    back byte-identically (accepted, by the round-trip rule), change `catalog_uri`
+    to a listener you control, POST `/test`, and the server resolves the real
+    credential and sends it to you. Same for every other type — `account_url`,
+    `workspace_url`, `endpoint_url`, `base_url` — since the primary `secret_ref`
+    is resolved from the ROW and the destination from CONFIG, and only config was
+    guarded.
+
+    The rule is the one #1401 proposed: **a destination move requires
+    re-supplying every credential the connection stores.** That closes the vector
+    by construction rather than by enumeration — to send a credential somewhere
+    new you must already know it, so a stored secret can never reach a host its
+    holder didn't authenticate to. It is also defensible on its own terms: a
+    credential minted for one host has no business silently following the
+    connection to another, so re-supplying is the honest operation, not a tax.
+
+    Note what this is NOT: it is not an authorization check (that is ADR 0033 —
+    connection mutations are Admin-only) and not a claim that Admins are hostile.
+    It closes a *privilege conversion*: an Admin may rotate a credential, which
+    is not the same as being allowed to read one. The audit trail #1400 left in
+    place (`connection_versions.changed_by`) records the attempt; this stops it.
+
+    Asked **per credential slot**, not per connection: a connection may store two
+    credentials with different destinations (Iceberg's catalog password vs its
+    storage key), and demanding both for a move that only affects one would make
+    the guard fire on ordinary edits often enough to read as a bug. Only the slot
+    whose destination actually moved is asked for.
+
+    A slot with nothing stored is never asked for — there is no credential to
+    redirect, so there is nothing to protect. That is what keeps a credential-less
+    Iceberg catalog freely editable.
+    """
+    moved: set[str] = set()
+    missing: list[str] = []
+    for slot, fields in sorted(destination_fields(conn_type).items()):
+        slot_moved = [f for f in fields if stored.get(f) != incoming.get(f)]
+        if not slot_moved:
+            continue
+        if slot == "secret":
+            if not has_stored_secret or supplied_secret is not None:
+                continue
+            missing.append("secret")
+        # An extra credential is "stored" iff config carries its ref, by the same
+        # `*_secret_name` suffix convention `_extra_secrets` resolves by — so a
+        # future second-credential slot needs no new branch here.
+        elif stored.get(f"{slot}_secret_name") and supplied_extra_secrets.get(slot) is None:
+            missing.append(f"{slot}_secret")
+        else:
+            continue
+        # Only the fields belonging to a slot that actually WENT unsatisfied — a
+        # message naming a field the caller already covered sends them looking in
+        # the wrong place.
+        moved.update(slot_moved)
+
+    if missing:
+        raise CredentialRedirectError(
+            f"changing {', '.join(repr(f) for f in sorted(moved))} moves where this "
+            f"connection's credentials are sent, so {', '.join(repr(m) for m in missing)} "
+            "must be re-supplied in the same request",
+            detail={"fields": sorted(moved), "required": missing},
+        )
 
 
 def _validate_extra_secret_supported(conn_type: str, config: Mapping[str, Any], field: str) -> None:
@@ -731,8 +812,23 @@ def update_connection(
         # CURRENT config, before `_carry_over_secret_name_keys` merges the two —
         # afterwards the caller's value and the server's are indistinguishable.
         _reject_foreign_secret_names(config, stored=conn.config or {})
-        was_syncing = bool((conn.config or {}).get("inventory_sync"))
-        conn.config = _carry_over_secret_name_keys(conn.config or {}, config)
+        stored_config = conn.config or {}
+        # Compare against the MERGED config, not the raw payload: a PATCH that
+        # omits `catalog_secret_name` has it carried over, so judging the raw
+        # payload would read every partial update as "dropped the field" — and,
+        # worse, an omitted destination field would read as a move to None and
+        # demand credentials for an edit that changed nothing.
+        merged_config = _carry_over_secret_name_keys(stored_config, config)
+        _reject_uncredentialed_redirect(
+            conn.type,
+            stored=stored_config,
+            incoming=merged_config,
+            has_stored_secret=conn.secret_ref is not None,
+            supplied_secret=secret,
+            supplied_extra_secrets={"catalog": catalog_secret},
+        )
+        was_syncing = bool(stored_config.get("inventory_sync"))
+        conn.config = merged_config
         if was_syncing and not bool((conn.config or {}).get("inventory_sync")):
             # Turning the ADR 0040 toggle OFF ends the sync, so the outcome state
             # describes something that no longer happens (#1104). Cleared HERE, not

@@ -1,4 +1,4 @@
-import { App, Badge, Button, Flex, Form, Input, Select, Tag, Typography } from 'antd';
+import { Alert, App, Badge, Button, Flex, Form, Input, Select, Tag, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 
 import {
@@ -15,7 +15,12 @@ import {
   updateConnection,
 } from '../../api/connections';
 import { ConnectionTypeFields } from './ConnectionTypeFields';
-import { activeAuthOption, composeSecret, initialConfigForType } from './connectionFormSpec';
+import {
+  activeAuthOption,
+  composeSecret,
+  CONNECTION_FORM_SPECS,
+  initialConfigForType,
+} from './connectionFormSpec';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errors';
 
@@ -40,7 +45,10 @@ type TestState = 'idle' | 'testing' | 'ok' | 'failed';
  * page (the drawer is retired in W6, ADR 0022). `connection === undefined` is
  * create mode (env is chosen + the credential is captured); editing locks type +
  * env (the backend `ConnectionUpdate` rejects changing them) and omits the secret
- * — credential rotation is the separate Re-auth flow.
+ * — credential rotation is the separate Re-auth flow. The one exception is a
+ * config edit that moves where the credential is SENT (#1401): the backend
+ * requires it back, so the field reappears rather than leaving the user at a
+ * 422 they cannot answer.
  */
 export function ConnectionForm({
   type,
@@ -107,6 +115,27 @@ export function ConnectionForm({
     }
   };
 
+  // #1401: the backend refuses a config change that moves where this
+  // connection's stored credential is SENT unless the credential is re-supplied
+  // in the same request. Edit mode normally hides the secret entirely (rotation
+  // is the Re-auth flow), so without this the user would fill in a new
+  // `account_url`, press Save, and get a 422 naming a field the form does not
+  // show them — a dead end for a legitimate host migration.
+  //
+  // The comparison is `JSON.stringify` rather than a deep-equal because one
+  // destination field (Iceberg's `properties`) is an object. Key-order
+  // sensitivity can only produce a FALSE POSITIVE — asking for a credential
+  // that the backend would not have demanded — which costs a re-typed password,
+  // not a security property.
+  const editedConfig = Form.useWatch('config', form) as Record<string, unknown> | undefined;
+  const movedDestinations = isEdit
+    ? (CONNECTION_FORM_SPECS[type].destinationFields ?? []).filter(
+        (field) =>
+          JSON.stringify(editedConfig?.[field] ?? null) !==
+          JSON.stringify(connection.config[field] ?? null),
+      )
+    : [];
+
   const onFinish = (values: FormValues) =>
     run(async () => {
       const saved = isEdit
@@ -114,6 +143,9 @@ export function ConnectionForm({
             name: values.name,
             config: values.config ?? {},
             catalog_secret: values.catalogSecret || undefined,
+            // Only when a destination moved — an ordinary edit still sends no
+            // credential, so a routine rename can never overwrite a working one.
+            secret: movedDestinations.length > 0 ? buildSecret(values) : undefined,
           })
         : await createConnection({
             name: values.name,
@@ -198,7 +230,24 @@ export function ConnectionForm({
           />
         </Form.Item>
       )}
-      <ConnectionTypeFields type={type} form={form} showSecret={!isEdit} />
+      {movedDestinations.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="Re-enter the credential to move this connection"
+          description={
+            `Changing ${movedDestinations.join(', ')} changes where this connection's ` +
+            'credential is sent, so it must be supplied again. The stored one is never ' +
+            'forwarded to a new destination.'
+          }
+        />
+      )}
+      <ConnectionTypeFields
+        type={type}
+        form={form}
+        showSecret={!isEdit || movedDestinations.length > 0}
+      />
       <Flex align="center" gap={8} style={{ marginBottom: 24 }}>
         <Button loading={testState === 'testing'} onClick={onTest}>
           {isEdit ? 'Test saved connection' : 'Test connection'}

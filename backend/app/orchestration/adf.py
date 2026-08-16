@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 from pydantic import BaseModel, ConfigDict
@@ -86,6 +86,16 @@ def _acquire_token(config: ADFConfig, client_secret: str) -> str:
 
 class ADFConnectionAdapter:
     """`ConnectionAdapter` for Azure Data Factory — config validation + live test."""
+
+    # #1401: EMPTY, and deliberately so — not an oversight, and not a default.
+    # The client secret only ever goes to `_AAD_OAUTH_URL`, a hardcoded
+    # `login.microsoftonline.com` endpoint; `tenant_id` interpolates into its
+    # PATH, so no config field can move the authority. `subscription_id` /
+    # `resource_group` / `factory_name` address an ARM resource with a token
+    # already issued, not a credential-receiving host. If a future change lets
+    # config choose the authority (a sovereign-cloud endpoint, say), that field
+    # belongs here.
+    destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {}
 
     def validate_config(self, raw: dict[str, Any]) -> ADFConfig:
         return ADFConfig.model_validate(raw)

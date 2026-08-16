@@ -219,6 +219,34 @@ class ConnectionAdapter(Protocol):
     `test_draft_connection` gate on the ``secret_optional`` class attribute
     below before it can happen.
 
+    ``destination_fields: Mapping[str, tuple[str, ...]]`` (declared on every
+    concrete adapter, with no default — see `registry.destination_fields`) maps a
+    **credential slot** to the config fields that decide where *that* credential
+    is sent. The slot key is ``"secret"`` for the primary credential and
+    ``"<field>"`` for an extra one resolved from ``<field>_secret_name`` (today
+    only ``"catalog"``), matching the kwarg names `update_connection` accepts.
+
+    It exists for one reason (#1401): a stored credential must never be
+    transmitted to a host the caller changed *without re-supplying that
+    credential*. `connection_service.update_connection` reads this and refuses a
+    config PATCH that moves a destination while leaving the credential at its
+    stored value — otherwise "may rotate a credential" silently becomes "may read
+    one", by pointing the connection at a listener and pressing Test.
+
+    Per-slot rather than one flat set, because Iceberg carries two credentials
+    with genuinely different destinations: ``catalog_uri`` steers the catalog
+    password, while ``warehouse`` / ``properties`` steer the storage credential.
+    A flat set would make setting a warehouse path demand the catalog DB
+    password — over-asking often enough that the guard would read as a bug.
+
+    Unlike ``secret_optional``, there is **no safe default**, so this is not read
+    through `getattr(..., default)`: a new adapter that forgot to declare it
+    would silently be unprotected, which is precisely the failure this closes.
+    An adapter with genuinely no caller-controlled destination declares an empty
+    mapping **explicitly**, with the reason in a comment (only
+    `ADFConnectionAdapter` does today — its authority is a fixed Microsoft
+    endpoint).
+
     ``secret_optional: bool`` (declared on the concrete adapter class, default
     ``False`` via ``getattr(adapter, "secret_optional", False)`` at the two
     call sites — deliberately NOT part of this Protocol's required surface, so

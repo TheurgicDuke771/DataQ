@@ -320,6 +320,11 @@ _TEST_NETWORK_TIMEOUT = 10
 class SnowflakeConnectionAdapter:
     """`ConnectionAdapter` for Snowflake — config validation + a SELECT 1 test."""
 
+    # #1401: `account` becomes `<account>.snowflakecomputing.com`, so it decides
+    # which host receives the password/key-pair. `warehouse`/`database`/`role`
+    # only select objects *within* an already-chosen account.
+    destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {"secret": ("account",)}
+
     def validate_config(self, raw: dict[str, Any]) -> SnowflakeConfig:
         return SnowflakeConfig.model_validate(raw)
 

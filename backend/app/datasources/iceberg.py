@@ -306,6 +306,29 @@ def list_iceberg_columns(
 class IcebergConnectionAdapter:
     """`ConnectionAdapter` for Iceberg — config validation + a metadata probe."""
 
+    # #1401 — the only type with two credential slots, and they have genuinely
+    # different destinations, which is why this attribute is per-slot rather than
+    # one flat set:
+    #
+    #   catalog  → `catalog_uri`, the URI `inject_uri_password` injects the
+    #              catalog DB password into.
+    #   secret   → `warehouse` (the storage root the credential authenticates
+    #              against), `secret_property` (which property it fills, so
+    #              repointing it hands the credential to a different subsystem),
+    #              and `properties` — freeform, non-secret, and behind a UI
+    #              key-value editor since #1181, where `s3.endpoint` or
+    #              `adls.account-name` redirect storage just as effectively.
+    #
+    # `properties` is included whole rather than by an allowlist of address-shaped
+    # keys: such a list covers pyiceberg's storage backends as they exist today
+    # and goes stale silently, and a stale entry here fails OPEN. The cost is that
+    # adding an unrelated property (`s3.region`) also asks for the storage
+    # credential; the alternative is a guard that quietly stops covering new keys.
+    destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {
+        "catalog": ("catalog_uri",),
+        "secret": ("warehouse", "properties", "secret_property"),
+    }
+
     # A credential-less catalog (local warehouse, vended-credentials REST) is a
     # legitimate config (ADR 0030 §3, the class docstring above) — mirrored by
     # the frontend's `optionalSecret: true` for `iceberg` in

@@ -87,6 +87,23 @@ export interface TypeSpec {
     extra?: string;
     showWhen: (config: Record<string, unknown> | undefined) => boolean;
   };
+  /**
+   * `config` fields that decide **where the PRIMARY credential is sent** (#1401).
+   * Editing one requires re-supplying that credential, so the edit form reveals
+   * the otherwise-hidden secret field when the user changes one — without this,
+   * a legitimate host migration hits a 422 the form gives them no way to satisfy
+   * (edit mode normally omits the secret; rotation is the Re-auth flow).
+   *
+   * Mirrors the backend adapters' `destination_fields["secret"]`, which is the
+   * authority — this copy only decides when to show a field, exactly as
+   * `optionalSecret` mirrors `secret_optional`. Drift fails CLOSED: a field
+   * missing here means the user sees the backend's 422 instead of the input,
+   * never that the credential moves unguarded.
+   *
+   * The SECOND credential's own destination needs no entry: `secondSecret` is
+   * already shown in edit mode, since PATCH is its only rotation path.
+   */
+  destinationFields?: string[];
 }
 
 export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
@@ -117,6 +134,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         requiredFields: ['role'],
       },
     ],
+    destinationFields: ['account'],
   },
   adls_gen2: {
     textFields: [
@@ -124,6 +142,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
       { name: 'container', label: 'Container' },
     ],
     secretLabel: 'SAS token',
+    destinationFields: ['account_url'],
   },
   s3: {
     // AWS by default; setting an endpoint points the same connection at any
@@ -147,6 +166,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
       },
     ],
     secretLabel: 'Secret access key',
+    destinationFields: ['endpoint_url'],
   },
   unity_catalog: {
     textFields: [
@@ -163,6 +183,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
       },
     ],
     secretLabel: 'Personal access token (PAT)',
+    destinationFields: ['workspace_url'],
   },
   iceberg: {
     // Native pyiceberg read (ADR 0030). `catalog_uri` is required for
@@ -218,6 +239,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         'credential above) — never persisted in the catalog URI (#754/#826).',
       showWhen: (config) => config?.catalog_type === 'sql' || config?.catalog_type === 'hive',
     },
+    destinationFields: ['warehouse', 'properties', 'secret_property'],
   },
   adf: {
     textFields: [
@@ -240,6 +262,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         extraField: { name: 'username', label: 'Username' },
       },
     ],
+    destinationFields: ['base_url'],
   },
   // dbt is an OrchestrationProvider (ADR 0029), not a datasource — it binds to
   // dbt's universal surface (the run_results.json artifact + a post-build
@@ -282,6 +305,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     ],
     secretLabel: 'Artifacts read credential (ADLS SAS / S3 secret key)',
     optionalSecret: true,
+    destinationFields: ['artifacts_uri', 'endpoint_url'],
   },
 };
 

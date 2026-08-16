@@ -95,6 +95,9 @@ class UnityCatalogConfig(BaseModel):
 class UnityCatalogConnectionAdapter:
     """`ConnectionAdapter` for Unity Catalog — config validation + a SELECT 1 probe."""
 
+    # #1401: `workspace_url` is the host the Databricks PAT is sent to.
+    destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {"secret": ("workspace_url",)}
+
     def validate_config(self, raw: dict[str, Any]) -> UnityCatalogConfig:
         return UnityCatalogConfig.model_validate(raw)
 

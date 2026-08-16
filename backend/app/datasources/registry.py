@@ -74,6 +74,32 @@ def get_connection_adapter(conn_type: str) -> ConnectionAdapter:
     return adapter
 
 
+def destination_fields(conn_type: str) -> dict[str, tuple[str, ...]]:
+    """Per credential slot, the config fields that decide where it is SENT (#1401).
+
+    Read by `connection_service.update_connection` to refuse a config change that
+    moves a destination without re-supplying that slot's credential — see the
+    `ConnectionAdapter` Protocol docstring for the full contract. Keys are
+    ``"secret"`` (the primary credential) and any extra-secret field name
+    (``"catalog"``).
+
+    Deliberately **not** ``getattr(adapter, "destination_fields", {})``. A missing
+    default would read as "this type has no redirectable destination", which is
+    the one answer that silently disables the guard; an adapter author who forgets
+    gets a loud failure instead, and `test_every_adapter_declares_destination_fields`
+    turns that failure into a CI error rather than a production one.
+    """
+    adapter = get_connection_adapter(conn_type)
+    slots = getattr(adapter, "destination_fields", None)
+    if slots is None:
+        raise UnsupportedConnectionTypeError(
+            f"adapter for type {conn_type!r} declares no 'destination_fields'; every "
+            "adapter must name its credential-destination config fields (#1401), "
+            "explicitly empty if it has none"
+        )
+    return {slot: tuple(fields) for slot, fields in slots.items()}
+
+
 def credential_expiry(
     conn_type: str, config: dict[str, Any], secret: str, **extra_secrets: Any
 ) -> datetime | None:

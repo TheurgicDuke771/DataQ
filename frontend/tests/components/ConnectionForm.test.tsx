@@ -330,3 +330,148 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
     expect(payload.catalog_secret).toBeUndefined();
   });
 });
+
+describe('ConnectionForm — moving a credential destination (#1401)', () => {
+  const snowflakeConnection: Connection = {
+    id: 'conn-sf-1',
+    name: 'finance-dev',
+    type: 'snowflake',
+    env: 'dev',
+    config: {
+      account: 'ab12345.eu-west-1',
+      user: 'DQ',
+      database: 'ANALYTICS',
+      schema: 'PUBLIC',
+      warehouse: 'COMPUTE_WH',
+      role: 'DQ_ROLE',
+      auth_type: 'password',
+    },
+    has_secret: true,
+    created_by: 'u1',
+  };
+
+  it('hides the credential while editing anything that is not a destination', async () => {
+    // The baseline the guard must not break — and the half a "does it appear?"
+    // test on its own would pass just as happily against a form that always
+    // shows the field. Editing `user` cannot move where the password goes.
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(snowflakeConnection);
+
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="snowflake"
+          connection={snowflakeConnection}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('User'), '_2');
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    // No credential rides an ordinary edit — a rename must never overwrite a
+    // working stored secret with a blank.
+    expect(mockUpdate.mock.calls[0][1].secret).toBeUndefined();
+  });
+
+  it('reveals the credential field and submits it once a destination field changes', async () => {
+    // Edit mode normally omits the secret entirely (rotation is the Re-auth
+    // flow), so without this a legitimate host migration hits a backend 422
+    // naming a field the form never renders — a dead end.
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(snowflakeConnection);
+
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="snowflake"
+          connection={snowflakeConnection}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    const account = await screen.findByLabelText('Account');
+    await user.clear(account);
+    await user.type(account, 'zz99999.us-east-1');
+
+    await screen.findByText('Re-enter the credential to move this connection');
+    await user.type(await screen.findByLabelText('Password'), 'the-new-password');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][1].secret).toBe('the-new-password');
+  });
+
+  it('hides the credential again when the destination is typed back to its stored value', async () => {
+    // The prompt is driven by a comparison against the STORED value, not by a
+    // "field was touched" flag — so undoing an edit puts the form back where it
+    // started rather than demanding a credential for a no-op save.
+    const user = userEvent.setup();
+
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="snowflake"
+          connection={snowflakeConnection}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    const account = await screen.findByLabelText('Account');
+    await user.clear(account);
+    await user.type(account, 'zz99999.us-east-1');
+    await screen.findByLabelText('Password');
+
+    await user.clear(account);
+    await user.type(account, 'ab12345.eu-west-1');
+
+    await waitFor(() => expect(screen.queryByLabelText('Password')).not.toBeInTheDocument());
+  });
+  it('does not submit a credential typed before the destination was undone', async () => {
+    // Locks the observable contract: undoing the host change must not rotate the
+    // stored credential to something typed for a move that never happened.
+    //
+    // Two things enforce it — hiding the field, and the `movedDestinations` guard
+    // on the submitted `secret` — and removing either one alone leaves this test
+    // green, so it is a behaviour lock rather than a proof of one mechanism. Worth
+    // keeping both: an antd Form.Item defaults `preserve` to true, which is exactly
+    // the trap the catalog-password `preserve={false}` test above pins (#602), and
+    // the failure mode here is silently overwriting a working credential.
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(snowflakeConnection);
+
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="snowflake"
+          connection={snowflakeConnection}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    const account = await screen.findByLabelText('Account');
+    await user.clear(account);
+    await user.type(account, 'zz99999.us-east-1');
+    await user.type(await screen.findByLabelText('Password'), 'typed-then-abandoned');
+
+    await user.clear(account);
+    await user.type(account, 'ab12345.eu-west-1');
+    await waitFor(() => expect(screen.queryByLabelText('Password')).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][1].secret).toBeUndefined();
+  });
+});
