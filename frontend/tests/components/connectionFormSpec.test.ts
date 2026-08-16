@@ -5,6 +5,7 @@ import {
   CONNECTION_FORM_SPECS,
   composeSecret,
   initialConfigForType,
+  movedDestinationFields,
 } from '../../src/components/connections/connectionFormSpec';
 
 describe('composeSecret', () => {
@@ -82,5 +83,51 @@ describe("Iceberg's second (catalog) credential — #1181", () => {
     expect(showWhen({ catalog_type: 'glue' })).toBe(false);
     expect(showWhen(undefined)).toBe(false);
     expect(showWhen({})).toBe(false);
+  });
+});
+
+describe('movedDestinationFields (#1401)', () => {
+  const stored = { account: 'ab12345.eu-west-1', warehouse: 'WH' };
+
+  it('treats an unwatched config as nothing moved, not everything moved', () => {
+    // The edit form seeds itself in a useEffect, so `Form.useWatch` returns
+    // undefined for the first render. Reading that as "every field changed"
+    // flashed the "Re-enter the credential" alert and a required credential
+    // input on every edit open, asserting something untrue of the current state.
+    // Invisible to an RTL test, which only observes the settled post-effect DOM.
+    expect(movedDestinationFields('snowflake', undefined, stored)).toEqual([]);
+  });
+
+  it('reports a moved destination field', () => {
+    expect(movedDestinationFields('snowflake', { ...stored, account: 'zz9.us' }, stored)).toEqual([
+      'account',
+    ]);
+  });
+
+  it('ignores a non-destination field', () => {
+    expect(movedDestinationFields('snowflake', { ...stored, warehouse: 'XL' }, stored)).toEqual([]);
+  });
+
+  it('treats a cleared optional destination as a move', () => {
+    // Distinct from `undefined`-the-whole-config above: the config IS known here
+    // and the field was emptied, which does move an S3 connection off its
+    // custom endpoint back to AWS.
+    expect(movedDestinationFields('s3', {}, { endpoint_url: 'https://minio.example.com' })).toEqual(
+      ['endpoint_url'],
+    );
+  });
+
+  it('compares object-valued destination fields by value', () => {
+    const props = { 's3.region': 'us-east-1' };
+    expect(
+      movedDestinationFields('iceberg', { properties: { ...props } }, { properties: props }),
+    ).toEqual([]);
+    expect(
+      movedDestinationFields(
+        'iceberg',
+        { properties: { 's3.endpoint': 'https://attacker' } },
+        { properties: props },
+      ),
+    ).toEqual(['properties']);
   });
 });

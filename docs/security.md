@@ -202,6 +202,17 @@ are the reason this mode is opt-in rather than the default:
   app reads them via a managed identity (Azure) or the task IAM role (AWS).
 - Secret **references** (names), not secret values, are stored alongside connections. Deleting
   a connection removes its secret (soft-delete on Key Vault).
+- A reference is **server-owned**: a client may echo back the one already stored on a
+  connection, but may never introduce or repoint one. Otherwise a caller could name someone
+  else's secret and have the server resolve it on their behalf.
+- **A stored credential is never sent to a destination the caller changed.** Editing a config
+  field that decides where a credential goes — Snowflake `account`, ADLS `account_url`,
+  S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri`/`warehouse`/
+  `properties`, Airflow `base_url`, dbt `artifacts_uri` — requires re-supplying that
+  credential in the same request, or the update is rejected (`422 credential_redirect`).
+  Moving a connection to a new host is a supported operation; doing it with a credential you
+  do not know is not. This is why an Admin, who may **rotate** a credential, still cannot
+  **read** one.
 - Inbound webhooks are authenticated: ADF by a shared secret, Airflow and dbt by an
   **HMAC-SHA256** signature keyed on a stored signing key.
 

@@ -312,12 +312,22 @@ class IcebergConnectionAdapter:
     #
     #   catalog  → `catalog_uri`, the URI `inject_uri_password` injects the
     #              catalog DB password into.
-    #   secret   → `warehouse` (the storage root the credential authenticates
-    #              against), `secret_property` (which property it fills, so
-    #              repointing it hands the credential to a different subsystem),
-    #              and `properties` — freeform, non-secret, and behind a UI
-    #              key-value editor since #1181, where `s3.endpoint` or
-    #              `adls.account-name` redirect storage just as effectively.
+    #   secret   → `catalog_uri` **as well** (see below), `warehouse` (the storage
+    #              root the credential authenticates against), `secret_property`
+    #              (which property it fills, so repointing it hands the credential
+    #              to a different subsystem), and `properties` — freeform,
+    #              non-secret, and behind a UI key-value editor since #1181, where
+    #              `s3.endpoint` or `adls.account-name` redirect storage just as
+    #              effectively.
+    #
+    # `catalog_uri` appears in BOTH slots because `catalog_properties` puts both
+    # credentials at that one address: the catalog password is injected into
+    # `props["uri"]`, and `props[secret_property] = secret` is sent TO that uri —
+    # for a REST catalog `secret_property` is `token`, which pyiceberg presents as
+    # `Authorization: Bearer …` against it. Listing it only under `catalog` left
+    # the exploit live on the commonest REST shape, which has a `secret_ref` and
+    # NO `catalog_secret_name`: the catalog slot finds nothing stored and waves the
+    # move through while the primary token follows the URI (caught in review).
     #
     # `properties` is included whole rather than by an allowlist of address-shaped
     # keys: such a list covers pyiceberg's storage backends as they exist today
@@ -326,7 +336,7 @@ class IcebergConnectionAdapter:
     # credential; the alternative is a guard that quietly stops covering new keys.
     destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {
         "catalog": ("catalog_uri",),
-        "secret": ("warehouse", "properties", "secret_property"),
+        "secret": ("catalog_uri", "warehouse", "properties", "secret_property"),
     }
 
     # A credential-less catalog (local warehouse, vended-credentials REST) is a

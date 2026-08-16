@@ -1411,6 +1411,54 @@ def test_every_adapter_declares_destination_fields() -> None:
             assert fields, f"{conn_type!r} slot {slot!r} names no fields"
 
 
+def test_moving_a_rest_catalog_uri_asks_for_the_primary_token(db_session: Any) -> None:
+    """The review-caught hole in the first cut of this guard, and the reason
+    `catalog_uri` is listed under BOTH slots.
+
+    `catalog_properties` puts both credentials at that one address: the catalog
+    password is injected into `props["uri"]`, and `props[secret_property] = secret`
+    is sent TO that uri — for a REST catalog `secret_property` is `token`, which
+    pyiceberg presents as `Authorization: Bearer …`.
+
+    So on the commonest REST shape — a `secret_ref` and NO `catalog_secret_name` —
+    listing `catalog_uri` under the `catalog` slot alone waved the move straight
+    through: the catalog slot found nothing stored and skipped, and the `secret`
+    slot's other fields hadn't moved. Every other test here reaches `catalog_uri`
+    through the catalog slot, which is exactly why none of them saw it.
+    """
+    store = FakeSecretStore()
+    conn = svc.create_connection(
+        db_session,
+        name="rest-iceberg",
+        conn_type="iceberg",
+        env="dev",
+        config={
+            "catalog_type": "rest",
+            "catalog_uri": "https://catalog.internal",
+            "secret_property": "token",
+        },
+        secret="the-bearer-token",
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+    assert conn.config.get("catalog_secret_name") is None
+
+    with pytest.raises(svc.CredentialRedirectError) as exc:
+        svc.update_connection(
+            db_session,
+            conn.id,
+            config={
+                "catalog_type": "rest",
+                "catalog_uri": "https://attacker.example.com",
+                "secret_property": "token",
+            },
+            secret_store=store,
+        )
+
+    assert exc.value.detail["required"] == ["secret"]
+    assert conn.config["catalog_uri"] == "https://catalog.internal"
+
+
 def test_moving_the_warehouse_asks_for_the_storage_key_not_the_catalog_password(
     db_session: Any,
 ) -> None:

@@ -18,8 +18,8 @@ import { ConnectionTypeFields } from './ConnectionTypeFields';
 import {
   activeAuthOption,
   composeSecret,
-  CONNECTION_FORM_SPECS,
   initialConfigForType,
+  movedDestinationFields,
 } from './connectionFormSpec';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errors';
@@ -120,20 +120,12 @@ export function ConnectionForm({
   // in the same request. Edit mode normally hides the secret entirely (rotation
   // is the Re-auth flow), so without this the user would fill in a new
   // `account_url`, press Save, and get a 422 naming a field the form does not
-  // show them — a dead end for a legitimate host migration.
-  //
-  // The comparison is `JSON.stringify` rather than a deep-equal because one
-  // destination field (Iceberg's `properties`) is an object. Key-order
-  // sensitivity can only produce a FALSE POSITIVE — asking for a credential
-  // that the backend would not have demanded — which costs a re-typed password,
-  // not a security property.
+  // show them — a dead end for a legitimate host migration. The comparison
+  // itself lives in `movedDestinationFields` so its first-render case is
+  // testable without a DOM.
   const editedConfig = Form.useWatch('config', form) as Record<string, unknown> | undefined;
   const movedDestinations = isEdit
-    ? (CONNECTION_FORM_SPECS[type].destinationFields ?? []).filter(
-        (field) =>
-          JSON.stringify(editedConfig?.[field] ?? null) !==
-          JSON.stringify(connection.config[field] ?? null),
-      )
+    ? movedDestinationFields(type, editedConfig, connection.config)
     : [];
 
   const onFinish = (values: FormValues) =>
