@@ -34,6 +34,31 @@ _AUTH_EMAIL_TRANSPORT_DEFAULTS: Final[dict[str, object]] = {
 _MCP_DEFAULT_ALLOWED_HOSTS = ("*.azurecontainerapps.io", "api", "localhost", "127.0.0.1")
 
 
+def _allowed_email_set(raw: str) -> frozenset[str]:
+    """Parse a comma-separated signup allowlist into normalized addresses.
+
+    Normalization is strip + lower — the SAME rule as `Settings.is_admin_email`,
+    `otp_service.normalize_email` and the `uq_users_email_lower` index. The
+    identity surface has exactly one rule (ADR 0032 decision 6), so both the OTP
+    and the generic-OIDC allowlists (#1385) go through this one function rather
+    than each spelling it out.
+    """
+    return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
+
+
+def _allowed_domain_set(raw: str) -> frozenset[str]:
+    """Parse a comma-separated signup allowlist into normalized domains.
+
+    A leading `@` is tolerated and stripped, because `@acme.io` is what an
+    operator naturally writes and a silently-never-matching allowlist is a
+    fail-OPEN-*looking* config error: every address reads as ineligible and the
+    uniform response hides which half is wrong.
+    """
+    return frozenset(
+        part.strip().lower().lstrip("@") for part in raw.split(",") if part.strip().lstrip("@")
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         # App config lives in .env.app (host dev reads it directly; compose injects
@@ -247,6 +272,33 @@ class Settings(BaseSettings):
     # `_validate_generic_oidc` below.
     oidc_issuer: str | None = None
     oidc_audience: str | None = None
+
+    # Signup gating for the generic-OIDC path (#1385) — the OIDC twin of
+    # AUTH_OTP_ALLOWED_EMAILS/_DOMAINS above, read through the normalized
+    # frozenset properties below, never the raw fields.
+    #
+    # Why this exists even though the IdP already authenticates: a valid token
+    # from the configured issuer is enough to be auto-provisioned a DataQ account
+    # (`core/auth.py`'s `_upsert_user`), so the IdP's OWN registration policy
+    # silently becomes DataQ's. That is fine for an Azure AD tenant (you must be
+    # invited) and was NOT fine for the AWS deployment's Cognito pool, which
+    # shipped with self-service sign-up enabled — anyone on the internet could
+    # register at the hosted UI and land an authenticated account. The pool is
+    # closed at the IdP now (deploy/terraform/aws/cognito.tf); this is the
+    # second, app-side layer so the same mistake in ANY issuer's console cannot
+    # reach the database.
+    #
+    # UNSET (both empty) = no app-side gate: every identity the issuer vouches
+    # for is admitted. That is the pre-#1385 behaviour, kept as the default so
+    # upgrading an existing deployment can never lock its whole workspace out —
+    # a fail-CLOSED default here would be a total outage on a routine image
+    # bump. `init_auth()` logs `auth_oidc_no_signup_allowlist` at WARNING when
+    # generic-OIDC runs in this state, so "open" is a visible condition rather
+    # than a silent one.
+    #   OIDC_ALLOWED_EMAILS=ada@acme.io,grace@acme.io
+    #   OIDC_ALLOWED_DOMAINS=acme.io
+    oidc_allowed_emails: str = ""
+    oidc_allowed_domains: str = ""
 
     auth_dev_bypass: bool = False
 
@@ -701,26 +753,33 @@ class Settings(BaseSettings):
 
     @property
     def auth_otp_allowed_email_set(self) -> frozenset[str]:
-        """Normalized (strip + lower) allow-listed signup addresses.
-
-        Same normalization as `is_admin_email` and the `uq_users_email_lower`
-        index — the identity surface has exactly one rule (ADR 0032 decision 6).
-        """
-        return frozenset(
-            part.strip().lower() for part in self.auth_otp_allowed_emails.split(",") if part.strip()
-        )
+        """Normalized (strip + lower) allow-listed OTP signup addresses."""
+        return _allowed_email_set(self.auth_otp_allowed_emails)
 
     @property
     def auth_otp_allowed_domain_set(self) -> frozenset[str]:
-        """Normalized allow-listed signup domains. A leading `@` is tolerated and
-        stripped, because `@acme.io` is what an operator naturally writes and a
-        silently-never-matching allowlist is a fail-OPEN-looking config error (every
-        address reads as ineligible, and the uniform response hides it)."""
-        return frozenset(
-            part.strip().lower().lstrip("@")
-            for part in self.auth_otp_allowed_domains.split(",")
-            if part.strip().lstrip("@")
-        )
+        """Normalized allow-listed OTP signup domains."""
+        return _allowed_domain_set(self.auth_otp_allowed_domains)
+
+    @property
+    def oidc_allowed_email_set(self) -> frozenset[str]:
+        """Normalized allow-listed generic-OIDC signup addresses (#1385)."""
+        return _allowed_email_set(self.oidc_allowed_emails)
+
+    @property
+    def oidc_allowed_domain_set(self) -> frozenset[str]:
+        """Normalized allow-listed generic-OIDC signup domains (#1385)."""
+        return _allowed_domain_set(self.oidc_allowed_domains)
+
+    @property
+    def oidc_allowlist_configured(self) -> bool:
+        """True iff an app-side OIDC access gate is in force.
+
+        False means every identity the issuer vouches for is admitted — see the
+        `oidc_allowed_emails` field comment for why that is the default and how
+        it is surfaced at boot.
+        """
+        return bool(self.oidc_allowed_email_set or self.oidc_allowed_domain_set)
 
     @property
     def auth_email_configured(self) -> bool:

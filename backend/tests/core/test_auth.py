@@ -399,6 +399,181 @@ def test_get_current_user_generic_oidc_401_without_any_credential(db_session: An
     assert excinfo.value.status_code == 401
 
 
+# ── OIDC access allowlist (#1385) ────────────────────────────────────────────
+# The defect being pinned: a valid token from the issuer was sufficient to be
+# auto-provisioned a DataQ account, so a self-signup-enabled IdP (the AWS
+# Cognito pool, as shipped) let anyone on the internet in.
+
+# Both generic-OIDC dependencies must be gated. They had byte-identical bodies,
+# so a gate added to one and missed on the other is the realistic regression —
+# hence parametrizing over both rather than testing the primary one twice.
+_OIDC_DEPS = pytest.mark.parametrize(
+    "dependency",
+    [auth_mod._get_current_user_generic_oidc, auth_mod._get_current_user_generic_oidc_or_otp],
+    ids=["generic_oidc", "generic_oidc_or_otp"],
+)
+
+
+@_OIDC_DEPS
+def test_oidc_allowlist_denies_an_address_not_on_it(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch, dependency: Any
+) -> None:
+    monkeypatch.setattr(
+        auth_mod, "_settings", _oidc_settings(oidc_allowed_emails="invited@example.com")
+    )
+    with pytest.raises(DataQError) as excinfo:
+        dependency(
+            _request(),
+            _oidc_claims({"sub": "stranger-sub", "email": "stranger@evil.test"}),
+            db_session,
+        )
+    # 403, not 401: the token is valid, so re-authenticating would loop forever.
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.code == "forbidden"
+
+
+@_OIDC_DEPS
+def test_oidc_allowlist_denial_provisions_no_user_row(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch, dependency: Any
+) -> None:
+    """The point of the gate is that the row never appears — a 403 that still
+    inserted would leave the account behind for any later path to resolve."""
+    monkeypatch.setattr(auth_mod, "_settings", _oidc_settings(oidc_allowed_domains="example.com"))
+    with pytest.raises(DataQError):
+        dependency(
+            _request(),
+            _oidc_claims({"sub": "no-row-sub", "email": "nobody@evil.test"}),
+            db_session,
+        )
+    assert db_session.query(User).filter(User.aad_object_id == "no-row-sub").one_or_none() is None
+
+
+@_OIDC_DEPS
+def test_oidc_allowlist_admits_a_listed_address(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch, dependency: Any
+) -> None:
+    monkeypatch.setattr(
+        auth_mod, "_settings", _oidc_settings(oidc_allowed_emails="invited@example.com")
+    )
+    user = dependency(
+        _request(),
+        _oidc_claims({"sub": f"invited-{dependency.__name__}", "email": "invited@example.com"}),
+        db_session,
+    )
+    assert user.email == "invited@example.com"
+
+
+def test_oidc_allowlist_admits_a_listed_domain(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(auth_mod, "_settings", _oidc_settings(oidc_allowed_domains="example.com"))
+    user = auth_mod._get_current_user_generic_oidc(
+        _request(),
+        _oidc_claims({"sub": "domain-sub", "email": "anyone@example.com"}),
+        db_session,
+    )
+    assert user.email == "anyone@example.com"
+
+
+def test_oidc_allowlist_matches_case_insensitively_and_ignores_surrounding_space(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The allowlist and the token must normalize identically, or a capitalised
+    claim silently reads as ineligible against a lower-cased list."""
+    monkeypatch.setattr(
+        auth_mod, "_settings", _oidc_settings(oidc_allowed_emails=" Invited@Example.COM , x@y.z ")
+    )
+    user = auth_mod._get_current_user_generic_oidc(
+        _request(),
+        _oidc_claims({"sub": "case-sub", "email": "INVITED@example.com"}),
+        db_session,
+    )
+    assert user.email == "invited@example.com"
+
+
+def test_oidc_allowlist_tolerates_an_at_prefixed_domain_entry(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`@acme.io` is what an operator naturally writes; if it did not match, the
+    allowlist would reject everyone while looking correctly configured."""
+    monkeypatch.setattr(auth_mod, "_settings", _oidc_settings(oidc_allowed_domains="@example.com"))
+    user = auth_mod._get_current_user_generic_oidc(
+        _request(),
+        _oidc_claims({"sub": "at-domain-sub", "email": "someone@example.com"}),
+        db_session,
+    )
+    assert user.email == "someone@example.com"
+
+
+def test_oidc_allowlist_unset_admits_everyone(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The documented default. Fail-OPEN here is deliberate (a fail-closed default
+    would lock an existing workspace out on a routine image bump) — pinned so the
+    default can never be flipped silently in either direction."""
+    settings = _oidc_settings()
+    assert settings.oidc_allowlist_configured is False
+    monkeypatch.setattr(auth_mod, "_settings", settings)
+    user = auth_mod._get_current_user_generic_oidc(
+        _request(),
+        _oidc_claims({"sub": "ungated-sub", "email": "anyone@anywhere.test"}),
+        db_session,
+    )
+    assert user.email == "anyone@anywhere.test"
+
+
+def test_oidc_allowlist_revokes_an_already_provisioned_user(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gating only the INSERT would let an identity provisioned while the list was
+    open keep its access forever — the list would grant but never revoke."""
+    monkeypatch.setattr(auth_mod, "_settings", _oidc_settings())
+    existing = auth_mod._get_current_user_generic_oidc(
+        _request(),
+        _oidc_claims({"sub": "revoked-sub", "email": "former@evil.test"}),
+        db_session,
+    )
+    assert existing.id is not None
+
+    monkeypatch.setattr(auth_mod, "_settings", _oidc_settings(oidc_allowed_domains="example.com"))
+    with pytest.raises(DataQError) as excinfo:
+        auth_mod._get_current_user_generic_oidc(
+            _request(),
+            _oidc_claims({"sub": "revoked-sub", "email": "former@evil.test"}),
+            db_session,
+        )
+    assert excinfo.value.status_code == 403
+
+
+def test_oidc_allowlist_denies_a_token_carrying_no_email(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cognito access tokens carry no `email` — it is filled from the userinfo
+    endpoint (#1346). If that round-trip fails the claim is empty, and an empty
+    address must not slip past a configured allowlist."""
+    monkeypatch.setattr(auth_mod, "_settings", _oidc_settings(oidc_allowed_domains="example.com"))
+    with pytest.raises(DataQError) as excinfo:
+        auth_mod._get_current_user_generic_oidc(
+            _request(), _oidc_claims({"sub": "no-email-sub"}), db_session
+        )
+    assert excinfo.value.status_code == 403
+
+
+def test_oidc_allowlist_does_not_gate_pat_authentication(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A PAT is resolved before any OIDC claim exists, so the gate must not reach
+    it — otherwise turning the allowlist on would break every MCP/API client."""
+    user, token = _user_with_pat(db_session)
+    monkeypatch.setattr(
+        auth_mod, "_settings", _oidc_settings(oidc_allowed_emails="someone-else@example.com")
+    )
+    resolved = auth_mod._get_current_user_generic_oidc(
+        _request(f"Bearer {token}"), None, db_session
+    )
+    assert resolved.id == user.id
+
+
 def test_azure_login_writes_the_deterministic_azure_issuer(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

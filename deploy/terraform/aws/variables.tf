@@ -78,6 +78,24 @@ variable "workspace_admin_emails" {
   default     = ""
 }
 
+# App-side access gate for the generic-OIDC path (#1385), the second layer
+# behind `allow_admin_create_user_only` in cognito.tf. Empty (both) = every
+# identity the pool issues a token for is admitted, which is the backend default
+# and is logged at WARNING on boot. Set at least one when the pool is not
+# strictly invite-only. Addresses are PII, so real values belong in the
+# gitignored terraform.tfvars, never here.
+variable "oidc_allowed_emails" {
+  description = "Comma-separated addresses allowed to hold a DataQ account via OIDC (OIDC_ALLOWED_EMAILS). Empty = no app-side gate."
+  type        = string
+  default     = ""
+}
+
+variable "oidc_allowed_domains" {
+  description = "Comma-separated email domains allowed to hold a DataQ account via OIDC (OIDC_ALLOWED_DOMAINS). Empty = no app-side gate."
+  type        = string
+  default     = ""
+}
+
 # Replaces the earlier email_username/email_from/email_to trio (#1368): the
 # stack now ships SES natively (ses.tf), so one address drives the whole
 # channel — it becomes the SES identity, the From:, and (sandbox) the sole

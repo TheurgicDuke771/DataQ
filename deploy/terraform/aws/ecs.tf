@@ -98,6 +98,11 @@ locals {
     { name = "AUTH_DEV_BYPASS", value = "false" },
     { name = "OIDC_ISSUER", value = local.cognito_issuer },
     { name = "OIDC_AUDIENCE", value = aws_cognito_user_pool_client.spa.id },
+    # App-side access gate (#1385) — second layer behind cognito.tf's
+    # allow_admin_create_user_only. Empty = no gate (backend default, logged at
+    # WARNING on boot); see variables.tf.
+    { name = "OIDC_ALLOWED_EMAILS", value = var.oidc_allowed_emails },
+    { name = "OIDC_ALLOWED_DOMAINS", value = var.oidc_allowed_domains },
     { name = "WORKSPACE_ADMIN_EMAILS", value = var.workspace_admin_emails },
     # Rate-limit per-IP keying (ADR 0035). Three proxies append to
     # X-Forwarded-For on the way in — CloudFront (appends the viewer IP), the
