@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
 from backend.app.api.v1.runs import RunRead
-from backend.app.core.auth import get_current_user
+from backend.app.core.auth import MemberUser, get_current_user
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import is_workspace_admin
 from backend.app.core.secrets import SecretStore, get_secret_store
@@ -153,7 +153,7 @@ class SuiteRead(ApiModel):
 )
 def create_suite(
     payload: SuiteCreate,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: MemberUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> SuiteRead:
     suite = svc.create_suite(
@@ -366,11 +366,14 @@ def export_suite(
 )
 def import_suite(
     payload: SuiteImportRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: MemberUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> SuiteRead:
-    # Like create_suite: any authenticated user may import; the new suite is
-    # owned by them. Thresholds/config round-trip exactly (Decimal in/out).
+    # Like create_suite: Member+ (ADR 0033 — a Viewer is read-only and cannot
+    # become an owner), and the new suite is owned by the importer. Gated here as
+    # well as on `POST /suites` deliberately: import is a second way to create a
+    # suite, and a role gate applied to only one of two doors is not a gate.
+    # Thresholds/config round-trip exactly (Decimal in/out).
     doc = payload.document
     suite = suite_io.import_suite(
         db,

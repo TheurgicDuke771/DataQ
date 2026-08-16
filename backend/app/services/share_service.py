@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
+from backend.app.core.roles import resolve_role
 from backend.app.db.models import Share, User
 from backend.app.services.suite_authz import require_permission
 
@@ -55,6 +56,35 @@ def _reject_ungrantable_permission(suite_id: uuid.UUID, permission: str) -> None
         raise ShareTargetInvalidError(
             "share permission must be 'view' or 'edit' ('admin'/'owner' are not grantable)",
             detail={"suite_id": str(suite_id), "permission": permission},
+        )
+
+
+def _reject_edit_share_to_viewer(
+    session: Session, suite_id: uuid.UUID, target_user_id: uuid.UUID, permission: str
+) -> None:
+    """Reject granting `edit` to a workspace **Viewer** (ADR 0033 decision 5).
+
+    The first of the two belts. This one exists to give the *admin doing the
+    granting* an immediate, explanatory error instead of a grant that silently
+    does nothing — `effective_permission` caps a Viewer at `view` regardless, so
+    without this the UI would happily show `edit` beside a user who cannot edit.
+
+    Resolves the target's EFFECTIVE role (`resolve_role`), not the stored column,
+    so a break-glass admin whose row still reads `member` is never mistaken for a
+    tier that can't hold `edit`.
+    """
+    if permission != "edit":
+        return
+    target = session.get(User, target_user_id)
+    if target is not None and resolve_role(target) == "viewer":
+        raise ShareTargetInvalidError(
+            "cannot grant 'edit' to a workspace viewer — viewers are read-only; "
+            "change their workspace role to member first",
+            detail={
+                "suite_id": str(suite_id),
+                "user_id": str(target_user_id),
+                "role": "viewer",
+            },
         )
 
 
@@ -98,6 +128,7 @@ def grant_share(
     # the permission value, so an outsider can't probe via the input-validity 422.
     suite = require_permission(session, suite_id, actor_id, minimum="admin")
     _reject_ungrantable_permission(suite_id, permission)
+    _reject_edit_share_to_viewer(session, suite_id, target_user_id, permission)
     if target_user_id == suite.created_by:
         raise ShareTargetInvalidError(
             "cannot share a suite with its owner (already has full access)",
@@ -151,6 +182,7 @@ def update_share(
     """Change a user's permission. Actor needs `admin`."""
     require_permission(session, suite_id, actor_id, minimum="admin")
     _reject_ungrantable_permission(suite_id, permission)
+    _reject_edit_share_to_viewer(session, suite_id, target_user_id, permission)
     _reject_self_target(suite_id, actor_id, target_user_id)
     share = _get_share(session, suite_id, target_user_id)
     share.permission = permission

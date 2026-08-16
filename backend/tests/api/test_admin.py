@@ -75,18 +75,21 @@ def _suite(db_session: Any, owner: User, conn: Connection, name: str) -> Suite:
 # ── authz gate ────────────────────────────────────────────────────────────────
 
 
-def test_non_admin_gets_403(client: TestClient) -> None:
-    # No WORKSPACE_ADMIN_EMAILS configured → the caller is not an admin.
+def test_non_admin_gets_403(client: TestClient, as_role: Any) -> None:
+    # A genuine MEMBER, not the ambient dev-bypass identity — which is itself a
+    # workspace admin since #741 (dev bypass is a single-operator mode). Using it
+    # here would have turned this test green for the wrong reason.
     get_settings.cache_clear()
+    _, headers = as_role("member")
     for path in (
         "/api/v1/admin/suites",
         "/api/v1/admin/users",
         "/api/v1/admin/access",
         "/api/v1/admin/orchestration/webhooks",
     ):
-        resp = client.get(path)
+        resp = client.get(path, headers=headers)
         assert resp.status_code == 403, path
-    resp = client.post("/api/v1/admin/auth-email/test")
+    resp = client.post("/api/v1/admin/auth-email/test", headers=headers)
     assert resp.status_code == 403
 
 

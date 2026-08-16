@@ -624,10 +624,13 @@ def test_me_reports_the_effective_role_not_the_stored_column(
     assert body["is_workspace_admin"] is True
 
 
-def test_me_dev_bypass_user_reports_member(
+def test_me_dev_bypass_user_reports_admin(
     me_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Dev bypass is a single-operator mode and its one identity is the workspace
+    admin (#741) — with NO allowlist configured, so this is the stored role, not
+    a break-glass resolution."""
     _allowlist(monkeypatch)
     body = me_client.get("/api/v1/me").json()
     assert body["email"] == DEV_BYPASS_EMAIL
-    assert body["role"] == DEFAULT_WORKSPACE_ROLE
+    assert body["role"] == ADMIN_ROLE

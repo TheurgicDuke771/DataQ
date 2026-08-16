@@ -3,6 +3,7 @@
 import os
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 # Set test-mode env vars BEFORE any backend.app.* import resolves. The auth
 # module computes its mode at import time from settings; without these the
@@ -127,6 +128,41 @@ def make_workspace_admin(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]
     def _make(*emails: str) -> None:
         monkeypatch.setenv("WORKSPACE_ADMIN_EMAILS", ",".join(emails))
         get_settings.cache_clear()
+
+    return _make
+
+
+@pytest.fixture
+def as_role(db_session: Any) -> "Callable[..., tuple[Any, dict[str, str]]]":
+    """Build a real user at a given workspace role, with PAT auth headers.
+
+    Returns `(user, headers)`. Needed because the DEV-BYPASS identity is a
+    workspace **admin** (ADR 0033 / #741 — dev bypass is a single-operator mode
+    and its one identity is the workspace), so it can no longer stand in for "a
+    non-admin caller". Tests that assert a 403, a `view`-only share, or any
+    not-an-admin behaviour must authenticate as a distinct principal; a PAT is
+    the seam that lets them, in every auth mode.
+
+    Prefer this over hand-rolling a `User` + key per test: the point is that the
+    caller is genuinely *not* the ambient identity, and a helper makes that
+    explicit at the call site.
+    """
+    import uuid as _uuid
+
+    from backend.app.db.models import User as _User
+    from backend.app.services import api_key_service as _aks
+
+    def _make(role: str = "member", *, email: str | None = None) -> tuple[Any, dict[str, str]]:
+        user = _User(
+            id=_uuid.uuid4(),
+            aad_object_id=None,
+            email=email or f"{role}-{_uuid.uuid4().hex[:8]}@example.com",
+            role=role,
+        )
+        db_session.add(user)
+        db_session.commit()
+        _, token = _aks.create_key(db_session, user, name=f"{role}-key")
+        return user, {"Authorization": f"Bearer {token}"}
 
     return _make
 
