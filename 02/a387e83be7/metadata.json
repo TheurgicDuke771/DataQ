@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "02a387e83be7",
+  "strategy": "manual-commit",
+  "branch": "docs/rbac-and-credential-redirect-sweep",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/02/a387e83be7/0/metadata.json",
+      "transcript": "/02/a387e83be7/0/full.jsonl",
+      "compact_transcript": "/02/a387e83be7/0/transcript.jsonl",
+      "content_hash": "/02/a387e83be7/0/content_hash.txt",
+      "prompt": "/02/a387e83be7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1352,
+    "cache_creation_tokens": 1524928,
+    "cache_read_tokens": 234704201,
+    "output_tokens": 390370,
+    "api_call_count": 676
+  }
+}
