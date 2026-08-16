@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "4c15df7abb6f",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1401-credential-redirect",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/adls.py",
+    "backend/app/datasources/base.py",
+    "backend/app/datasources/iceberg.py",
+    "backend/app/datasources/registry.py",
+    "backend/app/datasources/s3.py",
+    "backend/app/datasources/snowflake.py",
+    "backend/app/datasources/unity_catalog.py",
+    "backend/app/orchestration/adf.py",
+    "backend/app/orchestration/airflow.py",
+    "backend/app/orchestration/dbt.py",
+    "backend/app/services/connection_service.py",
+    "backend/tests/services/test_connection_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4c/15df7abb6f/0/metadata.json",
+      "transcript": "/4c/15df7abb6f/0/full.jsonl",
+      "compact_transcript": "/4c/15df7abb6f/0/transcript.jsonl",
+      "content_hash": "/4c/15df7abb6f/0/content_hash.txt",
+      "prompt": "/4c/15df7abb6f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1204,
+    "cache_creation_tokens": 1448804,
+    "cache_read_tokens": 215105183,
+    "output_tokens": 352155,
+    "api_call_count": 602
+  }
+}
