@@ -14,7 +14,7 @@
 
 In the UI, **Connections → Add connection**, pick the datasource, fill the type-specific
 fields, and **Test** it (a live reachability probe). Credentials are stored in the secret
-store (Azure Key Vault in production), never in the database.
+store (Azure Key Vault / AWS Secrets Manager / OpenBao, depending on deployment), never in the database.
 
 Snowflake supports two auth modes: **password** and **key pair (RSA)**. For key pair,
 paste the PEM private key; if the key is passphrase-protected (PKCS#8), fill the optional

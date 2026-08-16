@@ -178,7 +178,7 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 
 - **Three sign-in modes** — dev-bypass (local eval only), **email OTP** (a one-time code,
   no Identity Provider required — the local/eval default, ADR 0032), and **OIDC SSO**
-  (provider-neutral, Azure AD validated). Exactly one is active per deployment.
+  (provider-neutral, Azure AD and AWS Cognito both validated in prod). Exactly one is active per deployment.
 - **Personal access tokens (PATs)** — `dq_live_` tokens for headless / AI-client use, same
   authz as the user, on REST **and** `/mcp` ([API keys](api-keys.md), ADR 0026).
 - **Suite sharing** — per-suite view / edit grants, capped by workspace role (below).
@@ -206,7 +206,10 @@ and/or a generic OTLP endpoint ([Observability](observability.md)).
 
 ## Deployment & portability
 
-Runs on **Azure Container Apps** today (API + worker + frontend; the frontend is the sole
-public surface). Every cloud dependency sits behind a seam — OIDC auth, the secret store,
-observability export, and the orchestration providers are each one implementation of a
-provider-agnostic interface, so DataQ is not locked to Azure ([Architecture](architecture.md)).
+Runs live today on **both Azure Container Apps and AWS ECS Fargate** — two independent,
+equally-real deployments (API + worker + frontend; the frontend is the sole public
+surface on each). Every cloud dependency sits behind a seam — OIDC auth, the secret
+store, observability export, and the orchestration providers are each swappable behind a
+provider-agnostic interface, which is what let AWS ship as a second target with zero app
+code differing between clouds ([Architecture](architecture.md), [deployment
+parity](deployment-parity.md)).

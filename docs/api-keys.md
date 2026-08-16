@@ -2,7 +2,7 @@
 
 DataQ can mint you a **personal access token (PAT)** — a long-lived, revocable
 credential for scripts, CI, and always-on MCP clients, where an SSO browser
-flow or a ~60-minute Azure AD token doesn't fit (ADR
+flow or a ~60-minute OIDC access token doesn't fit (ADR
 [0026](adr/0026-auth-api-keys-and-principal-seam.md)).
 
 A PAT authenticates **as you**: it inherits exactly your per-suite access
@@ -17,7 +17,7 @@ PAT):
 
 ```bash
 curl -sS -X POST "$DATAQ_URL/api/v1/me/api-keys" \
-  -H "Authorization: Bearer $AZURE_AD_TOKEN" \
+  -H "Authorization: Bearer $OIDC_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name": "ci-smoke", "expires_in_days": 90}'
 ```
@@ -37,7 +37,7 @@ The response carries the plaintext token **exactly once**:
 !!! danger "Store it now — it cannot be retrieved again"
     Only a hash is kept at rest. If the token is lost, revoke the key and mint
     a new one. Never commit a token to version control; put it in your CI
-    secret store / Key Vault.
+    secret store (Key Vault, Secrets Manager, etc).
 
 - `name` — a label for telling keys apart (e.g. `ci-smoke`, `mcp-desktop`).
 - `expires_in_days` — default **90**, maximum **365**. Non-expiring keys are
@@ -45,7 +45,7 @@ The response carries the plaintext token **exactly once**:
 
 ## Using a key
 
-The token goes wherever an Azure AD bearer would — same header, same
+The token goes wherever an OIDC bearer token would — same header, same
 endpoints:
 
 ```bash

@@ -4,7 +4,7 @@
 
 **📖 Documentation site: <https://theurgicduke771.github.io/DataQ/>** (MkDocs Material — quickstart, concepts, architecture, guides).
 
-**Status:** **v1.0.0 released (2026-07-04)** — the 8-week roadmap is complete (187/189; 2 items consciously re-scoped to post-v1). v1 is **deployed to Azure Container Apps** — API + worker + a runtime-configured **frontend Container App** (the sole public surface; the api runs on internal ingress behind it), with Key Vault, App Insights, and orchestration polling live. Auth is a **generic OIDC client** (validated against Azure AD; ADR [0028](docs/adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md)). The completed v1 ledger is archived at [docs/progress-v1.md](docs/progress-v1.md); live post-v1 progress at [docs/progress.md](docs/progress.md).
+**Status:** **v1.0.0 released (2026-07-04)** — the 8-week roadmap is complete (187/189; 2 items consciously re-scoped to post-v1). DataQ is **deployed live on two independent clouds — Azure and AWS** (Azure Container Apps and AWS ECS Fargate, each with its own API + worker + a runtime-configured frontend as the sole public surface, Key Vault/Secrets Manager, App Insights/CloudWatch+X-Ray, and orchestration polling), behind the same generic, provider-neutral seams (ADR [0028](docs/adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md)) — see [deployment parity](https://theurgicduke771.github.io/DataQ/deployment-parity/) for the side-by-side. Auth is a **generic OIDC client** (Azure AD and AWS Cognito both validated). The completed v1 ledger is archived at [docs/progress-v1.md](docs/progress-v1.md); live post-v1 progress at [docs/progress.md](docs/progress.md).
 
 ## What it does
 
@@ -41,15 +41,15 @@
 |---|---|
 | Backend | FastAPI · Celery · Great Expectations · SQLAlchemy + Alembic · PostgreSQL · Redis |
 | Frontend | React · Vite · Ant Design · generic OIDC (`oidc-client-ts`) |
-| Auth / secrets | OIDC — Azure AD validated (`AUTH_*` contract, provider-neutral) · Azure Key Vault |
-| Hosting | Azure Container Apps (API · worker · frontend) + Application Insights (deployed) |
+| Auth / secrets | OIDC — Azure AD and AWS Cognito both validated (`AUTH_*` contract, provider-neutral) · Azure Key Vault or AWS Secrets Manager |
+| Hosting | Azure Container Apps or AWS ECS Fargate (API · worker · frontend), both live — App Insights or CloudWatch+X-Ray |
 | AI integration | FastMCP — 8 curated MCP tools at `/mcp` for Claude Desktop / Copilot / Cursor |
 
 ## Quick start
 
 ### Run DataQ — prebuilt images (recommended)
 
-Evaluate or self-host in ~5 minutes: **no source checkout, no Azure tenant.** Just Docker.
+Evaluate or self-host in ~5 minutes: **no source checkout, no cloud account or IdP.** Just Docker.
 
 ```bash
 curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
@@ -62,7 +62,7 @@ Open **<http://localhost:3000>**, enter that address, and read the 6-digit code 
 
 > Prefer no sign-in at all? `DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up` is the explicit downgrade — every request becomes one fixed admin user. Omitting `DATAQ_SIGNIN_EMAIL` entirely stops the stack instead of choosing that for you.
 
-> Self-hosting with **your own** Azure AD? The published frontend is **one generic image** — the compose eval runs it with `DATAQ_AUTH_MODE=otp`. For real SSO, **no rebuild**: run that same image with `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (auth config is injected at runtime, ADR 0028), and run the backend with `AUTH_DEV_BYPASS` off. See [Getting started](https://theurgicduke771.github.io/DataQ/getting-started/).
+> Self-hosting with **your own** IdP — Azure AD, AWS Cognito, or any standards-compliant OIDC provider? The published frontend is **one generic image** — the compose eval runs it with `DATAQ_AUTH_MODE=otp`. For real SSO, **no rebuild**: run that same image with `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (auth config is injected at runtime, ADR 0028), and run the backend with `AUTH_DEV_BYPASS` off. See [Getting started](https://theurgicduke771.github.io/DataQ/getting-started/).
 
 ### Develop DataQ — from source
 

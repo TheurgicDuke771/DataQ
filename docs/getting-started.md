@@ -185,8 +185,8 @@ docker-compose up      # Postgres + Redis + FastAPI (:8000) + React (:3000) + Ce
 
 `setup.sh` asks **which address may sign in** and writes the answer to your gitignored
 `.env` as `DATAQ_SIGNIN_EMAIL`. That address is allow-listed *and* made a workspace
-admin, and you sign in by reading the code at `http://localhost:8025` — no Azure tenant,
-no SMTP relay. Answering blank is the explicit downgrade to **dev-bypass** (no sign-in;
+admin, and you sign in by reading the code at `http://localhost:8025` — no cloud account
+or IdP, no SMTP relay. Answering blank is the explicit downgrade to **dev-bypass** (no sign-in;
 every request is one fixed dev user), which you can flip either way afterwards by editing
 that one variable and re-running `docker compose up`.
 

@@ -54,7 +54,7 @@ Manual checklist (the mutating tail):
 - **Single tenant**, suite-level access sharing; workspace-admin is a config allowlist.
 - Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
   deferred — you specify targets explicitly. JSON flat files deferred (CSV/Parquet in v1).
-- Auth is one of **Azure AD SSO, email OTP (ADR 0032, IdP-less), or dev-bypass**,
+- Auth is one of **OIDC SSO (Azure AD or Cognito), email OTP (ADR 0032, IdP-less), or dev-bypass**,
   plus **PATs** (`dq_live_…`, ADR 0026) for headless/API/MCP clients — no
   username/password login, and no separate service-account principal yet (ADR 0026
   phase 2, deferred).

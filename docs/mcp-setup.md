@@ -15,7 +15,7 @@ https://<your-dataq-host>/mcp/
     `Authorization` header when following redirects — which then surfaces as a
     confusing 401. Always configure clients with the `/mcp/` form.
 
-The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/0008-mcp-server.md) / [0026](adr/0026-auth-api-keys-and-principal-seam.md)): an Azure AD bearer token, or a **DataQ API key** (`dq_live_…`). Without auth configured, the endpoint is only mounted in local dev-bypass mode — never unauthenticated in a deployed environment.
+The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/0008-mcp-server.md) / [0026](adr/0026-auth-api-keys-and-principal-seam.md)): an OIDC bearer token (Azure AD or Cognito), or a **DataQ API key** (`dq_live_…`). Without auth configured, the endpoint is only mounted in local dev-bypass mode — never unauthenticated in a deployed environment.
 
 !!! info "Email-OTP deployments: MCP works, with an API key"
     A deployment running **email one-time codes instead of SSO** (ADR
