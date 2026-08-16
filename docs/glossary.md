@@ -15,7 +15,7 @@
 | **Health score** | Severity-weighted, SQL-normalised score (0–100) summarising workspace quality. |
 | **Trigger binding** | A mapping `(provider, pipeline/DAG, env) → suite` that runs a suite when a pipeline succeeds. |
 | **`pipeline_runs` vs `runs`** | Orchestration runs vs DataQ check runs — linked, never conflated. |
-| **Secret store** | Where credentials live — Azure Key Vault (prod) or env/redis (dev), behind one seam. |
+| **Secret store** | Where credentials live — Azure Key Vault / AWS Secrets Manager / OpenBao (prod) or env/redis (dev), behind one seam. |
 | **MCP** | Model Context Protocol — DataQ exposes 8 curated tools at `/mcp` for AI assistants. |
 | **ADR** | Architecture Decision Record — `docs/adr/`, one markdown per significant decision. |
 

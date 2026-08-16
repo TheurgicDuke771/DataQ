@@ -1,16 +1,21 @@
 # DataQ — deployment guide
 
-How DataQ v1 is deployed to Azure. Infrastructure is **in-repo OpenTofu**
-(`deploy/terraform/azure/`, applied — [ADR 0024](../docs/adr/0024-app-deployment-infrastructure.md));
-the app rolls out via the **`Deploy`** workflow
-([.github/workflows/deploy.yml](../.github/workflows/deploy.yml), `workflow_dispatch`).
-The stack is **live** — this is the runbook to provision a fresh environment and to
-deploy a new image. Related: [ADR 0025](../docs/adr/0025-production-image-pip-slim.md)
+How DataQ v1 is deployed to **Azure and AWS — two parallel, independently live
+deployments**, not a primary and a fallback. Infrastructure for both is **in-repo
+OpenTofu** (`deploy/terraform/azure/` and `deploy/terraform/aws/`, both applied —
+[ADR 0024](../docs/adr/0024-app-deployment-infrastructure.md)); each app rolls out via
+its own workflow (Azure: [.github/workflows/deploy.yml](../.github/workflows/deploy.yml);
+AWS: [.github/workflows/deploy-aws.yml](../.github/workflows/deploy-aws.yml), both
+`workflow_dispatch`). Both stacks are **live** — this is the runbook to provision a
+fresh environment and to deploy a new image, on either cloud. Related: [ADR 0025](../docs/adr/0025-production-image-pip-slim.md)
 (slim+pip image), [ADR 0023](../docs/adr/0023-container-image-registry-ghcr.md) (GHCR).
 
-Azure is **one** deploy target behind the app's seams (ADR 0010/0013) — the
-manifests here are infra config, not business logic. No Azure resource names are
-hardcoded in app code; they live only as OpenTofu vars + workflow `vars`/`secrets`.
+This guide is written Azure-first because Azure was built first and most of the prose
+below (Key Vault, Azure AD, Container Apps) describes it in detail; the [AWS
+deployment](#aws-deployment) section covers the AWS-specific equivalents. Neither cloud
+is a fallback for the other — no Azure resource names are hardcoded in app code, cloud
+identity lives only behind the app's seams (ADR 0010/0013), and each cloud's manifests
+are infra config, not business logic.
 
 ## Before you deploy: production prerequisites
 
@@ -99,11 +104,11 @@ mode for you. A production deployment must flip all of the following. Values liv
 
 ### 3. Cloud prerequisites
 
-DataQ is provider-agnostic by design — Azure is one target behind the app's seams
-(ADR [0010](../docs/adr/0010-provider-agnostic-infrastructure-seams.md) /
-[0013](../docs/adr/0013-marketplace-distribution-and-anti-lock-in.md)), so no cloud is
-baked into app code. Today **Azure is the supported, implemented target**; AWS and GCP
-are planned.
+DataQ is provider-agnostic by design — no cloud is baked into app code, and each
+target sits behind the same seams (ADR [0010](../docs/adr/0010-provider-agnostic-infrastructure-seams.md) /
+[0013](../docs/adr/0013-marketplace-distribution-and-anti-lock-in.md)). **Azure and AWS
+are both supported and live today, at the same level** — neither is primary or a
+fallback for the other; the choice is the deployer's. GCP remains planned.
 
 #### Azure — supported today
 
@@ -116,12 +121,15 @@ are planned.
 - The **resource providers** and **app registrations** from §2 registered/created.
 - The **GHCR** backend package public. Then follow [One-time provisioning](#one-time-provisioning).
 
-#### AWS — planned (not yet available)
+#### AWS — supported today
 
-Not yet implemented. The seams map to: ECS Fargate or App Runner (api + worker) · RDS
-for PostgreSQL · ElastiCache for Redis · Secrets Manager (`SecretStore` impl) · CloudWatch
-+ OpenTelemetry (observability) · Cognito or an OIDC IdP behind `get_current_user`. Track
-via the anti-lock-in roadmap ([ADR 0013](../docs/adr/0013-marketplace-distribution-and-anti-lock-in.md)).
+Live: ECS Fargate (api + worker + frontend) · RDS for PostgreSQL · ElastiCache for
+Redis · Secrets Manager (`SecretStore` impl) · CloudWatch + OpenTelemetry via ADOT/X-Ray
+(observability) · Cognito behind the generic `get_current_user` OIDC contract · CloudFront
+as the public HTTPS surface. Full prerequisites, IAM, and provisioning steps live in the
+dedicated runbook: [`deploy/terraform/aws/README.md`](terraform/aws/README.md). See
+[AWS deployment](#aws-deployment) below for the app-level equivalents of this guide's
+Azure-specific settings.
 
 #### GCP — planned (not yet available)
 
@@ -435,9 +443,10 @@ a hang into a failed deploy — better, but still a failed deploy.
 
 ## AWS deployment
 
-DataQ also runs as a **parallel deployment on AWS** (live since 2026-08-15; Azure
-stays primary prod). Everything Azure-specific above has an AWS counterpart behind
-the same app seams (ADR 0010/0013/0028) — no app code differs between the clouds.
+DataQ runs as a **fully independent, live deployment on AWS** (since 2026-08-15) —
+a peer to the Azure deployment above, not a fallback or a secondary copy of it.
+Everything Azure-specific above has an AWS counterpart behind the same app seams
+(ADR 0010/0013/0028) — no app code differs between the clouds.
 
 - **Infra runbook:** [`deploy/terraform/aws/README.md`](terraform/aws/README.md) —
   the OpenTofu stack (ECS Fargate api/worker/frontend + migrate task, RDS,

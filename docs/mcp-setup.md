@@ -15,7 +15,7 @@ https://<your-dataq-host>/mcp/
     `Authorization` header when following redirects — which then surfaces as a
     confusing 401. Always configure clients with the `/mcp/` form.
 
-The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/0008-mcp-server.md) / [0026](adr/0026-auth-api-keys-and-principal-seam.md)): an Azure AD bearer token, or a **DataQ API key** (`dq_live_…`). Without auth configured, the endpoint is only mounted in local dev-bypass mode — never unauthenticated in a deployed environment.
+The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/0008-mcp-server.md) / [0026](adr/0026-auth-api-keys-and-principal-seam.md)): an OIDC bearer token (Azure AD or Cognito), or a **DataQ API key** (`dq_live_…`). Without auth configured, the endpoint is only mounted in local dev-bypass mode — never unauthenticated in a deployed environment.
 
 !!! info "Email-OTP deployments: MCP works, with an API key"
     A deployment running **email one-time codes instead of SSO** (ADR
@@ -34,11 +34,11 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/00
 is revocable per-integration, and runs with exactly your per-suite access —
 built for always-on MCP configs.
 
-**Quick one-off — your web session's Azure token:** sign in to the DataQ web
+**Quick one-off — your web session's OIDC token:** sign in to the DataQ web
 app, open your browser's developer tools → **Application → Session Storage** →
 the `oidc.user:…` entry → copy the `access_token` value.
 
-!!! note "Azure tokens expire after ~1 hour"
+!!! note "OIDC tokens expire after ~1 hour"
     The pasted browser token is short-lived; when the client starts getting
     401s, paste a fresh one and restart the MCP server/connection — or switch
     to an [API key](api-keys.md) and stop re-pasting.

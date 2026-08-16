@@ -54,7 +54,7 @@ Manual checklist (the mutating tail):
 - **Single tenant**, suite-level access sharing; workspace-admin is a config allowlist.
 - Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
   deferred — you specify targets explicitly. JSON flat files deferred (CSV/Parquet in v1).
-- Auth is one of **Azure AD SSO, email OTP (ADR 0032, IdP-less), or dev-bypass**,
+- Auth is one of **OIDC SSO (Azure AD or Cognito), email OTP (ADR 0032, IdP-less), or dev-bypass**,
   plus **PATs** (`dq_live_…`, ADR 0026) for headless/API/MCP clients — no
   username/password login, and no separate service-account principal yet (ADR 0026
   phase 2, deferred).
@@ -68,13 +68,13 @@ can trigger from. You never write checks against them. See **[Concepts](concepts
 one-time code and bundle the mailbox too (a local Mailpit inbox at `localhost:8025`), so
 there is no IdP *and* no SMTP relay to bring — `scripts/setup.sh` just asks which address
 may sign in. Dev-bypass is still there as an explicit downgrade (leave that answer blank).
-Azure is one deployment target behind the app's seams (ADR 0010/0013).
+Azure and AWS are both live deployment targets behind the app's seams (ADR 0010/0013), at the same level — neither is primary.
 
 **Where do failed-row samples go?** Stored with the result, **PII-redacted**, and purged
 after a retention window — never written to logs.
 
 **Can an AI assistant use DataQ?** Yes — 8 MCP tools at `/mcp` (Claude Desktop / Claude.ai
-/ Copilot / Cursor), Azure-AD authenticated. See [AI assistants (MCP setup)](mcp-setup.md).
+/ Copilot / Cursor), OIDC-authenticated (Azure AD or Cognito) or via a PAT. See [AI assistants (MCP setup)](mcp-setup.md).
 
 **An asset shows no lineage — is that right?** Maybe not. "No lineage recorded" is what you
 see both when an asset genuinely has no upstreams **and** when DataQ has been unable to read

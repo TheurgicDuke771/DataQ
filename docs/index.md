@@ -16,7 +16,7 @@ automatically when a pipeline finishes.
 
 ### Run DataQ — prebuilt images (recommended)
 
-Evaluate or self-host with **no source checkout and no Azure tenant** — just Docker:
+Evaluate or self-host with **no source checkout and no cloud account or IdP** — just Docker:
 
 ```bash
 curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
@@ -49,8 +49,8 @@ docker-compose up         # Postgres + Redis + FastAPI + React + Celery worker
 
 Then open the UI, add a connection, create a suite of checks, and run it. See
 **[Getting started](getting-started.md)** for both paths in depth (incl. self-hosting
-with your own Azure AD) and **[Datasources & checks](datasources-checks.md)** to author
-your first check.
+with your own IdP — Azure AD, Cognito, Okta, …) and **[Datasources & checks](datasources-checks.md)**
+to author your first check.
 
 ## Where to go next
 
