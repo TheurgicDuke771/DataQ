@@ -60,6 +60,7 @@ in production, #170 — this page is the reference.)
 |---|---|---|
 | GET / POST | `/connections` | List / create a connection. |
 | GET / PATCH / DELETE | `/connections/{id}` | Read / update / delete. |
+| POST | `/connections/test` | Test an **unsaved draft** connection — nothing is persisted. |
 | POST | `/connections/{id}/test` | Test live connectivity. |
 | POST | `/connections/{id}/reauth` | Rotate the credential and verify. |
 
@@ -72,7 +73,8 @@ any suite grant — the two axes are independent.
 
 **Moving a connection to a new host.** A `PATCH` that changes a field deciding *where* the
 credential is sent — `account` (Snowflake), `account_url` (ADLS), `endpoint_url` (S3, dbt),
-`workspace_url` (Unity Catalog), `catalog_uri` / `warehouse` / `properties` (Iceberg),
+`workspace_url` (Unity Catalog), `catalog_uri` / `warehouse` / `properties` /
+`secret_property` (Iceberg),
 `base_url` (Airflow), `artifacts_uri` (dbt) — must re-supply that credential in the same
 request. Otherwise it returns `422` with `code: "credential_redirect"` and
 `detail.required` naming what to send. A stored credential is never forwarded to a

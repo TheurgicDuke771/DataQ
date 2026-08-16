@@ -32,7 +32,8 @@ runs, so it is validated when the connection is saved).
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
 `account_url`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
-`warehouse` / `properties`, Airflow `base_url`, dbt `artifacts_uri` — requires re-entering
+`warehouse` / `properties` / `secret_property`, Airflow `base_url`, dbt `artifacts_uri` —
+requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
 those fields; through the API the request is rejected with `422 credential_redirect` until
 you include it.

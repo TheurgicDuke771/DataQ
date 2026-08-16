@@ -109,11 +109,15 @@ Net per suite: **one owner + workspace-admin-as-admin + edit/view collaborators.
 **Implementation shape** (full plan in #482)
 - `effective_permission` / `effective_permissions` return `admin` when the user
   is a workspace-admin (computed, not a `shares` lookup).
-- `require_permission` takes an `is_workspace_admin` signal — today it is a pure
-  `session + user_id` primitive; ~~the flag is resolved from the allowlist at the
-  `/me`/API layer and threaded in~~ **(amended by ADR 0033: resolved by
-  `core.roles.resolve_role` off the stored `users.role`, with the allowlist as a
-  grant-only fallback)** and threaded in (keeps it unit-testable).
+- ~~`require_permission` takes an `is_workspace_admin` signal — today it is a pure
+  `session + user_id` primitive; the flag is resolved from the allowlist at the
+  `/me`/API layer and threaded in (keeps it unit-testable).~~ **Not what was
+  built, and superseded by ADR 0033.** `require_permission` /
+  `effective_permission` take `(session, suite, user_id)` and resolve the
+  workspace role *internally*, per call, via `suite_authz._workspace_role` — so
+  there is no signal for a caller to thread in, or to forget to. That also makes
+  the Viewer clamp (0033) unbypassable from the route layer, which threading a
+  flag would not have been.
 - The share validator accepts only `view`/`edit` (rejects `admin`).
 - Suite list/read scoping, Dashboard, and Results include all suites for
   workspace-admins (the #411/#412 surface).

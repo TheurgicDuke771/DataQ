@@ -19,7 +19,8 @@ the credential again.**
 
 You changed a field that decides where the credential is sent — a host, URL, or URI
 (Snowflake `account`, ADLS `account_url`, S3/dbt `endpoint_url`, Unity Catalog
-`workspace_url`, Iceberg `catalog_uri` / `warehouse` / `properties`, Airflow `base_url`, dbt
+`workspace_url`, Iceberg `catalog_uri` / `warehouse` / `properties` / `secret_property`,
+Airflow `base_url`, dbt
 `artifacts_uri`). Re-enter the credential in the same save and it will go through;
 `detail.required` on the API error names exactly what to send. See
 [Datasources & checks](datasources-checks.md#moving-a-connection-to-a-new-host).

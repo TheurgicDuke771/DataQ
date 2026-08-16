@@ -208,7 +208,7 @@ are the reason this mode is opt-in rather than the default:
 - **A stored credential is never sent to a destination the caller changed.** Editing a config
   field that decides where a credential goes — Snowflake `account`, ADLS `account_url`,
   S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri`/`warehouse`/
-  `properties`, Airflow `base_url`, dbt `artifacts_uri` — requires re-supplying that
+  `properties`/`secret_property`, Airflow `base_url`, dbt `artifacts_uri` — requires re-supplying that
   credential in the same request, or the update is rejected (`422 credential_redirect`).
   Moving a connection to a new host is a supported operation; doing it with a credential you
   do not know is not. This is why an Admin, who may **rotate** a credential, still cannot
