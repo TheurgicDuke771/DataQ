@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "79d2d9e0f2d2",
+  "strategy": "manual-commit",
+  "branch": "feature/rbac-743-role-aware-frontend",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/e2e/roles.spec.ts",
+    "frontend/tests/pages/roleAwareUi.test.tsx",
+    "frontend/tests/support/me.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/79/d2d9e0f2d2/0/metadata.json",
+      "transcript": "/79/d2d9e0f2d2/0/full.jsonl",
+      "compact_transcript": "/79/d2d9e0f2d2/0/transcript.jsonl",
+      "content_hash": "/79/d2d9e0f2d2/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 142,
+    "cache_creation_tokens": 60594,
+    "cache_read_tokens": 37554267,
+    "output_tokens": 37562,
+    "api_call_count": 71
+  }
+}
