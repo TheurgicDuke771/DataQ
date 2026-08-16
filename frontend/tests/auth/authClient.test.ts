@@ -153,3 +153,72 @@ describe('authClient.getUserManager scope (#1347)', () => {
     expect(await constructedScope()).toBe('openid email profile');
   });
 });
+
+describe('authClient.logout (#1364)', () => {
+  function mockRealConfigWithLogoutStyle(logoutStyle?: string) {
+    vi.doMock('../../src/auth/config', () => ({
+      authMode: 'real',
+      authConfig: {
+        authority: 'https://issuer.example/v2.0',
+        clientId: 'spa-1',
+        apiScope: 'api://x/u',
+        logoutStyle,
+      },
+    }));
+  }
+
+  function fakeManagerWithEndSession(endSession: string | undefined) {
+    return {
+      getUser: vi.fn(),
+      signinSilent: vi.fn(),
+      signinRedirect: vi.fn(),
+      signoutRedirect: vi.fn().mockResolvedValue(undefined),
+      removeUser: vi.fn().mockResolvedValue(undefined),
+      metadataService: { getEndSessionEndpoint: vi.fn().mockResolvedValue(endSession) },
+    };
+  }
+
+  const assignSpy = vi.fn();
+  beforeEach(() => {
+    assignSpy.mockClear();
+    // jsdom's window.location.assign throws "not implemented"; replace it.
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, origin: 'https://app.example', assign: assignSpy },
+      writable: true,
+    });
+  });
+
+  it('uses the standard signoutRedirect when no logoutStyle is configured', async () => {
+    mockRealConfigWithLogoutStyle(undefined);
+    const mgr = fakeManagerWithEndSession('https://idp.example/logout');
+    mockOidc(mgr);
+    const { logout } = await import('../../src/auth/authClient');
+    await logout();
+    expect(mgr.signoutRedirect).toHaveBeenCalledOnce();
+    expect(assignSpy).not.toHaveBeenCalled();
+  });
+
+  it("builds Cognito's client_id + logout_uri URL when logoutStyle='cognito'", async () => {
+    mockRealConfigWithLogoutStyle('cognito');
+    const mgr = fakeManagerWithEndSession('https://pool.auth.example/logout');
+    mockOidc(mgr);
+    const { logout } = await import('../../src/auth/authClient');
+    await logout();
+    expect(mgr.signoutRedirect).not.toHaveBeenCalled();
+    expect(mgr.removeUser).toHaveBeenCalledOnce();
+    expect(assignSpy).toHaveBeenCalledWith(
+      'https://pool.auth.example/logout?client_id=spa-1&logout_uri=https%3A%2F%2Fapp.example%2F',
+    );
+  });
+
+  it('still clears the local session when discovery has no end_session_endpoint', async () => {
+    mockRealConfigWithLogoutStyle('cognito');
+    const mgr = fakeManagerWithEndSession(undefined);
+    mockOidc(mgr);
+    const { logout } = await import('../../src/auth/authClient');
+    await logout();
+    expect(mgr.removeUser).toHaveBeenCalledOnce();
+    expect(assignSpy).not.toHaveBeenCalled();
+    expect(mgr.signoutRedirect).not.toHaveBeenCalled();
+  });
+});

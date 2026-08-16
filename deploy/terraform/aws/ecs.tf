@@ -281,6 +281,11 @@ resource "aws_ecs_task_definition" "frontend" {
         # on the code grant regardless. Must match cognito.tf's
         # allowed_oauth_scopes.
         { name = "DATAQ_AUTH_SCOPE", value = "openid email profile" },
+        # Sign-out dialect (#1364): Cognito's /logout is not RP-Initiated-Logout-
+        # conformant — it needs client_id + logout_uri and 400s on the standard
+        # id_token_hint/post_logout_redirect_uri, stranding the user on a raw
+        # "Client does not exist" error page with the hosted-UI session alive.
+        { name = "DATAQ_AUTH_LOGOUT_STYLE", value = "cognito" },
       ]
       logConfiguration = {
         logDriver = "awslogs"

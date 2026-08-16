@@ -72,7 +72,27 @@ export async function login(): Promise<void> {
 /** End the session (redirect to the IdP's logout, then back). */
 export async function logout(): Promise<void> {
   const mgr = getUserManager();
-  if (mgr) await mgr.signoutRedirect();
+  if (!mgr) return;
+  if (authConfig.logoutStyle === 'cognito') {
+    // Cognito's /logout is not RP-Initiated-Logout-conformant (#1364): it needs
+    // client_id + logout_uri (exactly matching a registered logout URL) and
+    // 400s "Client does not exist" on the standard id_token_hint /
+    // post_logout_redirect_uri that signoutRedirect sends — leaving the user on
+    // a raw Cognito error page with the hosted-UI session still alive (a
+    // sign-in right after silently re-authenticates the old user). Build the
+    // logout URL ourselves from the discovered end_session_endpoint.
+    const endSession = await mgr.metadataService.getEndSessionEndpoint();
+    // Clear the local session first either way — matching signoutRedirect,
+    // which also removes the stored user before navigating.
+    await mgr.removeUser();
+    if (!endSession) return; // nothing discoverable to redirect to; local session is gone
+    const url = new URL(endSession);
+    url.searchParams.set('client_id', authConfig.clientId ?? '');
+    url.searchParams.set('logout_uri', `${window.location.origin}/`);
+    window.location.assign(url.toString());
+    return;
+  }
+  await mgr.signoutRedirect();
 }
 
 /**
