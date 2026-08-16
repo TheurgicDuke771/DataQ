@@ -96,6 +96,20 @@ Browser ──HTTPS──► CloudFront (public surface, origin secret verified 
   needs `DATAQ_AUTH_LOGOUT_STYLE=cognito` (its `/logout` is not RP-Initiated-Logout
   conformant) and resolves the user profile via the **userinfo endpoint** (its access tokens
   carry neither `email` nor `aud`).
+- **Who can sign up — set this deliberately.** A Cognito pool allows **self-service
+  registration by default**, and DataQ provisions an account for anyone the issuer vouches
+  for, so the pool's registration setting effectively *is* your access policy. This stack
+  sets `allow_admin_create_user_only = true`; pair it with `OIDC_ALLOWED_EMAILS` /
+  `OIDC_ALLOWED_DOMAINS` (enforced on every request, on REST and MCP, so it revokes as well
+  as admits). Leaving the allowlist empty is permitted and logs
+  `auth_oidc_no_signup_allowlist` at WARNING on every boot.
+- **Edge protection:** a WAF per-IP rate ceiling on the distribution, in front of the in-app
+  limiter (which fails open by design), plus edge caching of the fingerprinted bundle. Set
+  `waf_enabled = false` to opt out of the ~$7/month.
+- **Browser security headers** ship with the frontend image on every deployment. Narrow the
+  CSP's `connect-src` to your identity provider's origins with `DATAQ_CSP_CONNECT_SRC` — for
+  Cognito that is **two** hosts (the issuer for discovery/JWKS, the hosted-UI domain for the
+  token exchange); the permissive `https:` default keeps sign-in working if you don't.
 - **Observability:** the app's vendor-neutral OTLP export feeds an **ADOT collector sidecar**
   → X-Ray traces + OpenTelemetry logs in CloudWatch with matching trace ids.
 - **Deploy:** a parallel **Deploy (AWS)** workflow (`deploy-aws.yml`) — GitHub OIDC role

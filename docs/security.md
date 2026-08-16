@@ -8,8 +8,23 @@ lawful basis) and is the deploying organization's responsibility.
 ## Authentication & access
 
 - **Single sign-on (OIDC).** Users sign in through your identity provider; DataQ is
-  provider-neutral (validated against Azure AD). The backend validates the token on every
-  request — there is no local password store.
+  provider-neutral (validated against Azure AD and AWS Cognito). The backend validates the
+  token on every request — there is no local password store.
+- **Who may hold an account is your decision, not your IdP's.** DataQ provisions a user on
+  first successful sign-in, so without a gate the identity provider's *registration* policy
+  silently becomes DataQ's *access* policy. That is fine for an invite-only tenant and wrong
+  for a provider with self-service sign-up. Two independent controls:
+  - Keep the identity provider invite-only (the AWS reference stack sets
+    `allow_admin_create_user_only` on the Cognito pool; an Azure AD tenant is invite-only by
+    nature).
+  - Set `OIDC_ALLOWED_EMAILS` / `OIDC_ALLOWED_DOMAINS` as the app-side allowlist. It is
+    checked on **every request**, not only at first sign-in, so removing an entry revokes an
+    existing account rather than merely blocking a new one.
+
+  Leaving the allowlist empty means "admit anyone the issuer vouches for" — deliberately, so
+  that upgrading DataQ can never lock an existing workspace out — and the API logs
+  `auth_oidc_no_signup_allowlist` at **WARNING** on every boot in that state. If you see that
+  line, confirm your IdP is invite-only.
 - **Personal access tokens (PATs).** For headless / AI-client use, users mint `dq_live_`
   tokens ([API keys](api-keys.md)). Tokens are **hashed (SHA-256) at rest** — the plaintext is
   shown once and never stored — and carry the **same authz as the user**, on REST and MCP.
@@ -130,6 +145,21 @@ are the reason this mode is opt-in rather than the default:
   credential MCP accepts**: a session token is rejected by prefix before any validation, and
   a bearer that is neither is rejected outright rather than handed to an unconfigured
   validator — the absence of a JWT verifier is a refusal, never a skipped check.
+- **Browser security headers.** Every response from the frontend carries a
+  **Content-Security-Policy** (`default-src 'self'`, `script-src 'self'`, `object-src 'none'`,
+  `frame-ancestors 'none'`, `base-uri 'self'`), **HSTS**, **X-Frame-Options**,
+  **X-Content-Type-Options: nosniff**, **Referrer-Policy** and **Permissions-Policy**. The CSP
+  is the backstop that matters here specifically because the UI renders values that came from
+  *your warehouse* — failing-row samples, error text, custom SQL. `connect-src` is configured
+  per deployment (`DATAQ_CSP_CONNECT_SRC`) because the sign-in flow talks directly to your
+  identity provider; the shipped default (`https:`) is permissive so that upgrading the image
+  cannot break an existing sign-in, and the reference stacks narrow it to their exact IdP
+  origins.
+- **Edge rate limiting (AWS).** In addition to the in-app limiter below, the CloudFront
+  distribution carries a WAF per-IP rate ceiling. The two are not redundant: the app limiter
+  is per-token, understands DataQ's request classes, and **fails open** if its Redis store is
+  unavailable — so it is deliberately biased toward availability. The WAF rule sheds a flood
+  *before* it reaches the application at all.
 - **CSRF.** The session cookie is `SameSite=Lax`, which blocks cross-site POSTs; that only
   holds while every state-changing endpoint is a POST/PATCH/PUT/DELETE, so the test suite
   audits the whole route table for a GET that mutates. Sign-in and sign-out are both POST-only,
@@ -175,10 +205,17 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
 
 ## Encryption
 
-- **In transit:** HTTPS/TLS everywhere (public ingress and the internal proxy hop).
-- **At rest:** provided by the managed data services — PostgreSQL, the object stores, and the
-  secret store (Key Vault / AWS Secrets Manager) all encrypt at rest in both reference
-  deployments.
+- **In transit:** HTTPS/TLS on every public surface, and TLS to PostgreSQL (`sslmode=require`)
+  and to the AWS cache (`rediss://`). Two internal hops are plaintext, both deliberately and
+  both stated rather than glossed: the Azure frontend→api hop, which never leaves the
+  Container Apps environment; and — on AWS only — the **CloudFront→ALB origin hop**, because
+  that stack has no custom domain and therefore no certificate the load balancer could serve.
+  The second one does cross the AWS network, so it is a real (tracked) gap rather than a
+  contained one: [#1384](https://github.com/TheurgicDuke771/DataQ/issues/1384).
+- **At rest:** PostgreSQL, the object stores, and the secret store (Key Vault / AWS Secrets
+  Manager) encrypt at rest in both reference deployments. The AWS cache (ElastiCache — the
+  Celery broker and rate-limit counters, not a data store) currently does **not**:
+  [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385).
 
 ## Reporting a vulnerability
 

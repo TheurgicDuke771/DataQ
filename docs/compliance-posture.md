@@ -121,7 +121,11 @@ in code when that feature lands.
 **Requirement:** GDPR Art 32 / HIPAA §164.312(a)(2)(iv) addressable encryption.
 **Current state:** satisfied by Azure platform-managed keys (default), but our OpenTofu
 neither asserts it nor offers customer-managed keys, and it's undocumented (no evidence
-for a customer security review).
+for a customer security review). The 2026-08-16 audit also found the AWS stack's
+**ElastiCache at-rest encryption off** (RDS beside it is `storage_encrypted = true`) —
+[#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385). It holds broker payloads and
+rate-limit counters rather than customer data, but it is exactly the asymmetry a security
+review would flag, and the fix is a one-line assert.
 **v2.x target:** assert at-rest encryption in IaC, document it, and offer a CMK
 (customer-managed key in Key Vault) toggle for customers who require key custody.
 

@@ -37,12 +37,23 @@ is the **same code everywhere**. Where the installations genuinely differ:
 | Alerting — email | configured | live-verified (SES) | Mailpit |
 | MCP (8 tools) | E2E-verified | E2E-verified (PAT) | works; PAT-only under OTP (no IdP ⇒ no bearer) |
 | Rate limiting | on (`RATE_LIMIT_XFF_TRUSTED_HOPS=3`, verified against a live XFF) | on (same setting; live-verified 2026-08-16 — an unauthenticated burst through CloudFront allowed exactly the configured 120/min then 429'd with `Retry-After`, and rotating a client-spoofed `X-Forwarded-For` could **not** escape the bucket, proving hops=3 selects the CloudFront-appended viewer IP) | off by design |
+| Browser security headers (CSP/HSTS/nosniff/frame-ancestors) | on — `connect-src` narrowed to the Azure AD origin | on — `connect-src` narrowed to both Cognito origins (issuer + hosted UI) | on, permissive `connect-src` default |
+| Edge rate limiting (WAF) | **none** — no Front Door/WAF in front of the Container App; the in-app limiter is the only layer | on — CloudFront WAF per-IP ceiling **in front of** the in-app limiter | n/a |
+| Edge caching | n/a | fingerprinted `/assets/*.<ext>` cached at the edge; `/api`, `/mcp`, `index.html` always reach the origin | n/a |
+| Sign-up gating | invite-only by nature (AAD tenant) | Cognito pool is admin-create-only + `OIDC_ALLOWED_EMAILS` | OTP allowlist (mandatory) |
 | Orchestration — ADF | ✅ (Azure-only by nature) | n/a | n/a |
 | Orchestration — Airflow / dbt | live-verified | **deployed but never fired** — the receivers are live, but no event source exists on that stack | local Airflow |
 
 The Airflow/dbt row is the one real capability gap: the code is identical and deployed, but
 the orchestration slice has never been exercised against the AWS installation. The cheapest
 closure is pointing an external Airflow's callbacks at the AWS public URL.
+
+The **edge rate-limiting row now runs the other way**: AWS has a WAF ceiling in front of the
+application and Azure has nothing equivalent. The in-app limiter (identical on both) fails
+open when its Redis store is unwell, so on Azure a flood that also stresses Redis meets no
+limiter at all. Front Door + WAF is the analogous Azure change and is not done —
+[#1388](https://github.com/TheurgicDuke771/DataQ/issues/1388). Neither deployment autoscales:
+`desired_count = 1` / `max_replicas = 3`.
 
 ## Test harness
 
