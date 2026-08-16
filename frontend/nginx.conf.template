@@ -41,11 +41,65 @@ map $http_x_forwarded_proto $dataq_forwarded_proto {
     ""      $scheme;
 }
 
+# ── Origin-secret guard (#1355) ───────────────────────────────────────────────
+# When DATAQ_ORIGIN_SECRET is set, every request must carry the matching
+# X-DataQ-Origin-Secret header or it is 403'd. The intended sender is a fronting
+# CDN/edge that stamps the header on origin fetches (AWS: CloudFront's custom
+# origin header, set in deploy/terraform/aws/cloudfront.tf) — closing the gap
+# where a THIRD PARTY's distribution origin-points at this container's
+# (discoverable) load-balancer DNS: their edge doesn't know the secret. Note
+# CloudFront overwrites any viewer-sent header of the same name with its own
+# configured value, so the secret cannot be probed through the legitimate
+# distribution either.
+#
+# When the variable is EMPTY (compose, BYOL, Azure — where ACA ingress is the
+# only route in), the guard is fully open, including for requests that happen
+# to carry the header. That is what the two-level map encodes:
+#   rendered key = "<secret>:<request header>"
+#   - secret empty  → key starts with ":" → the `~^:` regex allows everything
+#   - secret set    → only the exact "<secret>:<secret>" concatenation allows;
+#     an nginx map's exact match beats its regexes, and the secret is generated
+#     alphanumeric (terraform `special = false`), so it can never contain the
+#     ":" delimiter or map metacharacters.
+map "${DATAQ_ORIGIN_SECRET}:$http_x_dataq_origin_secret" $dataq_origin_bad {
+    default 1;
+    "~^:"   0;
+    "${DATAQ_ORIGIN_SECRET}:${DATAQ_ORIGIN_SECRET}" 0;
+}
+
+# Second level: exempt the load balancer's OWN health check, which reaches the
+# container directly (not through the CDN) and so can never carry the header.
+# /_alb-health is served locally below and probes nothing but nginx itself —
+# the frontend target's health must mean "nginx + bundle up", not "the api is
+# up" (#1349). Exact map keys beat the regex, so the exemption wins.
+map "$dataq_origin_bad:$uri" $dataq_origin_reject {
+    default 0;
+    "~^1:"  1;
+    "1:/_alb-health" 0;
+}
+
 server {
     listen 8080;
     server_name _;
     root /usr/share/nginx/html;
     index index.html;
+
+    # Origin-secret guard (#1355, maps above). Server-level so no location can
+    # be forgotten; a bare `return` in an `if` at server context is one of the
+    # two forms nginx's own docs bless ("if is evil" applies to content
+    # handlers, not to return/rewrite).
+    if ($dataq_origin_reject) {
+        return 403;
+    }
+
+    # Local health endpoint for the load balancer's target-group check (exempt
+    # from the guard above — the LB probes the container directly, without the
+    # CDN's header). Deliberately serves from nginx itself: frontend health
+    # means "nginx + bundle up", never "the api is up" (#1349).
+    location = /_alb-health {
+        default_type text/plain;
+        return 200 'ok';
+    }
 
     # Runtime app config (ADR 0028). Rendered from DATAQ_AUTH_* env by the same
     # startup envsubst, served BEFORE the app bundle so the SPA reads it
@@ -99,6 +153,11 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $dataq_forwarded_proto;
+        # Verified above, stripped here (#1355 review): the origin secret must
+        # not ride into the backend request context, where a traceback-locals
+        # capture (#536 class) or a dependency's header logging (#849 class)
+        # could surface it.
+        proxy_set_header X-DataQ-Origin-Secret "";
     }
 
     # Liveness probe — the api's top-level /healthz (NOT under /api), proxied here
@@ -115,6 +174,11 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $dataq_forwarded_proto;
+        # Verified above, stripped here (#1355 review): the origin secret must
+        # not ride into the backend request context, where a traceback-locals
+        # capture (#536 class) or a dependency's header logging (#849 class)
+        # could surface it.
+        proxy_set_header X-DataQ-Origin-Secret "";
     }
 
     # MCP sub-app (FastMCP at /mcp). Streamable-HTTP/SSE needs HTTP/1.1 with no
@@ -129,6 +193,11 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $dataq_forwarded_proto;
+        # Verified above, stripped here (#1355 review): the origin secret must
+        # not ride into the backend request context, where a traceback-locals
+        # capture (#536 class) or a dependency's header logging (#849 class)
+        # could surface it.
+        proxy_set_header X-DataQ-Origin-Secret "";
     }
 
     # Long-cache the fingerprinted build output; never cache index.html (it points

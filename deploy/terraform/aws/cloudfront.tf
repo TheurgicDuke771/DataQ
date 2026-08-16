@@ -34,6 +34,27 @@ resource "aws_cloudfront_distribution" "app" {
     domain_name = aws_lb.app.dns_name
     origin_id   = "alb"
 
+    # Origin secret (#1355): stamped on every origin fetch and verified by the
+    # frontend nginx (DATAQ_ORIGIN_SECRET) — closes the residual gap alb.tf
+    # documents, where a third party's OWN distribution could origin-point at
+    # this ALB's discoverable DNS name through the shared CloudFront
+    # origin-facing ranges. CloudFront overwrites any viewer-sent header of
+    # the same name, so the value can't be probed through this distribution.
+    # (Visible in the distribution config to anyone with CloudFront read
+    # access — an origin-authentication token, not a user credential.)
+    #
+    # Residual, stated honestly (#1378 review): the edge→origin hop is plain
+    # HTTP (origin_protocol_policy http-only — no custom domain means no cert
+    # the ALB could serve), so the header transits that leg in cleartext. An
+    # on-path observer of AWS's edge→ALB path could read it; that adversary
+    # class already sees the whole session traffic on the same hop. Closing
+    # it = custom domain + ACM on the ALB + https-only, the documented
+    # follow-up in the README's known-gaps list.
+    custom_header {
+      name  = "X-DataQ-Origin-Secret"
+      value = random_password.origin_secret.result
+    }
+
     custom_origin_config {
       http_port  = 80
       https_port = 443
@@ -74,4 +95,23 @@ resource "aws_cloudfront_distribution" "app" {
   }
 
   tags = { Name = "dataq-app-cloudfront" }
+}
+
+# Alphanumeric only (`special = false`): the nginx guard's map key uses ":" as
+# its delimiter and the value must stay free of nginx map metacharacters.
+resource "random_password" "origin_secret" {
+  length  = 40
+  special = false
+}
+
+# Injected into the frontend task via the `secrets` block (execution-role read,
+# same pattern as database-url/redis-url) rather than plaintext task-def env.
+resource "aws_secretsmanager_secret" "origin_secret" {
+  name                    = "dataq-app-infra/origin-secret"
+  recovery_window_in_days = 0
+}
+
+resource "aws_secretsmanager_secret_version" "origin_secret" {
+  secret_id     = aws_secretsmanager_secret.origin_secret.id
+  secret_string = random_password.origin_secret.result
 }
