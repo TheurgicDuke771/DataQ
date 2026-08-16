@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "55de9ce4317d",
+  "strategy": "manual-commit",
+  "branch": "chore/codeql-unnecessary-lambda",
+  "checkpoints_count": 8,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/55/de9ce4317d/0/metadata.json",
+      "transcript": "/55/de9ce4317d/0/full.jsonl",
+      "compact_transcript": "/55/de9ce4317d/0/transcript.jsonl",
+      "content_hash": "/55/de9ce4317d/0/content_hash.txt",
+      "prompt": "/55/de9ce4317d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1060,
+    "cache_creation_tokens": 992349,
+    "cache_read_tokens": 144584375,
+    "output_tokens": 232794,
+    "api_call_count": 530
+  }
+}
