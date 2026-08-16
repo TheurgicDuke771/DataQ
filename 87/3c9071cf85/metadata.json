@@ -3,9 +3,19 @@
   "checkpoint_id": "873c9071cf85",
   "strategy": "manual-commit",
   "branch": "docs/aws-azure-parity-wording",
-  "checkpoints_count": 4,
+  "checkpoints_count": 12,
   "files_touched": [
-    "deploy/README.md"
+    "README.md",
+    "deploy/README.md",
+    "docs/api-keys.md",
+    "docs/architecture.md",
+    "docs/datasources-checks.md",
+    "docs/features.md",
+    "docs/getting-started.md",
+    "docs/glossary.md",
+    "docs/index.md",
+    "docs/mcp-setup.md",
+    "docs/runbook-faq.md"
   ],
   "sessions": [
     {
@@ -14,13 +24,20 @@
       "compact_transcript": "/87/3c9071cf85/0/transcript.jsonl",
       "content_hash": "/87/3c9071cf85/0/content_hash.txt",
       "prompt": "/87/3c9071cf85/0/prompt.txt"
+    },
+    {
+      "metadata": "/87/3c9071cf85/1/metadata.json",
+      "transcript": "/87/3c9071cf85/1/full.jsonl",
+      "compact_transcript": "/87/3c9071cf85/1/transcript.jsonl",
+      "content_hash": "/87/3c9071cf85/1/content_hash.txt",
+      "prompt": "/87/3c9071cf85/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 1104,
-    "cache_creation_tokens": 1006587,
-    "cache_read_tokens": 148584410,
-    "output_tokens": 240710,
-    "api_call_count": 552
+    "input_tokens": 1234,
+    "cache_creation_tokens": 1135991,
+    "cache_read_tokens": 157157288,
+    "output_tokens": 264405,
+    "api_call_count": 617
   }
 }

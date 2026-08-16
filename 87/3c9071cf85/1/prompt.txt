@@ -1,0 +1,123 @@
+Why mailpit present in prod docker compose, I thought it is just for local
+
+---
+
+so, wht we need 2 compose file for local?
+
+---
+
+Why deploy/README.md still mention - `AWS — planned (not yet available)` when we already deploy and test aws?
+where else do we this kind of discrepancies?
+Alos README.md is heavily implying it is azure only [need proper wordings]
+scan all documents
+
+---
+
+<task-notification>
+<task-id>a1b40c9d46c06d756</task-id>
+<tool-use-id>toolu_01REKwyYvdKK9soEPCjfKKdX</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/8e70c155-d924-4687-b23c-4a47b3303b59/tasks/a1b40c9d46c06d756.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit docs for stale Azure-only/AWS-planned claims" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Audit results — Azure-only / "AWS planned" staleness
+
+### 🔴 Contradicts shipped reality
+
+**`deploy/README.md`**
+- **L100–106**: "DataQ is provider-agnostic by design... Today **Azure is the supported, implemented target**; AWS and GCP are planned." — Directly false: AWS has been live since 2026-08-15 with a full IaC stack (per this same file's own §"AWS deployment" starting ~L436). Fix: *"Today Azure is the primary reference target and AWS is a second, live-verified reference target ([`deploy/terraform/aws/`](terraform/aws/README.md)); GCP remains planned behind the same seams."*
+- **L119**: `#### AWS — planned (not yet available)` header — false, contradicted by the file's own AWS section. Fix: retitle to `#### AWS — supported today` (or delete this whole stub subsection and point to the real "## AWS deployment" section below, since the content is now duplicated/outdated).
+- **L121–124**: "Not yet implemented. The seams map to: ECS Fargate or App Runner..." — stale; ECS Fargate (not App Runner) is exactly what's deployed. Fix: replace with a one-line pointer to the "## AWS deployment" section (~L436) rather than re-describing the seam mapping as speculative.
+- **L126–130** (GCP section): accurate as-is — GCP genuinely isn't built. No change needed (case c/b).
+
+### 🟡 Azure-heavy but not technically false (worth a light touch, not urgent)
+
+**`README.md`** (root)
+- Zero AWS/GCP mentions anywhere (confirmed via grep). L7, L44–45, L65, L93 all describe hosting/auth/deploy-guide as Azure-only, with no pointer to the AWS reference deployment or `docs/deployment-parity.md`. Not "false" (Azure is genuinely primary/first), but materially incomplete given AWS is an equally-real, equally-documented second target. Suggested fix: add one line near L45 ("Hosting") — e.g. *"Hosting | Azure Container Apps (primary) — also deployable to AWS ECS Fargate, see [deployment parity](docs/deployment-parity.md)"* — and a pointer near L93's deployment-guide row.
+
+**`docs/features.md`**
+- L209–212: "Runs on **Azure Container Apps** today... provider-agnostic interface, so DataQ is not locked to Azure" — true but reads as aspirational/future-tense for something already realized on AWS. Fix: *"Runs on Azure Container Apps (primary) or AWS ECS Fargate (second live reference deployment) today..."*
+
+**`docs/index.md`** L19, **`docs/adr/0013-marketplace-distribution-and-anti-lock-in.md`** L54–55, 75
+- ADR 0013's "Phase 3 — AWS, then GCP. Mostly packaging..." (L55) and "AWS/GCP need the Phase-2 portability work first" (L75) describe a future plan that has since been substantially executed (AWS live). This is a decision-record dated at the time of writing — acceptable as historical record (case c), but since ADR 0024 sets precedent for amendment notes, consider a short "Amendment/Update" note pointing at the AWS shipment, similar to 0024's OpenTofu amendment.
+
+### 🟢 Correct / already updated (no action needed)
+
+- `docs/deployment.md` L9 — accurate: "Azure is the primary reference target; AWS is a second, live-verified reference stack... GCP is planned behind the same seams."
+- `docs/deployment-parity.md` — entire file is the correct, up-to-date Azure/AWS/Local parity doc; no issues found.
+- `docs/security.md`, `docs/observability.md`, `docs/changelog.md`, `docs/getting-started.md`, `docs/feature-matrix.md`, `docs/compliance-posture.md` — all correctly reference the live AWS stack (Cognito, Secrets Manager, ElastiCache, CloudFront, ADOT/X-Ray) alongside Azure.
+- `docs/architecture.md` — intentionally shows the Azure reference architecture as ONE diagram (case c); doesn't claim Azure-exclusivity. Fine as-is; a future "AWS variant" diagram would be a nice-to-have, not a correctness fix.
+- ADR 0010 (L28), ADR 0024 (L146, L160) — both correctly frame AWS as a future/additive seam at time of writing; ADR 0024 even names `deploy/terraform/aws/` as the eventual sibling convention, which is now real. No contradiction — these are historical records, not living status claims.
+- `docs/concepts.md` — correctly scopes ADF as Azure-specific orchestration (that's factually right, not an Azure-only claim about hosting).
+
+### Summary ranking
+1. `deploy/README.md` L100–130 (🔴 the confirmed contradiction, three sub-issues)
+2. `README.md` (🟡 Azure-only by omission, no false claims)
+3. `docs/features.md` L209–212 (🟡 stale framing)
+4. ADR 0013 (🟡 historical phase language, optional amendment note)</result>
+<usage><subagent_tokens>71503</subagent_tokens><tool_uses>9</tool_uses><duration_ms>47464</duration_ms></usage>
+</task-notification>
+
+---
+
+aws is not second to azure, both are in same level, don't give azure preference
+
+---
+
+in README.md L52 - `Evaluate or self-host in ~5 minutes: no source checkout, no Azure tenant. Just Docker.`
+shouldn't it read no cloud Idp instead of no Azure tenant?
+
+---
+
+scan the full  @docs/  directory and other documents for similar wordings and correct them
+
+---
+
+<task-notification>
+<task-id>aa607da76d958f411</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/8e70c155-d924-4687-b23c-4a47b3303b59/tasks/aa607da76d958f411.output</output-file>
+<status>completed</status>
+<summary>Agent "Scan docs/ for Azure-only wording needing AWS parity" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Audit findings — Azure-exclusivity wording in `docs/`
+
+Scanned all 38 files + `docs/adr/`. Excluded per instructions: ADRs, `progress.md`, `progress-v1.md`, `changelog.md`'s dated `## v1.0.0` entry, `ops-log.md` (all dated log entries — historical, correctly Azure-only at the time), and the six pre-checked files (`deployment-parity.md`, `deployment.md`, `security.md`, `observability.md`, `compliance-posture.md`, `feature-matrix.md`).
+
+### Severity 1 — living reference doc frames Azure as the only architecture
+
+**`docs/architecture.md`** — this is the current-state system diagram, not a dated log, and it never mentions AWS despite the platform running on both today.
+- L19: `subgraph platform["🟦 DataQ Platform · Azure Container Apps"]` → `"🟦 DataQ Platform · Azure Container Apps / AWS ECS Fargate"` (or add a footnote: "shown here is the Azure topology; AWS ECS Fargate is the equally-live peer — see deployment-parity.md").
+- L23 / L24: `Infra["PostgreSQL · Redis · Key Vault · App Insights…"]` → generalize to `Secret store (Key Vault/Secrets Manager) · Observability (App Insights/CloudWatch+X-Ray)`.
+- L482: `IDP["🔑 OIDC authority&lt;br/&gt;(Azure AD behind the generic DATAQ_AUTH_* contract)"]` → `(Azure AD or Cognito behind the generic DATAQ_AUTH_* contract)`.
+- L489, L492, L536, L537, L545: `Key Vault`/`App Insights` used as the sole backing-service names → append "(or the AWS equivalent — Secrets Manager/CloudWatch+X-Ray)".
+- L542: `validated against Azure AD — no MSAL, nothing cloud-specific baked in` → this line's own claim ("nothing cloud-specific baked in") is undercut by naming only Azure AD; add "(Azure AD or Cognito)".
+- L546: `it validates the same Azure AD bearer` → `it validates the same OIDC bearer (Azure AD or Cognito)`.
+
+### Severity 1 — "no Azure X" used as a generic prerequisite (same bug class already fixed in README)
+
+- `docs/index.md:19` — `Evaluate or self-host with **no source checkout and no Azure tenant** — just Docker` → `**no source checkout and no cloud account or IdP** — just Docker`.
+- `docs/getting-started.md:188` — `and you sign in by reading the code at http://localhost:8025 — no Azure tenant, no SMTP relay` → `— no cloud account or IdP, no SMTP relay`.
+
+### Severity 2 — generalize-to-cloud-neutral
+
+- `docs/index.md:52` — `self-hosting with your own Azure AD` → `self-hosting with your own IdP (Azure AD, Cognito, Okta, …)`.
+- `docs/mcp-setup.md:18` — `an Azure AD bearer token, or a DataQ API key` → `an OIDC bearer token (Azure AD or Cognito), or a DataQ API key`.
+- `docs/runbook-faq.md:57` — `Auth is one of Azure AD SSO, email OTP (ADR 0032, IdP-less), or dev-bypass` → `OIDC SSO (Azure AD or Cognito), email OTP (ADR 0032, IdP-less), or dev-bypass`.
+- `docs/glossary.md:18` — `**Secret store** | Where credentials live — Azure Key Vault (prod) or env/redis (dev), behind one seam.` → `Azure Key Vault / AWS Secrets Manager / OpenBao (prod) or env/redis (dev), behind one seam.` (four backends now exist per ADR 0039).
+- `docs/datasources-checks.md:17` — `Credentials are stored in the secret store (Azure Key Vault in production)` → `(Azure Key Vault / AWS Secrets Manager / OpenBao, depending on deployment)`.
+- `docs/api-keys.md:5` — `a ~60-minute Azure AD token doesn't fit` → `a ~60-minute OIDC access token doesn't fit`.
+- `docs/api-keys.md:48` — `The token goes wherever an Azure AD bearer would` → `wherever an OIDC bearer token would`.
+
+### Severity 3 — minor/optional
+
+- `docs/api-keys.md:40` — `put it in your CI secret store / Key Vault` → `/ Key Vault or Secrets Manager` (cosmetic, example instruction).
+- `docs/api-keys.md` curl example uses `$AZURE_AD_TOKEN` — could rename to `$OIDC_TOKEN` for neutrality; low priority, it's illustrative.
+- `docs/features.md:181` — `(provider-neutral, Azure AD validated)` → `(provider-neutral, Azure AD and AWS Cognito both validated in prod)` — accurate but under-claims parity that CLAUDE.md itself now states; optional polish.
+
+### Not flagged (confirmed correct)
+- `docs/features.md:209` and `docs/changelog.md` Unreleased section already correctly frame AWS as a live, equal peer.
+- `docs/orchestration.md` ADF/Azure Monitor mentions are legitimately ADF-specific (correct, per instructions).
+- `docs/getting-started.md:145-169` already generalizes OIDC self-hosting correctly (Cognito example included).</result>
+<usage><subagent_tokens>105440</subagent_tokens><tool_uses>7</tool_uses><duration_ms>70511</duration_ms></usage>
+</task-notification>
