@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "3b145848ec35",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1401-credential-redirect",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/connections.py",
+    "backend/app/datasources/iceberg.py",
+    "backend/tests/services/test_connection_service.py",
+    "docs/progress.md",
+    "docs/security.md",
+    "frontend/src/components/connections/ConnectionForm.tsx",
+    "frontend/src/components/connections/connectionFormSpec.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3b/145848ec35/0/metadata.json",
+      "transcript": "/3b/145848ec35/0/full.jsonl",
+      "compact_transcript": "/3b/145848ec35/0/transcript.jsonl",
+      "content_hash": "/3b/145848ec35/0/content_hash.txt",
+      "prompt": "/3b/145848ec35/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1294,
+    "cache_creation_tokens": 1502255,
+    "cache_read_tokens": 226421853,
+    "output_tokens": 373894,
+    "api_call_count": 647
+  }
+}
