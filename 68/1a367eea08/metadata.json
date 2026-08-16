@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "681a367eea08",
+  "strategy": "manual-commit",
+  "branch": "docs/rbac-track-record",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/68/1a367eea08/0/metadata.json",
+      "transcript": "/68/1a367eea08/0/full.jsonl",
+      "compact_transcript": "/68/1a367eea08/0/transcript.jsonl",
+      "content_hash": "/68/1a367eea08/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 15737,
+    "cache_read_tokens": 8779262,
+    "output_tokens": 9937,
+    "api_call_count": 14
+  }
+}
