@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "41226f04ff91",
+  "strategy": "manual-commit",
+  "branch": "feature/rbac-742-role-management",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/e2e/admin.spec.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/41/226f04ff91/0/metadata.json",
+      "transcript": "/41/226f04ff91/0/full.jsonl",
+      "compact_transcript": "/41/226f04ff91/0/transcript.jsonl",
+      "content_hash": "/41/226f04ff91/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 18759,
+    "cache_read_tokens": 12227308,
+    "output_tokens": 8887,
+    "api_call_count": 25
+  }
+}
