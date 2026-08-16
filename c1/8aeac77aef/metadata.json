@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "c18aeac77aef",
+  "strategy": "manual-commit",
+  "branch": "feature/rbac-743-role-aware-frontend",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/auth/RequireRole.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c1/8aeac77aef/0/metadata.json",
+      "transcript": "/c1/8aeac77aef/0/full.jsonl",
+      "compact_transcript": "/c1/8aeac77aef/0/transcript.jsonl",
+      "content_hash": "/c1/8aeac77aef/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 62,
+    "cache_creation_tokens": 25287,
+    "cache_read_tokens": 17723576,
+    "output_tokens": 17254,
+    "api_call_count": 31
+  }
+}
