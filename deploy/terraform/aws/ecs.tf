@@ -113,12 +113,16 @@ locals {
     { name = "AIRFLOW_WEBHOOK_SECRET_NAME", value = "airflow-webhook-secret" },
     { name = "DBT_WEBHOOK_SECRET_NAME", value = "dbt-webhook-secret" },
     { name = "SLACK_WEBHOOK_SECRET_NAME", value = "channel-slack-webhook" },
-    { name = "EMAIL_SMTP_HOST", value = "smtp.gmail.com" },
+    # Email alert channel via SES (#1368, ses.tf) — everything derives from
+    # var.alert_email; empty leaves the channel off (config.py's gate). The
+    # SMTP password lives at dataq/channel-email-password in Secrets Manager,
+    # read through the app's own SecretStore at send time.
+    { name = "EMAIL_SMTP_HOST", value = local.ses_smtp_host },
     { name = "EMAIL_SMTP_PORT", value = "587" },
     { name = "EMAIL_PASSWORD_SECRET_NAME", value = "channel-email-password" },
-    { name = "EMAIL_USERNAME", value = var.email_username },
-    { name = "EMAIL_FROM", value = var.email_from },
-    { name = "EMAIL_TO", value = var.email_to },
+    { name = "EMAIL_USERNAME", value = local.email_username },
+    { name = "EMAIL_FROM", value = var.alert_email },
+    { name = "EMAIL_TO", value = var.alert_email },
   ]
 
   worker_env = concat(local.app_env, [

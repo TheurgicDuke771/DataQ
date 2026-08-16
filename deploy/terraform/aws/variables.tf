@@ -78,20 +78,12 @@ variable "workspace_admin_emails" {
   default     = ""
 }
 
-variable "email_username" {
-  description = "SMTP login / sender for the email alert channel. Empty = channel off."
-  type        = string
-  default     = ""
-}
-
-variable "email_from" {
-  description = "From: address for email alerts (defaults to email_username when empty)."
-  type        = string
-  default     = ""
-}
-
-variable "email_to" {
-  description = "Comma-separated recipients for email alerts. Empty = email channel off."
+# Replaces the earlier email_username/email_from/email_to trio (#1368): the
+# stack now ships SES natively (ses.tf), so one address drives the whole
+# channel — it becomes the SES identity, the From:, and (sandbox) the sole
+# recipient; the SMTP login + password are derived resources, not inputs.
+variable "alert_email" {
+  description = "Verified SES identity for email alerts: sender AND (sandbox) recipient. Empty = email channel off. Requires the one-time SES verification click."
   type        = string
   default     = ""
 }
