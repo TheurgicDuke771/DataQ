@@ -70,6 +70,10 @@ around every deploy. In short:
   and MCP — MCP must be `401`, **not** `421`); prod docs are gated (`404`); and the api /
   worker / frontend are on the deployed tag with the migrate job `Succeeded`.
 
+> A side-by-side comparison of the three installations — hosting, features, harness,
+> workflow and config differences — lives on the
+> [Deployment parity](deployment-parity.md) page.
+
 ## AWS reference deployment
 
 The same product deploys to AWS from the in-repo OpenTofu stack
