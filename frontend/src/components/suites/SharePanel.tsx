@@ -215,13 +215,19 @@ function AddCollaborator({
   const { message } = App.useApp();
   const [options, setOptions] = useState<UserSummary[]>([]);
   const [searching, setSearching] = useState(false);
-  const [userId, setUserId] = useState<string>();
+  // The PICKED USER, held in state rather than re-derived from `options` on each
+  // render. `options` is the transient result of the last directory search, so a
+  // derived lookup silently becomes `undefined` the moment the admin searches
+  // again — which un-clamped the permission Select while a viewer was still
+  // selected, and let Add POST `edit` for them: exactly the 422 this mirror
+  // exists to avoid.
+  const [picked, setPicked] = useState<UserSummary>();
   const [permission, setPermission] = useState<SharePermission>('view');
   // A Viewer cannot hold `edit` (ADR 0033): the backend rejects the grant, and
   // `effective_permission` caps them at `view` regardless. Mirrored here so the
   // level is never offered — the server stays authoritative, this only stops us
   // proposing something it will refuse.
-  const picked = options.find((u) => u.id === userId);
+  const userId = picked?.id;
   const targetIsViewer = picked?.role === 'viewer';
   const [adding, setAdding] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -276,7 +282,7 @@ function AddCollaborator({
         permission: targetIsViewer ? 'view' : permission,
       });
       message.success(`${share.email}: shared`);
-      setUserId(undefined);
+      setPicked(undefined);
       setOptions([]);
       setPermission('view');
       onAdded();
@@ -303,7 +309,7 @@ function AddCollaborator({
         placeholder="Search by email or name"
         filterOption={false}
         onSearch={onSearch}
-        onChange={setUserId}
+        onChange={(id: string) => setPicked(options.find((u) => u.id === id))}
         notFoundContent={searching ? <Spin size="small" /> : null}
         options={options.map((u) => ({
           value: u.id,

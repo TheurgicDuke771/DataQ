@@ -38,7 +38,7 @@ from backend.app.core.auth import (
 )
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.secrets import get_secret_store
-from backend.app.db.models import Suite, User
+from backend.app.db.models import ApiKey, Suite, User
 from backend.app.db.session import get_session
 from backend.app.services import api_key_service, otp_service, share_service
 from backend.app.services.probe import ensure_probe_fixtures
@@ -148,7 +148,14 @@ def _seed_role_fixtures(session: Session, *, owner: User) -> int:
     tests.
     """
     tokens: dict[str, str] = {}
-    suite = session.scalars(select(Suite).where(Suite.created_by == owner.id)).first()
+    # DETERMINISTIC, not `.first()` on an unordered select. Postgres returns heap
+    # order, so an UPDATE elsewhere in the seed can relocate a row and silently
+    # move the viewer's share to a different suite — and `roles.spec.ts` names the
+    # suite it expects, so that failure would surface as a UI regression rather
+    # than as the seeding nondeterminism it is.
+    suite = session.scalars(
+        select(Suite).where(Suite.created_by == owner.id).order_by(Suite.created_at, Suite.id)
+    ).first()
     for role, email, display_name in _ROLE_FIXTURES:
         user = session.scalars(select(User).where(func.lower(User.email) == email)).first()
         if user is None:
@@ -168,7 +175,18 @@ def _seed_role_fixtures(session: Session, *, owner: User) -> int:
                     target_user_id=user.id,
                     permission="view",
                 )
-        _, token = api_key_service.create_key(session, user, name=f"e2e-{role}")
+        # Revoke this fixture's previous key before minting a new one. The rest
+        # of this function is idempotent, and a PAT that is not would be the one
+        # non-idempotent thing here that MATTERS: every re-seed would otherwise
+        # leave another live 90-day credential behind, and every stale copy of
+        # `.role-tokens.json` would keep working.
+        key_name = f"e2e-{role}"
+        for old in session.scalars(
+            select(ApiKey).where(ApiKey.user_id == user.id, ApiKey.name == key_name)
+        ):
+            session.delete(old)
+        session.flush()
+        _, token = api_key_service.create_key(session, user, name=key_name)
         tokens[role] = token
     session.commit()
 
