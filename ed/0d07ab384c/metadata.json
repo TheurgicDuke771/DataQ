@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "ed0d07ab384c",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1368-ses-alert-channel",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "deploy/terraform/aws/README.md",
+    "deploy/terraform/aws/ses.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ed/0d07ab384c/0/metadata.json",
+      "transcript": "/ed/0d07ab384c/0/full.jsonl",
+      "compact_transcript": "/ed/0d07ab384c/0/transcript.jsonl",
+      "content_hash": "/ed/0d07ab384c/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 6073,
+    "cache_read_tokens": 1865223,
+    "output_tokens": 2437,
+    "api_call_count": 6
+  }
+}
