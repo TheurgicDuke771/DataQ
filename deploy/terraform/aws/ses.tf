@@ -18,11 +18,22 @@ locals {
   # One gate for every resource in this file (PR #1370 review — the condition
   # was copy-pasted per resource, so a future edit could invert one silently).
   ses_enabled = var.alert_email == "" ? 0 : 1
+  # Recipient defaults to the sender; a distinct alert_email_to needs its OWN
+  # verified identity while the account is in the SES sandbox.
+  alert_email_to = var.alert_email_to != "" ? var.alert_email_to : var.alert_email
 }
 
 resource "aws_ses_email_identity" "alert" {
   count = local.ses_enabled
   email = var.alert_email
+}
+
+# Sandbox rule: the RECIPIENT must be verified too, so a distinct TO address
+# gets its own identity (its own one-time verification click). Collapses to
+# nothing when alert_email_to is unset/equal to the sender.
+resource "aws_ses_email_identity" "alert_to" {
+  count = local.ses_enabled == 1 && local.alert_email_to != var.alert_email ? 1 : 0
+  email = local.alert_email_to
 }
 
 # Dedicated IAM user for SMTP: SES SMTP credentials ARE an IAM access key —

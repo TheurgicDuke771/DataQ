@@ -43,3 +43,6 @@
 # recipient. SES emails a verification link to it on first apply — sends fail
 # until clicked.
 # alert_email = "you@example.com"
+# Recipient when different from the sender — in the sandbox it needs its own
+# verification click (a second identity is created for it).
+# alert_email_to = "alerts@example.com"

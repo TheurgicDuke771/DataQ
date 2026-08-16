@@ -83,7 +83,13 @@ variable "workspace_admin_emails" {
 # channel — it becomes the SES identity, the From:, and (sandbox) the sole
 # recipient; the SMTP login + password are derived resources, not inputs.
 variable "alert_email" {
-  description = "Verified SES identity for email alerts: sender AND (sandbox) recipient. Empty = email channel off. Requires the one-time SES verification click."
+  description = "Verified SES identity for email alerts: the sender (From:), and the default recipient when alert_email_to is unset. Empty = email channel off. Requires the one-time SES verification click."
+  type        = string
+  default     = ""
+}
+
+variable "alert_email_to" {
+  description = "Recipient(s) for email alerts (EMAIL_TO) when different from alert_email. In the SES sandbox this address needs its own verification click (a second identity is created for it)."
   type        = string
   default     = ""
 }
