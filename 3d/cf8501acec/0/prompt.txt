@@ -1,0 +1,10 @@
+What are the security surface for both azure and aws deployment?
+Can any one reach front-end, db or backend, dns or other exposed surfaces? 
+How vurnable DataQ is to attack like DDoS, Fuzzing, man-in-the-middle or other similar attacks?  
+And how the attacks can be contained or minimized?
+
+---
+
+these are security issues, no need to file, you can directly start working on them. 
+Plan looks good, go ahead implement 1-3
+You can file 4 & 5

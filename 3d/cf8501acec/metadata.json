@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "3dcf8501acec",
+  "strategy": "manual-commit",
+  "branch": "fix/1385-oidc-open-signup",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/auth.py",
+    "backend/app/core/config.py",
+    "backend/tests/core/test_auth.py",
+    "backend/tests/core/test_otp_config.py",
+    "deploy/README.md",
+    "deploy/terraform/aws/cognito.tf",
+    "deploy/terraform/aws/ecs.tf",
+    "deploy/terraform/aws/terraform.tfvars.example",
+    "deploy/terraform/aws/variables.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3d/cf8501acec/0/metadata.json",
+      "transcript": "/3d/cf8501acec/0/full.jsonl",
+      "compact_transcript": "/3d/cf8501acec/0/transcript.jsonl",
+      "content_hash": "/3d/cf8501acec/0/content_hash.txt",
+      "prompt": "/3d/cf8501acec/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 222,
+    "cache_creation_tokens": 175821,
+    "cache_read_tokens": 16588505,
+    "output_tokens": 48746,
+    "api_call_count": 111
+  }
+}
