@@ -113,6 +113,10 @@ locals {
     { name = "AIRFLOW_WEBHOOK_SECRET_NAME", value = "airflow-webhook-secret" },
     { name = "DBT_WEBHOOK_SECRET_NAME", value = "dbt-webhook-secret" },
     { name = "SLACK_WEBHOOK_SECRET_NAME", value = "channel-slack-webhook" },
+    # Spans + OTel logs → the ADOT sidecar on task-local loopback (#1369,
+    # adot.tf) → X-Ray / CloudWatch. The app half is the vendor-neutral
+    # core/otel.py (#589); this is just where its OTLP consumer lives.
+    { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "http://localhost:4318" },
     { name = "EMAIL_SMTP_HOST", value = "smtp.gmail.com" },
     { name = "EMAIL_SMTP_PORT", value = "587" },
     { name = "EMAIL_PASSWORD_SECRET_NAME", value = "channel-email-password" },
@@ -163,7 +167,13 @@ resource "aws_ecs_task_definition" "api" {
           "awslogs-stream-prefix" = "api"
         }
       }
-    }
+    },
+    # ADOT collector sidecar (#1369, adot.tf) — OTLP in on localhost:4318,
+    # traces → X-Ray, OTel logs → CloudWatch. NOTE ignore_changes below:
+    # adding/changing this on a LIVE stack needs `tofu apply -replace` on this
+    # task definition + an `update-service` to the new revision (README,
+    # "Rolling task-definition changes").
+    local.adot_container["api"],
   ])
 
   # CI rolls the live image out-of-band (new task-def revision via
@@ -225,7 +235,9 @@ resource "aws_ecs_task_definition" "worker" {
           "awslogs-stream-prefix" = "worker"
         }
       }
-    }
+    },
+    # Same ADOT sidecar + same -replace rollout note as the api task def.
+    local.adot_container["worker"],
   ])
 
   lifecycle {

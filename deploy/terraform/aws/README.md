@@ -17,7 +17,8 @@ only for this deployment.
 | `aws_cognito_user_pool.app` + SPA client | OIDC identity provider, validated by the backend's provider-neutral `OidcBearerScheme` (ADR 0026 amendment) — not Azure AD |
 | `aws_secretsmanager_secret.*` (2, infra-owned) + IAM grants | `database-url`/`redis-url` (infra-owned, referenced by ARN in task defs) + the app's own runtime grant under `AWS_SECRETS_MANAGER_PREFIX` (`SECRET_STORE=aws_secrets_manager`) |
 | `aws_iam_openid_connect_provider.github` + `aws_iam_role.github_deploy` | GitHub Actions → AWS auth for the Deploy workflow, OIDC federation, no stored access keys |
-| CloudWatch Log Groups (4) | Container logs. No APM/tracing wired up yet — the OTel core is vendor-neutral but the exporter shipped so far is Azure-only |
+| CloudWatch Log Groups (6) | Container logs (4) + `/dataq-app/otel` (app OTel logs via the collector) + `/dataq-app/adot` (the collector's own stdout) |
+| ADOT collector sidecars (in the api + worker task defs, `adot.tf`) | APM/tracing (#1369): the app's vendor-neutral OTLP export (`core/otel.py`, #589) points at `localhost:4318`; the sidecar ships traces → **X-Ray**, OTel logs → CloudWatch. Config injected via `AOT_CONFIG_CONTENT` (minimal two-pipeline config, minimal IAM) |
 
 ## Prerequisites
 
@@ -87,6 +88,23 @@ the Azure `deploy.yml` runs, adapted to ECS:
 It is `workflow_dispatch`-only (Azure stays primary prod), takes an optional
 `image_tag` input (blank → `aws-<sha>`), and needs no AWS-side registry
 credential — the GHCR packages are public and ECS pulls them anonymously.
+
+## Rolling task-definition changes (env vars, sidecars)
+
+The api/worker/frontend task definitions carry `lifecycle { ignore_changes =
+[container_definitions] }` (CI rolls images out-of-band), so a Terraform-side
+change to env vars or sidecar containers is **silently ignored by a plain
+apply**. To roll one:
+
+```bash
+tofu apply -replace=aws_ecs_task_definition.api ... # forces a new revision from config
+aws ecs update-service --cluster dataq-app --service dataq-app-api \
+  --task-definition dataq-app-api --force-new-deployment   # family name → latest revision
+```
+
+The services also ignore `task_definition`, hence the explicit
+`update-service`. Later CI deploys copy the LIVE definition and swap only the
+image, so the change persists across deploy-aws.yml runs.
 
 ## State encryption
 
