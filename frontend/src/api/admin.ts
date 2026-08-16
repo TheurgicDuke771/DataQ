@@ -22,6 +22,12 @@ export interface AdminSuite {
   updated_at: string;
 }
 
+/** The three workspace roles (ADR 0033). Closed vocabulary — the backend
+ *  `Literal` rejects anything else with a 422. */
+export type WorkspaceRole = 'admin' | 'member' | 'viewer';
+
+export const WORKSPACE_ROLES: WorkspaceRole[] = ['admin', 'member', 'viewer'];
+
 export interface AdminUser {
   id: string;
   email: string;
@@ -30,6 +36,14 @@ export interface AdminUser {
   created_at: string;
   owned_suite_count: number;
   shared_suite_count: number;
+  /** The STORED role — what the editor writes. Not the *effective* role: a user
+   *  on WORKSPACE_ADMIN_EMAILS may read `member` here while still being an admin,
+   *  which is what `allowlist_admin` below is for. Showing the resolved value
+   *  instead would misrepresent exactly the row an admin is most likely to act
+   *  on, and make a demotion look like it failed. */
+  role: WorkspaceRole;
+  /** Whether the env allowlist grants this user admin regardless of `role`. */
+  allowlist_admin: boolean;
 }
 
 /** One (user → suite) access grant: an implicit owner or an explicit share. */
@@ -49,6 +63,18 @@ export async function listAdminSuites(): Promise<AdminSuite[]> {
 
 export async function listAdminUsers(): Promise<AdminUser[]> {
   const { data } = await api.get<AdminUser[]>('/admin/users');
+  return data;
+}
+
+/** Change a user's stored workspace role (ADR 0033, #742).
+ *
+ *  The server refuses — 409, never a silent no-op — when the change would remove
+ *  the last stored-role admin, or when the target is the local dev-bypass
+ *  identity. Callers should surface `error.message` rather than a generic
+ *  failure: both refusals explain what to do instead.
+ */
+export async function setAdminUserRole(userId: string, role: WorkspaceRole): Promise<AdminUser> {
+  const { data } = await api.patch<AdminUser>(`/admin/users/${userId}/role`, { role });
   return data;
 }
 

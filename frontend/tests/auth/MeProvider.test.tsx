@@ -23,6 +23,7 @@ const adminMe = {
   email: 'dev@x.io',
   display_name: 'Dev',
   last_seen_at: null,
+  role: 'member' as const,
   is_workspace_admin: true,
 };
 

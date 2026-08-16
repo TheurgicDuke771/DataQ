@@ -14,7 +14,7 @@ connection to the mail relay, not *how many*.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
@@ -64,6 +64,14 @@ class AdminUserRead(ApiModel):
     created_at: datetime
     owned_suite_count: int
     shared_suite_count: int
+    #: The STORED role — what the editor below writes. Not the effective role:
+    #: see `admin_service.AdminUserRow` for why showing the resolved value here
+    #: would misrepresent exactly the rows an admin is most likely to act on.
+    role: str
+    #: Whether WORKSPACE_ADMIN_EMAILS grants this user admin regardless of the
+    #: stored role, so the UI can explain a `member` row that is nonetheless an
+    #: admin — and the last-admin guard's refusal alongside it.
+    allowlist_admin: bool
 
 
 class AdminAccessRead(ApiModel):
@@ -90,6 +98,49 @@ def all_users(db: Annotated[Session, Depends(get_db)]) -> list[svc.AdminUserRow]
 @router.get("/access", response_model=list[AdminAccessRead], summary="Access overview (admin)")
 def all_access(db: Annotated[Session, Depends(get_db)]) -> list[svc.AdminAccessRow]:
     return svc.list_all_access(db)
+
+
+class UserRoleUpdate(ApiModel):
+    """`PATCH /admin/users/{id}/role` body (ADR 0033, #742)."""
+
+    #: A Literal, not a bare `str`: an unknown tier is a 422 from the framework
+    #: rather than something the service has to reject, and it puts the closed
+    #: vocabulary in the OpenAPI schema where a client can read it. The service
+    #: re-validates anyway — it is callable directly and must not depend on a
+    #: router having filtered its input.
+    role: Literal["admin", "member", "viewer"]
+
+
+@router.patch(
+    "/users/{user_id}/role",
+    response_model=AdminUserRead,
+    summary="Change a user's workspace role (admin)",
+)
+def set_user_role(
+    user_id: UUID,
+    payload: UserRoleUpdate,
+    current_user: Annotated[User, Depends(require_workspace_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> AdminUserRead:
+    """Set `user_id`'s stored workspace role — the one sanctioned way to demote.
+
+    Admin-gated by the router-level dependency; `current_user` is re-declared
+    here (rather than relying on that dependency alone) because the audit line
+    needs the actor, and an audit line whose actor came from anywhere other than
+    the authenticated principal would be worth less than none.
+
+    Refuses rather than silently no-ops when a change cannot hold: the last
+    stored-role admin, and the dev-bypass identity. See `admin_service.set_user_role`.
+    """
+    svc.set_user_role(db, user_id, new_role=payload.role, actor=current_user)
+    # Re-read through the SAME row builder the list uses, so the response carries
+    # the identical computed fields (`allowlist_admin`, the suite counts) — a
+    # response shaped differently from the list it updates is how a table ends up
+    # with one row rendering unlike its neighbours. Scoped to this user (not a
+    # filter over the whole workspace aggregate), and it raises a typed 404
+    # rather than a bare `StopIteration` if the row vanished between the write
+    # and the read — an unhandled StopIteration surfaces as a 500 with no code.
+    return AdminUserRead.model_validate(svc.get_admin_user(db, user_id))
 
 
 class AdminWebhookRead(ApiModel):

@@ -34,6 +34,8 @@ const ADMIN_USERS = [
     created_at: '2026-07-01T00:00:00Z',
     owned_suite_count: 0,
     shared_suite_count: 0,
+    role: 'member' as const,
+    allowlist_admin: false,
   },
   {
     id: 'u-2',
@@ -43,6 +45,8 @@ const ADMIN_USERS = [
     created_at: '2026-07-01T00:00:00Z',
     owned_suite_count: 0,
     shared_suite_count: 0,
+    role: 'member' as const,
+    allowlist_admin: false,
   },
 ];
 
@@ -134,6 +138,7 @@ function meState(isAdmin: boolean): AsyncState<MeResponse> {
       email: 'user@dataq.io',
       display_name: 'User',
       last_seen_at: null,
+      role: 'member' as const,
       is_workspace_admin: isAdmin,
     },
   };

@@ -45,10 +45,44 @@ only to EU personal data.
 | **Secret isolation** — `SecretStore` seam (Azure Key Vault impl via managed identity); secrets never in git-tracked files, never logged | [`core/secrets.py`](../backend/app/core/secrets.py); CLAUDE.md secret rules | GDPR Art 32 / HIPAA §164.312(a) |
 | **Encryption in transit** — Postgres `sslmode=require`; HTTPS ingress | [`deploy/terraform/azure/postgres.tf`](../deploy/terraform/azure/postgres.tf) | GDPR Art 32 / HIPAA §164.312(e) |
 | **Encryption at rest** — Azure platform-managed keys on Postgres / Key Vault / Storage (default) | Azure platform default (not asserted in IaC — see gap G5) | GDPR Art 32 / HIPAA §164.312(a)(2)(iv) |
-| **Access control** — suite-scoped authz (owned-or-shared), workspace-admin allowlist, OIDC SSO (Azure AD validated) | suite authz, `WORKSPACE_ADMIN_EMAILS`, generic OIDC client + `fastapi-azure-auth` | GDPR Art 32 / HIPAA §164.312(a)(1) |
+| **Access control** — two axes: suite-scoped authz (owned-or-shared) **and** stored workspace roles (Admin / Member / Viewer), OIDC SSO (Azure AD + Cognito validated) | suite authz, `users.role` (ADR 0033), generic OIDC client + `fastapi-azure-auth` | GDPR Art 32 / HIPAA §164.312(a)(1) |
 | **Config-change history** — Type-4 snapshot tables (`check_versions`, `connection_versions`); credentials never snapshotted | ADR 0020 | GDPR Art 5(2) accountability (partial) |
 | **Data residency is deployable** — provider-agnostic seams (ADR 0010); a controller can deploy into their own jurisdiction's region | ADR 0010 / 0013 | GDPR Ch. V transfers |
 | **(Post-v1) LLM transfer minimization** — schema-only, PII-redacted context; local-endpoint option; no key-proxy | [`docs/post-v1-dq-intelligence-notes.md`](post-v1-dq-intelligence-notes.md) | GDPR Ch. V / HIPAA minimum-necessary |
+
+> **Access-control row — workspace roles are now stored, and manageable in-app (ADR
+> [0033](adr/0033-workspace-roles-rbac.md), shipped #740–#742).**
+> Authorization is two orthogonal axes. The **workspace role** (`users.role`:
+> `admin | member | viewer`) says what kind of principal you are; the **per-suite grant**
+> (`view` / `edit`) says what you may touch. Both are enforced server-side on REST and MCP
+> identically, and both resolve **per request** — so a demotion takes effect on the target's
+> next call, including calls made with tokens they already hold. There is no session or token
+> to revoke, and therefore no window in which a revoked privilege is still honoured.
+>
+> Two consequences an auditor should know, stated plainly rather than buried:
+>
+> - **Least privilege tightened materially.** Connections — the objects that hold warehouse
+>   credentials — can now be created, edited, deleted or re-credentialed **only by an Admin**.
+>   Before #741 *any* authenticated user could delete or re-point the connection every suite in
+>   the workspace ran on. **Viewer** is a genuine read-only tier: it cannot author, cannot be
+>   granted `edit` (rejected at grant time *and* capped at the point of use, so a demotion
+>   immediately downgrades grants the user already held), and cannot open an outbound
+>   connection test.
+> - **The `WORKSPACE_ADMIN_EMAILS` allowlist remains an admin-minting path, by design.**
+>   It is now a *bootstrap seed and lockout break-glass* rather than the admin mechanism: it
+>   only ever grants, never demotes, and the last-admin guard deliberately does **not** count
+>   allowlist-resolved admins toward its invariant (an env entry can disappear on the next
+>   deploy). The residual risk is explicit and unchanged from earlier releases: **anyone who
+>   can set environment variables on the API container can mint themselves a workspace admin.**
+>   Treat env write-access to the API as equivalent to workspace-admin in your access review,
+>   and keep the allowlist empty in steady state once an in-app Admin exists.
+>
+> **Role changes are audit-*logged*, not yet audit-*tabled*.** Every change emits a structured
+> line carrying actor, target and old→new role, `request_id`-correlated (never silent, and
+> never emitted for a change that was refused or was a no-op). The durable change-event table
+> is ADR [0020](adr/0020-history-and-audit-strategy.md)'s deferred cross-entity audit log
+> (**#310**) — distinct from the G1 *read*-access audit below. If your regime requires a
+> queryable, tamper-evident record of privilege changes, that gap is open.
 
 > **Decided change to the Access-control row — ADR [0027](adr/0027-suite-permission-model-workspace-admin.md) / [#482](https://github.com/TheurgicDuke771/DataQ/issues/482) (build pending).**
 > The suite-permission model is being revised so the **workspace-admin is an implicit
