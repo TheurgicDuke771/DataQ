@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "66659103920d",
+  "strategy": "manual-commit",
+  "branch": "docs/aws-second-reference-deployment",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/changelog.md",
+    "docs/deployment.md",
+    "docs/observability.md",
+    "docs/security.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/66/659103920d/0/metadata.json",
+      "transcript": "/66/659103920d/0/full.jsonl",
+      "compact_transcript": "/66/659103920d/0/transcript.jsonl",
+      "content_hash": "/66/659103920d/0/content_hash.txt",
+      "prompt": "/66/659103920d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 62,
+    "cache_creation_tokens": 99724,
+    "cache_read_tokens": 3119548,
+    "output_tokens": 22375,
+    "api_call_count": 31
+  }
+}

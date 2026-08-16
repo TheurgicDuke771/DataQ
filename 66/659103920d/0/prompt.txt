@@ -1,0 +1,2 @@
+Check the current status of the repo [last aws deploy was cancelled]
+Make sure all the documents [including github pages] are up to date with the latest commit [including all the aws realted works] and deploy the latest changes to to both azure and aws.
