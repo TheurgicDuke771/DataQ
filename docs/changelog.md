@@ -7,6 +7,22 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 Portability, auto-monitors, and polish on top of v1:
 
+- **Security hardening across both reference deployments** —
+  ([#1386](https://github.com/TheurgicDuke771/DataQ/issues/1386),
+  [#1387](https://github.com/TheurgicDuke771/DataQ/issues/1387),
+  [#1388](https://github.com/TheurgicDuke771/DataQ/issues/1388)):
+  - **Who may hold an account is now an explicit decision.** DataQ provisions a user on first
+    successful OIDC sign-in, so the identity provider's registration policy was in effect the
+    product's access policy. The AWS reference pool is now admin-create-only, and a new
+    app-side allowlist (`OIDC_ALLOWED_EMAILS` / `OIDC_ALLOWED_DOMAINS`) is enforced on every
+    request — on REST **and** MCP — so it revokes as well as admits.
+  - **Browser security headers on every response** — CSP, HSTS, `X-Frame-Options`,
+    `nosniff`, `Referrer-Policy`, `Permissions-Policy`. The CSP matters here because the UI
+    renders warehouse-supplied content (failing-row samples, error text).
+  - **Edge protection on AWS** — a CloudFront WAF per-IP rate ceiling in front of the in-app
+    limiter (which fails open by design), plus edge caching of the fingerprinted bundle so
+    the distribution actually absorbs load instead of passing everything through.
+
 - **AWS as a second deployment target** — a live-verified OpenTofu reference stack
   ([`deploy/terraform/aws/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/aws)):
   ECS Fargate (api / worker / frontend) + RDS + ElastiCache + **Amazon Cognito** (via the
