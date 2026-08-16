@@ -78,13 +78,13 @@ variable "workspace_admin_emails" {
   default     = ""
 }
 
-# App-side access gate for the generic-OIDC path (#1385), the second layer
+# App-side access gate for the generic-OIDC path (#1386), the second layer
 # behind `allow_admin_create_user_only` in cognito.tf. Empty (both) = every
 # identity the pool issues a token for is admitted, which is the backend default
 # and is logged at WARNING on boot. Set at least one when the pool is not
 # strictly invite-only. Addresses are PII, so real values belong in the
 # gitignored terraform.tfvars, never here.
-# ── WAF (#1387) ─────────────────────────────────────────────────────────────
+# ── WAF (#1388) ─────────────────────────────────────────────────────────────
 variable "waf_enabled" {
   description = "Attach a WAFv2 Web ACL to the CloudFront distribution. Costs roughly $7/month plus request charges; set false to remove it entirely."
   type        = bool

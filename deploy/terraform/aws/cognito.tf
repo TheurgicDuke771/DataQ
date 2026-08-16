@@ -17,7 +17,7 @@ resource "aws_cognito_user_pool" "app" {
 
   auto_verified_attributes = ["email"]
 
-  # NO self-service sign-up (#1385). This is the load-bearing line in this file.
+  # NO self-service sign-up (#1386). This is the load-bearing line in this file.
   #
   # A Cognito pool allows self-registration by DEFAULT, and the hosted UI serves
   # a working /signup form to anyone who finds the domain. DataQ auto-provisions

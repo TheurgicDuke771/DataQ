@@ -11,7 +11,7 @@ provider "aws" {
 }
 
 # CloudFront-scoped WAFv2 Web ACLs are a GLOBAL resource and exist only in
-# us-east-1, regardless of where the rest of the stack lives (#1387). This alias
+# us-east-1, regardless of where the rest of the stack lives (#1388). This alias
 # is used by waf.tf and by nothing else — the ACL is the one resource here that
 # cannot honour var.aws_region.
 provider "aws" {

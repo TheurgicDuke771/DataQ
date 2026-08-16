@@ -40,7 +40,7 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # Template (not a static conf): the nginx entrypoint envsubst's it at startup so
 # the API upstream + auth config are runtime-configurable.
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
-# Security headers (#1386), `include`d from the template above. Deliberately NOT
+# Security headers (#1387), `include`d from the template above. Deliberately NOT
 # in conf.d/ (auto-included into `http {}`, which would double every header) and
 # NOT a .template (it needs no substitution — the one runtime-dependent part,
 # the CSP, is assembled in the main template).

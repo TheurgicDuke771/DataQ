@@ -141,7 +141,7 @@ def test_the_allowlists_normalize_the_same_way_emails_do() -> None:
 
 
 def test_the_oidc_allowlists_share_the_otp_normalization_rule() -> None:
-    """#1385's allowlist parses through the same two helpers as the OTP one. Two
+    """#1386's allowlist parses through the same two helpers as the OTP one. Two
     subtly different rules on the identity surface is how one human becomes two
     accounts (ADR 0032 decision 6), so this pins them to identical behaviour."""
     s = Settings(

@@ -399,7 +399,7 @@ def test_get_current_user_generic_oidc_401_without_any_credential(db_session: An
     assert excinfo.value.status_code == 401
 
 
-# ── OIDC access allowlist (#1385) ────────────────────────────────────────────
+# ── OIDC access allowlist (#1386) ────────────────────────────────────────────
 # The defect being pinned: a valid token from the issuer was sufficient to be
 # auto-provisioned a DataQ account, so a self-signup-enabled IdP (the AWS
 # Cognito pool, as shipped) let anyone on the internet in.

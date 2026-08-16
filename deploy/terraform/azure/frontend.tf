@@ -68,7 +68,7 @@ resource "azurerm_container_app" "frontend" {
         value = "api://${azuread_application.api.client_id}/${var.azure_api_scope}"
       }
 
-      # CSP connect-src tail (#1386). The ORIGIN only — deliberately not
+      # CSP connect-src tail (#1387). The ORIGIN only — deliberately not
       # DATAQ_AUTH_AUTHORITY, which carries a path (`/<tenant>/v2.0`). A CSP
       # source matches by path prefix, and Azure AD's token endpoint lives at
       # `/<tenant>/oauth2/v2.0/token`, outside that prefix — so reusing the

@@ -1,4 +1,4 @@
-# AWS WAF on the CloudFront distribution (#1387).
+# AWS WAF on the CloudFront distribution (#1388).
 #
 # WHAT THIS IS FOR, precisely: the app's own rate limiter (ADR 0035) counts in
 # Redis, INSIDE the request path — every request it rejects has already crossed

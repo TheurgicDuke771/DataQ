@@ -33,7 +33,7 @@
 
 # workspace_admin_emails = "you@example.com"
 
-# App-side OIDC access gate (#1385). The Cognito pool is already invite-only
+# App-side OIDC access gate (#1386). The Cognito pool is already invite-only
 # (cognito.tf's allow_admin_create_user_only), so this is defence in depth:
 # it bounds who may hold a DataQ account even if the pool's own policy is
 # loosened later, and it doubles as a kill-switch (an identity removed here

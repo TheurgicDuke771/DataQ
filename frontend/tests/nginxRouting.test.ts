@@ -126,7 +126,7 @@ describe('nginx X-Forwarded-Proto (#1138 — OTP session cookie Secure inference
 });
 
 /**
- * Security-header inheritance (#1386).
+ * Security-header inheritance (#1387).
  *
  * nginx drops every inherited `add_header` at any level that declares one of its
  * own. Three locations here set their own `Cache-Control`, so the server-level
@@ -138,7 +138,7 @@ describe('nginx X-Forwarded-Proto (#1138 — OTP session cookie Secure inference
  * above): they pin the trap, they do not prove nginx emits the headers. The
  * behavioural proof is a real container + curl, run against the built image.
  */
-describe('nginx security headers (#1386 add_header inheritance)', () => {
+describe('nginx security headers (#1387 add_header inheritance)', () => {
   const SNIPPET_INCLUDE = 'include /etc/nginx/nginx-security-headers.conf;';
 
   /** Every `location … { … }` block, brace-matched (the bodies contain no nested braces). */

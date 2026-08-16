@@ -132,7 +132,7 @@ Then in a browser: sign in through Cognito end-to-end, confirm `/api` and
 `/mcp` return 401 unauthenticated without a credential, and run one real
 suite against a live datasource to confirm the worker path.
 
-## Edge protection (#1387)
+## Edge protection (#1388)
 
 `waf.tf` attaches a WAFv2 Web ACL to the distribution with two rules: a per-IP
 rate ceiling (`waf_rate_limit_per_5min`, default 2000 per 5 min) and an
@@ -146,7 +146,7 @@ switches enforcement off. The ACL sheds load *before* the origin sees it. It is
 sized an order of magnitude above the app limiter so it catches floods without
 shaping normal traffic.
 
-`/assets/*` also gets a caching behavior. Until #1387 the distribution had
+`/assets/*` also gets a caching behavior. Until #1388 the distribution had
 caching disabled on every path, so it shed nothing at all — a flood and a
 normal page load cost the origin the same. Only the fingerprinted build output
 is cached (a changed asset is a changed URL, so a stale bundle is impossible);

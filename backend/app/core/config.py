@@ -40,7 +40,7 @@ def _allowed_email_set(raw: str) -> frozenset[str]:
     Normalization is strip + lower — the SAME rule as `Settings.is_admin_email`,
     `otp_service.normalize_email` and the `uq_users_email_lower` index. The
     identity surface has exactly one rule (ADR 0032 decision 6), so both the OTP
-    and the generic-OIDC allowlists (#1385) go through this one function rather
+    and the generic-OIDC allowlists (#1386) go through this one function rather
     than each spelling it out.
     """
     return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
@@ -273,7 +273,7 @@ class Settings(BaseSettings):
     oidc_issuer: str | None = None
     oidc_audience: str | None = None
 
-    # Signup gating for the generic-OIDC path (#1385) — the OIDC twin of
+    # Signup gating for the generic-OIDC path (#1386) — the OIDC twin of
     # AUTH_OTP_ALLOWED_EMAILS/_DOMAINS above, read through the normalized
     # frozenset properties below, never the raw fields.
     #
@@ -289,7 +289,7 @@ class Settings(BaseSettings):
     # reach the database.
     #
     # UNSET (both empty) = no app-side gate: every identity the issuer vouches
-    # for is admitted. That is the pre-#1385 behaviour, kept as the default so
+    # for is admitted. That is the pre-#1386 behaviour, kept as the default so
     # upgrading an existing deployment can never lock its whole workspace out —
     # a fail-CLOSED default here would be a total outage on a routine image
     # bump. `init_auth()` logs `auth_oidc_no_signup_allowlist` at WARNING when
@@ -763,12 +763,12 @@ class Settings(BaseSettings):
 
     @property
     def oidc_allowed_email_set(self) -> frozenset[str]:
-        """Normalized allow-listed generic-OIDC signup addresses (#1385)."""
+        """Normalized allow-listed generic-OIDC signup addresses (#1386)."""
         return _allowed_email_set(self.oidc_allowed_emails)
 
     @property
     def oidc_allowed_domain_set(self) -> frozenset[str]:
-        """Normalized allow-listed generic-OIDC signup domains (#1385)."""
+        """Normalized allow-listed generic-OIDC signup domains (#1386)."""
         return _allowed_domain_set(self.oidc_allowed_domains)
 
     @property

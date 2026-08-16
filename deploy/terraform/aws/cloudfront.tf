@@ -18,7 +18,7 @@ data "aws_cloudfront_cache_policy" "caching_disabled" {
   name = "Managed-CachingDisabled"
 }
 
-# For the fingerprinted build output only (#1387). Everything else stays
+# For the fingerprinted build output only (#1388). Everything else stays
 # uncached — see the header comment.
 data "aws_cloudfront_cache_policy" "caching_optimized" {
   name = "Managed-CachingOptimized"
@@ -92,7 +92,7 @@ resource "aws_cloudfront_distribution" "app" {
 
   # Fingerprinted build output — the ONE thing here that is safe to cache at the
   # edge, and the only reason this distribution can absorb any load at all
-  # (#1387). With caching disabled everywhere, every asset request on every page
+  # (#1388). With caching disabled everywhere, every asset request on every page
   # load travelled the full CloudFront -> ALB -> nginx path, so the "CDN" in
   # front of the app shed nothing: an L7 flood and a legitimate page load cost
   # the origin exactly the same.
@@ -118,7 +118,7 @@ resource "aws_cloudfront_distribution" "app" {
     cache_policy_id = data.aws_cloudfront_cache_policy.caching_optimized.id
   }
 
-  # Edge rate limiting + oversized-body rejection (#1387, waf.tf). Null when
+  # Edge rate limiting + oversized-body rejection (#1388, waf.tf). Null when
   # waf_enabled = false, which detaches the ACL without touching anything else.
   web_acl_id = var.waf_enabled ? aws_wafv2_web_acl.app[0].arn : null
 

@@ -776,7 +776,7 @@ async def init_auth() -> None:
             # no app-side gate, DataQ admits every identity the issuer will
             # issue a token for, which makes the IdP's own registration policy
             # DataQ's access policy. That is fine for an invite-only tenant and
-            # is exactly how #1385 happened on a self-signup-enabled pool.
+            # is exactly how #1386 happened on a self-signup-enabled pool.
             # Count + domains only, never the addresses themselves (PII) —
             # mirrors `_log_otp_mode_ready`.
             log.warning(
@@ -882,7 +882,7 @@ def _get_current_user_real_or_otp(
 
 
 def _oidc_access_allowed(email: str) -> bool:
-    """Whether `email` (already normalized) may hold a DataQ account via OIDC (#1385).
+    """Whether `email` (already normalized) may hold a DataQ account via OIDC (#1386).
 
     Mirrors `otp_service.is_signup_eligible`, with one deliberate difference in the
     empty-allowlist case: OTP treats "no allowlist" as *nobody* (and refuses to

@@ -98,7 +98,7 @@ locals {
     { name = "AUTH_DEV_BYPASS", value = "false" },
     { name = "OIDC_ISSUER", value = local.cognito_issuer },
     { name = "OIDC_AUDIENCE", value = aws_cognito_user_pool_client.spa.id },
-    # App-side access gate (#1385) — second layer behind cognito.tf's
+    # App-side access gate (#1386) — second layer behind cognito.tf's
     # allow_admin_create_user_only. Empty = no gate (backend default, logged at
     # WARNING on boot); see variables.tf.
     { name = "OIDC_ALLOWED_EMAILS", value = var.oidc_allowed_emails },
@@ -307,7 +307,7 @@ resource "aws_ecs_task_definition" "frontend" {
         # id_token_hint/post_logout_redirect_uri, stranding the user on a raw
         # "Client does not exist" error page with the hosted-UI session alive.
         { name = "DATAQ_AUTH_LOGOUT_STYLE", value = "cognito" },
-        # CSP connect-src tail (#1386). BOTH Cognito hosts are required and they
+        # CSP connect-src tail (#1387). BOTH Cognito hosts are required and they
         # are different services: oidc-client-ts fetches discovery + JWKS from
         # the ISSUER host (cognito-idp.<region>.amazonaws.com) and then POSTs the
         # code exchange to the HOSTED-UI domain (<prefix>.auth.<region>.
