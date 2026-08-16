@@ -75,6 +75,7 @@ nav:
       - Architecture: architecture.md
       - Security & data handling: security.md
       - Deployment: deployment.md
+      - Deployment parity (Azure · AWS · Local): deployment-parity.md
       - Observability: observability.md
       - Performance baseline: perf-baseline.md
       - Troubleshooting: troubleshooting.md
