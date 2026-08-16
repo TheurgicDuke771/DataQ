@@ -4,8 +4,18 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setAdminUserRole, type AdminUser } from '../../src/api/admin';
+import { fetchMe } from '../../src/api/me';
 import { RoleEditor } from '../../src/components/admin/RoleEditor';
 import { selectOption } from '../support/antd';
+
+vi.mock('../../src/api/me', () => ({ fetchMe: vi.fn() }));
+
+const mockUpdateMe = vi.fn();
+let currentMe: { status: string; data?: { id: string } } = { status: 'loading' };
+vi.mock('../../src/auth/useMe', () => ({
+  useMe: () => currentMe,
+  useUpdateMe: () => mockUpdateMe,
+}));
 
 vi.mock('../../src/api/admin', async () => {
   const actual = await vi.importActual<typeof import('../../src/api/admin')>('../../src/api/admin');
@@ -51,6 +61,9 @@ async function pick(role: string) {
 describe('RoleEditor', () => {
   beforeEach(() => {
     mockSet.mockReset();
+    mockUpdateMe.mockReset();
+    vi.mocked(fetchMe).mockReset();
+    currentMe = { status: 'ok', data: { id: 'someone-else' } };
   });
 
   it('shows the STORED role, not the effective one', () => {
@@ -112,5 +125,35 @@ describe('RoleEditor', () => {
     // admins count (they do not). Better to let the server refuse and explain.
     renderEditor(user({ role: 'admin' }));
     expect(screen.getByRole('combobox')).not.toBeDisabled();
+  });
+
+  it('refetches /me when an admin changes their OWN role', async () => {
+    // Without this, a self-demoting admin keeps `is_workspace_admin: true` in the
+    // shared context: the Admin nav and page keep rendering, and every later
+    // action fails with a raw 403 against a UI still insisting they are an admin.
+    currentMe = { status: 'ok', data: { id: 'u-1' } };
+    const refreshed = { id: 'u-1', role: 'member', is_workspace_admin: false };
+    mockSet.mockResolvedValue(user({ role: 'member' }));
+    vi.mocked(fetchMe).mockResolvedValue(refreshed as never);
+    renderEditor(user({ id: 'u-1', role: 'admin' }));
+
+    await pick('member');
+
+    // Refetched, not patched locally: `/me` reports the EFFECTIVE role, and an
+    // admin still on WORKSPACE_ADMIN_EMAILS remains one — only the server knows.
+    await waitFor(() => expect(fetchMe).toHaveBeenCalled());
+    await waitFor(() => expect(mockUpdateMe).toHaveBeenCalledWith(refreshed));
+  });
+
+  it('does not refetch /me when changing someone else’s role', async () => {
+    currentMe = { status: 'ok', data: { id: 'someone-else' } };
+    mockSet.mockResolvedValue(user({ role: 'viewer' }));
+    renderEditor(user({ id: 'u-1', role: 'member' }));
+
+    await pick('viewer');
+
+    await waitFor(() => expect(mockSet).toHaveBeenCalled());
+    expect(fetchMe).not.toHaveBeenCalled();
+    expect(mockUpdateMe).not.toHaveBeenCalled();
   });
 });

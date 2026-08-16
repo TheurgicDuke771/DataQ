@@ -133,12 +133,14 @@ def set_user_role(
     stored-role admin, and the dev-bypass identity. See `admin_service.set_user_role`.
     """
     svc.set_user_role(db, user_id, new_role=payload.role, actor=current_user)
-    # Re-read through the list query so the response carries the same computed
-    # fields (`allowlist_admin`, the suite counts) as every other row the Admin
-    # page holds — a response shaped differently from the list it updates is how
-    # a table ends up with one row that renders unlike its neighbours.
-    updated = next(u for u in svc.list_all_users(db) if u.id == user_id)
-    return AdminUserRead.model_validate(updated)
+    # Re-read through the SAME row builder the list uses, so the response carries
+    # the identical computed fields (`allowlist_admin`, the suite counts) — a
+    # response shaped differently from the list it updates is how a table ends up
+    # with one row rendering unlike its neighbours. Scoped to this user (not a
+    # filter over the whole workspace aggregate), and it raises a typed 404
+    # rather than a bare `StopIteration` if the row vanished between the write
+    # and the read — an unhandled StopIteration surfaces as a 500 with no code.
+    return AdminUserRead.model_validate(svc.get_admin_user(db, user_id))
 
 
 class AdminWebhookRead(ApiModel):

@@ -131,8 +131,27 @@ def list_all_suites(session: Session) -> list[AdminSuiteRow]:
     return [AdminSuiteRow(*row) for row in session.execute(stmt)]
 
 
+def get_admin_user(session: Session, user_id: UUID) -> AdminUserRow:
+    """One user's admin-overview row — the same shape `list_all_users` returns.
+
+    Scoped to one id rather than filtering the full list: that query is a
+    workspace-wide aggregate over two outer joins, so re-running it to return a
+    single row costs the whole workspace's scan on every role change. Shares the
+    builder below so the two can never disagree about what a row contains.
+    """
+    rows = _admin_user_rows(session, user_id=user_id)
+    if not rows:
+        raise UserNotFoundError("user not found", detail={"user_id": str(user_id)})
+    return rows[0]
+
+
 def list_all_users(session: Session) -> list[AdminUserRow]:
     """Every user with their owned-suite and shared-suite counts, by email."""
+    return _admin_user_rows(session)
+
+
+def _admin_user_rows(session: Session, *, user_id: UUID | None = None) -> list[AdminUserRow]:
+    """The one row-builder behind both the list and the single-user read."""
     stmt = (
         select(
             User.id,
@@ -149,6 +168,8 @@ def list_all_users(session: Session) -> list[AdminUserRow]:
         .group_by(User.id)
         .order_by(User.email)
     )
+    if user_id is not None:
+        stmt = stmt.where(User.id == user_id)
     settings = get_settings()
     # Named rather than splatted: `allowlist_admin` is NOT a column — the
     # allowlist lives in env, not in Postgres — so it cannot ride in the SELECT,
@@ -524,9 +545,44 @@ def set_user_role(
             detail={"role": new_role, "allowed": list(WORKSPACE_ROLES)},
         )
 
-    target = session.get(User, user_id)
-    if target is None:
+    # Existence first, so a bad id is a 404 rather than a lock wait.
+    if session.get(User, user_id) is None:
         raise UserNotFoundError("user not found", detail={"user_id": str(user_id)})
+
+    # ── Everything below decides from LOCKED state, and that is load-bearing ──
+    #
+    # An earlier cut read `target.role` before taking the lock and gated the
+    # last-admin guard on that value. Review found the bypass: with stored admins
+    # {X}, actor A starts `T → viewer` while T is still `member` (capturing
+    # previous='member'), stalls; B commits `T → admin`; C commits `X → member`
+    # (its locked read sees {X, T}, so the guard passes); A resumes — its locked
+    # read is now correctly {T}, but the guard never runs because A's *stale*
+    # `previous` says T was never an admin. Result: zero stored admins. It is the
+    # same read-modify-write race the lock exists to prevent, merely relocated
+    # onto `target.role`, and it also made the audit line's `previous_role` a lie.
+    #
+    # Two locks, always in this order (target, then the admin set), so these
+    # callers cannot deadlock against each other. Re-locking a row already held
+    # is a no-op, which is what makes the overlap when the target IS an admin
+    # harmless.
+    target = session.execute(
+        select(User).where(User.id == user_id).with_for_update()
+    ).scalar_one_or_none()
+    if target is None:  # pragma: no cover — deleted between the check and the lock
+        raise UserNotFoundError("user not found", detail={"user_id": str(user_id)})
+    admin_ids = set(
+        session.scalars(select(User.id).where(User.role == ADMIN_ROLE).with_for_update()).all()
+    )
+    previous = target.role
+
+    if previous == new_role:
+        # Idempotent, and deliberately NOT an error: a UI that re-submits the
+        # current value should not surface a failure. Checked BEFORE the
+        # dev-bypass refusal below, so that setting that identity to the role it
+        # already has stays a no-op rather than contradicting this rule. No audit
+        # line either — nothing changed, and a log of non-events dilutes the ones
+        # that matter.
+        return target
 
     if target.aad_object_id == DEV_BYPASS_AAD_OID or target.email == DEV_BYPASS_EMAIL:
         raise RoleChangeRejectedError(
@@ -535,12 +591,37 @@ def set_user_role(
             detail={"user_id": str(user_id)},
         )
 
-    previous = target.role
-    if previous == new_role:
-        # Idempotent, and deliberately NOT an error: a UI that re-submits the
-        # current value should not surface a failure. No audit line either —
-        # nothing changed, and a log of non-events dilutes the ones that matter.
-        return target
+    # `target.id in admin_ids`, not `previous == ADMIN_ROLE`: both now come from
+    # the same locked snapshot, but reading membership from the set that the
+    # guard actually counts keeps the two from ever drifting apart again.
+    if target.id in admin_ids and admin_ids <= {target.id}:
+        raise RoleChangeRejectedError(
+            "cannot remove the last workspace admin — promote another user to "
+            "admin first. (Admins granted only by WORKSPACE_ADMIN_EMAILS do not "
+            "count: that allowlist is a recovery path, not the invariant.)",
+            detail={"user_id": str(user_id), "stored_admin_count": len(admin_ids)},
+        )
+
+    target.role = new_role
+    session.commit()
+    session.refresh(target)
+
+    # The durable audit *table* is ADR 0020's deferred cross-entity change log
+    # (#310). Until then this line is the whole guarantee that a role change is
+    # never silent — so it carries actor, target, and both ends of the change,
+    # and is emitted AFTER the commit so it can never claim a change that rolled
+    # back. `previous` comes from the locked read, so it cannot report a value
+    # that was already stale when the change was decided. Emails are omitted: ids
+    # correlate, and `_PII_KEYS` redacting an `email` key is a backstop, not a
+    # reason to hand one over.
+    log.info(
+        "workspace_role_changed",
+        actor_id=str(actor.id),
+        target_user_id=str(user_id),
+        previous_role=previous,
+        new_role=new_role,
+    )
+    return target
 
     # Lock the stored-role admins BEFORE deciding, so a concurrent demotion
     # serializes behind this one instead of racing it.

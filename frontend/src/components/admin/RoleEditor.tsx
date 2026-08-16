@@ -7,6 +7,8 @@ import {
   WORKSPACE_ROLES,
   setAdminUserRole,
 } from '../../api/admin';
+import { fetchMe } from '../../api/me';
+import { useMe, useUpdateMe } from '../../auth/useMe';
 import { errorMessage } from '../../utils/errors';
 
 /**
@@ -31,6 +33,14 @@ import { errorMessage } from '../../utils/errors';
  *    A break-glass allowlist admin reads `member` here and carries the
  *    "via allowlist" tag beside it — showing `admin` would make the editor look
  *    broken when demoting them changes nothing visible.
+ *
+ * The one thing it DOES do beyond the row: when an admin changes their **own**
+ * role, `/me` is refetched. Without that, a self-demoting admin keeps
+ * `is_workspace_admin: true` in the shared context — the Admin nav and page stay
+ * rendered, and every subsequent action fails with a raw 403 toast against a UI
+ * still insisting they are an admin. Roles resolve per request on the server
+ * (ADR 0033 decision 7), so the client is the only stale copy; this is what
+ * keeps it honest.
  */
 export function RoleEditor({
   user,
@@ -44,6 +54,8 @@ export function RoleEditor({
   // here and took the whole Admin page's render down with it, which is how the
   // convention got noticed).
   const { message } = App.useApp();
+  const me = useMe();
+  const updateMe = useUpdateMe();
   const [saving, setSaving] = useState(false);
 
   async function change(role: WorkspaceRole) {
@@ -53,6 +65,13 @@ export function RoleEditor({
       const updated = await setAdminUserRole(user.id, role);
       onChanged(updated);
       message.success(`${user.email} is now ${role}`);
+      if (me.status === 'ok' && me.data.id === user.id) {
+        // Self-change: refetch rather than patching the context locally, because
+        // `/me` reports the EFFECTIVE role — an admin who demotes themselves
+        // while still on WORKSPACE_ADMIN_EMAILS is still an admin, and only the
+        // server knows that.
+        updateMe(await fetchMe());
+      }
     } catch (err) {
       // The server's message is the useful one ("cannot remove the last workspace
       // admin — promote another user first"; "the dev-bypass identity's role

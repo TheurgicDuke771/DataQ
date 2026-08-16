@@ -20,7 +20,7 @@ from structlog.testing import capture_logs
 
 from backend.app.core.auth import DEV_BYPASS_AAD_OID, DEV_BYPASS_EMAIL
 from backend.app.core.config import get_settings
-from backend.app.db.models import User
+from backend.app.db.models import ADMIN_ROLE, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import admin_service
@@ -280,6 +280,116 @@ def test_concurrent_demotions_cannot_both_succeed(_db_engine: Any) -> None:
                 setup.delete(row)
         setup.commit()
         setup.close()
+
+
+def test_a_stale_in_session_read_cannot_bypass_the_guard(_db_engine: Any) -> None:
+    """The interleaving that reached zero stored admins (found in review).
+
+    The earlier cut captured `previous = target.role` from an UNLOCKED
+    `session.get` and gated the guard on it. `session.get` answers from the
+    identity map, so a row this session loaded earlier is returned **stale, with
+    no round trip** — which makes the race deterministic rather than a timing
+    accident:
+
+        stored admins {X}   (the acting user is deliberately not one)
+        A loads T (member) — e.g. rendering the Members table
+        B commits T→admin                                → admins {X, T}
+        C commits X→member                               → admins {T}
+        A now PATCHes T→viewer. The stale read says T was never an admin, so the
+        guard is skipped entirely → zero stored admins.
+
+    The fix decides from the locked `SELECT … FOR UPDATE`, which always round
+    trips. **Verified to fail against the pre-fix code** — a sequential version
+    of this test passed against both, which is precisely the "a test that cannot
+    express the failing case proves nothing" shape.
+    """
+    from sqlalchemy.orm import Session as SASession
+
+    x_id, t_id, actor_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    ids = (x_id, t_id, actor_id)
+    setup = SASession(bind=_db_engine)
+    try:
+        setup.add_all(
+            [
+                User(id=x_id, aad_object_id=None, email=f"x-{x_id.hex[:8]}@e.io", role="admin"),
+                User(id=t_id, aad_object_id=None, email=f"t-{t_id.hex[:8]}@e.io", role="member"),
+                # NOT an admin: the service gates on the actor's role nowhere (the
+                # endpoint does), and making them one would leave the workspace a
+                # spare admin — the guard would never be the thing under test.
+                User(
+                    id=actor_id,
+                    aad_object_id=None,
+                    email=f"a-{actor_id.hex[:8]}@e.io",
+                    role="member",
+                ),
+            ]
+        )
+        setup.commit()
+        actor = setup.get(User, actor_id)
+        assert actor is not None
+
+        s_a, s_other = SASession(bind=_db_engine), SASession(bind=_db_engine)
+        try:
+            # A loads T while it is still a member — this is the stale read.
+            stale = s_a.get(User, t_id)
+            assert stale is not None and stale.role == "member"
+
+            admin_service.set_user_role(s_other, t_id, new_role=ADMIN_ROLE, actor=actor)
+            admin_service.set_user_role(s_other, x_id, new_role="member", actor=actor)
+
+            # A proceeds on its stale picture. T is now the LAST stored admin.
+            with pytest.raises(admin_service.RoleChangeRejectedError):
+                admin_service.set_user_role(s_a, t_id, new_role="viewer", actor=actor)
+        finally:
+            s_a.close()
+            s_other.close()
+
+        setup.expire_all()
+        survivors = [setup.get(User, i) for i in ids]
+        assert any(
+            u is not None and u.role == ADMIN_ROLE for u in survivors
+        ), "the workspace must never be left with zero stored admins"
+    finally:
+        setup.rollback()
+        for uid in ids:
+            row = setup.get(User, uid)
+            if row is not None:
+                setup.delete(row)
+        setup.commit()
+        setup.close()
+
+
+def test_the_audit_line_reports_the_locked_previous_role(db_session: Any) -> None:
+    """`previous_role` comes from the locked read, so it can never report a value
+    that was already stale when the change was decided — the second half of the
+    same defect (an audit line that misreports the old value is worse than none).
+    """
+    actor = _user(db_session, "admin")
+    _user(db_session, "admin")
+    target = _user(db_session, "member")
+    # Change it out from under a caller that might have read it earlier.
+    target.role = "viewer"
+    db_session.commit()
+
+    with capture_logs() as logs:
+        admin_service.set_user_role(db_session, target.id, new_role="member", actor=actor)
+
+    line = next(e for e in logs if e["event"] == "workspace_role_changed")
+    assert line["previous_role"] == "viewer"
+
+
+def test_setting_the_dev_bypass_identity_to_its_current_role_is_a_no_op(
+    client: TestClient, db_session: Any
+) -> None:
+    """The refusal must not contradict the idempotency rule: re-submitting the
+    role it already has is a no-op, not a 409."""
+    client.get("/api/v1/me")
+    bypass = db_session.query(User).filter(User.aad_object_id == DEV_BYPASS_AAD_OID).one()
+
+    resp = client.patch(f"/api/v1/admin/users/{bypass.id}/role", json={"role": "admin"})
+
+    assert resp.status_code == 200
+    assert resp.json()["role"] == "admin"
 
 
 # ── the dev-bypass identity is not manageable ────────────────────────────────
