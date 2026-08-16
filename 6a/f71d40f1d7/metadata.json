@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "6af71d40f1d7",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1364-cognito-signout",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "deploy/terraform/aws/ecs.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6a/f71d40f1d7/0/metadata.json",
+      "transcript": "/6a/f71d40f1d7/0/full.jsonl",
+      "compact_transcript": "/6a/f71d40f1d7/0/transcript.jsonl",
+      "content_hash": "/6a/f71d40f1d7/0/content_hash.txt",
+      "prompt": "/6a/f71d40f1d7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 756,
+    "cache_creation_tokens": 1219134,
+    "cache_read_tokens": 89067315,
+    "output_tokens": 240710,
+    "api_call_count": 380
+  }
+}
