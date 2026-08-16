@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "b1ff6e248283",
+  "strategy": "manual-commit",
+  "branch": "docs/security-audit-1386-1388",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/changelog.md",
+    "docs/compliance-posture.md",
+    "docs/deployment-parity.md",
+    "docs/deployment.md",
+    "docs/security.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b1/ff6e248283/0/metadata.json",
+      "transcript": "/b1/ff6e248283/0/full.jsonl",
+      "compact_transcript": "/b1/ff6e248283/0/transcript.jsonl",
+      "content_hash": "/b1/ff6e248283/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 124,
+    "cache_creation_tokens": 49855,
+    "cache_read_tokens": 21214290,
+    "output_tokens": 19895,
+    "api_call_count": 62
+  }
+}
