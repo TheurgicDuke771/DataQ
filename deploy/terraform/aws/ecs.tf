@@ -126,7 +126,7 @@ locals {
     { name = "EMAIL_PASSWORD_SECRET_NAME", value = "channel-email-password" },
     { name = "EMAIL_USERNAME", value = local.email_username },
     { name = "EMAIL_FROM", value = var.alert_email },
-    { name = "EMAIL_TO", value = var.alert_email },
+    { name = "EMAIL_TO", value = local.alert_email_to },
   ]
 
   worker_env = concat(local.app_env, [
