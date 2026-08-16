@@ -7,10 +7,12 @@
   failed-check sample rows can't leak into logs.
 - **Azure Application Insights** captures logs + exceptions in deployed environments
   (gated on the connection string; off locally).
-- **Request + task spans** (OpenTelemetry, Azure-exported) in deployed environments:
-  every API request and Celery task run is a trace in App Insights, linked
-  request → task, with a `dataq.request_id` attribute joining spans to the log lines.
-  Health probes and the secret-bearing webhook URLs are excluded by design.
+- **Request + task spans** (OpenTelemetry) in deployed environments: every API request and
+  Celery task run is a trace, linked request → task, with a `dataq.request_id` attribute
+  joining spans to the log lines. Health probes and the secret-bearing webhook URLs are
+  excluded by design. Exported to App Insights on Azure; on the AWS stack the same
+  vendor-neutral OTLP export feeds an ADOT sidecar → **X-Ray traces + CloudWatch logs**
+  with matching trace ids; any generic OTLP endpoint works too.
 
 ## Where to look
 
