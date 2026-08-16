@@ -789,7 +789,12 @@ def test_update_secret_write_failure_raises_502(db_session: Any) -> None:
 
 # ────────── a SECOND credential — the Iceberg catalog secret (#1181) ─────────
 
-_ICEBERG_SQL_CONFIG = {"catalog_type": "sql", "catalog_uri": "sqlite:///w"}
+# `sqlite:///w` materialized a real 20KB database in whatever directory pytest
+# ran from — a stray, extensionless binary at the repo root that `.gitignore`'s
+# `*.sqlite` could not match, and which duly got committed. An in-memory URI
+# cannot leave an artifact anywhere; nothing here connects to it, the value only
+# has to be a valid catalog URI.
+_ICEBERG_SQL_CONFIG = {"catalog_type": "sql", "catalog_uri": "sqlite:///:memory:"}
 
 
 def test_create_iceberg_with_catalog_secret_stores_it_and_sets_config_field(
@@ -1041,6 +1046,40 @@ def test_config_only_update_preserves_catalog_secret_name(db_session: Any) -> No
     assert conn.config["warehouse"] == "s3://bucket/warehouse"
     # …and the credential itself is still resolvable — the actual stake here.
     assert store.data[ref] == "catalog-pw"
+
+
+def test_blanking_a_catalog_secret_name_is_rejected(db_session: Any) -> None:
+    """`""` is not "absent" — it is a present key with a non-ref value.
+
+    Skipping it would let a PATCH silently strip the connection's catalog
+    credential: `_carry_over_secret_name_keys` sees the key IS present, so it
+    carries nothing, and the row ends up pointing at no secret while the real one
+    stays live and unreferenced in the store — the #954 shape, self-inflicted,
+    and a purge candidate. Blanking is not how a credential is removed.
+    """
+    store = FakeSecretStore()
+    conn = svc.create_connection(
+        db_session,
+        name="harness-iceberg",
+        conn_type="iceberg",
+        env="dev",
+        config=dict(_ICEBERG_SQL_CONFIG),
+        secret=None,
+        catalog_secret="catalog-pw",
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+    original_ref = conn.config["catalog_secret_name"]
+
+    with pytest.raises(svc.ForeignSecretReferenceError):
+        svc.update_connection(
+            db_session,
+            conn.id,
+            config={**_ICEBERG_SQL_CONFIG, "catalog_secret_name": ""},
+            secret_store=store,
+        )
+
+    assert conn.config["catalog_secret_name"] == original_ref
 
 
 def test_a_faithfully_resent_catalog_secret_name_is_accepted(db_session: Any) -> None:

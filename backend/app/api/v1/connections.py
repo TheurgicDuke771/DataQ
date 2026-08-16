@@ -18,7 +18,7 @@ is why the role gates here are the sharpest in the app, and why they are
 per-route rather than declared once on the router:
 
     create / update / delete / reauth   AdminUser   — mutating shared credentialed infra
-    test (draft, unsaved)               AdminUser   — probes CALLER-SUPPLIED config (#1118)
+    test (draft, unsaved)               AdminUser   — probes CALLER-SUPPLIED config
     test (saved)                        MemberUser  — Members verify, Viewers do not probe
     list / get / versions               any authenticated user
 
@@ -261,19 +261,17 @@ def test_draft_connection(
     - The saved `/test` probes a connection an **admin already created and
       stored**. A Member verifying that it works learns nothing they could not
       learn by running a suite against it.
-    - This one probes config the **caller supplies in the request body** —
-      including `*_secret_name` fields, which are resolved against the flat
-      SecretStore namespace and handed to the adapter. That is #1118: a caller
-      can name a *victim* connection's secret (readable off `GET /connections`)
-      while pointing the endpoint at a host they control. The role gate does not
-      close that class; it bounds who can reach it.
+    - This one probes config the **caller supplies in the request body**. A
+      draft owns no stored secret refs, so `*_secret_name` is now **refused**
+      outright here rather than resolved (#1118) — but the config is still
+      wholly caller-chosen, which is enough on its own: this is the tier that
+      may point a probe at any host it likes.
 
     Admin is therefore the honest tier, and it costs nothing: this endpoint
     exists to serve the Create/Edit connection form, which is itself Admin-only
-    since #741. At Member+ it would grant the credential-exfiltration surface to
-    precisely the tier this slice just denied connection-write to, in support of
-    a form that tier cannot open. #1118 remains the real fix and is tracked
-    separately.
+    since #741. At Member+ it would hand the whole caller-supplied-probe surface
+    to precisely the tier #741 just denied connection-write to, in support of a
+    form that tier cannot open.
     """
     svc.test_draft_connection(
         payload.type,

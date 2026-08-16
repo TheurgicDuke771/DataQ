@@ -150,10 +150,27 @@ def _reject_foreign_secret_names(
     meaning is quietly altered is how the caller ends up debugging a connection
     that "lost" its catalog credential. The error names the field so a legitimate
     client can fix its payload.
+
+    **Scope — what this does NOT close (#1401).** It governs the reference NAME,
+    not the URI the resolved credential is then sent to. An Admin can still PATCH
+    a victim connection echoing `catalog_secret_name` byte-identically (accepted,
+    by the round-trip rule) while changing `catalog_uri` to a host they control,
+    and test it. That residual is narrower than what #1118 opened with — it is
+    Admin-only, and it requires mutating the victim's row, which
+    `connection_versions` records with `changed_by`, so it is no longer the
+    trace-less variant — but it is a real privilege conversion (rotate → read)
+    and is tracked separately rather than left unstated here.
     """
     for key, value in config.items():
-        if not key.endswith("_secret_name") or not isinstance(value, str) or not value:
+        if not key.endswith("_secret_name") or not isinstance(value, str):
             continue
+        # An EMPTY string is checked too, not skipped as "absent". `""` is not a
+        # ref, but it IS a present key — so `_carry_over_secret_name_keys` sees
+        # nothing to fill and the connection silently ends up with no catalog
+        # credential while the real secret stays live and unreferenced in the
+        # store: the #954 shape, self-inflicted, and a purge candidate. Blanking
+        # is not how a credential is removed (the row's deletion is), so it is a
+        # rejection like any other value the server did not put there.
         if stored is None or stored.get(key) != value:
             raise ForeignSecretReferenceError(
                 f"'{key}' is set by the server and cannot be supplied or changed by a "
