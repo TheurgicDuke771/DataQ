@@ -1,0 +1,79 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "4e84d1e089c8",
+  "session_id": "6ad68064-637c-487d-b001-34ff5f7e364a",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-16T07:14:22.66969Z",
+  "branch": "fix/security-audit-1386-1387-1388",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/mcp/auth.py",
+    "backend/app/core/auth.py",
+    "deploy/terraform/aws/waf.tf",
+    "deploy/terraform/aws/variables.tf",
+    "deploy/terraform/aws/cloudfront.tf",
+    "backend/tests/mcp/test_mcp_auth.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5",
+  "turn_id": "f133320cdb83",
+  "checkpoint_transcript_start": 669,
+  "transcript_lines_at_start": 669,
+  "compact_transcript_start": 213,
+  "token_usage": {
+    "input_tokens": 102,
+    "cache_creation_tokens": 35633,
+    "cache_read_tokens": 15320893,
+    "output_tokens": 25604,
+    "api_call_count": 51
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01PjzW44Zjv2aPwLaNNAj8Yo",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "f133320cdb83",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 678,
+        "end": 679,
+        "entry_ids": [
+          "b405dc39-9667-4909-b408-8f3b9d526d2e"
+        ],
+        "tool_use_id": "toolu_01PjzW44Zjv2aPwLaNNAj8Yo"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01PjzW44Zjv2aPwLaNNAj8Yo"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-16T07:14:22.597882Z",
+    "agent_lines": 252,
+    "agent_removed": 55,
+    "human_added": 25,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 277,
+    "total_lines_changed": 332,
+    "agent_percentage": 92.46987951807229,
+    "metric_version": 2
+  }
+}
