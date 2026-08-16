@@ -7,13 +7,13 @@
 # requires an HTTPS redirect URI, and there is no custom domain — see
 # cloudfront.tf). The security group admits only CloudFront's origin-facing
 # ranges (AWS-managed prefix list), so the ALB is not reachable from an
-# arbitrary internet address. Stated honestly: those ranges are shared by ALL
-# CloudFront distributions, so a third party could still origin-point their
-# own distribution at this ALB's (discoverable) DNS name; what that yields is
-# plain-HTTP origin access through their edge — no auth bypass (the app
-# validates Cognito tokens itself) and no XFF spoofing (the trusted-hops
-# depth counts appends, which their edge also performs). Full closure is a
-# secret custom origin header verified at nginx — follow-up #1355.
+# arbitrary internet address. Those ranges are shared by ALL CloudFront
+# distributions, so a third party could still origin-point their own
+# distribution at this ALB's (discoverable) DNS name — which is why the
+# frontend nginx additionally verifies the X-DataQ-Origin-Secret header our
+# distribution stamps on every origin fetch (#1355, cloudfront.tf): a foreign
+# edge doesn't know the secret and gets a 403 for every path except the ALB's
+# own local health endpoint.
 
 # AWS-managed, auto-updated list of CloudFront origin-facing IP ranges.
 data "aws_ec2_managed_prefix_list" "cloudfront_origin" {
@@ -61,14 +61,15 @@ resource "aws_lb_target_group" "frontend" {
   target_type = "ip" # required for Fargate tasks (no EC2 instance id)
 
   health_check {
-    # `/` (the SPA index), NOT `/healthz` — nginx PROXIES /healthz to the api,
-    # so checking it here made frontend target health mean "the api is up":
-    # an api outage would have had the ALB recycling perfectly healthy
-    # frontend tasks in a loop, masking the real failure (#1349). `/` is
-    # served by nginx locally; frontend health now means "nginx + bundle up".
-    # The api's own health stays observable via its ECS service + /healthz
-    # through the site.
-    path                = "/"
+    # /_alb-health — nginx's own local endpoint, exempt from the #1355
+    # origin-secret guard (the ALB probes the container directly, so it can
+    # never carry CloudFront's header; probing `/` would 403 and recycle
+    # healthy tasks once the guard is on). It supersedes the plain `/` chosen
+    # by #1349 while keeping that fix's property: frontend health means
+    # "nginx + bundle up", never "the api is up" (nginx PROXIES /healthz to
+    # the api). Old images without the location fall through to the SPA
+    # index (200), so the path change deploys safely ahead of the new image.
+    path                = "/_alb-health"
     healthy_threshold   = 2
     unhealthy_threshold = 3
     interval            = 15

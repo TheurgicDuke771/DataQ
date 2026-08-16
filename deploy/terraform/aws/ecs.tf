@@ -303,6 +303,12 @@ resource "aws_ecs_task_definition" "frontend" {
         # "Client does not exist" error page with the hosted-UI session alive.
         { name = "DATAQ_AUTH_LOGOUT_STYLE", value = "cognito" },
       ]
+      # Origin-secret guard (#1355): nginx 403s any request not carrying the
+      # header CloudFront stamps on origin fetches (cloudfront.tf). Injected
+      # as a secret, not plaintext env.
+      secrets = [
+        { name = "DATAQ_ORIGIN_SECRET", valueFrom = aws_secretsmanager_secret.origin_secret.arn },
+      ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {

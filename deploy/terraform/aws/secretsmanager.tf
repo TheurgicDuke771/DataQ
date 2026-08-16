@@ -76,6 +76,7 @@ data "aws_iam_policy_document" "execution_infra_secrets_read" {
     resources = [
       aws_secretsmanager_secret.database_url.arn,
       aws_secretsmanager_secret.redis_url.arn,
+      aws_secretsmanager_secret.origin_secret.arn,
     ]
   }
 }
