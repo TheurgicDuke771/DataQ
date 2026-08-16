@@ -146,8 +146,9 @@ are the reason this mode is opt-in rather than the default:
 ## Secrets
 
 - Datasource credentials, webhook signing keys, and channel secrets are held in a **secret
-  store behind a seam** — Azure Key Vault in the reference deployment — never in the database
-  or in git. The app reads them via a managed identity.
+  store behind a seam** — Azure Key Vault in the primary reference deployment, AWS Secrets
+  Manager on the AWS stack, OpenBao/Vault self-hosted — never in the database or in git. The
+  app reads them via a managed identity (Azure) or the task IAM role (AWS).
 - Secret **references** (names), not secret values, are stored alongside connections. Deleting
   a connection removes its secret (soft-delete on Key Vault).
 - Inbound webhooks are authenticated: ADF by a shared secret, Airflow and dbt by an
@@ -175,8 +176,9 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
 ## Encryption
 
 - **In transit:** HTTPS/TLS everywhere (public ingress and the internal proxy hop).
-- **At rest:** provided by the managed data services — PostgreSQL, the object stores, and Key
-  Vault all encrypt at rest in the reference (Azure) deployment.
+- **At rest:** provided by the managed data services — PostgreSQL, the object stores, and the
+  secret store (Key Vault / AWS Secrets Manager) all encrypt at rest in both reference
+  deployments.
 
 ## Reporting a vulnerability
 

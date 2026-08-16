@@ -7,6 +7,14 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 Portability, auto-monitors, and polish on top of v1:
 
+- **AWS as a second deployment target** — a live-verified OpenTofu reference stack
+  ([`deploy/terraform/aws/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/aws)):
+  ECS Fargate (api / worker / frontend) + RDS + ElastiCache + **Amazon Cognito** (via the
+  same generic OIDC contract) + **AWS Secrets Manager** (`SECRET_STORE=aws_secrets_manager`,
+  a fourth secret backend) behind **CloudFront** with an nginx-enforced origin secret;
+  **SES email alerts**, **X-Ray tracing** through an ADOT sidecar on the app's
+  vendor-neutral OTLP export, and a dedicated **Deploy (AWS)** GitHub Actions workflow.
+  Azure remains the primary reference deployment.
 - **dbt as a third orchestration provider** — observe dbt builds and trigger suites on
   success, via a post-build HMAC callback + a `run_results.json` artifact poll (ADR 0029).
 - **Apache Iceberg as a fifth datasource** — native `pyiceberg` read (v2 baseline; ADR

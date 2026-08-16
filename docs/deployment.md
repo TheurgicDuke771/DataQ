@@ -4,7 +4,10 @@ How to stand DataQ up in production. This is the operator's overview; the exhaus
 provisioning runbook, the OpenTofu stack, and the complete env-var reference live in
 [`deploy/README.md`](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/README.md) and
 [`deploy/terraform/azure/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/azure).
-Azure is the supported target today; AWS/GCP are planned behind the same seams.
+**Azure is the primary reference target; AWS is a second, live-verified reference stack**
+([`deploy/terraform/aws/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/aws) —
+see [AWS reference deployment](#aws-reference-deployment) below). GCP is planned behind the
+same seams.
 
 ## Topology
 
@@ -67,6 +70,40 @@ around every deploy. In short:
   and MCP — MCP must be `401`, **not** `421`); prod docs are gated (`404`); and the api /
   worker / frontend are on the deployed tag with the migrate job `Succeeded`.
 
+## AWS reference deployment
+
+The same product deploys to AWS from the in-repo OpenTofu stack
+([`deploy/terraform/aws/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/aws)) —
+identical images, identical topology, each seam pointed at the AWS implementation:
+
+```
+Browser ──HTTPS──► CloudFront (public surface, origin secret verified at nginx)
+                   ▼
+              ALB ──► frontend (ECS Fargate, nginx + SPA) ──proxies──► api (ECS Fargate)
+                   │  api/worker sidecars: ADOT collector → X-Ray traces + CloudWatch logs
+                   ├──► RDS PostgreSQL          ├──► ElastiCache Redis (TLS)
+                   ├──► AWS Secrets Manager     └──► SES (email alerts)
+              Cognito (OIDC issuer for the SPA + API)
+```
+
+- **Secrets:** `SECRET_STORE=aws_secrets_manager` (fourth store behind the seam).
+- **Auth:** Amazon Cognito through the same generic OIDC contract (`DATAQ_AUTH_*`,
+  `AUTH_OIDC_*`) — the second issuer validated in a real deployment after Azure AD. Cognito
+  needs `DATAQ_AUTH_LOGOUT_STYLE=cognito` (its `/logout` is not RP-Initiated-Logout
+  conformant) and resolves the user profile via the **userinfo endpoint** (its access tokens
+  carry neither `email` nor `aud`).
+- **Observability:** the app's vendor-neutral OTLP export feeds an **ADOT collector sidecar**
+  → X-Ray traces + OpenTelemetry logs in CloudWatch with matching trace ids.
+- **Deploy:** a parallel **Deploy (AWS)** workflow (`deploy-aws.yml`) — GitHub OIDC role
+  login, immutable `aws-<sha>` tags, migrate run-task gated on exit 0, then ECS service
+  rolls and a CloudFront smoke.
+- **Gotchas** (full list in the
+  [AWS README](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/terraform/aws/README.md)):
+  a `rediss://` broker URL needs `ssl_cert_reqs` (the app now defaults it to `required`);
+  task definitions are under `ignore_changes`, so env/sidecar edits need a targeted
+  `tofu apply -replace`; CloudFront sends an **origin secret header** that nginx enforces,
+  so a third-party distribution cannot origin-point at the ALB.
+
 ## Running DataQ without Azure
 
 Azure is **one implementation behind each seam, never the architecture** (ADR
@@ -75,10 +112,10 @@ Every seam has a working non-Azure implementation, so a fresh clone runs the
 whole product — API, worker, scheduler, UI, checks — with **zero Azure
 configuration** (#591):
 
-| Seam | Azure implementation | Local / non-Azure implementation |
+| Seam | Cloud implementation | Local / non-cloud implementation |
 |---|---|---|
-| Secrets | Key Vault (`SECRET_STORE=azure_key_vault`) | `SECRET_STORE=openbao` — OpenBao in compose (the default in `.env.app.example`), or `env` for host-only dev. ADR [0039](adr/0039-openbao-self-hosted-secret-backend.md); the store speaks the KV v2 API, so the same mode also serves Vault or HCP |
-| Auth | Entra SSO (`AZURE_*`) | **Email OTP** for humans (`AUTH_EMAIL_*` + an allowlist — ADR [0032](adr/0032-email-otp-signin.md)); `AUTH_DEV_BYPASS=true` for local dev; **PATs** (`dq_live_…`) for headless REST/MCP — see [API keys](api-keys.md). `/mcp` is served in every one of these modes; under OTP it accepts **PATs only** (no IdP ⇒ no bearer token to validate) |
+| Secrets | Key Vault (`SECRET_STORE=azure_key_vault`) · AWS Secrets Manager (`SECRET_STORE=aws_secrets_manager`) | `SECRET_STORE=openbao` — OpenBao in compose (the default in `.env.app.example`), or `env` for host-only dev. ADR [0039](adr/0039-openbao-self-hosted-secret-backend.md); the store speaks the KV v2 API, so the same mode also serves Vault or HCP |
+| Auth | Entra SSO (`AZURE_*`) · any OIDC issuer via `AUTH_OIDC_*` (Cognito validated live) | **Email OTP** for humans (`AUTH_EMAIL_*` + an allowlist — ADR [0032](adr/0032-email-otp-signin.md)); `AUTH_DEV_BYPASS=true` for local dev; **PATs** (`dq_live_…`) for headless REST/MCP — see [API keys](api-keys.md). `/mcp` is served in every one of these modes; under OTP it accepts **PATs only** (no IdP ⇒ no bearer token to validate) |
 | Observability | App Insights connection string | `OTEL_EXPORTER_OTLP_ENDPOINT` → any OTLP consumer; `docker-compose --profile telemetry up` starts a local Jaeger (UI on `:16686`). Unset ⇒ telemetry off, which is a supported posture, not a degraded one |
 | Queue / cache | — | Redis in compose (same image as prod) |
 | Database | Shared Azure Postgres | Postgres in compose |
