@@ -67,8 +67,16 @@ resource "aws_iam_user" "ses_smtp" {
 data "aws_iam_policy_document" "ses_smtp" {
   count = local.ses_enabled
   statement {
-    actions   = ["ses:SendRawEmail"]
-    resources = [aws_ses_email_identity.alert[0].arn]
+    actions = ["ses:SendRawEmail"]
+    # Sender AND every recipient identity (#1373): SES authorizes the send
+    # against the RECIPIENT identity ARNs too while the account is in the
+    # sandbox, so a sender-only grant 554s the moment alert_email_to differs
+    # from alert_email — proven by a live send, after a review had assessed
+    # the sender-only scoping as correct. Only-live-is-evidence, again.
+    resources = concat(
+      [aws_ses_email_identity.alert[0].arn],
+      [for identity in aws_ses_email_identity.alert_to : identity.arn],
+    )
   }
 }
 
