@@ -1,0 +1,77 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "df794bafb25e",
+  "session_id": "8e70c155-d924-4687-b23c-4a47b3303b59",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-16T15:41:15.525266Z",
+  "branch": "docs/aws-azure-parity-wording",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "README.md",
+    "docs/architecture.md",
+    "docs/mcp-setup.md",
+    "docs/runbook-faq.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "ec468065540b",
+  "checkpoint_transcript_start": 236,
+  "transcript_lines_at_start": 236,
+  "compact_transcript_start": 77,
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 7899,
+    "cache_read_tokens": 1965662,
+    "output_tokens": 3554,
+    "api_call_count": 12
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01G2xyy7zKpphYLSi3fy6ZUv",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ec468065540b",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 251,
+        "end": 252,
+        "entry_ids": [
+          "760b252a-ac78-49f5-a68b-201123dba6ec"
+        ],
+        "tool_use_id": "toolu_01G2xyy7zKpphYLSi3fy6ZUv"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01G2xyy7zKpphYLSi3fy6ZUv"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-16T15:41:15.49916Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 6,
+    "human_removed": 0,
+    "total_committed": 0,
+    "total_lines_changed": 6,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
