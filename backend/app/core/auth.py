@@ -881,7 +881,7 @@ def _get_current_user_real_or_otp(
     return user
 
 
-def _oidc_access_allowed(email: str) -> bool:
+def _oidc_access_allowed(email: str, settings: Settings | None = None) -> bool:
     """Whether `email` (already normalized) may hold a DataQ account via OIDC (#1386).
 
     Mirrors `otp_service.is_signup_eligible`, with one deliberate difference in the
@@ -895,17 +895,52 @@ def _oidc_access_allowed(email: str) -> bool:
     removed from the allowlist, so the list would grant access but never revoke
     it — this way it doubles as the kill-switch for an account that should no
     longer be admitted.
+
+    `settings` is explicit (same shape as `is_signup_eligible`) because the THREE
+    callers do not share one settings source: the two REST dependencies read this
+    module's import-time `_settings`, while `mcp.auth` resolves its own via
+    `get_settings()`. They are the same object in a running process, but letting
+    each caller pass what it already holds is what keeps /mcp and /api from
+    diverging under a test override — which is precisely how the /mcp path came
+    to be missed in the first place.
     """
-    # `_settings` (the module's import-time binding), not a fresh `get_settings()`
-    # — every other read in this module goes through it, and one settings source
-    # per module is what keeps a monkeypatched override from applying to half the
-    # auth path.
-    if not _settings.oidc_allowlist_configured:
+    s = settings or _settings
+    if not s.oidc_allowlist_configured:
         return True
-    if email in _settings.oidc_allowed_email_set:
+    if email in s.oidc_allowed_email_set:
         return True
     _, _, domain = email.partition("@")
-    return bool(domain) and domain in _settings.oidc_allowed_domain_set
+    return bool(domain) and domain in s.oidc_allowed_domain_set
+
+
+def _denied_identity(email: str) -> dict[str, str]:
+    """Log fields naming a REJECTED identity without logging the address.
+
+    `email=` cannot be used: `email` is in `core/logging.py`'s `_PII_KEYS`, so the
+    redactor replaces it and the line says nothing. Combined with the 403 body
+    deliberately not echoing the address, that would leave a misconfigured
+    allowlist with no diagnosable surface anywhere — the operator sees "somebody
+    was denied" and cannot find out who or why.
+
+    So: the DOMAIN (an org identifier, not a person — the same call
+    `_log_otp_mode_ready` makes) plus a short salt-free digest of the full
+    address. The digest is not reversible but IS stable, so one operator can
+    correlate "the user who says they can't get in" against a specific log line
+    by hashing the address they were given, and repeated denials from one
+    identity are visibly one identity rather than many.
+    """
+    # Normalized here rather than trusted from the caller: the digest's whole
+    # purpose is that an operator can reproduce it from an address a user gives
+    # them, and `Someone@Example.com` must hash to the same value the log line
+    # carries. Both current callers already normalize, so this is belt-and-braces
+    # — but a canonical-only-by-convention digest is a correlation key that
+    # quietly stops correlating.
+    normalized = normalize_email(email)
+    _, _, domain = normalized.partition("@")
+    return {
+        "email_domain": domain or "(none)",
+        "email_digest": hashlib.sha256(normalized.encode()).hexdigest()[:12],
+    }
 
 
 def _resolve_generic_oidc_user(db: Session, oidc_claims: dict[str, Any]) -> User:
@@ -919,11 +954,10 @@ def _resolve_generic_oidc_user(db: Session, oidc_claims: dict[str, Any]) -> User
     subject, email, display_name = _extract_oidc_claims(oidc_claims)
     email = normalize_email(email)
     if not _oidc_access_allowed(email):
-        # Deliberately 403, not 401: the token is VALID: re-authenticating would
-        # loop the SPA forever. The address is not echoed back — the caller
-        # already knows who they signed in as, and the log line below is where an
-        # operator reads it.
-        log.warning("auth_oidc_access_denied", mode="generic_oidc", email=email)
+        # Deliberately 403, not 401: the token is VALID, so re-authenticating
+        # would loop the SPA forever. The address is not echoed back to the
+        # caller; `_denied_identity` is how an operator identifies them.
+        log.warning("auth_oidc_access_denied", mode="generic_oidc", **_denied_identity(email))
         raise DataQError(
             code="forbidden",
             message="This account is not authorized for this DataQ workspace.",

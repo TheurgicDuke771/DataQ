@@ -78,12 +78,6 @@ variable "workspace_admin_emails" {
   default     = ""
 }
 
-# App-side access gate for the generic-OIDC path (#1386), the second layer
-# behind `allow_admin_create_user_only` in cognito.tf. Empty (both) = every
-# identity the pool issues a token for is admitted, which is the backend default
-# and is logged at WARNING on boot. Set at least one when the pool is not
-# strictly invite-only. Addresses are PII, so real values belong in the
-# gitignored terraform.tfvars, never here.
 # ── WAF (#1388) ─────────────────────────────────────────────────────────────
 variable "waf_enabled" {
   description = "Attach a WAFv2 Web ACL to the CloudFront distribution. Costs roughly $7/month plus request charges; set false to remove it entirely."
@@ -105,11 +99,26 @@ variable "waf_rate_limit_per_5min" {
 }
 
 variable "waf_max_body_bytes" {
-  description = "Largest request body accepted at the edge. DataQ's write surface is small JSON; anything much larger is a probe."
+  description = "Largest request body accepted at the edge. DataQ's write surface is small JSON; anything much larger is a probe. Must stay under 16384 - see the validation."
   type        = number
   default     = 8192
+
+  validation {
+    # The upper bound is the load-bearing half. WAF inspects at most 16KB of a
+    # CloudFront-scoped request body, so a threshold at or above that can never
+    # match: the rule would show as enabled in the console and enforce nothing.
+    # Fail the apply instead of shipping a control that is silently inert.
+    condition     = var.waf_max_body_bytes > 0 && var.waf_max_body_bytes < 16384
+    error_message = "waf_max_body_bytes must be between 1 and 16383: WAF inspects at most 16KB of a CloudFront body, so anything larger makes the rule unmatchable."
+  }
 }
 
+# ── OIDC access gate (#1386) ────────────────────────────────────────────────
+# The second layer behind `allow_admin_create_user_only` in cognito.tf. Empty
+# (both) = every identity the pool issues a token for is admitted, which is the
+# backend default and is logged at WARNING on boot. Set at least one when the
+# pool is not strictly invite-only. Addresses are PII, so real values belong in
+# the gitignored terraform.tfvars, never here.
 variable "oidc_allowed_emails" {
   description = "Comma-separated addresses allowed to hold a DataQ account via OIDC (OIDC_ALLOWED_EMAILS). Empty = no app-side gate."
   type        = string

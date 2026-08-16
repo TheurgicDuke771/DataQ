@@ -72,14 +72,25 @@ resource "aws_wafv2_web_acl" "app" {
 
   # ── Rule 2: oversized request bodies ───────────────────────────────────────
   # DataQ's write surface is JSON — suites, checks, connection configs, custom
-  # SQL. None of it is megabytes. An 8KB+ body is either a mistake or someone
-  # probing for a parser limit, and rejecting it at the edge keeps it away from
-  # FastAPI's validation entirely.
+  # SQL. None of it is megabytes. A body far above that is either a mistake or
+  # someone probing for a parser limit, and rejecting it at the edge keeps it
+  # away from FastAPI's validation entirely. (nginx's own 1MB `client_max_body_size`
+  # is the existing backstop; this is the tighter, earlier one.)
   #
-  # 8192 is WAF's own smallest SizeConstraint-friendly threshold to reason about
-  # and sits far above the largest legitimate payload observed (a long custom-SQL
-  # check is ~1-2KB). Raise `waf_max_body_bytes` if an import ever needs it —
-  # suite import is the one endpoint that could plausibly grow.
+  # TWO calibration facts, both learned the hard way in review:
+  #
+  # 1. WAF inspects at most 16KB of a CloudFront-scoped body. A threshold at or
+  #    above that can never match, so the rule would sit in the console looking
+  #    enabled while enforcing nothing — `waf_max_body_bytes` is range-validated
+  #    in variables.tf precisely so that state is unreachable.
+  #
+  # 2. `POST /api/v1/suites/import` is genuinely unbounded-ish: it carries a whole
+  #    suite (every check's config, name, description, custom SQL). A 30-check
+  #    export plausibly clears 8KB, and a block here happens AT THE EDGE — the
+  #    request never reaches the origin, so there is no application log, no
+  #    request id, and no error the user can report usefully. A security control
+  #    whose false positive is invisible is worse than one slightly wider, so the
+  #    import path is scoped out and left to nginx's 1MB cap.
   rule {
     name     = "oversized-body"
     priority = 2
@@ -89,22 +100,47 @@ resource "aws_wafv2_web_acl" "app" {
     }
 
     statement {
-      size_constraint_statement {
-        comparison_operator = "GT"
-        size                = var.waf_max_body_bytes
+      and_statement {
+        statement {
+          size_constraint_statement {
+            comparison_operator = "GT"
+            size                = var.waf_max_body_bytes
 
-        field_to_match {
-          body {
-            # A body larger than WAF can inspect is CONTINUEd rather than
-            # silently treated as empty — combined with GT this means an
-            # over-limit body still matches the rule instead of sailing past it.
-            oversize_handling = "CONTINUE"
+            field_to_match {
+              body {
+                # A body larger than WAF can inspect is CONTINUEd rather than
+                # silently treated as empty — combined with GT this means an
+                # over-limit body still matches the rule instead of sailing past it.
+                oversize_handling = "CONTINUE"
+              }
+            }
+
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
           }
         }
 
-        text_transformation {
-          priority = 0
-          type     = "NONE"
+        # ... and NOT the suite-import path (see note 2 above).
+        statement {
+          not_statement {
+            statement {
+              byte_match_statement {
+                positional_constraint = "STARTS_WITH"
+                search_string         = "/api/v1/suites/import"
+
+                field_to_match {
+                  uri_path {}
+                }
+
+                text_transformation {
+                  priority = 0
+                  type     = "NONE"
+                }
+              }
+            }
+          }
         }
       }
     }

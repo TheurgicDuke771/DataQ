@@ -46,8 +46,10 @@ from backend.app.core.auth import (
     DEV_BYPASS_AAD_OID,
     DEV_BYPASS_DISPLAY_NAME,
     DEV_BYPASS_EMAIL,
+    _denied_identity,
     _dev_bypass_allowed,
     _merge_userinfo,
+    _oidc_access_allowed,
     _upsert_user,
     discover_jwks_uri,
     fetch_userinfo,
@@ -57,6 +59,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import User
 from backend.app.services import api_key_service, session_service
+from backend.app.services.otp_service import normalize_email
 
 log = get_logger(__name__)
 
@@ -268,7 +271,17 @@ def resolve_current_user(session: Session) -> User:
                         if merged is None:
                             raise McpAuthError("userinfo subject does not match the token")
                         claims = merged
-                email = str(claims.get("email") or "")
+                email = normalize_email(str(claims.get("email") or ""))
+                # Same access allowlist the REST resolver applies (#1386). This
+                # is the THIRD generic-OIDC resolver in the codebase and the one
+                # easiest to forget: /mcp does not go through
+                # `_resolve_generic_oidc_user`, so without this line a token the
+                # REST API 403s would authenticate here, be provisioned a users
+                # row, and get all 8 tools — including `trigger_suite_run`.
+                # Exactly the invariant the Azure-guest branch below states.
+                if not _oidc_access_allowed(email, settings):
+                    log.warning("mcp_oidc_access_denied", **_denied_identity(email))
+                    raise McpAuthError("this account is not authorized for this DataQ workspace")
                 name = claims.get("name")
                 return _upsert_user(
                     session,

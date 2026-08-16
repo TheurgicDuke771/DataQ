@@ -13,8 +13,10 @@ from typing import Any
 import pytest
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 
+from backend.app.core import auth as core_auth
 from backend.app.core.auth import DEV_BYPASS_AAD_OID, DEV_BYPASS_EMAIL
 from backend.app.core.config import Settings
+from backend.app.db.models import User
 from backend.app.mcp import auth
 
 
@@ -704,3 +706,78 @@ def test_resolve_user_generic_oidc_userinfo_sub_mismatch_raises(
     monkeypatch.setattr(auth, "get_settings", lambda: _settings(**_OIDC, environment="prod"))
     with pytest.raises(auth.McpAuthError):
         auth.resolve_current_user(db_session)
+
+
+# ── OIDC access allowlist on /mcp (#1386) ────────────────────────────────────
+# Caught in review: `_resolve_generic_oidc_user` unified the two REST
+# dependencies, but `resolve_current_user` here is a THIRD generic-OIDC
+# resolver that called `_upsert_user` directly. A token the REST API 403s
+# authenticated fine at /mcp, was provisioned a users row, and got all 8 tools
+# including `trigger_suite_run` — breaking the invariant the Azure-guest branch
+# in this very module states out loud.
+
+
+def test_mcp_generic_oidc_denies_an_address_off_the_allowlist(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    token = SimpleNamespace(claims={"sub": "stranger-sub", "email": "stranger@evil.test"})
+    monkeypatch.setattr(auth, "get_access_token", lambda: token)
+    monkeypatch.setattr(
+        auth,
+        "get_settings",
+        lambda: _settings(**_OIDC, environment="prod", oidc_allowed_emails="invited@example.com"),
+    )
+    with pytest.raises(auth.McpAuthError):
+        auth.resolve_current_user(db_session)
+
+
+def test_mcp_generic_oidc_denial_provisions_no_user_row(db_session: Any, monkeypatch: Any) -> None:
+    """The whole point: /mcp must not be the path that creates the account the
+    REST API refuses to create."""
+    token = SimpleNamespace(claims={"sub": "mcp-no-row-sub", "email": "nobody@evil.test"})
+    monkeypatch.setattr(auth, "get_access_token", lambda: token)
+    monkeypatch.setattr(
+        auth,
+        "get_settings",
+        lambda: _settings(**_OIDC, environment="prod", oidc_allowed_domains="example.com"),
+    )
+    with pytest.raises(auth.McpAuthError):
+        auth.resolve_current_user(db_session)
+    assert (
+        db_session.query(User).filter(User.aad_object_id == "mcp-no-row-sub").one_or_none() is None
+    )
+
+
+def test_mcp_generic_oidc_admits_a_listed_address(db_session: Any, monkeypatch: Any) -> None:
+    token = SimpleNamespace(claims={"sub": "mcp-invited-sub", "email": "invited@example.com"})
+    monkeypatch.setattr(auth, "get_access_token", lambda: token)
+    monkeypatch.setattr(
+        auth,
+        "get_settings",
+        lambda: _settings(**_OIDC, environment="prod", oidc_allowed_emails="invited@example.com"),
+    )
+    user = auth.resolve_current_user(db_session)
+    assert user.email == "invited@example.com"
+
+
+def test_mcp_generic_oidc_ungated_when_no_allowlist_is_set(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Same documented default as the REST path — pinned on both surfaces so they
+    cannot drift apart in either direction."""
+    token = SimpleNamespace(claims={"sub": "mcp-ungated-sub", "email": "anyone@anywhere.test"})
+    monkeypatch.setattr(auth, "get_access_token", lambda: token)
+    monkeypatch.setattr(auth, "get_settings", lambda: _settings(**_OIDC, environment="prod"))
+    user = auth.resolve_current_user(db_session)
+    assert user.email == "anyone@anywhere.test"
+
+
+def test_mcp_generic_oidc_gate_matches_the_rest_gate_for_the_same_inputs(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The invariant itself, asserted directly rather than inferred from the two
+    suites agreeing by coincidence: for one settings object and one address, /mcp
+    and /api must reach the same verdict."""
+    settings = _settings(**_OIDC, environment="prod", oidc_allowed_domains="example.com")
+    for email, expected in [("ok@example.com", True), ("no@evil.test", False)]:
+        assert core_auth._oidc_access_allowed(email, settings) is expected

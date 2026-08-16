@@ -20,6 +20,7 @@ from starlette.requests import Request
 import backend.app.core.auth as auth_mod
 from backend.app.core.config import Settings
 from backend.app.core.errors import DataQError
+from backend.app.core.logging import _PII_KEYS
 from backend.app.db.models import User
 from backend.app.services import api_key_service, user_service
 
@@ -1182,3 +1183,27 @@ def test_fetch_userinfo_malformed_200_raises_value_error(
     monkeypatch.setattr(httpx, "get", fake_get)
     with pytest.raises(ValueError):
         auth_mod.fetch_userinfo("https://example-idp.test", "tok-bad")
+
+
+def test_denied_identity_names_the_caller_without_logging_the_address() -> None:
+    """`email=` would be swallowed by `_PII_KEYS`, and the 403 body deliberately
+    doesn't echo the address — so if this helper also said nothing, a
+    misconfigured allowlist would be undiagnosable from every surface at once."""
+    fields = auth_mod._denied_identity("Someone@Example.com")
+    assert fields["email_domain"] == "example.com"
+    # Stable (so repeated denials correlate) but not the address itself.
+    assert (
+        fields["email_digest"] == auth_mod._denied_identity("someone@example.com")["email_digest"]
+    )
+    assert "someone@example.com" not in str(fields)
+    assert "someone" not in fields["email_digest"]
+    # None of the keys may be one the logger redacts, or we are back to silence.
+    assert not (set(fields) & _PII_KEYS)
+
+
+def test_denied_identity_handles_an_address_with_no_domain() -> None:
+    """An empty/garbled `email` claim reaches here (userinfo outage, #1346), and
+    the log line must still render rather than raise inside the denial path."""
+    fields = auth_mod._denied_identity("")
+    assert fields["email_domain"] == "(none)"
+    assert fields["email_digest"]
