@@ -117,12 +117,16 @@ locals {
     # adot.tf) → X-Ray / CloudWatch. The app half is the vendor-neutral
     # core/otel.py (#589); this is just where its OTLP consumer lives.
     { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "http://localhost:4318" },
-    { name = "EMAIL_SMTP_HOST", value = "smtp.gmail.com" },
+    # Email alert channel via SES (#1368, ses.tf) — everything derives from
+    # var.alert_email; empty leaves the channel off (config.py's gate). The
+    # SMTP password lives at dataq/channel-email-password in Secrets Manager,
+    # read through the app's own SecretStore at send time.
+    { name = "EMAIL_SMTP_HOST", value = local.ses_smtp_host },
     { name = "EMAIL_SMTP_PORT", value = "587" },
     { name = "EMAIL_PASSWORD_SECRET_NAME", value = "channel-email-password" },
-    { name = "EMAIL_USERNAME", value = var.email_username },
-    { name = "EMAIL_FROM", value = var.email_from },
-    { name = "EMAIL_TO", value = var.email_to },
+    { name = "EMAIL_USERNAME", value = local.email_username },
+    { name = "EMAIL_FROM", value = var.alert_email },
+    { name = "EMAIL_TO", value = var.alert_email },
   ]
 
   worker_env = concat(local.app_env, [
@@ -293,6 +297,11 @@ resource "aws_ecs_task_definition" "frontend" {
         # on the code grant regardless. Must match cognito.tf's
         # allowed_oauth_scopes.
         { name = "DATAQ_AUTH_SCOPE", value = "openid email profile" },
+        # Sign-out dialect (#1364): Cognito's /logout is not RP-Initiated-Logout-
+        # conformant — it needs client_id + logout_uri and 400s on the standard
+        # id_token_hint/post_logout_redirect_uri, stranding the user on a raw
+        # "Client does not exist" error page with the hosted-UI session alive.
+        { name = "DATAQ_AUTH_LOGOUT_STYLE", value = "cognito" },
       ]
       logConfiguration = {
         logDriver = "awslogs"

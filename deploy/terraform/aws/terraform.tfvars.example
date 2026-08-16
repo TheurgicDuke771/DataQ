@@ -38,7 +38,8 @@
 
 # aws_secrets_manager_prefix = "dataq"
 
-# Email alerting (PII — leave empty to keep the channel off).
-# email_username = "you@example.com"
-# email_from     = "you@example.com"
-# email_to       = "you@example.com"
+# Email alerting via SES (#1368 — leave empty to keep the channel off). One
+# address: it becomes the SES identity, the From:, and (SES sandbox) the sole
+# recipient. SES emails a verification link to it on first apply — sends fail
+# until clicked.
+# alert_email = "you@example.com"
