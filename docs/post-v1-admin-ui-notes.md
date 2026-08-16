@@ -1,5 +1,18 @@
 # Post-v1 notes — Admin, access model & UI/IA (deferred design)
 
+> ## ⚠️ Superseded 2026-08-16 by ADR [0033](adr/0033-workspace-roles-rbac.md)
+>
+> **The "keep it minimal / defer RBAC as gold-plating" decision below did not
+> hold**, and this file is kept as a record of the earlier reasoning rather than
+> current design intent. Two of the things it explicitly defers — a role-management
+> console and per-connection ownership restrictions — are exactly what shipped,
+> because the single-tenant premise was the problem rather than the mitigation:
+> *any* authenticated user, including one holding a single `view` share, could
+> delete or re-credential the connection every suite in the workspace ran on
+> (gap G-e). Workspace roles (`admin | member | viewer`) are now stored on
+> `users.role`, managed under **Admin → Members**, and connection mutations are
+> Admin-only. Read the ADR, not this file, for the shipped model.
+>
 > **Status: deferred to post-v1.** Captured so the design intent isn't lost. We
 > intentionally did **not** build the admin/IAM console in v1. For a single-tenant
 > tool used by one trusted data team, a full RBAC console (admin write console,
@@ -15,9 +28,10 @@
 ## v1 access model (what actually ships)
 
 - **Per-suite access levels:** `view` / `edit` / `admin` / `owner` (suite-scoped sharing).
-- **Workspace-admin:** a config allowlist `WORKSPACE_ADMIN_EMAILS` — a generic identity
-  axis, **no** Azure/Entra claim read in route/service code, no migration. `dataq-admin`
-  is the workspace-admin.
+- **Workspace-admin:** ~~a config allowlist `WORKSPACE_ADMIN_EMAILS`~~ — **superseded by
+  ADR 0033: a stored `users.role`, with the allowlist demoted to a grant-only bootstrap
+  seed.** Still a generic identity axis: **no** Azure/Entra claim read in route/service
+  code. `dataq-admin` is the workspace-admin.
 - **Normal users:** *owned-or-shared* scoping — Dashboard / Suites / Results show only
   suites they own or that are shared with them.
 - **Workspace-admin in v1:** sees workspace-wide data **only** via the `/admin` page

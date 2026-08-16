@@ -12,6 +12,11 @@
 
 ## Add a connection
 
+Adding, editing, deleting or re-crendentialing a connection requires the **Admin** workspace
+role (ADR [0033](adr/0033-workspace-roles-rbac.md)) — connections are shared infrastructure
+holding credentials, and every suite in the workspace runs on them. Members and Viewers can
+see and reference them, and Members can run the saved-connection **Test**.
+
 In the UI, **Connections → Add connection**, pick the datasource, fill the type-specific
 fields, and **Test** it (a live reachability probe). Credentials are stored in the secret
 store (Azure Key Vault / AWS Secrets Manager / OpenBao, depending on deployment), never in the database.
@@ -22,6 +27,21 @@ paste the PEM private key; if the key is passphrase-protected (PKCS#8), fill the
 atomically via **Re-auth**. Leave the passphrase blank for an unencrypted key.
 Key-pair connections also require **Role** (the GX key-pair form mandates one for suite
 runs, so it is validated when the connection is saved).
+
+### Moving a connection to a new host
+
+Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
+`account_url`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
+`warehouse` / `properties` / `secret_property`, Airflow `base_url`, dbt `artifacts_uri` —
+requires re-entering
+that credential in the same save. The edit form asks for it as soon as you change one of
+those fields; through the API the request is rejected with `422 credential_redirect` until
+you include it.
+
+This is deliberate. A stored credential is never forwarded to a destination the caller
+changed, so an Admin who may *rotate* a credential still cannot *read* one by pointing the
+connection at a host they control and pressing Test. Moving a connection is fully supported —
+doing it with a credential you don't know is not.
 
 ### S3-compatible object stores
 

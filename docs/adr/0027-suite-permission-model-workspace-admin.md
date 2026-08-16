@@ -109,9 +109,15 @@ Net per suite: **one owner + workspace-admin-as-admin + edit/view collaborators.
 **Implementation shape** (full plan in #482)
 - `effective_permission` / `effective_permissions` return `admin` when the user
   is a workspace-admin (computed, not a `shares` lookup).
-- `require_permission` takes an `is_workspace_admin` signal — today it is a pure
+- ~~`require_permission` takes an `is_workspace_admin` signal — today it is a pure
   `session + user_id` primitive; the flag is resolved from the allowlist at the
-  `/me`/API layer and threaded in (keeps it unit-testable).
+  `/me`/API layer and threaded in (keeps it unit-testable).~~ **Not what was
+  built, and superseded by ADR 0033.** `require_permission` /
+  `effective_permission` take `(session, suite, user_id)` and resolve the
+  workspace role *internally*, per call, via `suite_authz._workspace_role` — so
+  there is no signal for a caller to thread in, or to forget to. That also makes
+  the Viewer clamp (0033) unbypassable from the route layer, which threading a
+  flag would not have been.
 - The share validator accepts only `view`/`edit` (rejects `admin`).
 - Suite list/read scoping, Dashboard, and Results include all suites for
   workspace-admins (the #411/#412 surface).
@@ -141,4 +147,6 @@ Net per suite: **one owner + workspace-admin-as-admin + edit/view collaborators.
 - #431 — data-access audit trail (workspace-admin reads of results/samples should
   be auditable under this expanded access).
 - ADR 0010 — workspace-admin is derived from the generic identity seam
-  (`is_workspace_admin` off a config allowlist), not from Azure/Entra claims.
+  (`is_workspace_admin` ~~off a config allowlist~~ **off the stored `users.role`
+  since ADR 0033; the config allowlist survives as a bootstrap seed and lockout
+  break-glass that only ever grants**), not from Azure/Entra claims.

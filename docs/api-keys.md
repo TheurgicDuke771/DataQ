@@ -5,10 +5,16 @@ credential for scripts, CI, and always-on MCP clients, where an SSO browser
 flow or a ~60-minute OIDC access token doesn't fit (ADR
 [0026](adr/0026-auth-api-keys-and-principal-seam.md)).
 
-A PAT authenticates **as you**: it inherits exactly your per-suite access
-(`view < edit < admin < owner`) on the REST API and `/mcp` alike. There is no
-separate "API-key permission model" to configure — if you can see a suite in
-the web app, your key can; if you can't, it can't.
+A PAT authenticates **as you**: it inherits **both axes** of your access on the
+REST API and `/mcp` alike — your **workspace role** (`admin | member | viewer`,
+ADR [0033](adr/0033-workspace-roles-rbac.md), which gates connection management
+workspace-wide) and your per-suite grants (`view < edit < admin < owner`). There
+is no separate "API-key permission model" to configure — a key can do exactly
+what its owner can do in the web app, no more and no less.
+
+Both axes resolve **per request**, so a demotion or a revoked share applies to
+keys you already hold, on their very next call — there is no token to hunt down
+and rotate.
 
 ## Minting a key
 

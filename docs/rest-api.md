@@ -22,8 +22,11 @@ TOKEN=dq_live_xxxxxxxx   # keep it out of shell history / source
 curl -s -H "Authorization: Bearer $TOKEN" $BASE/me
 ```
 
-A PAT acts **as its owning user** — every call is scoped by the same suite view/edit rules as
-the UI. Unauthenticated requests get `401`. (The interactive Swagger/OpenAPI docs are disabled
+A PAT acts **as its owning user** — every call is scoped by the same two axes as the UI: your
+**workspace role** (`admin | member | viewer`, ADR 0033) and your per-suite `view`/`edit`
+grants. Both resolve per request, so a role change or a revoked share applies to keys you
+already hold, on their very next call. Unauthenticated requests get `401`; an authenticated
+call your role doesn't permit gets `403`. (The interactive Swagger/OpenAPI docs are disabled
 in production, #170 — this page is the reference.)
 
 ## Conventions
@@ -32,6 +35,8 @@ in production, #170 — this page is the reference.)
 - **Errors:** a JSON envelope — `{"error": {"code": "...", "message": "...", "detail": {...}}}` —
   with a conventional HTTP status (`401` auth, `403` forbidden, `404` not found / hidden,
   `422` validation, `409` conflict, `429` rate limited, `502` datasource unreachable).
+  Named codes worth knowing: `rate_limited` (see below), and `credential_redirect` on
+  `PATCH /connections/{id}` — see [Connections](#connections).
 - **Rate limiting (ADR 0035):** every surface is throttled per minute — authenticated
   requests per API key, unauthenticated per client-IP **prefix** (IPv4 /24, IPv6 /64 by default — machines on one allocation share a budget; ADR 0035 #789). Over the limit returns `429` with
   `code: "rate_limited"`, `detail.retry_after_seconds` (1–60), and a matching `Retry-After`
@@ -44,7 +49,7 @@ in production, #170 — this page is the reference.)
 
 | Method | Path | What |
 |---|---|---|
-| GET | `/me` | The current user + `is_workspace_admin`. |
+| GET | `/me` | The current user + `role` (`admin` / `member` / `viewer`) + `is_workspace_admin`. |
 | POST | `/me/api-keys` | Mint a PAT (plaintext returned **once**). |
 | GET | `/me/api-keys` | List your keys (metadata only, never the token). |
 | DELETE | `/me/api-keys/{id}` | Revoke a key. |
@@ -55,8 +60,25 @@ in production, #170 — this page is the reference.)
 |---|---|---|
 | GET / POST | `/connections` | List / create a connection. |
 | GET / PATCH / DELETE | `/connections/{id}` | Read / update / delete. |
+| POST | `/connections/test` | Test an **unsaved draft** connection — nothing is persisted. |
 | POST | `/connections/{id}/test` | Test live connectivity. |
 | POST | `/connections/{id}/reauth` | Rotate the credential and verify. |
+
+**Roles (ADR 0033).** Connections are shared infrastructure holding credentials, so the gates
+here are the sharpest in the API: **create, update, delete, re-auth and the unsaved-draft
+`POST /connections/test` are Admin-only**; the saved-connection `POST /connections/{id}/test`
+is Member+; list and read are open to any authenticated user (responses carry `has_secret`,
+never secret material). A Member's PAT hitting `POST /connections` gets `403` regardless of
+any suite grant — the two axes are independent.
+
+**Moving a connection to a new host.** A `PATCH` that changes a field deciding *where* the
+credential is sent — `account` (Snowflake), `account_url` (ADLS), `endpoint_url` (S3, dbt),
+`workspace_url` (Unity Catalog), `catalog_uri` / `warehouse` / `properties` /
+`secret_property` (Iceberg),
+`base_url` (Airflow), `artifacts_uri` (dbt) — must re-supply that credential in the same
+request. Otherwise it returns `422` with `code: "credential_redirect"` and
+`detail.required` naming what to send. A stored credential is never forwarded to a
+destination the caller changed.
 
 ### Suites & checks
 
