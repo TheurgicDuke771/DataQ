@@ -29,16 +29,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 
 from backend.app.core import auth as auth_mod
-from backend.app.core.auth import (
-    DEV_BYPASS_EMAIL,
-    bootstrap_role,
-    is_workspace_admin,
-    promoted_role,
-    require_role,
-    resolve_role,
-)
+from backend.app.core.auth import DEV_BYPASS_EMAIL, require_role
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import register_exception_handlers
+from backend.app.core.roles import (
+    ROLE_RANK,
+    bootstrap_role,
+    is_workspace_admin,
+    resolve_role,
+    should_promote_to_admin,
+)
 from backend.app.db.models import (
     ADMIN_ROLE,
     DEFAULT_WORKSPACE_ROLE,
@@ -69,9 +69,9 @@ def test_role_rank_covers_every_stored_role() -> None:
     can't silently invert the ladder). This is the guard that keeps the two in
     sync — without it, adding a fourth role would make `require_role` raise
     `ValueError` for a role the CHECK constraint happily stores."""
-    assert set(auth_mod._ROLE_RANK) == set(WORKSPACE_ROLES)
-    assert auth_mod._ROLE_RANK["viewer"] < auth_mod._ROLE_RANK["member"]
-    assert auth_mod._ROLE_RANK["member"] < auth_mod._ROLE_RANK[ADMIN_ROLE]
+    assert set(ROLE_RANK) == set(WORKSPACE_ROLES)
+    assert ROLE_RANK["viewer"] < ROLE_RANK["member"]
+    assert ROLE_RANK["member"] < ROLE_RANK[ADMIN_ROLE]
 
 
 # ── resolve_role: the two sources compose ────────────────────────────────────
@@ -406,12 +406,16 @@ def test_bootstrap_role_prefers_the_allowlist_over_the_signup_default(
     assert bootstrap_role("bob@acme.io") == DEFAULT_WORKSPACE_ROLE
 
 
-def test_promoted_role_only_ever_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_should_promote_to_admin_is_true_only_for_the_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The predicate every existing-row writer branches on. False must mean
+    "write nothing", not "write the stored value back" — see the docstring; the
+    three call sites are covered individually below."""
     _allowlist(monkeypatch, "ada@acme.io")
-    assert promoted_role("ada@acme.io", "viewer") == ADMIN_ROLE
-    # Not on the list → keep whatever is stored, including admin.
-    assert promoted_role("bob@acme.io", ADMIN_ROLE) == ADMIN_ROLE
-    assert promoted_role("bob@acme.io", "viewer") == "viewer"
+    assert should_promote_to_admin("ada@acme.io") is True
+    assert should_promote_to_admin("ADA@ACME.IO") is True
+    assert should_promote_to_admin("bob@acme.io") is False
 
 
 def test_otp_signup_uses_the_configured_default_role(
@@ -441,6 +445,48 @@ def test_otp_signup_allowlist_beats_the_default_role(
 
     user = otp_service.resolve_or_create_user(db_session, email)
     assert user.role == ADMIN_ROLE
+
+
+def test_oidc_signup_uses_the_configured_default_role(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`AUTH_OIDC_DEFAULT_ROLE` — the OTP knob's twin on the SSO path.
+
+    ADR 0033 decision 8 specified the knob only for OTP, on the reasoning that an
+    OIDC issuer was already the deployment's identity boundary. #1386's
+    `OIDC_ALLOWED_DOMAINS` retired that reasoning: an operator can now admit a
+    whole domain on this path too, and without this knob "anyone at acme.io may
+    sign in" would necessarily also mean "anyone at acme.io may author suites".
+    """
+    monkeypatch.setenv("AUTH_OIDC_DEFAULT_ROLE", "viewer")
+    _allowlist(monkeypatch)
+    user = auth_mod._upsert_user(
+        db_session,
+        aad_object_id=uuid.uuid4().hex[:32],
+        email=f"sso-{uuid.uuid4().hex[:8]}@example.com",
+        display_name="S",
+    )
+    assert user.role == "viewer"
+
+
+def test_oidc_signup_allowlist_beats_the_default_role(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same precedence as the OTP path — one rule, enforced in `bootstrap_role`."""
+    email = f"sso-{uuid.uuid4().hex[:8]}@example.com"
+    monkeypatch.setenv("AUTH_OIDC_DEFAULT_ROLE", "viewer")
+    _allowlist(monkeypatch, email)
+    user = auth_mod._upsert_user(
+        db_session, aad_object_id=uuid.uuid4().hex[:32], email=email, display_name="S"
+    )
+    assert user.role == ADMIN_ROLE
+
+
+def test_auth_oidc_default_role_rejects_admin() -> None:
+    """Same reasoning as its OTP twin: a signup default must not become a third,
+    silent admin-minting mechanism."""
+    with pytest.raises(ValueError):
+        Settings(auth_oidc_default_role="admin")
 
 
 def test_auth_otp_default_role_rejects_admin() -> None:

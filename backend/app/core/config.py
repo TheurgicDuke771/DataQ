@@ -300,6 +300,22 @@ class Settings(BaseSettings):
     oidc_allowed_emails: str = ""
     oidc_allowed_domains: str = ""
 
+    # Workspace role a NEW user provisioned by an OIDC/AAD sign-in lands on
+    # (ADR 0033 decision 8, extended). The ADR specified this knob only for OTP,
+    # because at the time an OIDC issuer WAS the deployment's chosen identity
+    # boundary — you had to be invited into the tenant. #1386 changed that: with
+    # `OIDC_ALLOWED_DOMAINS` an operator can now admit a whole domain on the OIDC
+    # path too, which is exactly the case the OTP knob exists to answer. Leaving
+    # this out would mean "anyone at acme.io may sign in" necessarily also means
+    # "anyone at acme.io may author suites" — on one path but not the other, for
+    # no reason a reader could reconstruct.
+    #
+    # Same semantics as its OTP twin: seeds the FIRST sign-in only, never
+    # re-writes an existing user's role, and loses to the WORKSPACE_ADMIN_EMAILS
+    # write-through. `admin` is deliberately not accepted (see the OTP field). The
+    # same "not enforced until #741" caveat applies.
+    auth_oidc_default_role: Literal["member", "viewer"] = "member"
+
     auth_dev_bypass: bool = False
 
     # Browser origins allowed to call the API cross-origin (the Static Web App ↔
@@ -602,6 +618,11 @@ class Settings(BaseSettings):
     # second, silent admin-minting mechanism competing with the two ADR 0033
     # sanctions (in-app `PATCH /admin/users/{id}/role`, and the
     # WORKSPACE_ADMIN_EMAILS break-glass).
+    #
+    # NOT ENFORCED YET: `require_role` ships with #740, its call sites with #741.
+    # Until that merges a `viewer` can still create suites, edit checks and
+    # trigger runs — set this now so the tier is correct when enforcement
+    # arrives, not as a restriction already in force.
     #
     # Precedence, decided in the ADR: the WORKSPACE_ADMIN_EMAILS write-through
     # WINS over this default. An operator on both lists is stored `admin` at

@@ -63,6 +63,7 @@ from backend.app.core.circuit_breaker import (
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
+from backend.app.core.roles import bootstrap_role, should_promote_to_admin
 from backend.app.db.models import ADMIN_ROLE, OtpCode, User
 
 log = get_logger(__name__)
@@ -521,24 +522,20 @@ def resolve_or_create_user(db: Session, normalized_email: str) -> User:
         # last-admin guard, counting stored roles only, ever see them. Never
         # writes a role down: demotion has one sanctioned route, the PATCH
         # endpoint where the guard runs.
-        if get_settings().is_admin_email(normalized_email):
+        if should_promote_to_admin(normalized_email):
             user.role = ADMIN_ROLE
         db.commit()
         return user
-    settings = get_settings()
     user = User(
         id=uuid.uuid4(),
         aad_object_id=None,
         email=normalized_email,
-        # ADR 0033 decision 8. The allowlist write-through WINS over the signup
-        # default, so an operator on both lists is stored `admin` at first
-        # sign-in — never `member`-stored-but-admin-effective, which would let a
-        # later env-entry removal silently demote them.
-        role=(
-            ADMIN_ROLE
-            if settings.is_admin_email(normalized_email)
-            else settings.auth_otp_default_role
-        ),
+        # ADR 0033 decision 8's precedence lives inside `bootstrap_role`, shared
+        # with the OIDC/AAD sign-in path: the allowlist write-through WINS over
+        # the signup default, so an operator on both lists is stored `admin` at
+        # first sign-in — never `member`-stored-but-admin-effective, which would
+        # let a later env-entry removal silently demote them.
+        role=bootstrap_role(normalized_email, default=get_settings().auth_otp_default_role),
         last_seen_at=now,
     )
     db.add(user)

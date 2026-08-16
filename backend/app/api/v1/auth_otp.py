@@ -86,9 +86,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
 from backend.app.api.v1.me import MeResponse
-from backend.app.core.auth import is_workspace_admin, resolve_role
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.logging import get_logger
+from backend.app.core.roles import is_workspace_admin, resolve_role
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.db.session import get_db
 from backend.app.services import otp_service, session_service

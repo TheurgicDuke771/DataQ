@@ -25,7 +25,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import TOTAL_COUNT_HEADER, ApiModel, total_count_responses
-from backend.app.core.auth import get_current_user, is_workspace_admin
+from backend.app.core.auth import get_current_user
+from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import (
     COMPARISON_KIND,
     PIPELINE_RUN_STATUSES,

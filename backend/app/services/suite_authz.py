@@ -37,8 +37,8 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.auth import is_workspace_admin
 from backend.app.core.errors import DataQError
+from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import Share, Suite, User
 from backend.app.services.suite_service import SuiteNotFoundError
 
