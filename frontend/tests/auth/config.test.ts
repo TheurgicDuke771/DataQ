@@ -218,3 +218,22 @@ describe('scope override (#1347)', () => {
     expect(authConfig.scope).toBeUndefined();
   });
 });
+
+describe('logout style (#1364)', () => {
+  it('exposes an injected logoutStyle for authClient to branch on', async () => {
+    inject({
+      mode: 'oidc',
+      authority: 'https://cognito-idp.us-east-2.amazonaws.com/pool-1',
+      clientId: 'spa-1',
+      logoutStyle: 'cognito',
+    });
+    const { authConfig } = await loadConfig();
+    expect(authConfig.logoutStyle).toBe('cognito');
+  });
+
+  it('leaves logoutStyle undefined when not injected (standard RP-initiated logout)', async () => {
+    inject({ mode: 'oidc', authority: 'https://issuer.example/v2.0', clientId: 'spa-1' });
+    const { authConfig } = await loadConfig();
+    expect(authConfig.logoutStyle).toBeUndefined();
+  });
+});

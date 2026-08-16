@@ -54,6 +54,16 @@ export interface DataqAuthConfig {
    * (Cognito issues refresh tokens on the code grant regardless).
    */
   scope?: string;
+  /**
+   * Sign-out protocol dialect (#1364). Unset/'' = standard OIDC RP-Initiated
+   * Logout (oidc-client-ts `signoutRedirect` — id_token_hint +
+   * post_logout_redirect_uri; Azure AD conforms). 'cognito' = AWS Cognito's
+   * non-conformant `/logout`, which requires `client_id` + `logout_uri`
+   * (exactly matching a registered logout URL) and 400s "Client does not
+   * exist" on the standard parameters. A config flag, not issuer-hostname
+   * sniffing — ADR 0028 keeps the client provider-neutral.
+   */
+  logoutStyle?: 'cognito' | '';
 }
 
 declare global {
@@ -108,6 +118,7 @@ export const authConfig = {
   clientId: cfg.clientId,
   apiScope: cfg.apiScope,
   scope: cfg.scope,
+  logoutStyle: cfg.logoutStyle,
 } as const;
 
 export const authMode: AuthMode = (() => {
