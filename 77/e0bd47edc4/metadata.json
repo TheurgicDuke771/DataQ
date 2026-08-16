@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "77e0bd47edc4",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1355-origin-secret",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "deploy/terraform/aws/alb.tf",
+    "deploy/terraform/aws/cloudfront.tf",
+    "deploy/terraform/aws/ecs.tf",
+    "deploy/terraform/aws/secretsmanager.tf",
+    "frontend/Dockerfile",
+    "frontend/nginx.conf.template"
+  ],
+  "sessions": [
+    {
+      "metadata": "/77/e0bd47edc4/0/metadata.json",
+      "transcript": "/77/e0bd47edc4/0/full.jsonl",
+      "compact_transcript": "/77/e0bd47edc4/0/transcript.jsonl",
+      "content_hash": "/77/e0bd47edc4/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 23051,
+    "cache_read_tokens": 5849096,
+    "output_tokens": 9523,
+    "api_call_count": 12
+  }
+}
