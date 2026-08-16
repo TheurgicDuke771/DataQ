@@ -1,0 +1,24 @@
+So, what is now the parity among Azure, AWS & Local DataQ installation in terms of Hosting, Features and Harness
+
+---
+
+Give me the full table. 
+Also is there any difference for deployment b/w azure & aws? and waht are the config differences for these 2 deployment?
+
+---
+
+make these details documented
+
+---
+
+<task-notification>
+<task-id>bxbsymy55</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/7d54941a-5f4c-4755-8c36-6847b399bde5/tasks/bxbsymy55.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the rate-limit window to reset and confirm 401 recovery" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+You didn't added `Assets / lineage / incidents / scorecard` in the doc

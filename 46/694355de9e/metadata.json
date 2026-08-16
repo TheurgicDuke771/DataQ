@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "46694355de9e",
+  "strategy": "manual-commit",
+  "branch": "docs/deployment-parity-page",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/deployment-parity.md",
+    "docs/deployment.md",
+    "mkdocs.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/46/694355de9e/0/metadata.json",
+      "transcript": "/46/694355de9e/0/full.jsonl",
+      "compact_transcript": "/46/694355de9e/0/transcript.jsonl",
+      "content_hash": "/46/694355de9e/0/content_hash.txt",
+      "prompt": "/46/694355de9e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 31296,
+    "cache_read_tokens": 5300823,
+    "output_tokens": 20920,
+    "api_call_count": 26
+  }
+}
