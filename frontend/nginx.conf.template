@@ -36,6 +36,13 @@
 #
 # `map` lives in the `http` context: this template renders into conf.d/, which
 # nginx includes inside `http { }`, so a top-level directive here is valid.
+#
+# The origin-secret guard's static "<secret>:<secret>" key is 2×40+1 = 81 bytes
+# with the terraform-generated 40-char secret — over the 64-byte default
+# map_hash_bucket_size, which aborts nginx at startup (#1380). 128 covers any
+# secret up to 63 chars. MUST precede the first `map` block: parsing a `map`
+# freezes the hash sizes, and a later directive is rejected as "duplicate".
+map_hash_bucket_size 128;
 map $http_x_forwarded_proto $dataq_forwarded_proto {
     default $http_x_forwarded_proto;
     ""      $scheme;
