@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "a65c9dcb8060",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1373-ses-recipient-authz",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "deploy/terraform/aws/ses.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a6/5c9dcb8060/0/metadata.json",
+      "transcript": "/a6/5c9dcb8060/0/full.jsonl",
+      "compact_transcript": "/a6/5c9dcb8060/0/transcript.jsonl",
+      "content_hash": "/a6/5c9dcb8060/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 52,
+    "cache_creation_tokens": 23949,
+    "cache_read_tokens": 10750392,
+    "output_tokens": 16102,
+    "api_call_count": 26
+  }
+}
