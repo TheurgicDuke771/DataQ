@@ -1,0 +1,5 @@
+So, for AWS what are the pending tasks?
+
+---
+
+close the 3 tracked issues
