@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "08cc94f8108d",
+  "strategy": "manual-commit",
+  "branch": "fix/1386-security-headers",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/auth.py",
+    "backend/app/core/config.py",
+    "backend/tests/core/test_auth.py",
+    "backend/tests/core/test_otp_config.py",
+    "deploy/README.md",
+    "deploy/terraform/aws/README.md",
+    "deploy/terraform/aws/cloudfront.tf",
+    "deploy/terraform/aws/cognito.tf",
+    "deploy/terraform/aws/ecs.tf",
+    "deploy/terraform/aws/providers.tf",
+    "deploy/terraform/aws/terraform.tfvars.example",
+    "deploy/terraform/aws/variables.tf",
+    "deploy/terraform/aws/waf.tf",
+    "deploy/terraform/azure/frontend.tf",
+    "frontend/Dockerfile",
+    "frontend/nginx-security-headers.conf",
+    "frontend/nginx.conf.template",
+    "frontend/tests/nginxRouting.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/08/cc94f8108d/0/metadata.json",
+      "transcript": "/08/cc94f8108d/0/full.jsonl",
+      "compact_transcript": "/08/cc94f8108d/0/transcript.jsonl",
+      "content_hash": "/08/cc94f8108d/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 24275,
+    "cache_read_tokens": 3188194,
+    "output_tokens": 12496,
+    "api_call_count": 12
+  }
+}
