@@ -40,6 +40,11 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # Template (not a static conf): the nginx entrypoint envsubst's it at startup so
 # the API upstream + auth config are runtime-configurable.
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+# Security headers (#1386), `include`d from the template above. Deliberately NOT
+# in conf.d/ (auto-included into `http {}`, which would double every header) and
+# NOT a .template (it needs no substitution — the one runtime-dependent part,
+# the CSP, is assembled in the main template).
+COPY nginx-security-headers.conf /etc/nginx/nginx-security-headers.conf
 # Opt into the nginx image's built-in resolver detection: its
 # 15-local-resolvers.envsh only exports ${NGINX_LOCAL_RESOLVERS} (the
 # /etc/resolv.conf nameservers, used by the proxy `resolver` directive) when this
@@ -57,5 +62,6 @@ ENV DATAQ_API_UPSTREAM=http://api:8000 \
     DATAQ_AUTH_API_SCOPE="" \
     DATAQ_AUTH_SCOPE="" \
     DATAQ_AUTH_LOGOUT_STYLE="" \
-    DATAQ_ORIGIN_SECRET=""
+    DATAQ_ORIGIN_SECRET="" \
+    DATAQ_CSP_CONNECT_SRC="https:"
 EXPOSE 8080

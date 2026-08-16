@@ -124,3 +124,70 @@ describe('nginx X-Forwarded-Proto (#1138 — OTP session cookie Secure inference
     }
   });
 });
+
+/**
+ * Security-header inheritance (#1386).
+ *
+ * nginx drops every inherited `add_header` at any level that declares one of its
+ * own. Three locations here set their own `Cache-Control`, so the server-level
+ * security-header block is silently absent from exactly those responses unless
+ * the snippet is re-included — and one of them is `location /`, which serves
+ * index.html. A missing CSP there is invisible: the page renders perfectly.
+ *
+ * These are CONFIG assertions and are honest about it (same caveat as the block
+ * above): they pin the trap, they do not prove nginx emits the headers. The
+ * behavioural proof is a real container + curl, run against the built image.
+ */
+describe('nginx security headers (#1386 add_header inheritance)', () => {
+  const SNIPPET_INCLUDE = 'include /etc/nginx/nginx-security-headers.conf;';
+
+  /** Every `location … { … }` block, brace-matched (the bodies contain no nested braces). */
+  const locationBlocks = [...directives.matchAll(/location\s+[^{]+\{([^}]*)\}/g)].map((m) => ({
+    header: m[0].slice(0, m[0].indexOf('{')).trim(),
+    body: m[1],
+  }));
+
+  it('finds the locations it means to check', () => {
+    // Guards the regex itself: if it silently matched nothing, every assertion
+    // below would vacuously pass — the failure mode this whole file exists for.
+    expect(locationBlocks.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('re-includes the snippet in EVERY location that sets its own add_header', () => {
+    const shadowing = locationBlocks.filter((b) => /add_header/.test(b.body));
+    // config.js, the /assets file regex, and the SPA fallback.
+    expect(shadowing.length).toBe(3);
+    for (const block of shadowing) {
+      expect(
+        block.body,
+        `${block.header} sets add_header, which cancels inherited security headers`,
+      ).toContain(SNIPPET_INCLUDE);
+    }
+  });
+
+  it('includes the snippet at server level for locations that set no add_header', () => {
+    const serverLevel = directives.slice(
+      directives.indexOf('server {'),
+      directives.indexOf('location'),
+    );
+    expect(serverLevel).toContain(SNIPPET_INCLUDE);
+  });
+
+  it('builds a CSP whose connect-src is runtime-configurable', () => {
+    const map = directives.match(/map\s+\$host\s+\$dataq_csp\s*\{[^}]*\}/);
+    expect(map, 'expected a `map $host $dataq_csp` block').not.toBeNull();
+    // The directives that do the actual work — pinned so a future edit that
+    // loosens them has to say so out loud.
+    expect(map?.[0]).toContain("frame-ancestors 'none'");
+    expect(map?.[0]).toContain("object-src 'none'");
+    expect(map?.[0]).toContain("script-src 'self'");
+    expect(map?.[0]).toContain("base-uri 'self'");
+    // Substituted per deployment: deriving it from DATAQ_AUTH_AUTHORITY would
+    // block Azure AD's token endpoint (it sits outside the authority's path).
+    expect(map?.[0]).toContain('${DATAQ_CSP_CONNECT_SRC}');
+  });
+
+  it('turns off nginx version disclosure', () => {
+    expect(directives).toMatch(/server_tokens\s+off;/);
+  });
+});

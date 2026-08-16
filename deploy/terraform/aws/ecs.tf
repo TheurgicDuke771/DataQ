@@ -307,6 +307,20 @@ resource "aws_ecs_task_definition" "frontend" {
         # id_token_hint/post_logout_redirect_uri, stranding the user on a raw
         # "Client does not exist" error page with the hosted-UI session alive.
         { name = "DATAQ_AUTH_LOGOUT_STYLE", value = "cognito" },
+        # CSP connect-src tail (#1386). BOTH Cognito hosts are required and they
+        # are different services: oidc-client-ts fetches discovery + JWKS from
+        # the ISSUER host (cognito-idp.<region>.amazonaws.com) and then POSTs the
+        # code exchange to the HOSTED-UI domain (<prefix>.auth.<region>.
+        # amazoncognito.com). Omitting the second one yields a policy that passes
+        # discovery and then blocks the token exchange — i.e. sign-in fails at
+        # the last step, which is the least obvious way for this to break.
+        {
+          name = "DATAQ_CSP_CONNECT_SRC",
+          value = join(" ", [
+            "https://cognito-idp.${var.aws_region}.amazonaws.com",
+            "https://${aws_cognito_user_pool_domain.app.domain}.auth.${var.aws_region}.amazoncognito.com",
+          ])
+        },
       ]
       # Origin-secret guard (#1355): nginx 403s any request not carrying the
       # header CloudFront stamps on origin fetches (cloudfront.tf). Injected

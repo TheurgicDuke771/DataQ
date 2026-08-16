@@ -48,6 +48,32 @@ map $http_x_forwarded_proto $dataq_forwarded_proto {
     ""      $scheme;
 }
 
+# ── Content-Security-Policy (#1386) ───────────────────────────────────────────
+# Assembled here rather than in nginx-security-headers.conf because the one part
+# that cannot be static is `connect-src`: the SPA's OIDC client fetches discovery,
+# JWKS and the token endpoint directly from the identity provider, and which
+# origins those are is a per-deployment runtime fact (ADR 0028 — one generic
+# image, nothing baked in).
+#
+# `DATAQ_CSP_CONNECT_SRC` is the whole tail of the connect-src list. It defaults
+# to `https:` in the Dockerfile, NOT to the empty string, and that default is
+# load-bearing: a BYO deployment that upgrades this image without setting the
+# variable must not have its sign-in silently broken by a policy it never opted
+# into. Deployments we control set explicit origins instead (both Terraform
+# stacks do), which is what actually makes the directive worth having.
+#
+# It cannot be derived from DATAQ_AUTH_AUTHORITY, which is why it is a separate
+# variable: an authority is a URL *with a path* (`…/<tenant>/v2.0` on Azure AD),
+# a CSP source matches by path prefix, and Azure's token endpoint sits at
+# `…/<tenant>/oauth2/v2.0/token` — outside that prefix. Deriving it would have
+# produced a policy that blocked the token exchange on exactly one cloud.
+#
+# Keyed on $host purely because `map` requires a source variable; the result is
+# the same for every host.
+map $host $dataq_csp {
+    default "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; connect-src 'self' ${DATAQ_CSP_CONNECT_SRC}";
+}
+
 # ── Origin-secret guard (#1355) ───────────────────────────────────────────────
 # When DATAQ_ORIGIN_SECRET is set, every request must carry the matching
 # X-DataQ-Origin-Secret header or it is 403'd. The intended sender is a fronting
@@ -91,6 +117,15 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Don't advertise the exact nginx build in every response / error page.
+    server_tokens off;
+
+    # Security headers (#1386). Covers every location that does NOT declare its
+    # own `add_header`; the three that do re-include this file, because nginx
+    # drops inherited add_headers at any level that sets one. See the file
+    # header for why that is not avoidable here.
+    include /etc/nginx/nginx-security-headers.conf;
+
     # Origin-secret guard (#1355, maps above). Server-level so no location can
     # be forgotten; a bare `return` in an `if` at server context is one of the
     # two forms nginx's own docs bless ("if is evil" applies to content
@@ -119,6 +154,8 @@ server {
     location = /config.js {
         default_type application/javascript;
         add_header Cache-Control "no-cache";
+        # Re-included: the add_header above cancels inheritance (#1386).
+        include /etc/nginx/nginx-security-headers.conf;
         return 200 'window.__DATAQ_CONFIG__={"auth":{"mode":"${DATAQ_AUTH_MODE}","authority":"${DATAQ_AUTH_AUTHORITY}","clientId":"${DATAQ_AUTH_CLIENT_ID}","apiScope":"${DATAQ_AUTH_API_SCOPE}","scope":"${DATAQ_AUTH_SCOPE}","logoutStyle":"${DATAQ_AUTH_LOGOUT_STYLE}"}};';
     }
 
@@ -222,6 +259,9 @@ server {
         try_files $uri =404;
         expires 1y;
         add_header Cache-Control "public, immutable";
+        # Re-included: the add_header above cancels inheritance (#1386). nosniff
+        # is the one that earns its place here — these ARE the executable assets.
+        include /etc/nginx/nginx-security-headers.conf;
     }
 
     # SPA fallback: any non-file path returns index.html so client-side routes
@@ -235,5 +275,9 @@ server {
     location / {
         try_files $uri /index.html;
         add_header Cache-Control "no-cache";
+        # Re-included: the add_header above cancels inheritance (#1386). This is
+        # the location that serves index.html, so without this line the CSP and
+        # frame-ancestors would be absent from the one response that needs them.
+        include /etc/nginx/nginx-security-headers.conf;
     }
 }
