@@ -28,6 +28,7 @@ import {
   listConnections,
   testConnection,
 } from '../api/connections';
+import { useCanAuthor, useCanMutateConnections, useWorkspaceRole } from '../auth/useMe';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { formatTimestamp } from '../components/results/resultsFormat';
 import { expiryLabel, expiryStatus } from '../utils/expiry';
@@ -49,11 +50,20 @@ interface ConnectionActions {
   onTest: (connection: Connection) => Promise<boolean>;
   /** Drop a connection's stale health entry (after delete / edit / re-auth). */
   onClearHealth: (id: string) => void;
+  /** Admin: may create/edit/delete/re-auth a connection (ADR 0033). */
+  canMutate: boolean;
+  /** Member+: may test a connection. */
+  canAuthor: boolean;
 }
 
 export function Connections() {
   const { message } = App.useApp();
   const navigate = useNavigate();
+  // Mirrors the server's decision; the endpoints re-enforce with a 403, so
+  // hiding a control is honesty about what will work, never the security itself.
+  const role = useWorkspaceRole();
+  const canMutate = useCanMutateConnections();
+  const canAuthor = useCanAuthor();
   const { state, reload } = useAsyncData(() => listConnections());
   const [reauthing, setReauthing] = useState<Connection | null>(null);
   // Per-connection live connectivity status (the bulk health view).
@@ -99,6 +109,11 @@ export function Connections() {
     onChanged: reload,
     onTest: testOne,
     onClearHealth: clearHealth,
+    // Server-derived, never a client-side decision (#743): every gated endpoint
+    // re-enforces with a 403. Threaded through `actions` so the card doesn't need
+    // its own hook call per row.
+    canMutate,
+    canAuthor,
   };
 
   return (
@@ -107,13 +122,27 @@ export function Connections() {
         <Typography.Title level={3} style={{ margin: 0 }}>
           Connections
         </Typography.Title>
-        <Flex gap={8}>
-          <Button loading={testingAll} disabled={connections.length === 0} onClick={testAll}>
-            Test all
-          </Button>
-          <Button type="primary" onClick={() => navigate('/connections/new')}>
-            Add connection
-          </Button>
+        <Flex gap={8} align="center">
+          {/* Read-only hint, not a scolding: a Member landing here needs to know
+              the page is intentionally view-only for them, or the missing
+              buttons read as a bug. Shown only once `/me` has resolved. */}
+          {role !== null && !canMutate && (
+            <Typography.Text type="secondary">
+              {canAuthor
+                ? 'Connections are managed by workspace admins'
+                : 'Read-only — connections are managed by workspace admins'}
+            </Typography.Text>
+          )}
+          {canAuthor && (
+            <Button loading={testingAll} disabled={connections.length === 0} onClick={testAll}>
+              Test all
+            </Button>
+          )}
+          {canMutate && (
+            <Button type="primary" onClick={() => navigate('/connections/new')}>
+              Add connection
+            </Button>
+          )}
         </Flex>
       </Flex>
       <ConnectionsBody state={state} actions={actions} health={health} />
@@ -271,6 +300,9 @@ function ConnectionCard({
       onDone: actions.onChanged,
     });
 
+  // Every entry here mutates a connection, so the whole menu is Admin-only
+  // (ADR 0033). Rendered as nothing rather than as an empty dropdown: a trigger
+  // that opens to nothing reads as a broken control, not a withheld one.
   const menuItems = [
     { key: 'edit', label: 'Edit', onClick: () => actions.onEdit(connection) },
     { key: 'reauth', label: 'Re-authenticate', onClick: () => actions.onReauth(connection) },
@@ -288,14 +320,16 @@ function ConnectionCard({
           <ConnectionTypeAvatar type={connection.type} size={44} />
           <Flex gap={4} align="center">
             <HealthBadge health={health} />
-            <Dropdown menu={{ items: menuItems }} trigger={['click']}>
-              <Button
-                size="small"
-                type="text"
-                icon={<MoreOutlined />}
-                aria-label={`${connection.name} actions`}
-              />
-            </Dropdown>
+            {actions.canMutate && (
+              <Dropdown menu={{ items: menuItems }} trigger={['click']}>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<MoreOutlined />}
+                  aria-label={`${connection.name} actions`}
+                />
+              </Dropdown>
+            )}
           </Flex>
         </Flex>
 
@@ -409,16 +443,18 @@ function ConnectionCard({
                 </Tooltip>
               ))}
           </Flex>
-          <Button
-            size="small"
-            loading={health === 'testing'}
-            onClick={() => actions.onTest(connection)}
-          >
-            Test
-          </Button>
+          {actions.canAuthor && (
+            <Button
+              size="small"
+              loading={health === 'testing'}
+              onClick={() => actions.onTest(connection)}
+            >
+              Test
+            </Button>
+          )}
         </Flex>
 
-        {health === 'failed' && (
+        {health === 'failed' && actions.canMutate && (
           <Button
             type="link"
             size="small"

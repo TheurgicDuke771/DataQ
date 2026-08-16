@@ -217,6 +217,12 @@ function AddCollaborator({
   const [searching, setSearching] = useState(false);
   const [userId, setUserId] = useState<string>();
   const [permission, setPermission] = useState<SharePermission>('view');
+  // A Viewer cannot hold `edit` (ADR 0033): the backend rejects the grant, and
+  // `effective_permission` caps them at `view` regardless. Mirrored here so the
+  // level is never offered — the server stays authoritative, this only stops us
+  // proposing something it will refuse.
+  const picked = options.find((u) => u.id === userId);
+  const targetIsViewer = picked?.role === 'viewer';
   const [adding, setAdding] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Monotonic token so a slow earlier search can't overwrite a newer one's
@@ -262,7 +268,13 @@ function AddCollaborator({
     if (!userId) return;
     setAdding(true);
     try {
-      const share = await grantShare(suiteId, { user_id: userId, permission });
+      // Never send `edit` for a Viewer even if state got there some other way —
+      // the displayed value is already clamped above, and this keeps the request
+      // consistent with what the user was shown.
+      const share = await grantShare(suiteId, {
+        user_id: userId,
+        permission: targetIsViewer ? 'view' : permission,
+      });
       message.success(`${share.email}: shared`);
       setUserId(undefined);
       setOptions([]);
@@ -300,9 +312,20 @@ function AddCollaborator({
         style={{ flex: 1, minWidth: 160 }}
       />
       <Select
-        value={permission}
-        options={PERMISSION_OPTIONS}
+        value={targetIsViewer ? 'view' : permission}
+        options={PERMISSION_OPTIONS.map((o) => ({
+          ...o,
+          disabled: targetIsViewer && o.value === 'edit',
+        }))}
         onChange={setPermission}
+        disabled={targetIsViewer}
+        // The tooltip is what stops a disabled control being a dead end: it says
+        // which lever actually changes the answer (their workspace role).
+        title={
+          targetIsViewer
+            ? 'Workspace viewers are read-only — change their role to member to grant edit'
+            : undefined
+        }
         style={{ width: 110 }}
       />
       <Button type="primary" loading={adding} disabled={!userId} onClick={onAdd}>

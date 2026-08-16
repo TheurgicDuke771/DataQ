@@ -70,12 +70,42 @@ def test_blank_query_returns_empty(client: TestClient, db_session: Any) -> None:
 
 
 def test_summary_omits_sensitive_fields(client: TestClient, db_session: Any) -> None:
+    """An EXHAUSTIVE allowlist, deliberately — this directory is readable by every
+    authenticated user, so a field must never arrive here by accident. Equality
+    (not a subset check) is what makes a new column a failing test rather than a
+    silent widening.
+
+    `role` was added in #743 as a considered widening: the share picker has to
+    know whether a candidate is a Viewer, or it offers `edit` levels the backend
+    (ADR 0033) will refuse. It is coarse workspace metadata of the same kind as
+    the email and display name already here — not a credential, not a per-suite
+    grant, and not an identity key. `aad_object_id` in particular stays out.
+    """
     _user(db_session, "alice@acme.io", display_name="Alice")
     db_session.commit()
     resp = client.get("/api/v1/users/search", params={"q": "alice"})
     [row] = resp.json()
-    assert set(row) == {"id", "email", "display_name"}
+    assert set(row) == {"id", "email", "display_name", "role"}
     assert "aad_object_id" not in row
+
+
+def test_summary_reports_the_effective_role(
+    client: TestClient, db_session: Any, monkeypatch: Any
+) -> None:
+    """The EFFECTIVE role, not the stored column — because that is what
+    `share_service` checks when it rejects an `edit` grant. A break-glass
+    allowlist admin whose row still reads `member` can hold `edit`, and a picker
+    reading the stored value would wrongly refuse them."""
+    from backend.app.core.config import get_settings
+
+    user = _user(db_session, "ada@acme.io", display_name="Ada")
+    user.role = "member"
+    db_session.commit()
+    monkeypatch.setenv("WORKSPACE_ADMIN_EMAILS", "ada@acme.io")
+    get_settings.cache_clear()
+
+    [row] = client.get("/api/v1/users/search", params={"q": "ada"}).json()
+    assert row["role"] == "admin"
 
 
 def test_limit_is_capped(client: TestClient) -> None:

@@ -75,10 +75,10 @@ describe('SharePanel', () => {
   it('searches the directory and grants a share, excluding the owner + existing shares', async () => {
     mockList.mockResolvedValue([SHARE_B]);
     mockSearch.mockResolvedValue([
-      { id: 'u-c', email: 'carol@acme.io', display_name: 'Carol' },
+      { id: 'u-c', email: 'carol@acme.io', display_name: 'Carol', role: 'member' as const },
       // The owner + already-shared user must be filtered out of the picker.
-      { id: 'u-owner', email: 'owner@acme.io', display_name: 'Owner' },
-      { id: 'u-b', email: 'b@acme.io', display_name: 'Bee' },
+      { id: 'u-owner', email: 'owner@acme.io', display_name: 'Owner', role: 'member' as const },
+      { id: 'u-b', email: 'b@acme.io', display_name: 'Bee', role: 'member' as const },
     ]);
     mockGrant.mockResolvedValue({
       suite_id: 's1',
