@@ -15,7 +15,8 @@ only for this deployment.
 | `aws_db_instance.app` (RDS Postgres, `db.t4g.micro`) | The app's own database — this stack creates it directly (no shared-server bootstrap dance like the Azure stack, since this account is dedicated) |
 | `aws_elasticache_replication_group.app` (`cache.t4g.micro`, TLS + auth token) | Celery broker + rate-limit store |
 | `aws_cognito_user_pool.app` + SPA client | OIDC identity provider, validated by the backend's provider-neutral `OidcBearerScheme` (ADR 0026 amendment) — not Azure AD |
-| `aws_secretsmanager_secret.*` (2, infra-owned) + IAM grants | `database-url`/`redis-url` (infra-owned, referenced by ARN in task defs) + the app's own runtime grant under `AWS_SECRETS_MANAGER_PREFIX` (`SECRET_STORE=aws_secrets_manager`) |
+| `aws_secretsmanager_secret.*` (2–3, infra-owned) + IAM grants | `database-url`/`redis-url` (infra-owned, referenced by ARN in task defs) + the app's own runtime grant under `AWS_SECRETS_MANAGER_PREFIX` (`SECRET_STORE=aws_secrets_manager`) + when `alert_email` is set, `<prefix>/channel-email-password` (infra-written, app-read — the SES SMTP password, #1368) |
+| `aws_ses_email_identity` + `aws_iam_user.ses_smtp` (+key/policy) — only when `alert_email` set | Email alert channel (#1368): SES identity (sandbox — sender = recipient = `alert_email`, needs the one-time verification click) + a send-only SMTP credential |
 | `aws_iam_openid_connect_provider.github` + `aws_iam_role.github_deploy` | GitHub Actions → AWS auth for the Deploy workflow, OIDC federation, no stored access keys |
 | CloudWatch Log Groups (4) | Container logs. No APM/tracing wired up yet — the OTel core is vendor-neutral but the exporter shipped so far is Azure-only |
 
