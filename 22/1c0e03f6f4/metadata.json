@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "221c0e03f6f4",
+  "strategy": "manual-commit",
+  "branch": "fix/1386-security-headers",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "deploy/terraform/aws/cloudfront.tf",
+    "deploy/terraform/aws/providers.tf",
+    "deploy/terraform/aws/variables.tf",
+    "deploy/terraform/aws/waf.tf"
+  ],
+  "sessions": [
+    {
+      "metadata": "/22/1c0e03f6f4/0/metadata.json",
+      "transcript": "/22/1c0e03f6f4/0/full.jsonl",
+      "compact_transcript": "/22/1c0e03f6f4/0/transcript.jsonl",
+      "content_hash": "/22/1c0e03f6f4/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 392,
+    "cache_creation_tokens": 235529,
+    "cache_read_tokens": 36297035,
+    "output_tokens": 86190,
+    "api_call_count": 196
+  }
+}
