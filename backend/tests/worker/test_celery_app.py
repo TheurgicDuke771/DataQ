@@ -362,3 +362,43 @@ def test_acks_late_stays_off_so_an_oom_run_is_not_redelivered() -> None:
     late-ack would silently hand an OOM-killing run straight back to a fresh child.
     """
     assert celery_app.celery_app.conf.task_acks_late is False
+
+
+class TestRedissSafeUrl:
+    """#1363 — celery hard-rejects a rediss:// URL without ssl_cert_reqs, so the
+    app defaults it rather than crash-looping on any TLS redis (the #1361 AWS
+    failure, generalized). Never weakens an explicit choice."""
+
+    def test_plain_redis_url_untouched(self) -> None:
+        url = "redis://:pw@host:6379/0"
+        assert celery_app._rediss_safe_url(url) == url
+
+    def test_rediss_without_param_gains_required(self) -> None:
+        assert (
+            celery_app._rediss_safe_url("rediss://:pw@host:6379/0")
+            == "rediss://:pw@host:6379/0?ssl_cert_reqs=required"
+        )
+
+    def test_rediss_with_existing_query_appends_with_ampersand(self) -> None:
+        assert (
+            celery_app._rediss_safe_url("rediss://:pw@host:6379/0?socket_timeout=5")
+            == "rediss://:pw@host:6379/0?socket_timeout=5&ssl_cert_reqs=required"
+        )
+
+    def test_explicit_value_is_left_alone_even_cert_none(self) -> None:
+        # A deliberate operator choice — even a weaker one — is never rewritten.
+        url = "rediss://:pw@host:6379/0?ssl_cert_reqs=CERT_NONE"
+        assert celery_app._rediss_safe_url(url) == url
+
+    def test_celery_app_accepts_the_defaulted_url(self) -> None:
+        # The end-to-end claim: celery's redis backend parses the defaulted URL
+        # (it raises ValueError on the bare one — the #1361 crash shape).
+        from celery import Celery
+
+        bare = "rediss://:pw@host:6379/0"
+        app = Celery(
+            broker=celery_app._rediss_safe_url(bare), backend=celery_app._rediss_safe_url(bare)
+        )
+        assert app.backend.connparams["ssl_cert_reqs"] is not None
+        with pytest.raises(ValueError, match="ssl_cert_reqs"):
+            Celery(broker=bare, backend=bare).backend  # noqa: B018

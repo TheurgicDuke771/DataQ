@@ -40,12 +40,34 @@ REQUEST_ID_HEADER = "request_id"
 _REQUEST_ID_RESET_ATTR = "_dataq_request_id_reset"
 
 
+def _rediss_safe_url(url: str) -> str:
+    """A ``rediss://`` URL celery will accept: default ``ssl_cert_reqs=required``.
+
+    Celery's redis backend hard-raises ``ValueError`` on any ``rediss://`` URL
+    without an explicit ``ssl_cert_reqs`` query parameter, so a TLS redis
+    (ElastiCache, Azure Cache, managed Vault-adjacent redis) crash-loops the
+    worker at boot and kills the api's producer on first dispatch (#1361 —
+    which fixed only the AWS Terraform's URL; this is the generic guard,
+    #1363). ``required`` is never weaker than what the operator asked for:
+    it is full certificate verification, and an explicit parameter — any
+    value, including a deliberate ``CERT_NONE`` — is left untouched.
+    Non-rediss URLs pass through byte-identical.
+    """
+    from urllib.parse import parse_qs, urlsplit
+
+    parts = urlsplit(url)
+    if parts.scheme != "rediss" or "ssl_cert_reqs" in parse_qs(parts.query):
+        return url
+    separator = "&" if parts.query else "?"
+    return f"{url}{separator}ssl_cert_reqs=required"
+
+
 def create_celery_app() -> Celery:
     settings = get_settings()
     app = Celery(
         "dataq",
-        broker=settings.redis_url,
-        backend=settings.redis_url,
+        broker=_rediss_safe_url(settings.redis_url),
+        backend=_rediss_safe_url(settings.redis_url),
     )
     app.conf.update(
         task_serializer="json",
