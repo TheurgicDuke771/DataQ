@@ -18,8 +18,12 @@ is why the role gates here are the sharpest in the app, and why they are
 per-route rather than declared once on the router:
 
     create / update / delete / reauth   AdminUser   — mutating shared credentialed infra
-    test (saved) / test (draft)         MemberUser  — Members verify, Viewers do not probe
+    test (draft, unsaved)               AdminUser   — probes CALLER-SUPPLIED config (#1118)
+    test (saved)                        MemberUser  — Members verify, Viewers do not probe
     list / get / versions               any authenticated user
+
+The two `test` routes deliberately differ, and the split is about *whose config
+is being probed* rather than who is asking — see `test_draft_connection`.
 
 The read routes keeping the plain `get_current_user` is a **decision, not an
 omission**: a Member authoring a suite must be able to see and reference the

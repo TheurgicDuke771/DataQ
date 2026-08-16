@@ -2,6 +2,8 @@ import { App as AntApp } from 'antd';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
+
+import { WithMe } from '../support/me';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -44,13 +46,20 @@ function conn(overrides: Partial<Connection>): Connection {
 }
 
 // ConnectionCard uses antd's App.useApp() for messages → wrap in <AntApp>; the
-// page navigates to /connections/new → wrap in a router.
+// page navigates to /connections/new → wrap in a router; the page gates its
+// controls on the caller's workspace role → wrap in a resolved `/me`.
+//
+// Admin is the right default here rather than a convenience: these tests stand
+// in for the dev-bypass identity, which IS a workspace admin (#741). The
+// restricted perspectives get their own file (`roleAwareUi.test.tsx`).
 function renderPage() {
   return render(
     <MemoryRouter>
-      <AntApp>
-        <Connections />
-      </AntApp>
+      <WithMe>
+        <AntApp>
+          <Connections />
+        </AntApp>
+      </WithMe>
     </MemoryRouter>,
   );
 }

@@ -13,6 +13,7 @@ import {
 } from '../../src/api/shares';
 import { useCurrentUser } from '../../src/auth/useCurrentUser';
 import { SharePanel } from '../../src/components/suites/SharePanel';
+import { selectOption } from '../support/antd';
 
 vi.mock('../../src/auth/useCurrentUser', () => ({ useCurrentUser: vi.fn(() => null) }));
 const mockCurrentUser = vi.mocked(useCurrentUser);
@@ -75,10 +76,10 @@ describe('SharePanel', () => {
   it('searches the directory and grants a share, excluding the owner + existing shares', async () => {
     mockList.mockResolvedValue([SHARE_B]);
     mockSearch.mockResolvedValue([
-      { id: 'u-c', email: 'carol@acme.io', display_name: 'Carol' },
+      { id: 'u-c', email: 'carol@acme.io', display_name: 'Carol', role: 'member' as const },
       // The owner + already-shared user must be filtered out of the picker.
-      { id: 'u-owner', email: 'owner@acme.io', display_name: 'Owner' },
-      { id: 'u-b', email: 'b@acme.io', display_name: 'Bee' },
+      { id: 'u-owner', email: 'owner@acme.io', display_name: 'Owner', role: 'member' as const },
+      { id: 'u-b', email: 'b@acme.io', display_name: 'Bee', role: 'member' as const },
     ]);
     mockGrant.mockResolvedValue({
       suite_id: 's1',
@@ -105,6 +106,71 @@ describe('SharePanel', () => {
     await waitFor(() =>
       expect(mockGrant).toHaveBeenCalledWith('s1', {
         user_id: 'u-c',
+        permission: 'view',
+      }),
+    );
+  });
+
+  it('never grants edit to a workspace viewer, even after a later search', async () => {
+    // The regression the review caught, reproduced in full. The `edit` level has
+    // to be chosen BEFORE the viewer is picked — that is what leaves a live
+    // `edit` in state for the un-clamp to expose:
+    //   pick a member  → set `edit`
+    //   pick a viewer  → clamped to `view`                       ✓
+    //   search again   → the picked user is no longer in `options`, so a DERIVED
+    //                    lookup goes undefined, the Select re-enables, and Add
+    //                    POSTs the still-live `edit` for the still-selected viewer.
+    // Holding the picked user in state is what makes the clamp survive.
+    //
+    // A first cut of this test skipped the "set edit" step and passed against
+    // the buggy code too — the permission was `view` throughout, so there was
+    // nothing for the un-clamp to leak. Mutation-checked.
+    mockList.mockResolvedValue([]);
+    mockSearch
+      .mockResolvedValueOnce([
+        { id: 'u-m', email: 'mia@acme.io', display_name: 'Mia', role: 'member' as const },
+      ])
+      .mockResolvedValueOnce([
+        { id: 'u-v', email: 'vic@acme.io', display_name: 'Vic', role: 'viewer' as const },
+      ])
+      .mockResolvedValueOnce([
+        { id: 'u-z', email: 'zoe@acme.io', display_name: 'Zoe', role: 'member' as const },
+      ]);
+    mockGrant.mockResolvedValue({
+      suite_id: 's1',
+      user_id: 'u-v',
+      permission: 'view',
+      email: 'vic@acme.io',
+      display_name: 'Vic',
+    });
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText('Not shared with anyone yet.');
+
+    const search = screen.getAllByRole('combobox')[0];
+
+    // 1. Pick a member and raise the level to `edit`.
+    await user.type(search, 'mia');
+    await waitFor(() => expect(mockSearch).toHaveBeenCalledWith('mia'));
+    await user.click(await screen.findByText('Mia · mia@acme.io'));
+    await selectOption(user, 'Can edit', { index: 1, by: 'text' });
+
+    // 2. Switch to a VIEWER — the level clamps to `view`.
+    await user.clear(search);
+    await user.type(search, 'vic');
+    await waitFor(() => expect(mockSearch).toHaveBeenCalledWith('vic'));
+    await user.click(await screen.findByText('Vic · vic@acme.io'));
+
+    // 3. Search again for someone else, without changing the selection.
+    await user.clear(search);
+    await user.type(search, 'zoe');
+    await waitFor(() => expect(mockSearch).toHaveBeenCalledWith('zoe'));
+
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() =>
+      expect(mockGrant).toHaveBeenCalledWith('s1', {
+        user_id: 'u-v',
         permission: 'view',
       }),
     );

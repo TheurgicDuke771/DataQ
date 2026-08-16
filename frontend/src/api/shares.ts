@@ -1,3 +1,4 @@
+import type { WorkspaceRole } from './admin';
 import { api } from './client';
 
 /**
@@ -32,6 +33,10 @@ export interface UserSummary {
   id: string;
   email: string;
   display_name: string | null;
+  /** The user's EFFECTIVE workspace role (ADR 0033). Present so the share picker
+   *  can mirror the backend's rule — a Viewer cannot hold `edit` — rather than
+   *  offering a level the server will refuse. */
+  role: WorkspaceRole;
 }
 
 export async function listShares(suiteId: string): Promise<Share[]> {

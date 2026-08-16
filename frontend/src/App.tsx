@@ -19,6 +19,7 @@ import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { AuthGate } from './auth/AuthGate';
 import { authMode } from './auth/config';
+import { RequireRole } from './auth/RequireRole';
 import { useCurrentUser } from './auth/useCurrentUser';
 import { useIsWorkspaceAdmin } from './auth/useMe';
 import { logout } from './auth/authClient';
@@ -224,10 +225,45 @@ export function App() {
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/connections" element={<Connections />} />
-                  <Route path="/connections/new" element={<ConnectionNew />} />
-                  <Route path="/connections/:connectionId/edit" element={<ConnectionEdit />} />
+                  {/* Deep-linkable routes need their own gate, not just a hidden
+                      button (ADR 0033, #743): a bookmark, a Back after a
+                      demotion, or a shared link reaches these directly, and a
+                      Member would otherwise fill an entire credential form to
+                      learn at submit that it 403s. */}
+                  <Route
+                    path="/connections/new"
+                    element={
+                      <RequireRole
+                        minimum="admin"
+                        message="Connections are managed by workspace admins."
+                      >
+                        <ConnectionNew />
+                      </RequireRole>
+                    }
+                  />
+                  <Route
+                    path="/connections/:connectionId/edit"
+                    element={
+                      <RequireRole
+                        minimum="admin"
+                        message="Connections are managed by workspace admins."
+                      >
+                        <ConnectionEdit />
+                      </RequireRole>
+                    }
+                  />
                   <Route path="/suites" element={<Suites />} />
-                  <Route path="/suites/new" element={<SuiteNew />} />
+                  <Route
+                    path="/suites/new"
+                    element={
+                      <RequireRole
+                        minimum="member"
+                        message="Creating suites requires member access — you have read-only access to this workspace."
+                      >
+                        <SuiteNew />
+                      </RequireRole>
+                    }
+                  />
                   <Route path="/suites/:suiteId" element={<Suites />} />
                   <Route path="/suites/:suiteId/edit" element={<SuiteEdit />} />
                   <Route path="/suites/:suiteId/checks/new" element={<CheckNew />} />

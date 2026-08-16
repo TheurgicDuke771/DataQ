@@ -199,6 +199,33 @@ access from the worker, so it applies unchanged on a managed deployment.
 **If you run DataQ against a managed distribution, please report back** — the honest status
 above is "should work", and only a real deployment can upgrade that to "does".
 
+## Access — workspace roles × capabilities
+
+Two orthogonal axes (ADR [0033](adr/0033-workspace-roles-rbac.md)). Your **workspace
+role** says what kind of user you are; **per-suite grants** (`view` / `edit`) say what you
+may touch. Neither replaces the other — a Member with no share on a suite still cannot see
+it. Both are enforced server-side on REST **and** MCP, and both resolve **per request**, so
+a role change takes effect on the target's next call, including calls made with API tokens
+they already hold.
+
+| Capability | Admin | Member | Viewer |
+|---|---|---|---|
+| See/use suites shared to them | ✅ | ✅ | ✅ (view only) |
+| Create/import suites (become owner) | ✅ | ✅ | ❌ |
+| Receive `edit` shares | ✅ | ✅ | ❌ — capped at `view` |
+| Connections: create / edit / delete / re-auth | ✅ | ❌ | ❌ |
+| Connections: list & reference in suites | ✅ | ✅ | list only |
+| Connections: test (saved) | ✅ | ✅ | ❌ |
+| Connections: test (unsaved draft) | ✅ | ❌ | ❌ |
+| Mint API tokens (inherit the user's access) | ✅ | ✅ | ✅ |
+| `/admin`, implicit suite-admin, workspace-wide visibility | ✅ | ❌ | ❌ |
+| Manage roles in-app | ✅ | ❌ | ❌ |
+
+Roles are managed in **Admin → Members**. `WORKSPACE_ADMIN_EMAILS` remains a **bootstrap
+seed and lockout break-glass**: it grants Admin but never removes it, and a role change must
+always leave at least one *stored-role* admin. See [security](security.md) for the residual
+risk that carries.
+
 ## Interfaces
 
 | Surface | What |

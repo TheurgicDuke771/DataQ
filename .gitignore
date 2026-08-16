@@ -192,3 +192,4 @@ frontend/reports/mutation/
 
 # MkDocs build output (docs site, #288)
 site/
+frontend/e2e/.role-tokens.json

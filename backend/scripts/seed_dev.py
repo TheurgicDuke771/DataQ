@@ -22,9 +22,12 @@ Every step get-or-creates, so running this repeatedly is a no-op. Run as a modul
 
 from __future__ import annotations
 
+import json
 import os
+import uuid
+from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.auth import (
@@ -35,9 +38,9 @@ from backend.app.core.auth import (
 )
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.secrets import get_secret_store
-from backend.app.db.models import Suite, User
+from backend.app.db.models import ApiKey, Suite, User
 from backend.app.db.session import get_session
-from backend.app.services import otp_service, share_service
+from backend.app.services import api_key_service, otp_service, share_service
 from backend.app.services.probe import ensure_probe_fixtures
 from backend.scripts.demo_data import seed_demo_data
 
@@ -112,6 +115,88 @@ def _share_with_otp_operators(session: Session, *, owner: User, settings: Settin
     return granted
 
 
+# ── Role fixtures for the per-role browser E2E (ADR 0033, #743) ──────────────
+
+#: Where the minted tokens land. Gitignored, regenerated on every seed, and
+#: scoped to a throwaway dev/CI database — the same discipline `setup.sh` uses
+#: for `.env`: a credential may be *generated* into an untracked file, never
+#: committed to one.
+ROLE_TOKENS_PATH = Path(__file__).resolve().parents[2] / "frontend" / "e2e" / ".role-tokens.json"
+
+#: One seeded user per non-admin tier. The dev-bypass identity is always an
+#: admin (#741) and cannot be demoted, so a browser cannot experience the other
+#: two tiers as itself — these exist so the per-role specs drive a REAL session
+#: at a REAL role, rather than mocking `/me` and testing the UI against a lie.
+_ROLE_FIXTURES = (
+    ("member", "role-member@dataq.local", "Mia Member"),
+    ("viewer", "role-viewer@dataq.local", "Vic Viewer"),
+)
+
+
+def _seed_role_fixtures(session: Session, *, owner: User) -> int:
+    """Provision a member + a viewer, share a suite with each, and mint a PAT.
+
+    The PAT is the seam that makes this possible at all: `get_current_user`
+    resolves a `dq_live_` bearer BEFORE the dev-bypass branch, so a Playwright
+    context that sets an Authorization header is that user for every request —
+    including the ones the Vite proxy forwards.
+
+    Each fixture gets a `view` share on one suite so their read-only pages have
+    something in them; an empty page cannot distinguish "read-only" from
+    "broken". `view`, not `edit`, for the viewer specifically — the backend
+    rejects `edit` to a viewer (ADR 0033), which is itself the behaviour #741
+    tests.
+    """
+    tokens: dict[str, str] = {}
+    # DETERMINISTIC, not `.first()` on an unordered select. Postgres returns heap
+    # order, so an UPDATE elsewhere in the seed can relocate a row and silently
+    # move the viewer's share to a different suite — and `roles.spec.ts` names the
+    # suite it expects, so that failure would surface as a UI regression rather
+    # than as the seeding nondeterminism it is.
+    suite = session.scalars(
+        select(Suite).where(Suite.created_by == owner.id).order_by(Suite.created_at, Suite.id)
+    ).first()
+    for role, email, display_name in _ROLE_FIXTURES:
+        user = session.scalars(select(User).where(func.lower(User.email) == email)).first()
+        if user is None:
+            user = User(id=uuid.uuid4(), aad_object_id=None, email=email, display_name=display_name)
+            session.add(user)
+        # Set every time, not just on create: a re-seed must repair a row an
+        # earlier E2E run left at some other tier.
+        user.role = role
+        session.flush()
+        if suite is not None:
+            existing = share_service.list_shares(session, suite.id, actor_id=owner.id)
+            if not any(sh.user_id == user.id for sh in existing):
+                share_service.grant_share(
+                    session,
+                    suite.id,
+                    actor_id=owner.id,
+                    target_user_id=user.id,
+                    permission="view",
+                )
+        # Revoke this fixture's previous key before minting a new one. The rest
+        # of this function is idempotent, and a PAT that is not would be the one
+        # non-idempotent thing here that MATTERS: every re-seed would otherwise
+        # leave another live 90-day credential behind, and every stale copy of
+        # `.role-tokens.json` would keep working.
+        key_name = f"e2e-{role}"
+        for old in session.scalars(
+            select(ApiKey).where(ApiKey.user_id == user.id, ApiKey.name == key_name)
+        ):
+            session.delete(old)
+        session.flush()
+        _, token = api_key_service.create_key(session, user, name=key_name)
+        tokens[role] = token
+    session.commit()
+
+    ROLE_TOKENS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ROLE_TOKENS_PATH.write_text(json.dumps(tokens, indent=2) + "\n")
+    # Deliberately no token value in the output — the file is the channel.
+    print(f"Seeded role fixtures: {', '.join(tokens)} → {ROLE_TOKENS_PATH.name}")
+    return len(tokens)
+
+
 def seed() -> None:
     settings = get_settings()
     session = get_session()
@@ -127,6 +212,7 @@ def seed() -> None:
         # with varied checks, a cross-user share) for the UI / E2E smoke.
         summary = seed_demo_data(session, owner=user, secret_store=get_secret_store())
         operator_shares = _share_with_otp_operators(session, owner=user, settings=settings)
+        _seed_role_fixtures(session, owner=user)
         print(
             "Seeded dev data: "
             f"user={user.email} probe_connection={connection.name} "

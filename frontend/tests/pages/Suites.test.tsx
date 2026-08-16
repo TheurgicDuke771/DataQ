@@ -2,6 +2,8 @@ import { App as AntApp } from 'antd';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+
+import { WithMe } from '../support/me';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Connection, listConnections } from '../../src/api/connections';
@@ -96,16 +98,21 @@ function check(overrides: Partial<Check> = {}): Check {
 
 // Selecting a suite navigates to /suites/:suiteId, so render both routes at the
 // same Suites component (the param drives which suite is shown).
+// `WithMe` supplies a resolved `/me` at admin — the page hides its authoring
+// controls until the caller's workspace role is known (ADR 0033, #743), and
+// these tests stand in for the dev-bypass identity, which is an admin (#741).
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={['/suites']}>
-      <AntApp>
-        <Routes>
-          <Route path="/suites" element={<Suites />} />
-          <Route path="/suites/new" element={<div>New suite page</div>} />
-          <Route path="/suites/:suiteId" element={<Suites />} />
-        </Routes>
-      </AntApp>
+      <WithMe>
+        <AntApp>
+          <Routes>
+            <Route path="/suites" element={<Suites />} />
+            <Route path="/suites/new" element={<div>New suite page</div>} />
+            <Route path="/suites/:suiteId" element={<Suites />} />
+          </Routes>
+        </AntApp>
+      </WithMe>
     </MemoryRouter>,
   );
 }

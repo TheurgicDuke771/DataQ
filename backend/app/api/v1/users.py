@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user
+from backend.app.core.roles import resolve_role
 from backend.app.db.models import User
 from backend.app.db.session import get_db
 from backend.app.services import user_service as svc
@@ -33,6 +34,18 @@ class UserSummary(ApiModel):
     id: UUID
     email: str
     display_name: str | None
+    #: The user's EFFECTIVE workspace role (ADR 0033) — the effective one, not
+    #: the stored column, because that is what `share_service` checks when it
+    #: rejects an `edit` grant to a Viewer. A break-glass allowlist admin whose
+    #: row still reads `member` can hold `edit`, and a picker reading the stored
+    #: value would wrongly refuse them.
+    #:
+    #: Exposing it here is a deliberate, bounded widening: this directory already
+    #: returns every authenticated caller an email and a display name, and a
+    #: coarse role is workspace metadata of the same kind — not a credential, not
+    #: a per-suite grant. It exists so the share picker can mirror the backend's
+    #: rule instead of offering a level the server will refuse.
+    role: str
 
 
 @router.get(
@@ -47,4 +60,7 @@ def search_users(
     limit: Annotated[int, Query(ge=1, le=svc.MAX_LIMIT)] = svc.DEFAULT_LIMIT,
 ) -> list[UserSummary]:
     users = svc.search_users(db, q, limit=limit)
-    return [UserSummary.model_validate(u) for u in users]
+    return [
+        UserSummary(id=u.id, email=u.email, display_name=u.display_name, role=resolve_role(u))
+        for u in users
+    ]

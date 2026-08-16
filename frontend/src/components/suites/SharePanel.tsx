@@ -215,8 +215,20 @@ function AddCollaborator({
   const { message } = App.useApp();
   const [options, setOptions] = useState<UserSummary[]>([]);
   const [searching, setSearching] = useState(false);
-  const [userId, setUserId] = useState<string>();
+  // The PICKED USER, held in state rather than re-derived from `options` on each
+  // render. `options` is the transient result of the last directory search, so a
+  // derived lookup silently becomes `undefined` the moment the admin searches
+  // again — which un-clamped the permission Select while a viewer was still
+  // selected, and let Add POST `edit` for them: exactly the 422 this mirror
+  // exists to avoid.
+  const [picked, setPicked] = useState<UserSummary>();
   const [permission, setPermission] = useState<SharePermission>('view');
+  // A Viewer cannot hold `edit` (ADR 0033): the backend rejects the grant, and
+  // `effective_permission` caps them at `view` regardless. Mirrored here so the
+  // level is never offered — the server stays authoritative, this only stops us
+  // proposing something it will refuse.
+  const userId = picked?.id;
+  const targetIsViewer = picked?.role === 'viewer';
   const [adding, setAdding] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Monotonic token so a slow earlier search can't overwrite a newer one's
@@ -262,9 +274,15 @@ function AddCollaborator({
     if (!userId) return;
     setAdding(true);
     try {
-      const share = await grantShare(suiteId, { user_id: userId, permission });
+      // Never send `edit` for a Viewer even if state got there some other way —
+      // the displayed value is already clamped above, and this keeps the request
+      // consistent with what the user was shown.
+      const share = await grantShare(suiteId, {
+        user_id: userId,
+        permission: targetIsViewer ? 'view' : permission,
+      });
       message.success(`${share.email}: shared`);
-      setUserId(undefined);
+      setPicked(undefined);
       setOptions([]);
       setPermission('view');
       onAdded();
@@ -291,7 +309,7 @@ function AddCollaborator({
         placeholder="Search by email or name"
         filterOption={false}
         onSearch={onSearch}
-        onChange={setUserId}
+        onChange={(id: string) => setPicked(options.find((u) => u.id === id))}
         notFoundContent={searching ? <Spin size="small" /> : null}
         options={options.map((u) => ({
           value: u.id,
@@ -300,9 +318,20 @@ function AddCollaborator({
         style={{ flex: 1, minWidth: 160 }}
       />
       <Select
-        value={permission}
-        options={PERMISSION_OPTIONS}
+        value={targetIsViewer ? 'view' : permission}
+        options={PERMISSION_OPTIONS.map((o) => ({
+          ...o,
+          disabled: targetIsViewer && o.value === 'edit',
+        }))}
         onChange={setPermission}
+        disabled={targetIsViewer}
+        // The tooltip is what stops a disabled control being a dead end: it says
+        // which lever actually changes the answer (their workspace role).
+        title={
+          targetIsViewer
+            ? 'Workspace viewers are read-only — change their role to member to grant edit'
+            : undefined
+        }
         style={{ width: 110 }}
       />
       <Button type="primary" loading={adding} disabled={!userId} onClick={onAdd}>

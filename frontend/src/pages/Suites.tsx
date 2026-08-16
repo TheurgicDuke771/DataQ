@@ -42,6 +42,7 @@ import {
 import { AssetLink } from '../components/assets/AssetLink';
 import { isSnoozed, SnoozedTag } from '../components/checks/snooze';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
+import { useCanAuthor, useWorkspaceRole } from '../auth/useMe';
 import { Page } from '../components/layout/Page';
 import { LiveRunProgress } from '../components/runs/LiveRunProgress';
 import { ImportSuiteDrawer } from '../components/suites/ImportSuiteDrawer';
@@ -120,6 +121,9 @@ function SuiteIdentity({
 
 export function Suites() {
   const navigate = useNavigate();
+  // Mirrors the server (which re-enforces with a 403 on both create and import).
+  const role = useWorkspaceRole();
+  const canAuthor = useCanAuthor();
   // The selected suite is the route (`/suites/:suiteId`) so it deep-links and
   // survives the round-trip to the check editor; `/suites` selects nothing.
   const { suiteId } = useParams<{ suiteId: string }>();
@@ -139,22 +143,32 @@ export function Suites() {
         <Typography.Title level={3} style={{ margin: 0 }}>
           Suites
         </Typography.Title>
-        <Flex gap={8}>
-          <Button
-            loading={connState.status === 'loading'}
-            disabled={!hasDatasource}
-            onClick={() => setImportOpen(true)}
-          >
-            Import
-          </Button>
-          <Button
-            type="primary"
-            loading={connState.status === 'loading'}
-            disabled={!hasDatasource}
-            onClick={() => navigate('/suites/new')}
-          >
-            New suite
-          </Button>
+        <Flex gap={8} align="center">
+          {/* Viewers cannot create or import a suite (ADR 0033) — both would
+              make them an owner, which the capability matrix forbids. Hidden
+              rather than disabled: a disabled primary button invites a hunt for
+              the precondition that would enable it, and there isn't one. */}
+          {canAuthor ? (
+            <>
+              <Button
+                loading={connState.status === 'loading'}
+                disabled={!hasDatasource}
+                onClick={() => setImportOpen(true)}
+              >
+                Import
+              </Button>
+              <Button
+                type="primary"
+                loading={connState.status === 'loading'}
+                disabled={!hasDatasource}
+                onClick={() => navigate('/suites/new')}
+              >
+                New suite
+              </Button>
+            </>
+          ) : (
+            role !== null && <Typography.Text type="secondary">Read-only access</Typography.Text>
+          )}
         </Flex>
       </Flex>
       {connState.status === 'error' && (
