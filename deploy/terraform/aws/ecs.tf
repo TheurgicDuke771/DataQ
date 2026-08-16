@@ -303,6 +303,16 @@ resource "aws_ecs_task_definition" "frontend" {
         # "Client does not exist" error page with the hosted-UI session alive.
         { name = "DATAQ_AUTH_LOGOUT_STYLE", value = "cognito" },
       ]
+      # Origin-secret guard (#1355): nginx 403s any request not carrying the
+      # header CloudFront stamps on origin fetches (cloudfront.tf). Injected
+      # as a secret, not plaintext env. NOTE ignore_changes below: on a LIVE
+      # stack a plain apply never registers this — roll it with
+      # `tofu apply -replace` on this task definition + `update-service`
+      # (README, "Rolling task-definition changes"), or the guard silently
+      # stays fail-open while CloudFront stamps a header nobody checks.
+      secrets = [
+        { name = "DATAQ_ORIGIN_SECRET", valueFrom = aws_secretsmanager_secret.origin_secret.arn },
+      ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {
