@@ -7,15 +7,20 @@
 # assigned INSIDE the retried functions — retry() logs ::warning:: lines to
 # stdout, so `var=$(retry fn)` would swallow them into the captured value.
 
-# Register a new revision of task-definition family $1 with its (single)
+# Register a new revision of task-definition family $1 with the APP
 # container's image swapped to $2. Sets ECS_REGISTERED_ARN.
+#
+# "The app container" = the essential one, selected BY PREDICATE rather than
+# by position: the api/worker task defs also carry an essential=false
+# adot-collector sidecar (#1369), and a positional [0] would stamp the app
+# image onto whichever container happens to be listed first (PR #1371 review).
 ecs_register_revision() {
   local family=$1 image=$2 td new_td
   td=$(aws ecs describe-task-definition --task-definition "$family" \
          --query taskDefinition --output json)
   # del(): the output-only fields describe returns that register rejects.
   new_td=$(jq --arg img "$image" \
-    '.containerDefinitions[0].image = $img
+    '.containerDefinitions |= map(if .essential == true then .image = $img else . end)
      | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
            .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)' \
     <<<"$td")
@@ -61,8 +66,11 @@ ecs_verify_image() {
   local cluster=$1 service=$2 image=$3 live_td live_img
   live_td=$(aws ecs describe-services --cluster "$cluster" --services "$service" \
               --query 'services[0].deployments[0].taskDefinition' --output text)
+  # Same essential-container predicate as the register above — verifying the
+  # sidecar's image would pass a rollout that left the app on the old code.
   live_img=$(aws ecs describe-task-definition --task-definition "$live_td" \
-               --query 'taskDefinition.containerDefinitions[0].image' --output text)
+               --query 'taskDefinition' --output json \
+             | jq -r '.containerDefinitions[] | select(.essential == true) | .image')
   if [[ "$live_img" != "$image" ]]; then
     echo "::error::$service image mismatch after rollout: $live_img (wanted $image)"
     return 1
