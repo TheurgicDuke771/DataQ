@@ -30,11 +30,27 @@ def client(db_session: Any) -> Iterator[TestClient]:
         app.dependency_overrides.clear()
 
 
-def test_me_flags_non_admin_by_default(client: TestClient) -> None:
+def test_me_flags_non_admin_for_an_ordinary_member(client: TestClient, as_role: Any) -> None:
+    """A MEMBER, not the ambient dev-bypass identity — which since #741 IS the
+    workspace admin (dev bypass is a single-operator mode), so it can no longer
+    demonstrate the non-admin case."""
+    get_settings.cache_clear()
+    user, headers = as_role("member")
+    body = client.get("/api/v1/me", headers=headers).json()
+    assert body["email"] == user.email
+    assert body["is_workspace_admin"] is False
+    assert body["role"] == "member"
+
+
+def test_me_flags_the_dev_bypass_identity_as_admin(client: TestClient) -> None:
+    """Dev bypass resolves to a workspace admin (#741) — pinned, because the
+    local and published-eval stacks depend on it: a `member` here could not
+    create a connection, i.e. could not do the first thing DataQ is for."""
     get_settings.cache_clear()
     body = client.get("/api/v1/me").json()
     assert body["email"] == DEV_BYPASS_EMAIL
-    assert body["is_workspace_admin"] is False
+    assert body["is_workspace_admin"] is True
+    assert body["role"] == "admin"
 
 
 def test_me_flags_admin_when_allowlisted(

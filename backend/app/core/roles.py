@@ -127,6 +127,9 @@ def admin_promotion_values(email: str) -> dict[str, str]:
 
 
 __all__ = [
+    # Re-exported from `db.models` so a gate-defining module has one import.
+    "ADMIN_ROLE",
+    "DEFAULT_WORKSPACE_ROLE",
     "ROLE_RANK",
     "admin_promotion_values",
     "bootstrap_role",

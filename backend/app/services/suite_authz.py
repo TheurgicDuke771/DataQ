@@ -38,12 +38,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
-from backend.app.core.roles import is_workspace_admin
+from backend.app.core.roles import DEFAULT_WORKSPACE_ROLE, resolve_role
 from backend.app.db.models import Share, Suite, User
 from backend.app.services.suite_service import SuiteNotFoundError
 
 OWNER = "owner"
 ADMIN = "admin"
+VIEW = "view"
+#: The workspace-role name (`users.role`), not a suite level — the two
+#: vocabularies are separate ladders that happen to share the word "admin".
+#: Named here so the Viewer cap below reads as the role check it is.
+VIEWER = "viewer"
 
 # Ordered capability ranks. `owner` ranks above `admin` so it always clears an
 # admin gate, even though their capabilities are identical — the distinction is
@@ -68,8 +73,48 @@ def _is_workspace_admin(session: Session, user_id: uuid.UUID) -> bool:
     resolve in a deployment that sets no `WORKSPACE_ADMIN_EMAILS` at all — which,
     after in-app role management (#742), is the expected steady state.
     """
+    return _workspace_role(session, user_id) == ADMIN
+
+
+def _workspace_role(session: Session, user_id: uuid.UUID) -> str:
+    """The user's effective workspace role, or `member` if the row is gone.
+
+    A missing row falls back to `member` — the neutral tier — because that is
+    what the pre-#741 code did implicitly (`user is not None and …` → not admin)
+    and because neither of the two things a role decides here should fire on a
+    ghost: it must not confer admin, and it must not apply the Viewer cap to
+    somebody we cannot see. In practice a deleted user has no shares and owns
+    nothing, so the level resolves to `None` on its own.
+    """
     user = session.get(User, user_id)
-    return user is not None and is_workspace_admin(user)
+    return resolve_role(user) if user is not None else DEFAULT_WORKSPACE_ROLE
+
+
+def _cap_for_viewer(level: str | None, role: str) -> str | None:
+    """Clamp a resolved suite level to `view` for a workspace **Viewer**.
+
+    The second of ADR 0033 decision 5's two belts (the first is
+    `share_service._reject_edit_share_to_viewer`, which stops the grant being
+    made at all). This one is the *enforcement*, and it is not redundant with the
+    grant check — it covers the two cases a grant-time check structurally cannot:
+
+    * **Legacy rows.** An `edit` share granted before this shipped is already in
+      the table; nothing revalidates it.
+    * **Demotion after the grant.** A Member holding `edit` who is later demoted
+      to Viewer keeps a row that says `edit`. Roles resolve per request precisely
+      so that a demotion takes effect immediately (ADR 0033 decision 7) — a
+      demotion that left stale `edit` shares live would make that guarantee
+      false exactly where it matters most.
+
+    `owner` is capped too, and deliberately: a Viewer who created a suite before
+    being demoted is still read-only, which is what the tier *means*. They keep
+    `view` (so the suite stays visible rather than vanishing — existence-hiding
+    would be a worse surprise than losing the buttons); managing or deleting it
+    falls to a workspace admin, who is implicit `admin` on every suite.
+    """
+    if level is None or role != VIEWER:
+        return level
+    return VIEW
 
 
 class SuiteForbiddenError(DataQError):
@@ -81,16 +126,21 @@ def effective_permission(session: Session, suite: Suite, user_id: uuid.UUID) -> 
     """The user's level on `suite` (`owner`/`admin`/`edit`/`view`), or None.
 
     Ranking: creator → `owner`; workspace-admin → `admin` (implicit, every suite;
-    ranks above any share they might also hold); else their `shares` row; else None.
+    ranks above any share they might also hold); else their `shares` row; else
+    None — then clamped to `view` if they are a workspace Viewer (ADR 0033).
     """
+    role = _workspace_role(session, user_id)
+    if role == ADMIN:
+        # Checked before ownership only because the two coincide harmlessly
+        # (owner outranks admin), and putting it first keeps the one role lookup
+        # doing double duty for the cap below.
+        return OWNER if suite.created_by == user_id else ADMIN
     if suite.created_by == user_id:
-        return OWNER
-    if _is_workspace_admin(session, user_id):
-        return ADMIN
+        return _cap_for_viewer(OWNER, role)
     share = session.scalars(
         select(Share).where(Share.suite_id == suite.id, Share.user_id == user_id)
     ).first()
-    return share.permission if share is not None else None
+    return _cap_for_viewer(share.permission if share is not None else None, role)
 
 
 def effective_permissions(
@@ -104,9 +154,17 @@ def effective_permissions(
 
     A workspace-admin is an implicit `admin` on every suite they don't own
     (ADR 0027), resolved once here — no per-suite shares lookup needed.
+
+    Applies the Viewer cap identically to `effective_permission`. It has to: this
+    is what stamps each row of the suites LIST, and a list that offered Edit and
+    Delete on suites whose detail view then 403s would be a worse failure than no
+    cap at all — the user would be told they can do something the server has
+    already decided they cannot. `test_batch_and_single_agree_for_every_role`
+    pins the two together rather than trusting that they were kept in step.
     """
+    role = _workspace_role(session, user_id)
     owned = {s.id for s in suites if s.created_by == user_id}
-    if _is_workspace_admin(session, user_id):
+    if role == ADMIN:
         return {s.id: (OWNER if s.id in owned else ADMIN) for s in suites}
     shared_ids = [s.id for s in suites if s.id not in owned]
     levels: dict[uuid.UUID, str] = {}
@@ -115,7 +173,9 @@ def effective_permissions(
             select(Share).where(Share.user_id == user_id, Share.suite_id.in_(shared_ids))
         )
         levels = {row.suite_id: row.permission for row in rows}
-    return {s.id: (OWNER if s.id in owned else levels.get(s.id)) for s in suites}
+    return {
+        s.id: _cap_for_viewer(OWNER if s.id in owned else levels.get(s.id), role) for s in suites
+    }
 
 
 def require_permission(

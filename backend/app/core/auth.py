@@ -54,6 +54,8 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import (
+    ADMIN_ROLE,
+    DEFAULT_WORKSPACE_ROLE,
     ROLE_RANK,
     admin_promotion_values,
     bootstrap_role,
@@ -535,6 +537,7 @@ def _claim_unlinked_user(
     display_name: str | None,
     now: datetime,
     oidc_issuer: str | None = None,
+    role: str | None = None,
 ) -> User | None:
     """Attach an AAD identity to an existing OTP-provisioned row, or return None.
 
@@ -591,7 +594,13 @@ def _claim_unlinked_user(
             # role is authoritative and only the allowlist may raise it. See
             # `should_promote_to_admin` for why the no-op branch writes NOTHING
             # rather than the column's own value.
-            **admin_promotion_values(email),
+            #
+            # `role` (the dev-bypass force) overrides that, and must: this is a
+            # real path to the bypass identity's row — an unlinked OTP row for
+            # `dev-bypass@dataq.local` from an earlier OTP-mode run is claimed
+            # here rather than by the ordinary upsert — and landing it on
+            # `member` would 403 every connection route on the local stack.
+            **({"role": role} if role is not None else admin_promotion_values(email)),
         )
         .returning(User)
     ).scalar_one_or_none()
@@ -612,8 +621,17 @@ def _upsert_user(
     email: str,
     display_name: str | None,
     oidc_issuer: str | None = None,
+    role: str | None = None,
     _retrying: bool = False,
 ) -> User:
+    """Upsert the user this sign-in identifies, keyed on `aad_object_id`.
+
+    `role` forces a workspace role on BOTH branches (insert and conflict),
+    overriding the ordinary seed-then-promote-only rules. It exists for exactly
+    one caller — dev bypass, whose single identity is the workspace admin and has
+    no allowlist to be on. Leave it `None` everywhere else: an unconditional role
+    write on a real sign-in path would let a login undo an in-app demotion.
+    """
     now = datetime.now(UTC)
     stmt = (
         insert(User)
@@ -627,7 +645,7 @@ def _upsert_user(
             # #1386 this path can also be gated by a whole DOMAIN allowlist, so
             # it needs the same "admit broadly, author narrowly" answer. The
             # allowlist write-through still wins over it (inside `bootstrap_role`).
-            role=bootstrap_role(email, default=get_settings().auth_oidc_default_role),
+            role=role or bootstrap_role(email, default=get_settings().auth_oidc_default_role),
             last_seen_at=now,
         )
         .on_conflict_do_update(
@@ -639,7 +657,7 @@ def _upsert_user(
                 # (not written back as itself) when the address is not
                 # allowlisted, so this per-request upsert never participates in a
                 # race with an in-app role change it has no opinion about.
-                **admin_promotion_values(email),
+                **({"role": role} if role is not None else admin_promotion_values(email)),
                 # Branches on `display_name_override` (#1139, migration
                 # 6230293aea96), not a plain overwrite AND not a bare COALESCE.
                 # This upsert runs on EVERY real-mode request (no session cache
@@ -691,6 +709,7 @@ def _upsert_user(
                 display_name=display_name,
                 now=now,
                 oidc_issuer=oidc_issuer,
+                role=role,
             )
             if linked is not None:
                 return linked
@@ -705,6 +724,7 @@ def _upsert_user(
                 email=email,
                 display_name=display_name,
                 oidc_issuer=oidc_issuer,
+                role=role,
                 _retrying=True,
             )
         # Deliberately no email in the message or the log. The redactor covers
@@ -1086,11 +1106,25 @@ def _get_current_user_dev_bypass(
             return session_service.resolve_token(db, cookie)
         except session_service.SessionAuthError:
             log.debug("dev_bypass_ignoring_unusable_session_cookie")
+    # The bypass identity is the workspace ADMIN (ADR 0033 / #741). Dev bypass is
+    # a single-operator mode by definition — no credential, exactly one identity,
+    # and it cannot coexist with a real IdP (`_dev_bypass_allowed`) or with
+    # anything but `ENVIRONMENT=dev`. Landing it on `member` would leave the
+    # local and published-eval stacks unable to create a connection at all, i.e.
+    # unable to do the first thing DataQ is for, and the demo seed depends on the
+    # same capability.
+    #
+    # Seeded via the allowlist-shaped `role=` below rather than left to
+    # `bootstrap_role`, because there is no email allowlist in this mode to put
+    # it on. The write is unconditional (not promote-only) for the same reason
+    # the tier is admin: there is no second user whose deliberate demotion this
+    # could be undoing.
     user = _upsert_user(
         db,
         aad_object_id=DEV_BYPASS_AAD_OID,
         email=DEV_BYPASS_EMAIL,
         display_name=DEV_BYPASS_DISPLAY_NAME,
+        role=ADMIN_ROLE,
     )
     log.debug("auth_user_resolved", mode="dev_bypass", user_id=str(user.id))
     return user
@@ -1171,3 +1205,20 @@ def require_role(minimum: str) -> Callable[..., User]:
         return current_user
 
     return dependency
+
+
+#: The two role gates the API layer actually uses, as annotated types (ADR 0033,
+#: #741). Named aliases rather than `Depends(require_role(...))` spelled out at
+#: each route, for the reason the factory exists at all: a gate that is a *type*
+#: reads at the signature — `current_user: AdminUser` says what the endpoint
+#: requires without the reader tracing a call — and there is exactly one place a
+#: tier's meaning can be changed.
+#:
+#: They also make the *absence* of a gate legible. On `connections`, the read
+#: routes deliberately keep the plain `Depends(get_current_user)`: Members must
+#: reference connections when authoring suites, so list/get stay
+#: authenticated-any (credentials are never in the payload at any tier). That
+#: reads as a decision beside `AdminUser` siblings, where three near-identical
+#: `Depends(...)` expressions would just read as an oversight.
+AdminUser = Annotated[User, Depends(require_role(ADMIN_ROLE))]
+MemberUser = Annotated[User, Depends(require_role(DEFAULT_WORKSPACE_ROLE))]

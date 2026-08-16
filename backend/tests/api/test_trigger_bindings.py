@@ -194,29 +194,37 @@ def test_duplicate_binding_conflicts(client: TestClient, db_session: Any) -> Non
     assert dup.json()["error"]["code"] == "trigger_binding_conflict"
 
 
-def test_create_on_inaccessible_suite_is_404(client: TestClient, db_session: Any) -> None:
+def test_create_on_inaccessible_suite_is_404(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
     # A suite the caller has no access to is hidden (404), not 403 — and no row.
+    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace
+    # admin since #741, and a workspace admin is implicit `admin` on EVERY suite
+    # (ADR 0027) — so it can never be "a user without access to this suite".
+    _, headers = as_role("member")
     conn = _connection(db_session)
     suite = _unowned_suite(db_session, conn)
-    resp = client.post("/api/v1/trigger-bindings", json=_payload(str(suite.id)))
+    resp = client.post("/api/v1/trigger-bindings", json=_payload(str(suite.id)), headers=headers)
     assert resp.status_code == 404
     assert db_session.scalar(select(func.count()).select_from(TriggerBinding)) == 0
 
 
-def test_create_with_view_only_is_forbidden(client: TestClient, db_session: Any) -> None:
-    from backend.app.core.auth import DEV_BYPASS_AAD_OID
+def test_create_with_view_only_is_forbidden(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
     from backend.app.db.models import Share
 
+    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace
+    # admin since #741, and a workspace admin is implicit `admin` on EVERY suite
+    # (ADR 0027) — so it can never be "a user without access to this suite".
+    member, headers = as_role("member")
     conn = _connection(db_session)
     suite = _unowned_suite(db_session, conn)
-    # warm up auth so the dev-bypass user row exists, then share at view-only
-    client.get("/api/v1/trigger-bindings")
-    me = db_session.scalar(select(User).where(User.aad_object_id == DEV_BYPASS_AAD_OID))
-    db_session.add(Share(suite_id=suite.id, user_id=me.id, permission="view"))
+    db_session.add(Share(suite_id=suite.id, user_id=member.id, permission="view"))
     db_session.commit()
 
     # creating a binding needs `edit`; view-only → 403 (access exists, too low)
-    resp = client.post("/api/v1/trigger-bindings", json=_payload(str(suite.id)))
+    resp = client.post("/api/v1/trigger-bindings", json=_payload(str(suite.id)), headers=headers)
     assert resp.status_code == 403
 
 

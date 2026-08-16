@@ -13,10 +13,10 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from backend.app.core.auth import DEV_BYPASS_EMAIL
-from backend.app.db.models import Connection, Schedule, Suite, User
+from backend.app.db.models import Connection, Schedule, Share, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 
@@ -113,31 +113,49 @@ def test_create_rejects_unknown_timezone(client: TestClient, db_session: Any) ->
     assert resp.json()["error"]["code"] == "invalid_timezone"
 
 
-def test_create_on_inaccessible_suite_is_404(client: TestClient, db_session: Any) -> None:
+def test_create_on_inaccessible_suite_is_404(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
+    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace
+    # admin since #741, and a workspace admin is implicit `admin` on EVERY suite
+    # (ADR 0027) — so it can never be "a user without access to this suite".
+    _, headers = as_role("member")
     suite = _unowned_suite(db_session, _connection(db_session))
-    resp = client.post("/api/v1/schedules", json=_payload(str(suite.id)))
+    resp = client.post("/api/v1/schedules", json=_payload(str(suite.id)), headers=headers)
     assert resp.status_code == 404
     assert db_session.scalar(select(func.count()).select_from(Schedule)) == 0
 
 
-def test_create_with_view_only_is_forbidden(client: TestClient, db_session: Any) -> None:
-    from backend.app.core.auth import DEV_BYPASS_AAD_OID
-    from backend.app.db.models import Share
-
+def test_create_with_view_only_is_forbidden(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
+    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace
+    # admin since #741, and a workspace admin is implicit `admin` on EVERY suite
+    # (ADR 0027) — so it can never be "a user without access to this suite".
+    member, headers = as_role("member")
     suite = _unowned_suite(db_session, _connection(db_session))
-    client.get("/api/v1/schedules")  # warm up auth so the dev-bypass user row exists
-    me = db_session.scalar(select(User).where(User.aad_object_id == DEV_BYPASS_AAD_OID))
-    db_session.add(Share(suite_id=suite.id, user_id=me.id, permission="view"))
+    db_session.add(Share(suite_id=suite.id, user_id=member.id, permission="view"))
     db_session.commit()
 
-    resp = client.post("/api/v1/schedules", json=_payload(str(suite.id)))
+    resp = client.post("/api/v1/schedules", json=_payload(str(suite.id)), headers=headers)
     assert resp.status_code == 403
 
 
-def test_list_is_scoped_to_accessible_suites(client: TestClient, db_session: Any) -> None:
+def test_list_is_scoped_to_accessible_suites(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
+    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace
+    # admin since #741, and a workspace admin is implicit `admin` on EVERY suite
+    # (ADR 0027) — so it can never be "a user without access to this suite".
+    member, headers = as_role("member")
     conn = _connection(db_session)
     mine = _owned_suite(client, conn.id)
-    client.post("/api/v1/schedules", json=_payload(mine))
+    # Reassign to the member so THEY own it — scoping is about the caller.
+    db_session.execute(
+        update(Suite).where(Suite.id == uuid.UUID(mine)).values(created_by=member.id)
+    )
+    db_session.commit()
+    client.post("/api/v1/schedules", json=_payload(mine), headers=headers)
     theirs = _unowned_suite(db_session, conn)
     db_session.add(
         Schedule(
@@ -150,7 +168,7 @@ def test_list_is_scoped_to_accessible_suites(client: TestClient, db_session: Any
     )
     db_session.commit()
 
-    listed = client.get("/api/v1/schedules")
+    listed = client.get("/api/v1/schedules", headers=headers)
     assert listed.status_code == 200
     assert {s["suite_id"] for s in listed.json()} == {mine}
 

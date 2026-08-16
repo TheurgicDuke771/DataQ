@@ -9,6 +9,28 @@ Both `/test` routes (the saved-connection `/connections/{id}/test` and the
 draft `/connections/test`, #351) are sync ``def`` so FastAPI runs them in a
 worker thread; the datasource connect is blocking and must not stall the
 event loop.
+
+## Authorization (ADR 0033 / #741) — connections are the one workspace-global resource
+
+Connections are **shared infrastructure holding credentials**: they are not
+owned, not shared per-user, and every suite in the workspace runs on them. That
+is why the role gates here are the sharpest in the app, and why they are
+per-route rather than declared once on the router:
+
+    create / update / delete / reauth   AdminUser   — mutating shared credentialed infra
+    test (saved) / test (draft)         MemberUser  — Members verify, Viewers do not probe
+    list / get / versions               any authenticated user
+
+The read routes keeping the plain `get_current_user` is a **decision, not an
+omission**: a Member authoring a suite must be able to see and reference the
+connections available to them. No tier has ever been able to read a credential
+back out — responses carry `has_secret`, never secret material — so widening
+reads costs nothing that the Admin gate is protecting.
+
+⚠️ **Breaking change for Members.** Before this, *any* authenticated user could
+delete or re-credential the connection every suite in the workspace ran on.
+Deployments where non-admins managed connections must promote those users to
+Admin before upgrading — see CHANGELOG and docs/security.md.
 """
 
 from __future__ import annotations
@@ -22,7 +44,7 @@ from pydantic import ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
-from backend.app.core.auth import get_current_user
+from backend.app.core.auth import AdminUser, MemberUser, get_current_user
 from backend.app.core.roles import is_workspace_admin
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.core.uri_credentials import redact_config_uris
@@ -189,7 +211,7 @@ class ConnectionDraftTest(ApiModel):
 )
 def create_connection(
     payload: ConnectionCreate,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: AdminUser,
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> ConnectionRead:
@@ -214,7 +236,7 @@ def create_connection(
 )
 def test_draft_connection(
     payload: ConnectionDraftTest,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: AdminUser,
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> ConnectionTestResult:
     """Probe the config/secret the user just typed — before Create is pressed.
@@ -225,10 +247,29 @@ def test_draft_connection(
     (`connections`, `{connection_id}`, `test`), so Starlette can't route a
     `/connections/test` request to the parameterized handler regardless of
     registration order — `test_both_test_routes_resolve` pins this down.
-    Nothing is persisted: no `connections` row, no `SecretStore` write. Same
-    auth gate as `create_connection` — a credential-carrying probe must not be
-    more permissive than the endpoint that actually stores one. Sync `def` like
-    the saved-connection `/test`: the datasource connect is blocking.
+    Nothing is persisted: no `connections` row, no `SecretStore` write. Sync
+    `def` like the saved-connection `/test`: the datasource connect is blocking.
+
+    **Admin-only**, unlike the saved-connection `/test` beside it, which ADR
+    0033's matrix puts at Member+. The divergence is deliberate and it is about
+    *whose config is being probed*, not about who is asking:
+
+    - The saved `/test` probes a connection an **admin already created and
+      stored**. A Member verifying that it works learns nothing they could not
+      learn by running a suite against it.
+    - This one probes config the **caller supplies in the request body** —
+      including `*_secret_name` fields, which are resolved against the flat
+      SecretStore namespace and handed to the adapter. That is #1118: a caller
+      can name a *victim* connection's secret (readable off `GET /connections`)
+      while pointing the endpoint at a host they control. The role gate does not
+      close that class; it bounds who can reach it.
+
+    Admin is therefore the honest tier, and it costs nothing: this endpoint
+    exists to serve the Create/Edit connection form, which is itself Admin-only
+    since #741. At Member+ it would grant the credential-exfiltration surface to
+    precisely the tier this slice just denied connection-write to, in support of
+    a form that tier cannot open. #1118 remains the real fix and is tracked
+    separately.
     """
     svc.test_draft_connection(
         payload.type,
@@ -281,7 +322,7 @@ def get_connection(
 def update_connection(
     connection_id: uuid.UUID,
     payload: ConnectionUpdate,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: AdminUser,
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> ConnectionRead:
@@ -305,7 +346,7 @@ def update_connection(
 )
 def delete_connection(
     connection_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: AdminUser,
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> None:
@@ -327,7 +368,7 @@ def delete_connection(
 )
 def test_connection(
     connection_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: MemberUser,
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> ConnectionTestResult:
@@ -344,7 +385,7 @@ def test_connection(
 def reauth_connection(
     connection_id: uuid.UUID,
     payload: ConnectionReauth,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: AdminUser,
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> ConnectionTestResult:

@@ -121,11 +121,18 @@ are the reason this mode is opt-in rather than the default:
   except the Admin role below.
 - **Workspace roles — Admin / Member / Viewer.** A stored `users.role` (ADR 0033), not just
   an env allowlist. **Admin** has workspace-wide visibility over every suite, its results,
-  and schedules, and is the *only* role that can create, edit, delete, re-auth, or test a
-  **connection** — a Member can reference and run against an existing connection but cannot
-  mutate or re-credential it (closes the earlier hole where any authenticated user could
-  delete or re-point the Snowflake connection every suite ran on). **Viewer** is capped at
-  `view` everywhere, including on any share it receives. Because Admin visibility includes
+  and schedules, and is the *only* role that can create, edit, delete or re-auth a
+  **connection** — a Member can reference, test and run against an existing connection but
+  cannot mutate or re-credential it (closes the earlier hole where any authenticated user
+  could delete or re-point the Snowflake connection every suite ran on). Testing a **saved**
+  connection is deliberately Member+ rather than Admin-only: authoring a suite against a connection you
+  cannot verify is not a workable flow, and a test reveals nothing a Member could not
+  already learn by running a suite. Testing an **unsaved draft** is Admin-only, because that
+  request carries caller-supplied config rather than config an admin stored. **Viewer** is capped at `view` everywhere, including on
+  any share it receives, and cannot test a connection — the probe opens an outbound
+  connection using stored credentials, which a read-only tier has no reason to trigger.
+  The Viewer cap is enforced at the point of use, not only when a share is granted, so
+  demoting someone to Viewer immediately downgrades any `edit` share they already hold. Because Admin visibility includes
   failing-row samples (the one place PII can appear), **grant it sparingly** and treat a
   data-access audit trail as a prerequisite before granting it in a regulated deployment.
   `WORKSPACE_ADMIN_EMAILS` still resolves to Admin on sign-in as a **bootstrap / break-glass**

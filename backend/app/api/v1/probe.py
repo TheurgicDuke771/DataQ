@@ -17,6 +17,12 @@ was the argument for deleting rather than gating it.
 
 Read runs through `GET /api/v1/runs/{id}` and `/runs/{id}/results`, which enforce
 suite authz and redact.
+
+**Admin-only since #741.** `ensure_probe_fixtures` creates a `Connection` — which
+ADR 0033 makes an Admin-only resource — and a caller-owned `Suite`, which requires
+Member+. Left on the bare `get_current_user` it was a third door straight around
+both new gates: a Viewer could have called it and obtained a connection *and* a
+suite they owned. Gated at the stricter of the two things it does, not the looser.
 """
 
 from __future__ import annotations
@@ -28,9 +34,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
-from backend.app.core.auth import get_current_user
+from backend.app.core.auth import AdminUser
 from backend.app.core.config import get_settings
-from backend.app.db.models import User
 from backend.app.db.session import get_db
 from backend.app.services import run_dispatch
 from backend.app.services.probe import ensure_probe_fixtures
@@ -54,7 +59,7 @@ class ProbeRunResponse(ApiModel):
     ),
 )
 def trigger_snowflake_probe(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: AdminUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> ProbeRunResponse:
     settings = get_settings()

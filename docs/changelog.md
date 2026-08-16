@@ -7,6 +7,37 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 Portability, auto-monitors, and polish on top of v1:
 
+- ⚠️ **Workspace roles — Admin / Member / Viewer (ADR 0033)** — authorization is now two
+  axes. Your **workspace role** says what kind of user you are; the existing per-suite
+  `view / edit / admin / owner` grants say what you can touch. Neither replaces the other:
+  a Member with no share on a suite still cannot see it.
+
+  | Capability | Admin | Member | Viewer |
+  |---|---|---|---|
+  | See/use suites shared to them | ✅ | ✅ | ✅ (view only) |
+  | Create/import suites (become owner) | ✅ | ✅ | ❌ |
+  | Receive `edit` shares | ✅ | ✅ | ❌ — capped at `view` |
+  | Connections: create / edit / delete / re-auth | ✅ | ❌ | ❌ |
+  | Connections: list & reference in suites | ✅ | ✅ | list only |
+  | Connections: test | ✅ | ✅ | ❌ |
+  | `/admin`, implicit suite-admin, workspace-wide visibility | ✅ | ❌ | ❌ |
+
+  **BREAKING — Members lose connection-write.** Previously *any* authenticated user could
+  delete or re-credential the connection every suite in the workspace ran on. If people who
+  are not workspace admins manage connections in your deployment, **promote them to Admin
+  before upgrading**, or those operations will start returning 403.
+
+  Everything else upgrades with **no config change**: existing users become Members (which
+  is exactly what they could already do), and `WORKSPACE_ADMIN_EMAILS` keeps resolving to
+  Admin — it is now a **bootstrap seed and lockout break-glass** rather than the admin
+  mechanism, and it only ever grants, never demotes. New: `AUTH_OTP_DEFAULT_ROLE` /
+  `AUTH_OIDC_DEFAULT_ROLE` set the tier new signups land on (`member` by default; set
+  `viewer` when your signup allowlist is a whole domain).
+
+  Roles resolve **per request**, so a change takes effect on the target's next request —
+  including requests made with their existing API tokens, which authenticate as their user.
+  There is no token to revoke.
+
 - **Security hardening across both reference deployments** —
   ([#1386](https://github.com/TheurgicDuke771/DataQ/issues/1386),
   [#1387](https://github.com/TheurgicDuke771/DataQ/issues/1387),
