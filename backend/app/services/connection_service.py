@@ -108,6 +108,77 @@ def _extra_secrets(config: Mapping[str, Any], secret_store: SecretStore) -> dict
     return out
 
 
+class ForeignSecretReferenceError(DataQError):
+    """A caller-supplied `*_secret_name` naming a secret it does not own (#1118)."""
+
+    status_code = 422
+    code = "foreign_secret_reference"
+
+
+def _reject_foreign_secret_names(
+    config: Mapping[str, Any], *, stored: Mapping[str, Any] | None
+) -> None:
+    """Reject a `*_secret_name` a caller invented — closes #1118.
+
+    `*_secret_name` keys are **server-owned bookkeeping**, minted by
+    `_write_extra_secret` and pointed at a ref this connection owns. That
+    invariant was documented (see `_carry_over_secret_name_keys`) and enforced
+    nowhere, which made it a credential-exfiltration primitive:
+
+        1. read a victim connection's `catalog_secret_name` off `GET /connections`
+           (the list is workspace-global by design, and carries config)
+        2. create — or draft-test — a connection with `type=iceberg`, that
+           `catalog_secret_name`, and a `catalog_uri` pointing at a host you control
+        3. the server resolves the victim's real catalog credential and
+           `inject_uri_password()` sends it to your endpoint
+
+    SSRF plus exfiltration, out of the store the whole design exists to keep
+    credentials inside. ADR 0033's role gates narrowed *who* can reach the entry
+    points (both are Admin-only since #741) but did not close the class: an Admin
+    who may rotate credentials still may not READ them, and this turned the first
+    power into the second.
+
+    The rule is round-trip fidelity, not a blanket ban: a caller may send a
+    `*_secret_name` **only** if it is byte-identical to the one already stored on
+    that connection. That keeps the legitimate case working — a client that GETs
+    a connection, edits one field and PATCHes the whole config back — while
+    leaving no way to *introduce* a reference. With no stored row to compare
+    against (create, and the draft test, which persists nothing at all) any
+    `*_secret_name` is foreign by definition.
+
+    Deliberately raises rather than silently stripping the key: a request whose
+    meaning is quietly altered is how the caller ends up debugging a connection
+    that "lost" its catalog credential. The error names the field so a legitimate
+    client can fix its payload.
+
+    **Scope — what this does NOT close (#1401).** It governs the reference NAME,
+    not the URI the resolved credential is then sent to. An Admin can still PATCH
+    a victim connection echoing `catalog_secret_name` byte-identically (accepted,
+    by the round-trip rule) while changing `catalog_uri` to a host they control,
+    and test it. That residual is narrower than what #1118 opened with — it is
+    Admin-only, and it requires mutating the victim's row, which
+    `connection_versions` records with `changed_by`, so it is no longer the
+    trace-less variant — but it is a real privilege conversion (rotate → read)
+    and is tracked separately rather than left unstated here.
+    """
+    for key, value in config.items():
+        if not key.endswith("_secret_name") or not isinstance(value, str):
+            continue
+        # An EMPTY string is checked too, not skipped as "absent". `""` is not a
+        # ref, but it IS a present key — so `_carry_over_secret_name_keys` sees
+        # nothing to fill and the connection silently ends up with no catalog
+        # credential while the real secret stays live and unreferenced in the
+        # store: the #954 shape, self-inflicted, and a purge candidate. Blanking
+        # is not how a credential is removed (the row's deletion is), so it is a
+        # rejection like any other value the server did not put there.
+        if stored is None or stored.get(key) != value:
+            raise ForeignSecretReferenceError(
+                f"'{key}' is set by the server and cannot be supplied or changed by a "
+                "client; send the credential itself (e.g. 'catalog_secret') instead",
+                detail={"field": key},
+            )
+
+
 def _validate_extra_secret_supported(conn_type: str, config: Mapping[str, Any], field: str) -> None:
     """Reject a `<field>_secret` a connection TYPE's config model can't receive.
 
@@ -402,6 +473,10 @@ def create_connection(
     """
     _validated_config(conn_type, config)
     _validate_env(env)
+    # #1118: there is no stored row yet, so ANY `*_secret_name` in the payload
+    # names someone else's secret. Checked before the row and before any secret
+    # write, like every other up-front rejection here.
+    _reject_foreign_secret_names(config, stored=None)
     if catalog_secret is not None:
         _validate_extra_secret_supported(conn_type, config, "catalog")
 
@@ -650,6 +725,12 @@ def update_connection(
 
     if config is not None:
         _validated_config(conn.type, config)
+        # #1118: a client may echo back the `*_secret_name` it read off this
+        # connection (the GET → edit one field → PATCH the whole config flow),
+        # but may not introduce or repoint one. Compared against the row's
+        # CURRENT config, before `_carry_over_secret_name_keys` merges the two —
+        # afterwards the caller's value and the server's are indistinguishable.
+        _reject_foreign_secret_names(config, stored=conn.config or {})
         was_syncing = bool((conn.config or {}).get("inventory_sync"))
         conn.config = _carry_over_secret_name_keys(conn.config or {}, config)
         if was_syncing and not bool((conn.config or {}).get("inventory_sync")):
@@ -1072,13 +1153,19 @@ def test_draft_connection(
     constraint, not a connectivity fact), so a caller that hasn't picked one yet
     still gets a full connectivity check.
 
-    `_extra_secrets` still resolves `config`'s `_secret_name` fields — those name
-    EXISTING secrets already in the store, not something this call writes.
-    ``catalog_secret``, in contrast, is the RAW value straight off the draft
-    request (#1181): a draft has no row and nothing stored yet to name, so it
-    cannot flow through `_secret_name` resolution the way a saved connection's
-    catalog credential does post-#1181 — it is handed to the adapter directly,
-    under the same `catalog_secret` kwarg `_extra_secrets` would have produced.
+    **`*_secret_name` is REFUSED on this path (#1118).** It used to be resolved
+    here — the reasoning being that such a field names an existing store entry
+    rather than writing one — but that is precisely what made this endpoint a
+    credential-exfiltration primitive: a caller could name a *victim*
+    connection's ref (readable off `GET /connections`) while pointing
+    `catalog_uri` at a host they control, and the server would fetch the real
+    credential and send it there. A draft has no row, so it owns no refs, so
+    there is no such thing as a legitimate one here.
+
+    Nothing is lost: ``catalog_secret`` is the RAW value straight off the draft
+    request (#1181) and is handed to the adapter directly, under the same
+    `catalog_secret` kwarg `_extra_secrets` would have produced. That is the
+    supported way to test a second credential before saving.
     `secret_store.set` is never called anywhere on this path, for either secret.
 
     Raises `ConnectionConfigInvalidError` (422) for an unknown type or invalid
@@ -1092,6 +1179,8 @@ def test_draft_connection(
     _validated_config(conn_type, config)
     if env is not None:
         _validate_env(env)
+    # #1118 — a draft owns no secret refs, so every `*_secret_name` is foreign.
+    _reject_foreign_secret_names(config, stored=None)
     if catalog_secret is not None:
         # Same guard `create_connection`/`update_connection` run — a draft for a
         # type whose config model has no `catalog_secret_name` field must 422
@@ -1109,7 +1198,11 @@ def test_draft_connection(
     # "no credential", and the adapter (Iceberg/dbt) only branches on `is None`.
     secret = secret or None
 
-    extra_secrets = _extra_secrets(config, secret_store)
+    # No `_extra_secrets(config, ...)` here — the guard above rejected every
+    # `*_secret_name`, so there is nothing to resolve and nothing this path can
+    # be made to read out of the store (#1118). The raw draft value is the only
+    # second credential a draft can carry.
+    extra_secrets: dict[str, str] = {}
     if catalog_secret:
         extra_secrets["catalog_secret"] = catalog_secret
 
