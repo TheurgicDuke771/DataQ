@@ -581,6 +581,88 @@ def test_claiming_an_otp_row_from_aad_promotes_but_does_not_demote(
     assert claimed.role == ADMIN_ROLE, "linking an AAD identity must not reset the stored role"
 
 
+def test_the_forced_role_survives_the_identity_claim_path(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_upsert_user(role=...)` must force the role on EVERY branch, not just the
+    two obvious ones.
+
+    The dev-bypass identity forces `admin` (#741). But `_upsert_user` has three
+    exits, not two: insert, on-conflict update, and — when the email index
+    collides with an **unlinked OTP row** — `_claim_unlinked_user`. A local stack
+    that previously ran in OTP mode leaves exactly such a row for
+    `dev-bypass@dataq.local`, so this is a real path, not a contrived one.
+
+    Unforwarded, the claim path falls back to the promote-only allowlist rule,
+    the bypass identity lands on `member`, and every connection route on the
+    local and published-eval stacks 403s — the failure this force exists to
+    prevent, reintroduced by the one branch nobody looks at.
+    """
+    _allowlist(monkeypatch)
+    email = f"claim-{uuid.uuid4().hex[:8]}@example.com"
+    # An unlinked OTP row: no aad_object_id, ordinary role.
+    otp_row = otp_service.resolve_or_create_user(db_session, email)
+    assert otp_row.role == DEFAULT_WORKSPACE_ROLE
+    assert otp_row.aad_object_id is None
+
+    claimed = auth_mod._upsert_user(
+        db_session,
+        aad_object_id=uuid.uuid4().hex[:32],
+        email=email,
+        display_name="D",
+        role=ADMIN_ROLE,
+    )
+    assert claimed.id == otp_row.id, "precondition: this went through the CLAIM path"
+    assert claimed.role == ADMIN_ROLE
+
+
+def test_the_forced_role_survives_the_conflict_retry(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same invariant on the bounded-retry exit — the fourth way out of
+    `_upsert_user`, taken when a concurrent sign-in claims the row first."""
+    _allowlist(monkeypatch)
+    email = f"retry-{uuid.uuid4().hex[:8]}@example.com"
+    oid = uuid.uuid4().hex[:32]
+    first = auth_mod._upsert_user(
+        db_session, aad_object_id=oid, email=email, display_name="R", role=ADMIN_ROLE
+    )
+    assert first.role == ADMIN_ROLE
+    # A second pass over the same identity re-enters the conflict branch.
+    again = auth_mod._upsert_user(
+        db_session, aad_object_id=oid, email=email, display_name="R", role=ADMIN_ROLE
+    )
+    assert again.id == first.id
+    assert again.role == ADMIN_ROLE
+
+
+def test_the_dev_bypass_identity_recovers_admin_from_a_legacy_member_row(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An UPGRADE case: a local stack that already has a dev-bypass row from
+    before #741 has it stored as `member`. The force must repair it on the next
+    request, or upgrading the local stack breaks connection management on it."""
+    _allowlist(monkeypatch)
+    existing = auth_mod._upsert_user(
+        db_session,
+        aad_object_id=auth_mod.DEV_BYPASS_AAD_OID,
+        email=auth_mod.DEV_BYPASS_EMAIL,
+        display_name=auth_mod.DEV_BYPASS_DISPLAY_NAME,
+    )
+    existing.role = DEFAULT_WORKSPACE_ROLE
+    db_session.commit()
+
+    repaired = auth_mod._upsert_user(
+        db_session,
+        aad_object_id=auth_mod.DEV_BYPASS_AAD_OID,
+        email=auth_mod.DEV_BYPASS_EMAIL,
+        display_name=auth_mod.DEV_BYPASS_DISPLAY_NAME,
+        role=ADMIN_ROLE,
+    )
+    assert repaired.id == existing.id
+    assert repaired.role == ADMIN_ROLE
+
+
 # ── /me exposes the effective role ───────────────────────────────────────────
 
 

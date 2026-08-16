@@ -193,14 +193,20 @@ def test_test_connection_is_member_plus(
 
 
 @pytest.mark.parametrize("role", ROLES)
-def test_draft_connection_test_is_member_plus(client: TestClient, as_role: Any, role: str) -> None:
-    """The draft probe carries a credential in the REQUEST, so it must not be
-    more permissive than the saved one. Same tier, verified separately — the two
-    are different handlers and a gate on one is not a gate on the other."""
+def test_draft_connection_test_is_admin_only(client: TestClient, as_role: Any, role: str) -> None:
+    """STRICTER than the saved-connection `/test` beside it, and deliberately.
+
+    The saved probe uses config an admin already stored; this one probes config
+    the CALLER supplies — including `*_secret_name` fields resolved against the
+    flat SecretStore namespace, which is #1118 (name a victim connection's secret,
+    point the endpoint at a host you control). Member+ would have handed that
+    surface to exactly the tier this slice just denied connection-write to, in
+    support of a Create form that tier cannot open.
+    """
     _, headers = as_role(role)
     payload = {"type": "snowflake", "env": "dev", "config": dict(_SF_CONFIG), "secret": "p"}
     resp = client.post("/api/v1/connections/test", json=payload, headers=headers)
-    assert resp.status_code == (403 if role == "viewer" else 200)
+    assert resp.status_code == (200 if role == "admin" else 403)
 
 
 @pytest.mark.parametrize("role", ROLES)
@@ -236,6 +242,30 @@ def test_role_cannot_be_spoofed_through_the_request_body(client: TestClient, as_
     resp = client.post("/api/v1/connections", json=payload, headers=headers)
     assert resp.status_code in (403, 422)
     assert resp.status_code != 201
+
+
+@pytest.mark.parametrize("role", ROLES)
+def test_the_probe_endpoint_is_admin_only(
+    client: TestClient, as_role: Any, role: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The third door, found by review rather than by the matrix.
+
+    `POST /_probe/snowflake-suite` is mounted unconditionally and had only
+    `get_current_user` on it, while `ensure_probe_fixtures` creates a
+    **Connection** (Admin-only) *and* a caller-owned **Suite** (Member+) and then
+    dispatches a run. A Viewer calling it would have obtained both, straight
+    around the two gates this slice adds.
+
+    Gated at the stricter of the two things it does. This is the shape worth
+    remembering: the gates went on the resources' *own* routes, and a sibling
+    endpoint that creates the same resources by another name was invisible to
+    that reasoning.
+    """
+    _, headers = as_role(role)
+    resp = client.post("/api/v1/_probe/snowflake-suite", headers=headers)
+    # Admin gets past the gate (whatever the probe then does about a missing
+    # warehouse); the other tiers must not.
+    assert (resp.status_code == 403) is (role != "admin")
 
 
 # ── 2. suite creation requires Member+ ───────────────────────────────────────
@@ -419,50 +449,76 @@ def test_a_viewer_cannot_reach_an_edit_gated_endpoint(
 # ── 4. MCP parity ────────────────────────────────────────────────────────────
 
 
-def test_mcp_exposes_no_connection_mutation_or_suite_create_tool() -> None:
-    """The ACs ask us to verify this stays true rather than to build a gate.
+def test_the_mcp_tool_surface_is_exactly_the_eight_read_and_suite_scoped_tools() -> None:
+    """The tripwire for #741's blind spot: MCP calls services DIRECTLY.
 
-    #741's new gates live on REST routes; if MCP ever grew a tool that created a
-    suite or mutated a connection, it would bypass them entirely — the tool layer
-    calls services directly. This is the tripwire for that, and it fails when
-    someone adds such a tool without also adding the gate.
+    Every gate this slice adds lives on a REST route. A new MCP tool that created
+    a suite or mutated a connection would bypass all of them, silently — the tool
+    layer never touches the router.
+
+    Enumerated from FastMCP's own registry, and asserted as an **exact set**
+    rather than by intersecting with a list of forbidden names. A name list only
+    catches the names someone thought of: `add_connection` or `new_suite` would
+    sail straight through it. An exact set fails on ANY new tool, which is the
+    point — the next person to add one is forced to come here and decide whether
+    it needs a role gate.
+
+    If you are adding a tool: add it below AND make sure it either (a) is
+    read-only, or (b) gates through `suite_authz.require_permission`, or (c)
+    carries an explicit `require_role`-equivalent check.
     """
+    import asyncio
+
+    from backend.app.mcp.server import mcp
+
+    tools = {t.name for t in asyncio.run(mcp.list_tools())}
+    assert tools == {
+        # read-only
+        "list_suites",
+        "get_suite_results",
+        "get_health_score",
+        "get_adf_pipeline_status",
+        "get_run_status",
+        "profile_column",
+        # suite-scoped writes — gated on require_permission(minimum="edit"),
+        # which the Viewer cap feeds (see the test below)
+        "trigger_suite_run",
+        "create_check",
+    }
+
+
+def test_a_viewer_pat_is_refused_by_the_mcp_trigger_tool(
+    db_session: Any, as_role: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MCP parity, exercised THROUGH the tool rather than beside it.
+
+    Asserting on `require_permission` alone would only prove the primitive works
+    — it would not prove `trigger_suite_run` actually calls it, which is the
+    thing that could regress. So this enters the real tool function with a real
+    Viewer principal.
+
+    The Viewer holds a **legacy `edit` share**: the exact state a naive "viewers
+    never have edit" assumption gets wrong, and the reason the cap is enforced at
+    the point of use rather than only when a share is granted.
+    """
+    from contextlib import contextmanager
+
     from backend.app.mcp import server as mcp_server
 
-    names = {
-        name
-        for name in dir(mcp_server)
-        if not name.startswith("_") and callable(getattr(mcp_server, name, None))
-    }
-    forbidden = {
-        "create_connection",
-        "update_connection",
-        "delete_connection",
-        "reauth_connection",
-        "create_suite",
-        "import_suite",
-        "grant_share",
-    }
-    assert not (names & forbidden), (
-        "an MCP tool now performs an action #741 gates on the REST side — add the "
-        "equivalent role gate before exposing it"
-    )
-
-
-def test_a_viewer_pat_cannot_trigger_a_run_over_mcp(db_session: Any, as_role: Any) -> None:
-    """MCP parity for the gate that DOES exist there.
-
-    `trigger_suite_run` and `create_check` gate on `require_permission(edit)`,
-    so the Viewer cap reaches them through the shared primitive rather than
-    through a second, drift-prone set of checks. Exercised at that primitive with
-    a Viewer holding a legacy `edit` share — the exact state a naive
-    "viewers never have edit" assumption would get wrong.
-    """
     owner, _ = as_role("admin")
     viewer, _ = as_role("viewer")
     suite = _suite(db_session, owner, _connection(db_session, owner))
     db_session.add(Share(suite_id=suite.id, user_id=viewer.id, permission="edit"))
     db_session.commit()
 
-    with pytest.raises(suite_authz.SuiteForbiddenError):
-        suite_authz.require_permission(db_session, suite.id, viewer.id, minimum="edit")
+    @contextmanager
+    def _as_viewer() -> Any:
+        yield db_session, viewer
+
+    monkeypatch.setattr(mcp_server, "_ctx", _as_viewer)
+
+    with pytest.raises(Exception) as exc:
+        mcp_server.trigger_suite_run(suite_id=str(suite.id))
+    # `_service_errors` maps SuiteForbiddenError onto the MCP ToolError shape;
+    # either way it must NOT have queued a run.
+    assert "forbidden" in str(exc.value).lower() or "permission" in str(exc.value).lower()

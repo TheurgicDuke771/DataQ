@@ -537,6 +537,7 @@ def _claim_unlinked_user(
     display_name: str | None,
     now: datetime,
     oidc_issuer: str | None = None,
+    role: str | None = None,
 ) -> User | None:
     """Attach an AAD identity to an existing OTP-provisioned row, or return None.
 
@@ -593,7 +594,13 @@ def _claim_unlinked_user(
             # role is authoritative and only the allowlist may raise it. See
             # `should_promote_to_admin` for why the no-op branch writes NOTHING
             # rather than the column's own value.
-            **admin_promotion_values(email),
+            #
+            # `role` (the dev-bypass force) overrides that, and must: this is a
+            # real path to the bypass identity's row — an unlinked OTP row for
+            # `dev-bypass@dataq.local` from an earlier OTP-mode run is claimed
+            # here rather than by the ordinary upsert — and landing it on
+            # `member` would 403 every connection route on the local stack.
+            **({"role": role} if role is not None else admin_promotion_values(email)),
         )
         .returning(User)
     ).scalar_one_or_none()
@@ -702,6 +709,7 @@ def _upsert_user(
                 display_name=display_name,
                 now=now,
                 oidc_issuer=oidc_issuer,
+                role=role,
             )
             if linked is not None:
                 return linked
@@ -716,6 +724,7 @@ def _upsert_user(
                 email=email,
                 display_name=display_name,
                 oidc_issuer=oidc_issuer,
+                role=role,
                 _retrying=True,
             )
         # Deliberately no email in the message or the log. The redactor covers

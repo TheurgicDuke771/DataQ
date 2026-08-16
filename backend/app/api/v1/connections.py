@@ -236,7 +236,7 @@ def create_connection(
 )
 def test_draft_connection(
     payload: ConnectionDraftTest,
-    current_user: MemberUser,
+    current_user: AdminUser,
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> ConnectionTestResult:
     """Probe the config/secret the user just typed — before Create is pressed.
@@ -250,17 +250,26 @@ def test_draft_connection(
     Nothing is persisted: no `connections` row, no `SecretStore` write. Sync
     `def` like the saved-connection `/test`: the datasource connect is blocking.
 
-    **Member+, while `create_connection` is Admin-only** (ADR 0033's normative
-    matrix). That is deliberately *looser* than the endpoint which stores a
-    connection, and it is the one place in this file where the two diverge: a
-    Member authoring a suite needs to check that a connection they were given
-    works, without being able to create or re-credential one. Viewers are
-    excluded — this probe opens an outbound network connection using stored
-    credentials, which a read-only tier has no reason to trigger.
+    **Admin-only**, unlike the saved-connection `/test` beside it, which ADR
+    0033's matrix puts at Member+. The divergence is deliberate and it is about
+    *whose config is being probed*, not about who is asking:
 
-    Note this endpoint remains subject to the `*_secret_name` resolution class
-    filed as #1118; the role gate narrows who can reach it but does not close
-    it, and that mitigation is tracked separately.
+    - The saved `/test` probes a connection an **admin already created and
+      stored**. A Member verifying that it works learns nothing they could not
+      learn by running a suite against it.
+    - This one probes config the **caller supplies in the request body** —
+      including `*_secret_name` fields, which are resolved against the flat
+      SecretStore namespace and handed to the adapter. That is #1118: a caller
+      can name a *victim* connection's secret (readable off `GET /connections`)
+      while pointing the endpoint at a host they control. The role gate does not
+      close that class; it bounds who can reach it.
+
+    Admin is therefore the honest tier, and it costs nothing: this endpoint
+    exists to serve the Create/Edit connection form, which is itself Admin-only
+    since #741. At Member+ it would grant the credential-exfiltration surface to
+    precisely the tier this slice just denied connection-write to, in support of
+    a form that tier cannot open. #1118 remains the real fix and is tracked
+    separately.
     """
     svc.test_draft_connection(
         payload.type,
