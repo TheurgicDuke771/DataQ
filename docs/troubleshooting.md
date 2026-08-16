@@ -54,6 +54,13 @@ defined check count shown on the progress view.
 error detail carries a safe *reason* (config / connectivity / permission). The raw adapter
 error is never echoed (it can carry credential fragments) — check the server logs for detail.
 
+**Worker crash-loops at boot with `ValueError: A rediss:// URL must have parameter
+ssl_cert_reqs`.** Your `REDIS_URL` points at a TLS redis (`rediss://` — ElastiCache, Azure
+Cache, most managed offerings) and you're on a DataQ build older than the #1363 fix. Upgrade,
+or append `?ssl_cert_reqs=required` to the URL yourself. Current builds default the parameter
+to `required` (full certificate verification) whenever it's absent; an explicit value is
+respected as-is.
+
 ## Schedules
 
 **A scheduled run didn't fire.** Confirm the schedule is **enabled**, the cron + timezone are
