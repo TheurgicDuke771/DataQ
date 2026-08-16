@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "f1f4a5d4f25a",
+  "strategy": "manual-commit",
+  "branch": "fix/1386-security-headers",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "deploy/terraform/aws/ecs.tf",
+    "deploy/terraform/azure/frontend.tf",
+    "frontend/Dockerfile",
+    "frontend/nginx-security-headers.conf",
+    "frontend/nginx.conf.template"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f1/f4a5d4f25a/0/metadata.json",
+      "transcript": "/f1/f4a5d4f25a/0/full.jsonl",
+      "compact_transcript": "/f1/f4a5d4f25a/0/transcript.jsonl",
+      "content_hash": "/f1/f4a5d4f25a/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 156,
+    "cache_creation_tokens": 54704,
+    "cache_read_tokens": 17925386,
+    "output_tokens": 33736,
+    "api_call_count": 78
+  }
+}
