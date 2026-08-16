@@ -139,6 +139,34 @@ def test_create_returns_201_and_hides_secret(
     assert store.data[conn.secret_ref] == "p@ss"
 
 
+def test_a_blank_secret_is_rejected_rather_than_written(
+    client: tuple[TestClient, FakeSecretStore], db_session: Any
+) -> None:
+    """`None` means "not supplied"; `""` is not a credential. Without a
+    `min_length`, the service wrote the empty string straight through to the
+    SecretStore and returned 200/201 — the connection then had no visible state
+    until a run failed (the #954 blindness).
+
+    On PATCH it also punched a hole in #1401's redirect guard: `""` satisfied
+    "you re-supplied the credential" while destroying it, so a caller could move
+    a connection to their own host and blank the credential in one quiet request.
+    Caught in the #1403 review; `reauth` has carried this bound since it shipped.
+    """
+    api, store = client
+    blank_create = api.post("/api/v1/connections", json=_create_payload(secret=""))
+    assert blank_create.status_code == 422
+
+    created = api.post("/api/v1/connections", json=_create_payload())
+    conn_id = created.json()["id"]
+    ref = db_session.get(Connection, uuid.UUID(conn_id)).secret_ref
+
+    resp = api.patch(f"/api/v1/connections/{conn_id}", json={"secret": ""})
+
+    assert resp.status_code == 422
+    # The stake: the working credential is still there, not blanked.
+    assert store.data[ref] == "p@ss"
+
+
 def test_create_unknown_type_returns_422(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
     resp = api.post("/api/v1/connections", json=_create_payload(type="mssql"))

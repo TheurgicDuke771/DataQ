@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -254,6 +254,12 @@ def _status_from_results(results: list[dict[str, Any]]) -> str:
 
 class DbtConnectionAdapter:
     """`ConnectionAdapter` for dbt — config validation + an artifacts-read probe."""
+
+    # #1401: `artifacts_uri` is the store the credential reads from, and
+    # `endpoint_url` (#1063) overrides the S3 host it is signed against.
+    destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {
+        "secret": ("artifacts_uri", "endpoint_url")
+    }
 
     # A local `file://` artifacts path needs no credential (the class docstring
     # above) — mirrored by the frontend's `optionalSecret: true` for `dbt` in

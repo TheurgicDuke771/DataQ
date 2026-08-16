@@ -30,7 +30,7 @@ and fails-soft pending real credentials.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -87,6 +87,11 @@ class S3Config(BaseModel):
 
 class S3ConnectionAdapter:
     """`ConnectionAdapter` for AWS S3 — config validation + a head_bucket probe."""
+
+    # #1401: `endpoint_url` (#1063, the S3-compatible path) redirects the signed
+    # request to any host. `region` does not — it only varies which AWS endpoint
+    # boto3 derives, all of them AWS-controlled.
+    destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {"secret": ("endpoint_url",)}
 
     def validate_config(self, raw: dict[str, Any]) -> S3Config:
         return S3Config.model_validate(raw)

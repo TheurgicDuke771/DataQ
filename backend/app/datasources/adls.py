@@ -22,7 +22,7 @@ other adapters it runs live and fails-soft pending real credentials.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -65,6 +65,9 @@ class AdlsConfig(BaseModel):
 
 class AdlsConnectionAdapter:
     """`ConnectionAdapter` for ADLS Gen2 — config validation + a container probe."""
+
+    # #1401: an arbitrary URL the SAS/account key is presented to.
+    destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {"secret": ("account_url",)}
 
     def validate_config(self, raw: dict[str, Any]) -> AdlsConfig:
         return AdlsConfig.model_validate(raw)

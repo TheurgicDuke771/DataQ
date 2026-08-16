@@ -87,6 +87,23 @@ export interface TypeSpec {
     extra?: string;
     showWhen: (config: Record<string, unknown> | undefined) => boolean;
   };
+  /**
+   * `config` fields that decide **where the PRIMARY credential is sent** (#1401).
+   * Editing one requires re-supplying that credential, so the edit form reveals
+   * the otherwise-hidden secret field when the user changes one — without this,
+   * a legitimate host migration hits a 422 the form gives them no way to satisfy
+   * (edit mode normally omits the secret; rotation is the Re-auth flow).
+   *
+   * Mirrors the backend adapters' `destination_fields["secret"]`, which is the
+   * authority — this copy only decides when to show a field, exactly as
+   * `optionalSecret` mirrors `secret_optional`. Drift fails CLOSED: a field
+   * missing here means the user sees the backend's 422 instead of the input,
+   * never that the credential moves unguarded.
+   *
+   * The SECOND credential's own destination needs no entry: `secondSecret` is
+   * already shown in edit mode, since PATCH is its only rotation path.
+   */
+  destinationFields?: string[];
 }
 
 export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
@@ -117,6 +134,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         requiredFields: ['role'],
       },
     ],
+    destinationFields: ['account'],
   },
   adls_gen2: {
     textFields: [
@@ -124,6 +142,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
       { name: 'container', label: 'Container' },
     ],
     secretLabel: 'SAS token',
+    destinationFields: ['account_url'],
   },
   s3: {
     // AWS by default; setting an endpoint points the same connection at any
@@ -147,6 +166,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
       },
     ],
     secretLabel: 'Secret access key',
+    destinationFields: ['endpoint_url'],
   },
   unity_catalog: {
     textFields: [
@@ -163,6 +183,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
       },
     ],
     secretLabel: 'Personal access token (PAT)',
+    destinationFields: ['workspace_url'],
   },
   iceberg: {
     // Native pyiceberg read (ADR 0030). `catalog_uri` is required for
@@ -218,6 +239,8 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         'credential above) — never persisted in the catalog URI (#754/#826).',
       showWhen: (config) => config?.catalog_type === 'sql' || config?.catalog_type === 'hive',
     },
+    // `catalog_uri` steers BOTH credentials — see the backend adapter's comment.
+    destinationFields: ['catalog_uri', 'warehouse', 'properties', 'secret_property'],
   },
   adf: {
     textFields: [
@@ -240,6 +263,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         extraField: { name: 'username', label: 'Username' },
       },
     ],
+    destinationFields: ['base_url'],
   },
   // dbt is an OrchestrationProvider (ADR 0029), not a datasource — it binds to
   // dbt's universal surface (the run_results.json artifact + a post-build
@@ -282,6 +306,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     ],
     secretLabel: 'Artifacts read credential (ADLS SAS / S3 secret key)',
     optionalSecret: true,
+    destinationFields: ['artifacts_uri', 'endpoint_url'],
   },
 };
 
@@ -312,4 +337,36 @@ export function activeAuthOption(
  */
 export function composeSecret(secret: string, passphrase?: string): string {
   return passphrase?.trim() ? JSON.stringify({ private_key: secret, passphrase }) : secret;
+}
+
+/**
+ * Which of a type's `destinationFields` the edited config has moved away from the
+ * stored connection (#1401). Non-empty → the backend will require the credential
+ * back, so the edit form reveals it.
+ *
+ * `edited === undefined` means **not yet known**, not "cleared": the edit form
+ * seeds itself in a `useEffect`, so `Form.useWatch` returns undefined for the
+ * first render. Treating that as a move made every destination field read as
+ * changed, flashing the warning and a required credential input on every edit
+ * open — an alert asserting something untrue of the current state (review of
+ * #1403). "Unknown" must mean nothing moved, never everything moved.
+ *
+ * Compared with `JSON.stringify` because one destination field (Iceberg's
+ * `properties`) is an object. Key-order sensitivity can only produce a FALSE
+ * POSITIVE — asking for a credential the backend would not have demanded —
+ * which costs a re-typed password, not a security property.
+ *
+ * Pure and exported so this is unit-testable: the first-render case is invisible
+ * to a React Testing Library assertion, which only ever observes the settled
+ * state after effects have flushed.
+ */
+export function movedDestinationFields(
+  type: ConnectionType,
+  edited: Record<string, unknown> | undefined,
+  stored: Record<string, unknown>,
+): string[] {
+  if (edited === undefined) return [];
+  return (CONNECTION_FORM_SPECS[type].destinationFields ?? []).filter(
+    (field) => JSON.stringify(edited[field] ?? null) !== JSON.stringify(stored[field] ?? null),
+  );
 }

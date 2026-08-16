@@ -59,27 +59,42 @@ from backend.app.services import connection_service as svc
 router = APIRouter(tags=["connections"])
 
 
+# `None` is the "not supplied" signal on every credential field below, so an
+# EMPTY STRING is never a meaningful value — and it is actively harmful: the
+# service writes whatever it is handed straight to the SecretStore, so `""`
+# replaces a working credential with a blank one and returns 200. The connection
+# then has no visible state until a run fails (the #954 blindness). `reauth` has
+# carried `min_length=1` since it shipped; create/update did not, which also gave
+# #1401's redirect guard a hole — supplying `""` satisfied "you re-supplied the
+# credential" while destroying it. Caught in the #1403 review.
 class ConnectionCreate(ApiModel):
     name: str = Field(min_length=1, max_length=128)
     type: str
     env: str
     config: dict[str, Any] = Field(default_factory=dict)
-    secret: str | None = Field(default=None, description="Credential; write-only, never returned")
+    secret: str | None = Field(
+        default=None, description="Credential; write-only, never returned", min_length=1
+    )
     catalog_secret: str | None = Field(
         default=None,
         description=(
             "Second credential a connection type may need (currently the Iceberg "
             "SQL-catalog DB password, #1181); write-only, never returned"
         ),
+        min_length=1,
     )
 
 
 class ConnectionUpdate(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     config: dict[str, Any] | None = None
-    secret: str | None = Field(default=None, description="Rotate the credential; write-only")
+    secret: str | None = Field(
+        default=None, description="Rotate the credential; write-only", min_length=1
+    )
     catalog_secret: str | None = Field(
-        default=None, description="Rotate the second (catalog) credential; write-only"
+        default=None,
+        description="Rotate the second (catalog) credential; write-only",
+        min_length=1,
     )
 
 

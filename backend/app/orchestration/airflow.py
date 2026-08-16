@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -84,6 +84,9 @@ def _auth(config: AirflowConfig, secret: str) -> tuple[dict[str, str], httpx.Aut
 
 class AirflowConnectionAdapter:
     """`ConnectionAdapter` for Apache Airflow — config validation + a REST probe."""
+
+    # #1401: the webserver root the Bearer token / basic password is sent to.
+    destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {"secret": ("base_url",)}
 
     def validate_config(self, raw: dict[str, Any]) -> AirflowConfig:
         return AirflowConfig.model_validate(raw)
