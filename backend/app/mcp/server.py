@@ -813,8 +813,9 @@ def list_schedules(
     'is anything scheduled on this suite?'. Returns, per schedule: its id, the
     suite it runs, the cron expression, the timezone that expression is
     interpreted in, whether it is enabled, when it last ran, and — as
-    ``next_run_at`` — exactly when it fires next. Optionally narrow to one
-    ``suite_id`` or to ``enabled`` true/false.
+    ``next_run_at`` — exactly when it fires next, or ``null`` when it is disabled
+    and therefore will not fire at all. Optionally narrow to one ``suite_id`` or
+    to ``enabled`` true/false.
 
     Use ``next_run_at`` rather than deriving the next fire from the cron
     expression yourself: DataQ computes it in the schedule's own timezone and it
@@ -848,7 +849,12 @@ def list_schedules(
                 # Precomputed by the scheduler in the schedule's own timezone, so
                 # it is already DST-correct — which re-deriving it from `cron` +
                 # `timezone` downstream is not.
-                "next_run_at": s.next_run_at.isoformat(),
+                #
+                # `null` when the schedule is disabled: the column still holds a
+                # computed timestamp, but the dispatcher filters on `enabled` and
+                # never reaches it, so reporting the raw value would name a fire
+                # time that will not happen (found reviewing #1421).
+                "next_run_at": (s.next_run_at.isoformat() if s.enabled else None),
             }
             for s in schedules
         ]
@@ -1407,6 +1413,171 @@ def dryrun_check(
                 policy=suite.column_policy,
             ),
             "expected_value": outcome.expected_value,
+        }
+
+
+@mcp.tool
+def cancel_run(run_id: str) -> dict[str, Any]:
+    """Cancel a queued or still-running suite run.
+
+    Use this for 'stop the orders run' or 'cancel that, I triggered the wrong
+    suite'. Marks the run cancelled and drops its queued task.
+
+    An already-finished run (succeeded / failed / cancelled) cannot be cancelled
+    and reports so rather than pretending. A run already executing is stopped
+    **cooperatively** — the worker notices and stops writing results — so a fast
+    run can finish before the cancel reaches it; check ``get_run_status``
+    afterwards rather than assuming. Requires edit access to the run's suite.
+    """
+    rid = _parse_uuid(run_id, field="run_id")
+    with _ctx() as (session, user), _service_errors():
+        run = run_service.get_run(session, rid)
+        if run is None:
+            raise ToolError("run not found")
+        # Gate on the run's suite, like every other run tool — the denial hides
+        # the run id from a caller who cannot see its suite.
+        require_permission(session, run.suite_id, user.id, minimum="edit")
+        if not run_service.cancel_run(session, run):
+            raise ToolError(f"run is already finished (status: {run.status})")
+        # The other half the REST route does: without this a queued task still
+        # runs, and the row says cancelled while the work happens anyway.
+        run_dispatch.revoke_run(run.celery_task_id)
+        return {"run_id": run_id, "status": run.status}
+
+
+@mcp.tool
+def create_schedule(
+    suite_id: str,
+    # Bounded to the column (`schedules.cron` is String(128)) like the REST twin.
+    # An unbounded LLM-generated string reaches Postgres and raises
+    # StringDataRightTruncation, which is a psycopg error, not a `DataQError` —
+    # so it escapes `_service_errors` and surfaces as an opaque internal failure
+    # instead of an actionable one (#567's class, in a new column).
+    cron: Annotated[str, Field(min_length=1, max_length=128)],
+    timezone: Annotated[str, Field(min_length=1, max_length=64)] = "UTC",
+    enabled: bool = True,
+) -> dict[str, Any]:
+    """Schedule a suite to run automatically on a cron expression.
+
+    Use this for 'run the orders suite every night at 2am'. ``cron`` is a
+    standard five-field expression (``0 2 * * *``) and ``timezone`` is an IANA
+    name (``America/Toronto``), **not** a UTC offset — the expression is
+    interpreted in that zone, so a schedule written this way keeps its local time
+    across daylight-saving changes. Both are validated; an invalid one is an error
+    rather than a schedule that never fires.
+
+    Returns the schedule's id and ``next_run_at`` — the next time it will
+    actually fire — so you can confirm the *interpretation* to the user rather
+    than restating the cron back to them. Creating one with ``enabled=false``
+    reports ``next_run_at: null``, because a disabled schedule does not fire at
+    all; the stored expression is still there and starts firing when it is
+    enabled in the app.
+
+    A suite may be scheduled before its run target is configured; the dispatcher
+    re-checks at fire time and skips if it is still unset. Requires edit access.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    with _ctx() as (session, user), _service_errors():
+        # `create_schedule` gates internally, but gating here too keeps the
+        # authz visible at the tool — and is what the RBAC sweep enters.
+        require_permission(session, sid, user.id, minimum="edit")
+        schedule = schedule_service.create_schedule(
+            session,
+            suite_id=sid,
+            cron_expr=cron,
+            user_id=user.id,
+            timezone=timezone,
+            enabled=enabled,
+        )
+        return {
+            "id": str(schedule.id),
+            "suite_id": suite_id,
+            "cron": schedule.cron,
+            "timezone": schedule.timezone,
+            "enabled": schedule.enabled,
+            # `null` when disabled, not the stored timestamp. The column always
+            # holds a computed next fire, but a disabled schedule is filtered out
+            # by the dispatcher and never reaches it — reporting the raw value
+            # would have an assistant confirm a fire time for a paused schedule.
+            "next_run_at": (schedule.next_run_at.isoformat() if schedule.enabled else None),
+        }
+
+
+@mcp.tool
+def delete_schedule(schedule_id: str) -> dict[str, Any]:
+    """Delete a suite's cron schedule so it stops running automatically.
+
+    Use this for 'stop the nightly orders run'. The suite and its checks are
+    untouched — only the automatic trigger goes, and the suite can still be run
+    on demand.
+
+    If the intent is a pause rather than a removal, say so: a schedule can be
+    disabled in the app and re-enabled later, which this tool cannot do.
+    Requires edit access to the schedule's suite.
+    """
+    schid = _parse_uuid(schedule_id, field="schedule_id")
+    with _ctx() as (session, user), _service_errors():
+        # `delete_schedule` resolves the schedule and gates on ITS suite (404 for
+        # a caller who cannot see that suite), so the id alone is not a way in.
+        schedule_service.delete_schedule(session, schid, user_id=user.id)
+        return {"deleted": True, "schedule_id": schedule_id}
+
+
+@mcp.tool
+def create_trigger_binding(
+    provider: str,
+    # Same bound as the REST twin: the column is String(256) NOT NULL, and an
+    # empty value would create a binding that can never match a pipeline.
+    pipeline_or_dag_id: Annotated[str, Field(min_length=1, max_length=256)],
+    env: str,
+    suite_id: str,
+    enabled: bool = True,
+) -> dict[str, Any]:
+    """Run a suite automatically whenever an orchestrator pipeline succeeds.
+
+    Use this for 'run the orders checks after the nightly load finishes'. Binds
+    pipeline/DAG ``pipeline_or_dag_id`` on ``provider`` (adf / airflow / dbt) in
+    environment ``env`` to this suite: when that pipeline **completes
+    successfully** in that environment, the suite runs.
+
+    Only success triggers a run. A pipeline *failure* alerts but never triggers —
+    do not offer this as a way to react to failures.
+
+    ``env`` is part of the key and is the commonest thing to get wrong: a binding
+    on ``dev`` never fires for a pipeline whose runs are reported against ``qa``.
+    Any returned ``warnings`` are advisory, not errors — read them out, because
+    they name exactly that class of silent no-fire. Requires edit access.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    # NUL can't be stored by Postgres and the driver's ValueError would escape
+    # `_service_errors` — the same boundary rejection every other free-text tool
+    # argument gets (#567).
+    if contains_nul({"pipeline_or_dag_id": pipeline_or_dag_id, "provider": provider, "env": env}):
+        raise ToolError("NUL (\\x00) characters are not allowed in a trigger binding")
+    with _ctx() as (session, user), _service_errors():
+        result = trigger_binding_service.create_binding(
+            session,
+            provider=provider,
+            pipeline_or_dag_id=pipeline_or_dag_id,
+            env=env,
+            suite_id=sid,
+            user_id=user.id,
+            enabled=enabled,
+        )
+        return {
+            "id": str(result.binding.id),
+            "provider": result.binding.provider,
+            "pipeline_or_dag_id": result.binding.pipeline_or_dag_id,
+            "env": result.binding.env,
+            "suite_id": suite_id,
+            "enabled": result.binding.enabled,
+            # Advisory (#1186), never raised: the ambiguity may be intentional.
+            # Dropping them here would recreate the silent-trigger-loss incident
+            # they were built to surface.
+            "warnings": [
+                {"code": w.code, "message": w.message, "other_envs": w.other_envs}
+                for w in result.warnings
+            ],
         }
 
 

@@ -69,9 +69,13 @@ GATES: dict[str, str] = {
     # its REST twin gates on `edit` and not `view`. It sat in the "read-only"
     # comment group before this table existed — exactly the miscategorisation a
     # comment cannot catch and a driven test can.
+    "cancel_run": "suite:edit",
     "create_check": "suite:edit",
+    "create_schedule": "suite:edit",
+    "create_trigger_binding": "suite:edit",
     "delete_check": "suite:edit",
     "dryrun_check": "suite:edit",
+    "delete_schedule": "suite:edit",
     "profile_column": "suite:edit",
     "snooze_check": "suite:edit",
     "trigger_suite_run": "suite:edit",
