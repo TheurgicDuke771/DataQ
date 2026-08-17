@@ -129,6 +129,37 @@ def _service_errors() -> Generator[None]:
         raise ToolError(exc.message) from exc
 
 
+def _run_outcome_fields(run: Run, outcome: tuple[int, int, str | None] | None) -> dict[str, Any]:
+    """A run's data-quality verdict for `list_runs`, or nulls when it has none yet.
+
+    The same #318 rule `_run_results_payload` enforces, applied to the aggregate
+    instead of the result rows — because the aggregate overclaims in exactly the
+    way the row list does. Results are committed per phase, so a suite 3 checks
+    into 30 has a real, all-passing partial set, which `check_outcome_counts`
+    faithfully reports as `3 / 3, worst_severity: null`. That is the tool's own
+    definition of "nothing failed", asserted about a run that has barely started.
+
+    The REST runs table gets away with the raw numbers because a "running" badge
+    sits beside them in a UI. An LLM has no badge — it has whatever fields it is
+    handed — so a non-final run reports `results_final: false` and nothing else.
+    """
+    final = run.status in rollup.AGGREGATABLE_RUN_STATUSES
+    if not final or outcome is None:
+        return {
+            "results_final": final,
+            "checks_total": None,
+            "checks_passed": None,
+            "worst_severity": None,
+        }
+    total, passed, worst = outcome
+    return {
+        "results_final": True,
+        "checks_total": total,
+        "checks_passed": passed,
+        "worst_severity": worst,
+    }
+
+
 def _run_results_payload(session: Session, suite: Suite, run: Run) -> dict[str, Any]:
     """One run's `{run, checks}` payload — shared by `get_suite_results` (latest
     run of a suite) and `get_run_results` (a named run).
@@ -537,6 +568,11 @@ def list_runs(
     Those two statuses answer different questions and should not be merged: a run
     is ``succeeded`` when DataQ executed it, even if every check inside it failed.
 
+    A run that has not finished successfully reports ``results_final: false`` and
+    a **null** outcome (no counts, no severity) — it is still executing, or it
+    failed without producing a complete account. Describe such a run by its
+    status; it has no data-quality verdict yet.
+
     Optionally narrow to one ``suite_id`` (an error if you can't see it) and/or a
     run ``status``. ``total`` reports how many runs match regardless of ``limit``
     / ``offset``, so a short page is not mistaken for the end of the list. Scoped
@@ -581,9 +617,7 @@ def list_runs(
                     # A fixed category message from `failure_classifier`, never raw
                     # adapter text (which can carry DSN/credential fragments, #605).
                     "failure_reason": r.failure_reason,
-                    "checks_total": outcomes.get(r.id, (0, 0, None))[0],
-                    "checks_passed": outcomes.get(r.id, (0, 0, None))[1],
-                    "worst_severity": outcomes.get(r.id, (0, 0, None))[2],
+                    **_run_outcome_fields(r, outcomes.get(r.id)),
                 }
                 for r in runs
             ],

@@ -1201,6 +1201,7 @@ def test_list_runs_reports_execution_status_and_dq_outcome_separately(
     assert out["total"] == 1
     (run,) = out["runs"]
     assert run["status"] == "succeeded"
+    assert run["results_final"] is True
     assert run["checks_total"] == 3
     assert run["checks_passed"] == 1
     assert run["worst_severity"] == "critical"
@@ -1352,3 +1353,27 @@ def test_list_runs_bounds_are_advertised_in_the_tool_schema() -> None:
     props = tool.parameters["properties"]
     assert props["limit"] == {"default": 20, "minimum": 1, "maximum": 200, "type": "integer"}
     assert props["offset"]["minimum"] == 0
+
+
+def test_list_runs_withholds_a_mid_run_suites_partial_outcome(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The aggregate overclaims exactly the way the row list does (#318).
+
+    A suite 2 checks into 30 has a real, all-passing partial set, which
+    `check_outcome_counts` faithfully reports as `2 / 2, worst_severity: null` —
+    the tool's own definition of "nothing failed", asserted about a run that has
+    barely started. The REST table survives this because a "running" badge sits
+    beside the numbers; an LLM has no badge, only fields.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _run_with_results(db_session, suite, status="running", outcomes=("pass", "pass"))
+    _as(monkeypatch, db_session, user)
+
+    (run,) = server.list_runs()["runs"]
+    assert run["status"] == "running"
+    assert run["results_final"] is False
+    assert run["checks_total"] is None
+    assert run["checks_passed"] is None
+    assert run["worst_severity"] is None
