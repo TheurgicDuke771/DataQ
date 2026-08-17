@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "f13f800fb8da",
+  "strategy": "manual-commit",
+  "branch": "docs/mcp-tier2-expansion",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md",
+    "context/post-v1-roadmap.md",
+    "docs/adr/0008-mcp-server.md",
+    "docs/features.md",
+    "docs/mcp-setup.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f1/3f800fb8da/0/metadata.json",
+      "transcript": "/f1/3f800fb8da/0/full.jsonl",
+      "compact_transcript": "/f1/3f800fb8da/0/transcript.jsonl",
+      "content_hash": "/f1/3f800fb8da/0/content_hash.txt",
+      "prompt": "/f1/3f800fb8da/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 744,
+    "cache_creation_tokens": 526630,
+    "cache_read_tokens": 125141128,
+    "output_tokens": 238496,
+    "api_call_count": 372
+  }
+}
