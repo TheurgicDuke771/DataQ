@@ -77,9 +77,17 @@ GATES: dict[str, str] = {
     "dryrun_check": "suite:edit",
     "delete_schedule": "suite:edit",
     "profile_column": "suite:edit",
+    "suggest_column_policy": "suite:edit",
     "snooze_check": "suite:edit",
     "trigger_suite_run": "suite:edit",
     "update_check": "suite:edit",
+    # ── workspace-role gated: no suite to hang a resource gate on ───────────
+    # `test_connection` spends a stored credential against a remote system;
+    # `import_suite` CREATES a suite, so there is no existing resource whose
+    # ladder could gate it. Both are Member+ in ADR 0033's normative matrix, and
+    # both mirror their REST twin's `MemberUser`.
+    "import_suite": "role:member",
+    "test_connection": "role:member",
 }
 
 #: Gates whose tools must refuse a **Viewer**.

@@ -31,7 +31,12 @@ from backend.app.api.v1._base import contains_nul
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.core.roles import ROLE_RANK, is_workspace_admin, resolve_role
+from backend.app.core.roles import (
+    DEFAULT_WORKSPACE_ROLE,
+    ROLE_RANK,
+    is_workspace_admin,
+    resolve_role,
+)
 from backend.app.core.secrets import get_secret_store
 from backend.app.db.models import (
     CONNECTION_TYPES,
@@ -1578,6 +1583,136 @@ def create_trigger_binding(
                 {"code": w.code, "message": w.message, "other_envs": w.other_envs}
                 for w in result.warnings
             ],
+        }
+
+
+@mcp.tool
+def suggest_column_policy(suite_id: str) -> dict[str, Any]:
+    """Suggest which of a table's columns hold PII, by profiling it live.
+
+    Use this for 'which columns here are sensitive?' or before setting a suite's
+    redaction policy. Lists the suite target's columns, profiles them, and
+    classifies name **and** sample values into a suggested
+    ``{identifier_column, pii_columns}`` policy — which controls whether failing
+    sample rows show real values or masks.
+
+    **This only suggests. Nothing is saved**, and the suggestion is a heuristic
+    over column names and observed values, not a governance source of truth.
+    Present it as a proposal for the user to confirm and apply in the app; do not
+    describe a column as safe because it is absent from the list. Requires edit
+    access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    with _ctx() as (session, user), _service_errors():
+        suite = require_permission(session, sid, user.id, minimum="edit")
+        connection = session.get(Connection, suite.connection_id)
+        if connection is None:
+            raise ToolError("suite has no connection")
+        # The suite's own run target, resolved exactly as `profile_column` does —
+        # so "classify the orders suite" needs no location arguments at all.
+        table, schema, catalog, path, file_format = _profile_target_defaults(
+            suite, connection, schema=None, catalog=None, file_format=None
+        )
+        policy = profile_service.suggest_policy_for_target(
+            connection,
+            table=table,
+            schema=schema,
+            catalog=catalog,
+            path=path,
+            file_format=file_format,
+            secret_store=get_secret_store(),
+        )
+        return {
+            "suite_id": suite_id,
+            "saved": False,
+            "identifier_column": policy.get("identifier_column"),
+            "pii_columns": policy.get("pii_columns", []),
+        }
+
+
+@mcp.tool
+def test_connection(connection_id: str) -> dict[str, Any]:
+    """Check whether a stored connection can actually reach its datasource.
+
+    Use this for 'is the Snowflake connection working?' or when a run has failed
+    and you need to tell a dead credential from a broken check. Opens a live
+    connection using the stored credential and reports success or a classified
+    failure reason.
+
+    Nothing is changed and no credential is ever returned — this reports only
+    whether the probe worked. Requires the **member** workspace role: it spends a
+    stored credential against a remote system, which is not something a read-only
+    Viewer does. Fixing a failing connection (re-auth, edit, delete) is
+    Admin-only and is deliberately not available here at all — a credential must
+    never pass through an AI assistant.
+    """
+    cid = _parse_uuid(connection_id, field="connection_id")
+    with _ctx() as (session, user), _service_errors():
+        # The coarse axis: a connection has no suite, so there is no resource
+        # ladder to ride and `require_permission` has nothing to gate on. This is
+        # what `_require_role` exists for, and it mirrors the REST route's
+        # `MemberUser` exactly (ADR 0033's matrix puts `test` at Member+ while
+        # every connection *mutation* is Admin-only).
+        _require_role(user, DEFAULT_WORKSPACE_ROLE)
+        connection = connection_service.get_connection(session, cid)
+        connection_service.test_connection(session, cid, secret_store=get_secret_store())
+        return {
+            "connection_id": connection_id,
+            "name": connection.name,
+            "type": connection.type,
+            "env": connection.env,
+            "ok": True,
+        }
+
+
+@mcp.tool
+def import_suite(
+    connection_id: str,
+    name: Annotated[str, Field(min_length=1, max_length=256)],
+    checks: list[dict[str, Any]],
+    description: str | None = None,
+    version: int = 1,
+) -> dict[str, Any]:
+    """Create a whole suite in one call, from an exported suite document.
+
+    Use this to copy a suite between environments — ``export_suite`` the source,
+    then import the document onto a different connection ('recreate the orders
+    suite against the QA warehouse'). ``checks`` is the exported document's check
+    list verbatim; ``connection_id`` is the datasource the new suite runs against,
+    and it may be a different one from the source.
+
+    Creates a **new** suite owned by you — it never merges into or overwrites an
+    existing one, so importing twice gives you two suites. The whole document is
+    validated before anything is written, so a bad check means nothing is created
+    rather than a half-built suite.
+
+    Requires the **member** workspace role (creating a suite is not a read-only
+    action) and a datasource connection — orchestration providers cannot be suite
+    datasources.
+    """
+    cid = _parse_uuid(connection_id, field="connection_id")
+    _reject_nul(name=name, expectation_type="", kind="", config={}, dimension=description or "")
+    with _ctx() as (session, user), _service_errors():
+        # Suite creation is Member+ (ADR 0033), and this is the second door into
+        # it — the REST `POST /suites` and `POST /suites/import` both carry
+        # `MemberUser`. A door that creates the same resource under another name
+        # is exactly what #741's review found ungated on `_probe`, so it is gated
+        # here at the tool rather than assumed to be covered elsewhere.
+        _require_role(user, DEFAULT_WORKSPACE_ROLE)
+        suite = suite_io_service.import_suite(
+            session,
+            version=version,
+            name=name,
+            description=description,
+            checks=checks,
+            connection_id=cid,
+            created_by=user.id,
+        )
+        return {
+            "id": str(suite.id),
+            "name": suite.name,
+            "connection_id": connection_id,
+            "check_count": len(checks),
         }
 
 
