@@ -131,6 +131,7 @@ __all__ = [
     "ADMIN_ROLE",
     "DEFAULT_WORKSPACE_ROLE",
     "ROLE_RANK",
+    "VIEWER_ROLE",
     "admin_promotion_values",
     "bootstrap_role",
     "is_workspace_admin",
