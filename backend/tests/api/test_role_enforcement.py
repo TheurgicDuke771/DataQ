@@ -449,7 +449,7 @@ def test_a_viewer_cannot_reach_an_edit_gated_endpoint(
 # ── 4. MCP parity ────────────────────────────────────────────────────────────
 
 
-def test_the_mcp_tool_surface_is_exactly_the_eight_read_and_suite_scoped_tools() -> None:
+def test_the_mcp_tool_surface_is_exactly_the_read_and_suite_scoped_tools() -> None:
     """The tripwire for #741's blind spot: MCP calls services DIRECTLY.
 
     Every gate this slice adds lives on a REST route. A new MCP tool that created
@@ -480,6 +480,14 @@ def test_the_mcp_tool_surface_is_exactly_the_eight_read_and_suite_scoped_tools()
         "get_adf_pipeline_status",
         "get_run_status",
         "profile_column",
+        # read-only, view-gated (#529 Tier 1). Each takes a `suite_id` and calls
+        # `require_permission(minimum="view")` before any service call, so the
+        # per-suite ladder (ADR 0027) and the Viewer cap (ADR 0033) both apply —
+        # and a Viewer is *supposed* to reach these, which is what makes them
+        # safe rather than merely un-gated.
+        "list_checks",
+        "get_check",
+        "get_check_history",
         # suite-scoped writes — gated on require_permission(minimum="edit"),
         # which the Viewer cap feeds (see the test below)
         "trigger_suite_run",

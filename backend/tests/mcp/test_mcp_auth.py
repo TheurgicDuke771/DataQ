@@ -516,23 +516,36 @@ def _restore_server(monkeypatch: Any) -> None:
     importlib.reload(mcp_server)
 
 
-def test_otp_only_deployment_MOUNTS_mcp_and_still_serves_all_eight_tools(
+def test_otp_only_deployment_MOUNTS_mcp_and_still_serves_the_WHOLE_tool_surface(
     monkeypatch: Any,
 ) -> None:
     """The headline of #1128: before this, an OTP deployment had no `/mcp` at all.
 
     `build_mcp_app()` returned `None`, so `main.py` skipped the mount and the
-    whole 8-tool surface the feature matrix advertises silently disappeared — even
+    whole tool surface the feature matrix advertises silently disappeared — even
     though that deployment's PATs (the designated headless/MCP credential,
     ADR 0032 §1) resolve without touching Azure.
+
+    Asserted as "otp-only serves the same set as the default mode", not as a tool
+    *count*. The count was a literal `8`, which made a routine tool addition
+    (#529) fail here for no reason anyone reading the failure could connect to
+    OTP — and, worse, invited the fix of bumping the number, which would keep the
+    test green while proving nothing. The set comparison is what this test
+    actually means, and it needs no maintenance as the surface grows. Exactly
+    *which* tools exist is pinned once, deliberately, in
+    `test_role_enforcement.py::test_the_mcp_tool_surface_is_exactly_...`.
     """
     import asyncio
 
+    from backend.app.mcp.server import mcp as default_mode_mcp
+
+    expected = {t.name for t in asyncio.run(default_mode_mcp.list_tools(run_middleware=False))}
     try:
         reloaded = _reload_server_in_otp_only_mode(monkeypatch)
         assert reloaded.build_mcp_app() is not None, "/mcp is still unmounted in otp-only mode"
-        tools = asyncio.run(reloaded.mcp.list_tools(run_middleware=False))
-        assert len(tools) == 8, [t.name for t in tools]
+        tools = {t.name for t in asyncio.run(reloaded.mcp.list_tools(run_middleware=False))}
+        assert tools == expected
+        assert tools, "the registry is empty — the comparison above would pass vacuously"
     finally:
         _restore_server(monkeypatch)
 
