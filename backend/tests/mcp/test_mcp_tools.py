@@ -2561,3 +2561,83 @@ def test_suggest_column_policy_only_suggests(db_session: Any, monkeypatch: Any) 
     assert out["pii_columns"] == ["EMAIL"]
     db_session.refresh(suite)
     assert not suite.column_policy
+
+
+def test_import_suite_names_the_missing_field_instead_of_crashing(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`suite_io_service.import_suite` indexes required keys directly, so a
+    hand-composed check omitting one raises `KeyError` — not a `DataQError`, so it
+    escapes `_service_errors` as an opaque internal failure. The REST route is
+    immune only because its Pydantic model always emits every key; MCP has no such
+    model in front of it.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError) as exc:
+        server.import_suite(
+            str(suite.connection_id),
+            name="partial",
+            checks=[
+                {
+                    "name": "c",
+                    "kind": "expectation",
+                    "expectation_type": "expect_column_values_to_not_be_null",
+                    "config": {"column": "EMAIL"},
+                    # thresholds omitted — the shape an LLM composes by hand
+                }
+            ],
+        )
+    message = str(exc.value)
+    assert "checks[0]" in message
+    assert "warn_threshold" in message
+
+
+def test_import_suite_rejects_nul_anywhere_in_the_document(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The screen has to cover the CHECKS, not just the suite name: `create_check`
+    screens exactly these fields, and import is the second door to the same rows.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    def _doc(**overrides: Any) -> list[dict[str, Any]]:
+        check: dict[str, Any] = {
+            "name": "c",
+            "kind": "expectation",
+            "expectation_type": "expect_column_values_to_not_be_null",
+            "config": {"column": "EMAIL"},
+            "warn_threshold": None,
+            "fail_threshold": None,
+            "critical_threshold": None,
+        }
+        return [{**check, **overrides}]
+
+    cases: list[tuple[str, list[dict[str, Any]]]] = [
+        ("bad\x00name", _doc()),
+        ("ok", _doc(name="check\x00name")),
+        ("ok", _doc(config={"column": "EM\x00AIL"})),
+    ]
+    for suite_name, checks in cases:
+        with pytest.raises(ToolError) as exc:
+            server.import_suite(str(suite.connection_id), name=suite_name, checks=checks)
+        assert "NUL" in str(exc.value)
+
+
+def test_import_suite_bounds_the_suite_columns_in_the_schema() -> None:
+    """`suites.name` is String(128) and `description` String(1024) — a different
+    table from the per-check bounds the service validates, so the service's checks
+    do not cover these. Over-length reaches Postgres and raises
+    StringDataRightTruncation, escaping `_service_errors`."""
+    import asyncio
+
+    tool = asyncio.run(server.mcp.get_tool("import_suite"))
+    assert tool is not None
+    props = tool.parameters["properties"]
+    assert props["name"]["maxLength"] == 128
+    assert props["name"]["minLength"] == 1
+    assert "1024" in str(props["description"])

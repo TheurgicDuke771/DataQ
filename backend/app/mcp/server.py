@@ -189,6 +189,61 @@ def _require_role(user: User, minimum: str) -> None:
         )
 
 
+#: Keys `suite_io_service.import_suite` indexes DIRECTLY (`c["kind"]`,
+#: `c["warn_threshold"]`, …) rather than `.get()`-ing. The REST import route is
+#: immune to a missing one only because its `CheckDocument` Pydantic model always
+#: emits every key, defaulted — MCP has no such model in front of it, so a
+#: hand-composed check that simply omits `warn_threshold` would raise `KeyError`,
+#: which is not a `DataQError` and escapes `_service_errors` as an opaque
+#: internal failure instead of "your check is missing a field".
+_IMPORT_CHECK_KEYS = (
+    "name",
+    "kind",
+    "expectation_type",
+    "config",
+    "warn_threshold",
+    "fail_threshold",
+    "critical_threshold",
+)
+
+
+def _validate_import_document(
+    *, name: str, description: str | None, checks: list[dict[str, Any]]
+) -> None:
+    """Boundary validation for `import_suite` — the shape checks the REST route
+    gets from Pydantic and MCP would otherwise get from nothing.
+
+    Two failure modes, both of which would surface as internal errors rather than
+    actionable ones: a check missing a key the service indexes directly, and a NUL
+    anywhere in the document (Postgres cannot store it in text or JSONB, and the
+    driver raises `ValueError`).
+
+    The NUL screen covers the CHECKS too, not just the suite name. `create_check`
+    screens exactly these fields; import is the second door to the same rows, and
+    a guard applied at one door and not its sibling is the shape this track has
+    now hit three times.
+    """
+    if contains_nul({"name": name, "description": description or ""}):
+        raise ToolError("NUL (\\x00) characters are not allowed in the suite name or description")
+    for index, check in enumerate(checks):
+        if not isinstance(check, dict):
+            raise ToolError(f"checks[{index}] must be an object, got {type(check).__name__}")
+        missing = [key for key in _IMPORT_CHECK_KEYS if key not in check]
+        if missing:
+            raise ToolError(
+                f"checks[{index}] is missing required field(s): {', '.join(missing)}. "
+                "Pass the check objects from `export_suite` unchanged — thresholds "
+                "must be present even when null."
+            )
+        _reject_nul(
+            name=str(check["name"]),
+            expectation_type=str(check["expectation_type"]),
+            kind=str(check["kind"]),
+            config=check["config"] if isinstance(check["config"], dict) else {},
+            dimension=str(check.get("dimension") or ""),
+        )
+
+
 @contextmanager
 def _service_errors() -> Generator[None]:
     """Turn a service-layer DataQError (404/403/422) into a clean ToolError so the
@@ -1668,9 +1723,14 @@ def test_connection(connection_id: str) -> dict[str, Any]:
 @mcp.tool
 def import_suite(
     connection_id: str,
-    name: Annotated[str, Field(min_length=1, max_length=256)],
+    # Bounded to the COLUMNS (`suites.name` is String(128), `description` is
+    # String(1024)), not to the per-check bounds `validate_lengths` applies —
+    # those are a different table. Over-length here reaches Postgres and raises
+    # StringDataRightTruncation, which is not a `DataQError` and so escapes
+    # `_service_errors` as an opaque internal failure.
+    name: Annotated[str, Field(min_length=1, max_length=128)],
     checks: list[dict[str, Any]],
-    description: str | None = None,
+    description: Annotated[str, Field(max_length=1024)] | None = None,
     version: int = 1,
 ) -> dict[str, Any]:
     """Create a whole suite in one call, from an exported suite document.
@@ -1691,7 +1751,7 @@ def import_suite(
     datasources.
     """
     cid = _parse_uuid(connection_id, field="connection_id")
-    _reject_nul(name=name, expectation_type="", kind="", config={}, dimension=description or "")
+    _validate_import_document(name=name, description=description, checks=checks)
     with _ctx() as (session, user), _service_errors():
         # Suite creation is Member+ (ADR 0033), and this is the second door into
         # it — the REST `POST /suites` and `POST /suites/import` both carry
