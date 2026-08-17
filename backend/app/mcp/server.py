@@ -63,6 +63,7 @@ from backend.app.services import (
     run_service,
     run_target,
     schedule_service,
+    suite_io_service,
     suite_service,
     trigger_binding_service,
 )
@@ -919,6 +920,83 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
             # config, not this suite's setting, so they are reported as a source
             # rather than enumerated here.
             "email_recipients": config.email_recipients if config else None,
+        }
+
+
+@mcp.tool
+def get_suite_performance(window_days: int = 7) -> list[dict[str, Any]]:
+    """Rank the suites by data-quality health, worst first.
+
+    Use this for 'which suites are in the worst shape?' or 'where should I look
+    first?'. Returns, per suite: its id, name, a severity-weighted health score
+    (0-100) computed from that suite's **latest completed run**, and a state
+    label (``healthy`` / ``degraded`` / ``critical``). Ordered worst-first, so
+    the top of the list is where attention belongs.
+
+    A suite is **absent** from this list when its latest run produced nothing
+    countable — it has never run, is running now, or its last run failed without
+    a complete account. Absence is therefore "no health to report", not "healthy";
+    use ``list_suites`` to see the full set and which of them are missing here.
+    Scoped to the suites the user can access (a workspace-admin sees the whole
+    workspace).
+    """
+    if window_days < 1 or window_days > 90:
+        raise ToolError("window_days must be between 1 and 90")
+    with _ctx() as (session, user), _service_errors():
+        summary = dashboard_service.dashboard_summary(
+            session,
+            user_id=user.id,
+            window_days=window_days,
+            include_all=is_workspace_admin(user),
+        )
+        return [
+            {
+                "suite_id": str(p.suite_id),
+                "name": p.name,
+                "score": p.score,
+                "state": p.state,
+            }
+            for p in summary.suite_performance
+        ]
+
+
+@mcp.tool
+def export_suite(suite_id: str) -> dict[str, Any]:
+    """Export a suite as a portable document you can review or re-create elsewhere.
+
+    Use this for 'show me the whole orders suite', 'copy these checks to the QA
+    suite', or to diff two suites' definitions against each other. Returns the
+    suite's name and description plus every check in stable creation order, each
+    with its kind, expectation type, DQ dimension, configuration and severity
+    thresholds — the same document the app's export produces, so it can be handed
+    back to DataQ's import.
+
+    It carries **definitions only**: no results, no run history, and no
+    credentials — a comparison check's baseline connection appears as its
+    ``(name, env)`` pair, never as an id or anything resolvable to a secret.
+    Requires view access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    with _ctx() as (session, user), _service_errors():
+        suite = require_permission(session, sid, user.id, minimum="view")
+        doc = suite_io_service.export_suite(session, suite)
+        # Thresholds come back as `Decimal` (NUMERIC columns). The REST route has
+        # Pydantic to serialize them; MCP hands this dict straight to a JSON
+        # encoder, which raises on Decimal — the #1273 class, where a value that
+        # crosses a driver boundary reaches the serializer untouched and takes the
+        # whole response down. Coerced here rather than in `suite_io_service`,
+        # whose document shape is also the import contract.
+        return {
+            **doc,
+            "checks": [
+                {
+                    **check,
+                    "warn_threshold": _num(check.get("warn_threshold")),
+                    "fail_threshold": _num(check.get("fail_threshold")),
+                    "critical_threshold": _num(check.get("critical_threshold")),
+                }
+                for check in doc["checks"]
+            ],
         }
 
 
