@@ -31,7 +31,7 @@ from backend.app.api.v1._base import contains_nul
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.core.roles import is_workspace_admin
+from backend.app.core.roles import ROLE_RANK, is_workspace_admin, resolve_role
 from backend.app.core.secrets import get_secret_store
 from backend.app.db.models import (
     CONNECTION_TYPES,
@@ -131,6 +131,46 @@ def _reject_nul(
         }
     ):
         raise ToolError("NUL (\\x00) characters are not allowed in check fields")
+
+
+def _require_role(user: User, minimum: str) -> None:
+    """Assert the caller holds at least `minimum` workspace role (ADR 0033).
+
+    The MCP-side twin of `core.auth.require_role`. It cannot BE that function:
+    `require_role` is a FastAPI dependency factory built on `Depends`, and there
+    is no request/dependency graph here. What matters is that both resolve the
+    role through the same `core.roles.resolve_role` and rank it with the same
+    `ROLE_RANK`, so the two axes cannot disagree about who is an admin — the
+    module-level policy split exists precisely so a non-FastAPI caller can reach
+    the rule without reimplementing it.
+
+    This is the **coarse** axis. `suite_authz.require_permission` gates a
+    *resource*; this gates *a capability the workspace grants at all*, and the
+    two compose rather than substitute. Most MCP tools need only the resource
+    gate — `require_permission` already caps a Viewer at `view`
+    (`_cap_for_viewer`), so every `minimum="edit"` tool refuses a Viewer without
+    a role check. This function is for the capabilities that are **not**
+    suite-scoped and therefore have no resource ladder to ride: probing a
+    connection, and creating a suite from an imported document.
+
+    Raises `ToolError`, never a 404-shaped denial: unlike the suite ladder there
+    is no existence to hide — the capability is workspace-wide.
+    """
+    if minimum not in ROLE_RANK:
+        # The guard `core.auth.require_role` performs, for the same reason and one
+        # step later. There it is a ValueError at import time (a dependency
+        # factory runs once); here the check happens per call, so an unknown
+        # `minimum` would otherwise raise a raw KeyError *inside* a tool —
+        # escaping `_service_errors`, which maps only `DataQError`, and surfacing
+        # to the client as an internal error rather than a denial.
+        raise ToolError(  # pragma: no cover — programmer error
+            f"unknown workspace role: {minimum!r}"
+        )
+    role = resolve_role(user)
+    if ROLE_RANK[role] < ROLE_RANK[minimum]:
+        raise ToolError(
+            f"This action requires the '{minimum}' workspace role or higher (you are '{role}')."
+        )
 
 
 @contextmanager

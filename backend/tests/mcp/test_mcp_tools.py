@@ -1889,3 +1889,49 @@ def test_list_trigger_bindings_rejects_an_unknown_env(db_session: Any, monkeypat
     _as(monkeypatch, db_session, _user(db_session))
     with pytest.raises(ToolError):
         server.list_trigger_bindings(env="staging")
+
+
+# ──────────────── the coarse workspace-role axis on MCP (ADR 0033) ─────────
+
+
+def test_require_role_ranks_the_same_way_the_rest_gate_does(db_session: Any) -> None:
+    """`_require_role` is the MCP twin of `core.auth.require_role`, which is a
+    FastAPI dependency MCP cannot use. The thing that must hold is that both
+    resolve and rank through the SAME `core.roles` policy, so the two surfaces
+    cannot disagree about who is an admin."""
+    from backend.app.db.models import ADMIN_ROLE, DEFAULT_WORKSPACE_ROLE, VIEWER_ROLE
+
+    viewer = User(aad_object_id=uuid.uuid4().hex, email="v@acme.io", role=VIEWER_ROLE)
+    member = User(aad_object_id=uuid.uuid4().hex, email="m@acme.io", role=DEFAULT_WORKSPACE_ROLE)
+    admin = User(aad_object_id=uuid.uuid4().hex, email="a@acme.io", role=ADMIN_ROLE)
+
+    # A higher tier satisfies a lower requirement; the reverse is refused.
+    server._require_role(admin, DEFAULT_WORKSPACE_ROLE)
+    server._require_role(member, DEFAULT_WORKSPACE_ROLE)
+    server._require_role(admin, ADMIN_ROLE)
+    for user, minimum in [
+        (viewer, DEFAULT_WORKSPACE_ROLE),
+        (viewer, ADMIN_ROLE),
+        (member, ADMIN_ROLE),
+    ]:
+        with pytest.raises(ToolError) as exc:
+            server._require_role(user, minimum)
+        # The denial names both sides, like the REST gate's `have`/`need` detail —
+        # an LLM told only "denied" will retry rather than report why.
+        assert minimum in str(exc.value) and user.role in str(exc.value)
+
+
+def test_require_role_honours_the_admin_email_allowlist(
+    db_session: Any, make_workspace_admin: Any
+) -> None:
+    """The allowlist is ADR 0033's bootstrap seed + break-glass, and `resolve_role`
+    is where the two admin sources compose. Going through `resolve_role` rather
+    than reading `user.role` is what keeps that true here too."""
+    from backend.app.db.models import ADMIN_ROLE, DEFAULT_WORKSPACE_ROLE
+
+    user = User(aad_object_id=uuid.uuid4().hex, email="boot@acme.io", role=DEFAULT_WORKSPACE_ROLE)
+    with pytest.raises(ToolError):
+        server._require_role(user, ADMIN_ROLE)
+
+    make_workspace_admin(user.email)
+    server._require_role(user, ADMIN_ROLE)
