@@ -17,6 +17,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Any
 
@@ -365,8 +366,10 @@ def _check_summary(check: Check) -> dict[str, Any]:
 
     `config` is included deliberately: without it an LLM cannot answer "which
     column does this check?" and has to guess from the name, which is a free-text
-    label. It is bounded at author time (`check_service._reject_oversized_config`),
-    so this can't become an unbounded payload.
+    label. Per-check size is bounded at author time
+    (`check_service._reject_oversized_config` caps each config string) — the
+    *response* is bounded by `list_checks`' own `limit`, since that cap says
+    nothing about how many checks a suite has.
     """
     return {
         "id": str(check.id),
@@ -374,20 +377,41 @@ def _check_summary(check: Check) -> dict[str, Any]:
         "kind": check.kind,
         "expectation_type": check.expectation_type,
         "dimension": check.dimension,
+        # Non-NULL exactly for `kind='comparison'` (a table CHECK enforces the
+        # equivalence): the baseline connection the suite's dataset is diffed
+        # against (ADR 0015). Without it an LLM can describe a comparison check's
+        # rule but not what it compares against — half the answer.
+        "source_connection_id": (
+            str(check.source_connection_id) if check.source_connection_id else None
+        ),
         "config": check.config,
         "warn_threshold": _num(check.warn_threshold),
         "fail_threshold": _num(check.fail_threshold),
         "critical_threshold": _num(check.critical_threshold),
         # Operational, not config: an LLM asked "why did nobody get alerted?"
         # needs to see a live snooze (#370). Null = alerts are active.
+        #
+        # An EXPIRED snooze reads as null, matching the field's advertised meaning
+        # ("currently snoozed") and `suppression`'s own rule (`until > now`).
+        # `snooze_check` never clears the column, so passing the raw value through
+        # would show a month-old timestamp to a client that has no way to know the
+        # comparison is against wall-clock now — i.e. it would report suppression
+        # that is not in force, on exactly the question ("why no alert?") where a
+        # wrong answer is most confidently wrong.
         "alert_snoozed_until": (
-            check.alert_snoozed_until.isoformat() if check.alert_snoozed_until else None
+            check.alert_snoozed_until.isoformat()
+            if check.alert_snoozed_until is not None
+            and check.alert_snoozed_until > datetime.now(UTC)
+            else None
         ),
     }
 
 
 @mcp.tool
-def list_checks(suite_id: str) -> list[dict[str, Any]]:
+def list_checks(
+    suite_id: str,
+    limit: Annotated[int, Field(ge=1, le=500)] = 200,
+) -> dict[str, Any]:
     """List the checks (rules and monitors) configured on one suite.
 
     Use this for 'what does the orders suite actually check?' or before editing a
@@ -396,14 +420,31 @@ def list_checks(suite_id: str) -> list[dict[str, Any]]:
     ``freshness`` / ``volume`` / ``schema_drift`` / ``anomaly`` / ``comparison``),
     the expectation type, its DQ dimension (accuracy / completeness / consistency
     / integrity / timeliness / uniqueness / validity, or null when unclassified),
-    its configuration, any warn/fail/critical severity thresholds, and whether its
-    alerts are currently snoozed. This is the suite's *definition* — for how those
-    checks last performed, use ``get_suite_results``. Requires view access.
+    its configuration, the baseline connection for a comparison check, any
+    warn/fail/critical severity thresholds, and whether its alerts are currently
+    snoozed. This is the suite's *definition* — for how those checks last
+    performed, use ``get_suite_results``.
+
+    At most ``limit`` checks are returned (default 200); ``total`` reports how
+    many the suite actually has, so a truncated list is visible rather than
+    silently mistaken for the whole suite. Requires view access.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
         require_permission(session, sid, user.id, minimum="view")
-        return [_check_summary(c) for c in check_service.list_checks(session, sid)]
+        checks = check_service.list_checks(session, sid)
+        # Truncated in Python, not SQL: `list_checks` is the shared service read
+        # and a `limit` argument on it would be a new service behaviour for one
+        # caller. The row count here is bounded by what a suite can hold, and the
+        # cost this cap actually targets is the CONFIG payload crossing the wire
+        # into a context window, not the fetch. `total` keeps the truncation
+        # honest — a bare list would let an LLM report "the suite has 200 checks".
+        return {
+            "suite_id": suite_id,
+            "total": len(checks),
+            "truncated": len(checks) > limit,
+            "checks": [_check_summary(c) for c in checks[:limit]],
+        }
 
 
 @mcp.tool
@@ -413,7 +454,9 @@ def get_check(suite_id: str, check_id: str) -> dict[str, Any]:
     Use this after ``list_checks`` when you need a single check's exact
     configuration and thresholds — for example before proposing an edit, or to
     explain what a failing check was actually asserting. Returns the same fields
-    as ``list_checks`` plus when the check was created and last modified.
+    as ``list_checks`` (including ``source_connection_id`` — the baseline a
+    comparison check diffs against) plus when the check was created and last
+    modified.
     Requires view access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")

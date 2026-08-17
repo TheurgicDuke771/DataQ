@@ -1,4 +1,4 @@
-"""DB-backed tests for the 8 MCP tools (real Postgres).
+"""DB-backed tests for the MCP tools (real Postgres).
 
 Each tool is a thin wrapper that opens a session, resolves the caller, and calls
 the service layer with per-suite authz. We isolate the tool *logic* by patching
@@ -941,16 +941,18 @@ def test_list_checks_shapes_every_check_on_the_suite(db_session: Any, monkeypatc
     _as(monkeypatch, db_session, user)
 
     out = server.list_checks(str(suite.id))
-    assert len(out) == 1
-    assert out[0]["name"] == "not null email"
-    assert out[0]["kind"] == "expectation"
-    assert out[0]["expectation_type"] == "expect_column_values_to_not_be_null"
-    assert out[0]["dimension"] == "completeness"
+    assert out["total"] == 1 and out["truncated"] is False
+    (check,) = out["checks"]
+    assert check["name"] == "not null email"
+    assert check["kind"] == "expectation"
+    assert check["expectation_type"] == "expect_column_values_to_not_be_null"
+    assert check["dimension"] == "completeness"
     # `config` is what lets an LLM say WHICH column the check covers.
-    assert out[0]["config"] == {"column": "EMAIL"}
-    assert out[0]["warn_threshold"] == 0.01
-    assert out[0]["fail_threshold"] is None
-    assert out[0]["alert_snoozed_until"] is None
+    assert check["config"] == {"column": "EMAIL"}
+    assert check["warn_threshold"] == 0.01
+    assert check["fail_threshold"] is None
+    assert check["alert_snoozed_until"] is None
+    assert check["source_connection_id"] is None
 
 
 def test_list_checks_surfaces_a_live_alert_snooze(db_session: Any, monkeypatch: Any) -> None:
@@ -962,7 +964,8 @@ def test_list_checks_surfaces_a_live_alert_snooze(db_session: Any, monkeypatch: 
     _check(db_session, suite, alert_snoozed_until=until)
     _as(monkeypatch, db_session, user)
 
-    assert server.list_checks(str(suite.id))[0]["alert_snoozed_until"] == until.isoformat()
+    snoozed = server.list_checks(str(suite.id))["checks"][0]["alert_snoozed_until"]
+    assert snoozed == until.isoformat()
 
 
 def test_list_checks_denied_for_inaccessible_suite(db_session: Any, monkeypatch: Any) -> None:
@@ -1087,3 +1090,70 @@ def test_get_check_history_denied_for_inaccessible_suite(db_session: Any, monkey
     _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
     with pytest.raises(ToolError):
         server.get_check_history(str(suite.id), str(check.id))
+
+
+def test_list_checks_reports_an_expired_snooze_as_not_snoozed(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`snooze_check` never clears the column, so a raw pass-through would show a
+    month-old timestamp on the one question ("why was there no alert?") where a
+    wrong answer is most confidently wrong. `suppression` compares against now;
+    so does this."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _check(db_session, suite, alert_snoozed_until=datetime.now(UTC) - timedelta(days=30))
+    _as(monkeypatch, db_session, user)
+
+    assert server.list_checks(str(suite.id))["checks"][0]["alert_snoozed_until"] is None
+
+
+def test_list_checks_reports_a_comparison_checks_baseline_connection(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Non-NULL exactly for `kind='comparison'` (a table CHECK enforces it): an
+    LLM that cannot see it can describe the rule but not what it compares
+    against."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    baseline = _suite(db_session, user).connection_id
+    _check(
+        db_session,
+        suite,
+        kind="comparison",
+        expectation_type="comparison:records",
+        source_connection_id=baseline,
+        config={"source": {"table": "ORDERS"}, "keys": ["ID"]},
+    )
+    _as(monkeypatch, db_session, user)
+
+    (check,) = server.list_checks(str(suite.id))["checks"]
+    assert check["source_connection_id"] == str(baseline)
+    assert server.get_check(str(suite.id), check["id"])["source_connection_id"] == str(baseline)
+
+
+def test_list_checks_truncation_is_visible_not_silent(db_session: Any, monkeypatch: Any) -> None:
+    """A bare truncated list would let an LLM report "the suite has 2 checks"
+    with total confidence. `total` + `truncated` make the cut observable."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    for n in range(3):
+        _check(db_session, suite, name=f"check {n}")
+    _as(monkeypatch, db_session, user)
+
+    out = server.list_checks(str(suite.id), limit=2)
+    assert len(out["checks"]) == 2
+    assert out["total"] == 3
+    assert out["truncated"] is True
+
+
+def test_list_checks_limit_is_bounded_in_the_tool_schema() -> None:
+    import asyncio
+
+    tool = asyncio.run(server.mcp.get_tool("list_checks"))
+    assert tool is not None
+    assert tool.parameters["properties"]["limit"] == {
+        "default": 200,
+        "minimum": 1,
+        "maximum": 500,
+        "type": "integer",
+    }
