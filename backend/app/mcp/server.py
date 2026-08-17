@@ -33,7 +33,16 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import is_workspace_admin
 from backend.app.core.secrets import get_secret_store
-from backend.app.db.models import Check, Connection, Run, Suite, User
+from backend.app.db.models import (
+    CONNECTION_TYPES,
+    ENVS,
+    ORCHESTRATION_PROVIDERS,
+    Check,
+    Connection,
+    Run,
+    Suite,
+    User,
+)
 from backend.app.db.session import get_session
 from backend.app.mcp.auth import (
     McpAuthError,
@@ -363,13 +372,17 @@ def get_adf_pipeline_status(provider: str | None = None, limit: int = 20) -> lis
     """Get recent orchestration pipeline/DAG runs with their correlated DQ result.
 
     Use this for 'did any pipelines fail overnight?' or 'why did the customer
-    pipeline fail?'. Returns the most recent ADF / Airflow pipeline runs —
+    pipeline fail?'. Returns the most recent ADF / Airflow / dbt pipeline runs —
     provider, pipeline/DAG id, run status, start/end times — and, when a DQ suite
     was triggered by that pipeline run (and is visible to the user), the triggered
-    run's id and status. Optionally filter by ``provider`` ('adf' or 'airflow').
+    run's id and status. Optionally filter by ``provider`` ('adf', 'airflow' or
+    'dbt').
     """
-    if provider is not None and provider not in ("adf", "airflow"):
-        raise ToolError("provider must be 'adf' or 'airflow'")
+    # All three orchestration providers (ADR 0029 added dbt), from the shared
+    # vocabulary. The old two-name literal rejected `dbt` — the obvious next call
+    # after `list_trigger_bindings(provider="dbt")` returns a dbt binding.
+    if provider is not None and provider not in ORCHESTRATION_PROVIDERS:
+        raise ToolError(f"provider must be one of {list(ORCHESTRATION_PROVIDERS)}")
     with _ctx() as (session, user):
         runs = orchestration_service.list_pipeline_runs(session, provider=provider, limit=limit)
         accessible = set(
@@ -678,10 +691,17 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
     app if you need it.
 
     A null health timestamp means *unknown* — nothing has polled or run yet —
-    never "healthy". A null ``credential_expires_at`` likewise means this
-    credential type states no readable lifetime, not that it never expires;
-    report both as silence rather than reassurance.
+    never "healthy", and ``consecutive_run_failures`` is likewise null rather
+    than 0 for a connection that has never run. A null ``credential_expires_at``
+    means either that this credential type states no readable lifetime **or**
+    that its expiry has never been read — ``credential_expiry_checked_at`` tells
+    the two apart, and null there means we have never looked. Report all of these
+    as silence rather than reassurance.
     """
+    if type is not None and type not in CONNECTION_TYPES:
+        raise ToolError(f"type must be one of {list(CONNECTION_TYPES)}")
+    if env is not None and env not in ENVS:
+        raise ToolError(f"env must be one of {list(ENVS)}")
     with _ctx() as (session, _user), _service_errors():
         # Connections are workspace-scoped, not suite-scoped: every authenticated
         # caller can list them, exactly as the REST route does. The role axis
@@ -711,9 +731,20 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
                     # from the mapping = no runs yet = unknown, not healthy.
                     "last_run_at": (h.last_run_at.isoformat() if h and h.last_run_at else None),
                     "last_run_error": h.reason if h else None,
-                    "consecutive_run_failures": h.consecutive_failures if h else 0,
+                    # `None`, not 0: a connection absent from the health mapping
+                    # has never run, and rendering that unknown as a concrete zero
+                    # is the reassurance this tool's own docstring forbids.
+                    "consecutive_run_failures": h.consecutive_failures if h else None,
                     "credential_expires_at": (
                         c.credential_expires_at.isoformat() if c.credential_expires_at else None
+                    ),
+                    # Disambiguates the null above (#1024): "this credential type
+                    # has no readable lifetime" and "we have never looked" are
+                    # different facts, and only one of them is reassuring.
+                    "credential_expiry_checked_at": (
+                        c.credential_expiry_checked_at.isoformat()
+                        if c.credential_expiry_checked_at
+                        else None
                     ),
                 }
             )
@@ -729,8 +760,14 @@ def list_schedules(
     Use this for 'when does the orders suite run?', 'what runs overnight?', or
     'is anything scheduled on this suite?'. Returns, per schedule: its id, the
     suite it runs, the cron expression, the timezone that expression is
-    interpreted in, whether it is enabled, and when it last ran. Optionally
-    narrow to one ``suite_id`` or to ``enabled`` true/false.
+    interpreted in, whether it is enabled, when it last ran, and — as
+    ``next_run_at`` — exactly when it fires next. Optionally narrow to one
+    ``suite_id`` or to ``enabled`` true/false.
+
+    Use ``next_run_at`` rather than deriving the next fire from the cron
+    expression yourself: DataQ computes it in the schedule's own timezone and it
+    is therefore already correct across a DST transition, which hand-evaluating
+    a cron string against an IANA zone is not.
 
     A disabled schedule still exists and still reads back here — it simply does
     not fire, so do not describe a suite as unscheduled on the strength of a row
@@ -756,6 +793,10 @@ def list_schedules(
                 "timezone": s.timezone,
                 "enabled": s.enabled,
                 "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
+                # Precomputed by the scheduler in the schedule's own timezone, so
+                # it is already DST-correct — which re-deriving it from `cron` +
+                # `timezone` downstream is not.
+                "next_run_at": s.next_run_at.isoformat(),
             }
             for s in schedules
         ]
@@ -779,14 +820,21 @@ def list_trigger_bindings(
     Only *successful* pipeline completions trigger a suite run; a failure alerts
     but never triggers. Scoped to suites the user can access.
     """
-    if provider is not None and provider not in ("adf", "airflow", "dbt"):
-        raise ToolError("provider must be 'adf', 'airflow' or 'dbt'")
+    # The shared vocabulary, not a third hand-written copy of it: dbt joined the
+    # set in ADR 0029 and a literal here would silently exclude the next provider.
+    if provider is not None and provider not in ORCHESTRATION_PROVIDERS:
+        raise ToolError(f"provider must be one of {list(ORCHESTRATION_PROVIDERS)}")
     with _ctx() as (session, user), _service_errors():
         sid = _parse_uuid(suite_id, field="suite_id") if suite_id is not None else None
         if sid is not None:
             require_permission(session, sid, user.id, minimum="view")
         bindings = trigger_binding_service.list_bindings(
-            session, user_id=user.id, provider=provider, env=env, suite_id=sid
+            session,
+            user_id=user.id,
+            provider=provider,
+            env=env,
+            suite_id=sid,
+            include_all=is_workspace_admin(user),
         )
         return [
             {
@@ -807,9 +855,15 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
 
     Use this for 'who gets told when orders fails?' or 'are alerts even on for
     this suite?'. Returns whether the suite has its own configuration at all
-    (``configured``; when false the workspace defaults apply), whether alerting
-    is enabled, which result severities alert (``alert_on``), whether a Teams and
-    a Slack webhook are configured, and the email recipients.
+    (``configured``), whether alerting is enabled, which result severities alert
+    (``alert_on``), and — per channel — whether a Teams webhook, a Slack webhook
+    and email recipients are in effect, each with whether that comes from the
+    suite's **own** override or from the **workspace** default.
+
+    Read the ``*_source`` fields, not just the booleans, when the question is
+    "who gets told": a suite with no override of its own still alerts through the
+    workspace channels, so per-suite configuration being absent never means
+    nobody is notified.
 
     Webhook **URLs are never returned** — only whether one is set. A webhook URL
     is a bearer credential: anyone holding it can post into that channel, so it
@@ -820,28 +874,51 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
     with _ctx() as (session, user), _service_errors():
         require_permission(session, sid, user.id, minimum="view")
         config = notification_service.get_config(session, sid)
-        if config is None:
-            # Mirrors the REST default row exactly (`notifications._read`): a suite
-            # with no config still alerts, on the defaults — reporting "not
-            # configured" as "no alerts" would be the wrong answer to the question
-            # this tool is asked.
-            return {
-                "suite_id": suite_id,
-                "configured": False,
-                "enabled": True,
-                "alert_on": notification_service.DEFAULT_ALERT_ON,
-                "has_webhook": False,
-                "has_slack_webhook": False,
-                "email_recipients": None,
-            }
+        settings = get_settings()
+
+        # Each channel falls back to the workspace-level setting when the suite
+        # has no override (#633, `notification_service.resolve_*`). Reporting only
+        # the per-suite half — which is all the REST read carries, because the UI
+        # sits inside a per-suite settings panel that says so — would answer "who
+        # gets told when orders fails?" with "nobody" for the commonest
+        # deployment shape: one workspace webhook and no per-suite overrides.
+        #
+        # Presence is derived from the same inputs `resolve_webhook` /
+        # `resolve_slack_webhook` / `resolve_email_recipients` use, and the secret
+        # store is never read here: whether a reference is CONFIGURED is the
+        # question, and resolving it would fetch the credential itself.
+        def _channel(suite_value: Any, workspace_value: Any) -> tuple[bool, str | None]:
+            if suite_value:
+                return True, "suite"
+            if workspace_value:
+                return True, "workspace"
+            return False, None
+
+        has_webhook, webhook_source = _channel(
+            config.webhook_secret_ref if config else None, settings.teams_webhook_secret_name
+        )
+        has_slack, slack_source = _channel(
+            config.slack_webhook_secret_ref if config else None, settings.slack_webhook_secret_name
+        )
+        has_email, email_source = _channel(
+            config.email_recipients if config else None, settings.email_to
+        )
         return {
             "suite_id": suite_id,
-            "configured": True,
-            "enabled": config.enabled,
-            "alert_on": config.alert_on,
-            "has_webhook": config.webhook_secret_ref is not None,
-            "has_slack_webhook": config.slack_webhook_secret_ref is not None,
-            "email_recipients": config.email_recipients,
+            # False = "this suite has no override of its own", NOT "no alerting".
+            "configured": config is not None,
+            "enabled": config.enabled if config else True,
+            "alert_on": config.alert_on if config else notification_service.DEFAULT_ALERT_ON,
+            "has_webhook": has_webhook,
+            "webhook_source": webhook_source,
+            "has_slack_webhook": has_slack,
+            "slack_webhook_source": slack_source,
+            "has_email_recipients": has_email,
+            "email_recipients_source": email_source,
+            # The per-suite override only. Workspace recipients are deployment
+            # config, not this suite's setting, so they are reported as a source
+            # rather than enumerated here.
+            "email_recipients": config.email_recipients if config else None,
         }
 
 

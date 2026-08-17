@@ -23,7 +23,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -33,11 +33,10 @@ from backend.app.db.models import (
     ENVS,
     ORCHESTRATION_PROVIDERS,
     Connection,
-    Share,
-    Suite,
     TriggerBinding,
 )
 from backend.app.orchestration.registry import get_orchestration_provider
+from backend.app.services import suite_service
 from backend.app.services.suite_authz import require_permission
 
 log = get_logger(__name__)
@@ -206,17 +205,24 @@ def list_bindings(
     provider: str | None = None,
     env: str | None = None,
     suite_id: uuid.UUID | None = None,
+    include_all: bool = False,
 ) -> list[TriggerBinding]:
-    """Bindings on suites the user can access (owned or shared), newest first."""
-    accessible = select(Suite.id).where(
-        or_(
-            Suite.created_by == user_id,
-            Suite.id.in_(select(Share.suite_id).where(Share.user_id == user_id)),
-        )
-    )
+    """Bindings on suites the user can access (owned or shared), newest first — or
+    on *every* suite when ``include_all`` (the workspace-admin view, ADR 0027).
+
+    Scoped through `suite_service.accessible_suite_ids`, the same single source of
+    truth the suite/run/schedule reads use, rather than the hand-rolled
+    owned-OR-shared subquery this used to carry. The two were identical, which is
+    precisely why the copy was worth removing: a change to the visibility rule
+    would have silently applied to three surfaces and not this one.
+    """
     stmt = (
         select(TriggerBinding)
-        .where(TriggerBinding.suite_id.in_(accessible))
+        .where(
+            TriggerBinding.suite_id.in_(
+                suite_service.accessible_suite_ids(user_id, include_all=include_all)
+            )
+        )
         .order_by(TriggerBinding.created_at.desc())
     )
     if provider is not None:

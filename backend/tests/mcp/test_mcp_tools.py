@@ -1422,7 +1422,13 @@ def test_list_connections_reports_unknown_health_as_null_not_healthy(
     (conn,) = [c for c in server.list_connections() if c["id"] == str(suite.connection_id)]
     assert conn["last_run_at"] is None
     assert conn["last_run_error"] is None
-    assert conn["consecutive_run_failures"] == 0
+    # `None`, not 0 — a never-run connection is unknown, and a concrete zero is
+    # the reassurance the docstring forbids.
+    assert conn["consecutive_run_failures"] is None
+    # Same distinction on the credential: null expiry could mean "no readable
+    # lifetime" OR "never looked", and only this field tells them apart (#1024).
+    assert conn["credential_expires_at"] is None
+    assert conn["credential_expiry_checked_at"] is None
 
 
 def test_list_connections_surfaces_a_failing_datasource(db_session: Any, monkeypatch: Any) -> None:
@@ -1579,6 +1585,7 @@ def test_get_notification_config_defaults_when_unconfigured(
     assert out["enabled"] is True
     assert out["alert_on"] == "warn"
     assert out["has_webhook"] is False
+    assert out["webhook_source"] is None
 
 
 def test_get_notification_config_reports_webhook_presence_never_the_url(
@@ -1609,8 +1616,12 @@ def test_get_notification_config_reports_webhook_presence_never_the_url(
     assert out["has_slack_webhook"] is False
     assert out["alert_on"] == "fail"
     assert out["email_recipients"] == "ops@acme.io"
-    assert "notif-webhook-abc123" not in str(out)
-    assert not any("webhook" in k and k.startswith("webhook") for k in out)
+    # Asserted on the VALUES against the stored reference, not on field names — a
+    # name-shaped check would have to be revised every time a legitimate field
+    # like `webhook_source` is added, and would still miss a leak under a
+    # differently-named key.
+    stored = db_session.query(SuiteNotification).filter_by(suite_id=suite.id).one()
+    assert stored.webhook_secret_ref not in str(out)
 
 
 def test_get_notification_config_denied_for_inaccessible_suite(
@@ -1621,3 +1632,123 @@ def test_get_notification_config_denied_for_inaccessible_suite(
     _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
     with pytest.raises(ToolError):
         server.get_notification_config(str(suite.id))
+
+
+def test_list_connections_rejects_an_unknown_type_or_env(db_session: Any, monkeypatch: Any) -> None:
+    """An unknown filter value must raise, not return `[]` — which reads as
+    "nothing is connected" (#828), the exact shape `list_trigger_bindings` already
+    guards for `provider`."""
+    _as(monkeypatch, db_session, _user(db_session))
+    with pytest.raises(ToolError):
+        server.list_connections(type="databricks")
+    with pytest.raises(ToolError):
+        server.list_connections(env="staging")
+
+
+def test_list_schedules_reports_the_precomputed_next_fire(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`next_run_at` is computed by the scheduler in the schedule's own timezone
+    and is therefore already DST-correct — which re-deriving it from a cron string
+    against an IANA zone downstream is not."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    when = datetime.now(UTC) + timedelta(hours=6)
+    _schedule(db_session, suite, user, next_run_at=when, timezone="America/Toronto")
+    _as(monkeypatch, db_session, user)
+
+    (sched,) = server.list_schedules()
+    assert sched["next_run_at"] == when.isoformat()
+    assert sched["timezone"] == "America/Toronto"
+
+
+def test_list_trigger_bindings_workspace_admin_sees_unowned_bindings(
+    db_session: Any, monkeypatch: Any, make_workspace_admin: Any
+) -> None:
+    """Parity with `list_schedules`, which got the workspace-admin view in the same
+    commit — an admin seeing every schedule but zero bindings is not a defensible
+    place to land (ADR 0027)."""
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    binding = _binding(db_session, suite, owner)
+    admin = _user(db_session, "admin@acme.io")
+    make_workspace_admin(admin.email)
+    _as(monkeypatch, db_session, admin)
+
+    assert str(binding.id) in {b["id"] for b in server.list_trigger_bindings()}
+
+
+def test_list_trigger_bindings_accepts_every_orchestration_provider(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Driven off the shared vocabulary, so adding a provider can't leave a
+    hardcoded literal behind — the way `dbt` (ADR 0029) was left behind."""
+    from backend.app.db.models import ORCHESTRATION_PROVIDERS
+
+    _as(monkeypatch, db_session, _user(db_session))
+    for provider in ORCHESTRATION_PROVIDERS:
+        assert server.list_trigger_bindings(provider=provider) == []
+
+
+def test_get_adf_pipeline_status_accepts_dbt(db_session: Any, monkeypatch: Any) -> None:
+    """The obvious next call after `list_trigger_bindings(provider="dbt")` returns
+    a dbt binding. It used to raise on a provider DataQ has supported since
+    ADR 0029."""
+    _as(monkeypatch, db_session, _user(db_session))
+    assert server.get_adf_pipeline_status(provider="dbt") == []
+
+
+def test_get_notification_config_credits_the_workspace_channels(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The commonest deployment shape is one workspace webhook and no per-suite
+    overrides. Reporting only the per-suite half answers "who gets told when
+    orders fails?" with "nobody" for exactly that shape.
+    """
+    from backend.app.core.config import get_settings
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    monkeypatch.setenv("TEAMS_WEBHOOK_SECRET_NAME", "workspace-teams-hook")
+    monkeypatch.setenv("EMAIL_TO", "oncall@acme.io")
+    get_settings.cache_clear()
+    _as(monkeypatch, db_session, user)
+    try:
+        out = server.get_notification_config(str(suite.id))
+    finally:
+        get_settings.cache_clear()
+
+    assert out["configured"] is False
+    assert out["has_webhook"] is True
+    assert out["webhook_source"] == "workspace"
+    assert out["has_email_recipients"] is True
+    assert out["email_recipients_source"] == "workspace"
+    # Slack is genuinely unset here, so it stays honestly absent.
+    assert out["has_slack_webhook"] is False
+    assert out["slack_webhook_source"] is None
+    # And the workspace secret NAME is not part of the answer.
+    assert "workspace-teams-hook" not in str(out)
+
+
+def test_get_notification_config_prefers_the_suites_own_override(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    from backend.app.core.config import get_settings
+    from backend.app.db.models import SuiteNotification
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    db_session.add(
+        SuiteNotification(suite_id=suite.id, webhook_secret_ref="suite-hook", alert_on="fail")
+    )
+    db_session.commit()
+    monkeypatch.setenv("TEAMS_WEBHOOK_SECRET_NAME", "workspace-teams-hook")
+    get_settings.cache_clear()
+    _as(monkeypatch, db_session, user)
+    try:
+        out = server.get_notification_config(str(suite.id))
+    finally:
+        get_settings.cache_clear()
+
+    assert out["has_webhook"] is True
+    assert out["webhook_source"] == "suite"
