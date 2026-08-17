@@ -58,6 +58,7 @@ GATES: dict[str, str] = {
     "export_suite": "suite:view",
     "get_check": "suite:view",
     "get_check_history": "suite:view",
+    "get_column_policy": "suite:view",
     "get_notification_config": "suite:view",
     "get_run_results": "suite:view",
     "get_run_status": "suite:view",
@@ -77,10 +78,12 @@ GATES: dict[str, str] = {
     "dryrun_check": "suite:edit",
     "delete_schedule": "suite:edit",
     "profile_column": "suite:edit",
+    "set_column_policy": "suite:edit",
     "suggest_column_policy": "suite:edit",
     "snooze_check": "suite:edit",
     "trigger_suite_run": "suite:edit",
     "update_check": "suite:edit",
+    "update_suite": "suite:edit",
     # ── workspace-role gated: no suite to hang a resource gate on ───────────
     # `test_connection` spends a stored credential against a remote system;
     # `import_suite` CREATES a suite, so there is no existing resource whose

@@ -193,7 +193,7 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 
 ## AI assistants (MCP)
 
-A curated **30-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
+A curated **33-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
 results, checks, runs, connections, schedules, trigger bindings and notification config,
 trigger and cancel runs, poll status, add/update/delete/snooze checks, dry-run a check preview,
 create and delete schedules, create trigger bindings, import a suite, profile columns,

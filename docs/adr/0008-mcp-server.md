@@ -125,3 +125,25 @@ reference, matching the standing exclusions the Tier 1 amendment already recorde
 `list_connections` and `get_notification_config`.
 
 The three standing exclusions from the Tier 1 amendment are unaffected and still hold in full.
+
+## Amendment — Tier 3A coherence tools, 30 → 33 (2026-08-17, issue [#1424](https://github.com/TheurgicDuke771/DataQ/issues/1424))
+
+Three tools that close **dead-ends in the existing surface** rather than adding reach:
+`update_suite`, `get_column_policy`, `set_column_policy`. The split becomes
+**33 tools: 17 read-only, 12 that change state, 4 live-probe**.
+
+They exist because two shipped tools could not finish their own job:
+
+- `import_suite` creates a suite with **no run target**, and `trigger_suite_run` fails fast
+  without one — so an assistant could create a suite it had no way to make runnable.
+  `update_suite` sets the target (validated through the same `SuiteTarget` model the REST route
+  uses) and reports `runnable` explicitly. It also fires the same `dispatch_auto_classify` the
+  REST route does (#634), so a suite made runnable here still derives a redaction policy.
+- `suggest_column_policy` could propose a policy that nothing could read back or apply.
+
+All three gate on `suite_authz.require_permission` against an existing suite, so no new authz
+path is introduced and `tests/support/mcp_gates.GATES` picks them up in the four sweeps.
+
+The exclusions are unchanged. `DELETE /suites/{id}` is now **explicitly** excluded as well: it
+cascades every run and result the suite ever produced, and unlike `delete_check` there is no
+lesser action to steer an assistant toward.

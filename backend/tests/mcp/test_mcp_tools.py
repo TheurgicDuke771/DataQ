@@ -2680,3 +2680,217 @@ def test_tool_descriptions_cross_reference_the_confusable_neighbours() -> None:
     # Un-muting is served by a tool whose NAME says the opposite, so the
     # description has to carry the words a client would search for.
     assert "un-snooze" in snooze and "alerts back on" in snooze
+
+
+# ────────── Tier-3A: suite target + column policy (#1424) ─────────────────
+
+
+def test_update_suite_sets_a_target_and_reports_runnability(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The coherence gap this tool closes: `import_suite` creates a suite with NO
+    target, and `trigger_suite_run` fails fast without one — so before this,
+    an assistant could import a suite and had no way to make it runnable.
+
+    `runnable` is returned rather than left to be inferred from the absence of an
+    error, because that is the question the tool is usually called to fix.
+    """
+    user = _user(db_session)
+    conn_id = _suite(db_session, user).connection_id
+    _as(monkeypatch, db_session, user)
+    imported = server.import_suite(str(conn_id), name="fresh import", checks=[])
+
+    # The gap, demonstrated: no target, and the run tool refuses.
+    assert server.get_suite_results(imported["id"])["run"] is None
+    with pytest.raises(ToolError):
+        server.trigger_suite_run(imported["id"])
+
+    # `runnable` must report BOTH states — a field that is always true would pass
+    # the happy-path assertion below while telling the caller nothing.
+    still_not = server.update_suite(imported["id"], name="fresh import (renamed)")
+    assert still_not["target"] is None
+    assert still_not["runnable"] is False
+
+    out = server.update_suite(imported["id"], target={"table": "ORDERS_V2"})
+    assert out["target"] == {"table": "ORDERS_V2"}
+    assert out["runnable"] is True
+
+
+def test_update_suite_leaves_omitted_fields_alone(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    suite.description = "original"
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    out = server.update_suite(str(suite.id), name="renamed")
+    assert out["name"] == "renamed"
+    assert out["description"] == "original"
+    assert out["target"] == {"table": "ORDERS"}
+
+
+def test_update_suite_rejects_a_target_the_connection_cannot_use(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A flat-file target on a Snowflake connection is a clean error, not a suite
+    that silently fails at run time."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError):
+        server.update_suite(str(suite.id), target={"path": "raw/orders.csv"})
+    db_session.refresh(suite)
+    assert suite.target == {"table": "ORDERS"}
+
+
+def test_column_policy_round_trips_through_get_and_set(db_session: Any, monkeypatch: Any) -> None:
+    """The other coherence gap: `suggest_column_policy` could propose a policy that
+    nothing could read back or apply."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    before = server.get_column_policy(str(suite.id))
+    assert before["configured"] is False
+    assert before["pii_columns"] == []
+
+    server.set_column_policy(str(suite.id), pii_columns=["EMAIL"], identifier_column="ORDER_ID")
+    after = server.get_column_policy(str(suite.id))
+    assert after["configured"] is True
+    assert after["identifier_column"] == "ORDER_ID"
+    assert after["pii_columns"] == ["EMAIL"]
+
+
+def test_set_column_policy_actually_changes_what_samples_show(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Applying the policy has to move the redaction, not just store a row — this
+    is the whole point of the suggest → apply loop, and asserting on the stored
+    JSONB alone would pass even if nothing consumed it."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite, config={"column": "NOTE"})
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(
+        Result(
+            run_id=run.id,
+            check_id=check.id,
+            status="fail",
+            sample_failures={
+                "unexpected_index_list": [{"NOTE": "call me on 555-0100", "ORDER_ID": "A-1"}]
+            },
+        )
+    )
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    shown = str(server.get_suite_results(str(suite.id))["checks"][0]["sample_failures"])
+    assert "555-0100" in shown
+
+    server.set_column_policy(str(suite.id), pii_columns=["NOTE"], identifier_column="ORDER_ID")
+    masked = str(server.get_suite_results(str(suite.id))["checks"][0]["sample_failures"])
+    assert "555-0100" not in masked
+    assert "A-1" in masked, "the identifier column must stay visible to locate the row"
+
+
+def test_set_column_policy_refuses_an_identifier_that_is_also_pii(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Masking the very column meant to locate the row is self-defeating, and the
+    service rejects it — surfaced here as a clean error rather than a crash."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError):
+        server.set_column_policy(str(suite.id), pii_columns=["EMAIL"], identifier_column="EMAIL")
+
+
+def test_update_suite_nul_guard_cannot_be_shadowed_by_a_target_key(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The guard merged `target` over `name` in one dict, so a target key called
+    "name" replaced the value being checked and the NUL reached Postgres as an
+    uncaught driver error. Namespacing the buckets is the fix; this pins it."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError) as exc:
+        server.update_suite(
+            str(suite.id), name="bad\x00name", target={"name": "decoy", "table": "T"}
+        )
+    assert "NUL" in str(exc.value)
+
+
+def test_set_column_policy_nul_guard_cannot_be_shadowed_by_a_column_name(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Same shadowing shape: `dict.fromkeys(pii_columns, "")` let a PII column
+    literally named "identifier_column" overwrite the checked identifier."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError) as exc:
+        server.set_column_policy(
+            str(suite.id), pii_columns=["identifier_column"], identifier_column="ID\x00"
+        )
+    assert "NUL" in str(exc.value)
+
+
+def test_update_suite_validates_the_target_shape_not_just_its_fields(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`suite_service` validates the target's field COMBINATION per connection
+    type; `SuiteTarget` is what validates `file_format` and rejects unknown keys.
+    Without routing through it, `{"file_format": "xlsx"}` saved cleanly and then
+    failed every run — a config error deferred to execution."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError) as exc:
+        server.update_suite(str(suite.id), target={"path": "raw/x.xlsx", "file_format": "xlsx"})
+    assert "invalid run target" in str(exc.value)
+    db_session.refresh(suite)
+    assert suite.target == {"table": "ORDERS"}
+
+
+def test_update_suite_triggers_auto_classify_like_the_rest_route(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """REST parity (#634). Without it a suite imported and made runnable over MCP
+    never derives a redaction policy, and captures failing samples with no row
+    locator — invisible until someone reads a sample and finds nothing to
+    identify the row by."""
+    dispatched: list[Any] = []
+    user = _user(db_session)
+    conn_id = _suite(db_session, user).connection_id
+    _as(monkeypatch, db_session, user)
+    monkeypatch.setattr(run_dispatch, "dispatch_auto_classify", lambda sid: dispatched.append(sid))
+    imported = server.import_suite(str(conn_id), name="needs a policy", checks=[])
+
+    server.update_suite(imported["id"], target={"table": "ORDERS"})
+    assert dispatched == [uuid.UUID(imported["id"])]
+
+    # Never re-derived once a policy exists — that would clobber a user's own.
+    dispatched.clear()
+    server.set_column_policy(imported["id"], pii_columns=["EMAIL"])
+    server.update_suite(imported["id"], target={"table": "ORDERS_V2"})
+    assert dispatched == []
+
+
+def test_column_policy_bounds_are_advertised_in_the_tool_schema() -> None:
+    """The policy is walked on every read-time redaction, so an unbounded list is
+    paid on every sample render rather than once at write."""
+    import asyncio
+
+    tool = asyncio.run(server.mcp.get_tool("set_column_policy"))
+    assert tool is not None
+    props = tool.parameters["properties"]
+    assert props["pii_columns"]["maxItems"] == 200
+    assert "255" in str(props["identifier_column"])
