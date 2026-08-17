@@ -1235,8 +1235,15 @@ def update_check(
     """Change an existing check's definition — a partial update.
 
     Use this for 'loosen the null check on email to warn at 2%' or 'rename that
-    check'. Only the arguments you pass are changed; anything you omit is left
-    exactly as it was.
+    check'. Omitted **arguments** are left as they were.
+
+    ``config`` is the exception, and it matters: passing it **replaces the whole
+    configuration**, it does not merge into it. So to change one setting you must
+    send the complete config with that one setting altered — read the check first
+    with ``get_check`` and edit what you get back. Sending only the key you want
+    to change silently drops every other key: raising ``max_value`` on a
+    between-check by sending ``{"max_value": 100}`` deletes its ``min_value``, and
+    because the result is still a valid check it saves and reports success.
 
     Because omission means "leave alone", there is **no way to clear a field back
     to empty** through this tool — a threshold or dimension you want removed

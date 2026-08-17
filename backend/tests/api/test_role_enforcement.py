@@ -31,7 +31,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.core.secret_names import connection_secret_ref
-from backend.app.db.models import Connection, Run, Share, Suite, User
+from backend.app.db.models import Check, Connection, Run, Share, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import share_service, suite_authz
@@ -51,8 +51,16 @@ _SF_CONFIG = {
     "role": "DQ_ROLE",
 }
 
-#: Sentinel for a probe needing a REAL run row (see `_assert_tool_denies`).
+#: Sentinels for probes needing a REAL row, substituted in `_assert_tool_denies`.
+#:
+#: Both exist for the same reason: these tools look the row up BEFORE gating, so a
+#: fabricated id returns "run not found" / "check not found" — both in the
+#: accepted-denial vocabulary — and the sweep passes without the authz gate ever
+#: being reached. The run sentinel was added when that was noticed for `run_id`;
+#: the check one was missed until a reviewer mutation-verified it, which is the
+#: whole argument for checking that a guard can fail rather than trusting it.
 _REAL_RUN = "<a real run, substituted at probe time>"
+_REAL_CHECK = "<a real check, substituted at probe time>"
 
 #: Every role, so a matrix test can't silently skip a tier.
 ROLES = ("admin", "member", "viewer")
@@ -601,14 +609,20 @@ def _assert_tool_denies(
     # for the wrong reason" — a missing probe silently reading as a pass.
     args = _viewer_probe_args(tool_name, suite)
     if args.get("run_id") == _REAL_RUN:
-        # A REAL run on the unshared suite, not a fabricated id. The run tools look
-        # the run up before gating, so a made-up id returns "run not found" —
-        # which is in the accepted-denial vocabulary and would pass this test
-        # without the authz gate ever being reached.
         run = Run(suite_id=suite.id, status="succeeded")
         db_session.add(run)
         db_session.commit()
         args = {**args, "run_id": str(run.id)}
+    if args.get("check_id") == _REAL_CHECK:
+        check = Check(
+            suite_id=suite.id,
+            name="authz probe target",
+            expectation_type="expect_column_values_to_not_be_null",
+            config={"column": "EMAIL"},
+        )
+        db_session.add(check)
+        db_session.commit()
+        args = {**args, "check_id": str(check.id)}
 
     @contextmanager
     def _as_principal() -> Any:
@@ -640,7 +654,6 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
     guard that stops a newly-declared tool from being silently skipped.
     """
     sid = str(suite.id)
-    fake = str(uuid.uuid4())
     per_tool: dict[str, dict[str, Any]] = {
         # suite:edit
         "trigger_suite_run": {"suite_id": sid},
@@ -651,9 +664,9 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
             "config": {"column": "EMAIL"},
         },
         "profile_column": {"suite_id": sid, "columns": ["EMAIL"]},
-        "update_check": {"suite_id": sid, "check_id": fake, "name": "renamed"},
-        "delete_check": {"suite_id": sid, "check_id": fake},
-        "snooze_check": {"suite_id": sid, "check_id": fake, "hours": 2},
+        "update_check": {"suite_id": sid, "check_id": _REAL_CHECK, "name": "renamed"},
+        "delete_check": {"suite_id": sid, "check_id": _REAL_CHECK},
+        "snooze_check": {"suite_id": sid, "check_id": _REAL_CHECK, "hours": 2},
         "dryrun_check": {
             "suite_id": sid,
             "expectation_type": "expect_column_values_to_not_be_null",
@@ -661,8 +674,8 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
         },
         # suite:view
         "export_suite": {"suite_id": sid},
-        "get_check": {"suite_id": sid, "check_id": fake},
-        "get_check_history": {"suite_id": sid, "check_id": fake},
+        "get_check": {"suite_id": sid, "check_id": _REAL_CHECK},
+        "get_check_history": {"suite_id": sid, "check_id": _REAL_CHECK},
         "get_notification_config": {"suite_id": sid},
         "get_suite_results": {"suite_id": sid},
         "list_checks": {"suite_id": sid},

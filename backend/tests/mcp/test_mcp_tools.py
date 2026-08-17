@@ -2142,3 +2142,37 @@ def test_dryrun_check_redacts_observed_values_like_the_results_tools(
         config={"column": "STATUS"},
     )
     assert "SHIPPED" in str(shown["observed_value"])
+
+
+def test_update_check_config_replaces_wholesale_which_the_docstring_warns_about(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`config` is assigned, not merged — the one argument where "omitted means
+    unchanged" does NOT extend to the keys inside it.
+
+    Pinned because the failure is silent and plausible: sending only the key you
+    meant to change drops the rest, the result is still a valid check, so it saves
+    and reports success. This is REST's own PATCH semantics, so the fix is the
+    docstring telling an LLM to read-modify-write rather than a divergence here.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(
+        db_session,
+        suite,
+        expectation_type="expect_column_values_to_be_between",
+        config={"column": "AMT", "min_value": 0, "max_value": 10},
+    )
+    _as(monkeypatch, db_session, user)
+
+    out = server.update_check(
+        str(suite.id), str(check.id), config={"column": "AMT", "max_value": 100}
+    )
+    assert out["config"] == {"column": "AMT", "max_value": 100}
+    assert "min_value" not in out["config"]
+
+    # The documented safe path — read, edit, write back — keeps everything.
+    current = dict(server.get_check(str(suite.id), str(check.id))["config"])
+    current["max_value"] = 200
+    restored = server.update_check(str(suite.id), str(check.id), config=current)
+    assert restored["config"] == {"column": "AMT", "max_value": 200}
