@@ -16,10 +16,17 @@ from typing import Any
 
 import pytest
 from fastmcp.exceptions import ToolError
+from sqlalchemy import select
 
 from backend.app.db.models import Check, Connection, PipelineRun, Result, Run, Suite, User
 from backend.app.mcp import server
-from backend.app.services import profile_service, run_dispatch
+from backend.app.services import (
+    check_service,
+    dryrun_service,
+    profile_service,
+    run_dispatch,
+    run_service,
+)
 
 
 def _user(db_session: Any, email: str = "ada@acme.io") -> User:
@@ -1935,3 +1942,203 @@ def test_require_role_honours_the_admin_email_allowlist(
 
     make_workspace_admin(user.email)
     server._require_role(user, ADMIN_ROLE)
+
+
+# ───────────────────── Tier-2 check mutations (#529) ──────────────────────
+
+
+def test_update_check_leaves_omitted_fields_alone(db_session: Any, monkeypatch: Any) -> None:
+    """PATCH semantics: omission means "unchanged", not "clear". The tool docstring
+    tells an LLM this outright, because the natural repair for a field it wants
+    gone — passing 0 or "" — would SET that value, not remove it."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite, dimension="completeness", warn_threshold=Decimal("0.01"))
+    _as(monkeypatch, db_session, user)
+
+    out = server.update_check(str(suite.id), str(check.id), name="renamed")
+    assert out["name"] == "renamed"
+    assert out["warn_threshold"] == 0.01
+    assert out["dimension"] == "completeness"
+    assert out["config"] == {"column": "EMAIL"}
+
+
+def test_update_check_converts_thresholds_without_binary_float_drift(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`Decimal(0.05)` binds the binary float's full expansion, so the stored
+    threshold would not be the number asked for. `_dec` goes via `str`."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite)
+    _as(monkeypatch, db_session, user)
+
+    server.update_check(str(suite.id), str(check.id), fail_threshold=0.05)
+    db_session.refresh(check)
+    assert check.fail_threshold == Decimal("0.05")
+
+
+def test_update_check_records_a_new_version(db_session: Any, monkeypatch: Any) -> None:
+    """Every update snapshots the post-update state (#280), so a change made by an
+    LLM is as reviewable and reversible as one made in the app."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite)
+    _as(monkeypatch, db_session, user)
+
+    before = len(check_service.list_check_versions(db_session, suite.id, check.id))
+    server.update_check(str(suite.id), str(check.id), name="renamed")
+    after = check_service.list_check_versions(db_session, suite.id, check.id)
+    assert len(after) == before + 1
+    assert after[0].changed_by == user.id
+
+
+def test_update_check_cross_suite_is_refused(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    mine = _suite(db_session, user)
+    foreign = _check(db_session, _suite(db_session, _user(db_session, "o@acme.io")))
+    _as(monkeypatch, db_session, user)
+    with pytest.raises(ToolError):
+        server.update_check(str(mine.id), str(foreign.id), name="x")
+
+
+def test_delete_check_removes_it_and_names_what_went(db_session: Any, monkeypatch: Any) -> None:
+    """The name is read BEFORE the delete: an LLM confirming "removed the row-count
+    check" cannot look it up afterwards, and an id alone is not a confirmation a
+    user can check."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite, name="row count")
+    _as(monkeypatch, db_session, user)
+
+    out = server.delete_check(str(suite.id), str(check.id))
+    assert out == {"deleted": True, "check_id": str(check.id), "name": "row count"}
+    assert db_session.get(Check, check.id) is None
+
+
+def test_delete_check_also_destroys_its_result_history(db_session: Any, monkeypatch: Any) -> None:
+    """`results.check_id` is `ondelete="CASCADE"`, so a delete takes the history
+    with it.
+
+    This test was written to prove the opposite — the docstring first claimed past
+    results survive — and failing it is what sent me to the FK. Pinned here
+    because the tool's docstring is the only warning an LLM gets before doing
+    something irreversible, and a docstring that under-describes the blast radius
+    is worse than no docstring at all.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite)
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="pass"))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    server.delete_check(str(suite.id), str(check.id))
+    assert run_service.list_results(db_session, run.id) == []
+
+
+def test_snooze_check_sets_and_clears_one_piece_of_state(db_session: Any, monkeypatch: Any) -> None:
+    """One tool, not a snooze/unsnooze pair: it is a single field with two values,
+    and two names for it would be a selection problem for no gain."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite)
+    _as(monkeypatch, db_session, user)
+
+    snoozed = server.snooze_check(str(suite.id), str(check.id), hours=4)
+    assert snoozed["snoozed"] is True
+    assert snoozed["alert_snoozed_until"] is not None
+
+    cleared = server.snooze_check(str(suite.id), str(check.id))
+    assert cleared["snoozed"] is False
+    assert cleared["alert_snoozed_until"] is None
+
+
+def test_snooze_check_bounds_hours_in_the_tool_schema() -> None:
+    """An LLM-supplied duration arrives unbounded — a negative would set a snooze
+    in the PAST (silently no-op, reported as success), and an absurd one would
+    mute a check for centuries."""
+    import asyncio
+
+    tool = asyncio.run(server.mcp.get_tool("snooze_check"))
+    assert tool is not None
+    schema = tool.parameters["properties"]["hours"]
+    text = str(schema)
+    assert "exclusiveMinimum" in text or "minimum" in text
+    assert "8760" in text
+
+
+def test_dryrun_check_persists_nothing(db_session: Any, monkeypatch: Any) -> None:
+    """The whole point of the authoring loop: preview, adjust, preview — with no
+    check row, no run and no result left behind."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    monkeypatch.setattr(
+        dryrun_service,
+        "dry_run_check",
+        lambda *a, **k: SimpleNamespace(
+            status="pass",
+            metric_value=Decimal("0.0"),
+            observed_value={"unexpected_count": 0},
+            expected_value={"max": 0},
+        ),
+    )
+
+    out = server.dryrun_check(
+        str(suite.id),
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+    )
+    assert out["status"] == "pass"
+    assert out["metric_value"] == 0.0
+    assert db_session.scalars(select(Check).where(Check.suite_id == suite.id)).all() == []
+    assert db_session.scalars(select(Run).where(Run.suite_id == suite.id)).all() == []
+
+
+def test_dryrun_check_redacts_observed_values_like_the_results_tools(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The REST dry-run route does NOT redact (#1419) — defensible there, where the
+    consumer is the author's own editor panel. Here the consumer is a model that
+    will quote the value onward, and `get_suite_results` would mask this very
+    column on this very suite: an LLM seeing a value in one and a mask in the
+    other has no way to tell which is the truth.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    suite.column_policy = {"pii_columns": ["EMAIL"]}
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    def _fake(*_a: Any, **kwargs: Any) -> Any:
+        column = kwargs["config"]["column"]
+        values = ["ada@acme.io"] if column == "EMAIL" else ["SHIPPED", "PENDING"]
+        return SimpleNamespace(
+            status="fail",
+            metric_value=Decimal("3"),
+            observed_value={"observed_value": values},
+            expected_value=None,
+        )
+
+    monkeypatch.setattr(dryrun_service, "dry_run_check", _fake)
+
+    masked = server.dryrun_check(
+        str(suite.id),
+        expectation_type="expect_column_values_to_be_in_set",
+        config={"column": "EMAIL"},
+    )
+    assert "ada@acme.io" not in str(masked["observed_value"])
+
+    # And a non-sensitive column still shows its values — a redactor that masks
+    # everything is not a redactor, it is a blindfold, and the preview would be
+    # useless for the authoring loop it exists to serve.
+    shown = server.dryrun_check(
+        str(suite.id),
+        expectation_type="expect_column_values_to_be_in_set",
+        config={"column": "STATUS"},
+    )
+    assert "SHIPPED" in str(shown["observed_value"])

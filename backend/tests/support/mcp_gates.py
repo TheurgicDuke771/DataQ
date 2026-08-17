@@ -70,8 +70,12 @@ GATES: dict[str, str] = {
     # comment group before this table existed — exactly the miscategorisation a
     # comment cannot catch and a driven test can.
     "create_check": "suite:edit",
+    "delete_check": "suite:edit",
+    "dryrun_check": "suite:edit",
     "profile_column": "suite:edit",
+    "snooze_check": "suite:edit",
     "trigger_suite_run": "suite:edit",
+    "update_check": "suite:edit",
 }
 
 #: Gates whose tools must refuse a **Viewer**.

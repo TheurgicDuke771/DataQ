@@ -651,6 +651,14 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
             "config": {"column": "EMAIL"},
         },
         "profile_column": {"suite_id": sid, "columns": ["EMAIL"]},
+        "update_check": {"suite_id": sid, "check_id": fake, "name": "renamed"},
+        "delete_check": {"suite_id": sid, "check_id": fake},
+        "snooze_check": {"suite_id": sid, "check_id": fake, "hours": 2},
+        "dryrun_check": {
+            "suite_id": sid,
+            "expectation_type": "expect_column_values_to_not_be_null",
+            "config": {"column": "EMAIL"},
+        },
         # suite:view
         "export_suite": {"suite_id": sid},
         "get_check": {"suite_id": sid, "check_id": fake},
