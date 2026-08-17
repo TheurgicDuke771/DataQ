@@ -22,7 +22,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/00
     [0032](adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 30 tools and per-suite permissions. Two rejections are deliberate in that
+    all 33 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -80,7 +80,7 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 30 tools
+## The 33 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
@@ -115,6 +115,7 @@ succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 
 | `get_suite_results` | "What failed in suite X?" — latest run's per-check outcomes |
 | `get_suite_performance` | "Which suites are in the worst shape?" — a worst-first health ranking |
 | `get_health_score` | "How healthy is data quality overall?" — score, pass rate, trend |
+| `update_suite` | "Point the orders suite at ANALYTICS.ORDERS_V2" — renames a suite or sets **what it runs against**; an imported suite has no target and cannot run until this sets one. Returns `runnable` |
 | `export_suite` | "Show me the whole orders suite" — every check's definition as one portable document |
 
 ### Checks
@@ -140,6 +141,8 @@ succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 
 | `trigger_suite_run` | "Run the orders suite" — dispatches a run, returns the run id |
 | `cancel_run` | "Stop the orders run, I triggered the wrong suite" — cancels a queued or still-running run; cooperative, so a fast run may finish first |
 | `profile_column` | "Profile the qty column" — live null/distinct/min/max/top-values stats |
+| `get_column_policy` | "Is the email column masked in failure samples?" — the suite's redaction policy; an empty one means no suite-level override, **not** that nothing is masked |
+| `set_column_policy` | "Mask the email column in failure samples" — applies what `suggest_column_policy` proposed; replaces the whole policy |
 | `suggest_column_policy` | "Which columns here are sensitive?" — suggests (never saves) a PII redaction policy by profiling the suite's target live |
 
 ### Connections & orchestration

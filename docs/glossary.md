@@ -16,7 +16,7 @@
 | **Trigger binding** | A mapping `(provider, pipeline/DAG, env) → suite` that runs a suite when a pipeline succeeds. |
 | **`pipeline_runs` vs `runs`** | Orchestration runs vs DataQ check runs — linked, never conflated. |
 | **Secret store** | Where credentials live — Azure Key Vault / AWS Secrets Manager / OpenBao (prod) or env/redis (dev), behind one seam. |
-| **MCP** | Model Context Protocol — DataQ exposes 30 curated tools at `/mcp` for AI assistants (16 read-only, 10 that change state, 4 live-probe tools gated like writes). |
+| **MCP** | Model Context Protocol — DataQ exposes 33 curated tools at `/mcp` for AI assistants (17 read-only, 12 that change state, 4 live-probe tools gated like writes). |
 | **ADR** | Architecture Decision Record — `docs/adr/`, one markdown per significant decision. |
 
 ## Contact / ownership

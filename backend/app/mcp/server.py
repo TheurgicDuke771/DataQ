@@ -1831,13 +1831,38 @@ def update_suite(
     Requires edit access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
-    if contains_nul({"name": name or "", "description": description or "", **(target or {})}):
+    # Namespaced, NOT merged into one dict: a `target` key called "name" would
+    # shadow the suite name and slip a NUL past the check — #567's class defeated
+    # by dict-merge shadowing rather than by a missing guard.
+    if contains_nul({"name": name or "", "description": description or "", "target": target or {}}):
         raise ToolError("NUL (\\x00) characters are not allowed in a suite's fields")
+    # Through the REST route's own request model, not a hand-rolled check: it is
+    # what validates `file_format`, caps every string, and rejects unknown keys.
+    # Passing the raw dict to the service saved an `xlsx` file_format that then
+    # failed every run — a config error deferred to execution.
+    parsed = _parse_suite_target(target)
     with _ctx() as (session, user), _service_errors():
-        require_permission(session, sid, user.id, minimum="edit")
+        suite = require_permission(session, sid, user.id, minimum="edit")
+        had_policy = suite.column_policy is not None
+        old_target = dict(suite.target) if suite.target else None
         suite = suite_service.update_suite(
-            session, sid, name=name, description=description, target=target
+            session, sid, name=name, description=description, target=parsed
         )
+        # Parity with the REST route (#634): a target-setting update on a
+        # policy-less suite gets the same best-effort auto-classify as create.
+        # Without it, a suite imported and made runnable over MCP never derives a
+        # redaction policy and captures failing samples with no row locator.
+        if parsed is not None and suite.target is not None and suite.column_policy is None:
+            run_dispatch.dispatch_auto_classify(suite.id)
+        elif had_policy and parsed is not None and parsed != old_target:
+            # Re-pointing a policied suite can strand its policy — the stored
+            # columns may not exist in the new target. Deliberately not
+            # re-derived (#642); made observable instead (#643).
+            log.warning(
+                "suite_policy_possibly_stale",
+                suite_id=str(suite.id),
+                reason="target_changed_on_policied_suite",
+            )
         return {
             "id": str(suite.id),
             "name": suite.name,
@@ -1881,8 +1906,11 @@ def get_column_policy(suite_id: str) -> dict[str, Any]:
 @mcp.tool
 def set_column_policy(
     suite_id: str,
-    pii_columns: list[str],
-    identifier_column: str | None = None,
+    # Bounded like the REST twin: the policy is walked on every read-time
+    # redaction, so an unbounded list from an LLM argument is paid on every
+    # sample render, not once at write.
+    pii_columns: Annotated[list[str], Field(max_length=200)],
+    identifier_column: Annotated[str, Field(max_length=255)] | None = None,
 ) -> dict[str, Any]:
     """Set which columns are masked in this suite's failing-sample rows.
 
@@ -1894,17 +1922,24 @@ def set_column_policy(
 
     **This replaces the whole policy**, it does not add to it: send the complete
     list, and read the current one with ``get_column_policy`` first if you are
-    adding a column. Passing an empty ``pii_columns`` clears the suite's override
-    — it does not disable masking, because the datasource-tag governance floor
-    still applies underneath and overrules this policy.
+    adding a column.
 
-    Affects how samples are *displayed* from now on, including for runs that have
-    already happened; it does not alter any stored data. Requires edit access.
+    Passing an empty ``pii_columns`` does **not** clear the override — it stores
+    an empty policy, which still counts as configured and permanently opts the
+    suite out of automatic PII classification. There is no way to un-set a policy
+    from here; if that is what the user wants, say so rather than sending an
+    empty list.
+
+    What changes is how samples are **displayed**. Masking applies immediately,
+    including to runs that already happened. ``identifier_column`` does **not**
+    apply retroactively: it is used at capture time to choose which locator column
+    to record, so a past run shows whichever identifier was in force when it ran.
+    Requires edit access.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
-    if contains_nul(
-        {"identifier_column": identifier_column or "", **dict.fromkeys(pii_columns, "")}
-    ):
+    # Namespaced for the same reason as `update_suite`: a PII column literally
+    # named "identifier_column" would otherwise shadow the checked value.
+    if contains_nul({"identifier_column": identifier_column or "", "pii_columns": pii_columns}):
         raise ToolError("NUL (\\x00) characters are not allowed in a column policy")
     with _ctx() as (session, user), _service_errors():
         require_permission(session, sid, user.id, minimum="edit")
@@ -1917,6 +1952,29 @@ def set_column_policy(
             "identifier_column": policy.get("identifier_column"),
             "pii_columns": policy.get("pii_columns", []),
         }
+
+
+def _parse_suite_target(target: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Validate a raw target dict through the REST route's own `SuiteTarget` model.
+
+    Imported at call time to keep the API layer out of this module's import graph
+    (it already borrows `contains_nul` from `api.v1._base` the same way).
+
+    Worth routing through rather than trusting the service: `suite_service`
+    validates the target's *field combination* per connection type, but
+    `SuiteTarget` is what validates `file_format` against `csv|parquet`, caps
+    every string, and rejects unknown keys.
+    """
+    if target is None:
+        return None
+    from pydantic import ValidationError
+
+    from backend.app.api.v1.suites import SuiteTarget
+
+    try:
+        return SuiteTarget.model_validate(target).to_storage()
+    except ValidationError as exc:
+        raise ToolError(f"invalid run target: {exc.errors(include_url=False)}") from exc
 
 
 def _profile_target_defaults(

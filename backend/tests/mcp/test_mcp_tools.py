@@ -2807,3 +2807,90 @@ def test_set_column_policy_refuses_an_identifier_that_is_also_pii(
 
     with pytest.raises(ToolError):
         server.set_column_policy(str(suite.id), pii_columns=["EMAIL"], identifier_column="EMAIL")
+
+
+def test_update_suite_nul_guard_cannot_be_shadowed_by_a_target_key(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The guard merged `target` over `name` in one dict, so a target key called
+    "name" replaced the value being checked and the NUL reached Postgres as an
+    uncaught driver error. Namespacing the buckets is the fix; this pins it."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError) as exc:
+        server.update_suite(
+            str(suite.id), name="bad\x00name", target={"name": "decoy", "table": "T"}
+        )
+    assert "NUL" in str(exc.value)
+
+
+def test_set_column_policy_nul_guard_cannot_be_shadowed_by_a_column_name(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Same shadowing shape: `dict.fromkeys(pii_columns, "")` let a PII column
+    literally named "identifier_column" overwrite the checked identifier."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError) as exc:
+        server.set_column_policy(
+            str(suite.id), pii_columns=["identifier_column"], identifier_column="ID\x00"
+        )
+    assert "NUL" in str(exc.value)
+
+
+def test_update_suite_validates_the_target_shape_not_just_its_fields(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`suite_service` validates the target's field COMBINATION per connection
+    type; `SuiteTarget` is what validates `file_format` and rejects unknown keys.
+    Without routing through it, `{"file_format": "xlsx"}` saved cleanly and then
+    failed every run — a config error deferred to execution."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError) as exc:
+        server.update_suite(str(suite.id), target={"path": "raw/x.xlsx", "file_format": "xlsx"})
+    assert "invalid run target" in str(exc.value)
+    db_session.refresh(suite)
+    assert suite.target == {"table": "ORDERS"}
+
+
+def test_update_suite_triggers_auto_classify_like_the_rest_route(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """REST parity (#634). Without it a suite imported and made runnable over MCP
+    never derives a redaction policy, and captures failing samples with no row
+    locator — invisible until someone reads a sample and finds nothing to
+    identify the row by."""
+    dispatched: list[Any] = []
+    user = _user(db_session)
+    conn_id = _suite(db_session, user).connection_id
+    _as(monkeypatch, db_session, user)
+    monkeypatch.setattr(run_dispatch, "dispatch_auto_classify", lambda sid: dispatched.append(sid))
+    imported = server.import_suite(str(conn_id), name="needs a policy", checks=[])
+
+    server.update_suite(imported["id"], target={"table": "ORDERS"})
+    assert dispatched == [uuid.UUID(imported["id"])]
+
+    # Never re-derived once a policy exists — that would clobber a user's own.
+    dispatched.clear()
+    server.set_column_policy(imported["id"], pii_columns=["EMAIL"])
+    server.update_suite(imported["id"], target={"table": "ORDERS_V2"})
+    assert dispatched == []
+
+
+def test_column_policy_bounds_are_advertised_in_the_tool_schema() -> None:
+    """The policy is walked on every read-time redaction, so an unbounded list is
+    paid on every sample render rather than once at write."""
+    import asyncio
+
+    tool = asyncio.run(server.mcp.get_tool("set_column_policy"))
+    assert tool is not None
+    props = tool.parameters["properties"]
+    assert props["pii_columns"]["maxItems"] == 200
+    assert "255" in str(props["identifier_column"])

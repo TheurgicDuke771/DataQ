@@ -75,7 +75,7 @@ Portability, auto-monitors, and polish on top of v1:
   and MCP (ADR 0026).
 - **Workspace-admin visibility** extended to the MCP tools + schedules; **dry-run preview**
   extended to every datasource.
-- **MCP server expanded to 30 tools** — the Tier 1 read-only batch (checks, runs,
+- **MCP server expanded to 33 tools** — the Tier 1 read-only batch (checks, runs,
   connections, schedules, trigger bindings, notification config, suite performance,
   suite export) alongside the original 8, plus the Tier 2 batch (update/delete/snooze
   check, dry-run preview, cancel run, schedule + trigger-binding CRUD, suggest a PII
