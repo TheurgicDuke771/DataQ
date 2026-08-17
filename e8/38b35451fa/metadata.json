@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "e838b35451fa",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-tier1-run-reads",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/mcp/server.py",
+    "backend/tests/api/test_role_enforcement.py",
+    "backend/tests/mcp/test_mcp_tools.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e8/38b35451fa/0/metadata.json",
+      "transcript": "/e8/38b35451fa/0/full.jsonl",
+      "compact_transcript": "/e8/38b35451fa/0/transcript.jsonl",
+      "content_hash": "/e8/38b35451fa/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 54,
+    "cache_creation_tokens": 44815,
+    "cache_read_tokens": 5148092,
+    "output_tokens": 19004,
+    "api_call_count": 27
+  }
+}
