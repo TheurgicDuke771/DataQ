@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "84d8de04584f",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-tier2-role-gated",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/api/v1/trigger_bindings.py",
+    "backend/app/services/trigger_binding_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/84/d8de04584f/0/metadata.json",
+      "transcript": "/84/d8de04584f/0/full.jsonl",
+      "compact_transcript": "/84/d8de04584f/0/transcript.jsonl",
+      "content_hash": "/84/d8de04584f/0/content_hash.txt",
+      "prompt": "/84/d8de04584f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 692,
+    "cache_creation_tokens": 497907,
+    "cache_read_tokens": 111218986,
+    "output_tokens": 219339,
+    "api_call_count": 346
+  }
+}
