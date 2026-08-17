@@ -725,7 +725,7 @@ def test_resolve_user_generic_oidc_userinfo_sub_mismatch_raises(
 # Caught in review: `_resolve_generic_oidc_user` unified the two REST
 # dependencies, but `resolve_current_user` here is a THIRD generic-OIDC
 # resolver that called `_upsert_user` directly. A token the REST API 403s
-# authenticated fine at /mcp, was provisioned a users row, and got all 8 tools
+# authenticated fine at /mcp, was provisioned a users row, and got every tool
 # including `trigger_suite_run` — breaking the invariant the Azure-guest branch
 # in this very module states out loud.
 

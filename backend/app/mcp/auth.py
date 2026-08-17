@@ -18,7 +18,7 @@ mode and on ``/mcp`` in another (``mcp_auth_mode``):
   validate a JWT against, so a PAT is the *only* MCP credential; every non-PAT
   bearer is rejected uniformly, having reached no validator at all. The
   alternative — mounting nothing — silently cost an OTP deployment the whole
-  8-tool MCP surface even though its PATs work perfectly (#1128).
+  MCP surface (19 tools) even though its PATs work perfectly (#1128).
 - **dev_bypass** (`ENVIRONMENT=dev` + `AUTH_DEV_BYPASS=true`, no Azure, no OTP):
   no verifier — every call resolves to the fixed dev user, for local dev only.
 - **disabled**: nothing configured → the server is **not mounted** (fail-closed —
@@ -277,7 +277,7 @@ def resolve_current_user(session: Session) -> User:
                 # easiest to forget: /mcp does not go through
                 # `_resolve_generic_oidc_user`, so without this line a token the
                 # REST API 403s would authenticate here, be provisioned a users
-                # row, and get all 8 tools — including `trigger_suite_run`.
+                # row, and get all 19 tools — including `trigger_suite_run`.
                 # Exactly the invariant the Azure-guest branch below states.
                 if not _oidc_access_allowed(email, settings):
                     log.warning("mcp_oidc_access_denied", **_denied_identity(email))

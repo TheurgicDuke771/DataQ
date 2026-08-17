@@ -1,4 +1,5 @@
-"""FastMCP server (Week 7) — 8 curated tools mounted at ``/mcp``.
+"""FastMCP server (Week 7; expanded to 19 tools in the #529 Tier-1 batch) — curated
+tools mounted at ``/mcp``.
 
 LLM-facing surface over the same service layer the REST API uses: each tool is a
 thin wrapper that resolves the caller, calls a service function with the *same*

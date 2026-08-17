@@ -441,12 +441,17 @@ palette** (the shipped indigo theme stands).
 
 ## Theme 13 — MCP tool expansion (candidate endpoints)
 
-The v1 MCP server exposes 8 curated tools (ADR [0008](../docs/adr/0008-mcp-server.md));
-the REST surface has ~52 more endpoints. Candidates below, tiered by risk — every new
-tool stays a thin service-layer wrapper with `require_permission` authz + sample
-redaction, exactly like the existing 8 (`backend/app/mcp/server.py`). Cross-cutting
-dependencies: **#488** (workspace-admin visibility in MCP tools) and **#461 / ADR 0026**
-(DataQ-issued API keys, which unblock headless MCP clients).
+**Tier 1 — DELIVERED 2026-08-17 (issue [#529](https://github.com/TheurgicDuke771/DataQ/issues/529),
+ADR [0008](../docs/adr/0008-mcp-server.md) amendment).** All eleven Tier 1 tools below shipped,
+bringing the MCP server from 8 to **19 tools** (17 read-only + 2 mutating). Every new tool is the
+same thin service-layer wrapper with `require_permission` authz + sample redaction as the
+original 8 (`backend/app/mcp/server.py`); `list_connections` returns metadata + health only
+(never config or secrets) and `get_notification_config` reports webhook presence, never URLs.
+**Tier 2 is still open** — see below.
+
+The REST surface has ~52 more endpoints beyond the now-19 MCP tools. Candidates below, tiered
+by risk. Cross-cutting dependencies: **#488** (workspace-admin visibility in MCP tools) and
+**#461 / ADR 0026** (DataQ-issued API keys, which unblock headless MCP clients — shipped).
 
 **Filed (2026-07-04, carried from the retired `WEEK8_TODO` working tracker):**
 
@@ -455,7 +460,7 @@ dependencies: **#488** (workspace-admin visibility in MCP tools) and **#461 / AD
 | [#583](https://github.com/TheurgicDuke771/DataQ/issues/583) | `profile_column` 422s on SQL suites without explicit `table`/`schema` — default to the suite's run target (found in the #550 MCP client E2E) |
 | [#584](https://github.com/TheurgicDuke771/DataQ/issues/584) | NL tool-selection spot-check — watch a real LLM client route the 4 canonical queries (descriptions are LLM-facing, CLAUDE.md §10; the selection in #550 was author-made) |
 
-**Tier 1 — high-value safe reads:**
+**Tier 1 — high-value safe reads (DELIVERED 2026-08-17, #529):**
 
 | Candidate tool | Wraps | NL query it serves |
 |---|---|---|
