@@ -63,6 +63,7 @@ _SF_CONFIG = {
 _REAL_RUN = "<a real run, substituted at probe time>"
 _REAL_CHECK = "<a real check, substituted at probe time>"
 _REAL_SCHEDULE = "<a real schedule, substituted at probe time>"
+_REAL_CONNECTION = "<a real connection, substituted at probe time>"
 
 #: Every role, so a matrix test can't silently skip a tier.
 ROLES = ("admin", "member", "viewer")
@@ -553,6 +554,26 @@ def test_no_mcp_tool_that_should_deny_a_viewer_lets_one_through(
     _assert_tool_denies(monkeypatch, db_session, viewer, tool_name, suite)
 
 
+def test_mcp_exposes_no_admin_only_capability_by_design() -> None:
+    """The `role:admin` sweep below is empty, and that is the invariant — not an
+    oversight.
+
+    Every Admin-only capability in ADR 0033's matrix is a connection *mutation*
+    (create / edit / delete / re-auth), and MCP deliberately exposes none of them:
+    a credential must never transit an LLM (#529's standing exclusion). So there
+    is nothing for a Member sweep to sweep.
+
+    Stated as a test so the empty parametrize reads as a decision rather than a
+    forgotten row — and the sweep activates the moment that changes.
+    """
+    from backend.tests.support.mcp_gates import member_denied_tools as _admin_only
+
+    assert _admin_only() == [], (
+        "an admin-only MCP tool was added — that is a real decision (a credential "
+        "must never transit an LLM), so revisit it here deliberately"
+    )
+
+
 @pytest.mark.parametrize("tool_name", member_denied_tools())
 def test_no_admin_only_mcp_tool_lets_a_member_through(
     db_session: Any, as_role: Any, monkeypatch: pytest.MonkeyPatch, tool_name: str
@@ -615,6 +636,8 @@ def _assert_tool_denies(
         db_session.add(run)
         db_session.commit()
         args = {**args, "run_id": str(run.id)}
+    if args.get("connection_id") == _REAL_CONNECTION:
+        args = {**args, "connection_id": str(suite.connection_id)}
     if args.get("schedule_id") == _REAL_SCHEDULE:
         schedule = Schedule(
             suite_id=suite.id,
@@ -678,6 +701,15 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
         },
         "profile_column": {"suite_id": sid, "columns": ["EMAIL"]},
         "cancel_run": {"run_id": _REAL_RUN},
+        "suggest_column_policy": {"suite_id": sid},
+        # role:member — no suite argument at all, which is the point: these are
+        # the capabilities with no resource ladder to ride.
+        "test_connection": {"connection_id": _REAL_CONNECTION},
+        "import_suite": {
+            "connection_id": _REAL_CONNECTION,
+            "name": "imported probe",
+            "checks": [],
+        },
         "create_schedule": {"suite_id": sid, "cron": "0 2 * * *"},
         "delete_schedule": {"schedule_id": _REAL_SCHEDULE},
         "create_trigger_binding": {

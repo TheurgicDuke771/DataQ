@@ -22,11 +22,13 @@ from backend.app.db.models import Check, Connection, PipelineRun, Result, Run, S
 from backend.app.mcp import server
 from backend.app.services import (
     check_service,
+    connection_service,
     dryrun_service,
     profile_service,
     run_dispatch,
     run_service,
     schedule_service,
+    suite_service,
 )
 
 
@@ -2409,3 +2411,233 @@ def test_create_trigger_binding_rejects_nul_bytes(db_session: Any, monkeypatch: 
             suite_id=str(suite.id),
         )
     assert "NUL" in str(exc.value)
+
+
+# ─────────── Tier-2 workspace-role-gated capabilities (#529) ──────────────
+
+
+def test_test_connection_requires_the_member_role(db_session: Any, monkeypatch: Any) -> None:
+    """A connection has no suite, so `require_permission` has nothing to gate on —
+    this is the first tool where the coarse ADR-0033 axis is load-bearing rather
+    than implied by the suite ladder."""
+    from backend.app.db.models import DEFAULT_WORKSPACE_ROLE, VIEWER_ROLE
+
+    viewer = _user(db_session, "viewer@acme.io")
+    viewer.role = VIEWER_ROLE
+    suite = _suite(db_session, viewer)
+    db_session.commit()
+    _as(monkeypatch, db_session, viewer)
+    monkeypatch.setattr(connection_service, "test_connection", lambda *a, **k: None)
+
+    with pytest.raises(ToolError) as exc:
+        server.test_connection(str(suite.connection_id))
+    assert "member" in str(exc.value)
+
+    viewer.role = DEFAULT_WORKSPACE_ROLE
+    db_session.commit()
+    out = server.test_connection(str(suite.connection_id))
+    assert out["ok"] is True
+    assert out["type"] == "snowflake"
+
+
+def test_test_connection_never_returns_a_credential(db_session: Any, monkeypatch: Any) -> None:
+    """It reports whether the probe worked and nothing else — no secret, and not
+    even the secret's reference."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    monkeypatch.setattr(connection_service, "test_connection", lambda *a, **k: None)
+
+    out = server.test_connection(str(suite.connection_id))
+    stored = db_session.get(Connection, suite.connection_id)
+    assert stored.secret_ref not in str(out)
+    assert "config" not in out and "secret_ref" not in out
+
+
+def test_test_connection_surfaces_a_failure_as_an_actionable_error(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A dead credential is the reason to call this at all — the failure has to
+    arrive as a clean message, not an opaque tool crash."""
+    from backend.app.services.connection_service import ConnectionTestFailedError
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    def _boom(*_a: Any, **_k: Any) -> None:
+        raise ConnectionTestFailedError("authentication failed")
+
+    monkeypatch.setattr(connection_service, "test_connection", _boom)
+    with pytest.raises(ToolError) as exc:
+        server.test_connection(str(suite.connection_id))
+    assert "authentication failed" in str(exc.value)
+
+
+def test_import_suite_requires_the_member_role(db_session: Any, monkeypatch: Any) -> None:
+    """Creating a suite is Member+ (ADR 0033), and this is the SECOND door into
+    suite creation — the class of gap #741's review found on `_probe`, where a
+    sibling endpoint created the same resource under another name and was
+    invisible to gating that lived on the obvious route."""
+    from backend.app.db.models import DEFAULT_WORKSPACE_ROLE, VIEWER_ROLE
+
+    viewer = _user(db_session, "viewer@acme.io")
+    viewer.role = VIEWER_ROLE
+    suite = _suite(db_session, viewer)
+    db_session.commit()
+    _as(monkeypatch, db_session, viewer)
+
+    with pytest.raises(ToolError) as exc:
+        server.import_suite(str(suite.connection_id), name="copied", checks=[])
+    assert "member" in str(exc.value)
+    # And nothing was created by the refused call.
+    assert len(suite_service.list_suites(db_session, user_id=viewer.id)) == 1
+
+    viewer.role = DEFAULT_WORKSPACE_ROLE
+    db_session.commit()
+    out = server.import_suite(str(suite.connection_id), name="copied", checks=[])
+    assert out["name"] == "copied"
+    assert len(suite_service.list_suites(db_session, user_id=viewer.id)) == 2
+
+
+def test_import_suite_round_trips_an_exported_document(db_session: Any, monkeypatch: Any) -> None:
+    """The pairing that makes both tools useful: export one suite, import it onto
+    another connection. Checked end-to-end rather than by asserting each half's
+    shape, because the shapes agreeing is the whole claim."""
+    user = _user(db_session)
+    source = _suite(db_session, user)
+    _check(db_session, source, name="not null email", warn_threshold=Decimal("0.01"))
+    target_connection = _suite(db_session, user).connection_id
+    _as(monkeypatch, db_session, user)
+
+    doc = server.export_suite(str(source.id))
+    imported = server.import_suite(
+        str(target_connection),
+        name="Orders (QA)",
+        checks=doc["checks"],
+        description=doc["description"],
+        version=doc["version"],
+    )
+
+    assert imported["check_count"] == 1
+    listed = server.list_checks(imported["id"])
+    assert listed["checks"][0]["name"] == "not null email"
+    assert listed["checks"][0]["warn_threshold"] == 0.01
+
+
+def test_import_suite_is_atomic_on_a_bad_check(db_session: Any, monkeypatch: Any) -> None:
+    """A rejected document must leave nothing behind — a half-built suite would be
+    worse than a clean failure, and an LLM would report partial success."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    before = len(suite_service.list_suites(db_session, user_id=user.id))
+
+    with pytest.raises(ToolError):
+        server.import_suite(
+            str(suite.connection_id),
+            name="broken",
+            checks=[{"name": "x", "kind": "not_a_kind", "expectation_type": "e", "config": {}}],
+        )
+    assert len(suite_service.list_suites(db_session, user_id=user.id)) == before
+
+
+def test_suggest_column_policy_only_suggests(db_session: Any, monkeypatch: Any) -> None:
+    """It reports `saved: false` and leaves the suite's policy untouched. An LLM
+    that reads a suggestion as an applied setting would tell the user their PII is
+    masked when it is not."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    monkeypatch.setattr(
+        profile_service,
+        "suggest_policy_for_target",
+        lambda *a, **k: {"identifier_column": "ORDER_ID", "pii_columns": ["EMAIL"]},
+    )
+
+    out = server.suggest_column_policy(str(suite.id))
+    assert out["saved"] is False
+    assert out["identifier_column"] == "ORDER_ID"
+    assert out["pii_columns"] == ["EMAIL"]
+    db_session.refresh(suite)
+    assert not suite.column_policy
+
+
+def test_import_suite_names_the_missing_field_instead_of_crashing(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`suite_io_service.import_suite` indexes required keys directly, so a
+    hand-composed check omitting one raises `KeyError` — not a `DataQError`, so it
+    escapes `_service_errors` as an opaque internal failure. The REST route is
+    immune only because its Pydantic model always emits every key; MCP has no such
+    model in front of it.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError) as exc:
+        server.import_suite(
+            str(suite.connection_id),
+            name="partial",
+            checks=[
+                {
+                    "name": "c",
+                    "kind": "expectation",
+                    "expectation_type": "expect_column_values_to_not_be_null",
+                    "config": {"column": "EMAIL"},
+                    # thresholds omitted — the shape an LLM composes by hand
+                }
+            ],
+        )
+    message = str(exc.value)
+    assert "checks[0]" in message
+    assert "warn_threshold" in message
+
+
+def test_import_suite_rejects_nul_anywhere_in_the_document(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The screen has to cover the CHECKS, not just the suite name: `create_check`
+    screens exactly these fields, and import is the second door to the same rows.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    def _doc(**overrides: Any) -> list[dict[str, Any]]:
+        check: dict[str, Any] = {
+            "name": "c",
+            "kind": "expectation",
+            "expectation_type": "expect_column_values_to_not_be_null",
+            "config": {"column": "EMAIL"},
+            "warn_threshold": None,
+            "fail_threshold": None,
+            "critical_threshold": None,
+        }
+        return [{**check, **overrides}]
+
+    cases: list[tuple[str, list[dict[str, Any]]]] = [
+        ("bad\x00name", _doc()),
+        ("ok", _doc(name="check\x00name")),
+        ("ok", _doc(config={"column": "EM\x00AIL"})),
+    ]
+    for suite_name, checks in cases:
+        with pytest.raises(ToolError) as exc:
+            server.import_suite(str(suite.connection_id), name=suite_name, checks=checks)
+        assert "NUL" in str(exc.value)
+
+
+def test_import_suite_bounds_the_suite_columns_in_the_schema() -> None:
+    """`suites.name` is String(128) and `description` String(1024) — a different
+    table from the per-check bounds the service validates, so the service's checks
+    do not cover these. Over-length reaches Postgres and raises
+    StringDataRightTruncation, escaping `_service_errors`."""
+    import asyncio
+
+    tool = asyncio.run(server.mcp.get_tool("import_suite"))
+    assert tool is not None
+    props = tool.parameters["properties"]
+    assert props["name"]["maxLength"] == 128
+    assert props["name"]["minLength"] == 1
+    assert "1024" in str(props["description"])
