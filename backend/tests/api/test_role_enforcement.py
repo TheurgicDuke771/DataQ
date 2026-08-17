@@ -36,6 +36,7 @@ from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import share_service, suite_authz
 from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
+from backend.tests.support.mcp_gates import viewer_denied_tools
 
 _SF_CONFIG = {
     "account": "ab12345.eu-west-1",
@@ -449,82 +450,49 @@ def test_a_viewer_cannot_reach_an_edit_gated_endpoint(
 # ── 4. MCP parity ────────────────────────────────────────────────────────────
 
 
-def test_the_mcp_tool_surface_is_exactly_the_read_and_suite_scoped_tools() -> None:
+def test_every_mcp_tool_declares_a_gate_and_the_registry_matches() -> None:
     """The tripwire for #741's blind spot: MCP calls services DIRECTLY.
 
-    Every gate this slice adds lives on a REST route. A new MCP tool that created
-    a suite or mutated a connection would bypass all of them, silently — the tool
+    Every role gate #741 added lives on a REST route. A new MCP tool that created
+    a suite or mutated a connection would bypass all of them silently — the tool
     layer never touches the router.
 
-    Enumerated from FastMCP's own registry, and asserted as an **exact set**
-    rather than by intersecting with a list of forbidden names. A name list only
-    catches the names someone thought of: `add_connection` or `new_suite` would
-    sail straight through it. An exact set fails on ANY new tool, which is the
-    point — the next person to add one is forced to come here and decide whether
-    it needs a role gate.
+    Asserted as an **exact set** against `support/mcp_gates.GATES`, not by
+    intersecting with a list of forbidden names. A name list only catches the
+    names someone thought of: `add_connection` or `new_suite` would sail straight
+    through. An exact set fails on ANY new tool, which is the point.
 
-    If you are adding a tool: add it below AND make sure it either (a) is
-    read-only, or (b) gates through `suite_authz.require_permission`, or (c)
-    carries an explicit `require_role`-equivalent check.
+    The gate now lives in that table as **data rather than a comment**, because
+    the old bare set of names could catch a tool being added but not a tool being
+    added with the *wrong* gate — a name in the wrong comment group looks exactly
+    like a name in the right one. Declaring it makes the sweep below possible:
+    adding a row here is adding an enforcement test, not just a manifest entry.
+
+    If you are adding a tool: add it to `GATES` with the gate it actually calls,
+    and make sure that is one of (a) read-only, (b) `suite_authz.require_permission`,
+    or (c) `server._require_role`.
     """
     import asyncio
 
     from backend.app.mcp.server import mcp
+    from backend.tests.support.mcp_gates import GATES
 
     tools = {t.name for t in asyncio.run(mcp.list_tools())}
-    assert tools == {
-        # read-only
-        "list_suites",
-        "get_suite_results",
-        "get_health_score",
-        "get_adf_pipeline_status",
-        "get_run_status",
-        "profile_column",
-        # read-only, view-gated (#529 Tier 1). Each takes a `suite_id` and calls
-        # `require_permission(minimum="view")` before any service call, so the
-        # per-suite ladder (ADR 0027) and the Viewer cap (ADR 0033) both apply —
-        # and a Viewer is *supposed* to reach these, which is what makes them
-        # safe rather than merely un-gated.
-        "list_checks",
-        "get_check",
-        "get_check_history",
-        # read-only, view-gated (#529 Tier 1). `list_runs` scopes through
-        # `accessible_suite_ids` (and gates up front on a named suite);
-        # `get_run_results` gates on the run's OWN suite, so a run id alone
-        # cannot be used to reach a suite the caller can't see.
-        "list_runs",
-        "get_run_results",
-        # read-only ops/config (#529 Tier 1). `list_connections` is workspace-
-        # scoped like its REST route and returns metadata + health ONLY — never
-        # config or a secret reference; the other three scope through the
-        # caller's accessible suites, and `get_notification_config` reports
-        # webhook PRESENCE, never a URL (a webhook URL is a bearer credential).
-        "list_connections",
-        "list_schedules",
-        "list_trigger_bindings",
-        "get_notification_config",
-        # read-only aggregates/exports (#529 Tier 1). `get_suite_performance`
-        # scopes through the dashboard's own accessible-suite subquery;
-        # `export_suite` is view-gated and emits DEFINITIONS only — no results,
-        # no ids that resolve to a credential.
-        "get_suite_performance",
-        "export_suite",
-        # suite-scoped writes — gated on require_permission(minimum="edit"),
-        # which the Viewer cap feeds (see the test below)
-        "trigger_suite_run",
-        "create_check",
-    }
+    assert tools == set(GATES)
 
 
-def test_a_viewer_pat_is_refused_by_the_mcp_trigger_tool(
-    db_session: Any, as_role: Any, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("tool_name", viewer_denied_tools())
+def test_no_mcp_tool_that_should_deny_a_viewer_lets_one_through(
+    db_session: Any, as_role: Any, monkeypatch: pytest.MonkeyPatch, tool_name: str
 ) -> None:
-    """MCP parity, exercised THROUGH the tool rather than beside it.
+    """The RBAC sweep: EVERY Viewer-denied tool, not one representative sample.
 
-    Asserting on `require_permission` alone would only prove the primitive works
-    — it would not prove `trigger_suite_run` actually calls it, which is the
-    thing that could regress. So this enters the real tool function with a real
-    Viewer principal.
+    This used to test `trigger_suite_run` alone and reason that the rest were
+    covered "for free" because they call the same primitive. That reasoning is
+    right about the primitive and says nothing about whether a given tool
+    actually calls it — which is the only thing that can regress. Driving the
+    sweep off `GATES` means a new mutating tool is covered the moment it is
+    declared, rather than when someone remembers to add a test.
 
     The Viewer holds a **legacy `edit` share**: the exact state a naive "viewers
     never have edit" assumption gets wrong, and the reason the cap is enforced at
@@ -546,8 +514,39 @@ def test_a_viewer_pat_is_refused_by_the_mcp_trigger_tool(
 
     monkeypatch.setattr(mcp_server, "_ctx", _as_viewer)
 
+    tool = getattr(mcp_server, tool_name)
     with pytest.raises(Exception) as exc:
-        mcp_server.trigger_suite_run(suite_id=str(suite.id))
-    # `_service_errors` maps SuiteForbiddenError onto the MCP ToolError shape;
-    # either way it must NOT have queued a run.
-    assert "forbidden" in str(exc.value).lower() or "permission" in str(exc.value).lower()
+        tool(**_viewer_probe_args(tool_name, suite))
+
+    message = str(exc.value).lower()
+    # Either axis is an acceptable denial — the suite ladder's forbidden, or the
+    # coarse role gate's. What is NOT acceptable is the call succeeding, or
+    # failing for an unrelated reason (a missing argument, a bad UUID), which
+    # would make this test pass while proving nothing.
+    assert any(
+        word in message for word in ("forbidden", "permission", "workspace role")
+    ), f"{tool_name} denied for the wrong reason: {exc.value}"
+
+
+def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
+    """Minimal valid arguments per tool, so the sweep reaches the gate.
+
+    Deliberately valid: the point is that the call is stopped by *authorization*,
+    not by argument validation. Arguments that would 422 first would make every
+    row pass regardless of the gate.
+    """
+    per_tool: dict[str, dict[str, Any]] = {
+        "trigger_suite_run": {"suite_id": str(suite.id)},
+        "create_check": {
+            "suite_id": str(suite.id),
+            "name": "viewer probe",
+            "expectation_type": "expect_column_values_to_not_be_null",
+            "config": {"column": "EMAIL"},
+        },
+        "profile_column": {"suite_id": str(suite.id), "columns": ["EMAIL"]},
+    }
+    assert tool_name in per_tool, (
+        f"{tool_name} is declared Viewer-denied in mcp_gates.GATES but has no probe "
+        "arguments here — add them, or the sweep silently skips it"
+    )
+    return per_tool[tool_name]
