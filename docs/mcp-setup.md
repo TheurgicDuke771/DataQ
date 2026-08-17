@@ -22,7 +22,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/00
     [0032](adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    the 8 tools and per-suite permissions. Two rejections are deliberate in that
+    all 19 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -80,20 +80,58 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 8 tools
+## The 19 tools
 
-Each tool is a thin wrapper over the same service layer as the REST API — per-suite authorization and failing-sample redaction apply identically.
+Each tool is a thin wrapper over the same service layer as the REST API — per-suite
+authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
+identically. 17 are read-only; only `trigger_suite_run` and `create_check` change anything
+(Tier 1 expansion, issue [#529](https://github.com/TheurgicDuke771/DataQ/issues/529)).
+Connection create/update/reauth are deliberately **not** exposed here — a credential must
+never transit an LLM.
+
+### Suites & results
 
 | Tool | What it answers |
 |---|---|
 | `list_suites` | "What suites can I see?" — id, datasource, env, check count, last run |
 | `get_suite_results` | "What failed in suite X?" — latest run's per-check outcomes |
+| `get_suite_performance` | "Which suites are in the worst shape?" — a worst-first health ranking |
 | `get_health_score` | "How healthy is data quality overall?" — score, pass rate, trend |
-| `get_adf_pipeline_status` | "Why did pipeline Y fail?" — recent orchestrator runs + correlated DQ run |
-| `trigger_suite_run` | "Run the orders suite" — dispatches a run, returns the run id |
-| `get_run_status` | "Is it done?" — live status + per-check progress |
+| `export_suite` | "Show me the whole orders suite" — every check's definition as one portable document |
+
+### Checks
+
+| Tool | What it answers |
+|---|---|
+| `list_checks` | "What does the orders suite actually check?" — every check's config, kind, dimension |
+| `get_check` | "What is this check actually asserting?" — one check's full definition |
+| `get_check_history` | "Has the row-count check been flaky?" — recent result history for one check |
 | `create_check` | "Add a null check on email" — authors a check on a suite you can edit |
+
+### Runs & profiling
+
+| Tool | What it answers |
+|---|---|
+| `list_runs` | "What has run today?" / "show me the failed runs" |
+| `get_run_results` | "Why did last night's orders run fail?" — a specific historical run's per-check results |
+| `get_run_status` | "Is it done?" — live status + per-check progress |
+| `trigger_suite_run` | "Run the orders suite" — dispatches a run, returns the run id |
 | `profile_column` | "Profile the qty column" — live null/distinct/min/max/top-values stats |
+
+### Connections & orchestration
+
+| Tool | What it answers |
+|---|---|
+| `list_connections` | "What are we connected to?" / "which connections are broken?" — names, types and health **only**, never config or secrets |
+| `get_adf_pipeline_status` | "Why did pipeline Y fail?" — recent orchestrator (ADF/Airflow/dbt) runs + correlated DQ run |
+| `list_trigger_bindings` | "What runs after the nightly load?" — which pipeline/DAG successes trigger which suite |
+
+### Scheduling & alerting
+
+| Tool | What it answers |
+|---|---|
+| `list_schedules` | "When does the orders suite run?" — cron schedules + next fire time |
+| `get_notification_config` | "Who gets told when orders fails?" — channel presence (Teams/Slack/email), never webhook URLs |
 
 Try these natural-language queries once connected:
 

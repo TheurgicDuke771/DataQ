@@ -37,3 +37,34 @@ Week 7 calls for a FastMCP server exposing 8 curated tools at `/mcp`, reachable 
 - **`AzureProvider` (full OAuth)** — rejected: needs a client secret and an auth-code/redirect flow; clients already present a token.
 - **Bridge to `fastapi-azure-auth`** by faking a Starlette `Request` — rejected as brittle coupling to that library's request-bound internals; `JWTVerifier` is the clean, documented path and validates the same token.
 - **Resources for the reads** — rejected for LLM invocability (above); revisit if a client surfaces resources usefully.
+
+## Amendment — Tier 1 expansion to 19 tools (2026-08-17, issue [#529](https://github.com/TheurgicDuke771/DataQ/issues/529))
+
+The original 8 tools were deliberately the smallest set that answered the roadmap's canonical
+NL queries. [`context/post-v1-roadmap.md`](../../context/post-v1-roadmap.md) Theme 13 catalogued
+the rest of the REST surface as MCP candidates, tiered by risk. This amendment ships **Tier 1 —
+high-value safe reads** in full: `list_checks`, `get_check`, `get_check_history`, `list_runs`,
+`get_run_results`, `list_connections`, `list_schedules`, `list_trigger_bindings`,
+`get_notification_config`, `get_suite_performance`, `export_suite` — bringing the server to
+**19 tools: 17 read-only, 2 mutating** (the original `trigger_suite_run` and `create_check`).
+
+**The decision above is unchanged, not revisited.** Every new tool is the same thin wrapper this
+ADR already describes — open a session, resolve the caller, call the same service function
+through `suite_authz.require_permission`, return an LLM-shaped dict — so ADR 0027 per-suite
+sharing and the ADR 0033 Viewer view/edit clamp apply to the new tools exactly as they do to the
+original 8. No new authz path was introduced.
+
+Three standing exclusions carried forward, made explicit because Tier 1 sits right next to them:
+
+- **`list_connections` is workspace-scoped and returns metadata + health only** — id, name,
+  type, env, whether a credential is stored, and health signals. It never returns a
+  connection's configuration (account identifiers, hosts, paths) or a secret reference.
+- **`get_notification_config` reports channel presence, never webhook URLs.** A webhook URL is
+  itself a bearer credential; the tool answers "is Teams/Slack/email wired up, and from where"
+  without ever resolving the secret.
+- **Connection create/update/reauth remain excluded** — a credential must never transit an LLM.
+  This was true before Tier 1 and stays true after it; no mutating connection tool exists.
+
+**Tier 2** (mutating, edit-permission-gated: `dryrun_check`, `update_check`/`delete_check`,
+`snooze_check`, `cancel_run`, schedule/trigger-binding CRUD, `import_suite`, `test_connection`,
+etc. — see the roadmap's Theme 13 table) stays deferred; nothing in this amendment ships it.

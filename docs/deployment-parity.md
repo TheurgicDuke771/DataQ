@@ -26,7 +26,7 @@ cloud-conditional code paths**, and the same container images run everywhere.
 ## Features
 
 The application feature set — suites/checks across all five datasources, every monitor kind,
-assets/lineage/incidents, alerting, scheduling, the 8-tool MCP server, PATs, rate limiting —
+assets/lineage/incidents, alerting, scheduling, the 19-tool MCP server, PATs, rate limiting —
 is the **same code everywhere**. Where the installations genuinely differ:
 
 | Capability | Azure | AWS | Local |
@@ -35,7 +35,7 @@ is the **same code everywhere**. Where the installations genuinely differ:
 | Assets / lineage / incidents / DQ scorecard | live-verified (Snowflake full-tier lineage, UC dbt lineage, inventory sync) | deployed — same code; warehouse-lineage sweep enabled but not yet exercised against that account's grants | ✅ (Marquez reference consumer via `--profile lineage`) |
 | Alerting — Teams / Slack | live-verified | deployed, unexercised | pointable anywhere |
 | Alerting — email | configured | live-verified (SES) | Mailpit |
-| MCP (8 tools) | E2E-verified | E2E-verified (PAT) | works; PAT-only under OTP (no IdP ⇒ no bearer) |
+| MCP (19 tools) | E2E-verified | E2E-verified (PAT) | works; PAT-only under OTP (no IdP ⇒ no bearer) |
 | Rate limiting | on (`RATE_LIMIT_XFF_TRUSTED_HOPS=3`, verified against a live XFF) | on (same setting; live-verified 2026-08-16 — an unauthenticated burst through CloudFront allowed exactly the configured 120/min then 429'd with `Retry-After`, and rotating a client-spoofed `X-Forwarded-For` could **not** escape the bucket, proving hops=3 selects the CloudFront-appended viewer IP) | off by design |
 | Browser security headers (CSP/HSTS/nosniff/frame-ancestors) | on — `connect-src` narrowed to the Azure AD origin | on — `connect-src` narrowed to both Cognito origins (issuer + hosted UI) | on, permissive `connect-src` default |
 | Edge rate limiting (WAF) | **none** — no Front Door/WAF in front of the Container App; the in-app limiter is the only layer | on — CloudFront WAF per-IP ceiling **in front of** the in-app limiter | n/a |
