@@ -622,35 +622,3 @@ def set_user_role(
         new_role=new_role,
     )
     return target
-
-    # Lock the stored-role admins BEFORE deciding, so a concurrent demotion
-    # serializes behind this one instead of racing it.
-    admin_ids = set(
-        session.scalars(select(User.id).where(User.role == ADMIN_ROLE).with_for_update()).all()
-    )
-    if previous == ADMIN_ROLE and admin_ids <= {target.id}:
-        raise RoleChangeRejectedError(
-            "cannot remove the last workspace admin — promote another user to "
-            "admin first. (Admins granted only by WORKSPACE_ADMIN_EMAILS do not "
-            "count: that allowlist is a recovery path, not the invariant.)",
-            detail={"user_id": str(user_id), "stored_admin_count": len(admin_ids)},
-        )
-
-    target.role = new_role
-    session.commit()
-    session.refresh(target)
-
-    # The durable audit *table* is ADR 0020's deferred cross-entity change log
-    # (#310). Until then this line is the whole guarantee that a role change is
-    # never silent — so it carries actor, target, and both ends of the change,
-    # and is emitted AFTER the commit so it can never claim a change that rolled
-    # back. Emails are omitted: ids correlate, and `_PII_KEYS` redacting an
-    # `email` key is a backstop, not a reason to hand one over.
-    log.info(
-        "workspace_role_changed",
-        actor_id=str(actor.id),
-        target_user_id=str(user_id),
-        previous_role=previous,
-        new_role=new_role,
-    )
-    return target

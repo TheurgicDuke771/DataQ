@@ -105,9 +105,15 @@ PERMISSIONS = ("view", "edit", "admin")
 # not a roles table — groups/custom roles are recorded as deferred in the ADR.
 # Named Viewer (not Guest) because `AZURE_ALLOW_GUEST_USERS` already means
 # Entra B2B guests and two "guest" concepts would collide.
-WORKSPACE_ROLES = ("admin", "member", "viewer")
-DEFAULT_WORKSPACE_ROLE = "member"
+# The singletons first, then the vocabulary built FROM them — so each literal
+# appears exactly once. Spelling "admin"/"member" both in the tuple and in the
+# constant beside it is how a rename ends up half-applied, and it also left
+# `ADMIN_ROLE` unreferenced in its own module (CodeQL py/unused-global-variable),
+# which is a fair complaint about the shape even though three modules import it.
 ADMIN_ROLE = "admin"
+DEFAULT_WORKSPACE_ROLE = "member"
+VIEWER_ROLE = "viewer"
+WORKSPACE_ROLES = (ADMIN_ROLE, DEFAULT_WORKSPACE_ROLE, VIEWER_ROLE)
 ENVS = ("dev", "qa", "uat", "prod")
 # Per-suite alert delivery threshold (suite_notifications.alert_on). 'fail' =
 # fail/critical only, 'warn' = warn+, 'always' = every terminal run.
