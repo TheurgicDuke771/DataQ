@@ -998,12 +998,20 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
     is stored as a secret reference and this tool reports its presence, not its
     value.
 
-    **"Why did nobody get alerted?" has three possible answers and this tool holds
-    only one of them.** Check all three before concluding: alerting could be off
-    or unrouted (here); the specific check could be **snoozed**
-    (``list_checks`` reports a live snooze per check); or the run may never have
-    produced a failing verdict to alert on (``list_runs`` — an incomplete run has
-    no outcome, and ``alert_on`` only fires at or above its severity).
+    **"Why did nobody get alerted?" has four answers and this tool holds only one
+    of them.** Work through all four before blaming the delivery channel:
+
+    1. Alerting is off, or no channel is configured — **here**.
+    2. The check is **snoozed** — ``list_checks`` reports a live snooze per check.
+    3. The run never produced a verdict at or above the threshold — ``list_runs``
+       (an incomplete run has no outcome at all, and ``alert_on`` is a *threshold*:
+       ``fail`` alerts on fail and worse, ``warn`` on warn and worse, ``always``
+       on every run).
+    4. The alert was **deduplicated**. An ongoing, unchanged failure on a
+       scheduled suite does not re-alert every run — only the first one does,
+       under any policy except ``always``. Compare the run with the previous
+       terminal run (``list_runs``, ``get_check_history``): same checks failing
+       the same way means this is the expected silence, not a fault.
 
     Requires view access to the suite.
     """

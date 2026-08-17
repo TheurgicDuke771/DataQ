@@ -2669,8 +2669,13 @@ def test_tool_descriptions_cross_reference_the_confusable_neighbours() -> None:
     # A suite runs on a schedule OR a trigger binding; this tool sees only one.
     assert "list_trigger_bindings" in schedules
 
-    # "Why did nobody get alerted?" is three-way: config, snooze, or no verdict.
+    # "Why did nobody get alerted?" is FOUR-way: config, snooze, no verdict, or
+    # deduplicated. The fourth was missed on the first pass — the block claimed
+    # exhaustivity while `dispatch.publish_run_outcome` had a suppression path it
+    # did not name, which is the same defect class this test exists to prevent.
     assert "list_checks" in notifications and "list_runs" in notifications
+    assert "dedup" in notifications.lower()
+    assert "get_check_history" in notifications
 
     # Un-muting is served by a tool whose NAME says the opposite, so the
     # description has to carry the words a client would search for.
