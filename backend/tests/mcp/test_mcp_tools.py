@@ -2894,3 +2894,301 @@ def test_column_policy_bounds_are_advertised_in_the_tool_schema() -> None:
     props = tool.parameters["properties"]
     assert props["pii_columns"]["maxItems"] == 200
     assert "255" in str(props["identifier_column"])
+
+
+# ─────── Tier-3A: schedule / binding mutation + check version history ─────────
+
+
+def test_update_schedule_changes_only_what_was_passed(db_session: Any, monkeypatch: Any) -> None:
+    """The docstring promises an omitted argument is left "exactly as it was" —
+    the claim `update_check` gets WRONG for `config` (assigned wholesale). Here
+    the three arguments really are independent scalars, and this is what says so
+    rather than leaving the reader to trust two tools that behave differently."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_schedule(str(suite.id), cron="0 2 * * *", timezone="America/Toronto")
+
+    out = server.update_schedule(created["id"], cron="0 5 * * *")
+    assert out["cron"] == "0 5 * * *"
+    assert out["timezone"] == "America/Toronto"
+    assert out["enabled"] is True
+
+
+def test_update_schedule_pausing_reports_no_next_fire(db_session: Any, monkeypatch: Any) -> None:
+    """The stored `next_run_at` column is still populated on a paused schedule,
+    but the dispatcher filters on `enabled` and never reaches it. Reporting the
+    raw value would name a fire time that will not happen — and this tool, its
+    `create_schedule` sibling and `list_schedules` must not disagree about that,
+    since an assistant may see any one of the three."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_schedule(str(suite.id), cron="0 2 * * *")
+    assert created["next_run_at"] is not None
+
+    paused = server.update_schedule(created["id"], enabled=False)
+    assert paused["enabled"] is False
+    assert paused["next_run_at"] is None
+    # The column itself is untouched — which is exactly why the null has to be
+    # produced here rather than read off the row.
+    stored = schedule_service.get_schedule(db_session, uuid.UUID(created["id"]), user_id=user.id)
+    assert stored.next_run_at is not None
+
+    assert server.list_schedules(str(suite.id))[0]["next_run_at"] is None
+    assert server.update_schedule(created["id"], enabled=True)["next_run_at"] is not None
+
+
+def test_update_schedule_rejects_a_bad_cron_and_leaves_the_schedule_alone(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A rejected edit must not half-apply: the failure mode is a schedule the
+    user believes they retimed that is still firing on the old cadence."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_schedule(str(suite.id), cron="0 2 * * *")
+
+    with pytest.raises(ToolError):
+        server.update_schedule(created["id"], cron="not a cron")
+    db_session.rollback()
+    assert server.list_schedules(str(suite.id))[0]["cron"] == "0 2 * * *"
+
+
+def test_update_schedule_rejects_nul_bytes(db_session: Any, monkeypatch: Any) -> None:
+    """`create_schedule` screens NUL and `update_schedule` is the second door to
+    the same columns — the "guard on one door but not its sibling" class."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_schedule(str(suite.id), cron="0 2 * * *")
+
+    with pytest.raises(ToolError) as exc:
+        server.update_schedule(created["id"], timezone="UTC\x00")
+    assert "NUL" in str(exc.value)
+
+
+def test_update_schedule_free_text_is_bounded_in_the_schema() -> None:
+    """Same bound as `create_schedule`, for the same reason (#567's class): an
+    unbounded value reaches Postgres as a psycopg error that escapes
+    `_service_errors`."""
+    import asyncio
+
+    tool = asyncio.run(server.mcp.get_tool("update_schedule"))
+    assert tool is not None
+    props = tool.parameters["properties"]
+    assert "128" in str(props["cron"]) and "64" in str(props["timezone"])
+
+
+def test_update_trigger_binding_toggles_without_losing_the_wiring(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Disabling keeps the row — which is the whole distinction the docstring
+    draws against `delete_trigger_binding`, and what makes it re-enableable."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_trigger_binding(
+        provider="adf", pipeline_or_dag_id="pl_nightly", env="dev", suite_id=str(suite.id)
+    )
+
+    out = server.update_trigger_binding(created["id"], enabled=False)
+    assert out["enabled"] is False
+    assert out["provider"] == "adf"
+    assert out["pipeline_or_dag_id"] == "pl_nightly"
+    assert out["suite_id"] == str(suite.id)
+    # Still listed, still disabled — "not firing" is not "not wired up" (#828).
+    listed = server.list_trigger_bindings(suite_id=str(suite.id))
+    assert [b["enabled"] for b in listed] == [False]
+
+    assert server.update_trigger_binding(created["id"], enabled=True)["enabled"] is True
+
+
+def test_update_trigger_binding_recomputes_the_ambiguous_env_warning(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Advisory warnings are recomputed on ENABLE, not carried over from create:
+    re-enabling is exactly when a provider/environment ambiguity regains the
+    ability to lose triggers (#1186). Dropping them here would recreate the
+    silent-trigger-loss incident they exist to surface."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_trigger_binding(
+        provider="adf", pipeline_or_dag_id="pl_nightly", env="dev", suite_id=str(suite.id)
+    )
+    monkeypatch.setattr(
+        server.trigger_binding_service,
+        "_ambiguous_orchestration_warnings",
+        lambda session, *, provider, env: [
+            SimpleNamespace(code="ambiguous_env", message="two connections", other_envs=["qa"])
+        ],
+    )
+
+    # Disabling raises none — a binding that cannot fire cannot lose a trigger.
+    assert server.update_trigger_binding(created["id"], enabled=False)["warnings"] == []
+    enabled = server.update_trigger_binding(created["id"], enabled=True)
+    assert [w["code"] for w in enabled["warnings"]] == ["ambiguous_env"]
+
+
+def test_delete_trigger_binding_removes_only_the_binding(db_session: Any, monkeypatch: Any) -> None:
+    """The suite, its checks and its schedules survive — the docstring says only
+    the link goes, so that is what is checked."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _check(db_session, suite)
+    _as(monkeypatch, db_session, user)
+    server.create_schedule(str(suite.id), cron="0 2 * * *")
+    created = server.create_trigger_binding(
+        provider="adf", pipeline_or_dag_id="pl_nightly", env="dev", suite_id=str(suite.id)
+    )
+
+    out = server.delete_trigger_binding(created["id"])
+    assert out == {"deleted": True, "binding_id": created["id"]}
+    assert server.list_trigger_bindings(suite_id=str(suite.id)) == []
+    assert db_session.get(Suite, suite.id) is not None
+    assert len(check_service.list_checks(db_session, suite.id)) == 1
+    assert len(server.list_schedules(str(suite.id))) == 1
+
+
+def test_binding_mutations_are_denied_on_an_inaccessible_suite(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A binding id alone must not be a way around suite scoping."""
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    _as(monkeypatch, db_session, owner)
+    created = server.create_trigger_binding(
+        provider="adf", pipeline_or_dag_id="pl_nightly", env="dev", suite_id=str(suite.id)
+    )
+
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+    with pytest.raises(ToolError):
+        server.update_trigger_binding(created["id"], enabled=False)
+    with pytest.raises(ToolError):
+        server.delete_trigger_binding(created["id"])
+
+
+def test_list_check_versions_reports_the_snapshot_not_todays_check(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Edit history, not result history. Each row must describe the check AS IT
+    WAS — reporting today's threshold beside an old config is precisely the
+    misstatement that makes "was this edited when it started failing?"
+    unanswerable."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_check(
+        str(suite.id),
+        name="not null email",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+        warn_threshold=0.01,
+    )
+    server.update_check(str(suite.id), created["id"], warn_threshold=0.05, name="renamed")
+
+    out = server.list_check_versions(str(suite.id), created["id"])
+    versions = out["versions"]
+    # Newest first, additive — the original is still there after the edit.
+    assert [v["version_no"] for v in versions] == [2, 1]
+    assert versions[0]["name"] == "renamed"
+    assert versions[1]["name"] == "not null email"
+    assert versions[1]["warn_threshold"] == pytest.approx(0.01)
+
+
+def test_list_check_versions_thresholds_are_json_encodable(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The columns are NUMERIC and arrive as `Decimal`, which the JSON encoder
+    refuses. REST never sees it because Pydantic coerces on the way out; MCP has
+    no Pydantic in the path, which is exactly how #1273 happened. Asserting the
+    Python type is not enough — `Decimal` passes `isinstance(x, float)` nowhere
+    but reads fine in a repr, so this serializes."""
+    import json
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_check(
+        str(suite.id),
+        name="between",
+        expectation_type="expect_column_values_to_be_between",
+        config={"column": "AMOUNT", "min_value": 0, "max_value": 10},
+        warn_threshold=0.01,
+        fail_threshold=0.05,
+        critical_threshold=0.1,
+    )
+
+    out = server.list_check_versions(str(suite.id), created["id"])
+    json.dumps(out)  # would raise TypeError on a Decimal
+    assert isinstance(out["versions"][0]["warn_threshold"], float)
+
+
+def test_restore_check_version_applies_the_whole_snapshot_including_nulls(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """This is the one path that CLEARS a field. `update_check`'s PATCH
+    convention cannot — omission means "leave alone" there — so restoring a
+    version that had no warn threshold must actually remove today's, not skip it.
+    The docstring says so; without this the claim is untested and the tool would
+    look correct while silently leaving the old value in place."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_check(
+        str(suite.id),
+        name="not null email",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+    )
+    assert server.get_check(str(suite.id), created["id"])["warn_threshold"] is None
+    assert server.update_check(str(suite.id), created["id"], warn_threshold=0.05)[
+        "warn_threshold"
+    ] == pytest.approx(0.05)
+
+    out = server.restore_check_version(str(suite.id), created["id"], version_no=1)
+    assert out["warn_threshold"] is None
+    assert out["restored_from_version"] == 1
+
+
+def test_restore_check_version_is_additive(db_session: Any, monkeypatch: Any) -> None:
+    """History is never renumbered or deleted — the state being replaced stays
+    restorable. The docstring promises that, and it is what makes a restore safe
+    to offer without a confirmation step."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_check(
+        str(suite.id),
+        name="v1",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+    )
+    server.update_check(str(suite.id), created["id"], name="v2")
+
+    server.restore_check_version(str(suite.id), created["id"], version_no=1)
+    versions = server.list_check_versions(str(suite.id), created["id"])["versions"]
+    assert [v["version_no"] for v in versions] == [3, 2, 1]
+    assert versions[0]["name"] == "v1"
+    # The state that was replaced is still there and still restorable.
+    assert versions[1]["name"] == "v2"
+
+
+def test_restore_check_version_rejects_an_unknown_version(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """An LLM that guesses a version number instead of reading
+    `list_check_versions` must get an error, not a silent no-op."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_check(
+        str(suite.id),
+        name="only version",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+    )
+
+    with pytest.raises(ToolError):
+        server.restore_check_version(str(suite.id), created["id"], version_no=99)

@@ -17,7 +17,7 @@
 | **Auth / secrets** | Three-mode ladder (ADR 0032): dev-bypass (eval) · **email OTP** (IdP-less, default for the local stack — #1150) · OIDC — **now genuinely provider-neutral end-to-end** (ADR 0026 amendment): the frontend's generic `AUTH_*` contract (ADR 0028) is matched on the backend by `core.auth.OidcBearerScheme` (OIDC discovery + JWKS via `PyJWT`, any standards-compliant issuer — Azure AD validated in prod, AWS Cognito the second target) alongside the original `fastapi-azure-auth` validator; mutually exclusive per deployment. Plus PATs (`dq_live_`) for API/MCP clients. **Authorization is two axes (ADR 0033):** a stored workspace role (`admin | member | viewer`) × the per-suite `view/edit` ladder (ADR 0027) — connection mutations are Admin-only, Viewers are read-only everywhere. Secrets: Azure Key Vault / OpenBao / AWS Secrets Manager (ADR 0039) |
 | **Deploy** | Azure Container Apps (API + worker + frontend; frontend is the sole public surface, api internal — ADR 0028 §5) |
 | **Observability** | Azure Application Insights + structlog |
-| **AI integration** | FastMCP (33 curated tools mounted at `/mcp` — 17 read-only, 12 that change state, 4 live-probe tools gated like writes; ADR 0008 + Theme 13 Tiers 1 and 2, #529) — Claude Desktop / Claude.ai / Copilot / Cursor |
+| **AI integration** | FastMCP (38 curated tools mounted at `/mcp` — 18 read-only, 16 that change state, 4 live-probe tools gated like writes; ADR 0008 + Theme 13 Tiers 1 and 2 and Tier 3A, #529/#1424) — Claude Desktop / Claude.ai / Copilot / Cursor |
 
 Timeline: **8 weeks** to v1. Scope: single tenant, suite-level access sharing, Azure-hosted.
 
@@ -336,7 +336,7 @@ Update this section at the end of each week with: current week, the week's exit 
 | Observability | Azure Application Insights + structlog |
 | CI/CD | GitHub Actions |
 | API docs | FastAPI Swagger + ReDoc |
-| MCP | FastMCP (PrefectHQ) — 33 curated tools at `/mcp` (17 read-only, 12 that change state, 4 live-probe tools gated like writes; ADR 0008 + its #529 Tier-1/Tier-2 amendments) |
+| MCP | FastMCP (PrefectHQ) — 38 curated tools at `/mcp` (18 read-only, 16 that change state, 4 live-probe tools gated like writes; ADR 0008 + its #529 Tier-1/Tier-2 and #1424 Tier-3A amendments) |
 | Python tooling | conda + Black + Ruff + mypy + pytest + Bandit |
 | Frontend tooling | Prettier + ESLint + Vitest + React Testing Library |
 | Secret scanning | betterleaks (pre-commit + CI) |
@@ -344,7 +344,7 @@ Update this section at the end of each week with: current week, the week's exit 
 
 ### Client-side MCP servers (`.mcp.json`)
 
-Distinct from DataQ's **own** FastMCP server at `/mcp` (ADR 0008 — the 33 tools DataQ *serves* to AI clients), the repo-root **`.mcp.json`** configures MCP servers that AI assistants working in this repo *consume*:
+Distinct from DataQ's **own** FastMCP server at `/mcp` (ADR 0008 — the 38 tools DataQ *serves* to AI clients), the repo-root **`.mcp.json`** configures MCP servers that AI assistants working in this repo *consume*:
 
 | Server | Package (pinned major) | Publisher | Purpose |
 |---|---|---|---|
