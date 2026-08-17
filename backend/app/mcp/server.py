@@ -55,6 +55,7 @@ from backend.app.services import (
     check_service,
     connection_service,
     dashboard_service,
+    dryrun_service,
     notification_service,
     orchestration_service,
     profile_service,
@@ -108,6 +109,16 @@ def _parse_uuid(value: str, *, field: str) -> uuid.UUID:
 
 def _num(value: Decimal | float | None) -> float | None:
     return float(value) if value is not None else None
+
+
+def _dec(value: float | None) -> Decimal | None:
+    """float → Decimal for the NUMERIC threshold columns, `None` passed through.
+
+    Via `str()`, matching `create_check`: `Decimal(0.05)` binds the binary
+    float's full expansion, so the stored threshold would not be the number the
+    caller asked for.
+    """
+    return Decimal(str(value)) if value is not None else None
 
 
 def _reject_nul(
@@ -1194,11 +1205,9 @@ def create_check(
                 if source_connection_id is not None
                 else None
             ),
-            warn_threshold=Decimal(str(warn_threshold)) if warn_threshold is not None else None,
-            fail_threshold=Decimal(str(fail_threshold)) if fail_threshold is not None else None,
-            critical_threshold=(
-                Decimal(str(critical_threshold)) if critical_threshold is not None else None
-            ),
+            warn_threshold=_dec(warn_threshold),
+            fail_threshold=_dec(fail_threshold),
+            critical_threshold=_dec(critical_threshold),
             dimension=dimension,
             actor_id=user.id,
         )
@@ -1208,6 +1217,196 @@ def create_check(
             "name": check.name,
             "expectation_type": check.expectation_type,
             "dimension": check.dimension,
+        }
+
+
+@mcp.tool
+def update_check(
+    suite_id: str,
+    check_id: str,
+    name: str | None = None,
+    expectation_type: str | None = None,
+    config: dict[str, Any] | None = None,
+    warn_threshold: float | None = None,
+    fail_threshold: float | None = None,
+    critical_threshold: float | None = None,
+    dimension: str | None = None,
+) -> dict[str, Any]:
+    """Change an existing check's definition — a partial update.
+
+    Use this for 'loosen the null check on email to warn at 2%' or 'rename that
+    check'. Omitted **arguments** are left as they were.
+
+    ``config`` is the exception, and it matters: passing it **replaces the whole
+    configuration**, it does not merge into it. So to change one setting you must
+    send the complete config with that one setting altered — read the check first
+    with ``get_check`` and edit what you get back. Sending only the key you want
+    to change silently drops every other key: raising ``max_value`` on a
+    between-check by sending ``{"max_value": 100}`` deletes its ``min_value``, and
+    because the result is still a valid check it saves and reports success.
+
+    Because omission means "leave alone", there is **no way to clear a field back
+    to empty** through this tool — a threshold or dimension you want removed
+    needs the check recreated. Say so rather than passing 0 or an empty string,
+    which would set that value, not clear it. ``kind`` cannot be changed at all;
+    recreate the check as the other kind.
+
+    Every update snapshots the new state as a check version, so the change is
+    reviewable and reversible in the app. Requires edit access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    cid = _parse_uuid(check_id, field="check_id")
+    _reject_nul(
+        name=name or "",
+        expectation_type=expectation_type or "",
+        kind="",
+        config=config or {},
+        dimension=dimension or "",
+    )
+    with _ctx() as (session, user), _service_errors():
+        require_permission(session, sid, user.id, minimum="edit")
+        check = check_service.update_check(
+            session,
+            sid,
+            cid,
+            name=name,
+            expectation_type=expectation_type,
+            config=config,
+            warn_threshold=_dec(warn_threshold),
+            fail_threshold=_dec(fail_threshold),
+            critical_threshold=_dec(critical_threshold),
+            dimension=dimension,
+            actor_id=user.id,
+        )
+        return _check_summary(check)
+
+
+@mcp.tool
+def delete_check(suite_id: str, check_id: str) -> dict[str, Any]:
+    """Permanently delete a check from a suite — **and every result it ever
+    recorded**.
+
+    Use this for 'remove the row-count check from the orders suite', but read the
+    scope first: the delete cascades. The check, its version history, its stored
+    monitor baseline **and all of its historical results** go with it, so past
+    runs lose that check from their record and any trend built on its
+    ``metric_value`` disappears. It is not "stop running this check" — it is
+    "erase that this check ever existed".
+
+    This cannot be undone. Confirm with the user before calling it, say plainly
+    that result history is included, and prefer ``snooze_check`` when the intent
+    is only to stop the alerting. Requires edit access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    cid = _parse_uuid(check_id, field="check_id")
+    with _ctx() as (session, user), _service_errors():
+        require_permission(session, sid, user.id, minimum="edit")
+        # Read the name BEFORE deleting, so the confirmation can say what went.
+        name = check_service.get_check(session, sid, cid).name
+        check_service.delete_check(session, sid, cid)
+        return {"deleted": True, "check_id": check_id, "name": name}
+
+
+@mcp.tool
+def snooze_check(
+    suite_id: str,
+    check_id: str,
+    hours: Annotated[float, Field(gt=0, le=8760)] | None = None,
+) -> dict[str, Any]:
+    """Mute a check's alerts for a while — or un-mute it now.
+
+    Use this for 'stop alerting on the freshness check until tomorrow' or, with
+    ``hours`` omitted, 'turn alerts back on for that check'. Pass ``hours`` to
+    snooze for that many hours from now; omit it to clear any snooze immediately.
+
+    A snoozed check **still runs and still fails** — only the alert is
+    suppressed. Do not describe a snoozed check as disabled, and do not reach for
+    this when the user wants the check to stop evaluating. Requires edit access.
+
+    One tool rather than a snooze/unsnooze pair: it is one piece of state with
+    two values, and splitting it would ask an LLM to pick between two names for
+    the same field.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    cid = _parse_uuid(check_id, field="check_id")
+    with _ctx() as (session, user), _service_errors():
+        require_permission(session, sid, user.id, minimum="edit")
+        check = (
+            check_service.snooze_check(session, sid, cid, hours=hours)
+            if hours is not None
+            else check_service.clear_check_snooze(session, sid, cid)
+        )
+        return {
+            "check_id": check_id,
+            "name": check.name,
+            "snoozed": check.alert_snoozed_until is not None,
+            "alert_snoozed_until": (
+                check.alert_snoozed_until.isoformat() if check.alert_snoozed_until else None
+            ),
+        }
+
+
+@mcp.tool
+def dryrun_check(
+    suite_id: str,
+    expectation_type: str,
+    config: dict[str, Any] | None = None,
+    kind: str = "expectation",
+    warn_threshold: float | None = None,
+    fail_threshold: float | None = None,
+    critical_threshold: float | None = None,
+) -> dict[str, Any]:
+    """Preview a check against live data WITHOUT saving it.
+
+    Use this before ``create_check`` — 'would a not-null check on email pass
+    right now?' — to see what a rule would actually do against the suite's real
+    target. Nothing is persisted: no check row, no run, no result. Takes the same
+    arguments as ``create_check`` and runs against the suite's configured run
+    target.
+
+    Returns the status the check would have recorded (pass / warn / fail /
+    critical, or ``error`` when it could not be evaluated and ``skip`` when a
+    precondition was not met), the metric it measured, and the observed vs
+    expected values.
+
+    This is the authoring loop: dry-run, adjust the threshold, dry-run again, and
+    only then create. Requires edit access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    _reject_nul(name="", expectation_type=expectation_type, kind=kind, config=config or {})
+    with _ctx() as (session, user), _service_errors():
+        suite = require_permission(session, sid, user.id, minimum="edit")
+        connection = session.get(Connection, suite.connection_id)
+        if connection is None:
+            raise ToolError("suite has no connection")
+        outcome = dryrun_service.dry_run_check(
+            connection,
+            kind=kind,
+            expectation_type=expectation_type,
+            config=config or {},
+            warn_threshold=_dec(warn_threshold),
+            fail_threshold=_dec(fail_threshold),
+            critical_threshold=_dec(critical_threshold),
+            target=suite.target,
+            secret_store=get_secret_store(),
+        )
+        return {
+            "status": outcome.status,
+            "metric_value": _num(outcome.metric_value),
+            # Redacted against the suite's column policy — which the REST dry-run
+            # route does NOT do (#1419). That is defensible there and not here:
+            # the REST consumer is the author's own check-editor panel, looking at
+            # a suite they can edit; this consumer is a model that will quote the
+            # value into a conversation and may carry it further. Redacting makes
+            # the preview agree with `get_suite_results`, which would redact the
+            # same column on the same suite — an LLM seeing a value here and a
+            # mask there has no way to tell which is the truth.
+            "observed_value": run_service.redact_observed_value(
+                outcome.observed_value,
+                tested_column=(config or {}).get("column"),
+                policy=suite.column_policy,
+            ),
+            "expected_value": outcome.expected_value,
         }
 
 
