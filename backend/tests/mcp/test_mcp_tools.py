@@ -1377,3 +1377,247 @@ def test_list_runs_withholds_a_mid_run_suites_partial_outcome(
     assert run["checks_total"] is None
     assert run["checks_passed"] is None
     assert run["worst_severity"] is None
+
+
+# ─────────────── Tier-1 ops/config reads (#529) ───────────────────────────
+
+
+def test_list_connections_returns_metadata_and_health_but_never_config(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The #529 constraint, asserted as an absence rather than assumed.
+
+    `config` carries account identifiers, hosts, paths and `*_secret_name`
+    references (#1118). Names, types and health answer every question about
+    connections; this is the one surface where the rest would be handed to a
+    model verbatim, so it must not appear at all — nor may `secret_ref`.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    (conn,) = [c for c in server.list_connections() if c["id"] == str(suite.connection_id)]
+    assert conn["type"] == "snowflake"
+    assert conn["env"] == "dev"
+    assert conn["has_secret"] is True
+    assert "config" not in conn
+    assert "secret_ref" not in conn
+    # And nothing FROM the config leaked under another key — asserted against the
+    # stored config's own values, so a future field that grafts one in trips here
+    # rather than being caught by a name check that only knows today's names.
+    stored = db_session.get(Connection, suite.connection_id)
+    leaked = set(stored.config.values()) & {v for v in conn.values() if isinstance(v, str)}
+    assert not leaked, leaked
+
+
+def test_list_connections_reports_unknown_health_as_null_not_healthy(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A connection with no runs is *unknown*, and the docstring says so. Reading
+    a null as reassurance is the #828 blindness in a new place."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    (conn,) = [c for c in server.list_connections() if c["id"] == str(suite.connection_id)]
+    assert conn["last_run_at"] is None
+    assert conn["last_run_error"] is None
+    assert conn["consecutive_run_failures"] == 0
+
+
+def test_list_connections_surfaces_a_failing_datasource(db_session: Any, monkeypatch: Any) -> None:
+    """The #954 signal: a dead credential is invisible until a run fails, and then
+    it shows on the run, not the connection."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    db_session.add(Run(suite_id=suite.id, status="failed", failure_reason="authentication failed"))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    (conn,) = [c for c in server.list_connections() if c["id"] == str(suite.connection_id)]
+    assert conn["consecutive_run_failures"] == 1
+    assert conn["last_run_error"] == "authentication failed"
+
+
+def test_list_connections_filters_by_type_and_env(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    assert any(
+        c["id"] == str(suite.connection_id) for c in server.list_connections(type="snowflake")
+    )
+    assert not any(c["id"] == str(suite.connection_id) for c in server.list_connections(type="s3"))
+    assert not any(c["id"] == str(suite.connection_id) for c in server.list_connections(env="uat"))
+
+
+def _schedule(db_session: Any, suite: Suite, owner: User, **kw: Any) -> Any:
+    from backend.app.db.models import Schedule
+
+    defaults: dict[str, Any] = {
+        "suite_id": suite.id,
+        "cron": "0 2 * * *",
+        "timezone": "UTC",
+        "next_run_at": datetime.now(UTC) + timedelta(hours=1),
+        "created_by": owner.id,
+    }
+    sched = Schedule(**{**defaults, **kw})
+    db_session.add(sched)
+    db_session.commit()
+    return sched
+
+
+def test_list_schedules_shapes_the_schedule(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _schedule(db_session, suite, user)
+    _as(monkeypatch, db_session, user)
+
+    (sched,) = server.list_schedules()
+    assert sched["suite_id"] == str(suite.id)
+    assert sched["cron"] == "0 2 * * *"
+    assert sched["timezone"] == "UTC"
+    assert sched["enabled"] is True
+    assert sched["last_run_at"] is None
+
+
+def test_list_schedules_includes_disabled_ones_and_says_so(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A disabled schedule still reads back — the `enabled` flag is the answer, not
+    the row's presence. Filtering must be explicit."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _schedule(db_session, suite, user, enabled=False)
+    _as(monkeypatch, db_session, user)
+
+    assert server.list_schedules()[0]["enabled"] is False
+    assert server.list_schedules(enabled=True) == []
+    assert len(server.list_schedules(enabled=False)) == 1
+
+
+def test_list_schedules_hides_schedules_on_inaccessible_suites(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    _schedule(db_session, suite, owner)
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+    assert server.list_schedules() == []
+
+
+def test_list_schedules_named_inaccessible_suite_errors(db_session: Any, monkeypatch: Any) -> None:
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+    with pytest.raises(ToolError):
+        server.list_schedules(suite_id=str(suite.id))
+
+
+def _binding(db_session: Any, suite: Suite, _owner: User, **kw: Any) -> Any:
+    from backend.app.db.models import TriggerBinding
+
+    defaults: dict[str, Any] = {
+        "suite_id": suite.id,
+        "provider": "adf",
+        "pipeline_or_dag_id": "pl_nightly_load",
+        "env": "dev",
+    }
+    binding = TriggerBinding(**{**defaults, **kw})
+    db_session.add(binding)
+    db_session.commit()
+    return binding
+
+
+def test_list_trigger_bindings_shapes_the_binding(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _binding(db_session, suite, user)
+    _as(monkeypatch, db_session, user)
+
+    (b,) = server.list_trigger_bindings()
+    assert b["provider"] == "adf"
+    assert b["pipeline_or_dag_id"] == "pl_nightly_load"
+    assert b["env"] == "dev"
+    assert b["suite_id"] == str(suite.id)
+    assert b["enabled"] is True
+
+
+def test_list_trigger_bindings_rejects_an_unknown_provider(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """All three providers are valid (ADR 0029 added dbt) — and a typo must raise
+    rather than return an empty list that reads as "nothing is wired up"."""
+    user = _user(db_session)
+    _as(monkeypatch, db_session, user)
+    with pytest.raises(ToolError):
+        server.list_trigger_bindings(provider="databricks")
+
+
+def test_list_trigger_bindings_hides_bindings_on_inaccessible_suites(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    _binding(db_session, suite, owner)
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+    assert server.list_trigger_bindings() == []
+
+
+def test_get_notification_config_defaults_when_unconfigured(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A suite with no config still alerts on the defaults. Reporting "not
+    configured" as "alerts are off" would be the wrong answer to the question the
+    tool is actually asked."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_notification_config(str(suite.id))
+    assert out["configured"] is False
+    assert out["enabled"] is True
+    assert out["alert_on"] == "warn"
+    assert out["has_webhook"] is False
+
+
+def test_get_notification_config_reports_webhook_presence_never_the_url(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A webhook URL is a bearer credential — anyone holding it can post into the
+    channel. It is stored as a secret reference, and this tool must report its
+    presence only; neither the URL nor the reference may appear."""
+    from backend.app.db.models import SuiteNotification
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    db_session.add(
+        SuiteNotification(
+            suite_id=suite.id,
+            enabled=True,
+            alert_on="fail",
+            webhook_secret_ref="notif-webhook-abc123",
+            email_recipients="ops@acme.io",
+        )
+    )
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_notification_config(str(suite.id))
+    assert out["configured"] is True
+    assert out["has_webhook"] is True
+    assert out["has_slack_webhook"] is False
+    assert out["alert_on"] == "fail"
+    assert out["email_recipients"] == "ops@acme.io"
+    assert "notif-webhook-abc123" not in str(out)
+    assert not any("webhook" in k and k.startswith("webhook") for k in out)
+
+
+def test_get_notification_config_denied_for_inaccessible_suite(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+    with pytest.raises(ToolError):
+        server.get_notification_config(str(suite.id))
