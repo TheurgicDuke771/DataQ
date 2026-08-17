@@ -147,3 +147,41 @@ path is introduced and `tests/support/mcp_gates.GATES` picks them up in the four
 The exclusions are unchanged. `DELETE /suites/{id}` is now **explicitly** excluded as well: it
 cascades every run and result the suite ever produced, and unlike `delete_check` there is no
 lesser action to steer an assistant toward.
+
+## Amendment — Tier 3A batch 2, 33 → 38 (2026-08-17, issue [#1424](https://github.com/TheurgicDuke771/DataQ/issues/1424))
+
+Five more coherence tools, closing the last three **asymmetric-verb pairs** in the surface:
+`update_schedule`, `update_trigger_binding`, `delete_trigger_binding`, `list_check_versions`,
+`restore_check_version`. The split becomes **38 tools: 18 read-only, 16 that change state,
+4 live-probe**.
+
+Each pair was create-without-update, or create-without-delete, or a mutation with no way to
+inspect or undo it:
+
+- `create_schedule` + `delete_schedule` with no update meant "pause the nightly run" had only
+  one available answer — *delete it* — which discards the cron expression the user would need to
+  restore it. `update_schedule` makes pause a first-class, reversible action, and both tools now
+  point at each other so the destructive one is not chosen by default.
+- `create_trigger_binding` had neither a delete nor a disable, so an assistant could wire a
+  trigger and then had no way to unwire it.
+- `update_check` / `delete_check` snapshot every edit into `check_versions`, and none of that was
+  readable over MCP. `list_check_versions` exposes the edit history — deliberately distinct from
+  `get_check_history`'s *result* history, with both docstrings cross-referencing the other, since
+  "did this start failing because the data moved or because someone changed the check?" needs
+  both and the names are otherwise easy to confuse.
+- `restore_check_version` is also the **only** path that can clear a field back to empty:
+  `update_check`'s PATCH convention reads an omitted argument as "leave alone", so it structurally
+  cannot. That correction was applied to `update_check`'s own docstring, which had said
+  recreating the check was the only option.
+
+All five gate through `require_permission` on the owning suite (the schedule and binding tools
+resolve it from the row), so again no new authz path. The gate rows in
+`tests/support/mcp_gates.GATES` drive the four sweeps as before — with one trap worth recording:
+`restore_check_version` takes a `version_no`, and a probe check inserted directly rather than
+through `check_service` has **no version rows**, so the tool raised "check version not found"
+*before* reaching authz and the sweep passed with the gate deleted. That is the same vacuous-pass
+shape `_REAL_RUN` and `_REAL_CHECK` were each added to close, one level deeper; the fix inserts a
+real `CheckVersion` alongside the check. Every gate here was mutation-verified by removing it and
+confirming the sweep goes red.
+
+The exclusions are unchanged.

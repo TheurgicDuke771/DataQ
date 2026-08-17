@@ -655,7 +655,14 @@ def get_check_history(
     last row, z-score…), or null for a check that records no metric.
 
     This is *result* history, not edit history: it says how the check performed,
-    not how its definition changed. Requires view access to the suite.
+    not how its definition changed. **For how the check's definition changed —
+    who edited it, when, and what the thresholds used to be — use
+    ``list_check_versions``.** The two answer different questions and are easy to
+    confuse: a check that "started failing" may have started failing because the
+    data moved (visible here) or because someone tightened its threshold (visible
+    there), and this tool cannot distinguish them.
+
+    Requires view access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     cid = _parse_uuid(check_id, field="check_id")
@@ -673,6 +680,76 @@ def get_check_history(
                     "metric_value": p.metric_value,
                 }
                 for p in points
+            ],
+        }
+
+
+@mcp.tool
+def list_check_versions(
+    suite_id: str,
+    check_id: str,
+    limit: Annotated[int, Field(ge=1, le=200)] = 30,
+) -> dict[str, Any]:
+    """Get one check's edit history — how its definition has changed over time.
+
+    Use this for 'who changed this threshold?', 'what did this check look like
+    last week?', or 'was this check edited around the time it started failing?'.
+    Returns up to ``limit`` snapshots, newest first: the ``version_no``, the
+    check's name, kind, expectation type, dimension, full ``config`` and the three
+    severity thresholds **as they were at that version**, plus when the change was
+    made and who made it.
+
+    ``total`` reports how many versions exist regardless of ``limit``, so a short
+    page is not mistaken for the whole history — the oldest versions are the ones
+    dropped, which are exactly the ones "what did this look like originally?" is
+    asking for.
+
+    This is *edit* history, not result history. **For how the check has behaved
+    run over run — pass/fail and the measured value — use
+    ``get_check_history``.** Answering "why did this start failing?" usually
+    needs both: the data may have moved, or the definition may have.
+
+    A snapshot is written on create and after every successful edit, so a check
+    that has never been edited still has version 1. ``changed_by_name`` is null
+    when the editor was a system actor or a user who has since been removed —
+    read that as "the author is not recorded", not as "nobody edited it".
+
+    To put the check back to one of these snapshots, use
+    ``restore_check_version``. Requires view access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    cid = _parse_uuid(check_id, field="check_id")
+    with _ctx() as (session, user), _service_errors():
+        require_permission(session, sid, user.id, minimum="view")
+        versions = check_service.list_check_versions(session, sid, cid)
+        return {
+            "suite_id": suite_id,
+            "check_id": check_id,
+            # Before the slice, so truncation is visible rather than implied by a
+            # page that happens to be `limit` long.
+            "total": len(versions),
+            "versions": [
+                {
+                    "version_no": v.version_no,
+                    "name": v.name,
+                    "kind": v.kind,
+                    "expectation_type": v.expectation_type,
+                    # Snapshotted (ADR 0038) — reporting the check's CURRENT
+                    # dimension beside an OLD config would misstate what the
+                    # check was at that version.
+                    "dimension": v.dimension,
+                    "config": v.config,
+                    # `_num`, not the raw attribute: these are NUMERIC columns and
+                    # arrive as `Decimal`, which the JSON encoder refuses. REST is
+                    # immune because Pydantic coerces on the way out; MCP has no
+                    # Pydantic in the path, which is exactly how #1273 happened.
+                    "warn_threshold": _num(v.warn_threshold),
+                    "fail_threshold": _num(v.fail_threshold),
+                    "critical_threshold": _num(v.critical_threshold),
+                    "changed_at": v.created_at.isoformat(),
+                    "changed_by_name": v.changed_by_name,
+                }
+                for v in versions[:limit]
             ],
         }
 
@@ -1335,13 +1412,16 @@ def update_check(
     because the result is still a valid check it saves and reports success.
 
     Because omission means "leave alone", there is **no way to clear a field back
-    to empty** through this tool — a threshold or dimension you want removed
-    needs the check recreated. Say so rather than passing 0 or an empty string,
-    which would set that value, not clear it. ``kind`` cannot be changed at all;
-    recreate the check as the other kind.
+    to empty** through this tool. Say so rather than passing 0 or an empty string,
+    which would set that value, not clear it. If an earlier version of the check
+    had the field empty, ``restore_check_version`` will clear it — that is the
+    one path that applies emptiness rather than skipping it; otherwise the check
+    must be recreated. ``kind`` cannot be changed at all; recreate the check as
+    the other kind.
 
     Every update snapshots the new state as a check version, so the change is
-    reviewable and reversible in the app. Requires edit access to the suite.
+    reviewable with ``list_check_versions`` and reversible with
+    ``restore_check_version``. Requires edit access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     cid = _parse_uuid(check_id, field="check_id")
@@ -1368,6 +1448,46 @@ def update_check(
             actor_id=user.id,
         )
         return _check_summary(check)
+
+
+@mcp.tool
+def restore_check_version(
+    suite_id: str,
+    check_id: str,
+    version_no: Annotated[int, Field(ge=1)],
+) -> dict[str, Any]:
+    """Put a check back to one of its earlier versions.
+
+    Use this for 'undo that threshold change' or 'restore the orders row-count
+    check to how it was on Monday'. Get ``version_no`` from
+    ``list_check_versions`` — do not guess it.
+
+    Unlike ``update_check``, this applies the whole snapshot, including fields
+    that were empty at that version: restoring a version that had no warn
+    threshold clears the warn threshold, rather than leaving today's value in
+    place. That is the point of a restore, and it is why this is not the same as
+    patching the fields back by hand.
+
+    **Nothing is lost and nothing is renumbered.** History is additive: the
+    restore is recorded as a new version on top, so the state you are replacing
+    remains in ``list_check_versions`` and can itself be restored. Restoring the
+    version the check is already on is a no-op and records nothing.
+
+    **An old snapshot can be refused.** It is re-validated against today's rules,
+    not simply written back, so a version created before a validation rule
+    shipped may be rejected — the error names what is wrong and the check is left
+    exactly as it was. That is deliberate: it prevents reinstating a definition
+    the authoring path would no longer accept.
+
+    A check's kind is immutable and is never changed by a restore. Requires edit
+    access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    cid = _parse_uuid(check_id, field="check_id")
+    with _ctx() as (session, user), _service_errors():
+        require_permission(session, sid, user.id, minimum="edit")
+        check = check_service.restore_check_version(session, sid, cid, version_no, actor_id=user.id)
+        return {**_check_summary(check), "restored_from_version": version_no}
 
 
 @mcp.tool
@@ -1556,13 +1676,20 @@ def create_schedule(
     actually fire — so you can confirm the *interpretation* to the user rather
     than restating the cron back to them. Creating one with ``enabled=false``
     reports ``next_run_at: null``, because a disabled schedule does not fire at
-    all; the stored expression is still there and starts firing when it is
-    enabled in the app.
+    all; the stored expression is still there, and ``update_schedule`` with
+    ``enabled=true`` starts it firing and reports the resolved fire time then.
 
     A suite may be scheduled before its run target is configured; the dispatcher
     re-checks at fire time and skips if it is still unset. Requires edit access.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
+    # The same screen `update_schedule` applies to the same two columns. Cron and
+    # timezone validation would reject a NUL-bearing value anyway, but as "invalid
+    # timezone" — which sends an assistant looking for a zone-name typo that isn't
+    # there. Guarding one door and not its sibling is this surface's recurring
+    # defect; here it was inverted, with the newer door the guarded one.
+    if contains_nul({"cron": cron, "timezone": timezone}):
+        raise ToolError("NUL (\\x00) characters are not allowed in a schedule's fields")
     with _ctx() as (session, user), _service_errors():
         # `create_schedule` gates internally, but gating here too keeps the
         # authz visible at the tool — and is what the RBAC sweep enters.
@@ -1590,6 +1717,80 @@ def create_schedule(
 
 
 @mcp.tool
+def update_schedule(
+    schedule_id: str,
+    # Bounded to the columns, exactly as `create_schedule` is: an unbounded
+    # LLM-generated string reaches Postgres as StringDataRightTruncation, which is
+    # a psycopg error rather than a `DataQError` and so escapes `_service_errors`
+    # (#567's class). A guard on the create door and not the update door is no
+    # guard at all.
+    cron: Annotated[str | None, Field(min_length=1, max_length=128)] = None,
+    timezone: Annotated[str | None, Field(min_length=1, max_length=64)] = None,
+    enabled: bool | None = None,
+) -> dict[str, Any]:
+    """Change a suite's cron schedule — its cadence, its timezone, or pause/resume it.
+
+    Use this for 'move the orders run to 3am', 'pause the nightly schedule', or
+    'switch that schedule to Toronto time'. Every argument is optional and an
+    omitted one is left exactly as it was, so pausing a schedule is
+    ``enabled=false`` alone — you do not need to restate the cron.
+
+    ``cron`` is a standard five-field expression and ``timezone`` an IANA name
+    (``America/Toronto``), **not** a UTC offset. Both are validated; an invalid
+    one is an error rather than a schedule that silently stops firing.
+
+    Returns the schedule's new state including ``next_run_at`` — when it will
+    actually fire next, or ``null`` if the result is disabled, because a paused
+    schedule does not fire at all. When it is present, confirm the change to the
+    user from it rather than from the cron string, since it is the resolved
+    interpretation and the cron is only the input. When it is ``null`` the
+    schedule is paused: say that instead of naming a time, and note that
+    retiming a paused schedule stores the new cadence without scheduling
+    anything until it is re-enabled.
+
+    **Resuming a paused schedule re-bases it; it does not backfill.** Runs that
+    would have happened while it was paused do not happen retroactively — the
+    schedule simply starts again from its next future slot. If the user wants the
+    missed run, trigger it explicitly with ``trigger_suite_run``.
+
+    To stop a suite running automatically for good, use ``delete_schedule``;
+    disabling keeps the row and the expression. Requires edit access to the
+    schedule's suite.
+    """
+    schid = _parse_uuid(schedule_id, field="schedule_id")
+    # Same boundary rejection every other free-text tool argument gets: NUL can't
+    # be stored by Postgres and the driver's ValueError would escape
+    # `_service_errors` as an opaque internal failure (#567).
+    if contains_nul({"cron": cron or "", "timezone": timezone or ""}):
+        raise ToolError("NUL (\\x00) characters are not allowed in a schedule's fields")
+    with _ctx() as (session, user), _service_errors():
+        # `update_schedule` resolves the schedule and gates on ITS suite (404 for a
+        # caller who cannot see that suite), so the id alone is not a way in.
+        schedule = schedule_service.update_schedule(
+            session,
+            schid,
+            user_id=user.id,
+            cron_expr=cron,
+            timezone=timezone,
+            enabled=enabled,
+        )
+        return {
+            "id": str(schedule.id),
+            "suite_id": str(schedule.suite_id),
+            "cron": schedule.cron,
+            "timezone": schedule.timezone,
+            "enabled": schedule.enabled,
+            "last_run_at": schedule.last_run_at.isoformat() if schedule.last_run_at else None,
+            # `null` when disabled, not the stored timestamp — the column always
+            # holds a computed next fire, but the dispatcher filters on `enabled`
+            # and never reaches it. Same rule as `create_schedule` and
+            # `list_schedules`; the three must not disagree about a paused
+            # schedule, which is precisely the state a user asks about.
+            "next_run_at": (schedule.next_run_at.isoformat() if schedule.enabled else None),
+        }
+
+
+@mcp.tool
 def delete_schedule(schedule_id: str) -> dict[str, Any]:
     """Delete a suite's cron schedule so it stops running automatically.
 
@@ -1597,9 +1798,10 @@ def delete_schedule(schedule_id: str) -> dict[str, Any]:
     untouched — only the automatic trigger goes, and the suite can still be run
     on demand.
 
-    If the intent is a pause rather than a removal, say so: a schedule can be
-    disabled in the app and re-enabled later, which this tool cannot do.
-    Requires edit access to the schedule's suite.
+    **If the intent is a pause rather than a removal, use ``update_schedule``
+    with ``enabled=false`` instead** — that keeps the row and the cron expression
+    so it can be resumed later, where this tool discards both. Requires edit
+    access to the schedule's suite.
     """
     schid = _parse_uuid(schedule_id, field="schedule_id")
     with _ctx() as (session, user), _service_errors():
@@ -1632,7 +1834,15 @@ def create_trigger_binding(
     ``env`` is part of the key and is the commonest thing to get wrong: a binding
     on ``dev`` never fires for a pipeline whose runs are reported against ``qa``.
     Any returned ``warnings`` are advisory, not errors — read them out, because
-    they name exactly that class of silent no-fire. Requires edit access.
+    they name exactly that class of silent no-fire.
+
+    **An "already exists" error does not mean the trigger works.** The uniqueness
+    key is provider + pipeline + environment + suite and does **not** include
+    ``enabled``, so a *disabled* binding collides here exactly like a live one. If
+    you get that error while wiring something up, check
+    ``list_trigger_bindings`` and, if the existing one is disabled, enable it with
+    ``update_trigger_binding`` — otherwise you will report the trigger as in place
+    when it never fires. Requires edit access.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     # NUL can't be stored by Postgres and the driver's ValueError would escape
@@ -1665,6 +1875,66 @@ def create_trigger_binding(
                 for w in result.warnings
             ],
         }
+
+
+@mcp.tool
+def update_trigger_binding(binding_id: str, enabled: bool) -> dict[str, Any]:
+    """Enable or disable an orchestration trigger without deleting it.
+
+    Use this for 'stop the orders suite running after the nightly load, but keep
+    the wiring' or to switch one back on. A disabled binding still exists and
+    still reads back from ``list_trigger_bindings`` — it simply never fires.
+
+    **What a binding points at cannot be changed here.** Its provider,
+    pipeline/DAG id, environment and target suite are its identity and are
+    immutable; to re-target it, delete it with ``delete_trigger_binding`` and
+    create a new one. This tool only flips the switch.
+
+    Any returned ``warnings`` are advisory, not errors — read them out. They are
+    recomputed on enable rather than carried over from creation, because
+    re-enabling a binding is exactly when a provider/environment ambiguity
+    becomes able to lose triggers again (#1186). Requires edit access to the
+    binding's suite.
+    """
+    bid = _parse_uuid(binding_id, field="binding_id")
+    with _ctx() as (session, user), _service_errors():
+        # Resolves the binding and gates on ITS suite (404 for a caller who cannot
+        # see that suite), so the id alone is not a way in.
+        result = trigger_binding_service.update_binding(
+            session, bid, user_id=user.id, enabled=enabled
+        )
+        return {
+            "id": str(result.binding.id),
+            "provider": result.binding.provider,
+            "pipeline_or_dag_id": result.binding.pipeline_or_dag_id,
+            "env": result.binding.env,
+            "suite_id": str(result.binding.suite_id),
+            "enabled": result.binding.enabled,
+            "warnings": [
+                {"code": w.code, "message": w.message, "other_envs": w.other_envs}
+                for w in result.warnings
+            ],
+        }
+
+
+@mcp.tool
+def delete_trigger_binding(binding_id: str) -> dict[str, Any]:
+    """Delete an orchestration trigger so a pipeline stops running its suite.
+
+    Use this for 'unhook the orders checks from the nightly load'. The suite, its
+    checks and the pipeline are all untouched — only the link between them goes,
+    and the suite can still be run on demand or on a cron schedule.
+
+    **If the intent is a pause rather than a removal, use
+    ``update_trigger_binding`` with ``enabled=false`` instead** — that keeps the
+    binding so it can be switched back on, where this tool discards it and
+    re-creating one means knowing the provider, pipeline id and environment
+    again. Requires edit access to the binding's suite.
+    """
+    bid = _parse_uuid(binding_id, field="binding_id")
+    with _ctx() as (session, user), _service_errors():
+        trigger_binding_service.delete_binding(session, bid, user_id=user.id)
+        return {"deleted": True, "binding_id": binding_id}
 
 
 @mcp.tool

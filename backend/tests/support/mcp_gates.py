@@ -63,6 +63,7 @@ GATES: dict[str, str] = {
     "get_run_results": "suite:view",
     "get_run_status": "suite:view",
     "get_suite_results": "suite:view",
+    "list_check_versions": "suite:view",
     "list_checks": "suite:view",
     # ── writes (and live probes) gated on the suite ──────────────────────────
     # `profile_column` is here, not with the reads: it persists nothing, but it
@@ -77,13 +78,17 @@ GATES: dict[str, str] = {
     "delete_check": "suite:edit",
     "dryrun_check": "suite:edit",
     "delete_schedule": "suite:edit",
+    "delete_trigger_binding": "suite:edit",
     "profile_column": "suite:edit",
+    "restore_check_version": "suite:edit",
     "set_column_policy": "suite:edit",
     "suggest_column_policy": "suite:edit",
     "snooze_check": "suite:edit",
     "trigger_suite_run": "suite:edit",
     "update_check": "suite:edit",
+    "update_schedule": "suite:edit",
     "update_suite": "suite:edit",
+    "update_trigger_binding": "suite:edit",
     # ── workspace-role gated: no suite to hang a resource gate on ───────────
     # `test_connection` spends a stored credential against a remote system;
     # `import_suite` CREATES a suite, so there is no existing resource whose

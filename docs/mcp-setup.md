@@ -22,7 +22,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/00
     [0032](adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 33 tools and per-suite permissions. Two rejections are deliberate in that
+    all 38 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -80,20 +80,22 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 33 tools
+## The 38 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
-identically. The 30 split three ways, not two:
+identically. The 38 split three ways, not two:
 
-- **16 read-only** — `export_suite`, `get_adf_pipeline_status`, `get_check`, `get_check_history`,
-  `get_health_score`, `get_notification_config`, `get_run_results`, `get_run_status`,
-  `get_suite_performance`, `get_suite_results`, `list_checks`, `list_connections`, `list_runs`,
-  `list_schedules`, `list_suites`, `list_trigger_bindings`.
-- **10 that change state** — `create_check`, `update_check`, `delete_check`, `snooze_check`,
-  `trigger_suite_run`, `cancel_run`, `create_schedule`, `delete_schedule`,
-  `create_trigger_binding`, `import_suite`. All gate on `edit` access to the affected suite
-  (`create_trigger_binding`, `create_schedule` and friends via the suite they target); `import_suite`
+- **18 read-only** — `export_suite`, `get_adf_pipeline_status`, `get_check`, `get_check_history`,
+  `get_column_policy`, `get_health_score`, `get_notification_config`, `get_run_results`,
+  `get_run_status`, `get_suite_performance`, `get_suite_results`, `list_check_versions`,
+  `list_checks`, `list_connections`, `list_runs`, `list_schedules`, `list_suites`,
+  `list_trigger_bindings`.
+- **16 that change state** — `create_check`, `update_check`, `delete_check`, `snooze_check`,
+  `restore_check_version`, `trigger_suite_run`, `cancel_run`, `update_suite`, `set_column_policy`,
+  `create_schedule`, `update_schedule`, `delete_schedule`, `create_trigger_binding`,
+  `update_trigger_binding`, `delete_trigger_binding`, `import_suite`. All gate on `edit` access to
+  the affected suite (the schedule and binding tools via the suite they target); `import_suite`
   additionally requires the **member** workspace role, since it has no existing suite to gate on.
 - **4 that persist nothing but open a live datasource connection using stored credentials** —
   `profile_column`, `dryrun_check`, `suggest_column_policy`, `test_connection`. These are gated
@@ -124,11 +126,13 @@ succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 
 |---|---|
 | `list_checks` | "What does the orders suite actually check?" — every check's config, kind, dimension |
 | `get_check` | "What is this check actually asserting?" — one check's full definition |
-| `get_check_history` | "Has the row-count check been flaky?" — recent result history for one check |
+| `get_check_history` | "Has the row-count check been flaky?" — recent *result* history for one check; for how its definition changed, use `list_check_versions` |
+| `list_check_versions` | "Who changed this threshold?" — one check's *edit* history: every snapshot's config and thresholds as they were at that version |
 | `create_check` | "Add a null check on email" — authors a check on a suite you can edit |
 | `update_check` | "Loosen the null check on email to warn at 2%" — a partial update; `config` replaces the whole configuration rather than merging into it |
 | `delete_check` | "Remove the row-count check from orders" — permanently deletes a check **and every result it ever recorded**; prefer `snooze_check` to just stop alerting |
 | `snooze_check` | "Stop alerting on the freshness check until tomorrow" (or, with no duration, "turn alerts back on") — mutes alerts only; the check still runs and still fails |
+| `restore_check_version` | "Undo that threshold change" — puts a check back to a snapshot from `list_check_versions`; additive (nothing is renumbered or deleted), and the only path that *clears* a field back to empty |
 | `dryrun_check` | "Would a not-null check on email pass right now?" — previews a check against live data without saving anything |
 
 ### Runs & profiling
@@ -154,6 +158,8 @@ succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 
 | `get_adf_pipeline_status` | "Why did pipeline Y fail?" — recent orchestrator (ADF/Airflow/dbt) runs + correlated DQ run |
 | `list_trigger_bindings` | "What runs after the nightly load?" — which pipeline/DAG successes trigger which suite |
 | `create_trigger_binding` | "Run the orders checks after the nightly load finishes" — binds a pipeline/DAG success in a given `env` to a suite; only success triggers a run |
+| `update_trigger_binding` | "Stop that trigger firing, but keep the wiring" — enables or disables a binding; what it points at is immutable, so re-targeting means delete + create |
+| `delete_trigger_binding` | "Unhook the orders checks from the nightly load" — removes the binding; prefer `update_trigger_binding` if a pause is meant |
 
 ### Scheduling & alerting
 
@@ -161,7 +167,8 @@ succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 
 |---|---|
 | `list_schedules` | "When does the orders suite run?" — cron schedules + next fire time |
 | `create_schedule` | "Run the orders suite every night at 2am" — returns the resolved `next_run_at` so you can confirm the interpretation, or `null` when created disabled (a disabled schedule does not fire at all) |
-| `delete_schedule` | "Stop the nightly orders run" — removes the schedule; the suite and its checks are untouched |
+| `update_schedule` | "Move the orders run to 3am" / "pause the nightly schedule" — partial update of cron, timezone or enabled. Resuming **re-bases**; it does not backfill runs missed while paused |
+| `delete_schedule` | "Stop the nightly orders run" — removes the schedule; the suite and its checks are untouched. Prefer `update_schedule(enabled=false)` if a pause is meant |
 | `get_notification_config` | "Who gets told when orders fails?" — channel presence (Teams/Slack/email), never webhook URLs |
 
 ### Suite portability

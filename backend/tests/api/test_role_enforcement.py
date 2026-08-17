@@ -32,7 +32,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.core.secret_names import connection_secret_ref
-from backend.app.db.models import Check, Connection, Run, Schedule, Share, Suite, User
+from backend.app.db.models import (
+    Check,
+    CheckVersion,
+    Connection,
+    Run,
+    Schedule,
+    Share,
+    Suite,
+    TriggerBinding,
+    User,
+)
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import share_service, suite_authz
@@ -64,6 +74,7 @@ _REAL_RUN = "<a real run, substituted at probe time>"
 _REAL_CHECK = "<a real check, substituted at probe time>"
 _REAL_SCHEDULE = "<a real schedule, substituted at probe time>"
 _REAL_CONNECTION = "<a real connection, substituted at probe time>"
+_REAL_BINDING = "<a real trigger binding, substituted at probe time>"
 
 #: Every role, so a matrix test can't silently skip a tier.
 ROLES = ("admin", "member", "viewer")
@@ -649,6 +660,16 @@ def _assert_tool_denies(
         db_session.add(schedule)
         db_session.commit()
         args = {**args, "schedule_id": str(schedule.id)}
+    if args.get("binding_id") == _REAL_BINDING:
+        binding = TriggerBinding(
+            provider="adf",
+            pipeline_or_dag_id=f"pl_probe_{uuid.uuid4().hex[:8]}",
+            env="dev",
+            suite_id=suite.id,
+        )
+        db_session.add(binding)
+        db_session.commit()
+        args = {**args, "binding_id": str(binding.id)}
     if args.get("check_id") == _REAL_CHECK:
         check = Check(
             suite_id=suite.id,
@@ -659,6 +680,25 @@ def _assert_tool_denies(
         db_session.add(check)
         db_session.commit()
         args = {**args, "check_id": str(check.id)}
+        # `restore_check_version` needs the *version* to exist too, and this check
+        # was inserted directly rather than through `check_service`, so it has no
+        # snapshots at all. Without this row the tool raises "check version not
+        # found" BEFORE reaching authz — and "not found" is in the accepted-denial
+        # vocabulary below, so the sweep would pass with the gate deleted. Exactly
+        # the vacuous pass `_REAL_RUN` and `_REAL_CHECK` were each added to close,
+        # one level deeper.
+        if "version_no" in args:
+            db_session.add(
+                CheckVersion(
+                    check_id=check.id,
+                    version_no=args["version_no"],
+                    name=check.name,
+                    kind=check.kind,
+                    expectation_type=check.expectation_type,
+                    config=check.config,
+                )
+            )
+            db_session.commit()
 
     @contextmanager
     def _as_principal() -> Any:
@@ -714,7 +754,13 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
             "checks": [],
         },
         "create_schedule": {"suite_id": sid, "cron": "0 2 * * *"},
+        "update_schedule": {"schedule_id": _REAL_SCHEDULE, "enabled": False},
         "delete_schedule": {"schedule_id": _REAL_SCHEDULE},
+        "update_trigger_binding": {"binding_id": _REAL_BINDING, "enabled": False},
+        "delete_trigger_binding": {"binding_id": _REAL_BINDING},
+        # `version_no` is what makes `_assert_tool_denies` insert a CheckVersion
+        # alongside the check — see the comment there.
+        "restore_check_version": {"suite_id": sid, "check_id": _REAL_CHECK, "version_no": 1},
         "create_trigger_binding": {
             "provider": "adf",
             "pipeline_or_dag_id": "pl_probe",
@@ -733,6 +779,7 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
         "export_suite": {"suite_id": sid},
         "get_check": {"suite_id": sid, "check_id": _REAL_CHECK},
         "get_check_history": {"suite_id": sid, "check_id": _REAL_CHECK},
+        "list_check_versions": {"suite_id": sid, "check_id": _REAL_CHECK},
         "get_notification_config": {"suite_id": sid},
         "get_suite_results": {"suite_id": sid},
         "list_checks": {"suite_id": sid},
