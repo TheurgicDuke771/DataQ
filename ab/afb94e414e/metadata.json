@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "abafb94e414e",
+  "strategy": "manual-commit",
+  "branch": "fix/alert-title-prop",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/connections/ConnectionForm.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ab/afb94e414e/0/metadata.json",
+      "transcript": "/ab/afb94e414e/0/full.jsonl",
+      "compact_transcript": "/ab/afb94e414e/0/transcript.jsonl",
+      "content_hash": "/ab/afb94e414e/0/content_hash.txt",
+      "prompt": "/ab/afb94e414e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1462,
+    "cache_creation_tokens": 1574081,
+    "cache_read_tokens": 252470889,
+    "output_tokens": 410642,
+    "api_call_count": 731
+  }
+}
