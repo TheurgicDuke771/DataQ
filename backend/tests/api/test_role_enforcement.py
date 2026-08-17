@@ -494,6 +494,15 @@ def test_the_mcp_tool_surface_is_exactly_the_read_and_suite_scoped_tools() -> No
         # cannot be used to reach a suite the caller can't see.
         "list_runs",
         "get_run_results",
+        # read-only ops/config (#529 Tier 1). `list_connections` is workspace-
+        # scoped like its REST route and returns metadata + health ONLY — never
+        # config or a secret reference; the other three scope through the
+        # caller's accessible suites, and `get_notification_config` reports
+        # webhook PRESENCE, never a URL (a webhook URL is a bearer credential).
+        "list_connections",
+        "list_schedules",
+        "list_trigger_bindings",
+        "get_notification_config",
         # suite-scoped writes — gated on require_permission(minimum="edit"),
         # which the Viewer cap feeds (see the test below)
         "trigger_suite_run",

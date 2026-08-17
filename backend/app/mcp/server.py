@@ -33,7 +33,16 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import is_workspace_admin
 from backend.app.core.secrets import get_secret_store
-from backend.app.db.models import Check, Connection, Run, Suite, User
+from backend.app.db.models import (
+    CONNECTION_TYPES,
+    ENVS,
+    ORCHESTRATION_PROVIDERS,
+    Check,
+    Connection,
+    Run,
+    Suite,
+    User,
+)
 from backend.app.db.session import get_session
 from backend.app.mcp.auth import (
     McpAuthError,
@@ -44,14 +53,18 @@ from backend.app.mcp.auth import (
 )
 from backend.app.services import (
     check_service,
+    connection_service,
     dashboard_service,
+    notification_service,
     orchestration_service,
     profile_service,
     rollup,
     run_dispatch,
     run_service,
     run_target,
+    schedule_service,
     suite_service,
+    trigger_binding_service,
 )
 from backend.app.services.suite_authz import require_permission
 
@@ -359,13 +372,17 @@ def get_adf_pipeline_status(provider: str | None = None, limit: int = 20) -> lis
     """Get recent orchestration pipeline/DAG runs with their correlated DQ result.
 
     Use this for 'did any pipelines fail overnight?' or 'why did the customer
-    pipeline fail?'. Returns the most recent ADF / Airflow pipeline runs —
+    pipeline fail?'. Returns the most recent ADF / Airflow / dbt pipeline runs —
     provider, pipeline/DAG id, run status, start/end times — and, when a DQ suite
     was triggered by that pipeline run (and is visible to the user), the triggered
-    run's id and status. Optionally filter by ``provider`` ('adf' or 'airflow').
+    run's id and status. Optionally filter by ``provider`` ('adf', 'airflow' or
+    'dbt').
     """
-    if provider is not None and provider not in ("adf", "airflow"):
-        raise ToolError("provider must be 'adf' or 'airflow'")
+    # All three orchestration providers (ADR 0029 added dbt), from the shared
+    # vocabulary. The old two-name literal rejected `dbt` — the obvious next call
+    # after `list_trigger_bindings(provider="dbt")` returns a dbt binding.
+    if provider is not None and provider not in ORCHESTRATION_PROVIDERS:
+        raise ToolError(f"provider must be one of {list(ORCHESTRATION_PROVIDERS)}")
     with _ctx() as (session, user):
         runs = orchestration_service.list_pipeline_runs(session, provider=provider, limit=limit)
         accessible = set(
@@ -651,6 +668,258 @@ def get_run_results(run_id: str) -> dict[str, Any]:
         # holds — ADR 0027 existence-hiding).
         suite = require_permission(session, run.suite_id, user.id, minimum="view")
         return {"suite_id": str(run.suite_id), **_run_results_payload(session, suite, run)}
+
+
+@mcp.tool
+def list_connections(type: str | None = None, env: str | None = None) -> list[dict[str, Any]]:
+    """List the configured datasource and orchestration connections, with health.
+
+    Use this for 'what are we connected to?', 'which connections are broken?', or
+    to find the connection a suite should run against. Returns, per connection:
+    its id, name, type (``snowflake`` / ``adls_gen2`` / ``s3`` / ``unity_catalog``
+    / ``iceberg`` for datasources; ``adf`` / ``airflow`` / ``dbt`` for
+    orchestration providers), environment, whether a credential is stored, and
+    its health — when it was last polled or last ran, a classified error reason
+    when it is failing, how many consecutive failures it has had, and when its
+    credential expires if the credential states a lifetime. Optionally filter by
+    ``type`` or ``env``.
+
+    **Deliberately excludes every connection's configuration.** Names, types and
+    health are what a question about connections needs; account identifiers,
+    hosts, paths and secret references are not, and this is the surface where
+    they would be handed to a model verbatim. Read a connection's config in the
+    app if you need it.
+
+    A null health timestamp means *unknown* — nothing has polled or run yet —
+    never "healthy", and ``consecutive_run_failures`` is likewise null rather
+    than 0 for a connection that has never run. A null ``credential_expires_at``
+    means either that this credential type states no readable lifetime **or**
+    that its expiry has never been read — ``credential_expiry_checked_at`` tells
+    the two apart, and null there means we have never looked. Report all of these
+    as silence rather than reassurance.
+    """
+    if type is not None and type not in CONNECTION_TYPES:
+        raise ToolError(f"type must be one of {list(CONNECTION_TYPES)}")
+    if env is not None and env not in ENVS:
+        raise ToolError(f"env must be one of {list(ENVS)}")
+    with _ctx() as (session, _user), _service_errors():
+        # Connections are workspace-scoped, not suite-scoped: every authenticated
+        # caller can list them, exactly as the REST route does. The role axis
+        # (ADR 0033) gates *mutations*, which this tool deliberately has none of —
+        # and MCP has no connection-write tool at all, since a credential must
+        # never transit an LLM (#529's standing exclusion).
+        conns = connection_service.list_connections(session, conn_type=type, env=env)
+        # One batched query for the whole list, not one per connection (#947).
+        health = connection_service.datasource_health(session, [c.id for c in conns])
+        out: list[dict[str, Any]] = []
+        for c in conns:
+            h = health.get(c.id)
+            out.append(
+                {
+                    "id": str(c.id),
+                    "name": c.name,
+                    "type": c.type,
+                    "env": c.env,
+                    "has_secret": c.secret_ref is not None,
+                    # Orchestration connections: poll health (#828).
+                    "last_polled_at": c.last_polled_at.isoformat() if c.last_polled_at else None,
+                    # A CLASSIFIED reason, never raw exception text (which can
+                    # carry a SAS/DSN/token) — #605/#1285.
+                    "last_poll_error": c.last_poll_error,
+                    "consecutive_poll_failures": c.consecutive_poll_failures,
+                    # Datasource connections: run-derived health (#954). Absent
+                    # from the mapping = no runs yet = unknown, not healthy.
+                    "last_run_at": (h.last_run_at.isoformat() if h and h.last_run_at else None),
+                    "last_run_error": h.reason if h else None,
+                    # `None`, not 0: a connection absent from the health mapping
+                    # has never run, and rendering that unknown as a concrete zero
+                    # is the reassurance this tool's own docstring forbids.
+                    "consecutive_run_failures": h.consecutive_failures if h else None,
+                    "credential_expires_at": (
+                        c.credential_expires_at.isoformat() if c.credential_expires_at else None
+                    ),
+                    # Disambiguates the null above (#1024): "this credential type
+                    # has no readable lifetime" and "we have never looked" are
+                    # different facts, and only one of them is reassuring.
+                    "credential_expiry_checked_at": (
+                        c.credential_expiry_checked_at.isoformat()
+                        if c.credential_expiry_checked_at
+                        else None
+                    ),
+                }
+            )
+        return out
+
+
+@mcp.tool
+def list_schedules(
+    suite_id: str | None = None, enabled: bool | None = None
+) -> list[dict[str, Any]]:
+    """List the cron schedules that run suites automatically.
+
+    Use this for 'when does the orders suite run?', 'what runs overnight?', or
+    'is anything scheduled on this suite?'. Returns, per schedule: its id, the
+    suite it runs, the cron expression, the timezone that expression is
+    interpreted in, whether it is enabled, when it last ran, and — as
+    ``next_run_at`` — exactly when it fires next. Optionally narrow to one
+    ``suite_id`` or to ``enabled`` true/false.
+
+    Use ``next_run_at`` rather than deriving the next fire from the cron
+    expression yourself: DataQ computes it in the schedule's own timezone and it
+    is therefore already correct across a DST transition, which hand-evaluating
+    a cron string against an IANA zone is not.
+
+    A disabled schedule still exists and still reads back here — it simply does
+    not fire, so do not describe a suite as unscheduled on the strength of a row
+    being present. Scoped to suites the user can access (a workspace-admin sees
+    every suite).
+    """
+    with _ctx() as (session, user), _service_errors():
+        sid = _parse_uuid(suite_id, field="suite_id") if suite_id is not None else None
+        if sid is not None:
+            require_permission(session, sid, user.id, minimum="view")
+        schedules = schedule_service.list_schedules(
+            session,
+            user_id=user.id,
+            suite_id=sid,
+            enabled=enabled,
+            include_all=is_workspace_admin(user),
+        )
+        return [
+            {
+                "id": str(s.id),
+                "suite_id": str(s.suite_id),
+                "cron": s.cron,
+                "timezone": s.timezone,
+                "enabled": s.enabled,
+                "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
+                # Precomputed by the scheduler in the schedule's own timezone, so
+                # it is already DST-correct — which re-deriving it from `cron` +
+                # `timezone` downstream is not.
+                "next_run_at": s.next_run_at.isoformat(),
+            }
+            for s in schedules
+        ]
+
+
+@mcp.tool
+def list_trigger_bindings(
+    provider: str | None = None,
+    env: str | None = None,
+    suite_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """List the orchestration triggers that run a suite when a pipeline succeeds.
+
+    Use this for 'what runs after the nightly load?' or 'is this suite wired to
+    the ADF pipeline?'. A binding says: when pipeline/DAG ``pipeline_or_dag_id``
+    on ``provider`` (adf / airflow / dbt) completes successfully in environment
+    ``env``, run this suite. Returns each binding's id, provider, pipeline/DAG
+    id, environment, target suite and whether it is enabled. Optionally filter by
+    ``provider``, ``env`` or ``suite_id``.
+
+    Only *successful* pipeline completions trigger a suite run; a failure alerts
+    but never triggers. Scoped to suites the user can access.
+    """
+    # The shared vocabulary, not a third hand-written copy of it: dbt joined the
+    # set in ADR 0029 and a literal here would silently exclude the next provider.
+    if provider is not None and provider not in ORCHESTRATION_PROVIDERS:
+        raise ToolError(f"provider must be one of {list(ORCHESTRATION_PROVIDERS)}")
+    with _ctx() as (session, user), _service_errors():
+        sid = _parse_uuid(suite_id, field="suite_id") if suite_id is not None else None
+        if sid is not None:
+            require_permission(session, sid, user.id, minimum="view")
+        bindings = trigger_binding_service.list_bindings(
+            session,
+            user_id=user.id,
+            provider=provider,
+            env=env,
+            suite_id=sid,
+            include_all=is_workspace_admin(user),
+        )
+        return [
+            {
+                "id": str(b.id),
+                "provider": b.provider,
+                "pipeline_or_dag_id": b.pipeline_or_dag_id,
+                "env": b.env,
+                "suite_id": str(b.suite_id),
+                "enabled": b.enabled,
+            }
+            for b in bindings
+        ]
+
+
+@mcp.tool
+def get_notification_config(suite_id: str) -> dict[str, Any]:
+    """Get a suite's alert notification settings.
+
+    Use this for 'who gets told when orders fails?' or 'are alerts even on for
+    this suite?'. Returns whether the suite has its own configuration at all
+    (``configured``), whether alerting is enabled, which result severities alert
+    (``alert_on``), and — per channel — whether a Teams webhook, a Slack webhook
+    and email recipients are in effect, each with whether that comes from the
+    suite's **own** override or from the **workspace** default.
+
+    Read the ``*_source`` fields, not just the booleans, when the question is
+    "who gets told": a suite with no override of its own still alerts through the
+    workspace channels, so per-suite configuration being absent never means
+    nobody is notified.
+
+    Webhook **URLs are never returned** — only whether one is set. A webhook URL
+    is a bearer credential: anyone holding it can post into that channel, so it
+    is stored as a secret reference and this tool reports its presence, not its
+    value. Requires view access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    with _ctx() as (session, user), _service_errors():
+        require_permission(session, sid, user.id, minimum="view")
+        config = notification_service.get_config(session, sid)
+        settings = get_settings()
+
+        # Each channel falls back to the workspace-level setting when the suite
+        # has no override (#633, `notification_service.resolve_*`). Reporting only
+        # the per-suite half — which is all the REST read carries, because the UI
+        # sits inside a per-suite settings panel that says so — would answer "who
+        # gets told when orders fails?" with "nobody" for the commonest
+        # deployment shape: one workspace webhook and no per-suite overrides.
+        #
+        # Presence is derived from the same inputs `resolve_webhook` /
+        # `resolve_slack_webhook` / `resolve_email_recipients` use, and the secret
+        # store is never read here: whether a reference is CONFIGURED is the
+        # question, and resolving it would fetch the credential itself.
+        def _channel(suite_value: Any, workspace_value: Any) -> tuple[bool, str | None]:
+            if suite_value:
+                return True, "suite"
+            if workspace_value:
+                return True, "workspace"
+            return False, None
+
+        has_webhook, webhook_source = _channel(
+            config.webhook_secret_ref if config else None, settings.teams_webhook_secret_name
+        )
+        has_slack, slack_source = _channel(
+            config.slack_webhook_secret_ref if config else None, settings.slack_webhook_secret_name
+        )
+        has_email, email_source = _channel(
+            config.email_recipients if config else None, settings.email_to
+        )
+        return {
+            "suite_id": suite_id,
+            # False = "this suite has no override of its own", NOT "no alerting".
+            "configured": config is not None,
+            "enabled": config.enabled if config else True,
+            "alert_on": config.alert_on if config else notification_service.DEFAULT_ALERT_ON,
+            "has_webhook": has_webhook,
+            "webhook_source": webhook_source,
+            "has_slack_webhook": has_slack,
+            "slack_webhook_source": slack_source,
+            "has_email_recipients": has_email,
+            "email_recipients_source": email_source,
+            # The per-suite override only. Workspace recipients are deployment
+            # config, not this suite's setting, so they are reported as a source
+            # rather than enumerated here.
+            "email_recipients": config.email_recipients if config else None,
+        }
 
 
 # ─────────────────────────────── action tools ──────────────────────────────
