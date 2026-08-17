@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "a7d974d7e7c2",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-tier3a-schedule-binding-version-tools",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a7/d974d7e7c2/0/metadata.json",
+      "transcript": "/a7/d974d7e7c2/0/full.jsonl",
+      "compact_transcript": "/a7/d974d7e7c2/0/transcript.jsonl",
+      "content_hash": "/a7/d974d7e7c2/0/content_hash.txt",
+      "prompt": "/a7/d974d7e7c2/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1102,
+    "cache_creation_tokens": 799402,
+    "cache_read_tokens": 190386403,
+    "output_tokens": 350909,
+    "api_call_count": 551
+  }
+}
