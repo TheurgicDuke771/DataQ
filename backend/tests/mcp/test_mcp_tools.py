@@ -9,6 +9,8 @@ TEST_DATABASE_URL.
 """
 
 import uuid
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
@@ -914,3 +916,174 @@ def test_get_suite_results_reports_null_sampling_for_a_complete_read(
     _as(monkeypatch, db_session, user)
 
     assert server.get_suite_results(str(suite.id))["checks"][0]["sampling"] is None
+
+
+# ───────────────────── Tier-1 check reads (#529) ──────────────────────────
+
+
+def _check(db_session: Any, suite: Suite, **kw: Any) -> Check:
+    defaults: dict[str, Any] = {
+        "suite_id": suite.id,
+        "name": "not null email",
+        "expectation_type": "expect_column_values_to_not_be_null",
+        "config": {"column": "EMAIL"},
+    }
+    check = Check(**{**defaults, **kw})
+    db_session.add(check)
+    db_session.commit()
+    return check
+
+
+def test_list_checks_shapes_every_check_on_the_suite(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _check(db_session, suite, dimension="completeness", warn_threshold=Decimal("0.01"))
+    _as(monkeypatch, db_session, user)
+
+    out = server.list_checks(str(suite.id))
+    assert len(out) == 1
+    assert out[0]["name"] == "not null email"
+    assert out[0]["kind"] == "expectation"
+    assert out[0]["expectation_type"] == "expect_column_values_to_not_be_null"
+    assert out[0]["dimension"] == "completeness"
+    # `config` is what lets an LLM say WHICH column the check covers.
+    assert out[0]["config"] == {"column": "EMAIL"}
+    assert out[0]["warn_threshold"] == 0.01
+    assert out[0]["fail_threshold"] is None
+    assert out[0]["alert_snoozed_until"] is None
+
+
+def test_list_checks_surfaces_a_live_alert_snooze(db_session: Any, monkeypatch: Any) -> None:
+    """A snoozed check still runs and still fails — it just alerts nobody (#370).
+    An LLM asked "why was there no alert?" can only answer if it can see this."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    until = datetime.now(UTC) + timedelta(hours=4)
+    _check(db_session, suite, alert_snoozed_until=until)
+    _as(monkeypatch, db_session, user)
+
+    assert server.list_checks(str(suite.id))[0]["alert_snoozed_until"] == until.isoformat()
+
+
+def test_list_checks_denied_for_inaccessible_suite(db_session: Any, monkeypatch: Any) -> None:
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    _check(db_session, suite)
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+    with pytest.raises(ToolError):
+        server.list_checks(str(suite.id))
+
+
+def test_get_check_returns_the_full_definition(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite, fail_threshold=Decimal("0.05"))
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_check(str(suite.id), str(check.id))
+    assert out["id"] == str(check.id)
+    assert out["suite_id"] == str(suite.id)
+    assert out["fail_threshold"] == 0.05
+    assert out["created_at"] and out["updated_at"]
+
+
+def test_get_check_from_another_suite_is_not_found(db_session: Any, monkeypatch: Any) -> None:
+    """The cross-suite guard is the whole reason `get_check` takes BOTH ids: a
+    check id from a suite the caller cannot see must not resolve by passing a
+    suite they can (the 404-no-leak discipline, ADR 0027)."""
+    user = _user(db_session)
+    mine = _suite(db_session, user)
+    theirs = _suite(db_session, _user(db_session, "owner@acme.io"))
+    foreign = _check(db_session, theirs)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError):
+        server.get_check(str(mine.id), str(foreign.id))
+
+
+def test_get_check_denied_for_inaccessible_suite(db_session: Any, monkeypatch: Any) -> None:
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    check = _check(db_session, suite)
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+    with pytest.raises(ToolError):
+        server.get_check(str(suite.id), str(check.id))
+
+
+def test_get_check_history_is_chronological_with_metrics(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite)
+    base = datetime.now(UTC) - timedelta(hours=3)
+    for offset, (status, metric) in enumerate(
+        [("pass", 100), ("fail", 4), ("pass", 98)],
+    ):
+        run = Run(suite_id=suite.id, status="succeeded", created_at=base + timedelta(hours=offset))
+        db_session.add(run)
+        db_session.flush()
+        db_session.add(
+            Result(
+                run_id=run.id,
+                check_id=check.id,
+                status=status,
+                metric_value=Decimal(metric),
+            )
+        )
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    points = server.get_check_history(str(suite.id), str(check.id))["points"]
+    # Oldest first — the order a trend is read in, and the opposite of the SQL.
+    assert [p["status"] for p in points] == ["pass", "fail", "pass"]
+    assert [p["metric_value"] for p in points] == [100.0, 4.0, 98.0]
+    assert points[0]["run_id"] and points[0]["at"]
+
+
+def test_get_check_history_limit_keeps_the_most_recent_window(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`limit` must trim the OLD end, not the new one: a caller asking for 2
+    points wants the last two runs, not the first two (`list_check_result_history`
+    takes newest-first in SQL and reverses)."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite)
+    base = datetime.now(UTC) - timedelta(hours=3)
+    for offset, metric in enumerate([1, 2, 3]):
+        run = Run(suite_id=suite.id, status="succeeded", created_at=base + timedelta(hours=offset))
+        db_session.add(run)
+        db_session.flush()
+        db_session.add(
+            Result(run_id=run.id, check_id=check.id, status="pass", metric_value=Decimal(metric))
+        )
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    points = server.get_check_history(str(suite.id), str(check.id), limit=2)["points"]
+    assert [p["metric_value"] for p in points] == [2.0, 3.0]
+
+
+def test_get_check_history_limit_is_bounded_in_the_tool_schema() -> None:
+    """The bound must be visible to the CLIENT, not just enforced server-side —
+    an LLM picks its argument from the schema (the `profile_column` top_n rule).
+    Asserted on the advertised schema, since calling the decorated function
+    directly from Python bypasses FastMCP's validation entirely."""
+    import asyncio
+
+    tool = asyncio.run(server.mcp.get_tool("get_check_history"))
+    assert tool is not None
+    assert tool.parameters["properties"]["limit"] == {
+        "default": 30,
+        "minimum": 1,
+        "maximum": 200,
+        "type": "integer",
+    }
+
+
+def test_get_check_history_denied_for_inaccessible_suite(db_session: Any, monkeypatch: Any) -> None:
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    check = _check(db_session, suite)
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+    with pytest.raises(ToolError):
+        server.get_check_history(str(suite.id), str(check.id))

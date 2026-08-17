@@ -1,11 +1,11 @@
-"""FastMCP server — 8 curated, LLM-facing tools over the DataQ service layer.
+"""FastMCP server — curated, LLM-facing tools over the DataQ service layer.
 
 Mounted into FastAPI at ``/mcp`` (see ``main.py``). Every tool is a thin wrapper:
 open a session → resolve the caller (same Azure AD token as the REST API) →
 call the *same* service function with the *same* per-suite authz → return an
 LLM-shaped dict. No business logic lives here.
 
-All eight are registered as MCP **tools** (not resources): an LLM client invokes
+All are registered as MCP **tools** (not resources): an LLM client invokes
 tools from natural language, whereas resource-templates with required arguments
 aren't reliably auto-called — and the acceptance bar is "Claude answers the
 canonical NL queries" (ADR 0008). Docstrings are written for natural-language
@@ -357,6 +357,115 @@ def get_adf_pipeline_status(provider: str | None = None, limit: int = 20) -> lis
                 }
             )
         return out
+
+
+def _check_summary(check: Check) -> dict[str, Any]:
+    """The LLM-shaped view of one check — shared by `list_checks`/`get_check` so
+    the two can't describe the same row differently.
+
+    `config` is included deliberately: without it an LLM cannot answer "which
+    column does this check?" and has to guess from the name, which is a free-text
+    label. It is bounded at author time (`check_service._reject_oversized_config`),
+    so this can't become an unbounded payload.
+    """
+    return {
+        "id": str(check.id),
+        "name": check.name,
+        "kind": check.kind,
+        "expectation_type": check.expectation_type,
+        "dimension": check.dimension,
+        "config": check.config,
+        "warn_threshold": _num(check.warn_threshold),
+        "fail_threshold": _num(check.fail_threshold),
+        "critical_threshold": _num(check.critical_threshold),
+        # Operational, not config: an LLM asked "why did nobody get alerted?"
+        # needs to see a live snooze (#370). Null = alerts are active.
+        "alert_snoozed_until": (
+            check.alert_snoozed_until.isoformat() if check.alert_snoozed_until else None
+        ),
+    }
+
+
+@mcp.tool
+def list_checks(suite_id: str) -> list[dict[str, Any]]:
+    """List the checks (rules and monitors) configured on one suite.
+
+    Use this for 'what does the orders suite actually check?' or before editing a
+    check, to find its id. Returns, per check: its id, human name, kind
+    (``expectation`` for a Great Expectations rule, or a monitor kind —
+    ``freshness`` / ``volume`` / ``schema_drift`` / ``anomaly`` / ``comparison``),
+    the expectation type, its DQ dimension (accuracy / completeness / consistency
+    / integrity / timeliness / uniqueness / validity, or null when unclassified),
+    its configuration, any warn/fail/critical severity thresholds, and whether its
+    alerts are currently snoozed. This is the suite's *definition* — for how those
+    checks last performed, use ``get_suite_results``. Requires view access.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    with _ctx() as (session, user), _service_errors():
+        require_permission(session, sid, user.id, minimum="view")
+        return [_check_summary(c) for c in check_service.list_checks(session, sid)]
+
+
+@mcp.tool
+def get_check(suite_id: str, check_id: str) -> dict[str, Any]:
+    """Get one check's full definition by id.
+
+    Use this after ``list_checks`` when you need a single check's exact
+    configuration and thresholds — for example before proposing an edit, or to
+    explain what a failing check was actually asserting. Returns the same fields
+    as ``list_checks`` plus when the check was created and last modified.
+    Requires view access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    cid = _parse_uuid(check_id, field="check_id")
+    with _ctx() as (session, user), _service_errors():
+        require_permission(session, sid, user.id, minimum="view")
+        check = check_service.get_check(session, sid, cid)
+        return {
+            **_check_summary(check),
+            "suite_id": suite_id,
+            "created_at": check.created_at.isoformat(),
+            "updated_at": check.updated_at.isoformat(),
+        }
+
+
+@mcp.tool
+def get_check_history(
+    suite_id: str,
+    check_id: str,
+    limit: Annotated[int, Field(ge=1, le=200)] = 30,
+) -> dict[str, Any]:
+    """Get one check's recent result history — how it has behaved run over run.
+
+    Use this for 'has the row-count check been flaky?', 'when did freshness start
+    failing?', or 'is this a one-off or a trend?'. Returns up to ``limit`` of the
+    check's most recent results in chronological order (oldest first), each with
+    the run id, the run's timestamp, the check's status on that run
+    (pass / warn / fail / critical / skip / error) and its ``metric_value`` — the
+    number the check measured, when it measures one (row count, hours since the
+    last row, z-score…), or null for a check that records no metric.
+
+    This is *result* history, not edit history: it says how the check performed,
+    not how its definition changed. Requires view access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    cid = _parse_uuid(check_id, field="check_id")
+    with _ctx() as (session, user), _service_errors():
+        require_permission(session, sid, user.id, minimum="view")
+        points = check_service.list_check_result_history(session, sid, cid, limit=limit)
+        return {
+            "suite_id": suite_id,
+            "check_id": check_id,
+            "points": [
+                {
+                    "run_id": str(p.run_id),
+                    "at": p.created_at.isoformat(),
+                    "status": p.status,
+                    "metric_value": p.metric_value,
+                }
+                for p in points
+            ],
+        }
 
 
 # ─────────────────────────────── action tools ──────────────────────────────
