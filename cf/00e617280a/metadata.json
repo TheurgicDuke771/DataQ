@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "cf00e617280a",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-tier1-run-reads",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/cf/00e617280a/0/metadata.json",
+      "transcript": "/cf/00e617280a/0/full.jsonl",
+      "compact_transcript": "/cf/00e617280a/0/transcript.jsonl",
+      "content_hash": "/cf/00e617280a/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 6389,
+    "cache_read_tokens": 2469518,
+    "output_tokens": 2123,
+    "api_call_count": 10
+  }
+}
