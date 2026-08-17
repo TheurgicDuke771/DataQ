@@ -94,12 +94,17 @@ whichever gate its REST counterpart already applies.
 
 **The 30 tools split three ways, and the split is deliberately not "read vs mutate":**
 
-- **16 read-only** (unchanged from the Tier 1 amendment above).
+- **16 read-only** — **one fewer than the 17 the Tier 1 amendment above states.**
+  `profile_column` was reclassified out of read-only when the gate table was built (#1418): it
+  persists nothing, but it opens a live datasource with stored credentials and had always gated
+  on `edit`. The behaviour did not change; the label was wrong, and a comment could not catch it.
 - **10 that change state** — `create_check`, `update_check`, `delete_check`, `snooze_check`,
   `trigger_suite_run`, `cancel_run`, `create_schedule`, `delete_schedule`,
-  `create_trigger_binding`, `import_suite`. These gate on `suite_authz.require_permission`
-  (`minimum="edit"`) against the suite they act on, so per-suite sharing (ADR 0027) and the ADR
-  0033 Viewer read-only clamp apply exactly as on every existing mutating tool.
+  `create_trigger_binding`, `import_suite`. All except `import_suite` gate on
+  `suite_authz.require_permission` (`minimum="edit"`) against the suite they act on, so per-suite
+  sharing (ADR 0027) and the ADR 0033 Viewer read-only clamp apply exactly as on every existing
+  mutating tool. **`import_suite` is the exception**: it *creates* a suite, so there is no
+  existing resource whose ladder could gate it — it takes the coarse `role:member` gate below.
 - **4 that persist nothing but open a live datasource connection using stored credentials** —
   `profile_column`, `dryrun_check`, `suggest_column_policy`, `test_connection`. None of these
   write a row, but all four spend a real credential against a remote system, which is not a

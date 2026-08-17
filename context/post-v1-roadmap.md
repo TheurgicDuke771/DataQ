@@ -457,7 +457,8 @@ nothing but open a live datasource connection with stored credentials — `profi
 to gate on. No MCP tool is Admin-only. **Theme 13 is now complete** — both tiers of the
 candidate list below have shipped.
 
-The REST surface has ~52 more endpoints beyond the 30 MCP tools that remained out of scope for
+The REST surface has ~41 more endpoints beyond the 30 MCP tools — it was ~52 beyond the 19 Tier 1
+left, and Tier 2 wrapped 11 of them. Those remaining are out of scope for
 this theme (see the exclusions below). Cross-cutting dependencies: **#488** (workspace-admin
 visibility in MCP tools) and **#461 / ADR 0026** (DataQ-issued API keys, which unblock headless
 MCP clients — shipped).

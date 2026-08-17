@@ -196,7 +196,8 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 A curated **30-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
 results, checks, runs, connections, schedules, trigger bindings and notification config,
 trigger and cancel runs, poll status, add/update/delete/snooze checks, dry-run a check preview,
-manage schedules and trigger bindings, import a suite, profile columns, suggest a PII policy,
+create and delete schedules, create trigger bindings, import a suite, profile columns,
+suggest a PII policy,
 test a connection, and read the health score and pipeline status — in natural language, with
 the same per-suite authz as the UI. 16 tools are read-only, 10 change state, and 4 more persist
 nothing but open a live datasource connection with stored credentials and so are gated like

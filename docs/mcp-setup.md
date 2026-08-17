@@ -157,7 +157,7 @@ succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 
 | Tool | What it answers |
 |---|---|
 | `list_schedules` | "When does the orders suite run?" — cron schedules + next fire time |
-| `create_schedule` | "Run the orders suite every night at 2am" — schedules a suite on a cron expression + IANA timezone; returns the actual next fire time |
+| `create_schedule` | "Run the orders suite every night at 2am" — returns the resolved `next_run_at` so you can confirm the interpretation, or `null` when created disabled (a disabled schedule does not fire at all) |
 | `delete_schedule` | "Stop the nightly orders run" — removes the schedule; the suite and its checks are untouched |
 | `get_notification_config` | "Who gets told when orders fails?" — channel presence (Teams/Slack/email), never webhook URLs |
 
@@ -165,7 +165,7 @@ succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 
 
 | Tool | What it answers |
 |---|---|
-| `import_suite` | "Recreate the orders suite against the QA warehouse" — creates a whole new suite in one call from an `export_suite` document; requires the member workspace role |
+| `import_suite` | "Recreate the orders suite against the QA warehouse" — creates a whole new suite from an `export_suite` document. Requires the **member** workspace role (it creates a suite, so there is no existing suite to gate on); never merges into an existing suite |
 
 Try these natural-language queries once connected:
 
