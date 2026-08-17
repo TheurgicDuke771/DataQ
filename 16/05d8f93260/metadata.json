@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "1605d8f93260",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-rbac-role-gate",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/mcp/server.py",
+    "backend/tests/api/test_role_enforcement.py",
+    "backend/tests/mcp/test_mcp_tools.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/16/05d8f93260/0/metadata.json",
+      "transcript": "/16/05d8f93260/0/full.jsonl",
+      "compact_transcript": "/16/05d8f93260/0/transcript.jsonl",
+      "content_hash": "/16/05d8f93260/0/content_hash.txt",
+      "prompt": "/16/05d8f93260/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 512,
+    "cache_creation_tokens": 398695,
+    "cache_read_tokens": 68775995,
+    "output_tokens": 147757,
+    "api_call_count": 256
+  }
+}
