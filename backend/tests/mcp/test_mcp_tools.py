@@ -1493,6 +1493,7 @@ def test_list_schedules_shapes_the_schedule(db_session: Any, monkeypatch: Any) -
     assert sched["timezone"] == "UTC"
     assert sched["enabled"] is True
     assert sched["last_run_at"] is None
+    assert sched["next_run_at"]
 
 
 def test_list_schedules_includes_disabled_ones_and_says_so(
@@ -2351,3 +2352,60 @@ def test_create_trigger_binding_rejects_an_unknown_provider_or_env(
         server.create_trigger_binding(
             provider="adf", pipeline_or_dag_id="p", env="staging", suite_id=str(suite.id)
         )
+
+
+def test_a_disabled_schedule_reports_no_next_fire(db_session: Any, monkeypatch: Any) -> None:
+    """The column always holds a computed timestamp, but the dispatcher filters on
+    `enabled` and never reaches it — so reporting the raw value names a fire time
+    that will not happen. Both the create tool and the list tool have to agree,
+    since an assistant may see either.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    created = server.create_schedule(str(suite.id), cron="0 2 * * *", enabled=False)
+    assert created["enabled"] is False
+    assert created["next_run_at"] is None
+
+    (listed,) = server.list_schedules()
+    assert listed["enabled"] is False
+    assert listed["next_run_at"] is None
+    # The stored expression is untouched — it starts firing when re-enabled.
+    assert listed["cron"] == "0 2 * * *"
+
+
+def test_trigger_binding_and_schedule_free_text_is_bounded_in_the_schema() -> None:
+    """These land in `varchar` NOT NULL columns. An unbounded LLM-generated value
+    reaches Postgres and raises a psycopg error — NOT a `DataQError`, so it
+    escapes `_service_errors` and surfaces as an opaque internal failure rather
+    than an actionable one (#567's class, in new columns)."""
+    import asyncio
+
+    binding = asyncio.run(server.mcp.get_tool("create_trigger_binding"))
+    assert binding is not None
+    pipeline = binding.parameters["properties"]["pipeline_or_dag_id"]
+    assert pipeline["minLength"] == 1 and pipeline["maxLength"] == 256
+
+    schedule = asyncio.run(server.mcp.get_tool("create_schedule"))
+    assert schedule is not None
+    assert schedule.parameters["properties"]["cron"]["maxLength"] == 128
+    assert schedule.parameters["properties"]["timezone"]["maxLength"] == 64
+
+
+def test_create_trigger_binding_rejects_nul_bytes(db_session: Any, monkeypatch: Any) -> None:
+    """Postgres cannot store NUL in text, and the driver's ValueError is not a
+    `DataQError` — so without this the tool dies on an opaque internal error
+    instead of an actionable one."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError) as exc:
+        server.create_trigger_binding(
+            provider="adf",
+            pipeline_or_dag_id="pl\x00nightly",
+            env="dev",
+            suite_id=str(suite.id),
+        )
+    assert "NUL" in str(exc.value)

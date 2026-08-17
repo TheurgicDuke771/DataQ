@@ -813,8 +813,9 @@ def list_schedules(
     'is anything scheduled on this suite?'. Returns, per schedule: its id, the
     suite it runs, the cron expression, the timezone that expression is
     interpreted in, whether it is enabled, when it last ran, and — as
-    ``next_run_at`` — exactly when it fires next. Optionally narrow to one
-    ``suite_id`` or to ``enabled`` true/false.
+    ``next_run_at`` — exactly when it fires next, or ``null`` when it is disabled
+    and therefore will not fire at all. Optionally narrow to one ``suite_id`` or
+    to ``enabled`` true/false.
 
     Use ``next_run_at`` rather than deriving the next fire from the cron
     expression yourself: DataQ computes it in the schedule's own timezone and it
@@ -848,7 +849,12 @@ def list_schedules(
                 # Precomputed by the scheduler in the schedule's own timezone, so
                 # it is already DST-correct — which re-deriving it from `cron` +
                 # `timezone` downstream is not.
-                "next_run_at": s.next_run_at.isoformat(),
+                #
+                # `null` when the schedule is disabled: the column still holds a
+                # computed timestamp, but the dispatcher filters on `enabled` and
+                # never reaches it, so reporting the raw value would name a fire
+                # time that will not happen (found reviewing #1421).
+                "next_run_at": (s.next_run_at.isoformat() if s.enabled else None),
             }
             for s in schedules
         ]
@@ -1442,8 +1448,13 @@ def cancel_run(run_id: str) -> dict[str, Any]:
 @mcp.tool
 def create_schedule(
     suite_id: str,
-    cron: str,
-    timezone: str = "UTC",
+    # Bounded to the column (`schedules.cron` is String(128)) like the REST twin.
+    # An unbounded LLM-generated string reaches Postgres and raises
+    # StringDataRightTruncation, which is a psycopg error, not a `DataQError` —
+    # so it escapes `_service_errors` and surfaces as an opaque internal failure
+    # instead of an actionable one (#567's class, in a new column).
+    cron: Annotated[str, Field(min_length=1, max_length=128)],
+    timezone: Annotated[str, Field(min_length=1, max_length=64)] = "UTC",
     enabled: bool = True,
 ) -> dict[str, Any]:
     """Schedule a suite to run automatically on a cron expression.
@@ -1455,8 +1466,12 @@ def create_schedule(
     across daylight-saving changes. Both are validated; an invalid one is an error
     rather than a schedule that never fires.
 
-    Returns the schedule's id and the next time it will fire, so you can confirm
-    the interpretation to the user rather than restating the cron back to them.
+    Returns the schedule's id and ``next_run_at`` — the next time it will
+    actually fire — so you can confirm the *interpretation* to the user rather
+    than restating the cron back to them. Creating one with ``enabled=false``
+    reports ``next_run_at: null``, because a disabled schedule does not fire at
+    all; the stored expression is still there and starts firing when it is
+    enabled in the app.
 
     A suite may be scheduled before its run target is configured; the dispatcher
     re-checks at fire time and skips if it is still unset. Requires edit access.
@@ -1480,7 +1495,11 @@ def create_schedule(
             "cron": schedule.cron,
             "timezone": schedule.timezone,
             "enabled": schedule.enabled,
-            "next_run_at": schedule.next_run_at.isoformat(),
+            # `null` when disabled, not the stored timestamp. The column always
+            # holds a computed next fire, but a disabled schedule is filtered out
+            # by the dispatcher and never reaches it — reporting the raw value
+            # would have an assistant confirm a fire time for a paused schedule.
+            "next_run_at": (schedule.next_run_at.isoformat() if schedule.enabled else None),
         }
 
 
@@ -1507,7 +1526,9 @@ def delete_schedule(schedule_id: str) -> dict[str, Any]:
 @mcp.tool
 def create_trigger_binding(
     provider: str,
-    pipeline_or_dag_id: str,
+    # Same bound as the REST twin: the column is String(256) NOT NULL, and an
+    # empty value would create a binding that can never match a pipeline.
+    pipeline_or_dag_id: Annotated[str, Field(min_length=1, max_length=256)],
     env: str,
     suite_id: str,
     enabled: bool = True,
@@ -1528,6 +1549,11 @@ def create_trigger_binding(
     they name exactly that class of silent no-fire. Requires edit access.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
+    # NUL can't be stored by Postgres and the driver's ValueError would escape
+    # `_service_errors` — the same boundary rejection every other free-text tool
+    # argument gets (#567).
+    if contains_nul({"pipeline_or_dag_id": pipeline_or_dag_id, "provider": provider, "env": env}):
+        raise ToolError("NUL (\\x00) characters are not allowed in a trigger binding")
     with _ctx() as (session, user), _service_errors():
         result = trigger_binding_service.create_binding(
             session,
