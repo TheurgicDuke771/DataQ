@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "88146b6dc401",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-tier3a-suite-policy",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/api/v1/trigger_bindings.py",
+    "backend/app/services/trigger_binding_service.py",
+    "backend/tests/mcp/test_mcp_auth.py",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/88/146b6dc401/0/metadata.json",
+      "transcript": "/88/146b6dc401/0/full.jsonl",
+      "compact_transcript": "/88/146b6dc401/0/transcript.jsonl",
+      "content_hash": "/88/146b6dc401/0/content_hash.txt",
+      "prompt": "/88/146b6dc401/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 908,
+    "cache_creation_tokens": 623085,
+    "cache_read_tokens": 173989227,
+    "output_tokens": 302176,
+    "api_call_count": 454
+  }
+}
