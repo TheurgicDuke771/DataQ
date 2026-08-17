@@ -1,0 +1,82 @@
+<task-notification>
+<task-id>bdq14061i</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4cd0c8d7-38ca-4c1e-98ff-11c896a71042/tasks/bdq14061i.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR E CI and merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>box11u133</task-id>
+<tool-use-id>toolu_012BHsseagW67NCEBUMsNzKs</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4cd0c8d7-38ca-4c1e-98ff-11c896a71042/tasks/box11u133.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR E to merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Let's explore the Tier-II also. 
+Also make all the MCP are adhear to the RBAC ploicy. 
+And for docs no more curated 8 MCP [it is expanded now]
+
+---
+
+<task-notification>
+<task-id>aacf3b937502700f3</task-id>
+<tool-use-id>toolu_01D9xhPRPpHuchtWHWd8rLUN</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4cd0c8d7-38ca-4c1e-98ff-11c896a71042/tasks/aacf3b937502700f3.output</output-file>
+<status>completed</status>
+<summary>Agent "MCP docs 19→30 reconciliation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All edits are complete. Note: `docs/progress.md` shows as modified in `git status`, but that change was already present in the working tree before I started this session (I never opened or edited that file, per the explicit "DO NOT TOUCH" instruction) — it appears to be pre-existing uncommitted state, not something I introduced.
+
+## Summary
+
+**Files changed (all in `/Users/arijit/Coding/Python/DataQ`):**
+
+- `README.md` — feature table AI-integration row + MCP section: 19 → 30 tools, three-way split (16 read-only / 10 state-changing / 4 live-probe-gated-as-writes).
+- `CLAUDE.md` — only the two tech-stack table rows and the `.mcp.json` appendix intro line updated (30 tools, three-way split); §13 untouched.
+- `docs/mcp-setup.md` — "## The 19 tools" → "## The 30 tools", new intro explaining the three-way split and ADR 0033 authorization (`_require_role` for `test_connection`/`import_suite`, "no admin-only tool" statement), and all 11 new tools added into the existing five groups (added a new "Suite portability" group for `import_suite`, since it didn't fit the other five). Every description pulled verbatim-in-spirit from each tool's own docstring in `backend/app/mcp/server.py`.
+- `docs/feature-matrix.md`, `docs/glossary.md`, `docs/features.md`, `docs/runbook-faq.md`, `docs/deployment-parity.md` — tool counts and split updated in prose/table rows.
+- `docs/adr/README.md` — ADR 0008 index row now shows "8 → 19 tools (Tier 1 reads), then 19 → 30 tools (Tier 2 edit-gated mutations + live-probe tools)".
+- `docs/adr/0008-mcp-server.md` — appended a **second** amendment section for Tier 2 (11 new tools, the three-way split, `_require_role`/ADR 0033 authorization model, and confirmation the three standing exclusions still hold). The original decision and the first (Tier 1) amendment are untouched.
+- `docs/changelog.md` — updated the existing Unreleased "MCP server expanded to 19 tools" bullet in place to describe the final 30-tool state (no second bullet added); the v1.0.0 released entry untouched.
+- `context/post-v1-roadmap.md` — Theme 13: Tier 2 now marked DELIVERED alongside Tier 1, theme marked complete, and the Tier 2 candidate table rows annotated with what actually shipped (e.g. `snooze_check` as one tool, not a pair).
+
+**Deliberately left alone (all historical, not live-doc drift):**
+- `docs/adr/README.md`'s and `docs/adr/0008-mcp-server.md`'s references to "8 → 19 tools" — these correctly describe the intermediate Tier-1-only state and are immediately followed by the new Tier-2 amendment, so they're accurate history, not stale claims.
+- `context/post-v1-roadmap.md` line "bringing the MCP server from 8 to **19 tools**" under the Tier-1 DELIVERED note — same reasoning, it's describing what Tier 1 alone delivered.
+- `docs/progress.md`, `docs/retro-v1.md`, `docs/progress-v1.md`, `context/DataQ_platform_roadmap.md`, `backend/**` — untouched per instructions.
+
+**Check 1 (grep for stale counts):**
+```
+grep -rn "19 tools\|19 curated\|17 read-only" README.md CLAUDE.md docs/ context/
+```
+Only 4 hits remain, all inside `docs/adr/README.md`, `docs/adr/0008-mcp-server.md` (×2), and `context/post-v1-roadmap.md` — all dated/amendment-scoped historical statements about what Tier 1 alone delivered, immediately followed by the Tier 2 continuation. No live/current-state claim of "19 tools" remains anywhere.
+
+**Check 2 (mkdocs):** `conda run -n dataq mkdocs build --strict` exited 0, no errors or warnings about broken links (only informational notes about `compliance-posture.md` being deliberately excluded, pre-existing). The generated `site/` directory was deleted afterward.</result>
+<usage><subagent_tokens>126940</subagent_tokens><tool_uses>48</tool_uses><duration_ms>184741</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bsj5cm2pu</task-id>
+<tool-use-id>toolu_01SNb9P1sogeNUqzbJjuu1ba</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4cd0c8d7-38ca-4c1e-98ff-11c896a71042/tasks/bsj5cm2pu.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR J to merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Are there any new endpoints we can safely expose to MCP?
+
+---
+
+file the findings as tier-3. 
+exerise all 30 MCP and close #584. 
+then plan the new MCP endpoints and start execution

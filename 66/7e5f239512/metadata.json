@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "667e5f239512",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-tier3a-suite-policy",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/tests/api/test_role_enforcement.py",
+    "backend/tests/support/mcp_gates.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/66/7e5f239512/0/metadata.json",
+      "transcript": "/66/7e5f239512/0/full.jsonl",
+      "compact_transcript": "/66/7e5f239512/0/transcript.jsonl",
+      "content_hash": "/66/7e5f239512/0/content_hash.txt",
+      "prompt": "/66/7e5f239512/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 880,
+    "cache_creation_tokens": 604583,
+    "cache_read_tokens": 165098778,
+    "output_tokens": 288116,
+    "api_call_count": 440
+  }
+}
