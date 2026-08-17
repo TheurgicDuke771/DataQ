@@ -685,15 +685,24 @@ def get_check_history(
 
 
 @mcp.tool
-def list_check_versions(suite_id: str, check_id: str) -> dict[str, Any]:
+def list_check_versions(
+    suite_id: str,
+    check_id: str,
+    limit: Annotated[int, Field(ge=1, le=200)] = 30,
+) -> dict[str, Any]:
     """Get one check's edit history — how its definition has changed over time.
 
     Use this for 'who changed this threshold?', 'what did this check look like
     last week?', or 'was this check edited around the time it started failing?'.
-    Returns every snapshot, newest first: the ``version_no``, the check's name,
-    kind, expectation type, dimension, full ``config`` and the three severity
-    thresholds **as they were at that version**, plus when the change was made
-    and who made it.
+    Returns up to ``limit`` snapshots, newest first: the ``version_no``, the
+    check's name, kind, expectation type, dimension, full ``config`` and the three
+    severity thresholds **as they were at that version**, plus when the change was
+    made and who made it.
+
+    ``total`` reports how many versions exist regardless of ``limit``, so a short
+    page is not mistaken for the whole history — the oldest versions are the ones
+    dropped, which are exactly the ones "what did this look like originally?" is
+    asking for.
 
     This is *edit* history, not result history. **For how the check has behaved
     run over run — pass/fail and the measured value — use
@@ -716,6 +725,9 @@ def list_check_versions(suite_id: str, check_id: str) -> dict[str, Any]:
         return {
             "suite_id": suite_id,
             "check_id": check_id,
+            # Before the slice, so truncation is visible rather than implied by a
+            # page that happens to be `limit` long.
+            "total": len(versions),
             "versions": [
                 {
                     "version_no": v.version_no,
@@ -737,7 +749,7 @@ def list_check_versions(suite_id: str, check_id: str) -> dict[str, Any]:
                     "changed_at": v.created_at.isoformat(),
                     "changed_by_name": v.changed_by_name,
                 }
-                for v in versions
+                for v in versions[:limit]
             ],
         }
 
@@ -1664,13 +1676,20 @@ def create_schedule(
     actually fire — so you can confirm the *interpretation* to the user rather
     than restating the cron back to them. Creating one with ``enabled=false``
     reports ``next_run_at: null``, because a disabled schedule does not fire at
-    all; the stored expression is still there and starts firing when it is
-    enabled in the app.
+    all; the stored expression is still there, and ``update_schedule`` with
+    ``enabled=true`` starts it firing and reports the resolved fire time then.
 
     A suite may be scheduled before its run target is configured; the dispatcher
     re-checks at fire time and skips if it is still unset. Requires edit access.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
+    # The same screen `update_schedule` applies to the same two columns. Cron and
+    # timezone validation would reject a NUL-bearing value anyway, but as "invalid
+    # timezone" — which sends an assistant looking for a zone-name typo that isn't
+    # there. Guarding one door and not its sibling is this surface's recurring
+    # defect; here it was inverted, with the newer door the guarded one.
+    if contains_nul({"cron": cron, "timezone": timezone}):
+        raise ToolError("NUL (\\x00) characters are not allowed in a schedule's fields")
     with _ctx() as (session, user), _service_errors():
         # `create_schedule` gates internally, but gating here too keeps the
         # authz visible at the tool — and is what the RBAC sweep enters.
@@ -1722,8 +1741,12 @@ def update_schedule(
 
     Returns the schedule's new state including ``next_run_at`` — when it will
     actually fire next, or ``null`` if the result is disabled, because a paused
-    schedule does not fire at all. Confirm the change to the user from
-    ``next_run_at`` rather than from the cron string.
+    schedule does not fire at all. When it is present, confirm the change to the
+    user from it rather than from the cron string, since it is the resolved
+    interpretation and the cron is only the input. When it is ``null`` the
+    schedule is paused: say that instead of naming a time, and note that
+    retiming a paused schedule stores the new cadence without scheduling
+    anything until it is re-enabled.
 
     **Resuming a paused schedule re-bases it; it does not backfill.** Runs that
     would have happened while it was paused do not happen retroactively — the
@@ -1811,7 +1834,15 @@ def create_trigger_binding(
     ``env`` is part of the key and is the commonest thing to get wrong: a binding
     on ``dev`` never fires for a pipeline whose runs are reported against ``qa``.
     Any returned ``warnings`` are advisory, not errors — read them out, because
-    they name exactly that class of silent no-fire. Requires edit access.
+    they name exactly that class of silent no-fire.
+
+    **An "already exists" error does not mean the trigger works.** The uniqueness
+    key is provider + pipeline + environment + suite and does **not** include
+    ``enabled``, so a *disabled* binding collides here exactly like a live one. If
+    you get that error while wiring something up, check
+    ``list_trigger_bindings`` and, if the existing one is disabled, enable it with
+    ``update_trigger_binding`` — otherwise you will report the trigger as in place
+    when it never fires. Requires edit access.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     # NUL can't be stored by Postgres and the driver's ValueError would escape

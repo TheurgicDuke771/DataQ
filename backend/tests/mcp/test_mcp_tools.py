@@ -2955,9 +2955,12 @@ def test_update_schedule_rejects_a_bad_cron_and_leaves_the_schedule_alone(
     assert server.list_schedules(str(suite.id))[0]["cron"] == "0 2 * * *"
 
 
-def test_update_schedule_rejects_nul_bytes(db_session: Any, monkeypatch: Any) -> None:
-    """`create_schedule` screens NUL and `update_schedule` is the second door to
-    the same columns — the "guard on one door but not its sibling" class."""
+def test_schedule_tools_reject_nul_bytes_on_both_doors(db_session: Any, monkeypatch: Any) -> None:
+    """Both doors to the same two columns screen NUL — the "guard on one door but
+    not its sibling" class, which was inverted here: `update_schedule` shipped
+    with the guard and `create_schedule` had none. Cron/timezone validation would
+    reject a NUL-bearing value either way, but as "invalid timezone", which sends
+    an assistant hunting a zone-name typo that is not there."""
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2965,6 +2968,10 @@ def test_update_schedule_rejects_nul_bytes(db_session: Any, monkeypatch: Any) ->
 
     with pytest.raises(ToolError) as exc:
         server.update_schedule(created["id"], timezone="UTC\x00")
+    assert "NUL" in str(exc.value)
+
+    with pytest.raises(ToolError) as exc:
+        server.create_schedule(str(suite.id), cron="0 2 * * *", timezone="UTC\x00")
     assert "NUL" in str(exc.value)
 
 
@@ -3123,6 +3130,58 @@ def test_list_check_versions_thresholds_are_json_encodable(
     out = server.list_check_versions(str(suite.id), created["id"])
     json.dumps(out)  # would raise TypeError on a Decimal
     assert isinstance(out["versions"][0]["warn_threshold"], float)
+
+
+def test_list_check_versions_truncates_honestly(db_session: Any, monkeypatch: Any) -> None:
+    """A heavily-edited check returns every snapshot with its full `config`, and
+    `restore_check_version` adds more. Capping it is only half the fix: `total`
+    has to say how many exist, because the versions dropped are the OLDEST — which
+    are exactly the ones "what did this check look like originally?" is asking
+    for, so a silent truncation answers that question with the wrong row."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_check(
+        str(suite.id),
+        name="v1",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+    )
+    for n in range(2, 6):
+        server.update_check(str(suite.id), created["id"], name=f"v{n}")
+
+    out = server.list_check_versions(str(suite.id), created["id"], limit=2)
+    assert out["total"] == 5
+    assert [v["version_no"] for v in out["versions"]] == [5, 4]
+    # And the default returns the lot when it fits, so `total` is not a page size.
+    assert len(server.list_check_versions(str(suite.id), created["id"])["versions"]) == 5
+
+
+def test_create_trigger_binding_names_the_disabled_collision(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`uq_trigger_bindings_lookup` excludes `enabled`, so a DISABLED binding
+    collides here exactly like a live one. Without the docstring naming that, an
+    assistant re-wiring after a pause reads "already exists" as "the trigger is in
+    place" and reports success for something that never fires."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_trigger_binding(
+        provider="adf", pipeline_or_dag_id="pl_nightly", env="dev", suite_id=str(suite.id)
+    )
+    server.update_trigger_binding(created["id"], enabled=False)
+
+    with pytest.raises(ToolError):
+        server.create_trigger_binding(
+            provider="adf", pipeline_or_dag_id="pl_nightly", env="dev", suite_id=str(suite.id)
+        )
+    db_session.rollback()
+    tool = server.create_trigger_binding
+    assert "update_trigger_binding" in (tool.__doc__ or ""), (
+        "the collision guidance has to reach the LLM through the docstring — "
+        "that is the only channel it reads"
+    )
 
 
 def test_restore_check_version_applies_the_whole_snapshot_including_nulls(
