@@ -25,13 +25,14 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.core.secret_names import connection_secret_ref
-from backend.app.db.models import Check, Connection, Run, Share, Suite, User
+from backend.app.db.models import Check, Connection, Run, Schedule, Share, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import share_service, suite_authz
@@ -61,6 +62,7 @@ _SF_CONFIG = {
 #: whole argument for checking that a guard can fail rather than trusting it.
 _REAL_RUN = "<a real run, substituted at probe time>"
 _REAL_CHECK = "<a real check, substituted at probe time>"
+_REAL_SCHEDULE = "<a real schedule, substituted at probe time>"
 
 #: Every role, so a matrix test can't silently skip a tier.
 ROLES = ("admin", "member", "viewer")
@@ -613,6 +615,17 @@ def _assert_tool_denies(
         db_session.add(run)
         db_session.commit()
         args = {**args, "run_id": str(run.id)}
+    if args.get("schedule_id") == _REAL_SCHEDULE:
+        schedule = Schedule(
+            suite_id=suite.id,
+            cron="0 2 * * *",
+            timezone="UTC",
+            next_run_at=datetime.now(UTC) + timedelta(hours=1),
+            created_by=suite.created_by,
+        )
+        db_session.add(schedule)
+        db_session.commit()
+        args = {**args, "schedule_id": str(schedule.id)}
     if args.get("check_id") == _REAL_CHECK:
         check = Check(
             suite_id=suite.id,
@@ -664,6 +677,15 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
             "config": {"column": "EMAIL"},
         },
         "profile_column": {"suite_id": sid, "columns": ["EMAIL"]},
+        "cancel_run": {"run_id": _REAL_RUN},
+        "create_schedule": {"suite_id": sid, "cron": "0 2 * * *"},
+        "delete_schedule": {"schedule_id": _REAL_SCHEDULE},
+        "create_trigger_binding": {
+            "provider": "adf",
+            "pipeline_or_dag_id": "pl_probe",
+            "env": "dev",
+            "suite_id": sid,
+        },
         "update_check": {"suite_id": sid, "check_id": _REAL_CHECK, "name": "renamed"},
         "delete_check": {"suite_id": sid, "check_id": _REAL_CHECK},
         "snooze_check": {"suite_id": sid, "check_id": _REAL_CHECK, "hours": 2},

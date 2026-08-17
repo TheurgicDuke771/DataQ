@@ -26,6 +26,7 @@ from backend.app.services import (
     profile_service,
     run_dispatch,
     run_service,
+    schedule_service,
 )
 
 
@@ -2176,3 +2177,177 @@ def test_update_check_config_replaces_wholesale_which_the_docstring_warns_about(
     current["max_value"] = 200
     restored = server.update_check(str(suite.id), str(check.id), config=current)
     assert restored["config"] == {"column": "AMT", "max_value": 200}
+
+
+# ──────────── Tier-2 run / schedule / trigger mutations (#529) ─────────────
+
+
+def test_cancel_run_marks_it_cancelled_and_revokes_the_task(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Both halves. The DB flip alone leaves a queued Celery task to run anyway —
+    the row would say cancelled while the work happened, which is the worst of
+    both answers."""
+    revoked: list[str | None] = []
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    run = Run(suite_id=suite.id, status="queued", celery_task_id="task-1")
+    db_session.add(run)
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+    monkeypatch.setattr(run_dispatch, "revoke_run", lambda tid: revoked.append(tid))
+
+    out = server.cancel_run(str(run.id))
+    assert out["status"] == "cancelled"
+    assert revoked == ["task-1"]
+
+
+def test_cancel_run_refuses_an_already_finished_run(db_session: Any, monkeypatch: Any) -> None:
+    """It reports the real state rather than pretending it cancelled something —
+    an LLM told "cancelled" about a run that already succeeded will say so."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError) as exc:
+        server.cancel_run(str(run.id))
+    assert "already finished" in str(exc.value)
+    assert "succeeded" in str(exc.value)
+
+
+def test_cancel_run_denied_for_a_run_on_an_inaccessible_suite(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    run = Run(suite_id=suite.id, status="queued")
+    db_session.add(run)
+    db_session.commit()
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+    with pytest.raises(ToolError):
+        server.cancel_run(str(run.id))
+
+
+def test_create_schedule_returns_the_resolved_next_fire(db_session: Any, monkeypatch: Any) -> None:
+    """Returning `next_run_at` is the point: it lets the assistant confirm the
+    INTERPRETATION back to the user, instead of restating the cron string they
+    just supplied — which confirms nothing."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    out = server.create_schedule(str(suite.id), cron="0 2 * * *", timezone="America/Toronto")
+    assert out["cron"] == "0 2 * * *"
+    assert out["timezone"] == "America/Toronto"
+    assert out["enabled"] is True
+    assert out["next_run_at"]
+
+
+def test_create_schedule_rejects_a_bad_cron_or_timezone(db_session: Any, monkeypatch: Any) -> None:
+    """An invalid expression must be an error, not a schedule that quietly never
+    fires — the failure mode a user would not discover until the run they were
+    counting on did not happen."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError):
+        server.create_schedule(str(suite.id), cron="not a cron")
+    with pytest.raises(ToolError):
+        server.create_schedule(str(suite.id), cron="0 2 * * *", timezone="Mars/Olympus")
+    assert schedule_service.list_schedules(db_session, user_id=user.id) == []
+
+
+def test_delete_schedule_removes_only_the_schedule(db_session: Any, monkeypatch: Any) -> None:
+    """The suite and its checks survive — the docstring says only the automatic
+    trigger goes, so that is what is checked."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _check(db_session, suite)
+    _as(monkeypatch, db_session, user)
+    created = server.create_schedule(str(suite.id), cron="0 2 * * *")
+
+    out = server.delete_schedule(created["id"])
+    assert out == {"deleted": True, "schedule_id": created["id"]}
+    assert schedule_service.list_schedules(db_session, user_id=user.id) == []
+    assert db_session.get(Suite, suite.id) is not None
+    assert len(check_service.list_checks(db_session, suite.id)) == 1
+
+
+def test_delete_schedule_denied_on_an_inaccessible_suite(db_session: Any, monkeypatch: Any) -> None:
+    """A schedule id alone must not be a way around suite scoping."""
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    _as(monkeypatch, db_session, owner)
+    created = server.create_schedule(str(suite.id), cron="0 2 * * *")
+
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+    with pytest.raises(ToolError):
+        server.delete_schedule(created["id"])
+
+
+def test_create_trigger_binding_shapes_the_binding(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    out = server.create_trigger_binding(
+        provider="adf", pipeline_or_dag_id="pl_nightly", env="dev", suite_id=str(suite.id)
+    )
+    assert out["provider"] == "adf"
+    assert out["pipeline_or_dag_id"] == "pl_nightly"
+    assert out["suite_id"] == str(suite.id)
+    assert out["enabled"] is True
+    assert out["warnings"] == []
+
+
+def test_create_trigger_binding_surfaces_the_ambiguous_env_warning(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The #1186 advisory names a binding that will silently never fire. Dropping
+    it here — it is only a warning, after all — would recreate the exact live
+    incident it was built to surface, with an LLM cheerfully reporting success.
+    """
+    from backend.app.db.models import Connection
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    for env in ("dev", "qa"):
+        db_session.add(
+            Connection(
+                name=f"adf-{env}",
+                type="adf",
+                env=env,
+                config={"factory_name": "shared-factory"},
+                created_by=user.id,
+            )
+        )
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    out = server.create_trigger_binding(
+        provider="adf", pipeline_or_dag_id="pl_nightly", env="dev", suite_id=str(suite.id)
+    )
+    assert out["warnings"], "the ambiguous-env advisory was dropped"
+    assert out["warnings"][0]["code"] == "ambiguous_orchestration_url"
+    assert "qa" in out["warnings"][0]["other_envs"]
+
+
+def test_create_trigger_binding_rejects_an_unknown_provider_or_env(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError):
+        server.create_trigger_binding(
+            provider="databricks", pipeline_or_dag_id="p", env="dev", suite_id=str(suite.id)
+        )
+    with pytest.raises(ToolError):
+        server.create_trigger_binding(
+            provider="adf", pipeline_or_dag_id="p", env="staging", suite_id=str(suite.id)
+        )
