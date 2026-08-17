@@ -193,11 +193,14 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 
 ## AI assistants (MCP)
 
-A curated **19-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
+A curated **30-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
 results, checks, runs, connections, schedules, trigger bindings and notification config,
-trigger runs, poll status, add checks, profile columns, and read the health score and
-pipeline status — in natural language, with the same per-suite authz as the UI (17 tools are
-read-only; only `trigger_suite_run` and `create_check` mutate anything) ([AI
+trigger and cancel runs, poll status, add/update/delete/snooze checks, dry-run a check preview,
+manage schedules and trigger bindings, import a suite, profile columns, suggest a PII policy,
+test a connection, and read the health score and pipeline status — in natural language, with
+the same per-suite authz as the UI. 16 tools are read-only, 10 change state, and 4 more persist
+nothing but open a live datasource connection with stored credentials and so are gated like
+writes ([AI
 assistants](mcp-setup.md), ADR 0008).
 
 ## Observability

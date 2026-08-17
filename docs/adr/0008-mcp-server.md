@@ -80,3 +80,43 @@ Three standing exclusions carried forward, made explicit because Tier 1 sits rig
 **Tier 2** (mutating, edit-permission-gated: `dryrun_check`, `update_check`/`delete_check`,
 `snooze_check`, `cancel_run`, schedule/trigger-binding CRUD, `import_suite`, `test_connection`,
 etc. — see the roadmap's Theme 13 table) stays deferred; nothing in this amendment ships it.
+
+## Amendment — Tier 2 expansion to 30 tools (issue [#529](https://github.com/TheurgicDuke771/DataQ/issues/529))
+
+This amendment ships the **Tier 2** set deferred above, in full: `update_check`, `delete_check`,
+`snooze_check`, `dryrun_check`, `cancel_run`, `create_schedule`, `delete_schedule`,
+`create_trigger_binding`, `suggest_column_policy`, `test_connection`, `import_suite` — 11 new
+tools, bringing the server to **30 tools total**. Theme 13 is now fully delivered.
+
+**The decision above is still unchanged.** Every Tier 2 tool is the same thin wrapper — open a
+session, resolve the caller, call the same service function, return an LLM-shaped dict — reusing
+whichever gate its REST counterpart already applies.
+
+**The 30 tools split three ways, and the split is deliberately not "read vs mutate":**
+
+- **16 read-only** (unchanged from the Tier 1 amendment above).
+- **10 that change state** — `create_check`, `update_check`, `delete_check`, `snooze_check`,
+  `trigger_suite_run`, `cancel_run`, `create_schedule`, `delete_schedule`,
+  `create_trigger_binding`, `import_suite`. These gate on `suite_authz.require_permission`
+  (`minimum="edit"`) against the suite they act on, so per-suite sharing (ADR 0027) and the ADR
+  0033 Viewer read-only clamp apply exactly as on every existing mutating tool.
+- **4 that persist nothing but open a live datasource connection using stored credentials** —
+  `profile_column`, `dryrun_check`, `suggest_column_policy`, `test_connection`. None of these
+  write a row, but all four spend a real credential against a remote system, which is not a
+  read-only action even though nothing is saved. `profile_column`, `dryrun_check` and
+  `suggest_column_policy` are suite-scoped and gate on `require_permission(minimum="edit")` like
+  a write. `test_connection` has no suite to gate on at all — a connection is workspace-scoped,
+  not suite-scoped — so it gates on the **coarse** axis instead: `server._require_role(user,
+  "member")`, the MCP-side twin of `core.auth.require_role` (ADR 0033), asserting the caller
+  holds at least the `member` workspace role. `import_suite` gates the same way, for the
+  symmetric reason: creating a suite has no *existing* suite to check permission against either.
+
+**MCP exposes no admin-only tool at all.** Every Admin-only capability in ADR 0033's
+authorization matrix is a connection *mutation* — create, edit, delete, re-auth — and none of
+those are exposed here, before or after this amendment: a credential must never transit an LLM.
+`test_connection` is the closest any tool comes to touching a connection, and it deliberately
+stops at reporting whether the live probe succeeded; it never returns a credential or a secret
+reference, matching the standing exclusions the Tier 1 amendment already recorded for
+`list_connections` and `get_notification_config`.
+
+The three standing exclusions from the Tier 1 amendment are unaffected and still hold in full.

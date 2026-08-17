@@ -75,14 +75,22 @@ Portability, auto-monitors, and polish on top of v1:
   and MCP (ADR 0026).
 - **Workspace-admin visibility** extended to the MCP tools + schedules; **dry-run preview**
   extended to every datasource.
-- **MCP server expanded to 19 tools** — the Tier 1 read-only batch (checks, runs,
+- **MCP server expanded to 30 tools** — the Tier 1 read-only batch (checks, runs,
   connections, schedules, trigger bindings, notification config, suite performance,
-  suite export) alongside the original 8, each reusing the same authorization its REST
-  counterpart applies — per-suite for suite-scoped reads, workspace-scoped for the
-  connection list (ADR 0008 amendment, #529). `list_connections` returns metadata + health only, never
-  config or secrets; `get_notification_config` reports channel presence, never webhook
-  URLs; connection create/update/reauth remain excluded — a credential must never
-  transit an LLM.
+  suite export) alongside the original 8, plus the Tier 2 batch (update/delete/snooze
+  check, dry-run preview, cancel run, schedule + trigger-binding CRUD, suggest a PII
+  policy, test a connection, import a suite) — each reusing the same authorization its
+  REST counterpart applies (ADR 0008 amendments, #529). The 30 split three ways: 16
+  read-only; 10 that change state, gated on `edit` access to the suite they act on; and
+  4 that persist nothing but open a live datasource connection with stored credentials
+  (`profile_column`, `dryrun_check`, `suggest_column_policy`, `test_connection`) — gated
+  like writes, not reads, and requiring the **member** workspace role where there is no
+  suite to gate on. No MCP tool is Admin-only: every Admin-only capability in ADR 0033's
+  matrix is a connection mutation, and none are exposed here. `list_connections` returns
+  metadata + health only, never config or secrets; `get_notification_config` reports
+  channel presence, never webhook URLs; `test_connection` reports only pass/fail, never
+  a credential; connection create/update/reauth remain excluded — a credential must
+  never transit an LLM.
 - **Run failure reasons** — a run that fails to execute now shows a redaction-safe reason.
 - **Secret lifecycle** — connection delete cleans up its stored secret.
 - **Assets as the primary lens** — a data asset (table/file) is now a first-class entity
