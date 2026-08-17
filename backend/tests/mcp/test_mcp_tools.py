@@ -1711,6 +1711,10 @@ def test_get_notification_config_credits_the_workspace_channels(
     suite = _suite(db_session, user)
     monkeypatch.setenv("TEAMS_WEBHOOK_SECRET_NAME", "workspace-teams-hook")
     monkeypatch.setenv("EMAIL_TO", "oncall@acme.io")
+    # The SMTP transport too: recipients alone don't deliver anything.
+    monkeypatch.setenv("EMAIL_USERNAME", "dataq@acme.io")
+    monkeypatch.setenv("EMAIL_PASSWORD_SECRET_NAME", "smtp-password")
+    monkeypatch.setenv("EMAIL_FROM", "dataq@acme.io")
     get_settings.cache_clear()
     _as(monkeypatch, db_session, user)
     try:
@@ -1798,12 +1802,16 @@ def test_get_suite_performance_hides_unowned_suites(db_session: Any, monkeypatch
     assert server.get_suite_performance() == []
 
 
-def test_get_suite_performance_rejects_a_bad_window(db_session: Any, monkeypatch: Any) -> None:
-    _as(monkeypatch, db_session, _user(db_session))
-    with pytest.raises(ToolError):
-        server.get_suite_performance(window_days=0)
-    with pytest.raises(ToolError):
-        server.get_suite_performance(window_days=91)
+def test_get_suite_performance_advertises_no_window_argument() -> None:
+    """`_suite_performance` scores each suite's LATEST run and takes no window, so
+    a `window_days` argument was inert — identical rankings for 1 day and 90. A
+    knob that does nothing is worse than no knob on an LLM-facing tool: it will be
+    used, and then a difference that is not there will be explained."""
+    import asyncio
+
+    tool = asyncio.run(server.mcp.get_tool("get_suite_performance"))
+    assert tool is not None
+    assert tool.parameters.get("properties", {}) == {}
 
 
 def test_export_suite_emits_definitions_in_stable_order(db_session: Any, monkeypatch: Any) -> None:
@@ -1848,3 +1856,36 @@ def test_export_suite_denied_for_inaccessible_suite(db_session: Any, monkeypatch
     _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
     with pytest.raises(ToolError):
         server.export_suite(str(suite.id))
+
+
+def test_get_notification_config_does_not_claim_email_without_an_smtp_transport(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Recipients alone deliver nothing: `EmailPublisher.publish` no-ops unless the
+    workspace SMTP username, password secret AND sender are all configured. A
+    deployment that named recipients but never wired a mailer would otherwise be
+    told email alerting is on."""
+    from backend.app.core.config import get_settings
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    monkeypatch.setenv("EMAIL_TO", "oncall@acme.io")
+    monkeypatch.delenv("EMAIL_USERNAME", raising=False)
+    monkeypatch.delenv("EMAIL_PASSWORD_SECRET_NAME", raising=False)
+    get_settings.cache_clear()
+    _as(monkeypatch, db_session, user)
+    try:
+        out = server.get_notification_config(str(suite.id))
+    finally:
+        get_settings.cache_clear()
+
+    assert out["has_email_recipients"] is False
+    assert out["email_recipients_source"] is None
+
+
+def test_list_trigger_bindings_rejects_an_unknown_env(db_session: Any, monkeypatch: Any) -> None:
+    """`env` gets the same guard as `provider`: a typo'd value returning `[]` reads
+    as "nothing is wired up" (#828)."""
+    _as(monkeypatch, db_session, _user(db_session))
+    with pytest.raises(ToolError):
+        server.list_trigger_bindings(env="staging")

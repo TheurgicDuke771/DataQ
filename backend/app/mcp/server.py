@@ -825,6 +825,10 @@ def list_trigger_bindings(
     # set in ADR 0029 and a literal here would silently exclude the next provider.
     if provider is not None and provider not in ORCHESTRATION_PROVIDERS:
         raise ToolError(f"provider must be one of {list(ORCHESTRATION_PROVIDERS)}")
+    # `env` gets the same guard as `provider`, for the same reason: a typo'd value
+    # would otherwise return `[]`, which reads as "nothing is wired up" (#828).
+    if env is not None and env not in ENVS:
+        raise ToolError(f"env must be one of {list(ENVS)}")
     with _ctx() as (session, user), _service_errors():
         sid = _parse_uuid(suite_id, field="suite_id") if suite_id is not None else None
         if sid is not None:
@@ -901,8 +905,19 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
         has_slack, slack_source = _channel(
             config.slack_webhook_secret_ref if config else None, settings.slack_webhook_secret_name
         )
-        has_email, email_source = _channel(
-            config.email_recipients if config else None, settings.email_to
+        # Recipients alone do not mean email is delivered: `EmailPublisher.publish`
+        # no-ops unless the workspace SMTP transport (username + password secret +
+        # sender) is configured, and that gate applies to a per-suite recipient
+        # list exactly as it does to `EMAIL_TO`. Reporting recipients as "email is
+        # on" would overclaim on any deployment that names recipients but never
+        # wired a mailer.
+        smtp_ready = bool(
+            settings.email_username and settings.email_password_secret_name and settings.email_from
+        )
+        has_email, email_source = (
+            _channel(config.email_recipients if config else None, settings.email_to)
+            if smtp_ready
+            else (False, None)
         )
         return {
             "suite_id": suite_id,
@@ -924,14 +939,19 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
 
 
 @mcp.tool
-def get_suite_performance(window_days: int = 7) -> list[dict[str, Any]]:
+def get_suite_performance() -> list[dict[str, Any]]:
     """Rank the suites by data-quality health, worst first.
 
     Use this for 'which suites are in the worst shape?' or 'where should I look
     first?'. Returns, per suite: its id, name, a severity-weighted health score
-    (0-100) computed from that suite's **latest completed run**, and a state
-    label (``healthy`` / ``degraded`` / ``critical``). Ordered worst-first, so
-    the top of the list is where attention belongs.
+    (0-100, or null when its latest run recorded no scoreable outcome — every
+    check skipped or errored), and a state label: ``optimal``, ``stable``,
+    ``critical``, or ``unknown`` for a null score. Ordered worst-first, so the
+    top of the list is where attention belongs.
+
+    Each suite is scored from its **latest completed run** only — this is a
+    current-state ranking, not a trend, and it takes no time window. For health
+    over time use ``get_health_score``.
 
     A suite is **absent** from this list when its latest run produced nothing
     countable — it has never run, is running now, or its last run failed without
@@ -940,13 +960,18 @@ def get_suite_performance(window_days: int = 7) -> list[dict[str, Any]]:
     Scoped to the suites the user can access (a workspace-admin sees the whole
     workspace).
     """
-    if window_days < 1 or window_days > 90:
-        raise ToolError("window_days must be between 1 and 90")
     with _ctx() as (session, user), _service_errors():
+        # `window_days` is deliberately ABSENT rather than defaulted:
+        # `_suite_performance` scores each suite's LATEST run and takes no window,
+        # so the argument was inert — identical rankings for 1 day and 90 — while
+        # computing and discarding the summary's ~8 windowed aggregates. An LLM
+        # given a knob that does nothing will use it and then explain a difference
+        # that is not there. The value below only satisfies the shared entry
+        # point; nothing in the returned ranking depends on it.
         summary = dashboard_service.dashboard_summary(
             session,
             user_id=user.id,
-            window_days=window_days,
+            window_days=1,
             include_all=is_workspace_admin(user),
         )
         return [

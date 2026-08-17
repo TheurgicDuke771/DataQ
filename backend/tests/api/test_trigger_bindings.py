@@ -233,10 +233,27 @@ def test_create_on_missing_suite_404(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
-def test_list_is_scoped_to_accessible_suites(client: TestClient, db_session: Any) -> None:
+def test_list_is_scoped_to_accessible_suites(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
+    """Authenticated as a real **member**, not the ambient dev-bypass identity.
+
+    Dev bypass is a workspace *admin* (ADR 0033 / #741), and the list now honours
+    the admin's workspace-wide view — so running this as the ambient caller would
+    assert scoping about the one principal that is deliberately exempt from it.
+    The `as_role` fixture exists for exactly this.
+    """
+    actor, headers = as_role("member")
     conn = _connection(db_session)
-    mine = _owned_suite(client, conn.id)
-    client.post("/api/v1/trigger-bindings", json=_payload(mine))
+    mine = Suite(
+        id=uuid.uuid4(),
+        name=f"s-{uuid.uuid4().hex[:8]}",
+        connection_id=conn.id,
+        created_by=actor.id,
+    )
+    db_session.add(mine)
+    db_session.commit()
+    client.post("/api/v1/trigger-bindings", json=_payload(str(mine.id)), headers=headers)
     # a binding on a suite I don't own (inserted directly) must not show
     theirs = _unowned_suite(db_session, conn)
     db_session.add(
@@ -244,10 +261,28 @@ def test_list_is_scoped_to_accessible_suites(client: TestClient, db_session: Any
     )
     db_session.commit()
 
-    listed = client.get("/api/v1/trigger-bindings")
+    listed = client.get("/api/v1/trigger-bindings", headers=headers)
     assert listed.status_code == 200
     suite_ids = {b["suite_id"] for b in listed.json()}
-    assert suite_ids == {mine}
+    assert suite_ids == {str(mine.id)}
+
+
+def test_list_gives_a_workspace_admin_every_binding(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
+    """Parity with `/schedules`, which has honoured the workspace-admin view since
+    #488 — an admin seeing every schedule but only their own bindings is a
+    difference with no rationale behind it (ADR 0027)."""
+    _, headers = as_role("admin")
+    conn = _connection(db_session)
+    theirs = _unowned_suite(db_session, conn)
+    db_session.add(
+        TriggerBinding(provider="adf", pipeline_or_dag_id="other", env="dev", suite_id=theirs.id)
+    )
+    db_session.commit()
+
+    listed = client.get("/api/v1/trigger-bindings", headers=headers)
+    assert str(theirs.id) in {b["suite_id"] for b in listed.json()}
 
 
 def test_toggle_then_delete(client: TestClient, db_session: Any) -> None:
