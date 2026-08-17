@@ -488,6 +488,12 @@ def test_the_mcp_tool_surface_is_exactly_the_read_and_suite_scoped_tools() -> No
         "list_checks",
         "get_check",
         "get_check_history",
+        # read-only, view-gated (#529 Tier 1). `list_runs` scopes through
+        # `accessible_suite_ids` (and gates up front on a named suite);
+        # `get_run_results` gates on the run's OWN suite, so a run id alone
+        # cannot be used to reach a suite the caller can't see.
+        "list_runs",
+        "get_run_results",
         # suite-scoped writes — gated on require_permission(minimum="edit"),
         # which the Viewer cap feeds (see the test below)
         "trigger_suite_run",
