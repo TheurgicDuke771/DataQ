@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "27b49e7254ed",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-tier1-perf-export",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/trigger_bindings.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/27/b49e7254ed/0/metadata.json",
+      "transcript": "/27/b49e7254ed/0/full.jsonl",
+      "compact_transcript": "/27/b49e7254ed/0/transcript.jsonl",
+      "content_hash": "/27/b49e7254ed/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 21177,
+    "cache_read_tokens": 4701146,
+    "output_tokens": 12076,
+    "api_call_count": 15
+  }
+}
