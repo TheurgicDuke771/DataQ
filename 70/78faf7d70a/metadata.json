@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "7078faf7d70a",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-tier2-check-mutations",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/api/v1/trigger_bindings.py",
+    "backend/app/services/trigger_binding_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/70/78faf7d70a/0/metadata.json",
+      "transcript": "/70/78faf7d70a/0/full.jsonl",
+      "compact_transcript": "/70/78faf7d70a/0/transcript.jsonl",
+      "content_hash": "/70/78faf7d70a/0/content_hash.txt",
+      "prompt": "/70/78faf7d70a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 614,
+    "cache_creation_tokens": 452861,
+    "cache_read_tokens": 91794075,
+    "output_tokens": 186044,
+    "api_call_count": 307
+  }
+}
