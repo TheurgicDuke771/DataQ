@@ -29,6 +29,7 @@ from backend.app.services import (
     run_service,
     schedule_service,
     suite_service,
+    trigger_binding_service,
 )
 
 
@@ -3025,7 +3026,7 @@ def test_update_trigger_binding_recomputes_the_ambiguous_env_warning(
         provider="adf", pipeline_or_dag_id="pl_nightly", env="dev", suite_id=str(suite.id)
     )
     monkeypatch.setattr(
-        server.trigger_binding_service,
+        trigger_binding_service,
         "_ambiguous_orchestration_warnings",
         lambda session, *, provider, env: [
             SimpleNamespace(code="ambiguous_env", message="two connections", other_envs=["qa"])
