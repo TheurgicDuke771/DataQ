@@ -447,11 +447,21 @@ bringing the MCP server from 8 to **19 tools** (17 read-only + 2 mutating). Ever
 same thin service-layer wrapper with `require_permission` authz + sample redaction as the
 original 8 (`backend/app/mcp/server.py`); `list_connections` returns metadata + health only
 (never config or secrets) and `get_notification_config` reports webhook presence, never URLs.
-**Tier 2 is still open** — see below.
 
-The REST surface has ~52 more endpoints beyond the now-19 MCP tools. Candidates below, tiered
-by risk. Cross-cutting dependencies: **#488** (workspace-admin visibility in MCP tools) and
-**#461 / ADR 0026** (DataQ-issued API keys, which unblock headless MCP clients — shipped).
+**Tier 2 — DELIVERED (issue #529, ADR 0008's second amendment).** All eleven Tier 2 tools below
+shipped, bringing the MCP server from 19 to **30 tools**, which now split three ways: 16
+read-only, 10 that change state (edit-gated on the suite they act on), and 4 that persist
+nothing but open a live datasource connection with stored credentials — `profile_column`,
+`dryrun_check`, `suggest_column_policy`, `test_connection` — gated like writes, including a
+`member`-workspace-role gate on the two (`test_connection`, `import_suite`) that have no suite
+to gate on. No MCP tool is Admin-only. **Theme 13 is now complete** — both tiers of the
+candidate list below have shipped.
+
+The REST surface has ~41 more endpoints beyond the 30 MCP tools — it was ~52 beyond the 19 Tier 1
+left, and Tier 2 wrapped 11 of them. Those remaining are out of scope for
+this theme (see the exclusions below). Cross-cutting dependencies: **#488** (workspace-admin
+visibility in MCP tools) and **#461 / ADR 0026** (DataQ-issued API keys, which unblock headless
+MCP clients — shipped).
 
 **Filed (2026-07-04, carried from the retired `WEEK8_TODO` working tracker):**
 
@@ -475,19 +485,19 @@ by risk. Cross-cutting dependencies: **#488** (workspace-admin visibility in MCP
 | `get_suite_performance` | `GET /dashboard/summary` (per-suite slice) | "which suite is worst this month?" |
 | `export_suite` | `GET /suites/{id}/export` | "export the orders suite" |
 
-**Tier 2 — mutating, edit-permission-gated:**
+**Tier 2 — mutating, edit-permission-gated (DELIVERED, #529):**
 
 | Candidate tool | Wraps | Note |
 |---|---|---|
 | `dryrun_check` | `POST /suites/{id}/checks/dryrun` | the LLM author-preview loop — pairs with `create_check` |
-| `update_check` / `delete_check` | `PATCH`/`DELETE` check | delete needs confirm-style ergonomics |
-| `snooze_check` / `unsnooze_check` | check snooze endpoints | "snooze this alert for 24h" |
-| `cancel_run` | `POST /runs/{id}/cancel` | |
+| `update_check` / `delete_check` | `PATCH`/`DELETE` check | shipped as one `update_check` (partial update — `config` replaces, not merges) + one `delete_check` |
+| `snooze_check` | check snooze endpoint | shipped as one tool — omit `hours` to un-snooze, rather than a separate `unsnooze_check` |
+| `cancel_run` | `POST /runs/{id}/cancel` | cooperative cancel; a fast run can finish before it lands |
 | `create_schedule` / `delete_schedule` | schedules CRUD | "run this suite daily at 9am IST" |
 | `create_trigger_binding` | `POST /trigger-bindings` | "run this suite when the orders DAG succeeds" |
-| `import_suite` | `POST /suites/import` | |
-| `suggest_column_policy` | `POST /suites/{id}/column-policy/suggest` | redaction-policy assistant |
-| `test_connection` | `POST /connections/{id}/test` | action but non-destructive |
+| `import_suite` | `POST /suites/import` | member-role gated, no suite to gate on |
+| `suggest_column_policy` | `POST /suites/{id}/column-policy/suggest` | redaction-policy assistant; suggests only, never saves |
+| `test_connection` | `POST /connections/{id}/test` | member-role gated (no suite); never returns a credential |
 
 **Excluded (deliberate):** connection create/update/reauth (**credentials transiting an
 LLM — hard no**); the orchestration webhooks (M2M surface); admin endpoints (workspace-
