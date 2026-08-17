@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "60b1789131f4",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-tier1-ops-reads",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/mcp/server.py",
+    "backend/app/services/trigger_binding_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/60/b1789131f4/0/metadata.json",
+      "transcript": "/60/b1789131f4/0/full.jsonl",
+      "compact_transcript": "/60/b1789131f4/0/transcript.jsonl",
+      "content_hash": "/60/b1789131f4/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 66,
+    "cache_creation_tokens": 38179,
+    "cache_read_tokens": 8755214,
+    "output_tokens": 16784,
+    "api_call_count": 33
+  }
+}
