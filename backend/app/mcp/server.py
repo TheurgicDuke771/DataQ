@@ -156,6 +156,16 @@ def _require_role(user: User, minimum: str) -> None:
     Raises `ToolError`, never a 404-shaped denial: unlike the suite ladder there
     is no existence to hide — the capability is workspace-wide.
     """
+    if minimum not in ROLE_RANK:
+        # The guard `core.auth.require_role` performs, for the same reason and one
+        # step later. There it is a ValueError at import time (a dependency
+        # factory runs once); here the check happens per call, so an unknown
+        # `minimum` would otherwise raise a raw KeyError *inside* a tool —
+        # escaping `_service_errors`, which maps only `DataQError`, and surfacing
+        # to the client as an internal error rather than a denial.
+        raise ToolError(  # pragma: no cover — programmer error
+            f"unknown workspace role: {minimum!r}"
+        )
     role = resolve_role(user)
     if ROLE_RANK[role] < ROLE_RANK[minimum]:
         raise ToolError(

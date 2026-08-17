@@ -31,12 +31,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.core.secret_names import connection_secret_ref
-from backend.app.db.models import Connection, Share, Suite, User
+from backend.app.db.models import Connection, Run, Share, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import share_service, suite_authz
 from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
-from backend.tests.support.mcp_gates import viewer_denied_tools
+from backend.tests.support.mcp_gates import (
+    member_denied_tools,
+    outsider_denied_tools,
+    viewer_denied_tools,
+)
 
 _SF_CONFIG = {
     "account": "ab12345.eu-west-1",
@@ -46,6 +50,9 @@ _SF_CONFIG = {
     "warehouse": "WH_DQ",
     "role": "DQ_ROLE",
 }
+
+#: Sentinel for a probe needing a REAL run row (see `_assert_tool_denies`).
+_REAL_RUN = "<a real run, substituted at probe time>"
 
 #: Every role, so a matrix test can't silently skip a tier.
 ROLES = ("admin", "member", "viewer")
@@ -481,6 +488,37 @@ def test_every_mcp_tool_declares_a_gate_and_the_registry_matches() -> None:
     assert tools == set(GATES)
 
 
+def test_every_declared_gate_is_a_known_gate() -> None:
+    """A typo'd gate value would match no sweep and therefore be enforced by
+    nothing — while still passing the registry tripwire, which only compares
+    keys. Cheap guard against the table quietly opting a tool out."""
+    from backend.tests.support.mcp_gates import GATES, KNOWN_GATES
+
+    unknown = {name: gate for name, gate in GATES.items() if gate not in KNOWN_GATES}
+    assert not unknown, unknown
+
+
+def test_read_gated_tools_really_take_no_suite_id() -> None:
+    """`read` is the one gate with no denial to assert, which makes it the one
+    place a tool could be parked to escape every sweep. It is only defensible for
+    a tool that has no suite to gate ON — so that is what is checked, against the
+    advertised schema."""
+    import asyncio
+
+    from backend.app.mcp.server import mcp
+    from backend.tests.support.mcp_gates import tools_with_gate
+
+    read_only = set(tools_with_gate("read"))
+    for tool in asyncio.run(mcp.list_tools()):
+        if tool.name not in read_only:
+            continue
+        params = set(tool.parameters.get("properties", {}))
+        assert "suite_id" not in params, (
+            f"{tool.name} is declared `read` but accepts a suite_id — it must "
+            "either gate on it (`read:suite-optional`) or not take it"
+        )
+
+
 @pytest.mark.parametrize("tool_name", viewer_denied_tools())
 def test_no_mcp_tool_that_should_deny_a_viewer_lets_one_through(
     db_session: Any, as_role: Any, monkeypatch: pytest.MonkeyPatch, tool_name: str
@@ -490,63 +528,150 @@ def test_no_mcp_tool_that_should_deny_a_viewer_lets_one_through(
     This used to test `trigger_suite_run` alone and reason that the rest were
     covered "for free" because they call the same primitive. That reasoning is
     right about the primitive and says nothing about whether a given tool
-    actually calls it — which is the only thing that can regress. Driving the
-    sweep off `GATES` means a new mutating tool is covered the moment it is
-    declared, rather than when someone remembers to add a test.
+    actually calls it — which is the only thing that can regress.
 
     The Viewer holds a **legacy `edit` share**: the exact state a naive "viewers
     never have edit" assumption gets wrong, and the reason the cap is enforced at
     the point of use rather than only when a share is granted.
     """
-    from contextlib import contextmanager
-
-    from backend.app.mcp import server as mcp_server
-
     owner, _ = as_role("admin")
     viewer, _ = as_role("viewer")
     suite = _suite(db_session, owner, _connection(db_session, owner))
     db_session.add(Share(suite_id=suite.id, user_id=viewer.id, permission="edit"))
     db_session.commit()
 
+    _assert_tool_denies(monkeypatch, db_session, viewer, tool_name, suite)
+
+
+@pytest.mark.parametrize("tool_name", member_denied_tools())
+def test_no_admin_only_mcp_tool_lets_a_member_through(
+    db_session: Any, as_role: Any, monkeypatch: pytest.MonkeyPatch, tool_name: str
+) -> None:
+    """`role:admin` needs its own principal, not the Viewer sweep's.
+
+    A tool declared `role:admin` but implemented with `minimum="member"` refuses a
+    Viewer perfectly well — so the Viewer sweep passes, and every Member in the
+    workspace can invoke an admin capability. Only a Member can tell the two
+    apart. The Member is even given an `edit` share, so a suite-ladder gate
+    cannot stand in for the role gate this row is asserting.
+    """
+    owner, _ = as_role("admin")
+    member, _ = as_role("member")
+    suite = _suite(db_session, owner, _connection(db_session, owner))
+    db_session.add(Share(suite_id=suite.id, user_id=member.id, permission="edit"))
+    db_session.commit()
+
+    _assert_tool_denies(monkeypatch, db_session, member, tool_name, suite)
+
+
+@pytest.mark.parametrize("tool_name", outsider_denied_tools())
+def test_suite_scoped_mcp_tools_deny_a_user_with_no_share(
+    db_session: Any, as_role: Any, monkeypatch: pytest.MonkeyPatch, tool_name: str
+) -> None:
+    """The other half: a Member in good standing, with no share on THIS suite.
+
+    Without this, a tool declared `suite:view` and gating on nothing at all would
+    pass every other sweep — a Viewer is not refused by a read they are entitled
+    to, so the Viewer sweep says nothing about view-gated tools. This is also what
+    covers `read:suite-optional`'s up-front gate, whose absence turns a denial
+    into a misleading empty list (#828).
+    """
+    owner, _ = as_role("admin")
+    outsider, _ = as_role("member")
+    suite = _suite(db_session, owner, _connection(db_session, owner))
+    db_session.commit()
+
+    _assert_tool_denies(monkeypatch, db_session, outsider, tool_name, suite)
+
+
+def _assert_tool_denies(
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: Any,
+    principal: User,
+    tool_name: str,
+    suite: Suite,
+) -> None:
+    """Enter the real tool as `principal` and assert it refuses, for the right reason."""
+    from contextlib import contextmanager
+
+    from backend.app.mcp import server as mcp_server
+
+    # Built BEFORE `pytest.raises`, deliberately: an unknown tool raises here, and
+    # inside the block that failure would be swallowed and re-reported as "denied
+    # for the wrong reason" — a missing probe silently reading as a pass.
+    args = _viewer_probe_args(tool_name, suite)
+    if args.get("run_id") == _REAL_RUN:
+        # A REAL run on the unshared suite, not a fabricated id. The run tools look
+        # the run up before gating, so a made-up id returns "run not found" —
+        # which is in the accepted-denial vocabulary and would pass this test
+        # without the authz gate ever being reached.
+        run = Run(suite_id=suite.id, status="succeeded")
+        db_session.add(run)
+        db_session.commit()
+        args = {**args, "run_id": str(run.id)}
+
     @contextmanager
-    def _as_viewer() -> Any:
-        yield db_session, viewer
+    def _as_principal() -> Any:
+        yield db_session, principal
 
-    monkeypatch.setattr(mcp_server, "_ctx", _as_viewer)
-
+    monkeypatch.setattr(mcp_server, "_ctx", _as_principal)
     tool = getattr(mcp_server, tool_name)
     with pytest.raises(Exception) as exc:
-        tool(**_viewer_probe_args(tool_name, suite))
+        tool(**args)
 
     message = str(exc.value).lower()
-    # Either axis is an acceptable denial — the suite ladder's forbidden, or the
-    # coarse role gate's. What is NOT acceptable is the call succeeding, or
-    # failing for an unrelated reason (a missing argument, a bad UUID), which
-    # would make this test pass while proving nothing.
+    # Either axis is an acceptable denial — the suite ladder's forbidden/not-found,
+    # or the coarse role gate's. What is NOT acceptable is the call succeeding, or
+    # failing for an unrelated reason (a missing argument, a bad UUID), which would
+    # make this pass while proving nothing.
     assert any(
-        word in message for word in ("forbidden", "permission", "workspace role")
+        word in message for word in ("forbidden", "permission", "workspace role", "not found")
     ), f"{tool_name} denied for the wrong reason: {exc.value}"
 
 
 def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
-    """Minimal valid arguments per tool, so the sweep reaches the gate.
+    """Minimal valid arguments per tool, so a sweep reaches the gate.
 
     Deliberately valid: the point is that the call is stopped by *authorization*,
     not by argument validation. Arguments that would 422 first would make every
     row pass regardless of the gate.
+
+    A `raise`, not an `assert`: an assert vanishes under `-O`, and this is the
+    guard that stops a newly-declared tool from being silently skipped.
     """
+    sid = str(suite.id)
+    fake = str(uuid.uuid4())
     per_tool: dict[str, dict[str, Any]] = {
-        "trigger_suite_run": {"suite_id": str(suite.id)},
+        # suite:edit
+        "trigger_suite_run": {"suite_id": sid},
         "create_check": {
-            "suite_id": str(suite.id),
-            "name": "viewer probe",
+            "suite_id": sid,
+            "name": "authz probe",
             "expectation_type": "expect_column_values_to_not_be_null",
             "config": {"column": "EMAIL"},
         },
-        "profile_column": {"suite_id": str(suite.id), "columns": ["EMAIL"]},
+        "profile_column": {"suite_id": sid, "columns": ["EMAIL"]},
+        # suite:view
+        "export_suite": {"suite_id": sid},
+        "get_check": {"suite_id": sid, "check_id": fake},
+        "get_check_history": {"suite_id": sid, "check_id": fake},
+        "get_notification_config": {"suite_id": sid},
+        "get_suite_results": {"suite_id": sid},
+        "list_checks": {"suite_id": sid},
+        # These two take a RUN id and gate on the run's OWN suite. The sentinel is
+        # replaced with a real run by `_assert_tool_denies`: a fabricated id would
+        # return "run not found" before authz — an accepted denial word — and pass
+        # this test vacuously.
+        "get_run_results": {"run_id": _REAL_RUN},
+        "get_run_status": {"run_id": _REAL_RUN},
+        # read:suite-optional — the named-suite half is what has a gate
+        "list_runs": {"suite_id": sid},
+        "list_schedules": {"suite_id": sid},
+        "list_trigger_bindings": {"suite_id": sid},
     }
-    assert tool_name in per_tool, (
-        f"{tool_name} is declared Viewer-denied in mcp_gates.GATES but has no probe "
-        "arguments here — add them, or the sweep silently skips it"
-    )
+    if tool_name not in per_tool:
+        raise AssertionError(
+            f"{tool_name} is declared gated in mcp_gates.GATES but has no probe "
+            "arguments here — add them, or the sweep silently skips it"
+        )
     return per_tool[tool_name]
