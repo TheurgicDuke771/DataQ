@@ -227,7 +227,7 @@ export function ConnectionForm({
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message="Re-enter the credential to move this connection"
+          title="Re-enter the credential to move this connection"
           description={
             `Changing ${movedDestinations.join(', ')} changes where this connection's ` +
             'credential is sent, so it must be supplied again. The stored one is never ' +
