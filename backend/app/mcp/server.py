@@ -884,8 +884,14 @@ def list_schedules(
 
     A disabled schedule still exists and still reads back here — it simply does
     not fire, so do not describe a suite as unscheduled on the strength of a row
-    being present. Scoped to suites the user can access (a workspace-admin sees
-    every suite).
+    being present.
+
+    **A cron schedule is only one of the two ways a suite runs automatically.**
+    The other is an orchestration trigger — see ``list_trigger_bindings``. A suite
+    with no schedule may still run nightly because a pipeline triggers it, so
+    answer "when does this suite run?" from both, not from this tool alone.
+
+    Scoped to suites the user can access (a workspace-admin sees every suite).
     """
     with _ctx() as (session, user), _service_errors():
         sid = _parse_uuid(suite_id, field="suite_id") if suite_id is not None else None
@@ -990,7 +996,24 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
     Webhook **URLs are never returned** — only whether one is set. A webhook URL
     is a bearer credential: anyone holding it can post into that channel, so it
     is stored as a secret reference and this tool reports its presence, not its
-    value. Requires view access to the suite.
+    value.
+
+    **"Why did nobody get alerted?" has four answers and this tool holds only one
+    of them.** Work through all four before blaming the delivery channel:
+
+    1. Alerting is off, or no channel is configured — **here**.
+    2. The check is **snoozed** — ``list_checks`` reports a live snooze per check.
+    3. The run never produced a verdict at or above the threshold — ``list_runs``
+       (an incomplete run has no outcome at all, and ``alert_on`` is a *threshold*:
+       ``fail`` alerts on fail and worse, ``warn`` on warn and worse, ``always``
+       on every run).
+    4. The alert was **deduplicated**. An ongoing, unchanged failure on a
+       scheduled suite does not re-alert every run — only the first one does,
+       under any policy except ``always``. Compare the run with the previous
+       terminal run (``list_runs``, ``get_check_history``): same checks failing
+       the same way means this is the expected silence, not a fault.
+
+    Requires view access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
@@ -1391,7 +1414,10 @@ def snooze_check(
 
     One tool rather than a snooze/unsnooze pair: it is one piece of state with
     two values, and splitting it would ask an LLM to pick between two names for
-    the same field.
+    the same field. **The consequence is that "un-mute", "un-snooze", "turn
+    alerts back on" and "start alerting again" are all served by this tool too,
+    despite its name saying the opposite** — call it with ``hours`` omitted.
+    There is no separate unsnooze tool to look for.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     cid = _parse_uuid(check_id, field="check_id")

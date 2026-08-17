@@ -2641,3 +2641,42 @@ def test_import_suite_bounds_the_suite_columns_in_the_schema() -> None:
     assert props["name"]["maxLength"] == 128
     assert props["name"]["minLength"] == 1
     assert "1024" in str(props["description"])
+
+
+# ───────── description cross-references from the #584 routing check ────────
+
+
+def test_tool_descriptions_cross_reference_the_confusable_neighbours() -> None:
+    """The three hesitations the 30-tool NL routing check surfaced (#584).
+
+    None caused a misroute — the model reached the right tool every time — but in
+    each case it reported that the description gave it no pointer to the adjacent
+    tool it also needed. Asserted on the ADVERTISED description, because that
+    string is the entire input a client's selection is made from; a comment in the
+    source would not reach it.
+    """
+    import asyncio
+
+    def described(name: str) -> str:
+        tool = asyncio.run(server.mcp.get_tool(name))
+        assert tool is not None
+        return tool.description or ""
+
+    schedules = described("list_schedules")
+    notifications = described("get_notification_config")
+    snooze = described("snooze_check")
+
+    # A suite runs on a schedule OR a trigger binding; this tool sees only one.
+    assert "list_trigger_bindings" in schedules
+
+    # "Why did nobody get alerted?" is FOUR-way: config, snooze, no verdict, or
+    # deduplicated. The fourth was missed on the first pass — the block claimed
+    # exhaustivity while `dispatch.publish_run_outcome` had a suppression path it
+    # did not name, which is the same defect class this test exists to prevent.
+    assert "list_checks" in notifications and "list_runs" in notifications
+    assert "dedup" in notifications.lower()
+    assert "get_check_history" in notifications
+
+    # Un-muting is served by a tool whose NAME says the opposite, so the
+    # description has to carry the words a client would search for.
+    assert "un-snooze" in snooze and "alerts back on" in snooze
