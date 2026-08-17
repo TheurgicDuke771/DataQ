@@ -33,7 +33,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import is_workspace_admin
 from backend.app.core.secrets import get_secret_store
-from backend.app.db.models import Check, Connection, Run, User
+from backend.app.db.models import Check, Connection, Run, Suite, User
 from backend.app.db.session import get_session
 from backend.app.mcp.auth import (
     McpAuthError,
@@ -127,6 +127,68 @@ def _service_errors() -> Generator[None]:
         yield
     except DataQError as exc:
         raise ToolError(exc.message) from exc
+
+
+def _run_results_payload(session: Session, suite: Suite, run: Run) -> dict[str, Any]:
+    """One run's `{run, checks}` payload — shared by `get_suite_results` (latest
+    run of a suite) and `get_run_results` (a named run).
+
+    Shared rather than duplicated because the two rules encoded here are exactly
+    the ones a second copy would get subtly wrong: the #318 finality gate and the
+    column-aware sample redaction (#415). Both are safety properties, and a
+    divergence between two tools returning "a run's results" would be invisible
+    until it leaked.
+
+    Result rows are committed per phase (#318), so a `running` run has a genuine
+    partial set and a failed one can carry stragglers. An LLM asked "what failed
+    in orders today?" will summarise whatever list it is given as the answer — it
+    has no way to know the list is one phase of thirty — so an incomplete run
+    yields no checks at all and says why, rather than a confident report built
+    from a fraction of the suite.
+    """
+    final = run.status in rollup.AGGREGATABLE_RUN_STATUSES
+    results = run_service.list_results(session, run.id) if final else []
+    checks = {c.id: c for c in session.scalars(select(Check).where(Check.suite_id == suite.id))}
+    policy = suite.column_policy
+
+    def _tested_column(check_id: uuid.UUID | None) -> str | None:
+        check = checks.get(check_id) if check_id is not None else None
+        return check.config.get("column") if check is not None else None
+
+    return {
+        "run": {
+            "id": str(run.id),
+            "status": run.status,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            # Explicit, so a client branches on a field rather than inferring
+            # "no checks" means "nothing failed" (#318).
+            "results_final": final,
+        },
+        "checks": [
+            {
+                "name": checks[r.check_id].name if r.check_id in checks else None,
+                "status": r.status,
+                "metric_value": _num(r.metric_value),
+                # How much of the dataset this check actually saw (#595).
+                # `None` = a complete read. Without it an AI client reads a
+                # green board from a 2% sample and reports full-dataset
+                # quality with total confidence — the #424/#1115 overclaim
+                # class, reintroduced for every MCP consumer at once. Carries
+                # counts and a strategy name, never cell values, so it needs
+                # none of the redaction its neighbours do.
+                "sampling": r.sampling,
+                "observed_value": run_service.redact_observed_value(
+                    r.observed_value, tested_column=_tested_column(r.check_id), policy=policy
+                ),
+                "expected_value": r.expected_value,
+                "sample_failures": run_service.redact_sample_failures(
+                    r.sample_failures, tested_column=_tested_column(r.check_id), policy=policy
+                ),
+            }
+            for r in results
+        ],
+    }
 
 
 # ─────────────────────────────── read tools ────────────────────────────────
@@ -226,63 +288,7 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
         latest = session.scalars(rollup.latest_runs_per_suite_stmt([sid])).first()
         if latest is None:
             return {"suite_id": suite_id, "run": None, "checks": []}
-        # Result rows are committed per phase (#318), so a `running` run has a
-        # genuine partial set and a failed one can carry stragglers. An LLM asked
-        # "what failed in orders today?" will summarise whatever list it is given
-        # as the answer — it has no way to know the list is one phase of thirty —
-        # so an incomplete run yields no checks at all and says why, rather than a
-        # confident report built from a fraction of the suite.
-        final = latest.status in rollup.AGGREGATABLE_RUN_STATUSES
-        results = run_service.list_results(session, latest.id) if final else []
-        checks = {c.id: c for c in session.scalars(select(Check).where(Check.suite_id == sid))}
-        policy = suite.column_policy
-        return {
-            "suite_id": suite_id,
-            "run": {
-                "id": str(latest.id),
-                "status": latest.status,
-                "started_at": latest.started_at.isoformat() if latest.started_at else None,
-                "finished_at": latest.finished_at.isoformat() if latest.finished_at else None,
-                # Explicit, so a client branches on a field rather than inferring
-                # "no checks" means "nothing failed" (#318).
-                "results_final": final,
-            },
-            "checks": [
-                {
-                    "name": checks[r.check_id].name if r.check_id in checks else None,
-                    "status": r.status,
-                    "metric_value": _num(r.metric_value),
-                    # How much of the dataset this check actually saw (#595).
-                    # `None` = a complete read. Without it an AI client reads a
-                    # green board from a 2% sample and reports full-dataset
-                    # quality with total confidence — the #424/#1115 overclaim
-                    # class, reintroduced for every MCP consumer at once. Carries
-                    # counts and a strategy name, never cell values, so it needs
-                    # none of the redaction its neighbours do.
-                    "sampling": r.sampling,
-                    "observed_value": run_service.redact_observed_value(
-                        r.observed_value,
-                        tested_column=(
-                            checks[r.check_id].config.get("column")
-                            if r.check_id in checks
-                            else None
-                        ),
-                        policy=policy,
-                    ),
-                    "expected_value": r.expected_value,
-                    "sample_failures": run_service.redact_sample_failures(
-                        r.sample_failures,
-                        tested_column=(
-                            checks[r.check_id].config.get("column")
-                            if r.check_id in checks
-                            else None
-                        ),
-                        policy=policy,
-                    ),
-                }
-                for r in results
-            ],
-        }
+        return {"suite_id": suite_id, **_run_results_payload(session, suite, latest)}
 
 
 @mcp.tool
@@ -509,6 +515,108 @@ def get_check_history(
                 for p in points
             ],
         }
+
+
+@mcp.tool
+def list_runs(
+    suite_id: str | None = None,
+    status: str | None = None,
+    limit: Annotated[int, Field(ge=1, le=200)] = 20,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> dict[str, Any]:
+    """List recent suite runs, newest first, with each run's data-quality outcome.
+
+    Use this for 'what has run today?', 'show me the failed runs', or to find a
+    run id to drill into with ``get_run_results``. Returns, per run: its id, the
+    suite it belongs to, the **execution** status (queued / running / succeeded /
+    failed / cancelled), when it started and finished, what triggered it, a
+    user-safe failure reason when it failed, and its **data-quality** outcome —
+    ``checks_total`` / ``checks_passed`` over the evaluated checks plus
+    ``worst_severity`` (warn / fail / critical, or null when nothing failed).
+
+    Those two statuses answer different questions and should not be merged: a run
+    is ``succeeded`` when DataQ executed it, even if every check inside it failed.
+
+    Optionally narrow to one ``suite_id`` (an error if you can't see it) and/or a
+    run ``status``. ``total`` reports how many runs match regardless of ``limit``
+    / ``offset``, so a short page is not mistaken for the end of the list. Scoped
+    to suites the user can access (a workspace-admin sees every suite).
+    """
+    with _ctx() as (session, user), _service_errors():
+        sid = _parse_uuid(suite_id, field="suite_id") if suite_id is not None else None
+        # Gate on a named suite up front so an inaccessible or unknown one is a
+        # clean "not found" rather than a confident empty list — the same
+        # existence-hiding the REST route does, and the #828 rule that an empty
+        # answer must never stand in for "you may not ask".
+        if sid is not None:
+            require_permission(session, sid, user.id, minimum="view")
+        # A status outside the closed vocabulary raises rather than returning an
+        # empty page that reads as "no runs in that status" (#828).
+        run_service.validate_read_filters(status=status)
+        include_all = is_workspace_admin(user)
+        runs = run_service.list_runs(
+            session,
+            user_id=user.id,
+            suite_id=sid,
+            status=status,
+            limit=limit,
+            offset=offset,
+            include_all=include_all,
+        )
+        # One grouped query for the whole page's outcomes, not one per run — the
+        # N+1 an LLM caller cannot see the cost of (#947).
+        outcomes = run_service.check_outcome_counts(session, [r.id for r in runs])
+        return {
+            "total": run_service.count_runs(
+                session, user_id=user.id, suite_id=sid, status=status, include_all=include_all
+            ),
+            "runs": [
+                {
+                    "id": str(r.id),
+                    "suite_id": str(r.suite_id),
+                    "status": r.status,
+                    "started_at": r.started_at.isoformat() if r.started_at else None,
+                    "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                    "triggered_by": r.triggered_by,
+                    # A fixed category message from `failure_classifier`, never raw
+                    # adapter text (which can carry DSN/credential fragments, #605).
+                    "failure_reason": r.failure_reason,
+                    "checks_total": outcomes.get(r.id, (0, 0, None))[0],
+                    "checks_passed": outcomes.get(r.id, (0, 0, None))[1],
+                    "worst_severity": outcomes.get(r.id, (0, 0, None))[2],
+                }
+                for r in runs
+            ],
+        }
+
+
+@mcp.tool
+def get_run_results(run_id: str) -> dict[str, Any]:
+    """Get the per-check results of one specific run, by run id.
+
+    Use this to drill into a run found via ``list_runs`` — 'why did last night's
+    orders run fail?' — or to read a historical run rather than the latest one
+    (which is what ``get_suite_results`` returns). Returns the run's lifecycle
+    status plus, per check: the check name, its pass/warn/fail/critical (or
+    skip/error) status, the observed vs expected value, how much of the dataset
+    the check saw, and any sample failing rows (PII-redacted).
+
+    If the run has not finished successfully, ``checks`` is empty and
+    ``run.results_final`` is false — it is still executing, or it failed and
+    never produced a complete account. Report the run's status in that case; do
+    not describe the data's quality from it. Requires view access to the run's
+    suite.
+    """
+    rid = _parse_uuid(run_id, field="run_id")
+    with _ctx() as (session, user), _service_errors():
+        run = run_service.get_run(session, rid)
+        if run is None:
+            raise ToolError("run not found")
+        # Gate on the run's SUITE: a caller who can't see the suite can't see its
+        # runs, and the denial hides the run id too (the same rule the REST route
+        # holds — ADR 0027 existence-hiding).
+        suite = require_permission(session, run.suite_id, user.id, minimum="view")
+        return {"suite_id": str(run.suite_id), **_run_results_payload(session, suite, run)}
 
 
 # ─────────────────────────────── action tools ──────────────────────────────

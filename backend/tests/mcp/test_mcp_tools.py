@@ -1157,3 +1157,198 @@ def test_list_checks_limit_is_bounded_in_the_tool_schema() -> None:
         "maximum": 500,
         "type": "integer",
     }
+
+
+# ───────────────────── Tier-1 run reads (#529) ────────────────────────────
+
+
+def _run_with_results(
+    db_session: Any,
+    suite: Suite,
+    *,
+    status: str = "succeeded",
+    outcomes: tuple[str, ...] = ("pass",),
+    created_at: Any = None,
+) -> Run:
+    run = Run(suite_id=suite.id, status=status)
+    if created_at is not None:
+        run.created_at = created_at
+    db_session.add(run)
+    db_session.flush()
+    for n, outcome in enumerate(outcomes):
+        check = Check(
+            suite_id=suite.id, name=f"c{n}", expectation_type="expect_x", config={"column": "AMT"}
+        )
+        db_session.add(check)
+        db_session.flush()
+        db_session.add(Result(run_id=run.id, check_id=check.id, status=outcome))
+    db_session.commit()
+    return run
+
+
+def test_list_runs_reports_execution_status_and_dq_outcome_separately(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The distinction the tool docstring makes must be real in the payload: a run
+    is `succeeded` when DataQ executed it, even when every check inside failed.
+    Merging the two is the misreport this shape exists to prevent."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _run_with_results(db_session, suite, status="succeeded", outcomes=("pass", "fail", "critical"))
+    _as(monkeypatch, db_session, user)
+
+    out = server.list_runs()
+    assert out["total"] == 1
+    (run,) = out["runs"]
+    assert run["status"] == "succeeded"
+    assert run["checks_total"] == 3
+    assert run["checks_passed"] == 1
+    assert run["worst_severity"] == "critical"
+    assert run["suite_id"] == str(suite.id)
+
+
+def test_list_runs_excludes_operational_results_from_the_denominator(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`skip`/`error` are not evaluated checks (#122), so an all-skip run must
+    report 0 total — not a misleading `0/N` that reads as total failure."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _run_with_results(db_session, suite, outcomes=("skip", "error"))
+    _as(monkeypatch, db_session, user)
+
+    (run,) = server.list_runs()["runs"]
+    assert run["checks_total"] == 0
+    assert run["worst_severity"] is None
+
+
+def test_list_runs_total_is_independent_of_the_page(db_session: Any, monkeypatch: Any) -> None:
+    """A short page must not be mistaken for the end of the list (#1108): `total`
+    counts the whole matching population, not the slice."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    for _ in range(3):
+        _run_with_results(db_session, suite)
+    _as(monkeypatch, db_session, user)
+
+    out = server.list_runs(limit=1)
+    assert len(out["runs"]) == 1
+    assert out["total"] == 3
+
+
+def test_list_runs_hides_runs_on_inaccessible_suites(db_session: Any, monkeypatch: Any) -> None:
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    _run_with_results(db_session, suite)
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+
+    out = server.list_runs()
+    assert out["runs"] == [] and out["total"] == 0
+
+
+def test_list_runs_named_inaccessible_suite_errors_rather_than_returning_empty(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """An empty answer must never stand in for "you may not ask" (#828) — and the
+    denial must not confirm the suite exists either."""
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    _run_with_results(db_session, suite)
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+
+    with pytest.raises(ToolError):
+        server.list_runs(suite_id=str(suite.id))
+
+
+def test_list_runs_rejects_a_status_outside_the_vocabulary(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A typo'd status must raise, not return a confident empty list that reads as
+    "no runs in that state" (#828)."""
+    user = _user(db_session)
+    _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError):
+        server.list_runs(status="suceeded")
+
+
+def test_list_runs_workspace_admin_sees_unowned_runs(
+    db_session: Any, monkeypatch: Any, make_workspace_admin: Any
+) -> None:
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    run = _run_with_results(db_session, suite)
+    admin = _user(db_session, "admin@acme.io")
+    make_workspace_admin(admin.email)
+    _as(monkeypatch, db_session, admin)
+
+    assert str(run.id) in {r["id"] for r in server.list_runs()["runs"]}
+
+
+def test_get_run_results_returns_that_runs_checks(db_session: Any, monkeypatch: Any) -> None:
+    """A *named* run, not the latest one — the whole point of the tool is reading
+    history that `get_suite_results` has already moved past."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    older = _run_with_results(
+        db_session,
+        suite,
+        outcomes=("fail",),
+        created_at=datetime.now(UTC) - timedelta(days=2),
+    )
+    _run_with_results(db_session, suite, outcomes=("pass",))
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_run_results(str(older.id))
+    assert out["run"]["id"] == str(older.id)
+    assert out["run"]["results_final"] is True
+    assert [c["status"] for c in out["checks"]] == ["fail"]
+    # And `get_suite_results` still reports the newer one, so the two really do
+    # answer different questions.
+    assert server.get_suite_results(str(suite.id))["checks"][0]["status"] == "pass"
+
+
+def test_get_run_results_withholds_an_incomplete_runs_partial_results(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The #318 rule, inherited from the shared payload builder rather than
+    re-implemented: results are committed per phase, so a `running` run holds a
+    genuine fraction of the suite — which an LLM would summarise as the answer."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    run = _run_with_results(db_session, suite, status="running", outcomes=("fail",))
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_run_results(str(run.id))
+    assert out["run"]["results_final"] is False
+    assert out["checks"] == []
+
+
+def test_get_run_results_denied_for_a_run_on_an_inaccessible_suite(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A run id alone must not be a way around suite scoping."""
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    run = _run_with_results(db_session, suite)
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+
+    with pytest.raises(ToolError):
+        server.get_run_results(str(run.id))
+
+
+def test_get_run_results_unknown_run_is_a_clean_error(db_session: Any, monkeypatch: Any) -> None:
+    _as(monkeypatch, db_session, _user(db_session))
+    with pytest.raises(ToolError):
+        server.get_run_results(str(uuid.uuid4()))
+
+
+def test_list_runs_bounds_are_advertised_in_the_tool_schema() -> None:
+    import asyncio
+
+    tool = asyncio.run(server.mcp.get_tool("list_runs"))
+    assert tool is not None
+    props = tool.parameters["properties"]
+    assert props["limit"] == {"default": 20, "minimum": 1, "maximum": 200, "type": "integer"}
+    assert props["offset"]["minimum"] == 0
