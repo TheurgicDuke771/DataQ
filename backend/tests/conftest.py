@@ -250,7 +250,7 @@ def _ensure_local_test_database() -> None:
 def _db_engine() -> "Iterator[object]":
     from sqlalchemy import create_engine, text
 
-    import backend.app.db.models  # noqa: F401 — registers tables on Base.metadata
+    from backend.app.db import models  # noqa: F401 — registers tables on Base.metadata
     from backend.app.db.base import Base
 
     if not TEST_DATABASE_URL:

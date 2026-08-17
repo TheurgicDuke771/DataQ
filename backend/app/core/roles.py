@@ -22,7 +22,7 @@ on one suite. Neither replaces the other.
 from __future__ import annotations
 
 from backend.app.core.config import get_settings
-from backend.app.db.models import ADMIN_ROLE, DEFAULT_WORKSPACE_ROLE, User
+from backend.app.db.models import ADMIN_ROLE, DEFAULT_WORKSPACE_ROLE, VIEWER_ROLE, User
 
 # Ordered workspace-role ranks (ADR 0033). Mirrors `suite_authz._RANK`'s shape so
 # the two authz axes report and compare a level the same way — but they are
@@ -32,7 +32,7 @@ from backend.app.db.models import ADMIN_ROLE, DEFAULT_WORKSPACE_ROLE, User
 # Written out rather than derived from `WORKSPACE_ROLES`' tuple order, which is
 # alphabetical-by-accident and would silently invert the ladder if reordered.
 # `test_role_rank_covers_every_stored_role` holds the two in sync instead.
-ROLE_RANK = {"viewer": 1, DEFAULT_WORKSPACE_ROLE: 2, ADMIN_ROLE: 3}
+ROLE_RANK = {VIEWER_ROLE: 1, DEFAULT_WORKSPACE_ROLE: 2, ADMIN_ROLE: 3}
 
 
 def resolve_role(user: User) -> str:
@@ -131,6 +131,7 @@ __all__ = [
     "ADMIN_ROLE",
     "DEFAULT_WORKSPACE_ROLE",
     "ROLE_RANK",
+    "VIEWER_ROLE",
     "admin_promotion_values",
     "bootstrap_role",
     "is_workspace_admin",
