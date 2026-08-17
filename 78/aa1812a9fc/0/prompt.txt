@@ -1,0 +1,6 @@
+Hey, let's pickup the MCP expansion piece. 
+Check the curent state of repo. 
+Find the filled issues, do research. 
+Plan the implementation. 
+Create a TODO list based on priority and dependencies. 
+Start execution.
