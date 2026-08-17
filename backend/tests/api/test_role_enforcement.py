@@ -503,6 +503,12 @@ def test_the_mcp_tool_surface_is_exactly_the_read_and_suite_scoped_tools() -> No
         "list_schedules",
         "list_trigger_bindings",
         "get_notification_config",
+        # read-only aggregates/exports (#529 Tier 1). `get_suite_performance`
+        # scopes through the dashboard's own accessible-suite subquery;
+        # `export_suite` is view-gated and emits DEFINITIONS only — no results,
+        # no ids that resolve to a credential.
+        "get_suite_performance",
+        "export_suite",
         # suite-scoped writes — gated on require_permission(minimum="edit"),
         # which the Viewer cap feeds (see the test below)
         "trigger_suite_run",

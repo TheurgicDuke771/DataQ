@@ -63,6 +63,7 @@ from backend.app.services import (
     run_service,
     run_target,
     schedule_service,
+    suite_io_service,
     suite_service,
     trigger_binding_service,
 )
@@ -824,6 +825,10 @@ def list_trigger_bindings(
     # set in ADR 0029 and a literal here would silently exclude the next provider.
     if provider is not None and provider not in ORCHESTRATION_PROVIDERS:
         raise ToolError(f"provider must be one of {list(ORCHESTRATION_PROVIDERS)}")
+    # `env` gets the same guard as `provider`, for the same reason: a typo'd value
+    # would otherwise return `[]`, which reads as "nothing is wired up" (#828).
+    if env is not None and env not in ENVS:
+        raise ToolError(f"env must be one of {list(ENVS)}")
     with _ctx() as (session, user), _service_errors():
         sid = _parse_uuid(suite_id, field="suite_id") if suite_id is not None else None
         if sid is not None:
@@ -900,8 +905,19 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
         has_slack, slack_source = _channel(
             config.slack_webhook_secret_ref if config else None, settings.slack_webhook_secret_name
         )
-        has_email, email_source = _channel(
-            config.email_recipients if config else None, settings.email_to
+        # Recipients alone do not mean email is delivered: `EmailPublisher.publish`
+        # no-ops unless the workspace SMTP transport (username + password secret +
+        # sender) is configured, and that gate applies to a per-suite recipient
+        # list exactly as it does to `EMAIL_TO`. Reporting recipients as "email is
+        # on" would overclaim on any deployment that names recipients but never
+        # wired a mailer.
+        smtp_ready = bool(
+            settings.email_username and settings.email_password_secret_name and settings.email_from
+        )
+        has_email, email_source = (
+            _channel(config.email_recipients if config else None, settings.email_to)
+            if smtp_ready
+            else (False, None)
         )
         return {
             "suite_id": suite_id,
@@ -919,6 +935,93 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
             # config, not this suite's setting, so they are reported as a source
             # rather than enumerated here.
             "email_recipients": config.email_recipients if config else None,
+        }
+
+
+@mcp.tool
+def get_suite_performance() -> list[dict[str, Any]]:
+    """Rank the suites by data-quality health, worst first.
+
+    Use this for 'which suites are in the worst shape?' or 'where should I look
+    first?'. Returns, per suite: its id, name, a severity-weighted health score
+    (0-100, or null when its latest run recorded no scoreable outcome — every
+    check skipped or errored), and a state label: ``optimal``, ``stable``,
+    ``critical``, or ``unknown`` for a null score. Ordered worst-first, so the
+    top of the list is where attention belongs.
+
+    Each suite is scored from its **latest completed run** only — this is a
+    current-state ranking, not a trend, and it takes no time window. For health
+    over time use ``get_health_score``.
+
+    A suite is **absent** from this list when its latest run produced nothing
+    countable — it has never run, is running now, or its last run failed without
+    a complete account. Absence is therefore "no health to report", not "healthy";
+    use ``list_suites`` to see the full set and which of them are missing here.
+    Scoped to the suites the user can access (a workspace-admin sees the whole
+    workspace).
+    """
+    with _ctx() as (session, user), _service_errors():
+        # `window_days` is deliberately ABSENT rather than defaulted:
+        # `_suite_performance` scores each suite's LATEST run and takes no window,
+        # so the argument was inert — identical rankings for 1 day and 90 — while
+        # computing and discarding the summary's ~8 windowed aggregates. An LLM
+        # given a knob that does nothing will use it and then explain a difference
+        # that is not there. The value below only satisfies the shared entry
+        # point; nothing in the returned ranking depends on it.
+        summary = dashboard_service.dashboard_summary(
+            session,
+            user_id=user.id,
+            window_days=1,
+            include_all=is_workspace_admin(user),
+        )
+        return [
+            {
+                "suite_id": str(p.suite_id),
+                "name": p.name,
+                "score": p.score,
+                "state": p.state,
+            }
+            for p in summary.suite_performance
+        ]
+
+
+@mcp.tool
+def export_suite(suite_id: str) -> dict[str, Any]:
+    """Export a suite as a portable document you can review or re-create elsewhere.
+
+    Use this for 'show me the whole orders suite', 'copy these checks to the QA
+    suite', or to diff two suites' definitions against each other. Returns the
+    suite's name and description plus every check in stable creation order, each
+    with its kind, expectation type, DQ dimension, configuration and severity
+    thresholds — the same document the app's export produces, so it can be handed
+    back to DataQ's import.
+
+    It carries **definitions only**: no results, no run history, and no
+    credentials — a comparison check's baseline connection appears as its
+    ``(name, env)`` pair, never as an id or anything resolvable to a secret.
+    Requires view access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    with _ctx() as (session, user), _service_errors():
+        suite = require_permission(session, sid, user.id, minimum="view")
+        doc = suite_io_service.export_suite(session, suite)
+        # Thresholds come back as `Decimal` (NUMERIC columns). The REST route has
+        # Pydantic to serialize them; MCP hands this dict straight to a JSON
+        # encoder, which raises on Decimal — the #1273 class, where a value that
+        # crosses a driver boundary reaches the serializer untouched and takes the
+        # whole response down. Coerced here rather than in `suite_io_service`,
+        # whose document shape is also the import contract.
+        return {
+            **doc,
+            "checks": [
+                {
+                    **check,
+                    "warn_threshold": _num(check.get("warn_threshold")),
+                    "fail_threshold": _num(check.get("fail_threshold")),
+                    "critical_threshold": _num(check.get("critical_threshold")),
+                }
+                for check in doc["checks"]
+            ],
         }
 
 

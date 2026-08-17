@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import get_current_user
+from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import TriggerBinding, User
 from backend.app.db.session import get_db
 from backend.app.services import trigger_binding_service as svc
@@ -107,8 +108,16 @@ def list_trigger_bindings(
     env: str | None = None,
     suite_id: uuid.UUID | None = None,
 ) -> list[TriggerBinding]:
+    # Workspace-wide for a workspace-admin (ADR 0027), matching `/schedules` — the
+    # two are the same kind of automation list, and an admin seeing every schedule
+    # but only their own bindings is a difference with no rationale behind it.
     return svc.list_bindings(
-        db, user_id=current_user.id, provider=provider, env=env, suite_id=suite_id
+        db,
+        user_id=current_user.id,
+        provider=provider,
+        env=env,
+        suite_id=suite_id,
+        include_all=is_workspace_admin(current_user),
     )
 
 
