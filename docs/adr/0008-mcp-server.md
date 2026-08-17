@@ -41,7 +41,7 @@ Week 7 calls for a FastMCP server exposing 8 curated tools at `/mcp`, reachable 
 ## Amendment — Tier 1 expansion to 19 tools (2026-08-17, issue [#529](https://github.com/TheurgicDuke771/DataQ/issues/529))
 
 The original 8 tools were deliberately the smallest set that answered the roadmap's canonical
-NL queries. [`context/post-v1-roadmap.md`](../../context/post-v1-roadmap.md) Theme 13 catalogued
+NL queries. [`context/post-v1-roadmap.md`](https://github.com/TheurgicDuke771/DataQ/blob/main/context/post-v1-roadmap.md) Theme 13 catalogued
 the rest of the REST surface as MCP candidates, tiered by risk. This amendment ships **Tier 1 —
 high-value safe reads** in full: `list_checks`, `get_check`, `get_check_history`, `list_runs`,
 `get_run_results`, `list_connections`, `list_schedules`, `list_trigger_bindings`,
