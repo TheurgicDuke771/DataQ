@@ -49,10 +49,22 @@ high-value safe reads** in full: `list_checks`, `get_check`, `get_check_history`
 **19 tools: 17 read-only, 2 mutating** (the original `trigger_suite_run` and `create_check`).
 
 **The decision above is unchanged, not revisited.** Every new tool is the same thin wrapper this
-ADR already describes — open a session, resolve the caller, call the same service function
-through `suite_authz.require_permission`, return an LLM-shaped dict — so ADR 0027 per-suite
-sharing and the ADR 0033 Viewer view/edit clamp apply to the new tools exactly as they do to the
-original 8. No new authz path was introduced.
+ADR already describes — open a session, resolve the caller, call the same service function,
+return an LLM-shaped dict. No new authz path was introduced; each tool reuses whichever gate its
+REST counterpart already applies, which is deliberately **not** uniform:
+
+- **Suite-scoped reads** (`list_checks`, `get_check`, `get_check_history`, `get_run_results`,
+  `get_notification_config`, `export_suite`) gate on `suite_authz.require_permission(minimum="view")`,
+  so ADR 0027 per-suite sharing and the ADR 0033 Viewer clamp apply exactly as on the original 8.
+- **Suite-scoped lists** (`list_runs`, `list_schedules`, `list_trigger_bindings`) scope through
+  `suite_service.accessible_suite_ids` — with the workspace-admin view where their REST route has
+  it — and additionally call `require_permission` up front when the optional `suite_id` is given,
+  so naming a suite you cannot see is an error rather than an empty list.
+- **`get_suite_performance`** is scoped by the dashboard's own accessible-suite subquery.
+- **`list_connections` calls neither**, because connections are workspace-scoped rather than
+  suite-scoped — the same rule its REST route follows. That is why what it *returns* is
+  constrained instead (below); the ADR 0033 role axis gates connection **mutations**, and MCP
+  deliberately has none.
 
 Three standing exclusions carried forward, made explicit because Tier 1 sits right next to them:
 

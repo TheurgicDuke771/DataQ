@@ -43,7 +43,7 @@
 | Frontend | React · Vite · Ant Design · generic OIDC (`oidc-client-ts`) |
 | Auth / secrets | OIDC — Azure AD and AWS Cognito both validated (`AUTH_*` contract, provider-neutral) · Azure Key Vault or AWS Secrets Manager |
 | Hosting | Azure Container Apps or AWS ECS Fargate (API · worker · frontend), both live — App Insights or CloudWatch+X-Ray |
-| AI integration | FastMCP — 8 curated MCP tools at `/mcp` for Claude Desktop / Copilot / Cursor |
+| AI integration | FastMCP — 19 curated MCP tools at `/mcp` (17 read-only) for Claude Desktop / Copilot / Cursor |
 
 ## Quick start
 
@@ -78,7 +78,7 @@ Backend at `http://localhost:8000` (Swagger at `/docs`), frontend at `http://loc
 
 ## MCP (AI assistant access)
 
-DataQ exposes 8 curated MCP tools at `/mcp` (streamable HTTP) — `list_suites`, `get_suite_results`, `get_health_score`, `get_adf_pipeline_status`, `trigger_suite_run`, `get_run_status`, `create_check`, `profile_column`. `/mcp` mounts under **any** configured sign-in mode — OIDC SSO (Azure AD or AWS Cognito), email OTP (ADR [0032](docs/adr/0032-email-otp-signin.md)), or local dev-bypass — and stays unmounted, fail-closed, when none is configured (ADR [0008](docs/adr/0008-mcp-server.md)). Under SSO, present the same OIDC bearer token the web UI uses; under **email OTP the only accepted credential is a DataQ API key** (`dq_live_…`, a PAT — ADR [0026](docs/adr/0026-auth-api-keys-and-principal-seam.md)) — a raw JWT and a browser session cookie are both rejected there, since there is no IdP to validate a bearer against and a session is a browser-only credential.
+DataQ exposes 19 curated MCP tools at `/mcp` (streamable HTTP) — reading suites, checks, runs and results, connections, schedules, trigger bindings, notification config and health, plus two that act (`trigger_suite_run`, `create_check`) and a live column profiler. Full per-tool table: [AI assistants (MCP setup)](https://theurgicduke771.github.io/DataQ/mcp-setup/). `/mcp` mounts under **any** configured sign-in mode — OIDC SSO (Azure AD or AWS Cognito), email OTP (ADR [0032](docs/adr/0032-email-otp-signin.md)), or local dev-bypass — and stays unmounted, fail-closed, when none is configured (ADR [0008](docs/adr/0008-mcp-server.md)). Under SSO, present the same OIDC bearer token the web UI uses; under **email OTP the only accepted credential is a DataQ API key** (`dq_live_…`, a PAT — ADR [0026](docs/adr/0026-auth-api-keys-and-principal-seam.md)) — a raw JWT and a browser session cookie are both rejected there, since there is no IdP to validate a bearer against and a session is a browser-only credential.
 
 Point any MCP client at `https://<your-dataq-host>/mcp/` (keep the **trailing slash** — `/mcp` 307-redirects and some clients drop the `Authorization` header on redirect) with an `Authorization: Bearer <token>` header. Once configured, all 19 tools are available to natural-language queries (e.g. *"what failed in the orders suite today?"*, *"run the orders suite on DEV"*).
 

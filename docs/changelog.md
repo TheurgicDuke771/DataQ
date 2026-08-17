@@ -77,8 +77,9 @@ Portability, auto-monitors, and polish on top of v1:
   extended to every datasource.
 - **MCP server expanded to 19 tools** — the Tier 1 read-only batch (checks, runs,
   connections, schedules, trigger bindings, notification config, suite performance,
-  suite export) alongside the original 8, all gated through the same per-suite authz
-  (ADR 0008 amendment, #529). `list_connections` returns metadata + health only, never
+  suite export) alongside the original 8, each reusing the same authorization its REST
+  counterpart applies — per-suite for suite-scoped reads, workspace-scoped for the
+  connection list (ADR 0008 amendment, #529). `list_connections` returns metadata + health only, never
   config or secrets; `get_notification_config` reports channel presence, never webhook
   URLs; connection create/update/reauth remain excluded — a credential must never
   transit an LLM.
