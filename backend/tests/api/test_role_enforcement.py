@@ -702,6 +702,9 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
         "profile_column": {"suite_id": sid, "columns": ["EMAIL"]},
         "cancel_run": {"run_id": _REAL_RUN},
         "suggest_column_policy": {"suite_id": sid},
+        "update_suite": {"suite_id": sid, "name": "renamed by probe"},
+        "get_column_policy": {"suite_id": sid},
+        "set_column_policy": {"suite_id": sid, "pii_columns": ["EMAIL"]},
         # role:member — no suite argument at all, which is the point: these are
         # the capabilities with no resource ladder to ride.
         "test_connection": {"connection_id": _REAL_CONNECTION},

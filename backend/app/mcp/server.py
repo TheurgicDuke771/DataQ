@@ -1802,6 +1802,123 @@ def import_suite(
         }
 
 
+@mcp.tool
+def update_suite(
+    suite_id: str,
+    name: Annotated[str, Field(min_length=1, max_length=128)] | None = None,
+    description: Annotated[str, Field(max_length=1024)] | None = None,
+    target: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Change a suite's name, description, or **what it runs against**.
+
+    Use this for 'point the orders suite at ANALYTICS.ORDERS_V2', 'rename it', or
+    — most often — to give a newly imported suite a run target, since a suite
+    without one cannot be run at all.
+
+    ``target`` says which dataset the suite's checks execute against, and its
+    shape depends on the connection's type: ``{"table": ..., "schema": ...}`` for
+    a SQL warehouse, ``{"catalog": ..., "schema": ..., "table": ...}`` for Unity
+    Catalog, ``{"namespace": ..., "table": ...}`` for Iceberg, or
+    ``{"path": ..., "file_format": "csv"|"parquet"}`` for a flat file. A flat-file
+    target can instead select a rolling **batch** with ``pattern`` +
+    ``strategy``. An invalid shape for the connection type is rejected.
+
+    Only what you pass changes; omitted arguments are left alone, and ``target``
+    is **replaced wholesale** rather than merged — send the complete target, not
+    just the field you are changing. A suite's connection cannot be changed at
+    all: create or import the suite against the connection you want.
+
+    Requires edit access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    if contains_nul({"name": name or "", "description": description or "", **(target or {})}):
+        raise ToolError("NUL (\\x00) characters are not allowed in a suite's fields")
+    with _ctx() as (session, user), _service_errors():
+        require_permission(session, sid, user.id, minimum="edit")
+        suite = suite_service.update_suite(
+            session, sid, name=name, description=description, target=target
+        )
+        return {
+            "id": str(suite.id),
+            "name": suite.name,
+            "description": suite.description,
+            "connection_id": str(suite.connection_id),
+            "target": suite.target,
+            # Whether the suite can actually run now — the question this tool is
+            # usually called to fix, and one an LLM should confirm rather than
+            # infer from the absence of an error.
+            "runnable": suite.target is not None,
+        }
+
+
+@mcp.tool
+def get_column_policy(suite_id: str) -> dict[str, Any]:
+    """Get the suite's failing-sample redaction policy — which columns are masked.
+
+    Use this to answer 'is the email column masked in failure samples?' or before
+    proposing a change with ``set_column_policy``. Returns the
+    ``identifier_column`` (the one non-PII column shown so a failing row can be
+    located) and ``pii_columns`` (always masked).
+
+    A suite with **no policy set** reports both as empty. That does **not** mean
+    nothing is masked: DataQ still applies a governance floor from datasource
+    tags and a name/value classifier at redaction time, and that floor overrules
+    this policy. Read an empty policy as "no suite-level override", never as "no
+    protection". Requires view access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    with _ctx() as (session, user), _service_errors():
+        suite = require_permission(session, sid, user.id, minimum="view")
+        policy = suite.column_policy or {}
+        return {
+            "suite_id": suite_id,
+            "configured": suite.column_policy is not None,
+            "identifier_column": policy.get("identifier_column"),
+            "pii_columns": policy.get("pii_columns", []),
+        }
+
+
+@mcp.tool
+def set_column_policy(
+    suite_id: str,
+    pii_columns: list[str],
+    identifier_column: str | None = None,
+) -> dict[str, Any]:
+    """Set which columns are masked in this suite's failing-sample rows.
+
+    Use this to apply what ``suggest_column_policy`` proposed, or to act on 'mask
+    the email column in failure samples'. ``pii_columns`` are always masked;
+    ``identifier_column`` is the single non-PII column left visible so a failing
+    row can still be located. The identifier may not also be listed as PII, and
+    may not itself classify as direct PII — either is rejected.
+
+    **This replaces the whole policy**, it does not add to it: send the complete
+    list, and read the current one with ``get_column_policy`` first if you are
+    adding a column. Passing an empty ``pii_columns`` clears the suite's override
+    — it does not disable masking, because the datasource-tag governance floor
+    still applies underneath and overrules this policy.
+
+    Affects how samples are *displayed* from now on, including for runs that have
+    already happened; it does not alter any stored data. Requires edit access.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    if contains_nul(
+        {"identifier_column": identifier_column or "", **dict.fromkeys(pii_columns, "")}
+    ):
+        raise ToolError("NUL (\\x00) characters are not allowed in a column policy")
+    with _ctx() as (session, user), _service_errors():
+        require_permission(session, sid, user.id, minimum="edit")
+        suite = suite_service.set_column_policy(
+            session, sid, identifier_column=identifier_column, pii_columns=pii_columns
+        )
+        policy = suite.column_policy or {}
+        return {
+            "suite_id": suite_id,
+            "identifier_column": policy.get("identifier_column"),
+            "pii_columns": policy.get("pii_columns", []),
+        }
+
+
 def _profile_target_defaults(
     suite: Any,
     connection: Connection,
