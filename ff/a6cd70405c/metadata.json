@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "ffa6cd70405c",
+  "strategy": "manual-commit",
+  "branch": "chore/codeql-triage-rbac",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/roles.py",
+    "backend/app/db/models.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ff/a6cd70405c/0/metadata.json",
+      "transcript": "/ff/a6cd70405c/0/full.jsonl",
+      "compact_transcript": "/ff/a6cd70405c/0/transcript.jsonl",
+      "content_hash": "/ff/a6cd70405c/0/content_hash.txt",
+      "prompt": "/ff/a6cd70405c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1512,
+    "cache_creation_tokens": 1599401,
+    "cache_read_tokens": 261419414,
+    "output_tokens": 427758,
+    "api_call_count": 756
+  }
+}
