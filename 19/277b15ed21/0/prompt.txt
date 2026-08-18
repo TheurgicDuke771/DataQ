@@ -1,0 +1,5 @@
+Hey Let's start with the data privecy piece [HIPAA, GDPR, etc.]
+Check the current state of the repo. 
+Fetch the filed issues. Do research and find out what is required for the implementation and if any thing is missing. 
+Plan the implementation, create a TODO list based on priority and dependencies. 
+Start implementation.
