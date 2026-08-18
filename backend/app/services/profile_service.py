@@ -88,6 +88,10 @@ log = get_logger(__name__)
 _SUPPORTED_FORMATS = {"csv", "parquet"}
 # Flat-file profiling reads at most this many rows — stats are over the sample.
 _SAMPLE_ROWS = 100_000
+#: Public alias — the MCP layer RETURNS this value (`profile_column`'s
+#: `sample_row_limit`), because a sampled profile whose cap the caller cannot see
+#: is a full-table statistic as far as any consumer can tell.
+SAMPLE_ROWS = _SAMPLE_ROWS
 # How many columns share one batched top-values round-trip (#327). The batched
 # query joins one derived table per column (see `build_batched_top_values_query`),
 # and past a couple of dozen relations a planner stops enumerating join orders
