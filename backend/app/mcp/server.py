@@ -2559,6 +2559,11 @@ def get_column_policy(suite_id: str) -> dict[str, Any]:
             "configured": suite.column_policy is not None,
             "identifier_column": policy.get("identifier_column"),
             "pii_columns": policy.get("pii_columns", []),
+            # Returned so a read-modify-write can preserve it. Without this
+            # field an assistant following this tool's own advice — read the
+            # policy, change one thing, write it back — has no way to know
+            # fail-closed was on, and the write would carry it away.
+            "require_classification": bool(policy.get("require_classification")),
         }
 
 
@@ -2621,6 +2626,11 @@ def set_column_policy(
             sid,
             identifier_column=identifier_column,
             pii_columns=pii_columns,
+            # Omitted, so the stored value is preserved. This tool deliberately
+            # has no parameter for fail-closed mode: it is a compliance posture
+            # an operator sets in the app, not something an assistant should be
+            # able to switch off in passing while editing a PII column list.
+            require_classification=None,
             actor_id=user.id,
         )
         policy = suite.column_policy or {}
@@ -2628,6 +2638,11 @@ def set_column_policy(
             "suite_id": suite_id,
             "identifier_column": policy.get("identifier_column"),
             "pii_columns": policy.get("pii_columns", []),
+            # Returned so a read-modify-write can preserve it. Without this
+            # field an assistant following this tool's own advice — read the
+            # policy, change one thing, write it back — has no way to know
+            # fail-closed was on, and the write would carry it away.
+            "require_classification": bool(policy.get("require_classification")),
         }
 
 

@@ -27,7 +27,7 @@ import pytest
 from backend.app.services.run_service import _known_sensitive, _may_show_incidental
 
 _SENSITIVE_TAG = {"weird_name": "pii"}
-_CLEARED_TAG = {"weird_name": "public"}
+_CLEARED_TAG = {"weird_name": "public", "notes": "public"}
 
 
 # ── the ladder, tested as an order rather than as examples ───────────────────
@@ -126,15 +126,43 @@ def test_fail_closed_masks_a_column_the_classifier_would_have_cleared() -> None:
 
 
 def test_fail_closed_still_shows_an_explicitly_cleared_column() -> None:
-    """It removes the classifier, not every path. An operator's own
-    `identifier_column` and a governance tag saying `public` are explicit
-    clearances, and a mode that masked those too would make failing rows
-    unactionable with no way back."""
-    policy_id = {"require_classification": True, "identifier_column": "order_ref"}
-    assert _may_show_incidental("order_ref", ["A-1"], policy_id, None) is True
+    """It removes the classifier's permissive fallback, not every path. An
+    operator's own `identifier_column` and a governance tag saying `public` are
+    explicit clearances, and a mode that masked those too would make failing rows
+    unactionable with no way back.
+
+    `notes` is used rather than a name the classifier objects to — see the next
+    test for why that distinction is load-bearing.
+    """
+    policy_id = {"require_classification": True, "identifier_column": "notes"}
+    assert _may_show_incidental("notes", ["v1", "v2"], policy_id, None) is True
 
     policy_only = {"require_classification": True}
-    assert _may_show_incidental("weird_name", ["v"], policy_only, _CLEARED_TAG) is True
+    assert _may_show_incidental("notes", ["v1", "v2"], policy_only, _CLEARED_TAG) is True
+
+
+def test_a_clearance_does_not_beat_an_affirmative_pii_signal() -> None:
+    """Fail-closed may only ever TIGHTEN, and this is where that nearly broke.
+
+    The first version returned on the clearance alone, so an `identifier_column`
+    holding emails was **shown** in fail-closed mode and **masked** in the default
+    one — the mode became a way to un-mask. A false safety guarantee is worse than
+    no guarantee, and it was produced by the very change meant to add one.
+
+    Both doors, and both directions: an explicit clearance is necessary for a
+    value to surface here, and never sufficient on its own.
+    """
+    for policy in (
+        {"require_classification": True, "identifier_column": "email"},
+        {"require_classification": True},
+    ):
+        tags = None if "identifier_column" in policy else {"email": "public"}
+        assert _may_show_incidental("email", ["a@b.com"], policy, tags) is False
+        assert _known_sensitive("email", ["a@b.com"], policy, tags) is True
+
+    # …and the default mode already behaved this way, so fail-closed is not
+    # merely matching it — it must not be looser, which is the assertion above.
+    assert _may_show_incidental("email", ["a@b.com"], {"identifier_column": "email"}, None) is False
 
 
 def test_fail_closed_does_not_lift_the_governance_floor() -> None:
@@ -169,3 +197,19 @@ def test_fail_closed_gates_the_tested_column_as_well() -> None:
     # …and an explicit clearance still lets it through.
     cleared = {"require_classification": True, "identifier_column": "field_7"}
     assert _known_sensitive("field_7", values, cleared, None) is False
+
+
+def test_an_internal_tag_is_not_a_clearance() -> None:
+    """`internal` is a confidentiality LEVEL, not an assertion about personal data
+    — and it is commonly the default stamp applied to everything.
+
+    Accepting it as a clearance would un-mask whole tables in exactly the
+    deployments careful enough to tag them, which is the opposite of what tagging
+    is for. Asserted by name because the mistake is easy to make from the word
+    alone: "internal" sounds restrictive, and as a clearance it is the loosest
+    value in the vocabulary.
+    """
+    policy = {"require_classification": True}
+    assert _may_show_incidental("notes", ["v1", "v2"], policy, {"notes": "internal"}) is False
+    # …while a value that really does assert non-personal data still clears.
+    assert _may_show_incidental("notes", ["v1", "v2"], policy, {"notes": "public"}) is True

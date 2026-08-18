@@ -245,7 +245,7 @@ def set_column_policy(
     *,
     identifier_column: str | None,
     pii_columns: list[str],
-    require_classification: bool = False,
+    require_classification: bool | None = None,
     actor_id: uuid.UUID | None = None,
     machine_write: bool = False,
 ) -> Suite:
@@ -257,6 +257,11 @@ def set_column_policy(
     the ``identifier_column`` key is omitted when ``None`` (no locator chosen). The
     datasource-tag governance floor still overrules for masking at redaction time.
     """
+    suite = get_suite(session, suite_id)
+    audit_before = audit_service.snapshot("suite", suite)
+    #: The stored policy, read before it is replaced — the source for any field
+    #: this call left unspecified (see the tri-state note below).
+    suite_before = suite.column_policy
     pii = [c for c in dict.fromkeys(pii_columns) if c]  # de-dupe, drop blanks, keep order
     if identifier_column and identifier_column in pii:
         raise ColumnPolicyInvalidError(
@@ -274,13 +279,22 @@ def set_column_policy(
     policy: dict[str, Any] = {"pii_columns": pii}
     if identifier_column:
         policy["identifier_column"] = identifier_column
-    if require_classification:
-        # Written only when true, so an existing policy's stored shape is
-        # unchanged for every suite that does not use fail-closed mode — the
-        # absence of the key and `false` mean the same thing to the reader.
+    # Tri-state, and it is a security decision rather than a style one. `None`
+    # means "leave as it was": this endpoint is a full replacement, and every
+    # client that predates the flag — the shipped frontend's Save, the MCP
+    # `set_column_policy` tool — sends the policy without it. Defaulting to
+    # `False` would let any of them silently switch fail-closed OFF while
+    # editing an unrelated field, which is the worst failure available to a
+    # control whose entire job is to be conservative.
+    #
+    # Turning it off stays possible; it just has to be said out loud.
+    keep = (
+        require_classification
+        if require_classification is not None
+        else bool((suite_before or {}).get("require_classification"))
+    )
+    if keep:
         policy["require_classification"] = True
-    suite = get_suite(session, suite_id)
-    audit_before = audit_service.snapshot("suite", suite)
     suite.column_policy = policy
     # Among the highest-value events in the table: this changes WHAT PERSONAL DATA
     # the product will surface in a failing-row sample. `before`/`after` carry both

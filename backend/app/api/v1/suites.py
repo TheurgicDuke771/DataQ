@@ -637,7 +637,16 @@ class ColumnPolicyUpdate(ApiModel):
     #: Off by default, deliberately. A fully-masked failing row is unactionable —
     #: you cannot see what was wrong or which row — so this is a trade an operator
     #: makes for a regulated dataset, not one made for them.
-    require_classification: bool = False
+    require_classification: bool | None = None
+    """Tri-state: omit to LEAVE UNCHANGED, or send true/false to set it.
+
+    This route is a full replacement, so a plain `False` default would let any
+    client that predates the flag — including our own shipped Save button —
+    silently switch fail-closed OFF while editing an unrelated field. For a
+    control whose whole job is to be conservative, that is the worst available
+    failure, so absence preserves. Turning it off is still possible; it just has
+    to be said out loud.
+    """
 
 
 class ColumnPolicySuggestRequest(ApiModel):

@@ -1053,7 +1053,12 @@ def _policy_requires_classification(policy: Mapping[str, Any] | None) -> bool:
 #: mirror of `_SENSITIVE_TAG_VALUES`, and only consulted in fail-closed mode —
 #: outside it, "no tag" already means "fall through to the classifier", so an
 #: explicit non-sensitive tag would change nothing.
-_NON_SENSITIVE_TAG_VALUES = frozenset({"public", "non_sensitive", "nonsensitive", "internal"})
+#
+# `internal` is deliberately NOT here. It is a confidentiality *level* — and
+# commonly the default stamp applied to everything — not an assertion that a
+# column holds no personal data. Treating it as a clearance would clear whole
+# tables in exactly the deployments careful enough to tag them.
+_NON_SENSITIVE_TAG_VALUES = frozenset({"public", "non_sensitive", "nonsensitive"})
 
 
 def _tag_non_sensitive(column: str, tags: Mapping[str, str] | None) -> bool:
@@ -1104,7 +1109,17 @@ def _known_sensitive(
         # explicit clearance — a non-sensitive governance tag, or the operator's
         # own `identifier_column` — lets a value through; a *guess* that the name
         # looks harmless is exactly what this mode refuses to act on.
-        return not (_tag_non_sensitive(column, tags) or _policy_identifier(column, policy))
+        #
+        # **A clearance still does not beat an affirmative PII signal.** An
+        # earlier version returned on the clearance alone, which made this mode
+        # LOOSEN: an `identifier_column` holding emails was shown in fail-closed
+        # and masked in default mode. A mode whose whole promise is "tighter"
+        # must never be the reason something is surfaced, so the affirmative test
+        # still runs — the mode removes the permissive fallback, not the floor.
+        cleared = _tag_non_sensitive(column, tags) or _policy_identifier(column, policy)
+        if not cleared:
+            return True
+        return is_sensitive(column, values, value_signal_summary=value_signal_summary)
     return is_sensitive(column, values, value_signal_summary=value_signal_summary)
 
 
@@ -1129,14 +1144,13 @@ def _may_show_incidental(
         return False
     if _policy_requires_classification(policy):
         # Fail-closed (G3): an incidental column is shown only on an explicit
-        # clearance. Note the identifier still passes `is_sensitive` below — a
-        # designated locator that is itself direct PII is never unmasked, in this
-        # mode or out of it.
-        if _tag_non_sensitive(column, tags):
-            return True
-        if _policy_identifier(column, policy):
-            return not is_sensitive(column, values, value_signal_summary=value_signal_summary)
-        return False
+        # clearance, AND only when nothing about it is affirmatively sensitive.
+        # Both halves matter: without the first the mode does nothing, and
+        # without the second it would LOOSEN — a `public`-tagged EMAIL column
+        # would be shown here and masked in default mode.
+        if not (_tag_non_sensitive(column, tags) or _policy_identifier(column, policy)):
+            return False
+        return not is_sensitive(column, values, value_signal_summary=value_signal_summary)
     if _policy_identifier(column, policy):
         return not is_sensitive(column, values, value_signal_summary=value_signal_summary)
     return (
