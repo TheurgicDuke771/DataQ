@@ -110,7 +110,7 @@ only to EU personal data.
 Ranked by severity. Tracked in the Backlog milestone: **G1 #431 · G2 #432 · G3 #433 ·
 G4 #434 · G5 #435**.
 
-### G1 — 🟠 Data-*access* audit trail (the HIPAA gate) — #431 — **substrate shipped, reads pending**
+### G1 — 🟢 Data-*access* audit trail (the HIPAA gate) — #431 — **read events shipped; tamper-evidence open**
 **Requirement:** HIPAA §164.312(b) **audit controls** require a durable record of *who
 accessed which PHI*. GDPR accountability (Art 5(2) / 30) wants processing records too.
 **Current state (updated 2026-08-17):** the *"revisit ADR 0020"* instruction has been
@@ -128,22 +128,41 @@ grants/revokes** (the finest-grained permission in the product), **credential ro
 (which emitted a log line and nothing durable, while ADR 0033 §7 requires a durable
 record).
 
-**What is still missing, and it is the half the HIPAA gate is actually about:** these are
-*config-change* events (`action_class='config'`). There is still **no record of data
-reads**, and PII is deliberately redacted from logs, so logs cannot serve as that trail
-either. #431 is **phase 2 on the same table** (`action_class='access'`) — rows, not a
-parallel mechanism.
+**Phase 2 — data-*read* events — has now shipped too (#431).** Reading a run's results
+records an `action_class='access'` event naming **who**, **which run**, **when**, and —
+the field that makes the log answer the question it exists for — **whether regulated data
+was actually surfaced**. A read whose sample came back fully redacted exposed nothing, and
+recording it identically to one that surfaced real failing rows would bury the handful of
+events an investigator wants among the many they do not. Covered on **REST and MCP**, the
+latter tagged `surface: "mcp"`, because an LLM client may carry a value onward in ways a
+browser session does not.
 
-**Remaining v2.x target for #431:** read events for result/sample access covering REST
-**and** MCP, off the read critical path (its own AC forbids a latency regression — the
-opposite contract from phase 1, which is same-transaction and fail-closed); and
-**tamper-evidence**, which ADR 0041 §2.7 is explicit needs cryptographic chaining anchored
-*outside* the database. The `REVOKE UPDATE, DELETE` shipped in phase 1 is a guard against
-**accidental** in-app mutation and is **not** tamper-resistance: the table's owner
-(`dataq_app`) can grant the privileges straight back — the retention sweep does exactly
-that, by necessity — and splitting the database role to prevent it is rejected on a
-stronger security constraint. **Until phase 2 lands, this remains the hard blocker for any
-PHI customer.**
+The event records **which** result was read, never **what** it contained (ADR 0041 §2.6.3)
+— copying a sample into an append-only table with a longer retention would quietly turn
+the audit log into a second, unpurged copy of the personal data it audits, defeating both
+the #1253 purge and the G2 erasure path.
+
+**Two contracts differ from phase 1, deliberately.** A read event is **not** fail-closed:
+a failed audit write logs loudly (`audit_access_write_failed` at ERROR) and the read still
+succeeds, because failing a legitimate read over a bookkeeping problem trades a real
+outage for a smaller one. And the write is **one event per read, not per result**, so its
+cost does not scale with the data — measured at roughly one Postgres commit, on the
+request path. Moving it off the request path was considered and rejected: a deferred write
+can be lost when a process dies, and "we usually record accesses" is the property an audit
+control exists to rule out.
+
+**What remains open for #431 is tamper-evidence**, which ADR 0041 §2.7 is explicit needs
+cryptographic chaining anchored *outside* the database. The `REVOKE UPDATE, DELETE` is a
+guard against **accidental** in-app mutation and is **not** tamper-resistance: the table's
+owner (`dataq_app`) can grant the privileges straight back — the retention sweep does
+exactly that, by necessity — and splitting the database role to prevent it is rejected on
+a stronger security constraint. An operator whose regime requires a provably unaltered log
+needs that anchor; one that requires a durable, queryable, admin-gated record of who read
+which PHI now has it.
+
+⚠️ **Not yet verified in production.** All of the above is proven against local Postgres,
+including in the production role/ownership shape. It has not been observed on the deployed
+Azure or AWS stacks.
 **Scope widened by ADR 0027 / #482:** once the workspace-admin is an implicit admin on
 every suite, the audit log must capture **workspace-admin cross-suite result/sample
 reads** (not just owner/shared reads) — the read surface this gap must cover grows. A
@@ -237,7 +256,7 @@ codebase.
 |---|---|---|---|
 | **GDPR** | EU personal data in scope | Privacy-by-design handling; minimization + storage limitation strong; **missing** access audit (G1), subject rights (G2), residency enforcement (G4) | Processor-grade Art 25/32 controls + Art 15/17/20 levers + Ch. V residency |
 | **CCPA / CPRA** | CA residents' data, "business" threshold | No sale of data; deletion via cascade + purge; **missing** targeted know/delete (G2) | Right-to-know / delete workflow (G2) |
-| **HIPAA** | Customer processes **PHI** | Encryption + access control + minimization present; **blocked by missing audit controls (G1)** + needs a BAA (G6) | §164.312 technical safeguards met (G1 closes the gate); BAA still org-side |
+| **HIPAA** | Customer processes **PHI** | Encryption + access control + minimization present; **audit controls now present** — config changes *and* data reads are recorded and admin-queryable (G1) — with **tamper-evidence still open**; needs a BAA (G6) | §164.312 technical safeguards met once tamper-evidence lands; BAA still org-side |
 
 ## 4. The honest marketing line
 

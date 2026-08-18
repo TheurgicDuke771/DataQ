@@ -40,13 +40,15 @@ from typing import Any, Final
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.logging import _scrub_secret_strings, request_id_var
+from backend.app.core.logging import _scrub_secret_strings, get_logger, request_id_var
 from backend.app.db.models import (
     AUDIT_ACTION_CLASSES,
     AUDIT_ACTOR_KINDS,
     AuditEvent,
     User,
 )
+
+log = get_logger(__name__)
 
 # ── Redaction ─────────────────────────────────────────────────────────────────
 #
@@ -539,6 +541,109 @@ def record_entity_change(
         before=before_payload,
         after=after,
     )
+
+
+# ── Phase 2: data-access events (G1 / #431) ───────────────────────────────────
+#
+# The opposite latency and failure contract from phase 1, deliberately (ADR 0041
+# §2.1). A config event is written INSIDE the mutation's transaction and is
+# fail-closed: if it cannot be written, the change must not happen. A read event
+# cannot take that contract — #431's own AC forbids a latency regression on the
+# read path, and failing a legitimate read because the audit insert failed trades
+# a real outage for a bookkeeping problem.
+#
+# **What it records, and what it must never record.** A read event names WHICH
+# result was read and WHETHER regulated data was actually surfaced — never WHAT it
+# contained (ADR 0041 §2.6.3). Copying `sample_failures` or `observed_value` into
+# an append-only table with a longer retention would silently defeat both the
+# #1253 purge and the #432 erasure path, which is the exact failure this whole
+# design exists to avoid.
+#
+# **`exposed` is the field that makes the log answer the question it is for.** The
+# HIPAA question is "who accessed PHI", not "who opened a page". A read whose
+# sample came back fully redacted surfaced nothing regulated, and recording it
+# identically to one that surfaced real failing rows would bury the handful of
+# events an investigator actually wants among the many they do not.
+
+
+def record_access(
+    session: Session,
+    *,
+    action: str,
+    entity_type: str,
+    entity_id: uuid.UUID | None,
+    actor: Any | None,
+    exposed: bool,
+    detail: dict[str, Any] | None = None,
+    actor_kind: str = "user",
+) -> AuditEvent | None:
+    """Record a read of regulated data. **Never raises, never blocks the read.**
+
+    Written in a SAVEPOINT so a failed audit insert cannot poison the caller's
+    session: a read path holds no other pending work, so rolling the savepoint
+    back is harmless, whereas letting the error escape would turn a successful
+    read into a 500 — the outcome AC-3 exists to prevent.
+
+    **It COMMITS, and that is not an optional convenience.** Phase 2 is by
+    definition not part of the caller's transaction (phase 1 is; that asymmetry is
+    the whole point of ADR 0041 §2.1), and the request-scoped `get_db` session
+    never commits on its own — services do, and a *read* route has nothing to
+    commit, so it does not. An access event merely `add`-ed to that session is
+    therefore rolled back by `db.close()` and **never persists**.
+
+    That is not hypothetical: it is exactly what the first version of this code
+    did. The read returned 200, the row was added, and nothing reached the
+    database — while four tests passed, because the test fixture holds an outer
+    transaction the assertions read from. It was found by re-reading the event on
+    an INDEPENDENT session against a real database, and the regression test now
+    does the same. Committing here, rather than asking every caller to remember,
+    is what removes the whole class.
+
+    A failure is logged at ERROR with `audit_access_write_failed`, deliberately
+    loudly: this is a compliance control, so "it silently stopped recording" must
+    be visible in telemetry rather than discovered during an audit. That is the
+    honest residue of not being fail-closed, and it is stated rather than implied.
+    """
+    payload: dict[str, Any] = {"exposed": exposed}
+    if detail:
+        payload.update(detail)
+    previously_expiring = session.expire_on_commit
+    try:
+        with session.begin_nested():
+            event = record(
+                session,
+                action=action,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                actor=actor,
+                action_class="access",
+                actor_kind=actor_kind,
+                after=payload,
+            )
+        # `expire_on_commit` is True by default, so this commit would expire every
+        # ORM object the CALLER is still holding — and a read path commits in the
+        # middle of building its response. A 50-result run then issues ~50 refresh
+        # SELECTs on attribute access afterwards, and a re-read of a row deleted
+        # concurrently raises `ObjectDeletedError` — a 500 caused entirely by the
+        # audit write, on the path whose own AC forbids a latency regression.
+        #
+        # Suppressed only around this commit, and restored in `finally`, so the
+        # caller's own commit semantics are untouched. Safe here because the rows
+        # being committed are this event alone: a read path has nothing else
+        # pending, which is the same property that makes the savepoint rollback
+        # harmless.
+        session.expire_on_commit = False
+        session.commit()
+        return event
+    except Exception:
+        # Roll back before logging: after a database-level failure the session is
+        # in a failed transaction, and leaving it that way would turn the NEXT
+        # statement on this request into the visible error instead of this one.
+        session.rollback()
+        log.error("audit_access_write_failed", action=action, exc_info=True)
+        return None
+    finally:
+        session.expire_on_commit = previously_expiring
 
 
 def declared_entity_types() -> Sequence[str]:
