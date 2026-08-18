@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "45ab3db4b4bc",
+  "strategy": "manual-commit",
+  "branch": "feature/433-warehouse-column-tags",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/alerting/builder.py",
+    "backend/app/api/v1/runs.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/column_tags.py",
+    "backend/tests/api/test_column_tag_redaction.py",
+    "backend/tests/services/test_column_tags.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/45/ab3db4b4bc/0/metadata.json",
+      "transcript": "/45/ab3db4b4bc/0/full.jsonl",
+      "compact_transcript": "/45/ab3db4b4bc/0/transcript.jsonl",
+      "content_hash": "/45/ab3db4b4bc/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 27917,
+    "cache_read_tokens": 24621027,
+    "output_tokens": 21486,
+    "api_call_count": 28
+  }
+}
