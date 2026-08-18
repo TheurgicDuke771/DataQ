@@ -179,7 +179,7 @@ runs, `sample_failures` is a real (time-bounded) residual store of subject rows.
 demand (not just on the retention clock), (b) export: structured dump of stored personal
 data for a subject. Document that the controller's warehouse remains their responsibility.
 
-### G3 — 🟠 Authoritative PII/PHI classification (not just a heuristic) — #433 — **fail-closed mode shipped; warehouse tags still open**
+### G3 — 🟢 Authoritative PII/PHI classification (not just a heuristic) — #433 — **warehouse tags consumed; verification pending**
 **Requirement:** GDPR special-category data (Art 9) / HIPAA PHI must not leak via the
 **surfacing** path. Today `redact_sample_failures` surfaces the *tested* column when it's
 not flagged PII — but flagging is a **name-token heuristic + optional suite policy**, so a
@@ -206,12 +206,36 @@ that path, and the precedence matrix is now pinned by tests (tag > explicit mask
 show > classifier), which it previously was not: two isolated cases were covered, so an
 inversion making the suite policy override a governance tag would have passed.
 
-**Still open — the authoritative source.** Nothing yet reads Snowflake/UC column tags, so
-the `tags` governance floor is wired through every redaction path and **dormant**: a caller
-must supply the map, and none does. That half needs per-datasource introspection, somewhere
-to keep the result, and — per the project's standing rule that only a live run is evidence
-for anything crossing a driver boundary — **verification against real warehouses**, which
-are currently stopped. Tracked on #433.
+**Shipped (2026-08-18): the authoritative source.** `services/column_tags.py` reads column
+classifications from **Snowflake** (`dataq_classification` plus Snowflake's own
+`PRIVACY_CATEGORY`) and **Unity Catalog** (`dataq_classification`), caches them on the
+asset on each run, and feeds them to the governance floor of the redaction ladder — the
+rung a suite policy cannot lift, on REST *and* MCP. The convention is documented for
+customers in [docs/security.md](security.md).
+
+**A fixed convention rather than a per-connection mapping**, deliberately: a mapping would
+make itself an unreviewed security control, where one typo silently un-masks a column.
+
+**Cached on the ASSET, not on each result**, so a tag applied today masks samples captured
+yesterday — a classification is a statement about the data, not about the moment it was
+read.
+
+**Every failure is silence.** No permission on the tag, a missing `information_schema`, a
+dead warehouse: `{}` and a log line, never an exception into a run and never an inferred
+clearance. That direction matters because fail-closed mode treats a non-sensitive tag as a
+*clearance*, so a fetcher that guessed on failure could un-mask data.
+
+**Limits, stated rather than left to be discovered.** Only Snowflake and Unity Catalog have
+a column-tag concept at all; for ADLS, S3, Iceberg and flat files the classification remains
+the suite policy, the classifier and fail-closed mode. That is a platform limit, not an
+implementation gap.
+
+⚠️ **Not yet verified against a live warehouse.** The semantics, the wiring and the
+end-to-end masking are covered by tests against real Postgres, but the two SQL statements
+have not run against Snowflake or Databricks — and per the project's standing rule, only a
+live run is evidence for anything crossing a driver boundary. Two specifics that only a live
+run can settle: whether the connection's role can read `TAG_REFERENCES_ALL_COLUMNS`, and
+whether `system`-catalog access is granted for Unity Catalog's `column_tags`.
 
 ### G4 — 🟢 Region / residency assertion & enforcement — #434 — **asserted, surfaced, and its one exception accepted on the record**
 **Requirement:** GDPR Ch. V — EU personal data must stay in-region; cross-border transfer

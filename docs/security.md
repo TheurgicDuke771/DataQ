@@ -311,6 +311,89 @@ enable.
 Revisit if a customer requires key custody, or when a deployment stack owns its own
 database server from creation.
 
+## Column classification from your warehouse
+
+DataQ masks failing-row samples by default and surfaces only what it can justify
+showing (#415). The strongest justification available is **your own governance**:
+if a column is classified in the warehouse, DataQ reads that classification and
+treats it as the floor — a suite-level setting cannot lift it.
+
+### The convention
+
+A **fixed, documented convention**, not a per-connection mapping. A mapping would
+be more flexible and worse: every deployment would express the same idea
+differently, the mapping itself would become an unreviewed security control, and a
+typo in it would silently un-mask a column.
+
+Tag your **columns** with the key **`dataq_classification`** (matched
+case-insensitively):
+
+| Value | Effect |
+|---|---|
+| `sensitive` · `pii` · `confidential` · `restricted` · `secret` | **Always masked.** A suite policy cannot show it |
+| `public` · `non_sensitive` · `nonsensitive` | Cleared — may be shown, unless the value itself is affirmatively personal data |
+| anything else | **Ignored**, exactly as if untagged — see below |
+
+**Snowflake additionally honours its own `PRIVACY_CATEGORY`**, set by Snowflake's
+built-in classification. Its values (`IDENTIFIER`, `QUASI_IDENTIFIER`,
+`SENSITIVE`) all mean personal data, so all three mask. It has no clearing side:
+Snowflake omits the tag for data it does not consider personal rather than marking
+it public, so an unexpected value means *unknown*, not *safe*.
+
+**An unrecognised value is ignored rather than guessed at.** Guessing has only two
+directions, and one of them un-masks data. `internal` is the worked example: it
+sounds like a classification and is commonly the default stamp on everything, so
+reading it as a clearance would clear whole tables in exactly the organisations
+careful enough to tag them.
+
+**Inherited tags are not read.** A tag applied to a table or schema is reported by
+the warehouse against every column beneath it; DataQ accepts only tags applied to
+the **column itself**. An inherited tag is a statement about the container, and
+reading one as a per-column clearance would clear a whole schema from a single
+misplaced `public`.
+
+**The tag name is matched without its namespace**, and that is a constraint on
+you rather than a feature: DataQ honours a tag *named* `dataq_classification`
+wherever it lives, because knowing which database or schema should be
+authoritative would require per-deployment configuration, and this convention is
+deliberately fixed. **Do not create tags with this name for any other purpose** —
+a same-named tag elsewhere carrying a `public`-family value would be honoured as
+a clearance.
+
+### Where it applies
+
+Only **Snowflake** and **Unity Catalog** have a column-tag concept. ADLS, S3,
+Iceberg and flat files have no authoritative source to read, so for those the
+classification remains the suite's own policy, the name/value classifier, and
+fail-closed mode. This is a limit of the platforms, not a gap in the
+implementation, and it is stated here so nobody plans around a guarantee that
+cannot exist.
+
+### How fresh it is
+
+Tags are read **on each run** of a suite against that table and cached on the
+asset. So a newly-classified column takes effect from the suite's next run —
+including on samples captured *before* it was tagged, because a classification is
+a statement about the data rather than about the moment it was read.
+
+If the tags cannot be read — no permission on the tag, a warehouse that is down —
+DataQ logs it and behaves exactly as it did before the tag existed. It never
+infers a clearance from a failed lookup, because a wrong guess in that direction
+un-masks data.
+
+### Fail-closed mode
+
+For a dataset where "unclassified" should mean "do not show", set
+`require_classification` on the suite's column policy. Nothing row-level is then
+surfaced unless a column is explicitly cleared — by a `public`-family tag or by
+your own `identifier_column`. The classifier is not consulted at all, which is the
+point: a column called `field_7` full of national ID numbers looks harmless to a
+name heuristic.
+
+It is off by default, and deliberately: a fully-masked failing row is
+unactionable, so this is a trade you make for a regulated dataset rather than one
+made for you.
+
 ## Data residency
 
 Where data lives, and what can take it elsewhere. GDPR Ch. V asks a controller to

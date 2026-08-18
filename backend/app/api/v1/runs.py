@@ -32,6 +32,7 @@ from backend.app.db.models import (
     COMPARISON_KIND,
     PIPELINE_RUN_STATUSES,
     RUN_STATUSES,
+    Asset,
     Check,
     User,
 )
@@ -287,11 +288,40 @@ def list_runs(
     ]
 
 
+def _asset_column_tags(db: Session, suite: Any, run: Any = None) -> dict[str, str] | None:
+    """The warehouse's own column classifications for this suite's asset (G3).
+
+    The governance FLOOR of the redaction ladder — the rung a suite policy cannot
+    lift. Read from the asset rather than the warehouse: the read path must not
+    open a datasource connection, both for latency and because results have to
+    stay readable when the warehouse is down. The map is refreshed by the run
+    path, which is already connected.
+
+    `None` when the suite has no asset or the asset has never been refreshed,
+    which the redactor treats identically to an empty map — no opinion, fall
+    through to the policy and then the classifier. That is the same behaviour
+    that shipped before G3, and it is the only safe degradation: inventing a
+    clearance here would un-mask data through fail-closed mode.
+
+    Anchored on the **run's** asset when there is one, falling back to the
+    suite's. A suite can be retargeted at a different table, and the runs it
+    already produced are samples of the OLD one — redacting them against the new
+    table's classifications would apply the wrong governance to the wrong data,
+    in both directions. `runs.asset_id` records what was actually read.
+    """
+    asset_id = getattr(run, "asset_id", None) or getattr(suite, "asset_id", None)
+    if asset_id is None:
+        return None
+    asset = db.get(Asset, asset_id)
+    return asset.column_tags if asset is not None else None
+
+
 def _result_read(
     result: Any,
     *,
     tested_column: str | None = None,
     policy: dict[str, Any] | None = None,
+    tags: dict[str, str] | None = None,
 ) -> ResultRead:
     """Map a `Result` ORM row to `ResultRead`, redacting `sample_failures`.
 
@@ -304,7 +334,7 @@ def _result_read(
     already-persisted `sample_failures` — old rows get it for free at read time,
     nothing to backfill."""
     sample, redaction, redacted_columns = svc.redact_sample_failures_with_state(
-        result.sample_failures, tested_column=tested_column, policy=policy
+        result.sample_failures, tested_column=tested_column, policy=policy, tags=tags
     )
     return ResultRead(
         id=result.id,
@@ -313,7 +343,7 @@ def _result_read(
         metric_value=result.metric_value,
         duration_ms=result.duration_ms,
         observed_value=svc.redact_observed_value(
-            result.observed_value, tested_column=tested_column, policy=policy
+            result.observed_value, tested_column=tested_column, policy=policy, tags=tags
         ),
         expected_value=result.expected_value,
         sample_failures=sample,
@@ -396,6 +426,7 @@ def get_run(
     # against the suite's policy (#415): a non-PII tested column's values surface.
     checks = {c.id: c for c in db.scalars(select(Check).where(Check.suite_id == run.suite_id))}
     policy = suite.column_policy
+    tags = _asset_column_tags(db, suite, run)
     # `Run` has no `results` relationship to validate a RunDetailRead from
     # directly, so validate the run fields (as RunRead), graft the data-quality
     # outcome (#571 — else checks_total/passed stay at the 0/0 default here), and
@@ -408,6 +439,7 @@ def get_run(
                 checks[r.check_id].config.get("column") if r.check_id in checks else None
             ),
             policy=policy,
+            tags=tags,
         )
         for r in results
     ]
@@ -644,7 +676,11 @@ def download_comparison_report(
             "this result is not a comparison check result",
             detail={"result_id": str(result_id)},
         )
-    redacted = svc.redact_sample_failures(result.sample_failures, policy=suite.column_policy)
+    redacted = svc.redact_sample_failures(
+        result.sample_failures,
+        policy=suite.column_policy,
+        tags=_asset_column_tags(db, suite, run),
+    )
     payload, media_type = build_report(fmt, sample=redacted, observed=result.observed_value)
     # AFTER the render, not before: `build_report` can raise, and an event
     # recording a download that never happened is worse than a missing one — a

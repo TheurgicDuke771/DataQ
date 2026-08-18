@@ -25,6 +25,7 @@ from backend.app.alerting.base import (
 from backend.app.core.config import get_settings
 from backend.app.db.models import (
     FAILING_TIERS,
+    Asset,
     Check,
     Connection,
     Result,
@@ -74,6 +75,20 @@ def build_connection_health_report(
     )
 
 
+def _asset_column_tags(session: Session, run: Run, suite: Suite | None) -> dict[str, str] | None:
+    """The warehouse column classifications that applied to what this run read.
+
+    Anchored on `run.asset_id` first: a retargeted suite's older runs are samples
+    of the previous table. `None` means no opinion — the same degradation the read
+    paths use.
+    """
+    asset_id = getattr(run, "asset_id", None) or getattr(suite, "asset_id", None)
+    if asset_id is None:
+        return None
+    asset = session.get(Asset, asset_id)
+    return asset.column_tags if asset is not None else None
+
+
 def _target_label(suite: Suite | None) -> str:
     """A human-readable one-line target for the notification.
 
@@ -112,6 +127,13 @@ def build_run_report(session: Session, run: Run) -> RunReport:
     connection = session.get(Connection, suite.connection_id) if suite is not None else None
     owner = session.get(User, suite.created_by) if suite is not None else None
     checks = {c.id: c for c in session.scalars(select(Check).where(Check.suite_id == run.suite_id))}
+    # The warehouse's own column classifications (G3, #433) — the same governance
+    # floor the REST and MCP read paths apply. Applied HERE too, and the omission
+    # was the sharper half of the bug: an alert is the surface that LEAVES the
+    # platform, into a webhook or a mailbox whose location DataQ does not know.
+    # A floor honoured in the UI and not in the outbound message is honoured in
+    # the place that matters least.
+    tags = _asset_column_tags(session, run, suite)
     results: list[Result] = run_service.list_results(session, run.id)
 
     counts: dict[str, int] = {}
@@ -131,6 +153,7 @@ def build_run_report(session: Session, run: Run) -> RunReport:
                     result.observed_value,
                     tested_column=(check.config.get("column") if check is not None else None),
                     policy=suite.column_policy if suite is not None else None,
+                    tags=tags,
                 ),
                 expected_value=result.expected_value,
                 # Column-aware redaction (#415): the tested column's failing values
@@ -139,6 +162,7 @@ def build_run_report(session: Session, run: Run) -> RunReport:
                     result.sample_failures,
                     tested_column=(check.config.get("column") if check is not None else None),
                     policy=suite.column_policy if suite is not None else None,
+                    tags=tags,
                 ),
             )
         )

@@ -391,6 +391,23 @@ class Asset(Base):
     connection_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("connections.id", ondelete="SET NULL")
     )
+    #: Warehouse-native column classification (G3, #433): `{column_lower:
+    #: "sensitive" | "public"}`, read from the warehouse's own tags on each run
+    #: and consumed as the governance FLOOR of the redaction ladder — the rung a
+    #: suite policy cannot lift.
+    #:
+    #: Lives on the asset rather than on each result deliberately: a tag added
+    #: *after* a sample was captured must still mask it, because a classification
+    #: is a statement about the data, not about the moment it was read. NULL and
+    #: `{}` mean the same thing to the redactor — no opinion, fall through — so an
+    #: unreadable tag source degrades to the pre-G3 behaviour rather than to a
+    #: clearance.
+    column_tags: Mapped[dict[str, str] | None] = mapped_column(JSONB)
+    #: When `column_tags` was last read from the warehouse. For the operator, not
+    #: the code path: it distinguishes "never looked" from "looked and found
+    #: none", which are identical to the redactor and very different to someone
+    #: auditing why a column surfaced.
+    column_tags_refreshed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
