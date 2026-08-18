@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "a8e71c5163e3",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-honesty-pass",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "backend/app/mcp/server.py",
+    "backend/app/services/profile_service.py",
+    "backend/tests/mcp/test_mcp_tools.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a8/e71c5163e3/0/metadata.json",
+      "transcript": "/a8/e71c5163e3/0/full.jsonl",
+      "compact_transcript": "/a8/e71c5163e3/0/transcript.jsonl",
+      "content_hash": "/a8/e71c5163e3/0/content_hash.txt",
+      "prompt": "/a8/e71c5163e3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1680,
+    "cache_creation_tokens": 1246252,
+    "cache_read_tokens": 265047146,
+    "output_tokens": 527417,
+    "api_call_count": 840
+  }
+}
