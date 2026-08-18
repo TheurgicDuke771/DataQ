@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "e40f70c959a5",
+  "strategy": "manual-commit",
+  "branch": "fix/1319-created-by-ondelete",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/admin.py",
+    "backend/app/services/admin_service.py",
+    "backend/tests/db/test_user_delete_nulls_provenance.py",
+    "frontend/src/api/connections.ts",
+    "frontend/src/api/suites.ts",
+    "frontend/src/components/suites/SharePanel.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e4/0f70c959a5/0/metadata.json",
+      "transcript": "/e4/0f70c959a5/0/full.jsonl",
+      "compact_transcript": "/e4/0f70c959a5/0/transcript.jsonl",
+      "content_hash": "/e4/0f70c959a5/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 13004,
+    "cache_read_tokens": 11286719,
+    "output_tokens": 8680,
+    "api_call_count": 17
+  }
+}
