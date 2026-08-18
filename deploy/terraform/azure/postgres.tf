@@ -31,33 +31,35 @@ data "azurerm_postgresql_flexible_server" "shared" {
 
 # ── Residency assertion for the resource that actually holds the data (G4/#434) ─
 #
-# The Container Apps environment gets a `postcondition` (aca.tf) because a
-# mismatch there is silent and currently absent. This one is a `check` block —
-# it WARNS on every plan instead of blocking — for a reason that is uncomfortable
-# and therefore worth writing down rather than papering over:
+# This server holds the application's personal data (`results.sample_failures`,
+# list-shaped `observed_value`), so it is the resource residency claims are ABOUT.
 #
-#   **It does not hold today.** The app declares `azure_location` = "West US 2"
-#   while the shared Postgres server lives in West US 3. Verified against live
-#   Azure, not inferred from the server's name.
+# It is checked against `shared_pg_expected_location`, NOT `azure_location`,
+# because the two deliberately differ: the subscription's 1-server cap forced the
+# app onto the harness's shared server, which sits in West US 3 while the app is
+# in West US 2. That is an **accepted exception** (#1465) — same jurisdiction
+# (United States), which is what GDPR Ch. V keys on — recorded in the residency
+# matrix in docs/security.md alongside the CloudFront and WAF exceptions.
 #
-# Both are US regions, so this is not a GDPR Ch. V transfer — but the residency
-# matrix claimed they agreed, and a compliance document that is wrong about the
-# live deployment is worse than the gap it describes. See docs/security.md.
+# **Checking against the expected value rather than against `azure_location` is
+# what keeps this useful.** The latter would warn on every plan forever, and a
+# permanently-firing check is noise people learn to skip — it would mask the
+# drift that actually matters, this server moving to another jurisdiction.
 #
-# A `postcondition` here would fail every apply until someone moves a database,
-# which is an operational decision this file has no business making unilaterally.
-# A `check` surfaces the drift on every plan, by name, and lets a deliberate
-# resolution happen deliberately. Tracked as a follow-up.
+# A `check` (warns) rather than a `postcondition` (blocks), unlike its sibling on
+# the Container Apps environment in aca.tf. The difference is deliberate: a
+# blocking assertion here would fail every apply until someone migrated a
+# database, and the response to "the DB moved" is a decision, not a rollback.
 check "database_residency" {
   assert {
-    condition     = lower(replace(data.azurerm_postgresql_flexible_server.shared.location, " ", "")) == lower(replace(var.azure_location, " ", ""))
+    condition     = lower(replace(data.azurerm_postgresql_flexible_server.shared.location, " ", "")) == lower(replace(var.shared_pg_expected_location, " ", ""))
     error_message = <<-EOT
-      Residency drift (G4/#434): the shared PostgreSQL server is in
+      Residency drift (G4/#434, #1465): the shared PostgreSQL server is in
       '${data.azurerm_postgresql_flexible_server.shared.location}' but
-      azure_location declares '${var.azure_location}'. This server holds the
-      application's personal data (results.sample_failures, list-shaped
-      observed_value), so it is the resource residency claims are ABOUT.
-      Known and currently expected; see the residency matrix in docs/security.md.
+      shared_pg_expected_location declares '${var.shared_pg_expected_location}'.
+      This server holds the application's personal data, so a move is a residency
+      change even when it looks routine. Confirm the new region is in the intended
+      JURISDICTION, then update the variable and the matrix in docs/security.md.
     EOT
   }
 }

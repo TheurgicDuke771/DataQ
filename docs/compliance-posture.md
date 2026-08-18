@@ -213,7 +213,7 @@ to keep the result, and — per the project's standing rule that only a live run
 for anything crossing a driver boundary — **verification against real warehouses**, which
 are currently stopped. Tracked on #433.
 
-### G4 — 🟠 Region / residency assertion & enforcement — #434 — **asserted and surfaced; one live discrepancy found**
+### G4 — 🟢 Region / residency assertion & enforcement — #434 — **asserted, surfaced, and its one exception accepted on the record**
 **Requirement:** GDPR Ch. V — EU personal data must stay in-region; cross-border transfer
 needs a lawful basis. The post-v1 LLM call is a new transfer vector.
 **Current state:** deploy is region-pinned to **US (westus3)**; the seam *allows* an EU
@@ -243,13 +243,26 @@ considered rather than inferring its absence.
 
 **Building the control immediately found a live discrepancy, which is the strongest
 argument for it.** The Azure Postgres server — the only resource holding personal data —
-is in **West US 3** while the deployment declares **West US 2**. Verified against running
-Azure, not inferred. Both are US regions, so this is not a Ch. V transfer, but the
-residency matrix asserted they agreed and an earlier draft of it shipped that claim. The
-mismatch is now stated in the matrix and surfaced by a `check` block on every plan; the
-underlying resolution (the subscription's 1-server cap is what forced the shared server)
-is an operational decision, not a documentation one, so G4 stays 🟠 rather than 🟢 until it
-is resolved or consciously accepted — tracked as [#1465](https://github.com/TheurgicDuke771/DataQ/issues/1465).
+is in **West US 3** while the app's other resources are in **West US 2**. Verified against
+running Azure, not inferred, and an earlier draft of the matrix had asserted they agreed.
+
+**Consciously accepted** as a recorded exception ([#1465](https://github.com/TheurgicDuke771/DataQ/issues/1465),
+closed on that decision), on a stated basis rather than a shrug: both regions are in the
+**same jurisdiction** (United States), which is the unit GDPR Ch. V keys on, so no personal
+data crosses a border. Resolving it would mean a new server plus a data migration against
+the same 1-server subscription cap that forced the shared server in the first place — the
+cap that also blocks CMK in G5.
+
+The acceptance is encoded as a `shared_pg_expected_location` variable rather than left in
+prose, so the `check` block still **passes today and fires on a real move**. Checking the
+server against `azure_location` would have warned on every plan forever, and a
+permanently-firing check is noise people learn to skip — it would have masked exactly the
+drift that matters. An accepted exception must not cost you the detector.
+
+**The constraint this places on a future deployment is stated in
+[docs/security.md](security.md):** an operator whose regime cares about sub-national
+placement, or who deploys into the EU where a two-region split could straddle adequacy
+boundaries, must consolidate rather than inherit this exception.
 
 **What this does not do, stated plainly:** the app **declares** a jurisdiction, it does not
 verify one. Software cannot confirm which datacentre its database sits in; the IaC pins it
