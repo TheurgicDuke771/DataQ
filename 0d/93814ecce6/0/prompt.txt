@@ -1,0 +1,452 @@
+<task-notification>
+<task-id>bdq14061i</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4cd0c8d7-38ca-4c1e-98ff-11c896a71042/tasks/bdq14061i.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR E CI and merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>box11u133</task-id>
+<tool-use-id>toolu_012BHsseagW67NCEBUMsNzKs</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4cd0c8d7-38ca-4c1e-98ff-11c896a71042/tasks/box11u133.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR E to merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Let's explore the Tier-II also. 
+Also make all the MCP are adhear to the RBAC ploicy. 
+And for docs no more curated 8 MCP [it is expanded now]
+
+---
+
+<task-notification>
+<task-id>aacf3b937502700f3</task-id>
+<tool-use-id>toolu_01D9xhPRPpHuchtWHWd8rLUN</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4cd0c8d7-38ca-4c1e-98ff-11c896a71042/tasks/aacf3b937502700f3.output</output-file>
+<status>completed</status>
+<summary>Agent "MCP docs 19→30 reconciliation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All edits are complete. Note: `docs/progress.md` shows as modified in `git status`, but that change was already present in the working tree before I started this session (I never opened or edited that file, per the explicit "DO NOT TOUCH" instruction) — it appears to be pre-existing uncommitted state, not something I introduced.
+
+## Summary
+
+**Files changed (all in `/Users/arijit/Coding/Python/DataQ`):**
+
+- `README.md` — feature table AI-integration row + MCP section: 19 → 30 tools, three-way split (16 read-only / 10 state-changing / 4 live-probe-gated-as-writes).
+- `CLAUDE.md` — only the two tech-stack table rows and the `.mcp.json` appendix intro line updated (30 tools, three-way split); §13 untouched.
+- `docs/mcp-setup.md` — "## The 19 tools" → "## The 30 tools", new intro explaining the three-way split and ADR 0033 authorization (`_require_role` for `test_connection`/`import_suite`, "no admin-only tool" statement), and all 11 new tools added into the existing five groups (added a new "Suite portability" group for `import_suite`, since it didn't fit the other five). Every description pulled verbatim-in-spirit from each tool's own docstring in `backend/app/mcp/server.py`.
+- `docs/feature-matrix.md`, `docs/glossary.md`, `docs/features.md`, `docs/runbook-faq.md`, `docs/deployment-parity.md` — tool counts and split updated in prose/table rows.
+- `docs/adr/README.md` — ADR 0008 index row now shows "8 → 19 tools (Tier 1 reads), then 19 → 30 tools (Tier 2 edit-gated mutations + live-probe tools)".
+- `docs/adr/0008-mcp-server.md` — appended a **second** amendment section for Tier 2 (11 new tools, the three-way split, `_require_role`/ADR 0033 authorization model, and confirmation the three standing exclusions still hold). The original decision and the first (Tier 1) amendment are untouched.
+- `docs/changelog.md` — updated the existing Unreleased "MCP server expanded to 19 tools" bullet in place to describe the final 30-tool state (no second bullet added); the v1.0.0 released entry untouched.
+- `context/post-v1-roadmap.md` — Theme 13: Tier 2 now marked DELIVERED alongside Tier 1, theme marked complete, and the Tier 2 candidate table rows annotated with what actually shipped (e.g. `snooze_check` as one tool, not a pair).
+
+**Deliberately left alone (all historical, not live-doc drift):**
+- `docs/adr/README.md`'s and `docs/adr/0008-mcp-server.md`'s references to "8 → 19 tools" — these correctly describe the intermediate Tier-1-only state and are immediately followed by the new Tier-2 amendment, so they're accurate history, not stale claims.
+- `context/post-v1-roadmap.md` line "bringing the MCP server from 8 to **19 tools**" under the Tier-1 DELIVERED note — same reasoning, it's describing what Tier 1 alone delivered.
+- `docs/progress.md`, `docs/retro-v1.md`, `docs/progress-v1.md`, `context/DataQ_platform_roadmap.md`, `backend/**` — untouched per instructions.
+
+**Check 1 (grep for stale counts):**
+```
+grep -rn "19 tools\|19 curated\|17 read-only" README.md CLAUDE.md docs/ context/
+```
+Only 4 hits remain, all inside `docs/adr/README.md`, `docs/adr/0008-mcp-server.md` (×2), and `context/post-v1-roadmap.md` — all dated/amendment-scoped historical statements about what Tier 1 alone delivered, immediately followed by the Tier 2 continuation. No live/current-state claim of "19 tools" remains anywhere.
+
+**Check 2 (mkdocs):** `conda run -n dataq mkdocs build --strict` exited 0, no errors or warnings about broken links (only informational notes about `compliance-posture.md` being deliberately excluded, pre-existing). The generated `site/` directory was deleted afterward.</result>
+<usage><subagent_tokens>126940</subagent_tokens><tool_uses>48</tool_uses><duration_ms>184741</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bsj5cm2pu</task-id>
+<tool-use-id>toolu_01SNb9P1sogeNUqzbJjuu1ba</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4cd0c8d7-38ca-4c1e-98ff-11c896a71042/tasks/bsj5cm2pu.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR J to merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Are there any new endpoints we can safely expose to MCP?
+
+---
+
+file the findings as tier-3. 
+exerise all 30 MCP and close #584. 
+then plan the new MCP endpoints and start execution
+
+---
+
+yeah continue
+
+---
+
+<task-notification>
+<task-id>bba9kfu6e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4cd0c8d7-38ca-4c1e-98ff-11c896a71042/tasks/bba9kfu6e.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for 1427 merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Start with tier 3B
+
+---
+
+<task-notification>
+<task-id>a2d6c6239300aed45</task-id>
+<tool-use-id>toolu_01LRMP2WgMfGR3HQT59PgQ2F</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4cd0c8d7-38ca-4c1e-98ff-11c896a71042/tasks/a2d6c6239300aed45.output</output-file>
+<status>completed</status>
+<summary>Agent "NL routing check at 46 tools" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I read all 46 descriptions in full (the file is 46 entries; no truncation).
+
+## (a) Answers
+
+1. **`list_runs`** — "failed today" is a time-bounded execution question; it lists recent runs newest-first with each run's `worst_severity`, and is the documented way to find a run id to drill into with `get_run_results`.
+2. **`list_suites`** first (to resolve "Retail Orders" to an id — its description names this as the pre-step to triggering), then **`trigger_suite_run`**; for "Is it done?" → **`get_run_status`**, which `trigger_suite_run` explicitly tells you to poll.
+3. **`get_adf_pipeline_status`** — its description literally carries "why did the customer pipeline fail?" and returns provider/pipeline run status plus the correlated DQ run.
+4. **`list_suites`** to resolve the suite id, then **`create_check`** (`expect_column_values_to_not_be_null`, `config={"column":"order_number"}`) — with **`dryrun_check`** in between, which `create_check`'s sibling explicitly frames as the authoring loop.
+5. **`list_assets`** — get_asset is the real answer but needs an asset id, and `list_assets` names itself "the first step in 'is orders healthy?'"; then **`get_asset`**.
+6. **`list_incidents`** with `status="open"` — the description states that filter is exactly "what is broken right now".
+7. **`list_assets`** — "what tables do we monitor?" is verbatim in its description.
+8. **`ack_incident`** (preceded by `list_incidents` if "that incident" has no id in context).
+9. **`resolve_incident`** — but I'd say out loud first that resolving is a statement, not a fix, and offer **`trigger_suite_run`** to confirm the backfill worked, because the description instructs exactly that rather than resolving on the user's assumption.
+10. **`list_columns`** — names only, and it's the documented cheap path versus `profile_column`.
+11. **`get_near_misses`** — its description is written for this sentence ("the suite was supposed to run after the pipeline and it did not").
+12. **`list_check_versions`** — edit history: who changed it, when, and the thresholds as they were.
+13. **`get_check_history`** — result history run-over-run; "has the row-count check been flaky?" is verbatim.
+14. **`snooze_check`** with `hours≈24`.
+15. **Decline / clarify.** No tool does this. `delete_check` explicitly cascades the result history, version history and baseline — the opposite of "keep its history" — and there is no disable-a-check tool. I'd ask whether they mean *stop alerting* (**`snooze_check`**) or genuinely erase it (**`delete_check`**, with the cascade stated).
+16. **`list_check_versions`** first (restore says "get `version_no` from there — do not guess"), then **`restore_check_version`**.
+17. **`update_schedule`** with `enabled=false` (via `list_schedules` if the id isn't in context) — `delete_schedule` explicitly redirects pauses here.
+18. **`update_trigger_binding`** with `enabled=false` — "keep the wiring" is its own phrasing.
+19. **`get_column_policy`** — "is the email column masked in failure samples?" is verbatim.
+20. **`suggest_column_policy`** — classifies which columns *are* sensitive, vs `get_column_policy` which reports what's configured.
+21. **`get_notification_config`** — verbatim, and the one that warns to read `*_source` so workspace defaults aren't reported as "nobody".
+22. **`get_asset`** — its description covers both halves ("what feeds this table?" / "what breaks if this is wrong?") via the lineage neighbourhood; `list_assets` first only if the id is unknown.
+23. **`update_suite`** — "point the orders suite at ANALYTICS.ORDERS_V2" is verbatim.
+24. **`test_connection`** (via `list_connections` if the connection id isn't known).
+
+## (b) Genuinely confusable pairs
+
+- **#1 — `list_runs` vs `list_incidents` vs `get_suite_results`.** The hardest one. "Checks failed today" reads as incident-shaped, but `list_incidents` is *deduplicated state* with no date filter, and its own text warns an ongoing failure is one row with `occurrence_count: 40`. `list_runs` won on "today" being a time-bounded execution question. **Neither description mentions a date/since parameter**, so I can't actually scope to "today" from the catalog alone — see (c).
+- **#12 vs #13 — `list_check_versions` vs `get_check_history`.** Resolved *cleanly and deliberately*: both descriptions cross-reference each other and name the exact confusion ("started failing because the data moved, or because someone tightened the threshold"). This is the best-disambiguated pair in the catalog.
+- **#17 / #18 — `update_*` vs `delete_*`.** Resolved by the delete tools explicitly redirecting "if the intent is a pause… use update with `enabled=false`". Without that line I'd have plausibly called `delete_schedule` for "pause the nightly schedule", which would have discarded the cron expression.
+- **#14 — `snooze_check` vs `ack_incident`.** Both are "make this stop bothering me" shaped. `ack_incident`'s "acknowledging does not stop alerts… to stop the alerting itself use `snooze_check`" resolved it outright.
+- **#19 vs #20 — `get_column_policy` vs `suggest_column_policy` vs `set_column_policy`.** Resolved: get = what's masked now, suggest = live profiling proposal, set = apply. #20's "which columns here are sensitive?" is verbatim in `suggest_`.
+- **#3 — `get_adf_pipeline_status` name vs scope.** The *name* says ADF, the description says ADF/Airflow/dbt with a `provider` filter. Name and body disagree; a client skimming names could miss it for an Airflow question. Worth renaming.
+- **#5 vs #22 — both route to `get_asset`.** Not a confusion so much as one tool answering two quite different questions; the description covers both explicitly.
+
+## (c) Where the catalog left me unable to choose confidently
+
+1. **No time filter is documented anywhere.** #1 ("today") and any "overnight / this week" question can't be scoped from the descriptions — `list_runs` documents only `suite_id`, `status`, `limit`, `offset`; `list_incidents` only `status`/`suite_id`/`asset_id`. `get_health_score` is the only tool with a window and it returns a score, not failures. I picked `list_runs` and would filter client-side, but I'm guessing about the parameter surface.
+2. **There is no lookup-by-name tool for anything.** Eight of the 24 requests name a resource in prose ("the Retail Orders suite", "that incident", "this check", "the Snowflake connection") and every mutation takes an id. Every one of those needs a speculative `list_*` call first. That's a real cost, and for "that incident" / "this check" the referent is only recoverable from conversation context, not from the catalog.
+3. **#15 has no correct tool** — "stop running this check without erasing it" simply isn't in the surface. `delete_check` even says "it is not 'stop running this check'", which tells me the capability is missing rather than hidden. I'd decline; whether that's the intended answer or a gap is a product question.
+4. **#1 vs #6 overlap in practice.** "What failed today" and "what's broken right now" are different tools by design, but a user asking #1 who actually wants #6 would get a runs list. Nothing in the descriptions helps me detect that misframing.
+5. **#9's correct behaviour is a judgement call, not a routing one.** `resolve_incident` is unambiguously the tool, but its own text tells me not to call it on the user's assumption. Whether "answer = the tool" or "answer = ask first" is the right response here depends on how much a client trusts the user's "the backfill fixed it".
+
+One thing worth noting positively: several descriptions changed what I would *say* rather than which tool I'd call — the `delete_check` cascade drove #15 to a decline, `get_notification_config`'s four-causes list would keep me from blaming the channel, and `list_assets`' `worst_severity: null` warning would stop me calling an unmonitored table healthy in #5/#7.</result>
+<usage><subagent_tokens>97358</subagent_tokens><tool_uses>5</tool_uses><duration_ms>79544</duration_ms></usage>
+</task-notification>
+
+---
+
+tell me more about - "what happened today" only approximately.
+
+---
+
+The UI is expected that user will know the details. But in the MCP, that is not applicable. So the answers should give the limitation and and mention what it cannot see clearly to the user. It should not omit the details. 
+Can you make appropiate changes to reflect this [applicalble to all 46 endpoints]
+
+---
+
+<task-notification>
+<task-id>a63a2ddc1d516d73a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4cd0c8d7-38ca-4c1e-98ff-11c896a71042/tasks/a63a2ddc1d516d73a.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit MCP tools group 4" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Audited all 10 against the code and the services they call.
+
+---
+
+**restore_check_version**
+
+- **MEDIUM — a no-op restore is indistinguishable from a real one.** `_record_version_and_commit` skips the snapshot when `session.is_modified(check)` is False, and the tool returns `{**_check_summary(check), "restored_from_version": version_no}` either way. The docstring already knows this ("Restoring the version the check is already on is a no-op and records nothing") but the *data* doesn't say it, so the model reports "restored to v3" for a call that changed nothing. Add fields: `"changed": bool` and `"new_version_no": &lt;int&gt;` (read the minted version, or the current one when unmodified). Prose→data: replace the sentence with "Returns `changed: false` and no new version number when the check was already on that version."
+- **LOW — "this applies the whole snapshot" overreaches.** `CheckVersion` covers name/expectation_type/config/thresholds/dimension/source_connection_id only. An active alert snooze (`alert_snoozed_until`) and the check's anomaly `monitor_baselines` row are untouched by a restore. Append: "Operational state is not part of a version: an active snooze stays in force and a monitor baseline is not reset."
+- **LOW — deferred effect.** Nothing is re-evaluated; the restored definition applies from the next run. Past results keep the outcomes the replaced definition produced. Add: "Takes effect on the next run; past results are not re-scored."
+
+---
+
+**set_column_policy**
+
+- **HIGH — omitting a column from `pii_columns` does not unmask it.** `redact_sample_failures` masks over three layers: datasource tags (floor), this policy, *and* the name/value classifier — "PII + unclassified masked". So "unmask the email column in failure samples" → caller sends a policy without `email` → tool returns success with `pii_columns` not containing it → email is still masked. `get_column_policy` states the floor; this tool, which is the one that acts, does not. Current wording: *"``pii_columns`` are always masked; ``identifier_column`` is the single non-PII column left visible"*. Proposed addition: "The reverse does **not** hold. A column left out of ``pii_columns`` is not thereby made visible — a datasource-tag governance floor and a name/value classifier still mask anything they judge PII, and unclassified columns default to masked. This tool can only *add* masking, never guarantee visibility; do not tell the user a column will now be shown."
+- **LOW — the stored list is normalised silently.** `set_column_policy` de-dupes, drops blank entries, and omits `identifier_column` entirely when it is falsy. Self-correcting because the response echoes the stored policy, but worth one line: "The stored list is de-duplicated and blanks are dropped — compare the returned ``pii_columns`` with what you sent."
+
+---
+
+**snooze_check**
+
+- **HIGH — a snooze suppresses nothing unless *every* failing check in the run is snoozed.** `alerting/suppression.all_failures_snoozed` returns `failing &lt;= snoozed`; if even one other check in the same suite fails live, the alert fires — and it fires for the whole run, including the snoozed check's failure. The docstring's *"Mute a check's alerts for a while"* and *"only the alert is suppressed"* read as a per-check mute. Proposed insertion: "**Suppression is per *run*, not per check.** An alert is only withheld when every failing check in that run is snoozed. If any other check in the suite fails while this one is snoozed, the alert still fires and still contains this check's failure. Snoozing one noisy check in a suite that fails for several reasons will not stop the alerts."
+- **MEDIUM — a snooze never suppresses an operationally-failed run.** `all_failures_snoozed` short-circuits `if run.status == "failed": return False`. So if the suite errors out (dead credential, worker loss), the alert fires regardless of any snooze. Add: "A run that fails to *execute* (bad credential, worker error) always alerts — there are no per-check results to snooze."
+- **MEDIUM — snooze is alert-delivery only; incidents still open.** `alert_snoozed_until` is read in exactly one place (`suppression.py`). Incident creation (ADR 0037, `list_incidents`) is unaffected. Add: "Only alert *delivery* is muted. The check still runs, still records a failing result, still counts toward the run's ``worst_severity``, and still opens an incident visible to ``list_incidents``."
+
+---
+
+**suggest_column_policy**
+
+- **MEDIUM — the docstring routes the user away from a tool that now exists.** Current: *"Present it as a proposal for the user to confirm and apply in the app"*. `set_column_policy` shipped in the same tier. Proposed: "Present it as a proposal for the user to confirm, then apply it with ``set_column_policy`` — and read the existing policy with ``get_column_policy`` first, since setting one replaces it wholesale."
+- **MEDIUM — no data about the basis of the suggestion.** `suggest_policy_for_target` lists the target's columns and profiles them with `top_n=20`, classifying on names plus at most 20 sampled values per column. The response is only `{suite_id, saved, identifier_column, pii_columns}` — the model cannot say how many columns were examined or which dataset was profiled. Add fields: `"columns_profiled": &lt;int&gt;`, `"top_values_sampled_per_column": 20`, and `"profiled_target": &lt;the resolved target dict&gt;`. Then the prose "not a governance source of truth" becomes checkable rather than a disclaimer.
+- **LOW — a flat-file batch target profiles one file.** `_profile_target_defaults` calls `run_target.materialize_path` and profiles the single currently-resolved batch member. Add: "For a flat-file batch target this profiles the one file the batch currently resolves to, not the whole history — a column absent from today's file is absent from the suggestion."
+
+---
+
+**test_connection**
+
+- **HIGH — promises a classification the code deliberately withholds (#1442 shape).** Current: *"Opens a live connection using the stored credential and reports success or a **classified failure reason**."* `connection_service.test_connection` catches every adapter exception and re-raises a flat `ConnectionTestFailedError("connection test failed", detail={"connection_id": ...})`, explicitly *not* echoing the adapter message (credential-leak guard); the only other shapes are "credential could not be resolved" and "connection has no stored credential to test with". `_service_errors` surfaces that one string. Proposed: "…and reports success, or a failure. **The failure is deliberately unclassified** — the underlying driver error is withheld because it can carry DSN and credential fragments, so you get 'connection test failed' and nothing more. Do not speculate about the cause; tell the user the probe failed and that the server logs carry the detail."
+- **HIGH — `ok: true` does not mean suite runs will work.** The adapter's `test` is a bare connectivity probe (`snowflake.py`: opens an engine, runs `SELECT 1`, "Deliberately GX-free — a lightweight connectivity probe, not a suite run"). It does not check the suite's target table exists, that the role can read it, or that GX's own requirements are met — this is exactly #1067, where a Snowflake connection with no Role tests green and fails every run. A user asking "is the Snowflake connection working?" after a failed run gets a confident "yes, the connection is fine". Proposed insertion after the first paragraph: "**What it proves is narrow:** the credential authenticates and the datasource answers a trivial query. It does **not** verify that the suite's target table exists, that the role can read it, or that the run configuration is complete — a connection can pass here and fail every suite run. An ``ok: true`` beside a failing run means 'not a dead credential', not 'the connection is fine'."
+- **LOW — no `tested_at`.** The response is a live probe result with no timestamp, so a model relaying it later cannot say how old it is. Add `"tested_at": &lt;iso8601&gt;`.
+
+---
+
+**trigger_suite_run**
+
+- **HIGH — the docstring's own example needs a parameter the tool does not have (#1442 shape).** Current: *"Use this for 'run the orders suite on DEV'."* The signature is `trigger_suite_run(suite_id)`; the environment and dataset come from `suite.connection_id` and `suite.target`, neither selectable here. Asked to "run the orders suite on DEV" against a suite bound to a QA connection, the tool runs QA and the model reports DEV. Proposed: "Use this for 'run the orders suite'. **You cannot choose the environment or the dataset** — a run always uses the suite's own connection and run target, which are fixed on the suite. If the user names an environment, confirm it against ``list_suites`` / ``list_connections`` first; a suite bound to QA cannot be run against DEV from here (import or create a separate suite on that connection)."
+- **MEDIUM — no concurrency guard.** `new_queued_run` + `dispatch_or_fail` unconditionally create and publish a run; there is no check for an in-flight run of the same suite. Two calls queue two concurrent runs, and the tool cannot see a run a schedule or trigger binding started seconds earlier. Add: "There is no de-duplication — calling twice starts two concurrent runs of the same suite, and this tool cannot see a run a schedule or pipeline trigger already started. Check ``list_runs`` before re-triggering."
+- **MEDIUM — all-or-nothing scope.** Every check in the suite runs, including snoozed ones (a snooze mutes alerts only); there is no way to run a single check. Add: "Runs **every** check in the suite — there is no way to run one check. Snoozed checks still execute; only their alerting is muted."
+- **LOW — a failed dispatch leaves a persisted `failed` run.** `dispatch_or_fail` commits the run as `failed` before returning False, then the tool raises. The caller sees an error but a run row now exists and appears in `list_runs`. Add: "If dispatch fails, the run is still recorded — as ``failed`` with a dispatch-failure reason — so it will appear in ``list_runs``."
+
+---
+
+**update_check**
+
+- **MEDIUM — a comparison check's baseline cannot be repointed here, and the docstring implies only `kind` is off-limits.** `check_service.update_check` accepts `source_connection_id`; the MCP tool does not pass or expose it. Current: *"``kind`` cannot be changed at all; recreate the check as the other kind."* Proposed: "``kind`` cannot be changed at all, and for a **comparison** check (ADR 0015) the baseline ``source_connection_id`` cannot be changed from here either — recreate the check to repoint it."
+- **MEDIUM — deferred and non-retroactive, including the anomaly baseline.** Nothing re-scores past results, and the check's stored `monitor_baselines` row is untouched by an update, so an anomaly check whose config changed keeps evaluating against a baseline built under the old definition. Add: "The new definition applies from the next run. Past results are not re-scored, and for an ``anomaly`` check the stored baseline is **not** reset — it continues from history gathered under the previous definition."
+- **LOW — "Every update snapshots the new state as a check version" is not unconditional.** `_record_version_and_commit` gates on `session.is_modified(check)`, so a submit-identical-values call mints no version. Soften to "Every update that actually changes something snapshots…".
+
+---
+
+**update_schedule**
+
+- **HIGH — pausing the schedule does not stop the suite running.** A suite can also be run by an orchestration trigger binding (`trigger_bindings`) and on demand. `schedule_service.update_schedule` touches only the `schedules` row. "Pause the nightly orders run" → `enabled=false` → success → the model says the suite will not run, and the ADF/Airflow binding fires it that night anyway. Current wording is *"To stop a suite running automatically for good, use ``delete_schedule``; disabling keeps the row and the expression."* Proposed replacement: "This governs the **cron schedule only**. A suite can also be started by an orchestration trigger binding when a pipeline finishes, and on demand via ``trigger_suite_run``. Before telling a user the suite will not run, check ``list_trigger_bindings`` for that suite — pausing here does not disable a binding (use ``update_trigger_binding``). To stop the cron for good use ``delete_schedule``; disabling keeps the row and the expression."
+- **MEDIUM — the pause is not retroactive and is not instant.** The change is picked up by the 60-second beat dispatcher, and a run already queued or executing is unaffected. Add: "Takes effect from the dispatcher's next sweep (within about a minute) and does **not** cancel a run already queued or in progress — use ``cancel_run`` for that."
+- **LOW — `next_run_at` is only recomputed on a cadence change or a re-enable.** Correctly masked to `null` while disabled, so no wrong value is emitted; noting for completeness, no change needed.
+
+---
+
+**update_suite**
+
+- **MEDIUM — the tool detects a stranded redaction policy and tells only the server log.** The `elif had_policy and parsed is not None and parsed != old_target` branch emits `log.warning("suite_policy_possibly_stale", ...)` and returns a payload that says nothing about it. The caller who just re-pointed the suite is the one person who could act. Add a field: `"column_policy_may_be_stale": true` on that branch (plus, in prose, "the policy's columns may not exist in the new target — review it with ``get_column_policy`` and reset it with ``set_column_policy``").
+- **MEDIUM — auto-classify is fire-and-forget and invisible.** When a target lands on a policy-less suite, `run_dispatch.dispatch_auto_classify` is dispatched best-effort (`dispatch_auto_classify` swallows broker errors and the task "never raises"). An immediate `get_column_policy` can legitimately report `configured: false` forever. Add `"column_policy_pending": true` on that branch and: "Setting a target on a suite with no redaction policy kicks off automatic PII classification in the background. It is best-effort — it may take a moment and may silently not happen — so do not assert that a policy now exists; re-read it with ``get_column_policy``."
+- **MEDIUM — `runnable` overclaims.** It is literally `suite.target is not None`. It says nothing about whether the suite has any checks (a suite with zero checks runs and reports vacuous success), whether the connection's credential works, or whether the new table and its columns actually exist. Current comment/prose: *"Whether the suite can actually run now"*. Proposed: `"runnable"` documented as "a run target is set — the one precondition ``trigger_suite_run`` fails fast on. It does **not** mean the run will succeed: the suite may have no checks, the credential may be dead, and the target table may not exist. None of that is validated here."
+- **LOW — re-targeting silently re-points (or detaches) the suite's asset.** `suite_service.update_suite` calls `resolve_and_upsert_asset`, "fail-soft: an unresolvable target leaves asset_id NULL". Lineage and asset scorecards move or disappear with no signal. Add: "Changing the target also re-points the suite's catalog asset; if the new target cannot be resolved the suite is left with no asset, and it will drop out of asset/lineage views."
+- **LOW — existing checks are not re-validated against the new target.** Column-referencing checks that no longer match fail at run time, not here.
+- **LOW — a target cannot be cleared.** `target=None` means "leave alone"; there is no path back to a targetless suite. Worth one clause alongside the existing "omitted arguments are left alone".
+
+---
+
+**update_trigger_binding**
+
+- **MEDIUM — disabling the binding does not stop the suite running.** Symmetric to `update_schedule`: a cron schedule or a manual trigger still runs it. Current: *"A disabled binding still exists and still reads back from ``list_trigger_bindings`` — it simply never fires."* Proposed addition: "That stops **this pipeline** from starting the suite. It does not stop a cron schedule (``list_schedules`` / ``update_schedule``), another binding on a different pipeline or environment, or a manual ``trigger_suite_run``. Check for those before telling the user the suite will no longer run."
+- **LOW — an empty `warnings` on disable means "not computed", not "no ambiguity".** `update_binding` returns `warnings = [...] if enabled else []`. The docstring explains the recompute-on-enable rule in prose; make it data so the model can branch: add `"warnings_computed": bool` (false when disabling).
+- **LOW — not retroactive.** A run this binding already dispatched is unaffected; the flip applies to the next orchestration event.</result>
+<usage><subagent_tokens>125408</subagent_tokens><tool_uses>28</tool_uses><duration_ms>277063</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a13531ec2fadd88b2</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4cd0c8d7-38ca-4c1e-98ff-11c896a71042/tasks/a13531ec2fadd88b2.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-check routing + limitation reporting" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Read all 46 descriptions in full. Below is the selection + caveat pass, then the three reports.
+
+---
+
+## Part 1 — per request: first call, and the caveats I would state
+
+**1. "What data quality checks failed today?"** → `list_runs`
+- No time filter exists. I'd report the window I actually saw (`newest_in_page`/`oldest_in_page`) and page with `offset` until `oldest_in_page` precedes midnight — never call a page "today's runs."
+- Execution status ≠ data-quality outcome: a run is `succeeded` even if every check inside failed.
+- Runs still executing report `results_final: false` and a **null** outcome — they have no verdict, not a clean one.
+- Scoped to suites I can see; a workspace-admin sees more.
+
+**2. "Did any pipelines fail overnight?"** → `get_adf_pipeline_status`
+- Same problem, worse: no time filter at all, so "overnight" can't be asked. If `oldest_in_page` is later than last night, I have not seen the window and must say so rather than "nothing failed."
+- Only pipelines DataQ has **ingested** appear. A short or empty result can equally mean no orchestration connection exists for that provider/env, or its poller is failing — check `list_connections` before any all-clear.
+
+**3. "When did the freshness check start failing?"** → `get_check_history`
+- It's a **count-capped page, not a time window**. If `truncated` is true, the earliest point is a page boundary, not an onset — I'd raise `limit` (max 200) and, if still truncated, say the onset is *before* `oldest_in_page` rather than naming that date.
+- Empty `points` = never produced a result, not never failed.
+- Points can include runs that never completed — cross-check a surprising one with `get_run_status`.
+- **The load-bearing one:** this is result history, not edit history. "Started failing" can mean the data moved *or* someone tightened the threshold, and this tool cannot tell them apart. I'd pull `list_check_versions` alongside before answering.
+
+**4. "Is the orders table healthy?"** → `list_assets` to resolve the id, then `get_asset`
+- `summary`/`scorecard` are **workspace-true** — computed over every suite targeting the asset, including ones I can't see. The `suites` list is filtered to my grants. If `restricted_suite_count &gt; 0` I must say the listed checks aren't the whole story behind the number.
+- `scorecard.uncovered` (dimensions with **no checks at all**) is usually the better answer than the score.
+- A dimension `score` of `null` = nothing evaluated — not 0, not 100. `unclassified_checks` are bucketed nowhere.
+- If `lineage.qualified_by` is non-empty, a thin neighbour list proves nothing — I'd report the qualification, not "nothing feeds this table."
+
+**5. "Which assets are unhealthy?"** → `list_assets`
+- **Alphabetical, no health sort or filter.** A truncated page is an alphabetical slice, not the worst assets — I have to page to `truncated: false` before ranking anything.
+- Health figures are workspace-true, so I must not call them "your checks."
+- `worst_severity: null` covers both all-passed *and* never-evaluated — check `checks_total`/`last_run_at` first.
+- `monitored: false` = unchecked, never "clean."
+- `has_operational_error`/`has_skip`/`has_failed_run` are **reachability**, not quality — an asset can be broken *and* show `worst_severity: null`.
+- An asset can be absent simply because nothing ever enumerated it.
+
+**6. "Is the Snowflake connection working?" (right after a suite run failed)** → `test_connection`
+- **A pass is narrow**: credential authenticates, datasource answers a trivial query. It does not check the target table exists, that the role can read it, or that the run config is complete. A Snowflake connection with no Role passes here and fails every run. `ok: true` beside a failing run means "not a dead credential," not "the connection is fine."
+- A failure is **deliberately unclassified** (driver messages can carry DSN/credential fragments). I would not speculate on cause; server logs hold it.
+- Needs the member role. Fixing it — re-auth, edit, delete — is Admin-only and deliberately not exposed here at all, so I cannot offer to repair it.
+
+**7. "Silence the freshness alert until tomorrow."** → `snooze_check(hours=24)`
+- **Suppression is per *run*, not per check.** The alert is only withheld if *every* failing check in that run is snoozed — if the suite fails for other reasons too, alerts keep coming and the alert still contains this check's failure. This is the caveat I'd lead with, because "done, it's silenced" would otherwise be wrong.
+- A run that fails to *execute* always alerts, snooze or not.
+- The check still runs, still records a failure, still counts toward `worst_severity`, still opens an incident. Snoozed ≠ disabled.
+
+**8. "Pause the nightly schedule so the suite stops running."** → `list_schedules` (get the id), then `update_schedule(enabled=false)`
+- Pause, not delete — the cron expression is kept and resumable (`delete_schedule` would discard it).
+- **"Stops running" is the risky half:** this governs the cron only. A trigger binding can still start the suite, and so can a manual run. I'd check `list_trigger_bindings` before confirming the suite won't run.
+- Doesn't cancel a run already queued or in progress (`cancel_run` for that); dispatcher picks it up within ~a minute.
+- Resuming **re-bases, does not backfill** — missed runs never happen retroactively.
+
+**9. "Run the orders suite on DEV."** → `list_suites` first, *not* `trigger_suite_run`
+- **You cannot choose the environment or dataset.** A run always uses the suite's own connection and run target, both fixed on the suite. If "orders" is bound to QA, this request is not satisfiable by running it — it needs a different suite.
+- No de-duplication: calling twice starts two concurrent runs, and this tool can't see a run a schedule or trigger started moments ago — I'd check `list_runs` first.
+- Every check runs, including snoozed ones; no way to run a single check.
+- Fails fast if no valid run target is configured.
+
+**10. "How many rows are in the orders file?" (S3 flat file)** → `profile_column`
+- **S3/ADLS/Iceberg are profiled over a sample of at most 100,000 rows** (Snowflake and Unity Catalog are full). When `sampled` is true, `row_count` is *the number of rows sampled* — not the size of the file. I would state that explicitly rather than hand over a number.
+- So on S3 I cannot give an exact file row count from this tool; I'd say so.
+- `top_values`/`min`/`max` are real cell contents and are **not** PII-redacted — I'd avoid profiling policy-marked columns and not echo values.
+
+**11. "Unmask the email column in failure samples."** → `get_column_policy`
+- **This is not doable.** `set_column_policy` can only ever *add* masking. Leaving a column out of `pii_columns` does not make it visible — a datasource-tag floor plus a name/value classifier still mask anything they judge sensitive, and unclassified columns default to masked.
+- An empty current policy means "no suite-level override," never "no protection."
+- Also: sending an empty `pii_columns` doesn't clear anything — it stores an empty policy that permanently opts the suite out of automatic classification. There's no un-set from here.
+- Masking changes *display* and applies retroactively; `identifier_column` does **not** (it's chosen at capture time).
+
+**12. "Is data health improving?"** → `get_health_score`
+- **`trend` is not a health trend.** It is a per-day count of **runs** that succeeded/failed — run *lifecycle* status, not data quality — and **no daily score is computed**. I cannot answer "is quality improving" from it; at most "are runs completing."
+- Days with no runs are zero-filled; running/cancelled runs appear in neither count, so the two need not sum to that day's runs.
+- `health_score`/`pass_rate` are **null**, not 0, when nothing was evaluated. Null is "no data," never "bad." A large `total_runs` beside a null score means the runs didn't complete.
+- `active_connections` is not windowed and not a health signal — it counts even dead-credential connections.
+
+**13. "Recreate the orders suite against the QA warehouse."** → `export_suite`, then `import_suite`
+- **Only name, description and check definitions are copied.** The new suite has **no run target and is not runnable** until `update_suite` gives it one — I'd say that as part of the completion, not as a footnote.
+- Also not copied and each needing deliberate recreation: schedules, trigger bindings, notification config, column redaction policy, shares. This copies the rules, not the automation.
+- It always creates a **new** suite, owned by and visible only to me — never merges. Running it twice makes two suites.
+- Needs the member role; the target must be a datasource connection (orchestration providers can't be suite datasources).
+
+**14. "Remove the row-count check."** → `list_checks` (find the id), then confirm before `delete_check`
+- **The delete cascades and cannot be undone**: the check, its version history, its monitor baseline, **all historical results**, and **every incident it raised including one currently open**. Past runs lose that check from their record and any `metric_value` trend disappears.
+- It is not "stop running this check" — it is "erase that this check ever existed." I would state that plainly and get explicit confirmation.
+- If the real intent is only to stop the noise, `snooze_check` is the right tool.
+
+**15. "Which connections are broken?"** → `list_connections`
+- **`consecutive_run_failures` reads narrowly**: non-zero only when *every* suite on that connection is currently failing, and then it's the smallest such streak, capped at 20 runs each. One succeeding suite resets it to 0 and clears the error while another suite fails every run — so a per-suite problem is invisible here. `list_runs(suite_id=…)` for that.
+- Null health timestamps mean **unknown**, never healthy; `consecutive_run_failures` is null (not 0) for a connection that never ran.
+- Null `credential_expires_at` means either "this credential type states no readable lifetime" **or** "we never looked" — `credential_expiry_checked_at` disambiguates. Report as silence, not reassurance.
+- Config (accounts, hosts, paths, secret refs) is deliberately excluded; fixing a broken connection is Admin-only and not available over MCP.
+
+---
+
+## Report
+
+### A. Caveats the descriptions gave me that I would **not** have stated on my own
+
+Ranked by how wrong my unaided answer would have been:
+
+1. **`get_health_score.trend` is run-lifecycle counts, not quality** (#12). On a tool called *health score*, with a field called *trend*, I would have plotted it and said "health is improving." This is the single highest-value disclosure in the catalog and it prevents a confidently-wrong answer to a question executives actually ask.
+2. **`snooze_check` suppression is per-run, not per-check** (#7). I would have said "done, that alert is silenced." In a multi-failure suite that is simply false, and the user finds out via the next page.
+3. **`list_connections.consecutive_run_failures` resets to 0 if any one suite passes** (#15). I'd have read 0 as "connection healthy" and closed the investigation at exactly the wrong point.
+4. **`set_column_policy` can only add masking; empty list ≠ clear** (#11). I'd have accepted an unmask request as actionable and reported success on a call that changed nothing visible.
+5. **`list_assets` is alphabetical with no health sort** (#5). I would have treated a truncated page as a ranked worst-first list. That's a silent, plausible-looking wrong answer.
+6. **`delete_check` cascades result history *and open incidents*** (#14). I'd have expected results to survive a definition delete — most systems keep them.
+7. **The `get_check_history` / `list_check_versions` confound** (#3). "When did it start failing?" having two distinct causes — data moved vs threshold tightened — that neither tool can distinguish alone is a genuinely non-obvious framing, and it changes the shape of the answer, not just its hedging.
+8. **ADR-0037's workspace-true vs caller-scoped split** (#4, #5). I'd have written "your checks" over numbers that aggregate suites the caller cannot see.
+9. **`profile_column` samples ≤100k rows on S3/ADLS/Iceberg but profiles Snowflake/UC in full** (#10). The asymmetry is what makes it dangerous — the same tool is trustworthy on one datasource and not another.
+10. **`test_connection` passing on a Snowflake connection with no Role** (#6). Concrete, falsifiable, and exactly the scenario in the prompt. Best-written caveat in the catalog.
+11. **An empty `get_adf_pipeline_status` can mean "no orchestration connection configured"** (#2). I'd have reported an all-clear.
+12. **`import_suite` produces a non-runnable suite** (#13). I'd have said "recreated" and left the user with a suite that silently never runs.
+
+### B. Where I'd still answer confidently-but-wrongly
+
+**B1 — #1, "what failed today": the tool-choice fork is undisclosed.** `list_runs` and `list_incidents` are both plausible first calls and neither description positions itself against the other for this question. `list_incidents` sells itself as "what's broken right now" and notes that a passing result auto-resolves an incident. Follow that: a check that failed at 03:00 and passed at 09:00 **auto-resolved** and is invisible to `status="open"` — so "what failed today?" answered from `list_incidents` returns nothing, confidently, for a day that had a real failure. Nothing in either description warns about this. The `list_runs` route is correct but I'd only land on it by luck. **Fix: one line in `list_incidents` — "incidents auto-resolve on the first passing result, so a failure that has since recovered will not appear under `status=open`; use `list_runs`/`get_check_history` for 'what failed during period X'."**
+
+**B2 — #6/#15, two tools contradict each other on error classification.** `list_connections` promises "a classified error reason when it is failing." `test_connection` says a failure is "deliberately **unclassified**" because driver messages leak DSN fragments. Neither cross-references the other. Investigating a failed run I would quote a classified reason from `list_connections` while telling the user `test_connection` can't classify — incoherent at best, and if the two classifiers differ in fidelity, misleading. **Fix: state in both what "classified" means and whether the two are the same classifier.**
+
+**B3 — #10, the row-count gap is invisible.** `profile_column` honestly discloses its sampling, which pushes me to look for a better tool — and there isn't one, and nothing says so. The natural fallback is `dryrun_check` with `kind="volume"`, whose description says **nothing** about sampling on flat files. So I'd dry-run a volume monitor against S3 and report its row count as exact. `create_check`'s volume clause is equally silent. **This is the clearest genuine hole: `dryrun_check` and `create_check` inherit the sampling caveat and disclose it nowhere.**
+
+**B4 — #9, "run on DEV" has no positive resolution path.** `trigger_suite_run` correctly refuses to let me choose an environment and tells me to check `list_suites`. But if `list_suites` shows one "orders" suite on QA and one on DEV, nothing tells me how to be sure which the user means, and if there is *only* a QA one, nothing states the remedy (create/import a second suite against a DEV connection). I'd probably run the QA suite and describe it as "the orders suite," which is the exact confusion the caveat was written to prevent. **Fix: one clause pointing at `import_suite` + `update_suite` as the way to get a DEV equivalent.**
+
+**B5 — #4, name→id resolution is unspecified.** `get_asset` needs an id; `list_assets` advertises no name filter and is alphabetical-only. For a large workspace I'd page blindly or guess. Low severity but it will bite on the single most common phrasing ("is the orders table healthy?"), which `get_asset` itself quotes as its example.
+
+**B6 — `list_checks` is textually corrupted, and the corruption sits on a safety caveat.** The description contains a spliced duplicate: *"...and whether its alerts are currently whether its alerts are currently snoozed. A null `alert_snoozed_until` rules out a per-check snooze only — it does **not** mean an alert would have been delivered, which also depends on the suite's snoozed. This is the suite's *definition*..."* The sentence terminates in "the suite's snoozed," and the whole caveat then repeats correctly below. `list_check_versions` has the same class of defect (*"so a check so a check that has never been edited"*). These are real bugs in shipped LLM-facing text — an incoherent sentence is exactly the thing a model skims.
+
+### C. Over-caveating — blunt
+
+You have not overcorrected globally. Most descriptions are proportionate and the caveats are *actionable* (they tell me what to say or which tool to call next), which is the right test. But there are specific overruns, and one structural problem that costs you more than any individual excess.
+
+**C1 — The structural problem: several descriptions lead with caveats and bury what the tool *is*.** `get_check_history`, `get_adf_pipeline_status`, `test_connection` and `trigger_suite_run` all put a bolded warning before, or jammed mid-paragraph around, the "Returns…" sentence. `get_adf_pipeline_status` is the worst — its actual return contract begins mid-sentence *after* two caveat paragraphs (*"...before reporting an all-clear. Returns the most recent ADF / Airflow / dbt pipeline runs —"*). Selection is a first-impression operation over 46 descriptions; caveats-first pushes tool identity down the page and makes selection harder while making the caveat no more likely to be read. **Invariant: one-line summary → what it returns → caveats. Always.**
+
+**C2 — `get_notification_config` has a troubleshooting runbook where its description should be.** The four-numbered-answers block ("Why did nobody get alerted?") is roughly half the text and three of its four items are about *other* tools. It's genuinely good content and I'd want it — but it belongs in a prompt/resource, not in a tool description that is resident in context on every single request. This is the one most likely to be skimmed past, because it visually reads as prose rather than as a constraint on this tool's output.
+
+**C3 — `get_incident`'s null-taxonomy is over-engineered, and `profile_diff` is dead weight.** Documenting that a field is *always* null, as a placeholder, in an LLM-facing description, is pure cost: either remove the field or stop describing it. The three-way distinction between `upstream_pipeline_run` (null is normal), `metric_trend`/`sibling_checks` (`[]` is normal, null is a failure) and `profile_diff` (always null) asks a model to hold a per-field null semantics table — I'd get this wrong under load despite having read it.
+
+**C4 — `snooze_check` ends with design rationale written for a code reviewer.** *"One tool rather than a snooze/unsnooze pair: it is one piece of state with two values, and splitting it would ask an LLM to pick between two names for the same field."* The client-actionable content is one clause: **omit `hours` to un-mute; there is no separate unsnooze tool.** Cut the justification. Same critique, milder, applies to the ADR numbers scattered through `get_asset`/`list_assets` (`ADR 0037`) and `#318`/`#1186` issue references in `get_run_status`/`update_trigger_binding` — an MCP client cannot look those up, so they are noise at the point of use.
+
+**C5 — `create_trigger_binding` has three stacked warnings and reads as a procedure.** Env-mismatch, then empty-warnings-≠-sound, then already-exists-≠-works, each with its own follow-up tool call. Each is individually justified (the disabled-binding collision is a genuinely good catch), but together they turn a create tool into a checklist. Selection isn't impaired — nothing else competes for "wire a pipeline to a suite" — but this is where skim risk is highest, and the *last* paragraph is the one carrying the silent-failure case.
+
+**C6 — the inverse failure: `create_check` is under-caveated and hard to parse.** It's a dense parameter reference with essentially no honesty fields, and the `anomaly` clause is a ~90-word run-on carrying six parameters. Given `dryrun_check` next door, `create_check` should at minimum inherit the sampling disclosure (see B3) and say what happens if the config is valid-but-wrong. It is the odd one out in a catalog that otherwise takes this seriously.
+
+**C7 — aggregate size.** ~62KB of tool JSON, ~1.3KB average per description, for 46 tools. That's on the order of 15k tokens resident before the user says anything. The content is largely earning its place, but C2/C3/C4 alone are several hundred wasted tokens *and* the highest skim risk. Trim those and you lose nothing.
+
+**Bottom line:** the disclosures changed my answer on 12 of 15 requests, and in at least four cases (#5, #7, #12, #15) prevented a confident, plausible, wrong answer. That is the feature working. The failure modes left are not too many caveats — they are **ordering** (caveats before identity), **placement** (a runbook in a tool description), **inheritance gaps** (`dryrun_check`/`create_check` don't carry `profile_column`'s sampling caveat), and **two garbled sentences shipped into `list_checks` and `list_check_versions`**.</result>
+<usage><subagent_tokens>101770</subagent_tokens><tool_uses>5</tool_uses><duration_ms>174032</duration_ms></usage>
+</task-notification>
+
+---
+
+CI completed for #1440
+
+---
+
+CI completed for #1444
+
+---
+
+<task-notification>
+<task-id>b37y3d7bs</task-id>
+<summary>Monitor event: "Azure + AWS deploy job outcomes"</summary>
+<event>Deploy (AWS) :: Frontend — build image, deploy to ECS = success
+Deploy (AWS) :: RUN COMPLETE = success</event>
+</task-notification>
+
+---
+
+sync to main. remove all the temp files. prune all the un-necessary remote and local branches.
+
+---
+
+<task-notification>
+<task-id>bsch5jb9f</task-id>
+<summary>Monitor event: "Azure + AWS redeploy on f17e05a3"</summary>
+<event>Deploy :: Backend — build, migrate, deploy (API + worker) = success</event>
+</task-notification>
