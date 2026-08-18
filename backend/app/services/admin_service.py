@@ -37,7 +37,7 @@ from backend.app.db.models import (
     Suite,
     User,
 )
-from backend.app.services import otp_service
+from backend.app.services import audit_service, otp_service
 from backend.app.services.suite_authz import OWNER
 
 log = get_logger(__name__)
@@ -603,17 +603,44 @@ def set_user_role(
         )
 
     target.role = new_role
+    # The durable record (ADR 0041 phase 1, #1318). `before` is built from the
+    # LOCKED read's `previous`, not by snapshotting `target` a second time — the
+    # row's `role` has just been reassigned in memory, so a fresh snapshot would
+    # record the new value as the old one. This is the same reason the log line
+    # below uses `previous` rather than re-reading.
+    #
+    # ADR 0041 §2.5 lists this event as "prospective — ADR 0033 unbuilt", which
+    # was true when the ADR was written and is not now: `users.role` shipped with
+    # #740-#742. ADR 0033 §7 names a durable record of role changes as a
+    # requirement, and the ADR's own precondition was that the substrate precede
+    # the slice — it did not, so the event is wired here instead.
+    #
+    # Same-transaction and BEFORE the commit, unlike the log line: the two have
+    # deliberately opposite failure modes. A failed audit write must roll the role
+    # change back (fail-closed — a privilege change that is not recorded must not
+    # happen), whereas the log line must never claim a change that rolled back,
+    # which is why it stays after.
+    audit_service.record(
+        session,
+        action="user.role_change",
+        entity_type="user",
+        entity_id=target.id,
+        actor=actor,
+        before={"id": str(target.id), "role": previous},
+        after={"id": str(target.id), "role": new_role},
+    )
     session.commit()
     session.refresh(target)
 
-    # The durable audit *table* is ADR 0020's deferred cross-entity change log
-    # (#310). Until then this line is the whole guarantee that a role change is
-    # never silent — so it carries actor, target, and both ends of the change,
-    # and is emitted AFTER the commit so it can never claim a change that rolled
-    # back. `previous` comes from the locked read, so it cannot report a value
-    # that was already stale when the change was decided. Emails are omitted: ids
-    # correlate, and `_PII_KEYS` redacting an `email` key is a backstop, not a
-    # reason to hand one over.
+    # This line is no longer the whole guarantee that a role change is never
+    # silent — `audit_events` is — but it stays: it is what a live operator
+    # watching logs sees, and it is `request_id`-correlated with the audit row.
+    # It carries actor, target and both ends of the change, and is emitted AFTER
+    # the commit so it can never claim a change that rolled back. `previous` comes
+    # from the locked read, so it cannot report a value that was already stale
+    # when the change was decided. Emails are omitted: ids correlate, and
+    # `_PII_KEYS` redacting an `email` key is a backstop, not a reason to hand one
+    # over.
     log.info(
         "workspace_role_changed",
         actor_id=str(actor.id),

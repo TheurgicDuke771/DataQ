@@ -41,7 +41,12 @@ from typing import Any, Final
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import _scrub_secret_strings, request_id_var
-from backend.app.db.models import AUDIT_ACTION_CLASSES, AUDIT_ACTOR_KINDS, AuditEvent
+from backend.app.db.models import (
+    AUDIT_ACTION_CLASSES,
+    AUDIT_ACTOR_KINDS,
+    AuditEvent,
+    User,
+)
 
 # ── Redaction ─────────────────────────────────────────────────────────────────
 #
@@ -363,6 +368,15 @@ def snapshot(entity_type: str, entity: Any) -> dict[str, Any] | None:
     return _cap_payload(_scrub_value(_jsonable(raw)))
 
 
+def _resolve_actor(session: Session, actor: Any | None) -> Any | None:
+    """Normalize the actor argument to a `User` row (or `None`)."""
+    if actor is None:
+        return None
+    if isinstance(actor, uuid.UUID):
+        return session.get(User, actor)
+    return actor
+
+
 def _sanitize_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     """Scrub, JSON-coerce and cap a payload, whoever built it. See `record`."""
     if payload is None:
@@ -391,7 +405,14 @@ def record(
     and never swallows an exception — a broken audit write is *supposed* to fail
     the mutation.
 
-    `actor` is a `User` row (or `None` for a webhook principal, which has no user).
+    `actor` is a `User` row, a bare `actor_id` UUID, or `None` for a webhook
+    principal (which has no user). The UUID form exists because the service layer
+    threads `actor_id: uuid.UUID`, not the row — accepting only the row would mean
+    changing thirty service signatures to satisfy the audit seam, which is the
+    tail wagging the dog. Resolving it costs nothing in practice: the
+    authentication dependency has already loaded that `User` into the same
+    session, so `session.get` is an identity-map hit rather than a query.
+
     `actor_label` is denormalized here, at write time, so the attribution survives
     both the `ON DELETE SET NULL` and any later rename.
     """
@@ -410,11 +431,24 @@ def record(
             f"actor_kind={actor_kind!r} is not one of {AUDIT_ACTOR_KINDS} — "
             "there is deliberately no 'system' kind (ADR 0041 §2.1)"
         )
+    actor_row = _resolve_actor(session, actor)
     label: str | None = None
     actor_id: uuid.UUID | None = None
-    if actor is not None:
-        actor_id = getattr(actor, "id", None)
-        label = getattr(actor, "display_name", None) or getattr(actor, "email", None)
+    if actor_row is not None:
+        actor_id = getattr(actor_row, "id", None)
+        label = getattr(actor_row, "display_name", None) or getattr(actor_row, "email", None)
+    elif isinstance(actor, uuid.UUID):
+        # The id was given but the row could not be loaded (a user deleted between
+        # the request and this write). Attribution is preserved in `actor_label`,
+        # NOT in `actor_user_id`.
+        #
+        # An earlier version put the id in the FK column "so the event still says
+        # WHO". That inverted the intent: the column is a real foreign key, so a
+        # user id with no row fails the INSERT — and because several callers wrap
+        # their commit in `except IntegrityError` to map a duplicate to 409, the
+        # failure surfaced as a bogus conflict on an unrelated resource. The
+        # graceful-degradation branch was the one that broke the request.
+        label = f"<unresolved user {actor}>"
     # The module's three guarantees — allow-list, redaction, cap — must hold on
     # EVERY payload, not only the ones `snapshot` built. A slice-2 caller
     # hand-building a `before`/`after` dict (a role change, a share grant) would
@@ -449,8 +483,22 @@ def record_entity_change(
     actor: Any | None,
     before: Mapping[str, Any] | None = None,
     actor_kind: str = "user",
-) -> AuditEvent:
+    if_changed: bool = False,
+) -> AuditEvent | None:
     """`record`, with the `after` payload built from `entity` via the allow-list.
+
+    ``if_changed`` skips the write when the allow-listed payload is identical
+    before and after, returning ``None``. Use it on partial-update paths, where a
+    PATCH that sets a field to its current value — or names no fields at all — is
+    a real request that changed nothing. Recording those produces a log whose
+    entries mostly did not happen, and a reader learns to skim it; `check_service`
+    already applies the same rule via `session.is_modified`, so this makes the
+    other update paths consistent with it rather than each inventing an answer.
+
+    It is deliberately opt-in: a create and a delete have nothing to compare, and
+    an entity whose audited payload is unchanged while an UNAUDITED field moved
+    (`schedules.next_run_at`, say) should still be skipped — that is a config
+    non-event by the allow-list's own definition of config.
 
     The common shape: the caller captures `before = snapshot(...)` ahead of the
     mutation and hands the mutated entity here. For a delete, pass the pre-delete
@@ -477,6 +525,10 @@ def record_entity_change(
     if entity_id is None and before is not None:
         raw_id = before.get("id")
         entity_id = uuid.UUID(str(raw_id)) if raw_id is not None else None
+    after = snapshot(entity_type, entity)
+    before_payload = dict(before) if before is not None else None
+    if if_changed and before_payload is not None and before_payload == after:
+        return None
     return record(
         session,
         action=action,
@@ -484,8 +536,8 @@ def record_entity_change(
         entity_id=entity_id,
         actor=actor,
         actor_kind=actor_kind,
-        before=dict(before) if before is not None else None,
-        after=snapshot(entity_type, entity),
+        before=before_payload,
+        after=after,
     )
 
 

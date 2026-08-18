@@ -31,6 +31,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.db.models import COMPARISON_KIND, ORCHESTRATION_PROVIDERS, Check, Connection, Suite
+from backend.app.services import audit_service
 from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import (
     record_check_version,
@@ -249,6 +250,17 @@ def import_suite(
     session.flush()  # assign check ids so each can carry a v1 snapshot (#280)
     for check in suite.checks:
         record_check_version(session, check, actor_id=created_by)
+    # ONE event for the import, not one per check. An import is a single
+    # deliberate act, and N per-check creates would drown the act that actually
+    # happened — `check_versions` already carries the per-check detail, and it is
+    # the audit log's job to record the act, not to mirror the writes.
+    audit_service.record_entity_change(
+        session,
+        action="suite.import",
+        entity_type="suite",
+        entity=suite,
+        actor=created_by,
+    )
     session.commit()
     session.refresh(suite)
     log.info(

@@ -12,6 +12,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import User
+from backend.app.services import audit_service
 
 # A short query would match most of the directory; require enough to be a real
 # prefix/substring before we run the scan.
@@ -47,8 +48,17 @@ def update_display_name(session: Session, user: User, display_name: str) -> User
     NULL and "overridden" — the one combination this module never produces
     on purpose.
     """
+    audit_before = audit_service.snapshot("user", user)
     user.display_name = display_name
     user.display_name_override = True
+    audit_service.record_entity_change(
+        session,
+        action="user.profile_update",
+        entity_type="user",
+        entity=user,
+        actor=user,
+        before=audit_before,
+    )
     session.commit()
     session.refresh(user)
     return user

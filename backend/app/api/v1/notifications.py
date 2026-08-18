@@ -109,6 +109,7 @@ def put_notifications(
         slack_webhook=payload.slack_webhook,
         email_recipients=payload.email_recipients,
         secret_store=secret_store,
+        actor_id=current_user.id,
     )
     return _read(config)
 
@@ -125,4 +126,4 @@ def delete_notifications(
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> None:
     require_permission(db, suite_id, current_user.id, minimum="edit")
-    svc.delete_config(db, suite_id, secret_store=secret_store)
+    svc.delete_config(db, suite_id, secret_store=secret_store, actor_id=current_user.id)

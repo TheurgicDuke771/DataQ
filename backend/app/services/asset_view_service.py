@@ -54,6 +54,7 @@ from backend.app.db.models import (
     worst_severity,
 )
 from backend.app.lineage.edges import lineage_neighbourhood
+from backend.app.services import audit_service
 from backend.app.services.rollup import (
     AGGREGATABLE_RUN_STATUSES,
     evaluated_total,
@@ -843,6 +844,7 @@ def update_asset_metadata(
     description: str | None = None,
     set_owner: bool = False,
     set_description: bool = False,
+    actor_id: uuid.UUID | None = None,
 ) -> Asset:
     """Set an asset's owner and/or description (workspace-Admin-only; gated at API).
 
@@ -855,6 +857,7 @@ def update_asset_metadata(
     asset = session.get(Asset, asset_id)
     if asset is None:
         raise AssetNotFoundError("asset not found", detail={"asset_id": str(asset_id)})
+    audit_before = audit_service.snapshot("asset", asset)
     if set_owner:
         if owner_user_id is not None and session.get(User, owner_user_id) is None:
             raise AssetOwnerInvalidError(
@@ -863,6 +866,17 @@ def update_asset_metadata(
         asset.owner_user_id = owner_user_id
     if set_description:
         asset.description = description
+    # Metadata mutation only (ADR 0041 §2.5). The inventory-sync column family and
+    # `first_seen`/`last_seen` are machine writes and never reach a payload.
+    audit_service.record_entity_change(
+        session,
+        action="asset.update",
+        entity_type="asset",
+        entity=asset,
+        actor=actor_id,
+        before=audit_before,
+        if_changed=True,
+    )
     session.commit()
     session.refresh(asset)
     log.info("asset_metadata_updated", asset_id=str(asset.id))

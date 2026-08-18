@@ -220,6 +220,7 @@ def update_suite(
         name=payload.name,
         description=payload.description,
         target=new_target,
+        actor_id=current_user.id,
     )
     # A target-setting update on a policy-less suite gets the same best-effort
     # auto-classify as create (#634) — e.g. a suite created target-less, now given
@@ -252,7 +253,7 @@ def delete_suite(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     require_permission(db, suite_id, current_user.id, minimum="admin")
-    svc.delete_suite(db, suite_id)
+    svc.delete_suite(db, suite_id, actor_id=current_user.id)
 
 
 # ───────────────────────── manual run trigger ──────────────────────
@@ -658,6 +659,7 @@ def set_column_policy(
         suite_id,
         identifier_column=payload.identifier_column,
         pii_columns=payload.pii_columns,
+        actor_id=current_user.id,
     )
     return ColumnPolicyRead.of(suite.column_policy)
 

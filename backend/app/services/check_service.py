@@ -57,6 +57,7 @@ from backend.app.db.models import (
     Run,
     Suite,
 )
+from backend.app.services import audit_service
 from backend.app.services.check_dimension import is_valid_dimension, resolve_dimension
 from backend.app.services.custom_sql import (
     SQL_QUERYABLE_TYPES,
@@ -766,6 +767,13 @@ def create_check(
     session.add(check)
     session.flush()  # assign check.id so the v1 snapshot can reference it
     record_check_version(session, check, actor_id=actor_id)
+    audit_service.record_entity_change(
+        session,
+        action="check.create",
+        entity_type="check",
+        entity=check,
+        actor=actor_id,
+    )
     session.commit()
     session.refresh(check)
     log.info("check_created", check_id=str(check.id), suite_id=str(suite_id))
@@ -852,7 +860,13 @@ def _validate_kind_specific_config(
 
 
 def _record_version_and_commit(
-    session: Session, check: Check, check_id: uuid.UUID, actor_id: uuid.UUID | None
+    session: Session,
+    check: Check,
+    check_id: uuid.UUID,
+    actor_id: uuid.UUID | None,
+    *,
+    audit_action: str = "check.update",
+    audit_before: dict[str, Any] | None = None,
 ) -> Check:
     """Snapshot-if-modified + commit + the concurrent-edit-race → 409 mapping
     shared by `update_check` and `restore_check_version` (#283): both are a
@@ -864,9 +878,25 @@ def _record_version_and_commit(
     # would fill the history drawer with noise and defeat "see previous config".
     # SQLAlchemy reports net changes, so setting a field to its existing value
     # isn't dirty.
-    if session.is_modified(check):
+    modified = session.is_modified(check)
+    if modified:
         record_check_version(session, check, actor_id=actor_id)
     try:
+        # Audited on the same condition as the version snapshot, and for the same
+        # reason: a no-op write (identical fields, or restoring the already-current
+        # version) changed nothing, and an audit log that records non-events is one
+        # a reader learns to skim. The two mechanisms stay distinct in what they
+        # SURVIVE, not in when they fire — `check_versions` cascades away with the
+        # check, this does not.
+        if modified:
+            audit_service.record_entity_change(
+                session,
+                action=audit_action,
+                entity_type="check",
+                entity=check,
+                actor=actor_id,
+                before=audit_before,
+            )
         session.commit()
     except IntegrityError as exc:
         # Roll back the poisoned tx, then map ONLY the version-snapshot collision to
@@ -912,6 +942,8 @@ def update_check(
     cleared back to unclassified.
     """
     check = get_check(session, suite_id, check_id)
+    # Before any field below is mutated.
+    audit_before = audit_service.snapshot("check", check)
     validate_lengths(name=name, expectation_type=expectation_type)
     validate_dimension(dimension)
     if source_connection_id is not None and check.kind != COMPARISON_KIND:
@@ -975,14 +1007,39 @@ def update_check(
         check.critical_threshold = critical_threshold
     if dimension is not None:
         check.dimension = dimension
-    check = _record_version_and_commit(session, check, check_id, actor_id)
+    check = _record_version_and_commit(
+        session, check, check_id, actor_id, audit_action="check.update", audit_before=audit_before
+    )
     log.info("check_updated", check_id=str(check.id))
     return check
 
 
-def delete_check(session: Session, suite_id: uuid.UUID, check_id: uuid.UUID) -> None:
+def delete_check(
+    session: Session,
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    *,
+    actor_id: uuid.UUID | None = None,
+) -> None:
+    """Delete a check.
+
+    The cascade is wide and irreversible: `results.check_id`, `check_versions` and
+    `Incident.check_id` are all `ondelete=CASCADE`, so this erases the check's
+    result history, its config history and any open incident with it. The audit
+    event is therefore the only record that survives the act — which is exactly
+    what `audit_events.entity_id` carrying no foreign key is for.
+    """
     check = get_check(session, suite_id, check_id)
+    audit_before = audit_service.snapshot("check", check)
     session.delete(check)
+    audit_service.record_entity_change(
+        session,
+        action="check.delete",
+        entity_type="check",
+        entity=None,
+        actor=actor_id,
+        before=audit_before,
+    )
     session.commit()
     log.info("check_deleted", check_id=str(check_id))
 
@@ -994,6 +1051,7 @@ def snooze_check(
     *,
     hours: float,
     now: datetime | None = None,
+    actor_id: uuid.UUID | None = None,
 ) -> Check:
     """Mute a check's alerts until ``hours`` from now (alert suppression).
 
@@ -1002,17 +1060,46 @@ def snooze_check(
     history shouldn't churn on it). 404 / cross-suite guard via ``get_check``.
     """
     check = get_check(session, suite_id, check_id)
+    audit_before = audit_service.snapshot("check", check)
     check.alert_snoozed_until = (now or datetime.now(UTC)) + timedelta(hours=hours)
+    # Audited even though it records no `check_versions` snapshot. The two
+    # mechanisms answer different questions: a snooze is not CONFIG history (the
+    # drawer should not churn on it), but it IS a deliberate act that suppresses
+    # alerting on a failing check — and "why was nobody told?" is among the first
+    # questions an incident review asks.
+    audit_service.record_entity_change(
+        session,
+        action="check.snooze",
+        entity_type="check",
+        entity=check,
+        actor=actor_id,
+        before=audit_before,
+    )
     session.commit()
     session.refresh(check)
     log.info("check_snoozed", check_id=str(check.id), hours=hours)
     return check
 
 
-def clear_check_snooze(session: Session, suite_id: uuid.UUID, check_id: uuid.UUID) -> Check:
+def clear_check_snooze(
+    session: Session,
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    *,
+    actor_id: uuid.UUID | None = None,
+) -> Check:
     """Clear a check's alert snooze (re-enable alerts immediately). Idempotent."""
     check = get_check(session, suite_id, check_id)
+    audit_before = audit_service.snapshot("check", check)
     check.alert_snoozed_until = None
+    audit_service.record_entity_change(
+        session,
+        action="check.unsnooze",
+        entity_type="check",
+        entity=check,
+        actor=actor_id,
+        before=audit_before,
+    )
     session.commit()
     session.refresh(check)
     log.info("check_snooze_cleared", check_id=str(check.id))
@@ -1074,6 +1161,7 @@ def restore_check_version(
     the snapshot — restoring the already-current version is a no-op.
     """
     check = get_check(session, suite_id, check_id)  # 404 / cross-suite guard
+    audit_before = audit_service.snapshot("check", check)
     version = session.scalar(
         select(CheckVersion).where(
             CheckVersion.check_id == check_id, CheckVersion.version_no == version_no
@@ -1122,7 +1210,9 @@ def restore_check_version(
     check.critical_threshold = version.critical_threshold
     check.dimension = version.dimension
 
-    check = _record_version_and_commit(session, check, check_id, actor_id)
+    check = _record_version_and_commit(
+        session, check, check_id, actor_id, audit_action="check.restore", audit_before=audit_before
+    )
     log.info("check_restored", check_id=str(check.id), version_no=version_no)
     return check
 

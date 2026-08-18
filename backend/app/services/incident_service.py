@@ -57,7 +57,7 @@ from backend.app.db.models import (
     Suite,
     SuiteNotification,
 )
-from backend.app.services import suite_service
+from backend.app.services import audit_service, suite_service
 from backend.app.services.incident_evidence import build_evidence
 from backend.app.services.run_service import list_results
 from backend.app.services.suite_authz import SuiteForbiddenError, effective_permission
@@ -283,11 +283,20 @@ def acknowledge_incident(
         raise IncidentNotActiveError(
             "cannot acknowledge a resolved incident", detail={"incident_id": str(incident.id)}
         )
+    audit_before = audit_service.snapshot("incident", incident)
     incident.status = "acknowledged"
     incident.acknowledged_at = _now()
     incident.acknowledged_by = user_id
     if note is not None:
         incident.acknowledge_note = note
+    audit_service.record_entity_change(
+        session,
+        action="incident.acknowledge",
+        entity_type="incident",
+        entity=incident,
+        actor=user_id,
+        before=audit_before,
+    )
     session.commit()
     session.refresh(incident)
     log.info("incident_acknowledged", incident_id=str(incident.id), user_id=str(user_id))
@@ -311,12 +320,24 @@ def resolve_incident(
         raise IncidentNotActiveError(
             "incident is already resolved", detail={"incident_id": str(incident.id)}
         )
+    audit_before = audit_service.snapshot("incident", incident)
     incident.status = "resolved"
     incident.resolved_by = "user"
     incident.resolved_by_user_id = user_id
     incident.resolved_at = _now()
     if note is not None:
         incident.resolution_note = note
+    # Only the MANUAL resolve is audited. The auto-resolve path (a passing run
+    # closing an incident) is a machine write and is excluded by ADR 0041 §2.1 —
+    # which is also why `resolved_by` distinguishes the two.
+    audit_service.record_entity_change(
+        session,
+        action="incident.resolve",
+        entity_type="incident",
+        entity=incident,
+        actor=user_id,
+        before=audit_before,
+    )
     session.commit()
     session.refresh(incident)
     log.info("incident_resolved", incident_id=str(incident.id), user_id=str(user_id))

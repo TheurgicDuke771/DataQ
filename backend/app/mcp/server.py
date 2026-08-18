@@ -1740,7 +1740,7 @@ def delete_check(suite_id: str, check_id: str) -> dict[str, Any]:
         require_permission(session, sid, user.id, minimum="edit")
         # Read the name BEFORE deleting, so the confirmation can say what went.
         name = check_service.get_check(session, sid, cid).name
-        check_service.delete_check(session, sid, cid)
+        check_service.delete_check(session, sid, cid, actor_id=user.id)
         return {"deleted": True, "check_id": check_id, "name": name}
 
 
@@ -1781,9 +1781,9 @@ def snooze_check(
     with _ctx() as (session, user), _service_errors():
         require_permission(session, sid, user.id, minimum="edit")
         check = (
-            check_service.snooze_check(session, sid, cid, hours=hours)
+            check_service.snooze_check(session, sid, cid, hours=hours, actor_id=user.id)
             if hours is not None
-            else check_service.clear_check_snooze(session, sid, cid)
+            else check_service.clear_check_snooze(session, sid, cid, actor_id=user.id)
         )
         return {
             "check_id": check_id,
@@ -2430,7 +2430,7 @@ def update_suite(
         had_policy = suite.column_policy is not None
         old_target = dict(suite.target) if suite.target else None
         suite = suite_service.update_suite(
-            session, sid, name=name, description=description, target=parsed
+            session, sid, name=name, description=description, target=parsed, actor_id=user.id
         )
         # Parity with the REST route (#634): a target-setting update on a
         # policy-less suite gets the same best-effort auto-classify as create.
@@ -2554,7 +2554,11 @@ def set_column_policy(
     with _ctx() as (session, user), _service_errors():
         require_permission(session, sid, user.id, minimum="edit")
         suite = suite_service.set_column_policy(
-            session, sid, identifier_column=identifier_column, pii_columns=pii_columns
+            session,
+            sid,
+            identifier_column=identifier_column,
+            pii_columns=pii_columns,
+            actor_id=user.id,
         )
         policy = suite.column_policy or {}
         return {

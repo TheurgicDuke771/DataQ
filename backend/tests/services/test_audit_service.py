@@ -13,14 +13,16 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, cast
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import _PII_KEYS
-from backend.app.db.models import AUDIT_ACTOR_KINDS, Check, Connection, Suite, User
+from backend.app.db.models import AUDIT_ACTOR_KINDS, AuditEvent, Check, Connection, Suite, User
 from backend.app.services import audit_service
 
 
@@ -511,3 +513,118 @@ def test_a_payload_whose_single_field_blows_the_budget_reduces_to_its_marker() -
     assert list(capped) == [audit_service._TRUNCATION_KEY]
     assert capped[audit_service._TRUNCATION_KEY]["dropped_fields"] == ["sql"]
     assert audit_service._encoded_size(capped) <= audit_service.MAX_PAYLOAD_BYTES
+
+
+# ── Review findings (PR #1454) ────────────────────────────────────────────────
+
+
+def test_an_unresolvable_actor_id_does_not_write_a_dangling_foreign_key(
+    db_session: Any,
+) -> None:
+    """`actor_user_id` is a real FK, so an id with no row fails the INSERT.
+
+    The first version of the fallback put the id in that column "so the event
+    still says WHO" — which inverted the intent: the branch meant to degrade
+    gracefully was the one that broke the request. Worse, several callers wrap
+    their commit in `except IntegrityError` to map a duplicate to a 409, so the
+    failure surfaced as a bogus conflict on an unrelated resource.
+
+    Attribution is preserved in `actor_label` instead, which is exactly the column
+    that exists to survive an actor the FK cannot point at.
+    """
+    ghost = uuid.uuid4()
+    audit_service.record(
+        db_session,
+        action="suite.delete",
+        entity_type="suite",
+        entity_id=uuid.uuid4(),
+        actor=ghost,
+    )
+    db_session.flush()  # the INSERT the FK would reject
+
+    event = db_session.scalars(
+        select(AuditEvent).where(AuditEvent.action == "suite.delete")
+    ).first()
+    assert event is not None
+    assert event.actor_user_id is None
+    assert str(ghost) in (event.actor_label or "")
+
+
+def test_if_changed_skips_a_no_op_update() -> None:
+    """A PATCH that sets a field to its current value — or names no fields at all
+    — is a real request that changed nothing.
+
+    Recording those produces a log whose entries mostly did not happen, and a
+    reader learns to skim it. `check_service` already applies this rule via
+    `session.is_modified`; `if_changed` is how the other partial-update paths
+    reach the same answer instead of each inventing one.
+    """
+    suite = Suite(id=uuid.uuid4(), name="orders")
+    unchanged = audit_service.snapshot("suite", suite)
+
+    session = _FakeSession()
+    result = audit_service.record_entity_change(
+        _as_session(session),
+        action="suite.update",
+        entity_type="suite",
+        entity=suite,
+        actor=None,
+        actor_kind="webhook",
+        before=unchanged,
+        if_changed=True,
+    )
+    assert result is None
+    assert session.added == []
+
+
+def test_if_changed_still_writes_when_something_actually_changed() -> None:
+    """The other half — the guard must not be a mute button.
+
+    Asserted separately because a broken `if_changed` that skipped everything
+    would pass the test above while silently emptying the audit log, and that is
+    the failure mode a compliance control cannot have.
+    """
+    suite = Suite(id=uuid.uuid4(), name="orders")
+    before = audit_service.snapshot("suite", suite)
+    suite.name = "orders-renamed"
+
+    session = _FakeSession()
+    result = audit_service.record_entity_change(
+        _as_session(session),
+        action="suite.update",
+        entity_type="suite",
+        entity=suite,
+        actor=None,
+        actor_kind="webhook",
+        before=before,
+        if_changed=True,
+    )
+    assert result is not None
+    assert session.added[0].after["name"] == "orders-renamed"
+
+
+def test_if_changed_ignores_a_change_to_an_UNAUDITED_field() -> None:
+    """The comparison is over the allow-listed payload, not the row.
+
+    A field nobody declared as config moving is a config non-event by the
+    allow-list's own definition — `schedules.next_run_at` advancing, say. If the
+    guard compared whole rows instead, every such tick would mint an event whose
+    `before` and `after` looked identical to a reader, which is the most confusing
+    possible entry.
+    """
+    suite = Suite(id=uuid.uuid4(), name="orders")
+    before = audit_service.snapshot("suite", suite)
+    suite.updated_at = datetime(2026, 8, 17, tzinfo=UTC)  # not in _SUITE_FIELDS
+
+    session = _FakeSession()
+    result = audit_service.record_entity_change(
+        _as_session(session),
+        action="suite.update",
+        entity_type="suite",
+        entity=suite,
+        actor=None,
+        actor_kind="webhook",
+        before=before,
+        if_changed=True,
+    )
+    assert result is None

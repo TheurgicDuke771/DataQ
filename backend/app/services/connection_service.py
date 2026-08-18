@@ -44,6 +44,7 @@ from backend.app.db.models import (
     Run,
     Suite,
 )
+from backend.app.services import audit_service
 from backend.app.services.asset_service import resolve_and_upsert_asset
 from backend.app.services.suite_service import accessible_suite_ids
 
@@ -585,6 +586,17 @@ def create_connection(
             _write_extra_secret(conn, catalog_secret, secret_store, field="catalog")
         # v1 snapshot — atomic with the insert (same commit).
         record_connection_version(session, conn, actor_id=created_by)
+        # And the audit event, also same-commit (ADR 0041 §2.1). The two are not
+        # redundant: the version table is the product's history drawer and
+        # cascades away with the connection; the audit event outlives it and is
+        # the only thing that can record the DELETE.
+        audit_service.record_entity_change(
+            session,
+            action="connection.create",
+            entity_type="connection",
+            entity=conn,
+            actor=created_by,
+        )
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -803,6 +815,10 @@ def update_connection(
     # Capture before commit: a unique violation rolls back and expires the
     # instance, so read the (immutable) type/env now for the conflict message.
     conn_type, conn_env = conn.type, conn.env
+    # Same reasoning for the audit payload, and it must be taken before any field
+    # below is mutated — a snapshot read afterwards would record the new state as
+    # the old one, which is worse than no `before` at all.
+    audit_before = audit_service.snapshot("connection", conn)
 
     if config is not None:
         _validated_config(conn.type, config)
@@ -906,6 +922,18 @@ def update_connection(
         # rather than at commit, and must map to the same conflict error.
         if versioned_change:
             record_connection_version(session, conn, actor_id=actor_id)
+        # Audited on EVERY update, including a secret-only rotation that records
+        # no version. That asymmetry is the point: `versioned_change` is about
+        # CONFIG history, and a credential rotation is precisely the act ADR 0020
+        # shipped with no record at all.
+        audit_service.record_entity_change(
+            session,
+            action="connection.update",
+            entity_type="connection",
+            entity=conn,
+            actor=actor_id,
+            before=audit_before,
+        )
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -950,6 +978,7 @@ def reauth_connection(
     *,
     secret: str,
     secret_store: SecretStore,
+    actor_id: uuid.UUID | None = None,
 ) -> None:
     """Rotate an existing connection's credential and verify it, in one step.
 
@@ -965,6 +994,7 @@ def reauth_connection(
     existing credential is left untouched.
     """
     conn = get_connection(session, connection_id)
+    before = audit_service.snapshot("connection", conn)
     secret_ref = conn.secret_ref or connection_secret_ref(
         connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type
     )
@@ -981,6 +1011,25 @@ def reauth_connection(
     # The "fix an expired token" path is exactly where the new expiry matters most:
     # the badge that prompted the rotation must clear on the same request (#838).
     _refresh_credential_expiry(conn, secret)
+    # The event ADR 0020 shipped as a known hole: a credential rotation left no
+    # trace of any kind. It records THAT the credential rotated and WHICH pointer
+    # it now resolves through — never a before/after of the value, which is not in
+    # the database to begin with (`config` holds `*_secret_name` pointers only).
+    #
+    # Recorded here, BEFORE the verify probe, deliberately. The rotation has
+    # already happened at this point — the docstring above says so in as many
+    # words: a failed probe means the freshly supplied credential is bad and the
+    # old one is *already replaced*. Recording only on a successful probe would
+    # leave the most alarming outcome — the credential was changed and does not
+    # work — as the one case with no audit trail.
+    audit_service.record_entity_change(
+        session,
+        action="connection.reauth",
+        entity_type="connection",
+        entity=conn,
+        actor=actor_id,
+        before=before,
+    )
     session.commit()
 
     # Verify the freshly-rotated credential through the same probe as /test;
@@ -1133,8 +1182,21 @@ def delete_connection(
     extra_secret_refs = [
         v for k, v in (conn.config or {}).items() if k.endswith("_secret_name") and v
     ]
+    # Snapshot BEFORE the delete. Once this commits, `connection_versions`
+    # cascades away with the row, so this payload is the ONLY surviving record of
+    # what the connection was — the structural reason `audit_events.entity_id`
+    # carries no foreign key.
+    audit_before = audit_service.snapshot("connection", conn)
     session.delete(conn)
     try:
+        audit_service.record_entity_change(
+            session,
+            action="connection.delete",
+            entity_type="connection",
+            entity=None,
+            actor=actor_id,
+            before=audit_before,
+        )
         session.commit()
     except IntegrityError as exc:
         # TOCTOU backstop: a suite or comparison check created between the

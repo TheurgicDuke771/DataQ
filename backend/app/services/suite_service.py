@@ -27,7 +27,7 @@ from backend.app.datasources.sampling import (
     is_row_count_expectation,
 )
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Share, Suite
-from backend.app.services import run_target
+from backend.app.services import audit_service, run_target
 from backend.app.services.asset_service import resolve_and_upsert_asset
 from backend.app.services.column_classification import is_sensitive
 
@@ -116,6 +116,13 @@ def create_suite(
         asset_id=asset_id,
     )
     session.add(suite)
+    audit_service.record_entity_change(
+        session,
+        action="suite.create",
+        entity_type="suite",
+        entity=suite,
+        actor=created_by,
+    )
     session.commit()
     session.refresh(suite)
     log.info("suite_created", suite_id=str(suite.id), connection_id=str(connection_id))
@@ -188,6 +195,7 @@ def update_suite(
     name: str | None = None,
     description: str | None = None,
     target: dict[str, Any] | None = None,
+    actor_id: uuid.UUID | None = None,
 ) -> Suite:
     """Partial update of name / description / target. `connection_id` is immutable.
 
@@ -197,6 +205,9 @@ def update_suite(
     this path sets/replaces a target but never clears one back to NULL.
     """
     suite = get_suite(session, suite_id)
+    # Before ANY field is mutated — a snapshot taken later would record the new
+    # state as the old one, which is worse than no `before` at all.
+    audit_before = audit_service.snapshot("suite", suite)
     if name is not None:
         suite.name = name
     if description is not None:
@@ -214,6 +225,14 @@ def update_suite(
             # Re-point the suite at the asset its new target resolves to (ADR 0034).
             # Fail-soft: an unresolvable target leaves asset_id NULL, never 500s.
             suite.asset_id = resolve_and_upsert_asset(session, connection, target)
+    audit_service.record_entity_change(
+        session,
+        action="suite.update",
+        entity_type="suite",
+        entity=suite,
+        actor=actor_id,
+        before=audit_before,
+    )
     session.commit()
     session.refresh(suite)
     log.info("suite_updated", suite_id=str(suite.id))
@@ -226,6 +245,8 @@ def set_column_policy(
     *,
     identifier_column: str | None,
     pii_columns: list[str],
+    actor_id: uuid.UUID | None = None,
+    machine_write: bool = False,
 ) -> Suite:
     """Set the suite's failing-sample redaction policy (#415): the shown
     ``identifier_column`` (a non-PII row locator) + the always-masked ``pii_columns``.
@@ -253,16 +274,57 @@ def set_column_policy(
     if identifier_column:
         policy["identifier_column"] = identifier_column
     suite = get_suite(session, suite_id)
+    audit_before = audit_service.snapshot("suite", suite)
     suite.column_policy = policy
+    # Among the highest-value events in the table: this changes WHAT PERSONAL DATA
+    # the product will surface in a failing-row sample. `before`/`after` carry both
+    # policies, so "why did this column start appearing?" is answerable.
+    # `machine_write` is the auto-classify beat task (#634), which derives a policy
+    # for a suite that has none. ADR 0041 §2.1 excludes machine writes from the
+    # audit log, and there is deliberately NO `system` actor_kind — so this path
+    # must record nothing rather than record an unattributable event.
+    #
+    # An explicit flag rather than "no actor_id ⇒ no event": the absence of an
+    # actor is exactly what a forgotten `actor_id=` at a real call site looks
+    # like, so inferring the exclusion from it would silently drop a principal's
+    # act. Here the caller has to say so, and a test pins that the beat path
+    # writes nothing.
+    if not machine_write:
+        audit_service.record_entity_change(
+            session,
+            action="suite.column_policy_update",
+            entity_type="suite",
+            entity=suite,
+            actor=actor_id,
+            before=audit_before,
+        )
     session.commit()
     session.refresh(suite)
     log.info("suite_column_policy_set", suite_id=str(suite.id))
     return suite
 
 
-def delete_suite(session: Session, suite_id: uuid.UUID) -> None:
-    """Delete a suite; its checks cascade (Suite.checks delete-orphan + FK)."""
+def delete_suite(
+    session: Session, suite_id: uuid.UUID, *, actor_id: uuid.UUID | None = None
+) -> None:
+    """Delete a suite; its checks cascade (Suite.checks delete-orphan + FK).
+
+    The most destructive act in the product: the cascade takes every check, run
+    and result the suite ever produced (#540), and ADR 0041 §2.3 rejected
+    soft-delete rather than make it recoverable. What it gets instead is this
+    event — WHAT was destroyed, BY WHOM, WHEN — which is honesty about an
+    irreversible action, not undo, and the ADR does not pretend otherwise.
+    """
     suite = get_suite(session, suite_id)
+    audit_before = audit_service.snapshot("suite", suite)
     session.delete(suite)
+    audit_service.record_entity_change(
+        session,
+        action="suite.delete",
+        entity_type="suite",
+        entity=None,
+        actor=actor_id,
+        before=audit_before,
+    )
     session.commit()
     log.info("suite_deleted", suite_id=str(suite_id))

@@ -27,9 +27,9 @@ from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.datasources.monitors import STATEFUL_MONITOR_KINDS
 from backend.app.db.models import Connection, User
 from backend.app.db.session import get_db
+from backend.app.services import audit_service, monitor_baseline
 from backend.app.services import check_service as svc
 from backend.app.services import dryrun_service as dryrun
-from backend.app.services import monitor_baseline
 from backend.app.services.check_service import CheckConfigInvalidError
 from backend.app.services.suite_authz import require_permission
 
@@ -194,7 +194,7 @@ def delete_check(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     require_permission(db, suite_id, current_user.id, minimum="edit")
-    svc.delete_check(db, suite_id, check_id)
+    svc.delete_check(db, suite_id, check_id, actor_id=current_user.id)
 
 
 # ───────────────────────── schema-drift re-baseline (#592) ─────────
@@ -230,7 +230,25 @@ def rebaseline_check(
             f"only stateful monitor checks hold a baseline; {check.kind!r} does not",
             detail={"kind": check.kind},
         )
-    monitor_baseline.rebaseline(db, check)
+    dropped = monitor_baseline.rebaseline(db, check)
+    # A deliberate act by a principal that discards the learned baseline a
+    # `schema_drift`/`anomaly` monitor decides against — so the next run compares
+    # against the new normal rather than the old one. Nothing else records it, and
+    # "why did this monitor stop alerting?" has a rebaseline as one of its two
+    # answers (the other, a snooze, is audited too).
+    # Only when a baseline actually existed to drop. `rebaseline` is idempotent,
+    # and an event for a request that discarded nothing is the same non-event the
+    # no-op-update guard exists to keep out — worse here, because "the baseline
+    # was reset" is a real explanation for a monitor going quiet, and a reader
+    # would accept a false one.
+    if dropped:
+        audit_service.record_entity_change(
+            db,
+            action="check.rebaseline",
+            entity_type="check",
+            entity=check,
+            actor=current_user.id,
+        )
     db.commit()
     log.info("check_rebaselined", check_id=str(check_id), suite_id=str(suite_id))
 
@@ -256,7 +274,7 @@ def snooze_check(
     db: Annotated[Session, Depends(get_db)],
 ) -> CheckRead:
     require_permission(db, suite_id, current_user.id, minimum="edit")
-    check = svc.snooze_check(db, suite_id, check_id, hours=payload.hours)
+    check = svc.snooze_check(db, suite_id, check_id, hours=payload.hours, actor_id=current_user.id)
     return CheckRead.model_validate(check)
 
 
@@ -272,7 +290,7 @@ def clear_check_snooze(
     db: Annotated[Session, Depends(get_db)],
 ) -> CheckRead:
     require_permission(db, suite_id, current_user.id, minimum="edit")
-    check = svc.clear_check_snooze(db, suite_id, check_id)
+    check = svc.clear_check_snooze(db, suite_id, check_id, actor_id=current_user.id)
     return CheckRead.model_validate(check)
 
 
