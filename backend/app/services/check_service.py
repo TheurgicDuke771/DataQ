@@ -1170,6 +1170,26 @@ def list_check_result_history(
     return rows
 
 
+def count_check_results(session: Session, suite_id: uuid.UUID, check_id: uuid.UUID) -> int:
+    """Total results this check has ever recorded, ignoring any `limit`.
+
+    Exists because `list_check_result_history` is a COUNT-capped page answering
+    TIME-shaped questions ("when did this start failing?"), and inferring
+    truncation from `len(page) == limit` is wrong on the exact-boundary page —
+    the same #925 mistake `/assets` grew `X-Total-Count` to avoid. Without a real
+    total, a complete 30-result history is reported as truncated and the caller
+    is told an onset it can actually see is unknowable.
+    """
+    get_check(session, suite_id, check_id)  # 404 / cross-suite guard, as the list does
+    stmt = (
+        select(func.count())
+        .select_from(Result)
+        .join(Run, Result.run_id == Run.id)
+        .where(Result.check_id == check_id, Run.suite_id == suite_id)
+    )
+    return session.scalar(stmt) or 0
+
+
 @dataclass(frozen=True)
 class CheckBaselinePoint:
     """A stateful monitor's stored baseline row (#594) — the raw payload the

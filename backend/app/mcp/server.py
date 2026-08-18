@@ -807,16 +807,18 @@ def get_check_history(
     cid = _parse_uuid(check_id, field="check_id")
     with _ctx() as (session, user), _service_errors():
         require_permission(session, sid, user.id, minimum="view")
+        total = check_service.count_check_results(session, sid, cid)
         points = check_service.list_check_result_history(session, sid, cid, limit=limit)
         return {
             "suite_id": suite_id,
             "check_id": check_id,
-            # This is a COUNT-capped page answering TIME-shaped questions ("when
-            # did freshness start failing?"). A full page means older results
-            # exist beyond `oldest_in_page`, so the earliest point here is a page
-            # boundary, not an onset — reporting it as the onset is confidently
-            # wrong whenever the failure predates the page (#1442's shape).
-            "truncated": len(points) == limit,
+            # Against a real total, not `len(points) == limit` — that inference
+            # is wrong on the exact-boundary page, the #925 mistake `/assets`
+            # grew `X-Total-Count` to avoid. Getting it wrong here is not
+            # cosmetic: with the docstring below, a COMPLETE history reported as
+            # truncated makes the model refuse to name an onset it can see.
+            "total": total,
+            "truncated": len(points) < total,
             **_page_window([p.created_at for p in points]),
             "points": [
                 {
@@ -1134,9 +1136,13 @@ def list_schedules(
     a cron string against an IANA zone is not.
 
     ``next_run_at`` is a stored value the dispatcher advances when it fires the
-    schedule. **If it is already in the past, the schedule did not fire on time
-    and the dispatcher is not running** — report that, rather than quoting a past
-    time as the next fire. ``last_run_at`` is when the schedule fired, not
+    schedule, and it is reported as ``null`` whenever the schedule is disabled.
+    **On an ENABLED schedule, a value already in the past means it did not fire on
+    time and the dispatcher is not running** — report that rather than quoting a
+    past time as the next fire. (Pausing leaves the stored value untouched, which
+    is why a disabled schedule's is masked rather than shown as overdue.)
+
+    ``last_run_at`` is when the schedule fired, not
     whether the run succeeded (see ``list_runs``).
 
     A disabled schedule still exists and still reads back here — it simply does
@@ -2327,9 +2333,10 @@ def import_suite(
     config, the column redaction policy, and any shares. This is a copy of the
     RULES, not of the automation around them.
 
-    Creates a **new** suite owned by you and visible only to you — it never
-    merges into or overwrites an existing one, so importing twice gives you two
-    suites. The whole document is
+    Creates a **new** suite owned by you, with none of the source suite's shares
+    carried over (workspace admins still see it, as they see every suite). It
+    never merges into or overwrites an existing one, so importing twice gives you
+    two suites. The whole document is
     validated before anything is written, so a bad check means nothing is created
     rather than a half-built suite.
 
@@ -2501,11 +2508,17 @@ def set_column_policy(
     row can still be located. The identifier may not also be listed as PII, and
     may not itself classify as direct PII — either is rejected.
 
-    **This tool can only ever ADD masking.** Leaving a column out of
-    ``pii_columns`` does not make it visible: a datasource-tag floor and a
-    name/value classifier still mask anything they judge sensitive, and
-    unclassified columns default to masked. Never tell a user a column will now
-    be shown as a result of this call.
+    **Do not promise that a column will become visible.** Masking is decided by
+    three layers, and this policy is only the middle one: a datasource governance
+    tag always masks, and an unclassified column defaults to masked. So removing
+    a column from ``pii_columns`` usually does *not* reveal it.
+
+    The one case that does reveal a column is naming it as ``identifier_column``
+    — and only when it does not itself classify as PII (an ``EMAIL`` named as the
+    identifier stays masked). Since this call replaces the whole policy, dropping
+    a column from ``pii_columns`` can re-expose it if it is also the tested
+    column or the identifier. Check the result with ``get_column_policy`` and a
+    real sample rather than asserting either outcome.
 
     **This replaces the whole policy**, it does not add to it: send the complete
     list, and read the current one with ``get_column_policy`` first if you are
@@ -2518,9 +2531,11 @@ def set_column_policy(
     empty list.
 
     What changes is how samples are **displayed**. Masking applies immediately,
-    including to runs that already happened. ``identifier_column`` does **not**
-    apply retroactively: it is used at capture time to choose which locator column
-    to record, so a past run shows whichever identifier was in force when it ran.
+    including to runs that already happened, and so does the identifier's
+    un-masking effect at read time. What is *not* retroactive is which locator
+    column was **captured**: that was chosen when the run executed, so a past run
+    can only ever show an identifier whose column is present in its stored
+    sample.
     Requires edit access.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
@@ -3023,9 +3038,11 @@ def get_near_misses(suite_id: str | None = None) -> dict[str, Any]:
       ``binding_env`` is firing correctly there. Confirm with ``list_runs``
       before telling a user a trigger has never worked.
     - An empty result does **not** prove a binding is firing. Only mismatches
-      observed in roughly the last two days are reported, so a weekly DAG's
-      mismatch ages out of this view entirely; the pipeline may also simply not
-      have run, or the binding may be disabled (check ``enabled`` in
+      observed within the deployment's near-miss window are reported, and that
+      window is returned as ``window_hours`` (48 by default, but configurable —
+      quote the returned value, never a default). A mismatch older than it ages
+      out entirely, so a weekly DAG's may never appear; the pipeline may also
+      simply not have run, or the binding may be disabled (check ``enabled`` in
       ``list_trigger_bindings``).
 
     Optionally narrow to one ``suite_id``. Scoped to suites the caller can

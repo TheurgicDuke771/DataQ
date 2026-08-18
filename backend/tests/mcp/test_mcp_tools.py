@@ -3669,6 +3669,15 @@ def test_get_check_history_flags_a_truncated_page_and_its_window(
     whole = server.get_check_history(str(suite.id), str(check.id), limit=50)
     assert whole["truncated"] is False
 
+    # The exact-boundary page: full, and yet nothing follows it. Inferring
+    # truncation from `len(points) == limit` gets this wrong (the #925 mistake),
+    # and here that is not cosmetic — a COMPLETE history reported as truncated
+    # makes a model refuse to name an onset it can actually see.
+    boundary = server.get_check_history(str(suite.id), str(check.id), limit=3)
+    assert boundary["total"] == 3
+    assert len(boundary["points"]) == 3
+    assert boundary["truncated"] is False
+
 
 def test_list_runs_reports_the_time_window_it_actually_covered(
     db_session: Any, monkeypatch: Any
