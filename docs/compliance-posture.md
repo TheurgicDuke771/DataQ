@@ -47,6 +47,7 @@ only to EU personal data.
 | **Encryption at rest** — Azure platform-managed keys on Postgres / Key Vault / Storage (default) | Azure platform default (not asserted in IaC — see gap G5) | GDPR Art 32 / HIPAA §164.312(a)(2)(iv) |
 | **Access control** — two axes: suite-scoped authz (owned-or-shared) **and** stored workspace roles (Admin / Member / Viewer), OIDC SSO (Azure AD + Cognito validated) | suite authz, `users.role` (ADR 0033), generic OIDC client + `fastapi-azure-auth` | GDPR Art 32 / HIPAA §164.312(a)(1) |
 | **Config-change history** — Type-4 snapshot tables (`check_versions`, `connection_versions`); credentials never snapshotted | ADR 0020 | GDPR Art 5(2) accountability (partial) |
+| **Cross-entity audit log** — append-only `audit_events`: every config mutation by a principal (actor, action, entity, before/after, `request_id`), written **inside the mutation's transaction** so an applied change and its record cannot diverge. Per-entity payload allow-list — no credential, no warehouse data. Workspace-admin read endpoint; own retention clock | ADR [0041](adr/0041-history-audit-strategy.md), #1318 | GDPR Art 5(2)/30 accountability; HIPAA §164.312(b) **partial** — config events only, data *reads* are #431 |
 | **Data residency is deployable** — provider-agnostic seams (ADR 0010); a controller can deploy into their own jurisdiction's region | ADR 0010 / 0013 | GDPR Ch. V transfers |
 | **(Post-v1) LLM transfer minimization** — schema-only, PII-redacted context; local-endpoint option; no key-proxy | [`docs/post-v1-dq-intelligence-notes.md`](post-v1-dq-intelligence-notes.md) | GDPR Ch. V / HIPAA minimum-necessary |
 
@@ -77,12 +78,18 @@ only to EU personal data.
 >   Treat env write-access to the API as equivalent to workspace-admin in your access review,
 >   and keep the allowlist empty in steady state once an in-app Admin exists.
 >
-> **Role changes are audit-*logged*, not yet audit-*tabled*.** Every change emits a structured
-> line carrying actor, target and old→new role, `request_id`-correlated (never silent, and
-> never emitted for a change that was refused or was a no-op). The durable change-event table
-> is ADR [0020](adr/0020-history-and-audit-strategy.md)'s deferred cross-entity audit log
-> (**#310**) — distinct from the G1 *read*-access audit below. If your regime requires a
-> queryable, tamper-evident record of privilege changes, that gap is open.
+> **Role changes are now audit-*tabled*, not only audit-logged (updated 2026-08-17).** Every
+> change writes an `audit_events` row (`user.role_change`, with both the old and the new role)
+> **inside the same transaction as the change**, so a refused or no-op change leaves nothing
+> behind and an applied one cannot go unrecorded. The structured log line is kept alongside it,
+> `request_id`-correlated. Queryable at `GET /api/v1/admin/audit-events`.
+>
+> **Tamper-evidence remains open**, and the distinction matters for an auditor: the table is
+> append-only in the app and carries a `REVOKE UPDATE, DELETE` from the application role, which
+> stops accidental in-app mutation and **nothing stronger** — that role owns the table and can
+> grant the privileges back. Real tamper-evidence needs an external cryptographic anchor and is
+> tracked with **#431**. This entry is distinct from the G1 *read*-access audit below, which is
+> still open.
 
 > **Decided change to the Access-control row — ADR [0027](adr/0027-suite-permission-model-workspace-admin.md) / [#482](https://github.com/TheurgicDuke771/DataQ/issues/482) (build pending).**
 > The suite-permission model is being revised so the **workspace-admin is an implicit
@@ -103,15 +110,40 @@ only to EU personal data.
 Ranked by severity. Tracked in the Backlog milestone: **G1 #431 · G2 #432 · G3 #433 ·
 G4 #434 · G5 #435**.
 
-### G1 — 🔴 Data-*access* audit trail (the HIPAA gate) — #431
+### G1 — 🟠 Data-*access* audit trail (the HIPAA gate) — #431 — **substrate shipped, reads pending**
 **Requirement:** HIPAA §164.312(b) **audit controls** require a durable record of *who
 accessed which PHI*. GDPR accountability (Art 5(2) / 30) wants processing records too.
-**Current state:** we have config-*change* history (ADR 0020), but **no record of data
-reads** — and we deliberately redact PII from logs, so logs can't serve as the audit
-trail either. ADR 0020 explicitly deferred the cross-entity audit log.
-**v2.x target:** an append-only access-audit log (actor, action, suite/run/result,
-timestamp, request_id) for result/sample reads + share grants; tamper-evident; its own
-retention policy. Revisit ADR 0020. **This is the one hard blocker for any PHI customer.**
+**Current state (updated 2026-08-17):** the *"revisit ADR 0020"* instruction has been
+discharged — ADR [0041](adr/0041-history-audit-strategy.md) **accepts** the cross-entity
+audit log, and **phase 1 has shipped** (#1318): an append-only `audit_events` table, an
+`audit_service` seam with a per-entity payload allow-list, every one of the 35 mutating
+`/api/v1` routes either audited or explicitly exempted behind a route-table coverage
+guard, a workspace-admin read endpoint (`GET /api/v1/admin/audit-events`) and a daily
+retention sweep on its own `AUDIT_RETENTION_DAYS` clock (default 365, deliberately
+decoupled from `SAMPLE_FAILURES_RETENTION_DAYS` — the two protect opposite things).
+
+Three acts that previously left **no trace of any kind** are now recorded: **share
+grants/revokes** (the finest-grained permission in the product), **credential rotations**
+(`connection.reauth`, a hole ADR 0020 shipped knowingly), and **workspace-role changes**
+(which emitted a log line and nothing durable, while ADR 0033 §7 requires a durable
+record).
+
+**What is still missing, and it is the half the HIPAA gate is actually about:** these are
+*config-change* events (`action_class='config'`). There is still **no record of data
+reads**, and PII is deliberately redacted from logs, so logs cannot serve as that trail
+either. #431 is **phase 2 on the same table** (`action_class='access'`) — rows, not a
+parallel mechanism.
+
+**Remaining v2.x target for #431:** read events for result/sample access covering REST
+**and** MCP, off the read critical path (its own AC forbids a latency regression — the
+opposite contract from phase 1, which is same-transaction and fail-closed); and
+**tamper-evidence**, which ADR 0041 §2.7 is explicit needs cryptographic chaining anchored
+*outside* the database. The `REVOKE UPDATE, DELETE` shipped in phase 1 is a guard against
+**accidental** in-app mutation and is **not** tamper-resistance: the table's owner
+(`dataq_app`) can grant the privileges straight back — the retention sweep does exactly
+that, by necessity — and splitting the database role to prevent it is rejected on a
+stronger security constraint. **Until phase 2 lands, this remains the hard blocker for any
+PHI customer.**
 **Scope widened by ADR 0027 / #482:** once the workspace-admin is an implicit admin on
 every suite, the audit log must capture **workspace-admin cross-suite result/sample
 reads** (not just owner/shared reads) — the read surface this gap must cover grows. A
