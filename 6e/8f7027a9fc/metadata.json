@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "6e8f7027a9fc",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-tier3b-assets-incidents-reads",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "README.md",
+    "backend/app/mcp/server.py",
+    "backend/tests/api/test_role_enforcement.py",
+    "backend/tests/support/mcp_gates.py",
+    "docs/mcp-setup.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6e/8f7027a9fc/0/metadata.json",
+      "transcript": "/6e/8f7027a9fc/0/full.jsonl",
+      "compact_transcript": "/6e/8f7027a9fc/0/transcript.jsonl",
+      "content_hash": "/6e/8f7027a9fc/0/content_hash.txt",
+      "prompt": "/6e/8f7027a9fc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1378,
+    "cache_creation_tokens": 1065536,
+    "cache_read_tokens": 218059134,
+    "output_tokens": 427861,
+    "api_call_count": 689
+  }
+}
