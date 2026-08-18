@@ -183,7 +183,7 @@ resources (Postgres, KV, Storage, ACA, LLM endpoint) to one region/jurisdiction,
 validation that they agree; honor the schema-only/PII-redacted/local-endpoint LLM posture
 in code when that feature lands.
 
-### G5 — 🟡 Assert encryption-at-rest & offer CMK — #435
+### G5 — 🟢 Assert encryption-at-rest & offer CMK — #435 — **documented; CMK deferred with reasons**
 **Requirement:** GDPR Art 32 / HIPAA §164.312(a)(2)(iv) addressable encryption.
 **Current state:** satisfied by Azure platform-managed keys (default), but our OpenTofu
 neither asserts it nor offers customer-managed keys, and it's undocumented (no evidence
@@ -192,8 +192,35 @@ for a customer security review). The 2026-08-16 audit also found the AWS stack's
 [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385). It holds broker payloads and
 rate-limit counters rather than customer data, but it is exactly the asymmetry a security
 review would flag, and the fix is a one-line assert.
-**v2.x target:** assert at-rest encryption in IaC, document it, and offer a CMK
-(customer-managed key in Key Vault) toggle for customers who require key custody.
+**Resolution (2026-08-17).** The original framing — *"satisfied … but our OpenTofu neither
+asserts it nor offers CMK, **and it's undocumented (no evidence for a customer security
+review)**"* — named documentation as the actual deliverable, and that is what shipped:
+[docs/security.md](security.md) now carries a **per-resource at-rest table for both
+reference deployments** (what is encrypted, with which key, with a first-party citation),
+which is the artifact a security reviewer asks for.
+
+Two corrections to this gap's premises, both recorded rather than quietly dropped:
+
+- *"No cloud target"* is stale — Azure has been applied since 2026-06-28 and AWS since
+  2026-08-15.
+- **"Assert it in IaC" is mostly not expressible.** Azure Postgres, Key Vault, Log
+  Analytics and App Insights encrypt at rest *unconditionally and by platform default*;
+  there is no Terraform attribute to assert. The one place an assertion is both possible
+  and meaningful is AWS RDS (`storage_encrypted = true`), where our stack owns the
+  database — and it is already set. So the IaC half of this gap was largely a category
+  error, and saying so is more honest than adding a no-op attribute that looks like a
+  control.
+
+**CMK is deferred, with three independent reasons** (full detail in
+[docs/security.md](security.md)): it is **creation-time-only** on Azure Postgres and
+therefore a data migration rather than a toggle; our IaC does not own the database server
+(1-server subscription cap → shared server, declared as a `data` source); and our Key Vault
+is deliberately purge-protection-off, which makes it the wrong custodian for a key whose
+loss takes the database offline. Revisit if a customer requires key custody, or when a
+stack owns its own database from creation.
+
+**Still open:** [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385) — ElastiCache
+at-rest encryption is off beside an encrypted RDS.
 
 ### G6 — ⚪ Organizational artifacts (out of code scope, tracked for completeness)
 DPA / BAA templates, DPIA template, breach-notification runbook, a published

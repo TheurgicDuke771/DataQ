@@ -249,6 +249,68 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   Celery broker and rate-limit counters, not a data store) currently does **not**:
   [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385).
 
+### At-rest encryption per resource — the security-review evidence
+
+What encrypts what, with which key, and where the vendor says so. This exists because
+"encrypted at rest" is only useful to a reviewer with the mechanism attached; each row
+below is checkable against a first-party citation rather than our assertion.
+
+**Azure (primary reference deployment)**
+
+| Resource | Encrypted at rest | Key | Citation |
+|---|---|---|---|
+| PostgreSQL Flexible Server — user + system databases, **server logs, WAL segments and backups** | Always, unconditionally | Service-managed (Azure-managed) by default | [Data encryption at rest](https://learn.microsoft.com/azure/postgresql/security/security-data-encryption) |
+| Key Vault (the `SecretStore` — warehouse credentials, webhook URLs) | Yes | Microsoft-managed, FIPS 140-validated HSM-backed | [About keys](https://learn.microsoft.com/azure/key-vault/keys/about-keys#compliance) |
+| Container Apps images / revisions (GHCR-sourced) | Registry-side | Provider-managed | — |
+| Log Analytics + Application Insights (telemetry, PII-redacted at the logger) | Yes | Microsoft-managed by default | [Azure Monitor data security](https://learn.microsoft.com/azure/azure-monitor/logs/data-security) |
+
+**AWS (second reference deployment)**
+
+| Resource | Encrypted at rest | Key | Notes |
+|---|---|---|---|
+| RDS PostgreSQL | Yes — `storage_encrypted = true`, asserted in our own IaC | AWS-managed KMS | The one row our Terraform/OpenTofu actually asserts, because that stack **owns** its database |
+| Secrets Manager (`dataq/conn-*`) | Yes | AWS-managed KMS | |
+| S3 (landing bucket) | Yes | SSE-S3 default | |
+| ElastiCache (Celery broker + rate-limit counters) | **No** | — | [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385). Not a data store, but the asymmetry beside an encrypted RDS is exactly what a review flags |
+
+### Customer-managed keys (CMK) — not offered, and why
+
+CMK is **out of scope for the current Azure reference deployment**, and this is a recorded
+decision rather than an oversight. Three independent reasons, any one of which is
+sufficient:
+
+1. **CMK is creation-time-only.** Microsoft is explicit: *"You can select the mode only at
+   server creation time. You can't change the mode from one to another for the lifetime of
+   the server."* The only route to CMK on an existing server is restoring a backup onto a
+   **new** server — so this is a data migration, not a Terraform toggle. It is also
+   one-way: reverting to service-managed keys requires another restore.
+   ([Limitations of CMK](https://learn.microsoft.com/azure/postgresql/security/security-data-encryption#limitations-of-customer-managed-keys-cmk))
+2. **Our IaC does not own the database server.** `deploy/terraform/azure/postgres.tf`
+   declares it as a `data` source — the subscription caps Flexible Servers at one, so the
+   app shares a server and provisions only a distinct database and least-privilege role.
+   There is no `azurerm_postgresql_flexible_server` resource in that stack to attach a key
+   to, and creating one collides with the same cap that produced the shared design.
+3. **Our Key Vault is deliberately destroyable, which makes it the wrong key custodian.**
+   It runs with purge protection **off** so a destroy/re-apply can reuse the vault name (a
+   recorded decision for a demo-scoped vault). If the vault holding a CMK is deleted, the
+   server goes **Inaccessible** and denies every connection. Adopting CMK therefore means
+   reversing that decision — and purge protection is irreversible once enabled. Azure
+   additionally requires the vault's **"days to retain deleted vaults" to be 90**, a value
+   that *cannot be changed after the vault is created*: an existing vault set lower needs a
+   **new vault**, not a setting change.
+
+**What a customer requiring key custody would need**, stated so the ask is answerable
+rather than merely declined: a dedicated Flexible Server created *with* CMK, a
+purge-protected Key Vault in the same region with 90-day deleted-vault retention, a
+user-assigned managed identity with key permissions, and an operational commitment to key
+rotation — because a key that expires, is disabled, or becomes unreachable takes the
+database offline within about an hour. That is a deployment topology, not a feature flag,
+which is why it is documented here instead of shipped as an option nobody could safely
+enable.
+
+Revisit if a customer requires key custody, or when a deployment stack owns its own
+database server from creation.
+
 ## Reporting a vulnerability
 
 Please report suspected security issues privately to the maintainers rather than opening a
