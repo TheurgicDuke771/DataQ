@@ -18,9 +18,20 @@ import pytest
 from fastmcp.exceptions import ToolError
 from sqlalchemy import select
 
-from backend.app.db.models import Check, Connection, PipelineRun, Result, Run, Suite, User
+from backend.app.db.models import (
+    Asset,
+    Check,
+    Connection,
+    Incident,
+    PipelineRun,
+    Result,
+    Run,
+    Suite,
+    User,
+)
 from backend.app.mcp import server
 from backend.app.services import (
+    asset_view_service,
     check_service,
     connection_service,
     dryrun_service,
@@ -3252,3 +3263,191 @@ def test_restore_check_version_rejects_an_unknown_version(
 
     with pytest.raises(ToolError):
         server.restore_check_version(str(suite.id), created["id"], version_no=99)
+
+
+# ── Tier 3B: assets & incidents ───────────────────────────────────────────────
+
+
+def _asset(db_session: Any, *, name: str = "orders", env: str | None = "dev") -> Asset:
+    asset = Asset(namespace="snowflake://acct/RETAIL", name=name, env=env)
+    db_session.add(asset)
+    db_session.commit()
+    return asset
+
+
+def _incident(db_session: Any, *, asset: Asset, check: Check, suite: Suite, **kw: Any) -> Incident:
+    incident = Incident(
+        asset_id=asset.id,
+        check_id=check.id,
+        suite_id=suite.id,
+        status=kw.pop("status", "open"),
+        **kw,
+    )
+    db_session.add(incident)
+    db_session.commit()
+    return incident
+
+
+def test_list_assets_reports_an_unmonitored_asset_as_unmonitored(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The failure this field exists to prevent: an asset with no suite has
+    `worst_severity: null` and `checks_total: 0`, which is literally "nothing is
+    failing" and reads as a clean bill of health. `monitored` names the actual
+    state so the two cannot be confused."""
+    user = _user(db_session)
+    _asset(db_session, name="unwatched")
+    _as(monkeypatch, db_session, user)
+
+    out = server.list_assets()
+    row = next(a for a in out["assets"] if a["name"] == "unwatched")
+    assert row["monitored"] is False
+    assert row["suite_count"] == 0
+    assert row["worst_severity"] is None
+    assert row["checks_total"] == 0
+
+
+def test_list_assets_reports_truncation_against_the_real_total(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`truncated` is computed from the workspace total, not inferred from
+    `len(page) == limit` — which is wrong on the exact-boundary page, the one
+    case where a client would confidently report a partial list as complete."""
+    user = _user(db_session)
+    for i in range(3):
+        _asset(db_session, name=f"tbl_{i}")
+    _as(monkeypatch, db_session, user)
+
+    page = server.list_assets(limit=2)
+    assert page["total"] == 3
+    assert page["returned"] == 2
+    assert page["truncated"] is True
+
+    # The exact-boundary page: full, and yet nothing follows it.
+    boundary = server.list_assets(limit=3)
+    assert boundary["returned"] == 3
+    assert boundary["truncated"] is False
+
+
+def test_get_asset_counts_the_suites_it_cannot_name(db_session: Any, monkeypatch: Any) -> None:
+    """ADR 0037's split, asserted: the summary aggregates over EVERY composing
+    suite, while `suites` lists only what the caller may view. Without
+    `restricted_suite_count` an LLM would present the visible suites as the whole
+    explanation for a workspace-true number."""
+    owner = _user(db_session)
+    outsider = _user(db_session, email="outsider@acme.io")
+    asset = _asset(db_session)
+    suite = _suite(db_session, owner)
+    suite.asset_id = asset.id
+    db_session.commit()
+    _as(monkeypatch, db_session, outsider)
+
+    out = server.get_asset(str(asset.id))
+    assert out["summary"]["suite_count"] == 1
+    assert out["suites"] == []
+    assert out["restricted_suite_count"] == 1
+
+
+def test_get_asset_qualifies_lineage_when_a_source_is_failing(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """An empty lineage graph behind a broken poller must never read as "nothing
+    feeds this table" (#828). The qualifier is the only thing that distinguishes
+    the two, so it is asserted rather than trusted."""
+    user = _user(db_session)
+    asset = _asset(db_session)
+    _as(monkeypatch, db_session, user)
+
+    failing = SimpleNamespace(
+        connection_id=uuid.uuid4(),
+        name="warehouse-dev",
+        type="snowflake",
+        consecutive_failures=4,
+        last_error="credential_expired",
+        last_polled_at=None,
+    )
+    monkeypatch.setattr(asset_view_service, "failing_lineage_sources", lambda _s: [failing])
+
+    out = server.get_asset(str(asset.id))
+    assert out["lineage"]["upstream"] == []
+    assert any("warehouse-dev" in q for q in out["lineage"]["qualified_by"])
+
+
+def test_list_incidents_rejects_an_unknown_status(db_session: Any, monkeypatch: Any) -> None:
+    """A typo'd status returning `[]` would answer "what's broken?" with
+    "nothing" — the #828 shape on the question where it is worst."""
+    user = _user(db_session)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError):
+        server.list_incidents(status="opened")
+
+
+def test_list_incidents_hides_incidents_on_suites_the_caller_cannot_see(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    owner = _user(db_session)
+    outsider = _user(db_session, email="nope@acme.io")
+    asset = _asset(db_session)
+    suite = _suite(db_session, owner)
+    check = Check(suite_id=suite.id, name="freshness", expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.commit()
+    _incident(db_session, asset=asset, check=check, suite=suite)
+
+    _as(monkeypatch, db_session, owner)
+    assert server.list_incidents()["total"] == 1
+
+    _as(monkeypatch, db_session, outsider)
+    assert server.list_incidents()["total"] == 0
+
+
+def test_get_incident_hides_an_incident_on_an_invisible_suite(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """404-no-leak: an outsider cannot tell a real incident from a fictional one."""
+    owner = _user(db_session)
+    outsider = _user(db_session, email="nope2@acme.io")
+    asset = _asset(db_session)
+    suite = _suite(db_session, owner)
+    check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.commit()
+    incident = _incident(db_session, asset=asset, check=check, suite=suite)
+
+    _as(monkeypatch, db_session, outsider)
+    with pytest.raises(ToolError) as real:
+        server.get_incident(str(incident.id))
+    with pytest.raises(ToolError) as fictional:
+        server.get_incident(str(uuid.uuid4()))
+    assert str(real.value) == str(fictional.value)
+
+
+def test_get_incident_returns_the_evidence_card(db_session: Any, monkeypatch: Any) -> None:
+    """The evidence card is what makes this tool worth more than `list_incidents`,
+    and its `check`/`asset` layers are what the summary fields are lifted from."""
+    owner = _user(db_session)
+    asset = _asset(db_session)
+    suite = _suite(db_session, owner)
+    check = Check(suite_id=suite.id, name="row count", expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.commit()
+    incident = _incident(
+        db_session,
+        asset=asset,
+        check=check,
+        suite=suite,
+        evidence={
+            "check": {"name": "row count"},
+            "asset": {"namespace": asset.namespace, "name": asset.name},
+            "failing_result": {"status": "fail"},
+            "profile_diff": None,
+        },
+    )
+    _as(monkeypatch, db_session, owner)
+
+    out = server.get_incident(str(incident.id))
+    assert out["check_name"] == "row count"
+    assert out["asset_name"] == "orders"
+    assert out["latest_severity"] == "fail"
+    assert out["evidence"]["profile_diff"] is None

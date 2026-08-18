@@ -27,17 +27,12 @@ from backend.app.api.v1._base import TOTAL_COUNT_HEADER, ApiModel, total_count_r
 from backend.app.core.auth import get_current_user
 from backend.app.core.errors import DataQError
 from backend.app.core.roles import is_workspace_admin
-from backend.app.db.models import INCIDENT_STATUSES, Incident, Suite, User
+from backend.app.db.models import INCIDENT_STATUSES, Incident, User
 from backend.app.db.session import get_db
 from backend.app.services import incident_service
-from backend.app.services.incident_service import IncidentNotFoundError
-from backend.app.services.suite_authz import SuiteForbiddenError, effective_permission
 
 router = APIRouter(tags=["incidents"])
 
-# Levels that may act on (ack/resolve) an incident — edit and above, mirroring the
-# suite_authz ladder (view reads; edit/admin/owner act).
-_ACTING_LEVELS = frozenset({"edit", "admin", "owner"})
 _NOTE_MAX_LEN = 2000
 
 
@@ -138,35 +133,6 @@ def _to_detail(incident: Incident) -> IncidentDetailRead:
     )
 
 
-# ── authz helper (404-no-leak; edit-gated actions) ────────────────────────────
-
-
-def _load_visible_incident(
-    db: Session, incident_id: uuid.UUID, user: User, *, for_action: bool
-) -> Incident:
-    """Load an incident the caller may see, or 404-no-leak. When ``for_action`` the
-    caller must have ``edit`` on the incident's suite (else 403).
-
-    An unknown id and an id whose suite the caller can't view return the SAME 404
-    (existence hidden) — the suite-grain no-leak rule, deliberately KEPT by
-    ADR 0037 (which retired the asset-grain one): incidents are itemized
-    evidence, not identity.
-    """
-    incident = incident_service.get_incident(db, incident_id)
-    suite = db.get(Suite, incident.suite_id) if incident is not None else None
-    # Workspace-admin sees every suite (implicit admin — effective_permission
-    # resolves that); a normal user resolves to their grant or None.
-    level = effective_permission(db, suite, user.id) if suite is not None else None
-    if incident is None or level is None:
-        raise IncidentNotFoundError("incident not found", detail={"incident_id": str(incident_id)})
-    if for_action and level not in _ACTING_LEVELS:
-        raise SuiteForbiddenError(
-            "acknowledging or resolving an incident requires 'edit' on its suite",
-            detail={"incident_id": str(incident_id), "have": level, "need": "edit"},
-        )
-    return incident
-
-
 # ── endpoints ─────────────────────────────────────────────────────────────────
 
 
@@ -233,7 +199,9 @@ def get_incident(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> IncidentDetailRead:
-    incident = _load_visible_incident(db, incident_id, current_user, for_action=False)
+    incident = incident_service.load_visible_incident(
+        db, incident_id, user_id=current_user.id, for_action=False
+    )
     return _to_detail(incident)
 
 
@@ -248,7 +216,9 @@ def acknowledge_incident(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> IncidentDetailRead:
-    incident = _load_visible_incident(db, incident_id, current_user, for_action=True)
+    incident = incident_service.load_visible_incident(
+        db, incident_id, user_id=current_user.id, for_action=True
+    )
     incident = incident_service.acknowledge_incident(
         db, incident, user_id=current_user.id, note=payload.note
     )
@@ -266,7 +236,9 @@ def resolve_incident(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> IncidentDetailRead:
-    incident = _load_visible_incident(db, incident_id, current_user, for_action=True)
+    incident = incident_service.load_visible_incident(
+        db, incident_id, user_id=current_user.id, for_action=True
+    )
     incident = incident_service.resolve_incident(
         db, incident, user_id=current_user.id, note=payload.note
     )

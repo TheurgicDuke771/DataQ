@@ -33,6 +33,12 @@ unverified, in a file whose entire purpose is to make such claims checkable.
 - ``suite:edit`` — `require_permission(minimum="edit")`, which
   `suite_authz._cap_for_viewer` feeds, so a Viewer is refused even holding a
   legacy `edit` share.
+- ``incident:view`` — reached through
+  `incident_service.load_visible_incident`, which resolves the ADR 0027 ladder on
+  the incident's *suite* (404-no-leak on a suite the caller cannot view). Distinct
+  from ``suite:view`` because the tool takes an **incident** id, so the sweep must
+  materialise a real incident on the probe suite — a fabricated id 404s before
+  authz and would pass the sweep vacuously.
 - ``role:member`` / ``role:admin`` — `server._require_role`, the coarse ADR 0033
   axis, for capabilities with no suite to hang a resource gate on. Kept as two
   distinct values rather than one "role gate" bucket: collapsing them would let a
@@ -45,12 +51,20 @@ from __future__ import annotations
 #: Tool name → its declared authorization gate. Keep alphabetical within a group.
 GATES: dict[str, str] = {
     # ── no per-resource gate ─────────────────────────────────────────────────
+    # `list_assets` and `get_asset` are here by ADR 0037's explicit decision, not
+    # by omission: asset identity + the aggregate rollup are workspace knowledge,
+    # visible to every member and identical for all of them. Only `get_asset`'s
+    # composing-suite LIST is grant-filtered, and that filtering happens inside
+    # `asset_view_service`, not at a gate.
     "get_adf_pipeline_status": "read",
+    "get_asset": "read",
     "get_health_score": "read",
     "get_suite_performance": "read",
+    "list_assets": "read",
     "list_connections": "read",
     "list_suites": "read",
     # ── accessible-suite scoped, and view-gated when a suite is named ────────
+    "list_incidents": "read:suite-optional",
     "list_runs": "read:suite-optional",
     "list_schedules": "read:suite-optional",
     "list_trigger_bindings": "read:suite-optional",
@@ -89,6 +103,8 @@ GATES: dict[str, str] = {
     "update_schedule": "suite:edit",
     "update_suite": "suite:edit",
     "update_trigger_binding": "suite:edit",
+    # ── incident-scoped, via the incident's suite ────────────────────────────
+    "get_incident": "incident:view",
     # ── workspace-role gated: no suite to hang a resource gate on ───────────
     # `test_connection` spends a stored credential against a remote system;
     # `import_suite` CREATES a suite, so there is no existing resource whose
@@ -109,12 +125,22 @@ MEMBER_DENIED_GATES = frozenset({"role:admin"})
 #: Gates whose tools must refuse a user with **no share on the named suite**.
 #: Covers `read:suite-optional` too: its up-front gate is the half that turns a
 #: misleading empty list into an honest denial.
-OUTSIDER_DENIED_GATES = frozenset({"suite:view", "suite:edit", "read:suite-optional"})
+OUTSIDER_DENIED_GATES = frozenset(
+    {"suite:view", "suite:edit", "incident:view", "read:suite-optional"}
+)
 
 #: Every value that may appear in `GATES`. A typo'd gate would otherwise silently
 #: match no sweep and be enforced by nothing.
 KNOWN_GATES = frozenset(
-    {"read", "read:suite-optional", "suite:view", "suite:edit", "role:member", "role:admin"}
+    {
+        "read",
+        "read:suite-optional",
+        "suite:view",
+        "suite:edit",
+        "incident:view",
+        "role:member",
+        "role:admin",
+    }
 )
 
 

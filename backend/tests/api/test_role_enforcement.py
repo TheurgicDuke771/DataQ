@@ -33,9 +33,11 @@ from fastapi.testclient import TestClient
 
 from backend.app.core.secret_names import connection_secret_ref
 from backend.app.db.models import (
+    Asset,
     Check,
     CheckVersion,
     Connection,
+    Incident,
     Run,
     Schedule,
     Share,
@@ -75,6 +77,7 @@ _REAL_CHECK = "<a real check, substituted at probe time>"
 _REAL_SCHEDULE = "<a real schedule, substituted at probe time>"
 _REAL_CONNECTION = "<a real connection, substituted at probe time>"
 _REAL_BINDING = "<a real trigger binding, substituted at probe time>"
+_REAL_INCIDENT = "<a real incident, substituted at probe time>"
 
 #: Every role, so a matrix test can't silently skip a tier.
 ROLES = ("admin", "member", "viewer")
@@ -670,6 +673,29 @@ def _assert_tool_denies(
         db_session.add(binding)
         db_session.commit()
         args = {**args, "binding_id": str(binding.id)}
+    if args.get("incident_id") == _REAL_INCIDENT:
+        # A real incident on the probe suite, for the same reason as `_REAL_RUN`
+        # and `_REAL_CHECK`: `get_incident` resolves the row BEFORE the suite
+        # ladder, so a fabricated id raises "incident not found" — an accepted
+        # denial word — and the sweep would pass with the gate deleted.
+        asset = Asset(namespace="probe://authz", name=f"asset_{uuid.uuid4().hex[:8]}")
+        incident_check = Check(
+            suite_id=suite.id,
+            name="incident probe target",
+            expectation_type="expect_column_values_to_not_be_null",
+            config={"column": "EMAIL"},
+        )
+        db_session.add_all([asset, incident_check])
+        db_session.commit()
+        incident = Incident(
+            asset_id=asset.id,
+            check_id=incident_check.id,
+            suite_id=suite.id,
+            status="open",
+        )
+        db_session.add(incident)
+        db_session.commit()
+        args = {**args, "incident_id": str(incident.id)}
     if args.get("check_id") == _REAL_CHECK:
         check = Check(
             suite_id=suite.id,
@@ -789,7 +815,11 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
         # this test vacuously.
         "get_run_results": {"run_id": _REAL_RUN},
         "get_run_status": {"run_id": _REAL_RUN},
+        # incident:view — takes an incident id, so the sentinel is what makes the
+        # sweep reach the gate rather than a 404.
+        "get_incident": {"incident_id": _REAL_INCIDENT},
         # read:suite-optional — the named-suite half is what has a gate
+        "list_incidents": {"suite_id": sid},
         "list_runs": {"suite_id": sid},
         "list_schedules": {"suite_id": sid},
         "list_trigger_bindings": {"suite_id": sid},

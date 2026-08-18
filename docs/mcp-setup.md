@@ -22,7 +22,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/00
     [0032](adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 38 tools and per-suite permissions. Two rejections are deliberate in that
+    all 42 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -80,17 +80,17 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 38 tools
+## The 42 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
-identically. The 38 split three ways, not two:
+identically. The 42 split three ways, not two:
 
-- **18 read-only** — `export_suite`, `get_adf_pipeline_status`, `get_check`, `get_check_history`,
-  `get_column_policy`, `get_health_score`, `get_notification_config`, `get_run_results`,
-  `get_run_status`, `get_suite_performance`, `get_suite_results`, `list_check_versions`,
-  `list_checks`, `list_connections`, `list_runs`, `list_schedules`, `list_suites`,
-  `list_trigger_bindings`.
+- **22 read-only** — `export_suite`, `get_adf_pipeline_status`, `get_asset`, `get_check`,
+  `get_check_history`, `get_column_policy`, `get_health_score`, `get_incident`,
+  `get_notification_config`, `get_run_results`, `get_run_status`, `get_suite_performance`,
+  `get_suite_results`, `list_assets`, `list_check_versions`, `list_checks`, `list_connections`,
+  `list_incidents`, `list_runs`, `list_schedules`, `list_suites`, `list_trigger_bindings`.
 - **16 that change state** — `create_check`, `update_check`, `delete_check`, `snooze_check`,
   `restore_check_version`, `trigger_suite_run`, `cancel_run`, `update_suite`, `set_column_policy`,
   `create_schedule`, `update_schedule`, `delete_schedule`, `create_trigger_binding`,
@@ -170,6 +170,18 @@ succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 
 | `update_schedule` | "Move the orders run to 3am" / "pause the nightly schedule" — partial update of cron, timezone or enabled. Resuming **re-bases**; it does not backfill runs missed while paused |
 | `delete_schedule` | "Stop the nightly orders run" — removes the schedule; the suite and its checks are untouched. Prefer `update_schedule(enabled=false)` if a pause is meant |
 | `get_notification_config` | "Who gets told when orders fails?" — channel presence (Teams/Slack/email), never webhook URLs |
+
+### Assets & incidents
+
+Assets are the grain people reason in ("is `orders` healthy?"); suites are the grain checks are
+authored in. Incidents are the deduplicated, stateful roll-up of repeated failures.
+
+| Tool | What it answers |
+|---|---|
+| `list_assets` | "What tables do we monitor?" / "which assets are unhealthy?" — every asset with its health. The numbers are **workspace-true** (ADR [0037](adr/0037-workspace-visible-asset-identity.md)): aggregated over every composing suite, including ones the caller cannot see, so they are not "your" checks |
+| `get_asset` | "Is the orders table healthy, and what feeds it?" — the workspace-true summary + per-dimension scorecard + the composing suites the caller may view (`restricted_suite_count` counts the rest) + the lineage neighbourhood, qualified when a lineage source is failing or stale |
+| `list_incidents` | "What's broken right now?" — open/acknowledged/resolved incidents, scoped to suites the caller can see, so an empty result means "nothing visible to you", not "nothing is wrong" |
+| `get_incident` | "Why did this open, and what else broke at the time?" — the evidence card snapshotted at the last occurrence; carries no failing sample rows by design |
 
 ### Suite portability
 

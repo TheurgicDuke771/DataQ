@@ -41,6 +41,7 @@ from backend.app.core.secrets import get_secret_store
 from backend.app.db.models import (
     CONNECTION_TYPES,
     ENVS,
+    INCIDENT_STATUSES,
     ORCHESTRATION_PROVIDERS,
     Check,
     Connection,
@@ -57,10 +58,12 @@ from backend.app.mcp.auth import (
     resolve_current_user,
 )
 from backend.app.services import (
+    asset_view_service,
     check_service,
     connection_service,
     dashboard_service,
     dryrun_service,
+    incident_service,
     notification_service,
     orchestration_service,
     profile_service,
@@ -2221,6 +2224,346 @@ def set_column_policy(
             "suite_id": suite_id,
             "identifier_column": policy.get("identifier_column"),
             "pii_columns": policy.get("pii_columns", []),
+        }
+
+
+# ── assets & incidents (ADR 0034 / 0037, Tier 3B) ─────────────────────────
+
+
+def _asset_summary_payload(a: Any) -> dict[str, Any]:
+    """One asset's workspace-true rollup, LLM-shaped.
+
+    `monitored` is derived rather than left to the reader: `suite_count == 0` is
+    an asset DataQ knows about but nothing checks (the #1103 inventory-sync
+    case), and "no failures" is a true and useless statement about it.
+    """
+    return {
+        "id": str(a.id),
+        "namespace": a.namespace,
+        "name": a.name,
+        "env": a.env,
+        "description": a.description,
+        "suite_count": a.suite_count,
+        "monitored": a.suite_count > 0,
+        # ── data quality ──
+        "worst_severity": a.worst_severity,
+        "checks_total": a.checks_total,
+        "checks_passed": a.checks_passed,
+        "last_run_at": a.last_run_at.isoformat() if a.last_run_at else None,
+        # ── reachability / execution (never data quality) ──
+        "has_operational_error": a.has_operational_error,
+        "has_skip": a.has_skip,
+        "has_failed_run": a.has_failed_run,
+        "has_active_run": a.has_active_run,
+        "has_cancelled_run": a.has_cancelled_run,
+    }
+
+
+@mcp.tool
+def list_assets(
+    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> dict[str, Any]:
+    """List the data assets (tables, views, files) DataQ knows about, with health.
+
+    Use this for 'what tables do we monitor?', 'which assets are unhealthy?', or
+    as the first step in 'is orders healthy?' — assets are the grain people think
+    in, whereas suites are the grain checks are authored in. Returns each asset's
+    namespace, name, environment, how many suites target it, and its latest
+    health, plus `total` / `truncated` so you can tell a page from the whole set.
+
+    **The health numbers are workspace-true, not scoped to this user
+    (ADR 0037).** They aggregate over EVERY suite targeting the asset, including
+    suites the caller has no grant on. That is deliberate — one verdict per
+    asset, identical for everyone — but it means you must not describe these
+    figures as "your" checks or imply the caller could see them all. Only
+    `get_asset`'s composing-suite LIST is filtered to their grants.
+
+    Reading the fields honestly:
+
+    - `worst_severity: null` means "nothing is currently failing", which covers
+      **both** all-passed and nothing-ever-evaluated. Check `checks_total` and
+      `last_run_at` before calling an asset healthy.
+    - `monitored: false` (`suite_count: 0`) means no suite targets it at all — it
+      is unchecked, not passing. Never report it as clean.
+    - `has_operational_error` / `has_skip` / `has_failed_run` are *reachability*,
+      not data quality: DataQ could not evaluate against the datasource, or a
+      precondition was not met. An asset can be reachability-broken with
+      `worst_severity: null`, and that is a problem, not a pass.
+    """
+    with _ctx() as (session, _user), _service_errors():
+        total = asset_view_service.count_assets(session)
+        assets = asset_view_service.list_visible_assets(session, limit=limit, offset=offset)
+        return {
+            "total": total,
+            "returned": len(assets),
+            # Explicit rather than left to be inferred from `len == limit`, which
+            # is wrong on the exact-boundary page (#925 — the same reason the REST
+            # route grew X-Total-Count).
+            "truncated": offset + len(assets) < total,
+            "assets": [_asset_summary_payload(a) for a in assets],
+        }
+
+
+@mcp.tool
+def get_asset(asset_id: str) -> dict[str, Any]:
+    """Get one asset's health, the suites that check it, and its lineage neighbours.
+
+    Use this for 'is the orders table healthy?', 'what checks run on this table?',
+    'what feeds this table?' or 'what breaks if this is wrong?'. Returns the
+    workspace-true summary, a per-dimension `scorecard`, the composing suites the
+    caller can see (each with its latest run), and the upstream/downstream lineage
+    neighbourhood with the edges connecting them.
+
+    Two scoping rules that must not be conflated (ADR 0037):
+
+    - `summary` and `scorecard` are **workspace-true** — computed over every
+      suite targeting the asset, including ones the caller cannot see.
+    - `suites` lists **only** what the caller may view; `restricted_suite_count`
+      is how many more compose the asset. When that count is above zero, say so:
+      the listed checks are not the whole story behind the summary.
+
+    `scorecard.uncovered` names DQ dimensions with **no checks at all** — the
+    actionable half, and usually a better answer to "how is this asset doing?"
+    than the score. A dimension `score` of `null` means nothing evaluated, which
+    is neither 0 nor 100. `unclassified_checks` are checks with no dimension
+    (custom SQL, or never classified) and are deliberately not bucketed anywhere.
+
+    `lineage.qualified_by` is non-empty when a lineage source is failing, stale or
+    coarse. In that case an empty or thin neighbour list proves nothing about the
+    real graph — report the qualification rather than "nothing feeds this table".
+    """
+    aid = _parse_uuid(asset_id, field="asset_id")
+    with _ctx() as (session, user), _service_errors():
+        detail = asset_view_service.get_visible_asset(
+            session, aid, user_id=user.id, include_all=is_workspace_admin(user)
+        )
+        qualifiers: list[str] = []
+        for src in detail.failing_lineage_sources:
+            qualifiers.append(
+                f"lineage poll failing on connection '{src.name}' "
+                f"({src.consecutive_failures} consecutive failures)"
+            )
+        for wh in detail.warehouse_lineage_status:
+            if wh.last_error:
+                qualifiers.append(f"warehouse lineage refresh failing on '{wh.name}'")
+            if wh.stale:
+                qualifiers.append(f"warehouse lineage on '{wh.name}' has not refreshed recently")
+            if wh.degraded_reason:
+                qualifiers.append(
+                    f"warehouse lineage on '{wh.name}' is coarse: {wh.degraded_reason}"
+                )
+        scorecard = detail.scorecard
+        return {
+            "summary": _asset_summary_payload(detail.summary),
+            "scorecard": (
+                None
+                if scorecard is None
+                else {
+                    "covered": [
+                        {
+                            "dimension": d.dimension,
+                            "checks_total": d.checks_total,
+                            "checks_passing": d.checks_passing,
+                            "checks_evaluated": d.checks_evaluated,
+                            "score": _num(d.score),
+                        }
+                        for d in scorecard.covered
+                    ],
+                    "uncovered": list(scorecard.uncovered),
+                    "unclassified_checks": scorecard.unclassified_checks,
+                }
+            ),
+            "suites": [
+                {
+                    "suite_id": str(cs.suite_id),
+                    "name": cs.name,
+                    "my_permission": cs.my_permission,
+                    "latest_run": {
+                        "run_id": str(cs.latest_run.run_id) if cs.latest_run.run_id else None,
+                        "status": cs.latest_run.status,
+                        "worst_severity": cs.latest_run.worst_severity,
+                        "checks_total": cs.latest_run.checks_total,
+                        "checks_passed": cs.latest_run.checks_passed,
+                        "finished_at": (
+                            cs.latest_run.finished_at.isoformat()
+                            if cs.latest_run.finished_at
+                            else None
+                        ),
+                    },
+                }
+                for cs in detail.suites
+            ],
+            # Non-zero ⇒ the summary above covers suites not listed here.
+            "restricted_suite_count": detail.restricted_suite_count,
+            "lineage": {
+                "upstream": [_lineage_node_payload(n) for n in detail.upstream],
+                "downstream": [_lineage_node_payload(n) for n in detail.downstream],
+                "edges": [
+                    {"source": str(e.source), "target": str(e.target), "columns": e.columns}
+                    for e in detail.lineage_edges
+                ],
+                # Empty ⇒ the graph is as complete as DataQ can make it. Non-empty
+                # ⇒ absence of an edge is not evidence of absence of a dependency
+                # (#828 — a broken poller must never read as "no lineage").
+                "qualified_by": qualifiers,
+            },
+        }
+
+
+def _lineage_node_payload(node: Any) -> dict[str, Any]:
+    return {
+        "id": str(node.id),
+        "namespace": node.namespace,
+        "name": node.name,
+        "env": node.env,
+        # False ⇒ DataQ knows the table exists but nothing checks it.
+        "is_monitored": node.is_monitored,
+        "depth": node.depth,
+    }
+
+
+def _incident_payload(incident: Any) -> dict[str, Any]:
+    ev: dict[str, Any] = incident.evidence if isinstance(incident.evidence, dict) else {}
+
+    def _layer(key: str) -> dict[str, Any]:
+        # A layer is `null` when it could not be built (the check was deleted, no
+        # trend yet) — never an empty dict, so the two must not be conflated by a
+        # bare `.get(key, {})`.
+        value = ev.get(key)
+        return value if isinstance(value, dict) else {}
+
+    check = _layer("check")
+    asset = _layer("asset")
+    failing = _layer("failing_result")
+    return {
+        "id": str(incident.id),
+        "status": incident.status,
+        "suite_id": str(incident.suite_id),
+        "check_id": str(incident.check_id),
+        "check_name": check.get("name"),
+        "asset_id": str(incident.asset_id),
+        "asset_namespace": asset.get("namespace"),
+        "asset_name": asset.get("name"),
+        "latest_severity": failing.get("status"),
+        "occurrence_count": incident.occurrence_count,
+        "created_at": incident.created_at.isoformat(),
+        "last_seen_at": incident.last_seen_at.isoformat(),
+        "acknowledged_at": (
+            incident.acknowledged_at.isoformat() if incident.acknowledged_at else None
+        ),
+        "resolved_at": incident.resolved_at.isoformat() if incident.resolved_at else None,
+        # 'user' = a person closed it; 'auto' = a later passing result closed it.
+        # Null while still open.
+        "resolved_by": incident.resolved_by,
+    }
+
+
+@mcp.tool
+def list_incidents(
+    status: str | None = None,
+    suite_id: str | None = None,
+    asset_id: str | None = None,
+    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> dict[str, Any]:
+    """List data-quality incidents — what is broken right now, and since when.
+
+    Use this for "what's broken?", "what's still open?", "has anyone
+    acknowledged the orders failure?". An incident is the deduplicated,
+    stateful roll-up of repeated failures of one check on one asset: the first
+    breach opens it, later breaches raise `occurrence_count` rather than piling
+    up new rows, and a passing result (or a person) resolves it.
+
+    Filter by `status` (`open`, `acknowledged`, `resolved`), `suite_id`, or
+    `asset_id`. Default is every status — pass `status="open"` for "what is
+    broken right now", since a resolved incident is history, not a live problem.
+
+    `occurrence_count` is how many times the check has breached, not how many
+    incidents exist; a count of 40 on one incident is one ongoing problem, not
+    forty. Prefer `last_seen_at` over `created_at` when asked whether something
+    is still happening.
+
+    Scoped to suites the caller can access (a workspace-admin sees all), so an
+    empty result means "nothing visible to you", which is not the same as
+    "nothing is wrong in the workspace" — unlike `list_assets`, whose health
+    numbers are workspace-wide.
+    """
+    if status is not None and status not in INCIDENT_STATUSES:
+        # A typo'd status would otherwise return `[]` — indistinguishable from
+        # "nothing is broken", on the one question where that is worst (#828).
+        raise ToolError(f"status must be one of {list(INCIDENT_STATUSES)}")
+    with _ctx() as (session, user), _service_errors():
+        sid = _parse_uuid(suite_id, field="suite_id") if suite_id is not None else None
+        aid = _parse_uuid(asset_id, field="asset_id") if asset_id is not None else None
+        if sid is not None:
+            # The up-front gate: without it a suite the caller cannot see returns
+            # an empty list, which reads as a clean bill of health rather than a
+            # denial.
+            require_permission(session, sid, user.id, minimum="view")
+        include_all = is_workspace_admin(user)
+        total = incident_service.count_incidents(
+            session,
+            user_id=user.id,
+            include_all=include_all,
+            asset_id=aid,
+            suite_id=sid,
+            state=status,
+        )
+        incidents = incident_service.list_incidents(
+            session,
+            user_id=user.id,
+            include_all=include_all,
+            asset_id=aid,
+            suite_id=sid,
+            state=status,
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "total": total,
+            "returned": len(incidents),
+            "truncated": offset + len(incidents) < total,
+            "incidents": [_incident_payload(i) for i in incidents],
+        }
+
+
+@mcp.tool
+def get_incident(incident_id: str) -> dict[str, Any]:
+    """Get one incident with its evidence card — why it opened and what else broke.
+
+    Use this for 'why did the orders freshness incident open?' or 'what else was
+    failing at the time?'. Returns the incident's lifecycle state plus the
+    `evidence` snapshot captured when it last breached: the failing check and its
+    observed value, the asset, the recent metric trend, the sibling checks in the
+    same run, the upstream pipeline run, and the downstream blast radius.
+
+    The evidence card is a **snapshot taken at the last occurrence**, not a live
+    read — describe it as "when this last failed", not "right now". It carries no
+    failing sample rows by design, so it cannot show which specific records were
+    bad; use the run results for that.
+
+    A `null` layer inside `evidence` means that layer could not be built (the
+    check was deleted, no trend exists yet), not that it was empty. `profile_diff`
+    is always null — it is a documented placeholder, never a computed absence.
+
+    Requires view access to the incident's suite; an incident on a suite the
+    caller cannot see is indistinguishable from one that does not exist.
+    """
+    iid = _parse_uuid(incident_id, field="incident_id")
+    with _ctx() as (session, user), _service_errors():
+        incident = incident_service.load_visible_incident(
+            session, iid, user_id=user.id, for_action=False
+        )
+        return {
+            **_incident_payload(incident),
+            "acknowledge_note": incident.acknowledge_note,
+            "resolution_note": incident.resolution_note,
+            # Non-null ⇒ this pair broke before, was resolved, and broke again.
+            "prior_incident_id": (
+                str(incident.prior_incident_id) if incident.prior_incident_id else None
+            ),
+            "evidence": incident.evidence,
         }
 
 
