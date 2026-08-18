@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "7819513e2a1a",
+  "strategy": "manual-commit",
+  "branch": "feature/434-g4-residency",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".env.app.example",
+    "backend/app/api/v1/admin.py",
+    "backend/app/core/config.py",
+    "backend/tests/api/test_deployment_posture.py",
+    "deploy/terraform/azure/aca.tf",
+    "docs/compliance-posture.md",
+    "docs/security.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/78/19513e2a1a/0/metadata.json",
+      "transcript": "/78/19513e2a1a/0/full.jsonl",
+      "compact_transcript": "/78/19513e2a1a/0/transcript.jsonl",
+      "content_hash": "/78/19513e2a1a/0/content_hash.txt",
+      "prompt": "/78/19513e2a1a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 16612,
+    "cache_read_tokens": 13925166,
+    "output_tokens": 12950,
+    "api_call_count": 19
+  }
+}
