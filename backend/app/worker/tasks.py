@@ -46,6 +46,7 @@ from backend.app.lineage import pull as lineage_pull
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import (
     asset_service,
+    audit_read_service,
     comparison_run,
     connection_service,
     cron,
@@ -893,6 +894,34 @@ def purge_sample_failures() -> int:
     try:
         retention_days = get_settings().sample_failures_retention_days
         return run_service.purge_expired_sample_failures(session, retention_days=retention_days)
+    finally:
+        session.close()
+
+
+# ─────────────────────── Audit-log retention sweep (#1318) ──────────────────
+
+
+@celery_app.task(name="purge_audit_events")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def purge_audit_events() -> int:
+    """Celery-beat entry point — daily audit-log retention sweep (ADR 0041 §2.7).
+
+    Runs on its OWN clock and its own setting (`AUDIT_RETENTION_DAYS`, default
+    365), deliberately decoupled from the sample-failures sweep: that one destroys
+    incidentally-captured personal data, this one destroys a record of what people
+    did, and an operator must be able to set a short window for the first and a
+    long one for the second.
+
+    Runs as `dataq_app` like every other beat task — ADR 0041 §2.7 rules out a
+    second, less-trusted database role, because the single-role model is the whole
+    mitigation for the unpatched Postgres RI owner-switched-cast escalation. The
+    service handles the consequence: the migration revoked DELETE on this table
+    from that same role, so the sweep re-grants it around its own statement.
+    """
+    session = get_session()
+    try:
+        return audit_read_service.purge_expired_events(
+            session, retention_days=get_settings().audit_retention_days
+        )
     finally:
         session.close()
 

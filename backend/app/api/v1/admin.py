@@ -13,8 +13,8 @@ connection to the mail relay, not *how many*.
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Annotated, Literal
+from datetime import UTC, datetime
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
@@ -28,6 +28,7 @@ from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.db.models import User
 from backend.app.db.session import get_db
 from backend.app.services import admin_service as svc
+from backend.app.services import audit_read_service
 from backend.app.services.otp_mailer import OtpMailer
 
 router = APIRouter(
@@ -215,3 +216,121 @@ def test_auth_email(
     mailer = OtpMailer(secret_store)
     mailer.send_preflight(to=current_user.email)
     return AuthEmailTestResponse(to=current_user.email)
+
+
+# ───────────────────────── audit log (ADR 0041, #1318) ─────────────────────────
+
+
+class AuditEventRead(ApiModel):
+    """One audit event.
+
+    `actor_label` and `actor_display` are both served, deliberately. They are the
+    same string almost always, and they differ exactly when the actor has been
+    renamed or deleted since the event — `actor_label` is the identity **as at the
+    time of the action**, `actor_display` resolves the live row. That difference
+    is information an auditor wants ("this was done by someone who no longer
+    exists"), not a discrepancy to paper over by serving one of them.
+    """
+
+    id: str
+    occurred_at: str
+    action_class: str
+    action: str
+    entity_type: str
+    entity_id: str | None
+    actor_user_id: str | None
+    actor_kind: str
+    actor_label: str | None
+    actor_display: str | None
+    before: dict[str, Any] | None
+    after: dict[str, Any] | None
+    request_id: str | None
+
+
+class AuditEventPage(ApiModel):
+    """A page of events plus the fields needed to interpret it honestly.
+
+    `total` and `truncated` are not decoration: a page of `limit` rows is
+    otherwise indistinguishable from "that is all there is", and on an audit log
+    "there are no more events" is a conclusion someone may act on.
+    """
+
+    events: list[AuditEventRead]
+    total: int
+    truncated: bool
+    #: The configured retention window and the point before which events have been
+    #: swept (`null` when the sweep is disabled). Pagination honesty is not the
+    #: only honesty this page needs: a query for a window older than retention
+    #: returns `total: 0`, which is indistinguishable from "nothing happened
+    #: then" — the single most misleading answer an audit log can give.
+    retention_days: int
+    retained_since: datetime | None
+
+
+def _assume_utc(value: datetime | None) -> datetime | None:
+    """Interpret a naive datetime as UTC. See the note in `list_audit_events`."""
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
+@router.get(
+    "/audit-events",
+    response_model=AuditEventPage,
+    summary="Query the append-only audit log (workspace-admin only)",
+)
+def list_audit_events(
+    db: Annotated[Session, Depends(get_db)],
+    action_class: Literal["config", "access"] | None = None,
+    entity_type: str | None = None,
+    entity_id: UUID | None = None,
+    actor_user_id: UUID | None = None,
+    action: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> AuditEventPage:
+    """The durable record of deliberate acts by a principal, newest first.
+
+    Workspace-admin only, via the router-level `require_workspace_admin` — there
+    is deliberately no per-suite scoping. An audit log scoped by the grants of the
+    person reading it cannot answer the question it exists for ("who changed the
+    thing I no longer have access to?"), and every row here is *metadata about an
+    act*, never warehouse data: `before`/`after` are built from a per-entity
+    allow-list that excludes `sample_failures`, `observed_value` and every
+    credential.
+
+    `action_class` is `config` today. `access` is reserved for the data-read
+    events of G1/#431 and returns nothing until that ships — an empty result for
+    `action_class=access` means "not built yet", not "nobody read anything", which
+    is why the parameter accepts it rather than 422-ing on a value the schema
+    knows about.
+    """
+    # A naive datetime compared against a `timestamptz` column is interpreted in
+    # the database session's `TimeZone`, so the window a caller asked for would
+    # silently shift with server configuration — and an audit query that quietly
+    # covers a different period than requested is worse than one that refuses.
+    # UTC is the assumption because every timestamp this API emits is UTC ISO-8601.
+    since = _assume_utc(since)
+    until = _assume_utc(until)
+
+    page = audit_read_service.list_events(
+        db,
+        action_class=action_class,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        actor_user_id=actor_user_id,
+        action=action,
+        since=since,
+        until=until,
+        limit=limit,
+        offset=offset,
+    )
+    return AuditEventPage(
+        events=[AuditEventRead(**audit_read_service.as_dict(e)) for e in page.events],
+        total=page.total,
+        truncated=page.truncated,
+        retention_days=page.retention_days,
+        retained_since=page.retained_since,
+    )

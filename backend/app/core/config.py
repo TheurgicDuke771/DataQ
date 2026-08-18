@@ -180,6 +180,23 @@ class Settings(BaseSettings):
 
     sample_failures_retention_days: int = 30
 
+    # Audit-log retention (ADR 0041 §2.7, #1318). Deliberately DECOUPLED from
+    # `sample_failures_retention_days` above, and the two sit next to each other so
+    # the reason is visible: they protect opposite things. That one destroys
+    # personal data that was incidentally captured (PII minimisation — the shorter
+    # the better); this one keeps a record of what people did (accountability — the
+    # longer the better). One knob would force an operator to trade one against the
+    # other, and the sensible settings point in opposite directions.
+    #
+    # 365 days is the default because the audience is an annual access review or a
+    # regulator's request, not an operator debugging last Tuesday. <=0 disables the
+    # sweep entirely (a no-op, guarded in `audit_read_service.purge_expired_events`)
+    # — NOT "expire instantly": the cutoff is `now - retention_days`, so without the
+    # guard a non-positive value would erase the whole audit trail, including the
+    # event written a moment ago.
+    #   AUDIT_RETENTION_DAYS=365
+    audit_retention_days: int = 365
+
     # OTP-code retention sweep (#1136). `otp_codes.email` is stored in plaintext
     # (deliberately — the "newest live code for this address" lookup needs it), so
     # each row is a sign-in-attempt timestamp against an address: PII with no

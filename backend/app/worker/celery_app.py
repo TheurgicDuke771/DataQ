@@ -221,6 +221,17 @@ def create_celery_app() -> Celery:
                 "task": "sync_asset_inventory",
                 "schedule": crontab(hour="3", minute="17"),  # daily, 03:17 UTC
             },
+            # Audit-log retention sweep (#1318, ADR 0041 §2.7): once a day, delete
+            # `audit_events` past `audit_retention_days` (default 365). Its own
+            # clock and its own setting, decoupled from the sample-failures sweep
+            # above on purpose — the two protect opposite things (a record of what
+            # people did vs. incidentally-captured personal data), so their
+            # sensible windows point in opposite directions. Off-peak and offset
+            # from its neighbours so the daily sweeps do not pile onto one minute.
+            "purge-audit-events": {
+                "task": "purge_audit_events",
+                "schedule": crontab(hour="4", minute="17"),  # daily, 04:17 UTC
+            },
             # OTP-code retention sweep (#1136): once a day, delete expired/spent
             # `otp_codes` rows past `otp_codes_retention_hours` (default 24h, well
             # past the 10-minute code TTL). Hygiene, not a security control — the
