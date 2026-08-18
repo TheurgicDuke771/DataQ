@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "688a03f49631",
+  "strategy": "manual-commit",
+  "branch": "feature/433-g3-warehouse-tags",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/suites.py",
+    "backend/app/services/run_service.py",
+    "backend/app/services/suite_service.py",
+    "backend/tests/api/test_suites.py",
+    "backend/tests/services/test_redaction_precedence.py",
+    "docs/compliance-posture.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/68/8a03f49631/0/metadata.json",
+      "transcript": "/68/8a03f49631/0/full.jsonl",
+      "compact_transcript": "/68/8a03f49631/0/transcript.jsonl",
+      "content_hash": "/68/8a03f49631/0/content_hash.txt",
+      "prompt": "/68/8a03f49631/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 66,
+    "cache_creation_tokens": 31073,
+    "cache_read_tokens": 22681658,
+    "output_tokens": 24097,
+    "api_call_count": 33
+  }
+}
