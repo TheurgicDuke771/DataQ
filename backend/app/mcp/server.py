@@ -579,7 +579,12 @@ def get_adf_pipeline_status(
 ) -> dict[str, Any]:
     """Get recent orchestration pipeline/DAG runs with their correlated DQ result.
 
-    Use this for 'why did the customer pipeline fail?'.
+    Use this for 'why did the customer pipeline fail?'. Returns the most recent
+    ADF / Airflow / dbt pipeline runs —
+    provider, pipeline/DAG id, run status, start/end times — and, when a DQ suite
+    was triggered by that pipeline run (and is visible to the user), the triggered
+    run's id and status. Optionally filter by ``provider`` ('adf', 'airflow' or
+    'dbt') and/or ``status``.
 
     **There is no time filter**, so "did anything fail overnight?" cannot be
     asked directly: this returns the ``limit`` most recent runs, and
@@ -591,11 +596,7 @@ def get_adf_pipeline_status(
     Only pipelines DataQ has ingested appear here. A short or empty result can
     also mean no orchestration connection is configured for that provider and
     environment, or that its poller is failing — check ``list_connections``
-    before reporting an all-clear. Returns the most recent ADF / Airflow / dbt pipeline runs —
-    provider, pipeline/DAG id, run status, start/end times — and, when a DQ suite
-    was triggered by that pipeline run (and is visible to the user), the triggered
-    run's id and status. Optionally filter by ``provider`` ('adf', 'airflow' or
-    'dbt').
+    before reporting an all-clear.
     """
     # All three orchestration providers (ADR 0029 added dbt), from the shared
     # vocabulary. The old two-name literal rejected `dbt` — the obvious next call
@@ -712,9 +713,6 @@ def list_checks(
     / integrity / timeliness / uniqueness / validity, or null when unclassified),
     its configuration, the baseline connection for a comparison check, any
     warn/fail/critical severity thresholds, and whether its alerts are currently
-    whether its alerts are currently snoozed. A null
-    ``alert_snoozed_until`` rules out a per-check snooze only — it does **not**
-    mean an alert would have been delivered, which also depends on the suite's
     snoozed. This is the suite's *definition* — for how those checks last
     performed, use ``get_suite_results``.
 
@@ -779,19 +777,7 @@ def get_check_history(
     """Get one check's recent result history — how it has behaved run over run.
 
     Use this for 'has the row-count check been flaky?', 'when did freshness start
-    failing?', or 'is this a one-off or a trend?'.
-
-    **This is a count-capped page, not a time window** — it returns the most
-    recent ``limit`` results and takes no date range. When ``truncated`` is true,
-    older results exist beyond ``oldest_in_page``, so the earliest point here is
-    a page boundary and **not** an onset: raise ``limit`` (max 200), and if it is
-    still truncated say the onset is *before* ``oldest_in_page`` rather than
-    naming the first row's date. An empty ``points`` means the check has never
-    produced a result, not that it has never failed. Points may also include
-    results from runs that never completed, so cross-check a surprising one's
-    ``run_id`` with ``get_run_status``.
-
-    Returns up to ``limit`` of the
+    failing?', or 'is this a one-off or a trend?'. Returns up to ``limit`` of the
     check's most recent results in chronological order (oldest first), each with
     the run id, the run's timestamp, the check's status on that run
     (pass / warn / fail / critical / skip / error) and its ``metric_value`` — the
@@ -805,6 +791,15 @@ def get_check_history(
     confuse: a check that "started failing" may have started failing because the
     data moved (visible here) or because someone tightened its threshold (visible
     there), and this tool cannot distinguish them.
+
+    **This is a count-capped page, not a time window** — it returns the most
+    recent ``limit`` results and takes no date range. When ``truncated`` is true,
+    older results exist beyond ``oldest_in_page``, so the earliest point here is
+    a page boundary and **not** an onset: raise ``limit`` (max 200), and if it is
+    still truncated say the onset is *before* ``oldest_in_page`` rather than
+    naming the first row's date. An empty ``points`` means the check has never
+    produced a result, not that it has never failed, and points may include
+    results from runs that never completed.
 
     Requires view access to the suite.
     """
@@ -860,16 +855,16 @@ def list_check_versions(
     ``get_check_history``.** Answering "why did this start failing?" usually
     needs both: the data may have moved, or the definition may have.
 
-    A snapshot is written on create and after every successful edit, so a check
-    so a check that has never been edited still has version 1 — **except for
-    checks authored before version history existed**, which have no snapshot of
-    their original definition. For those, ``total: 0`` means "no recorded
-    history", not "never edited", and the oldest snapshot is the state after
-    their first later edit, not the original.
+    A snapshot is written on create and after every edit that actually changes
+    something, so a check that has never been edited still has version 1 —
+    **except for checks authored before version history existed**, which have no
+    snapshot of their original definition. For those, ``total: 0`` means "no
+    recorded history", not "never edited", and the oldest snapshot is the state
+    after their first later edit, not the original.
 
-    ``changed_by_name`` is null
-    when the editor was a system actor or a user who has since been removed —
-    read that as "the author is not recorded", not as "nobody edited it".
+    ``changed_by_name`` is null when the editor was a system actor or a user who
+    has since been removed — read that as "the author is not recorded", not as
+    "nobody edited it".
 
     To put the check back to one of these snapshots, use
     ``restore_check_version``. Requires view access to the suite.
@@ -921,16 +916,7 @@ def list_runs(
     """List recent suite runs, newest first, with each run's data-quality outcome.
 
     Use this to see recent runs, or to find a run id to drill into with
-    ``get_run_results``.
-
-    **This tool has no time filter.** It returns the newest ``limit`` runs
-    matching the optional ``suite_id``/``status``, and ``total`` counts matching
-    runs for all time. It therefore cannot answer "what ran today" directly:
-    read ``newest_in_page`` / ``oldest_in_page``, state the window you actually
-    saw, and page with ``offset`` until ``oldest_in_page`` precedes the period
-    you were asked about. Never describe a page as "today's runs".
-
-    Returns, per run: its id, the
+    ``get_run_results``. Returns, per run: its id, the
     suite it belongs to, the **execution** status (queued / running / succeeded /
     failed / cancelled), when it started and finished, what triggered it, a
     user-safe failure reason when it failed, and its **data-quality** outcome —
@@ -944,6 +930,13 @@ def list_runs(
     a **null** outcome (no counts, no severity) — it is still executing, or it
     failed without producing a complete account. Describe such a run by its
     status; it has no data-quality verdict yet.
+
+    **This tool has no time filter.** It returns the newest ``limit`` runs and
+    ``total`` counts matching runs for all time, so it cannot answer "what ran
+    today" directly: read ``newest_in_page`` / ``oldest_in_page``, state the
+    window you actually saw, and page with ``offset`` until ``oldest_in_page``
+    precedes the period you were asked about. Never describe a page as "today's
+    runs".
 
     Optionally narrow to one ``suite_id`` (an error if you can't see it) and/or a
     run ``status``. ``total`` reports how many runs match regardless of ``limit``
@@ -1450,24 +1443,23 @@ def export_suite(suite_id: str) -> dict[str, Any]:
 def trigger_suite_run(suite_id: str) -> dict[str, Any]:
     """Trigger an asynchronous run of a suite's checks; returns a run id to poll.
 
-    Use this for 'run the orders suite'.
+    Use this for 'run the orders suite'. Queues the suite and dispatches it to
+    the worker, returning the new run's id and queued status — poll
+    ``get_run_status`` with that id for progress. Requires edit access. Fails
+    fast if the suite has no valid run target configured.
 
     **You cannot choose the environment or the dataset here.** A run always uses
     the suite's own connection and run target, both fixed on the suite. If the
     user names an environment, check it against ``list_suites`` /
     ``list_connections`` first — a suite bound to QA cannot be run against DEV
-    from this tool.
+    from this tool, and getting a DEV equivalent means ``import_suite`` onto a
+    DEV connection plus ``update_suite`` to give it a target.
 
     There is no de-duplication: calling twice starts two concurrent runs, and
     this tool cannot see a run a schedule or pipeline trigger started moments
     ago — check ``list_runs`` before re-triggering. Every check in the suite
     runs, including snoozed ones (a snooze mutes alerting only); there is no way
     to run a single check.
-
-    Queues the suite and dispatches it
-    to the worker, returning the new run's id and queued status — poll
-    ``get_run_status`` with that id for progress. Requires edit access. Fails
-    fast if the suite has no valid run target configured.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
@@ -1764,9 +1756,8 @@ def snooze_check(
     suppressed. Do not describe a snoozed check as disabled, and do not reach for
     this when the user wants the check to stop evaluating. Requires edit access.
 
-    One tool rather than a snooze/unsnooze pair: it is one piece of state with
-    two values, and splitting it would ask an LLM to pick between two names for
-    the same field. **The consequence is that "un-mute", "un-snooze", "turn
+    There is no separate unsnooze tool — omitting ``hours`` is how you
+    un-mute. **The consequence is that "un-mute", "un-snooze", "turn
     alerts back on" and "start alerting again" are all served by this tool too,
     despite its name saying the opposite** — call it with ``hours`` omitted.
     There is no separate unsnooze tool to look for.
@@ -1812,6 +1803,12 @@ def dryrun_check(
     critical, or ``error`` when it could not be evaluated and ``skip`` when a
     precondition was not met), the metric it measured, and the observed vs
     expected values.
+
+    **A preview reads what a real run would read, so it inherits the target's
+    sampling.** On ADLS / S3 / Iceberg the evaluation may be over a capped sample
+    rather than the whole dataset — so a ``pass`` describes the sample, and a
+    ``volume`` preview's row count is not the file's row count. Say so rather
+    than reporting either as a fact about the full table.
 
     This is the authoring loop: dry-run, adjust the threshold, dry-run again, and
     only then create. Requires edit access to the suite.
@@ -2259,6 +2256,10 @@ def suggest_column_policy(suite_id: str) -> dict[str, Any]:
 def test_connection(connection_id: str) -> dict[str, Any]:
     """Check whether a stored connection can actually reach its datasource.
 
+    Use this for 'is the Snowflake connection working?' or when a run has failed
+    and you need to tell a dead credential from a broken check. Opens a live
+    connection using the stored credential and reports success or a failure.
+
     **What a pass proves is narrow:** the credential authenticates and the
     datasource answers a trivial query. It does **not** check that a suite's
     target table exists, that the role can read it, or that the run
@@ -2271,11 +2272,6 @@ def test_connection(connection_id: str) -> dict[str, Any]:
     carry DSN and credential fragments, so it is withheld. Do not speculate
     about the cause — report that the probe failed and that the server logs
     carry the detail.
-
-    Use this for 'is the Snowflake connection working?' or when a run has failed
-    and you need to tell a dead credential from a broken check. Opens a live
-    connection using the stored credential and reports success or a classified
-    failure reason.
 
     Nothing is changed and no credential is ever returned — this reports only
     whether the probe worked. Requires the **member** workspace role: it spends a
