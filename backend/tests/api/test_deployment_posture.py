@@ -105,3 +105,66 @@ def test_every_transfer_vector_explains_itself(client: TestClient) -> None:
     body = client.get("/api/v1/admin/deployment").json()
     thin = [t["name"] for t in body["external_transfers"] if len(t["detail"].strip()) < 40]
     assert not thin, f"transfer vectors with no substantive detail: {thin}"
+
+
+def test_the_live_mcp_transfer_vector_is_listed(client: TestClient) -> None:
+    """Two distinct LLM vectors, and conflating them was a real omission.
+
+    `/mcp` serves run results and redacted failing samples to third-party AI
+    clients **today, in production**. An earlier version of this register listed
+    only the *unbuilt outbound* LLM feature — so a register whose whole job is to
+    enumerate what can move data out named the future vector and omitted the live
+    one.
+    """
+    body = client.get("/api/v1/admin/deployment").json()
+    names = {t["name"] for t in body["external_transfers"]}
+    assert "mcp_ai_clients" in names
+    assert "signin_email" in names
+    assert "secret_store" in names
+
+
+def test_per_suite_alerting_counts_as_an_alert_transfer(
+    client: TestClient, db_session: Any
+) -> None:
+    """Reading only the WORKSPACE settings reported "no alert transfer" for a
+    deployment that alerts entirely through per-suite webhooks.
+
+    That is a supported and common shape — and exactly the deployment whose
+    operator most needs this register to be right, since nothing at the workspace
+    level would hint that anything leaves at all.
+    """
+    from backend.app.db.models import Connection, Suite, SuiteNotification
+
+    before = next(
+        t
+        for t in client.get("/api/v1/admin/deployment").json()["external_transfers"]
+        if t["name"] == "alert_delivery"
+    )
+    assert before["enabled"] is False, "precondition: no workspace-level alerting configured"
+
+    owner = _user(db_session, "admin")
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "x"},
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name=f"s-{uuid.uuid4().hex[:8]}", connection_id=conn.id, created_by=owner.id)
+    db_session.add(suite)
+    db_session.flush()
+    db_session.add(
+        SuiteNotification(suite_id=suite.id, enabled=True, webhook_secret_ref="suite-notif-x")
+    )
+    db_session.commit()
+
+    after = next(
+        t
+        for t in client.get("/api/v1/admin/deployment").json()["external_transfers"]
+        if t["name"] == "alert_delivery"
+    )
+    assert (
+        after["enabled"] is True
+    ), "a suite-level webhook is an outbound transfer and must be reported as one"

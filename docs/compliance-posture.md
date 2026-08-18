@@ -213,7 +213,7 @@ to keep the result, and — per the project's standing rule that only a live run
 for anything crossing a driver boundary — **verification against real warehouses**, which
 are currently stopped. Tracked on #433.
 
-### G4 — 🟢 Region / residency assertion & enforcement — #434 — **declared, asserted and surfaced**
+### G4 — 🟠 Region / residency assertion & enforcement — #434 — **asserted and surfaced; one live discrepancy found**
 **Requirement:** GDPR Ch. V — EU personal data must stay in-region; cross-border transfer
 needs a lawful basis. The post-v1 LLM call is a new transfer vector.
 **Current state:** deploy is region-pinned to **US (westus3)**; the seam *allows* an EU
@@ -240,6 +240,16 @@ holds rules, not data.
 **External transfers are enumerated, not derived** — alert delivery, telemetry, and the
 unbuilt LLM seam, which is listed while disabled on purpose so an auditor sees it was
 considered rather than inferring its absence.
+
+**Building the control immediately found a live discrepancy, which is the strongest
+argument for it.** The Azure Postgres server — the only resource holding personal data —
+is in **West US 3** while the deployment declares **West US 2**. Verified against running
+Azure, not inferred. Both are US regions, so this is not a Ch. V transfer, but the
+residency matrix asserted they agreed and an earlier draft of it shipped that claim. The
+mismatch is now stated in the matrix and surfaced by a `check` block on every plan; the
+underlying resolution (the subscription's 1-server cap is what forced the shared server)
+is an operational decision, not a documentation one, so G4 stays 🟠 rather than 🟢 until it
+is resolved or consciously accepted — tracked as [#1465](https://github.com/TheurgicDuke771/DataQ/issues/1465).
 
 **What this does not do, stated plainly:** the app **declares** a jurisdiction, it does not
 verify one. Software cannot confirm which datacentre its database sits in; the IaC pins it

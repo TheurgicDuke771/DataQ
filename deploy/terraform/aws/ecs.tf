@@ -86,6 +86,10 @@ locals {
   # local.app_env, with AWS-shaped values in place of the Azure ones.
   app_env = [
     { name = "ENVIRONMENT", value = var.environment },
+    # The jurisdiction this deployment DECLARES (G4/#434). Sourced from the same
+    # variable that places the resources, so the declaration and the placement
+    # cannot drift apart by editing one of them.
+    { name = "DEPLOYMENT_REGION", value = var.aws_region },
     { name = "LOG_LEVEL", value = "INFO" },
     { name = "SAMPLE_FAILURES_RETENTION_DAYS", value = "30" },
     # Runtime SecretStore -> AWS Secrets Manager via the ECS task role (no

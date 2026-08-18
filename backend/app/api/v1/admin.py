@@ -19,14 +19,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import ConfigDict
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
 from backend.app.core.auth import require_workspace_admin
 from backend.app.core.config import get_settings
 from backend.app.core.secrets import SecretStore, get_secret_store
-from backend.app.db.models import User
+from backend.app.db.models import SuiteNotification, User
 from backend.app.db.session import get_db
+from backend.app.mcp.auth import mcp_enabled
 from backend.app.services import admin_service as svc
 from backend.app.services import audit_read_service
 from backend.app.services.otp_mailer import OtpMailer
@@ -373,7 +375,7 @@ class DeploymentPostureRead(ApiModel):
     response_model=DeploymentPostureRead,
     summary="Declared data residency and external-transfer vectors (workspace-admin only)",
 )
-def get_deployment_posture() -> DeploymentPostureRead:
+def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> DeploymentPostureRead:
     """The declared residency posture (GDPR Ch. V, G4/#434).
 
     Workspace-admin only via the router gate. The transfer list is enumerated
@@ -382,6 +384,24 @@ def get_deployment_posture() -> DeploymentPostureRead:
     a control an auditor can rely on.
     """
     settings = get_settings()
+    # Per-suite notification configs count too. Reading only the WORKSPACE
+    # settings reported "no alert transfer" for a deployment that alerts entirely
+    # through per-suite webhooks — which is a supported and common shape, and
+    # exactly the deployment whose operator most needs the register to be right.
+    per_suite_alerting = bool(
+        db.scalar(
+            select(func.count())
+            .select_from(SuiteNotification)
+            .where(
+                SuiteNotification.enabled.is_(True),
+                or_(
+                    SuiteNotification.webhook_secret_ref.isnot(None),
+                    SuiteNotification.slack_webhook_secret_ref.isnot(None),
+                    SuiteNotification.email_recipients.isnot(None),
+                ),
+            )
+        )
+    )
     transfers = [
         ExternalTransfer(
             name="alert_delivery",
@@ -389,7 +409,8 @@ def get_deployment_posture() -> DeploymentPostureRead:
                 settings.teams_webhook_secret_name
                 or settings.slack_webhook_secret_name
                 or settings.email_to
-            ),
+            )
+            or per_suite_alerting,
             detail=(
                 "Alerts carry check names, statuses and — when a failing sample is "
                 "included — redacted sample values, to whatever webhook or mailbox "
@@ -398,16 +419,54 @@ def get_deployment_posture() -> DeploymentPostureRead:
                 "the operator can attest to."
             ),
         ),
+        # TWO distinct LLM vectors, and conflating them was a real omission: the
+        # unbuilt outbound one was listed while the LIVE inbound one — third-party
+        # AI clients reading through /mcp — was not.
+        ExternalTransfer(
+            name="mcp_ai_clients",
+            enabled=mcp_enabled(settings),
+            detail=(
+                "The /mcp surface serves run results, redacted failing samples and "
+                "check configuration to whatever AI client holds a valid PAT — "
+                "Claude Desktop, Copilot, Cursor. The model provider behind that "
+                "client, and its jurisdiction, are chosen by the token holder and "
+                "are outside DataQ's knowledge. This is a live transfer path today, "
+                "not a future one, and it is the more consequential of the two "
+                "LLM entries here."
+            ),
+        ),
         ExternalTransfer(
             name="llm_intelligence",
             enabled=False,
             detail=(
-                "Not built. When it lands it is a Ch. V transfer vector by "
-                "construction, and its design posture (schema-only context, "
-                "PII-redacted, local-endpoint option) is recorded in "
-                "docs/post-v1-dq-intelligence-notes.md. Listed here while disabled "
-                "on purpose: an auditor should see that it was considered and is "
-                "off, not have to infer its absence."
+                "The OUTBOUND direction — DataQ calling a model on its own behalf — "
+                "and it is not built. When it lands it is a Ch. V transfer by "
+                "construction; its design posture (schema-only context, "
+                "PII-redacted, local-endpoint option) is in "
+                "docs/post-v1-dq-intelligence-notes.md. Listed while disabled on "
+                "purpose: an auditor should see it was considered, not infer its "
+                "absence. Distinct from mcp_ai_clients above, which is inbound "
+                "and live."
+            ),
+        ),
+        ExternalTransfer(
+            name="signin_email",
+            enabled=bool(settings.auth_email_smtp_host),
+            detail=(
+                "Email-OTP sign-in (ADR 0032) sends one-time codes to user "
+                "addresses through the configured SMTP relay. It carries account "
+                "identifiers — personal data under GDPR Art 4(1) — rather than "
+                "warehouse content, and the relay is operator-chosen."
+            ),
+        ),
+        ExternalTransfer(
+            name="secret_store",
+            enabled=settings.secret_store not in {"redis", "memory"},
+            detail=(
+                f"Warehouse credentials are held in the '{settings.secret_store}' "
+                "backend. Not customer data, but a remote store is a location "
+                "outside the app's own region if configured that way — and the "
+                "credentials it holds unlock the systems the customer data lives in."
             ),
         ),
         ExternalTransfer(

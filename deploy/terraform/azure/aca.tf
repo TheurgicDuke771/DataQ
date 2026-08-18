@@ -21,9 +21,12 @@ data "azurerm_container_app_environment" "shared" {
   # with a clean `apply` and no signal. For a GDPR Ch. V control, "we did not
   # notice the jurisdiction changed" is the whole failure.
   #
-  # A `precondition` rather than a `validation` block: this is a fact about the
-  # remote world, not about an input value, so it can only be checked at plan
-  # time against the refreshed data source.
+  # A `postcondition` on the data source rather than a `validation` block: this is
+  # a fact about the remote world, not about an input value, so it can only be
+  # checked after the data source refreshes. (Named precisely because the sibling
+  # assertion on the shared DATABASE below is a `check` block instead, for a
+  # reason spelled out there — a maintainer adding a third should know the two
+  # forms differ in whether they BLOCK.)
   lifecycle {
     postcondition {
       condition     = lower(replace(self.location, " ", "")) == lower(replace(var.azure_location, " ", ""))
