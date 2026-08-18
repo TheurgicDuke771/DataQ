@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "47fd9ff392dd",
+  "strategy": "manual-commit",
+  "branch": "feature/1318-audit-events-substrate",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/audit_service.py",
+    "backend/tests/services/test_audit_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/47/fd9ff392dd/0/metadata.json",
+      "transcript": "/47/fd9ff392dd/0/full.jsonl",
+      "compact_transcript": "/47/fd9ff392dd/0/transcript.jsonl",
+      "content_hash": "/47/fd9ff392dd/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 23392,
+    "cache_read_tokens": 5109991,
+    "output_tokens": 16354,
+    "api_call_count": 23
+  }
+}
