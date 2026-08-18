@@ -61,6 +61,7 @@ from backend.app.mcp.auth import (
 )
 from backend.app.services import (
     asset_view_service,
+    audit_service,
     check_service,
     connection_service,
     dashboard_service,
@@ -311,7 +312,9 @@ def _run_outcome_fields(run: Run, outcome: tuple[int, int, str | None] | None) -
     }
 
 
-def _run_results_payload(session: Session, suite: Suite, run: Run) -> dict[str, Any]:
+def _run_results_payload(
+    session: Session, suite: Suite, run: Run, *, actor: User | None = None
+) -> dict[str, Any]:
     """One run's `{run, checks}` payload — shared by `get_suite_results` (latest
     run of a suite) and `get_run_results` (a named run).
 
@@ -327,6 +330,12 @@ def _run_results_payload(session: Session, suite: Suite, run: Run) -> dict[str, 
     has no way to know the list is one phase of thirty — so an incomplete run
     yields no checks at all and says why, rather than a confident report built
     from a fraction of the suite.
+
+    **The G1 access event is written here, not at the two call sites** (#431). The
+    reason is the same one this function is shared for: a second copy of the audit
+    call is a second place to forget it, and the surface it protects — who read
+    which failing rows — is one where a silent gap is indistinguishable from
+    nobody having looked.
     """
     final = run.status in rollup.AGGREGATABLE_RUN_STATUSES
     results = run_service.list_results(session, run.id) if final else []
@@ -336,6 +345,46 @@ def _run_results_payload(session: Session, suite: Suite, run: Run) -> dict[str, 
     def _tested_column(check_id: uuid.UUID | None) -> str | None:
         check = checks.get(check_id) if check_id is not None else None
         return check.config.get("column") if check is not None else None
+
+    rendered = [
+        {
+            "result_id": str(r.id),
+            **_redacted_sample(r, _tested_column(r.check_id), policy),
+            "observed_value": run_service.redact_observed_value(
+                r.observed_value, tested_column=_tested_column(r.check_id), policy=policy
+            ),
+        }
+        for r in results
+    ]
+    # `redaction` is the state the redactor computed for THIS read: `full` means
+    # everything row-level was masked and `null` means there was no row-level
+    # content at all, so neither exposed anything. Derived from the redacted
+    # output rather than the stored row, so the policy that decides what the
+    # caller sees is the same one that decides what the audit records — the two
+    # cannot disagree about whether an exposure happened.
+    exposed_ids = [
+        r["result_id"]
+        for r in rendered
+        if r["redaction"] in {"none", "partial"} or r["observed_value"] is not None
+    ]
+    audit_service.record_access(
+        session,
+        action="run_results.read",
+        entity_type="run",
+        entity_id=run.id,
+        actor=actor,
+        exposed=bool(exposed_ids),
+        detail={
+            "suite_id": str(suite.id),
+            "result_count": len(results),
+            "exposed_result_ids": exposed_ids,
+            # The surface matters to an investigator: an LLM client may carry a
+            # value into a conversation and onward in ways a browser session does
+            # not, so "who read this" is not the whole question — "through what"
+            # is part of it.
+            "surface": "mcp",
+        },
+    )
 
     return {
         "run": {
@@ -514,7 +563,7 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
         latest = session.scalars(rollup.latest_runs_per_suite_stmt([sid])).first()
         if latest is None:
             return {"suite_id": suite_id, "run": None, "checks": []}
-        return {"suite_id": suite_id, **_run_results_payload(session, suite, latest)}
+        return {"suite_id": suite_id, **_run_results_payload(session, suite, latest, actor=user)}
 
 
 @mcp.tool
@@ -1032,7 +1081,10 @@ def get_run_results(run_id: str) -> dict[str, Any]:
         # runs, and the denial hides the run id too (the same rule the REST route
         # holds — ADR 0027 existence-hiding).
         suite = require_permission(session, run.suite_id, user.id, minimum="view")
-        return {"suite_id": str(run.suite_id), **_run_results_payload(session, suite, run)}
+        return {
+            "suite_id": str(run.suite_id),
+            **_run_results_payload(session, suite, run, actor=user),
+        }
 
 
 @mcp.tool

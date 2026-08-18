@@ -16,6 +16,7 @@ suite-scoped, edit-gated write); this module owns the reads.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
@@ -35,7 +36,7 @@ from backend.app.db.models import (
     User,
 )
 from backend.app.db.session import get_db
-from backend.app.services import orchestration_service, run_dispatch
+from backend.app.services import audit_service, orchestration_service, run_dispatch
 from backend.app.services import run_service as svc
 from backend.app.services.comparison_report import ComparisonReportInvalidError, build_report
 from backend.app.services.suite_authz import require_permission
@@ -325,6 +326,54 @@ def _result_read(
     )
 
 
+def _exposed_result_ids(results: Sequence[ResultRead]) -> list[str]:
+    """Which of these results actually surfaced regulated data to the caller.
+
+    `redaction` is the state the redactor computed for THIS read: `full` means
+    everything row-level was masked, `null` means the result carried no row-level
+    content at all. Neither exposed anything, so neither belongs in the list an
+    investigator reads to answer "who saw the failing rows?".
+
+    Derived from the redacted output rather than from the stored row, deliberately
+    — the same column policy that decides what the caller sees decides what the
+    audit records, so the two can never disagree about whether an exposure
+    happened.
+    """
+    return [
+        str(r.id)
+        for r in results
+        if r.redaction in {"none", "partial"} or r.observed_value is not None
+    ]
+
+
+def _audit_result_read(db: Session, user: User, *, run: Any, results: Sequence[ResultRead]) -> None:
+    """Record a read of a run's results (G1 / #431, `action_class='access'`).
+
+    ONE event per read, not per result: the act is "this person opened this run",
+    and N events for one page would bury the acts an investigator is looking for
+    under the mechanics of how the page is assembled. The individual result ids
+    are in the payload, so nothing is lost.
+
+    Records WHICH results exposed regulated data, never WHAT they contained (ADR
+    0041 §2.6.3) — copying samples into an append-only table with a longer
+    retention would defeat the #1253 purge and the #432 erasure path.
+    """
+    exposed = _exposed_result_ids(results)
+    audit_service.record_access(
+        db,
+        action="run_results.read",
+        entity_type="run",
+        entity_id=run.id,
+        actor=user,
+        exposed=bool(exposed),
+        detail={
+            "suite_id": str(run.suite_id),
+            "result_count": len(results),
+            "exposed_result_ids": exposed,
+        },
+    )
+
+
 @router.get("/runs/{run_id}", response_model=RunDetailRead, summary="Get a run with its results")
 def get_run(
     run_id: uuid.UUID,
@@ -347,18 +396,20 @@ def get_run(
     # outcome (#571 — else checks_total/passed stay at the 0/0 default here), and
     # attach the separately-fetched, redaction-gated results.
     outcome = svc.check_outcome_counts(db, [run.id]).get(run.id)
+    reads = [
+        _result_read(
+            r,
+            tested_column=(
+                checks[r.check_id].config.get("column") if r.check_id in checks else None
+            ),
+            policy=policy,
+        )
+        for r in results
+    ]
+    _audit_result_read(db, current_user, run=run, results=reads)
     return RunDetailRead(
         **RunRead.model_validate(run).model_copy(update=_outcome_update(outcome)).model_dump(),
-        results=[
-            _result_read(
-                r,
-                tested_column=(
-                    checks[r.check_id].config.get("column") if r.check_id in checks else None
-                ),
-                policy=policy,
-            )
-            for r in results
-        ],
+        results=reads,
     )
 
 
@@ -589,6 +640,21 @@ def download_comparison_report(
             detail={"result_id": str(result_id)},
         )
     redacted = svc.redact_sample_failures(result.sample_failures, policy=suite.column_policy)
+    # A separate door to the same data, and a more consequential one: this hands
+    # the caller a FILE, which leaves the product entirely. `exposed=True`
+    # unconditionally — unlike the run-detail read there is no per-result
+    # redaction state to consult, and `observed_value` is passed to the report
+    # UNREDACTED, so a download that surfaced nothing is not a state this route
+    # can be in.
+    audit_service.record_access(
+        db,
+        action="comparison_report.download",
+        entity_type="result",
+        entity_id=result.id,
+        actor=current_user,
+        exposed=True,
+        detail={"run_id": str(run_id), "suite_id": str(run.suite_id), "format": fmt},
+    )
     payload, media_type = build_report(fmt, sample=redacted, observed=result.observed_value)
     filename = f"comparison-{result_id}.{fmt}"
     return Response(
