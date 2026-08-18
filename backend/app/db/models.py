@@ -1419,8 +1419,145 @@ class WorkspaceHealth(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+# ── Audit events (ADR 0041 phase 1, #1318) ─────────────────────────────────────
+#: Discriminator on `audit_events.action_class`. `config` = a principal changed
+#: configuration (phase 1). `access` = a principal READ regulated data (phase 2,
+#: G1/#431). One table, two classes, so retention, indexing and — if read volume
+#: ever demands it — physical partitioning can diverge per class without a second
+#: schema, a second authz gate, a second redaction seam, or a `UNION` behind
+#: "everything that happened to this suite" (ADR 0041 §2.1, §4).
+AUDIT_ACTION_CLASSES = ("config", "access")
+
+#: Discriminator on `audit_events.actor_kind` — WHICH KIND of principal acted.
+#: There is deliberately **no `system` value** (ADR 0041 §2.1): machine writes are
+#: out of scope entirely, so a `system` actor would have no legitimate producer and
+#: would exist purely as an invitation to smuggle routine machine writes in under
+#: it. Add it only when a config-changing act by DataQ *on its own authority*
+#: actually exists, and name that act in the same change.
+AUDIT_ACTOR_KINDS = ("user", "pat", "webhook")
+
+
+class AuditEvent(Base):
+    """An append-only record of a **deliberate act by a principal** (ADR 0041).
+
+    This is the record `check_versions` / `connection_versions` structurally cannot
+    be. A Type-4 snapshot table cascades away with its entity, so it can never
+    retain the one event an auditor most needs: the *delete*. The two mechanisms
+    keep distinct jobs and the split is the point — **Type-4 tables are the product
+    feature** (the version-history drawer, restore #1120: joinable, queryable by
+    `version_no`, safe to expose through the read API); **this table is the durable
+    record** (append-only, admin-gated, outlives its entity).
+
+    **`entity_id` deliberately carries no foreign key.** An FK leaves two options,
+    both self-defeating: CASCADE (the audit row dies with the entity — exactly the
+    failure this table exists to fix) or RESTRICT (the audit log makes deletion
+    impossible). The in-repo precedent is `CheckVersion.source_connection_id`, a
+    plain UUID with the same deliberate no-FK comment.
+
+    **Machine writes are out of scope** (ADR 0041 §2.1): a run insert, a
+    `lineage_edges` refresh, an `assets.last_seen` bump, an inventory sync, a
+    retention purge, and the bulk-DML deletes (the #770 asset sweep, the
+    sample-failure purge, the OTP-code and lineage-edge prunes). Auditing those
+    would bury the actor-attributable events in noise.
+
+    **Append-only is a guard against ACCIDENTAL in-app mutation, not
+    tamper-resistance**, and that distinction is recorded rather than implied. The
+    app owns its schema — the deployed stack creates the database `OWNER
+    dataq_app` and hands the migrate job the same `DATABASE_URL` as the api and
+    worker, so Alembic creates this table owned by `dataq_app`, which can `GRANT`
+    the revoked privileges straight back, or `TRUNCATE`/`DROP` it regardless of any
+    grant. The migration's `REVOKE UPDATE, DELETE` therefore stops a stray ORM call
+    or a careless bulk statement and **nothing stronger**. Splitting the role to
+    harden it is explicitly rejected: a second, less-trusted role in the `dataq`
+    database is precisely what the project's standing Postgres constraint forbids
+    (the referential-integrity check runs implicit casts as the referenced table's
+    owner). Real tamper-evidence needs cryptographic chaining anchored *outside*
+    the database and belongs to #431.
+
+    **No secret values and no warehouse data ever reach `before`/`after`** — see
+    `services/audit_service.py`, which owns the per-entity allow-list. An audit
+    payload is a JSONB write that never passes through structlog, so CLAUDE.md
+    §10's *redact at the logger, not the call site* rule genuinely does not cover
+    it; assuming it did would be the #849 shape in the one place the rule does not
+    reach.
+    """
+
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        _in_check("action_class", AUDIT_ACTION_CLASSES, "action_class_valid"),
+        _in_check("actor_kind", AUDIT_ACTOR_KINDS, "actor_kind_valid"),
+        # "Everything that happened to this check/connection/suite", newest first —
+        # the entity-history read, and the reason `entity_type` leads the key.
+        Index(
+            "ix_audit_events_entity",
+            "entity_type",
+            "entity_id",
+            text("occurred_at DESC"),
+        ),
+        # The workspace-wide feed, newest first. Carries `action_class` as the
+        # leading column so a class-scoped sweep (retention, or a read-only
+        # `access` feed) never scans the other class's rows — the phase-2 read
+        # volume is expected to dwarf phase 1's.
+        Index(
+            "ix_audit_events_class_occurred",
+            "action_class",
+            text("occurred_at DESC"),
+        ),
+        # "What did this principal do", newest first.
+        Index(
+            "ix_audit_events_actor",
+            "actor_user_id",
+            text("occurred_at DESC"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    occurred_at: Mapped[datetime] = _created_at()
+    action_class: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: Dotted `entity.verb`, e.g. `check.update`, `share.grant`,
+    #: `connection.reauth`, `user.role_change`. Free-form by design: a CHECK
+    #: constraint over the verb vocabulary would make a new audited action a
+    #: migration, and an audit row that cannot be written is a mutation that
+    #: cannot happen (the write is same-transaction and fail-closed).
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    #: NO foreign key — see the class docstring. Nullable because a few audited
+    #: acts have no single row (a bulk import's summary event).
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    #: SET NULL, not CASCADE: the event must outlive its actor. `actor_label`
+    #: below is what keeps the record legible after that null.
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    actor_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: Denormalized identity **as at the time of the action**, so attribution
+    #: survives both the `SET NULL` above and a later rename. This is itself
+    #: personal data, and the tension with GDPR Art 17 erasure (G2/#432) is named
+    #: here rather than discovered later: an erasure must be able to
+    #: **pseudonymize this column in place** while keeping the event and its
+    #: timestamp. The machinery is #432's; this column shape is what makes it
+    #: possible (ADR 0041 §2.6.5).
+    actor_label: Mapped[str | None] = mapped_column(String(320))
+    before: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    after: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    #: Correlates the event with the structured log line and the OTel span that
+    #: carry the same `dataq.request_id` (#525).
+    request_id: Mapped[str | None] = mapped_column(String(64))
+
+    actor: Mapped["User | None"] = relationship()
+
+    @property
+    def actor_display(self) -> str | None:
+        """Best available attribution: the live user's label if the row survives,
+        else the denormalized snapshot taken at write time."""
+        if self.actor is not None:
+            return self.actor.display_name or self.actor.email
+        return self.actor_label
+
+
 __all__ = [
     "Asset",
+    "AuditEvent",
     "Base",
     "Check",
     "Connection",
