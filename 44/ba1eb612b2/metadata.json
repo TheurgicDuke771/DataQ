@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "44ba1eb612b2",
+  "strategy": "manual-commit",
+  "branch": "fix/1319-created-by-ondelete",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/115c74d4bf26_created_by_ondelete_set_null.py",
+    "backend/tests/db/test_fk_ondelete_policy.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/44/ba1eb612b2/0/metadata.json",
+      "transcript": "/44/ba1eb612b2/0/full.jsonl",
+      "compact_transcript": "/44/ba1eb612b2/0/transcript.jsonl",
+      "content_hash": "/44/ba1eb612b2/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 29304,
+    "cache_read_tokens": 25731524,
+    "output_tokens": 20164,
+    "api_call_count": 40
+  }
+}
