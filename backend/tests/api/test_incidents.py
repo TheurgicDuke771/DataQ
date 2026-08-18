@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,6 +26,15 @@ from backend.app.services import incident_service, suite_service
 
 _SF_CONFIG = {"account": "ab12345.eu-west-1", "database": "ANALYTICS", "schema": "PUBLIC"}
 _ADMIN_EMAIL = "admin@example.com"
+
+
+def _author(row: Any) -> uuid.UUID:
+    """`created_by` is `UUID | None` since #1319 (SET NULL on user delete), but a
+    row this test just seeded always has one — narrowed here so a real None fails
+    loudly in the test rather than inside the service."""
+    author = row.created_by
+    assert author is not None
+    return cast(uuid.UUID, author)
 
 
 @pytest.fixture
@@ -94,7 +103,7 @@ def _incident(db: Any, suite: Suite, *, status: str = "fail") -> Any:
     db.add(Result(run_id=run.id, check_id=check.id, status=status, metric_value=0.4))
     db.commit()
     incident_service.sync_incidents_for_run(db, run_id=run.id)
-    return incident_service.list_incidents(db, user_id=suite.created_by, include_all=True)[0]
+    return incident_service.list_incidents(db, user_id=_author(suite), include_all=True)[0]
 
 
 @pytest.fixture

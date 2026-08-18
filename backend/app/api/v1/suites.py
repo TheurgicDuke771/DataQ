@@ -131,7 +131,10 @@ class SuiteRead(ApiModel):
     # until set — the classifier still auto-classifies incidental columns at redaction
     # time; this stored policy pins the shown identifier + the always-masked columns.
     column_policy: dict[str, Any] | None = None
-    created_by: uuid.UUID
+    #: `None` once the creating user is erased — the row outlives its author
+    #: (`ondelete=SET NULL`, #1319). Nullable in the schema, so nullable here:
+    #: a non-optional field would 500 on serialization instead.
+    created_by: uuid.UUID | None
     # The caller's effective level on this suite (`owner`/`admin`/`edit`/`view`)
     # so the UI can gate per-suite actions — manage shares, delete — without a
     # second round-trip or guessing from `created_by`. Always set on an

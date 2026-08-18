@@ -7,7 +7,7 @@ TEST_DATABASE_URL (CI provides an ephemeral Postgres).
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from sqlalchemy import func, select
@@ -87,6 +87,15 @@ class _OptionalSecretAdapter(_PassAdapter):
 
     def test(self, raw: dict[str, Any], secret: str | None) -> None:
         self.received_secret = secret
+
+
+def _author_of(row: Any) -> uuid.UUID:
+    """`created_by` is `UUID | None` since #1319 (SET NULL on user delete), but a
+    row this test just seeded always has one — narrow rather than cast, so a real
+    None fails loudly here instead of inside the service."""
+    author = row.created_by
+    assert author is not None
+    return cast(uuid.UUID, author)
 
 
 def _user(db_session: Any) -> User:
@@ -319,7 +328,7 @@ def test_delete_removes_row_and_secret(db_session: Any) -> None:
     conn = _create(db_session, store)
     ref = conn.secret_ref
     assert ref in store.data  # credential was written through on create
-    svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=conn.created_by)
+    svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=_author_of(conn))
     with pytest.raises(ConnectionNotFoundError):
         svc.get_connection(db_session, conn.id)
     assert ref not in store.data  # #372: orphaned credential removed on delete
@@ -424,7 +433,7 @@ def test_delete_orchestration_connection_cascades_pipeline_runs(db_session: Any)
     )
     db_session.commit()
 
-    svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=conn.created_by)
+    svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=_author_of(conn))
     assert (
         db_session.scalar(
             select(func.count()).select_from(PipelineRun).where(PipelineRun.provider == "airflow")
@@ -1514,7 +1523,7 @@ def test_delete_removes_the_catalog_secret_alongside_the_primary(db_session: Any
     primary_ref = conn.secret_ref
     assert catalog_ref in store.data and primary_ref in store.data
 
-    svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=conn.created_by)
+    svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=_author_of(conn))
 
     assert primary_ref not in store.data
     assert catalog_ref not in store.data  # #1181: was previously left orphaned
@@ -1525,7 +1534,7 @@ def test_delete_without_a_catalog_secret_does_not_choke(db_session: Any) -> None
     exactly as it always has — no `catalog_secret_name` key to even look for."""
     store = FakeSecretStore()
     conn = _create(db_session, store)  # plain snowflake, no catalog_secret
-    svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=conn.created_by)
+    svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=_author_of(conn))
     assert db_session.scalars(select(Connection)).all() == []
 
 
@@ -1656,7 +1665,7 @@ def test_delete_connection_cascades_versions(db_session: Any) -> None:
     conn = _create(db_session, FakeSecretStore())
     assert len(_versions(db_session, conn.id)) == 1
     svc.delete_connection(
-        db_session, conn.id, secret_store=FakeSecretStore(), actor_id=conn.created_by
+        db_session, conn.id, secret_store=FakeSecretStore(), actor_id=_author_of(conn)
     )
     assert _versions(db_session, conn.id) == []
 

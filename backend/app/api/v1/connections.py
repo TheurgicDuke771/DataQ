@@ -107,7 +107,10 @@ class ConnectionRead(ApiModel):
     env: str
     config: dict[str, Any]
     has_secret: bool
-    created_by: uuid.UUID
+    #: `None` once the creating user is erased — the row outlives its author
+    #: (`ondelete=SET NULL`, #1319). Nullable in the schema, so nullable here:
+    #: a non-optional field would 500 on serialization instead.
+    created_by: uuid.UUID | None
 
     # Poll health (#828) — orchestration connections only; NULL/0 elsewhere. A failing
     # poll used to live purely in the logs, so a dead integration looked identical to a
