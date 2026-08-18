@@ -226,6 +226,12 @@ def upsert_config(
             config = get_config(session, suite_id)
             if config is None:  # pragma: no cover — the winner's row must exist post-rollback
                 raise
+            # Re-snapshot: the outer `audit_before` is None because OUR read found
+            # no row, but the concurrent winner's row exists and we are about to
+            # overwrite it. Leaving `audit_before` at None would record an update
+            # as a create and lose the config being replaced — the one state this
+            # branch is entered to handle.
+            audit_before = audit_service.snapshot("suite_notification", config)
             config.enabled = enabled
             config.alert_on = alert_on
     else:

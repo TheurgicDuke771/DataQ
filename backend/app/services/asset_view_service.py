@@ -875,6 +875,7 @@ def update_asset_metadata(
         entity=asset,
         actor=actor_id,
         before=audit_before,
+        if_changed=True,
     )
     session.commit()
     session.refresh(asset)

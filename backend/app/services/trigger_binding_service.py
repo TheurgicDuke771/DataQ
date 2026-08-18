@@ -281,6 +281,7 @@ def update_binding(
         entity=binding,
         actor=user_id,
         before=audit_before,
+        if_changed=True,
     )
     session.commit()
     session.refresh(binding)

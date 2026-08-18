@@ -230,19 +230,25 @@ def rebaseline_check(
             f"only stateful monitor checks hold a baseline; {check.kind!r} does not",
             detail={"kind": check.kind},
         )
-    monitor_baseline.rebaseline(db, check)
+    dropped = monitor_baseline.rebaseline(db, check)
     # A deliberate act by a principal that discards the learned baseline a
     # `schema_drift`/`anomaly` monitor decides against — so the next run compares
     # against the new normal rather than the old one. Nothing else records it, and
     # "why did this monitor stop alerting?" has a rebaseline as one of its two
     # answers (the other, a snooze, is audited too).
-    audit_service.record_entity_change(
-        db,
-        action="check.rebaseline",
-        entity_type="check",
-        entity=check,
-        actor=current_user.id,
-    )
+    # Only when a baseline actually existed to drop. `rebaseline` is idempotent,
+    # and an event for a request that discarded nothing is the same non-event the
+    # no-op-update guard exists to keep out — worse here, because "the baseline
+    # was reset" is a real explanation for a monitor going quiet, and a reader
+    # would accept a false one.
+    if dropped:
+        audit_service.record_entity_change(
+            db,
+            action="check.rebaseline",
+            entity_type="check",
+            entity=check,
+            actor=current_user.id,
+        )
     db.commit()
     log.info("check_rebaselined", check_id=str(check_id), suite_id=str(suite_id))
 

@@ -44,6 +44,8 @@ def ensure_probe_fixtures(
     session: Session, *, user: User, settings: Settings
 ) -> tuple[Connection, Suite, list[Check]]:
     """Get-or-create the probe Connection, Suite, and Checks. Idempotent."""
+    # Whether this call actually created anything — see the audit gate at the end.
+    provisioned = False
     connection = session.scalars(
         select(Connection).where(
             Connection.name == PROBE_CONNECTION_NAME, Connection.env == PROBE_ENV
@@ -60,6 +62,7 @@ def ensure_probe_fixtures(
         )
         session.add(connection)
         session.flush()  # populate connection.id for the suite FK
+        provisioned = True
 
     # The run target (#215) — the probe table the suite's checks run against,
     # from settings. NULL when no probe table is configured (the run then fails
@@ -79,6 +82,7 @@ def ensure_probe_fixtures(
         )
         session.add(suite)
         session.flush()  # populate suite.id for the check FK
+        provisioned = True
     elif target is not None:
         # Backfill a suite seeded before the target column existed, but never
         # auto-clear an already-configured target just because the env setting
@@ -97,6 +101,7 @@ def ensure_probe_fixtures(
             )
             session.add(check)
             checks.append(check)
+            provisioned = True
 
     # ONE event for the whole provisioning act, and it exists because of how this
     # endpoint was found: the ADR-0033 RBAC review (#1396) caught it as a THIRD
@@ -106,19 +111,24 @@ def ensure_probe_fixtures(
     # would have had the identical blind spot, so the act is recorded here by
     # name. `entity_type` is the suite because that is what the act produces that
     # a reader would go looking for; the connection id rides in the payload.
-    audit_service.record(
-        session,
-        action="probe.provision",
-        entity_type="suite",
-        entity_id=suite.id,
-        actor=user,
-        after={
-            "suite_id": str(suite.id),
-            "suite_name": suite.name,
-            "connection_id": str(connection.id),
-            "connection_name": connection.name,
-            "check_count": len(checks),
-        },
-    )
+    # Only when something was actually created. This endpoint is a get-or-create
+    # smoke probe, so the common case is a repeat call that provisions nothing —
+    # and an event per smoke run would report provisioning that did not happen,
+    # in the log an auditor reads to find out what did.
+    if provisioned:
+        audit_service.record(
+            session,
+            action="probe.provision",
+            entity_type="suite",
+            entity_id=suite.id,
+            actor=user,
+            after={
+                "suite_id": str(suite.id),
+                "suite_name": suite.name,
+                "connection_id": str(connection.id),
+                "connection_name": connection.name,
+                "check_count": len(checks),
+            },
+        )
     session.commit()
     return connection, suite, checks

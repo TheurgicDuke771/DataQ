@@ -439,9 +439,16 @@ def record(
         label = getattr(actor_row, "display_name", None) or getattr(actor_row, "email", None)
     elif isinstance(actor, uuid.UUID):
         # The id was given but the row could not be loaded (a user deleted between
-        # the request and the write). Record the id we have rather than dropping
-        # the attribution entirely — an unlabelled event still says WHO.
-        actor_id = actor
+        # the request and this write). Attribution is preserved in `actor_label`,
+        # NOT in `actor_user_id`.
+        #
+        # An earlier version put the id in the FK column "so the event still says
+        # WHO". That inverted the intent: the column is a real foreign key, so a
+        # user id with no row fails the INSERT — and because several callers wrap
+        # their commit in `except IntegrityError` to map a duplicate to 409, the
+        # failure surfaced as a bogus conflict on an unrelated resource. The
+        # graceful-degradation branch was the one that broke the request.
+        label = f"<unresolved user {actor}>"
     # The module's three guarantees — allow-list, redaction, cap — must hold on
     # EVERY payload, not only the ones `snapshot` built. A slice-2 caller
     # hand-building a `before`/`after` dict (a role change, a share grant) would
@@ -476,8 +483,22 @@ def record_entity_change(
     actor: Any | None,
     before: Mapping[str, Any] | None = None,
     actor_kind: str = "user",
-) -> AuditEvent:
+    if_changed: bool = False,
+) -> AuditEvent | None:
     """`record`, with the `after` payload built from `entity` via the allow-list.
+
+    ``if_changed`` skips the write when the allow-listed payload is identical
+    before and after, returning ``None``. Use it on partial-update paths, where a
+    PATCH that sets a field to its current value — or names no fields at all — is
+    a real request that changed nothing. Recording those produces a log whose
+    entries mostly did not happen, and a reader learns to skim it; `check_service`
+    already applies the same rule via `session.is_modified`, so this makes the
+    other update paths consistent with it rather than each inventing an answer.
+
+    It is deliberately opt-in: a create and a delete have nothing to compare, and
+    an entity whose audited payload is unchanged while an UNAUDITED field moved
+    (`schedules.next_run_at`, say) should still be skipped — that is a config
+    non-event by the allow-list's own definition of config.
 
     The common shape: the caller captures `before = snapshot(...)` ahead of the
     mutation and hands the mutated entity here. For a delete, pass the pre-delete
@@ -504,6 +525,10 @@ def record_entity_change(
     if entity_id is None and before is not None:
         raw_id = before.get("id")
         entity_id = uuid.UUID(str(raw_id)) if raw_id is not None else None
+    after = snapshot(entity_type, entity)
+    before_payload = dict(before) if before is not None else None
+    if if_changed and before_payload is not None and before_payload == after:
+        return None
     return record(
         session,
         action=action,
@@ -511,8 +536,8 @@ def record_entity_change(
         entity_id=entity_id,
         actor=actor,
         actor_kind=actor_kind,
-        before=dict(before) if before is not None else None,
-        after=snapshot(entity_type, entity),
+        before=before_payload,
+        after=after,
     )
 
 

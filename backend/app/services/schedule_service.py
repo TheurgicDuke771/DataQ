@@ -171,6 +171,7 @@ def update_schedule(
         entity=schedule,
         actor=user_id,
         before=audit_before,
+        if_changed=True,
     )
     session.commit()
     session.refresh(schedule)

@@ -208,6 +208,7 @@ def update_share(
         entity=share,
         actor=actor_id,
         before=before,
+        if_changed=True,
     )
     session.commit()
     session.refresh(share)
