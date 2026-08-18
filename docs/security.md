@@ -346,6 +346,20 @@ sounds like a classification and is commonly the default stamp on everything, so
 reading it as a clearance would clear whole tables in exactly the organisations
 careful enough to tag them.
 
+**Inherited tags are not read.** A tag applied to a table or schema is reported by
+the warehouse against every column beneath it; DataQ accepts only tags applied to
+the **column itself**. An inherited tag is a statement about the container, and
+reading one as a per-column clearance would clear a whole schema from a single
+misplaced `public`.
+
+**The tag name is matched without its namespace**, and that is a constraint on
+you rather than a feature: DataQ honours a tag *named* `dataq_classification`
+wherever it lives, because knowing which database or schema should be
+authoritative would require per-deployment configuration, and this convention is
+deliberately fixed. **Do not create tags with this name for any other purpose** —
+a same-named tag elsewhere carrying a `public`-family value would be honoured as
+a clearance.
+
 ### Where it applies
 
 Only **Snowflake** and **Unity Catalog** have a column-tag concept. ADLS, S3,
