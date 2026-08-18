@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "d05f042f90ac",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-honesty-pass",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d0/5f042f90ac/0/metadata.json",
+      "transcript": "/d0/5f042f90ac/0/full.jsonl",
+      "compact_transcript": "/d0/5f042f90ac/0/transcript.jsonl",
+      "content_hash": "/d0/5f042f90ac/0/content_hash.txt",
+      "prompt": "/d0/5f042f90ac/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1834,
+    "cache_creation_tokens": 1311529,
+    "cache_read_tokens": 298768073,
+    "output_tokens": 568119,
+    "api_call_count": 917
+  }
+}
