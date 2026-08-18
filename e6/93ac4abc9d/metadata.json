@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "e693ac4abc9d",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-tier3b-incident-actions",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/e6/93ac4abc9d/0/metadata.json",
+      "transcript": "/e6/93ac4abc9d/0/full.jsonl",
+      "compact_transcript": "/e6/93ac4abc9d/0/transcript.jsonl",
+      "content_hash": "/e6/93ac4abc9d/0/content_hash.txt",
+      "prompt": "/e6/93ac4abc9d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1444,
+    "cache_creation_tokens": 1099894,
+    "cache_read_tokens": 225763406,
+    "output_tokens": 452958,
+    "api_call_count": 722
+  }
+}
