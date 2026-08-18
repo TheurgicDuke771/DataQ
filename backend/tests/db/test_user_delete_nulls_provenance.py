@@ -108,3 +108,94 @@ def test_a_suite_with_no_author_grants_nobody_ownership(db_session: Any) -> None
     reloaded = db_session.get(Suite, suite_id)
     assert reloaded.created_by is None, "precondition: the author really was erased"
     assert effective_permission(db_session, reloaded, other.id) is None
+
+
+def test_an_ownerless_suite_stays_visible_in_the_admin_overview(db_session: Any) -> None:
+    """The consequence one PR over, and the reason it matters more than it looks.
+
+    `list_all_suites` inner-joined the author, so a suite whose creator was erased
+    dropped out of the Admin control centre **entirely** — while still running on
+    its schedules and still holding its shares. Invisible and active is the worst
+    combination available: an admin reviewing the workspace would not see the one
+    suite with nobody obviously responsible for it.
+
+    Found by review, on a file this change never touched — a widened column ages
+    every query that assumed it was NOT NULL.
+    """
+    from backend.app.services import admin_service
+
+    author = User(aad_object_id=uuid.uuid4().hex, email=f"a-{uuid.uuid4().hex[:8]}@example.com")
+    db_session.add(author)
+    db_session.flush()
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "x"},
+        created_by=author.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(
+        name=f"orphan-{uuid.uuid4().hex[:6]}", connection_id=conn.id, created_by=author.id
+    )
+    db_session.add(suite)
+    db_session.commit()
+    suite_id, suite_name = suite.id, suite.name
+
+    assert any(
+        r.id == suite_id for r in admin_service.list_all_suites(db_session)
+    ), "precondition: the suite is listed while its author exists"
+
+    db_session.delete(author)
+    db_session.commit()
+    db_session.expire_all()
+
+    listed = {r.id: r for r in admin_service.list_all_suites(db_session)}
+    assert suite_id in listed, (
+        f"the suite {suite_name!r} vanished from the admin overview when its author "
+        "was erased — it still runs, so it must still be visible"
+    )
+    row = listed[suite_id]
+    assert (
+        row.owner_id is None and row.owner_email is None
+    ), "an erased author must read as absent, not as a stale or invented owner"
+
+
+def test_an_ownerless_suite_reports_no_owner_grant(db_session: Any) -> None:
+    """`list_all_access` is the other side, and it wants the OPPOSITE handling.
+
+    There, an erased author leaves no grant to report — a row with a null user
+    would render as a grant to nobody. Its absence is correct here, while its
+    absence from the suites overview above is not, which is exactly why the two
+    joins treat the null differently. Asserted so that "make them consistent"
+    cannot be applied later as a tidy-up.
+    """
+    from backend.app.services import admin_service
+
+    author = User(aad_object_id=uuid.uuid4().hex, email=f"a-{uuid.uuid4().hex[:8]}@example.com")
+    db_session.add(author)
+    db_session.flush()
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "x"},
+        created_by=author.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name=f"s-{uuid.uuid4().hex[:8]}", connection_id=conn.id, created_by=author.id)
+    db_session.add(suite)
+    db_session.commit()
+    suite_id = suite.id
+
+    db_session.delete(author)
+    db_session.commit()
+    db_session.expire_all()
+
+    rows = admin_service.list_all_access(db_session)
+    assert not [r for r in rows if r.suite_id == suite_id], (
+        "an erased author must leave no access row — a null user would render as a "
+        "grant to nobody"
+    )

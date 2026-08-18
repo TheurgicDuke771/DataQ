@@ -134,7 +134,11 @@ export interface Connection {
   env: ConnectionEnv;
   config: Record<string, unknown>;
   has_secret: boolean;
-  created_by: string;
+  /** `null` once the creating user is erased — the row outlives its author
+   *  (`ondelete=SET NULL`, #1319). Nullable server-side, so nullable here:
+   *  a non-nullable mirror lets the compiler wave through the next consumer
+   *  that assumes an author is always present. */
+  created_by: string | null;
   /** Poll health (#828) — orchestration connections only. A failing poll used to be
    *  visible ONLY in the logs, so a dead integration looked exactly like a healthy
    *  quiet one. `last_poll_error` is a classified reason, never raw exception text. */

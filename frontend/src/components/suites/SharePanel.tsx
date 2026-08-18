@@ -43,7 +43,9 @@ export function SharePanel({
   open: boolean;
   suiteId: string;
   /** The suite's `created_by` — the owner can't be added as a share. */
-  ownerId: string;
+  /** `null` when the creating user has been erased (#1319). An ownerless
+   *  suite simply has nobody to exclude from the collaborator picker. */
+  ownerId: string | null;
   canManage: boolean;
   onClose: () => void;
 }) {
@@ -62,7 +64,9 @@ function SharePanelBody({
   canManage,
 }: {
   suiteId: string;
-  ownerId: string;
+  /** `null` when the creating user has been erased (#1319). An ownerless
+   *  suite simply has nobody to exclude from the collaborator picker. */
+  ownerId: string | null;
   canManage: boolean;
 }) {
   const { state, reload } = useAsyncData(() => listShares(suiteId));
@@ -84,7 +88,13 @@ function SharePanelBody({
           {canManage && (
             <AddCollaborator
               suiteId={suiteId}
-              excludedIds={[ownerId, ...shares.map((s) => s.user_id)]}
+              // The owner already has access, so they are never offered as a
+              // collaborator. With no owner there is nobody extra to exclude —
+              // filtering keeps a stray `null` out of the id list rather than
+              // silently matching a user whose id is nullish.
+              excludedIds={[ownerId, ...shares.map((s) => s.user_id)].filter(
+                (id): id is string => id !== null,
+              )}
               onAdded={reload}
             />
           )}

@@ -55,8 +55,13 @@ class AdminSuiteRow:
     connection_name: str
     connection_type: str
     env: str
-    owner_id: UUID
-    owner_email: str
+    #: `None` once the creating user is erased (`created_by` is `SET NULL`,
+    #: #1319). The suite itself is unaffected — it still runs on its schedules and
+    #: still holds its shares — so it MUST keep appearing here. An inner join on
+    #: the author would drop exactly the suites an admin most needs to see: live,
+    #: firing, and with nobody obviously responsible for them.
+    owner_id: UUID | None
+    owner_email: str | None
     owner_name: str | None
     check_count: int
     share_count: int
@@ -120,7 +125,10 @@ def list_all_suites(session: Session) -> list[AdminSuiteRow]:
             Suite.created_at,
             Suite.updated_at,
         )
-        .join(User, Suite.created_by == User.id)
+        # OUTER join on the author: a suite whose creator was erased must stay
+        # visible. An inner join silently removes it from the admin overview
+        # while it keeps running — invisible and active is the worst combination.
+        .outerjoin(User, Suite.created_by == User.id)
         .join(Connection, Suite.connection_id == Connection.id)
         .outerjoin(Check, Check.suite_id == Suite.id)
         .outerjoin(Share, Share.suite_id == Suite.id)
@@ -196,7 +204,11 @@ def list_all_access(session: Session) -> list[AdminAccessRow]:
 
     Ordered by suite name, then strongest permission first, then user email.
     """
-    owner_stmt = select(Suite.id, Suite.name, User.id, User.email, User.display_name).join(
+    # Outer join for the same reason as `list_all_suites`: after an erasure the
+    # suite has no owner ROW, and an inner join would report that as "this suite
+    # has no owner grant" — indistinguishable, on an access-review screen, from a
+    # suite nobody was ever given access to.
+    owner_stmt = select(Suite.id, Suite.name, User.id, User.email, User.display_name).outerjoin(
         User, Suite.created_by == User.id
     )
     share_stmt = (
@@ -208,6 +220,11 @@ def list_all_access(session: Session) -> list[AdminAccessRow]:
     rows = [
         AdminAccessRow(sid, sname, uid, email, name, OWNER)
         for sid, sname, uid, email, name in session.execute(owner_stmt)
+        # An erased author leaves no grant to report: the suite has no owner, and
+        # a row with a null user would render as a grant to nobody. Its ABSENCE
+        # here is correct; its absence from `list_all_suites` above would not be,
+        # which is why the two joins differ in what they do with the null.
+        if uid is not None
     ]
     rows += [
         AdminAccessRow(sid, sname, uid, email, name, perm)
