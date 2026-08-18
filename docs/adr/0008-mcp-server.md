@@ -185,3 +185,49 @@ real `CheckVersion` alongside the check. Every gate here was mutation-verified b
 confirming the sweep goes red.
 
 The exclusions are unchanged.
+
+## Amendment — Tier 3B batch 1, 38 → 42 (2026-08-17, issue [#1424](https://github.com/TheurgicDuke771/DataQ/issues/1424))
+
+Four read-only tools over the **asset and incident** surfaces — `list_assets`, `get_asset`,
+`list_incidents`, `get_incident`. The split becomes **42 tools: 22 read-only, 16 that change
+state, 4 live-probe**.
+
+Unlike Tier 3A, this is not coherence — it is the capability gap #529's candidate list never
+evaluated, because that list was written on 2026-07-04 and assets, lineage and incidents shipped
+on 2026-07-10/11. It is also the grain users actually reason in: "is `orders` healthy?" is an
+*asset* question, and answering it from suites alone requires knowing which suites target the
+table, which is exactly what the asset view exists to remove.
+
+**Two scoping rules had to be carried into the docstrings, not just the code.**
+
+- The asset rollup is **workspace-true** (ADR [0037](0037-workspace-visible-asset-identity.md)):
+  `list_visible_assets` takes no user and aggregates over ALL composing suites. That is the
+  established REST decision and is mirrored unchanged — but a model handed a health number with
+  no caveat will describe it as covering what the caller can see. `get_asset` therefore reports
+  `restricted_suite_count` beside the grant-filtered `suites` list, and both docstrings state the
+  split explicitly.
+- Incidents stay **behind suite grants** (also ADR 0037, deliberately unchanged there): they are
+  itemized failure evidence, not identity. `get_incident` is 404-no-leak.
+
+That second rule is why `incident:view` is a **new gate value** in `mcp_gates.GATES` rather than
+`suite:view`: the tool takes an *incident* id and resolves the ladder through the incident's
+suite, so the RBAC sweep needs a real incident materialised on the probe suite. A fabricated id
+raises "incident not found" — an accepted denial word — and the sweep would have passed with the
+gate deleted, the same vacuous-pass shape as `_REAL_RUN` / `_REAL_CHECK` / the Tier-3A
+`CheckVersion` trap. Both new gates were mutation-verified by removing them and confirming the
+sweep goes red.
+
+The 404-no-leak rule itself moved **out of the HTTP layer** into
+`incident_service.load_visible_incident`, so REST and MCP share one implementation. A second
+hand-written copy of the only thing standing between an incident's evidence and an ungranted
+caller is the "guard applied at one door and not its sibling" shape this track has hit
+repeatedly, and the divergence would be invisible until it leaked.
+
+Three honesty fields exist because the underlying value is true and misleading on its own:
+`monitored` (an asset with no suite has `worst_severity: null`, which reads as a clean bill of
+health for something nothing checks), `truncated` (computed against the real total, since
+`len(page) == limit` is wrong on the exact-boundary page), and `lineage.qualified_by` (an empty
+graph behind a failing poller must never read as "nothing feeds this table" — the #828 class).
+
+The exclusions are unchanged. `PATCH /assets/{id}` is **not** exposed: it is workspace-Admin-only
+(ADR 0034 §4), and MCP exposing no admin-only tool at all remains an asserted invariant.

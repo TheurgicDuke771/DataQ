@@ -54,11 +54,13 @@ from backend.app.db.models import (
     Incident,
     Result,
     Run,
+    Suite,
     SuiteNotification,
 )
 from backend.app.services import suite_service
 from backend.app.services.incident_evidence import build_evidence
 from backend.app.services.run_service import list_results
+from backend.app.services.suite_authz import SuiteForbiddenError, effective_permission
 
 log = get_logger(__name__)
 
@@ -393,6 +395,45 @@ def active_incidents_for_run(session: Session, run: Run) -> dict[uuid.UUID, Inci
         )
     )
     return {inc.check_id: inc for inc in rows}
+
+
+#: Suite levels that may act on (ack / resolve) an incident — `edit` and above,
+#: mirroring the suite_authz ladder (a `view` share reads but never acts).
+ACTING_LEVELS = frozenset({"edit", "admin", "owner"})
+
+
+def load_visible_incident(
+    session: Session, incident_id: uuid.UUID, *, user_id: uuid.UUID, for_action: bool
+) -> Incident:
+    """Load an incident the caller may see, or raise 404-no-leak. When
+    ``for_action`` the caller must additionally hold ``edit`` on the incident's
+    suite (else `SuiteForbiddenError`).
+
+    An unknown id and an id whose suite the caller cannot view raise the SAME
+    error (existence hidden) — the suite-grain no-leak rule, deliberately KEPT by
+    ADR 0037 (which retired the asset-grain one): incidents are itemized
+    evidence, not identity.
+
+    Lives here rather than in the HTTP layer because it is the **only** thing
+    standing between an incident's evidence and a caller with no grant on its
+    suite, and there are now two surfaces that need it (REST and MCP). A second
+    hand-written copy of a 404-no-leak rule is the "guard applied at one door and
+    not its sibling" shape this codebase has hit repeatedly; the divergence would
+    be invisible until it leaked.
+    """
+    incident = get_incident(session, incident_id)
+    suite = session.get(Suite, incident.suite_id) if incident is not None else None
+    # Workspace-admin resolves to an implicit `admin` on every suite inside
+    # `effective_permission`; a normal user resolves to their grant or None.
+    level = effective_permission(session, suite, user_id) if suite is not None else None
+    if incident is None or level is None:
+        raise IncidentNotFoundError("incident not found", detail={"incident_id": str(incident_id)})
+    if for_action and level not in ACTING_LEVELS:
+        raise SuiteForbiddenError(
+            "acknowledging or resolving an incident requires 'edit' on its suite",
+            detail={"incident_id": str(incident_id), "have": level, "need": "edit"},
+        )
+    return incident
 
 
 def get_incident(session: Session, incident_id: uuid.UUID) -> Incident | None:
