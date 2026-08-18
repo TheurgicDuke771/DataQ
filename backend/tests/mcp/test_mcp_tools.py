@@ -35,6 +35,7 @@ from backend.app.services import (
     check_service,
     connection_service,
     dryrun_service,
+    orchestration_service,
     profile_service,
     run_dispatch,
     run_service,
@@ -3463,3 +3464,108 @@ def test_list_incidents_rejects_an_unknown_asset_id(db_session: Any, monkeypatch
 
     with pytest.raises(ToolError):
         server.list_incidents(asset_id=str(uuid.uuid4()))
+
+
+def test_ack_incident_records_the_actor_and_leaves_it_unresolved(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Acknowledging is explicitly NOT resolving — the docstring says the check
+    still runs and still alerts, and the status is what an LLM will report."""
+    owner = _user(db_session)
+    asset = _asset(db_session)
+    suite = _suite(db_session, owner)
+    check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.commit()
+    incident = _incident(db_session, asset=asset, check=check, suite=suite)
+    _as(monkeypatch, db_session, owner)
+
+    out = server.ack_incident(str(incident.id), note="looking at it")
+    assert out["status"] == "acknowledged"
+    assert out["acknowledged_at"] is not None
+    assert out["resolved_at"] is None
+
+
+def test_resolve_incident_refuses_a_second_resolve(db_session: Any, monkeypatch: Any) -> None:
+    """A resolved incident is closed for good — the next breach opens a NEW one.
+    A silent second resolve would let an assistant report a fresh action that
+    never happened."""
+    owner = _user(db_session)
+    asset = _asset(db_session)
+    suite = _suite(db_session, owner)
+    check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.commit()
+    incident = _incident(db_session, asset=asset, check=check, suite=suite)
+    _as(monkeypatch, db_session, owner)
+
+    assert server.resolve_incident(str(incident.id))["status"] == "resolved"
+    with pytest.raises(ToolError):
+        server.resolve_incident(str(incident.id))
+
+
+def test_ack_incident_refuses_a_resolved_incident(db_session: Any, monkeypatch: Any) -> None:
+    owner = _user(db_session)
+    asset = _asset(db_session)
+    suite = _suite(db_session, owner)
+    check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.commit()
+    incident = _incident(db_session, asset=asset, check=check, suite=suite, status="resolved")
+    _as(monkeypatch, db_session, owner)
+
+    with pytest.raises(ToolError):
+        server.ack_incident(str(incident.id))
+
+
+def test_get_near_misses_reports_both_envs(db_session: Any, monkeypatch: Any) -> None:
+    """The mismatch IS the finding — a row carrying only one env would be
+    unactionable, since the fix is to change one of the two."""
+    owner = _user(db_session)
+    suite = _suite(db_session, owner)
+    _as(monkeypatch, db_session, owner)
+
+    record = SimpleNamespace(
+        provider="airflow",
+        pipeline_or_dag_id="nightly_load",
+        run_env="prod",
+        binding_env="qa",
+        updated_at=datetime.now(UTC),
+    )
+    monkeypatch.setattr(orchestration_service, "list_env_near_misses", lambda *a, **k: [record])
+
+    out = server.get_near_misses(str(suite.id))
+    assert out[0]["run_env"] == "prod"
+    assert out[0]["binding_env"] == "qa"
+    assert out[0]["pipeline_or_dag_id"] == "nightly_load"
+
+
+def test_list_columns_defaults_to_the_suite_target(db_session: Any, monkeypatch: Any) -> None:
+    """The whole point of the defaulting: 'what columns are on this suite?'
+    should not require the caller to already know the table name."""
+    owner = _user(db_session)
+    suite = _suite(db_session, owner)
+    _as(monkeypatch, db_session, owner)
+
+    seen: dict[str, Any] = {}
+
+    def _fake(connection: Any, **kw: Any) -> list[str]:
+        seen.update(kw)
+        return ["ORDER_ID", "EMAIL"]
+
+    monkeypatch.setattr(profile_service, "list_columns", _fake)
+
+    out = server.list_columns(str(suite.id))
+    assert out["columns"] == ["ORDER_ID", "EMAIL"]
+    assert seen["table"] == "ORDERS"
+
+
+def test_list_columns_reports_a_suite_with_no_target(db_session: Any, monkeypatch: Any) -> None:
+    """An actionable error, not an empty column list — an empty list would read as
+    'this table has no columns' and send an assistant off to guess names."""
+    owner = _user(db_session)
+    suite = _suite(db_session, owner, with_target=False)
+    _as(monkeypatch, db_session, owner)
+
+    with pytest.raises(ToolError):
+        server.list_columns(str(suite.id))

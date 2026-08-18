@@ -2583,6 +2583,179 @@ def get_incident(incident_id: str) -> dict[str, Any]:
         }
 
 
+#: Cap on an ack/resolve note, matching the REST `IncidentActionRequest`. The
+#: column is unbounded Text, so without this an LLM-generated note is unbounded
+#: too — the same boundary the #567/#1421 class of findings kept surfacing.
+_NOTE_MAX_LEN = 2000
+
+
+@mcp.tool
+def ack_incident(
+    incident_id: str,
+    note: Annotated[str, Field(max_length=_NOTE_MAX_LEN)] | None = None,
+) -> dict[str, Any]:
+    """Acknowledge an incident — record that someone is looking at it.
+
+    Use this for 'acknowledge that', 'I'm on it', or 'mark the orders freshness
+    incident as being investigated'. An optional ``note`` records why or who.
+
+    **Acknowledging changes nothing about the data and does not stop alerts.**
+    The check still runs, still fails, and still fires notifications on its own
+    schedule; this only moves the incident from `open` to `acknowledged` so the
+    workspace can see it is owned. To stop the alerting itself, use
+    ``snooze_check``; to declare the problem over, use ``resolve_incident``.
+
+    Acknowledging an already-acknowledged incident is fine — it records the newer
+    actor and note. Acknowledging a **resolved** one is refused: a resolved
+    incident is closed for good, and a later breach of the same check opens a new
+    incident rather than reopening this one.
+
+    Requires edit access to the incident's suite.
+    """
+    iid = _parse_uuid(incident_id, field="incident_id")
+    if contains_nul({"note": note or ""}):
+        raise ToolError("NUL (\\x00) characters are not allowed in a note")
+    with _ctx() as (session, user), _service_errors():
+        incident = incident_service.load_visible_incident(
+            session, iid, user_id=user.id, for_action=True
+        )
+        incident = incident_service.acknowledge_incident(
+            session, incident, user_id=user.id, note=note
+        )
+        return _incident_payload(incident)
+
+
+@mcp.tool
+def resolve_incident(
+    incident_id: str,
+    note: Annotated[str, Field(max_length=_NOTE_MAX_LEN)] | None = None,
+) -> dict[str, Any]:
+    """Resolve an incident — declare the problem over.
+
+    Use this for 'resolve that', 'the orders backfill fixed it', or 'close the
+    freshness incident'. An optional ``note`` records the resolution.
+
+    **This is a statement about the incident, not a fix to the data.** Resolving
+    does not re-run anything and does not make the check pass; if the underlying
+    problem is still there, the very next failing run opens a **new** incident
+    (linked back to this one), because a resolved incident is never reopened.
+    Prefer ``trigger_suite_run`` to confirm the fix before resolving, and say so
+    rather than resolving on the user's assumption that something is fixed.
+
+    A double-resolve is refused. Incidents also auto-resolve on the first passing
+    result unless the suite has that turned off, so an incident may already be
+    closed without anyone acting.
+
+    Requires edit access to the incident's suite.
+    """
+    iid = _parse_uuid(incident_id, field="incident_id")
+    if contains_nul({"note": note or ""}):
+        raise ToolError("NUL (\\x00) characters are not allowed in a note")
+    with _ctx() as (session, user), _service_errors():
+        incident = incident_service.load_visible_incident(
+            session, iid, user_id=user.id, for_action=True
+        )
+        incident = incident_service.resolve_incident(session, incident, user_id=user.id, note=note)
+        return _incident_payload(incident)
+
+
+@mcp.tool
+def get_near_misses(suite_id: str | None = None) -> list[dict[str, Any]]:
+    """Find orchestration triggers that are silently never firing.
+
+    Use this when a user says 'the suite was supposed to run after the pipeline
+    and it did not', or to investigate the warning ``create_trigger_binding``
+    returns. Each row is a real, observed mismatch: a pipeline/DAG **did**
+    succeed in ``run_env``, but the only enabled binding for it is scoped to
+    ``binding_env``, so the trigger has never fired and never will until one of
+    the two environments is corrected.
+
+    This is the diagnosis for the failure mode a binding cannot report about
+    itself: it exists, it looks correct in ``list_trigger_bindings``, and it is
+    inert. An empty result does **not** prove a binding is firing — it only means
+    no env mismatch was observed; the pipeline may simply not have run, or the
+    binding may be disabled (check ``enabled`` in ``list_trigger_bindings``).
+
+    Optionally narrow to one ``suite_id``. Scoped to suites the caller can
+    access, since a near-miss is derived from suite-owned binding config.
+    """
+    with _ctx() as (session, user), _service_errors():
+        sid = _parse_uuid(suite_id, field="suite_id") if suite_id is not None else None
+        if sid is not None:
+            require_permission(session, sid, user.id, minimum="view")
+        rows = orchestration_service.list_env_near_misses(
+            session, user_id=user.id, include_all=is_workspace_admin(user), suite_id=sid
+        )
+        return [
+            {
+                "provider": r.provider,
+                "pipeline_or_dag_id": r.pipeline_or_dag_id,
+                # Where the pipeline actually succeeded...
+                "run_env": r.run_env,
+                # ...and where the binding is looking. These differing IS the bug.
+                "binding_env": r.binding_env,
+                "last_observed_at": r.updated_at.isoformat(),
+            }
+            for r in rows
+        ]
+
+
+@mcp.tool
+def list_columns(
+    suite_id: str,
+    table: str | None = None,
+    schema: str | None = None,
+    catalog: str | None = None,
+    namespace: str | None = None,
+    path: str | None = None,
+    file_format: str | None = None,
+) -> dict[str, Any]:
+    """List the column names of a suite's table or file.
+
+    Use this **before authoring a check** — it is the cheap way to get exact
+    column names, and far cheaper than ``profile_column``, which reads data to
+    compute statistics. Guessing a column name produces a check that runs and
+    errors, so read the names rather than inferring them from a table name.
+
+    ``table`` (+ optional ``schema``/``catalog``) or ``path`` (+ ``file_format``)
+    default to the suite's own run target, so they only need passing to inspect
+    something *other* than what the suite runs against.
+
+    Returns names only — no types, no data, no statistics. It cannot tell you
+    whether a column is nullable or what it contains; use ``profile_column`` for
+    that.
+
+    Requires **edit** access to the suite, not view: this opens a live connection
+    to the datasource using the stored credential, the same gate the profiler and
+    dry-run carry for the same reason.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    with _ctx() as (session, user), _service_errors():
+        suite = require_permission(session, sid, user.id, minimum="edit")
+        connection = session.get(Connection, suite.connection_id)
+        if connection is None:
+            raise ToolError("suite has no connection")
+        if table is None and path is None:
+            # Same defaulting as `profile_column` — and the same reason it clears
+            # `namespace`: the resolver already folds the target's namespace into
+            # `table` for Iceberg, so passing it again would double it.
+            table, schema, catalog, path, file_format = _profile_target_defaults(
+                suite, connection, schema=schema, catalog=catalog, file_format=file_format
+            )
+            namespace = None
+        columns = profile_service.list_columns(
+            connection,
+            table=table,
+            schema=schema,
+            catalog=catalog,
+            namespace=namespace,
+            path=path,
+            file_format=file_format,
+            secret_store=get_secret_store(),
+        )
+        return {"table": table, "path": path, "columns": columns}
+
+
 def _parse_suite_target(target: dict[str, Any] | None) -> dict[str, Any] | None:
     """Validate a raw target dict through the REST route's own `SuiteTarget` model.
 

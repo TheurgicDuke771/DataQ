@@ -22,7 +22,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/00
     [0032](adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 42 tools and per-suite permissions. Two rejections are deliberate in that
+    all 46 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -80,28 +80,31 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 42 tools
+## The 46 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
-identically. The 42 split three ways, not two:
+identically. The 46 split three ways, not two:
 
-- **22 read-only** — `export_suite`, `get_adf_pipeline_status`, `get_asset`, `get_check`,
+- **23 read-only** — `export_suite`, `get_adf_pipeline_status`, `get_asset`, `get_check`,
   `get_check_history`, `get_column_policy`, `get_health_score`, `get_incident`,
-  `get_notification_config`, `get_run_results`, `get_run_status`, `get_suite_performance`,
-  `get_suite_results`, `list_assets`, `list_check_versions`, `list_checks`, `list_connections`,
-  `list_incidents`, `list_runs`, `list_schedules`, `list_suites`, `list_trigger_bindings`.
-- **16 that change state** — `create_check`, `update_check`, `delete_check`, `snooze_check`,
+  `get_near_misses`, `get_notification_config`, `get_run_results`, `get_run_status`,
+  `get_suite_performance`, `get_suite_results`, `list_assets`, `list_check_versions`,
+  `list_checks`, `list_connections`, `list_incidents`, `list_runs`, `list_schedules`,
+  `list_suites`, `list_trigger_bindings`.
+- **18 that change state** — `create_check`, `update_check`, `delete_check`, `snooze_check`,
   `restore_check_version`, `trigger_suite_run`, `cancel_run`, `update_suite`, `set_column_policy`,
   `create_schedule`, `update_schedule`, `delete_schedule`, `create_trigger_binding`,
-  `update_trigger_binding`, `delete_trigger_binding`, `import_suite`. All gate on `edit` access to
-  the affected suite (the schedule and binding tools via the suite they target); `import_suite`
-  additionally requires the **member** workspace role, since it has no existing suite to gate on.
-- **4 that persist nothing but open a live datasource connection using stored credentials** —
-  `profile_column`, `dryrun_check`, `suggest_column_policy`, `test_connection`. These are gated
-  like writes, not like reads, because they spend a real credential against a remote system even
-  though nothing is saved: the first three require `edit` on the suite whose connection they
-  probe, and `test_connection` (which has no suite at all) requires the **member** workspace role.
+  `update_trigger_binding`, `delete_trigger_binding`, `ack_incident`, `resolve_incident`,
+  `import_suite`. All gate on `edit` access to the affected suite (the schedule, binding and
+  incident tools via the suite they target); `import_suite` additionally requires the **member**
+  workspace role, since it has no existing suite to gate on.
+- **5 that persist nothing but open a live datasource connection using stored credentials** —
+  `profile_column`, `list_columns`, `dryrun_check`, `suggest_column_policy`, `test_connection`.
+  These are gated like writes, not like reads, because they spend a real credential against a
+  remote system even though nothing is saved: the first four require `edit` on the suite whose
+  connection they probe, and `test_connection` (which has no suite at all) requires the **member**
+  workspace role.
 
 No MCP tool is Admin-only. Every Admin-only capability in ADR 0033's authorization matrix is a
 connection *mutation* (create/edit/delete/re-auth), and none of those are exposed here at all —
@@ -144,6 +147,7 @@ succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 
 | `get_run_status` | "Is it done?" — live status + per-check progress |
 | `trigger_suite_run` | "Run the orders suite" — dispatches a run, returns the run id |
 | `cancel_run` | "Stop the orders run, I triggered the wrong suite" — cancels a queued or still-running run; cooperative, so a fast run may finish first |
+| `list_columns` | "What columns are on this table?" — names only, defaulting to the suite's own target. The cheap first step before authoring; guessing a column name produces a check that runs and errors |
 | `profile_column` | "Profile the qty column" — live null/distinct/min/max/top-values stats |
 | `get_column_policy` | "Is the email column masked in failure samples?" — the suite's redaction policy; an empty one means no suite-level override, **not** that nothing is masked |
 | `set_column_policy` | "Mask the email column in failure samples" — applies what `suggest_column_policy` proposed; replaces the whole policy |
@@ -160,6 +164,7 @@ succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 
 | `create_trigger_binding` | "Run the orders checks after the nightly load finishes" — binds a pipeline/DAG success in a given `env` to a suite; only success triggers a run |
 | `update_trigger_binding` | "Stop that trigger firing, but keep the wiring" — enables or disables a binding; what it points at is immutable, so re-targeting means delete + create |
 | `delete_trigger_binding` | "Unhook the orders checks from the nightly load" — removes the binding; prefer `update_trigger_binding` if a pause is meant |
+| `get_near_misses` | "The suite was supposed to run after the pipeline and it didn't" — pipelines that succeeded in one `env` while the only enabled binding is scoped to another, so the trigger is inert |
 
 ### Scheduling & alerting
 
@@ -182,6 +187,8 @@ authored in. Incidents are the deduplicated, stateful roll-up of repeated failur
 | `get_asset` | "Is the orders table healthy, and what feeds it?" — the workspace-true summary + per-dimension scorecard + the composing suites the caller may view (`restricted_suite_count` counts the rest) + the lineage neighbourhood, qualified when a lineage source is failing or stale |
 | `list_incidents` | "What's broken right now?" — open/acknowledged/resolved incidents, scoped to suites the caller can see, so an empty result means "nothing visible to you", not "nothing is wrong" |
 | `get_incident` | "Why did this open, and what else broke at the time?" — the evidence card snapshotted at the last occurrence; carries no failing sample rows by design |
+| `ack_incident` | "I'm on it" — records that someone owns the incident. Changes nothing about the data and does **not** stop alerts; use `snooze_check` for that |
+| `resolve_incident` | "The backfill fixed it" — declares the problem over. Does not re-run anything, and the next failing run opens a **new** incident |
 
 ### Suite portability
 

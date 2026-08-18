@@ -231,3 +231,39 @@ graph behind a failing poller must never read as "nothing feeds this table" — 
 
 The exclusions are unchanged. `PATCH /assets/{id}` is **not** exposed: it is workspace-Admin-only
 (ADR 0034 §4), and MCP exposing no admin-only tool at all remains an asserted invariant.
+
+## Amendment — Tier 3B batch 2, 42 → 46 (2026-08-17, issue [#1424](https://github.com/TheurgicDuke771/DataQ/issues/1424))
+
+`ack_incident`, `resolve_incident`, `list_columns`, `get_near_misses`. The split becomes
+**46 tools: 23 read-only, 18 that change state, 5 live-probe**. Tier 3B is complete.
+
+`list_columns` is classified as a **live probe**, not a read, for the `profile_column` reason
+exactly: it persists nothing but opens a live datasource connection with the stored credential,
+so it gates on `edit`. It is also the cheap authoring step the surface was missing —
+`profile_column` reads data to compute statistics when the question was only "what are the column
+names?", and a guessed column produces a check that runs and errors.
+
+`get_near_misses` closes a loop `create_trigger_binding` opened: that tool *warns* about an
+environment mismatch it has no way to investigate, and before this route existed the only way to
+see one was `psql` (#1199). Its docstring states the asymmetry explicitly — an empty result does
+**not** prove a binding is firing, only that no mismatch was observed.
+
+**The two lifecycle verbs required the most docstring care in the batch, because both are
+statements about the incident and neither touches the data.** Acknowledging does not stop
+alerting (the check still runs, still fails, still notifies) and points at `snooze_check` for
+what a user asking to "silence it" usually means. Resolving re-runs nothing and fixes nothing: if
+the underlying problem persists, the next failing run opens a **new** incident, since a resolved
+incident is never reopened — so the tool steers toward `trigger_suite_run` to confirm a fix
+rather than resolving on an assumption. Both refuse the closed-state transition (the service's
+`IncidentNotActiveError`) instead of silently no-opping, which would let an assistant report an
+action that never happened.
+
+One harness finding is worth recording: `SuiteForbiddenError` from `load_visible_incident` names
+the required level ("requires 'edit' on its suite") and matched **none** of the RBAC sweep's
+accepted-denial vocabulary, so a correctly-denied tool failed the sweep for looking like the
+wrong kind of failure. That exact phrase was added — deliberately not a loose word like
+"requires", because anything that also matches an argument-validation message would let a
+gateless tool pass by failing for the wrong reason. Every gate in this batch was mutation-
+verified.
+
+The exclusions are unchanged.

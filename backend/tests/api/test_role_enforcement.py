@@ -741,7 +741,19 @@ def _assert_tool_denies(
     # failing for an unrelated reason (a missing argument, a bad UUID), which would
     # make this pass while proving nothing.
     assert any(
-        word in message for word in ("forbidden", "permission", "workspace role", "not found")
+        word in message
+        for word in (
+            "forbidden",
+            "permission",
+            "workspace role",
+            "not found",
+            # `SuiteForbiddenError` from `load_visible_incident` names the level
+            # rather than using the word "permission". Added as a specific phrase,
+            # not a loose one like "requires": the vocabulary is narrow on purpose,
+            # since anything that also matches an argument-validation message would
+            # let a gateless tool pass by failing for the wrong reason.
+            "requires 'edit'",
+        )
     ), f"{tool_name} denied for the wrong reason: {exc.value}"
 
 
@@ -766,6 +778,7 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
             "config": {"column": "EMAIL"},
         },
         "profile_column": {"suite_id": sid, "columns": ["EMAIL"]},
+        "list_columns": {"suite_id": sid},
         "cancel_run": {"run_id": _REAL_RUN},
         "suggest_column_policy": {"suite_id": sid},
         "update_suite": {"suite_id": sid, "name": "renamed by probe"},
@@ -818,7 +831,12 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
         # incident:view — takes an incident id, so the sentinel is what makes the
         # sweep reach the gate rather than a 404.
         "get_incident": {"incident_id": _REAL_INCIDENT},
+        # incident:edit — same sentinel; the ladder is resolved through the
+        # incident's suite, so `edit` is what separates these from get_incident.
+        "ack_incident": {"incident_id": _REAL_INCIDENT},
+        "resolve_incident": {"incident_id": _REAL_INCIDENT},
         # read:suite-optional — the named-suite half is what has a gate
+        "get_near_misses": {"suite_id": sid},
         "list_incidents": {"suite_id": sid},
         "list_runs": {"suite_id": sid},
         "list_schedules": {"suite_id": sid},
