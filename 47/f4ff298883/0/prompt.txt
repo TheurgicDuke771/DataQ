@@ -1,0 +1,11 @@
+how much effort is required to close #433 G3
+
+---
+
+<task-notification>
+<task-id>bt0wygcgv</task-id>
+<tool-use-id>toolu_01R5QGGRUR5CVCfNoDeVr8os</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/248e6c9f-6db3-446e-8372-f8dd810b180b/tasks/bt0wygcgv.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI" completed (exit code 0)</summary>
+</task-notification>

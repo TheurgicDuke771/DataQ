@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "47f4ff298883",
+  "strategy": "manual-commit",
+  "branch": "docs/1465-accept-residency-exception",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "deploy/terraform/azure/postgres.tf",
+    "deploy/terraform/azure/terraform.tfvars.example",
+    "deploy/terraform/azure/variables.tf",
+    "docs/compliance-posture.md",
+    "docs/security.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/47/f4ff298883/0/metadata.json",
+      "transcript": "/47/f4ff298883/0/full.jsonl",
+      "compact_transcript": "/47/f4ff298883/0/transcript.jsonl",
+      "content_hash": "/47/f4ff298883/0/content_hash.txt",
+      "prompt": "/47/f4ff298883/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 36,
+    "cache_creation_tokens": 16387,
+    "cache_read_tokens": 14456118,
+    "output_tokens": 12180,
+    "api_call_count": 18
+  }
+}
