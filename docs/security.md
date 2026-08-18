@@ -318,18 +318,25 @@ answer both; this section is the answer for the reference deployments, and
 `GET /api/v1/admin/deployment` is the same answer read live from a running
 instance (workspace-admin only) so it can be checked rather than trusted.
 
-**One declared jurisdiction per deployment**, set by a single IaC variable
-(`azure_location` / `aws_region`) and declared to the app as `DEPLOYMENT_REGION`.
-The app's value is a **declaration, not a verification** — software cannot confirm
-which datacentre its database sits in — and it is reported as `null` when unset,
-so an auditor sees a gap rather than a guess.
+**One declared jurisdiction per deployment.** The unit that matters is the
+*jurisdiction* — the country whose law applies — because that is what GDPR Ch. V
+keys on; a cloud *region* is how a provider spells a location within one. Both
+reference deployments are entirely in the **United States**.
+
+The primary region is set by a single IaC variable (`azure_location` /
+`aws_region`) and declared to the app as `DEPLOYMENT_REGION`. The app's value is a
+**declaration, not a verification** — software cannot confirm which datacentre its
+database sits in — and it is reported as `null` when unset, so an auditor sees a
+gap rather than a guess. Where an individual resource sits in a *different region
+of the same jurisdiction*, the table below says so; those are recorded exceptions,
+not drift.
 
 ### Where each resource sits
 
 | Resource | Region | Holds customer data? |
 |---|---|---|
 | PostgreSQL (AWS RDS) | the declared region | **Yes** — suites, checks, results, and the incidental personal data in failing-row samples |
-| PostgreSQL (Azure Flexible Server) | **shared server, set outside this stack — currently `West US 3` while the app declares `West US 2`** | **Yes** — as above |
+| PostgreSQL (Azure Flexible Server) | **`West US 3`** — a recorded exception; the app's other resources are in `West US 2`. Same jurisdiction | **Yes** — as above |
 | Secret store (Key Vault / Secrets Manager / OpenBao) | the declared region | Warehouse credentials, not customer data |
 | Container Apps / ECS compute | the declared region | In transit only |
 | Object storage (AWS landing bucket) | the declared region | Whatever the operator lands there |
@@ -337,25 +344,37 @@ so an auditor sees a gap rather than a guess.
 | CloudFront (AWS only) | **global edge** | **No.** Only fingerprinted static assets are cached (`/assets/*.<ext>`); every other path is pass-through, so no API response and no failing-row sample is stored at an edge location |
 | WAFv2 Web ACL (AWS only) | **`us-east-1`, unavoidably** | **No** — the ACL is rule configuration. CloudFront-scoped ACLs exist only in `us-east-1` regardless of where the stack lives |
 
-The CloudFront and WAF rows are the honest exceptions, and both are stated rather
-than omitted: a reviewer who finds a `us-east-1` provider alias in an `eu-west`
-stack should find it explained here rather than have to work out whether it
-matters.
+The CloudFront and WAF rows are stated rather than omitted for the same reason: a
+reviewer who finds a `us-east-1` provider alias in an `eu-west` stack should find
+it explained here rather than have to work out whether it matters.
 
-**The Azure Postgres row is a live discrepancy, not an exception.** The
-subscription caps Flexible Servers at one, so the app shares the harness's server
-and declares it as a `data` source — meaning its region is set outside this stack.
-Verified against live Azure: the server is in **West US 3** while
-`azure_location` is **West US 2**. Both are US regions, so this is not a GDPR
-Ch. V transfer; it is a mismatch between what the deployment declares and where
-the data actually sits, on the one resource residency claims are *about*. It is
-surfaced on every `plan` by the `check` block in `postgres.tf` rather than
-silently tolerated, and tracked as [#1465](https://github.com/TheurgicDuke771/DataQ/issues/1465), and it is written here rather than smoothed over, because a
-compliance document that is wrong about the live deployment is worse than the gap
-it describes.
+**The Azure Postgres row is a third recorded exception**, and the one that matters
+most, because it is the resource holding the data.
 
-An earlier draft of this table asserted that Postgres sits in the declared region.
-It was caught by checking the running deployment rather than the IaC.
+The subscription caps PostgreSQL Flexible Servers at one, so the app shares the
+harness's server and declares it as a `data` source — its region was fixed by
+whoever created it, not by this stack. Verified against live Azure: **West US 3**,
+while the app's own resources are in **West US 2**. Resolving it means a new
+server plus a data migration against that same cap, so it is **accepted
+deliberately** ([#1465](https://github.com/TheurgicDuke771/DataQ/issues/1465))
+rather than treated as a defect.
+
+Accepted on a specific basis, which is the part worth checking: **same
+jurisdiction**. Both regions are in the United States, so no personal data crosses
+a border and GDPR Ch. V is not engaged. An operator whose regime cares about
+sub-national placement — or who deploys into the EU, where a two-region split
+could straddle adequacy boundaries — must treat this as a real constraint and
+consolidate rather than inherit the exception.
+
+The `check` block in `postgres.tf` compares the server against an explicitly
+declared `shared_pg_expected_location` rather than against `azure_location`. That
+distinction is what keeps it working: checking against `azure_location` would warn
+on every plan forever, and a permanently-firing check is noise people learn to
+skip — it would mask the drift that actually matters, this server moving to
+another *jurisdiction*.
+
+An earlier draft of this table asserted Postgres sat in the declared region. It
+was caught by checking the running deployment rather than the IaC.
 
 ### The assertions that catch drift
 
@@ -371,11 +390,17 @@ with a message naming both. For a Ch. V control, "we did not notice the
 jurisdiction changed" is the whole failure mode.
 
 The shared **database** gets the same comparison as a `check` block, which
-**warns** on every plan instead of blocking — because unlike the environment, it
-does not hold today (see the table above). A `postcondition` there would fail
-every apply until someone moves a database, which is an operational decision the
-IaC should not make unilaterally; a `check` names the drift on every plan and
-lets the resolution happen deliberately.
+**warns** rather than blocking. A `postcondition` there would fail every apply
+until someone migrated a database, and the right response to "the DB moved" is a
+decision, not a rollback.
+
+It compares against `shared_pg_expected_location`, which defaults to
+`azure_location` — so for an ordinary single-region deployment the two are the
+same thing and the check is silent. Setting the variable is how a deployment
+records an accepted exception; this one does, for the West US 3 server described
+above. That indirection is the difference between a check that still works and
+one that warns on every plan forever: an accepted exception must not cost you the
+detector, and it must not hand the noise to every other deployment either.
 
 ### What can move data out
 
