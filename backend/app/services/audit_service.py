@@ -41,7 +41,7 @@ from typing import Any, Final
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import _scrub_secret_strings, request_id_var
-from backend.app.db.models import AUDIT_ACTOR_KINDS, AuditEvent
+from backend.app.db.models import AUDIT_ACTION_CLASSES, AUDIT_ACTOR_KINDS, AuditEvent
 
 # ── Redaction ─────────────────────────────────────────────────────────────────
 #
@@ -140,6 +140,12 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
+def _encoded_size(value: Any) -> int:
+    """Serialized byte length — the unit the cap is expressed in, in one place so
+    the budget check and the per-field measurement cannot drift apart."""
+    return len(json.dumps(value, default=str).encode())
+
+
 def _cap_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Bound the serialized payload to `MAX_PAYLOAD_BYTES`, dropping the largest
     fields first and recording WHICH ones went.
@@ -148,23 +154,32 @@ def _cap_payload(payload: dict[str, Any]) -> dict[str, Any]:
     oversized payload is almost always one giant field (a custom-SQL body, a drift
     baseline) beside a dozen small ones that are individually the interesting part.
     """
-    if len(json.dumps(payload, default=str).encode()) <= MAX_PAYLOAD_BYTES:
+    if _encoded_size(payload) <= MAX_PAYLOAD_BYTES:
         return payload
     sizes = sorted(
-        ((k, len(json.dumps(v, default=str).encode())) for k, v in payload.items()),
+        ((k, _encoded_size({k: v})) for k, v in payload.items()),
         key=lambda kv: kv[1],
         reverse=True,
     )
     kept = dict(payload)
     dropped: list[str] = []
+
+    def _marker(names: list[str]) -> dict[str, Any]:
+        return {"dropped_fields": sorted(names), "limit_bytes": MAX_PAYLOAD_BYTES}
+
     for key, _size in sizes:
-        if len(json.dumps(kept, default=str).encode()) <= MAX_PAYLOAD_BYTES:
+        # The marker is part of the payload, so it is part of the budget. Measuring
+        # WITHOUT it and appending afterwards — as an earlier version did — puts the
+        # stored row over the limit it advertises, every single time it truncates.
+        if _encoded_size({**kept, _TRUNCATION_KEY: _marker(dropped)}) <= MAX_PAYLOAD_BYTES:
             break
-        # Never drop the marker itself, and never drop the last surviving field —
-        # an empty payload with a marker is still more honest than a silent cap.
         kept.pop(key, None)
         dropped.append(key)
-    kept[_TRUNCATION_KEY] = {"dropped_fields": sorted(dropped), "limit_bytes": MAX_PAYLOAD_BYTES}
+    # A payload reduced to nothing but its marker is the honest outcome when a
+    # SINGLE field blows the budget (an enormous custom-SQL body). It says "there
+    # was a record and this is why you cannot see it", which is the point; keeping
+    # the oversized field to avoid an empty-looking row would defeat the cap.
+    kept[_TRUNCATION_KEY] = _marker(dropped)
     return kept
 
 
@@ -327,9 +342,14 @@ def snapshot(entity_type: str, entity: Any) -> dict[str, Any] | None:
     `None` in → `None` out, so a create event's `before` and a delete event's
     `after` are naturally null rather than an empty dict that reads as "we looked
     and it was blank".
+
+    **The entity_type is validated FIRST, before that None short-circuit.** An
+    earlier version checked `entity is None` first, which made the guard
+    unreachable on exactly the path that needs it most: a delete passes
+    `entity=None`, so an undeclared or typo'd `entity_type` was recorded silently
+    there while the same typo raised everywhere else. A guard that is skipped on
+    one of its doors is the shape this module exists to avoid.
     """
-    if entity is None:
-        return None
     fields = _SERIALIZERS.get(entity_type)
     if fields is None:
         raise UnknownAuditEntityError(
@@ -337,8 +357,17 @@ def snapshot(entity_type: str, entity: Any) -> dict[str, Any] | None:
             "add one to audit_service._SERIALIZERS rather than auditing an "
             "undeclared shape"
         )
+    if entity is None:
+        return None
     raw = {name: getattr(entity, name, None) for name in fields}
     return _cap_payload(_scrub_value(_jsonable(raw)))
+
+
+def _sanitize_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Scrub, JSON-coerce and cap a payload, whoever built it. See `record`."""
+    if payload is None:
+        return None
+    return _cap_payload(_scrub_value(_jsonable(payload)))
 
 
 def record(
@@ -366,6 +395,16 @@ def record(
     `actor_label` is denormalized here, at write time, so the attribution survives
     both the `ON DELETE SET NULL` and any later rename.
     """
+    # Both discriminators are validated here, not just one. Each carries a DB
+    # CHECK, so an invalid value is caught either way — but only at COMMIT, as an
+    # `IntegrityError` that (the write being same-transaction and fail-closed)
+    # aborts the user's mutation with an opaque database error. Raising at the
+    # call site turns a production 500 into a failing test.
+    if action_class not in AUDIT_ACTION_CLASSES:
+        raise ValueError(
+            f"action_class={action_class!r} is not one of {AUDIT_ACTION_CLASSES} "
+            "('access' is phase 2 / G1 #431)"
+        )
     if actor_kind not in AUDIT_ACTOR_KINDS:
         raise ValueError(
             f"actor_kind={actor_kind!r} is not one of {AUDIT_ACTOR_KINDS} — "
@@ -376,6 +415,15 @@ def record(
     if actor is not None:
         actor_id = getattr(actor, "id", None)
         label = getattr(actor, "display_name", None) or getattr(actor, "email", None)
+    # The module's three guarantees — allow-list, redaction, cap — must hold on
+    # EVERY payload, not only the ones `snapshot` built. A slice-2 caller
+    # hand-building a `before`/`after` dict (a role change, a share grant) would
+    # otherwise bypass all three: an unredacted credential could be stored, and a
+    # stray `Decimal` would hit the #1273 JSON-encoder crash which — the write
+    # being same-transaction and fail-closed — rolls back the user's mutation. The
+    # allow-list still cannot be applied to a free-form dict, so this is the two
+    # halves that CAN be: scrub, then coerce, then cap. Re-running them over a
+    # `snapshot` result is idempotent and cheap.
     event = AuditEvent(
         action_class=action_class,
         action=action,
@@ -384,8 +432,8 @@ def record(
         actor_user_id=actor_id,
         actor_kind=actor_kind,
         actor_label=label,
-        before=before,
-        after=after,
+        before=_sanitize_payload(before),
+        after=_sanitize_payload(after),
         request_id=request_id if request_id is not None else request_id_var.get(),
     )
     session.add(event)
@@ -409,7 +457,22 @@ def record_entity_change(
     snapshot as `before` and let `entity` be `None` — the audit row is then the
     only surviving record of what was destroyed, which is the whole reason this
     table has no foreign key on `entity_id`.
+
+    **A pending entity is flushed first, and that is load-bearing.** `id` is
+    `gen_random_uuid()` — a SERVER default with no Python-side counterpart — so on
+    a CREATE the attribute is still `None` until the row reaches the database.
+    Without the flush the event would store `entity_id = NULL` and `after.id =
+    null`, and the `(entity_type, entity_id, occurred_at)` index read — "everything
+    that happened to this check" — would never return the creation event. The row
+    would exist and look fine; only the query that matters would come up short.
+
+    A flush is not a commit: it stays inside the caller's transaction and rolls
+    back with it, so the fail-closed contract is untouched. It is scoped to this
+    one object rather than the whole session, so auditing cannot force an
+    unrelated pending change to the database early.
     """
+    if entity is not None and getattr(entity, "id", None) is None and entity in session:
+        session.flush([entity])
     entity_id = getattr(entity, "id", None) if entity is not None else None
     if entity_id is None and before is not None:
         raw_id = before.get("id")

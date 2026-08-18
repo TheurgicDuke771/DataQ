@@ -20,7 +20,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import _PII_KEYS
-from backend.app.db.models import AUDIT_ACTOR_KINDS, Check, Connection, Suite
+from backend.app.db.models import AUDIT_ACTOR_KINDS, Check, Connection, Suite, User
 from backend.app.services import audit_service
 
 
@@ -344,3 +344,170 @@ def test_snapshot_of_none_is_none_not_an_empty_dict() -> None:
     """So a create event's `before` and a delete event's `after` read as "there
     was nothing", not as "we looked and it was blank"."""
     assert audit_service.snapshot("suite", None) is None
+
+
+# ── Review findings (PR #1451) ────────────────────────────────────────────────
+#
+# Each of these five failed against the code as first written. They are grouped
+# rather than filed beside their subject because what they have in common is the
+# point: every one is a guarantee the module STATES and did not, at that door,
+# actually provide.
+
+
+def test_a_create_is_audited_with_the_id_the_database_assigned(db_session: Any) -> None:
+    """`id` is `gen_random_uuid()` — a SERVER default with no Python-side
+    counterpart — so on a create the attribute is `None` until the row reaches the
+    database.
+
+    Without a flush the event stores `entity_id = NULL`, the row looks perfectly
+    fine, and the ONE query the entity index exists for — "everything that
+    happened to this suite" — silently never returns the creation event. Needs
+    real Postgres precisely because it is the database that assigns the value.
+    """
+    owner = User(email=f"owner-{uuid.uuid4().hex[:8]}@example.com")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "a", "warehouse": "w", "database": "d", "role": "r"},
+        secret_ref="kv-ref",
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name=f"s-{uuid.uuid4().hex[:8]}", connection_id=conn.id, created_by=owner.id)
+    db_session.add(suite)
+    # NOT flushed — `suite.id` is None right now, which is the whole point.
+    assert suite.id is None
+
+    event = audit_service.record_entity_change(
+        db_session,
+        action="suite.create",
+        entity_type="suite",
+        entity=suite,
+        actor=None,
+        actor_kind="webhook",
+    )
+
+    assert suite.id is not None
+    assert event.entity_id == suite.id
+    assert event.after is not None and event.after["id"] == str(suite.id)
+
+
+def test_an_undeclared_entity_type_raises_on_the_DELETE_path_too() -> None:
+    """The delete path passes `entity=None`, and an earlier version short-circuited
+    on that before ever consulting the allow-list — so a typo'd `entity_type` was
+    recorded silently there while the same typo raised on every other path.
+
+    A guard applied at one door and not its sibling is invisible until it matters,
+    and the delete is the event this whole table exists to retain.
+    """
+    with pytest.raises(audit_service.UnknownAuditEntityError):
+        audit_service.snapshot("no_such_entity", None)
+
+
+def test_a_hand_built_payload_is_scrubbed_like_a_snapshot_one() -> None:
+    """The module's guarantees must hold on EVERY payload, not only the ones
+    `snapshot` built.
+
+    Slice 2 hand-builds `before`/`after` for events with no single entity row (a
+    role change, a share grant). If `record` wrote those through unexamined, the
+    allow-list would be the only control and a credential could be stored in
+    plaintext by a caller that simply did not think about it.
+    """
+    session = _FakeSession()
+    audit_service.record(
+        _as_session(session),
+        action="connection.reauth",
+        entity_type="connection",
+        entity_id=uuid.uuid4(),
+        actor=_Actor(),
+        after={"password": "hunter2", "secret_ref": "conn-snowflake-orders-dev-ab12"},
+    )
+    event = session.added[0]
+    assert event.after["password"] == audit_service._REDACTED
+    assert event.after["secret_ref"] == "conn-snowflake-orders-dev-ab12"
+
+
+def test_a_hand_built_payload_with_a_decimal_does_not_crash_the_mutation() -> None:
+    """The #1273 class, arriving by the other door. A stray `Decimal` in a
+    caller-built payload reaches the JSONB encoder and raises — and because this
+    write is same-transaction and fail-closed, that failure rolls back the USER'S
+    mutation. The audit log must never be the reason a legitimate change fails.
+    """
+    session = _FakeSession()
+    audit_service.record(
+        _as_session(session),
+        action="check.update",
+        entity_type="check",
+        entity_id=uuid.uuid4(),
+        actor=_Actor(),
+        after={"warn_threshold": Decimal("0.25")},
+    )
+    json.dumps(session.added[0].after)  # must not raise
+    assert session.added[0].after["warn_threshold"] == "0.25"
+
+
+def test_an_invalid_action_class_raises_at_the_call_site() -> None:
+    """`actor_kind` was validated and `action_class` was not, though both carry a
+    DB CHECK.
+
+    The CHECK catches it either way — but only at COMMIT, as an `IntegrityError`
+    that aborts the user's mutation with an opaque database error. Raising here
+    turns a production 500 into a failing test.
+    """
+    with pytest.raises(ValueError, match="action_class"):
+        audit_service.record(
+            _as_session(_FakeSession()),
+            action="check.update",
+            entity_type="check",
+            entity_id=uuid.uuid4(),
+            actor=None,
+            actor_kind="webhook",
+            action_class="not_a_class",
+        )
+
+
+def test_a_truncated_payload_INCLUDING_its_marker_fits_the_budget() -> None:
+    """The marker is part of the payload, so it is part of the budget.
+
+    Measuring without it and appending afterwards puts the stored row over the
+    limit it advertises — every single time it truncates, which is the only time
+    anyone is measuring.
+
+    **This is deliberately a boundary case, built by hand.** The obvious version of
+    this test — a Suite with one enormous field — passes against the unfixed code,
+    because once the giant field goes the survivors sit far below the limit and a
+    ~60-byte marker still fits. It looked like a regression test and proved
+    nothing; mutation-checking is what caught that. So the surviving field is sized
+    to land just UNDER the limit, where the marker is exactly what tips it over.
+    """
+    limit = audit_service.MAX_PAYLOAD_BYTES
+    survivor = "y" * (limit - len(json.dumps({"keep": ""}).encode()) - 8)
+    payload = {"drop_me": "x" * limit * 2, "keep": survivor}
+    assert audit_service._encoded_size({"keep": survivor}) <= limit
+    assert audit_service._encoded_size({"keep": survivor}) > limit - 64  # marker-sized headroom
+
+    capped = audit_service._cap_payload(payload)
+
+    assert capped[audit_service._TRUNCATION_KEY]["dropped_fields"] == ["drop_me", "keep"]
+    assert audit_service._encoded_size(capped) <= limit
+
+
+def test_a_payload_whose_single_field_blows_the_budget_reduces_to_its_marker() -> None:
+    """The honest outcome when ONE field is oversized: the row says "there was a
+    record and this is why you cannot see it".
+
+    Keeping the oversized field to avoid an empty-looking payload would defeat the
+    cap entirely, and an earlier comment claimed the code never dropped the last
+    surviving field — a promise the code did not keep. The behaviour is now
+    asserted rather than described.
+    """
+    capped = audit_service._cap_payload(
+        {"sql": "SELECT 1 -- " + "x" * audit_service.MAX_PAYLOAD_BYTES * 2}
+    )
+    assert list(capped) == [audit_service._TRUNCATION_KEY]
+    assert capped[audit_service._TRUNCATION_KEY]["dropped_fields"] == ["sql"]
+    assert audit_service._encoded_size(capped) <= audit_service.MAX_PAYLOAD_BYTES
