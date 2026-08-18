@@ -197,6 +197,20 @@ erDiagram
         numeric critical_threshold
         uuid changed_by FK "SET NULL"
     }
+    audit_events {
+        uuid id PK
+        timestamptz occurred_at
+        string action_class "config (ADR 0041 ph1) / access (G1 #431 ph2)"
+        string action "check.update / share.grant / connection.reauth / …"
+        string entity_type
+        uuid entity_id "NO FK — the audit row must outlive the entity"
+        uuid actor_user_id FK "SET NULL"
+        string actor_kind "user / pat / webhook — deliberately no 'system'"
+        string actor_label "denormalized, survives the SET NULL"
+        jsonb before
+        jsonb after
+        string request_id
+    }
     runs {
         uuid id PK
         uuid suite_id FK
@@ -290,6 +304,7 @@ erDiagram
     users ||--o{ shares : "grantee (CASCADE)"
     users |o--o{ connection_versions : "changed_by (SET NULL)"
     users |o--o{ check_versions : "changed_by (SET NULL)"
+    users |o--o{ audit_events : "actor_user_id (SET NULL)"
 
     connections ||--o{ connection_versions : "config history (CASCADE)"
     connections ||--o{ suites : "datasource for"
