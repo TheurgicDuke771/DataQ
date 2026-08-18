@@ -75,6 +75,19 @@ Portability, auto-monitors, and polish on top of v1:
   and MCP (ADR 0026).
 - **Workspace-admin visibility** extended to the MCP tools + schedules; **dry-run preview**
   extended to every datasource.
+- **Every MCP tool now states what it cannot see.** A REST caller wrote their own
+  query and a UI user reads the screen; an AI client has neither, so a tool that
+  returns literally-true values while omitting its blind spot produces a
+  confident wrong answer. All 46 were audited against six criteria — population,
+  time window, truncation, freshness, null/zero semantics, and what the tool
+  structurally cannot see — and the limits are returned as **fields** wherever
+  possible rather than prose: `truncated` / `oldest_in_page` (the list tools take
+  no time filter), `results_final` (a mid-run partial is not a verdict),
+  `redaction` / `redacted_columns` (a masked sample is not an absent one),
+  `sampled` / `sample_row_limit` (flat-file and Iceberg profiles read at most
+  100k rows), `runnable`, `is_recurrence`, `window_hours`. Six docstrings were
+  corrected outright, having claimed things the code does not do — see
+  [AI assistants (MCP setup)](mcp-setup.md) under *Reading the results honestly*.
 - **MCP server expanded to 46 tools** — the Tier 1 read-only batch (checks, runs,
   connections, schedules, trigger bindings, notification config, suite performance,
   suite export) alongside the original 8, plus the Tier 2 batch (update/delete/snooze

@@ -112,6 +112,31 @@ a credential must never transit an LLM. `test_connection` reports only whether a
 succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 expansion, issue
 [#529](https://github.com/TheurgicDuke771/DataQ/issues/529)).
 
+### Reading the results honestly
+
+A REST caller wrote their own query and a UI user reads the screen — the row
+count, the timestamps, the "running" badge, the filter they chose. An AI client
+has neither, so several tools return **fields whose whole job is to say what the
+answer does not cover**. A well-behaved client should branch on these rather
+than summarising the payload as-is.
+
+| Field | Appears on | What it prevents |
+|---|---|---|
+| `total` · `returned` · `truncated` | `list_runs`, `list_checks`, `list_check_versions`, `list_incidents`, `list_assets`, `get_check_history`, `get_adf_pipeline_status` | reporting one page as the whole set. `truncated` is computed against a real total, never inferred from page length. The unpaged tools — `list_suites`, `list_connections`, `list_schedules`, `list_trigger_bindings`, `get_near_misses` — return every row and carry no page fields at all |
+| `oldest_in_page` · `newest_in_page` | `list_runs`, `get_check_history`, `get_adf_pipeline_status` | answering a time-bounded question ("what failed today?") from a **count**-capped page. None of these tools has a time filter ([#1442](https://github.com/TheurgicDuke771/DataQ/issues/1442)) — these fields say what window you actually saw |
+| `results_final` | `list_runs`, `get_run_results`, `get_run_status`, `get_suite_results` | reading a mid-run partial as a verdict. A 30-check suite three checks in genuinely has "3/3 passed" — and no result yet |
+| `redaction` · `redacted_columns` | per-check results | describing masked rows as "no failing rows", or mask tokens as data |
+| `sampling` · `sampled` · `sample_row_limit` | results, `profile_column` | stating a sample statistic as a fact about the full dataset |
+| `runnable` | `update_suite`, `import_suite` | reporting a suite as ready when it has no run target and cannot run |
+| `is_recurrence` · `prior_incident_id` | incidents | describing a recurring problem as brand new |
+| `window_hours` | `get_near_misses` | quoting a default window on a deployment that changed it |
+| `restricted_suite_count` | `get_asset` | presenting the suites you can see as the whole explanation for a workspace-wide health number |
+| `column_policy_pending` · `column_policy_may_be_stale` | `update_suite` | leaving a redaction policy stranded after re-pointing a suite |
+
+The same principle runs through the tool descriptions themselves: each states its
+population (so an empty result is never read as "nothing exists"), whether it is a
+snapshot or a live read, and what it structurally cannot see.
+
 ### Suites & results
 
 | Tool | What it answers |
@@ -119,7 +144,7 @@ succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 
 | `list_suites` | "What suites can I see?" — id, datasource, env, check count, last run |
 | `get_suite_results` | "What failed in suite X?" — latest run's per-check outcomes |
 | `get_suite_performance` | "Which suites are in the worst shape?" — a worst-first health ranking |
-| `get_health_score` | "How healthy is data quality overall?" — score, pass rate, trend |
+| `get_health_score` | "How healthy is data quality overall?" — score and pass rate over a window. Its `trend` is a per-day count of **runs** by lifecycle status, **not** a per-day score; a null score means nothing was evaluated, not zero |
 | `update_suite` | "Point the orders suite at ANALYTICS.ORDERS_V2" — renames a suite or sets **what it runs against**; an imported suite has no target and cannot run until this sets one. Returns `runnable` |
 | `export_suite` | "Show me the whole orders suite" — every check's definition as one portable document |
 
@@ -133,22 +158,22 @@ succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 
 | `list_check_versions` | "Who changed this threshold?" — one check's *edit* history: every snapshot's config and thresholds as they were at that version |
 | `create_check` | "Add a null check on email" — authors a check on a suite you can edit |
 | `update_check` | "Loosen the null check on email to warn at 2%" — a partial update; `config` replaces the whole configuration rather than merging into it |
-| `delete_check` | "Remove the row-count check from orders" — permanently deletes a check **and every result it ever recorded**; prefer `snooze_check` to just stop alerting |
-| `snooze_check` | "Stop alerting on the freshness check until tomorrow" (or, with no duration, "turn alerts back on") — mutes alerts only; the check still runs and still fails |
+| `delete_check` | "Remove the row-count check from orders" — permanently deletes a check **and every result it ever recorded, plus every incident it raised, including open ones**; prefer `snooze_check` to just stop alerting |
+| `snooze_check` | "Stop alerting on the freshness check until tomorrow" (or, with no duration, "turn alerts back on") — mutes alerts only; the check still runs, still fails, and still opens an incident. **Suppression is per _run_**: the alert is withheld only when every failing check in that run is snoozed |
 | `restore_check_version` | "Undo that threshold change" — puts a check back to a snapshot from `list_check_versions`; additive (nothing is renumbered or deleted), and the only path that *clears* a field back to empty |
-| `dryrun_check` | "Would a not-null check on email pass right now?" — previews a check against live data without saving anything |
+| `dryrun_check` | "Would a not-null check on email pass right now?" — previews a check against live data without saving anything. Reads what a real run would read, so on flat-file / Iceberg targets it inherits the run target's sampling |
 
 ### Runs & profiling
 
 | Tool | What it answers |
 |---|---|
-| `list_runs` | "What has run today?" / "show me the failed runs" |
+| `list_runs` | "Show me the recent runs" / "find the run that failed". **No time filter** — it returns the newest `limit` runs and reports `oldest_in_page` / `newest_in_page` so you can tell what window you actually saw ([#1442](https://github.com/TheurgicDuke771/DataQ/issues/1442)) |
 | `get_run_results` | "Why did last night's orders run fail?" — a specific historical run's per-check results |
 | `get_run_status` | "Is it done?" — live status + per-check progress |
-| `trigger_suite_run` | "Run the orders suite" — dispatches a run, returns the run id |
+| `trigger_suite_run` | "Run the orders suite" — dispatches a run, returns the run id. **The environment and dataset cannot be chosen**: a run always uses the suite's own connection and target |
 | `cancel_run` | "Stop the orders run, I triggered the wrong suite" — cancels a queued or still-running run; cooperative, so a fast run may finish first |
 | `list_columns` | "What columns are on this table?" — names only, defaulting to the suite's own target. The cheap first step before authoring; guessing a column name produces a check that runs and errors |
-| `profile_column` | "Profile the qty column" — live null/distinct/min/max/top-values stats |
+| `profile_column` | "Profile the qty column" — live null/distinct/min/max/top-values stats. Snowflake and Unity Catalog are profiled in full; **ADLS, S3 and Iceberg are sampled to 100k rows**, and `sampled: true` means `row_count` is the sample size, not the table's. Values are returned **unredacted** |
 | `get_column_policy` | "Is the email column masked in failure samples?" — the suite's redaction policy; an empty one means no suite-level override, **not** that nothing is masked |
 | `set_column_policy` | "Mask the email column in failure samples" — applies what `suggest_column_policy` proposed; replaces the whole policy |
 | `suggest_column_policy` | "Which columns here are sensitive?" — suggests (never saves) a PII redaction policy by profiling the suite's target live |
@@ -157,8 +182,8 @@ succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 
 
 | Tool | What it answers |
 |---|---|
-| `list_connections` | "What are we connected to?" / "which connections are broken?" — names, types and health **only**, never config or secrets |
-| `test_connection` | "Is the Snowflake connection working?" — opens a live connection with the stored credential and reports success or a classified failure; never returns a credential |
+| `list_connections` | "What are we connected to?" / "which connections are broken?" — names, types and health **only**, never config or secrets. `consecutive_run_failures` is non-zero only when *every* suite on the connection is failing, so a per-suite problem is invisible here |
+| `test_connection` | "Is the Snowflake connection working?" — opens a live connection with the stored credential. A pass proves only that the credential authenticates and the datasource answers, **not** that a suite will run; a failure is deliberately unclassified (driver text can carry credential fragments) |
 | `get_adf_pipeline_status` | "Why did pipeline Y fail?" — recent orchestrator (ADF/Airflow/dbt) runs + correlated DQ run |
 | `list_trigger_bindings` | "What runs after the nightly load?" — which pipeline/DAG successes trigger which suite |
 | `create_trigger_binding` | "Run the orders checks after the nightly load finishes" — binds a pipeline/DAG success in a given `env` to a suite; only success triggers a run |
@@ -194,7 +219,7 @@ authored in. Incidents are the deduplicated, stateful roll-up of repeated failur
 
 | Tool | What it answers |
 |---|---|
-| `import_suite` | "Recreate the orders suite against the QA warehouse" — creates a whole new suite from an `export_suite` document. Requires the **member** workspace role (it creates a suite, so there is no existing suite to gate on); never merges into an existing suite |
+| `import_suite` | "Recreate the orders suite against the QA warehouse" — creates a whole new suite from an `export_suite` document. **Only the checks are copied**: the new suite has no run target (`runnable: false` — fix with `update_suite`), no schedules, no trigger bindings, no notification config, no column policy and no shares. Requires the **member** workspace role; never merges into an existing suite |
 
 Try these natural-language queries once connected:
 

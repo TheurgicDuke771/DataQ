@@ -738,6 +738,7 @@ def list_checks(
         return {
             "suite_id": suite_id,
             "total": len(checks),
+            "returned": min(len(checks), limit),
             "truncated": len(checks) > limit,
             "checks": [_check_summary(c) for c in checks[:limit]],
         }
@@ -882,6 +883,8 @@ def list_check_versions(
             # Before the slice, so truncation is visible rather than implied by a
             # page that happens to be `limit` long.
             "total": len(versions),
+            "returned": min(len(versions), limit),
+            "truncated": len(versions) > limit,
             "versions": [
                 {
                     "version_no": v.version_no,
@@ -969,11 +972,16 @@ def list_runs(
         # One grouped query for the whole page's outcomes, not one per run — the
         # N+1 an LLM caller cannot see the cost of (#947).
         outcomes = run_service.check_outcome_counts(session, [r.id for r in runs])
+        total = run_service.count_runs(
+            session, user_id=user.id, suite_id=sid, status=status, include_all=include_all
+        )
         return {
-            "total": run_service.count_runs(
-                session, user_id=user.id, suite_id=sid, status=status, include_all=include_all
-            ),
+            "total": total,
             "returned": len(runs),
+            # Consistent with every other paged tool: a client told to branch on
+            # `truncated` reads its ABSENCE as false, and reports a capped page as
+            # the whole set — the exact failure the field exists to prevent.
+            "truncated": offset + len(runs) < total,
             # This tool has NO time filter (#1442), and the questions it is asked
             # are time-shaped ("what failed today?"). The covered interval is
             # returned as data so a model can check whether the period it was

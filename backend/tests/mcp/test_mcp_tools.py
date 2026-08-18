@@ -3778,3 +3778,48 @@ def test_update_suite_surfaces_its_own_side_effects(db_session: Any, monkeypatch
     db_session.commit()
     moved = server.update_suite(str(suite.id), target={"table": "ORDERS_V2"})
     assert moved["column_policy_may_be_stale"] is True
+
+
+def test_every_paged_tool_reports_truncation_the_same_way(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A client is told to branch on `truncated`. Where a paged tool omits it, the
+    absence reads as `false` and a capped page is reported as the whole set —
+    the exact failure the field exists to prevent (#1449 review).
+
+    Pinned as an invariant rather than left to per-tool review: the defect is
+    invisible in any single tool's own tests, since each one passes in isolation.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = Check(
+        suite_id=suite.id,
+        name="c",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+    )
+    db_session.add(check)
+    db_session.commit()
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.commit()
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="pass"))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    paged = {
+        "list_runs": server.list_runs(),
+        "list_checks": server.list_checks(str(suite.id)),
+        "list_check_versions": server.list_check_versions(str(suite.id), str(check.id)),
+        "list_incidents": server.list_incidents(),
+        "list_assets": server.list_assets(),
+        "get_check_history": server.get_check_history(str(suite.id), str(check.id)),
+        "get_adf_pipeline_status": server.get_adf_pipeline_status(),
+    }
+    for name, payload in paged.items():
+        assert "total" in payload, f"{name} pages but reports no total"
+        assert "truncated" in payload, (
+            f"{name} pages but reports no `truncated` — a client branching on it "
+            "reads the absence as false and calls a capped page complete"
+        )
+        assert isinstance(payload["truncated"], bool)
