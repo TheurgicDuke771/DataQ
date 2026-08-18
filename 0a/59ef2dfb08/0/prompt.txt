@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bbp8tg7oq</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/248e6c9f-6db3-446e-8372-f8dd810b180b/tasks/bbp8tg7oq.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI to finish" completed (exit code 0)</summary>
+</task-notification>
