@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "d2e24190bc44",
+  "strategy": "manual-commit",
+  "branch": "feature/1318-audit-read-and-retention",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/admin.py",
+    "backend/app/services/audit_read_service.py",
+    "backend/tests/api/test_audit_read.py",
+    "backend/tests/db/test_audit_retention_privileges.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d2/e24190bc44/0/metadata.json",
+      "transcript": "/d2/e24190bc44/0/full.jsonl",
+      "compact_transcript": "/d2/e24190bc44/0/transcript.jsonl",
+      "content_hash": "/d2/e24190bc44/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 52,
+    "cache_creation_tokens": 28808,
+    "cache_read_tokens": 11543820,
+    "output_tokens": 23369,
+    "api_call_count": 26
+  }
+}
