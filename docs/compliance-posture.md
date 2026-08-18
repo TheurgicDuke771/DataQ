@@ -230,12 +230,33 @@ a column-tag concept at all; for ADLS, S3, Iceberg and flat files the classifica
 the suite policy, the classifier and fail-closed mode. That is a platform limit, not an
 implementation gap.
 
-⚠️ **Not yet verified against a live warehouse.** The semantics, the wiring and the
-end-to-end masking are covered by tests against real Postgres, but the two SQL statements
-have not run against Snowflake or Databricks — and per the project's standing rule, only a
-live run is evidence for anything crossing a driver boundary. Two specifics that only a live
-run can settle: whether the connection's role can read `TAG_REFERENCES_ALL_COLUMNS`, and
-whether `system`-catalog access is granted for Unity Catalog's `column_tags`.
+**Live-verified 2026-08-18 against the real warehouses**, which is the only evidence that
+counts across a driver boundary (the #953 rule). Both unknowns are settled and one gap
+remains:
+
+* **Unity Catalog — fully verified end to end.** A `dataq_classification = 'pii'` tag was
+  applied to a real column, read back through the shipped `fetch_column_tags` as
+  `{'customer_id': 'sensitive'}`, and removed; the removal was confirmed by re-reading
+  `information_schema.column_tags`, not by trusting the cleanup's own log line.
+* **Snowflake — the read path verified.**
+  `INFORMATION_SCHEMA.TAG_REFERENCES_ALL_COLUMNS` **executes under DataQ's own
+  `DATAQ_READER` role** and returns cleanly. That settles the larger unknown: no
+  `ACCOUNT_USAGE` grant is needed, so classifications are read fresh rather than with that
+  view's up-to-two-hour lag.
+* **Snowflake — the apply/read-back half is NOT verified, and cannot be with the
+  credentials that exist.** Both stored Snowflake credentials are **role-scoped
+  programmatic access tokens** (one `DATAQ_READER`, one `DATAQ_LOADER`); neither role holds
+  `CREATE TAG` on the schema, and a PAT cannot assume `ACCOUNTADMIN` even though the
+  underlying user is granted it. Verified by inspecting the grants rather than inferred from
+  an error message.
+
+  So what remains unproven is narrow and specific: the `LEVEL = 'COLUMN'` filter and the
+  upper-to-lower column-name folding, **against real Snowflake rows**. Closing it needs
+  either a `CREATE TAG` grant on the target schema or an admin credential — a deliberate
+  privilege decision, not something to grant in passing.
+
+  Worth noting that the failure is itself a small piece of evidence: least-privileged roles
+  genuinely cannot apply governance, which is the separation this feature assumes.
 
 ### G4 — 🟢 Region / residency assertion & enforcement — #434 — **asserted, surfaced, and its one exception accepted on the record**
 **Requirement:** GDPR Ch. V — EU personal data must stay in-region; cross-border transfer
