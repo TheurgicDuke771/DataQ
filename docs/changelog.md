@@ -82,7 +82,7 @@ Portability, auto-monitors, and polish on top of v1:
   policy, test a connection, import a suite), plus the Tier 3A coherence batch
   (set a suite's run target, read/set its column policy, update a schedule,
   update/delete a trigger binding, read and restore a check's version history), plus the
-  Tier 3B reads over **assets and incidents** (browse the tables DataQ monitors with
+  Tier 3B batch over **assets and incidents** (browse the tables DataQ monitors with
   their health and lineage; see what is broken right now and the evidence behind it,
   acknowledge and resolve it, list a target's columns before authoring, and diagnose
   orchestration triggers that are silently never firing) — each reusing the same

@@ -1838,7 +1838,8 @@ def create_trigger_binding(
     ``env`` is part of the key and is the commonest thing to get wrong: a binding
     on ``dev`` never fires for a pipeline whose runs are reported against ``qa``.
     Any returned ``warnings`` are advisory, not errors — read them out, because
-    they name exactly that class of silent no-fire.
+    they name exactly that class of silent no-fire. When a user later reports the
+    suite did not run, ``get_near_misses`` shows the mismatches actually observed.
 
     **An "already exists" error does not mean the trigger works.** The uniqueness
     key is provider + pipeline + environment + suite and does **not** include
@@ -1897,7 +1898,8 @@ def update_trigger_binding(binding_id: str, enabled: bool) -> dict[str, Any]:
     Any returned ``warnings`` are advisory, not errors — read them out. They are
     recomputed on enable rather than carried over from creation, because
     re-enabling a binding is exactly when a provider/environment ambiguity
-    becomes able to lose triggers again (#1186). Requires edit access to the
+    becomes able to lose triggers again (#1186); ``get_near_misses`` reports the
+    mismatches that have actually cost a trigger. Requires edit access to the
     binding's suite.
     """
     bid = _parse_uuid(binding_id, field="binding_id")
@@ -2665,16 +2667,25 @@ def get_near_misses(suite_id: str | None = None) -> list[dict[str, Any]]:
 
     Use this when a user says 'the suite was supposed to run after the pipeline
     and it did not', or to investigate the warning ``create_trigger_binding``
-    returns. Each row is a real, observed mismatch: a pipeline/DAG **did**
-    succeed in ``run_env``, but the only enabled binding for it is scoped to
-    ``binding_env``, so the trigger has never fired and never will until one of
-    the two environments is corrected.
+    returns. Each row is a real, observed event: a pipeline/DAG run **did**
+    succeed in ``run_env``, no binding was scoped to that env, and an enabled
+    binding for the same pipeline exists in ``binding_env`` — so that run
+    triggered nothing, and the two environments disagree.
 
     This is the diagnosis for the failure mode a binding cannot report about
-    itself: it exists, it looks correct in ``list_trigger_bindings``, and it is
-    inert. An empty result does **not** prove a binding is firing — it only means
-    no env mismatch was observed; the pipeline may simply not have run, or the
-    binding may be disabled (check ``enabled`` in ``list_trigger_bindings``).
+    itself: it exists, it looks correct in ``list_trigger_bindings``, and nothing
+    fires. Two limits to state rather than paper over:
+
+    - A row means **those runs** triggered nothing, not that the binding is
+      permanently dead. A near-miss is recorded per run and only when that run's
+      env matched no binding, so a pipeline id that *also* runs in
+      ``binding_env`` is firing correctly there. Confirm with ``list_runs``
+      before telling a user a trigger has never worked.
+    - An empty result does **not** prove a binding is firing. Only mismatches
+      observed in roughly the last two days are reported, so a weekly DAG's
+      mismatch ages out of this view entirely; the pipeline may also simply not
+      have run, or the binding may be disabled (check ``enabled`` in
+      ``list_trigger_bindings``).
 
     Optionally narrow to one ``suite_id``. Scoped to suites the caller can
     access, since a near-miss is derived from suite-owned binding config.
@@ -2719,7 +2730,10 @@ def list_columns(
 
     ``table`` (+ optional ``schema``/``catalog``) or ``path`` (+ ``file_format``)
     default to the suite's own run target, so they only need passing to inspect
-    something *other* than what the suite runs against.
+    something *other* than what the suite runs against. ``namespace`` is only
+    meaningful for an Iceberg table alongside an explicit ``table`` (Iceberg
+    addresses ``namespace.table``); with no explicit ``table``/``path`` the
+    suite target supplies its own namespace, so passing one there is ignored.
 
     Returns names only — no types, no data, no statistics. It cannot tell you
     whether a column is nullable or what it contains; use ``profile_column`` for
