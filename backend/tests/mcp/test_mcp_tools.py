@@ -248,7 +248,7 @@ def test_get_adf_pipeline_status_correlates_dq_run(db_session: Any, monkeypatch:
     db_session.commit()
     _as(monkeypatch, db_session, user)
 
-    out = server.get_adf_pipeline_status()
+    out = server.get_adf_pipeline_status()["pipeline_runs"]
     assert out[0]["pipeline"] == "load_orders"
     assert out[0]["dq_run"]["status"] == "succeeded"
 
@@ -281,7 +281,7 @@ def test_get_adf_pipeline_status_hides_unowned_correlation_from_non_admin(
     # scoped: a non-admin outsider sees the pipeline row with dq_run == None.
     outsider = _adf_run_on_unowned_suite(db_session)
     _as(monkeypatch, db_session, outsider)
-    out = server.get_adf_pipeline_status()
+    out = server.get_adf_pipeline_status()["pipeline_runs"]
     assert out[0]["pipeline"] == "load_orders"
     assert out[0]["dq_run"] is None
 
@@ -294,7 +294,7 @@ def test_get_adf_pipeline_status_workspace_admin_correlates_unowned_run(
     admin = _adf_run_on_unowned_suite(db_session)
     make_workspace_admin(admin.email)
     _as(monkeypatch, db_session, admin)
-    out = server.get_adf_pipeline_status()
+    out = server.get_adf_pipeline_status()["pipeline_runs"]
     assert out[0]["dq_run"]["status"] == "succeeded"
 
 
@@ -1719,7 +1719,7 @@ def test_get_adf_pipeline_status_accepts_dbt(db_session: Any, monkeypatch: Any) 
     a dbt binding. It used to raise on a provider DataQ has supported since
     ADR 0029."""
     _as(monkeypatch, db_session, _user(db_session))
-    assert server.get_adf_pipeline_status(provider="dbt") == []
+    assert server.get_adf_pipeline_status(provider="dbt")["pipeline_runs"] == []
 
 
 def test_get_notification_config_credits_the_workspace_channels(
@@ -2287,7 +2287,12 @@ def test_delete_schedule_removes_only_the_schedule(db_session: Any, monkeypatch:
     created = server.create_schedule(str(suite.id), cron="0 2 * * *")
 
     out = server.delete_schedule(created["id"])
-    assert out == {"deleted": True, "schedule_id": created["id"]}
+    assert out["deleted"] is True
+    assert out["schedule_id"] == created["id"]
+    # The response says WHAT was deleted, so a model handed the wrong id cannot
+    # confirm the removal of something it never touched.
+    assert out["cron"] == "0 2 * * *"
+    assert out["suite_id"] == str(suite.id)
     assert schedule_service.list_schedules(db_session, user_id=user.id) == []
     assert db_session.get(Suite, suite.id) is not None
     assert len(check_service.list_checks(db_session, suite.id)) == 1
@@ -3064,7 +3069,11 @@ def test_delete_trigger_binding_removes_only_the_binding(db_session: Any, monkey
     )
 
     out = server.delete_trigger_binding(created["id"])
-    assert out == {"deleted": True, "binding_id": created["id"]}
+    assert out["deleted"] is True
+    assert out["binding_id"] == created["id"]
+    # Echoes exactly what re-creating it would need.
+    assert (out["provider"], out["pipeline_or_dag_id"], out["env"]) == ("adf", "pl_nightly", "dev")
+    assert out["suite_id"] == str(suite.id)
     assert server.list_trigger_bindings(suite_id=str(suite.id)) == []
     assert db_session.get(Suite, suite.id) is not None
     assert len(check_service.list_checks(db_session, suite.id)) == 1
@@ -3534,7 +3543,7 @@ def test_get_near_misses_reports_both_envs(db_session: Any, monkeypatch: Any) ->
     )
     monkeypatch.setattr(orchestration_service, "list_env_near_misses", lambda *a, **k: [record])
 
-    out = server.get_near_misses(str(suite.id))
+    out = server.get_near_misses(str(suite.id))["near_misses"]
     assert out[0]["run_env"] == "prod"
     assert out[0]["binding_env"] == "qa"
     assert out[0]["pipeline_or_dag_id"] == "nightly_load"
@@ -3569,3 +3578,203 @@ def test_list_columns_reports_a_suite_with_no_target(db_session: Any, monkeypatc
 
     with pytest.raises(ToolError):
         server.list_columns(str(suite.id))
+
+
+# ── honesty-field pass (all 46 tools) ────────────────────────────────────────
+
+
+def test_run_results_report_how_much_of_the_sample_was_masked(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The REST route has returned `redaction`/`redacted_columns` since #1115 and
+    MCP dropped them, so a masked sample was indistinguishable from an unmasked
+    one. Both readings are confident and wrong: mask tokens reported as data, or
+    a fully-masked sample reported as 'no failing rows were captured'."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    suite.column_policy = {"identifier_column": "ORDER_ID", "pii_columns": ["EMAIL"]}
+    check = Check(
+        suite_id=suite.id,
+        name="email not null",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+    )
+    db_session.add(check)
+    db_session.commit()
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.commit()
+    db_session.add(
+        Result(
+            run_id=run.id,
+            check_id=check.id,
+            status="fail",
+            sample_failures={
+                "partial_unexpected_list": [{"ORDER_ID": "A-1", "EMAIL": "ada@acme.io"}]
+            },
+        )
+    )
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    row = server.get_run_results(str(run.id))["checks"][0]
+    assert row["redaction"] in {"full", "partial", "none"}
+    assert "EMAIL" in row["redacted_columns"]
+    # And the id, so the model can act on the check it just found.
+    assert row["check_id"] == str(check.id)
+
+
+def test_get_run_status_marks_a_running_run_as_not_final(db_session: Any, monkeypatch: Any) -> None:
+    """`counts` on a mid-run suite is progress, not a verdict. The sibling tools
+    have carried `results_final` since #318; this one emitted the counts bare, so
+    a 30-check suite three checks in reported `{"pass": 3}` — the tool's own
+    definition of 'nothing failed', about a run that has barely started."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    db_session.add(Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={}))
+    db_session.commit()
+    running = Run(suite_id=suite.id, status="running")
+    done = Run(suite_id=suite.id, status="succeeded")
+    db_session.add_all([running, done])
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    assert server.get_run_status(str(running.id))["results_final"] is False
+    assert server.get_run_status(str(done.id))["results_final"] is True
+
+
+def test_get_check_history_flags_a_truncated_page_and_its_window(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A count-capped page answering a time-shaped question ('when did this start
+    failing?'). Without `truncated`, the oldest point is a page boundary reported
+    as an onset — wrong whenever the failure predates the page."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.commit()
+    for _ in range(3):
+        run = Run(suite_id=suite.id, status="succeeded")
+        db_session.add(run)
+        db_session.commit()
+        db_session.add(Result(run_id=run.id, check_id=check.id, status="pass"))
+        db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    page = server.get_check_history(str(suite.id), str(check.id), limit=2)
+    assert page["truncated"] is True
+    assert page["oldest_in_page"] is not None and page["newest_in_page"] is not None
+
+    whole = server.get_check_history(str(suite.id), str(check.id), limit=50)
+    assert whole["truncated"] is False
+
+    # The exact-boundary page: full, and yet nothing follows it. Inferring
+    # truncation from `len(points) == limit` gets this wrong (the #925 mistake),
+    # and here that is not cosmetic — a COMPLETE history reported as truncated
+    # makes a model refuse to name an onset it can actually see.
+    boundary = server.get_check_history(str(suite.id), str(check.id), limit=3)
+    assert boundary["total"] == 3
+    assert len(boundary["points"]) == 3
+    assert boundary["truncated"] is False
+
+
+def test_list_runs_reports_the_time_window_it_actually_covered(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """#1442: there is no time filter, and the questions are time-shaped. The
+    covered interval is returned so a model can check whether the period it was
+    asked about is inside the page instead of calling the page 'today'."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    for _ in range(2):
+        db_session.add(Run(suite_id=suite.id, status="succeeded"))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    out = server.list_runs(limit=1)
+    assert out["total"] == 2
+    assert out["returned"] == 1
+    assert out["newest_in_page"] is not None
+    assert out["oldest_in_page"] == out["newest_in_page"]
+
+
+def test_get_adf_pipeline_status_reports_truncation(db_session: Any, monkeypatch: Any) -> None:
+    """It took `limit` and returned a bare list, so a full page was
+    indistinguishable from the whole set on 'did any pipeline fail overnight?'."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    for i in range(3):
+        db_session.add(
+            PipelineRun(
+                provider="adf",
+                connection_id=suite.connection_id,
+                pipeline_or_dag_id=f"pl_{i}",
+                provider_run_id=str(uuid.uuid4()),
+                env="dev",
+                status="succeeded",
+            )
+        )
+    db_session.commit()
+
+    page = server.get_adf_pipeline_status(limit=2)
+    assert page["total"] == 3
+    assert page["truncated"] is True
+    assert len(page["pipeline_runs"]) == 2
+
+    with pytest.raises(ToolError):
+        server.get_adf_pipeline_status(status="explode")
+
+
+def test_import_suite_reports_that_it_is_not_runnable(db_session: Any, monkeypatch: Any) -> None:
+    """An export document carries no run target, so an imported suite cannot run
+    until `update_suite` gives it one. The tool that creates that state now says
+    so, instead of leaving it to be discovered when `trigger_suite_run` fails."""
+    user = _user(db_session)
+    conn = _suite(db_session, user).connection_id
+    _as(monkeypatch, db_session, user)
+
+    out = server.import_suite(connection_id=str(conn), name="imported", checks=[])
+    assert out["runnable"] is False
+    assert out["target"] is None
+
+
+def test_incident_payload_exposes_the_reopen_link(db_session: Any, monkeypatch: Any) -> None:
+    """`resolve_incident` promises the next breach opens a new incident 'linked
+    back to this one', and nothing returned the link — so a recurrence of a
+    weekly problem read as brand new."""
+    owner = _user(db_session)
+    asset = _asset(db_session)
+    suite = _suite(db_session, owner)
+    check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.commit()
+    first = _incident(db_session, asset=asset, check=check, suite=suite, status="resolved")
+    second = _incident(db_session, asset=asset, check=check, suite=suite)
+    second.prior_incident_id = first.id
+    db_session.commit()
+    _as(monkeypatch, db_session, owner)
+
+    out = server.get_incident(str(second.id))
+    assert out["prior_incident_id"] == str(first.id)
+    assert out["is_recurrence"] is True
+    assert server.get_incident(str(first.id))["is_recurrence"] is False
+
+
+def test_update_suite_surfaces_its_own_side_effects(db_session: Any, monkeypatch: Any) -> None:
+    """Both signals previously went to the server log only — and the caller who
+    just re-pointed the suite is the one person who can act on them."""
+    user = _user(db_session)
+    suite = _suite(db_session, user, with_target=False)
+    _as(monkeypatch, db_session, user)
+    monkeypatch.setattr(run_dispatch, "dispatch_auto_classify", lambda _sid: None)
+
+    fresh = server.update_suite(str(suite.id), target={"table": "ORDERS"})
+    assert fresh["column_policy_pending"] is True
+    assert fresh["column_policy_may_be_stale"] is False
+
+    db_session.get(Suite, suite.id).column_policy = {"pii_columns": ["EMAIL"]}
+    db_session.commit()
+    moved = server.update_suite(str(suite.id), target={"table": "ORDERS_V2"})
+    assert moved["column_policy_may_be_stale"] is True

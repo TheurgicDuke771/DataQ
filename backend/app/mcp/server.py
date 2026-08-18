@@ -43,6 +43,7 @@ from backend.app.db.models import (
     ENVS,
     INCIDENT_STATUSES,
     ORCHESTRATION_PROVIDERS,
+    PIPELINE_RUN_STATUSES,
     Asset,
     Check,
     Connection,
@@ -258,6 +259,27 @@ def _service_errors() -> Generator[None]:
         raise ToolError(exc.message) from exc
 
 
+def _page_window(timestamps: list[datetime | None]) -> dict[str, Any]:
+    """The time interval a count-capped page actually covers.
+
+    Several tools cap by COUNT and are asked questions bounded by TIME ("what
+    failed today?", "did anything fail overnight?"). The REST caller wrote the
+    query and knows what they asked for; the UI user sees the timestamps in the
+    table. An LLM has neither, so a page of the 20 newest rows reads as "the
+    period you asked about" — which is #1442, and the same shape recurs on every
+    count-capped list here.
+
+    Returning the interval as DATA lets a model check whether the window it was
+    asked about is inside the page, instead of inferring it from row timestamps
+    it may well summarise away.
+    """
+    present = [t for t in timestamps if t is not None]
+    return {
+        "newest_in_page": max(present).isoformat() if present else None,
+        "oldest_in_page": min(present).isoformat() if present else None,
+    }
+
+
 def _run_outcome_fields(run: Run, outcome: tuple[int, int, str | None] | None) -> dict[str, Any]:
     """A run's data-quality verdict for `list_runs`, or nulls when it has none yet.
 
@@ -327,6 +349,10 @@ def _run_results_payload(session: Session, suite: Suite, run: Run) -> dict[str, 
         },
         "checks": [
             {
+                # The id, so a model that finds the failing check here can reach
+                # `get_check` / `get_check_history` / `snooze_check` directly
+                # instead of name-matching back through `list_checks`.
+                "check_id": str(r.check_id) if r.check_id else None,
                 "name": checks[r.check_id].name if r.check_id in checks else None,
                 "status": r.status,
                 "metric_value": _num(r.metric_value),
@@ -342,12 +368,35 @@ def _run_results_payload(session: Session, suite: Suite, run: Run) -> dict[str, 
                     r.observed_value, tested_column=_tested_column(r.check_id), policy=policy
                 ),
                 "expected_value": r.expected_value,
-                "sample_failures": run_service.redact_sample_failures(
-                    r.sample_failures, tested_column=_tested_column(r.check_id), policy=policy
-                ),
+                **_redacted_sample(r, _tested_column(r.check_id), policy),
             }
             for r in results
         ],
+    }
+
+
+def _redacted_sample(
+    result: Any, tested_column: str | None, policy: dict[str, Any] | None
+) -> dict[str, Any]:
+    """The failing-row sample plus **how much of it was masked** (#424/#1115).
+
+    The REST route has shipped `redaction` / `redacted_columns` since #1115 and
+    MCP called the stateless redactor, so an AI client received a masked sample
+    with no way to tell masking had happened. Both readings are wrong and
+    confident: mask tokens reported as the data, or a fully-masked sample
+    reported as "no failing rows were captured".
+
+    `redaction` is `full` / `partial` / `none`, or `null` when the sample carried
+    no row-level content at all — which is the one case where there is nothing
+    true to claim either way.
+    """
+    sample, state, redacted_columns = run_service.redact_sample_failures_with_state(
+        result.sample_failures, tested_column=tested_column, policy=policy
+    )
+    return {
+        "sample_failures": sample,
+        "redaction": state,
+        "redacted_columns": redacted_columns,
     }
 
 
@@ -364,6 +413,11 @@ def list_suites() -> list[dict[str, Any]]:
     uat), how many checks it has, and the status + time of its most recent run
     (null if it has never run). Scoped to suites the user owns or has a share on
     (a workspace-admin sees every suite).
+
+    ``last_run.status`` is the **execution** status — a run is ``succeeded`` when
+    DataQ managed to execute it, even if every check inside it failed. Never
+    describe a suite as healthy from this field; use ``get_suite_results`` for
+    the data-quality outcome.
     """
     with _ctx() as (session, user):
         suites = suite_service.list_suites(
@@ -428,11 +482,23 @@ def list_suites() -> list[dict[str, Any]]:
 def get_suite_results(suite_id: str) -> dict[str, Any]:
     """Get the latest data-quality run results for one suite.
 
-    Use this to answer 'what failed in <suite> today?'. Returns the most recent
-    run's lifecycle status plus, per check: the check name, its pass/warn/fail/
-    critical (or skip/error) status, the observed vs expected value, and any
-    sample failing rows (PII-redacted). Returns an empty result set if the suite
-    has never run. Requires at least view access to the suite.
+    Use this for 'what failed in <suite> on its last run?'.
+
+    **This returns the suite's most recent run, whenever that was** — there is no
+    date filter and no way to ask for a particular day. Check the returned
+    ``run.started_at`` before answering anything phrased about "today" or "last
+    night"; use ``list_runs`` + ``get_run_results`` to reach an earlier run.
+
+    Returns the most recent run's lifecycle status plus, per check: the check
+    name and id, its pass/warn/fail/critical (or skip/error) status, the observed
+    vs expected value (**redacted on the same column-aware policy as the
+    samples** — a masked observed value is not the measured one), how much of the
+    dataset the check actually saw (``sampling`` — null means a complete read; a
+    non-null record means the verdict came from a sample), any sample failing
+    rows, and ``redaction`` / ``redacted_columns`` saying how much of those rows
+    was masked. A masked sample is not an absent one — never describe redacted
+    rows as "no failing rows". Returns an empty result set if the suite has never
+    run. Requires at least view access to the suite.
 
     If the latest run has not finished successfully, `checks` is empty and
     `run.results_final` is false — the run is still executing, or it failed and
@@ -457,9 +523,30 @@ def get_health_score(window_days: int = 7) -> dict[str, Any]:
 
     Use this for 'what's the data health this week?'. Returns the overall health
     score (0-100, severity-weighted), the pass rate, total runs and active
-    connections over the trailing ``window_days`` (default 7, max 90), plus a
-    per-day trend of the score. Scoped to the suites the user can access
-    (a workspace-admin sees the whole workspace).
+    connections over the trailing ``window_days`` (default 7, max 90), plus
+    ``trend``.
+
+    Read the fields exactly as they are defined, because three of them are drawn
+    from different populations:
+
+    - ``trend`` is a per-day count of **runs** that succeeded and failed —
+      run *lifecycle* status, not data quality, and **not a per-day score**
+      (no daily score is computed). Days with no runs are zero-filled, and runs
+      in any other state (running, cancelled) appear in neither count, so the
+      two need not sum to that day's runs.
+    - ``health_score`` and ``pass_rate`` are **null**, not 0, when nothing was
+      evaluated in the window — no completed runs, or every check skipped or
+      errored. Null is "no data", never "bad". Both come only from runs in a
+      final state, while ``total_runs`` counts every run created in the window,
+      so a large ``total_runs`` beside a null score means the runs did not
+      complete.
+    - ``active_connections`` is **not windowed and not a health signal**: it is
+      how many distinct connections the accessible suites reference. A
+      connection counts here even if it has never run or its credential is dead
+      — use ``list_connections`` for connection state.
+
+    Scoped to the suites the user can access (a workspace-admin sees the whole
+    workspace).
     """
     if window_days < 1 or window_days > 90:
         raise ToolError("window_days must be between 1 and 90")
@@ -484,23 +571,47 @@ def get_health_score(window_days: int = 7) -> dict[str, Any]:
 
 
 @mcp.tool
-def get_adf_pipeline_status(provider: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+def get_adf_pipeline_status(
+    provider: str | None = None,
+    status: str | None = None,
+    limit: Annotated[int, Field(ge=1, le=200)] = 20,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> dict[str, Any]:
     """Get recent orchestration pipeline/DAG runs with their correlated DQ result.
 
-    Use this for 'did any pipelines fail overnight?' or 'why did the customer
-    pipeline fail?'. Returns the most recent ADF / Airflow / dbt pipeline runs —
+    Use this for 'why did the customer pipeline fail?'. Returns the most recent
+    ADF / Airflow / dbt pipeline runs —
     provider, pipeline/DAG id, run status, start/end times — and, when a DQ suite
     was triggered by that pipeline run (and is visible to the user), the triggered
     run's id and status. Optionally filter by ``provider`` ('adf', 'airflow' or
-    'dbt').
+    'dbt') and/or ``status``.
+
+    **There is no time filter**, so "did anything fail overnight?" cannot be
+    asked directly: this returns the ``limit`` most recent runs, and
+    ``oldest_in_page`` says how far back you actually saw. If ``oldest_in_page``
+    is later than the window you were asked about, you have not seen the whole
+    window — raise ``limit`` or page with ``offset``, and say so rather than
+    answering "nothing failed".
+
+    Only pipelines DataQ has ingested appear here. A short or empty result can
+    also mean no orchestration connection is configured for that provider and
+    environment, or that its poller is failing — check ``list_connections``
+    before reporting an all-clear.
     """
     # All three orchestration providers (ADR 0029 added dbt), from the shared
     # vocabulary. The old two-name literal rejected `dbt` — the obvious next call
     # after `list_trigger_bindings(provider="dbt")` returns a dbt binding.
     if provider is not None and provider not in ORCHESTRATION_PROVIDERS:
         raise ToolError(f"provider must be one of {list(ORCHESTRATION_PROVIDERS)}")
+    if status is not None and status not in PIPELINE_RUN_STATUSES:
+        # An unvalidated status would return `[]`, which reads as "no pipeline
+        # failed" on the one question this tool exists to answer (#828).
+        raise ToolError(f"status must be one of {list(PIPELINE_RUN_STATUSES)}")
     with _ctx() as (session, user):
-        runs = orchestration_service.list_pipeline_runs(session, provider=provider, limit=limit)
+        total = orchestration_service.count_pipeline_runs(session, provider=provider, status=status)
+        runs = orchestration_service.list_pipeline_runs(
+            session, provider=provider, status=status, limit=limit, offset=offset
+        )
         accessible = set(
             session.scalars(
                 suite_service.accessible_suite_ids(user.id, include_all=is_workspace_admin(user))
@@ -525,9 +636,19 @@ def get_adf_pipeline_status(provider: str | None = None, limit: int = 20) -> lis
                     "started_at": pr.started_at.isoformat() if pr.started_at else None,
                     "finished_at": pr.finished_at.isoformat() if pr.finished_at else None,
                     "dq_run": correlated,
+                    # Distinguishes "no suite was triggered" from "a suite was
+                    # triggered and you cannot see it" — the same fact the
+                    # docstring stated in prose and the payload conflated.
+                    "dq_run_restricted": dq is not None and dq.suite_id not in accessible,
                 }
             )
-        return out
+        return {
+            "total": total,
+            "returned": len(out),
+            "truncated": offset + len(out) < total,
+            **_page_window([pr.started_at or pr.created_at for pr in runs]),
+            "pipeline_runs": out,
+        }
 
 
 def _check_summary(check: Check) -> dict[str, Any]:
@@ -594,6 +715,11 @@ def list_checks(
     warn/fail/critical severity thresholds, and whether its alerts are currently
     snoozed. This is the suite's *definition* — for how those checks last
     performed, use ``get_suite_results``.
+
+    A null ``alert_snoozed_until`` rules out a per-check snooze only — it does
+    **not** mean an alert would have been delivered, which also depends on the
+    suite's notification config and severity routing
+    (``get_notification_config``).
 
     At most ``limit`` checks are returned (default 200); ``total`` reports how
     many the suite actually has, so a truncated list is visible rather than
@@ -666,16 +792,34 @@ def get_check_history(
     data moved (visible here) or because someone tightened its threshold (visible
     there), and this tool cannot distinguish them.
 
+    **This is a count-capped page, not a time window** — it returns the most
+    recent ``limit`` results and takes no date range. When ``truncated`` is true,
+    older results exist beyond ``oldest_in_page``, so the earliest point here is
+    a page boundary and **not** an onset: raise ``limit`` (max 200), and if it is
+    still truncated say the onset is *before* ``oldest_in_page`` rather than
+    naming the first row's date. An empty ``points`` means the check has never
+    produced a result, not that it has never failed, and points may include
+    results from runs that never completed.
+
     Requires view access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     cid = _parse_uuid(check_id, field="check_id")
     with _ctx() as (session, user), _service_errors():
         require_permission(session, sid, user.id, minimum="view")
+        total = check_service.count_check_results(session, sid, cid)
         points = check_service.list_check_result_history(session, sid, cid, limit=limit)
         return {
             "suite_id": suite_id,
             "check_id": check_id,
+            # Against a real total, not `len(points) == limit` — that inference
+            # is wrong on the exact-boundary page, the #925 mistake `/assets`
+            # grew `X-Total-Count` to avoid. Getting it wrong here is not
+            # cosmetic: with the docstring below, a COMPLETE history reported as
+            # truncated makes the model refuse to name an onset it can see.
+            "total": total,
+            "truncated": len(points) < total,
+            **_page_window([p.created_at for p in points]),
             "points": [
                 {
                     "run_id": str(p.run_id),
@@ -713,10 +857,16 @@ def list_check_versions(
     ``get_check_history``.** Answering "why did this start failing?" usually
     needs both: the data may have moved, or the definition may have.
 
-    A snapshot is written on create and after every successful edit, so a check
-    that has never been edited still has version 1. ``changed_by_name`` is null
-    when the editor was a system actor or a user who has since been removed —
-    read that as "the author is not recorded", not as "nobody edited it".
+    A snapshot is written on create and after every edit that actually changes
+    something, so a check that has never been edited still has version 1 —
+    **except for checks authored before version history existed**, which have no
+    snapshot of their original definition. For those, ``total: 0`` means "no
+    recorded history", not "never edited", and the oldest snapshot is the state
+    after their first later edit, not the original.
+
+    ``changed_by_name`` is null when the editor was a system actor or a user who
+    has since been removed — read that as "the author is not recorded", not as
+    "nobody edited it".
 
     To put the check back to one of these snapshots, use
     ``restore_check_version``. Requires view access to the suite.
@@ -767,8 +917,8 @@ def list_runs(
 ) -> dict[str, Any]:
     """List recent suite runs, newest first, with each run's data-quality outcome.
 
-    Use this for 'what has run today?', 'show me the failed runs', or to find a
-    run id to drill into with ``get_run_results``. Returns, per run: its id, the
+    Use this to see recent runs, or to find a run id to drill into with
+    ``get_run_results``. Returns, per run: its id, the
     suite it belongs to, the **execution** status (queued / running / succeeded /
     failed / cancelled), when it started and finished, what triggered it, a
     user-safe failure reason when it failed, and its **data-quality** outcome —
@@ -782,6 +932,13 @@ def list_runs(
     a **null** outcome (no counts, no severity) — it is still executing, or it
     failed without producing a complete account. Describe such a run by its
     status; it has no data-quality verdict yet.
+
+    **This tool has no time filter.** It returns the newest ``limit`` runs and
+    ``total`` counts matching runs for all time, so it cannot answer "what ran
+    today" directly: read ``newest_in_page`` / ``oldest_in_page``, state the
+    window you actually saw, and page with ``offset`` until ``oldest_in_page``
+    precedes the period you were asked about. Never describe a page as "today's
+    runs".
 
     Optionally narrow to one ``suite_id`` (an error if you can't see it) and/or a
     run ``status``. ``total`` reports how many runs match regardless of ``limit``
@@ -816,6 +973,13 @@ def list_runs(
             "total": run_service.count_runs(
                 session, user_id=user.id, suite_id=sid, status=status, include_all=include_all
             ),
+            "returned": len(runs),
+            # This tool has NO time filter (#1442), and the questions it is asked
+            # are time-shaped ("what failed today?"). The covered interval is
+            # returned as data so a model can check whether the period it was
+            # asked about is inside the page, rather than describing whatever it
+            # received as "today".
+            **_page_window([r.created_at for r in runs]),
             "runs": [
                 {
                     "id": str(r.id),
@@ -876,6 +1040,14 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
     when it is failing, how many consecutive failures it has had, and when its
     credential expires if the credential states a lifetime. Optionally filter by
     ``type`` or ``env``.
+
+    **Read ``consecutive_run_failures`` narrowly.** It is non-zero only when
+    *every* suite running on the connection is currently failing — the shape a
+    dead credential has — and it is then the smallest such streak across those
+    suites, capped at the last 20 runs each. A single succeeding suite resets it
+    to 0 and clears the error even while another suite on the same connection
+    fails every run, so a per-suite problem is invisible here; use
+    ``list_runs(suite_id=…)`` for that.
 
     **Deliberately excludes every connection's configuration.** Names, types and
     health are what a question about connections needs; account identifiers,
@@ -963,6 +1135,16 @@ def list_schedules(
     is therefore already correct across a DST transition, which hand-evaluating
     a cron string against an IANA zone is not.
 
+    ``next_run_at`` is a stored value the dispatcher advances when it fires the
+    schedule, and it is reported as ``null`` whenever the schedule is disabled.
+    **On an ENABLED schedule, a value already in the past means it did not fire on
+    time and the dispatcher is not running** — report that rather than quoting a
+    past time as the next fire. (Pausing leaves the stored value untouched, which
+    is why a disabled schedule's is masked rather than shown as overdue.)
+
+    ``last_run_at`` is when the schedule fired, not
+    whether the run succeeded (see ``list_runs``).
+
     A disabled schedule still exists and still reads back here — it simply does
     not fire, so do not describe a suite as unscheduled on the strength of a row
     being present.
@@ -1021,6 +1203,13 @@ def list_trigger_bindings(
     ``env``, run this suite. Returns each binding's id, provider, pipeline/DAG
     id, environment, target suite and whether it is enabled. Optionally filter by
     ``provider``, ``env`` or ``suite_id``.
+
+    A disabled binding still exists and still reads back here — it simply never
+    fires — so check ``enabled`` before answering "is this suite wired to the
+    pipeline?". And an enabled binding is *wiring*, not proof anything runs: it
+    fires only if its provider connection is still receiving or polling events
+    (see ``list_connections`` health) and the target suite has a run target.
+    Confirm with ``list_runs``.
 
     Only *successful* pipeline completions trigger a suite run; a failure alerts
     but never triggers. Scoped to suites the user can access.
@@ -1217,10 +1406,17 @@ def export_suite(suite_id: str) -> dict[str, Any]:
     thresholds — the same document the app's export produces, so it can be handed
     back to DataQ's import.
 
-    It carries **definitions only**: no results, no run history, and no
-    credentials — a comparison check's baseline connection appears as its
-    ``(name, env)`` pair, never as an id or anything resolvable to a secret.
-    Requires view access to the suite.
+    It carries **check definitions only**: no results, no run history, no
+    credentials — and also **no connection, no run target, no schedules, no
+    trigger bindings, no notification config and no column policy**. A suite
+    created from this document is not runnable until ``update_suite`` gives it a
+    target, and none of its automation comes with it. When the user asks to see
+    "the whole suite", pair this with ``list_schedules``,
+    ``list_trigger_bindings`` and ``get_notification_config``.
+
+    A comparison check's baseline connection appears as its ``(name, env)``
+    pair, never as an id or anything resolvable to a secret. Requires view
+    access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
@@ -1253,10 +1449,23 @@ def export_suite(suite_id: str) -> dict[str, Any]:
 def trigger_suite_run(suite_id: str) -> dict[str, Any]:
     """Trigger an asynchronous run of a suite's checks; returns a run id to poll.
 
-    Use this for 'run the orders suite on DEV'. Queues the suite and dispatches it
-    to the worker, returning the new run's id and queued status — poll
+    Use this for 'run the orders suite'. Queues the suite and dispatches it to
+    the worker, returning the new run's id and queued status — poll
     ``get_run_status`` with that id for progress. Requires edit access. Fails
     fast if the suite has no valid run target configured.
+
+    **You cannot choose the environment or the dataset here.** A run always uses
+    the suite's own connection and run target, both fixed on the suite. If the
+    user names an environment, check it against ``list_suites`` /
+    ``list_connections`` first — a suite bound to QA cannot be run against DEV
+    from this tool, and getting a DEV equivalent means ``import_suite`` onto a
+    DEV connection plus ``update_suite`` to give it a target.
+
+    There is no de-duplication: calling twice starts two concurrent runs, and
+    this tool cannot see a run a schedule or pipeline trigger started moments
+    ago — check ``list_runs`` before re-triggering. Every check in the suite
+    runs, including snoozed ones (a snooze mutes alerting only); there is no way
+    to run a single check.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
@@ -1304,6 +1513,12 @@ def get_run_status(run_id: str) -> dict[str, Any]:
         return {
             "run_id": str(progress.run.id),
             "status": progress.run.status,
+            # The same #318 gate `list_runs` and `get_run_results` apply, which
+            # this tool was missing: while false, `counts` and the per-check
+            # statuses describe only the phases committed so far. A 30-check
+            # suite three checks in reports `{"pass": 3}`, which is a true
+            # progress reading and a false verdict.
+            "results_final": progress.run.status in rollup.AGGREGATABLE_RUN_STATUSES,
             "total_checks": progress.total_checks,
             "completed_checks": progress.completed_checks,
             "counts": progress.counts,
@@ -1501,7 +1716,8 @@ def delete_check(suite_id: str, check_id: str) -> dict[str, Any]:
 
     Use this for 'remove the row-count check from the orders suite', but read the
     scope first: the delete cascades. The check, its version history, its stored
-    monitor baseline **and all of its historical results** go with it, so past
+    monitor baseline, **all of its historical results, and every incident it ever
+    raised — including one currently open or acknowledged** — go with it, so past
     runs lose that check from their record and any trend built on its
     ``metric_value`` disappears. It is not "stop running this check" — it is
     "erase that this check ever existed".
@@ -1528,6 +1744,16 @@ def snooze_check(
 ) -> dict[str, Any]:
     """Mute a check's alerts for a while — or un-mute it now.
 
+    **Suppression is per *run*, not per check.** An alert is only withheld when
+    EVERY failing check in that run is snoozed — so silencing one noisy check in
+    a suite that fails for several reasons does not stop the alerts, and the
+    alert that fires still contains this check's failure. A run that fails to
+    *execute* (dead credential, worker error) always alerts, snooze or not.
+
+    Only alert **delivery** is muted. The check still runs, still records a
+    failing result, still counts toward the run's ``worst_severity``, and still
+    opens an incident visible to ``list_incidents``.
+
     Use this for 'stop alerting on the freshness check until tomorrow' or, with
     ``hours`` omitted, 'turn alerts back on for that check'. Pass ``hours`` to
     snooze for that many hours from now; omit it to clear any snooze immediately.
@@ -1536,9 +1762,8 @@ def snooze_check(
     suppressed. Do not describe a snoozed check as disabled, and do not reach for
     this when the user wants the check to stop evaluating. Requires edit access.
 
-    One tool rather than a snooze/unsnooze pair: it is one piece of state with
-    two values, and splitting it would ask an LLM to pick between two names for
-    the same field. **The consequence is that "un-mute", "un-snooze", "turn
+    There is no separate unsnooze tool — omitting ``hours`` is how you
+    un-mute. **The consequence is that "un-mute", "un-snooze", "turn
     alerts back on" and "start alerting again" are all served by this tool too,
     despite its name saying the opposite** — call it with ``hours`` omitted.
     There is no separate unsnooze tool to look for.
@@ -1584,6 +1809,12 @@ def dryrun_check(
     critical, or ``error`` when it could not be evaluated and ``skip`` when a
     precondition was not met), the metric it measured, and the observed vs
     expected values.
+
+    **A preview reads what a real run would read, so it inherits the target's
+    sampling.** On ADLS / S3 / Iceberg the evaluation may be over a capped sample
+    rather than the whole dataset — so a ``pass`` describes the sample, and a
+    ``volume`` preview's row count is not the file's row count. Say so rather
+    than reporting either as a fact about the full table.
 
     This is the authoring loop: dry-run, adjust the threshold, dry-run again, and
     only then create. Requires edit access to the suite.
@@ -1757,8 +1988,16 @@ def update_schedule(
     schedule simply starts again from its next future slot. If the user wants the
     missed run, trigger it explicitly with ``trigger_suite_run``.
 
-    To stop a suite running automatically for good, use ``delete_schedule``;
-    disabling keeps the row and the expression. Requires edit access to the
+    **This governs the cron schedule only.** A suite can also be started by an
+    orchestration trigger binding when a pipeline finishes, and on demand via
+    ``trigger_suite_run``. Before telling a user the suite will not run, check
+    ``list_trigger_bindings`` for it — pausing here does not disable a binding
+    (use ``update_trigger_binding``). The change is picked up by the dispatcher
+    within about a minute and does **not** cancel a run already queued or in
+    progress (use ``cancel_run``).
+
+    To stop the cron for good use ``delete_schedule``; disabling keeps the row
+    and the expression. Requires edit access to the
     schedule's suite.
     """
     schid = _parse_uuid(schedule_id, field="schedule_id")
@@ -1809,10 +2048,21 @@ def delete_schedule(schedule_id: str) -> dict[str, Any]:
     """
     schid = _parse_uuid(schedule_id, field="schedule_id")
     with _ctx() as (session, user), _service_errors():
+        # Read it BEFORE deleting so the response can say what was destroyed —
+        # `delete_check` does this for the same reason. Handed the wrong id, a
+        # bare `{"deleted": true}` lets a model confirm the deletion of "the
+        # nightly run" with nothing in the payload to contradict it.
+        schedule = schedule_service.get_schedule(session, schid, user_id=user.id)
+        deleted = {
+            "suite_id": str(schedule.suite_id),
+            "cron": schedule.cron,
+            "timezone": schedule.timezone,
+            "enabled": schedule.enabled,
+        }
         # `delete_schedule` resolves the schedule and gates on ITS suite (404 for
         # a caller who cannot see that suite), so the id alone is not a way in.
         schedule_service.delete_schedule(session, schid, user_id=user.id)
-        return {"deleted": True, "schedule_id": schedule_id}
+        return {"deleted": True, "schedule_id": schedule_id, **deleted}
 
 
 @mcp.tool
@@ -1838,8 +2088,13 @@ def create_trigger_binding(
     ``env`` is part of the key and is the commonest thing to get wrong: a binding
     on ``dev`` never fires for a pipeline whose runs are reported against ``qa``.
     Any returned ``warnings`` are advisory, not errors — read them out, because
-    they name exactly that class of silent no-fire. When a user later reports the
-    suite did not run, ``get_near_misses`` shows the mismatches actually observed.
+    they name exactly that class of silent no-fire. But an **empty** ``warnings``
+    does not mean the wiring is sound: no ambiguity check runs at all when the
+    binding is created disabled, and if no orchestration connection exists for
+    this provider and environment, DataQ never observes that pipeline and the
+    binding can never fire. Check ``list_connections(type=provider, env=env)``
+    before telling the user it is wired. When they later report the suite did not
+    run, ``get_near_misses`` shows the mismatches actually observed.
 
     **An "already exists" error does not mean the trigger works.** The uniqueness
     key is provider + pipeline + environment + suite and does **not** include
@@ -1889,6 +2144,10 @@ def update_trigger_binding(binding_id: str, enabled: bool) -> dict[str, Any]:
     Use this for 'stop the orders suite running after the nightly load, but keep
     the wiring' or to switch one back on. A disabled binding still exists and
     still reads back from ``list_trigger_bindings`` — it simply never fires.
+    That stops **this pipeline** from starting the suite; it does not stop a cron
+    schedule, another binding on a different pipeline or environment, or a manual
+    ``trigger_suite_run``. Check those before saying the suite will no longer
+    run.
 
     **What a binding points at cannot be changed here.** Its provider,
     pipeline/DAG id, environment and target suite are its identity and are
@@ -1939,8 +2198,18 @@ def delete_trigger_binding(binding_id: str) -> dict[str, Any]:
     """
     bid = _parse_uuid(binding_id, field="binding_id")
     with _ctx() as (session, user), _service_errors():
+        # Read before deleting, like `delete_schedule` — and here the echoed
+        # fields are exactly what re-creating the binding would require, which
+        # the docstring already tells the caller they will need.
+        binding = trigger_binding_service.get_binding(session, bid, user_id=user.id)
+        deleted = {
+            "provider": binding.provider,
+            "pipeline_or_dag_id": binding.pipeline_or_dag_id,
+            "env": binding.env,
+            "suite_id": str(binding.suite_id),
+        }
         trigger_binding_service.delete_binding(session, bid, user_id=user.id)
-        return {"deleted": True, "binding_id": binding_id}
+        return {"deleted": True, "binding_id": binding_id, **deleted}
 
 
 @mcp.tool
@@ -1955,7 +2224,9 @@ def suggest_column_policy(suite_id: str) -> dict[str, Any]:
 
     **This only suggests. Nothing is saved**, and the suggestion is a heuristic
     over column names and observed values, not a governance source of truth.
-    Present it as a proposal for the user to confirm and apply in the app; do not
+    Present it as a proposal for the user to confirm, then apply it with
+    ``set_column_policy`` — reading the current one with ``get_column_policy``
+    first, since setting a policy replaces it wholesale; do not
     describe a column as safe because it is absent from the list. Requires edit
     access to the suite.
     """
@@ -1993,8 +2264,20 @@ def test_connection(connection_id: str) -> dict[str, Any]:
 
     Use this for 'is the Snowflake connection working?' or when a run has failed
     and you need to tell a dead credential from a broken check. Opens a live
-    connection using the stored credential and reports success or a classified
-    failure reason.
+    connection using the stored credential and reports success or a failure.
+
+    **What a pass proves is narrow:** the credential authenticates and the
+    datasource answers a trivial query. It does **not** check that a suite's
+    target table exists, that the role can read it, or that the run
+    configuration is complete — a connection can pass here and fail every suite
+    run (a Snowflake connection with no Role does exactly that). An ``ok: true``
+    beside a failing run means "not a dead credential", not "the connection is
+    fine".
+
+    A failure is deliberately **unclassified**: the driver's own message can
+    carry DSN and credential fragments, so it is withheld. Do not speculate
+    about the cause — report that the probe failed and that the server logs
+    carry the detail.
 
     Nothing is changed and no credential is ever returned — this reports only
     whether the probe worked. Requires the **member** workspace role: it spends a
@@ -2043,8 +2326,17 @@ def import_suite(
     list verbatim; ``connection_id`` is the datasource the new suite runs against,
     and it may be a different one from the source.
 
-    Creates a **new** suite owned by you — it never merges into or overwrites an
-    existing one, so importing twice gives you two suites. The whole document is
+    **Only the name, description and check definitions are copied.** Not
+    copied, and each needing to be recreated deliberately: the run target (so the
+    new suite is **not runnable** — the returned ``runnable`` says so, and
+    ``update_suite`` is the fix), schedules, trigger bindings, the notification
+    config, the column redaction policy, and any shares. This is a copy of the
+    RULES, not of the automation around them.
+
+    Creates a **new** suite owned by you, with none of the source suite's shares
+    carried over (workspace admins still see it, as they see every suite). It
+    never merges into or overwrites an existing one, so importing twice gives you
+    two suites. The whole document is
     validated before anything is written, so a bad check means nothing is created
     rather than a half-built suite.
 
@@ -2074,7 +2366,15 @@ def import_suite(
             "id": str(suite.id),
             "name": suite.name,
             "connection_id": connection_id,
-            "check_count": len(checks),
+            # A read of what was STORED, not an echo of the argument — the field
+            # is only useful as confirmation if it can disagree with the input.
+            "check_count": len(suite.checks),
+            # An export document carries no run target, so an imported suite
+            # cannot run until `update_suite` gives it one. The tool that creates
+            # that state now says so in data, instead of leaving the caller to
+            # discover it when `trigger_suite_run` fails.
+            "target": suite.target,
+            "runnable": suite.target is not None,
         }
 
 
@@ -2128,8 +2428,11 @@ def update_suite(
         # policy-less suite gets the same best-effort auto-classify as create.
         # Without it, a suite imported and made runnable over MCP never derives a
         # redaction policy and captures failing samples with no row locator.
+        policy_pending = False
+        policy_may_be_stale = False
         if parsed is not None and suite.target is not None and suite.column_policy is None:
             run_dispatch.dispatch_auto_classify(suite.id)
+            policy_pending = True
         elif had_policy and parsed is not None and parsed != old_target:
             # Re-pointing a policied suite can strand its policy — the stored
             # columns may not exist in the new target. Deliberately not
@@ -2139,6 +2442,7 @@ def update_suite(
                 suite_id=str(suite.id),
                 reason="target_changed_on_policied_suite",
             )
+            policy_may_be_stale = True
         return {
             "id": str(suite.id),
             "name": suite.name,
@@ -2147,8 +2451,16 @@ def update_suite(
             "target": suite.target,
             # Whether the suite can actually run now — the question this tool is
             # usually called to fix, and one an LLM should confirm rather than
-            # infer from the absence of an error.
+            # infer from the absence of an error. It is the ONE precondition
+            # `trigger_suite_run` fails fast on — not a prediction that the run
+            # will succeed: the suite may have no checks, the credential may be
+            # dead, and the target table may not exist. None of that is checked.
             "runnable": suite.target is not None,
+            # Both of these were previously emitted to the server log only — and
+            # the caller who just re-pointed the suite is the one person able to
+            # act on them.
+            "column_policy_pending": policy_pending,
+            "column_policy_may_be_stale": policy_may_be_stale,
         }
 
 
@@ -2196,6 +2508,18 @@ def set_column_policy(
     row can still be located. The identifier may not also be listed as PII, and
     may not itself classify as direct PII — either is rejected.
 
+    **Do not promise that a column will become visible.** Masking is decided by
+    three layers, and this policy is only the middle one: a datasource governance
+    tag always masks, and an unclassified column defaults to masked. So removing
+    a column from ``pii_columns`` usually does *not* reveal it.
+
+    The one case that does reveal a column is naming it as ``identifier_column``
+    — and only when it does not itself classify as PII (an ``EMAIL`` named as the
+    identifier stays masked). Since this call replaces the whole policy, dropping
+    a column from ``pii_columns`` can re-expose it if it is also the tested
+    column or the identifier. Check the result with ``get_column_policy`` and a
+    real sample rather than asserting either outcome.
+
     **This replaces the whole policy**, it does not add to it: send the complete
     list, and read the current one with ``get_column_policy`` first if you are
     adding a column.
@@ -2207,9 +2531,11 @@ def set_column_policy(
     empty list.
 
     What changes is how samples are **displayed**. Masking applies immediately,
-    including to runs that already happened. ``identifier_column`` does **not**
-    apply retroactively: it is used at capture time to choose which locator column
-    to record, so a past run shows whichever identifier was in force when it ran.
+    including to runs that already happened, and so does the identifier's
+    un-masking effect at read time. What is *not* retroactive is which locator
+    column was **captured**: that was chosen when the run executed, so a past run
+    can only ever show an identifier whose column is present in its stored
+    sample.
     Requires edit access.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
@@ -2269,11 +2595,20 @@ def list_assets(
 ) -> dict[str, Any]:
     """List the data assets (tables, views, files) DataQ knows about, with health.
 
-    Use this for 'what tables do we monitor?', 'which assets are unhealthy?', or
-    as the first step in 'is orders healthy?' — assets are the grain people think
-    in, whereas suites are the grain checks are authored in. Returns each asset's
-    namespace, name, environment, how many suites target it, and its latest
-    health, plus `total` / `truncated` so you can tell a page from the whole set.
+    Use this for 'what tables do we monitor?' or as the first step in 'is orders
+    healthy?'.
+
+    **Assets are returned in alphabetical order and there is no health filter or
+    sort.** A truncated page is therefore an alphabetical slice, never "the
+    unhealthiest assets" — to answer that, page with ``offset`` until
+    ``truncated`` is false. An asset appears here only because a suite targets
+    it, lineage emitted it, or its connection has inventory sync enabled, so a
+    table absent from the list may simply never have been enumerated.
+
+    Assets are the grain people think in, whereas suites are the grain checks are
+    authored in. Returns each asset's namespace, name, environment, how many
+    suites target it, and its latest health, plus ``total`` / ``truncated`` so
+    you can tell a page from the whole set.
 
     **The health numbers are workspace-true, not scoped to this user
     (ADR 0037).** They aggregate over EVERY suite targeting the asset, including
@@ -2459,6 +2794,20 @@ def _incident_payload(incident: Any) -> dict[str, Any]:
         # 'user' = a person closed it; 'auto' = a later passing result closed it.
         # Null while still open.
         "resolved_by": incident.resolved_by,
+        # Non-null ⇒ this (asset, check) pair broke before, was resolved, and
+        # broke again. Without it a recurrence of a weekly problem reads as
+        # brand new — `created_at` today, `occurrence_count: 1` — which is the
+        # opposite of what the user needs to know. `resolve_incident`'s own
+        # docstring promised this link and nothing returned it.
+        "prior_incident_id": (
+            str(incident.prior_incident_id) if incident.prior_incident_id else None
+        ),
+        "is_recurrence": incident.prior_incident_id is not None,
+        # Echoed so a confirmation is data rather than faith: `acknowledge_note`
+        # is only overwritten when a note is passed, so a re-ack without one
+        # keeps the previous note under a new actor.
+        "acknowledge_note": incident.acknowledge_note,
+        "resolution_note": incident.resolution_note,
     }
 
 
@@ -2553,6 +2902,19 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     failing sample rows by design, so it cannot show which specific records were
     bad; use the run results for that.
 
+    ``downstream_blast_radius`` is ``[]`` for three reasons that look
+    identical: the failing asset was never resolved, the asset is a genuine
+    lineage leaf, or **this workspace has no lineage recorded at all**. It is
+    also depth-capped, so a non-empty list is a floor rather than a complete
+    inventory. Never report "nothing downstream is affected" from an empty
+    radius — confirm lineage exists with ``get_asset`` first.
+
+    ``check_name``, ``asset_name`` and ``latest_severity`` are read from the same
+    snapshot, so a check renamed since the last occurrence still reports its old
+    name, and a null there means the layer could not be built (usually a deleted
+    check) — not that the check is passing. The lifecycle fields (``status``,
+    ``occurrence_count``, ``last_seen_at``, the ack/resolve stamps) are live.
+
     A `null` layer inside `evidence` does **not** by itself mean something went
     wrong, and the distinction matters because each layer means a different thing
     by it:
@@ -2575,12 +2937,6 @@ def get_incident(incident_id: str) -> dict[str, Any]:
         )
         return {
             **_incident_payload(incident),
-            "acknowledge_note": incident.acknowledge_note,
-            "resolution_note": incident.resolution_note,
-            # Non-null ⇒ this pair broke before, was resolved, and broke again.
-            "prior_incident_id": (
-                str(incident.prior_incident_id) if incident.prior_incident_id else None
-            ),
             "evidence": incident.evidence,
         }
 
@@ -2662,7 +3018,7 @@ def resolve_incident(
 
 
 @mcp.tool
-def get_near_misses(suite_id: str | None = None) -> list[dict[str, Any]]:
+def get_near_misses(suite_id: str | None = None) -> dict[str, Any]:
     """Find orchestration triggers that are silently never firing.
 
     Use this when a user says 'the suite was supposed to run after the pipeline
@@ -2682,9 +3038,11 @@ def get_near_misses(suite_id: str | None = None) -> list[dict[str, Any]]:
       ``binding_env`` is firing correctly there. Confirm with ``list_runs``
       before telling a user a trigger has never worked.
     - An empty result does **not** prove a binding is firing. Only mismatches
-      observed in roughly the last two days are reported, so a weekly DAG's
-      mismatch ages out of this view entirely; the pipeline may also simply not
-      have run, or the binding may be disabled (check ``enabled`` in
+      observed within the deployment's near-miss window are reported, and that
+      window is returned as ``window_hours`` (48 by default, but configurable —
+      quote the returned value, never a default). A mismatch older than it ages
+      out entirely, so a weekly DAG's may never appear; the pipeline may also
+      simply not have run, or the binding may be disabled (check ``enabled`` in
       ``list_trigger_bindings``).
 
     Optionally narrow to one ``suite_id``. Scoped to suites the caller can
@@ -2697,18 +3055,25 @@ def get_near_misses(suite_id: str | None = None) -> list[dict[str, Any]]:
         rows = orchestration_service.list_env_near_misses(
             session, user_id=user.id, include_all=is_workspace_admin(user), suite_id=sid
         )
-        return [
-            {
-                "provider": r.provider,
-                "pipeline_or_dag_id": r.pipeline_or_dag_id,
-                # Where the pipeline actually succeeded...
-                "run_env": r.run_env,
-                # ...and where the binding is looking. These differing IS the bug.
-                "binding_env": r.binding_env,
-                "last_observed_at": r.updated_at.isoformat(),
-            }
-            for r in rows
-        ]
+        return {
+            # The window is `trigger_env_near_miss_recent_hours` and is
+            # deployment-configurable, so "roughly two days" was wrong on any
+            # workspace that changed it. Returned so the model states the real
+            # bound rather than a default it cannot see.
+            "window_hours": get_settings().trigger_env_near_miss_recent_hours,
+            "near_misses": [
+                {
+                    "provider": r.provider,
+                    "pipeline_or_dag_id": r.pipeline_or_dag_id,
+                    # Where the pipeline actually succeeded...
+                    "run_env": r.run_env,
+                    # ...and where the binding is looking. These differing IS the bug.
+                    "binding_env": r.binding_env,
+                    "last_observed_at": r.updated_at.isoformat(),
+                }
+                for r in rows
+            ],
+        }
 
 
 @mcp.tool
@@ -2767,7 +3132,18 @@ def list_columns(
             file_format=file_format,
             secret_store=get_secret_store(),
         )
-        return {"table": table, "path": path, "columns": columns}
+        return {
+            # The fully-qualified object actually read. These may have been
+            # defaulted off the suite's run target, and "ORDERS" on its own is
+            # ambiguous across schemas and catalogs.
+            "table": table,
+            "schema": schema,
+            "catalog": catalog,
+            "namespace": namespace,
+            "path": path,
+            "file_format": file_format,
+            "columns": columns,
+        }
 
 
 def _parse_suite_target(target: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -2867,7 +3243,22 @@ def profile_column(
     for an Iceberg table when passing an explicit ``table`` (Iceberg addresses
     ``namespace.table``); it defaults to the suite target's namespace when no
     explicit ``table``/``path`` is given, so it only needs passing alongside
-    your own ``table``. Requires edit access to the suite.
+    your own ``table``. **Snowflake and Unity Catalog are profiled in full; ADLS, S3 and Iceberg
+    targets are profiled over a sample of at most 100,000 rows.** When
+    ``sampled`` is true, ``row_count`` is the number of rows **sampled** — not
+    the size of the file or table — and every statistic describes only that
+    sample. Say so rather than reporting a sample fraction as a fact about the
+    dataset.
+
+    A null ``min_value`` / ``max_value`` / ``distinct_count`` means the statistic
+    is unavailable, not that the column is empty: the column may be entirely
+    null, or the stat may not be computable for its type (mixed uncomparable
+    values, nested list/struct cells).
+
+    The returned ``top_values`` / ``min_value`` / ``max_value`` are **real cell
+    contents and are not PII-redacted** — the suite's column policy is not
+    applied here. Do not profile columns the policy marks as PII, and do not echo
+    values into a summary unnecessarily. Requires edit access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
@@ -2895,10 +3286,24 @@ def profile_column(
             file_format=file_format,
             secret_store=get_secret_store(),
         )
+        # Only the SQL path (Snowflake / Unity Catalog) aggregates the whole
+        # table; ADLS / S3 / Iceberg read at most `_SAMPLE_ROWS` rows into pandas
+        # and compute locally. `row_count` is then the SAMPLE size, not the
+        # table's — "how many rows are in the orders file?" answered `100000`
+        # exactly, and every null fraction was a sample fraction stated as fact.
+        sampled = result.path is not None or connection.type == "iceberg"
         return {
             "row_count": result.row_count,
             "table": result.table,
             "path": result.path,
+            # Which qualified object was actually read — the tool may have
+            # defaulted these off the suite's target, and "ORDERS" alone is
+            # ambiguous across schemas and catalogs.
+            "schema": result.schema,
+            "catalog": result.catalog,
+            "file_format": result.file_format,
+            "sampled": sampled,
+            "sample_row_limit": profile_service.SAMPLE_ROWS if sampled else None,
             "columns": [
                 {
                     "column": c.column,
