@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "55e0e26671ab",
+  "strategy": "manual-commit",
+  "branch": "feature/431-g1-access-events",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/api/test_access_coverage.py",
+    "backend/tests/api/test_access_event_latency.py",
+    "backend/tests/api/test_access_events.py",
+    "backend/tests/db/test_access_event_persistence.py",
+    "backend/tests/support/access_coverage.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/55/e0e26671ab/0/metadata.json",
+      "transcript": "/55/e0e26671ab/0/full.jsonl",
+      "compact_transcript": "/55/e0e26671ab/0/transcript.jsonl",
+      "content_hash": "/55/e0e26671ab/0/content_hash.txt",
+      "prompt": "/55/e0e26671ab/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 120,
+    "cache_creation_tokens": 70583,
+    "cache_read_tokens": 32199277,
+    "output_tokens": 44327,
+    "api_call_count": 60
+  }
+}
