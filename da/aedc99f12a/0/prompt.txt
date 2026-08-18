@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b0ppis4op</task-id>
+<tool-use-id>toolu_01Du9iPjMbEsbXQWC7QGDM1E</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/248e6c9f-6db3-446e-8372-f8dd810b180b/tasks/b0ppis4op.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI on both PRs" completed (exit code 0)</summary>
+</task-notification>

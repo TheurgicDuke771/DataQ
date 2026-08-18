@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "daaedc99f12a",
+  "strategy": "manual-commit",
+  "branch": "feature/1318-audit-read-and-retention",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".env.app.example",
+    "backend/app/api/v1/admin.py",
+    "backend/app/core/config.py",
+    "backend/app/services/audit_read_service.py",
+    "backend/app/worker/celery_app.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/api/test_audit_read.py",
+    "backend/tests/db/test_audit_retention_privileges.py",
+    "docs/compliance-posture.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/da/aedc99f12a/0/metadata.json",
+      "transcript": "/da/aedc99f12a/0/full.jsonl",
+      "compact_transcript": "/da/aedc99f12a/0/transcript.jsonl",
+      "content_hash": "/da/aedc99f12a/0/content_hash.txt",
+      "prompt": "/da/aedc99f12a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 68,
+    "cache_creation_tokens": 46485,
+    "cache_read_tokens": 13699428,
+    "output_tokens": 29354,
+    "api_call_count": 34
+  }
+}
