@@ -311,6 +311,69 @@ enable.
 Revisit if a customer requires key custody, or when a deployment stack owns its own
 database server from creation.
 
+## Data residency
+
+Where data lives, and what can take it elsewhere. GDPR Ch. V asks a controller to
+answer both; this section is the answer for the reference deployments, and
+`GET /api/v1/admin/deployment` is the same answer read live from a running
+instance (workspace-admin only) so it can be checked rather than trusted.
+
+**One declared jurisdiction per deployment**, set by a single IaC variable
+(`azure_location` / `aws_region`) and declared to the app as `DEPLOYMENT_REGION`.
+The app's value is a **declaration, not a verification** — software cannot confirm
+which datacentre its database sits in — and it is reported as `null` when unset,
+so an auditor sees a gap rather than a guess.
+
+### Where each resource sits
+
+| Resource | Region | Holds customer data? |
+|---|---|---|
+| PostgreSQL (Azure Flexible Server / AWS RDS) | the declared region | **Yes** — suites, checks, results, and the incidental personal data in failing-row samples |
+| Secret store (Key Vault / Secrets Manager / OpenBao) | the declared region | Warehouse credentials, not customer data |
+| Container Apps / ECS compute | the declared region | In transit only |
+| Object storage (AWS landing bucket) | the declared region | Whatever the operator lands there |
+| Telemetry (App Insights / CloudWatch / OTLP) | the sink's region — **operator-chosen** | Operational metadata; PII redacted at the logger |
+| CloudFront (AWS only) | **global edge** | **No.** Only fingerprinted static assets are cached (`/assets/*.<ext>`); every other path is pass-through, so no API response and no failing-row sample is stored at an edge location |
+| WAFv2 Web ACL (AWS only) | **`us-east-1`, unavoidably** | **No** — the ACL is rule configuration. CloudFront-scoped ACLs exist only in `us-east-1` regardless of where the stack lives |
+
+The last two rows are the honest exceptions, and both are stated rather than
+omitted: a reviewer who finds a `us-east-1` provider alias in an `eu-west` stack
+should find it explained here rather than have to work out whether it matters.
+
+### The assertion that catches drift
+
+The Azure stack shares a Container Apps environment, declared as a `data` source —
+so its region is set by whoever created it, and **every Container App and Job in
+the stack inherits it** (a Job must sit in its environment's region). Left
+unchecked, moving or recreating that shared environment elsewhere would relocate
+all of the app's compute with a clean `apply` and no signal.
+
+`aca.tf` therefore carries a `postcondition` comparing the shared environment's
+actual location against `var.azure_location`, so a mismatch fails the plan with a
+message naming both. For a Ch. V control, "we did not notice the jurisdiction
+changed" is the whole failure mode.
+
+### What can move data out
+
+Enumerated at `GET /api/v1/admin/deployment` — enumerated rather than derived, so
+a vector that is switched **off** still appears and an auditor can see it was
+considered:
+
+- **Alert delivery** — webhooks and email carry check names, statuses and, when a
+  failing sample is included, *redacted* sample values. The destination is
+  operator-configured and its location is outside DataQ's knowledge.
+- **Telemetry** — traces and logs to an operator-chosen sink; PII is redacted at
+  the logger, so this is operational metadata rather than warehouse values.
+- **LLM intelligence** — **not built.** When it lands it is a Ch. V transfer by
+  construction; its intended posture (schema-only context, PII-redacted,
+  local-endpoint option) is recorded in
+  [post-v1-dq-intelligence-notes.md](post-v1-dq-intelligence-notes.md).
+
+Deploying into another jurisdiction is a variable change, not a fork: the same
+images and the same IaC take a different region. What DataQ does **not** do is
+verify the result — that remains the deploying organization's attestation, which
+is the correct split for a customer-deployed product.
+
 ## Reporting a vulnerability
 
 Please report suspected security issues privately to the maintainers rather than opening a

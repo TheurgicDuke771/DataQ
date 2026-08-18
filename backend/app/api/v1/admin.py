@@ -337,3 +337,94 @@ def list_audit_events(
         retention_days=page.retention_days,
         retained_since=page.retained_since,
     )
+
+
+# ───────────────────── deployment posture (G4 / #434) ──────────────────────
+
+
+class ExternalTransfer(ApiModel):
+    """One way data can leave the declared jurisdiction."""
+
+    name: str
+    enabled: bool
+    detail: str
+
+
+class DeploymentPostureRead(ApiModel):
+    """What an auditor needs to answer "where does our data live, and what can
+    take it elsewhere?" without shell access to the deployment.
+
+    Deliberately reports **declarations and configuration**, never a probe. The
+    app cannot verify which datacentre its database sits in, and a field that
+    looked like verification would be worse than one that is plainly a
+    declaration — it would be believed.
+    """
+
+    #: The jurisdiction this deployment declares (`DEPLOYMENT_REGION`). `null`
+    #: when unset, which reads as "not declared" rather than implying a default —
+    #: an auditor should see the gap, not a guess.
+    region: str | None
+    #: Ways data can leave that jurisdiction, each with whether it is live here.
+    external_transfers: list[ExternalTransfer]
+
+
+@router.get(
+    "/deployment",
+    response_model=DeploymentPostureRead,
+    summary="Declared data residency and external-transfer vectors (workspace-admin only)",
+)
+def get_deployment_posture() -> DeploymentPostureRead:
+    """The declared residency posture (GDPR Ch. V, G4/#434).
+
+    Workspace-admin only via the router gate. The transfer list is enumerated
+    rather than derived, so a new outbound integration has to be added here
+    consciously — a vector that reports itself only when someone remembers is not
+    a control an auditor can rely on.
+    """
+    settings = get_settings()
+    transfers = [
+        ExternalTransfer(
+            name="alert_delivery",
+            enabled=bool(
+                settings.teams_webhook_secret_name
+                or settings.slack_webhook_secret_name
+                or settings.email_to
+            ),
+            detail=(
+                "Alerts carry check names, statuses and — when a failing sample is "
+                "included — redacted sample values, to whatever webhook or mailbox "
+                "the operator configured. That endpoint's own location is outside "
+                "DataQ's knowledge, so this is a transfer whose destination only "
+                "the operator can attest to."
+            ),
+        ),
+        ExternalTransfer(
+            name="llm_intelligence",
+            enabled=False,
+            detail=(
+                "Not built. When it lands it is a Ch. V transfer vector by "
+                "construction, and its design posture (schema-only context, "
+                "PII-redacted, local-endpoint option) is recorded in "
+                "docs/post-v1-dq-intelligence-notes.md. Listed here while disabled "
+                "on purpose: an auditor should see that it was considered and is "
+                "off, not have to infer its absence."
+            ),
+        ),
+        ExternalTransfer(
+            name="telemetry",
+            enabled=bool(
+                settings.applicationinsights_connection_string
+                or settings.otel_exporter_otlp_endpoint
+            ),
+            detail=(
+                "Traces and logs to the configured backend. PII is redacted at the "
+                "logger (core/logging.py), so this carries operational metadata "
+                "rather than warehouse values — but the sink is chosen by the "
+                "operator and may sit in another jurisdiction."
+            ),
+        ),
+    ]
+    return DeploymentPostureRead(
+        region=settings.deployment_region or None,
+        external_transfers=transfers,
+    )
