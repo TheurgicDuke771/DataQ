@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "815d7aabed0c",
+  "strategy": "manual-commit",
+  "branch": "feature/433-g3-warehouse-tags",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/suites.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/run_service.py",
+    "backend/app/services/suite_service.py",
+    "backend/tests/api/test_suites.py",
+    "backend/tests/services/test_redaction_precedence.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/81/5d7aabed0c/0/metadata.json",
+      "transcript": "/81/5d7aabed0c/0/full.jsonl",
+      "compact_transcript": "/81/5d7aabed0c/0/transcript.jsonl",
+      "content_hash": "/81/5d7aabed0c/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 18136,
+    "cache_read_tokens": 13557924,
+    "output_tokens": 14023,
+    "api_call_count": 19
+  }
+}
