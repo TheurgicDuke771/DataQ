@@ -122,7 +122,7 @@ than summarising the payload as-is.
 
 | Field | Appears on | What it prevents |
 |---|---|---|
-| `total` · `truncated` · `returned` | the list tools | reporting one page as the whole set. `truncated` is computed against a real total, never inferred from page length |
+| `total` · `returned` · `truncated` | `list_runs`, `list_checks`, `list_check_versions`, `list_incidents`, `list_assets`, `get_check_history`, `get_adf_pipeline_status` | reporting one page as the whole set. `truncated` is computed against a real total, never inferred from page length. The unpaged tools — `list_suites`, `list_connections`, `list_schedules`, `list_trigger_bindings`, `get_near_misses` — return every row and carry no page fields at all |
 | `oldest_in_page` · `newest_in_page` | `list_runs`, `get_check_history`, `get_adf_pipeline_status` | answering a time-bounded question ("what failed today?") from a **count**-capped page. None of these tools has a time filter ([#1442](https://github.com/TheurgicDuke771/DataQ/issues/1442)) — these fields say what window you actually saw |
 | `results_final` | `list_runs`, `get_run_results`, `get_run_status`, `get_suite_results` | reading a mid-run partial as a verdict. A 30-check suite three checks in genuinely has "3/3 passed" — and no result yet |
 | `redaction` · `redacted_columns` | per-check results | describing masked rows as "no failing rows", or mask tokens as data |
