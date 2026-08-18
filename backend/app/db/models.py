@@ -445,8 +445,17 @@ class Connection(Base):
     # (test_connection → 502 without a stored credential), so the column stays
     # NULL-able for the W7 credential-less modes without a later migration.
     secret_ref: Mapped[str | None] = mapped_column(String(256))
-    created_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    #: Provenance, not lifecycle ownership — `SET NULL`, matching every other
+    #: user-referencing FK that records *who did something* (`changed_by`,
+    #: `owner_user_id`, `acknowledged_by`, `audit_events.actor_user_id`). The
+    #: alternative, RESTRICT-with-409, would make a user un-erasable because they
+    #: once created a suite, which is the wrong answer for GDPR Art 17 (#432).
+    #:
+    #: Nullable is what `SET NULL` requires; it does not mean "usually absent".
+    #: Every row written by the app sets it, and there is no path that clears it
+    #: except a user delete (#1319).
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
@@ -669,8 +678,17 @@ class Suite(Base):
     # later. Auto-derivable from datasource classification/tags + name heuristics;
     # this column stores the resolved/overridden policy.
     column_policy: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
-    created_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    #: Provenance, not lifecycle ownership — `SET NULL`, matching every other
+    #: user-referencing FK that records *who did something* (`changed_by`,
+    #: `owner_user_id`, `acknowledged_by`, `audit_events.actor_user_id`). The
+    #: alternative, RESTRICT-with-409, would make a user un-erasable because they
+    #: once created a suite, which is the wrong answer for GDPR Art 17 (#432).
+    #:
+    #: Nullable is what `SET NULL` requires; it does not mean "usually absent".
+    #: Every row written by the app sets it, and there is no path that clears it
+    #: except a user delete (#1319).
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
@@ -1131,8 +1149,17 @@ class Schedule(Base):
     next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # Last time the dispatcher fired this schedule (NULL until first fire).
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    #: Provenance, not lifecycle ownership — `SET NULL`, matching every other
+    #: user-referencing FK that records *who did something* (`changed_by`,
+    #: `owner_user_id`, `acknowledged_by`, `audit_events.actor_user_id`). The
+    #: alternative, RESTRICT-with-409, would make a user un-erasable because they
+    #: once created a suite, which is the wrong answer for GDPR Art 17 (#432).
+    #:
+    #: Nullable is what `SET NULL` requires; it does not mean "usually absent".
+    #: Every row written by the app sets it, and there is no path that clears it
+    #: except a user delete (#1319).
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()

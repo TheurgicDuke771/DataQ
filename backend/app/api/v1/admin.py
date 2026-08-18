@@ -46,8 +46,11 @@ class AdminSuiteRead(ApiModel):
     connection_name: str
     connection_type: str
     env: str
-    owner_id: UUID
-    owner_email: str
+    #: `None` once the creating user is erased (#1319). The suite stays listed —
+    #: it still runs and still holds shares — so the admin overview must be able
+    #: to render an ownerless one rather than 500 on serialization.
+    owner_id: UUID | None
+    owner_email: str | None
     owner_name: str | None
     check_count: int
     share_count: int

@@ -17,7 +17,11 @@ export interface Suite {
   /** The asset this suite's target resolves to (ADR 0034, #760); null for a
    *  targetless/unresolvable suite. Links the suite back to its asset (#773). */
   asset_id?: string | null;
-  created_by: string;
+  /** `null` once the creating user is erased — the row outlives its author
+   *  (`ondelete=SET NULL`, #1319). Nullable server-side, so nullable here:
+   *  a non-nullable mirror lets the compiler wave through the next consumer
+   *  that assumes an author is always present. */
+  created_by: string | null;
   /** The caller's effective level — gates per-suite actions (share, delete).
    *  `owner`/`admin`/`edit`/`view`; absent on older payloads. */
   my_permission?: 'owner' | 'admin' | 'edit' | 'view' | null;
