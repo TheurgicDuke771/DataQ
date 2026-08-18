@@ -1769,7 +1769,13 @@ def _new_suite(client: TestClient, db_session: Any) -> str:
 def test_column_policy_defaults_empty(client: TestClient, db_session: Any) -> None:
     sid = _new_suite(client, db_session)
     body = client.get(f"/api/v1/suites/{sid}/column-policy").json()
-    assert body == {"identifier_column": None, "pii_columns": []}
+    assert body == {
+        "identifier_column": None,
+        "pii_columns": [],
+        # Fail-closed is off unless asked for (G3 / #433) — the default must stay
+        # visible in the payload so an operator can see which mode they are in.
+        "require_classification": False,
+    }
 
 
 def test_column_policy_put_sets_and_reads_back(client: TestClient, db_session: Any) -> None:
@@ -1780,7 +1786,11 @@ def test_column_policy_put_sets_and_reads_back(client: TestClient, db_session: A
     )
     assert resp.status_code == 200
     # de-duped + blanks dropped
-    assert resp.json() == {"identifier_column": "ORDER_NUMBER", "pii_columns": ["EMAIL"]}
+    assert resp.json() == {
+        "identifier_column": "ORDER_NUMBER",
+        "pii_columns": ["EMAIL"],
+        "require_classification": False,
+    }
     # reflected on GET and on the suite read
     resp = client.get(f"/api/v1/suites/{sid}/column-policy")
     assert resp.json()["identifier_column"] == ("ORDER_NUMBER")
@@ -1836,7 +1846,11 @@ def test_column_policy_suggest_profiles_and_classifies(
     body = client.post(
         f"/api/v1/suites/{sid}/column-policy/suggest", json={"table": "ORDERS", "schema": "RETAIL"}
     ).json()
-    assert body == {"identifier_column": "ORDER_NUMBER", "pii_columns": ["EMAIL"]}
+    assert body == {
+        "identifier_column": "ORDER_NUMBER",
+        "pii_columns": ["EMAIL"],
+        "require_classification": False,
+    }
 
 
 # ── batch-target preview (#1193) ─────────────────────────────────────

@@ -1027,6 +1027,43 @@ def _tag_sensitive(column: str, tags: Mapping[str, str] | None) -> bool:
     return str(tag).strip().lower() in _SENSITIVE_TAG_VALUES
 
 
+def _policy_requires_classification(policy: Mapping[str, Any] | None) -> bool:
+    """Whether this suite is in **fail-closed** mode (G3 / #433).
+
+    Default off, and that default is the honest one: turning it on globally would
+    change what every existing suite surfaces without anyone asking, and the
+    surfacing exception exists because a fully-masked failing row is
+    *unactionable* — you cannot see what was wrong or which row it was.
+
+    On, nothing row-level is shown unless a column is **explicitly** classified
+    non-sensitive: the suite's `identifier_column`, or a datasource governance tag
+    saying so. The name/value classifier is not consulted at all, because
+    consulting it IS the risk this mode exists to remove — a column called
+    `field_7` full of SSNs classifies as safe-looking and would surface.
+
+    This is the half of G3 that needs no warehouse integration. Reading tags FROM
+    the warehouse (the other AC) makes the *allow* side authoritative; this makes
+    the *default* safe in the meantime, which is the direction that fails safely
+    while the tag source does not exist.
+    """
+    return bool(policy and policy.get("require_classification"))
+
+
+#: Datasource-tag values that explicitly clear a column as non-sensitive. The
+#: mirror of `_SENSITIVE_TAG_VALUES`, and only consulted in fail-closed mode —
+#: outside it, "no tag" already means "fall through to the classifier", so an
+#: explicit non-sensitive tag would change nothing.
+_NON_SENSITIVE_TAG_VALUES = frozenset({"public", "non_sensitive", "nonsensitive", "internal"})
+
+
+def _tag_non_sensitive(column: str, tags: Mapping[str, str] | None) -> bool:
+    """Level 1, the allow side — a governance tag explicitly clears the column."""
+    if not tags:
+        return False
+    tag = tags.get(column) or tags.get(column.strip().lower()) or ""
+    return str(tag).strip().lower() in _NON_SENSITIVE_TAG_VALUES
+
+
 def _policy_pii(column: str, policy: Mapping[str, Any] | None) -> bool:
     """Level 3 — the suite override explicitly lists the column as PII."""
     if not policy:
@@ -1060,11 +1097,15 @@ def _known_sensitive(
     counts summary for THIS column — preferred over deriving the value signal from
     the (possibly capped) ``values`` alone; see `column_classification._value_signal`.
     """
-    return (
-        _tag_sensitive(column, tags)
-        or _policy_pii(column, policy)
-        or is_sensitive(column, values, value_signal_summary=value_signal_summary)
-    )
+    if _tag_sensitive(column, tags) or _policy_pii(column, policy):
+        return True
+    if _policy_requires_classification(policy):
+        # Fail-closed (G3): "known sensitive" becomes "not known SAFE". Only an
+        # explicit clearance — a non-sensitive governance tag, or the operator's
+        # own `identifier_column` — lets a value through; a *guess* that the name
+        # looks harmless is exactly what this mode refuses to act on.
+        return not (_tag_non_sensitive(column, tags) or _policy_identifier(column, policy))
+    return is_sensitive(column, values, value_signal_summary=value_signal_summary)
 
 
 def _may_show_incidental(
@@ -1085,6 +1126,16 @@ def _may_show_incidental(
     ``value_signal_summary`` (#1230): see `_known_sensitive`.
     """
     if _tag_sensitive(column, tags) or _policy_pii(column, policy):
+        return False
+    if _policy_requires_classification(policy):
+        # Fail-closed (G3): an incidental column is shown only on an explicit
+        # clearance. Note the identifier still passes `is_sensitive` below — a
+        # designated locator that is itself direct PII is never unmasked, in this
+        # mode or out of it.
+        if _tag_non_sensitive(column, tags):
+            return True
+        if _policy_identifier(column, policy):
+            return not is_sensitive(column, values, value_signal_summary=value_signal_summary)
         return False
     if _policy_identifier(column, policy):
         return not is_sensitive(column, values, value_signal_summary=value_signal_summary)

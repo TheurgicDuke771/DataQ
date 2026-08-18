@@ -599,10 +599,21 @@ def preview_batch_target(
 
 class ColumnPolicyRead(ApiModel):
     """A suite's failing-sample redaction policy: the shown ``identifier_column``
-    (a non-PII row locator) + the always-masked ``pii_columns``."""
+    (a non-PII row locator) + the always-masked ``pii_columns``, plus whether the
+    suite is in fail-closed mode."""
 
     identifier_column: str | None = None
     pii_columns: list[str] = Field(default_factory=list)
+    #: Fail-closed mode (G3 / #433). When true, nothing row-level is surfaced
+    #: unless a column is EXPLICITLY cleared — the operator's `identifier_column`
+    #: or a datasource governance tag. The name/value classifier is not consulted,
+    #: because consulting it is the risk this removes: a column called `field_7`
+    #: full of SSNs looks harmless to a name heuristic.
+    #:
+    #: Off by default, deliberately. A fully-masked failing row is unactionable —
+    #: you cannot see what was wrong or which row — so this is a trade an operator
+    #: makes for a regulated dataset, not one made for them.
+    require_classification: bool = False
 
     @classmethod
     def of(cls, policy: dict[str, Any] | None) -> ColumnPolicyRead:
@@ -610,12 +621,23 @@ class ColumnPolicyRead(ApiModel):
         return cls(
             identifier_column=policy.get("identifier_column"),
             pii_columns=list(policy.get("pii_columns") or []),
+            require_classification=bool(policy.get("require_classification")),
         )
 
 
 class ColumnPolicyUpdate(ApiModel):
     identifier_column: str | None = Field(default=None, max_length=255)
     pii_columns: list[str] = Field(default_factory=list, max_length=200)
+    #: Fail-closed mode (G3 / #433). When true, nothing row-level is surfaced
+    #: unless a column is EXPLICITLY cleared — the operator's `identifier_column`
+    #: or a datasource governance tag. The name/value classifier is not consulted,
+    #: because consulting it is the risk this removes: a column called `field_7`
+    #: full of SSNs looks harmless to a name heuristic.
+    #:
+    #: Off by default, deliberately. A fully-masked failing row is unactionable —
+    #: you cannot see what was wrong or which row — so this is a trade an operator
+    #: makes for a regulated dataset, not one made for them.
+    require_classification: bool = False
 
 
 class ColumnPolicySuggestRequest(ApiModel):
@@ -662,6 +684,7 @@ def set_column_policy(
         suite_id,
         identifier_column=payload.identifier_column,
         pii_columns=payload.pii_columns,
+        require_classification=payload.require_classification,
         actor_id=current_user.id,
     )
     return ColumnPolicyRead.of(suite.column_policy)

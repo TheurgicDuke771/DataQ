@@ -245,6 +245,7 @@ def set_column_policy(
     *,
     identifier_column: str | None,
     pii_columns: list[str],
+    require_classification: bool = False,
     actor_id: uuid.UUID | None = None,
     machine_write: bool = False,
 ) -> Suite:
@@ -273,6 +274,11 @@ def set_column_policy(
     policy: dict[str, Any] = {"pii_columns": pii}
     if identifier_column:
         policy["identifier_column"] = identifier_column
+    if require_classification:
+        # Written only when true, so an existing policy's stored shape is
+        # unchanged for every suite that does not use fail-closed mode — the
+        # absence of the key and `false` mean the same thing to the reader.
+        policy["require_classification"] = True
     suite = get_suite(session, suite_id)
     audit_before = audit_service.snapshot("suite", suite)
     suite.column_policy = policy
