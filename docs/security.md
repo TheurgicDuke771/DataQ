@@ -390,11 +390,17 @@ with a message naming both. For a Ch. V control, "we did not notice the
 jurisdiction changed" is the whole failure mode.
 
 The shared **database** gets the same comparison as a `check` block, which
-**warns** on every plan instead of blocking — because unlike the environment, it
-does not hold today (see the table above). A `postcondition` there would fail
-every apply until someone moves a database, which is an operational decision the
-IaC should not make unilaterally; a `check` names the drift on every plan and
-lets the resolution happen deliberately.
+**warns** rather than blocking. A `postcondition` there would fail every apply
+until someone migrated a database, and the right response to "the DB moved" is a
+decision, not a rollback.
+
+It compares against `shared_pg_expected_location`, which defaults to
+`azure_location` — so for an ordinary single-region deployment the two are the
+same thing and the check is silent. Setting the variable is how a deployment
+records an accepted exception; this one does, for the West US 3 server described
+above. That indirection is the difference between a check that still works and
+one that warns on every plan forever: an accepted exception must not cost you the
+detector, and it must not hand the noise to every other deployment either.
 
 ### What can move data out
 

@@ -21,30 +21,34 @@ variable "azure_location" {
   default     = "West US 2"
 }
 
-# The region the shared PostgreSQL server is EXPECTED to be in — an accepted,
-# recorded exception to "everything sits in azure_location" (#1465, G4/#434).
+# The region the shared PostgreSQL server is EXPECTED to be in.
 #
-# The subscription caps Flexible Servers at one, so the app shares the harness's
-# server and declares it as a `data` source: its region was fixed by whoever
-# created it, not by this stack. It is West US 3 while the app is West US 2.
-# Both are in the SAME JURISDICTION (United States), which is what GDPR Ch. V
-# keys on, so this is a region split rather than a residency problem — and it is
-# accepted deliberately rather than resolved, because resolving it means a new
-# server plus a data migration against that same 1-server cap.
+# **Defaults to null, meaning "wherever azure_location says".** That is the
+# correct expectation for any ordinary deployment — one region, everything in it —
+# and it means the `check` in postgres.tf stays silent for them.
 #
-# **Declared as a variable rather than left as prose, so the `check` in
-# postgres.tf keeps working.** Comparing the server against `azure_location`
-# would now warn on EVERY plan, and a permanently-firing check is noise people
-# learn to skip — it would mask the drift that actually matters (this server
-# moving to another *jurisdiction*). Encoding the accepted value means the check
-# passes today and still fires the moment reality changes.
+# THIS deployment overrides it, because it carries an accepted exception (#1465,
+# G4/#434): the subscription caps Flexible Servers at one, so the app shares the
+# harness's server, which sits in West US 3 while the app is in West US 2. Both
+# are the same JURISDICTION (United States), which is what GDPR Ch. V keys on, so
+# it is a region split rather than a residency problem — accepted deliberately
+# rather than resolved, since resolving it means a new server plus a data
+# migration against that same cap. The override lives in this deployment's
+# tfvars, which is where a deployment-specific fact belongs.
 #
-# Set this to `azure_location` if the two are ever consolidated.
+# **Declared as a variable rather than left as prose, so the `check` keeps
+# working.** Comparing the server against `azure_location` unconditionally would
+# warn on EVERY plan here, and a permanently-firing check is noise people learn to
+# skip — it would mask the drift that actually matters (this server moving to
+# another *jurisdiction*). Baking "West US 3" in as the DEFAULT would have moved
+# that same noise onto every other deployment instead, with a factually wrong
+# warning attached.
 variable "shared_pg_expected_location" {
-  description = "Region the shared PostgreSQL server is expected in. Differs from azure_location by accepted exception — see #1465."
+  description = "Region the shared PostgreSQL server is expected in. Null = same as azure_location; set it only where an accepted exception applies (see #1465)."
   type        = string
-  default     = "West US 3"
+  default     = null
 }
+
 
 # ── Shared Postgres (the app's DB lives on the harness's single server) ───────
 

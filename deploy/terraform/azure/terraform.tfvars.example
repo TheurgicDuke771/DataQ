@@ -24,6 +24,11 @@
 # image_tag          = "v10"       # backend  — bump per deploy (immutable tag, not "latest")
 # frontend_image_tag = "v1"        # frontend — bump per deploy (immutable tag, not "latest")
 # shared_pg_server_name = "dataq-pg-wus3-3erlgd"   # the shared (harness) PG server
+# Region that server is EXPECTED in. Leave unset for an ordinary deployment —
+# it then defaults to azure_location and the residency check stays silent. Set
+# it only where an accepted exception applies: here the shared server is in
+# West US 3 while the app is in West US 2 (same jurisdiction; #1465, G4/#434).
+# shared_pg_expected_location = "West US 3"
 
 # Azure AD SSO (fill once the app registrations exist; empty deploys fine with
 # health/docs reachable — AUTH_DEV_BYPASS stays false regardless).

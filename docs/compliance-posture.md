@@ -216,9 +216,11 @@ are currently stopped. Tracked on #433.
 ### G4 — 🟢 Region / residency assertion & enforcement — #434 — **asserted, surfaced, and its one exception accepted on the record**
 **Requirement:** GDPR Ch. V — EU personal data must stay in-region; cross-border transfer
 needs a lawful basis. The post-v1 LLM call is a new transfer vector.
-**Current state:** deploy is region-pinned to **US (westus3)**; the seam *allows* an EU
-deploy but nothing documents or enforces jurisdiction, and the LLM-transfer mitigation is
-design-only so far.
+**Current state (as filed):** the seam *allowed* an EU deploy but nothing documented or
+enforced jurisdiction, and the LLM-transfer mitigation was design-only. The filing text also
+described the deploy as "region-pinned to US (westus3)", which turned out to be half right
+and is corrected below: the **database** is in West US 3, the **app** is in West US 2, and
+nothing had noticed.
 **Shipped (2026-08-18).** A documented **residency matrix** per resource for both
 reference deployments ([docs/security.md](security.md)), a `DEPLOYMENT_REGION` declaration
 surfaced at `GET /api/v1/admin/deployment` (workspace-admin only) so the posture is
@@ -232,7 +234,8 @@ Moving or recreating it elsewhere would have relocated all of the app's compute 
 clean `apply` and no signal, and "we did not notice the jurisdiction changed" is precisely
 the Ch. V failure.
 
-The matrix states its two honest exceptions rather than omitting them — CloudFront's global
+The matrix states its three honest exceptions rather than omitting them — the shared Postgres
+region split described below, CloudFront's global
 edge (fingerprinted static assets only; no API response or failing-row sample is cached)
 and the WAFv2 ACL, which exists only in `us-east-1` regardless of the stack's region and
 holds rules, not data.

@@ -34,10 +34,13 @@ data "azurerm_postgresql_flexible_server" "shared" {
 # This server holds the application's personal data (`results.sample_failures`,
 # list-shaped `observed_value`), so it is the resource residency claims are ABOUT.
 #
-# It is checked against `shared_pg_expected_location`, NOT `azure_location`,
-# because the two deliberately differ: the subscription's 1-server cap forced the
-# app onto the harness's shared server, which sits in West US 3 while the app is
-# in West US 2. That is an **accepted exception** (#1465) — same jurisdiction
+# It is checked against `shared_pg_expected_location` when that is set, and
+# against `azure_location` otherwise. For an ordinary deployment — one region,
+# everything in it — those are the same thing and the check is silent.
+#
+# THIS deployment sets the override, because the subscription's 1-server cap
+# forced the app onto the harness's shared server: West US 3, while the app is in
+# West US 2. That is an **accepted exception** (#1465) — same jurisdiction
 # (United States), which is what GDPR Ch. V keys on — recorded in the residency
 # matrix in docs/security.md alongside the CloudFront and WAF exceptions.
 #
@@ -52,11 +55,11 @@ data "azurerm_postgresql_flexible_server" "shared" {
 # database, and the response to "the DB moved" is a decision, not a rollback.
 check "database_residency" {
   assert {
-    condition     = lower(replace(data.azurerm_postgresql_flexible_server.shared.location, " ", "")) == lower(replace(var.shared_pg_expected_location, " ", ""))
+    condition     = lower(replace(data.azurerm_postgresql_flexible_server.shared.location, " ", "")) == lower(replace(coalesce(var.shared_pg_expected_location, var.azure_location), " ", ""))
     error_message = <<-EOT
       Residency drift (G4/#434, #1465): the shared PostgreSQL server is in
       '${data.azurerm_postgresql_flexible_server.shared.location}' but
-      shared_pg_expected_location declares '${var.shared_pg_expected_location}'.
+      the expected region is '${coalesce(var.shared_pg_expected_location, var.azure_location)}'.
       This server holds the application's personal data, so a move is a residency
       change even when it looks routine. Confirm the new region is in the intended
       JURISDICTION, then update the variable and the matrix in docs/security.md.
