@@ -213,16 +213,49 @@ to keep the result, and — per the project's standing rule that only a live run
 for anything crossing a driver boundary — **verification against real warehouses**, which
 are currently stopped. Tracked on #433.
 
-### G4 — 🟠 Region / residency assertion & enforcement — #434
+### G4 — 🟠 Region / residency assertion & enforcement — #434 — **asserted and surfaced; one live discrepancy found**
 **Requirement:** GDPR Ch. V — EU personal data must stay in-region; cross-border transfer
 needs a lawful basis. The post-v1 LLM call is a new transfer vector.
 **Current state:** deploy is region-pinned to **US (westus3)**; the seam *allows* an EU
 deploy but nothing documents or enforces jurisdiction, and the LLM-transfer mitigation is
 design-only so far.
-**v2.x target:** a documented residency matrix + an IaC variable that pins all stateful
-resources (Postgres, KV, Storage, ACA, LLM endpoint) to one region/jurisdiction, with a
-validation that they agree; honor the schema-only/PII-redacted/local-endpoint LLM posture
-in code when that feature lands.
+**Shipped (2026-08-18).** A documented **residency matrix** per resource for both
+reference deployments ([docs/security.md](security.md)), a `DEPLOYMENT_REGION` declaration
+surfaced at `GET /api/v1/admin/deployment` (workspace-admin only) so the posture is
+readable without shell access, and — the part that is a control rather than a document —
+an IaC **postcondition** that fails the plan when the shared Azure Container Apps
+environment's region disagrees with `azure_location`.
+
+That last one closes a real hole rather than a theoretical one: the environment is shared
+and declared as a `data` source, so **every Container App and Job inherits its region**.
+Moving or recreating it elsewhere would have relocated all of the app's compute with a
+clean `apply` and no signal, and "we did not notice the jurisdiction changed" is precisely
+the Ch. V failure.
+
+The matrix states its two honest exceptions rather than omitting them — CloudFront's global
+edge (fingerprinted static assets only; no API response or failing-row sample is cached)
+and the WAFv2 ACL, which exists only in `us-east-1` regardless of the stack's region and
+holds rules, not data.
+
+**External transfers are enumerated, not derived** — alert delivery, telemetry, and the
+unbuilt LLM seam, which is listed while disabled on purpose so an auditor sees it was
+considered rather than inferring its absence.
+
+**Building the control immediately found a live discrepancy, which is the strongest
+argument for it.** The Azure Postgres server — the only resource holding personal data —
+is in **West US 3** while the deployment declares **West US 2**. Verified against running
+Azure, not inferred. Both are US regions, so this is not a Ch. V transfer, but the
+residency matrix asserted they agreed and an earlier draft of it shipped that claim. The
+mismatch is now stated in the matrix and surfaced by a `check` block on every plan; the
+underlying resolution (the subscription's 1-server cap is what forced the shared server)
+is an operational decision, not a documentation one, so G4 stays 🟠 rather than 🟢 until it
+is resolved or consciously accepted — tracked as [#1465](https://github.com/TheurgicDuke771/DataQ/issues/1465).
+
+**What this does not do, stated plainly:** the app **declares** a jurisdiction, it does not
+verify one. Software cannot confirm which datacentre its database sits in; the IaC pins it
+and the deploying organization attests to it. `DEPLOYMENT_REGION` reads as `null` when
+unset, so an undeclared deployment shows a gap rather than a default. The LLM posture
+remains design-only until that feature exists.
 
 ### G5 — 🟢 Assert encryption-at-rest & offer CMK — #435 — **documented; CMK deferred with reasons**
 **Requirement:** GDPR Art 32 / HIPAA §164.312(a)(2)(iv) addressable encryption.

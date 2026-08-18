@@ -29,6 +29,39 @@ data "azurerm_postgresql_flexible_server" "shared" {
   resource_group_name = data.azurerm_resource_group.dataq.name
 }
 
+# ── Residency assertion for the resource that actually holds the data (G4/#434) ─
+#
+# The Container Apps environment gets a `postcondition` (aca.tf) because a
+# mismatch there is silent and currently absent. This one is a `check` block —
+# it WARNS on every plan instead of blocking — for a reason that is uncomfortable
+# and therefore worth writing down rather than papering over:
+#
+#   **It does not hold today.** The app declares `azure_location` = "West US 2"
+#   while the shared Postgres server lives in West US 3. Verified against live
+#   Azure, not inferred from the server's name.
+#
+# Both are US regions, so this is not a GDPR Ch. V transfer — but the residency
+# matrix claimed they agreed, and a compliance document that is wrong about the
+# live deployment is worse than the gap it describes. See docs/security.md.
+#
+# A `postcondition` here would fail every apply until someone moves a database,
+# which is an operational decision this file has no business making unilaterally.
+# A `check` surfaces the drift on every plan, by name, and lets a deliberate
+# resolution happen deliberately. Tracked as a follow-up.
+check "database_residency" {
+  assert {
+    condition     = lower(replace(data.azurerm_postgresql_flexible_server.shared.location, " ", "")) == lower(replace(var.azure_location, " ", ""))
+    error_message = <<-EOT
+      Residency drift (G4/#434): the shared PostgreSQL server is in
+      '${data.azurerm_postgresql_flexible_server.shared.location}' but
+      azure_location declares '${var.azure_location}'. This server holds the
+      application's personal data (results.sample_failures, list-shaped
+      observed_value), so it is the resource residency claims are ABOUT.
+      Known and currently expected; see the residency matrix in docs/security.md.
+    EOT
+  }
+}
+
 locals {
   # psycopg2 URL the backend Settings read as DATABASE_URL. sslmode=require —
   # Flexible Server enforces TLS. The password is URL-encoded so a future value

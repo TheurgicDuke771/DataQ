@@ -178,6 +178,23 @@ class Settings(BaseSettings):
     #   TRIGGER_ENV_NEAR_MISS_RECENT_HOURS=48
     trigger_env_near_miss_recent_hours: int = Field(default=48, ge=0)
 
+    # ── Data residency (G4 / #434, GDPR Ch. V) ───────────────────────────────
+    #
+    # The jurisdiction this deployment declares its data lives in. Free-form
+    # rather than an enum: it has to name whatever a cloud calls its regions, and
+    # a closed list would be wrong for the next provider and for on-prem.
+    #
+    # **This is a DECLARATION, not an enforcement.** The app cannot verify where
+    # its database actually is; what pins that is the IaC (one region variable,
+    # plus the postcondition in `aca.tf` that catches a shared resource drifting
+    # to another region). The value here exists so the declared jurisdiction is
+    # visible to an operator and an auditor without shell access, and so it can be
+    # compared against reality — a control nobody can read is a control nobody can
+    # check. Empty means "not declared", which reads honestly as unknown rather
+    # than implying a default.
+    #   DEPLOYMENT_REGION=westus2
+    deployment_region: str = ""
+
     sample_failures_retention_days: int = 30
 
     # Audit-log retention (ADR 0041 §2.7, #1318). Deliberately DECOUPLED from

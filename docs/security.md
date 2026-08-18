@@ -311,6 +311,104 @@ enable.
 Revisit if a customer requires key custody, or when a deployment stack owns its own
 database server from creation.
 
+## Data residency
+
+Where data lives, and what can take it elsewhere. GDPR Ch. V asks a controller to
+answer both; this section is the answer for the reference deployments, and
+`GET /api/v1/admin/deployment` is the same answer read live from a running
+instance (workspace-admin only) so it can be checked rather than trusted.
+
+**One declared jurisdiction per deployment**, set by a single IaC variable
+(`azure_location` / `aws_region`) and declared to the app as `DEPLOYMENT_REGION`.
+The app's value is a **declaration, not a verification** — software cannot confirm
+which datacentre its database sits in — and it is reported as `null` when unset,
+so an auditor sees a gap rather than a guess.
+
+### Where each resource sits
+
+| Resource | Region | Holds customer data? |
+|---|---|---|
+| PostgreSQL (AWS RDS) | the declared region | **Yes** — suites, checks, results, and the incidental personal data in failing-row samples |
+| PostgreSQL (Azure Flexible Server) | **shared server, set outside this stack — currently `West US 3` while the app declares `West US 2`** | **Yes** — as above |
+| Secret store (Key Vault / Secrets Manager / OpenBao) | the declared region | Warehouse credentials, not customer data |
+| Container Apps / ECS compute | the declared region | In transit only |
+| Object storage (AWS landing bucket) | the declared region | Whatever the operator lands there |
+| Telemetry (App Insights / CloudWatch / OTLP) | the sink's region — **operator-chosen** | Operational metadata; PII redacted at the logger |
+| CloudFront (AWS only) | **global edge** | **No.** Only fingerprinted static assets are cached (`/assets/*.<ext>`); every other path is pass-through, so no API response and no failing-row sample is stored at an edge location |
+| WAFv2 Web ACL (AWS only) | **`us-east-1`, unavoidably** | **No** — the ACL is rule configuration. CloudFront-scoped ACLs exist only in `us-east-1` regardless of where the stack lives |
+
+The CloudFront and WAF rows are the honest exceptions, and both are stated rather
+than omitted: a reviewer who finds a `us-east-1` provider alias in an `eu-west`
+stack should find it explained here rather than have to work out whether it
+matters.
+
+**The Azure Postgres row is a live discrepancy, not an exception.** The
+subscription caps Flexible Servers at one, so the app shares the harness's server
+and declares it as a `data` source — meaning its region is set outside this stack.
+Verified against live Azure: the server is in **West US 3** while
+`azure_location` is **West US 2**. Both are US regions, so this is not a GDPR
+Ch. V transfer; it is a mismatch between what the deployment declares and where
+the data actually sits, on the one resource residency claims are *about*. It is
+surfaced on every `plan` by the `check` block in `postgres.tf` rather than
+silently tolerated, and tracked as [#1465](https://github.com/TheurgicDuke771/DataQ/issues/1465), and it is written here rather than smoothed over, because a
+compliance document that is wrong about the live deployment is worse than the gap
+it describes.
+
+An earlier draft of this table asserted that Postgres sits in the declared region.
+It was caught by checking the running deployment rather than the IaC.
+
+### The assertions that catch drift
+
+The Azure stack shares a Container Apps environment, declared as a `data` source —
+so its region is set by whoever created it, and **every Container App and Job in
+the stack inherits it** (a Job must sit in its environment's region). Left
+unchecked, moving or recreating that shared environment elsewhere would relocate
+all of the app's compute with a clean `apply` and no signal.
+
+`aca.tf` therefore carries a `postcondition` comparing the shared environment's
+actual location against `var.azure_location`, so a mismatch **fails the plan**
+with a message naming both. For a Ch. V control, "we did not notice the
+jurisdiction changed" is the whole failure mode.
+
+The shared **database** gets the same comparison as a `check` block, which
+**warns** on every plan instead of blocking — because unlike the environment, it
+does not hold today (see the table above). A `postcondition` there would fail
+every apply until someone moves a database, which is an operational decision the
+IaC should not make unilaterally; a `check` names the drift on every plan and
+lets the resolution happen deliberately.
+
+### What can move data out
+
+Enumerated at `GET /api/v1/admin/deployment` — enumerated rather than derived, so
+a vector that is switched **off** still appears and an auditor can see it was
+considered:
+
+- **Alert delivery** — webhooks and email carry check names, statuses and, when a
+  failing sample is included, *redacted* sample values. The destination is
+  operator-configured and its location is outside DataQ's knowledge.
+- **Telemetry** — traces and logs to an operator-chosen sink; PII is redacted at
+  the logger, so this is operational metadata rather than warehouse values.
+- **MCP AI clients** — **live today.** `/mcp` serves run results, redacted failing
+  samples and check configuration to whatever AI client holds a valid PAT. The
+  model provider behind that client, and its jurisdiction, are chosen by the token
+  holder and are outside DataQ's knowledge. This is the more consequential of the
+  two LLM entries, and an earlier draft listed only the other one.
+- **LLM intelligence** — the *outbound* direction, DataQ calling a model on its
+  own behalf: **not built.** When it lands it is a Ch. V transfer by construction;
+  its intended posture (schema-only context, PII-redacted, local-endpoint option)
+  is recorded in
+  [post-v1-dq-intelligence-notes.md](post-v1-dq-intelligence-notes.md).
+- **Sign-in email** — email-OTP codes to user addresses via the configured SMTP
+  relay: account identifiers rather than warehouse content, relay operator-chosen.
+- **Secret store** — warehouse credentials in Key Vault / Secrets Manager /
+  OpenBao. Not customer data, but a remote store is a location, and the
+  credentials it holds unlock the systems the customer data lives in.
+
+Deploying into another jurisdiction is a variable change, not a fork: the same
+images and the same IaC take a different region. What DataQ does **not** do is
+verify the result — that remains the deploying organization's attestation, which
+is the correct split for a customer-deployed product.
+
 ## Reporting a vulnerability
 
 Please report suspected security issues privately to the maintainers rather than opening a

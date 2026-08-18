@@ -27,6 +27,10 @@ locals {
     { name = "DATABASE_URL", secret_name = "database-url" },
     { name = "REDIS_URL", secret_name = "redis-url" },
     { name = "APPLICATIONINSIGHTS_CONNECTION_STRING", secret_name = "appinsights-conn" },
+    # The jurisdiction this deployment DECLARES (G4/#434). Sourced from the same
+    # variable that places the resources, so the declaration and the placement
+    # cannot drift apart by editing one of them.
+    { name = "DEPLOYMENT_REGION", value = var.azure_location },
     { name = "SAMPLE_FAILURES_RETENTION_DAYS", value = "30" },
     # Runtime SecretStore -> Key Vault via the user-assigned identity.
     { name = "SECRET_STORE", value = "azure_key_vault" },
