@@ -133,10 +133,14 @@ def test_rows_with_no_recognised_tag_produce_no_entry() -> None:
     assert ct._rows_to_tags([("EMAIL", "cost_centre", "finance")]) == {}
 
 
-def test_a_datasource_with_no_tag_concept_returns_empty(monkeypatch: Any) -> None:
+def test_a_datasource_with_no_tag_concept_returns_none(monkeypatch: Any) -> None:
     """Only Snowflake and Unity Catalog have column tags. For ADLS, S3, Iceberg
-    and flat files there is no authoritative source to read — and this must
-    return `{}` without ever opening a connection, since there is nothing to ask.
+    and flat files there is no source to read, so the answer is `None` — "could
+    not look" — and no connection is opened, since there is nothing to ask.
+
+    `None` rather than `{}` because the caller CACHES this: an empty map is a
+    positive claim that the table has no tags, and writing that down on the
+    strength of "this datasource has no tag concept" would erase a real map.
     """
 
     class _Conn:
@@ -149,17 +153,21 @@ def test_a_datasource_with_no_tag_concept_returns_empty(monkeypatch: Any) -> Non
     monkeypatch.setattr(
         "backend.app.services.profile_service._open_connection", _explode, raising=False
     )
-    assert ct.fetch_column_tags(_Conn(), table="t", secret_store=object()) == {}  # type: ignore[arg-type]
+    assert ct.fetch_column_tags(_Conn(), table="t", secret_store=object()) is None  # type: ignore[arg-type]
 
 
 def test_a_failing_lookup_is_silence_not_a_guess(monkeypatch: Any) -> None:
     """The safety property the whole module rests on.
 
     No permission on the tag, a missing information_schema, a dead warehouse —
-    all return `{}` and log. Never raises into a run, and never invents a
-    clearance. Because fail-closed mode treats an explicit non-sensitive tag as a
-    clearance, a fetcher that guessed on failure could *un-mask* data; silence
-    degrades to exactly the pre-G3 behaviour instead.
+    all return **`None`** and log. Never raises into a run, and never invents a
+    clearance.
+
+    `None`, not `{}`, and the distinction is the whole safety property: the caller
+    caches this result, so `{}` would be written down as "this table has no tags"
+    and **erase a map read successfully a minute earlier** — un-masking columns on
+    the strength of a permission error. An earlier version did exactly that while
+    its docstring claimed it degraded gracefully.
     """
 
     class _Conn:
@@ -172,7 +180,7 @@ def test_a_failing_lookup_is_silence_not_a_guess(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         "backend.app.services.profile_service._open_connection", _explode, raising=False
     )
-    assert ct.fetch_column_tags(_Conn(), table="ORDERS", secret_store=object()) == {}  # type: ignore[arg-type]
+    assert ct.fetch_column_tags(_Conn(), table="ORDERS", secret_store=object()) is None  # type: ignore[arg-type]
 
 
 def test_snowflake_binds_the_object_name_rather_than_interpolating_it() -> None:

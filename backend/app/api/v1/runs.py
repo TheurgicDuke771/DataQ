@@ -288,7 +288,7 @@ def list_runs(
     ]
 
 
-def _asset_column_tags(db: Session, suite: Any) -> dict[str, str] | None:
+def _asset_column_tags(db: Session, suite: Any, run: Any = None) -> dict[str, str] | None:
     """The warehouse's own column classifications for this suite's asset (G3).
 
     The governance FLOOR of the redaction ladder — the rung a suite policy cannot
@@ -302,8 +302,14 @@ def _asset_column_tags(db: Session, suite: Any) -> dict[str, str] | None:
     through to the policy and then the classifier. That is the same behaviour
     that shipped before G3, and it is the only safe degradation: inventing a
     clearance here would un-mask data through fail-closed mode.
+
+    Anchored on the **run's** asset when there is one, falling back to the
+    suite's. A suite can be retargeted at a different table, and the runs it
+    already produced are samples of the OLD one — redacting them against the new
+    table's classifications would apply the wrong governance to the wrong data,
+    in both directions. `runs.asset_id` records what was actually read.
     """
-    asset_id = getattr(suite, "asset_id", None)
+    asset_id = getattr(run, "asset_id", None) or getattr(suite, "asset_id", None)
     if asset_id is None:
         return None
     asset = db.get(Asset, asset_id)
@@ -420,7 +426,7 @@ def get_run(
     # against the suite's policy (#415): a non-PII tested column's values surface.
     checks = {c.id: c for c in db.scalars(select(Check).where(Check.suite_id == run.suite_id))}
     policy = suite.column_policy
-    tags = _asset_column_tags(db, suite)
+    tags = _asset_column_tags(db, suite, run)
     # `Run` has no `results` relationship to validate a RunDetailRead from
     # directly, so validate the run fields (as RunRead), graft the data-quality
     # outcome (#571 — else checks_total/passed stay at the 0/0 default here), and
@@ -673,7 +679,7 @@ def download_comparison_report(
     redacted = svc.redact_sample_failures(
         result.sample_failures,
         policy=suite.column_policy,
-        tags=_asset_column_tags(db, suite),
+        tags=_asset_column_tags(db, suite, run),
     )
     payload, media_type = build_report(fmt, sample=redacted, observed=result.observed_value)
     # AFTER the render, not before: `build_report` can raise, and an event

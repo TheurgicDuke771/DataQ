@@ -345,7 +345,7 @@ def _run_results_payload(
     # a suite policy cannot lift. Read from the cached map on the asset, never
     # from the warehouse: an MCP read must not open a datasource connection.
     # `None` means no opinion, which is what shipped before G3.
-    tags = _asset_column_tags(session, suite)
+    tags = _asset_column_tags(session, suite, run)
 
     def _tested_column(check_id: uuid.UUID | None) -> str | None:
         check = checks.get(check_id) if check_id is not None else None
@@ -443,15 +443,21 @@ def _run_results_payload(
     }
 
 
-def _asset_column_tags(session: Session, suite: Suite) -> dict[str, str] | None:
+def _asset_column_tags(
+    session: Session, suite: Suite, run: Run | None = None
+) -> dict[str, str] | None:
     """The warehouse's own column classifications for this suite's asset (G3).
 
     Mirrors the REST helper deliberately rather than sharing it: both are three
     lines over the ORM, and the thing that must not diverge — the *precedence* —
     lives in `run_service`, not here. `None` when there is no asset or it has
     never been refreshed, which the redactor treats as no opinion.
+
+    Anchored on the RUN's asset when there is one: a retargeted suite's older runs
+    are samples of the previous table, and redacting them against the new table's
+    classifications applies the wrong governance to the wrong data.
     """
-    asset_id = getattr(suite, "asset_id", None)
+    asset_id = getattr(run, "asset_id", None) or getattr(suite, "asset_id", None)
     if asset_id is None:
         return None
     asset = session.get(Asset, asset_id)
@@ -1949,6 +1955,11 @@ def dryrun_check(
                 outcome.observed_value,
                 tested_column=(config or {}).get("column"),
                 policy=suite.column_policy,
+                # The governance floor applies to a PREVIEW too (G3, #433). A
+                # dry-run reads live warehouse data and hands it to a model, so a
+                # tag honoured on the results path and not here would mask the
+                # column in the record and expose it in the rehearsal.
+                tags=_asset_column_tags(session, suite),
             ),
             "expected_value": outcome.expected_value,
         }

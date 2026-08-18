@@ -55,8 +55,8 @@ module, which is the only safe degradation available.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from typing import Any, Final
+from datetime import UTC, datetime, timedelta
+from typing import Any, Final, cast
 
 from sqlalchemy import text
 
@@ -90,6 +90,13 @@ _SENSITIVE_VALUES: Final[frozenset[str]] = frozenset(
 _NON_SENSITIVE_VALUES: Final[frozenset[str]] = frozenset(
     {"public", "non_sensitive", "nonsensitive"}
 )
+
+#: How long a cached map is trusted before the run path re-reads it. A
+#: frequently-scheduled suite would otherwise open a warehouse connection every
+#: run to re-read something that changes when a human edits governance. The cost
+#: of the TTL is a bounded delay before a new tag bites; the cost of not having
+#: one is a warehouse round-trip on every run forever.
+REFRESH_TTL: Final[timedelta] = timedelta(minutes=15)
 
 #: Datasource types with a column-tag concept at all.
 TAGGABLE_TYPES: Final[frozenset[str]] = frozenset({"snowflake", "unity_catalog"})
@@ -154,18 +161,32 @@ def _rows_to_tags(rows: Any) -> dict[str, str]:
 
 
 def _snowflake_query(*, database: str, schema: str, table: str) -> Any:
-    """Per-table tag references, fresh.
+    """Per-table tag references, fresh, **column-level only**.
 
     `TAG_REFERENCES_ALL_COLUMNS` rather than `SNOWFLAKE.ACCOUNT_USAGE.TAG_REFERENCES`
     deliberately: ACCOUNT_USAGE lags by up to two hours and needs a grant on the
     shared database, and a *stale* classification is the failure mode this whole
     feature exists to remove. The object name is a bound STRING argument to a
     table function, not an interpolated identifier.
+
+    **`LEVEL = 'COLUMN'` is load-bearing.** Snowflake tags are inherited: a tag
+    applied to the table or the schema is reported against every column beneath
+    it. Without the filter, one `dataq_classification = 'public'` on a schema
+    would arrive as a per-column clearance for every column in it — and in
+    fail-closed mode a clearance is exactly what un-masks data. An inherited tag
+    is a statement about the container, and this module only accepts statements
+    about the column.
+
+    Identifiers are upper-cased because Snowflake folds unquoted names that way;
+    a lower-case target would otherwise resolve to nothing and return silently
+    empty, which is indistinguishable from "no tags".
     """
+    obj = f"{database.upper()}.{schema.upper()}.{table.upper()}"
     return text(
         "SELECT COLUMN_NAME, TAG_NAME, TAG_VALUE "
-        "FROM TABLE(INFORMATION_SCHEMA.TAG_REFERENCES_ALL_COLUMNS(:obj, 'TABLE'))"
-    ).bindparams(obj=f"{database}.{schema}.{table}")
+        "FROM TABLE(INFORMATION_SCHEMA.TAG_REFERENCES_ALL_COLUMNS(:obj, 'TABLE')) "
+        "WHERE LEVEL = 'COLUMN'"
+    ).bindparams(obj=obj)
 
 
 def _unity_catalog_query(*, catalog: str, schema: str, table: str) -> Any:
@@ -186,8 +207,8 @@ def _unity_catalog_query(*, catalog: str, schema: str, table: str) -> Any:
     return text(
         f"SELECT column_name, tag_name, tag_value "  # noqa: S608  # nosec B608
         f"FROM {catalog}.information_schema.column_tags "
-        "WHERE schema_name = :schema AND table_name = :table"
-    ).bindparams(schema=schema, table=table)
+        "WHERE lower(schema_name) = :schema AND lower(table_name) = :table"
+    ).bindparams(schema=schema.lower(), table=table.lower())
 
 
 def fetch_column_tags(
@@ -197,21 +218,26 @@ def fetch_column_tags(
     schema: str | None = None,
     catalog: str | None = None,
     secret_store: SecretStore,
-) -> dict[str, str]:
+) -> dict[str, str] | None:
     """Read a target's column classifications from the warehouse.
 
-    Returns `{column_lower: "sensitive" | "public"}`, or `{}` for a datasource
-    with no tag concept, an unreadable tag source, or a target with no tags. The
-    caller cannot distinguish those cases and does not need to: all four mean
-    "this module has no opinion", and the redaction ladder already has a rung
-    below.
+    Returns `{column_lower: "sensitive" | "public"}` on a successful read —
+    possibly empty, meaning *this table genuinely has no tags*.
 
-    **Never raises.** See the module docstring — a fetcher that failed loudly
-    would take out a run over a governance lookup, and one that guessed on failure
-    could un-mask data through fail-closed mode's clearance path.
+    Returns **`None` when the tags could not be read at all**: no permission on
+    the tag, a missing `information_schema`, a dead warehouse, or a datasource
+    with no tag concept. That distinction is not cosmetic and an earlier version
+    lacked it: the caller CACHES this result, so returning `{}` on failure would
+    overwrite a previously-read map and **un-mask columns that were masked a
+    minute ago**. "I could not look" and "I looked and there is nothing" have to
+    be different answers, because only one of them is safe to write down.
+
+    **Never raises.** A fetcher that failed loudly would take out a run over a
+    governance lookup, and one that guessed could un-mask data through fail-closed
+    mode's clearance path.
     """
     if connection.type not in TAGGABLE_TYPES:
-        return {}
+        return None
 
     # Imported here rather than at module scope: `profile_service` pulls in the
     # datasource stack, and this module is imported by the read path, which must
@@ -232,12 +258,12 @@ def fetch_column_tags(
         if connection.type == "snowflake":
             database = (connection.config or {}).get("database")
             if not database:
-                return {}
+                return None
             validate_identifier(str(database))
             stmt = _snowflake_query(database=str(database), schema=effective_schema, table=table)
         else:
             if not catalog:
-                return {}
+                return None
             stmt = _unity_catalog_query(catalog=catalog, schema=effective_schema, table=table)
 
         with _open_connection(connection, secret_store) as conn:
@@ -249,7 +275,7 @@ def fetch_column_tags(
             connection_type=connection.type,
             error_type=type(exc).__name__,
         )
-        return {}
+        return None
 
 
 def refresh_asset_column_tags(
@@ -271,8 +297,8 @@ def refresh_asset_column_tags(
     failure could hand fail-closed mode a false clearance. Silence degrades to
     exactly the pre-G3 behaviour, which is the only safe direction.
 
-    A no-op when the suite has no `asset_id` (nothing to cache against) or the
-    datasource has no tag concept.
+    A no-op when the suite has no `asset_id` (nothing to cache against), the
+    datasource has no tag concept, or the cached map is still fresh.
     """
     if connection.type not in TAGGABLE_TYPES:
         return None
@@ -284,6 +310,18 @@ def refresh_asset_column_tags(
     if not table:
         return None
 
+    asset = session.get(Asset, asset_id)
+    if asset is None:
+        return None
+    # A frequently-scheduled suite would otherwise open a warehouse connection on
+    # every single run to re-read a map that changes when someone edits
+    # governance — i.e. rarely. The TTL bounds that cost; the cost of the TTL is
+    # that a newly-applied tag can take up to this long to bite, which is a
+    # bounded, documented staleness rather than an unbounded one.
+    refreshed = getattr(asset, "column_tags_refreshed_at", None)
+    if refreshed is not None and datetime.now(UTC) - refreshed < REFRESH_TTL:
+        return cast("dict[str, str] | None", asset.column_tags)
+
     try:
         tags = fetch_column_tags(
             connection,
@@ -292,9 +330,14 @@ def refresh_asset_column_tags(
             catalog=getattr(target, "catalog", None),
             secret_store=secret_store,
         )
-        asset = session.get(Asset, asset_id)
-        if asset is None:
-            return None
+        if tags is None:
+            # Could NOT read — leave the cached map alone. Overwriting it with an
+            # empty map would un-mask columns that were masked a minute ago, on
+            # the strength of a permission error. The contract is that a failed
+            # lookup degrades to the PREVIOUS behaviour, and the previous
+            # behaviour includes whatever was already cached.
+            log.info("column_tags_unreadable_cache_kept", asset_id=str(asset_id))
+            return cast("dict[str, str] | None", asset.column_tags)
         # Written even when EMPTY, together with the timestamp: "we looked and
         # found none" is a different fact from "we never looked", and the
         # timestamp is the only thing that distinguishes them for an operator

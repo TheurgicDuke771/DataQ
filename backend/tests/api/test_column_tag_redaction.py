@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -22,6 +23,26 @@ from backend.app.core.auth import get_current_user
 from backend.app.db.models import Asset, Check, Connection, Result, Run, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
+
+
+@pytest.fixture(autouse=True)
+def _clear_overrides() -> Iterator[None]:
+    """Clear FastAPI dependency overrides after EVERY test in this module.
+
+    `_seed` sets `get_current_user` so the seeded owner is the caller, and three
+    tests here take `db_session` without the `client` fixture that used to do the
+    clearing — so the override leaked into later modules, where a subsequent test
+    authenticated as a `User` whose row had been rolled back and hit a
+    `ForeignKeyViolation` on `suites.created_by`.
+
+    Autouse rather than a rule about which fixtures to request: a helper that
+    mutates global state has to be paired with cleanup that runs regardless of
+    what the test remembered to ask for.
+    """
+    try:
+        yield
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture
@@ -194,3 +215,134 @@ def test_the_mcp_read_path_honours_the_same_tag(client: TestClient, db_session: 
     suite = db_session.get(Suite, run.suite_id)
     payload = mcp_server._run_results_payload(db_session, suite, run)
     assert "ACME LTD" not in str(payload["checks"])
+
+
+# ── Review findings (PR #1468) ────────────────────────────────────────────────
+
+
+def test_a_failed_tag_read_does_not_erase_the_cached_map(db_session: Any, monkeypatch: Any) -> None:
+    """The worst of the review findings, and it inverted the safety property the
+    module's own docstring claimed.
+
+    A failed fetch used to return `{}`, which the refresh wrote straight over the
+    cached map — so a permission error on the tag would **un-mask columns that
+    were masked a minute earlier**. "I could not look" and "I looked and there is
+    nothing" have to be different answers, because only one of them is safe to
+    write down.
+    """
+    from backend.app.services import column_tags as ct
+
+    run = _seed(db_session, tags={"vendor_name": "sensitive"})
+    suite = db_session.get(Suite, run.suite_id)
+    asset = db_session.get(Asset, suite.asset_id)
+    connection = db_session.get(Connection, suite.connection_id)
+    # Past the TTL, so the refresh actually attempts a read.
+    asset.column_tags_refreshed_at = datetime.now(UTC) - timedelta(days=1)
+    db_session.commit()
+
+    monkeypatch.setattr(ct, "fetch_column_tags", lambda *a, **k: None)
+
+    class _Target:
+        table = "ORDERS"
+        schema = "RETAIL"
+        catalog = None
+
+    ct.refresh_asset_column_tags(
+        db_session,
+        suite=suite,
+        connection=connection,
+        target=_Target(),
+        secret_store=object(),  # type: ignore[arg-type]
+    )
+
+    db_session.expire_all()
+    assert db_session.get(Asset, asset.id).column_tags == {"vendor_name": "sensitive"}
+
+
+def test_a_successful_empty_read_does_clear_the_map(db_session: Any, monkeypatch: Any) -> None:
+    """The other half — otherwise "never erase" becomes "never update".
+
+    Un-tagging a column in the warehouse is a real governance action, and it has
+    to take effect. This is the case that distinguishes a cautious cache from a
+    write-once one.
+    """
+    from backend.app.services import column_tags as ct
+
+    run = _seed(db_session, tags={"vendor_name": "sensitive"})
+    suite = db_session.get(Suite, run.suite_id)
+    asset = db_session.get(Asset, suite.asset_id)
+    connection = db_session.get(Connection, suite.connection_id)
+    asset.column_tags_refreshed_at = datetime.now(UTC) - timedelta(days=1)
+    db_session.commit()
+
+    monkeypatch.setattr(ct, "fetch_column_tags", lambda *a, **k: {})
+
+    class _Target:
+        table = "ORDERS"
+        schema = "RETAIL"
+        catalog = None
+
+    ct.refresh_asset_column_tags(
+        db_session,
+        suite=suite,
+        connection=connection,
+        target=_Target(),
+        secret_store=object(),  # type: ignore[arg-type]
+    )
+
+    db_session.expire_all()
+    assert db_session.get(Asset, asset.id).column_tags == {}
+
+
+def test_a_retargeted_suite_does_not_re_redact_old_runs_against_the_new_table(
+    client: TestClient, db_session: Any
+) -> None:
+    """Tags are anchored on the RUN's asset, not the suite's current one.
+
+    A suite can be retargeted at a different table; the runs it already produced
+    are samples of the OLD one. Redacting them against the new table's
+    classifications applies the wrong governance to the wrong data — and in the
+    direction this test exercises, it would expose values that the table they
+    actually came from had classified.
+    """
+    run = _seed(db_session, tags={"vendor_name": "sensitive"})
+    suite = db_session.get(Suite, run.suite_id)
+    run_row = db_session.get(Run, run.id)
+    run_row.asset_id = suite.asset_id  # what this run actually read
+
+    # The suite is now pointed at a different table, whose columns are untagged.
+    other = Asset(
+        namespace=f"snowflake://acct-{uuid.uuid4().hex[:6]}",
+        name="RETAIL.INVOICES",
+        env="dev",
+        column_tags={},
+    )
+    db_session.add(other)
+    db_session.flush()
+    suite.asset_id = other.id
+    db_session.commit()
+
+    body = _sample(client, run)
+    assert "ACME LTD" not in str(body["sample_failures"]), (
+        "the old run's sample must stay masked by the classification of the table "
+        "it was actually read from"
+    )
+
+
+def test_alert_delivery_honours_the_tag_floor(db_session: Any) -> None:
+    """The sibling door that leaves the platform.
+
+    An alert goes to a webhook or a mailbox whose location DataQ does not know, so
+    a governance floor honoured in the UI and not in the outbound message is
+    honoured in the place that matters least.
+    """
+    from backend.app.alerting.builder import build_run_report
+
+    run = _seed(db_session, tags={"vendor_name": "sensitive"})
+    run_row = db_session.get(Run, run.id)
+    suite = db_session.get(Suite, run.suite_id)
+    run_row.asset_id = suite.asset_id
+    db_session.commit()
+
+    report = build_run_report(db_session, run_row)
+    assert "ACME LTD" not in str([c.sample_summary for c in report.checks])
