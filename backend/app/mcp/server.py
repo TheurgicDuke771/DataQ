@@ -43,6 +43,7 @@ from backend.app.db.models import (
     ENVS,
     INCIDENT_STATUSES,
     ORCHESTRATION_PROVIDERS,
+    Asset,
     Check,
     Connection,
     Run,
@@ -2496,6 +2497,13 @@ def list_incidents(
     with _ctx() as (session, user), _service_errors():
         sid = _parse_uuid(suite_id, field="suite_id") if suite_id is not None else None
         aid = _parse_uuid(asset_id, field="asset_id") if asset_id is not None else None
+        if aid is not None and session.get(Asset, aid) is None:
+            # An unknown asset id would otherwise return an empty page, which
+            # reads as "nothing is broken on that asset" — the #828 shape the
+            # `status` guard above exists to prevent, in the sibling argument.
+            # Asset identity is workspace-visible (ADR 0037), so saying an id is
+            # unknown leaks nothing; the incidents themselves stay grant-scoped.
+            raise ToolError(f"no asset with id {asset_id}")
         if sid is not None:
             # The up-front gate: without it a suite the caller cannot see returns
             # an empty list, which reads as a clean bill of health rather than a
@@ -2543,9 +2551,17 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     failing sample rows by design, so it cannot show which specific records were
     bad; use the run results for that.
 
-    A `null` layer inside `evidence` means that layer could not be built (the
-    check was deleted, no trend exists yet), not that it was empty. `profile_diff`
-    is always null — it is a documented placeholder, never a computed absence.
+    A `null` layer inside `evidence` does **not** by itself mean something went
+    wrong, and the distinction matters because each layer means a different thing
+    by it:
+
+    - `upstream_pipeline_run` is null for every manually-triggered or scheduled
+      run — most runs. It means "no orchestration pipeline triggered this", which
+      is normal, not a missing pipeline or a DataQ failure.
+    - `metric_trend` and `sibling_checks` are `[]` when there is nothing to show,
+      so a null there really is a layer that could not be built.
+    - `profile_diff` is *always* null — a documented placeholder, never a
+      computed absence.
 
     Requires view access to the incident's suite; an incident on a suite the
     caller cannot see is indistinguishable from one that does not exist.

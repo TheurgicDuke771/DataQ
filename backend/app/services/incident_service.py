@@ -60,6 +60,7 @@ from backend.app.db.models import (
 from backend.app.services import suite_service
 from backend.app.services.incident_evidence import build_evidence
 from backend.app.services.run_service import list_results
+from backend.app.services.suite_authz import SuiteForbiddenError, effective_permission
 
 log = get_logger(__name__)
 
@@ -420,10 +421,6 @@ def load_visible_incident(
     not its sibling" shape this codebase has hit repeatedly; the divergence would
     be invisible until it leaked.
     """
-    # Imported here, not at module scope: `suite_authz` imports service modules,
-    # and a top-level import would close the cycle.
-    from backend.app.services.suite_authz import SuiteForbiddenError, effective_permission
-
     incident = get_incident(session, incident_id)
     suite = session.get(Suite, incident.suite_id) if incident is not None else None
     # Workspace-admin resolves to an implicit `admin` on every suite inside

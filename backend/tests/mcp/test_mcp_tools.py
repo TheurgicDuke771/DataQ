@@ -3451,3 +3451,15 @@ def test_get_incident_returns_the_evidence_card(db_session: Any, monkeypatch: An
     assert out["asset_name"] == "orders"
     assert out["latest_severity"] == "fail"
     assert out["evidence"]["profile_diff"] is None
+
+
+def test_list_incidents_rejects_an_unknown_asset_id(db_session: Any, monkeypatch: Any) -> None:
+    """The sibling of the `status` guard. A well-formed but unknown asset id would
+    otherwise return an empty page, which reads as "nothing is broken on that
+    asset" (#828). Asset identity is workspace-visible (ADR 0037), so naming an id
+    as unknown leaks nothing."""
+    user = _user(db_session)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError):
+        server.list_incidents(asset_id=str(uuid.uuid4()))
