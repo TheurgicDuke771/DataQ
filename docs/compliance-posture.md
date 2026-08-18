@@ -179,17 +179,39 @@ runs, `sample_failures` is a real (time-bounded) residual store of subject rows.
 demand (not just on the retention clock), (b) export: structured dump of stored personal
 data for a subject. Document that the controller's warehouse remains their responsibility.
 
-### G3 — 🟠 Authoritative PII/PHI classification (not just a heuristic) — #433
+### G3 — 🟠 Authoritative PII/PHI classification (not just a heuristic) — #433 — **fail-closed mode shipped; warehouse tags still open**
 **Requirement:** GDPR special-category data (Art 9) / HIPAA PHI must not leak via the
 **surfacing** path. Today `redact_sample_failures` surfaces the *tested* column when it's
 not flagged PII — but flagging is a **name-token heuristic + optional suite policy**, so a
 mis-named column (`field_7` holding SSNs) can surface unredacted (false negative).
 **Current state:** default-redact everywhere *else* limits blast radius; the gap is the
 surfacing exception trusting best-effort classification.
-**v2.x target:** make classification **authoritative** — consume warehouse-native data
-classification / tags (Snowflake/UC column tags) as the source of truth, fall back to
-policy, and treat the name heuristic as a last resort only. Optionally: fail-closed mode
-(surface nothing unless a column is explicitly classified non-sensitive).
+**Shipped (2026-08-18): the fail-closed mode**, `column_policy.require_classification`,
+per suite and off by default. With it on, nothing row-level is surfaced unless a column is
+**explicitly** cleared — the operator's `identifier_column`, or a datasource governance tag
+saying non-sensitive. The name/value classifier is not consulted, because consulting it is
+the risk being removed.
+
+Off by default deliberately: a fully-masked failing row is *unactionable* — you cannot see
+what was wrong or which row — so this is a trade an operator makes for a regulated dataset,
+not one made for them.
+
+**Measuring the gap corrected our description of it.** The `field_7`-holding-SSNs example
+does **not** leak through an *incidental* column: those already default-mask (#415). It
+leaks through the **tested** column, which is shown by design (seeing the failing value is
+the point) and is gated by the *affirmative* sensitivity test — and a meaningless name is
+not affirmatively anything. So the exception is narrower than this gap originally described
+and lands squarely on the one column the operator asked about. Fail-closed closes exactly
+that path, and the precedence matrix is now pinned by tests (tag > explicit mask > explicit
+show > classifier), which it previously was not: two isolated cases were covered, so an
+inversion making the suite policy override a governance tag would have passed.
+
+**Still open — the authoritative source.** Nothing yet reads Snowflake/UC column tags, so
+the `tags` governance floor is wired through every redaction path and **dormant**: a caller
+must supply the map, and none does. That half needs per-datasource introspection, somewhere
+to keep the result, and — per the project's standing rule that only a live run is evidence
+for anything crossing a driver boundary — **verification against real warehouses**, which
+are currently stopped. Tracked on #433.
 
 ### G4 — 🟠 Region / residency assertion & enforcement — #434
 **Requirement:** GDPR Ch. V — EU personal data must stay in-region; cross-border transfer

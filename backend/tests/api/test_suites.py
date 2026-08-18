@@ -1769,7 +1769,13 @@ def _new_suite(client: TestClient, db_session: Any) -> str:
 def test_column_policy_defaults_empty(client: TestClient, db_session: Any) -> None:
     sid = _new_suite(client, db_session)
     body = client.get(f"/api/v1/suites/{sid}/column-policy").json()
-    assert body == {"identifier_column": None, "pii_columns": []}
+    assert body == {
+        "identifier_column": None,
+        "pii_columns": [],
+        # Fail-closed is off unless asked for (G3 / #433) — the default must stay
+        # visible in the payload so an operator can see which mode they are in.
+        "require_classification": False,
+    }
 
 
 def test_column_policy_put_sets_and_reads_back(client: TestClient, db_session: Any) -> None:
@@ -1780,7 +1786,11 @@ def test_column_policy_put_sets_and_reads_back(client: TestClient, db_session: A
     )
     assert resp.status_code == 200
     # de-duped + blanks dropped
-    assert resp.json() == {"identifier_column": "ORDER_NUMBER", "pii_columns": ["EMAIL"]}
+    assert resp.json() == {
+        "identifier_column": "ORDER_NUMBER",
+        "pii_columns": ["EMAIL"],
+        "require_classification": False,
+    }
     # reflected on GET and on the suite read
     resp = client.get(f"/api/v1/suites/{sid}/column-policy")
     assert resp.json()["identifier_column"] == ("ORDER_NUMBER")
@@ -1836,7 +1846,11 @@ def test_column_policy_suggest_profiles_and_classifies(
     body = client.post(
         f"/api/v1/suites/{sid}/column-policy/suggest", json={"table": "ORDERS", "schema": "RETAIL"}
     ).json()
-    assert body == {"identifier_column": "ORDER_NUMBER", "pii_columns": ["EMAIL"]}
+    assert body == {
+        "identifier_column": "ORDER_NUMBER",
+        "pii_columns": ["EMAIL"],
+        "require_classification": False,
+    }
 
 
 # ── batch-target preview (#1193) ─────────────────────────────────────
@@ -2121,3 +2135,56 @@ def test_sampling_on_a_pushdown_datasource_is_refused_through_the_api(
     )
     assert resp.status_code == 422
     assert "sampling" in resp.json()["error"]["message"]
+
+
+def test_a_policy_save_without_the_flag_does_not_disable_fail_closed(
+    client: TestClient, db_session: Any
+) -> None:
+    """The highest-severity finding on #1463: a security control that turns itself
+    off.
+
+    `PUT /column-policy` is a full replacement, and every client that predates the
+    flag — including our own shipped Save button and the MCP `set_column_policy`
+    tool — sends the policy WITHOUT it. With a plain `False` default, editing an
+    unrelated field silently switched fail-closed off, on a suite chosen for
+    fail-closed precisely because its data is regulated.
+
+    Absence therefore preserves. Turning it off stays possible; it just has to be
+    said out loud, which the second half asserts so "preserve" cannot quietly
+    become "immutable".
+    """
+    sid = _new_suite(client, db_session)
+
+    enabled = client.put(
+        f"/api/v1/suites/{sid}/column-policy",
+        json={
+            "identifier_column": "ORDER_ID",
+            "pii_columns": ["EMAIL"],
+            "require_classification": True,
+        },
+    )
+    assert enabled.status_code == 200
+    assert enabled.json()["require_classification"] is True
+
+    # A pre-flag client's Save: identifier + pii only.
+    resaved = client.put(
+        f"/api/v1/suites/{sid}/column-policy",
+        json={"identifier_column": "ORDER_ID", "pii_columns": ["EMAIL", "PHONE"]},
+    )
+    assert resaved.status_code == 200
+    assert resaved.json()["pii_columns"] == ["EMAIL", "PHONE"], "the edit still applies"
+    assert (
+        resaved.json()["require_classification"] is True
+    ), "an unrelated edit must not disable fail-closed mode"
+
+    # …and an explicit false still turns it off.
+    disabled = client.put(
+        f"/api/v1/suites/{sid}/column-policy",
+        json={
+            "identifier_column": "ORDER_ID",
+            "pii_columns": ["EMAIL"],
+            "require_classification": False,
+        },
+    )
+    assert disabled.status_code == 200
+    assert disabled.json()["require_classification"] is False
