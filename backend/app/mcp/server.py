@@ -341,6 +341,11 @@ def _run_results_payload(
     results = run_service.list_results(session, run.id) if final else []
     checks = {c.id: c for c in session.scalars(select(Check).where(Check.suite_id == suite.id))}
     policy = suite.column_policy
+    # The warehouse's own column classifications (G3, #433) — the governance floor
+    # a suite policy cannot lift. Read from the cached map on the asset, never
+    # from the warehouse: an MCP read must not open a datasource connection.
+    # `None` means no opinion, which is what shipped before G3.
+    tags = _asset_column_tags(session, suite)
 
     def _tested_column(check_id: uuid.UUID | None) -> str | None:
         check = checks.get(check_id) if check_id is not None else None
@@ -352,9 +357,12 @@ def _run_results_payload(
     rendered = [
         {
             "result_id": str(r.id),
-            **_redacted_sample(r, _tested_column(r.check_id), policy),
+            **_redacted_sample(r, _tested_column(r.check_id), policy, tags),
             "observed_value": run_service.redact_observed_value(
-                r.observed_value, tested_column=_tested_column(r.check_id), policy=policy
+                r.observed_value,
+                tested_column=_tested_column(r.check_id),
+                policy=policy,
+                tags=tags,
             ),
         }
         for r in results
@@ -435,8 +443,26 @@ def _run_results_payload(
     }
 
 
+def _asset_column_tags(session: Session, suite: Suite) -> dict[str, str] | None:
+    """The warehouse's own column classifications for this suite's asset (G3).
+
+    Mirrors the REST helper deliberately rather than sharing it: both are three
+    lines over the ORM, and the thing that must not diverge — the *precedence* —
+    lives in `run_service`, not here. `None` when there is no asset or it has
+    never been refreshed, which the redactor treats as no opinion.
+    """
+    asset_id = getattr(suite, "asset_id", None)
+    if asset_id is None:
+        return None
+    asset = session.get(Asset, asset_id)
+    return asset.column_tags if asset is not None else None
+
+
 def _redacted_sample(
-    result: Any, tested_column: str | None, policy: dict[str, Any] | None
+    result: Any,
+    tested_column: str | None,
+    policy: dict[str, Any] | None,
+    tags: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """The failing-row sample plus **how much of it was masked** (#424/#1115).
 
@@ -451,7 +477,7 @@ def _redacted_sample(
     true to claim either way.
     """
     sample, state, redacted_columns = run_service.redact_sample_failures_with_state(
-        result.sample_failures, tested_column=tested_column, policy=policy
+        result.sample_failures, tested_column=tested_column, policy=policy, tags=tags
     )
     return {
         "sample_failures": sample,

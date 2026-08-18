@@ -47,6 +47,7 @@ from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import (
     asset_service,
     audit_read_service,
+    column_tags,
     comparison_run,
     connection_service,
     cron,
@@ -152,6 +153,27 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
             run_id=run_id,
             reason=classify_failure_reason(exc),
         )
+
+    # Refresh the asset's warehouse column classifications (G3 / #433) before the
+    # checks run. Here rather than on the read path for two reasons: the read path
+    # must not open a warehouse connection (latency, and it would fail when the
+    # warehouse is down), and this is the one moment DataQ is already connected
+    # with the credentials and the resolved target in hand.
+    #
+    # Fail-soft by construction — `refresh_asset_column_tags` swallows everything
+    # and the whole call is guarded besides. A governance lookup must never be the
+    # reason a data-quality run fails, and a stale map degrades to the pre-G3
+    # behaviour rather than to a clearance.
+    try:
+        column_tags.refresh_asset_column_tags(
+            session,
+            suite=suite,
+            connection=connection,
+            target=target,
+            secret_store=get_secret_store(),
+        )
+    except Exception:  # pragma: no cover - the callee already swallows
+        log.warning("column_tags_refresh_skipped", run_id=str(run_id), exc_info=True)
 
     # From here the runner exists — everything below runs inside `owned_runner`,
     # which releases its shared engine pool (#427) on every exit: normal return,
