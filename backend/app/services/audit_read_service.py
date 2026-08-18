@@ -21,8 +21,15 @@ role holds INSERT/SELECT and neither UPDATE nor DELETE, and a plain `DELETE FROM
 audit_events` is refused with `permission denied`.
 
 So the sweep re-grants `DELETE` for the duration of its own statement and revokes
-it again, in the same transaction. Stated plainly, because it looks like a
-loophole and is instead the honest shape:
+it again **in the same transaction** — which is load-bearing, not tidiness. A
+`GRANT` is transactional in Postgres (verified directly: a rolled-back `GRANT`
+leaves `has_table_privilege` false; only a commit persists it), so committing it
+separately from the `REVOKE` would mean a crashed worker leaves `DELETE` granted
+**permanently**, and a long sweep leaves the guard off **workspace-wide** for its
+whole duration. Keeping the pair in one transaction makes each committed batch a
+net-zero privilege change, which no other session can observe.
+
+Stated plainly, because it looks like a loophole and is instead the honest shape:
 
 * The table's owner can always do this. That is exactly why ADR 0041 §2.7 says
   the `REVOKE` is a guard against **accidental** in-app mutation and **not**
@@ -41,16 +48,34 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import CursorResult, delete, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
+from backend.app.core.config import get_settings
+from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.db.chunked_dml import chunked_dml
+from backend.app.db.chunked_dml import CHUNK_SIZE
 from backend.app.db.models import AuditEvent
+from backend.app.services import audit_service
 
 log = get_logger(__name__)
+
+
+class AuditFilterInvalidError(DataQError):
+    """A filter names a value that cannot exist — a 422, never an empty page.
+
+    Deliberately an error rather than an empty result: on this table an empty page
+    is a statement about the workspace ("nobody did that"), so a typo must not be
+    able to make one.
+    """
+
+    def __init__(self, message: str, *, detail: dict[str, Any] | None = None) -> None:
+        super().__init__(
+            code="audit_filter_invalid", message=message, status_code=422, detail=detail
+        )
+
 
 #: Hard ceiling on a single page. A read surface with no ceiling is a way to pull
 #: the whole table through the API one request at a time, and this table is the
@@ -72,6 +97,14 @@ class AuditPage:
     events: Sequence[AuditEvent]
     total: int
     truncated: bool
+    #: The configured retention window, and the timestamp before which events have
+    #: been swept. Present because pagination honesty is not the only honesty this
+    #: page needs: a query for a window older than the retention period returns
+    #: `total: 0`, which is indistinguishable from "nothing happened then" — the
+    #: single most misleading answer an audit log can give. A reader can now tell
+    #: "no events" from "no longer retained".
+    retention_days: int
+    retained_since: datetime | None
 
 
 def list_events(
@@ -86,6 +119,7 @@ def list_events(
     until: datetime | None = None,
     limit: int = 50,
     offset: int = 0,
+    retention_days: int | None = None,
 ) -> AuditPage:
     """Query the audit log, newest first. **Workspace-admin only — gated at the
     API, not here**, matching how every other admin read in this codebase is
@@ -102,6 +136,20 @@ def list_events(
     """
     limit = max(1, min(limit, MAX_PAGE_SIZE))
     offset = max(0, offset)
+
+    # An unvalidated filter that matches nothing returns `total: 0`, and on an
+    # audit log that reads as "nothing happened" rather than "you asked for a
+    # thing that does not exist" — the #828 class, in the place it is least
+    # affordable. The write path already refuses an undeclared entity type, so the
+    # read path refuses the same vocabulary rather than inventing a second one.
+    if entity_type is not None and entity_type not in audit_service.declared_entity_types():
+        raise AuditFilterInvalidError(
+            f"unknown entity_type {entity_type!r}",
+            detail={
+                "entity_type": entity_type,
+                "known": list(audit_service.declared_entity_types()),
+            },
+        )
 
     filters = []
     if action_class is not None:
@@ -135,7 +183,17 @@ def list_events(
             .offset(offset)
         )
     )
-    return AuditPage(events=events, total=total, truncated=offset + len(events) < total)
+    retention = get_settings().audit_retention_days if retention_days is None else retention_days
+    return AuditPage(
+        events=events,
+        total=total,
+        truncated=offset + len(events) < total,
+        retention_days=retention,
+        # None when the sweep is disabled — "nothing has been swept" is a different
+        # statement from "swept back to the beginning of time", and collapsing them
+        # would be the same conflation this field exists to prevent.
+        retained_since=(datetime.now(UTC) - timedelta(days=retention) if retention > 0 else None),
+    )
 
 
 def _set_delete_privilege(session: Session, *, granted: bool) -> None:
@@ -165,42 +223,82 @@ def purge_expired_events(session: Session, *, retention_days: int) -> int:
     moment ago. On this table that is the difference between a disabled sweep and
     erasing the entire audit trail.
 
-    Chunked and individually committed, like its siblings, so a first-enable
-    catch-up over a long backlog never holds one long transaction against the
-    mutation path — which matters more here than elsewhere, because the writers
-    it would block are fail-closed: a blocked audit write does not queue, it rolls
+    **Each batch is GRANT → DELETE → REVOKE inside ONE transaction, and that is
+    the whole design of this function.** Two properties follow, and neither is
+    available if the privilege change is committed separately from the delete:
+
+    * **A crash cannot leave the guard off.** `GRANT` is transactional in
+      Postgres — verified directly, not assumed: a `GRANT` rolled back leaves
+      `has_table_privilege` false, and only a commit persists it. So a worker
+      SIGKILLed mid-sweep rolls back its open transaction and the privilege goes
+      with it. Committing the `GRANT` separately would leave `DELETE ON
+      audit_events` granted **permanently**, with nothing to notice it.
+    * **No other session ever observes the guard off.** The net privilege change
+      of each committed transaction is zero, so a concurrent session sees the
+      before state or the after state and they are identical. A `GRANT` committed
+      at the start of a long sweep is visible workspace-wide for its whole
+      duration.
+
+    This is why the shared `chunked_dml` helper is deliberately NOT used here,
+    despite this being a chunked retention sweep exactly like its three siblings:
+    that helper commits **per batch**, which is correct for them and is precisely
+    the thing that must not happen across the privilege boundary. `CHUNK_SIZE` is
+    still imported from it, so the sweeps stay on one convention for the one thing
+    they genuinely share.
+
+    Batching still matters for the same reason it does in the siblings: a
+    first-enable catch-up over a long backlog must not hold one long transaction
+    against the mutation path — which matters *more* here, because the writers it
+    would block are fail-closed, so a blocked audit write does not queue, it rolls
     back the user's mutation.
     """
     if retention_days <= 0:
         return 0
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
 
-    # See the module docstring: the migration revokes DELETE from this very role,
-    # so the sweep has to hand it back for the length of its own work. The
-    # try/finally is not decoration — leaving DELETE granted after a failed batch
-    # would silently undo the guard for every later request on this connection.
-    _set_delete_privilege(session, granted=True)
-    try:
-        deleted = chunked_dml(
-            session,
-            lambda: delete(AuditEvent).where(
-                AuditEvent.occurred_at < cutoff,
-                AuditEvent.id.in_(
-                    select(AuditEvent.id)
-                    .where(AuditEvent.occurred_at < cutoff)
-                    .order_by(AuditEvent.occurred_at)
-                    .limit(500)
-                    .scalar_subquery()
-                ),
-            ),
-        )
-    finally:
-        _set_delete_privilege(session, granted=False)
-        session.commit()
+    total = 0
+    while True:
+        try:
+            _set_delete_privilege(session, granted=True)
+            result = session.execute(
+                delete(AuditEvent).where(
+                    AuditEvent.occurred_at < cutoff,
+                    AuditEvent.id.in_(
+                        select(AuditEvent.id)
+                        .where(AuditEvent.occurred_at < cutoff)
+                        .order_by(AuditEvent.occurred_at)
+                        .limit(CHUNK_SIZE)
+                        .scalar_subquery()
+                    ),
+                )
+            )
+            # `max(..., 0)`, not a bare `or 0`: some DB-API drivers return -1 for
+            # "unknown rowcount", which is truthy — it would corrupt both the
+            # running total and the `affected == 0` termination check, spinning
+            # this loop forever. Copied deliberately from `chunked_dml`, which
+            # carries the same floor for the same reason (#323 review F6, where
+            # one of two hand-rolled sweep loops had already lost it).
+            affected = max(cast(CursorResult[Any], result).rowcount or 0, 0)
+            _set_delete_privilege(session, granted=False)
+            session.commit()
+        except Exception:
+            # Rollback FIRST. After a database-level error the session is in a
+            # failed transaction and every further statement raises
+            # `PendingRollbackError` — so an attempt to re-revoke here would mask
+            # the real error rather than restore the guard. The rollback is what
+            # actually restores it, by undoing the GRANT.
+            session.rollback()
+            raise
+        total += affected
+        # Exit on zero rather than `affected < CHUNK_SIZE`: a chunk size that
+        # evenly divides the backlog never produces a partial batch, and a
+        # concurrent delete can shrink one batch while a real backlog remains.
+        if affected == 0:
+            break
 
-    if deleted:
-        log.info("audit_events_purged", deleted=deleted, retention_days=retention_days)
-    return deleted
+    if total:
+        log.info("audit_events_purged", deleted=total, retention_days=retention_days)
+    return total
 
 
 def as_dict(event: AuditEvent) -> dict[str, Any]:

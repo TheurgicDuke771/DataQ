@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import AuditEvent, User
@@ -220,3 +221,95 @@ def test_an_actor_deleted_since_the_event_is_still_attributable(
     assert event["actor_user_id"] is None
     assert event["actor_label"] == "Olivia Green"
     assert event["actor_display"] == "Olivia Green"
+
+
+def test_an_unknown_entity_type_is_refused_not_answered_with_an_empty_page(
+    client: TestClient, db_session: Any
+) -> None:
+    """A typo must not be able to say "nothing happened".
+
+    An unvalidated filter that matches nothing returns `total: 0`, and on THIS
+    table an empty page is a statement about the workspace, not about the query —
+    the #828 class, in the place it is least affordable. The write path already
+    refuses an undeclared entity type, so the read path reuses that vocabulary
+    rather than inventing a second one.
+    """
+    resp = client.get("/api/v1/admin/audit-events?entity_type=cheque")
+    assert resp.status_code == 422, resp.text
+    body = resp.json()["error"]
+    assert body["code"] == "audit_filter_invalid"
+    assert "check" in body["detail"]["known"], "the error must say what IS valid"
+
+    ok = client.get("/api/v1/admin/audit-events?entity_type=check")
+    assert ok.status_code == 200
+
+
+def test_a_naive_since_is_read_as_utc(client: TestClient, db_session: Any) -> None:
+    """A naive datetime compared against a `timestamptz` column is interpreted in
+    the DATABASE session's `TimeZone`, so the same request would cover a different
+    period depending on server configuration.
+
+    An audit query that quietly covers a different window than the one asked for
+    is worse than one that refuses, and it is invisible: the response looks
+    perfectly well-formed.
+
+    **The session timezone is moved off UTC deliberately, and the test is
+    worthless without it.** The first version ran against the default UTC session,
+    where a naive and an aware timestamp mean the same instant — so it passed with
+    the coercion deleted. Mutation-checking caught that. `America/New_York` is
+    chosen because it is four hours off UTC in August, comfortably larger than the
+    one-hour window under test, so a mis-read boundary changes the answer rather
+    than merely nudging it.
+    """
+    db_session.execute(text("SET TIME ZONE 'America/New_York'"))
+    entity = uuid.uuid4()
+    now = datetime.now(UTC)
+    _event(db_session, entity_id=entity, occurred_at=now - timedelta(hours=3))
+    _event(db_session, entity_id=entity, occurred_at=now - timedelta(minutes=30))
+
+    naive = (now - timedelta(hours=1)).replace(tzinfo=None).isoformat()
+    aware = (now - timedelta(hours=1)).isoformat()
+
+    # `params=` rather than an f-string URL: an aware ISO timestamp ends in
+    # `+00:00`, and a bare `+` in a query string decodes to a SPACE, so the
+    # interpolated version 422s on a malformed datetime and the test would be
+    # comparing two failures rather than two windows.
+    def _total(since_value: str) -> int:
+        resp = client.get(
+            "/api/v1/admin/audit-events",
+            params={"entity_id": str(entity), "since": since_value},
+        )
+        assert resp.status_code == 200, resp.text
+        return int(resp.json()["total"])
+
+    assert _total(naive) == _total(aware) == 1
+    db_session.execute(text("SET TIME ZONE 'UTC'"))
+
+
+def test_the_page_states_the_retention_window(client: TestClient, db_session: Any) -> None:
+    """Pagination honesty is not the only honesty this page needs.
+
+    A query for a window older than `AUDIT_RETENTION_DAYS` returns `total: 0`,
+    which is indistinguishable from "nothing happened then" — the single most
+    misleading answer an audit log can give. `retained_since` lets a reader tell
+    "no events" from "no longer retained".
+    """
+    from backend.app.core.config import get_settings
+
+    body = client.get("/api/v1/admin/audit-events?limit=1").json()
+    assert body["retention_days"] == get_settings().audit_retention_days
+    assert body["retained_since"] is not None
+    assert datetime.fromisoformat(body["retained_since"]) < datetime.now(UTC)
+
+
+def test_a_disabled_sweep_reports_no_retention_horizon(
+    client: TestClient, db_session: Any, monkeypatch: Any
+) -> None:
+    """`null`, not a date. "Nothing has been swept" is a different statement from
+    "swept back to the beginning of time", and collapsing them would be the same
+    conflation `retained_since` exists to prevent."""
+    from backend.app.services import audit_read_service
+
+    page = audit_read_service.list_events(db_session, limit=1, retention_days=0)
+    assert page.retention_days == 0
+    assert page.retained_since is None

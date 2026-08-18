@@ -13,7 +13,7 @@ connection to the mail relay, not *how many*.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -258,6 +258,20 @@ class AuditEventPage(ApiModel):
     events: list[AuditEventRead]
     total: int
     truncated: bool
+    #: The configured retention window and the point before which events have been
+    #: swept (`null` when the sweep is disabled). Pagination honesty is not the
+    #: only honesty this page needs: a query for a window older than retention
+    #: returns `total: 0`, which is indistinguishable from "nothing happened
+    #: then" — the single most misleading answer an audit log can give.
+    retention_days: int
+    retained_since: datetime | None
+
+
+def _assume_utc(value: datetime | None) -> datetime | None:
+    """Interpret a naive datetime as UTC. See the note in `list_audit_events`."""
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
 
 
 @router.get(
@@ -293,6 +307,14 @@ def list_audit_events(
     is why the parameter accepts it rather than 422-ing on a value the schema
     knows about.
     """
+    # A naive datetime compared against a `timestamptz` column is interpreted in
+    # the database session's `TimeZone`, so the window a caller asked for would
+    # silently shift with server configuration — and an audit query that quietly
+    # covers a different period than requested is worse than one that refuses.
+    # UTC is the assumption because every timestamp this API emits is UTC ISO-8601.
+    since = _assume_utc(since)
+    until = _assume_utc(until)
+
     page = audit_read_service.list_events(
         db,
         action_class=action_class,
@@ -309,4 +331,6 @@ def list_audit_events(
         events=[AuditEventRead(**audit_read_service.as_dict(e)) for e in page.events],
         total=page.total,
         truncated=page.truncated,
+        retention_days=page.retention_days,
+        retained_since=page.retained_since,
     )

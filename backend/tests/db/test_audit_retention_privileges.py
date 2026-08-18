@@ -171,13 +171,11 @@ def test_the_sweep_deletes_despite_the_revoke(owner_session: Session) -> None:
     assert len(remaining) == 3, "the recent events must survive — this is a cutoff, not a wipe"
 
 
-def test_the_sweep_leaves_the_guard_back_in_place(owner_session: Session, monkeypatch: Any) -> None:
+def test_the_sweep_leaves_the_guard_back_in_place(owner_session: Session) -> None:
     """Property 3 — and the one most likely to rot silently.
 
     A sweep that left DELETE granted would disable the guard for every later
-    request on that connection while still passing a "did it delete?" test. Also
-    asserted for the failure path: the re-revoke is in a `finally`, because a
-    sweep that raises mid-batch must not leave the privilege behind.
+    request on that connection while still passing a "did it delete?" test.
     """
     _seed(owner_session, age_days=500)
     owner_session.execute(text(_revoke_statement(_ROLE)))
@@ -186,19 +184,150 @@ def test_the_sweep_leaves_the_guard_back_in_place(owner_session: Session, monkey
     audit_read_service.purge_expired_events(owner_session, retention_days=365)
     assert _has_delete(owner_session) is False
 
-    # And on the failure path: force the sweep to raise mid-batch. The re-revoke
-    # lives in a `finally` precisely so a crash cannot leave the privilege behind,
-    # and that is the branch a happy-path test never reaches.
+
+def test_a_database_level_failure_still_restores_the_guard(
+    owner_session: Session, monkeypatch: Any
+) -> None:
+    """The failure path, provoked by a REAL database error — which is the whole
+    point, and which the first version of this test could not do.
+
+    That version monkeypatched the batch helper to raise *before any statement
+    ran*, so the session was never in a failed transaction and the handler was
+    never asked the hard question. After a genuine database error every further
+    statement on that session raises `PendingRollbackError`, so an attempt to
+    re-REVOKE would mask the original error and leave the privilege granted.
+    Rolling back is what actually restores the guard — `GRANT` is transactional,
+    so undoing the transaction undoes the grant.
+
+    The error is provoked by suppressing only the GRANT half, which makes the
+    DELETE itself fail with `permission denied`: a real Postgres error arriving
+    from the exact statement that would fail in production.
+    """
     _seed(owner_session, age_days=500)
+    owner_session.execute(text(_revoke_statement(_ROLE)))
+    owner_session.commit()
 
-    def _boom(*_args: Any, **_kwargs: Any) -> int:
-        raise RuntimeError("batch exploded")
+    real = audit_read_service._set_delete_privilege
 
-    monkeypatch.setattr(audit_read_service, "chunked_dml", _boom)
+    def _skip_the_grant(session: Session, *, granted: bool) -> None:
+        if granted:
+            return
+        real(session, granted=granted)
+
+    monkeypatch.setattr(audit_read_service, "_set_delete_privilege", _skip_the_grant)
+    with pytest.raises(ProgrammingError):
+        audit_read_service.purge_expired_events(owner_session, retention_days=365)
+    monkeypatch.undo()
+
+    # The session must be usable — i.e. it was rolled back rather than left
+    # poisoned — and the guard must still be in place.
+    assert _has_delete(owner_session) is False
+    assert len(owner_session.scalars(AuditEvent.__table__.select()).all()) == 3
+
+
+def test_a_crash_mid_sweep_cannot_leave_delete_granted(owner_session: Session) -> None:
+    """The property the one-transaction-per-batch design exists for.
+
+    `GRANT` is transactional in Postgres — verified directly rather than assumed:
+    a rolled-back GRANT leaves `has_table_privilege` false, and only a commit
+    persists it. So a worker killed mid-sweep loses its open transaction and the
+    privilege with it.
+
+    Committing the GRANT separately from the REVOKE — which is what the shared
+    `chunked_dml` helper would do, since it commits per batch — would leave
+    `DELETE ON audit_events` granted **permanently** after such a crash, with
+    nothing in the system to notice. This asserts the primitive that rules that
+    out, which is why it tests the GRANT rather than the sweep.
+    """
+    owner_session.execute(text(_revoke_statement(_ROLE)))
+    owner_session.commit()
+
+    audit_read_service._set_delete_privilege(owner_session, granted=True)
+    assert _has_delete(owner_session) is True, "precondition: the grant took effect"
+    owner_session.rollback()  # stands in for the process dying
+
+    assert _has_delete(owner_session) is False
+
+
+def test_a_failure_before_the_revoke_does_not_leave_the_grant_committed(
+    owner_session: Session, monkeypatch: Any
+) -> None:
+    """The property the one-transaction-per-batch design exists for, asserted
+    against the SWEEP rather than the primitive.
+
+    A sibling test proves `GRANT` is transactional; this proves the sweep actually
+    relies on that, by crashing it in the window between the grant and the revoke.
+    Without it, the sweep could regress to committing the grant separately — which
+    is exactly what the shared `chunked_dml` helper does, and the reason it is not
+    used here — and every other test in this file would still pass while the guard
+    was left permanently off after any crash.
+
+    Caught by mutation-checking: inserting a `session.commit()` after the grant
+    left all fourteen tests green.
+    """
+    _seed(owner_session, age_days=500)
+    owner_session.execute(text(_revoke_statement(_ROLE)))
+    owner_session.commit()
+
+    real = audit_read_service._set_delete_privilege
+
+    def _explode_on_revoke(session: Session, *, granted: bool) -> None:
+        if not granted:
+            raise RuntimeError("worker died before revoking")
+        real(session, granted=granted)
+
+    monkeypatch.setattr(audit_read_service, "_set_delete_privilege", _explode_on_revoke)
     with pytest.raises(RuntimeError):
         audit_read_service.purge_expired_events(owner_session, retention_days=365)
     monkeypatch.undo()
-    assert _has_delete(owner_session) is False
+
+    assert _has_delete(owner_session) is False, (
+        "the grant was committed separately from the revoke — a crash in this "
+        "window leaves DELETE granted permanently"
+    )
+    # The delete must have gone with it: the batch is one transaction, so a
+    # failure anywhere in it undoes the whole batch, not just the privilege.
+    assert len(owner_session.scalars(AuditEvent.__table__.select()).all()) == 3
+
+
+def test_an_unknown_rowcount_terminates_instead_of_spinning(
+    owner_session: Session, monkeypatch: Any
+) -> None:
+    """Some DB-API drivers return -1 for "unknown rowcount", which is TRUTHY.
+
+    A bare `rowcount or 0` would therefore pass -1 straight through, corrupting
+    the running total and — far worse — never satisfying the `affected == 0`
+    termination check, so a nightly beat task would spin forever holding a
+    connection. The `max(..., 0)` floor is required, not decorative;
+    `chunked_dml` carries the same floor after one of two hand-rolled sweep
+    loops lost it (#323 review F6).
+
+    The floor is what this asserts, so the driver is faked: no real driver here
+    returns -1 for a DELETE, which is precisely why this would otherwise go
+    untested until it happened in production.
+    """
+
+    class _UnknownRowcount:
+        rowcount = -1
+
+    real_execute = owner_session.execute
+    seen = {"deletes": 0}
+
+    def _fake_execute(statement: Any, *args: Any, **kwargs: Any) -> Any:
+        text_sql = str(statement)
+        if text_sql.strip().upper().startswith("DELETE"):
+            seen["deletes"] += 1
+            if seen["deletes"] > 3:  # a spin guard for the test itself
+                raise AssertionError("the loop did not terminate on an unknown rowcount")
+            return _UnknownRowcount()
+        return real_execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(owner_session, "execute", _fake_execute)
+    total = audit_read_service.purge_expired_events(owner_session, retention_days=365)
+    monkeypatch.undo()
+
+    assert total == 0
+    assert seen["deletes"] == 1, "an unknown rowcount must read as zero and stop"
 
 
 def test_a_non_positive_retention_is_an_off_switch_not_a_wipe(owner_session: Session) -> None:
