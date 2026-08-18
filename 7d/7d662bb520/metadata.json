@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "7d7d662bb520",
+  "strategy": "manual-commit",
+  "branch": "feature/mcp-tier3b-assets-incidents-reads",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/7d/7d662bb520/0/metadata.json",
+      "transcript": "/7d/7d662bb520/0/full.jsonl",
+      "compact_transcript": "/7d/7d662bb520/0/transcript.jsonl",
+      "content_hash": "/7d/7d662bb520/0/content_hash.txt",
+      "prompt": "/7d/7d662bb520/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1402,
+    "cache_creation_tokens": 1075681,
+    "cache_read_tokens": 220752496,
+    "output_tokens": 433217,
+    "api_call_count": 701
+  }
+}
