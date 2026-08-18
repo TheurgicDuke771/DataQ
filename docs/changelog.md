@@ -75,20 +75,23 @@ Portability, auto-monitors, and polish on top of v1:
   and MCP (ADR 0026).
 - **Workspace-admin visibility** extended to the MCP tools + schedules; **dry-run preview**
   extended to every datasource.
-- **MCP server expanded to 42 tools** — the Tier 1 read-only batch (checks, runs,
+- **MCP server expanded to 46 tools** — the Tier 1 read-only batch (checks, runs,
   connections, schedules, trigger bindings, notification config, suite performance,
   suite export) alongside the original 8, plus the Tier 2 batch (update/delete/snooze
   check, dry-run preview, cancel run, schedule + trigger-binding CRUD, suggest a PII
   policy, test a connection, import a suite), plus the Tier 3A coherence batch
   (set a suite's run target, read/set its column policy, update a schedule,
   update/delete a trigger binding, read and restore a check's version history), plus the
-  Tier 3B reads over **assets and incidents** (browse the tables DataQ monitors with
-  their health and lineage; see what is broken right now and the evidence behind it) —
-  each reusing the same authorization its REST counterpart applies (ADR 0008 amendments,
-  #529 / #1424). The 42 split three ways: 22
-  read-only; 16 that change state, gated on `edit` access to the suite they act on; and
-  4 that persist nothing but open a live datasource connection with stored credentials
-  (`profile_column`, `dryrun_check`, `suggest_column_policy`, `test_connection`) — gated
+  Tier 3B batch over **assets and incidents** (browse the tables DataQ monitors with
+  their health and lineage; see what is broken right now and the evidence behind it,
+  acknowledge and resolve it, list a target's columns before authoring, and diagnose
+  orchestration triggers that are silently never firing) — each reusing the same
+  authorization its REST counterpart applies (ADR 0008 amendments,
+  #529 / #1424). The 46 split three ways: 23
+  read-only; 18 that change state, gated on `edit` access to the suite they act on; and
+  5 that persist nothing but open a live datasource connection with stored credentials
+  (`profile_column`, `list_columns`, `dryrun_check`, `suggest_column_policy`,
+  `test_connection`) — gated
   like writes, not reads, and requiring the **member** workspace role where there is no
   suite to gate on. No MCP tool is Admin-only: every Admin-only capability in ADR 0033's
   matrix is a connection mutation, and none are exposed here. `list_connections` returns

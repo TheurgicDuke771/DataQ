@@ -17,7 +17,7 @@
 | **Auth / secrets** | Three-mode ladder (ADR 0032): dev-bypass (eval) · **email OTP** (IdP-less, default for the local stack — #1150) · OIDC — **now genuinely provider-neutral end-to-end** (ADR 0026 amendment): the frontend's generic `AUTH_*` contract (ADR 0028) is matched on the backend by `core.auth.OidcBearerScheme` (OIDC discovery + JWKS via `PyJWT`, any standards-compliant issuer — Azure AD validated in prod, AWS Cognito the second target) alongside the original `fastapi-azure-auth` validator; mutually exclusive per deployment. Plus PATs (`dq_live_`) for API/MCP clients. **Authorization is two axes (ADR 0033):** a stored workspace role (`admin | member | viewer`) × the per-suite `view/edit` ladder (ADR 0027) — connection mutations are Admin-only, Viewers are read-only everywhere. Secrets: Azure Key Vault / OpenBao / AWS Secrets Manager (ADR 0039) |
 | **Deploy** | Azure Container Apps (API + worker + frontend; frontend is the sole public surface, api internal — ADR 0028 §5) |
 | **Observability** | Azure Application Insights + structlog |
-| **AI integration** | FastMCP (42 curated tools mounted at `/mcp` — 22 read-only, 16 that change state, 4 live-probe tools gated like writes; ADR 0008 + Theme 13 Tiers 1 and 2 and Tier 3A/3B, #529/#1424) — Claude Desktop / Claude.ai / Copilot / Cursor |
+| **AI integration** | FastMCP (46 curated tools mounted at `/mcp` — 23 read-only, 18 that change state, 5 live-probe tools gated like writes; ADR 0008 + Theme 13 Tiers 1 and 2 and Tier 3A/3B, #529/#1424) — Claude Desktop / Claude.ai / Copilot / Cursor |
 
 Timeline: **8 weeks** to v1. Scope: single tenant, suite-level access sharing, Azure-hosted.
 
@@ -315,6 +315,12 @@ Verified beyond the unit tests, both tiers: every new tool was called **through 
 
 **A docs miss worth recording: the tool-count *headings* were updated and the *bodies* were not.** `docs/mcp-setup.md` and `docs/changelog.md` said "33 tools" above a list that still enumerated the 30-tool split. Deriving the counts from `GATES` is the fix; counting by hand is what let them drift. `mypy backend/tests/` also caught what a local mypy-on-the-changed-file-only did not — run the full sweep, not the file you touched.
 
+**Shipped 2026-08-17 — MCP Tier 3B batch 2, 42 → 46 — Tier 3B COMPLETE.** `ack_incident` / `resolve_incident` / `list_columns` / `get_near_misses`, taking the split to **23 read-only, 18 that change state, 5 live-probe**. `list_columns` joins the live-probe group rather than the reads for the `profile_column` reason exactly — it persists nothing but opens a live datasource with the stored credential — and it is the *cheap* authoring step the surface lacked: `profile_column` reads data to compute statistics when the question was only "what are the column names?", and guessing one produces a check that runs and errors. `get_near_misses` closes the loop `create_trigger_binding` opened: that tool **warns** about an env mismatch it cannot investigate, and before this the only way to see one was `psql` (#1199).
+
+**The lifecycle docstrings carry the load here, because both verbs are about the *incident*, not the data.** Acknowledging changes nothing and does **not** stop alerts — the check still runs, still fails, still notifies — so it points at `snooze_check` for what the user probably meant. Resolving re-runs nothing and fixes nothing: if the problem is still there the next failing run opens a **new** incident (a resolved one is never reopened), so the docstring steers toward `trigger_suite_run` to confirm before declaring victory. Both refuse the closed-state transition rather than silently no-opping, which would let an assistant report an action that never happened.
+
+**One test-harness finding worth recording:** `SuiteForbiddenError` from `load_visible_incident` names the required level ("requires 'edit' on its suite") and matched **none** of the RBAC sweep's accepted-denial vocabulary, so a correctly-denied tool failed the sweep for looking like the wrong kind of failure. Fixed by adding that exact phrase — not a loose word like "requires", since anything also matching an argument-validation message would let a gateless tool pass by failing for the wrong reason. All four gates were then mutation-verified, and all four tools exercised through the real MCP protocol (46 registered), with the over-long note refused at the schema layer before reaching the driver.
+
 **Shipped 2026-08-17 — MCP Tier 3B batch 1, 38 → 42 ([#1424](https://github.com/TheurgicDuke771/DataQ/issues/1424)).** Four read-only tools over the surfaces #529 never evaluated — `list_assets` / `get_asset` / `list_incidents` / `get_incident` — taking the split to **22 read-only, 16 that change state, 4 live-probe**, again derived from `mcp_gates.GATES` rather than counted. Unlike 3A this is capability, not coherence: *"is `orders` healthy?"* is an **asset** question, and answering it from suites alone means first knowing which suites target the table, which is precisely what the asset view exists to remove.
 
 **Two scoping rules had to reach the docstrings, not just the code.** The asset rollup is **workspace-true** (ADR 0037) — `list_visible_assets` takes no user and aggregates over ALL composing suites — so a model handed the number with no caveat will describe it as covering what the caller can see; `get_asset` therefore reports `restricted_suite_count` beside the grant-filtered suite list. Incidents, by the same ADR, stay **behind suite grants**: they are itemized failure evidence, not identity, so `get_incident` is 404-no-leak. That second rule is why **`incident:view` is a new gate value** rather than `suite:view` — the tool takes an *incident* id, so the sweep must materialise a real incident on the probe suite; a fabricated id raises "incident not found", which is in the accepted-denial vocabulary, and the sweep would pass **with the gate deleted**. The same vacuous-pass shape as `_REAL_RUN` / `_REAL_CHECK` / the 3A `CheckVersion` trap, hit for the fourth time. Both new gates were mutation-verified.
@@ -354,7 +360,7 @@ Update this section at the end of each week with: current week, the week's exit 
 | Observability | Azure Application Insights + structlog |
 | CI/CD | GitHub Actions |
 | API docs | FastAPI Swagger + ReDoc |
-| MCP | FastMCP (PrefectHQ) — 42 curated tools at `/mcp` (22 read-only, 16 that change state, 4 live-probe tools gated like writes; ADR 0008 + its #529 Tier-1/Tier-2 and #1424 Tier-3A/3B amendments) |
+| MCP | FastMCP (PrefectHQ) — 46 curated tools at `/mcp` (23 read-only, 18 that change state, 5 live-probe tools gated like writes; ADR 0008 + its #529 Tier-1/Tier-2 and #1424 Tier-3A/3B amendments) |
 | Python tooling | conda + Black + Ruff + mypy + pytest + Bandit |
 | Frontend tooling | Prettier + ESLint + Vitest + React Testing Library |
 | Secret scanning | betterleaks (pre-commit + CI) |
@@ -362,7 +368,7 @@ Update this section at the end of each week with: current week, the week's exit 
 
 ### Client-side MCP servers (`.mcp.json`)
 
-Distinct from DataQ's **own** FastMCP server at `/mcp` (ADR 0008 — the 42 tools DataQ *serves* to AI clients), the repo-root **`.mcp.json`** configures MCP servers that AI assistants working in this repo *consume*:
+Distinct from DataQ's **own** FastMCP server at `/mcp` (ADR 0008 — the 46 tools DataQ *serves* to AI clients), the repo-root **`.mcp.json`** configures MCP servers that AI assistants working in this repo *consume*:
 
 | Server | Package (pinned major) | Publisher | Purpose |
 |---|---|---|---|
