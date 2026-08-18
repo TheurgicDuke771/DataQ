@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "40feb1e21258",
+  "strategy": "manual-commit",
+  "branch": "feature/1318-append-only-guard",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/services/test_audit_append_only.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/40/feb1e21258/0/metadata.json",
+      "transcript": "/40/feb1e21258/0/full.jsonl",
+      "compact_transcript": "/40/feb1e21258/0/transcript.jsonl",
+      "content_hash": "/40/feb1e21258/0/content_hash.txt",
+      "prompt": "/40/feb1e21258/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 10876,
+    "cache_read_tokens": 4863689,
+    "output_tokens": 7619,
+    "api_call_count": 10
+  }
+}
