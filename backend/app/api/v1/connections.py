@@ -408,7 +408,13 @@ def reauth_connection(
 ) -> ConnectionTestResult:
     # sync def → threadpool; the verify probe is blocking, like /test. Rotates
     # the credential then probes it; a bad new credential surfaces as 502.
-    svc.reauth_connection(db, connection_id, secret=payload.secret, secret_store=secret_store)
+    svc.reauth_connection(
+        db,
+        connection_id,
+        secret=payload.secret,
+        secret_store=secret_store,
+        actor_id=current_user.id,
+    )
     return ConnectionTestResult(ok=True)
 
 

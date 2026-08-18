@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import ApiKey, User
+from backend.app.services import audit_service
 
 log = get_logger(__name__)
 
@@ -98,6 +99,16 @@ def create_key(
         expires_at=datetime.now(UTC) + timedelta(days=expires_in_days),
     )
     db.add(key)
+    # Records the mint and NEVER the token or its hash (ADR 0041 §2.5) — the
+    # allow-list for `api_key` omits `key_hash` entirely, so this cannot leak one
+    # by a later field being added.
+    audit_service.record_entity_change(
+        db,
+        action="api_key.mint",
+        entity_type="api_key",
+        entity=key,
+        actor=user,
+    )
     db.commit()
     db.refresh(key)
     log.info(
@@ -130,7 +141,19 @@ def revoke_key(db: Session, user: User, key_id: uuid.UUID) -> ApiKey:
     if key is None:
         raise ApiKeyNotFoundError(key_id)
     if key.revoked_at is None:
+        audit_before = audit_service.snapshot("api_key", key)
         key.revoked_at = datetime.now(UTC)
+        # Inside the `is None` guard, matching the log line: re-revoking an
+        # already-revoked key is idempotent and changes nothing, and an audit log
+        # that records non-events is one a reader learns to skim.
+        audit_service.record_entity_change(
+            db,
+            action="api_key.revoke",
+            entity_type="api_key",
+            entity=key,
+            actor=user,
+            before=audit_before,
+        )
         db.commit()
         log.info(
             "api_key_revoked",

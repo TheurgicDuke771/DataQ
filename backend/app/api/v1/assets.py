@@ -317,7 +317,7 @@ def update_asset(
     asset_id: uuid.UUID,
     payload: AssetMetadataUpdate,
     # Workspace-Admin-only (ADR 0034 §4) — a non-admin gets a real 403.
-    _admin: Annotated[User, Depends(require_workspace_admin)],
+    admin: Annotated[User, Depends(require_workspace_admin)],
     db: Annotated[Session, Depends(get_db)],
 ) -> svc.AssetSummary:
     fields = payload.model_fields_set
@@ -328,6 +328,7 @@ def update_asset(
         description=payload.description,
         set_owner="owner_user_id" in fields,
         set_description="description" in fields,
+        actor_id=admin.id,
     )
     # Return the refreshed workspace-true summary. Never 404s on an asset with no
     # composing suites — metadata exists independently of suites.

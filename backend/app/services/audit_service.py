@@ -41,7 +41,12 @@ from typing import Any, Final
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import _scrub_secret_strings, request_id_var
-from backend.app.db.models import AUDIT_ACTION_CLASSES, AUDIT_ACTOR_KINDS, AuditEvent
+from backend.app.db.models import (
+    AUDIT_ACTION_CLASSES,
+    AUDIT_ACTOR_KINDS,
+    AuditEvent,
+    User,
+)
 
 # ── Redaction ─────────────────────────────────────────────────────────────────
 #
@@ -363,6 +368,15 @@ def snapshot(entity_type: str, entity: Any) -> dict[str, Any] | None:
     return _cap_payload(_scrub_value(_jsonable(raw)))
 
 
+def _resolve_actor(session: Session, actor: Any | None) -> Any | None:
+    """Normalize the actor argument to a `User` row (or `None`)."""
+    if actor is None:
+        return None
+    if isinstance(actor, uuid.UUID):
+        return session.get(User, actor)
+    return actor
+
+
 def _sanitize_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     """Scrub, JSON-coerce and cap a payload, whoever built it. See `record`."""
     if payload is None:
@@ -391,7 +405,14 @@ def record(
     and never swallows an exception — a broken audit write is *supposed* to fail
     the mutation.
 
-    `actor` is a `User` row (or `None` for a webhook principal, which has no user).
+    `actor` is a `User` row, a bare `actor_id` UUID, or `None` for a webhook
+    principal (which has no user). The UUID form exists because the service layer
+    threads `actor_id: uuid.UUID`, not the row — accepting only the row would mean
+    changing thirty service signatures to satisfy the audit seam, which is the
+    tail wagging the dog. Resolving it costs nothing in practice: the
+    authentication dependency has already loaded that `User` into the same
+    session, so `session.get` is an identity-map hit rather than a query.
+
     `actor_label` is denormalized here, at write time, so the attribution survives
     both the `ON DELETE SET NULL` and any later rename.
     """
@@ -410,11 +431,17 @@ def record(
             f"actor_kind={actor_kind!r} is not one of {AUDIT_ACTOR_KINDS} — "
             "there is deliberately no 'system' kind (ADR 0041 §2.1)"
         )
+    actor_row = _resolve_actor(session, actor)
     label: str | None = None
     actor_id: uuid.UUID | None = None
-    if actor is not None:
-        actor_id = getattr(actor, "id", None)
-        label = getattr(actor, "display_name", None) or getattr(actor, "email", None)
+    if actor_row is not None:
+        actor_id = getattr(actor_row, "id", None)
+        label = getattr(actor_row, "display_name", None) or getattr(actor_row, "email", None)
+    elif isinstance(actor, uuid.UUID):
+        # The id was given but the row could not be loaded (a user deleted between
+        # the request and the write). Record the id we have rather than dropping
+        # the attribution entirely — an unlabelled event still says WHO.
+        actor_id = actor
     # The module's three guarantees — allow-list, redaction, cap — must hold on
     # EVERY payload, not only the ones `snapshot` built. A slice-2 caller
     # hand-building a `before`/`after` dict (a role change, a share grant) would

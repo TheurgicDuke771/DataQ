@@ -24,6 +24,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretNotFoundError, SecretStore
 from backend.app.db.models import ALERT_ON_POLICIES, SuiteNotification
+from backend.app.services import audit_service
 
 log = get_logger(__name__)
 
@@ -182,6 +183,7 @@ def upsert_config(
     slack_webhook: str | None = None,
     email_recipients: str | None = None,
     secret_store: SecretStore,
+    actor_id: uuid.UUID | None = None,
 ) -> SuiteNotification:
     """Create or update a suite's notification config.
 
@@ -205,6 +207,9 @@ def upsert_config(
         assert_valid_recipients(email_recipients)
 
     config = get_config(session, suite_id)
+    # Before any field is assigned below. `None` here means the row did not exist,
+    # so the event reads as a create rather than an update with a blank prior state.
+    audit_before = audit_service.snapshot("suite_notification", config)
     if config is None:
         try:
             # SAVEPOINT so a concurrent first-write losing the unique race
@@ -247,6 +252,17 @@ def upsert_config(
     if email_recipients is not None:
         config.email_recipients = email_recipients or None
 
+    # Records the POINTERS (`*_secret_ref`) and never the webhook URLs, which are
+    # token-bearing credentials living in the SecretStore — the same rule as
+    # `connection.reauth`.
+    audit_service.record_entity_change(
+        session,
+        action="suite_notification.update",
+        entity_type="suite_notification",
+        entity=config,
+        actor=actor_id,
+        before=audit_before,
+    )
     session.commit()
     session.refresh(config)
     # Post-commit, fail-soft: remove any now-orphaned webhook secrets (#372).
@@ -257,14 +273,29 @@ def upsert_config(
     return config
 
 
-def delete_config(session: Session, suite_id: uuid.UUID, *, secret_store: SecretStore) -> bool:
+def delete_config(
+    session: Session,
+    suite_id: uuid.UUID,
+    *,
+    secret_store: SecretStore,
+    actor_id: uuid.UUID | None = None,
+) -> bool:
     """Delete a suite's config (revert to defaults). Returns whether a row existed."""
     config = get_config(session, suite_id)
     if config is None:
         return False
     # Capture both webhook refs before delete so we can soft-delete them after commit.
     orphaned_refs = [config.webhook_secret_ref, config.slack_webhook_secret_ref]
+    audit_before = audit_service.snapshot("suite_notification", config)
     session.delete(config)
+    audit_service.record_entity_change(
+        session,
+        action="suite_notification.delete",
+        entity_type="suite_notification",
+        entity=None,
+        actor=actor_id,
+        before=audit_before,
+    )
     session.commit()
     # Best-effort remove the orphaned per-suite webhook secrets (#372), fail-soft.
     for ref in orphaned_refs:

@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Schedule
-from backend.app.services import cron, suite_service
+from backend.app.services import audit_service, cron, suite_service
 from backend.app.services.suite_authz import require_permission
 
 log = get_logger(__name__)
@@ -65,6 +65,13 @@ def create_schedule(
     )
     schedule.created_by = user_id
     session.add(schedule)
+    audit_service.record_entity_change(
+        session,
+        action="schedule.create",
+        entity_type="schedule",
+        entity=schedule,
+        actor=user_id,
+    )
     session.commit()
     session.refresh(schedule)
     log.info(
@@ -138,6 +145,7 @@ def update_schedule(
     future fire rather than firing every slot missed while paused.
     """
     schedule = _get_owned(session, schedule_id, user_id, minimum="edit")
+    audit_before = audit_service.snapshot("schedule", schedule)
 
     new_cron = cron_expr if cron_expr is not None else schedule.cron
     new_tz = timezone if timezone is not None else schedule.timezone
@@ -156,6 +164,14 @@ def update_schedule(
         # Validates the (possibly new) cron + tz (422) and re-bases the fire time.
         schedule.next_run_at = cron.next_fire(new_cron, new_tz)
 
+    audit_service.record_entity_change(
+        session,
+        action="schedule.update",
+        entity_type="schedule",
+        entity=schedule,
+        actor=user_id,
+        before=audit_before,
+    )
     session.commit()
     session.refresh(schedule)
     log.info(
@@ -171,6 +187,18 @@ def update_schedule(
 def delete_schedule(session: Session, schedule_id: uuid.UUID, *, user_id: uuid.UUID) -> None:
     """Delete a schedule. Requires `edit` on its suite."""
     schedule = _get_owned(session, schedule_id, user_id, minimum="edit")
+    # Deleting is how a schedule gets "paused" by a client with no update verb,
+    # and it discards the cron expression needed to restore it — so the `before`
+    # payload is what makes the act reversible by hand.
+    audit_before = audit_service.snapshot("schedule", schedule)
     session.delete(schedule)
+    audit_service.record_entity_change(
+        session,
+        action="schedule.delete",
+        entity_type="schedule",
+        entity=None,
+        actor=user_id,
+        before=audit_before,
+    )
     session.commit()
     log.info("schedule_deleted", schedule_id=str(schedule_id))

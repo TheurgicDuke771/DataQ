@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
 from backend.app.db.models import Check, Connection, Suite, User
+from backend.app.services import audit_service
 
 PROBE_CONNECTION_NAME = "probe-snowflake-dev"
 PROBE_SUITE_NAME = "probe-snowflake-suite"
@@ -97,5 +98,27 @@ def ensure_probe_fixtures(
             session.add(check)
             checks.append(check)
 
+    # ONE event for the whole provisioning act, and it exists because of how this
+    # endpoint was found: the ADR-0033 RBAC review (#1396) caught it as a THIRD
+    # DOOR — it creates a Connection AND a Suite under a name that mentions
+    # neither, so reasoning that put controls on those resources' own routes was
+    # structurally blind to it. Auditing the resources rather than the routes
+    # would have had the identical blind spot, so the act is recorded here by
+    # name. `entity_type` is the suite because that is what the act produces that
+    # a reader would go looking for; the connection id rides in the payload.
+    audit_service.record(
+        session,
+        action="probe.provision",
+        entity_type="suite",
+        entity_id=suite.id,
+        actor=user,
+        after={
+            "suite_id": str(suite.id),
+            "suite_name": suite.name,
+            "connection_id": str(connection.id),
+            "connection_name": connection.name,
+            "check_count": len(checks),
+        },
+    )
     session.commit()
     return connection, suite, checks

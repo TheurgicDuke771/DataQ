@@ -359,6 +359,10 @@ def _auto_classify_columns(session: Session, *, suite_id: uuid.UUID) -> str:
             suite_id,
             identifier_column=policy.get("identifier_column"),
             pii_columns=policy.get("pii_columns", []),
+            # No principal issued this — it is the auto-classify derive. ADR 0041
+            # §2.1 keeps machine writes out of the audit log so they cannot bury
+            # the actor-attributable events.
+            machine_write=True,
         )
     except Exception:
         session.rollback()

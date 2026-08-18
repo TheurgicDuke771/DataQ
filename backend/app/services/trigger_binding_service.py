@@ -36,7 +36,7 @@ from backend.app.db.models import (
     TriggerBinding,
 )
 from backend.app.orchestration.registry import get_orchestration_provider
-from backend.app.services import suite_service
+from backend.app.services import audit_service, suite_service
 from backend.app.services.suite_authz import require_permission
 
 log = get_logger(__name__)
@@ -176,6 +176,16 @@ def create_binding(
     )
     session.add(binding)
     try:
+        # Inside the try: `record_entity_change` flushes to obtain the
+        # server-assigned id, which is where the duplicate-binding unique
+        # constraint now fires — the handler below has to keep catching it.
+        audit_service.record_entity_change(
+            session,
+            action="trigger_binding.create",
+            entity_type="trigger_binding",
+            entity=binding,
+            actor=user_id,
+        )
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -262,7 +272,16 @@ def update_binding(
     the ambiguity becomes actionable again.
     """
     binding = _get_owned(session, binding_id, user_id, minimum="edit")
+    audit_before = audit_service.snapshot("trigger_binding", binding)
     binding.enabled = enabled
+    audit_service.record_entity_change(
+        session,
+        action="trigger_binding.update",
+        entity_type="trigger_binding",
+        entity=binding,
+        actor=user_id,
+        before=audit_before,
+    )
     session.commit()
     session.refresh(binding)
     log.info("trigger_binding_updated", binding_id=str(binding.id), enabled=enabled)
@@ -277,6 +296,15 @@ def update_binding(
 def delete_binding(session: Session, binding_id: uuid.UUID, *, user_id: uuid.UUID) -> None:
     """Delete a binding. Requires `edit` on its suite."""
     binding = _get_owned(session, binding_id, user_id, minimum="edit")
+    audit_before = audit_service.snapshot("trigger_binding", binding)
     session.delete(binding)
+    audit_service.record_entity_change(
+        session,
+        action="trigger_binding.delete",
+        entity_type="trigger_binding",
+        entity=None,
+        actor=user_id,
+        before=audit_before,
+    )
     session.commit()
     log.info("trigger_binding_deleted", binding_id=str(binding_id))

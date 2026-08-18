@@ -23,6 +23,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import resolve_role
 from backend.app.db.models import Share, User
+from backend.app.services import audit_service
 from backend.app.services.suite_authz import require_permission
 
 log = get_logger(__name__)
@@ -142,6 +143,19 @@ def grant_share(
     share = Share(suite_id=suite_id, user_id=target_user_id, permission=permission)
     session.add(share)
     try:
+        # Inside the try, and before the commit, for two reasons. The audit write
+        # is same-transaction and fail-closed (ADR 0041 §2.1) — a grant that is
+        # not recorded must not happen. And `record_entity_change` flushes to
+        # obtain the server-assigned id, which is where a duplicate share now
+        # raises `IntegrityError`; the existing handler below has to keep catching
+        # it, so the call belongs inside this block rather than above it.
+        audit_service.record_entity_change(
+            session,
+            action="share.grant",
+            entity_type="share",
+            entity=share,
+            actor=actor_id,
+        )
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -185,7 +199,16 @@ def update_share(
     _reject_edit_share_to_viewer(session, suite_id, target_user_id, permission)
     _reject_self_target(suite_id, actor_id, target_user_id)
     share = _get_share(session, suite_id, target_user_id)
+    before = audit_service.snapshot("share", share)
     share.permission = permission
+    audit_service.record_entity_change(
+        session,
+        action="share.update",
+        entity_type="share",
+        entity=share,
+        actor=actor_id,
+        before=before,
+    )
     session.commit()
     session.refresh(share)
     log.info(
@@ -205,6 +228,18 @@ def revoke_share(
     require_permission(session, suite_id, actor_id, minimum="admin")
     _reject_self_target(suite_id, actor_id, target_user_id)
     share = _get_share(session, suite_id, target_user_id)
+    # Snapshot BEFORE the delete: the row is about to stop existing, and this
+    # payload is the only surviving record of what was revoked. Capturing it
+    # afterwards would read the expired instance.
+    before = audit_service.snapshot("share", share)
     session.delete(share)
+    audit_service.record_entity_change(
+        session,
+        action="share.revoke",
+        entity_type="share",
+        entity=None,
+        actor=actor_id,
+        before=before,
+    )
     session.commit()
     log.info("share_revoked", suite_id=str(suite_id), user_id=str(target_user_id))
