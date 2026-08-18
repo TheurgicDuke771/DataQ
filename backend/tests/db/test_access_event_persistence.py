@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import (
+    COMPARISON_KIND,
     AuditEvent,
     Base,
     Check,
@@ -165,3 +166,96 @@ def test_a_rest_read_commits_its_access_event(probe_engine: Any) -> None:
     )
     assert events[0].actor_user_id == owner_id
     assert events[0].after is not None and events[0].after["exposed"] is True
+
+
+def test_a_failed_report_render_leaves_no_committed_download_event(probe_engine: Any) -> None:
+    """An event for a download that never happened is worse than a missing one —
+    a reader cannot tell it from a real access.
+
+    **This lives here, not beside the other access-event tests, for the same
+    reason the persistence test does.** `record_access` commits, so a version that
+    recorded the download BEFORE rendering would leave a real, committed event
+    behind when the render failed. Inside the shared fixture transaction that is
+    invisible: `get_db` rolls back on the exception and the rollback unwinds the
+    fixture's savepoint, erasing the event — so the test passes either way, which
+    is exactly what happened to the first version of it.
+
+    Only a real database, where the commit is real and the rollback cannot undo
+    it, can tell the two orderings apart.
+    """
+    from backend.app.api.v1 import runs as runs_api
+
+    make_session = sessionmaker(bind=probe_engine)
+    setup: Session = make_session()
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"o-{uuid.uuid4().hex[:8]}@example.com")
+    setup.add(owner)
+    setup.flush()
+    conn = Connection(
+        name=f"sf-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "x"},
+        created_by=owner.id,
+    )
+    setup.add(conn)
+    setup.flush()
+    suite = Suite(name="cmp", connection_id=conn.id, created_by=owner.id)
+    setup.add(suite)
+    setup.flush()
+    check = Check(
+        suite_id=suite.id,
+        name="cmp",
+        kind=COMPARISON_KIND,
+        expectation_type="expect_table_row_count_to_equal_other_table",
+        source_connection_id=conn.id,
+        config={"column": "line_total"},
+    )
+    setup.add(check)
+    run = Run(suite_id=suite.id, status="succeeded", triggered_by="manual")
+    setup.add(run)
+    setup.flush()
+    result = Result(
+        run_id=run.id,
+        check_id=check.id,
+        status="fail",
+        sample_failures={"partial_unexpected_list": [1], "unexpected_count": 1},
+    )
+    setup.add(result)
+    setup.commit()
+    run_id, result_id, owner_id = run.id, result.id, owner.id
+    setup.close()
+
+    request_session: Session = make_session()
+    app.dependency_overrides[get_db] = lambda: request_session
+    app.dependency_overrides[get_current_user] = lambda: request_session.get(User, owner_id)
+    original = runs_api.build_report  # type: ignore[attr-defined]
+
+    def _render_fails(*_a: Any, **_k: Any) -> Any:
+        raise RuntimeError("render blew up")
+
+    monkeypatch_target = "build_report"
+    setattr(runs_api, monkeypatch_target, _render_fails)
+    try:
+        resp = TestClient(app, raise_server_exceptions=False).get(
+            f"/api/v1/runs/{run_id}/results/{result_id}/comparison_report?fmt=csv"
+        )
+        assert resp.status_code >= 400, "the failed render must not return a file"
+    finally:
+        setattr(runs_api, monkeypatch_target, original)
+        app.dependency_overrides.clear()
+        request_session.close()
+
+    verify: Session = make_session()
+    try:
+        events = list(
+            verify.scalars(
+                select(AuditEvent).where(AuditEvent.action == "comparison_report.download")
+            )
+        )
+    finally:
+        verify.close()
+    assert events == [], (
+        "a committed download event survived a render that failed — the access is "
+        "recorded before the file exists, so the log claims a download that never "
+        "happened"
+    )

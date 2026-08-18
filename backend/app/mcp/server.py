@@ -346,6 +346,9 @@ def _run_results_payload(
         check = checks.get(check_id) if check_id is not None else None
         return check.config.get("column") if check is not None else None
 
+    # Redact ONCE, here, and reuse below. An earlier version redacted every result
+    # a second time purely to compute `exposed_ids` and then threw the result
+    # away, so every MCP results read paid the redaction pass twice.
     rendered = [
         {
             "result_id": str(r.id),
@@ -358,15 +361,21 @@ def _run_results_payload(
     ]
     # `redaction` is the state the redactor computed for THIS read: `full` means
     # everything row-level was masked and `null` means there was no row-level
-    # content at all, so neither exposed anything. Derived from the redacted
-    # output rather than the stored row, so the policy that decides what the
-    # caller sees is the same one that decides what the audit records — the two
-    # cannot disagree about whether an exposure happened.
+    # content at all, so neither exposed anything. `observed_value` is the OTHER
+    # door to raw cells and needs its own test rather than a null check — a fully
+    # masked list and a plain row count are both non-None and neither is an
+    # exposure (see `run_service.observed_value_exposes_cells`).
+    #
+    # Derived from the redacted output rather than the stored row, so the policy
+    # that decides what the caller sees is the same one that decides what the
+    # audit records — the two cannot disagree about whether an exposure happened.
     exposed_ids = [
         r["result_id"]
         for r in rendered
-        if r["redaction"] in {"none", "partial"} or r["observed_value"] is not None
+        if r["redaction"] in {"none", "partial"}
+        or run_service.observed_value_exposes_cells(r["observed_value"])
     ]
+    rendered_by_id = {r["result_id"]: r for r in rendered}
     audit_service.record_access(
         session,
         action="run_results.read",
@@ -413,11 +422,13 @@ def _run_results_payload(
                 # counts and a strategy name, never cell values, so it needs
                 # none of the redaction its neighbours do.
                 "sampling": r.sampling,
-                "observed_value": run_service.redact_observed_value(
-                    r.observed_value, tested_column=_tested_column(r.check_id), policy=policy
-                ),
                 "expected_value": r.expected_value,
-                **_redacted_sample(r, _tested_column(r.check_id), policy),
+                # Redaction reused from `rendered` above, not recomputed. Beyond
+                # the wasted second pass, computing it twice would let the payload
+                # and the access event disagree about what was masked — and the
+                # event's whole value is that it reports what the caller actually
+                # saw.
+                **{k: v for k, v in rendered_by_id[str(r.id)].items() if k != "result_id"},
             }
             for r in results
         ],

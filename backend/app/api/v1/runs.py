@@ -334,6 +334,11 @@ def _exposed_result_ids(results: Sequence[ResultRead]) -> list[str]:
     content at all. Neither exposed anything, so neither belongs in the list an
     investigator reads to answer "who saw the failing rows?".
 
+    `observed_value` is the OTHER door to raw cells and needs its own test, not a
+    null check — see `observed_value_exposes_cells`. The first version here asked
+    only whether it was non-None, which marked a fully-masked list and a plain row
+    count alike as exposures, so effectively every read was recorded as one.
+
     Derived from the redacted output rather than from the stored row, deliberately
     — the same column policy that decides what the caller sees decides what the
     audit records, so the two can never disagree about whether an exposure
@@ -342,7 +347,7 @@ def _exposed_result_ids(results: Sequence[ResultRead]) -> list[str]:
     return [
         str(r.id)
         for r in results
-        if r.redaction in {"none", "partial"} or r.observed_value is not None
+        if r.redaction in {"none", "partial"} or svc.observed_value_exposes_cells(r.observed_value)
     ]
 
 
@@ -640,6 +645,11 @@ def download_comparison_report(
             detail={"result_id": str(result_id)},
         )
     redacted = svc.redact_sample_failures(result.sample_failures, policy=suite.column_policy)
+    payload, media_type = build_report(fmt, sample=redacted, observed=result.observed_value)
+    # AFTER the render, not before: `build_report` can raise, and an event
+    # recording a download that never happened is worse than a missing one — a
+    # reader cannot tell it from a real access.
+    #
     # A separate door to the same data, and a more consequential one: this hands
     # the caller a FILE, which leaves the product entirely. `exposed=True`
     # unconditionally — unlike the run-detail read there is no per-result
@@ -655,7 +665,6 @@ def download_comparison_report(
         exposed=True,
         detail={"run_id": str(run_id), "suite_id": str(run.suite_id), "format": fmt},
     )
-    payload, media_type = build_report(fmt, sample=redacted, observed=result.observed_value)
     filename = f"comparison-{result_id}.{fmt}"
     return Response(
         content=payload,

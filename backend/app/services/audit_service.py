@@ -607,6 +607,7 @@ def record_access(
     payload: dict[str, Any] = {"exposed": exposed}
     if detail:
         payload.update(detail)
+    previously_expiring = session.expire_on_commit
     try:
         with session.begin_nested():
             event = record(
@@ -619,6 +620,19 @@ def record_access(
                 actor_kind=actor_kind,
                 after=payload,
             )
+        # `expire_on_commit` is True by default, so this commit would expire every
+        # ORM object the CALLER is still holding — and a read path commits in the
+        # middle of building its response. A 50-result run then issues ~50 refresh
+        # SELECTs on attribute access afterwards, and a re-read of a row deleted
+        # concurrently raises `ObjectDeletedError` — a 500 caused entirely by the
+        # audit write, on the path whose own AC forbids a latency regression.
+        #
+        # Suppressed only around this commit, and restored in `finally`, so the
+        # caller's own commit semantics are untouched. Safe here because the rows
+        # being committed are this event alone: a read path has nothing else
+        # pending, which is the same property that makes the savepoint rollback
+        # harmless.
+        session.expire_on_commit = False
         session.commit()
         return event
     except Exception:
@@ -628,6 +642,8 @@ def record_access(
         session.rollback()
         log.error("audit_access_write_failed", action=action, exc_info=True)
         return None
+    finally:
+        session.expire_on_commit = previously_expiring
 
 
 def declared_entity_types() -> Sequence[str]:

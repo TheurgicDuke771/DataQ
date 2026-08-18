@@ -1305,6 +1305,42 @@ def _redact_comparison_row(
     return out
 
 
+def observed_value_exposes_cells(redacted: dict[str, Any] | None) -> bool:
+    """Whether a **redacted** `observed_value` still carries raw cell values.
+
+    Lives here, beside the redactor whose output it interprets, and is shared by
+    every G1 access-event caller (#431) — a second copy would be a second place
+    to get the shapes wrong, and the shapes are the whole difficulty.
+
+    Three shapes reach a redacted `observed_value`, and only two can carry cells:
+
+    * ``{"observed_value": <scalar>}`` — an aggregate the check MEASURED (a row
+      count, a mean). A measurement is not personal data, so this is **not** an
+      exposure however large the number.
+    * ``{"observed_value": [...]}`` — a set-oriented expectation's distinct-value
+      list, i.e. raw cells from the tested column (#1229). An exposure iff any
+      element survived masking.
+    * ``{"unparsed_value": <cell>, "column": …}`` — one raw cell a monitor choked
+      on. An exposure iff it survived masking.
+
+    The distinction matters because the naive test — "is it non-None?" — is what
+    the first version of the access event used, and it is wrong in **both**
+    directions: a fully masked list returns ``{"observed_value": ["<redacted>"]}``
+    (non-None, exposing nothing) and a plain row count returns
+    ``{"observed_value": 34680}`` (non-None, not personal data at all). Every read
+    was therefore recorded as an exposure, which defeats the one field the access
+    log hangs on. It went unnoticed because every test fixture had
+    ``observed_value=None``.
+    """
+    if not isinstance(redacted, dict):
+        return False
+    values = redacted.get("observed_value")
+    if isinstance(values, list) and any(v != _REDACTED_VALUE for v in values):
+        return True
+    unparsed = redacted.get("unparsed_value")
+    return unparsed is not None and unparsed != _REDACTED_VALUE
+
+
 def redact_observed_value(
     observed: dict[str, Any] | None,
     *,

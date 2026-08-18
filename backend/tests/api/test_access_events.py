@@ -203,3 +203,105 @@ def test_a_failed_audit_write_does_not_fail_the_read(
     assert any(
         entry.get("event") == "audit_access_write_failed" for entry in logs
     ), "a compliance control that stops recording must be visible in telemetry"
+
+
+# ── Review findings (PR #1459) ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("observed", "column", "expect_exposed", "why"),
+    [
+        (
+            {"observed_value": ["a@b.com", "c@d.com"]},
+            "email",
+            False,
+            "a fully MASKED distinct-value list exposes nothing — but it is non-None",
+        ),
+        (
+            {"observed_value": 34680},
+            "line_total",
+            False,
+            "a row count is a MEASUREMENT, not personal data, however large",
+        ),
+        (
+            {"error": "connection refused"},
+            "line_total",
+            False,
+            "an error message is not a cell value",
+        ),
+        (
+            {"observed_value": ["ACME", "GLOBEX"]},
+            "vendor_name",
+            True,
+            "an UNMASKED distinct-value list is raw cells from the tested column",
+        ),
+        (
+            {"unparsed_value": "not-a-date", "column": "order_ts"},
+            "order_ts",
+            True,
+            "an unparsed cell that survived masking is a raw cell",
+        ),
+    ],
+)
+def test_observed_value_exposure_is_not_a_null_check(
+    client: TestClient,
+    db_session: Any,
+    observed: dict[str, Any],
+    column: str,
+    expect_exposed: bool,
+    why: str,
+) -> None:
+    """`exposed` must reflect what was SURFACED, not whether a field is non-None.
+
+    The first version asked only `observed_value is not None`, which is wrong in
+    **both** directions: `redact_observed_value` masks IN PLACE, so a fully masked
+    list comes back as `{"observed_value": ["<redacted>"]}` — non-None, exposing
+    nothing — and a plain row count comes back as `{"observed_value": 34680}` —
+    non-None, not personal data at all. Effectively every read was recorded as an
+    exposure, which defeats the one field the access log hangs on.
+
+    It survived review-by-reading and passed every test, because **every fixture
+    had `observed_value=None`**: the tests encoded the shape we happened to build,
+    not the shapes production produces. Parameterised over all five real shapes
+    for that reason.
+    """
+    _owner, run = _seed(db_session, sample=None, column=column)
+    result = db_session.scalars(select(Result).where(Result.run_id == run.id)).one()
+    result.observed_value = observed
+    db_session.commit()
+
+    resp = client.get(f"/api/v1/runs/{run.id}")
+    assert resp.status_code == 200
+
+    event = _events(db_session, "run_results.read", run.id)[0]
+    assert event.after is not None
+    assert event.after["exposed"] is expect_exposed, why
+
+
+def test_the_access_commit_does_not_expire_the_callers_objects(
+    client: TestClient, db_session: Any
+) -> None:
+    """`expire_on_commit` is True by default, and a read path commits in the
+    MIDDLE of building its response.
+
+    Left unsuppressed, every ORM object the caller still holds is expired, so a
+    50-result run issues ~50 refresh SELECTs on the attribute access that follows
+    — and a row deleted concurrently raises `ObjectDeletedError`, a 500 caused
+    entirely by the audit write, on the path whose own AC forbids a latency
+    regression.
+
+    Asserted through the response rather than by counting queries: if the objects
+    had been expired and the row was gone, the request would not have returned
+    its data at all.
+    """
+    _owner, run = _seed(
+        db_session,
+        sample={"partial_unexpected_list": [1], "unexpected_count": 1},
+        column="line_total",
+    )
+    resp = client.get(f"/api/v1/runs/{run.id}")
+    assert resp.status_code == 200
+    assert resp.json()["results"], "the response must survive the access commit"
+    # The caller's session must be left with its default semantics restored, or
+    # every later commit in the process silently stops expiring.
+    assert db_session.expire_on_commit is True
