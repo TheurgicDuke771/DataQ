@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "e48813dfa390",
+  "strategy": "manual-commit",
+  "branch": "docs/compliance-track-progress",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e4/8813dfa390/0/metadata.json",
+      "transcript": "/e4/8813dfa390/0/full.jsonl",
+      "compact_transcript": "/e4/8813dfa390/0/transcript.jsonl",
+      "content_hash": "/e4/8813dfa390/0/content_hash.txt",
+      "prompt": "/e4/8813dfa390/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 7705,
+    "cache_read_tokens": 4501292,
+    "output_tokens": 6498,
+    "api_call_count": 9
+  }
+}
