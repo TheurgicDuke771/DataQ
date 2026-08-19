@@ -110,7 +110,7 @@ only to EU personal data.
 Ranked by severity. Tracked in the Backlog milestone: **G1 #431 · G2 #432 · G3 #433 ·
 G4 #434 · G5 #435**.
 
-### G1 — 🟢 Data-*access* audit trail (the HIPAA gate) — #431 — **read events shipped; tamper-evidence open**
+### G1 — 🟢 Data-*access* audit trail (the HIPAA gate) — #431 — **read events shipped and production-verified on Azure; sweep observation + AWS pending; tamper-evidence open**
 **Requirement:** HIPAA §164.312(b) **audit controls** require a durable record of *who
 accessed which PHI*. GDPR accountability (Art 5(2) / 30) wants processing records too.
 **Current state (updated 2026-08-17):** the *"revisit ADR 0020"* instruction has been
@@ -137,6 +137,16 @@ events an investigator wants among the many they do not. Covered on **REST and M
 latter tagged `surface: "mcp"`, because an LLM client may carry a value onward in ways a
 browser session does not.
 
+⚠️ **Read coverage is three doors, not every door.** Events are emitted for a run's
+results (REST and MCP) and for a comparison-report download. The **column profiler**
+(`top_values` holds real cell values) and the **check dry-run** (`observed_value`,
+unredacted per #1419) return live warehouse data and record nothing — both are live-probe
+routes that persist no result row, which is exactly what made them invisible to a design
+keyed on run/result ids. Tracked as
+[#1479](https://github.com/TheurgicDuke771/DataQ/issues/1479). Until it closes, an empty
+`action_class=access` page is evidence about those three doors and **must not** be read as
+"no regulated data was surfaced"; the endpoint's own docstring now says so.
+
 The event records **which** result was read, never **what** it contained (ADR 0041 §2.6.3)
 — copying a sample into an append-only table with a longer retention would quietly turn
 the audit log into a second, unpurged copy of the personal data it audits, defeating both
@@ -160,9 +170,40 @@ a stronger security constraint. An operator whose regime requires a provably una
 needs that anchor; one that requires a durable, queryable, admin-gated record of who read
 which PHI now has it.
 
-⚠️ **Not yet verified in production.** All of the above is proven against local Postgres,
-including in the production role/ownership shape. It has not been observed on the deployed
-Azure or AWS stacks.
+**Verified in production (Azure, 2026-08-19).** The write/read half is no longer
+local-only. A run's results were read on the deployed stack as an ordinary **member**, and
+the resulting event was then read back through `GET /api/v1/admin/audit-events` as a
+**workspace admin** — a different request, on a different connection, minutes later:
+
+```
+occurred_at  2026-08-19T02:20:23.609926+00:00
+action       run_results.read          entity_type  run
+actor        (the member who read it)  actor_kind   user
+after        {"exposed": false, "result_count": 0, "exposed_result_ids": []}
+```
+
+That specific shape is the evidence, not the 200: the event was written by one process and
+observed by another, which is exactly what the test suite could not establish. Its fixture
+reads through the **same transaction** as the write, so four tests once passed against code
+that committed nothing durable. A cross-connection read is the only thing that rules that
+out, and it is now on the record for the deployed stack.
+
+The page also reports `retention_days: 365` and a computed `retained_since`, so the read
+API states its own window rather than leaving an empty page ambiguous.
+
+⚠️ **Still local-only: the retention sweep's privilege path.** `purge_expired_events` runs
+`GRANT → DELETE → REVOKE` in one transaction, and the test suite is **structurally blind to
+it** — tests run as a superuser, which bypasses `REVOKE` entirely, so the grant/revoke pair
+is a no-op there and the `DELETE` would succeed with the whole mechanism removed. Only a run
+as the real least-privileged role exercises it. The task is confirmed **registered** in the
+deployed worker image and beat is confirmed healthy on the new revision, so the daily 04:17
+UTC entry will fire; observing that run is what closes this line. Note that a zero-row sweep
+currently logs nothing at all ([#1477](https://github.com/TheurgicDuke771/DataQ/issues/1477)),
+which is what makes the observation harder than it should be.
+
+⚠️ **Not yet verified on AWS.** The Azure evidence above does not transfer: the point of
+these checks is the deployment's own role/ownership and commit behaviour, so the second
+stack needs its own run.
 **Scope widened by ADR 0027 / #482:** once the workspace-admin is an implicit admin on
 every suite, the audit log must capture **workspace-admin cross-suite result/sample
 reads** (not just owner/shared reads) — the read surface this gap must cover grows. A

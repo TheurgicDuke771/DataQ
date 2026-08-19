@@ -306,11 +306,30 @@ def list_audit_events(
     allow-list that excludes `sample_failures`, `observed_value` and every
     credential.
 
-    `action_class` is `config` today. `access` is reserved for the data-read
-    events of G1/#431 and returns nothing until that ships — an empty result for
-    `action_class=access` means "not built yet", not "nobody read anything", which
-    is why the parameter accepts it rather than 422-ing on a value the schema
-    knows about.
+    Both `action_class` values are live. `config` records deliberate changes to
+    the workspace; `access` records data *reads* (G1/#431 phase 2) — who read
+    which run's results, when, and whether regulated data was actually surfaced.
+    `access` covers exactly three doors today: reading a run's results over REST,
+    the same read over MCP, and downloading a comparison report. **An empty
+    `action_class=access` page is therefore evidence about those doors only, and
+    is NOT evidence that no regulated data was surfaced.** Two routes return live
+    warehouse values and record nothing here — the column profiler (`top_values`
+    holds real cell values) and the check dry-run (`observed_value`, unredacted
+    per #1419). An investigator who reads an empty page as "nobody saw anything"
+    would be wrong in precisely the way this endpoint must not be wrong.
+
+    Three further things an empty page does not rule out. Reads older than
+    `AUDIT_RETENTION_DAYS` (default 365) have been swept — the response states
+    its own window in `retention_days`/`retained_since` rather than leaving that
+    to be assumed. A read whose audit write failed still succeeded, because the
+    access path is deliberately not fail-closed (ADR 0041), so a gap correlates
+    with `audit_access_write_failed` at ERROR in telemetry. And warehouse-side
+    access made outside DataQ is invisible here by definition.
+
+    This paragraph previously said `access` was unbuilt and that an empty page
+    meant "not built yet, not nobody read anything". It is kept explicit about
+    coverage because the *shape* of that error — a confident claim that inverts
+    an auditor's conclusion — is the failure mode of this particular endpoint.
     """
     # A naive datetime compared against a `timestamptz` column is interpreted in
     # the database session's `TimeZone`, so the window a caller asked for would
