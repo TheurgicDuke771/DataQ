@@ -55,7 +55,13 @@ before apply):
 
 ## Shared Postgres — one-off role + database
 
-The app's DB lives on the shared server but is provisioned **out-of-band** (keeps
+Name the server with **`shared_pg_server_name`** in your `terraform.tfvars`. It is
+**required and has no default**: the server pre-exists and this stack only attaches
+to it, so no default could be right for more than one deployment. With
+`-input=false` (which the apply below uses) a missing value fails fast rather than
+prompting into a redirected stdout — which looks exactly like a hang.
+
+The app's DB lives on that server but is provisioned **out-of-band** (keeps
 this stack connection-free / CI-friendly — no postgres provider). Run once,
 connected as the server admin (add a temp firewall rule for your IP first):
 

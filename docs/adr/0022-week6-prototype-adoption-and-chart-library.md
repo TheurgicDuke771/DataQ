@@ -11,7 +11,7 @@ Week 6 ("Results dashboard + alerting") is also the week we adopt the **DataQ De
 
 Two problems pushed this to an ADR:
 
-1. **The Week-6 task list under-scoped the work.** the maintainers' tracker tracked 23 tasks but the prototype's `templates/app/index.html` registers **13 screens**, and three real screens fell out of the tracking: **Profile** (still a placeholder `Home` component), **Settings** (didn't exist; had been punted to Week 7 as "backend-gated"), and the **New-Connection source-select split**. The decision now is to build the **full prototype screen set in Week 6**, not a subset.
+1. **The Week-6 task list under-scoped the work.** The tracker listed 23 tasks but the prototype's `templates/app/index.html` registers **13 screens**, and three real screens fell out of the tracking: **Profile** (still a placeholder `Home` component), **Settings** (didn't exist; had been punted to Week 7 as "backend-gated"), and the **New-Connection source-select split**. The decision now is to build the **full prototype screen set in Week 6**, not a subset.
 2. **The dashboard + trend charts gate on a charting library** the prototype is silent about (it fakes charts with divs). antd ships none, so this is a real dependency decision with bundle-size + `pnpm audit` consequences.
 
 ## Decision

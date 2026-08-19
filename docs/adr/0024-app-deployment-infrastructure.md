@@ -173,7 +173,7 @@ together.**
   project's provider builds are not byte-identical to HashiCorp's).
 - **Both stacks convert; neither is applied as part of the change.** The harness stack is
   verified **plan-only** — a blanket harness `apply` arms ADF triggers and drifts the
-  warehouse (see `docs/ops-log.md`).
+  warehouse (see `the maintainers' ops log`).
 
 ### Evidence — how this was verified
 
