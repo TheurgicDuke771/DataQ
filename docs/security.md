@@ -479,9 +479,18 @@ Apps environment — a subscription quota, or an organisation's shared-platform
 policy, are the usual reasons. Its region was then fixed by whoever created it and
 is not something this stack chooses.
 
-That is supported, and it is an **accepted exception rather than drift**: declare
-it with `shared_pg_expected_location`, which is what turns "this server is
-somewhere else" from an unexplained mismatch into a recorded decision.
+**The two are treated differently, on purpose.** A shared **database** in another
+region is an **accepted exception rather than drift**: declare it with
+`shared_pg_expected_location`, which turns "this server is somewhere else" from an
+unexplained mismatch into a recorded decision.
+
+A shared **Container Apps environment** has **no such escape hatch, deliberately** —
+it is compared against `azure_location` and a mismatch fails the plan outright. The
+asymmetry follows from blast radius: one out-of-region database is a single
+resource you can reason about, whereas the environment's region is inherited by
+*every* Container App and Job in the stack, so accepting a mismatch there silently
+relocates the entire deployment. Moving the app's compute to another jurisdiction
+should require changing the declaration, not setting an override.
 
 The basis on which such an exception is acceptable is the part worth checking, and
 it is **jurisdiction, not region**. Two regions inside one country engage no

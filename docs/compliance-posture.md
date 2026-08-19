@@ -293,8 +293,8 @@ enforced jurisdiction, and the LLM-transfer mitigation was design-only. The fili
 described the deploy as "region-pinned to US (westus3)", which turned out to be half right
 and is corrected below: the **database** is in West US 3, the **app** is in West US 2, and
 nothing had noticed.
-**Shipped (2026-08-18).** A documented **residency matrix** per resource for both
-reference deployments ([docs/security.md](security.md)), a `DEPLOYMENT_REGION` declaration
+**Shipped (2026-08-18).** A documented **residency posture** per resource class in
+[docs/security.md](security.md), a `DEPLOYMENT_REGION` declaration
 surfaced at `GET /api/v1/admin/deployment` (workspace-admin only) so the posture is
 readable without shell access, and — the part that is a control rather than a document —
 an IaC **postcondition** that fails the plan when the shared Azure Container Apps
@@ -306,11 +306,16 @@ Moving or recreating it elsewhere would have relocated all of the app's compute 
 clean `apply` and no signal, and "we did not notice the jurisdiction changed" is precisely
 the Ch. V failure.
 
-The matrix states its three honest exceptions rather than omitting them — the shared Postgres
-region split described below, CloudFront's global
-edge (fingerprinted static assets only; no API response or failing-row sample is cached)
-and the WAFv2 ACL, which exists only in `us-east-1` regardless of the stack's region and
-holds rules, not data.
+The published page states the exceptions that are **structural** rather than omitting them:
+CloudFront's global edge (fingerprinted static assets only; no API response or failing-row
+sample is cached) and the WAFv2 ACL, which exists only in `us-east-1` regardless of the
+stack's region and holds rules, not data. Both are true of every AWS deployment.
+
+**The shared-Postgres split below is not on that page**, and that was a later correction
+(#1472): it is a fact about *this* estate, and `docs/security.md` is published to the
+public docs site while this file is not. See "the concrete regions live here" at the end
+of this section for the reasoning — in short, a published snapshot of live infrastructure
+is a claim that rots silently, which is exactly how the false matrix row below arose.
 
 **External transfers are enumerated, not derived** — alert delivery, telemetry, and the
 unbuilt LLM seam, which is listed while disabled on purpose so an auditor sees it was
