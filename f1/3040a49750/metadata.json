@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "f13040a49750",
+  "strategy": "manual-commit",
+  "branch": "docs/residency-principle-not-actuals",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f1/3040a49750/0/metadata.json",
+      "transcript": "/f1/3040a49750/0/full.jsonl",
+      "compact_transcript": "/f1/3040a49750/0/transcript.jsonl",
+      "content_hash": "/f1/3040a49750/0/content_hash.txt",
+      "prompt": "/f1/3040a49750/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1948,
+    "cache_creation_tokens": 2844371,
+    "cache_read_tokens": 480825227,
+    "output_tokens": 662482,
+    "api_call_count": 974
+  }
+}
