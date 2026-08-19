@@ -1,0 +1,230 @@
+DATAQ_LOADER is provided CREATE TAG privilage, verify the pending part and close the loop
+
+---
+
+<task-notification>
+<task-id>bcc2unuwt</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/248e6c9f-6db3-446e-8372-f8dd810b180b/tasks/bcc2unuwt.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for final CI on 1470" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b7ee0pb4k</task-id>
+<tool-use-id>toolu_01FPRpYSJG35JxSeC9gSSTkF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/248e6c9f-6db3-446e-8372-f8dd810b180b/tasks/b7ee0pb4k.output</output-file>
+<status>completed</status>
+<summary>Background command "Set milestone and wait for CI on 1471" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Is it required to document our current hosting details [like azure postgres is in west-us-3], Current hosting is just for demonstration purpose, and it will change from customer to customers. Shouldn't we just document the principle, not the actual posting details?
+
+---
+
+<task-notification>
+<task-id>a348ec861873d5182</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/248e6c9f-6db3-446e-8372-f8dd810b180b/tasks/a348ec861873d5182.output</output-file>
+<status>completed</status>
+<summary>Agent "Sweep published docs for deployment specifics" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to report.
+
+## Audit: deployment-specific facts in PUBLISHED DataQ docs
+
+**Critical framing point first:** `mkdocs.yml` `exclude_docs` lists 7 files, but **two more internal files sit in `docs/` and are neither excluded nor in `nav` — mkdocs still builds and publishes them** (nav omission does not exclude a page; it just isn't linked, and it *is* reachable by URL and indexed by the built-in search plugin):
+
+- `/Users/arijit/Coding/Python/DataQ/docs/ops-log.md` (529 lines)
+- `/Users/arijit/Coding/Python/DataQ/docs/post-v1-assets-lineage-incidents-notes.md` (164 lines)
+
+That single omission is the largest finding in the audit, and everything in section A below flows from it.
+
+---
+
+## SEVERITY 1 — actively misleading / should never have been published
+
+### A. `docs/ops-log.md` — the entire file (cat 1, 2, 4). Fix: add to `exclude_docs`.
+
+This is a maintainer's private ops journal published verbatim on a public product site. It is 100% our-estate, contains a personal identity, an operational-security narrative, and cost data. Not fixable by editing; it should be excluded wholesale.
+
+| Line | Quote | Why |
+|---|---|---|
+| 93 | `royarijit04@outlook.com` | Cat 1 — personal email as an actor column. Also lines 213, 335 `SHOW GRANTS TO USER ROYARIJIT04` (Snowflake username). |
+| 78–92, 526–529 | `dataq-harness-airflow`, `dataq-harness-airflow-worker`, `dataq-harness-*`, `dataq-app-api`, `dataq-app-worker`, `dataq-rg` | Cat 1 — our Container App / RG names. |
+| 89 | `Shared Postgres` **`dataq-pg-wus3-3erlgd`** … reset the server's `airflowadmin` password … `DataQ prod uses the separate dataq_app role` | Cat 1, highest — a live server hostname fragment, admin role names, and the fact prod shares it. Reads as an attack map. |
+| 83 | "an Airflow admin credential was briefly written to two scratch files via `terraform output` redirection (violates the inline-fetch-only rule) — caught immediately" | Cat 1/4 — a published self-report of a credential-handling incident on our infra. |
+| 71, 79, 92, 527 | "the harness is burning ~CAD 17/day", "Extra burn ≈ CAD 4–5", "killed mid-poll by the account's monthly spend limit" | Cat 1 — our billing. |
+| 80, 83 | "two messages purporting to be from 'a coordinator' arrived… Neither was acted on"; "I passively waited… roughly an hour… pure wasted awake-time cost" | Cat 4 — agent-session post-mortems on a product docs site. |
+| 84 | `f637a18e`, revisions `--0000066` / `--0000064`, `plan -detailed-exitcode` | Cat 1 — commit SHA + revision numbers. |
+| 143–481 | Six "Finding" sections (~340 lines) on our Snowflake grants, `DATAQ_LOADER`/`DATAQ_READER` PATs, `CREATE TAG` grants, an emulator spike, OpenTofu lock regeneration | Cat 1+4 — pure internal decision-archaeology. |
+| 482–529 | "Credential rotation" / "Expiring soon" tables | Cat 1 — a public inventory of which of our secrets expire when. |
+
+**Fix:** add `ops-log.md` to `exclude_docs`. Nothing here is product documentation.
+
+### B. `docs/post-v1-assets-lineage-incidents-notes.md` — publish status inconsistent (cat 2/3)
+
+Line 1–12: `&gt; **Status: design for the next cycle's build (the #596 deliverable — no code in this PR)**`, links to `context/post-v1-roadmap.md`, "Themes 2/3/5/14". Line 76: `Harness test bed already green-on-paper: 4 RETAIL sources → 4 ANALYTICS_STG`. Its two sibling files (`post-v1-admin-ui-notes.md`, `post-v1-dq-intelligence-notes.md`) *are* excluded — this one was missed.
+**Fix:** add to `exclude_docs`.
+
+### C. `docs/adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md:105-106` (cat 1)
+
+```
+az containerapp auth update -n dataq-app-api -g dataq-rg --enabled false
+```
+A copy-pasteable command naming **our** app and **our** resource group, presented as a migration step. A customer running it either errors or, worse, believes those are the product's required names.
+**Fix:** `-n &lt;your-api-app&gt; -g &lt;your-resource-group&gt;`.
+
+### D. `docs/deployment-parity.md:6` — broken ADR link (cat 3-adjacent, renders 404)
+
+`.../docs/adr/0028-cloud-neutral-frontend-and-auth.md` — no such file; the real one is `0028-cloud-neutral-image-runtime-config-generic-oidc.md`. Also note this is an absolute GitHub URL where the in-site relative link `adr/0028-….md` would work.
+**Fix:** correct the slug and make it a relative in-site link.
+
+### E. `docs/security.md:276-300` — CMK "not offered, and why" (cat 1, misleading)
+
+Two of the three stated reasons are facts about **our** subscription, published as if they were product limitations:
+- L289: "`postgres.tf` declares it as a `data` source — **the subscription caps Flexible Servers at one**, so the app shares a server" — a free/trial-tier quota on *our* account.
+- L294-296: "**Our** Key Vault is deliberately destroyable… purge protection **off**… a recorded decision for a **demo-scoped vault**."
+
+A customer reads "DataQ does not support CMK." The truth is "our demo vault can't host a CMK." Reason 1 (creation-time-only, first-party citation) is the genuinely product-relevant one and should stay.
+**Fix:** keep reason 1; recast 2 &amp; 3 as "if your stack references a pre-existing server, or runs the vault without purge protection, CMK is unavailable — see [prerequisites]". Cuts ~20 lines and removes the false product claim.
+
+### F. `docs/orchestration.md:208-212` (cat 1/2, will confuse and already rots)
+
+&gt; "**Not yet verified against a deployed app.** The Azure subscription lapsed (2026-07-12), so there is no running prod to attach a catalog to, and the harness Flow-A chain needs live Snowflake."
+
+Our billing status published as a product caveat. Also L256 "live-verified on **the demo account** (RETAIL→STG→ANALYTICS chain)", L282 "captured from the live demo account/workspace (2026-07-17 spike)", L131-132 `DATAQ_DB.ANALYTICS.mart_order_revenue`.
+**Fix:** "Verified locally and against captured payloads; not yet exercised against a deployed catalog." Drop the subscription sentence entirely; genericize the identifiers to `&lt;db&gt;.&lt;schema&gt;.&lt;table&gt;`.
+
+### G. `docs/runbook-faq.md:24-29` (cat 1/2, stale-on-arrival)
+
+&gt; "**Snowflake window update (2026-07-04):** the trial runs to **~2026-07-25** (same as Azure). The #588 retirement was rehearsed and reversed the same day — the leg is live again on a fresh 25-day PAT (schedules/bindings restore pending, see #588)"
+
+Entirely our trial account, with issue numbers a reader cannot open meaningfully, and a date already 13 months past. Also L20 heading "Live smoke (deployed stack + **harness** data)" and L40/42 "a **harness** suite", "a **harness** pipeline" — "the harness" is undefined for any reader.
+**Fix:** delete the whole admonition; replace "harness" with "a suite backed by a real datasource" / "an orchestrated pipeline".
+
+---
+
+## SEVERITY 2 — will rot silently as our infra changes
+
+### H. `docs/perf-baseline.md` (cat 1 + 2), several places
+
+| Line | Quote | Note |
+|---|---|---|
+| 3-4 | "Captured 2026-07-10 (**v1.1 W3**), while both the Snowflake trial and the **Azure subscription were still live**" | Our billing + internal week numbering. |
+| 36 | `App code | main @ e6b63fe1 (v1.1 W3)` | Commit SHA + week number. |
+| 46-47 | `DATAQ_DB.PERF.ORDER_LINES_50M`, `dataq_retail.perf.order_lines_1m` | Our warehouse objects. |
+| 51 | "burned **~0.46 Snowflake credits**" | Our billing. |
+| 150, 162, 218, 228 | "v1.1 W6", "the W3 campaign", "the W3 UC datum" | Week-numbered milestones. |
+| 283-312 | Whole appendix: "days before the Snowflake subscription was to lapse (the lapse was later reversed)… `DATAQ_READER` role… `--seed 587`, **harness repo per ADR 0021**" | See bloat item N. |
+
+**Fix:** keep the *numbers* (genuinely useful product data), strip the account narrative; replace `DATAQ_DB.PERF.…` with `&lt;db&gt;.&lt;schema&gt;.order_lines_50m`; replace "v1.1 W3" with the release version.
+
+### I. `docs/feature-matrix.md:32, 54` (cat 1)
+
+`Snowflake RETAIL.ORDERS_HEADER row_count=34680.0`, `dataq_retail.gold.feedback_sentiment row_count=180.0` / `(195 rows)`.
+Legitimate purpose (evidence that a ✅ was earned by a real run), illegitimate specificity.
+**Fix:** "verified against a live Snowflake table and a live Unity Catalog table" — drop the object names and row counts. L191 "the reference **harness** runs this" → "verified against a self-hosted Airflow".
+
+### J. `docs/deployment-parity.md` — framing (cat 2) and one over-specific row
+
+The page is titled "How the **three reference installations** compare" — i.e. it documents *our* estate rather than the product. Most of the content is genuinely useful (the config-difference tables are exactly what an operator wants). The problems are the framing and two rows:
+- L58-63 "## Test harness" table — "Full external harness (ADF pipelines, Airflow, dbt job; **opened on demand**)" / "**none**". Pure our-estate; means nothing to a customer.  **Fix: delete the section.**
+- L39 rate-limiting cell — "live-verified 2026-08-16 — an unauthenticated burst through CloudFront allowed exactly the configured 120/min then 429'd…" This is ~4 lines of our test result in a comparison table. **Fix:** compress to "on (`RATE_LIMIT_XFF_TRUSTED_HOPS=3`)" and move the verification prose to `security.md` if it's worth keeping.
+- L64-72 "AWS has a WAF ceiling and Azure has nothing equivalent… #1388" — accurate and useful as a *product* caveat, but phrased about our two stacks. **Fix:** reframe as "the Azure stack in this repo ships no WAF; add Front Door if you need edge limiting."
+
+### K. `docs/deployment.md:167` (cat 1/2)
+
+&gt; "The **reference deployment** carries **demo/test fixtures** — tear them down before any customer-facing or marketplace use"
+
+Reads as an instruction to the customer about *our* deployment, which they cannot act on. Otherwise `deployment.md` is clean and product-shaped — good baseline for the others.
+**Fix:** "If you seeded demo fixtures (`scripts/setup.sh`), remove them before production use."
+
+### L. ADR bare references to excluded pages (cat 2/3)
+
+These are code-span mentions, not markdown links, so they don't render 404s — but they point a public reader at a page that does not exist on the site:
+- `docs/adr/0012-monitor-kind-seam.md:177` — `` `docs/progress-v1.md` — Week 3 "Monitor abstraction…" tasks``
+- `docs/adr/0010-provider-agnostic-infrastructure-seams.md:59` — "tracked in `docs/progress-v1.md` (Week 2…, Week 7…)"
+- `docs/adr/0011-extensibility-seams-for-deferred-integrations.md:62` — "(Week 5 generic dispatch, Week 6 `ResultPublisher` seam)"
+- `docs/adr/0005-severity-tier-weights.md:118` — "Week 3 … Week 6 health"
+- `docs/adr/0021-demo-test-data-environment-strategy.md:14` — "carried in CLAUDE.md §13 and `docs/progress-v1.md`"
+- `docs/adr/0033-workspace-roles-rbac.md:44` — "carried into `docs/security.md` / **`docs/compliance-posture.md`** by #742"
+- `docs/adr/0024-app-deployment-infrastructure.md:159` — "the `docs/compliance-posture.md` evidence links"
+
+**Fix:** drop the trailing "tracked in docs/progress-v1.md" lines from ADRs (they are the ADR's own build-tracking residue), and drop the `compliance-posture.md` mentions.
+
+### M. `docs/adr/0024-app-deployment-infrastructure.md` — our estate, top to bottom (cat 1)
+
+~30 hits across 250 lines: `dataq-rg`, `dataq-app-api`, `dataq-app-worker`, `dataq-app-migrate`, `dataq-cae`, `dataq-harness-*`, `dataq-harness-logs`, `dataq-app-ai`, `dataq-github-deploy`, "this **subscription** is hard-capped at one Container App Environment (`MaxNumberOfGlobalEnvironmentsInSubExceeded` — a **free/trial-tier** limit)", "the env's region is fixed (**westus2**)".
+
+This is the hardest call in the audit. ADRs are decision records and naming the actual resources is what makes a decision record honest — I would **not** strip an ADR into genericity. But two things here are worse than the rest:
+- The "free/trial-tier subscription cap" is presented as the *architectural reason* the app shares an environment with a harness the reader has never heard of. A customer deploying DataQ will conclude the product requires a shared environment. **Fix:** one lead-in sentence — "This ADR records decisions for the maintainer's reference deployment; customer deployments provision a dedicated environment." That one sentence defuses most of section M *and* section A's residue in other ADRs.
+- Similarly ADR 0021 (`0021-demo-test-data-environment-strategy.md`) is *entirely* about our demo harness — 65 lines whose subject is "the harness lives outside the repo". It is a legitimate decision record, but it is the source of every unexplained "the harness" reference elsewhere. **Fix:** keep it, but add the same lead-in, and make it the one place "the harness" is defined so other pages can stop using the word.
+
+### Other scattered cat-1 items (low individual severity)
+
+- `docs/adr/0034-…:52-53` — `DATAQ_DB.ANALYTICS.mart_order_revenue` / `MART_ORDER_REVENUE`. **Genuinely load-bearing**: the whole ADR is about a case-folding mismatch, and a generic example would destroy the point. Leave; at most rename to `ANALYTICS_DB`.
+- `docs/adr/0040-…:11` — "prod's `dataq_retail.reference.*` schema". **Fix:** `&lt;catalog&gt;.reference.*`.
+- `docs/adr/0036-…:60` and `docs/adr/0030-…:66` — "the current trial runs to ~2026-07-25", "Snowflake trial + Azure both end ~2026-07-25; harness compute stopped by default — see project memory". "See project memory" is unreadable to a public audience. **Fix:** drop the trial-expiry clauses.
+- `docs/adr/README.md:65` — "Week-6 prototype adoption"; ADR filename `0022-week6-…`. Minor cat 2; the filename is public URL surface. Low priority.
+- `docs/changelog.md:41, 64` — "across both **reference deployments**", "Azure remains the primary reference deployment". Borderline: a changelog legitimately says where a thing was verified. Acceptable as-is.
+
+---
+
+## LEGITIMATE — flagged as looking suspicious but should NOT be changed
+
+- `docs/security.md:468, 470-473` — "WAFv2 Web ACL — **`us-east-1`, unavoidably** … CloudFront-scoped ACLs exist only in `us-east-1` regardless of where the stack lives", with the explicit note that this is stated "so that a reviewer who finds a `us-east-1` provider alias in an `eu-west` stack finds it explained here… Both are properties of the product, not of any one deployment." This is exactly right, self-aware about the distinction, and should be left alone.
+- `docs/getting-started.md` and `docs/index.md` — every address is `you@example.com` / `smtp.example.com` / `dataq@example.com`. Correct placeholder discipline throughout. No findings.
+- `docs/security.md:8-155` (auth), `:314-431` (column classification), `:432-566` (data residency) — long, but this is a security page explaining controls a reviewer must verify. Length warranted; no cuts recommended.
+- `docs/deployment.md` overall — product-shaped, uses "the reference deploy" sparingly and correctly. Only L167 needs a touch.
+
+---
+
+## SEVERITY 3 — bloat (length not warranted by the audience)
+
+| File | Lines | What | Cut |
+|---|---|---|---|
+| `docs/ops-log.md` | 1–529 | Whole file | **529 lines — exclude entirely** |
+| `docs/adr/0024-…` | 130–250 | The OpenTofu amendment: "Evidence — how this was verified" incl. the Terraform-vs-OpenTofu plan-equivalence table, the positional-`env`-diff aside, the #1087/#1093 state-encryption update | ~60 of 120 lines. The *decision* (OpenTofu, why, path unchanged) is 15 lines; the rest is verification archaeology. |
+| `docs/perf-baseline.md` | 282–312 | "Appendix — Snowflake 1.2M baseline (#587, historical)" — explicitly superseded by the table above it, with `--seed 587`, `DATAQ_READER`, harness reproduction steps | **~30 lines, delete outright.** A superseded baseline is exactly "an earlier draft said X". |
+| `docs/orchestration.md` | 200–290 | Lineage verification narrative — "#804 verified locally", "#912 Snowpark scratch… the pre-#912 drop was silent, which is why establishing whether it was biting took manual archaeology against prod", "captures taken from live prod Enterprise on 2026-07-28" | ~25 of 90 lines. The tier ladder table and the "dark by default / grants needed" prose are genuinely needed; the per-issue verification provenance is not. |
+| `docs/feature-matrix.md` | 23–58 | Footnotes ᵃ/ᵇ/ᶜ — esp. ᶜ "**The Unity Catalog tick was false until 2026-08-08**… It had never once worked… the standing rule after #953 shipped a ✅ that had never once worked" | ~20 of 36 lines. Footnote ᵇ (what schema drift actually inspects per datasource) is real product info — keep. Footnote ᶜ is an internal integrity confession; a customer needs "UC custom SQL: supported since 1.1", not the bug's biography. |
+| `docs/adr/README.md` | 82 | The ADR 0039 summary row is a single ~450-word cell | Compress to one line; the ADR itself carries the detail. |
+| `docs/deployment-parity.md` | 39, 58–72 | Harness section + inline verification prose | ~15 lines |
+
+**Rough total: ~700 lines removable, of which 529 are one file that should simply be excluded from the build.**
+
+---
+
+## Suggested order of action
+
+1. Add `ops-log.md` and `post-v1-assets-lineage-incidents-notes.md` to `exclude_docs` (one edit, removes the great majority of category-1 exposure).
+2. Fix `docs/adr/0028-…:105` (`dataq-app-api -g dataq-rg` → placeholders) and the broken ADR-0028 link in `deployment-parity.md:6`.
+3. Rewrite `security.md` CMK reasons 2 &amp; 3; delete `runbook-faq.md:24-29`; delete `orchestration.md:208-212`.
+4. Genericize warehouse object names in `perf-baseline.md`, `feature-matrix.md`, `adr/0040`; drop trial-expiry clauses in `adr/0030`, `adr/0036`.
+5. Add a one-line "this ADR describes the maintainer's reference deployment" preamble to ADRs 0021 and 0024 rather than genericizing them.
+6. Bloat cuts, lowest priority.</result>
+<usage><subagent_tokens>74797</subagent_tokens><tool_uses>16</tool_uses><duration_ms>190133</duration_ms></usage>
+</task-notification>
+
+---
+
+remove the email, any PII data, server name, resource name, and anything similar from throughout the repo [be it published or not]
+
+---
+
+<task-notification>
+<task-id>bmfnj7new</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/248e6c9f-6db3-446e-8372-f8dd810b180b/tasks/bmfnj7new.output</output-file>
+<status>completed</status>
+<summary>Background command "Full backend test suite" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+create a hook, so that this kind of data don't get commit/publish in future.
