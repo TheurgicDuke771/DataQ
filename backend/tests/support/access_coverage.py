@@ -44,6 +44,20 @@ AUDITED: Final[dict[str, str]] = {
     # declaration at the caller instead would be a claim about a line the guard
     # never checks.
     "mcp/server.py::_redacted_sample": "run_results.read",
+    # ── live probes (#1419/#1479) ────────────────────────────────────────────
+    # These read the WAREHOUSE and persist nothing, which is why they were once
+    # outside G1's subject (see the `dryrun_check` note that used to sit in
+    # EXEMPT below). That scope has now widened from "reads of what we stored" to
+    # "disclosures of regulated data", on the ground that an empty
+    # `action_class=access` page was being read as "nobody saw anything" while
+    # these doors were returning live cell values.
+    #
+    # They are audited whether or not they mask: "profiled the customers table
+    # and saw nothing" is a different fact from "nobody profiled it".
+    "api/v1/checks.py::dry_run_check": "check.dryrun",
+    "api/v1/suites.py::profile_columns": "column.profile",
+    "mcp/server.py::profile_column": "column.profile",
+    "mcp/server.py::dryrun_check": "check.dryrun",
 }
 
 #: Redactor call sites that do NOT record an access event, each with the reason.
@@ -58,13 +72,18 @@ EXEMPT: Final[dict[str, str]] = {
     "alerting/builder.py::build_run_report": (
         "the alert-delivery write path, not a principal's read — no actor to attribute"
     ),
-    # A live evaluation the caller explicitly asked for, whose values are
-    # transient and never persisted. It is the same class of act as running a
-    # check, and it reads the WAREHOUSE rather than a stored result — so it is
-    # outside G1's subject (reads of results/samples DataQ has retained). Worth
-    # revisiting if the scope of the audit widens from "what we stored" to
-    # "everything we ever showed".
-    "mcp/server.py::dryrun_check": (
-        "a live warehouse evaluation the caller initiated; reads no stored result"
-    ),
 }
+
+# NOTE — one entry was REMOVED from EXEMPT rather than edited, and the reason is
+# worth keeping. `mcp/server.py::dryrun_check` was exempt as "a live warehouse
+# evaluation the caller initiated; reads no stored result", and that entry ended:
+#
+#     Worth revisiting if the scope of the audit widens from "what we stored" to
+#     "everything we ever showed".
+#
+# #1479 is that revisit. The exemption was coherent while G1's subject was
+# retained results; what broke it is that `GET /admin/audit-events` presents an
+# empty `action_class=access` page as evidence, and an investigator cannot tell
+# "nobody read anything" from "the doors that were open are not on this list".
+# The condition for changing the decision was written down in advance, which is
+# why this is a documented revisit and not a reversal.

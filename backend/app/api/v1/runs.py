@@ -32,7 +32,6 @@ from backend.app.db.models import (
     COMPARISON_KIND,
     PIPELINE_RUN_STATUSES,
     RUN_STATUSES,
-    Asset,
     Check,
     User,
 )
@@ -289,31 +288,13 @@ def list_runs(
 
 
 def _asset_column_tags(db: Session, suite: Any, run: Any = None) -> dict[str, str] | None:
-    """The warehouse's own column classifications for this suite's asset (G3).
+    """Thin alias for `run_service.asset_column_tags` — see its docstring.
 
-    The governance FLOOR of the redaction ladder — the rung a suite policy cannot
-    lift. Read from the asset rather than the warehouse: the read path must not
-    open a datasource connection, both for latency and because results have to
-    stay readable when the warehouse is down. The map is refreshed by the run
-    path, which is already connected.
-
-    `None` when the suite has no asset or the asset has never been refreshed,
-    which the redactor treats identically to an empty map — no opinion, fall
-    through to the policy and then the classifier. That is the same behaviour
-    that shipped before G3, and it is the only safe degradation: inventing a
-    clearance here would un-mask data through fail-closed mode.
-
-    Anchored on the **run's** asset when there is one, falling back to the
-    suite's. A suite can be retargeted at a different table, and the runs it
-    already produced are samples of the OLD one — redacting them against the new
-    table's classifications would apply the wrong governance to the wrong data,
-    in both directions. `runs.asset_id` records what was actually read.
+    Kept as a name in this module because the read path calls it in three places,
+    but the BODY moved to the service so the live-probe routes (#1419/#1479)
+    share one implementation rather than growing a second.
     """
-    asset_id = getattr(run, "asset_id", None) or getattr(suite, "asset_id", None)
-    if asset_id is None:
-        return None
-    asset = db.get(Asset, asset_id)
-    return asset.column_tags if asset is not None else None
+    return svc.asset_column_tags(db, suite, run)
 
 
 def _result_read(

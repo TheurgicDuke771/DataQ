@@ -27,7 +27,7 @@ from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.datasources.monitors import STATEFUL_MONITOR_KINDS
 from backend.app.db.models import Connection, User
 from backend.app.db.session import get_db
-from backend.app.services import audit_service, monitor_baseline
+from backend.app.services import audit_service, live_probe, monitor_baseline, run_service
 from backend.app.services import check_service as svc
 from backend.app.services import dryrun_service as dryrun
 from backend.app.services.check_service import CheckConfigInvalidError
@@ -491,11 +491,42 @@ def dry_run_check(
         target=suite.target,
         secret_store=secret_store,
     )
+    # Live probe: real values, nothing persisted — so both the redaction ladder
+    # and the G1 access audit, which hang off a Result row, missed this route
+    # entirely (#1419 / #1479). Redaction follows the DESTINATION: an author's own
+    # preview panel is `INTERACTIVE`, so the values are shown — seeing what the
+    # rule fired on is the entire purpose of a dry-run, and masking it would trade
+    # the feature for a policy artifact. The disclosure is recorded instead.
+    #
+    # Fail-closed suites (`column_policy.require_classification`) still mask here:
+    # that operator has explicitly chosen assurance over capability, and this seam
+    # honours the choice rather than making it either way.
+    policy = suite.column_policy
+    masked = live_probe.values_are_masked(policy, destination=live_probe.Destination.INTERACTIVE)
+    tested_column = (payload.config or {}).get("column")
+    observed = outcome.observed_value
+    if masked:
+        observed = live_probe.redact_probe_observed_value(
+            observed,
+            tested_column=tested_column,
+            policy=policy,
+            tags=run_service.asset_column_tags(db, suite),
+        )
+    live_probe.record_probe_access(
+        db,
+        action="check.dryrun",
+        suite_id=suite.id,
+        actor=current_user,
+        destination=live_probe.Destination.INTERACTIVE,
+        masked=masked,
+        columns=[tested_column] if tested_column else None,
+        detail={"expectation_type": payload.expectation_type, "kind": payload.kind},
+    )
     return CheckDryRunResult(
         status=outcome.status,
         # Explicit Decimal→float: the response model wants clean JSON numbers
         # (pydantic coerced this implicitly; typed now so checkers see it too).
         metric_value=float(outcome.metric_value) if outcome.metric_value is not None else None,
-        observed_value=outcome.observed_value,
+        observed_value=observed,
         expected_value=outcome.expected_value,
     )

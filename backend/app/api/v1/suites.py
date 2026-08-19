@@ -25,8 +25,8 @@ from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.datasources.sampling import MAX_SAMPLE_ROWS
 from backend.app.db.models import Connection, Suite, User
 from backend.app.db.session import get_db
+from backend.app.services import live_probe, run_dispatch, run_service, run_target
 from backend.app.services import profile_service as profile
-from backend.app.services import run_dispatch, run_target
 from backend.app.services import suite_io_service as suite_io
 from backend.app.services import suite_service as svc
 from backend.app.services.suite_authz import (
@@ -482,6 +482,42 @@ def profile_columns(
         file_format=payload.file_format,
         secret_store=secret_store,
     )
+    # Live probe: `top_values` / `min_value` / `max_value` are real cell contents,
+    # and this route consulted no policy and wrote no audit event (#1419/#1479).
+    # Destination rule: an author's own profiler panel is `INTERACTIVE`, so values
+    # are shown — profiling exists to tell you what is IN a column — and the
+    # disclosure is recorded instead of prevented.
+    #
+    # Governance tags need filtering when the probe may not be reading the suite's
+    # own asset — see `live_probe.applicable_tags`. Dropping the map WHOLESALE was
+    # the first attempt and is wrong in the other direction: it drops the
+    # sensitive floor too, which masks LESS, on the common path where the check
+    # editor sends the suite's own table explicitly.
+    policy = suite.column_policy
+    probed_other_target = any(
+        v is not None for v in (payload.table, payload.path, payload.schema_, payload.catalog)
+    )
+    tags = live_probe.applicable_tags(
+        run_service.asset_column_tags(db, suite), probed_other_target=probed_other_target
+    )
+    sensitive = live_probe.sensitive_profile_columns(result.columns, policy=policy, tags=tags)
+    masked = live_probe.values_are_masked(policy, destination=live_probe.Destination.INTERACTIVE)
+    columns = (
+        live_probe.mask_profile_columns(result.columns, sensitive=sensitive)
+        if masked
+        else result.columns
+    )
+    live_probe.record_probe_access(
+        db,
+        action="column.profile",
+        suite_id=suite.id,
+        actor=current_user,
+        destination=live_probe.Destination.INTERACTIVE,
+        masked=masked,
+        columns=[c.column for c in result.columns],
+        sensitive_columns=sensitive,
+        detail={"table": result.table, "path": result.path, "row_count": result.row_count},
+    )
     return ProfileRead(
         row_count=result.row_count,
         table=result.table,
@@ -499,7 +535,9 @@ def profile_columns(
                 max_value=c.max_value,
                 top_values=[TopValue(value=t["value"], count=t["count"]) for t in c.top_values],
             )
-            for c in result.columns
+            # `columns`, NOT `result.columns` — iterating the raw list here is what
+            # would make the masking above inert while looking correct.
+            for c in columns
         ],
     )
 
