@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "1a0ec7d93329",
+  "strategy": "manual-commit",
+  "branch": "feat/live-probe-disclosure-seam",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/api/v1/checks.py",
+    "backend/app/api/v1/suites.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/live_probe.py",
+    "backend/tests/api/test_access_coverage.py",
+    "backend/tests/mcp/test_mcp_tools.py",
+    "backend/tests/services/test_live_probe.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1a/0ec7d93329/0/metadata.json",
+      "transcript": "/1a/0ec7d93329/0/full.jsonl",
+      "compact_transcript": "/1a/0ec7d93329/0/transcript.jsonl",
+      "content_hash": "/1a/0ec7d93329/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 2073,
+    "cache_read_tokens": 821091,
+    "output_tokens": 1464,
+    "api_call_count": 2
+  }
+}
