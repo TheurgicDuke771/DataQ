@@ -232,7 +232,7 @@ implementation gap.
 
 **Live-verified 2026-08-18 against the real warehouses**, which is the only evidence that
 counts across a driver boundary (the #953 rule). Every property is now settled on **both**
-platforms, each in the production shape — a **steward** role applies the tag, and DataQ's
+platforms and **both Snowflake tag families**, each in the production shape — a **steward** role applies the tag, and DataQ's
 own least-privileged connection reads it back through the shipped `fetch_column_tags`. That
 split is the test: one powerful role doing both would prove nothing about whether the role
 the product actually runs as can see a tag someone else applied.
@@ -270,10 +270,20 @@ role**, even one the underlying user is granted; this is why the earlier pass co
 apply anything at all. Both are properties of the platform's privilege model, and both are
 now on the record rather than rediscovered by the next person.
 
-**Still unexercised, deliberately:** Snowflake's own `PRIVACY_CATEGORY` system tag. It is
-set by Snowflake's built-in classification service, not by an `ALTER TABLE`, so exercising
-it means running that service — and the code path it feeds is the same `_merge` the
-`dataq_classification` cases just proved. Recorded as a limit rather than claimed as tested.
+**`PRIVACY_CATEGORY` was verified too, after review pushed back on skipping it.** The
+first draft recorded it as unexercised on the reasoning that it feeds the same `_merge` as
+`dataq_classification`. That reasoning was wrong in a way worth keeping: the tag lives in
+the **shared `SNOWFLAKE` database**, so it is governed by a *different access-control rule*,
+and a role that cannot see it gets **zero rows rather than an error** — the column would
+read as untagged and silently fall back to the name heuristic. Same `_merge`, entirely
+different failure mode.
+
+It is settable with `ALTER TABLE` (that is how the classification service applies its own
+results), so the path was exercised directly rather than by running classification. All
+three values — `IDENTIFIER`, `QUASI_IDENTIFIER`, `SENSITIVE` — returned `sensitive` through
+the shipped path, read by a connection role confirmed to hold **no `IMPORTED PRIVILEGES`**.
+So the "no extra grant" claim now covers both tag families, on evidence rather than on
+symmetry.
 
 ### G4 — 🟢 Region / residency assertion & enforcement — #434 — **asserted, surfaced, and its one exception accepted on the record**
 **Requirement:** GDPR Ch. V — EU personal data must stay in-region; cross-border transfer
