@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "b5c6255d5c0c",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-snapshot-dependabot-triage",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b5/c6255d5c0c/0/metadata.json",
+      "transcript": "/b5/c6255d5c0c/0/full.jsonl",
+      "compact_transcript": "/b5/c6255d5c0c/0/transcript.jsonl",
+      "content_hash": "/b5/c6255d5c0c/0/content_hash.txt",
+      "prompt": "/b5/c6255d5c0c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 6741,
+    "cache_read_tokens": 1422706,
+    "output_tokens": 3188,
+    "api_call_count": 9
+  }
+}
