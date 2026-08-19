@@ -1957,7 +1957,7 @@ def dryrun_check(
         return {
             "status": outcome.status,
             "metric_value": _num(outcome.metric_value),
-            "observed_value": run_service.redact_observed_value(
+            "observed_value": live_probe.redact_probe_observed_value(
                 outcome.observed_value,
                 tested_column=(config or {}).get("column"),
                 policy=suite.column_policy,
@@ -3267,19 +3267,21 @@ def list_columns(
         )
         # Audited, not masked. This probe opens the customer's warehouse with a
         # stored credential, so "who touched this table" must be answerable — but
-        # it returns column NAMES, which are schema rather than data, so there is
-        # nothing to redact and `masked=True` would misreport a disclosure that
-        # never had values in it. `exposed` is therefore False for the honest
-        # reason, not by suppressing the event.
+        # it returns column NAMES, which are schema rather than data. Hence
+        # `values_in_scope=False` rather than `masked=True`: there was nothing to
+        # redact, and claiming a redaction that never happened is the same class
+        # of dishonest field this whole seam exists to remove. `exposed` is False
+        # because nothing was disclosed, not because it was hidden.
         live_probe.record_probe_access(
             session,
             action="column.list",
             suite_id=suite.id,
             actor=user,
             destination=live_probe.Destination.EGRESS,
-            masked=True,
+            masked=False,
+            values_in_scope=False,
             columns=columns,
-            detail={"table": table, "path": path, "values_returned": False},
+            detail={"table": table, "path": path},
         )
         return {
             # The fully-qualified object actually read. These may have been
@@ -3424,6 +3426,10 @@ def profile_column(
         connection = session.get(Connection, suite.connection_id)
         if connection is None:
             raise ToolError("suite has no connection")
+        # BEFORE `_profile_target_defaults` runs: it overwrites these locals with
+        # the suite's own target, so reading them afterwards always looks like an
+        # explicit override — which silently dropped the tag floor on every call.
+        probed_other = any(v is not None for v in (table, path, schema, catalog))
         if table is None and path is None:
             # `_profile_target_defaults` -> `run_target.resolve_target` already
             # folds the suite target's namespace into `table` for Iceberg — don't
@@ -3460,10 +3466,14 @@ def profile_column(
         # Tags apply only when the probe hit the suite's OWN asset: an explicit
         # table/path override may name a different table whose columns collide by
         # name, and the asset's tags could hand out a clearance belonging to it.
-        probed_other = any(v is not None for v in (table, path, schema, catalog))
-        tags = None if probed_other else _asset_column_tags(session, suite)
+        tags = live_probe.applicable_tags(
+            _asset_column_tags(session, suite), probed_other_target=probed_other
+        )
         sensitive = live_probe.sensitive_profile_columns(
-            result.columns, policy=suite.column_policy, tags=tags
+            result.columns,
+            policy=suite.column_policy,
+            tags=tags,
+            destination=live_probe.Destination.EGRESS,
         )
         # NOT `columns` — that name is this tool's own parameter (the list of
         # column NAMES to profile). Shadowing it silently changed what was

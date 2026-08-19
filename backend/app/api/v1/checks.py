@@ -506,7 +506,7 @@ def dry_run_check(
     tested_column = (payload.config or {}).get("column")
     observed = outcome.observed_value
     if masked:
-        observed = run_service.redact_observed_value(
+        observed = live_probe.redact_probe_observed_value(
             observed,
             tested_column=tested_column,
             policy=policy,

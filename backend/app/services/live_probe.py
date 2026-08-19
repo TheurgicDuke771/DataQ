@@ -82,14 +82,18 @@ from backend.app.services import audit_service
 # G3) being the layer a reimplementation forgets first.
 from backend.app.services.run_service import (
     _REDACTED_VALUE,
+    _SENSITIVE_TAG_VALUES,
     _known_sensitive,
+    _may_show_incidental,
     _policy_requires_classification,
 )
 
 __all__ = [
     "Destination",
+    "applicable_tags",
     "mask_profile_columns",
     "record_probe_access",
+    "redact_probe_observed_value",
     "sensitive_profile_columns",
     "values_are_masked",
 ]
@@ -128,10 +132,79 @@ def values_are_masked(policy: Mapping[str, Any] | None, *, destination: Destinat
     """
     if destination is Destination.EGRESS:
         return True
-    # Import locally: `run_service` imports a large slice of the datasource layer,
-    # and this module is imported by API routes that must stay cheap to load.
-
     return _policy_requires_classification(policy)
+
+
+def applicable_tags(
+    tags: Mapping[str, str] | None, *, probed_other_target: bool
+) -> Mapping[str, str] | None:
+    """The asset's tags, filtered for a probe that may not be reading that asset.
+
+    A probe can name an explicit table/path that is **not** the suite's asset, and
+    two tables can share a column name. The asset's tag map is then about the
+    wrong table, and it carries two kinds of entry that fail in opposite
+    directions:
+
+    * a **sensitive** tag masks — applying it to the wrong table can only
+      over-mask, which is safe;
+    * a **non-sensitive** tag is a *clearance* that un-masks in fail-closed mode —
+      applying that to the wrong table hands out permission that was never
+      granted for this data.
+
+    So the clearances are dropped and the floor is kept. An earlier version of
+    this code dropped the whole map and the comment claimed that "can only mask
+    more, never less" — which is backwards: dropping the map also drops the
+    sensitive floor, and outside fail-closed mode that makes it mask *less*. On
+    the common path (the check editor sends the suite's own table explicitly) that
+    would have silently disabled the G3 governance floor.
+    """
+    if not tags:
+        return tags
+    if not probed_other_target:
+        return tags
+    return {
+        column: value
+        for column, value in tags.items()
+        if str(value).strip().lower() in _SENSITIVE_TAG_VALUES
+    }
+
+
+def redact_probe_observed_value(
+    observed: dict[str, Any] | None,
+    *,
+    tested_column: str | None,
+    policy: dict[str, Any] | None,
+    tags: Mapping[str, str] | None = None,
+) -> dict[str, Any] | None:
+    """`run_service.redact_observed_value`, plus the **scalar** case it does not cover.
+
+    That redactor handles `error`, `unparsed_value`, and a *list* `observed_value`.
+    A **scalar** one passes through verbatim — so an expectation whose observed
+    value is a single cell (``expect_column_max_to_be_between`` on a text column
+    reports the largest value, i.e. a real cell) is returned raw even under
+    fail-closed mode with the column named in `pii_columns`. Verified directly,
+    not assumed.
+
+    Masking here rather than in `run_service` is deliberate and narrow: the same
+    gap exists on the persisted-results path, but closing it there changes what
+    every stored result renders and needs its own decision about numeric
+    aggregates (a row count is not a cell value; a max salary is). That is
+    [#1482](https://github.com/TheurgicDuke771/DataQ/issues/1482). What must not
+    happen meanwhile is this seam reporting ``masked: true`` on a value it did not
+    mask — an audit field that lies is worse than one that is missing.
+    """
+    from backend.app.services.run_service import redact_observed_value
+
+    result = redact_observed_value(observed, tested_column=tested_column, policy=policy, tags=tags)
+    if not isinstance(result, dict) or "observed_value" not in result:
+        return result
+    value = result["observed_value"]
+    # Lists are already handled upstream; containers and scalars are what remain.
+    if isinstance(value, list):
+        return result
+    if tested_column is None or not _known_sensitive(tested_column, [value], policy, tags):
+        return result
+    return {**result, "observed_value": _REDACTED_VALUE}
 
 
 def _profile_sample_values(column: Any) -> list[Any]:
@@ -155,6 +228,7 @@ def sensitive_profile_columns(
     *,
     policy: Mapping[str, Any] | None,
     tags: Mapping[str, str] | None = None,
+    destination: Destination = Destination.INTERACTIVE,
 ) -> list[str]:
     """Names of the profiled columns the redaction ladder considers sensitive.
 
@@ -169,6 +243,26 @@ def sensitive_profile_columns(
     which is the whole content of "accountable rather than forbidden".
     """
 
+    # The rung differs by destination, which is the same principle one level
+    # deeper rather than a new one.
+    #
+    # `INTERACTIVE`: a profiled column was *explicitly named by the caller*, so it
+    # is the analogue of a **tested** column — shown unless KNOWN sensitive. Using
+    # the incidental rule here would default-mask every column a classifier cannot
+    # positively clear, which on a free-text table is most of them, and profiling
+    # would stop answering the question it exists for.
+    #
+    # `EGRESS`: match the persisted-results path, which default-masks incidental
+    # columns (#415). Otherwise an unclassifiable `notes` column ships in full to
+    # a model that may quote it onward, while the SAME column is masked in a
+    # stored run's sample — and an assistant seeing a value in one place and a
+    # mask in the other cannot tell which is the truth.
+    if destination is Destination.EGRESS:
+        return [
+            column.column
+            for column in columns
+            if not _may_show_incidental(column.column, _profile_sample_values(column), policy, tags)
+        ]
     return [
         column.column
         for column in columns
@@ -218,6 +312,7 @@ def record_probe_access(
     actor: Any | None,
     destination: Destination,
     masked: bool,
+    values_in_scope: bool = True,
     columns: Sequence[str] | None = None,
     sensitive_columns: Sequence[str] | None = None,
     detail: dict[str, Any] | None = None,
@@ -245,6 +340,13 @@ def record_probe_access(
     here is only visible as `audit_access_write_failed` at ERROR.
     """
     payload: dict[str, Any] = {"destination": destination.value, "masked": masked}
+    if not values_in_scope:
+        # A probe that returns only column NAMES never had cell values to mask.
+        # Reporting `masked: true` there would assert a redaction that never
+        # happened; `values_in_scope: false` says the honest thing, and `exposed`
+        # is False because nothing was disclosed rather than because it was hidden.
+        payload["masked"] = False
+        payload["values_in_scope"] = False
     if columns:
         payload["columns"] = list(columns)
     if sensitive_columns:
@@ -261,7 +363,7 @@ def record_probe_access(
         # Masked probes are recorded with `exposed=False` rather than dropped:
         # "this person profiled the customers table and saw nothing" is a
         # different fact from "nobody profiled it", and only one of them is true.
-        exposed=not masked,
+        exposed=masked is False and values_in_scope,
         detail=payload,
         actor_kind=actor_kind,
     )

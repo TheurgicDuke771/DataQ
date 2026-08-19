@@ -18,7 +18,9 @@ import pytest
 
 from backend.app.services.live_probe import (
     Destination,
+    applicable_tags,
     mask_profile_columns,
+    redact_probe_observed_value,
     sensitive_profile_columns,
     values_are_masked,
 )
@@ -140,3 +142,56 @@ def test_masking_does_not_mutate_the_input() -> None:
 def test_empty_sensitive_list_is_a_passthrough(sensitive: list[str] | None) -> None:
     cols = [_col("a"), _col("b")]
     assert mask_profile_columns(cols, sensitive=sensitive or []) == cols
+
+
+# ── review findings on the seam itself (PR #1481) ─────────────────────────────
+
+
+def test_applicable_tags_keeps_the_sensitive_floor_on_an_off_asset_probe() -> None:
+    """F2: dropping the whole tag map masks LESS, not more.
+
+    The first version of this code dropped every tag when the probe named another
+    table, with a comment claiming that could "only mask more". Backwards: the map
+    carries the sensitive FLOOR as well as the clearances.
+    """
+    tags = {"email": "restricted", "order_id": "public"}
+    kept = applicable_tags(tags, probed_other_target=True)
+    assert kept == {"email": "restricted"}  # floor kept, clearance dropped
+
+
+def test_applicable_tags_are_untouched_for_the_suites_own_asset() -> None:
+    tags = {"email": "restricted", "order_id": "public"}
+    assert applicable_tags(tags, probed_other_target=False) == tags
+
+
+def test_scalar_observed_value_is_masked() -> None:
+    """F4: `run_service.redact_observed_value` handles lists, not scalars.
+
+    `expect_column_max_to_be_between` on a text column reports the largest value —
+    a real cell — and it was returned verbatim while the audit event said
+    `masked: true`. An audit field that lies is worse than one that is missing.
+    """
+    policy = {"pii_columns": ["email"]}
+    out = redact_probe_observed_value(
+        {"observed_value": "ada@example.com"}, tested_column="email", policy=policy
+    )
+    assert out == {"observed_value": _REDACTED_VALUE}
+
+
+def test_scalar_observed_value_on_an_unflagged_column_is_untouched() -> None:
+    out = redact_probe_observed_value(
+        {"observed_value": 34680}, tested_column="order_id", policy=None
+    )
+    assert out == {"observed_value": 34680}
+
+
+def test_egress_default_masks_an_unclassifiable_column_and_interactive_does_not() -> None:
+    """F5: the rung differs by destination — the same principle, one level deeper.
+
+    A free-text column no classifier can positively clear ships in full to an
+    author (whose profiler would be useless otherwise) and is masked toward a
+    model, matching what a persisted run's sample would do for the same column.
+    """
+    cols = [_col("notes", top=["lorem ipsum", "dolor sit"], lo=None, hi=None)]
+    assert sensitive_profile_columns(cols, policy=None) == []
+    assert sensitive_profile_columns(cols, policy=None, destination=Destination.EGRESS) == ["notes"]

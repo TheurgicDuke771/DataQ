@@ -488,16 +488,18 @@ def profile_columns(
     # are shown — profiling exists to tell you what is IN a column — and the
     # disclosure is recorded instead of prevented.
     #
-    # Governance tags apply only when the probe targets the suite's OWN asset. An
-    # explicit table/path override may point at a different table, whose columns
-    # share names with the asset's by coincidence; applying the asset's tags there
-    # could hand out a *clearance* that belongs to another table. Falling back to
-    # no tags is the safe direction — it can only mask more, never less.
+    # Governance tags need filtering when the probe may not be reading the suite's
+    # own asset — see `live_probe.applicable_tags`. Dropping the map WHOLESALE was
+    # the first attempt and is wrong in the other direction: it drops the
+    # sensitive floor too, which masks LESS, on the common path where the check
+    # editor sends the suite's own table explicitly.
     policy = suite.column_policy
     probed_other_target = any(
         v is not None for v in (payload.table, payload.path, payload.schema_, payload.catalog)
     )
-    tags = None if probed_other_target else run_service.asset_column_tags(db, suite)
+    tags = live_probe.applicable_tags(
+        run_service.asset_column_tags(db, suite), probed_other_target=probed_other_target
+    )
     sensitive = live_probe.sensitive_profile_columns(result.columns, policy=policy, tags=tags)
     masked = live_probe.values_are_masked(policy, destination=live_probe.Destination.INTERACTIVE)
     columns = (

@@ -34,6 +34,11 @@ _REDACTORS: Final[frozenset[str]] = frozenset(
         # docstring warns about ("a future path that hand-rolls its own masking"),
         # so the fix is to widen the seam definition rather than to accept it.
         "mask_profile_columns",
+        # The dry-run doors call this wrapper rather than `redact_observed_value`
+        # directly (it adds the scalar case, #1482). Without the name here the
+        # scan stops seeing them and the reverse guard — "a declaration naming a
+        # site that no longer exists" — fires, which is how this was caught.
+        "redact_probe_observed_value",
     }
 )
 

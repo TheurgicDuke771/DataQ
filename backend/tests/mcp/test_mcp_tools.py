@@ -3823,3 +3823,122 @@ def test_every_paged_tool_reports_truncation_the_same_way(
             "reads the absence as false and calls a capped page complete"
         )
         assert isinstance(payload["truncated"], bool)
+
+
+def test_profile_column_applies_the_governance_tag_floor_on_the_default_target(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A warehouse tag is the only thing marking this column — it must apply."""
+    from backend.app.db.models import Asset
+    from backend.app.services.profile_service import ColumnProfile, ProfileResult
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    asset = Asset(
+        namespace="db.schema",
+        name="ORDERS",
+        env="dev",
+        connection_id=suite.connection_id,
+        # `field_7` is un-guessable by name and holds innocuous-looking values —
+        # the tag is the ONLY thing that marks it.
+        column_tags={"field_7": "restricted"},
+    )
+    db_session.add(asset)
+    db_session.flush()
+    suite.asset_id = asset.id
+    db_session.flush()
+
+    def _fake_profile(connection: Any, **kwargs: Any) -> ProfileResult:
+        return ProfileResult(
+            row_count=1,
+            table=kwargs["table"],
+            schema=kwargs["schema"],
+            catalog=None,
+            path=None,
+            file_format=None,
+            columns=[
+                ColumnProfile(
+                    column="field_7",
+                    null_count=0,
+                    null_fraction=0.0,
+                    distinct_count=2,
+                    min_value="aaa",
+                    max_value="zzz",
+                    top_values=[{"value": "aaa", "count": 1}],
+                )
+            ],
+        )
+
+    monkeypatch.setattr(profile_service, "profile_connection", _fake_profile)
+    _as(monkeypatch, db_session, user)
+
+    out = server.profile_column(str(suite.id), columns=["field_7"])
+    assert out["redacted_columns"] == ["field_7"]
+    assert out["columns"][0]["min_value"] is None
+    assert [t["value"] for t in out["columns"][0]["top_values"]] == ["<redacted>"]
+
+
+def test_profile_column_honours_a_clearance_on_the_suites_own_target(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Target defaulting must not silently discard the tag CLEARANCES (F1).
+
+    `_profile_target_defaults` overwrites the `table`/`path` locals with the
+    suite's own target, so a "did the caller name another table?" test made
+    *after* it is always true — and the asset's tag map was filtered as if every
+    request were probing a foreign table.
+
+    Written against the CLEARANCE direction deliberately. The first version of
+    this test used a sensitive tag and **passed with the bug reintroduced**,
+    because `applicable_tags` keeps the sensitive floor either way; the mutation
+    check caught that it was proving nothing. What the ordering bug actually
+    destroys is the other half: in fail-closed mode a column cleared by a
+    `public` tag stays masked, which is a capability lost to a policy artifact —
+    the exact failure this whole seam exists to avoid.
+    """
+    from backend.app.db.models import Asset
+    from backend.app.services.profile_service import ColumnProfile, ProfileResult
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    suite.column_policy = {"require_classification": True}
+    asset = Asset(
+        namespace="db.schema",
+        name="ORDERS",
+        env="dev",
+        connection_id=suite.connection_id,
+        column_tags={"region_code": "public"},
+    )
+    db_session.add(asset)
+    db_session.flush()
+    suite.asset_id = asset.id
+    db_session.flush()
+
+    def _fake_profile(connection: Any, **kwargs: Any) -> ProfileResult:
+        return ProfileResult(
+            row_count=1,
+            table=kwargs["table"],
+            schema=kwargs["schema"],
+            catalog=None,
+            path=None,
+            file_format=None,
+            columns=[
+                ColumnProfile(
+                    column="region_code",
+                    null_count=0,
+                    null_fraction=0.0,
+                    distinct_count=2,
+                    min_value="EMEA",
+                    max_value="NA",
+                    top_values=[{"value": "EMEA", "count": 1}],
+                )
+            ],
+        )
+
+    monkeypatch.setattr(profile_service, "profile_connection", _fake_profile)
+    _as(monkeypatch, db_session, user)
+
+    out = server.profile_column(str(suite.id), columns=["region_code"])
+    # The clearance survived defaulting, so the cleared column keeps its values.
+    assert out["redacted_columns"] == []
+    assert out["columns"][0]["min_value"] == "EMEA"
