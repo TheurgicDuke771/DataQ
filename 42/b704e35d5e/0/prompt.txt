@@ -1,0 +1,9 @@
+CI completed
+
+---
+
+check AWS using playwright
+
+---
+
+logged in
