@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "5a4e94638372",
+  "strategy": "manual-commit",
+  "branch": "docs/residency-principle-not-actuals",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "deploy/terraform/azure/aca.tf",
+    "deploy/terraform/azure/postgres.tf",
+    "docs/compliance-posture.md",
+    "docs/security.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5a/4e94638372/0/metadata.json",
+      "transcript": "/5a/4e94638372/0/full.jsonl",
+      "compact_transcript": "/5a/4e94638372/0/transcript.jsonl",
+      "content_hash": "/5a/4e94638372/0/content_hash.txt",
+      "prompt": "/5a/4e94638372/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1888,
+    "cache_creation_tokens": 2806531,
+    "cache_read_tokens": 473024683,
+    "output_tokens": 644780,
+    "api_call_count": 944
+  }
+}
