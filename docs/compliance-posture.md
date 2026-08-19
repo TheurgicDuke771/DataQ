@@ -110,7 +110,7 @@ only to EU personal data.
 Ranked by severity. Tracked in the Backlog milestone: **G1 #431 · G2 #432 · G3 #433 ·
 G4 #434 · G5 #435**.
 
-### G1 — 🟢 Data-*access* audit trail (the HIPAA gate) — #431 — **read events shipped and production-verified on Azure; sweep observation + AWS pending; tamper-evidence open**
+### G1 — 🟢 Data-*access* audit trail (the HIPAA gate) — #431 — **read + config events production-verified on BOTH clouds; sweep observation pending; tamper-evidence open**
 **Requirement:** HIPAA §164.312(b) **audit controls** require a durable record of *who
 accessed which PHI*. GDPR accountability (Art 5(2) / 30) wants processing records too.
 **Current state (updated 2026-08-17):** the *"revisit ADR 0020"* instruction has been
@@ -201,9 +201,29 @@ UTC entry will fire; observing that run is what closes this line. Note that a ze
 currently logs nothing at all ([#1477](https://github.com/TheurgicDuke771/DataQ/issues/1477)),
 which is what makes the observation harder than it should be.
 
-⚠️ **Not yet verified on AWS.** The Azure evidence above does not transfer: the point of
-these checks is the deployment's own role/ownership and commit behaviour, so the second
-stack needs its own run.
+**Verified in production (AWS, 2026-08-19) — and this run is the stronger of the two.**
+Repeated independently on the second stack, because the point of the check is the
+deployment's own commit behaviour, which does not transfer. A workspace admin opened a run
+with real failures through the browser; the event was then read back in a separate request:
+
+```
+occurred_at  2026-08-19T02:54:18.515411+00:00
+action       run_results.read     entity_type  run
+after        {"exposed": true, "result_count": 6, "exposed_result_ids": [<3 ids>]}
+```
+
+The Azure event was `exposed: false, result_count: 0` — true, but trivially so. Here the
+field did real work: **3 of 6 results** were flagged as having surfaced data cells, matching
+the three genuinely failing checks in the UI, while the passing row-count and freshness
+checks — whose `observed_value` is a scalar, not cells — were correctly *not* counted. That
+is the distinction the field exists to draw, exercised rather than merely present.
+
+**Phase 1 (config events) was verified on AWS in the same session**, using a deliberately
+reversible mutation: a **disabled** schedule (the dispatcher filters on `enabled`, so it can
+never fire) was created and immediately deleted. Both `schedule.create` and `schedule.delete`
+were recorded with the correct actor and entity type, and the schedule was confirmed gone
+(404, zero remaining). The two events themselves are permanent, which is the append-only
+contract working as intended.
 **Scope widened by ADR 0027 / #482:** once the workspace-admin is an implicit admin on
 every suite, the audit log must capture **workspace-admin cross-suite result/sample
 reads** (not just owner/shared reads) — the read surface this gap must cover grows. A
