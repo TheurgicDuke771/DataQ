@@ -137,6 +137,16 @@ events an investigator wants among the many they do not. Covered on **REST and M
 latter tagged `surface: "mcp"`, because an LLM client may carry a value onward in ways a
 browser session does not.
 
+⚠️ **Read coverage is three doors, not every door.** Events are emitted for a run's
+results (REST and MCP) and for a comparison-report download. The **column profiler**
+(`top_values` holds real cell values) and the **check dry-run** (`observed_value`,
+unredacted per #1419) return live warehouse data and record nothing — both are live-probe
+routes that persist no result row, which is exactly what made them invisible to a design
+keyed on run/result ids. Tracked as
+[#1479](https://github.com/TheurgicDuke771/DataQ/issues/1479). Until it closes, an empty
+`action_class=access` page is evidence about those three doors and **must not** be read as
+"no regulated data was surfaced"; the endpoint's own docstring now says so.
+
 The event records **which** result was read, never **what** it contained (ADR 0041 §2.6.3)
 — copying a sample into an append-only table with a longer retention would quietly turn
 the audit log into a second, unpurged copy of the personal data it audits, defeating both

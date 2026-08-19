@@ -309,18 +309,27 @@ def list_audit_events(
     Both `action_class` values are live. `config` records deliberate changes to
     the workspace; `access` records data *reads* (G1/#431 phase 2) — who read
     which run's results, when, and whether regulated data was actually surfaced.
-    An empty `action_class=access` result therefore means **nobody read anything
-    in the window**, and may be relied on as evidence. It previously meant "not
-    built yet", and this docstring said so; reading a stale version of that
-    sentence would invert the conclusion an investigator draws from an empty
-    page, which is the one place this endpoint must not be wrong.
+    `access` covers exactly three doors today: reading a run's results over REST,
+    the same read over MCP, and downloading a comparison report. **An empty
+    `action_class=access` page is therefore evidence about those doors only, and
+    is NOT evidence that no regulated data was surfaced.** Two routes return live
+    warehouse values and record nothing here — the column profiler (`top_values`
+    holds real cell values) and the check dry-run (`observed_value`, unredacted
+    per #1419). An investigator who reads an empty page as "nobody saw anything"
+    would be wrong in precisely the way this endpoint must not be wrong.
 
-    Two caveats an empty page does NOT rule out, because they are outside what
-    this table records. Reads older than `AUDIT_RETENTION_DAYS` (default 365)
-    have been swept. And a read whose audit write failed still succeeded — the
-    access path is deliberately not fail-closed (ADR 0041) — so a gap is
-    correlated with `audit_access_write_failed` at ERROR in telemetry, which is
-    the signal to check before treating absence as proof.
+    Three further things an empty page does not rule out. Reads older than
+    `AUDIT_RETENTION_DAYS` (default 365) have been swept — the response states
+    its own window in `retention_days`/`retained_since` rather than leaving that
+    to be assumed. A read whose audit write failed still succeeded, because the
+    access path is deliberately not fail-closed (ADR 0041), so a gap correlates
+    with `audit_access_write_failed` at ERROR in telemetry. And warehouse-side
+    access made outside DataQ is invisible here by definition.
+
+    This paragraph previously said `access` was unbuilt and that an empty page
+    meant "not built yet, not nobody read anything". It is kept explicit about
+    coverage because the *shape* of that error — a confident claim that inverts
+    an auditor's conclusion — is the failure mode of this particular endpoint.
     """
     # A naive datetime compared against a `timestamptz` column is interpreted in
     # the database session's `TimeZone`, so the window a caller asked for would
