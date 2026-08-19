@@ -83,7 +83,7 @@ class _OptionalSecretAdapter(_PassAdapter):
     secret_optional = True
 
     def __init__(self) -> None:
-        self.received_secret: str | None | object = "UNSET"
+        self.received_secret: str | object | None = "UNSET"
 
     def test(self, raw: dict[str, Any], secret: str | None) -> None:
         self.received_secret = secret
