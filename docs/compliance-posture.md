@@ -110,7 +110,7 @@ only to EU personal data.
 Ranked by severity. Tracked in the Backlog milestone: **G1 #431 · G2 #432 · G3 #433 ·
 G4 #434 · G5 #435**.
 
-### G1 — 🟢 Data-*access* audit trail (the HIPAA gate) — #431 — **read + config events and the retention sweep all production-verified on BOTH clouds; read-coverage gap #1479 closed; tamper-evidence open**
+### G1 — 🟢 Data-*access* audit trail (the HIPAA gate) — #431 — **result-read + config events and the retention sweep production-verified on BOTH clouds; the live-probe read-coverage fix is MERGED BUT NOT DEPLOYED; tamper-evidence open**
 **Requirement:** HIPAA §164.312(b) **audit controls** require a durable record of *who
 accessed which PHI*. GDPR accountability (Art 5(2) / 30) wants processing records too.
 **Current state (updated 2026-08-17):** the *"revisit ADR 0020"* instruction has been
@@ -137,9 +137,21 @@ events an investigator wants among the many they do not. Covered on **REST and M
 latter tagged `surface: "mcp"`, because an LLM client may carry a value onward in ways a
 browser session does not.
 
-**Read coverage now spans the live probes too ([#1479](https://github.com/TheurgicDuke771/DataQ/issues/1479),
-closed).** Five actions are recorded: `run_results.read` (REST and MCP),
-`comparison_report.download`, `check.dryrun`, `column.profile` and `column.list`.
+⚠️ **Read coverage in the CODE is five actions; in PRODUCTION it is still three.**
+[#1479](https://github.com/TheurgicDuke771/DataQ/issues/1479) is closed and
+[#1481](https://github.com/TheurgicDuke771/DataQ/pull/1481) is merged, adding
+`check.dryrun`, `column.profile` and `column.list` alongside `run_results.read`
+(REST and MCP) and `comparison_report.download`. **Neither cloud is running that
+build.** Both deployments serve `a0dbede6`, which predates the seam, so on the
+live stacks the column profiler and the check dry-run still return warehouse
+values and record nothing.
+
+Until the next roll, an empty `action_class=access` page on a deployed stack is
+evidence about **three** doors, not five, and must not be read as "no regulated
+data was surfaced". Stated here rather than left to inference because this page
+describes the deployed posture, and "merged" is not "deployed" — a distinction
+this project has already been bitten by (an AWS worker that never started while
+the public smoke stayed green, #1361).
 
 The gap is worth keeping on the record, because it was found by *trying to use* this
 control rather than by reading it. The **column profiler** and the **check dry-run** return
@@ -157,7 +169,8 @@ redacts. That direction is what HIPAA §164.312(b) actually asks for — it is a
 control that permits access for legitimate work and requires it be logged — and it means no
 capability was traded away to close the gap.
 
-The coverage guard was widened in the same change so a future live probe cannot repeat it:
+The coverage guard was widened in the same (undeployed) change so a future live probe
+cannot repeat it:
 `test_access_coverage` treats the probe masker as part of the redaction seam, and every
 call site must be declared `AUDITED` or `EXEMPT` with a reason.
 
