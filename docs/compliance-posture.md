@@ -110,7 +110,7 @@ only to EU personal data.
 Ranked by severity. Tracked in the Backlog milestone: **G1 #431 · G2 #432 · G3 #433 ·
 G4 #434 · G5 #435**.
 
-### G1 — 🟢 Data-*access* audit trail (the HIPAA gate) — #431 — **result-read + config events and the retention sweep production-verified on BOTH clouds; the live-probe read-coverage fix is MERGED BUT NOT DEPLOYED; tamper-evidence open**
+### G1 — 🟢 Data-*access* audit trail (the HIPAA gate) — #431 — **all five recorded actions, config events and the retention sweep production-verified on BOTH clouds; tamper-evidence open**
 **Requirement:** HIPAA §164.312(b) **audit controls** require a durable record of *who
 accessed which PHI*. GDPR accountability (Art 5(2) / 30) wants processing records too.
 **Current state (updated 2026-08-17):** the *"revisit ADR 0020"* instruction has been
@@ -137,42 +137,47 @@ events an investigator wants among the many they do not. Covered on **REST and M
 latter tagged `surface: "mcp"`, because an LLM client may carry a value onward in ways a
 browser session does not.
 
-⚠️ **Read coverage in the CODE is five actions; in PRODUCTION it is still three.**
-[#1479](https://github.com/TheurgicDuke771/DataQ/issues/1479) is closed and
-[#1481](https://github.com/TheurgicDuke771/DataQ/pull/1481) is merged, adding
-`check.dryrun`, `column.profile` and `column.list` alongside `run_results.read`
-(REST and MCP) and `comparison_report.download`. **Neither cloud is running that
-build.** Both deployments serve `a0dbede6`, which predates the seam, so on the
-live stacks the column profiler and the check dry-run still return warehouse
-values and record nothing.
+**Read coverage is five actions, deployed and verified on both clouds
+(2026-08-19).** `run_results.read` (REST and MCP), `comparison_report.download`,
+`check.dryrun`, `column.profile` and `column.list`.
 
-Until the next roll, an empty `action_class=access` page on a deployed stack is
-evidence about **three** doors, not five, and must not be read as "no regulated
-data was surfaced". Stated here rather than left to inference because this page
-describes the deployed posture, and "merged" is not "deployed" — a distinction
-this project has already been bitten by (an AWS worker that never started while
-the public smoke stayed green, #1361).
-
-The gap is worth keeping on the record, because it was found by *trying to use* this
-control rather than by reading it. The **column profiler** and the **check dry-run** return
-live warehouse values and recorded nothing — both are live-probe routes that persist no
-result row, which is exactly what made them invisible to a pipeline keyed on run/result
-ids, the same reason they were also outside the redaction ladder (#1419). So an empty
-`action_class=access` page, which this endpoint presents as evidence, **was not evidence**,
-in the one place a confident wrong answer does most damage.
+The last two were the gap [#1479](https://github.com/TheurgicDuke771/DataQ/issues/1479)
+described, and it is worth keeping on the record because it was found by *trying to
+use* this control rather than by reading it. The column profiler and the check
+dry-run returned live warehouse values and recorded nothing — both are live-probe
+routes that persist no result row, which is exactly what made them invisible to a
+pipeline keyed on run/result ids, and the same reason they were outside the
+redaction ladder (#1419). So an empty `action_class=access` page, which this
+endpoint presents as evidence, **was not evidence**, in the one place a confident
+wrong answer does the most damage.
 
 Both were closed by one seam
-([#1481](https://github.com/TheurgicDuke771/DataQ/pull/1481)) rather than two patches:
-redaction and audit now follow **where the data is going**, not which column it came from.
-An author's own preview keeps its values and is audited; an LLM context, a file or an alert
-redacts. That direction is what HIPAA §164.312(b) actually asks for — it is an *audit*
-control that permits access for legitimate work and requires it be logged — and it means no
-capability was traded away to close the gap.
+([#1481](https://github.com/TheurgicDuke771/DataQ/pull/1481)) rather than two
+patches: redaction and audit now follow **where the data is going**, not which
+column it came from. An author's own preview keeps its values and is audited; an
+LLM context, a file or an alert redacts. That is the direction HIPAA §164.312(b)
+actually asks for — an *audit* control that permits access for legitimate work and
+requires it be logged — so no capability was traded away to close the gap.
 
-The coverage guard was widened in the same (undeployed) change so a future live probe
-cannot repeat it:
-`test_access_coverage` treats the probe masker as part of the redaction seam, and every
-call site must be declared `AUDITED` or `EXEMPT` with a reason.
+Verified against the running deployments rather than the merge, after an earlier
+draft of this page claimed the coverage while both stacks were still serving a
+build that predated it:
+
+```
+Azure  04:35:01  column.profile  table=ORDERS_HEADER row_count=34680 exposed=true
+       04:35:24  check.dryrun    columns=[order_number]  destination=interactive
+AWS    04:36:19  column.profile  columns=[ORDER_NUMBER, ORDER_TS] exposed=true
+       04:36:22  check.dryrun    columns=[ORDER_NUMBER]  destination=interactive
+```
+
+Both profilers returned real cell values (`ORD-00000001`, `delivered`) rather than
+`<redacted>`, which is the destination rule working in the direction that matters:
+the capability survives, and the disclosure is recorded.
+
+The coverage guard was widened in the same change so a future live probe cannot
+repeat this: `test_access_coverage` treats the probe masker as part of the
+redaction seam, and every call site must be declared `AUDITED` or `EXEMPT` with a
+reason.
 
 The event records **which** result was read, never **what** it contained (ADR 0041 §2.6.3)
 — copying a sample into an append-only table with a longer retention would quietly turn
