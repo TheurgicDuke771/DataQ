@@ -110,7 +110,7 @@ only to EU personal data.
 Ranked by severity. Tracked in the Backlog milestone: **G1 #431 · G2 #432 · G3 #433 ·
 G4 #434 · G5 #435**.
 
-### G1 — 🟢 Data-*access* audit trail (the HIPAA gate) — #431 — **read + config events production-verified on BOTH clouds; sweep observation pending; tamper-evidence open**
+### G1 — 🟢 Data-*access* audit trail (the HIPAA gate) — #431 — **all five recorded actions, config events and the retention sweep production-verified on BOTH clouds; tamper-evidence open**
 **Requirement:** HIPAA §164.312(b) **audit controls** require a durable record of *who
 accessed which PHI*. GDPR accountability (Art 5(2) / 30) wants processing records too.
 **Current state (updated 2026-08-17):** the *"revisit ADR 0020"* instruction has been
@@ -137,15 +137,47 @@ events an investigator wants among the many they do not. Covered on **REST and M
 latter tagged `surface: "mcp"`, because an LLM client may carry a value onward in ways a
 browser session does not.
 
-⚠️ **Read coverage is three doors, not every door.** Events are emitted for a run's
-results (REST and MCP) and for a comparison-report download. The **column profiler**
-(`top_values` holds real cell values) and the **check dry-run** (`observed_value`,
-unredacted per #1419) return live warehouse data and record nothing — both are live-probe
-routes that persist no result row, which is exactly what made them invisible to a design
-keyed on run/result ids. Tracked as
-[#1479](https://github.com/TheurgicDuke771/DataQ/issues/1479). Until it closes, an empty
-`action_class=access` page is evidence about those three doors and **must not** be read as
-"no regulated data was surfaced"; the endpoint's own docstring now says so.
+**Read coverage is five actions, deployed and verified on both clouds
+(2026-08-19).** `run_results.read` (REST and MCP), `comparison_report.download`,
+`check.dryrun`, `column.profile` and `column.list`.
+
+The last two were the gap [#1479](https://github.com/TheurgicDuke771/DataQ/issues/1479)
+described, and it is worth keeping on the record because it was found by *trying to
+use* this control rather than by reading it. The column profiler and the check
+dry-run returned live warehouse values and recorded nothing — both are live-probe
+routes that persist no result row, which is exactly what made them invisible to a
+pipeline keyed on run/result ids, and the same reason they were outside the
+redaction ladder (#1419). So an empty `action_class=access` page, which this
+endpoint presents as evidence, **was not evidence**, in the one place a confident
+wrong answer does the most damage.
+
+Both were closed by one seam
+([#1481](https://github.com/TheurgicDuke771/DataQ/pull/1481)) rather than two
+patches: redaction and audit now follow **where the data is going**, not which
+column it came from. An author's own preview keeps its values and is audited; an
+LLM context, a file or an alert redacts. That is the direction HIPAA §164.312(b)
+actually asks for — an *audit* control that permits access for legitimate work and
+requires it be logged — so no capability was traded away to close the gap.
+
+Verified against the running deployments rather than the merge, after an earlier
+draft of this page claimed the coverage while both stacks were still serving a
+build that predated it:
+
+```
+Azure  04:35:01  column.profile  table=ORDERS_HEADER row_count=34680 exposed=true
+       04:35:24  check.dryrun    columns=[order_number]  destination=interactive
+AWS    04:36:19  column.profile  columns=[ORDER_NUMBER, ORDER_TS] exposed=true
+       04:36:22  check.dryrun    columns=[ORDER_NUMBER]  destination=interactive
+```
+
+Both profilers returned real cell values (`ORD-00000001`, `delivered`) rather than
+`<redacted>`, which is the destination rule working in the direction that matters:
+the capability survives, and the disclosure is recorded.
+
+The coverage guard was widened in the same change so a future live probe cannot
+repeat this: `test_access_coverage` treats the probe masker as part of the
+redaction seam, and every call site must be declared `AUDITED` or `EXEMPT` with a
+reason.
 
 The event records **which** result was read, never **what** it contained (ADR 0041 §2.6.3)
 — copying a sample into an append-only table with a longer retention would quietly turn
@@ -191,15 +223,36 @@ out, and it is now on the record for the deployed stack.
 The page also reports `retention_days: 365` and a computed `retained_since`, so the read
 API states its own window rather than leaving an empty page ambiguous.
 
-⚠️ **Still local-only: the retention sweep's privilege path.** `purge_expired_events` runs
-`GRANT → DELETE → REVOKE` in one transaction, and the test suite is **structurally blind to
-it** — tests run as a superuser, which bypasses `REVOKE` entirely, so the grant/revoke pair
-is a no-op there and the `DELETE` would succeed with the whole mechanism removed. Only a run
-as the real least-privileged role exercises it. The task is confirmed **registered** in the
-deployed worker image and beat is confirmed healthy on the new revision, so the daily 04:17
-UTC entry will fire; observing that run is what closes this line. Note that a zero-row sweep
-currently logs nothing at all ([#1477](https://github.com/TheurgicDuke771/DataQ/issues/1477)),
-which is what makes the observation harder than it should be.
+**Verified in production (both clouds, 2026-08-19 04:17 UTC) — the retention
+sweep's privilege path.** `purge_expired_events` runs `GRANT → DELETE → REVOKE`
+in one transaction, and the test suite is **structurally blind to it**: tests run
+as a superuser, which bypasses `REVOKE` entirely, so the grant/revoke pair is a
+no-op there and the `DELETE` would succeed with the whole mechanism removed. Only
+a run as the real least-privileged role exercises it.
+
+The scheduled beat entry was observed on both deployments:
+
+```
+Azure  04:17:00.000  Sending due task purge-audit-events
+       04:17:00.240  Task purge_audit_events[613b8c64…] succeeded in 0.2347s: 0
+AWS    04:17:00.002  Sending due task purge-audit-events
+       04:17:00.109  Task purge_audit_events[a4c55b60…] succeeded in 0.0675s: 0
+```
+
+**Reading `0` correctly matters more than the success line.** The return value is
+ambiguous on its own — it is also what a *disabled* sweep returns, because
+`retention_days <= 0` short-circuits before the privilege block. What rules that
+out is independent: the read API reports `retention_days: 365` on both stacks, so
+the guard did not fire and the loop body ran. The sweep therefore executed
+`GRANT`, deleted zero rows (the table is hours old against a 365-day window),
+`REVOKE`d, and committed — as `dataq_app`, without raising. A `GRANT` that failed
+against the live `REVOKE` would have surfaced as `InsufficientPrivilege`, which
+the service re-raises after rollback, and the task would have logged FAILED.
+
+That the observation needs a second source at all is
+[#1477](https://github.com/TheurgicDuke771/DataQ/issues/1477): a zero-row sweep
+logs no domain event, so "ran and worked" and "never registered" are
+indistinguishable from this control's own output for its first 365 days.
 
 **Verified in production (AWS, 2026-08-19) — and this run is the stronger of the two.**
 Repeated independently on the second stack, because the point of the check is the
