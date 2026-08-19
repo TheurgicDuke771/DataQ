@@ -1,0 +1,11 @@
+go ahead, deploy -> verify -> merge the G1 pending part -> deploy the latest changes
+
+---
+
+<task-notification>
+<task-id>bx4gp063a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/248e6c9f-6db3-446e-8372-f8dd810b180b/tasks/bx4gp063a.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for Azure and verify per-app images" completed (exit code 0)</summary>
+</task-notification>
