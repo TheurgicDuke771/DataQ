@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "eddb9647d1ed",
+  "strategy": "manual-commit",
+  "branch": "docs/433-live-verification",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ed/db9647d1ed/0/metadata.json",
+      "transcript": "/ed/db9647d1ed/0/full.jsonl",
+      "compact_transcript": "/ed/db9647d1ed/0/transcript.jsonl",
+      "content_hash": "/ed/db9647d1ed/0/content_hash.txt",
+      "prompt": "/ed/db9647d1ed/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1750,
+    "cache_creation_tokens": 2738185,
+    "cache_read_tokens": 458888749,
+    "output_tokens": 611276,
+    "api_call_count": 875
+  }
+}
