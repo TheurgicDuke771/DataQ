@@ -86,6 +86,12 @@ nav:
 
 # Internal planning docs stay in the repo (version-controlled) but are NOT
 # published to the public site. ADRs (decision records) ARE published.
+#
+# **Omitting a file from `nav` does NOT unpublish it.** MkDocs builds every .md
+# under docs/ and serves it by URL, indexed by the search plugin — a page absent
+# from the nav is unlinked, not absent. `exclude_docs` is the only thing that
+# keeps a file off the site, so an internal document added to docs/ must be
+# listed here in the same change. Two were not, and were live on the public site.
 exclude_docs: |
   progress.md
   progress-v1.md
@@ -93,7 +99,9 @@ exclude_docs: |
   retro-v1.1.md
   post-v1-admin-ui-notes.md
   post-v1-dq-intelligence-notes.md
+  post-v1-assets-lineage-incidents-notes.md
   compliance-posture.md
+  ops-log.md
 
 validation:
   omitted_files: ignore

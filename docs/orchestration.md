@@ -205,10 +205,9 @@ and the asset's lineage graph rendered the full chain — including a **BI dashb
 Marquez knew about**, which dbt's manifest never produced. Seeds that Marquez has never heard of
 log a fail-soft `marquez_lineage_pull_failed` warning per node and are skipped, exactly as intended.
 
-**Not yet verified against a deployed app.** The Azure subscription lapsed (2026-07-12), so there is
-no running prod to attach a catalog to, and the harness Flow-A chain needs live Snowflake. The
-prod-side stand-up — a Marquez the deployed app can reach, plus enabling OL emission on the harness
-flows — is deferred until infra returns; the app side needs no further change (it is one env var).
+**Verified locally, not yet against a deployed catalog.** Standing this up in a deployment means
+running a Marquez the app can reach and enabling OpenLineage emission on your orchestrated flows;
+the app side needs no code change — it is one environment variable.
 
 Marquez's newest release is 0.50.0 (2024-10); its slow cadence is an **accepted low risk** for a
 dev-time reference consumer (ADR 0034) — the `/api/v1/lineage` contract has been stable across

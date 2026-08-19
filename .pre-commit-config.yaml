@@ -43,6 +43,27 @@ repos:
         pass_filenames: false
         files: ^(backend/requirements-typecheck\.txt|\.pre-commit-config\.yaml)$
 
+  # ── Identifier + publication guards (#1472) ─────────────────────────────────
+  #
+  # Distinct from betterleaks below, which finds SECRETS. A secret that leaks is
+  # revoked and rotated; an identifier cannot be, because it names something real
+  # that keeps existing — so these two run on top rather than instead.
+  - repo: local
+    hooks:
+      - id: check-identifiers
+        name: No personal or live-infrastructure identifiers
+        entry: python scripts/check-identifiers.py
+        language: system
+        # Every text file: an identifier leaks as readily from a test fixture or a
+        # .tf default as from prose. Binary/vendored paths are skipped in-script.
+        exclude: ^(node_modules/|frontend/dist/|site/)
+      - id: check-docs-publication
+        name: Every doc declares published or not
+        entry: python scripts/check-docs-publication.py
+        language: system
+        pass_filenames: false
+        files: ^(docs/.*\.md|mkdocs\.yml|scripts/check-docs-publication\.py)$
+
   # ── Secret scanning ─────────────────────────────────────────────────────────
   - repo: https://github.com/betterleaks/betterleaks
     rev: v1.4.1

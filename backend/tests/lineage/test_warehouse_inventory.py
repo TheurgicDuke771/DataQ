@@ -21,8 +21,8 @@ from backend.app.lineage.warehouse_unity_catalog import UnityCatalogLineageProvi
 
 _FIXTURES = Path(__file__).parent.parent / "fixtures" / "lineage_native"
 
-_SF_CONFIG: dict[str, object] = {"account": "PVQSOEQ-ZGB34383", "database": "DATAQ_DB"}
-_UC_CONFIG: dict[str, object] = {"workspace_url": "https://dbc-4492dde4-090c.cloud.databricks.com"}
+_SF_CONFIG: dict[str, object] = {"account": "ACMEORG-TEST01", "database": "DATAQ_DB"}
+_UC_CONFIG: dict[str, object] = {"workspace_url": "https://dbc-1234abcd-5678.cloud.databricks.com"}
 
 
 class _FakeResult:
@@ -66,7 +66,7 @@ class TestSnowflakeEnumeration:
             "DATAQ_DB.ANALYTICS_STG.STG_ORDERS",
         }
         # Byte-for-byte the namespace a suite target on the same account produces.
-        assert all(i.namespace == "snowflake://PVQSOEQ-ZGB34383" for i in idents)
+        assert all(i.namespace == "snowflake://ACMEORG-TEST01" for i in idents)
 
     def test_null_rows_from_the_real_capture_are_skipped_not_materialized(self) -> None:
         """The account-wide capture contains NULL-catalog rows — a NULLed row must
@@ -128,7 +128,7 @@ class TestUnityCatalogEnumeration:
         idents = UnityCatalogLineageProvider().enumerate_tables(conn, connection_config=_UC_CONFIG)
         assert idents, "the capture holds real workspace tables"
         assert all(
-            i.namespace == "unitycatalog://dbc-4492dde4-090c.cloud.databricks.com" for i in idents
+            i.namespace == "unitycatalog://dbc-1234abcd-5678.cloud.databricks.com" for i in idents
         )
         # UC's information_schema returns lower-case; identities keep it verbatim.
         assert all(i.name == i.name.lower() for i in idents)

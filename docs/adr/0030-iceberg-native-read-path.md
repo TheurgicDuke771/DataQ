@@ -63,7 +63,7 @@ Migration `c9d0e1f2a3b4` repairs rows written before the guard, updating `assets
 
 ### 4. Why we are NOT standing up Snowflake Iceberg tables / Databricks foreign catalog in this spike
 
-Deliberately skipped. The SQL runners are **format-transparent by construction** (question 1 above — proven from the code, not by experiment): `add_table_asset` / `read_sql_table` push SQL to the engine and the engine resolves the format. Creating a Snowflake `EXTERNAL VOLUME` + object-store catalog integration, or a Databricks foreign/UniForm catalog, would only **re-confirm what the code already guarantees**, at the cost of live Snowflake/Databricks/Azure setup during the subscription wind-down (Snowflake trial + Azure both end ~2026-07-25; harness compute stopped by default — see project memory). Zero decision value for real setup cost. The engine-level path is documented as supported; its correctness rests on the same transparency the four existing SQL-datasource paths already rely on.
+Deliberately skipped. The SQL runners are **format-transparent by construction** (question 1 above — proven from the code, not by experiment): `add_table_asset` / `read_sql_table` push SQL to the engine and the engine resolves the format. Creating a Snowflake `EXTERNAL VOLUME` + object-store catalog integration, or a Databricks foreign/UniForm catalog, would only **re-confirm what the code already guarantees**, at the cost of standing up live Snowflake/Databricks/Azure infrastructure. Zero decision value for real setup cost. The engine-level path is documented as supported; its correctness rests on the same transparency the four existing SQL-datasource paths already rely on.
 
 ## Consequences
 

@@ -644,7 +644,7 @@ G-d design doc (#596) + audit ADR (#310) merged with next-cycle phase-1 issues f
 `v1.1.0` tagged.
 
 _First clause, flat-file half — **met and measured** by [#1325](https://github.com/TheurgicDuke771/DataQ/pull/1325)'s
-volume test (§W6 of [perf-baseline.md](perf-baseline.md)): 5M rows / 249 MB CSV needs 2,210 MiB
+volume test (the scale-aware-execution section of [perf-baseline.md](perf-baseline.md)): 5M rows / 249 MB CSV needs 2,210 MiB
 uncapped, is refused in 0.00 s capped, and runs at 411 MiB sampled with `sampled: true` on every
 result. The **UC half awaits a live run** — `TABLESAMPLE` is a driver-boundary fact, and only a
 live run is evidence ([#953](https://github.com/TheurgicDuke771/DataQ/issues/953))._

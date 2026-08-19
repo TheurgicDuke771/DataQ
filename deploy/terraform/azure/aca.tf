@@ -2,8 +2,8 @@
 # capped at ONE Container App Environment, so we do NOT create one here — the
 # harness Terraform owns it (renamed to the neutral `dataq-cae`). The app stack
 # only REFERENCES it; the app's own apps/redis/migrate job run inside it but stay
-# separate, dataq-app-* resources. The env lives in azure_location (westus2), so
-# the app's container resources land there too.
+# separate, dataq-app-* resources. The env's own region is what the app's container
+# resources inherit — which is what the residency assertion below is guarding.
 data "azurerm_container_app_environment" "shared" {
   name                = "dataq-cae"
   resource_group_name = data.azurerm_resource_group.dataq.name
@@ -35,8 +35,10 @@ data "azurerm_container_app_environment" "shared" {
         '${self.location}' but var.azure_location declares '${var.azure_location}'.
         Every Container App and Job in this stack inherits the ENVIRONMENT's region,
         so applying would place the app's compute outside the declared jurisdiction.
-        Either move the workload back, or change azure_location deliberately and
-        update the residency matrix in docs/security.md.
+        There is deliberately no override for this one (unlike the shared DB's
+        check): the environment's region is inherited by every Container App and
+        Job here, so accepting a mismatch would relocate the whole deployment.
+        Either move the workload back, or change azure_location deliberately.
       EOT
     }
   }

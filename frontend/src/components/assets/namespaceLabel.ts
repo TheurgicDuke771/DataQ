@@ -55,7 +55,7 @@ const SCHEMES: SchemeSpec[] = [
     prefix: 'unitycatalog://',
     kind: 'unity_catalog',
     source: 'Databricks',
-    // `dbc-4492dde4-090c.cloud.databricks.com` → `dbc-4492dde4-090c`. A host with no
+    // `dbc-1234abcd-5678.cloud.databricks.com` → `dbc-1234abcd-5678`. A host with no
     // dotted suffix (self-hosted, a bare host) has nothing to drop — keep it whole
     // rather than truncating something meaningful away.
     instance: (rest) => (rest.includes('.') ? rest.slice(0, rest.indexOf('.')) : rest),
@@ -64,7 +64,7 @@ const SCHEMES: SchemeSpec[] = [
     prefix: 'abfss://',
     kind: 'adls_gen2',
     // `container@account.dfs.core.windows.net` → `account/container`, which reads the
-    // way a person names it ("the raw container on dataqharness").
+    // way a person names it ("the raw container on acmelake").
     source: 'ADLS',
     instance: (rest) => {
       const at = rest.indexOf('@');

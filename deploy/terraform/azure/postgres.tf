@@ -38,11 +38,15 @@ data "azurerm_postgresql_flexible_server" "shared" {
 # against `azure_location` otherwise. For an ordinary deployment — one region,
 # everything in it — those are the same thing and the check is silent.
 #
-# THIS deployment sets the override, because the subscription's 1-server cap
-# forced the app onto the harness's shared server: West US 3, while the app is in
-# West US 2. That is an **accepted exception** (#1465) — same jurisdiction
-# (United States), which is what GDPR Ch. V keys on — recorded in the residency
-# matrix in docs/security.md alongside the CloudFront and WAF exceptions.
+# Setting the override is how a deployment records an ACCEPTED EXCEPTION — most
+# often because a subscription quota or a shared-platform policy forced the app
+# onto a server someone else created, in a region this stack does not choose.
+#
+# The basis on which such an exception is acceptable is JURISDICTION, not region:
+# two regions inside one country engage no GDPR Ch. V transfer, two straddling an
+# adequacy boundary do. Record the reasoning wherever this deployment's posture
+# lives; concrete regions are deliberately not written into this repo, since they
+# differ per deployment and a committed value goes stale silently (#1465).
 #
 # **Checking against the expected value rather than against `azure_location` is
 # what keeps this useful.** The latter would warn on every plan forever, and a

@@ -8,7 +8,7 @@
 
 Assets materialize from exactly three signals — a suite targets the table, a run
 stamps it, or a lineage edge touches it. A table with none of the three is
-**invisible**, not merely unmonitored: prod's `dataq_retail.reference.*` schema
+**invisible**, not merely unmonitored: a deployment's `<catalog>.reference.*` schema
 (static lookup tables; nothing writes them, so `system.access` has no edges
 either) does not appear in the asset view at all. ADR 0037 made asset identity
 workspace-visible precisely so a new member can browse and target the estate;

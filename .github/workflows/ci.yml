@@ -192,7 +192,14 @@ jobs:
           DATAQ_E2E: "1"
         run: pytest backend/tests/
 
-  # ── Secret scanning ──────────────────────────────────────────────────────────
+  # ── Leak prevention: secrets (betterleaks) + identifiers (#1472) ─────────────
+  #
+  # The job keeps its original NAME because that string is the required-status-check
+  # context in the `main` ruleset — renaming it would silently un-gate the branch.
+  # Its scope is now broader than the name: betterleaks finds secrets, the two
+  # scripts find identifiers and undeclared docs. They are different failures — a
+  # leaked secret is revoked and rotated, an identifier names something real that
+  # keeps existing and cannot be.
   secrets:
     name: Secret scanning (betterleaks)
     runs-on: ubuntu-latest
@@ -250,6 +257,18 @@ jobs:
             git /repo --config /repo/.betterleaks.toml --redact --verbose \
             --git-workers=4 \
             --log-opts="$LOGOPTS"
+
+      # Backstop for the pre-commit hooks of the same name. Pre-commit can be
+      # skipped (--no-verify), is absent for edits made through the GitHub web UI,
+      # and Dependabot bypasses it entirely — which is exactly how the
+      # typecheck-deps drift got in before. Whole working tree, not a commit range:
+      # both checks are cheap and a full pass cannot miss a value introduced by a
+      # rebase or a merge.
+      - name: No personal or live-infrastructure identifiers
+        run: python scripts/check-identifiers.py
+
+      - name: Every doc declares published or not
+        run: python scripts/check-docs-publication.py
 
   # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend-lint:

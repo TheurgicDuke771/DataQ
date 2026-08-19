@@ -8,11 +8,11 @@ resources forced by free/trial subscription caps (1 Container App Environment an
 
 - the **subscription** + **resource group** (`dataq-rg`),
 - the **Container Apps environment** `dataq-cae` (neutral name, `purpose=dataq-shared`),
-- the **Postgres Flexible Server** `dataq-pg-wus3-*` (neutral, `purpose=dataq-shared`).
+- the **Postgres Flexible Server** (tagged `purpose=dataq-shared`), named per deployment.
 
 Both shared resources are **owned by the harness stack**; this stack only
 *references* them (data sources). Everything the app creates is `dataq-app-*` /
-`purpose=dataq-app`; the harness's `dataq-harness-*` resources are untouched.
+`purpose=dataq-app`; any other resources in the group are untouched.
 
 ## What it creates
 
@@ -29,7 +29,7 @@ Both shared resources are **owned by the harness stack**; this stack only
 | GitHub-deploy app registration | `dataq-github-deploy` (OIDC federated cred) |
 
 **Referenced, not created:** the `dataq-cae` environment and the
-`dataq-pg-wus3-*` server (both harness-owned). The app's database is a **distinct
+shared Postgres server (both pre-existing). The app's database is a **distinct
 `dataq` database** + least-privilege **`dataq_app`** role on the shared server.
 
 Images (GHCR, public — ACA pulls anonymously, ADR 0023; must exist + be **public**
@@ -48,14 +48,20 @@ before apply):
   AAD app registrations, and Key Vault secrets). **Do not** `source` the harness
   `secrets.sh` — that switches the CLI to the harness SP, which lacks Key Vault
   data-plane rights (403) and isn't the right identity for this stack.
-- The shared `dataq-cae` env + `dataq-pg-wus3-*` server already exist (harness).
+- The shared Container Apps environment + Postgres server already exist.
 - The GHCR backend **and** frontend images pushed + public.
 - The `dataq` database + `dataq_app` role provisioned (one-off, below).
 - State is **local + gitignored**.
 
 ## Shared Postgres — one-off role + database
 
-The app's DB lives on the shared server but is provisioned **out-of-band** (keeps
+Name the server with **`shared_pg_server_name`** in your `terraform.tfvars`. It is
+**required and has no default**: the server pre-exists and this stack only attaches
+to it, so no default could be right for more than one deployment. With
+`-input=false` (which the apply below uses) a missing value fails fast rather than
+prompting into a redirected stdout — which looks exactly like a hang.
+
+The app's DB lives on that server but is provisioned **out-of-band** (keeps
 this stack connection-free / CI-friendly — no postgres provider). Run once,
 connected as the server admin (add a temp firewall rule for your IP first):
 

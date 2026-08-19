@@ -1,5 +1,10 @@
 # ADR 0021 — Live test/demo-data environment (retail model) lives outside the repo
 
+> **Scope note.** "The harness" throughout DataQ's documentation means the thing this
+> ADR decides: a **maintainer-run** retail dataset and orchestration estate, living in a
+> separate repository and used to exercise the product against real datasources. It is
+> not part of DataQ, not shipped, and nothing in it is a prerequisite for deploying.
+
 > **Amendment (2026-07-27, in place — no new ADR):** the harness's IaC **CLI** is now
 > **OpenTofu** (`tofu`), not Terraform, converted in the same pass as the app stack.
 > Rationale, evidence and consequences are recorded once in the ADR 0024 amendment
@@ -11,7 +16,7 @@
 - **Status:** Accepted (amended 2026-07-27 — harness IaC CLI is OpenTofu; see ADR 0024)
 - **Date:** 2026-06-21
 - **Deciders:** @TheurgicDuke771
-- **Related:** ADR [0004](0004-orchestration-abstraction.md) (orchestration abstraction — the flows exercise it), [0010](0010-provider-agnostic-infrastructure-seams.md) / [0013](0013-marketplace-distribution-and-anti-lock-in.md) (Azure/Key Vault is one impl behind each seam; no Azure resource names in the repo), [0003](0003-gx-only-for-v1.md) (GX run paths the flows feed), [0012](0012-monitor-kind-seam.md) (the reserved freshness/volume/anomaly/schema-drift kinds the harness shapes data for), [0014](0014-reconciliation-comparison-check-kind.md) (the cross-platform `comparison` target the route map sets up). Discharges the standing **"live warehouse/file run — deferred Week-1 smoke"** caveat carried in CLAUDE.md §13 and `docs/progress-v1.md`.
+- **Related:** ADR [0004](0004-orchestration-abstraction.md) (orchestration abstraction — the flows exercise it), [0010](0010-provider-agnostic-infrastructure-seams.md) / [0013](0013-marketplace-distribution-and-anti-lock-in.md) (Azure/Key Vault is one impl behind each seam; no Azure resource names in the repo), [0003](0003-gx-only-for-v1.md) (GX run paths the flows feed), [0012](0012-monitor-kind-seam.md) (the reserved freshness/volume/anomaly/schema-drift kinds the harness shapes data for), [0014](0014-reconciliation-comparison-check-kind.md) (the cross-platform `comparison` target the route map sets up). Discharges the standing **"live warehouse/file run — deferred Week-1 smoke"** caveat carried in CLAUDE.md §13 and the maintainers' tracker.
 
 ## Context
 
@@ -29,7 +34,7 @@ The question this ADR settles is **what, if anything, of that environment belong
 - **Mock-data generators** for the retail model and the seed data they produce — out of repo.
 - **The Databricks RAW→Silver→Gold notebook** that processes landed files — out of repo.
 
-What **is** git-tracked is only documentation that points at the harness and records this decision: this ADR, plus the roadmap / `progress-v1.md` pointers that finally give the deferred-smoke caveat an owner.
+What **is** git-tracked is only documentation that points at the harness and records this decision: this ADR, plus the roadmap / the maintainers' tracker pointers that finally give the deferred-smoke caveat an owner.
 
 **Retail data model** the harness seeds (domains → entities): Product (style, colour, material, SKU) · Inventory (on-hand, planned) · Location (store, address, store hours) · Sales (placed, shipped, audited) · Return/Cancellation (return, cancellation, guest, platform) · Logistics (shipment, tracking, carrier) · Guest/Customer (details, survey, chatbot feedback). Plus cross-cutting: on-sale/discount, promotion/award/coupon, tax rate, exchange rate, product price, misc.
 

@@ -2,8 +2,8 @@
 
 How the three reference installations compare, as of 2026-08-16 (both clouds deployed from
 the same commit). The design intent (ADR
-[0010](https://github.com/TheurgicDuke771/DataQ/blob/main/docs/adr/0010-provider-agnostic-infrastructure-seams.md) /
-[0028](https://github.com/TheurgicDuke771/DataQ/blob/main/docs/adr/0028-cloud-neutral-frontend-and-auth.md))
+[0010](adr/0010-provider-agnostic-infrastructure-seams.md) /
+[0028](adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md))
 is that **every difference lives in deploy-time configuration — there are zero
 cloud-conditional code paths**, and the same container images run everywhere.
 
@@ -36,7 +36,7 @@ is the **same code everywhere**. Where the installations genuinely differ:
 | Alerting — Teams / Slack | live-verified | deployed, unexercised | pointable anywhere |
 | Alerting — email | configured | live-verified (SES) | Mailpit |
 | MCP (46 tools) | E2E-verified | E2E-verified (PAT) | works; PAT-only under OTP (no IdP ⇒ no bearer) |
-| Rate limiting | on (`RATE_LIMIT_XFF_TRUSTED_HOPS=3`, verified against a live XFF) | on (same setting; live-verified 2026-08-16 — an unauthenticated burst through CloudFront allowed exactly the configured 120/min then 429'd with `Retry-After`, and rotating a client-spoofed `X-Forwarded-For` could **not** escape the bucket, proving hops=3 selects the CloudFront-appended viewer IP) | off by design |
+| Rate limiting | on (`RATE_LIMIT_XFF_TRUSTED_HOPS=3`, verified against a live XFF) | on (same setting; verified through CloudFront — a spoofed `X-Forwarded-For` cannot escape the bucket, since hops=3 selects the edge-appended viewer IP) | off by design |
 | Browser security headers (CSP/HSTS/nosniff/frame-ancestors) | on — `connect-src` narrowed to the Azure AD origin | on — `connect-src` narrowed to both Cognito origins (issuer + hosted UI) | on, permissive `connect-src` default |
 | Edge rate limiting (WAF) | **none** — no Front Door/WAF in front of the Container App; the in-app limiter is the only layer | on — CloudFront WAF per-IP ceiling **in front of** the in-app limiter | n/a |
 | Edge caching | n/a | fingerprinted `/assets/*.<ext>` cached at the edge; `/api`, `/mcp`, `index.html` always reach the origin | n/a |
@@ -54,13 +54,6 @@ open when its Redis store is unwell, so on Azure a flood that also stresses Redi
 limiter at all. Front Door + WAF is the analogous Azure change and is not done —
 [#1388](https://github.com/TheurgicDuke771/DataQ/issues/1388). Neither deployment autoscales:
 `desired_count = 1` / `max_replicas = 3`.
-
-## Test harness
-
-| | Azure | AWS | Local |
-|---|---|---|---|
-| Mock-data / flow harness | Full external harness (ADF pipelines, Airflow, dbt job; opened on demand) | **none** | Self-contained mirror: local Airflow + MinIO landing zone + an open-source Snowflake stand-in |
-| Orchestration event source | ADF + Airflow + dbt | none | local Airflow |
 
 ## Deploying: Azure vs AWS
 

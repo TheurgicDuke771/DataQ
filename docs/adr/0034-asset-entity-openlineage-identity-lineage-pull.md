@@ -4,7 +4,7 @@
 - **Date:** 2026-07-10
 - **Deciders:** @TheurgicDuke771
 - **Related:** ADR [0012](0012-monitor-kind-seam.md) (`metric_value` feeds the metrics facet), [0027](0027-suite-permission-model-workspace-admin.md) / [0033](0033-workspace-roles-rbac.md) (asset authz derives from the suite ladder; asset-metadata mutation is an Admin capability row), [0029](0029-dbt-orchestration-provider.md) (the artifact reader the manifest parser extends), [0031](0031-oss-byol-distribution-licensing.md) (rules out the OpenMetadata SDK)
-- **Issue:** [#596](https://github.com/TheurgicDuke771/DataQ/issues/596) (gap G-d design). Full design: [docs/post-v1-assets-lineage-incidents-notes.md](../post-v1-assets-lineage-incidents-notes.md).
+- **Issue:** [#596](https://github.com/TheurgicDuke771/DataQ/issues/596) (gap G-d design). The full design note is kept with the maintainers rather than published.
 
 ## Context
 

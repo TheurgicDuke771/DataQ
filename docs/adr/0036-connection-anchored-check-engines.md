@@ -57,7 +57,7 @@ DMF outcomes are metric-shaped and ride the existing result semantics unchanged:
 
 | Engine | Gate / trigger | Notes |
 |---|---|---|
-| **DMF** (Snowflake) | Build first — umbrella issue [#895](https://github.com/TheurgicDuke771/DataQ/issues/895) | Ad-hoc `SELECT` invocation of system DMFs (`NULL_COUNT`, `NULL_PERCENT`, `DUPLICATE_COUNT`, `UNIQUE_COUNT`, `ROW_COUNT`, `FRESHNESS`) mapped onto existing kinds; custom DMFs later. **Constraint:** needs a live Snowflake with Enterprise features — the current trial runs to ~2026-07-25; after that the build waits on a new subscription. |
+| **DMF** (Snowflake) | Build first — umbrella issue [#895](https://github.com/TheurgicDuke771/DataQ/issues/895) | Ad-hoc `SELECT` invocation of system DMFs (`NULL_COUNT`, `NULL_PERCENT`, `DUPLICATE_COUNT`, `UNIQUE_COUNT`, `ROW_COUNT`, `FRESHNESS`) mapped onto existing kinds; custom DMFs later. **Constraint:** needs a live Snowflake with Enterprise features to build against. |
 | **DQX** (Unity Catalog) | A real Databricks/streaming user, **plus** two prereqs | (a) a remote-execution design — DQX's value is Spark-side evaluation, so DataQ must submit work to the workspace, a new architectural capability (today's UC runner pulls into pandas); (b) the Databricks **Labs license check** against ADR 0031's no-source-available guardrail *before* it stays on any roadmap. |
 | **Dataplex** (BigQuery) | A BigQuery-as-datasource decision | BigQuery isn't a DataQ datasource; that decision dominates the cost and comes first. |
 | **Scheduled-native ingest** (DMF schedules / Dataplex scans) | Separate future ADR | Pull-provider shape; must first settle synthetic-runs vs sibling-measurements-table for `results.run_id`. |
