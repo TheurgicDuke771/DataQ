@@ -306,11 +306,21 @@ def list_audit_events(
     allow-list that excludes `sample_failures`, `observed_value` and every
     credential.
 
-    `action_class` is `config` today. `access` is reserved for the data-read
-    events of G1/#431 and returns nothing until that ships — an empty result for
-    `action_class=access` means "not built yet", not "nobody read anything", which
-    is why the parameter accepts it rather than 422-ing on a value the schema
-    knows about.
+    Both `action_class` values are live. `config` records deliberate changes to
+    the workspace; `access` records data *reads* (G1/#431 phase 2) — who read
+    which run's results, when, and whether regulated data was actually surfaced.
+    An empty `action_class=access` result therefore means **nobody read anything
+    in the window**, and may be relied on as evidence. It previously meant "not
+    built yet", and this docstring said so; reading a stale version of that
+    sentence would invert the conclusion an investigator draws from an empty
+    page, which is the one place this endpoint must not be wrong.
+
+    Two caveats an empty page does NOT rule out, because they are outside what
+    this table records. Reads older than `AUDIT_RETENTION_DAYS` (default 365)
+    have been swept. And a read whose audit write failed still succeeded — the
+    access path is deliberately not fail-closed (ADR 0041) — so a gap is
+    correlated with `audit_access_write_failed` at ERROR in telemetry, which is
+    the signal to check before treating absence as proof.
     """
     # A naive datetime compared against a `timestamptz` column is interpreted in
     # the database session's `TimeZone`, so the window a caller asked for would
