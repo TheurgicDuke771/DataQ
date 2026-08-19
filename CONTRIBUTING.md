@@ -80,6 +80,22 @@ All checks run on every PR and must pass before merge.
 13. **Python:** Ruff (lint) → Black `--check` (format) → mypy (types) → Bandit (SAST) → pytest (from Week 8).
 14. **Frontend:** ESLint → Prettier `--check` → Vitest (from Week 8).
 15. **Secret scanning:** betterleaks in pre-commit hook AND in CI. A secret detected in CI blocks merge.
+15a. **No personal or live-infrastructure identifiers** (`scripts/check-identifiers.py`, pre-commit
+    AND CI — same both-layers rule as 15, and in the same required job). The repo is public, and an
+    identifier is not a secret: a leaked secret is revoked and rotated, while a hostname, account id
+    or email names something real that keeps existing. Blocked: personal email addresses, Azure
+    Postgres / Key Vault / Storage / Container Apps hostnames, Databricks workspace ids, Snowflake
+    account locators and hosts, CloudFront domains, AWS account ids. Use a placeholder instead
+    (`<angle-bracket>`, `acme…`, `example.com`) — the hook recognises those and stays quiet. A value
+    that must genuinely stay takes `identifier-ok: <reason>` on the line or the one above.
+    Deployment-specific values belong in gitignored config: `shared_pg_server_name` in
+    `deploy/terraform/azure/variables.tf` is the worked example — required, no default, set per
+    deployment.
+15b. **Every doc declares published or not** (`scripts/check-docs-publication.py`). Omitting a file
+    from mkdocs `nav` does **not** unpublish it — MkDocs builds every `.md` under `docs/` and serves
+    it by URL. Each one must be in `nav` (public), `exclude_docs` (internal), or the script's
+    `PUBLISHED_UNLINKED` list (public but unlinked, e.g. ADRs). Two internal documents reached the
+    public site by defaulting into it.
 16. **SAST:** Bandit (Python) + CodeQL (GitHub Actions) on every PR. **Suppression hygiene (#806):** a suppression comment carries its test id and *nothing else* — put the justification on its own line above, and never spell `# nosec`/`# noqa` inside prose. Bandit parses everything after its token as a test-id list (so an inline explanation emits one warning per word, and merely *mentioning* the token in a nearby comment does the same); Ruff rejects the same shape as a malformed directive. **Judge a suppression by the gate's exit code, never by its warnings:** `bandit -c pyproject.toml -r backend/app/` (the CI command) must exit 0 with "No issues identified". A `nosec encountered … but no failed test` warning does **not** mean the suppression is dead — on a multi-line node bandit emits one per covered line that had no finding, so it is unavoidable noise around a load-bearing marker. Removing one on that evidence breaks the build; confirm against the exit code first.
 17. **Dependency vulnerability scanning:** Dependabot alerts + auto-PRs for security updates, plus a synchronous CI gate (`pip-audit` backend, `pnpm audit` frontend). Python deps are pinned in `backend/requirements*.txt` (single source of truth; `environment.yml` and CI install from there).
 
