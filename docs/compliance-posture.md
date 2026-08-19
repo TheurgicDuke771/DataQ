@@ -179,7 +179,7 @@ runs, `sample_failures` is a real (time-bounded) residual store of subject rows.
 demand (not just on the retention clock), (b) export: structured dump of stored personal
 data for a subject. Document that the controller's warehouse remains their responsibility.
 
-### G3 — 🟢 Authoritative PII/PHI classification (not just a heuristic) — #433 — **warehouse tags consumed; verification pending**
+### G3 — 🟢 Authoritative PII/PHI classification (not just a heuristic) — #433 — **warehouse tags consumed, live-verified on both platforms**
 **Requirement:** GDPR special-category data (Art 9) / HIPAA PHI must not leak via the
 **surfacing** path. Today `redact_sample_failures` surfaces the *tested* column when it's
 not flagged PII — but flagging is a **name-token heuristic + optional suite policy**, so a
@@ -231,32 +231,49 @@ the suite policy, the classifier and fail-closed mode. That is a platform limit,
 implementation gap.
 
 **Live-verified 2026-08-18 against the real warehouses**, which is the only evidence that
-counts across a driver boundary (the #953 rule). Both unknowns are settled and one gap
-remains:
+counts across a driver boundary (the #953 rule). Every property is now settled on **both**
+platforms, each in the production shape — a **steward** role applies the tag, and DataQ's
+own least-privileged connection reads it back through the shipped `fetch_column_tags`. That
+split is the test: one powerful role doing both would prove nothing about whether the role
+the product actually runs as can see a tag someone else applied.
 
-* **Unity Catalog — fully verified end to end.** A `dataq_classification = 'pii'` tag was
-  applied to a real column, read back through the shipped `fetch_column_tags` as
-  `{'customer_id': 'sensitive'}`, and removed; the removal was confirmed by re-reading
-  `information_schema.column_tags`, not by trusting the cleanup's own log line.
-* **Snowflake — the read path verified.**
-  `INFORMATION_SCHEMA.TAG_REFERENCES_ALL_COLUMNS` **executes under DataQ's own
-  `DATAQ_READER` role** and returns cleanly. That settles the larger unknown: no
-  `ACCOUNT_USAGE` grant is needed, so classifications are read fresh rather than with that
+* **Unity Catalog — verified end to end.** `dataq_classification = 'pii'` applied to a real
+  column, read back as `{'customer_id': 'sensitive'}`, then removed — with the removal
+  confirmed by re-reading `information_schema.column_tags`, not by trusting the cleanup's
+  own log line.
+* **Snowflake — verified end to end**, on a `DATAQ_LOADER`-owned table, once that role was
+  granted `CREATE TAG`. Four properties, none of which a unit test can reach:
+  1. a column tag round-trips through the shipped query at all;
+  2. Snowflake's `UPPER`-cased column names fold to the lower-cased keys the redactor
+     matches on (`PAYMENT_ID` → `payment_id` → `sensitive`);
+  3. `LEVEL = 'COLUMN'` suppresses an **inherited** table-level tag;
+  4. an unrecognised value (`'banana'`) is ignored rather than guessed at — the column is
+     absent from the map and falls through to the next rung of the ladder.
+* **`INFORMATION_SCHEMA.TAG_REFERENCES_ALL_COLUMNS` executes under `DATAQ_READER`**, so no
+  `ACCOUNT_USAGE` grant is required and classifications are read **fresh**, without that
   view's up-to-two-hour lag.
-* **Snowflake — the apply/read-back half is NOT verified, and cannot be with the
-  credentials that exist.** Both stored Snowflake credentials are **role-scoped
-  programmatic access tokens** (one `DATAQ_READER`, one `DATAQ_LOADER`); neither role holds
-  `CREATE TAG` on the schema, and a PAT cannot assume `ACCOUNTADMIN` even though the
-  underlying user is granted it. Verified by inspecting the grants rather than inferred from
-  an error message.
 
-  So what remains unproven is narrow and specific: the `LEVEL = 'COLUMN'` filter and the
-  upper-to-lower column-name folding, **against real Snowflake rows**. Closing it needs
-  either a `CREATE TAG` grant on the target schema or an admin credential — a deliberate
-  privilege decision, not something to grant in passing.
+**Property 3 was then mutation-checked, because it could have passed vacuously.** "The
+inherited tag produced no clearance" is equally true if the warehouse simply never reports
+inherited tags — in which case the filter guards nothing. Running the same query with the
+filter removed settled it: one table-level `dataq_classification = 'public'` came back as
+**six rows, one per column, each `LEVEL = 'TABLE'`**, and the shipped query returned zero.
+Without the filter those six would have reached the redactor as per-column clearances and
+**un-masked every column in the table** — under fail-closed mode, where a clearance is
+precisely what lifts the mask. The guard is load-bearing, and the test is real.
 
-  Worth noting that the failure is itself a small piece of evidence: least-privileged roles
-  genuinely cannot apply governance, which is the separation this feature assumes.
+**Two findings the live run produced that no amount of local reasoning would have.**
+Applying a tag needs **`OWNERSHIP` of the table**, not merely `CREATE TAG` on the schema —
+the first attempt was refused on an `ACCOUNTADMIN`-owned table and succeeded on a
+loader-owned one. And a **role-scoped programmatic access token cannot assume another
+role**, even one the underlying user is granted; this is why the earlier pass could not
+apply anything at all. Both are properties of the platform's privilege model, and both are
+now on the record rather than rediscovered by the next person.
+
+**Still unexercised, deliberately:** Snowflake's own `PRIVACY_CATEGORY` system tag. It is
+set by Snowflake's built-in classification service, not by an `ALTER TABLE`, so exercising
+it means running that service — and the code path it feeds is the same `_merge` the
+`dataq_classification` cases just proved. Recorded as a limit rather than claimed as tested.
 
 ### G4 — 🟢 Region / residency assertion & enforcement — #434 — **asserted, surfaced, and its one exception accepted on the record**
 **Requirement:** GDPR Ch. V — EU personal data must stay in-region; cross-border transfer

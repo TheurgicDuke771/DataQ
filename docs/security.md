@@ -360,6 +360,27 @@ deliberately fixed. **Do not create tags with this name for any other purpose** 
 a same-named tag elsewhere carrying a `public`-family value would be honoured as
 a clearance.
 
+### Who can apply the tags, and what DataQ needs to read them
+
+Two different privileges, and conflating them is the usual stumbling block.
+
+**Applying** a tag is a data-steward action, and on Snowflake it needs more than
+the `CREATE TAG` grant that creates the tag object: setting a tag on a table's
+column requires **`OWNERSHIP` of that table** (or `APPLY TAG` on the account).
+A role that can create the tag but does not own the table is refused. Verified
+against a live warehouse, not inferred.
+
+Related, if your connection uses one: a **role-scoped programmatic access token
+cannot switch to another role**, even one the underlying user holds. A PAT issued
+for a read-only role stays read-only no matter what the user is granted.
+
+**Reading** them needs nothing extra. DataQ queries
+`INFORMATION_SCHEMA.TAG_REFERENCES_ALL_COLUMNS` (Snowflake) and
+`information_schema.column_tags` (Unity Catalog) as the connection's own role —
+no `ACCOUNT_USAGE` grant, no elevated identity. That is deliberate: `ACCOUNT_USAGE`
+lags by up to two hours, and a *stale* classification is the failure this feature
+exists to prevent.
+
 ### Where it applies
 
 Only **Snowflake** and **Unity Catalog** have a column-tag concept. ADLS, S3,
