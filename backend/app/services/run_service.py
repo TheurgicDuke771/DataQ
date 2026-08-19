@@ -51,6 +51,7 @@ from backend.app.db.models import (
     RESULT_STATUSES,
     RUN_STATUSES,
     SEVERITY_RANK,
+    Asset,
     Check,
     Result,
     Run,
@@ -1368,6 +1369,38 @@ def _redact_comparison_row(
         if tracker is not None:
             tracker.record(raw, show)
     return out
+
+
+def asset_column_tags(session: Session, suite: Any, run: Any = None) -> dict[str, str] | None:
+    """The warehouse's own column classifications for a suite's asset (G3).
+
+    The governance FLOOR of the redaction ladder — the rung a suite policy cannot
+    lift. Read from the asset rather than the warehouse: a read path must not open
+    a datasource connection, both for latency and because results have to stay
+    readable when the warehouse is down. The map is refreshed by the run path,
+    which is already connected.
+
+    `None` when the suite has no asset or the asset has never been refreshed,
+    which the redactor treats identically to an empty map — no opinion, fall
+    through to the policy and then the classifier. That is the same behaviour
+    that shipped before G3, and it is the only safe degradation: inventing a
+    clearance here would un-mask data through fail-closed mode.
+
+    Anchored on the **run's** asset when there is one, falling back to the
+    suite's. A suite can be retargeted at a different table, and the runs it
+    already produced are samples of the OLD one — redacting them against the new
+    table's classifications would apply the wrong governance to the wrong data,
+    in both directions. `runs.asset_id` records what was actually read.
+
+    Lives here, beside the ladder it feeds, because it is now shared by the run
+    read path and the live probes (#1419/#1479). A second copy in the probe
+    routes would be the guard-at-one-door shape those issues are made of.
+    """
+    asset_id = getattr(run, "asset_id", None) or getattr(suite, "asset_id", None)
+    if asset_id is None:
+        return None
+    asset = session.get(Asset, asset_id)
+    return asset.column_tags if asset is not None else None
 
 
 def observed_value_exposes_cells(redacted: dict[str, Any] | None) -> bool:

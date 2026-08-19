@@ -17,6 +17,7 @@ from sqlalchemy.exc import StatementError
 from backend.app.core.auth import get_current_user
 from backend.app.datasources.base import CheckOutcome, SuiteOutcome
 from backend.app.db.models import (
+    AuditEvent,
     Check,
     CheckVersion,
     Connection,
@@ -2360,3 +2361,83 @@ def test_dryrun_still_classifies_an_ordinary_driver_error(
 
     reason = resp.json()["error"]["detail"]["reason"]
     assert "svc" not in reason and "acct.example" not in reason
+
+
+# ── live-probe disclosure seam (#1419 / #1479) ────────────────────────────────
+#
+# The destination rule: an author's own preview panel is INTERACTIVE, so it keeps
+# its values (that is the capability the fix refuses to trade away), while the
+# disclosure is recorded instead of prevented. Fail-closed suites still mask,
+# because that operator explicitly chose assurance over capability.
+
+
+def _pii_preview(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch, policy: dict[str, Any]
+) -> Any:
+    """Dry-run a check on a column the suite's policy marks PII."""
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    suite = db_session.get(Suite, uuid.UUID(sid))
+    suite.column_policy = policy
+    db_session.flush()
+    _patch_runner(
+        monkeypatch,
+        _FakeRunner(
+            SuiteOutcome(
+                success=False,
+                checks=[
+                    CheckOutcome(
+                        "x",
+                        success=False,
+                        # `observed_value` as a LIST is the shape the redactor
+                        # acts on; `partial_unexpected_list` belongs to
+                        # `sample_failures` and is a different sink entirely.
+                        observed_value={"observed_value": ["ada@example.com"]},
+                    )
+                ],
+            )
+        ),
+    )
+    return client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(config={"column": "email"}),
+    )
+
+
+def test_dryrun_keeps_values_for_the_author_and_audits_the_disclosure(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1419: the preview must NOT lose the offending value to a policy artifact.
+
+    Seeing what the rule fired on is the entire purpose of a dry-run, so the fix
+    is accountability, not masking. If this ever flips to `<redacted>`, the
+    capability has been traded away again.
+    """
+    resp = _pii_preview(client, db_session, monkeypatch, {"pii_columns": ["email"]})
+    assert resp.status_code == 200
+    assert resp.json()["observed_value"] == {"observed_value": ["ada@example.com"]}
+
+    events = db_session.query(AuditEvent).filter_by(action="check.dryrun").all()
+    assert len(events) == 1
+    assert events[0].action_class == "access"
+    # `exposed` is the field an investigator filters on — a shown value must not
+    # be recorded as if nothing were surfaced.
+    assert events[0].after["exposed"] is True
+    assert events[0].after["destination"] == "interactive"
+    assert events[0].after["masked"] is False
+
+
+def test_dryrun_masks_under_fail_closed_and_says_so_in_the_audit(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """G3 fail-closed still wins — the operator chose assurance over capability."""
+    resp = _pii_preview(
+        client, db_session, monkeypatch, {"pii_columns": ["email"], "require_classification": True}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["observed_value"] == {"observed_value": ["<redacted>"]}
+
+    event = db_session.query(AuditEvent).filter_by(action="check.dryrun").one()
+    # A masked probe is still RECORDED: "profiled it and saw nothing" is a
+    # different fact from "nobody profiled it", and only one of them is true.
+    assert event.after["masked"] is True
+    assert event.after["exposed"] is False

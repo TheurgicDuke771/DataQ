@@ -67,6 +67,7 @@ from backend.app.services import (
     dashboard_service,
     dryrun_service,
     incident_service,
+    live_probe,
     notification_service,
     orchestration_service,
     profile_service,
@@ -446,22 +447,15 @@ def _run_results_payload(
 def _asset_column_tags(
     session: Session, suite: Suite, run: Run | None = None
 ) -> dict[str, str] | None:
-    """The warehouse's own column classifications for this suite's asset (G3).
+    """Thin alias for `run_service.asset_column_tags` — see its docstring.
 
-    Mirrors the REST helper deliberately rather than sharing it: both are three
-    lines over the ORM, and the thing that must not diverge — the *precedence* —
-    lives in `run_service`, not here. `None` when there is no asset or it has
-    never been refreshed, which the redactor treats as no opinion.
-
-    Anchored on the RUN's asset when there is one: a retargeted suite's older runs
-    are samples of the previous table, and redacting them against the new table's
-    classifications applies the wrong governance to the wrong data.
+    This used to be a deliberate copy, on the grounds that it was three lines over
+    the ORM and the precedence that must not diverge lived in `run_service`. That
+    held while there was no shared home for it; #1419/#1479 gave the live probes
+    one, and a third spelling of the governance floor is exactly the
+    guard-at-one-door shape those issues are made of.
     """
-    asset_id = getattr(run, "asset_id", None) or getattr(suite, "asset_id", None)
-    if asset_id is None:
-        return None
-    asset = session.get(Asset, asset_id)
-    return asset.column_tags if asset is not None else None
+    return run_service.asset_column_tags(session, suite, run)
 
 
 def _redacted_sample(
@@ -1940,17 +1934,29 @@ def dryrun_check(
             target=suite.target,
             secret_store=get_secret_store(),
         )
+        # Redaction follows the DESTINATION (#1419/#1479, `services.live_probe`).
+        # An MCP consumer is `EGRESS`: a model that will quote the value into a
+        # conversation and may carry it further, so it masks — while the REST
+        # dry-run panel is `INTERACTIVE` and shows values. Under the old
+        # column-property framing those two were a contradiction; under the
+        # destination rule they are the right answer twice. Masking here also
+        # keeps the preview agreeing with `get_suite_results`, which redacts the
+        # same column on the same suite — an LLM seeing a value in one and a mask
+        # in the other has no way to tell which is the truth.
+        live_probe.record_probe_access(
+            session,
+            action="check.dryrun",
+            suite_id=suite.id,
+            actor=user,
+            destination=live_probe.Destination.EGRESS,
+            masked=True,
+            columns=[c] if (c := (config or {}).get("column")) else None,
+            detail={"expectation_type": expectation_type, "kind": kind},
+            actor_kind="user",
+        )
         return {
             "status": outcome.status,
             "metric_value": _num(outcome.metric_value),
-            # Redacted against the suite's column policy — which the REST dry-run
-            # route does NOT do (#1419). That is defensible there and not here:
-            # the REST consumer is the author's own check-editor panel, looking at
-            # a suite they can edit; this consumer is a model that will quote the
-            # value into a conversation and may carry it further. Redacting makes
-            # the preview agree with `get_suite_results`, which would redact the
-            # same column on the same suite — an LLM seeing a value here and a
-            # mask there has no way to tell which is the truth.
             "observed_value": run_service.redact_observed_value(
                 outcome.observed_value,
                 tested_column=(config or {}).get("column"),
@@ -3259,6 +3265,22 @@ def list_columns(
             file_format=file_format,
             secret_store=get_secret_store(),
         )
+        # Audited, not masked. This probe opens the customer's warehouse with a
+        # stored credential, so "who touched this table" must be answerable — but
+        # it returns column NAMES, which are schema rather than data, so there is
+        # nothing to redact and `masked=True` would misreport a disclosure that
+        # never had values in it. `exposed` is therefore False for the honest
+        # reason, not by suppressing the event.
+        live_probe.record_probe_access(
+            session,
+            action="column.list",
+            suite_id=suite.id,
+            actor=user,
+            destination=live_probe.Destination.EGRESS,
+            masked=True,
+            columns=columns,
+            detail={"table": table, "path": path, "values_returned": False},
+        )
         return {
             # The fully-qualified object actually read. These may have been
             # defaulted off the suite's run target, and "ORDERS" on its own is
@@ -3382,10 +3404,19 @@ def profile_column(
     null, or the stat may not be computable for its type (mixed uncomparable
     values, nested list/struct cells).
 
-    The returned ``top_values`` / ``min_value`` / ``max_value`` are **real cell
-    contents and are not PII-redacted** — the suite's column policy is not
-    applied here. Do not profile columns the policy marks as PII, and do not echo
-    values into a summary unnecessarily. Requires edit access to the suite.
+    **Values are masked for columns the suite's redaction policy considers
+    sensitive**, and ``redacted_columns`` names them. Statistics survive masking —
+    ``null_count``, ``null_fraction``, ``distinct_count`` and each ``top_values``
+    ``count`` are facts *about* the data, not the data — so "how complete is this
+    column, how skewed is it" is answerable even when the literal values are not
+    shown. A masked column's ``min_value`` / ``max_value`` are null because they
+    were withheld, NOT because the column is empty; check ``redacted_columns``
+    before reporting a column as having no values.
+
+    This docstring previously said the values were unredacted and asked you not
+    to profile PII columns. That was an instruction, not a control, and the
+    control now exists. Requires edit access to the suite, and the read is
+    recorded in the workspace audit log.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
@@ -3419,6 +3450,36 @@ def profile_column(
         # table's — "how many rows are in the orders file?" answered `100000`
         # exactly, and every null fraction was a sample fraction stated as fact.
         sampled = result.path is not None or connection.type == "iceberg"
+        # An MCP consumer is `EGRESS` (#1419/#1479): `top_values` / `min_value` /
+        # `max_value` are real cell contents, and a model may quote them onward.
+        # Until now the ONLY control here was a sentence in this docstring telling
+        # the model not to profile PII columns — an instruction, not a control,
+        # and the same "documented and enforced nowhere" shape as the ADR 0033
+        # `*_secret_name` hole. Statistics survive masking; only literal values go.
+        #
+        # Tags apply only when the probe hit the suite's OWN asset: an explicit
+        # table/path override may name a different table whose columns collide by
+        # name, and the asset's tags could hand out a clearance belonging to it.
+        probed_other = any(v is not None for v in (table, path, schema, catalog))
+        tags = None if probed_other else _asset_column_tags(session, suite)
+        sensitive = live_probe.sensitive_profile_columns(
+            result.columns, policy=suite.column_policy, tags=tags
+        )
+        # NOT `columns` — that name is this tool's own parameter (the list of
+        # column NAMES to profile). Shadowing it silently changed what was
+        # profiled; mypy caught it, which a looser type would not have.
+        shown_columns = live_probe.mask_profile_columns(result.columns, sensitive=sensitive)
+        live_probe.record_probe_access(
+            session,
+            action="column.profile",
+            suite_id=suite.id,
+            actor=user,
+            destination=live_probe.Destination.EGRESS,
+            masked=True,
+            columns=[c.column for c in result.columns],
+            sensitive_columns=sensitive,
+            detail={"table": result.table, "path": result.path, "sampled": sampled},
+        )
         return {
             "row_count": result.row_count,
             "table": result.table,
@@ -3441,8 +3502,15 @@ def profile_column(
                     "max_value": c.max_value,
                     "top_values": c.top_values,
                 }
-                for c in result.columns
+                # `shown_columns`, NOT `result.columns` — iterating the raw list
+                # is what would leave the masking above inert while reading as
+                # correct.
+                for c in shown_columns
             ],
+            #: Which columns came back masked, so a model can say "the policy
+            #: hides these" instead of reporting them as empty. A null min/max on
+            #: a masked column means masked, not absent.
+            "redacted_columns": sensitive,
         }
 
 

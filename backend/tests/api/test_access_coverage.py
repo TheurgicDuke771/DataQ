@@ -27,13 +27,26 @@ _REDACTORS: Final[frozenset[str]] = frozenset(
         "redact_sample_failures",
         "redact_sample_failures_with_state",
         "redact_observed_value",
+        # The live-probe seam (#1419/#1479) is a SECOND door onto regulated data
+        # — the profiler returns real cell values and never touches the three
+        # redactors above, so without this name the profiler routes would be
+        # invisible to this guard. That is precisely the blind spot the module
+        # docstring warns about ("a future path that hand-rolls its own masking"),
+        # so the fix is to widen the seam definition rather than to accept it.
+        "mask_profile_columns",
     }
 )
 
 #: `run_service` defines the redactors; auditing their own definitions would be
 #: circular. `audit_service` is the recorder, not a consumer.
 _SKIP_MODULES: Final[frozenset[str]] = frozenset(
-    {"services/run_service.py", "services/audit_service.py"}
+    {
+        "services/run_service.py",
+        "services/audit_service.py",
+        # Defines `mask_profile_columns`; auditing its own definition is circular,
+        # exactly as for the redactors above.
+        "services/live_probe.py",
+    }
 )
 
 
