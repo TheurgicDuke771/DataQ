@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "ead2a3bf90d2",
+  "strategy": "manual-commit",
+  "branch": "fix/pnpm-lock-cross-merge",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/pnpm-lock.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ea/d2a3bf90d2/0/metadata.json",
+      "transcript": "/ea/d2a3bf90d2/0/full.jsonl",
+      "compact_transcript": "/ea/d2a3bf90d2/0/transcript.jsonl",
+      "content_hash": "/ea/d2a3bf90d2/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 20954,
+    "cache_read_tokens": 4313021,
+    "output_tokens": 11801,
+    "api_call_count": 32
+  }
+}
