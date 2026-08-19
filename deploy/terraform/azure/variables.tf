@@ -45,10 +45,13 @@ variable "shared_pg_expected_location" {
 
 # ── Shared Postgres (the app's DB lives on the harness's single server) ───────
 
+# No default, deliberately. This names a PRE-EXISTING server that this stack does
+# not create, so there is no value that is correct for more than one deployment —
+# and a committed default would publish the maintainers' server name in a public
+# repo. Set it in your own (gitignored) tfvars; Terraform fails clearly if unset.
 variable "shared_pg_server_name" {
-  description = "Name of the shared Postgres Flexible Server (harness-owned, neutral name). The app's `dataq` database + `dataq_app` role live here (provisioned out-of-band — see README)."
+  description = "Name of the pre-existing Postgres Flexible Server hosting the app's database. The app's database + least-privilege role live here (provisioned out-of-band — see README)."
   type        = string
-  default     = "dataq-pg-wus3-3erlgd"
 }
 
 variable "app_db_name" {

@@ -43,7 +43,7 @@ from backend.app.lineage.warehouse_snowflake import (
 from backend.app.services.asset_identity import format_snowflake_name, normalize_snowflake_account
 
 _FIXTURES = Path(__file__).parent.parent / "fixtures" / "lineage_native"
-_ACCOUNT = "PVQSOEQ-ZGB34383"  # the demo account the payload was captured from
+_ACCOUNT = "ACMEORG-TEST01"  # anonymised locator of the account the payload came from
 _CONFIG: dict[str, Any] = {"account": _ACCOUNT, "database": "DATAQ_DB"}
 
 

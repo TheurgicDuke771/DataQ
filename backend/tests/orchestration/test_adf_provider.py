@@ -67,14 +67,14 @@ _COMMON_ALERT: dict[str, Any] = {
     "data": {
         "essentials": {
             "alertId": "/subscriptions/sub-1/providers/Microsoft.AlertsManagement/alerts/x",
-            "alertRule": "dataq-adf-failed-runs",
+            "alertRule": "acme-adf-failed-runs",
             "severity": "Sev3",
             "signalType": "Metric",
             "monitorCondition": "Fired",
             "monitoringService": "Platform",
             "alertTargetIDs": [
-                "/subscriptions/sub-1/resourcegroups/dataq-harness-rg"
-                "/providers/microsoft.datafactory/factories/dataq-harness-adf"
+                "/subscriptions/sub-1/resourcegroups/acme-rg"
+                "/providers/microsoft.datafactory/factories/acme-adf"
             ],
             "firedDateTime": "2026-07-02T03:01:00.000Z",
         },
@@ -104,7 +104,7 @@ _COMMON_ALERT: dict[str, Any] = {
 def test_common_alert_schema_returns_fired_ping_with_factory_and_pipeline() -> None:
     ping = _parse_ping(_COMMON_ALERT)
     assert ping.monitor_condition == "fired"
-    assert ping.resource_name == "dataq-harness-adf"
+    assert ping.resource_name == "acme-adf"
     assert ping.pipeline_or_dag_id == "pl_flow_a_orders"
     assert ping.fired_at is not None and ping.fired_at.year == 2026
 

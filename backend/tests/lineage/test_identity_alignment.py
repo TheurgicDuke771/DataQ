@@ -7,8 +7,7 @@ long: every existing fixture was written by us, so it agreed with us.
 `backend/tests/fixtures/lineage/marquez_*_dbt_real.json` were captured from a real
 Marquez 0.50.0, populated by piping the real `manifest.json` from a real dbt build
 against real Snowflake through real `openlineage-dbt` 1.51.0. Only the Snowflake
-account locator was replaced (`PVQSOEQ-ZGB34383` → `ACME-TEST01`); **the casing — the
-entire point — is untouched.**
+account locator was anonymised; **the casing — the entire point — is untouched.**
 
 The fact these pin: a real producer names the same table
 ``DATAQ_DB.ANALYTICS.mart_order_revenue`` while DataQ's asset identity is

@@ -23,7 +23,7 @@
 
 # image_tag          = "v10"       # backend  — bump per deploy (immutable tag, not "latest")
 # frontend_image_tag = "v1"        # frontend — bump per deploy (immutable tag, not "latest")
-# shared_pg_server_name = "dataq-pg-wus3-3erlgd"   # the shared (harness) PG server
+# shared_pg_server_name = "my-shared-pg-server"    # REQUIRED — the pre-existing PG server
 # Region that server is EXPECTED in. Leave unset for an ordinary deployment —
 # it then defaults to azure_location and the residency check stays silent. Set
 # it only where an accepted exception applies: here the shared server is in

@@ -22,8 +22,8 @@ from backend.app.lineage.warehouse_unity_catalog import UnityCatalogLineageProvi
 from backend.app.services.asset_identity import format_unity_catalog_name
 
 _FIXTURES = Path(__file__).parent.parent / "fixtures" / "lineage_native"
-_WORKSPACE = "https://adb-7474653982915344.4.azuredatabricks.net"
-_HOST = "adb-7474653982915344.4.azuredatabricks.net"
+_WORKSPACE = "https://adb-1234567890123456.4.azuredatabricks.net"
+_HOST = "adb-1234567890123456.4.azuredatabricks.net"
 _CONFIG: dict[str, Any] = {"workspace_url": _WORKSPACE}
 
 

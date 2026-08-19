@@ -14,12 +14,12 @@ describe('namespaceLabel', () => {
     it('names a Snowflake account, preserving its case', () => {
       // Account identifiers are case-significant to a reader — this is also why the
       // parser can't be `new URL()`, whose `.host` lowercases.
-      expect(namespaceLabel('snowflake://PVQSOEQ-ZGB34383')).toBe('Snowflake · PVQSOEQ-ZGB34383');
+      expect(namespaceLabel('snowflake://ACMEORG-TEST01')).toBe('Snowflake · ACMEORG-TEST01');
     });
 
     it('shortens a Databricks workspace host to the workspace id', () => {
-      expect(namespaceLabel('unitycatalog://dbc-4492dde4-090c.cloud.databricks.com')).toBe(
-        'Databricks · dbc-4492dde4-090c',
+      expect(namespaceLabel('unitycatalog://dbc-1234abcd-5678.cloud.databricks.com')).toBe(
+        'Databricks · dbc-1234abcd-5678',
       );
     });
 
@@ -28,8 +28,8 @@ describe('namespaceLabel', () => {
     });
 
     it('reads an ADLS namespace as account/container', () => {
-      expect(namespaceLabel('abfss://raw@dataqharness.dfs.core.windows.net')).toBe(
-        'ADLS · dataqharness/raw',
+      expect(namespaceLabel('abfss://raw@acmelake.dfs.core.windows.net')).toBe(
+        'ADLS · acmelake/raw',
       );
     });
 
