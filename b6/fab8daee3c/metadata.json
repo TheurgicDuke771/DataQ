@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "b6fab8daee3c",
+  "strategy": "manual-commit",
+  "branch": "docs/snapshot-live-probe-seam",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b6/fab8daee3c/0/metadata.json",
+      "transcript": "/b6/fab8daee3c/0/full.jsonl",
+      "compact_transcript": "/b6/fab8daee3c/0/transcript.jsonl",
+      "content_hash": "/b6/fab8daee3c/0/content_hash.txt",
+      "prompt": "/b6/fab8daee3c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 58,
+    "cache_creation_tokens": 19558,
+    "cache_read_tokens": 12324600,
+    "output_tokens": 13043,
+    "api_call_count": 29
+  }
+}
