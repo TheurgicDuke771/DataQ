@@ -102,8 +102,8 @@ generic seams.**
    been **linked as an SWA backend**, Azure had auto-enabled Container Apps **EasyAuth**
    (`azureStaticWebApps` provider) on it; destroying the SWA orphans that config, which then
    401s every request (DataQ validates tokens itself via `fastapi-azure-auth`, so EasyAuth is
-   redundant). Disable it once post-cutover: `az containerapp auth update -n dataq-app-api -g
-   dataq-rg --enabled false` (durable — nothing re-enables it). See deploy/README.md §1.4.
+   redundant). Disable it once post-cutover: `az containerapp auth update -n <api-app> -g
+   <resource-group> --enabled false` (durable — nothing re-enables it). See deploy/README.md §1.4.
 
 ## Consequences
 

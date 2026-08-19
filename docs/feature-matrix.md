@@ -20,17 +20,13 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-ᵃ **Live-verified 2026-08-01.** The anomaly monitor (#593, PRs #1117/#1119 — backend
-engine plus its check-editor authoring UI) learns a rolling mean/stddev of the
+ᵃ **Live-verified.** The anomaly monitor learns a rolling mean/stddev of the
 target's own row count or freshness age (optionally per weekday) and bands each
 run's z-score through the usual warn/fail/critical thresholds; below its
 `min_points` of history it reports `skip`, never a fabricated pass. Both target
-metrics were run against both live warehouses via the real `measure_metric` path
-(the standing rule after #953 shipped a ✅ that had never once worked — only an
-**executed** run against a live datasource earns the tick): Snowflake
-`RETAIL.ORDERS_HEADER` row_count=34680.0 + freshness `ORDER_TS`=132.28h; Unity
-Catalog `dataq_retail.gold.feedback_sentiment` row_count=180.0 + freshness
-`scored_at`=132.48h. The dashes are a real restriction, not an omission: the
+metrics were run against live Snowflake and live Unity Catalog tables via the real
+`measure_metric` path — a tick here is earned by an **executed** run against a live
+datasource, never by a passing unit test. The dashes are a real restriction, not an omission: the
 anomaly executor takes its own measurement over a live SQL connection, while
 Iceberg and flat files compute their monitor scalars natively inside their
 runners, which stateful kinds never reach.
@@ -44,20 +40,14 @@ CSV header sample for ADLS/S3 flat files, and the loaded table's own metadata fo
 Iceberg (no data scan on any of them except the CSV sample). Re-baseline explicitly
 once a drift is expected and reviewed.
 
-ᶜ **The Unity Catalog tick was false until 2026-08-08** ([#1179](https://github.com/TheurgicDuke771/DataQ/issues/1179)).
-ADR 0019 declared custom SQL for both SQL datasources, but the UC runner validates a
-pandas DataFrame, and `UnexpectedRowsExpectation`'s metrics have no pandas provider —
-so every UC custom-SQL check, in a run *and* in a dry-run, failed with `No provider
-found for unexpected_rows_query.table using PandasExecutionEngine`. It had never once
-worked. Custom-SQL checks now run against a GX Databricks-SQL batch over the same
-table (ordinary expectations keep the DataFrame batch). **Live-verified against the
-real warehouse** on `dataq_retail.gold.feedback_sentiment` (195 rows) — this is the
-same standing rule the anomaly note above records: a zero-row query passed with
-`observed_value=0`, `WHERE rating >= 4` failed with `observed_value=74`, and an
-unresolvable column came back as an operational `error` carrying the Databricks
-message rather than crashing the run. Snowflake was always genuinely ✅ and is
-unchanged. Custom SQL stays binary pass/fail on both (ADR 0019 §4 — a row count is
-not a bandable metric), so `metric_value` is null by design, not by omission.
+ᶜ **Unity Catalog custom SQL is supported since v1.1.** It runs against a GX
+Databricks-SQL batch over the target table, while ordinary expectations keep the
+DataFrame batch — the split exists because `UnexpectedRowsExpectation` has no pandas
+metric provider, so custom SQL cannot use the DataFrame path. Verified against a live
+Unity Catalog table, including the operational-`error` path when a column will not
+resolve. Custom SQL stays binary pass/fail on both SQL datasources (ADR 0019 §4 — a
+row count is not a bandable metric), so `metric_value` is null by design, not by
+omission.
 
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
@@ -188,7 +178,7 @@ credential (`auth_type: token`, the default — sent as `Authorization: Bearer �
 
 | Distribution | Expected to work | Status |
 |---|---|---|
-| Self-hosted / OSS Airflow | ✅ | **Verified** — the reference harness runs this |
+| Self-hosted / OSS Airflow | ✅ | **Verified** against a self-hosted Airflow |
 | Astronomer (Astro) | ✅ via an Astro **Deployment API token** as the Bearer credential, with `base_url` set to the deployment's Airflow URL (`https://<org>.astronomer.run/<deployment-id>`) | **Untested** — no Astro deployment has been exercised; compatible by construction, not by observation (#800) |
 | MWAA / Cloud Composer | Likely, same Bearer shape | **Untested** |
 

@@ -164,8 +164,8 @@ any kind.
   live-worker lock; recovery + hardening are documented in the deploy README.
 - **Secrets rotate** without a redeploy (they're read from the store at runtime); restart the
   dependent apps after a shared-Postgres recreate (start-time secret snapshot).
-- The reference deployment carries **demo/test fixtures** — tear them down before any
-  customer-facing or marketplace use (see the deploy README's operational notes).
+- If you seeded **demo fixtures** (`scripts/setup.sh` offers them), remove them before
+  any customer-facing use — see the deploy README's operational notes.
 
 For the full runbook — one-time provisioning, the complete env-var reference, SSO setup, and
 the checklists — see

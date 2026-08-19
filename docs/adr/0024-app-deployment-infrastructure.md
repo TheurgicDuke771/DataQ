@@ -1,5 +1,12 @@
 # ADR 0024 — App deployment infrastructure: Terraform (ACA + SWA + KV + self-hosted Redis), sharing the Container Apps environment with the harness
 
+> **Scope note.** This record describes the **maintainers' own reference deployment**,
+> and names its actual resources on purpose — a decision record that genericizes its
+> subject stops being evidence of what was decided and why. Nothing here is a
+> requirement of the product: a customer deployment provisions its own resources with
+> its own names, and the constraints cited below (subscription quotas, shared
+> infrastructure) are properties of that one estate, not of DataQ.
+
 > **Amendment (2026-07-27, in place — no new ADR):** the IaC **CLI** is now **OpenTofu**
 > (`tofu`), not Terraform. The stack, state, providers, and every decision below are
 > otherwise unchanged — only the binary that reads them differs. See the
@@ -156,7 +163,7 @@ together.**
 - **Directory path and file extensions are unchanged.** `deploy/terraform/<cloud>/` and
   `*.tf` stay. `terraform {}` is OpenTofu's own block name and `.tf` its own format; they
   are not Terraform leftovers. Renaming would churn every doc link, the `.gitignore`
-  path-independent globs, the `docs/compliance-posture.md` evidence links, and the
+  path-independent globs, the compliance-register evidence links, and the
   `aws/`/`gcp/` sibling convention #505 will follow, for zero functional gain.
 - **State carries over untouched.** Local backend, state format version 4, gitignored. No
   migration step, no re-import, no `state mv`.
@@ -170,22 +177,10 @@ together.**
 
 ### Evidence — how this was verified
 
-A clean plan was **not** the acceptance bar, because the stack already carries pre-existing
-drift — the ADR 0034 lineage env vars (`LINEAGE_PROVIDER`, `MARQUEZ_URL`,
-`WAREHOUSE_LINEAGE_ENABLED`) are live on prod but absent from `containerapps.tf`, so an
-apply would *delete* them, while `DBT_WEBHOOK_SECRET_NAME` (ADR 0029) is in config but not
-live. Filed as #1086; unrelated to this change and reproducing identically on both CLIs.
-The bar was therefore **equivalence**: the same config and the same state must produce the
-*same plan* under both CLIs.
-
-> Worth recording, because it nearly went in wrong: the azurerm provider diffs a container
-> app's `env` block **positionally**, so the rendered plan reads as a 14-line shuffle of
-> variable names and the actual content is invisible. Read from the rendering alone, the
-> drift looks like "config vars that were never applied" — including
-> `RATE_LIMIT_XFF_TRUSTED_HOPS`, which is in fact present on both sides and merely moves
-> index. Only the `show -json` set-difference gives the real answer (2 removals + 1
-> addition per app, 28 unchanged). Another instance of the standing rule: the rendered
-> form is not the evidence.
+A clean plan was **not** the acceptance bar: the stack already carried unrelated
+pre-existing drift (filed separately, reproducing identically on both CLIs). The bar was
+therefore **equivalence** — the same config and the same state must produce the *same
+plan* under both CLIs.
 
 Both CLIs were run against live Azure with identical inputs, their plans exported with
 `-out` and rendered via `show -json`, and the `resource_changes` projection normalized

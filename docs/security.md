@@ -273,43 +273,36 @@ below is checkable against a first-party citation rather than our assertion.
 | S3 (landing bucket) | Yes | SSE-S3 default | |
 | ElastiCache (Celery broker + rate-limit counters) | **No** | — | [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385). Not a data store, but the asymmetry beside an encrypted RDS is exactly what a review flags |
 
-### Customer-managed keys (CMK) — not offered, and why
+### Customer-managed keys (CMK)
 
-CMK is **out of scope for the current Azure reference deployment**, and this is a recorded
-decision rather than an oversight. Three independent reasons, any one of which is
-sufficient:
+Data at rest is encrypted with **service-managed keys** by default on both clouds.
+CMK — where you hold the key — is **not wired into the IaC in this repo**, and the
+reason splits into one product constraint and a set of deployment prerequisites.
 
-1. **CMK is creation-time-only.** Microsoft is explicit: *"You can select the mode only at
-   server creation time. You can't change the mode from one to another for the lifetime of
-   the server."* The only route to CMK on an existing server is restoring a backup onto a
-   **new** server — so this is a data migration, not a Terraform toggle. It is also
-   one-way: reverting to service-managed keys requires another restore.
-   ([Limitations of CMK](https://learn.microsoft.com/azure/postgresql/security/security-data-encryption#limitations-of-customer-managed-keys-cmk))
-2. **Our IaC does not own the database server.** `deploy/terraform/azure/postgres.tf`
-   declares it as a `data` source — the subscription caps Flexible Servers at one, so the
-   app shares a server and provisions only a distinct database and least-privilege role.
-   There is no `azurerm_postgresql_flexible_server` resource in that stack to attach a key
-   to, and creating one collides with the same cap that produced the shared design.
-3. **Our Key Vault is deliberately destroyable, which makes it the wrong key custodian.**
-   It runs with purge protection **off** so a destroy/re-apply can reuse the vault name (a
-   recorded decision for a demo-scoped vault). If the vault holding a CMK is deleted, the
-   server goes **Inaccessible** and denies every connection. Adopting CMK therefore means
-   reversing that decision — and purge protection is irreversible once enabled. Azure
-   additionally requires the vault's **"days to retain deleted vaults" to be 90**, a value
-   that *cannot be changed after the vault is created*: an existing vault set lower needs a
-   **new vault**, not a setting change.
+**The product constraint: on Azure, CMK is creation-time-only.** Microsoft is
+explicit — *"You can select the mode only at server creation time. You can't change
+the mode from one to another for the lifetime of the server."* The only route to
+CMK on an existing server is restoring a backup onto a **new** one, so it is a data
+migration rather than a Terraform toggle, and it is one-way: reverting to
+service-managed keys requires another restore.
+([Limitations of CMK](https://learn.microsoft.com/azure/postgresql/security/security-data-encryption#limitations-of-customer-managed-keys-cmk))
 
-**What a customer requiring key custody would need**, stated so the ask is answerable
-rather than merely declined: a dedicated Flexible Server created *with* CMK, a
-purge-protected Key Vault in the same region with 90-day deleted-vault retention, a
-user-assigned managed identity with key permissions, and an operational commitment to key
-rotation — because a key that expires, is disabled, or becomes unreachable takes the
-database offline within about an hour. That is a deployment topology, not a feature flag,
-which is why it is documented here instead of shipped as an option nobody could safely
-enable.
+**The prerequisites, which a deployment either meets or does not:**
 
-Revisit if a customer requires key custody, or when a deployment stack owns its own
-database server from creation.
+- **Your IaC must own the database server from creation.** A stack that attaches to
+  a pre-existing server has no server resource to hang a key on.
+- **The key vault must be non-destroyable.** If the vault holding a CMK is deleted,
+  the server goes **Inaccessible** and denies every connection — so purge protection
+  must be on, which is irreversible once enabled. Azure additionally requires
+  90-day deleted-vault retention, a value that *cannot be changed after the vault is
+  created*: a vault set lower needs a new vault, not a setting change.
+- **You must commit to key rotation operationally.** A key that expires, is
+  disabled, or becomes unreachable takes the database offline within about an hour.
+
+Meeting all three is a deployment topology, not a feature flag — which is why CMK is
+documented here rather than shipped as an option that could be enabled unsafely. A
+stack that provisions its own server and a purge-protected vault can adopt it; the
+maintainers' reference deployment does neither, so it is out of scope there.
 
 ## Column classification from your warehouse
 

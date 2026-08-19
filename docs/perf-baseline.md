@@ -1,11 +1,7 @@
 # Performance baseline — all datasources
 
-> Captured **2026-07-10** (v1.1 W3), while both the Snowflake trial and the Azure
-> subscription were still live. This supersedes the Snowflake-only W1 baseline
-> (#587, kept below as the historical appendix) and is the **reference datum for
-> [#595](https://github.com/TheurgicDuke771/DataQ/issues/595) — scale-aware
-> execution (G-b)**: it measures, per datasource, where DataQ's run path stops
-> scaling and *how it fails* when it does.
+> Captured **2026-07-10** against live warehouses. It measures, per datasource,
+> where DataQ's run path stops scaling and *how it fails* when it does.
 
 ## TL;DR
 
@@ -33,7 +29,7 @@ Two sentences of conclusion:
 
 | | |
 |---|---|
-| App code | `main` @ `e6b63fe1` (v1.1 W3) |
+| App code | `main`, during v1.1 development |
 | Measurement rig | docker-compose stack pinned to **production parity**: worker at 1 CPU / 2 GiB / `celery --concurrency=4` (matched to the deployed worker), driven through the real REST API |
 | Iceberg leg | run against the deployed stack (the native catalog wasn't reachable from the local rig) — wall via REST, worker memory via the platform metric |
 | Worker memory sampling | `docker stats` at 1 Hz (local); 1-min max metric (prod) |
@@ -43,8 +39,8 @@ Two sentences of conclusion:
 Data generation (all regenerable in seconds — nothing needs to be archived):
 
 - **Snowflake**: `CREATE TABLE … AS SELECT SEQ8(), UNIFORM(…), … FROM TABLE(GENERATOR(ROWCOUNT => 200000000))`
-  — 50M in 10.6s, 100M in 17s, 200M in 28.6s on XSMALL. `DATAQ_DB.PERF.ORDER_LINES_50M` is kept; the 100M/200M tables were dropped after the run.
-- **UC**: `CREATE TABLE dataq_retail.perf.order_lines_1m AS SELECT … FROM range(1000000)` via the SQL Statements API (schema dropped after).
+  — 50M in 10.6s, 100M in 17s, 200M in 28.6s on XSMALL. The 50M table was kept; the 100M/200M tables were dropped after the run.
+- **UC**: `CREATE TABLE <catalog>.perf.order_lines_1m AS SELECT … FROM range(1000000)` via the SQL Statements API (schema dropped after).
 - **Flat files**: numpy → CSV + Parquet at 1/2/5/10M rows, uploaded to `landing/perf/` (deleted after).
 - **Iceberg**: 1M-row Arrow batches appended to a dedicated `perf.order_lines` namespace via `pyiceberg` (namespace dropped after the run).
 
@@ -147,7 +143,7 @@ Two non-performance defects were also found and filed while measuring
 
 ---
 
-## v1.1 W6 — scale-aware execution ([#595](https://github.com/TheurgicDuke771/DataQ/issues/595))
+## v1.1 — scale-aware execution ([#595](https://github.com/TheurgicDuke771/DataQ/issues/595))
 
 > Captured **2026-08-13** while building the sampling + guardrail work. This
 > section answers the issue's last acceptance criterion ("volume test vs the #587
@@ -159,7 +155,7 @@ Two non-performance defects were also found and filed while measuring
 A 5M-row, 6-column order-lines dataset (the same shape as every rung above) was
 written as both CSV (**249 MB**) and Parquet (**114 MB**), and the **real**
 `FlatFileCheckRunner` was run against it with five expectations (not-null ×2,
-between ×2, unique ×1) — the same suite the W3 campaign used.
+between ×2, unique ×1) — the same suite this campaign used.
 
 The three object-store seams (`file_stat` / `download_bytes` / `read_range`) were
 pointed at a local file, so the runner, the guardrail and the sampling readers all
@@ -215,7 +211,7 @@ measurement: the 249 MB CSV passes a 256 MiB cap and *still* peaks at 2,210 MiB.
 A cap that admits the case it exists to prevent is a guardrail that does not
 guard. At the measured expansion (~8× object bytes for CSV, ~9× for Parquet),
 128 MiB puts a full read at roughly 1.2–1.3 GiB, which fits the deployed worker
-with its baseline. It also lands exactly on the W3 pass/fail boundary above: it
+with its baseline. It also lands exactly on the pass/fail boundary above: it
 admits every rung measured to pass (121 MB CSV, 131 MB Parquet) and refuses every
 rung measured to die (263 MB Parquet, 304 MB CSV).
 
@@ -225,7 +221,7 @@ the next rung up (10M rows, ~228 MB) is refused. A deployment on a smaller worke
 should lower the cap; a deployment on a larger one can raise it, and the message
 says so.
 
-`RUN_MAX_SCAN_ROWS` keeps the W3 UC datum: 1M passed at 1,681 MiB, 2M OOM-killed
+`RUN_MAX_SCAN_ROWS` keeps the UC datum: 1M passed at 1,681 MiB, 2M OOM-killed
 the child, so 1.5M sits between them. It is a **row** cap rather than a byte one
 because a warehouse `COUNT(*)` is exact and free, where a CSV's row count would
 cost the very scan being avoided.
@@ -277,36 +273,3 @@ that would stamp "sampled" on a result that was not.
   learns one vocabulary for "this verdict covers less than everything".
 
 ---
-
-## Appendix — Snowflake 1.2M baseline (#587, 2026-07-04, historical)
-
-The original W1 pushdown datum, captured days before the Snowflake subscription
-was to lapse (the lapse was later reversed). Environment: `DATAQ_DB.PERF`
-`ORDER_LINES` 1,199,854 rows / `ORDERS_HEADER` 400,000 rows (harness generator
-`PERF` tier, `--seed 587`), local stack at `v1.0.0` + #602/#603, XSMALL
-warehouse, `DATAQ_READER` role.
-
-| Measurement | Value |
-|---|---|
-| Test-connection (`SELECT 1`) | 3.7 s |
-| Suite run, 1.2M-row table — 6 expectations + volume | 12.2 s wall, all pass |
-| Suite run, 400K-row table — freshness + 2 expectations | 8.1 s wall |
-| Column profiler, 4 columns on 1.2M rows | 2.6 s |
-| Worker memory delta during the 1.2M run | < 50 MB (idle 1.99 GiB → peak 2.04 GiB, 14-child unpinned worker) |
-| Snowflake compute, whole session | 54 SELECTs, ~2.3 s total; slowest query 1.0 s |
-| Credits burned | ~0.08 |
-
-Slowest per-query attribution (from `QUERY_HISTORY`): 647 ms unexpected-count
-aggregate (uniqueness), 484 ms profiler batched aggregate, 388 ms
-unexpected-values sample fetch, 213 ms profiler top-10 on the ~1.2M-distinct
-column; every other expectation aggregate ≤ 15 ms, monitor scalars sub-10 ms.
-Per-check `duration_ms` stays NULL in v1 by design (`run_service.py` — per-check
-timing is a deferred datum). Gaps found then and since tracked: #571
-(`checks_total` cosmetic 0), #605 (failure reasons — since shipped).
-
-Reproducing the historical datum (generator `python -m mockdata backfill --tier
-PERF --seed 587 --no-issues`, harness repo per ADR 0021): load via pandas
-`write_pandas` with **`use_logical_type=True`** — without it, `datetime64`
-columns land as epoch `NUMBER` and freshness monitors error with "not a
-date/timestamp". Credits/timing were read from
-`INFORMATION_SCHEMA.WAREHOUSE_METERING_HISTORY` / `QUERY_HISTORY`.
