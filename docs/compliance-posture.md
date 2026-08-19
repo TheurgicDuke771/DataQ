@@ -339,6 +339,20 @@ drift that matters. An accepted exception must not cost you the detector.
 placement, or who deploys into the EU where a two-region split could straddle adequacy
 boundaries, must consolidate rather than inherit this exception.
 
+**The concrete regions live here and not on the published page, deliberately.**
+`docs/security.md` ships to the public docs site; this file is in `exclude_docs`. DataQ is
+customer-deployed, so *our* regions are a property of one demo estate that will differ for
+every operator — publishing them states somebody else's posture as if it were the product's.
+
+The stronger argument is the incident above: the matrix asserted the database sat in the
+declared region, and it had not for some time. Nobody lied; the page was written once and
+the infrastructure moved. A published snapshot of live infrastructure is a claim that rots
+silently, so the public page now documents the **mechanism** — declare a region, the
+`postcondition` blocks, the `check` warns, `shared_pg_expected_location` records an
+exception — and points readers at `GET /api/v1/admin/deployment` for the **values**, read
+live from their own running system. A control you can query beats a paragraph you have to
+trust.
+
 **What this does not do, stated plainly:** the app **declares** a jurisdiction, it does not
 verify one. Software cannot confirm which datacentre its database sits in; the IaC pins it
 and the deploying organization attests to it. `DEPLOYMENT_REGION` reads as `null` when

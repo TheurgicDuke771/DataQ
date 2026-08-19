@@ -150,8 +150,8 @@ are the reason this mode is opt-in rather than the default:
   admin; allowlist-resolved admins deliberately do not count toward that (the env entry can
   vanish on the next deploy, which would leave the workspace with no admin and no in-app way
   to mint one). Promote a successor first. Role changes are **logged** with actor, target and
-  old→new role; a durable, queryable audit *table* for privilege changes is not yet built —
-  see [compliance posture](compliance-posture.md).
+  old→new role; a durable, queryable audit *table* for privilege changes is not yet built
+  and is tracked in the maintainers' compliance-posture register.
 
 ## Network exposure
 
@@ -432,73 +432,69 @@ made for you.
 ## Data residency
 
 Where data lives, and what can take it elsewhere. GDPR Ch. V asks a controller to
-answer both; this section is the answer for the reference deployments, and
-`GET /api/v1/admin/deployment` is the same answer read live from a running
-instance (workspace-admin only) so it can be checked rather than trusted.
+answer both; this section describes **how DataQ answers them**, and
+`GET /api/v1/admin/deployment` gives the answer for *your* instance, read live from
+the running system (workspace-admin only) so it can be checked rather than
+trusted.
 
 **One declared jurisdiction per deployment.** The unit that matters is the
 *jurisdiction* — the country whose law applies — because that is what GDPR Ch. V
-keys on; a cloud *region* is how a provider spells a location within one. Both
-reference deployments are entirely in the **United States**.
+keys on; a cloud *region* is how a provider spells a location within one.
 
 The primary region is set by a single IaC variable (`azure_location` /
 `aws_region`) and declared to the app as `DEPLOYMENT_REGION`. The app's value is a
 **declaration, not a verification** — software cannot confirm which datacentre its
 database sits in — and it is reported as `null` when unset, so an auditor sees a
-gap rather than a guess. Where an individual resource sits in a *different region
-of the same jurisdiction*, the table below says so; those are recorded exceptions,
-not drift.
+gap rather than a guess.
+
+**This page deliberately does not state where any particular deployment sits.**
+DataQ is customer-deployed: your regions are yours, they are set at deploy time,
+and a region printed in a document is a snapshot that silently stops being true.
+Read the live answer from the running instance instead —
+`GET /api/v1/admin/deployment` (workspace-admin only) reports the declared region
+and the enumerated transfer vectors from the system itself. A control you can
+query beats a paragraph you have to trust.
 
 ### Where each resource sits
 
+By default **every resource is in the declared region**, so the interesting rows
+are the ones that cannot be:
+
 | Resource | Region | Holds customer data? |
 |---|---|---|
-| PostgreSQL (AWS RDS) | the declared region | **Yes** — suites, checks, results, and the incidental personal data in failing-row samples |
-| PostgreSQL (Azure Flexible Server) | **`West US 3`** — a recorded exception; the app's other resources are in `West US 2`. Same jurisdiction | **Yes** — as above |
-| Secret store (Key Vault / Secrets Manager / OpenBao) | the declared region | Warehouse credentials, not customer data |
-| Container Apps / ECS compute | the declared region | In transit only |
-| Object storage (AWS landing bucket) | the declared region | Whatever the operator lands there |
-| Telemetry (App Insights / CloudWatch / OTLP) | the sink's region — **operator-chosen** | Operational metadata; PII redacted at the logger |
+| PostgreSQL, secret store, compute, object storage | the declared region | **Postgres holds the data** — suites, checks, results, and the incidental personal data in failing-row samples. The secret store holds warehouse credentials; compute holds data in transit only |
+| Telemetry (App Insights / CloudWatch / OTLP) | the sink's region — **operator-chosen**, and may differ | Operational metadata; PII redacted at the logger |
 | CloudFront (AWS only) | **global edge** | **No.** Only fingerprinted static assets are cached (`/assets/*.<ext>`); every other path is pass-through, so no API response and no failing-row sample is stored at an edge location |
 | WAFv2 Web ACL (AWS only) | **`us-east-1`, unavoidably** | **No** — the ACL is rule configuration. CloudFront-scoped ACLs exist only in `us-east-1` regardless of where the stack lives |
 
-The CloudFront and WAF rows are stated rather than omitted for the same reason: a
-reviewer who finds a `us-east-1` provider alias in an `eu-west` stack should find
-it explained here rather than have to work out whether it matters.
+The CloudFront and WAF rows are stated rather than omitted so that a reviewer who
+finds a `us-east-1` provider alias in an `eu-west` stack finds it explained here
+rather than having to work out whether it matters. Both are properties of the
+product, not of any one deployment.
 
-**The Azure Postgres row is a third recorded exception**, and the one that matters
-most, because it is the resource holding the data.
+### When a resource legitimately sits elsewhere
 
-The subscription caps PostgreSQL Flexible Servers at one, so the app shares the
-harness's server and declares it as a `data` source — its region was fixed by
-whoever created it, not by this stack. Verified against live Azure: **West US 3**,
-while the app's own resources are in **West US 2**. Resolving it means a new
-server plus a data migration against that same cap, so it is **accepted
-deliberately** ([#1465](https://github.com/TheurgicDuke771/DataQ/issues/1465))
-rather than treated as a defect.
+A deployment may attach the app to a **pre-existing** database server or Container
+Apps environment — a subscription quota, or an organisation's shared-platform
+policy, are the usual reasons. Its region was then fixed by whoever created it and
+is not something this stack chooses.
 
-Accepted on a specific basis, which is the part worth checking: **same
-jurisdiction**. Both regions are in the United States, so no personal data crosses
-a border and GDPR Ch. V is not engaged. An operator whose regime cares about
-sub-national placement — or who deploys into the EU, where a two-region split
-could straddle adequacy boundaries — must treat this as a real constraint and
-consolidate rather than inherit the exception.
+That is supported, and it is an **accepted exception rather than drift**: declare
+it with `shared_pg_expected_location`, which is what turns "this server is
+somewhere else" from an unexplained mismatch into a recorded decision.
 
-The `check` block in `postgres.tf` compares the server against an explicitly
-declared `shared_pg_expected_location` rather than against `azure_location`. That
-distinction is what keeps it working: checking against `azure_location` would warn
-on every plan forever, and a permanently-firing check is noise people learn to
-skip — it would mask the drift that actually matters, this server moving to
-another *jurisdiction*.
-
-An earlier draft of this table asserted Postgres sat in the declared region. It
-was caught by checking the running deployment rather than the IaC.
+The basis on which such an exception is acceptable is the part worth checking, and
+it is **jurisdiction, not region**. Two regions inside one country engage no
+Ch. V transfer. Two regions straddling an adequacy boundary do, whatever the
+provider's console calls them — so an operator in a regime that cares about
+sub-national placement, or one deploying across an EU boundary, must consolidate
+rather than inherit somebody else's reasoning.
 
 ### The assertions that catch drift
 
-The Azure stack shares a Container Apps environment, declared as a `data` source —
-so its region is set by whoever created it, and **every Container App and Job in
-the stack inherits it** (a Job must sit in its environment's region). Left
+The Azure stack can share a Container Apps environment, declared as a `data`
+source — so its region is set by whoever created it, and **every Container App and
+Job in the stack inherits it** (a Job must sit in its environment's region). Left
 unchecked, moving or recreating that shared environment elsewhere would relocate
 all of the app's compute with a clean `apply` and no signal.
 
@@ -507,18 +503,26 @@ actual location against `var.azure_location`, so a mismatch **fails the plan**
 with a message naming both. For a Ch. V control, "we did not notice the
 jurisdiction changed" is the whole failure mode.
 
-The shared **database** gets the same comparison as a `check` block, which
-**warns** rather than blocking. A `postcondition` there would fail every apply
-until someone migrated a database, and the right response to "the DB moved" is a
-decision, not a rollback.
+A shared **database** gets the same comparison as a `check` block, which **warns**
+rather than blocking. A `postcondition` there would fail every apply until someone
+migrated a database, and the right response to "the DB moved" is a decision, not a
+rollback.
 
-It compares against `shared_pg_expected_location`, which defaults to
-`azure_location` — so for an ordinary single-region deployment the two are the
+It compares against `shared_pg_expected_location`, which **defaults to
+`azure_location`** — so for an ordinary single-region deployment the two are the
 same thing and the check is silent. Setting the variable is how a deployment
-records an accepted exception; this one does, for the West US 3 server described
-above. That indirection is the difference between a check that still works and
-one that warns on every plan forever: an accepted exception must not cost you the
-detector, and it must not hand the noise to every other deployment either.
+records an accepted exception. That indirection is the difference between a check
+that still works and one that warns on every plan forever: an accepted exception
+must not cost you the detector, and it must not hand the noise to every other
+deployment either.
+
+**One drafting lesson, kept because it argues for the paragraph above.** An
+earlier version of this page tabulated a specific deployment's regions. One row
+asserted the database sat in the declared region; checking the running deployment
+showed it did not, and had not for some time. Nobody had lied — the document had
+simply been written once and the infrastructure had moved. That is the failure
+mode of publishing per-deployment facts, and it is why this page now describes the
+mechanism and points you at the live endpoint for the values.
 
 ### What can move data out
 
@@ -539,8 +543,7 @@ considered:
 - **LLM intelligence** — the *outbound* direction, DataQ calling a model on its
   own behalf: **not built.** When it lands it is a Ch. V transfer by construction;
   its intended posture (schema-only context, PII-redacted, local-endpoint option)
-  is recorded in
-  [post-v1-dq-intelligence-notes.md](post-v1-dq-intelligence-notes.md).
+  is recorded in the maintainers' design notes.
 - **Sign-in email** — email-OTP codes to user addresses via the configured SMTP
   relay: account identifiers rather than warehouse content, relay operator-chosen.
 - **Secret store** — warehouse credentials in Key Vault / Secrets Manager /
