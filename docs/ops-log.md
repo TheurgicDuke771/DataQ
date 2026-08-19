@@ -298,6 +298,52 @@ throughout and only jobs were briefly resumed.
 > `on-run-end` grant hook so the role does not need it remains the tighter
 > long-term fix.
 
+### Finding 2026-08-18 — `DATAQ_LOADER` granted `CREATE TAG`, and why that alone was not enough
+
+**Standing state change, not a rotation.** To live-verify G3's warehouse-tag reader
+(#433) the user granted:
+
+```sql
+GRANT CREATE TAG ON SCHEMA DATAQ_DB.RETAIL TO ROLE DATAQ_LOADER;
+```
+
+That is now a permanent property of the account, recorded here because it widens
+what the harness loader role can do and nothing else tracks it.
+
+**The grant creates the tag object; it does not let you attach one.** The first
+verification attempt still failed:
+
+```
+003001 (42501): Insufficient privileges to operate on table 'ORDERS_HEADER'.
+Your primary role DATAQ_LOADER must have OWNERSHIP granted on TABLE ...
+```
+
+Setting a tag on a column requires **`OWNERSHIP` of that table** (or `APPLY TAG`
+on the account). `SHOW TABLES IN SCHEMA DATAQ_DB.RETAIL` settled it: `DATAQ_LOADER`
+owns ten of the twelve tables — `ORDERS_HEADER` and `CUSTOMERS` are
+`ACCOUNTADMIN`-owned, being the two the Terraform provider created rather than the
+loader. The verification moved to `PAYMENTS` and succeeded. **No new grant was
+requested for this** — using a table the role already owns is the smaller change.
+
+**And the earlier dead end is now explained rather than merely observed.** The
+2026-08-18 first pass could not apply a tag as `ACCOUNTADMIN` either:
+
+```
+250001 (08001): Role 'ACCOUNTADMIN' specified in the connect string is not granted to this user
+```
+
+`SHOW GRANTS TO USER ROYARIJIT04` confirms the user *is* granted `ACCOUNTADMIN`.
+The cause is that both stored credentials are **role-scoped programmatic access
+tokens** — a PAT is issued for one role and **cannot switch to another**, whatever
+the user holds. Same shape as the 2026-07-27 finding above: an authentication-looking
+error that is really about authorisation, and specifically about the credential's
+scope rather than the principal's.
+
+**Nothing was left behind.** Every tag created during verification was unset and
+dropped, and `SHOW TAGS IN SCHEMA DATAQ_DB.RETAIL` was re-queried afterwards
+returning zero — cleanup verified by reading, not inferred from the absence of an
+exception.
+
 ### Finding 2026-07-27 — a Snowflake emulator spike, and what it says about evidence
 
 Readiness exercise, not a wind-down: **no Azure resource was touched and all five

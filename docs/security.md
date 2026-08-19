@@ -360,6 +360,41 @@ deliberately fixed. **Do not create tags with this name for any other purpose** 
 a same-named tag elsewhere carrying a `public`-family value would be honoured as
 a clearance.
 
+### Who can apply the tags, and what DataQ needs to read them
+
+Two different privileges, and conflating them is the usual stumbling block.
+
+**Applying** a tag is a data-steward action, and on Snowflake it needs more than
+the `CREATE TAG` grant that creates the tag object. Either:
+
+* `APPLY TAG` **on the account** — the global route; or
+* `APPLY` on the **tag** *and* `OWNERSHIP` of the **object** being tagged.
+
+A role that can create the tag but does not own the table is refused. Verified
+against a live warehouse, not inferred — though our run held both halves of the
+second route at once (the steward created the tag and owned the table), so it
+confirms the combination rather than isolating which half was doing the work.
+
+Related, if your connection uses one: a **role-scoped programmatic access token
+cannot switch to another role**, even one the underlying user holds. A PAT issued
+for a read-only role stays read-only no matter what the user is granted.
+
+**Reading** them needs nothing extra. DataQ queries
+`INFORMATION_SCHEMA.TAG_REFERENCES_ALL_COLUMNS` (Snowflake) and
+`information_schema.column_tags` (Unity Catalog) as the connection's own role —
+no `ACCOUNT_USAGE` grant, no elevated identity. That is deliberate: `ACCOUNT_USAGE`
+lags by up to two hours, and a *stale* classification is the failure this feature
+exists to prevent.
+
+**That holds for `PRIVACY_CATEGORY` too**, which is worth stating because the tag
+lives in the shared `SNOWFLAKE` database and a reasonable reader would expect it to
+need `IMPORTED PRIVILEGES`. It does not: verified live against a connection role
+holding no such grant, which nonetheless saw the tag and all three of its values.
+The check mattered because failure here would be **silent** — a role that cannot
+see a tag gets zero rows, not an error, so the column would look untagged and fall
+back to the name heuristic. If you restrict tag visibility in your own account,
+confirm your DataQ connection role can still read both tags.
+
 ### Where it applies
 
 Only **Snowflake** and **Unity Catalog** have a column-tag concept. ADLS, S3,

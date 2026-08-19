@@ -179,7 +179,7 @@ runs, `sample_failures` is a real (time-bounded) residual store of subject rows.
 demand (not just on the retention clock), (b) export: structured dump of stored personal
 data for a subject. Document that the controller's warehouse remains their responsibility.
 
-### G3 — 🟢 Authoritative PII/PHI classification (not just a heuristic) — #433 — **warehouse tags consumed; verification pending**
+### G3 — 🟢 Authoritative PII/PHI classification (not just a heuristic) — #433 — **warehouse tags consumed, live-verified on both platforms**
 **Requirement:** GDPR special-category data (Art 9) / HIPAA PHI must not leak via the
 **surfacing** path. Today `redact_sample_failures` surfaces the *tested* column when it's
 not flagged PII — but flagging is a **name-token heuristic + optional suite policy**, so a
@@ -230,12 +230,60 @@ a column-tag concept at all; for ADLS, S3, Iceberg and flat files the classifica
 the suite policy, the classifier and fail-closed mode. That is a platform limit, not an
 implementation gap.
 
-⚠️ **Not yet verified against a live warehouse.** The semantics, the wiring and the
-end-to-end masking are covered by tests against real Postgres, but the two SQL statements
-have not run against Snowflake or Databricks — and per the project's standing rule, only a
-live run is evidence for anything crossing a driver boundary. Two specifics that only a live
-run can settle: whether the connection's role can read `TAG_REFERENCES_ALL_COLUMNS`, and
-whether `system`-catalog access is granted for Unity Catalog's `column_tags`.
+**Live-verified 2026-08-18 against the real warehouses**, which is the only evidence that
+counts across a driver boundary (the #953 rule). Every property is now settled on **both**
+platforms and **both Snowflake tag families**, each in the production shape — a **steward** role applies the tag, and DataQ's
+own least-privileged connection reads it back through the shipped `fetch_column_tags`. That
+split is the test: one powerful role doing both would prove nothing about whether the role
+the product actually runs as can see a tag someone else applied.
+
+* **Unity Catalog — verified end to end.** `dataq_classification = 'pii'` applied to a real
+  column, read back as `{'customer_id': 'sensitive'}`, then removed — with the removal
+  confirmed by re-reading `information_schema.column_tags`, not by trusting the cleanup's
+  own log line.
+* **Snowflake — verified end to end**, on a `DATAQ_LOADER`-owned table, once that role was
+  granted `CREATE TAG`. Four properties, none of which a unit test can reach:
+  1. a column tag round-trips through the shipped query at all;
+  2. Snowflake's `UPPER`-cased column names fold to the lower-cased keys the redactor
+     matches on (`PAYMENT_ID` → `payment_id` → `sensitive`);
+  3. `LEVEL = 'COLUMN'` suppresses an **inherited** table-level tag;
+  4. an unrecognised value (`'banana'`) is ignored rather than guessed at — the column is
+     absent from the map and falls through to the next rung of the ladder.
+* **`INFORMATION_SCHEMA.TAG_REFERENCES_ALL_COLUMNS` executes under `DATAQ_READER`**, so no
+  `ACCOUNT_USAGE` grant is required and classifications are read **fresh**, without that
+  view's up-to-two-hour lag.
+
+**Property 3 was then mutation-checked, because it could have passed vacuously.** "The
+inherited tag produced no clearance" is equally true if the warehouse simply never reports
+inherited tags — in which case the filter guards nothing. Running the same query with the
+filter removed settled it: one table-level `dataq_classification = 'public'` came back as
+**six rows, one per column, each `LEVEL = 'TABLE'`**, and the shipped query returned zero.
+Without the filter those six would have reached the redactor as per-column clearances and
+**un-masked every column in the table** — under fail-closed mode, where a clearance is
+precisely what lifts the mask. The guard is load-bearing, and the test is real.
+
+**Two findings the live run produced that no amount of local reasoning would have.**
+Applying a tag needs **`OWNERSHIP` of the table**, not merely `CREATE TAG` on the schema —
+the first attempt was refused on an `ACCOUNTADMIN`-owned table and succeeded on a
+loader-owned one. And a **role-scoped programmatic access token cannot assume another
+role**, even one the underlying user is granted; this is why the earlier pass could not
+apply anything at all. Both are properties of the platform's privilege model, and both are
+now on the record rather than rediscovered by the next person.
+
+**`PRIVACY_CATEGORY` was verified too, after review pushed back on skipping it.** The
+first draft recorded it as unexercised on the reasoning that it feeds the same `_merge` as
+`dataq_classification`. That reasoning was wrong in a way worth keeping: the tag lives in
+the **shared `SNOWFLAKE` database**, so it is governed by a *different access-control rule*,
+and a role that cannot see it gets **zero rows rather than an error** — the column would
+read as untagged and silently fall back to the name heuristic. Same `_merge`, entirely
+different failure mode.
+
+It is settable with `ALTER TABLE` (that is how the classification service applies its own
+results), so the path was exercised directly rather than by running classification. All
+three values — `IDENTIFIER`, `QUASI_IDENTIFIER`, `SENSITIVE` — returned `sensitive` through
+the shipped path, read by a connection role confirmed to hold **no `IMPORTED PRIVILEGES`**.
+So the "no extra grant" claim now covers both tag families, on evidence rather than on
+symmetry.
 
 ### G4 — 🟢 Region / residency assertion & enforcement — #434 — **asserted, surfaced, and its one exception accepted on the record**
 **Requirement:** GDPR Ch. V — EU personal data must stay in-region; cross-border transfer
