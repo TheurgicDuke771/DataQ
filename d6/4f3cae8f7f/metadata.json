@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "d64f3cae8f7f",
+  "strategy": "manual-commit",
+  "branch": "docs/snapshot-live-probe-seam",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/compliance-posture.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d6/4f3cae8f7f/0/metadata.json",
+      "transcript": "/d6/4f3cae8f7f/0/full.jsonl",
+      "compact_transcript": "/d6/4f3cae8f7f/0/transcript.jsonl",
+      "content_hash": "/d6/4f3cae8f7f/0/content_hash.txt",
+      "prompt": "/d6/4f3cae8f7f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 5353,
+    "cache_read_tokens": 1801261,
+    "output_tokens": 4293,
+    "api_call_count": 4
+  }
+}
