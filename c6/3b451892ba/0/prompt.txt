@@ -1,0 +1,6 @@
+what fix do you suggest for 1419 & 1479?
+
+---
+
+principle is we shouldn't loose functionality over policy - 
+give me the option to fix the root cause
