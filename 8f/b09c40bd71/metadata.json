@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "8fb09c40bd71",
+  "strategy": "manual-commit",
+  "branch": "fix/g1-live-verification",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "backend/app/api/v1/admin.py",
+    "docs/compliance-posture.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8f/b09c40bd71/0/metadata.json",
+      "transcript": "/8f/b09c40bd71/0/full.jsonl",
+      "compact_transcript": "/8f/b09c40bd71/0/transcript.jsonl",
+      "content_hash": "/8f/b09c40bd71/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 7452,
+    "cache_read_tokens": 1694276,
+    "output_tokens": 6314,
+    "api_call_count": 7
+  }
+}
