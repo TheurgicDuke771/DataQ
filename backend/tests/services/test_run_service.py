@@ -1602,11 +1602,44 @@ def test_redact_observed_value_masks_when_the_column_is_unknown() -> None:
 # ── #1229: a set-oriented expectation's `observed_value` list ────────────────
 
 
-def test_redact_observed_value_scalar_is_never_touched() -> None:
-    # The aggregate/metric case (row counts, means) must pass through untouched —
-    # only list/set-shaped observed_value is in scope for #1229.
+def test_redact_observed_value_shows_a_non_sensitive_scalar() -> None:
+    # A scalar over a non-sensitive tested column (e.g. expect_column_max_to_be_
+    # between on LINE_TOTAL) shows — same authority as the list case.
     out = run_service.redact_observed_value({"observed_value": 74}, tested_column="LINE_TOTAL")
     assert out == {"observed_value": 74}
+
+
+def test_redact_observed_value_masks_a_scalar_for_a_pii_tested_column() -> None:
+    # #1482: a scalar observed_value is a real cell (max/min report the largest/
+    # smallest value IN the column), so it must mask under the same known-
+    # sensitive authority as the list branch — verified directly against the
+    # repro in the issue, not inferred from the list case alone.
+    out = run_service.redact_observed_value(
+        {"observed_value": "ada@example.com"},
+        tested_column="email",
+        policy={"pii_columns": ["email"], "require_classification": True},
+    )
+    assert out == {"observed_value": "<redacted>"}
+
+
+def test_redact_observed_value_masks_a_numeric_scalar_for_a_pii_tested_column() -> None:
+    # #1482: no numeric carve-out — a max SALARY is a disclosure, not merely a
+    # statistic, once the column is known sensitive.
+    out = run_service.redact_observed_value(
+        {"observed_value": 250_000},
+        tested_column="SALARY",
+        policy={"pii_columns": ["SALARY"]},
+    )
+    assert out == {"observed_value": "<redacted>"}
+
+
+def test_redact_observed_value_shows_a_table_level_scalar_with_no_tested_column() -> None:
+    # A table-level aggregate (a row count) has no tested_column at all — no
+    # column context means nothing to classify, so it passes through. This is
+    # the opposite default from the list branch (there, no context masks) because
+    # here the value isn't attributable to any column in the first place.
+    out = run_service.redact_observed_value({"observed_value": 34680})
+    assert out == {"observed_value": 34680}
 
 
 def test_redact_observed_value_surfaces_a_non_pii_tested_columns_set() -> None:
