@@ -1,0 +1,144 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "d9da7efedaf3",
+  "session_id": "69e80831-f1df-4b73-9124-56be4ce388ca",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-21T20:19:16.633645Z",
+  "branch": "fix/issue-1310-antd-deprecated-prop-lint",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/eslint.config.cjs",
+    "frontend/src/components/checks/ColumnProfilePanel.tsx",
+    "frontend/src/components/checks/ComparisonCheckForm.tsx",
+    "frontend/src/components/runs/RunNowPanel.tsx",
+    "frontend/src/components/suites/SharePanel.tsx",
+    "frontend/src/pages/AssetDetail.tsx",
+    "frontend/src/pages/Assets.tsx",
+    "frontend/src/pages/Results.tsx",
+    "frontend/src/pages/RunDetail.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "f15cf7e10545",
+  "checkpoint_transcript_start": 1817,
+  "transcript_lines_at_start": 1817,
+  "compact_transcript_start": 365,
+  "token_usage": {
+    "input_tokens": 128,
+    "cache_creation_tokens": 49711,
+    "cache_read_tokens": 11450932,
+    "output_tokens": 19617,
+    "api_call_count": 64
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_017QSC4xMNoWUL6NV4EPVb7A",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "f15cf7e10545",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 292,
+        "end": 293,
+        "entry_ids": [
+          "543a113b-622e-4dd7-8edb-5b654ffe1d60"
+        ],
+        "tool_use_id": "toolu_017QSC4xMNoWUL6NV4EPVb7A"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_017QSC4xMNoWUL6NV4EPVb7A"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01PZEaDby5EPHcuG951K8h6J",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "f15cf7e10545",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 706,
+        "end": 707,
+        "entry_ids": [
+          "016dc8f4-a542-4bd3-99b3-e36df587910e"
+        ],
+        "tool_use_id": "toolu_01PZEaDby5EPHcuG951K8h6J"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01PZEaDby5EPHcuG951K8h6J"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01AXMycPchfyb2qjXn8CCWV7",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "f15cf7e10545",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1104,
+        "end": 1105,
+        "entry_ids": [
+          "54284117-2a69-4fb1-86c7-f66031f9cf0c"
+        ],
+        "tool_use_id": "toolu_01AXMycPchfyb2qjXn8CCWV7"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01AXMycPchfyb2qjXn8CCWV7"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-21T20:19:16.519985Z",
+    "agent_lines": 43,
+    "agent_removed": 19,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 43,
+    "total_lines_changed": 62,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

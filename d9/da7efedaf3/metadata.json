@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "d9da7efedaf3",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1310-antd-deprecated-prop-lint",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/eslint.config.cjs",
+    "frontend/src/components/checks/ColumnProfilePanel.tsx",
+    "frontend/src/components/checks/ComparisonCheckForm.tsx",
+    "frontend/src/components/runs/RunNowPanel.tsx",
+    "frontend/src/components/suites/SharePanel.tsx",
+    "frontend/src/pages/AssetDetail.tsx",
+    "frontend/src/pages/Assets.tsx",
+    "frontend/src/pages/Results.tsx",
+    "frontend/src/pages/RunDetail.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d9/da7efedaf3/0/metadata.json",
+      "transcript": "/d9/da7efedaf3/0/full.jsonl",
+      "compact_transcript": "/d9/da7efedaf3/0/transcript.jsonl",
+      "content_hash": "/d9/da7efedaf3/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 128,
+    "cache_creation_tokens": 49711,
+    "cache_read_tokens": 11450932,
+    "output_tokens": 19617,
+    "api_call_count": 64
+  }
+}
