@@ -354,7 +354,7 @@ def test_a_stored_admin_is_implicit_suite_admin_with_an_empty_allowlist(
 ) -> None:
     """The regression the pre-#740 short-circuit would have caused.
 
-    `_is_workspace_admin` used to `return False` immediately when
+    The suite ladder's workspace-admin check used to `return False` immediately when
     `WORKSPACE_ADMIN_EMAILS` was empty. That was sound when the allowlist was the
     only source; with a stored role it is a silent authz hole in the direction
     that matters — after #742, a workspace managed entirely in-app sets NO env
