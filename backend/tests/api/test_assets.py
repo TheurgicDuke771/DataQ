@@ -5,12 +5,11 @@ The **ADR 0037 three-layer rule is the point**: asset identity + lineage topolog
 (over ALL composing suites — one verdict for every viewer); only the
 composing-suite list follows the ADR 0027 grants, the rest collapsing to
 `restricted_suite_count`. This exercises owner / edit-share / view-share /
-no-share / workspace-admin end to end through the HTTP surface — including that
-the suite boundary (names, runs) holds while identity flows.
-
-The ADR-0033 **Viewer** role is N/A here: it is not built yet (#740-#743 open), so
-the ladder under test is owner / edit / view / no-share / workspace-admin. When
-Viewer lands (#741) it caps at `view`, so it will fold into the view-share rows.
+no-share / workspace-admin / ADR-0033 workspace-Viewer end to end through the
+HTTP surface — including that the suite boundary (names, runs) holds while
+identity flows, and that the Viewer role's `edit`→`view` cap
+(`suite_authz._cap_for_viewer`) is applied on THIS surface too, not just the
+suite endpoints its own tests cover.
 
 Skips without TEST_DATABASE_URL (JSONB/UUID need real Postgres).
 """
@@ -50,8 +49,8 @@ def _as(user: User) -> None:
     app.dependency_overrides[get_current_user] = lambda: user
 
 
-def _user(db_session: Any, email: str) -> User:
-    u = User(aad_object_id=uuid.uuid4().hex, email=email)
+def _user(db_session: Any, email: str, *, role: str = "member") -> User:
+    u = User(aad_object_id=uuid.uuid4().hex, email=email, role=role)
     db_session.add(u)
     db_session.flush()
     return u
@@ -206,6 +205,26 @@ def test_workspace_admin_sees_all(
     assert by_id[str(world["asset_x"])]["suite_count"] == 2  # admin sees every suite
 
 
+def test_viewer_role_browses_assets_like_any_grant_holder(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """#1476: an ADR-0033 workspace-Viewer with a view-share is a distinct axis
+    from the ADR-0027 view-share itself (a stale comment here used to say this
+    axis was untested because the role didn't exist yet — it shipped 2026-08-16
+    and the comment was never updated). Reads are read-only either way, so this
+    is expected to behave identically to `test_partial_grant_browse_is_workspace_true` —
+    but "expected" is exactly why it was never pinned."""
+    viewer = _user(client_db(client), "viewer-role@example.com", role="viewer")
+    _share(client_db(client), world["s1"], viewer, "view")
+    _as(viewer)
+    resp = client.get("/api/v1/assets")
+    assert resp.status_code == 200
+    by_id = {a["id"]: a for a in resp.json()}
+    assert by_id[str(world["asset_x"])]["suite_count"] == 2  # workspace-true
+    assert by_id[str(world["asset_x"])]["worst_severity"] == "fail"
+    assert by_id[str(world["asset_y"])]["suite_count"] == 1
+
+
 # ── detail authz + no-leak ───────────────────────────────────────────────────
 
 
@@ -268,6 +287,24 @@ def test_detail_split_follows_the_grant(client: TestClient, world: dict[str, Any
     assert body["suites"][0]["my_permission"] == "view"
     assert body["restricted_suite_count"] == 1
     assert body["summary"]["suite_count"] == 2
+
+
+def test_viewer_role_caps_an_edit_share_to_view_on_the_asset_surface(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """#1476: the interaction the stale N/A comment left unpinned. A workspace
+    Viewer's `edit`→`view` cap (`suite_authz._cap_for_viewer`) is proven against
+    the suite endpoints, but this asset detail response stamps `my_permission`
+    from its OWN call into `effective_permissions` (asset_view_service.py) — a
+    second call site the cap has to reach independently. Give the Viewer an
+    EDIT share (not view) so a missed cap would be visible: `my_permission`
+    would read `edit` instead of the correctly-clamped `view`."""
+    viewer = _user(client_db(client), "viewer-role-edit@example.com", role="viewer")
+    _share(client_db(client), world["s1"], viewer, "edit")
+    _as(viewer)
+    body = client.get(f"/api/v1/assets/{world['asset_x']}").json()
+    assert body["suites"][0]["suite_id"] == str(world["s1"].id)
+    assert body["suites"][0]["my_permission"] == "view"  # capped, not "edit"
 
 
 def test_garbage_uuid_is_422_not_500(client: TestClient, world: dict[str, Any]) -> None:
