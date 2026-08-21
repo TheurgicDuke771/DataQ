@@ -22,6 +22,8 @@ import re
 import sys
 from pathlib import Path
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REQS_FILE = REPO_ROOT / "backend" / "requirements-tooling.txt"
 PRECOMMIT_FILE = REPO_ROOT / ".pre-commit-config.yaml"
@@ -34,8 +36,6 @@ _TRACKED_REPOS = {
     "black": "psf/black",
     "mypy": "pre-commit/mirrors-mypy",
 }
-
-_REPO_BLOCK_RE = re.compile(r"-\s*repo:\s*https://github\.com/([^\s]+)\s*\n\s*rev:\s*([^\s#]+)")
 
 
 def _parse_requirements_pins(path: Path) -> dict[str, str]:
@@ -52,8 +52,21 @@ def _parse_requirements_pins(path: Path) -> dict[str, str]:
 
 
 def _parse_precommit_revs(path: Path) -> dict[str, str]:
-    """Return {repo_url: rev} for every repo block in the config."""
-    return dict(_REPO_BLOCK_RE.findall(path.read_text()))
+    """Return {repo_url_suffix: rev} for every repo block in the config.
+
+    Parsed as YAML rather than matched with a regex against `repo:`/`rev:` line
+    adjacency — a comment or blank line between the two (e.g. explaining why a
+    version is pinned) is valid YAML but would silently break a positional regex
+    match, reporting a false "repo not found" drift error.
+    """
+    doc = yaml.safe_load(path.read_text())
+    revs: dict[str, str] = {}
+    for repo in doc.get("repos", []):
+        url = repo.get("repo", "")
+        rev = repo.get("rev")
+        if url.startswith("https://github.com/") and rev is not None:
+            revs[url.removeprefix("https://github.com/")] = str(rev)
+    return revs
 
 
 def main() -> int:
