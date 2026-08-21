@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "bd7c17667a7e",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1473-precommit-tooling-sync-guard",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".pre-commit-config.yaml",
+    "scripts/check-precommit-tooling-sync.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bd/7c17667a7e/0/metadata.json",
+      "transcript": "/bd/7c17667a7e/0/full.jsonl",
+      "compact_transcript": "/bd/7c17667a7e/0/transcript.jsonl",
+      "content_hash": "/bd/7c17667a7e/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 11189,
+    "cache_read_tokens": 2176890,
+    "output_tokens": 5740,
+    "api_call_count": 15
+  }
+}
