@@ -43,6 +43,16 @@ repos:
         pass_filenames: false
         files: ^(backend/requirements-typecheck\.txt|\.pre-commit-config\.yaml)$
 
+  # ── Single-source-of-truth enforcement for pre-commit hook tool pins (#1473) ─
+  - repo: local
+    hooks:
+      - id: precommit-tooling-sync
+        name: precommit-tooling-sync
+        entry: python scripts/check-precommit-tooling-sync.py
+        language: system
+        pass_filenames: false
+        files: ^(backend/requirements-tooling\.txt|\.pre-commit-config\.yaml)$
+
   # ── Identifier + publication guards (#1472) ─────────────────────────────────
   #
   # Distinct from betterleaks below, which finds SECRETS. A secret that leaks is

@@ -38,6 +38,11 @@ jobs:
         # this catches the drift in CI, which previously slipped through).
         run: python scripts/check-typecheck-deps.py
 
+      - name: Pre-commit tooling pins in sync
+        # Same shape, for ruff/black/mypy's own `rev:`s (#1473) — otherwise
+        # "pre-commit passing" stops being evidence CI will pass.
+        run: python scripts/check-precommit-tooling-sync.py
+
   backend-types:
     name: Backend — type check
     runs-on: ubuntu-latest
