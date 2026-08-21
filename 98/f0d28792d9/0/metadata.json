@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "98f0d28792d9",
+  "session_id": "69e80831-f1df-4b73-9124-56be4ce388ca",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-21T17:40:08.90751Z",
+  "branch": "fix/issue-1482-scalar-observed-value-redaction",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/live_probe.py",
+    "backend/app/services/run_service.py",
+    "backend/tests/services/test_run_service.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "503eb4bedeca",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 98,
+    "cache_creation_tokens": 118541,
+    "cache_read_tokens": 6376947,
+    "output_tokens": 14736,
+    "api_call_count": 49
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-21T17:40:08.889951Z",
+    "agent_lines": 69,
+    "agent_removed": 30,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 69,
+    "total_lines_changed": 99,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
