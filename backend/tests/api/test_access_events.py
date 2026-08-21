@@ -38,12 +38,22 @@ def client(db_session: Any) -> Iterator[TestClient]:
         app.dependency_overrides.clear()
 
 
-def _seed(db_session: Any, *, sample: dict[str, Any] | None, column: str) -> tuple[User, Run]:
+def _seed(
+    db_session: Any,
+    *,
+    sample: dict[str, Any] | None,
+    column: str,
+    expectation_type: str = "expect_column_values_to_not_be_null",
+) -> tuple[User, Run]:
     """A suite with one failed check and one result carrying `sample`.
 
     `column` is the tested column, which is what drives the redactor: a non-PII
     name lets the failing values through, a PII one masks them. That is the lever
-    the `exposed` assertions below turn.
+    the `exposed` assertions below turn. `expectation_type` (#1486) is the OTHER
+    lever a **scalar** `observed_value` exposure turns — only a known
+    cell-reporting type (`expect_column_max_to_be_between` and siblings) counts an
+    unmasked scalar as an exposure; the default here is deliberately NOT one, so
+    every existing caller keeps asserting against a genuine aggregate.
     """
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"o-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
@@ -64,7 +74,7 @@ def _seed(db_session: Any, *, sample: dict[str, Any] | None, column: str) -> tup
         suite_id=suite.id,
         name="values",
         kind="expectation",
-        expectation_type="expect_column_values_to_not_be_null",
+        expectation_type=expectation_type,
         config={"column": column},
     )
     db_session.add(check)
@@ -209,37 +219,58 @@ def test_a_failed_audit_write_does_not_fail_the_read(
 
 
 @pytest.mark.parametrize(
-    ("observed", "column", "expect_exposed", "why"),
+    ("observed", "column", "expectation_type", "expect_exposed", "why"),
     [
         (
             {"observed_value": ["a@b.com", "c@d.com"]},
             "email",
+            "expect_column_values_to_not_be_null",
             False,
             "a fully MASKED distinct-value list exposes nothing — but it is non-None",
         ),
         (
             {"observed_value": 34680},
             "line_total",
+            "expect_column_values_to_not_be_null",
             False,
-            "a row count is a MEASUREMENT, not personal data, however large",
+            "a row count is a MEASUREMENT, not personal data, however large — even "
+            "though this check has a real tested column",
         ),
         (
             {"error": "connection refused"},
             "line_total",
+            "expect_column_values_to_not_be_null",
             False,
             "an error message is not a cell value",
         ),
         (
             {"observed_value": ["ACME", "GLOBEX"]},
             "vendor_name",
+            "expect_column_values_to_not_be_null",
             True,
             "an UNMASKED distinct-value list is raw cells from the tested column",
         ),
         (
             {"unparsed_value": "not-a-date", "column": "order_ts"},
             "order_ts",
+            "expect_column_values_to_not_be_null",
             True,
             "an unparsed cell that survived masking is a raw cell",
+        ),
+        (
+            {"observed_value": "a very personal note"},
+            "notes",
+            "expect_column_max_to_be_between",
+            True,
+            "#1486: an UNMASKED scalar from a known cell-reporting expectation "
+            "(max/min) is a real cell, same as the list case",
+        ),
+        (
+            {"observed_value": "<redacted>"},
+            "email",
+            "expect_column_max_to_be_between",
+            False,
+            "#1486: a MASKED scalar exposes nothing, even from a cell-reporting type",
         ),
     ],
 )
@@ -248,6 +279,7 @@ def test_observed_value_exposure_is_not_a_null_check(
     db_session: Any,
     observed: dict[str, Any],
     column: str,
+    expectation_type: str,
     expect_exposed: bool,
     why: str,
 ) -> None:
@@ -262,10 +294,13 @@ def test_observed_value_exposure_is_not_a_null_check(
 
     It survived review-by-reading and passed every test, because **every fixture
     had `observed_value=None`**: the tests encoded the shape we happened to build,
-    not the shapes production produces. Parameterised over all five real shapes
-    for that reason.
+    not the shapes production produces. Parameterised over all real shapes for
+    that reason — the last two are #1486's scalar-from-a-cell-reporting-type case,
+    which needs its own `expectation_type` lever since a tested `column` alone
+    (the `line_total` row-count case above) is not enough to tell a real cell
+    apart from an aggregate statistic.
     """
-    _owner, run = _seed(db_session, sample=None, column=column)
+    _owner, run = _seed(db_session, sample=None, column=column, expectation_type=expectation_type)
     result = db_session.scalars(select(Result).where(Result.run_id == run.id)).one()
     result.observed_value = observed
     db_session.commit()

@@ -373,16 +373,25 @@ def _run_results_payload(
     # content at all, so neither exposed anything. `observed_value` is the OTHER
     # door to raw cells and needs its own test rather than a null check — a fully
     # masked list and a plain row count are both non-None and neither is an
-    # exposure (see `run_service.observed_value_exposes_cells`).
+    # exposure (see `run_service.observed_value_exposes_cells`). `expectation_type`
+    # (#1486) is what lets that test tell a max/min's literal cell apart from an
+    # aggregate statistic that also happens to have a tested column — looked up
+    # from the ORM `Result`, not `rendered`, so it never has to be excluded from
+    # the dict spread that builds the client-facing payload below.
     #
     # Derived from the redacted output rather than the stored row, so the policy
     # that decides what the caller sees is the same one that decides what the
     # audit records — the two cannot disagree about whether an exposure happened.
     exposed_ids = [
         r["result_id"]
-        for r in rendered
+        for result, r in zip(results, rendered, strict=True)
         if r["redaction"] in {"none", "partial"}
-        or run_service.observed_value_exposes_cells(r["observed_value"])
+        or run_service.observed_value_exposes_cells(
+            r["observed_value"],
+            expectation_type=(
+                checks[result.check_id].expectation_type if result.check_id in checks else None
+            ),
+        )
     ]
     rendered_by_id = {r["result_id"]: r for r in rendered}
     audit_service.record_access(

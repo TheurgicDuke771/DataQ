@@ -16,7 +16,7 @@ suite-scoped, edit-gated write); this module owns the reads.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
@@ -337,7 +337,9 @@ def _result_read(
     )
 
 
-def _exposed_result_ids(results: Sequence[ResultRead]) -> list[str]:
+def _exposed_result_ids(
+    results: Sequence[ResultRead], *, expectation_types: Mapping[uuid.UUID, str]
+) -> list[str]:
     """Which of these results actually surfaced regulated data to the caller.
 
     `redaction` is the state the redactor computed for THIS read: `full` means
@@ -349,6 +351,10 @@ def _exposed_result_ids(results: Sequence[ResultRead]) -> list[str]:
     null check — see `observed_value_exposes_cells`. The first version here asked
     only whether it was non-None, which marked a fully-masked list and a plain row
     count alike as exposures, so effectively every read was recorded as one.
+    `expectation_types` (`check_id` → `expectation_type`, #1486) is what lets that
+    test tell a max/min's literal cell apart from an aggregate statistic that also
+    happens to have a tested column — a missing entry (a deleted check) falls back
+    to "not a known cell-reporting type", same as before #1486.
 
     Derived from the redacted output rather than from the stored row, deliberately
     — the same column policy that decides what the caller sees decides what the
@@ -358,11 +364,21 @@ def _exposed_result_ids(results: Sequence[ResultRead]) -> list[str]:
     return [
         str(r.id)
         for r in results
-        if r.redaction in {"none", "partial"} or svc.observed_value_exposes_cells(r.observed_value)
+        if r.redaction in {"none", "partial"}
+        or svc.observed_value_exposes_cells(
+            r.observed_value, expectation_type=expectation_types.get(r.check_id)
+        )
     ]
 
 
-def _audit_result_read(db: Session, user: User, *, run: Any, results: Sequence[ResultRead]) -> None:
+def _audit_result_read(
+    db: Session,
+    user: User,
+    *,
+    run: Any,
+    results: Sequence[ResultRead],
+    expectation_types: Mapping[uuid.UUID, str],
+) -> None:
     """Record a read of a run's results (G1 / #431, `action_class='access'`).
 
     ONE event per read, not per result: the act is "this person opened this run",
@@ -374,7 +390,7 @@ def _audit_result_read(db: Session, user: User, *, run: Any, results: Sequence[R
     0041 §2.6.3) — copying samples into an append-only table with a longer
     retention would defeat the #1253 purge and the #432 erasure path.
     """
-    exposed = _exposed_result_ids(results)
+    exposed = _exposed_result_ids(results, expectation_types=expectation_types)
     audit_service.record_access(
         db,
         action="run_results.read",
@@ -424,7 +440,10 @@ def get_run(
         )
         for r in results
     ]
-    _audit_result_read(db, current_user, run=run, results=reads)
+    expectation_types = {check_id: check.expectation_type for check_id, check in checks.items()}
+    _audit_result_read(
+        db, current_user, run=run, results=reads, expectation_types=expectation_types
+    )
     return RunDetailRead(
         **RunRead.model_validate(run).model_copy(update=_outcome_update(outcome)).model_dump(),
         results=reads,
