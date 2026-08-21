@@ -39,7 +39,17 @@ _SF_CONFIG = {"account": "ab12345.eu-west-1", "database": "ANALYTICS", "schema":
 # (worker() doesn't re-raise), which then fails as a baffling assertion mismatch
 # rather than a recognizable timeout. Generous enough that a loaded CI box isn't
 # flaky, tight enough that a genuine deadlock still fails in finite time.
-_RACE_TIMEOUT = 30.0
+#
+# Review caught a first-pass version of this fix that gave both the barrier and
+# the join the SAME budget: `join`'s timeout is measured from thread start, not
+# from barrier release, so a thread that used most of its barrier budget just
+# reaching the rendezvous would have had ~0 time left to do its actual work
+# before `join` gave up (which raises nothing — it just returns) — the exact
+# flake this PR exists to remove, reappearing at a higher contention threshold.
+# The join budget must be strictly larger than the barrier budget to leave real
+# room for the post-barrier work.
+_BARRIER_TIMEOUT = 30.0
+_JOIN_TIMEOUT = 60.0
 
 
 # ── seeding helpers ───────────────────────────────────────────────────────────
@@ -430,7 +440,7 @@ def test_concurrent_failing_syncs_no_duplicate(_db_engine: Any) -> None:
         def worker(run_id: uuid.UUID) -> None:
             s = SASession(bind=_db_engine)
             try:
-                barrier.wait(timeout=_RACE_TIMEOUT)
+                barrier.wait(timeout=_BARRIER_TIMEOUT)
                 incident_service.sync_incidents_for_run(s, run_id=run_id)
             finally:
                 s.close()
@@ -439,7 +449,7 @@ def test_concurrent_failing_syncs_no_duplicate(_db_engine: Any) -> None:
         for t in threads:
             t.start()
         for t in threads:
-            t.join(timeout=_RACE_TIMEOUT)
+            t.join(timeout=_JOIN_TIMEOUT)
 
         check_sess = SASession(bind=_db_engine)
         try:
@@ -548,7 +558,7 @@ def test_concurrent_manual_resolves_exactly_one_wins(_db_engine: Any) -> None:
             try:
                 incident = s.get(Incident, incident_id)
                 assert incident is not None
-                barrier.wait(timeout=_RACE_TIMEOUT)
+                barrier.wait(timeout=_BARRIER_TIMEOUT)
                 try:
                     incident_service.resolve_incident(s, incident, user_id=owner_id, note=tag)
                     with lock:
@@ -563,7 +573,7 @@ def test_concurrent_manual_resolves_exactly_one_wins(_db_engine: Any) -> None:
         for t in threads:
             t.start()
         for t in threads:
-            t.join(timeout=_RACE_TIMEOUT)
+            t.join(timeout=_JOIN_TIMEOUT)
 
         assert sorted(o.split(":")[1] for o in outcomes) == ["409", "won"]
         verify = SASession(bind=_db_engine)
