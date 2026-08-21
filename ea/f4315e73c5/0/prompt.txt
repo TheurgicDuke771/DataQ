@@ -1,0 +1,40 @@
+<task-notification>
+<task-id>bg02bx102</task-id>
+<summary>Monitor event: "Watch PR #1499 CI checks until all complete"</summary>
+<event>Backend — SAST (Bandit): pass
+Backend — dependency audit (pip-audit): pass
+Backend — lint &amp; format: pass
+Frontend — dependency audit (pnpm audit): pass
+GitGuardian Security Checks: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bg02bx102</task-id>
+<summary>Monitor event: "Watch PR #1499 CI checks until all complete"</summary>
+<event>Backend — type check: pass
+Frontend — lint &amp; format: pass
+Secret scanning (betterleaks): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bg02bx102</task-id>
+<summary>Monitor event: "Watch PR #1499 CI checks until all complete"</summary>
+<event>CodeQL: skipping</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bg02bx102</task-id>
+<summary>Monitor event: "Watch PR #1499 CI checks until all complete"</summary>
+<event>CodeQL analysis (javascript-typescript): pass
+CodeQL: pass</event>
+</task-notification>
+
+---
+
+Before the docs lets pick 1498 also

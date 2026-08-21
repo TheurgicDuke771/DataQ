@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "eaf4315e73c5",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1498-ids-unbound-in-incident-race-tests",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "backend/tests/services/test_incident_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ea/f4315e73c5/0/metadata.json",
+      "transcript": "/ea/f4315e73c5/0/full.jsonl",
+      "compact_transcript": "/ea/f4315e73c5/0/transcript.jsonl",
+      "content_hash": "/ea/f4315e73c5/0/content_hash.txt",
+      "prompt": "/ea/f4315e73c5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 14872,
+    "cache_read_tokens": 8440153,
+    "output_tokens": 5489,
+    "api_call_count": 22
+  }
+}
