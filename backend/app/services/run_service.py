@@ -1403,18 +1403,44 @@ def asset_column_tags(session: Session, suite: Any, run: Any = None) -> dict[str
     return asset.column_tags if asset is not None else None
 
 
-def observed_value_exposes_cells(redacted: dict[str, Any] | None) -> bool:
+# Expectation types whose SCALAR `observed_value` is a literal cell rather than a
+# computed statistic (#1486). A max/min is always a value that genuinely exists
+# in the column; a count, mean or median is not attributable to any one row even
+# though its check config may name a column. Deliberately an explicit, narrow
+# allowlist rather than "has a tested_column" — `test_observed_value_exposure_
+# is_not_a_null_check`'s `{"observed_value": 34680}` on a real `line_total`
+# config column is exactly the case a tested_column-only proxy would
+# false-positive on. Expand this set only for an expectation type verified to
+# report an actual dataset value, the same bar the issue held #1482 to.
+_CELL_SCALAR_EXPECTATION_TYPES = frozenset(
+    {
+        "expect_column_max_to_be_between",
+        "expect_column_min_to_be_between",
+    }
+)
+
+
+def observed_value_exposes_cells(
+    redacted: dict[str, Any] | None,
+    *,
+    expectation_type: str | None = None,
+) -> bool:
     """Whether a **redacted** `observed_value` still carries raw cell values.
 
     Lives here, beside the redactor whose output it interprets, and is shared by
     every G1 access-event caller (#431) — a second copy would be a second place
     to get the shapes wrong, and the shapes are the whole difficulty.
 
-    Three shapes reach a redacted `observed_value`, and only two can carry cells:
+    Four shapes reach a redacted `observed_value`, and three can carry cells:
 
-    * ``{"observed_value": <scalar>}`` — an aggregate the check MEASURED (a row
-      count, a mean). A measurement is not personal data, so this is **not** an
-      exposure however large the number.
+    * ``{"observed_value": <scalar>}`` from a **known cell-reporting** expectation
+      (`_CELL_SCALAR_EXPECTATION_TYPES` — #1482/#1486) is a literal cell (a
+      max/min genuinely exists in the column) and is an exposure iff it survived
+      masking. From any other expectation it is an aggregate the check MEASURED
+      (a row count, a mean) — not personal data, so **not** an exposure however
+      large the number, and not reclassified by ``expectation_type`` being
+      unknown/omitted (the caller not yet passing it must not silently start
+      over- **or** under-reporting; it just falls back to the pre-#1486 default).
     * ``{"observed_value": [...]}`` — a set-oriented expectation's distinct-value
       list, i.e. raw cells from the tested column (#1229). An exposure iff any
       element survived masking.
@@ -1434,6 +1460,12 @@ def observed_value_exposes_cells(redacted: dict[str, Any] | None) -> bool:
         return False
     values = redacted.get("observed_value")
     if isinstance(values, list) and any(v != _REDACTED_VALUE for v in values):
+        return True
+    if (
+        expectation_type in _CELL_SCALAR_EXPECTATION_TYPES
+        and values is not None
+        and values != _REDACTED_VALUE
+    ):
         return True
     unparsed = redacted.get("unparsed_value")
     return unparsed is not None and unparsed != _REDACTED_VALUE

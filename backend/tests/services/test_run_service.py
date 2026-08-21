@@ -1642,6 +1642,47 @@ def test_redact_observed_value_shows_a_table_level_scalar_with_no_tested_column(
     assert out == {"observed_value": 34680}
 
 
+# ── #1486: observed_value_exposes_cells and a scalar from a cell-reporting type ──
+
+
+def test_observed_value_exposes_cells_ignores_a_measurement_scalar() -> None:
+    # A row count is not attributable to any row, regardless of expectation_type.
+    assert (
+        run_service.observed_value_exposes_cells(
+            {"observed_value": 34680}, expectation_type="expect_column_values_to_not_be_null"
+        )
+        is False
+    )
+
+
+def test_observed_value_exposes_cells_ignores_an_unclassified_expectation_type() -> None:
+    # No expectation_type context (a caller not yet passing it, or a deleted
+    # check) must not start treating every scalar as a cell — same conservative
+    # default as before #1486.
+    assert run_service.observed_value_exposes_cells({"observed_value": "x@y.com"}) is False
+
+
+def test_observed_value_exposes_cells_flags_an_unmasked_cell_scalar() -> None:
+    # The case #1486 exists for: a max/min genuinely IS a cell.
+    assert (
+        run_service.observed_value_exposes_cells(
+            {"observed_value": "a real note"}, expectation_type="expect_column_max_to_be_between"
+        )
+        is True
+    )
+
+
+def test_observed_value_exposes_cells_does_not_flag_a_masked_cell_scalar() -> None:
+    # A masked scalar (the redactor already replaced it) exposes nothing, even
+    # from a known cell-reporting type.
+    assert (
+        run_service.observed_value_exposes_cells(
+            {"observed_value": "<redacted>"}, expectation_type="expect_column_max_to_be_between"
+        )
+        is False
+    )
+
+
 def test_redact_observed_value_surfaces_a_non_pii_tested_columns_set() -> None:
     # The whole point, same authority as `partial_unexpected_list`'s tested column.
     out = run_service.redact_observed_value(
