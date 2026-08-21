@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "71746a097b37",
+  "strategy": "manual-commit",
+  "branch": "docs/issue-1452-compliance-g6-artifacts",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/compliance/breach-notification-runbook.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/71/746a097b37/0/metadata.json",
+      "transcript": "/71/746a097b37/0/full.jsonl",
+      "compact_transcript": "/71/746a097b37/0/transcript.jsonl",
+      "content_hash": "/71/746a097b37/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 4037,
+    "cache_read_tokens": 907370,
+    "output_tokens": 900,
+    "api_call_count": 3
+  }
+}
