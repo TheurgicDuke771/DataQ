@@ -517,12 +517,27 @@ stack owns its own database from creation.
 **Still open:** [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385) — ElastiCache
 at-rest encryption is off beside an encrypted RDS.
 
-### G6 — ⚪ Organizational artifacts (out of code scope, tracked for completeness)
-DPA / BAA templates, DPIA template, breach-notification runbook, a published
-sub-processor list (incl. the LLM provider when enabled), consent/lawful-basis guidance.
-These are **documentation/legal**, not engineering — listed so they aren't forgotten in a
-"are we compliant?" review. Owner: the deploying organization + DataQ legal, not the
-codebase.
+### G6 — 🟢 Organizational artifacts — #1452 — **the producible half shipped; the legal half drafted and counsel-gated**
+Tracked as [#1452](https://github.com/TheurgicDuke771/DataQ/issues/1452) (this gap
+was originally "listed so it isn't forgotten" and then tracked nowhere — exactly the
+failure mode this section warned about, which is why the issue exists). Shipped
+2026-08-21 under [docs/compliance/](compliance/sub-processors.md), all published on
+the docs site:
+
+- **[Sub-processor / third-party disclosure](compliance/sub-processors.md)** — every
+  external service the software can send data to, enumerated-not-derived (the same
+  rule as the residency posture), with the update process that keeps it current
+  (same-PR rule for new outbound calls + the rule-39 quarterly audit as backstop).
+- **[DPIA input sheet](compliance/dpia-input-sheet.md)** — the personal-data
+  inventory only we can supply: both data classes, per-location retention and
+  controls, and the honest open items (#432 erasure, #1267 scalar-cell sweep,
+  #1460 tamper-evidence) stated rather than implied closed.
+- **[Breach-notification runbook](compliance/breach-notification-runbook.md)** —
+  reference-deployment procedure + a template for customer deployments.
+- **[DPA / BAA templates](compliance/dpa-baa-templates.md)** — drafted with accurate
+  technical annexes and marked **counsel-review-required**; explicitly NOT an
+  engineering sign-off. Consent/lawful-basis guidance stays with the deploying
+  organization (controller-side by construction).
 
 ---
 
