@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "4e6d931bf2ee",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1407-redis-loopback-bind",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docker-compose.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4e/6d931bf2ee/0/metadata.json",
+      "transcript": "/4e/6d931bf2ee/0/full.jsonl",
+      "compact_transcript": "/4e/6d931bf2ee/0/transcript.jsonl",
+      "content_hash": "/4e/6d931bf2ee/0/content_hash.txt",
+      "prompt": "/4e/6d931bf2ee/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 108057,
+    "cache_read_tokens": 1744473,
+    "output_tokens": 9996,
+    "api_call_count": 15
+  }
+}

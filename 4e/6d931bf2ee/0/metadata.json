@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "4e6d931bf2ee",
+  "session_id": "549fb1c2-398f-49ca-ac74-d72b1487f2cc",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-21T23:11:34.469285Z",
+  "branch": "fix/issue-1407-redis-loopback-bind",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docker-compose.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5",
+  "turn_id": "c59965231d76",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 108057,
+    "cache_read_tokens": 1744473,
+    "output_tokens": 9996,
+    "api_call_count": 15
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-21T23:11:34.454629Z",
+    "agent_lines": 8,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 8,
+    "total_lines_changed": 10,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 6,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 6
+      }
+    }
+  ]
+}
