@@ -57,27 +57,18 @@ VIEWER = "viewer"
 _RANK = {"view": 1, "edit": 2, ADMIN: 3, OWNER: 4}
 
 
-def _is_workspace_admin(session: Session, user_id: uuid.UUID) -> bool:
-    """True iff `user_id` is a workspace admin — stored `users.role` OR allowlist.
-
-    Resolved here — rather than threaded through every `require_permission` call
-    site — so a workspace-admin is an implicit `admin` on every suite (ADR 0027,
-    the rule itself unchanged by ADR 0033; only its *source* moved). One PK fetch,
-    usually an identity-map hit since the request already loaded the user.
-
-    Delegates to `core.auth.resolve_role` rather than re-deriving the OR, so this
-    gate and the REST gate cannot drift — the failure mode ADR 0033 is most
-    exposed to is exactly a role that means one thing at the router and another
-    at the suite ladder. The pre-#740 short-circuit on an empty allowlist is gone
-    with the same reasoning: it is no longer sound, because a stored `admin` must
-    resolve in a deployment that sets no `WORKSPACE_ADMIN_EMAILS` at all — which,
-    after in-app role management (#742), is the expected steady state.
-    """
-    return _workspace_role(session, user_id) == ADMIN
-
-
 def _workspace_role(session: Session, user_id: uuid.UUID) -> str:
     """The user's effective workspace role, or `member` if the row is gone.
+
+    This is the ONE place the suite ladder resolves a workspace role — callers
+    compare the result to `ADMIN` (the implicit admin-on-every-suite rule, ADR
+    0027; ADR 0033 moved only its *source*) and feed the same value to
+    `_cap_for_viewer`, so one PK fetch (usually an identity-map hit) does double
+    duty. Delegates to `core.roles.resolve_role` rather than re-deriving the
+    stored-role-OR-allowlist union, so this gate and the REST gate
+    (`require_role` / `require_workspace_admin`) cannot drift — the failure mode
+    ADR 0033 is most exposed to is exactly a role that means one thing at the
+    router and another at the suite ladder.
 
     A missing row falls back to `member` — the neutral tier — because that is
     what the pre-#741 code did implicitly (`user is not None and …` → not admin)
