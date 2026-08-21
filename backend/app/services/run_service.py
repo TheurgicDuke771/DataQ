@@ -53,6 +53,7 @@ from backend.app.db.models import (
     SEVERITY_RANK,
     Asset,
     Check,
+    CheckVersion,
     Result,
     Run,
     worst_severity,
@@ -1401,6 +1402,71 @@ def asset_column_tags(session: Session, suite: Any, run: Any = None) -> dict[str
         return None
     asset = session.get(Asset, asset_id)
     return asset.column_tags if asset is not None else None
+
+
+def historical_check_context(
+    session: Session,
+    results: Sequence[Result],
+    checks: Mapping[uuid.UUID, Check],
+) -> dict[uuid.UUID, tuple[str | None, str | None]]:
+    """Per-**result** `(tested_column, expectation_type)`, resolved as of WHEN that
+    result was written — not the check's CURRENT state (#1489).
+
+    `redact_observed_value`/`redact_sample_failures` (tested_column) and
+    `observed_value_exposes_cells` (expectation_type, #1486) both need to know
+    what a check WAS measuring at the moment a given result was produced.
+    `expectation_type` and `config["column"]` are freely PATCH-able on a live
+    `Check` with no re-validation against existing results, so reading them
+    straight off `checks` — as every caller did before this — silently
+    re-labels history every time a check is edited: a check that reported a mean
+    when a result was written but was later changed to `max`/`min` makes that OLD
+    result look like a literal-cell exposure it never was, and the reverse edit
+    makes a genuine one vanish. Same shape as `asset_column_tags`'s run-anchoring
+    reasoning just above — a stored row is a sample of what was true when it was
+    taken, not a live view of the current configuration.
+
+    Resolved from `check_versions` (#280 — an immutable snapshot on every create
+    and update) rather than a new column on `Result`: the version whose
+    `created_at` is the most recent one at-or-before the result's `created_at` is
+    what was actually in effect. A check with no version rows at all (created
+    before #280 shipped) falls back to its current `Check` row — the same
+    behaviour every caller had before this function existed, so a check that
+    predates versioning is no worse off than it already was. The one-query-per-
+    check-id-set batching (not a query per result) mirrors how `checks` itself is
+    already loaded by every caller.
+    """
+    check_ids = {r.check_id for r in results if r.check_id is not None}
+    versions_by_check: dict[uuid.UUID, list[CheckVersion]] = defaultdict(list)
+    if check_ids:
+        for version in session.scalars(
+            select(CheckVersion)
+            .where(CheckVersion.check_id.in_(check_ids))
+            .order_by(CheckVersion.check_id, CheckVersion.created_at)
+        ):
+            versions_by_check[version.check_id].append(version)
+
+    def _resolve(check_id: uuid.UUID | None, at: datetime) -> tuple[str | None, str | None]:
+        check = checks.get(check_id) if check_id is not None else None
+        versions = versions_by_check.get(check_id) if check_id is not None else None
+        if not versions:
+            return (
+                (check.config.get("column") if check else None),
+                (check.expectation_type if check else None),
+            )
+        # `versions` is sorted ascending by created_at: the last one at-or-before
+        # `at` is what was in effect. If every version is AFTER `at` (clock skew,
+        # or a result written in the same instant as version 1), fall back to the
+        # earliest rather than the live check — "before the first edit" is a
+        # closer approximation of history than "whatever it is today".
+        effective = versions[0]
+        for version in versions:
+            if version.created_at <= at:
+                effective = version
+            else:
+                break
+        return effective.config.get("column"), effective.expectation_type
+
+    return {r.id: _resolve(r.check_id, r.created_at) for r in results}
 
 
 # Expectation types whose SCALAR `observed_value` is a literal cell rather than a

@@ -338,7 +338,7 @@ def _result_read(
 
 
 def _exposed_result_ids(
-    results: Sequence[ResultRead], *, expectation_types: Mapping[uuid.UUID, str]
+    results: Sequence[ResultRead], *, expectation_types: Mapping[uuid.UUID, str | None]
 ) -> list[str]:
     """Which of these results actually surfaced regulated data to the caller.
 
@@ -351,10 +351,14 @@ def _exposed_result_ids(
     null check — see `observed_value_exposes_cells`. The first version here asked
     only whether it was non-None, which marked a fully-masked list and a plain row
     count alike as exposures, so effectively every read was recorded as one.
-    `expectation_types` (`check_id` → `expectation_type`, #1486) is what lets that
-    test tell a max/min's literal cell apart from an aggregate statistic that also
-    happens to have a tested column — a missing entry (a deleted check) falls back
-    to "not a known cell-reporting type", same as before #1486.
+    `expectation_types` (`result.id` → `expectation_type`, #1486/#1489) is what
+    lets that test tell a max/min's literal cell apart from an aggregate
+    statistic that also happens to have a tested column. Keyed by **result**, not
+    check: `run_service.historical_check_context` resolves the expectation type
+    as of when EACH result was written, so two results for the same check taken
+    before/after an edit can legitimately resolve differently. A missing entry
+    (a deleted check with no version history) falls back to "not a known
+    cell-reporting type", same as before #1486.
 
     Derived from the redacted output rather than from the stored row, deliberately
     — the same column policy that decides what the caller sees decides what the
@@ -366,7 +370,7 @@ def _exposed_result_ids(
         for r in results
         if r.redaction in {"none", "partial"}
         or svc.observed_value_exposes_cells(
-            r.observed_value, expectation_type=expectation_types.get(r.check_id)
+            r.observed_value, expectation_type=expectation_types.get(r.id)
         )
     ]
 
@@ -377,7 +381,7 @@ def _audit_result_read(
     *,
     run: Any,
     results: Sequence[ResultRead],
-    expectation_types: Mapping[uuid.UUID, str],
+    expectation_types: Mapping[uuid.UUID, str | None],
 ) -> None:
     """Record a read of a run's results (G1 / #431, `action_class='access'`).
 
@@ -419,11 +423,13 @@ def get_run(
     # runs (404 hides the run id too, matching the suite existence-hiding rule).
     suite = require_permission(db, run.suite_id, current_user.id, minimum="view")
     results = svc.list_results(db, run_id)
-    # Map check_id → tested column so each result's sample is redacted column-aware
-    # against the suite's policy (#415): a non-PII tested column's values surface.
     checks = {c.id: c for c in db.scalars(select(Check).where(Check.suite_id == run.suite_id))}
     policy = suite.column_policy
     tags = _asset_column_tags(db, suite, run)
+    # Per-RESULT (tested_column, expectation_type) as of when each result was
+    # written (#1489) — not the check's current state, which is freely editable
+    # after the fact and would silently re-label what old results show/audit.
+    context = svc.historical_check_context(db, results, checks)
     # `Run` has no `results` relationship to validate a RunDetailRead from
     # directly, so validate the run fields (as RunRead), graft the data-quality
     # outcome (#571 — else checks_total/passed stay at the 0/0 default here), and
@@ -432,15 +438,13 @@ def get_run(
     reads = [
         _result_read(
             r,
-            tested_column=(
-                checks[r.check_id].config.get("column") if r.check_id in checks else None
-            ),
+            tested_column=context.get(r.id, (None, None))[0],
             policy=policy,
             tags=tags,
         )
         for r in results
     ]
-    expectation_types = {check_id: check.expectation_type for check_id, check in checks.items()}
+    expectation_types = {r.id: context.get(r.id, (None, None))[1] for r in results}
     _audit_result_read(
         db, current_user, run=run, results=reads, expectation_types=expectation_types
     )

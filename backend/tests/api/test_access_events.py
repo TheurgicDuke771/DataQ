@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -24,9 +25,19 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from backend.app.core.auth import get_current_user
-from backend.app.db.models import AuditEvent, Check, Connection, Result, Run, Suite, User
+from backend.app.db.models import (
+    AuditEvent,
+    Check,
+    CheckVersion,
+    Connection,
+    Result,
+    Run,
+    Suite,
+    User,
+)
 from backend.app.db.session import get_db
 from backend.app.main import app
+from backend.app.services import check_service
 
 
 @pytest.fixture
@@ -340,3 +351,117 @@ def test_the_access_commit_does_not_expire_the_callers_objects(
     # The caller's session must be left with its default semantics restored, or
     # every later commit in the process silently stops expiring.
     assert db_session.expire_on_commit is True
+
+
+# ── Review finding on PR #1488 (#1489) ────────────────────────────────────────
+
+
+def test_editing_a_check_does_not_retroactively_relabel_an_old_result(
+    client: TestClient, db_session: Any
+) -> None:
+    """A result must be classified by what the check WAS when the row was
+    written, not what it is now.
+
+    Real end-to-end repro of the #1489 gap: a check is created reporting a MEAN
+    (never a cell), a result is written under that version, and the check is
+    THEN edited via the real `check_service.update_check` path to a MAX/MIN
+    type on a different, deliberately NON-PII column — the exact edit
+    `update_check` allows with no re-validation against existing results.
+    Re-reading the OLD result must still see it as the harmless mean it always
+    was, not a newly-invented cell exposure.
+
+    The post-edit column is deliberately non-PII (`unit_price`, not e.g.
+    `customer_email`): a PII-named column masks regardless of expectation type,
+    which would make `exposed is False` true for the WRONG reason under the
+    unfixed code too (masked because the name looks sensitive, not because the
+    resolution is historically correct) — a vacuous version of this test caught
+    by mutation-checking it. With a non-PII column, the unfixed code shows the
+    raw scalar as a genuine max/min cell (`exposed=True`, wrong); only the fix
+    correctly attributes the old result to its pre-edit mean version.
+
+    `created_at` is stamped explicitly on the version-2 snapshot and the result,
+    rather than relying on wall-clock separation between the two `commit()`s:
+    this fixture runs the whole test inside one outer transaction (rolled back
+    at teardown), and Postgres' `now()` is fixed for the transaction's lifetime
+    — every `server_default=func.now()` row here would otherwise land on the
+    IDENTICAL instant, which collapses the very ordering this test exists to
+    prove (found by running it and observing all three timestamps tie).
+    """
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"o-{uuid.uuid4().hex[:8]}@example.com")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"sf-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "x"},
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name="orders", connection_id=conn.id, created_by=owner.id)
+    db_session.add(suite)
+    db_session.commit()
+
+    check = check_service.create_check(
+        db_session,
+        suite_id=suite.id,
+        name="avg",
+        kind="expectation",
+        expectation_type="expect_column_mean_to_be_between",
+        config={"column": "line_total"},
+        warn_threshold=None,
+        fail_threshold=None,
+        critical_threshold=None,
+    )
+    # Explicit created_at throughout, rather than relying on wall-clock
+    # separation between commits: every server_default=func.now() row inside
+    # this fixture's outer transaction ties to the SAME instant (Postgres'
+    # now() is fixed for a transaction's lifetime, and this fixture never
+    # really commits until teardown), which collapses the ordering this test
+    # exists to prove — confirmed by running it and observing all timestamps
+    # identical. `version_1`'s row was written by `create_check` itself.
+    version_1 = db_session.scalars(
+        select(CheckVersion).where(CheckVersion.check_id == check.id, CheckVersion.version_no == 1)
+    ).one()
+    version_1.created_at = datetime(2026, 1, 1, tzinfo=UTC)  # T0
+    run = Run(suite_id=suite.id, status="succeeded", triggered_by="manual")
+    db_session.add(run)
+    db_session.flush()
+    result = Result(
+        run_id=run.id,
+        check_id=check.id,
+        status="pass",
+        observed_value={"observed_value": 1250.5},
+        created_at=datetime(2026, 1, 1, 1, tzinfo=UTC),  # T0 + 1h — after v1, before the edit
+    )
+    db_session.add(result)
+    db_session.commit()
+
+    # The edit #1489 is about: expectation_type AND the tested column both
+    # change. Non-PII column (see the docstring above for why that matters).
+    check_service.update_check(
+        db_session,
+        suite.id,
+        check.id,
+        expectation_type="expect_column_max_to_be_between",
+        config={"column": "unit_price"},
+    )
+    version_2 = db_session.scalars(
+        select(CheckVersion).where(CheckVersion.check_id == check.id, CheckVersion.version_no == 2)
+    ).one()
+    version_2.created_at = datetime(
+        2026, 1, 2, tzinfo=UTC
+    )  # T0 + 1 day — strictly after the result
+    db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: owner
+    resp = client.get(f"/api/v1/runs/{run.id}")
+    assert resp.status_code == 200, resp.text
+
+    event = _events(db_session, "run_results.read", run.id)[0]
+    assert event.after is not None
+    assert event.after["exposed"] is False, (
+        "the mean was never a cell — re-reading it after the check was edited to "
+        "a max/min type must not retroactively count it as one"
+    )
