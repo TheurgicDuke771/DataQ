@@ -176,35 +176,19 @@ def redact_probe_observed_value(
     policy: dict[str, Any] | None,
     tags: Mapping[str, str] | None = None,
 ) -> dict[str, Any] | None:
-    """`run_service.redact_observed_value`, plus the **scalar** case it does not cover.
+    """Thin call into `run_service.redact_observed_value`.
 
-    That redactor handles `error`, `unparsed_value`, and a *list* `observed_value`.
-    A **scalar** one passes through verbatim — so an expectation whose observed
-    value is a single cell (``expect_column_max_to_be_between`` on a text column
-    reports the largest value, i.e. a real cell) is returned raw even under
-    fail-closed mode with the column named in `pii_columns`. Verified directly,
-    not assumed.
-
-    Masking here rather than in `run_service` is deliberate and narrow: the same
-    gap exists on the persisted-results path, but closing it there changes what
-    every stored result renders and needs its own decision about numeric
-    aggregates (a row count is not a cell value; a max salary is). That is
-    [#1482](https://github.com/TheurgicDuke771/DataQ/issues/1482). What must not
-    happen meanwhile is this seam reporting ``masked: true`` on a value it did not
-    mask — an audit field that lies is worse than one that is missing.
+    Used to add the **scalar** `observed_value` case that redactor did not
+    cover (#1482 — an expectation whose observed value is a single cell, e.g.
+    ``expect_column_max_to_be_between`` on a text column, passed through raw
+    even under fail-closed mode with the column named in `pii_columns`). That
+    gap is now closed in the shared redactor itself, so every scalar case —
+    numeric or not — masks there under the same authority as the list case,
+    and this wrapper has nothing left to add.
     """
     from backend.app.services.run_service import redact_observed_value
 
-    result = redact_observed_value(observed, tested_column=tested_column, policy=policy, tags=tags)
-    if not isinstance(result, dict) or "observed_value" not in result:
-        return result
-    value = result["observed_value"]
-    # Lists are already handled upstream; containers and scalars are what remain.
-    if isinstance(value, list):
-        return result
-    if tested_column is None or not _known_sensitive(tested_column, [value], policy, tags):
-        return result
-    return {**result, "observed_value": _REDACTED_VALUE}
+    return redact_observed_value(observed, tested_column=tested_column, policy=policy, tags=tags)
 
 
 def _profile_sample_values(column: Any) -> list[Any]:

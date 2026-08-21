@@ -1482,6 +1482,21 @@ def redact_observed_value(
       Classification runs over the **full** persisted list (bounding what is
       emitted must never widen what is examined), only the emitted value is
       capped.
+    * a **scalar** ``observed_value`` (#1482) — the outcome of a single-cell
+      aggregate such as ``expect_column_max_to_be_between`` /
+      ``expect_column_min_to_be_between``. On a text column that is a literal
+      cell from the **tested** column, no different in kind from the list case
+      above; on a numeric column it can still be one (a max **salary** is a
+      disclosure, not merely a statistic). The distinguishing fact is not the
+      value's type, it's whether the value has column context at all: a
+      table-level aggregate with no tested column (a row count) never reaches
+      here with one, and passes through untouched — the same "no
+      ``tested_column`` → nothing to classify" shape the list branch already
+      uses, just inverted (there, no context means mask; here, no context
+      means nothing *to* mask, since the number isn't attributable to any
+      column). So a scalar is masked under the same *known*-sensitive
+      authority as the list case, gated on ``tested_column`` being set, with
+      no numeric carve-out.
 
     This function is what the run-detail API, the MCP tools and the alert
     builder all call, so a fix here covers all three sinks at once.
@@ -1498,14 +1513,21 @@ def redact_observed_value(
         value = observed.get("unparsed_value")
         show = bool(column) and not _known_sensitive(column, [value], policy, tags)
         return {**observed, "unparsed_value": value if show else _redact_sample_value(value)}
-    raw_observed_value = observed.get("observed_value")
+    if "observed_value" not in observed:
+        return observed
+    raw_observed_value = observed["observed_value"]
     if isinstance(raw_observed_value, list):
         show = tested_column is not None and not _known_sensitive(
             tested_column, raw_observed_value, policy, tags
         )
         capped = raw_observed_value[:SAMPLE_ROW_CAP]
         return {**observed, "observed_value": capped if show else _redact_sample_value(capped)}
-    return observed
+    show = tested_column is None or not _known_sensitive(
+        tested_column, [raw_observed_value], policy, tags
+    )
+    if show:
+        return observed
+    return {**observed, "observed_value": _redact_sample_value(raw_observed_value)}
 
 
 def redact_sample_failures(
