@@ -413,6 +413,10 @@ def test_concurrent_failing_syncs_no_duplicate(_db_engine: Any) -> None:
     one active incident with the occurrences counted — no duplicate, no
     IntegrityError. Committed rows are cleaned up so other tests aren't polluted."""
     seed = SASession(bind=_db_engine)
+    # Declared before the try so a seeding failure (any call before `ids` is
+    # assigned below) can't turn `finally`'s `_cleanup(**ids)` into a NameError
+    # that masks the real failure (#1498).
+    ids: dict[str, uuid.UUID] | None = None
     try:
         owner = _user(seed, email=f"race-{uuid.uuid4().hex[:6]}@ex.com")
         conn = _connection(seed, owner)
@@ -467,7 +471,8 @@ def test_concurrent_failing_syncs_no_duplicate(_db_engine: Any) -> None:
             check_sess.close()
     finally:
         seed.close()  # idempotent; ensures no idle-in-transaction leak on failure
-        _cleanup(_db_engine, **ids)
+        if ids is not None:
+            _cleanup(_db_engine, **ids)
 
 
 def _cleanup(
@@ -529,6 +534,10 @@ def test_concurrent_manual_resolves_exactly_one_wins(_db_engine: Any) -> None:
     serializes them — exactly one wins, the loser gets a clean 409 (not a silent
     actor/note overwrite), and the row ends resolved-by-user exactly once."""
     seed = SASession(bind=_db_engine)
+    # Declared before the try so a seeding failure (any call before `ids` is
+    # assigned below) can't turn `finally`'s `_cleanup(**ids)` into a NameError
+    # that masks the real failure (#1498).
+    ids: dict[str, uuid.UUID] | None = None
     try:
         owner = _user(seed, email=f"race2-{uuid.uuid4().hex[:6]}@ex.com")
         conn = _connection(seed, owner)
@@ -589,7 +598,8 @@ def test_concurrent_manual_resolves_exactly_one_wins(_db_engine: Any) -> None:
             verify.close()
     finally:
         seed.close()  # idempotent; ensures no idle-in-transaction leak on failure
-        _cleanup(_db_engine, **ids)
+        if ids is not None:
+            _cleanup(_db_engine, **ids)
 
 
 def test_open_retries_when_active_vanishes_mid_attach(
