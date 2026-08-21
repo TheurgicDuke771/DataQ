@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "5e1fda68d3eb",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1489-historical-check-context",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/api/test_access_events.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5e/1fda68d3eb/0/metadata.json",
+      "transcript": "/5e/1fda68d3eb/0/full.jsonl",
+      "compact_transcript": "/5e/1fda68d3eb/0/transcript.jsonl",
+      "content_hash": "/5e/1fda68d3eb/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 82,
+    "cache_creation_tokens": 42588,
+    "cache_read_tokens": 13461803,
+    "output_tokens": 21465,
+    "api_call_count": 41
+  }
+}
