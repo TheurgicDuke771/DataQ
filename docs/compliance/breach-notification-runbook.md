@@ -32,7 +32,7 @@ may have been read or altered by an unauthorized party.
 Record the **time of awareness** first; every regulatory clock runs from it.
 
 1. **Revoke what's compromised, narrowest first:**
-   - A PAT → delete it in *Profile → API keys* (or `DELETE /api/v1/api_keys/{id}`).
+   - A PAT → delete it in *Profile → API keys* (or `DELETE /api/v1/me/api-keys/{key_id}`).
      Role changes and revocations apply on the holder's **next request** — there
      is no token to wait out.
    - A user account → demote to `viewer` (Admin → Members) or disable at the IdP;
