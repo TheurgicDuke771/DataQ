@@ -15,6 +15,7 @@ jobs:
   backend-lint:
     name: Backend — lint & format
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -41,6 +42,7 @@ jobs:
   backend-types:
     name: Backend — type check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -61,6 +63,7 @@ jobs:
   backend-sast:
     name: Backend — SAST (Bandit)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -78,6 +81,7 @@ jobs:
   backend-audit:
     name: Backend — dependency audit (pip-audit)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -122,6 +126,7 @@ jobs:
   backend-test:
     name: Backend — tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Ephemeral Postgres for DB-backed integration tests (seed/run/endpoint).
     # Matches the compose image; gen_random_uuid() is built in to PG16.
     #
@@ -203,6 +208,7 @@ jobs:
   secrets:
     name: Secret scanning (betterleaks)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
@@ -274,6 +280,7 @@ jobs:
   frontend-lint:
     name: Frontend — lint & format
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -303,6 +310,7 @@ jobs:
   frontend-test:
     name: Frontend — tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -326,6 +334,7 @@ jobs:
   frontend-e2e:
     name: Frontend — browser E2E (Playwright)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     # Full-stack browser smoke (#128): real API + seeded demo data + dev-bypass,
     # driven through the React UI. Mirrors the compose stack — Postgres + Redis
     # services, the backend on :8000, Playwright starts its own Vite dev server.
@@ -449,7 +458,10 @@ jobs:
           pnpm exec playwright install chromium
           sudo rm -f /etc/apt/sources.list.d/*microsoft* /etc/apt/sources.list.d/*azure* || true
           for attempt in 1 2 3; do
-            if pnpm exec playwright install-deps chromium; then ok=1; break; fi
+            # #1484: a stalled apt mirror hangs rather than exits non-zero, which
+            # the retry loop below can't detect on its own — `timeout` turns a
+            # hang into a fast failure the loop can actually retry.
+            if timeout 300 pnpm exec playwright install-deps chromium; then ok=1; break; fi
             echo "playwright install-deps attempt $attempt failed; retrying in 5s…"; sleep 5
           done
           [ -n "${ok:-}" ] || { echo "playwright install-deps failed after 3 attempts"; exit 1; }
@@ -507,6 +519,7 @@ jobs:
   frontend-audit:
     name: Frontend — dependency audit (pnpm audit)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -534,6 +547,7 @@ jobs:
   codeql:
     name: CodeQL analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       security-events: write
       actions: read
