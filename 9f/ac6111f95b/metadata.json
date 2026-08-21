@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "9fac6111f95b",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-ci-hardening-batch-2026-08-21",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9f/ac6111f95b/0/metadata.json",
+      "transcript": "/9f/ac6111f95b/0/full.jsonl",
+      "compact_transcript": "/9f/ac6111f95b/0/transcript.jsonl",
+      "content_hash": "/9f/ac6111f95b/0/content_hash.txt",
+      "prompt": "/9f/ac6111f95b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 10265,
+    "cache_read_tokens": 4808223,
+    "output_tokens": 2789,
+    "api_call_count": 15
+  }
+}
