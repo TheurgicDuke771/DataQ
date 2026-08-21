@@ -11,6 +11,8 @@ same ``request_id_var`` ContextVar the structlog processor chain reads from, so
 worker log lines correlate with the request that triggered them.
 """
 
+import os
+import tempfile
 import uuid
 from typing import Any
 
@@ -117,6 +119,12 @@ def create_celery_app() -> Celery:
         # Gap recovery (B2) sweeps a wider 1-hour window every 30 min (plus once
         # on beat startup, via the beat_init signal below) to re-ingest runs
         # missed while the system was down — idempotent with the 10-min poll.
+        # Beat's schedule shelve goes in the temp dir, not the CWD default: the
+        # runtime image runs as a non-root user with a read-only /workspace
+        # (#1408), so a CWD write would crash beat at startup — and the state is
+        # disposable by design (see "beat state does not survive a restart"
+        # above), so nothing is lost by parking it somewhere ephemeral.
+        beat_schedule_filename=os.path.join(tempfile.gettempdir(), "dataq-celerybeat-schedule"),
         beat_schedule={
             "poll-orchestration-runs": {
                 "task": "poll_orchestration_runs",
