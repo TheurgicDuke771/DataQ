@@ -1,0 +1,2 @@
+merge them sequencially. 
+run the code-review then let the CI complete [resolve if there is any conflicts] then merge if all good.

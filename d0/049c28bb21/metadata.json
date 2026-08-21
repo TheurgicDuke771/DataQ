@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "d0049c28bb21",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1473-precommit-tooling-sync-guard-clean",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "scripts/check-precommit-tooling-sync.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d0/049c28bb21/0/metadata.json",
+      "transcript": "/d0/049c28bb21/0/full.jsonl",
+      "compact_transcript": "/d0/049c28bb21/0/transcript.jsonl",
+      "content_hash": "/d0/049c28bb21/0/content_hash.txt",
+      "prompt": "/d0/049c28bb21/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 19381,
+    "cache_read_tokens": 6525467,
+    "output_tokens": 11115,
+    "api_call_count": 25,
+    "subagent_tokens": {
+      "input_tokens": 110,
+      "cache_creation_tokens": 250293,
+      "cache_read_tokens": 3958635,
+      "output_tokens": 19441,
+      "api_call_count": 55
+    }
+  }
+}
