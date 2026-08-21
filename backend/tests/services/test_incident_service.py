@@ -32,6 +32,15 @@ from backend.app.services import incident_service, suite_service
 
 _SF_CONFIG = {"account": "ab12345.eu-west-1", "database": "ANALYTICS", "schema": "PUBLIC"}
 
+# #1411: the two race tests below synchronize two threads on a `threading.Barrier`
+# then join them — under CPU contention (e.g. `pytest --cov` running alongside
+# another heavy job), thread scheduling can stall past a tight deadline, tripping
+# `BrokenBarrierError`/a stuck join with no exception surfaced on the main thread
+# (worker() doesn't re-raise), which then fails as a baffling assertion mismatch
+# rather than a recognizable timeout. Generous enough that a loaded CI box isn't
+# flaky, tight enough that a genuine deadlock still fails in finite time.
+_RACE_TIMEOUT = 30.0
+
 
 # ── seeding helpers ───────────────────────────────────────────────────────────
 
@@ -421,7 +430,7 @@ def test_concurrent_failing_syncs_no_duplicate(_db_engine: Any) -> None:
         def worker(run_id: uuid.UUID) -> None:
             s = SASession(bind=_db_engine)
             try:
-                barrier.wait(timeout=5)
+                barrier.wait(timeout=_RACE_TIMEOUT)
                 incident_service.sync_incidents_for_run(s, run_id=run_id)
             finally:
                 s.close()
@@ -430,7 +439,7 @@ def test_concurrent_failing_syncs_no_duplicate(_db_engine: Any) -> None:
         for t in threads:
             t.start()
         for t in threads:
-            t.join(timeout=10)
+            t.join(timeout=_RACE_TIMEOUT)
 
         check_sess = SASession(bind=_db_engine)
         try:
@@ -539,7 +548,7 @@ def test_concurrent_manual_resolves_exactly_one_wins(_db_engine: Any) -> None:
             try:
                 incident = s.get(Incident, incident_id)
                 assert incident is not None
-                barrier.wait(timeout=5)
+                barrier.wait(timeout=_RACE_TIMEOUT)
                 try:
                     incident_service.resolve_incident(s, incident, user_id=owner_id, note=tag)
                     with lock:
@@ -554,7 +563,7 @@ def test_concurrent_manual_resolves_exactly_one_wins(_db_engine: Any) -> None:
         for t in threads:
             t.start()
         for t in threads:
-            t.join(timeout=10)
+            t.join(timeout=_RACE_TIMEOUT)
 
         assert sorted(o.split(":")[1] for o in outcomes) == ["409", "won"]
         verify = SASession(bind=_db_engine)
