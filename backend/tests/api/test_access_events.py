@@ -27,6 +27,7 @@ from backend.app.core.auth import get_current_user
 from backend.app.db.models import AuditEvent, Check, Connection, Result, Run, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
+from backend.app.services import check_service
 
 
 @pytest.fixture
@@ -340,3 +341,84 @@ def test_the_access_commit_does_not_expire_the_callers_objects(
     # The caller's session must be left with its default semantics restored, or
     # every later commit in the process silently stops expiring.
     assert db_session.expire_on_commit is True
+
+
+# ── Review finding on PR #1488 (#1489) ────────────────────────────────────────
+
+
+def test_editing_a_check_does_not_retroactively_relabel_an_old_result(
+    client: TestClient, db_session: Any
+) -> None:
+    """A result must be classified by what the check WAS when the row was
+    written, not what it is now.
+
+    Real end-to-end repro of the #1489 gap: a check is created reporting a MEAN
+    (never a cell), a result is written under that version, and the check is
+    THEN edited via the real `check_service.update_check` path to a MAX/MIN type
+    on a different (PII) column — the exact edit `update_check` allows with no
+    re-validation against existing results. Re-reading the OLD result must still
+    see it as the harmless mean it always was: neither a newly-invented cell
+    exposure in the audit, nor a newly-applied mask on a column it was never
+    actually redacted against.
+    """
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"o-{uuid.uuid4().hex[:8]}@example.com")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"sf-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "x"},
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name="orders", connection_id=conn.id, created_by=owner.id)
+    db_session.add(suite)
+    db_session.commit()
+
+    check = check_service.create_check(
+        db_session,
+        suite_id=suite.id,
+        name="avg",
+        kind="expectation",
+        expectation_type="expect_column_mean_to_be_between",
+        config={"column": "line_total"},
+        warn_threshold=None,
+        fail_threshold=None,
+        critical_threshold=None,
+    )
+    run = Run(suite_id=suite.id, status="succeeded", triggered_by="manual")
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(
+        Result(
+            run_id=run.id,
+            check_id=check.id,
+            status="pass",
+            observed_value={"observed_value": 1250.5},
+        )
+    )
+    db_session.commit()
+
+    # The edit #1489 is about: expectation_type AND the tested column both
+    # change, onto a PII-named column a max/min check would genuinely expose.
+    check_service.update_check(
+        db_session,
+        suite.id,
+        check.id,
+        expectation_type="expect_column_max_to_be_between",
+        config={"column": "customer_email"},
+    )
+    db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: owner
+    resp = client.get(f"/api/v1/runs/{run.id}")
+    assert resp.status_code == 200, resp.text
+
+    event = _events(db_session, "run_results.read", run.id)[0]
+    assert event.after is not None
+    assert event.after["exposed"] is False, (
+        "the mean was never a cell — re-reading it after the check was edited to "
+        "a max/min type must not retroactively count it as one"
+    )

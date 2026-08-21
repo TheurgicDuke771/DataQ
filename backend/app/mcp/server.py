@@ -347,10 +347,13 @@ def _run_results_payload(
     # from the warehouse: an MCP read must not open a datasource connection.
     # `None` means no opinion, which is what shipped before G3.
     tags = _asset_column_tags(session, suite, run)
+    # Per-RESULT (tested_column, expectation_type) as of when each result was
+    # written (#1489) — not the check's current state, which is freely editable
+    # after the fact and would silently re-label what old results show/audit.
+    context = run_service.historical_check_context(session, results, checks)
 
-    def _tested_column(check_id: uuid.UUID | None) -> str | None:
-        check = checks.get(check_id) if check_id is not None else None
-        return check.config.get("column") if check is not None else None
+    def _tested_column(result_id: uuid.UUID) -> str | None:
+        return context.get(result_id, (None, None))[0]
 
     # Redact ONCE, here, and reuse below. An earlier version redacted every result
     # a second time purely to compute `exposed_ids` and then threw the result
@@ -358,10 +361,10 @@ def _run_results_payload(
     rendered = [
         {
             "result_id": str(r.id),
-            **_redacted_sample(r, _tested_column(r.check_id), policy, tags),
+            **_redacted_sample(r, _tested_column(r.id), policy, tags),
             "observed_value": run_service.redact_observed_value(
                 r.observed_value,
-                tested_column=_tested_column(r.check_id),
+                tested_column=_tested_column(r.id),
                 policy=policy,
                 tags=tags,
             ),
@@ -374,10 +377,10 @@ def _run_results_payload(
     # door to raw cells and needs its own test rather than a null check — a fully
     # masked list and a plain row count are both non-None and neither is an
     # exposure (see `run_service.observed_value_exposes_cells`). `expectation_type`
-    # (#1486) is what lets that test tell a max/min's literal cell apart from an
-    # aggregate statistic that also happens to have a tested column — looked up
-    # from the ORM `Result`, not `rendered`, so it never has to be excluded from
-    # the dict spread that builds the client-facing payload below.
+    # (#1486/#1489) is what lets that test tell a max/min's literal cell apart
+    # from an aggregate statistic that also happens to have a tested column —
+    # resolved historically via `context`, not the live `checks` row, for the
+    # same reason `tested_column` is above.
     #
     # Derived from the redacted output rather than the stored row, so the policy
     # that decides what the caller sees is the same one that decides what the
@@ -387,10 +390,7 @@ def _run_results_payload(
         for result, r in zip(results, rendered, strict=True)
         if r["redaction"] in {"none", "partial"}
         or run_service.observed_value_exposes_cells(
-            r["observed_value"],
-            expectation_type=(
-                checks[result.check_id].expectation_type if result.check_id in checks else None
-            ),
+            r["observed_value"], expectation_type=context.get(result.id, (None, None))[1]
         )
     ]
     rendered_by_id = {r["result_id"]: r for r in rendered}
