@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "804e7a76a67d",
+  "session_id": "69e80831-f1df-4b73-9124-56be4ce388ca",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-21T17:40:48.769486Z",
+  "branch": "fix/issue-1482-scalar-observed-value-redaction",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "503eb4bedeca",
+  "checkpoint_transcript_start": 246,
+  "transcript_lines_at_start": 246,
+  "compact_transcript_start": 54,
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 7797,
+    "cache_read_tokens": 1079488,
+    "output_tokens": 1351,
+    "api_call_count": 7
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-21T17:40:48.749226Z",
+    "agent_lines": 1,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1,
+    "total_lines_changed": 2,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
