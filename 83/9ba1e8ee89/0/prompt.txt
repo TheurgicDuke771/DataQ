@@ -1,0 +1,5 @@
+Continue work on issue #1482: check if Docker Desktop finished starting, bring up postgres+redis, run the DB-backed test suite (backend/tests/api/test_access_events.py and full backend/tests/services/test_run_service.py + test_live_probe.py) to confirm no regressions, check on the mutation-verifier agent (a324febdca623d4fe), then commit/open PR per CLAUDE.md workflow (one functionality per commit, /code-review before merge, fix in same PR, file issue for anything deferred).
+
+---
+
+Merge #1485 once CI completes
