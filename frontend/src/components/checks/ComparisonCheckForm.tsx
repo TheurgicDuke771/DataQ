@@ -72,8 +72,7 @@ export function ComparisonCheckForm({
                   value: c.id,
                   label: `${c.name} (${c.type}, ${c.env})`,
                 }))}
-                showSearch
-                optionFilterProp="label"
+                showSearch={{ optionFilterProp: 'label' }}
               />
             </Form.Item>
             {sourceSql && (
@@ -145,6 +144,13 @@ export function ComparisonCheckForm({
               placeholder="e.g. order_id"
               tokenSeparators={[',']}
               open={false}
+              // `no-deprecated` flags this via rc-select's lower-level BaseSelect,
+              // whose own `suffixIcon` is deprecated in favor of `suffix` — but
+              // antd's own Select component (this one) never reads `suffix` for
+              // its icon at all, only `suffixIcon` (antd/es/select/useIcons.js).
+              // Verified empirically: `suffix={null}` here left the dropdown
+              // arrow visible; `suffixIcon={null}` is what actually hides it.
+              // eslint-disable-next-line @typescript-eslint/no-deprecated
               suffixIcon={null}
             />
           </Form.Item>

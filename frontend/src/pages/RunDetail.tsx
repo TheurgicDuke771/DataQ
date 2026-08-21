@@ -574,7 +574,7 @@ function ResultsTable({
           return (
             <Flex vertical gap={16}>
               <CheckTrend key={record.check_id} suiteId={suiteId} check={check} />
-              {coldStart && <Alert type="info" showIcon message={coldStart} />}
+              {coldStart && <Alert type="info" showIcon title={coldStart} />}
               {check.kind === 'comparison' ? (
                 <ComparisonResultDetail runId={runId} result={record} />
               ) : (

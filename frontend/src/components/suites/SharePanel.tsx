@@ -314,11 +314,9 @@ function AddCollaborator({
     // whole row fits on one line.
     <Flex gap={8} align="center" wrap>
       <Select
-        showSearch
+        showSearch={{ filterOption: false, onSearch }}
         value={userId}
         placeholder="Search by email or name"
-        filterOption={false}
-        onSearch={onSearch}
         onChange={(id: string) => setPicked(options.find((u) => u.id === id))}
         notFoundContent={searching ? <Spin size="small" /> : null}
         options={options.map((u) => ({

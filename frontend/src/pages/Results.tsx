@@ -351,8 +351,7 @@ function RunsTab({
             value={suiteId}
             onChange={setSuiteId}
             style={{ width: 220 }}
-            showSearch
-            optionFilterProp="label"
+            showSearch={{ optionFilterProp: 'label' }}
             options={[{ value: 'all', label: 'All suites' }, ...suiteOptions]}
           />
         </Filter>

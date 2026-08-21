@@ -141,9 +141,10 @@ export function ColumnProfilePanel({
                   value={value}
                   onChange={(v) => setValue(v)}
                   options={options}
-                  filterOption={(input, option) =>
-                    (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
+                  showSearch={{
+                    filterOption: (input, option) =>
+                      (option?.value ?? '').toLowerCase().includes(input.toLowerCase()),
+                  }}
                   style={{ minWidth: 240 }}
                 >
                   <Input

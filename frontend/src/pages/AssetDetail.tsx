@@ -405,11 +405,10 @@ function OwnerBlock({
           style={{ width: '100%' }}
           placeholder="Unassigned"
           allowClear
-          showSearch
+          showSearch={{ optionFilterProp: 'label' }}
           loading={state.status === 'loading'}
           value={draft}
           onChange={(value) => setDraft(value)}
-          optionFilterProp="label"
           options={users.map((u) => ({ value: u.id, label: label(u) }))}
         />
       </Modal>

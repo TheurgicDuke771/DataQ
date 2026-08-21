@@ -128,8 +128,7 @@ function RunNowForm({
       <Flex vertical gap={6}>
         <Typography.Text type="secondary">Suite</Typography.Text>
         <Select<string>
-          showSearch
-          optionFilterProp="label"
+          showSearch={{ optionFilterProp: 'label' }}
           placeholder="Select a suite to run"
           value={suiteId ?? undefined}
           onChange={setSuiteId}
