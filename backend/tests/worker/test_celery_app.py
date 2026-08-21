@@ -56,6 +56,19 @@ def test_create_celery_app_uses_redis_url_and_json() -> None:
     assert app.conf.task_track_started is True
 
 
+def test_beat_schedule_file_lives_in_the_temp_dir_not_the_cwd() -> None:
+    """The runtime image runs as a non-root user with a read-only /workspace
+    (#1408), so beat's schedule shelve must never land in the CWD — celery's
+    default. A regression here crashes beat at startup in EVERY deployed
+    environment, which silently kills all periodic tasks (the #405 blast
+    radius: orchestration polling, scheduled dispatch, gap recovery, sweeps)."""
+    import os
+    import tempfile
+
+    filename = create_celery_app().conf.beat_schedule_filename
+    assert filename == os.path.join(tempfile.gettempdir(), "dataq-celerybeat-schedule")
+
+
 def test_beat_schedule_registers_poll_and_gap_recovery() -> None:
     """Both orchestration beats are wired with the right tasks + intervals — the
     10-min poll (#171) and the 30-min gap-recovery sweep (B2). Guards against a

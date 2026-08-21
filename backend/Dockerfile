@@ -55,6 +55,18 @@ COPY --from=builder /opt/venv /opt/venv
 COPY pyproject.toml ./
 COPY backend ./backend
 
+# Run as a dedicated non-root user (#1408): a future RCE through the parser/
+# interpreter surface (custom SQL, flat-file content) lands in a privilege-
+# constrained process instead of uid 0. /workspace and /opt/venv deliberately
+# STAY root-owned and read-only to this user — the app writes nothing there
+# (celery-beat's schedule shelve is pointed at the temp dir in celery_app.py
+# for exactly this reason). --create-home because libraries treat $HOME as
+# writable cache space (the Snowflake connector's OCSP cache, for one); the
+# uid is >10000 so it can't collide with a host uid, and fixed so
+# runAsNonRoot-style admission checks can verify it numerically.
+RUN useradd --create-home --uid 10001 dataq
+USER dataq
+
 EXPOSE 8000
 
 # Default to the API; the worker overrides `command` (compose / Container App),
