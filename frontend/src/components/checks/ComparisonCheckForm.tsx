@@ -72,8 +72,7 @@ export function ComparisonCheckForm({
                   value: c.id,
                   label: `${c.name} (${c.type}, ${c.env})`,
                 }))}
-                showSearch
-                optionFilterProp="label"
+                showSearch={{ optionFilterProp: 'label' }}
               />
             </Form.Item>
             {sourceSql && (
@@ -145,7 +144,7 @@ export function ComparisonCheckForm({
               placeholder="e.g. order_id"
               tokenSeparators={[',']}
               open={false}
-              suffixIcon={null}
+              suffix={null}
             />
           </Form.Item>
         </Col>

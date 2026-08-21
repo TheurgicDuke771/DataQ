@@ -8,7 +8,7 @@ import {
 import { Alert, Empty, Flex, Segmented, Table, Tag, Tooltip, Tree, Typography } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import type { DataNode } from 'antd/es/tree';
-import type { MutableRefObject, ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -144,7 +144,7 @@ function AssetsTreeView({
 }: {
   onOpen: (id: string) => void;
   /** Held by the parent (`Assets`) — see its comment. */
-  cacheRef: MutableRefObject<AssetListPage | null>;
+  cacheRef: RefObject<AssetListPage | null>;
 }) {
   const { state, reload } = useAsyncData<AssetListPage>((signal) => {
     // A complete walk from an earlier mount of this view (a prior toggle to
@@ -177,7 +177,7 @@ function AssetsTreeView({
               <Alert
                 type="warning"
                 showIcon
-                message={`Showing ${items.length} of ${total} assets`}
+                title={`Showing ${items.length} of ${total} assets`}
                 description={
                   'The tree view is capped so the browser stays responsive — switch to ' +
                   '"All assets" to page through the rest.'
