@@ -74,6 +74,11 @@ nav:
       - REST API: rest-api.md
       - Architecture: architecture.md
       - Security & data handling: security.md
+      - Compliance:
+          - Sub-processor disclosure: compliance/sub-processors.md
+          - DPIA input sheet: compliance/dpia-input-sheet.md
+          - Breach-notification runbook: compliance/breach-notification-runbook.md
+          - DPA / BAA templates (counsel-gated): compliance/dpa-baa-templates.md
       - Deployment: deployment.md
       - Deployment parity (Azure · AWS · Local): deployment-parity.md
       - Observability: observability.md
