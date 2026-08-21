@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "e4dbf699434c",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1476-asset-viewer-role-coverage",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "backend/tests/api/test_assets.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e4/dbf699434c/0/metadata.json",
+      "transcript": "/e4/dbf699434c/0/full.jsonl",
+      "compact_transcript": "/e4/dbf699434c/0/transcript.jsonl",
+      "content_hash": "/e4/dbf699434c/0/content_hash.txt",
+      "prompt": "/e4/dbf699434c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 110,
+    "cache_creation_tokens": 42880,
+    "cache_read_tokens": 19330663,
+    "output_tokens": 19048,
+    "api_call_count": 55
+  }
+}

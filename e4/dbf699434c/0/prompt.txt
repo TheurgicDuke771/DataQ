@@ -1,0 +1,76 @@
+<task-notification>
+<task-id>b1azeqbia</task-id>
+<summary>Monitor event: "Watch PR #1497 (docs) CI checks until all complete"</summary>
+<event>GitGuardian Security Checks: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1azeqbia</task-id>
+<summary>Monitor event: "Watch PR #1497 (docs) CI checks until all complete"</summary>
+<event>Backend — SAST (Bandit): pass
+Frontend — dependency audit (pnpm audit): pass
+build: pass
+deploy: skipping</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1azeqbia</task-id>
+<summary>Monitor event: "Watch PR #1497 (docs) CI checks until all complete"</summary>
+<event>Backend — dependency audit (pip-audit): pass
+Backend — lint &amp; format: pass
+Frontend — lint &amp; format: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1azeqbia</task-id>
+<summary>Monitor event: "Watch PR #1497 (docs) CI checks until all complete"</summary>
+<event>Backend — type check: pass
+Secret scanning (betterleaks): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1azeqbia</task-id>
+<summary>Monitor event: "Watch PR #1497 (docs) CI checks until all complete"</summary>
+<event>CodeQL analysis (javascript-typescript): pass
+CodeQL: skipping</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1azeqbia</task-id>
+<summary>Monitor event: "Watch PR #1497 (docs) CI checks until all complete"</summary>
+<event>CodeQL analysis (python): pass
+CodeQL: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1azeqbia</task-id>
+<summary>Monitor event: "Watch PR #1497 (docs) CI checks until all complete"</summary>
+<event>Frontend — browser E2E (Playwright): pass
+Frontend — tests: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1azeqbia</task-id>
+<summary>Monitor event: "Watch PR #1497 (docs) CI checks until all complete"</summary>
+<event>Backend — tests: pass
+ALL_CHECKS_DONE</event>
+</task-notification>
+
+---
+
+Hey, what is this ` ids-unbound warning` issue?
+Also lat's pick #1476
