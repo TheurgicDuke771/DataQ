@@ -444,8 +444,9 @@ services:
     ports:
       # Host 5002/5003: macOS binds 5000 (AirPlay Receiver) by default. In-network the
       # app still reaches http://marquez:5000; only host-side browsing uses 5002/5003.
-      - "5002:5000"
-      - "5003:5001"
+      # Loopback ONLY — Marquez's API is writable with no auth (#1407 class).
+      - "127.0.0.1:5002:5000"
+      - "127.0.0.1:5003:5001"
     depends_on:
       marquez-db:
         condition: service_healthy
@@ -467,8 +468,9 @@ services:
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
     ports:
-      - "16686:16686"  # UI
-      - "4318:4318"    # OTLP/HTTP receiver (the endpoint DataQ exports to)
+      # Loopback ONLY — unauthenticated UI + OTLP receiver (#1407 class).
+      - "127.0.0.1:16686:16686"  # UI
+      - "127.0.0.1:4318:4318"    # OTLP/HTTP receiver (the endpoint DataQ exports to)
 
 volumes:
   postgres_data:
