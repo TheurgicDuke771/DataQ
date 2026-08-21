@@ -1,0 +1,85 @@
+<task-notification>
+<task-id>busjvxzy8</task-id>
+<summary>Monitor event: "Watch PR #1493 CI checks until all complete"</summary>
+<event>GitGuardian Security Checks: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>busjvxzy8</task-id>
+<summary>Monitor event: "Watch PR #1493 CI checks until all complete"</summary>
+<event>Backend — SAST (Bandit): pass
+Frontend — dependency audit (pnpm audit): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>busjvxzy8</task-id>
+<summary>Monitor event: "Watch PR #1493 CI checks until all complete"</summary>
+<event>Backend — dependency audit (pip-audit): pass
+Backend — lint &amp; format: pass
+Frontend — lint &amp; format: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>busjvxzy8</task-id>
+<summary>Monitor event: "Watch PR #1493 CI checks until all complete"</summary>
+<event>Backend — type check: pass
+Secret scanning (betterleaks): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>busjvxzy8</task-id>
+<summary>Monitor event: "Watch PR #1493 CI checks until all complete"</summary>
+<event>CodeQL analysis (javascript-typescript): pass
+CodeQL: skipping</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>busjvxzy8</task-id>
+<summary>Monitor event: "Watch PR #1493 CI checks until all complete"</summary>
+<event>CodeQL: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>busjvxzy8</task-id>
+<summary>Monitor event: "Watch PR #1493 CI checks until all complete"</summary>
+<event>CodeQL analysis (python): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>busjvxzy8</task-id>
+<summary>Monitor event: "Watch PR #1493 CI checks until all complete"</summary>
+<event>Frontend — browser E2E (Playwright): pass
+Frontend — tests: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>busjvxzy8</task-id>
+<summary>Monitor event: "Watch PR #1493 CI checks until all complete"</summary>
+<event>Backend — tests: pass
+ALL_CHECKS_DONE</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bf5wjuv5a</task-id>
+<summary>Monitor event: "Wait for GitHub to recompute #1494 mergeability"</summary>
+<event>MERGEABLE CLEAN
+RESOLVED: MERGEABLE CLEAN</event>
+</task-notification>

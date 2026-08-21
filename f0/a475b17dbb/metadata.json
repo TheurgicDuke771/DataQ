@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "f0a475b17dbb",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1310-antd-deprecated-prop-lint",
+  "checkpoints_count": 10,
+  "files_touched": [
+    "frontend/src/components/checks/ComparisonCheckForm.tsx",
+    "frontend/tests/components/ComparisonCheckForm.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f0/a475b17dbb/0/metadata.json",
+      "transcript": "/f0/a475b17dbb/0/full.jsonl",
+      "compact_transcript": "/f0/a475b17dbb/0/transcript.jsonl",
+      "content_hash": "/f0/a475b17dbb/0/content_hash.txt",
+      "prompt": "/f0/a475b17dbb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 66,
+    "cache_creation_tokens": 20454,
+    "cache_read_tokens": 9370628,
+    "output_tokens": 10242,
+    "api_call_count": 33
+  }
+}
