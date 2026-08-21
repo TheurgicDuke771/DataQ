@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "ec861fff0c15",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1486-scalar-cell-exposure-audit",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/runs.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/run_service.py",
+    "backend/tests/api/test_access_events.py",
+    "backend/tests/services/test_run_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ec/861fff0c15/0/metadata.json",
+      "transcript": "/ec/861fff0c15/0/full.jsonl",
+      "compact_transcript": "/ec/861fff0c15/0/transcript.jsonl",
+      "content_hash": "/ec/861fff0c15/0/content_hash.txt",
+      "prompt": "/ec/861fff0c15/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 104,
+    "cache_creation_tokens": 47463,
+    "cache_read_tokens": 10781414,
+    "output_tokens": 22934,
+    "api_call_count": 52
+  }
+}
