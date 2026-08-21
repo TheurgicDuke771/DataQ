@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "e730e0d6e0fe",
+  "strategy": "manual-commit",
+  "branch": "docs/issue-1452-compliance-g6-artifacts",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/compliance-posture.md",
+    "docs/compliance/breach-notification-runbook.md",
+    "docs/compliance/dpa-baa-templates.md",
+    "docs/compliance/dpia-input-sheet.md",
+    "docs/compliance/sub-processors.md",
+    "mkdocs.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e7/30e0d6e0fe/0/metadata.json",
+      "transcript": "/e7/30e0d6e0fe/0/full.jsonl",
+      "compact_transcript": "/e7/30e0d6e0fe/0/transcript.jsonl",
+      "content_hash": "/e7/30e0d6e0fe/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 280,
+    "cache_creation_tokens": 275444,
+    "cache_read_tokens": 28850982,
+    "output_tokens": 82237,
+    "api_call_count": 140
+  }
+}
