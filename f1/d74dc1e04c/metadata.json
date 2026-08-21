@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "f1d74dc1e04c",
+  "strategy": "manual-commit",
+  "branch": "test/issue-1410-checkform-mutation-coverage",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/tests/components/checkForm.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f1/d74dc1e04c/0/metadata.json",
+      "transcript": "/f1/d74dc1e04c/0/full.jsonl",
+      "compact_transcript": "/f1/d74dc1e04c/0/transcript.jsonl",
+      "content_hash": "/f1/d74dc1e04c/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 138,
+    "cache_creation_tokens": 85565,
+    "cache_read_tokens": 17305597,
+    "output_tokens": 42010,
+    "api_call_count": 69
+  }
+}
