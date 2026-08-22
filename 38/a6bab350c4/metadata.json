@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "38a6bab350c4",
+  "strategy": "manual-commit",
+  "branch": "chore/automation-surface-reconcile",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/SECURITY.md",
+    ".github/pull_request_template.md",
+    ".github/workflows/ci.yml",
+    ".github/workflows/deploy.yml",
+    "frontend/vite.config.ts",
+    "scripts/check-identifiers.py",
+    "scripts/e2e-otp-stack.sh",
+    "scripts/reset_dev_db.sh",
+    "scripts/test-backend.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/38/a6bab350c4/0/metadata.json",
+      "transcript": "/38/a6bab350c4/0/full.jsonl",
+      "compact_transcript": "/38/a6bab350c4/0/transcript.jsonl",
+      "content_hash": "/38/a6bab350c4/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 10428,
+    "cache_read_tokens": 3154087,
+    "output_tokens": 6123,
+    "api_call_count": 6
+  }
+}
