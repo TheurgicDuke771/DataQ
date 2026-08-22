@@ -22,9 +22,11 @@ A few terms make the rest of the docs click.
 - **Connection** — credentials + config for one datasource or orchestration provider.
 - **Suite** — a named collection of checks that runs against one connection's target
   (a table, a file/path, a Unity Catalog table, or an Iceberg `namespace.table`).
-- **Check** — a single data-quality rule. In v1 every check is a **Great Expectations
-  expectation** (e.g. "this column is never null", or a custom SQL rule). Freshness and
-  volume **monitors** are also supported.
+- **Check** — a single data-quality rule. Six kinds: a **Great Expectations expectation**
+  (e.g. "this column is never null", or a custom SQL rule), or one of the monitor kinds —
+  **freshness** (is the data stale?), **volume** (did the load land whole?),
+  **schema drift** (did the shape change?), **anomaly** (is this value abnormal for this
+  dataset?), and **comparison** (does it reconcile against a baseline dataset?).
 - **Run** — one execution of a suite. Each check produces a **result** with a status:
   **pass / warn / fail / critical** (plus *skip* / *error* for operational outcomes).
 - **Severity & health score** — warn/fail/critical are weighted into a workspace **health

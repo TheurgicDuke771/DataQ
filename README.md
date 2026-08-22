@@ -10,10 +10,10 @@
 
 - **Checks on 5 datasources** — Snowflake, Unity Catalog (Databricks), ADLS Gen2 + S3
   flat files (CSV/Parquet, batch patterns), and Apache Iceberg (native `pyiceberg` read).
-  Five check styles: **GX expectations**, **custom SQL** (rows returned = failures),
-  **freshness / volume monitors**, and **comparison** (reconcile two datasets across
-  connections — ADR 0015); plus a column profiler and dry-run preview on every
-  datasource. [Feature matrix →](https://theurgicduke771.github.io/DataQ/feature-matrix/)
+  Six check kinds: **GX expectations** (including **custom SQL** — rows returned =
+  failures), **freshness / volume / schema-drift / anomaly monitors**, and **comparison**
+  (reconcile two datasets across connections — ADR 0015); plus a column profiler and
+  dry-run preview on every datasource. [Feature matrix →](https://theurgicduke771.github.io/DataQ/feature-matrix/)
 - **Assets, lineage & incidents** — the table/file is a first-class entity: health rolled
   up across every suite that targets it, **table-level lineage** (a left-to-right graph of
   provenance and blast radius, from dbt's manifest or an OpenLineage catalog), and open

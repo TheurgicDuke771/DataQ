@@ -17,14 +17,15 @@ assignees: []
 ## Scope
 
 - Component(s): <!-- backend / frontend / celery / mcp / orchestration / datasource adapter / docs -->
-- Affected datasource(s): <!-- snowflake / adls / s3 / unity_catalog / all / n/a -->
-- Affected orchestration provider(s): <!-- adf / airflow / both / n/a -->
+- Affected datasource(s): <!-- snowflake / adls / s3 / unity_catalog / iceberg / all / n/a -->
+- Affected orchestration provider(s): <!-- adf / airflow / dbt / all / n/a -->
 - Schema migration required? <!-- yes (describe) / no -->
 - New external dependency? <!-- yes (name + license) / no -->
 
 ## Roadmap alignment
 
-<!-- Is this in the v1 8-week roadmap, deferred-to-v1.1, or net-new? Reference context/DataQ_platform_roadmap.md week if applicable. -->
+<!-- Does this map to a post-v1 roadmap theme (context/post-v1-roadmap.md) or an existing cycle milestone, or is it net-new? -->
+
 
 ## Acceptance criteria
 

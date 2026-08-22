@@ -217,14 +217,16 @@ generates local-dev credentials on first run.
 
 ## Running tests
 
-The ~450 DB-backed tests need a real Postgres (`gen_random_uuid()`/jsonb, which SQLite
-can't host); notification tests also need Redis. There are three ways to run:
+The DB-backed tests need a real Postgres (`gen_random_uuid()`/jsonb, which SQLite
+can't host); notification tests also need Redis. The suite is ~4,800 tests and growing —
+exact counts below drift with every PR, so treat them as shapes, not contracts. There are
+three ways to run:
 
 ```bash
 # 1. One command — brings up the compose Postgres + Redis, provisions a dedicated
 #    `dataq_test` DB, runs the whole suite incl. the real-broker E2E (this is what
 #    CI runs; the script sets DATAQ_E2E=1 for you — see the note below):
-scripts/test-backend.sh                    # → 1099 passed
+scripts/test-backend.sh                    # → everything passes
 scripts/test-backend.sh -k notifications   # extra pytest args pass through
 
 # 2. Plain pytest — incl. the VS Code / PyCharm test runner. With the compose
@@ -232,10 +234,10 @@ scripts/test-backend.sh -k notifications   # extra pytest args pass through
 #    so the DB tests run — no env vars, no wrapper. The one real-broker E2E test
 #    still skips here (see the note below):
 docker compose up -d postgres redis
-conda run -n dataq python -m pytest backend/tests           # → 1098 passed, 1 skipped
+conda run -n dataq python -m pytest backend/tests           # → all pass, 1 skipped
 
-# 3. No services at all — the DB tests skip, the pure-unit suite still runs green:
-conda run -n dataq python -m pytest backend/tests           # → 652 passed, 448 skipped
+# 3. No services at all — the DB-backed tests skip, the pure-unit suite still runs green:
+conda run -n dataq python -m pytest backend/tests           # → passes with the DB tests skipped
 
 # Frontend:
 cd frontend && pnpm test

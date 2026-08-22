@@ -278,6 +278,35 @@ a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
 
+### Anomaly monitor (Snowflake / Unity Catalog — ADR 0012, #593)
+
+*Is this value abnormal for this dataset?* Where a volume monitor asks "is the row
+count inside a range I chose?", the anomaly monitor learns the range: it keeps a
+rolling mean/stddev of the target's own **row count** or **freshness age** and bands
+each run's **z-score** through the usual warn / fail / critical thresholds. Optional
+**seasonality** makes the baseline weekday-aware, so a quiet Sunday isn't an anomaly
+just for being smaller than Monday.
+
+Below its `min_points` of history the check reports **skip**, never a fabricated
+pass — a baseline that hasn't seen enough runs has no opinion. The per-check
+**trend view** overlays the learned baseline band on the metric history so you can
+see what "normal" currently means. SQL datasources only: the anomaly executor takes
+its own measurement over a live SQL connection, which the natively-computed Iceberg
+and flat-file monitor paths don't expose.
+
+### Comparison check (all datasources — ADR 0015)
+
+*Does this dataset reconcile against that one?* A comparison check diffs the suite's
+dataset (the **target under test**) against a **baseline** on any other datasource
+connection — cross-type and cross-env both work (Snowflake DEV vs Snowflake QA, or
+Snowflake vs the flat-file extract it was loaded from). Rows are joined on the key
+columns you pick, producing **matched / mismatched / additional-per-side** buckets
+with a mismatch-% metric that bands through the normal severity thresholds. Reads
+are capped fail-fast (`COMPARISON_MAX_ROWS`), samples are redacted like every other
+failing-row surface, and a CSV/XLSX report of the differences is downloadable
+on demand (derived at read time, never stored). Either SQL side can use a read-only
+query projection instead of a whole table.
+
 ### DQ dimension (ADR 0038)
 
 Every check carries a **DQ dimension** — the quality aspect it measures. This is a

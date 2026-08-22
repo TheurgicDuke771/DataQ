@@ -149,9 +149,12 @@ are the reason this mode is opt-in rather than the default:
 - **You cannot remove the last Admin.** A role change must leave at least one **stored-role**
   admin; allowlist-resolved admins deliberately do not count toward that (the env entry can
   vanish on the next deploy, which would leave the workspace with no admin and no in-app way
-  to mint one). Promote a successor first. Role changes are **logged** with actor, target and
-  old→new role; a durable, queryable audit *table* for privilege changes is not yet built
-  and is tracked in the maintainers' compliance-posture register.
+  to mint one). Promote a successor first. Role changes are **audited durably**: every change
+  writes an append-only `audit_events` row (`user.role_change`, old and new role, actor,
+  `request_id`) **inside the same transaction as the change**, queryable by a workspace
+  admin at `GET /api/v1/admin/audit-events` (ADR 0041) — alongside the structured log line.
+  Tamper-evidence (an external cryptographic anchor) is the one remaining gap, tracked in
+  the maintainers' compliance-posture register.
 
 ## Network exposure
 

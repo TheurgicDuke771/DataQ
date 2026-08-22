@@ -25,8 +25,8 @@ assignees: []
 - Component: <!-- e.g. backend / frontend / celery worker / mcp / docker-compose / azure deploy -->
 - Branch / commit: <!-- git rev-parse HEAD -->
 - OS / browser (if relevant):
-- Datasource (if relevant): <!-- snowflake / adls / s3 / unity_catalog / n/a -->
-- Orchestration provider (if relevant): <!-- adf / airflow / n/a -->
+- Datasource (if relevant): <!-- snowflake / adls / s3 / unity_catalog / iceberg / n/a -->
+- Orchestration provider (if relevant): <!-- adf / airflow / dbt / n/a -->
 
 ## Severity
 

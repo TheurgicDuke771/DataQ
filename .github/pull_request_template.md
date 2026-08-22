@@ -2,7 +2,7 @@
 Per working-agreements #1, #3, #5, #11, #25:
 - One functionality per PR (squash-merges into one commit on main)
 - Reference any related GitHub issue (Fixes #N for defect fixes)
-- Manually tested before merge (until automated tests land in Week 8)
+- Manually tested before merge; automated tests required (the ≥80% CI gate is live and blocking)
 -->
 
 ## Summary
@@ -38,13 +38,14 @@ Fixes #
 
 ## Checklist
 
-- [ ] **Manually tested locally** (required pre-Week-8; describe what you tested below)
+- [ ] **Manually tested locally** (describe what you tested below)
 - [ ] **Single functionality** — no unrelated changes piggybacked
 - [ ] **Conventional commit title** (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`)
 - [ ] **No secrets, credentials, or `.env` files committed**
 - [ ] **Black + Ruff + mypy pass locally** (for Python changes)
 - [ ] **Prettier + ESLint pass locally** (for frontend changes)
-- [ ] **Tests added/updated** (required from Week 8 onward)
+- [ ] **Tests added/updated** (the ≥80% coverage gate is CI-enforced)
+- [ ] **`/code-review` agent review run on this PR** (CONTRIBUTING rule 1c — findings fixed in-PR or filed, never dropped)
 - [ ] **Docs / ADRs updated** if user-facing or architectural change
 - [ ] **`docs/progress.md` updated** — flip the implemented roadmap task(s) from ⬜ to ✅ / 🟡, append PR link, update week + snapshot subtotals. Tick the N/A box below if this PR doesn't map to a roadmap task (pure tooling / docs).
 - [ ] **`docs/progress.md` — N/A** for this PR

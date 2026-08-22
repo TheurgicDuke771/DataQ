@@ -22,7 +22,9 @@ Stores you write checks **against** (see [Datasources & checks](datasources-chec
 
 ## Checks & authoring
 
-Every check is a Great Expectations expectation in v1 (`check.kind`), authored in the UI:
+A check is one data-quality rule, authored in the UI. Six kinds ship (`check.kind`): GX
+**expectations** (including custom SQL), and the **freshness / volume / schema-drift /
+anomaly / comparison** monitor kinds:
 
 - **DQ dimension** — every check is classified by the quality aspect it measures
   (accuracy, completeness, consistency, integrity, timeliness, uniqueness, validity).
@@ -45,6 +47,15 @@ Every check is a Great Expectations expectation in v1 (`check.kind`), authored i
   stored baseline (did the shape change under you?). Also runs on **every** datasource —
   introspection is per-store (SQL `information_schema`, a Parquet footer / CSV header
   sample for flat files, Iceberg table metadata), never a data scan.
+- **Anomaly monitor** — a rolling z-score baseline over a check's `metric_value` history,
+  with optional seasonality (weekday-aware); flags a value that is abnormal *for this
+  dataset* rather than one crossing a fixed threshold. Skips on cold start instead of
+  false-alerting, and the trend view overlays the learned baseline.
+- **Comparison check** — cross-dataset reconciliation (ADR 0015): diff the suite's
+  dataset against a baseline on **any other connection** (cross-type and cross-env both
+  work), joined on key columns, producing matched / mismatched / additional-per-side
+  buckets with a mismatch-% metric and an on-demand CSV/XLSX report — for migration /
+  replication / promotion validation.
 - **Column profiler** — nulls, distinct count, min/max, and top values for a column, on
   any datasource — the baseline you set thresholds from.
 - **Dry-run preview** — run one check against live data **without persisting**, on every
@@ -193,16 +204,19 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 
 ## AI assistants (MCP)
 
-A curated **33-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
+A curated **46-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
 results, checks, runs, connections, schedules, trigger bindings and notification config,
 trigger and cancel runs, poll status, add/update/delete/snooze checks, dry-run a check preview,
-create and delete schedules, create trigger bindings, import a suite, profile columns,
-suggest a PII policy,
-test a connection, and read the health score and pipeline status — in natural language, with
-the same per-suite authz as the UI. 16 tools are read-only, 10 change state, and 4 more persist
-nothing but open a live datasource connection with stored credentials and so are gated like
-writes ([AI
-assistants](mcp-setup.md), ADR 0008).
+manage schedules and trigger bindings end-to-end (create / update / delete), import a suite
+and set its run target, read and restore a check's version history, read and set a suite's
+column policy, browse **assets** (the tables DataQ monitors, with health and lineage) and
+**incidents** (what is broken right now, with the evidence — acknowledge and resolve them,
+and surface near-miss triggers that silently never fire), list a target's columns, profile
+columns, suggest a PII policy, test a connection, and read the health score and pipeline
+status — in natural language, with the same per-suite authz as the UI. The 46 split three
+ways: **23 read-only, 18 that change state**, and **5 that persist nothing but open a live
+datasource connection with stored credentials** and so are gated like writes ([AI
+assistants](mcp-setup.md), ADR 0008 + its Tier 1–3B amendments).
 
 ## Observability
 

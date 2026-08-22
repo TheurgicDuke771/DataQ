@@ -107,7 +107,8 @@ acts **as that user** — it sees exactly what the user can.
 
 ## 8. Set up access
 
-**Do:** users sign in via **SSO**. The first admin is seeded by the `WORKSPACE_ADMIN_EMAILS`
+**Do:** users sign in via **SSO** in production (email **OTP** is the local/eval default —
+ADR 0032). The first admin is seeded by the `WORKSPACE_ADMIN_EMAILS`
 bootstrap allowlist; from then on manage roles under **Admin → Members**. Share individual
 suites (**view / edit**) from the suite.
 

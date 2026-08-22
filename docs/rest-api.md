@@ -45,14 +45,17 @@ in production, #170 — this page is the reference.)
 
 ## Endpoints
 
-### Identity
+### Identity & sign-in
 
 | Method | Path | What |
 |---|---|---|
-| GET | `/me` | The current user + `role` (`admin` / `member` / `viewer`) + `is_workspace_admin`. |
+| GET / PATCH | `/me` | The current user + `role` (`admin` / `member` / `viewer`) + `is_workspace_admin`; PATCH updates `display_name`. |
 | POST | `/me/api-keys` | Mint a PAT (plaintext returned **once**). |
 | GET | `/me/api-keys` | List your keys (metadata only, never the token). |
 | DELETE | `/me/api-keys/{id}` | Revoke a key. |
+| POST | `/auth/otp/request` · `/auth/otp/verify` | Email-OTP sign-in (ADR 0032): request a code, redeem it for a `dq_sess_` cookie session. Uniform responses — never confirms whether an address is enrolled. |
+| POST | `/auth/logout` | Revoke the OTP session server-side. |
+| GET | `/users/search` | Find a user by name/email (for sharing). Viewer results are edit-clamped. |
 
 ### Connections
 
@@ -63,6 +66,7 @@ in production, #170 — this page is the reference.)
 | POST | `/connections/test` | Test an **unsaved draft** connection — nothing is persisted. |
 | POST | `/connections/{id}/test` | Test live connectivity. |
 | POST | `/connections/{id}/reauth` | Rotate the credential and verify. |
+| GET | `/connections/{id}/versions` | Config-change history (ADR 0020 snapshots — never credentials). |
 
 **Roles (ADR 0033).** Connections are shared infrastructure holding credentials, so the gates
 here are the sharpest in the API: **create, update, delete, re-auth and the unsaved-draft
@@ -87,31 +91,64 @@ destination the caller changed.
 | GET / POST | `/suites` | List / create a suite. |
 | GET / PATCH / DELETE | `/suites/{id}` | Read / update / delete. |
 | GET / POST | `/suites/{id}/checks` | List / add checks. |
-| PATCH / DELETE | `/suites/{id}/checks/{cid}` | Update / delete a check. |
+| GET / PATCH / DELETE | `/suites/{id}/checks/{cid}` | Read / update / delete a check. |
 | POST | `/suites/{id}/checks/dryrun` | Preview a check against live data (no persistence). |
 | POST | `/suites/{id}/checks/{cid}/snooze` · DELETE to clear | Snooze a check's alerts for N hours. |
+| GET | `/suites/{id}/checks/{cid}/versions` · POST `…/versions/{n}/restore` | Version history + restore (restore mints a new version). |
+| GET | `/suites/{id}/checks/{cid}/history` | Result history for the trend view (`metric_value` over time). |
+| GET | `/suites/{id}/checks/{cid}/baseline` · POST `…/rebaseline` | Read / recapture a monitor baseline (schema-drift, anomaly). |
 | GET | `/suites/{id}/export` · POST `/suites/import` | Portable suite document (env promotion). |
 | GET / PUT | `/suites/{id}/column-policy` | Read / set the failing-sample redaction policy. |
-| POST | `/suites/{id}/profile` | Column profiler (no persistence). |
+| POST | `/suites/{id}/column-policy/suggest` | Heuristic PII-column suggestions from a profile. |
+| POST | `/suites/{id}/profile` | Column profiler (no persistence; audited as a data access). |
+| GET | `/suites/{id}/columns` | Column names/types of the resolved target (cheap authoring aid). |
+| GET | `/suites/{id}/batch-preview` | Which files a flat-file batch pattern currently matches. |
+| GET / POST | `/suites/{id}/shares` | List / grant per-suite access (`view` / `edit`). |
+| PATCH / DELETE | `/suites/{id}/shares/{user_id}` | Change / revoke a grant (Viewers cap at `view`). |
+| GET / PUT / DELETE | `/suites/{id}/notifications` | Per-suite alert config (channels, `alert_on`, auto-resolve). |
 
 ### Running & results
 
 | Method | Path | What |
 |---|---|---|
 | POST | `/suites/{id}/run` | Trigger a run (returns a run id to poll). |
-| GET | `/runs` · `/runs/{id}` | List runs / get a run with its results. |
+| GET | `/runs` · `/runs/{id}` | List runs / get a run with its results (reads are access-audited — ADR 0041). |
 | GET | `/runs/{id}/progress` | Live per-check progress. |
 | POST | `/runs/{id}/cancel` | Cancel a queued/running run. |
+| GET | `/runs/{id}/results/{rid}/comparison_report` | CSV/XLSX diff report of a comparison result (derived on demand, never stored). |
 | GET | `/dashboard/summary` | KPIs + run trend + per-suite performance. |
+
+### Assets & incidents
+
+| Method | Path | What |
+|---|---|---|
+| GET | `/assets` · `/assets/{id}` | The monitored tables/files (ADR 0034/0037): health rollup, composing suites (grant-filtered), lineage. Paged, `X-Total-Count`. |
+| PATCH | `/assets/{id}` | Set owner / description (workspace-Admin-only). |
+| GET | `/incidents` · `/incidents/{id}` | Open/acknowledged/resolved incidents with the evidence card (suite-granted; 404-no-leak). |
+| POST | `/incidents/{id}/ack` · `/incidents/{id}/resolve` | Lifecycle transitions (requires `edit` on the suite). |
 
 ### Scheduling & orchestration
 
 | Method | Path | What |
 |---|---|---|
 | GET / POST | `/schedules` | List / create cron schedules. |
-| PATCH / DELETE | `/schedules/{id}` | Update / delete. |
+| GET / PATCH / DELETE | `/schedules/{id}` | Read / update / delete. |
+| GET / POST | `/trigger-bindings` | List / create pipeline→suite trigger bindings. |
+| GET / PATCH / DELETE | `/trigger-bindings/{id}` | Read / update (incl. enable/disable) / delete. |
 | GET | `/pipeline_runs` · `/orchestration/pipelines` | Monitored orchestrator runs. |
+| GET | `/orchestration/near-misses` | Succeeded pipeline runs that matched **no** enabled binding (why a trigger never fired). |
 | POST | `/orchestration/events/{provider}` | Inbound webhook (adf / airflow / dbt) — authenticated by shared-secret / HMAC, not a PAT. |
+
+### Admin (workspace-admin only)
+
+| Method | Path | What |
+|---|---|---|
+| GET | `/admin/suites` · `/admin/users` · `/admin/access` | Unscoped workspace-wide views. |
+| PATCH | `/admin/users/{id}/role` | Change a workspace role (last-admin guarded; audit-tabled). |
+| GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
+| GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`). |
+| GET | `/admin/orchestration/webhooks` | Webhook receiver URLs + auth mode per provider. |
+| POST | `/admin/auth-email/test` | SMTP pre-flight for the OTP mailer (per-admin throttled). |
 
 ## Example: trigger a suite and poll it
 
