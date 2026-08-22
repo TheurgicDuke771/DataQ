@@ -46,6 +46,13 @@ _BY_EXPECTATION_TYPE: dict[str, str] = {
     "expect_column_values_to_match_regex": VALIDITY,
     "expect_column_value_lengths_to_be_between": VALIDITY,
     "expect_column_values_to_be_of_type": VALIDITY,
+    # Snowflake DMF column metrics (ADR 0036 slice 2). Unlike custom SQL, each
+    # has exactly one honest dimension — leaving them NULL would render every
+    # dmf-covered asset as a coverage gap on the #889 scorecard.
+    "dmf:null_count": COMPLETENESS,
+    "dmf:null_percent": COMPLETENESS,
+    "dmf:duplicate_count": UNIQUENESS,
+    "dmf:unique_count": UNIQUENESS,
 }
 
 # Fallback for the non-GX kinds, whose `expectation_type` is the generated

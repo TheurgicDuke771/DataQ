@@ -235,12 +235,21 @@ def test_no_backend_mapping_is_missing_from_the_catalog() -> None:
     authority at write time, so the editor would show the author an empty select
     while a classification they never saw gets stored.
     """
+    from backend.app.datasources.snowflake_dmf import DMF_EXPECTATION_TYPES
     from backend.app.services import check_dimension
 
     catalog_types = {e["type"] for e in _catalog()}
     catalog_kinds = {e["kind"] for e in _catalog()}
 
-    orphan_types = set(check_dimension._BY_EXPECTATION_TYPE) - catalog_types
+    # The dmf:* types (ADR 0036 slice 2) are API-authorable only until slice 3
+    # lands the engine-aware catalog + editor selector (#895) — the hazard this
+    # guard exists for (the EDITOR storing a classification the author never
+    # saw) cannot occur for a type the editor cannot author. Slice 3 must
+    # delete this carve-out when it adds the catalog entries; leaving it would
+    # re-open the guard's blind spot for exactly these types.
+    orphan_types = (
+        set(check_dimension._BY_EXPECTATION_TYPE) - catalog_types - set(DMF_EXPECTATION_TYPES)
+    )
     orphan_kinds = set(check_dimension._BY_KIND) - catalog_kinds
     assert not orphan_types, f"backend maps types absent from the catalog: {sorted(orphan_types)}"
     assert not orphan_kinds, f"backend maps kinds absent from the catalog: {sorted(orphan_kinds)}"
