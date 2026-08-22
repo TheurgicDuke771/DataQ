@@ -1,0 +1,103 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "7a535f4aeb71",
+  "session_id": "862bd9e7-c40f-4044-9570-9be795a326db",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-22T21:44:40.58328Z",
+  "branch": "docs/uc-perf-and-ops-log-2026-08-22",
+  "checkpoints_count": 8,
+  "save_step_count": 4,
+  "files_touched": [
+    "docs/site/perf-baseline.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "00b0eccc9f1e",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 322,
+    "cache_creation_tokens": 415118,
+    "cache_read_tokens": 34260592,
+    "output_tokens": 91010,
+    "api_call_count": 161
+  },
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-22T21:44:40.53775Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 410,
+    "human_modified": 12,
+    "human_removed": 0,
+    "total_committed": 410,
+    "total_lines_changed": 422,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 93,
+      "user_lines_removed": 3,
+      "agent_lines_added": 2,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7,
+        "docs/site/perf-baseline.md": 86
+      },
+      "user_removed_per_file": {
+        "docs/site/perf-baseline.md": 3
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 119,
+      "user_lines_removed": 3,
+      "agent_lines_added": 2,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7,
+        "docs/site/perf-baseline.md": 112
+      },
+      "user_removed_per_file": {
+        "docs/site/perf-baseline.md": 3
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 119,
+      "user_lines_removed": 3,
+      "agent_lines_added": 3,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7,
+        "docs/site/perf-baseline.md": 112
+      },
+      "user_removed_per_file": {
+        "docs/site/perf-baseline.md": 3
+      }
+    }
+  ]
+}
