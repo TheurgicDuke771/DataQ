@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "8cf5a73112d1",
+  "strategy": "manual-commit",
+  "branch": "docs/v1.1-closeout-v1.2-plan",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "context/post-v1-roadmap.md",
+    "docs/post-v1-admin-ui-notes.md",
+    "docs/post-v1-assets-lineage-incidents-notes.md",
+    "mkdocs.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8c/f5a73112d1/0/metadata.json",
+      "transcript": "/8c/f5a73112d1/0/full.jsonl",
+      "compact_transcript": "/8c/f5a73112d1/0/transcript.jsonl",
+      "content_hash": "/8c/f5a73112d1/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 10156,
+    "cache_read_tokens": 2824727,
+    "output_tokens": 6447,
+    "api_call_count": 8
+  }
+}
