@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "b4ec68137355",
+  "strategy": "manual-commit",
+  "branch": "docs/notes-issue-refs-and-arch-sync",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b4/ec68137355/0/metadata.json",
+      "transcript": "/b4/ec68137355/0/full.jsonl",
+      "compact_transcript": "/b4/ec68137355/0/transcript.jsonl",
+      "content_hash": "/b4/ec68137355/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 20496,
+    "cache_read_tokens": 2873140,
+    "output_tokens": 7153,
+    "api_call_count": 14
+  }
+}
