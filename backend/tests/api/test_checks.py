@@ -2441,3 +2441,62 @@ def test_dryrun_masks_under_fail_closed_and_says_so_in_the_audit(
     # different fact from "nobody profiled it", and only one of them is true.
     assert event.after["masked"] is True
     assert event.after["exposed"] is False
+
+
+# ───────────────────── engine (ADR 0036, #895 slice 1) ─────────────────────
+
+
+def test_create_defaults_engine_to_gx(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload())
+    assert resp.status_code == 201
+    assert resp.json()["engine"] == "gx"
+    row = db_session.get(Check, uuid.UUID(resp.json()["id"]))
+    assert row.engine == "gx"
+
+
+def test_create_rejects_an_unoffered_engine_naming_the_offer(
+    client: TestClient, db_session: Any
+) -> None:
+    # 'dmf' is vocabulary-valid but unoffered until DmfCheckRunner registers
+    # (#895 slice 2): the 422 must carry what IS offered, not just refuse.
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(engine="dmf"))
+    assert resp.status_code == 422
+    detail = resp.json()["error"]["detail"]
+    assert detail["engine"] == "dmf"
+    assert detail["offered"] == ["gx"]
+
+
+def test_create_rejects_an_unknown_engine(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(engine="sparkles"))
+    assert resp.status_code == 422
+    assert "not recognised" in resp.json()["error"]["message"]
+
+
+def test_update_validates_engine_and_leaves_it_unchanged_when_omitted(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()
+    cid = created["id"]
+
+    # Omitted engine (PATCH convention) → unchanged.
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "renamed"})
+    assert resp.status_code == 200
+    assert resp.json()["engine"] == "gx"
+
+    # A provided-but-unoffered engine 422s AND leaves the check untouched.
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"engine": "dmf"})
+    assert resp.status_code == 422
+    db_session.expire_all()
+    assert db_session.get(Check, uuid.UUID(cid)).engine == "gx"
+
+
+def test_version_snapshot_carries_the_engine(client: TestClient, db_session: Any) -> None:
+    # Restore must reproduce the evaluator, so the snapshot records it (ADR 0036).
+    sid = _suite_id(client, db_session)
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()
+    version = db_session.query(CheckVersion).filter_by(check_id=uuid.UUID(created["id"])).one()
+    assert version.engine == "gx"
