@@ -144,6 +144,7 @@ from backend.app.datasources.sampling import (  # noqa: E402
 )
 from backend.app.datasources.unity_catalog import (  # noqa: E402
     SQL_BATCH_EXPECTATION_TYPES,
+    SQL_PUSHDOWN_EXPECTATION_TYPES,
     UnityCatalogCheckRunner,
     build_databricks_url,
     build_unity_catalog_runner,
@@ -152,6 +153,30 @@ from backend.app.services.custom_sql import is_custom_sql  # noqa: E402
 from backend.app.services.failure_classifier import classify_failure_reason  # noqa: E402
 from backend.app.services.severity import extract_metric  # noqa: E402
 from backend.tests.support.fake_secret_store import FakeSecretStore  # noqa: E402
+
+_REAL_SQL_BATCH_DEF = UnityCatalogCheckRunner._sql_batch_definition
+
+
+@pytest.fixture(autouse=True)
+def _no_live_sql_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    # #1532: a check misrouted to the live SQL seam must fail loudly, not hang
+    # on DNS for the fake workspace host. Tests override per instance; a test
+    # of the real seam rebinds `_REAL_SQL_BATCH_DEF`.
+    def _refuse(self: Any, context: Any, *, table: str, schema: str) -> Any:
+        pytest.fail(f"unexpected live SQL batch for {table!r} — misrouted check")
+
+    monkeypatch.setattr(UnityCatalogCheckRunner, "_sql_batch_definition", _refuse)
+
+
+def _pushdown_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UC_SQL_PUSHDOWN", "false")
+    get_settings.cache_clear()
+
+
+def _pushdown_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    # conftest defaults the flag off for the legacy frame-lane tests; opt in here.
+    monkeypatch.setenv("UC_SQL_PUSHDOWN", "true")
+    get_settings.cache_clear()
 
 
 def test_build_databricks_url_encodes_parts() -> None:
@@ -200,6 +225,8 @@ def test_build_unity_catalog_runner_requires_secret_ref() -> None:
 
 
 def _runner_over(df: pd.DataFrame, monkeypatch: pytest.MonkeyPatch) -> UnityCatalogCheckRunner:
+    # Pushdown off (#1532): these tests cover the frame path, now the rollback lane.
+    _pushdown_off(monkeypatch)
     runner = UnityCatalogCheckRunner(
         config=UnityCatalogConfig.model_validate(_UC_CONFIG), token="t", catalog="main"
     )
@@ -518,6 +545,7 @@ def test_mixed_suite_merges_both_batches_in_submission_order(
 def test_mixed_suite_keeps_order_when_a_dataframe_check_errors(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _pushdown_off(monkeypatch)
     """The same merge, under the condition that produced #767.
 
     GX 1.17 `graph_validate` returns results in submission order only while
@@ -565,6 +593,7 @@ def test_mixed_suite_keeps_order_when_a_dataframe_check_errors(
 
 
 def test_suite_without_custom_sql_never_opens_a_sql_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    _pushdown_off(monkeypatch)
     """No custom SQL → no second warehouse session. The DataFrame path is byte-
     for-byte what it always was."""
     runner = _uc_runner()
@@ -667,6 +696,7 @@ def test_custom_sql_refuses_a_non_identifier_catalog(monkeypatch: pytest.MonkeyP
 def test_an_unreachable_sql_batch_errors_only_its_own_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _pushdown_off(monkeypatch)
     """Building the SQL batch can fail on its own (auto-stopped warehouse, expired
     PAT, missing grant) — GX tests the connection and validates the table there.
 
@@ -734,6 +764,8 @@ def test_a_failure_building_the_asset_still_disposes_the_engine(
     strands a live warehouse session: the caller's `finally` can't reach it,
     because the tuple it would have bound never got returned."""
     runner = _uc_runner()
+    # This test exercises the REAL seam (against a fake GX context).
+    monkeypatch.setattr(runner, "_sql_batch_definition", _REAL_SQL_BATCH_DEF.__get__(runner))
     disposed: list[object] = []
 
     class _FakeDatasource:
@@ -1063,6 +1095,7 @@ def test_a_schema_less_target_drops_the_catalog_rather_than_misresolving(
 def test_an_oversized_table_is_refused_before_the_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _pushdown_off(monkeypatch)
     """#755, inverted: instead of the child being SIGKILLed and the run sitting
     `running` for an hour, the run ends with a sentence naming the knob."""
     runner = UnityCatalogCheckRunner(
@@ -1083,6 +1116,7 @@ def test_an_oversized_table_is_refused_before_the_read(
 def test_a_disabled_row_cap_skips_the_count_probe_entirely(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _pushdown_off(monkeypatch)
     """The off-switch has to be genuinely off: an operator who disables the cap
     should not keep paying a warehouse round trip for a number nobody reads."""
     monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "0")
@@ -1107,6 +1141,7 @@ def test_a_disabled_row_cap_skips_the_count_probe_entirely(
 def test_a_sampled_uc_run_is_allowed_past_the_row_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _pushdown_off(monkeypatch)
     """Sampling replaces the guardrail rather than stacking with it — the read is
     bounded at the warehouse, so the table's own size stops being a memory fact.
     If the cap still applied, the feature would be unreachable where it is needed."""
@@ -1129,6 +1164,7 @@ def test_a_sampled_uc_run_is_allowed_past_the_row_cap(
 def test_a_uc_sample_over_the_row_cap_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _pushdown_off(monkeypatch)
     runner = _sampling_runner(SampleSpec(strategy="head", rows=9_000_000))
     monkeypatch.setattr(
         runner,
@@ -1146,6 +1182,7 @@ def test_a_uc_sample_over_the_row_cap_is_refused(
 def test_only_the_sampled_group_is_labelled_sampled_not_the_custom_sql_beside_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Any
 ) -> None:
+    _pushdown_off(monkeypatch)
     """The reason sampled-ness is per-CHECK and not per-run (#1179 + #595): a
     custom-SQL check evaluates against a SQL batch over the WHOLE table while the
     expectations beside it ran on the sample. One run-level flag would have to lie
@@ -1389,6 +1426,7 @@ def test_a_SHORT_draw_is_accepted_and_reported_honestly(
 def test_a_row_count_expectation_is_refused_on_a_sampled_uc_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _pushdown_off(monkeypatch)
     """C6. Against a sampled frame this expectation deterministically observes the
     SAMPLE and reports it as the table's size, so a healthy 5M-row table with
     `min_value=4_000_000` fails critically forever. Refused per check (#122), so
@@ -1432,3 +1470,265 @@ def test_a_row_count_expectation_runs_normally_without_sampling(
         ],
     )
     assert outcome.checks[0].success is True
+
+
+# ───────────────────────── SQL pushdown (#1532) ─────────────────────────
+
+
+def _orders_sql_seam(
+    runner: UnityCatalogCheckRunner,
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    rows: list[tuple[Any, Any]],
+) -> list[dict[str, Any]]:
+    """sqlite-backed SQL batch over `orders(id, amt)`; arms the frame seam to fail."""
+    import sqlite3
+
+    path = tmp_path / "uc_pushdown.sqlite"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE orders (id INTEGER, amt INTEGER)")
+    conn.executemany("INSERT INTO orders VALUES (?, ?)", rows)
+    conn.commit()
+    conn.close()
+
+    calls: list[dict[str, Any]] = []
+
+    def _seam(context: Any, *, table: str, schema: str) -> tuple[Any, Any]:
+        calls.append({"table": table, "schema": schema})
+        datasource = context.data_sources.add_sqlite(
+            name="uc-sql", connection_string=f"sqlite:///{path}"
+        )
+        asset = datasource.add_table_asset(name="orders", table_name="orders")
+        return datasource, asset.add_batch_definition_whole_table(name="whole_table")
+
+    monkeypatch.setattr(runner, "_sql_batch_definition", _seam)
+    _forbid_dataframe_read(runner, monkeypatch)
+    return calls
+
+
+def test_pushdown_runs_catalog_types_on_the_sql_batch_without_a_frame(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pushdown_on(monkeypatch)
+    runner = _uc_runner()
+    calls = _orders_sql_seam(runner, tmp_path, monkeypatch, rows=[(1, 10), (2, 20), (None, 30)])
+    outcome = runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+            CheckSpec("expect_table_row_count_to_be_between", {"min_value": 1, "max_value": 10}),
+        ],
+    )
+    assert calls == [{"table": "orders", "schema": "sales"}]
+    by_type = {c.expectation_type: c for c in outcome.checks}
+    assert by_type["expect_column_values_to_not_be_null"].success is False
+    assert by_type["expect_table_row_count_to_be_between"].success is True
+    assert by_type["expect_table_row_count_to_be_between"].observed_value == {"observed_value": 3}
+
+
+def test_pushdown_off_never_opens_a_sql_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    df = pd.DataFrame({"id": [1]})
+    runner = _runner_over(df, monkeypatch)
+    monkeypatch.setattr(
+        runner,
+        "_sql_batch_definition",
+        lambda *a, **k: pytest.fail("no SQL batch when pushdown is off"),
+    )
+    outcome = runner.run_checks(
+        table="t",
+        schema="s",
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    assert outcome.checks[0].success is True
+
+
+def test_type_check_stays_on_the_frame_beside_a_pushdown_check(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pushdown_on(monkeypatch)
+    """`to_be_of_type` keeps its pandas dtype vocabulary; order is submission order."""
+    runner = _uc_runner()
+    calls = _orders_sql_seam(runner, tmp_path, monkeypatch, rows=[(1, 10), (2, 20)])
+    df = pd.DataFrame({"id": pd.array([1, 2], dtype="int64")})
+    monkeypatch.setattr(runner, "_read_table", lambda **_kw: df)
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: len(df))
+    outcome = runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[
+            CheckSpec("expect_column_values_to_be_of_type", {"column": "id", "type_": "int64"}),
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+        ],
+    )
+    assert len(calls) == 1
+    assert [c.expectation_type for c in outcome.checks] == [
+        "expect_column_values_to_be_of_type",
+        "expect_column_values_to_not_be_null",
+    ]
+    assert [c.success for c in outcome.checks] == [True, True]
+
+
+def test_unknown_type_falls_to_the_frame(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    _pushdown_on(monkeypatch)
+    runner = _uc_runner()
+    calls = _orders_sql_seam(runner, tmp_path, monkeypatch, rows=[(1, 10)])
+    df = pd.DataFrame({"id": [1, 2, 3]})
+    monkeypatch.setattr(runner, "_read_table", lambda **_kw: df)
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: len(df))
+    outcome = runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[CheckSpec("expect_column_median_to_be_between", {"column": "id", "min_value": 1})],
+    )
+    assert calls == []
+    assert outcome.checks[0].success is True
+
+
+def test_schemaless_target_falls_back_to_frame_except_custom_sql(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _pushdown_on(monkeypatch)
+    runner = _uc_runner()
+    df = pd.DataFrame({"id": [1]})
+    monkeypatch.setattr(runner, "_read_table", lambda **_kw: df)
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: len(df))
+    monkeypatch.setattr(
+        runner,
+        "_sql_batch_definition",
+        lambda *a, **k: pytest.fail("no SQL batch without a schema"),
+    )
+    outcome = runner.run_checks(
+        table="orders",
+        schema=None,
+        checks=[
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+            _custom_sql("SELECT * FROM {batch} WHERE id < 0"),
+        ],
+    )
+    assert outcome.checks[0].success is True
+    assert outcome.checks[1].errored is True
+    assert "schema" in (outcome.checks[1].error_message or "")
+
+
+def test_pushdown_row_count_is_not_refused_under_sampling(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pushdown_on(monkeypatch)
+    """Pushdown evaluates the real table, so the #595 C6 refusal no longer applies."""
+    runner = _sampling_runner(SampleSpec(strategy="head", rows=50))
+    calls = _orders_sql_seam(runner, tmp_path, monkeypatch, rows=[(1, 10), (2, 20)])
+    outcome = runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[
+            CheckSpec("expect_table_row_count_to_be_between", {"min_value": 1, "max_value": 10})
+        ],
+    )
+    assert len(calls) == 1
+    assert outcome.checks[0].errored is False
+    assert outcome.checks[0].success is True
+
+
+def test_index_columns_forwarded_for_pushdown_and_dropped_for_pure_custom_sql(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pushdown_on(monkeypatch)
+    from backend.app.datasources import unity_catalog as uc_module
+    from backend.app.datasources.gx_runner import run_expectations as real
+
+    seen: list[Any] = []
+
+    def _spy(*args: Any, **kwargs: Any) -> Any:
+        seen.append(kwargs.get("index_columns"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(uc_module, "run_expectations", _spy)
+
+    runner = _uc_runner()
+    _orders_sql_seam(runner, tmp_path, monkeypatch, rows=[(1, 10)])
+    runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+        index_columns=["amt"],
+    )
+    assert seen == [["amt"]]
+
+    seen.clear()
+    runner2 = _uc_runner()
+    _sqlite_batch_seam(runner2, tmp_path, rows=[1, 2], monkeypatch=monkeypatch)
+    runner2.run_checks(
+        table="feedback",
+        schema="gold",
+        checks=[_custom_sql("SELECT * FROM {batch} WHERE rating > 99")],
+        index_columns=["rating"],
+    )
+    assert seen == [None]
+
+
+def test_pushdown_allowlist_partitions_the_catalog() -> None:
+    """Every catalog expectation type is consciously routed: pushdown, frame
+    (`to_be_of_type`), or custom SQL. A new catalog entry must pick a side."""
+    import json
+    from pathlib import Path
+
+    fixture = Path(__file__).parent.parent / "fixtures" / "expectation_catalog.json"
+    catalog_types = {
+        e["type"] for e in json.loads(fixture.read_text()) if e["kind"] == "expectation"
+    }
+    routed = (
+        SQL_PUSHDOWN_EXPECTATION_TYPES
+        | {"expect_column_values_to_be_of_type"}
+        | SQL_BATCH_EXPECTATION_TYPES
+    )
+    assert catalog_types == routed
+
+
+def test_index_column_clash_runs_without_the_index_request(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pushdown_on(monkeypatch)
+    """A check on its own index column drops the locator request (Databricks
+    refuses the duplicate-field index query — live-found, #1532); siblings keep it."""
+    from backend.app.datasources import unity_catalog as uc_module
+    from backend.app.datasources.gx_runner import run_expectations as real
+
+    seen: list[tuple[list[str], Any]] = []
+
+    def _spy(*args: Any, **kwargs: Any) -> Any:
+        seen.append(([c.expectation_type for c in kwargs["checks"]], kwargs.get("index_columns")))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(uc_module, "run_expectations", _spy)
+    runner = _uc_runner()
+    _orders_sql_seam(runner, tmp_path, monkeypatch, rows=[(1, 10), (None, 20)])
+    outcome = runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+            CheckSpec(
+                "expect_column_values_to_be_between",
+                {"column": "amt", "min_value": 0, "max_value": 100},
+            ),
+        ],
+        index_columns=["id"],
+    )
+    assert seen == [
+        (["expect_column_values_to_be_between"], ["id"]),
+        (["expect_column_values_to_not_be_null"], None),
+    ]
+    assert [c.expectation_type for c in outcome.checks] == [
+        "expect_column_values_to_not_be_null",
+        "expect_column_values_to_be_between",
+    ]
+    assert outcome.checks[0].success is False
+    assert outcome.checks[1].success is True
+
+
+def test_pushdown_default_is_on() -> None:
+    # The test suite pins UC_SQL_PUSHDOWN=false in conftest; the SHIPPED default is on.
+    from backend.app.core.config import Settings
+
+    assert Settings.model_fields["uc_sql_pushdown"].default is True

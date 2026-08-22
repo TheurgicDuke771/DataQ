@@ -175,6 +175,23 @@ def build_databricks_url(
 # visible to the next person, not to duplicate that decision.
 SQL_BATCH_EXPECTATION_TYPES: frozenset[str] = frozenset({CUSTOM_SQL_EXPECTATION_TYPE})
 
+# Types that push down to the Databricks-SQL batch under `uc_sql_pushdown`
+# (#1532). Audited allowlist (live-verified per #953), widened only consciously;
+# anything else falls to the pandas frame. `expect_column_values_to_be_of_type`
+# is excluded: its authored `type_` values are pandas dtypes, and the SQL engine
+# checks reflected SQLAlchemy types — pushdown would flip existing checks.
+SQL_PUSHDOWN_EXPECTATION_TYPES: frozenset[str] = frozenset(
+    {
+        "expect_column_values_to_not_be_null",
+        "expect_column_values_to_be_unique",
+        "expect_column_values_to_be_between",
+        "expect_column_values_to_be_in_set",
+        "expect_column_value_lengths_to_be_between",
+        "expect_column_values_to_match_regex",
+        "expect_table_row_count_to_be_between",
+    }
+)
+
 #: How far a Bernoulli ``TABLESAMPLE`` is over-drawn before the ``LIMIT`` trims it
 #: (#595). ``TABLESAMPLE (p PERCENT)`` keeps each row with probability p, so an
 #: exactly-sized draw comes back short about half the time; asking for 20% more
@@ -241,18 +258,11 @@ def format_sample_percent(percent: float) -> str:
 class UnityCatalogCheckRunner:
     """GX `CheckRunner` for Unity Catalog via the Databricks SQL Warehouse.
 
-    The UC run path reads the target table into a pandas DataFrame and validates
-    that frame with GX — the "GX DataFrame datasource" shape (CLAUDE.md §5), the
-    same shape Databricks Labs DQX consumes, so v1.1 can swap GX for DQX behind
-    this same interface without touching the suite/check/result layer.
-
-    The **one** exception is the custom-SQL check (ADR 0019), whose GX metrics
-    have no pandas provider at all; it runs against a GX Databricks-SQL batch
-    over the same table instead. `run_checks` owns that split — see its
-    docstring for why, and #1179 for what it was before. The DataFrame shape is
-    unchanged for every other expectation, so the DQX swap-in argument still
-    holds where it applies (custom SQL is SQL by definition and was never going
-    to be a DQX rule).
+    Since #1532 the default evaluator is a GX Databricks-SQL batch — the
+    warehouse executes the audited catalog expectations plus custom SQL (#1179),
+    worker memory stays flat (the Snowflake shape). The read-into-pandas path
+    remains for `expect_column_values_to_be_of_type`, unaudited types, and the
+    `uc_sql_pushdown=false` rollback. `run_checks` owns the routing.
 
     `table` + `schema` come from `run_checks` (the suite's target); `catalog` is
     fixed per run (held here). The two live seams are `_read_table` (reflect +
@@ -489,48 +499,25 @@ class UnityCatalogCheckRunner:
     ) -> SuiteOutcome:
         """Evaluate `checks`, routing each to the batch its expectation can run on.
 
-        **Two batches, one target (#1179).** Almost every GX expectation is
-        engine-agnostic and runs on the pandas frame this runner has always used
-        (the DQX swap-in shape — see the class docstring). The one that is not is
-        the custom-SQL check (ADR 0019 — a GX ``UnexpectedRowsExpectation``): its
-        metrics are ``unexpected_rows_query.{table,row_count}``, which have a
-        SqlAlchemy provider and no pandas one, so on the DataFrame batch GX
-        raises ``No provider found for unexpected_rows_query.table using
-        PandasExecutionEngine`` — the reported bug. Custom SQL had therefore
-        **never** worked on Unity Catalog, in a run or a dry-run, since the
-        capability was declared in ADR 0019.
-
-        So custom-SQL checks (and only those) run against a **GX Databricks-SQL
-        batch** over the same table. Deliberately GX's own SQL datasource rather
-        than a hand-rolled COUNT/LIMIT of our own: the result semantics
-        (``{batch}`` substitution, 0 rows → pass, the unexpected row count as
-        ``observed_value``, a query error as an operational `error`) are then
-        identical to the Snowflake path **by construction** instead of by
-        re-implementation, and this module adds no SQL-string interpolation of
-        its own, so the guardrail set stays exactly ADR 0019's (author-time
-        read-only single-statement validation plus the connection's
-        least-privilege role) with nothing new to weaken.
-
-        The split is also why the two groups are re-merged **positionally**:
-        `run_service` zips outcomes back onto its `checks` list, so the returned
-        order must be submission order regardless of which batch evaluated what.
-
-        Neither batch is built unless its group is non-empty — an all-custom-SQL
-        suite never pays the full-table DataFrame read, and a suite with no
-        custom SQL opens no second warehouse session.
+        SQL batch (default since #1532): the audited pushdown types + custom SQL
+        (#1179 — its metrics have no pandas provider, so it can NEVER run on the
+        frame). Pandas frame: `to_be_of_type`, unaudited types, schema-less or
+        invalid targets (custom SQL alone errors there), and everything when
+        `uc_sql_pushdown` is off. Groups re-merge positionally (`run_service`
+        zips onto `checks`); a batch is only built for a non-empty group.
         """
-        # ROUTING INVARIANT: the DataFrame batch is the DEFAULT and the SQL group
-        # is named positively, so this is a derive-by-exclusion rule — the same
-        # shape #429 removed from `supported_monitor_kinds`. Any future GX
-        # expectation whose metrics are SqlAlchemy-only would silently fall to the
-        # pandas batch and reproduce #1179's per-check "No provider found" error
-        # rather than being routed. Widening the SQL group must therefore be a
-        # CONSCIOUS act: add the type here (and to `SQL_BATCH_EXPECTATION_TYPES`,
-        # whose canary test exists to make that a deliberate edit).
-        sql_positions = [i for i, spec in enumerate(checks) if is_custom_sql(spec.expectation_type)]
-        frame_positions = [
-            i for i, spec in enumerate(checks) if not is_custom_sql(spec.expectation_type)
-        ]
+        pushdown_on = (
+            get_settings().uc_sql_pushdown
+            and self._sql_target_problem(table=table, schema=schema) is None
+        )
+
+        def _routes_to_sql(spec: CheckSpec) -> bool:
+            if is_custom_sql(spec.expectation_type):
+                return True
+            return pushdown_on and spec.expectation_type in SQL_PUSHDOWN_EXPECTATION_TYPES
+
+        sql_positions = [i for i, spec in enumerate(checks) if _routes_to_sql(spec)]
+        frame_positions = [i for i, spec in enumerate(checks) if not _routes_to_sql(spec)]
         # Keyed by submission position, never appended to: a missing key is a
         # loud KeyError below rather than a silently short/misaligned outcome
         # list, which `run_service`'s positional zip would map onto wrong checks.
@@ -558,7 +545,10 @@ class UnityCatalogCheckRunner:
             by_position.update(zip(frame_positions, frame_outcome.checks, strict=True))
         if sql_positions:
             sql_outcome = self._run_sql_checks(
-                table=table, schema=schema, checks=[checks[i] for i in sql_positions]
+                table=table,
+                schema=schema,
+                checks=[checks[i] for i in sql_positions],
+                index_columns=index_columns,
             )
             success = success and sql_outcome.success
             by_position.update(zip(sql_positions, sql_outcome.checks, strict=True))
@@ -663,24 +653,24 @@ class UnityCatalogCheckRunner:
             raise
 
     def _run_sql_checks(
-        self, *, table: str, schema: str | None, checks: list[CheckSpec]
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        checks: list[CheckSpec],
+        index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
-        """Evaluate custom-SQL checks against a GX Databricks-SQL batch (#1179).
+        """Evaluate the SQL-batch group (custom SQL #1179, pushdown types #1532)
+        on one Databricks-SQL batch.
 
-        ``index_columns`` is deliberately **not** threaded through.
-        ``UnexpectedRowsExpectation`` is a batch expectation whose `_validate`
-        reads only the two query metrics and never computes an
-        ``unexpected_index_list``, so `unexpected_index_column_names` cannot
-        change its result — passing it would be inert.
-
-        Not merely inert, though: `run_expectations` re-runs the whole group
-        without the index request whenever *every* check errored. That condition
-        is reachable here for a reason that has nothing to do with the index —
-        the user's own SQL failing — and the retry would then bill a second
-        warehouse round-trip to obtain the identical error. (The index request
-        itself never causes the error; it just makes the pointless retry
-        possible.) Not requesting it avoids both.
+        ``index_columns`` is dropped for a pure custom-SQL group:
+        ``UnexpectedRowsExpectation`` never computes an index list, and the
+        request enables `run_expectations`' all-errored retry — a second
+        warehouse round-trip for the identical error. With pushdown checks
+        present it is load-bearing (failing-sample locators).
         """
+        if all(is_custom_sql(spec.expectation_type) for spec in checks):
+            index_columns = None
         problem = self._sql_target_problem(table=table, schema=schema)
         if problem is not None:
             return self._sql_group_errored(checks, problem)
@@ -691,12 +681,46 @@ class UnityCatalogCheckRunner:
             datasource, batch_definition = self._sql_batch_definition(
                 context, table=table, schema=schema
             )
-            return run_expectations(
+            # A check on a column that is ALSO an index column runs without the
+            # index request: the locator query would select the column twice and
+            # Databricks' arrow layer refuses ("Can't unify schema with duplicate
+            # field names" — live-found, #1532). Its unexpected values ARE the
+            # locators, so nothing is lost.
+            clash = [
+                i
+                for i, spec in enumerate(checks)
+                if index_columns and spec.kwargs.get("column") in index_columns
+            ]
+            if not clash:
+                return run_expectations(
+                    context,
+                    batch_definition=batch_definition,
+                    checks=checks,
+                    name=f"suite-uc-sql-{table}",
+                    index_columns=index_columns,
+                )
+            keep = [i for i in range(len(checks)) if i not in set(clash)]
+            outcomes: dict[int, CheckOutcome] = {}
+            success = True
+            if keep:
+                kept = run_expectations(
+                    context,
+                    batch_definition=batch_definition,
+                    checks=[checks[i] for i in keep],
+                    name=f"suite-uc-sql-{table}",
+                    index_columns=index_columns,
+                )
+                success = kept.success
+                outcomes.update(zip(keep, kept.checks, strict=True))
+            clashed = run_expectations(
                 context,
                 batch_definition=batch_definition,
-                checks=checks,
-                name=f"suite-uc-sql-{table}",
+                checks=[checks[i] for i in clash],
+                name=f"suite-uc-sql-noidx-{table}",
             )
+            success = success and clashed.success
+            outcomes.update(zip(clash, clashed.checks, strict=True))
+            return SuiteOutcome(success=success, checks=[outcomes[i] for i in range(len(checks))])
         except Exception as exc:
             # Building the SQL batch can fail on its own — GX tests the connection
             # inside `add_databricks_sql` and validates the table inside
