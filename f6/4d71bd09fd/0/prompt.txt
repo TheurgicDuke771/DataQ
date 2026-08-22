@@ -1,0 +1,10 @@
+check the pending items from - 
+* @docs/compliance-posture.md  
+* @docs/post-v1-admin-ui-notes.md  
+* @docs/post-v1-assets-lineage-incidents-notes.md  
+* @docs/post-v1-dq-intelligence-notes.md  
+and file the issues as required. 
+
+Also check if these are up to date with rhe current state of repo - 
+* @docs/architecture.md  
+* @docs/glossary.md
