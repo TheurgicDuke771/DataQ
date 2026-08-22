@@ -5,6 +5,9 @@
 #
 # Starts, in order (the order is load-bearing):
 #   1. the SMTP sink        (backend/scripts/e2e_otp_smtp_sink.py) on :1025 / :1080
+#      (NOTE: the compose stack's mailpit also binds 127.0.0.1:1025 — with the
+#      compose stack up, set OTP_SMTP_PORT to a free port or stop mailpit first;
+#      CI has no compose stack, so the default is fine there)
 #   2. a second api process (uvicorn, OTP mode) on :8100
 #
 # The sink emits a self-signed certificate at startup and the api must trust it
@@ -24,7 +27,9 @@
 # frontend/playwright.config.ts and frontend/e2e-otp/README.md.
 #
 # Environment (all optional):
-#   DATABASE_URL     defaults to the compose Postgres, e2e database
+#   DATABASE_URL     defaults to dataq:dataq@localhost:5432/dataq_e2e — true of
+#                    CI's service container only; local setups have a generated
+#                    POSTGRES_PASSWORD (setup.sh), so pass DATABASE_URL explicitly
 #   OTP_API_PORT     8100
 #   OTP_SMTP_PORT    1025
 #   OTP_SINK_PORT    1080

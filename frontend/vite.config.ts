@@ -93,7 +93,7 @@ export default defineConfig({
       include: ['src'],
       exclude: ['src/main.tsx'],
       thresholds: {
-        // The Week-8 exit gate (fails `pnpm test:coverage`, wired into CI).
+        // The 80% line gate (fails `pnpm test:coverage`, wired into CI since v1 W8).
         lines: 80,
       },
     },

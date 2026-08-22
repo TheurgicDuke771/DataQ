@@ -25,11 +25,18 @@ set +a
 : "${POSTGRES_USER:?POSTGRES_USER not set in .env}"
 : "${POSTGRES_DB:?POSTGRES_DB not set in .env}"
 
-step "Ensuring Postgres is up"
-docker compose up -d postgres >/dev/null
+step "Ensuring Postgres + OpenBao are up"
+# OpenBao is NOT optional here: seed_dev writes connection credentials through
+# the SecretStore, and the stock .env.app ships SECRET_STORE=openbao (ADR 0039).
+docker compose up -d postgres openbao >/dev/null
 for i in $(seq 1 30); do
   docker compose exec -T postgres pg_isready -U "${POSTGRES_USER}" >/dev/null 2>&1 && { ok "Postgres ready"; break; }
   [ "$i" -eq 30 ] && die "Postgres did not become ready in time"
+  sleep 1
+done
+for i in $(seq 1 30); do
+  docker compose exec -T openbao bao status >/dev/null 2>&1 && { ok "OpenBao ready"; break; }
+  [ "$i" -eq 30 ] && die "OpenBao did not become ready in time"
   sleep 1
 done
 

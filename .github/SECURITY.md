@@ -19,9 +19,9 @@ You will receive a response within **5 business days** acknowledging the report.
 
 Components in scope:
 - FastAPI backend (`/api/v1/*`, `/mcp`)
-- Authentication flow — generic OIDC sign-in (`oidc-client-ts`) + backend token validation, and personal access tokens
+- Authentication flow — generic OIDC sign-in (`oidc-client-ts`) + backend token validation, **email OTP sign-in** (ADR 0032: code request/verify, `dq_sess_` cookie sessions, signup allowlist, rate limits), and personal access tokens
 - Celery worker + GX execution path
-- Secret-store access patterns (the `SecretStore` seam; Azure Key Vault is the validated implementation)
+- Secret-store access patterns (the `SecretStore` seam; validated implementations: Azure Key Vault, AWS Secrets Manager, OpenBao/Vault KV v2 — ADR 0039)
 
 Out of scope:
 - Vulnerabilities in third-party dependencies — report those upstream; we track them via Dependabot
@@ -35,7 +35,7 @@ repository and curated in [CHANGELOG.md](../CHANGELOG.md).
 | Version | Supported |
 |---|---|
 | `main` (latest commit) | Yes — fixes land here first |
-| Latest tagged release (currently **v1.0.0**) | Yes |
+| Latest tagged release (currently **v1.1.0**) | Yes |
 | Older tagged releases | No |
 
 Security fixes are applied to `main` and ship in the next release. There is no long-term

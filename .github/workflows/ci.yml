@@ -220,7 +220,7 @@ jobs:
           fetch-depth: 0
 
       # Scan only the commits THIS event introduces, not the whole history.
-      # A full `git` history walk grows unbounded with the repo (300+ commits →
+      # A full `git` history walk grows unbounded with the repo (1,000+ commits →
       # >15 min in CI) and re-scans commits already scanned when they merged.
       # Every line that reaches main is still scanned exactly once: a PR scans its
       # own commits (base..head), and the push to main scans the squashed/merged
@@ -333,7 +333,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Vitest (80% line-coverage gate — the W8 exit gate)
+      - name: Vitest (80% line-coverage gate — CI-enforced since the v1 W8 flip)
         run: pnpm test:coverage
 
   frontend-e2e:
@@ -522,6 +522,10 @@ jobs:
           retention-days: 7
 
   frontend-audit:
+    # Job name kept verbatim: it is the pinned required-check context on the main
+    # ruleset (same rule as the `secrets` job) — renaming it un-gates the branch.
+    # The step no longer runs `pnpm audit` (npm 410'd the legacy endpoints,
+    # 2026-07-15); see the step comment below (#877).
     name: Frontend — dependency audit (pnpm audit)
     runs-on: ubuntu-latest
     timeout-minutes: 15
