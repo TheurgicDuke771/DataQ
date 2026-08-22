@@ -266,7 +266,10 @@ def _run_outcome_phases(
     stateful_idx = [i for i, c in checks_gx if c.kind in STATEFUL_MONITOR_KINDS]
     comparison_idx = [i for i, c in checks_gx if c.kind == COMPARISON_KIND]
     handled = {_EXPECTATION_KIND, *MONITOR_KINDS, COMPARISON_KIND}
-    unsupported = sorted({c.kind for c in checks if c.kind not in handled})
+    # Swept over the GX partition only: a native-engine check was already fully
+    # resolved above as a classified error, whatever its kind — raising for it
+    # here would resolve it twice and take its GX siblings down with it.
+    unsupported = sorted({c.kind for _, c in checks_gx if c.kind not in handled})
     if unsupported:
         raise NotImplementedError(f"no run path for check kind(s) {', '.join(unsupported)}")
 

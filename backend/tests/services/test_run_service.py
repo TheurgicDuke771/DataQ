@@ -375,6 +375,24 @@ def test_native_engine_check_errors_and_gx_siblings_still_run() -> None:
     assert len(cast(list[CheckSpec], runner.called_with["checks"])) == 1
 
 
+def test_native_engine_check_with_unhandled_kind_still_errors_not_raises() -> None:
+    # Review catch on the first cut: the unsupported-kind sweep iterated ALL
+    # checks, so a native row with an out-of-band kind was resolved twice — an
+    # error phase, then a suite-killing NotImplementedError. The sweep must see
+    # only the GX partition.
+    native = _monitor_check("telepathy", {})  # kind with no run path anywhere
+    native.engine = "dmf"
+    gx_check = _checks(1)[0]
+    runner = FakeRunner(
+        outcome=SuiteOutcome(success=True, checks=[CheckOutcome("e1", success=True)])
+    )
+
+    outcomes = collect_outcomes(runner, table="T", schema=None, checks=[gx_check, native])
+
+    assert outcomes[0].success is True
+    assert outcomes[1].errored is True
+
+
 def test_transient_check_without_engine_runs_as_gx() -> None:
     # A transient (unflushed) Check has engine=None — the server default hasn't
     # applied. The run path must treat that as 'gx' (what the flush would have

@@ -319,6 +319,9 @@ class CheckVersionRead(ApiModel):
     version_no: int
     name: str
     kind: str
+    # Snapshotted (ADR 0036): restore applies `version.engine` unconditionally,
+    # so history must show which evaluator a restore would reinstate.
+    engine: str
     expectation_type: str
     # Snapshotted (ADR 0038): showing the CURRENT dimension against an OLD config
     # would misreport what the check was at that version.

@@ -2500,3 +2500,12 @@ def test_version_snapshot_carries_the_engine(client: TestClient, db_session: Any
     created = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()
     version = db_session.query(CheckVersion).filter_by(check_id=uuid.UUID(created["id"])).one()
     assert version.engine == "gx"
+
+
+def test_version_history_api_shows_the_engine(client: TestClient, db_session: Any) -> None:
+    # Restore applies version.engine unconditionally, so the history the user
+    # decides from must show which evaluator a restore would reinstate.
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert versions[0]["engine"] == "gx"
