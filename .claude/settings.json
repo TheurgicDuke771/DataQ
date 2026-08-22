@@ -16,6 +16,10 @@
           {
             "type": "command",
             "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); case \"$fp\" in */docs/progress-v1.md|*/docs/progress-v1.1.md) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"This file is a FROZEN cycle archive (banner says do not update) - the live tracker is docs/progress.md. Make sure this edit is intentional archive maintenance (e.g. link-path repair), not a task tick that belongs in progress.md.\"}}';; */docs/progress.md) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"docs/progress.md changed - keep the Snapshot counts (open PRs/issues) consistent with GitHub, and if a tracked cycle epic exists (label:epic, currently #1518 for v1.2), tick/untick its checklist to match. Frozen ledgers: docs/progress-v1.md (v1) and docs/progress-v1.1.md (v1.1) - task ticks never go there.\"}}';; esac"
+          },
+          {
+            "type": "command",
+            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); case \"$fp\" in */backend/app/mcp/server.py) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"backend/app/mcp/server.py changed - before merge, run the mcp-honesty-reviewer agent on this diff. This surface has produced 50+ honesty defects (partial-as-final, unknown-as-zero, one null meaning two things, false-not-thin docstrings, inert params, mutation-completion gaps, scope conflation) and adding a tool routinely falsifies a sibling docstring that named its absence as the workaround - both are things a normal review pass tends to miss on this file specifically. The agent also runs a generic MCP-tool-quality pass (safety annotations, unit ambiguity, unverified/forwarded data) independent of this repos own issue history.\"}}';; esac"
           }
         ]
       },
