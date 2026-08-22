@@ -1,0 +1,10 @@
+/security-scan
+
+---
+
+rotated all 3 sf tokens - `/Users/arijit/Downloads/DATAQ_*_PAT-token-secret.txt` update all the references. 
+tokens are valid till September 06.
+
+---
+
+re-mint the dataq pats
