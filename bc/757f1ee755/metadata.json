@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "bc757f1ee755",
+  "strategy": "manual-commit",
+  "branch": "docs/uc-perf-and-ops-log-2026-08-22",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "docs/ops-log.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bc/757f1ee755/0/metadata.json",
+      "transcript": "/bc/757f1ee755/0/full.jsonl",
+      "compact_transcript": "/bc/757f1ee755/0/transcript.jsonl",
+      "content_hash": "/bc/757f1ee755/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 14023,
+    "cache_read_tokens": 2416480,
+    "output_tokens": 5875,
+    "api_call_count": 8
+  }
+}
