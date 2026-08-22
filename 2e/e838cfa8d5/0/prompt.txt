@@ -1,0 +1,39 @@
+So, what is the default method for running checks for unity catalog now? [split by check types]
+Are we using gx spark now?
+Also, lets do a perf test and update the basline stats.
+
+---
+
+do we need to deploy the code in-order to get the pushdown perf result?
+
+---
+
+Why we are not using push down everywhere? - Is it delibared? if so what is the rational?  
+And why there is no spark?
+Do we need spark [will help to offload the compute from dataq for UC, as UC warehouse will anyway have a compute serverless or dedicated server]?
+
+---
+
+what are the real-world chances [even for enterprise scenarios] that we need spark?
+And what is happening for UC custom sql?
+
+---
+
+Okay, lets proceed with that perf test
+
+---
+
+Done
+
+---
+
+you mention custom sql is push down but in baseline doc it is bundle under `unaudited types / sampled suites / custom SQL` which have upper limit of 2M. 
+Also can we push till 200M or higher [similar to SF]
+
+---
+
+I've rotated all SF PATs, [/Users/arijit/Downloads/] Can you update all the references [az, aws, local]
+
+---
+
+commit the changes and sync to main
