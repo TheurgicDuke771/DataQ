@@ -77,15 +77,17 @@ The flow reads left → right: **inputs** (Clients, Orchestration) drive the **D
 
 ## Data model (ER diagram)
 
-> Source of truth: [`backend/app/db/models.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/db/models.py) (16 tables). Update this diagram in the same PR as any model/migration change.
+> Source of truth: [`backend/app/db/models.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/db/models.py) (22 tables). Update this diagram in the same PR as any model/migration change.
 
 ```mermaid
 erDiagram
     users {
         uuid id PK
         string aad_object_id UK "nullable — NULL for non-AAD (email-OTP) identities"
+        string oidc_issuer "issuer that vouched for aad_object_id (provider-neutral OIDC)"
         string email UK "unique on lower(email) — the cross-authenticator identity key"
         string display_name
+        bool display_name_override "user-set name survives IdP re-sync (#1139)"
         string role "admin | member | viewer — CHECK-constrained, ADR 0033"
         timestamptz last_seen_at
     }
@@ -122,6 +124,10 @@ erDiagram
         jsonb config "non-secret datasource config"
         string secret_ref "SecretStore key, never the credential"
         uuid created_by FK
+        timestamptz last_polled_at "orchestration poll health (#839): + last_poll_error, consecutive_poll_failures, health_alerted_at"
+        timestamptz credential_expires_at "readable credential lifetime (#954): + credential_expiry_checked_at — NULL = unknown, never 'does not expire'"
+        timestamptz lineage_last_refresh_at "lineage pull state (ADR 0034): + lineage_watermark, lineage_last_tier, lineage_degraded_reason, lineage_last_error"
+        timestamptz inventory_sync_last_attempted_at "inventory sync state (ADR 0040): + inventory_sync_last_error, _failing_since, _last_table_count, _zero_since"
     }
     connection_versions {
         uuid id PK
@@ -139,7 +145,10 @@ erDiagram
         string name "OpenLineage dataset name — (namespace,name) unique"
         string env "metadata, not identity"
         uuid connection_id FK "provenance hint (SET NULL)"
-        uuid owner_user_id FK "incident-routing hop (SET NULL)"
+        uuid owner_user_id FK "incident-routing hop (SET NULL — routing use is #1515)"
+        string description "workspace-Admin-set (ADR 0034 §4)"
+        jsonb column_tags "warehouse governance classifications, cached per read (G3 #433)"
+        timestamptz column_tags_refreshed_at "'never looked' vs 'looked, found none'"
         timestamptz first_seen
         timestamptz last_seen
     }
@@ -149,6 +158,7 @@ erDiagram
         uuid downstream_asset_id FK "CASCADE"
         string source "lineage source, e.g. 'dbt'"
         uuid connection_id FK "CASCADE — refreshing conn (provenance + prune scope); (up,down,source,connection_id) unique"
+        jsonb columns "column-level mapping when the source provides one (none_as_null)"
         timestamptz first_seen
         timestamptz last_seen
     }
@@ -166,9 +176,10 @@ erDiagram
         uuid id PK
         uuid suite_id FK
         string name
-        string kind "expectation (v1) / freshness / volume / ..."
+        string kind "expectation / freshness / volume / schema_drift / anomaly / comparison (ADR 0012/0015)"
         string expectation_type
         string dimension "DQ dimension (ADR 0038) — nullable; NULL = unclassified"
+        uuid source_connection_id FK "comparison baseline datasource (ADR 0015; RESTRICT) — set iff kind='comparison'"
         numeric warn_threshold
         numeric fail_threshold
         numeric critical_threshold
@@ -191,6 +202,7 @@ erDiagram
         string kind
         string expectation_type
         string dimension "DQ dimension (ADR 0038) — nullable; NULL = unclassified"
+        uuid source_connection_id "snapshot — plain UUID, deliberately no FK"
         jsonb config
         numeric warn_threshold
         numeric fail_threshold
@@ -214,9 +226,11 @@ erDiagram
     runs {
         uuid id PK
         uuid suite_id FK
+        uuid asset_id FK "stamped at dispatch (SET NULL) — targets change; history shouldn't rewrite"
         string status "queued / running / succeeded / failed / cancelled"
         string triggered_by "manual / schedule / provider:pipeline:run_id"
         string celery_task_id
+        string failure_reason "operational failure classification"
         timestamptz started_at
         timestamptz finished_at
     }
@@ -231,6 +245,7 @@ erDiagram
         jsonb expected_value
         jsonb sample_failures "redacted failing rows"
         timestamptz sample_failures_purged_at
+        jsonb sampling "scale-aware read strategy + counts (#595) — NULL = full read"
     }
     shares {
         uuid id PK
@@ -240,7 +255,7 @@ erDiagram
     }
     pipeline_runs {
         uuid id PK
-        string provider "adf / airflow"
+        string provider "adf / airflow / dbt"
         uuid connection_id FK
         string provider_run_id "unique per provider"
         string pipeline_or_dag_id
@@ -275,6 +290,8 @@ erDiagram
         bool enabled
         string alert_on "fail / warn / always"
         string webhook_secret_ref "per-suite Teams webhook, SecretStore key"
+        string slack_webhook_secret_ref "per-suite Slack webhook ref (#633; NULL → workspace webhook)"
+        string email_recipients "comma-separated addresses (not secret; NULL → workspace EMAIL_TO)"
         bool auto_resolve_incidents "auto-resolve on pass (default true, ADR 0034)"
     }
     workspace_health {
@@ -290,7 +307,9 @@ erDiagram
         string resolved_by "user / auto (NULL until resolved)"
         int occurrence_count "repeat failures attach, not duplicate"
         timestamptz last_seen_at
+        timestamptz acknowledged_at "+ acknowledge_note — lifecycle transition record"
         uuid acknowledged_by FK "SET NULL"
+        timestamptz resolved_at "+ resolution_note"
         uuid resolved_by_user_id FK "SET NULL"
         uuid prior_incident_id FK "SET NULL — reopen chain"
         jsonb evidence "deterministic layer-1 card (no sample rows — PII)"
@@ -319,6 +338,7 @@ erDiagram
     connections ||--o{ lineage_edges : "refreshed by (CASCADE)"
 
     suites ||--o{ checks : "contains (CASCADE)"
+    connections |o--o{ checks : "comparison source (ADR 0015, RESTRICT)"
     suites ||--o{ runs : "executed as (CASCADE)"
     suites ||--o{ shares : "shared via (CASCADE)"
     suites ||--o{ trigger_bindings : "triggered by (CASCADE)"
@@ -495,7 +515,7 @@ flowchart LR
     subgraph internet["🌍 Untrusted — public internet"]
         B["Browser (React SPA)"]
         AI["AI clients (MCP)"]
-        WH["ADF / Airflow webhooks"]
+        WH["ADF / Airflow / dbt webhooks"]
     end
     IDP["🔑 OIDC authority<br/>(Azure AD or AWS Cognito behind the generic DATAQ_AUTH_* contract)"]
     subgraph aca["🟦 Trust boundary — Container Apps env"]
@@ -519,7 +539,7 @@ flowchart LR
     IDP -. "same bearer token, minted by the user's<br/>web-app sign-in and copied into the client<br/>(no client-driven flow — ADR 0008)" .-> AI
     B -- "HTTPS · bearer JWT on /api" --> FE
     AI -- "bearer JWT on /mcp" --> FE
-    WH -- "ADF: shared-secret token in URL (ADR 0006)<br/>Airflow: HMAC-SHA256 body signature (ADR 0007)" --> FE
+    WH -- "ADF: shared-secret token in URL (ADR 0006)<br/>Airflow / dbt: HMAC-SHA256 body signature (ADR 0007/0029)" --> FE
     FE -- "same-origin proxy /api · /mcp · /healthz (HTTP/1.1)" --> API
     API -- "JWT validated (fastapi-azure-auth / MCP JWTVerifier)<br/>+ per-suite authz + sample redaction" --> API
     API -- "enqueue tasks" --> RD
@@ -558,8 +578,8 @@ Boundary notes:
 ## Key invariants
 
 - **The frontend (Container App on Azure, ECS Fargate task on AWS) is the sole public surface** (ADR [0028](adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md) §5). It's one generic nginx image whose auth is injected at **runtime** (`DATAQ_AUTH_*` → generic OIDC, validated against Azure AD or AWS Cognito — no MSAL, nothing cloud-specific baked in), and it reverse-proxies `/api` + `/mcp` + `/healthz` same-origin to the **internal-ingress** API. The API is not reachable directly from the internet; external orchestrator webhooks land on the frontend and are proxied through.
-- **Orchestration providers (ADF · Airflow) are not datasources.** They live in `pipeline_runs`, not `runs`. Trigger bindings map `(provider, pipeline_id, env) → suite_id`.
+- **Orchestration providers (ADF · Airflow · dbt) are not datasources.** They live in `pipeline_runs`, not `runs`. Trigger bindings map `(provider, pipeline_id, env) → suite_id`.
 - **Scheduled/triggered suite runs are Celery-only.** FastAPI never enqueues GX itself for a full suite run; it dispatches a task. **Exception — synchronous preview paths:** the check dry-run (`POST /suites/{id}/checks/dryrun`) and the column profiler (`POST /suites/{id}/profile`) run a single GX check / a profiling query against the datasource **synchronously in a threadpool** (persisting nothing) — interactive authoring aids, not scheduled runs.
 - **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS. Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see [ADR 0009](adr/0009-flat-monorepo-layout.md) layout note and `backend/app/core/secrets.py`). No credentials are ever hardcoded.
-- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 8 FastMCP tools are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **any** of the three sign-in modes (SSO, email OTP, dev-bypass) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential ([#1151](https://github.com/TheurgicDuke771/DataQ/issues/1151)). See [ADR 0008](adr/0008-mcp-server.md) / [ADR 0032](adr/0032-email-otp-signin.md).
+- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 46 FastMCP tools (23 read-only, 18 that change state, 5 live-probe tools gated like writes — ADR 0008 + the #529/#1424 tier amendments) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **any** of the three sign-in modes (SSO, email OTP, dev-bypass) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential ([#1151](https://github.com/TheurgicDuke771/DataQ/issues/1151)). See [ADR 0008](adr/0008-mcp-server.md) / [ADR 0032](adr/0032-email-otp-signin.md).
 - **Interactive API docs are off in production.** `/docs`, `/redoc`, and `/openapi.json` are disabled when `ENVIRONMENT=prod` (the prod-docs gate); available in dev/staging.
