@@ -48,6 +48,9 @@ class CheckCreate(ApiModel):
     # validates against the seven canonical values. Omitting is NOT the same as
     # "unclassified" — only an underivable type (custom SQL) lands NULL.
     dimension: str | None = None
+    # Evaluating engine (ADR 0036). Default 'gx'; a native engine must be offered
+    # by the suite's connection or the save 422s naming the missing capability.
+    engine: str = Field(default="gx", min_length=1, max_length=32)
     config: dict[str, Any] = Field(default_factory=dict)
     # Comparison source ref (ADR 0015) — required for kind='comparison',
     # rejected on any other kind (service enforces).
@@ -63,6 +66,9 @@ class CheckUpdate(ApiModel):
     # Re-classifiable at any time (ADR 0038 §2) — derivation is a guess about
     # intent, not a fact. Follows the PATCH convention: None = not provided.
     dimension: str | None = None
+    # Re-pointable to another engine the connection offers (ADR 0036); PATCH
+    # convention: None = not provided.
+    engine: str | None = Field(default=None, min_length=1, max_length=32)
     config: dict[str, Any] | None = None
     # Repoint a comparison check's source (never clearable — the kind requires
     # it); 422 on any other kind.
@@ -79,6 +85,8 @@ class CheckRead(ApiModel):
     suite_id: uuid.UUID
     name: str
     kind: str
+    # Who evaluates this check (ADR 0036); 'gx' unless a native engine was chosen.
+    engine: str
     expectation_type: str
     # NULL = unclassified (ADR 0038): an underivable type nobody has classified.
     # Consumers must render it as a coverage gap, never bucket it silently.
@@ -118,6 +126,7 @@ def create_check(
         critical_threshold=payload.critical_threshold,
         source_connection_id=payload.source_connection_id,
         dimension=payload.dimension,
+        engine=payload.engine,
         actor_id=current_user.id,
     )
     return CheckRead.model_validate(check)
@@ -177,6 +186,7 @@ def update_check(
         critical_threshold=payload.critical_threshold,
         source_connection_id=payload.source_connection_id,
         dimension=payload.dimension,
+        engine=payload.engine,
         actor_id=current_user.id,
     )
     return CheckRead.model_validate(check)
@@ -309,6 +319,9 @@ class CheckVersionRead(ApiModel):
     version_no: int
     name: str
     kind: str
+    # Snapshotted (ADR 0036): restore applies `version.engine` unconditionally,
+    # so history must show which evaluator a restore would reinstate.
+    engine: str
     expectation_type: str
     # Snapshotted (ADR 0038): showing the CURRENT dimension against an OLD config
     # would misreport what the check was at that version.

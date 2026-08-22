@@ -325,6 +325,13 @@ class CheckDocument(ApiModel):
     # exactly as if freshly authored. Optional in BOTH directions, so
     # EXPORT_VERSION does not bump (it bumps only on an incompatible shape).
     dimension: str | None = None
+    # Evaluating engine (ADR 0036). Absent on a pre-engine export → 'gx', which
+    # is what those checks ran as; a native value must be offered by the TARGET
+    # connection or import 422s naming the capability (same gate as authoring).
+    # Optional-with-default so EXPORT_VERSION does not bump. Without this field,
+    # ApiModel's extra='ignore' would silently convert a native-engine document
+    # to 'gx' on import — the exact conversion the service layer forbids.
+    engine: str = Field(default="gx", min_length=1, max_length=32)
     config: dict[str, Any] = Field(default_factory=dict)
     # Present only on comparison checks (ADR 0015); resolved on import.
     source_connection: SourceConnectionRef | None = None

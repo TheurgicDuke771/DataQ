@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
+from backend.app.datasources.engines import engines_for
 from backend.app.datasources.monitors import (
     ANOMALY,
     FRESHNESS,
@@ -46,9 +47,11 @@ from backend.app.datasources.sampling import (
     is_row_count_expectation,
 )
 from backend.app.db.models import (
+    CHECK_ENGINES,
     CHECK_ORDER,
     COMPARISON_KIND,
     DQ_DIMENSIONS,
+    GX_ENGINE,
     ORCHESTRATION_PROVIDERS,
     Check,
     CheckVersion,
@@ -172,6 +175,33 @@ def validate_kind(kind: str) -> None:
         raise CheckConfigInvalidError(
             f"check kind {kind!r} is not supported in v1",
             detail={"kind": kind, "supported": sorted(_V1_SUPPORTED_KINDS)},
+        )
+
+
+def validate_engine(engine: str, *, connection_type: str) -> None:
+    """Reject an engine the suite's connection doesn't offer (422, ADR 0036 §5).
+
+    Two distinct refusals, both named for the author: an engine outside the
+    vocabulary entirely, and a real engine this connection TYPE doesn't unlock
+    (`dmf` needs a Snowflake connection). The message carries what IS offered —
+    "missing capability" without the alternative is a dead end. Shared by CRUD,
+    restore, and suite import, so no door accepts what another refuses."""
+    if engine not in CHECK_ENGINES:
+        raise CheckConfigInvalidError(
+            f"check engine {engine!r} is not recognised",
+            detail={"engine": engine, "known": sorted(CHECK_ENGINES)},
+        )
+    offered = engines_for(connection_type)
+    if engine not in offered:
+        raise CheckConfigInvalidError(
+            f"engine {engine!r} is not offered by this suite's connection "
+            f"(type {connection_type!r}) — ADR 0036 anchors native engines to "
+            "the connection that can run them",
+            detail={
+                "engine": engine,
+                "connection_type": connection_type,
+                "offered": sorted(offered),
+            },
         )
 
 
@@ -673,6 +703,7 @@ def record_check_version(
         version_no=next_no,
         name=check.name,
         kind=check.kind,
+        engine=check.engine,
         expectation_type=check.expectation_type,
         dimension=check.dimension,
         source_connection_id=check.source_connection_id,
@@ -699,6 +730,7 @@ def create_check(
     critical_threshold: Decimal | None,
     source_connection_id: uuid.UUID | None = None,
     dimension: str | None = None,
+    engine: str = GX_ENGINE,
     actor_id: uuid.UUID | None = None,
 ) -> Check:
     """Create a check in a suite, recording its first version (#280).
@@ -712,6 +744,7 @@ def create_check(
     """
     suite = get_suite(session, suite_id)  # 404 if the suite is missing
     validate_kind(kind)
+    validate_engine(engine, connection_type=_connection_type(session, suite))
     validate_lengths(name=name, expectation_type=expectation_type)
     validate_threshold_ordering(
         warn_threshold=warn_threshold,
@@ -754,6 +787,7 @@ def create_check(
         suite_id=suite_id,
         name=name,
         kind=kind,
+        engine=engine,
         expectation_type=expectation_type,
         dimension=resolve_dimension(
             expectation_type=expectation_type, kind=kind, explicit=validate_dimension(dimension)
@@ -928,9 +962,15 @@ def update_check(
     critical_threshold: Decimal | None = None,
     source_connection_id: uuid.UUID | None = None,
     dimension: str | None = None,
+    engine: str | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Check:
     """Partial update, snapshotting the post-update state as a new version (#280).
+
+    `engine` (ADR 0036) follows the same PATCH convention — `None` = unchanged;
+    a provided value is validated against the suite connection's capability set,
+    so re-pointing a check at an engine the connection doesn't offer 422s here,
+    not at run time.
 
     Follows the codebase PATCH convention (connections / suites): a `None`
     argument means "not provided", so an omitted field is left unchanged. v1 has
@@ -946,6 +986,10 @@ def update_check(
     audit_before = audit_service.snapshot("check", check)
     validate_lengths(name=name, expectation_type=expectation_type)
     validate_dimension(dimension)
+    if engine is not None:
+        validate_engine(
+            engine, connection_type=_connection_type(session, get_suite(session, suite_id))
+        )
     if source_connection_id is not None and check.kind != COMPARISON_KIND:
         raise CheckConfigInvalidError(
             "only comparison checks carry a source connection (ADR 0015)",
@@ -1007,6 +1051,8 @@ def update_check(
         check.critical_threshold = critical_threshold
     if dimension is not None:
         check.dimension = dimension
+    if engine is not None:
+        check.engine = engine
     check = _record_version_and_commit(
         session, check, check_id, actor_id, audit_action="check.update", audit_before=audit_before
     )
@@ -1179,6 +1225,13 @@ def restore_check_version(
 
     validate_lengths(name=version.name, expectation_type=version.expectation_type)
     validate_dimension(version.dimension)
+    # Re-validated like every other snapshot field (ADR 0036): a snapshot cut
+    # when the connection offered an engine it no longer does must be refused,
+    # not silently reinstated to fail at run time.
+    validate_engine(
+        version.engine,
+        connection_type=_connection_type(session, get_suite(session, suite_id)),
+    )
     validate_threshold_ordering(
         warn_threshold=version.warn_threshold,
         fail_threshold=version.fail_threshold,
@@ -1202,6 +1255,7 @@ def restore_check_version(
     # restore's entire point is to reproduce the version exactly, including
     # clearing a threshold/dimension back to NULL if that's what it held.
     check.name = version.name
+    check.engine = version.engine
     check.expectation_type = version.expectation_type
     check.config = version.config
     check.source_connection_id = version.source_connection_id

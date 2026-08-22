@@ -30,13 +30,21 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.monitors import MONITOR_KINDS
-from backend.app.db.models import COMPARISON_KIND, ORCHESTRATION_PROVIDERS, Check, Connection, Suite
+from backend.app.db.models import (
+    COMPARISON_KIND,
+    GX_ENGINE,
+    ORCHESTRATION_PROVIDERS,
+    Check,
+    Connection,
+    Suite,
+)
 from backend.app.services import audit_service
 from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import (
     record_check_version,
     validate_comparison_check,
     validate_dimension,
+    validate_engine,
     validate_expectation_check,
     validate_kind,
     validate_lengths,
@@ -87,6 +95,11 @@ def export_suite(session: Session, suite: Suite) -> dict[str, Any]:
             "fail_threshold": c.fail_threshold,
             "critical_threshold": c.critical_threshold,
         }
+        # Emitted only when non-default (ADR 0036), like `source_connection`
+        # below: pre-engine documents and consumers stay byte-identical, and a
+        # 'gx' check imports everywhere without the key saying so.
+        if c.engine != GX_ENGINE:
+            doc["engine"] = c.engine
         if c.source_connection_id is not None:
             # RESTRICT FK: a referenced source connection cannot have been
             # deleted, so the row always resolves.
@@ -173,6 +186,12 @@ def import_suite(
     source_ids: list[uuid.UUID | None] = []
     for c in checks:
         validate_kind(c["kind"])
+        # ADR 0036 §5: a document carrying a native-engine check imports only
+        # where the target connection offers that engine — the same save-time
+        # validation as CRUD, marking the mismatch explicitly (422 naming the
+        # capability) rather than dropping or silently converting the check.
+        # Key absent = a pre-engine document = 'gx', which is what it ran as.
+        validate_engine(c.get("engine", GX_ENGINE), connection_type=connection.type)
         # Direct `Check(...)` construction below has no Pydantic layer of its own —
         # today the REST import route's `CheckDocument` model already enforces the
         # same 256/128 bounds, but this keeps the guarantee at the service layer
@@ -227,6 +246,7 @@ def import_suite(
         Check(
             name=c["name"],
             kind=c["kind"],
+            engine=c.get("engine", GX_ENGINE),
             expectation_type=c["expectation_type"],
             # Key ABSENT (an older document) → derive, so an import behaves like
             # fresh authoring. Key PRESENT — including an explicit null → take it

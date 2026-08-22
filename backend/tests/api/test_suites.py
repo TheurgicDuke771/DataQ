@@ -2188,3 +2188,38 @@ def test_a_policy_save_without_the_flag_does_not_disable_fail_closed(
     )
     assert disabled.status_code == 200
     assert disabled.json()["require_classification"] is False
+
+
+# ───────────────────── engine in the portable document (ADR 0036) ──────────
+
+
+def test_rest_import_rejects_a_native_engine_document(client: TestClient, db_session: Any) -> None:
+    # The REST door must apply the same engine gate as authoring: before
+    # CheckDocument carried `engine`, extra='ignore' dropped the key and this
+    # document imported silently as 'gx' — the conversion the service forbids.
+    src = _suite_with_checks(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    document["checks"][0]["engine"] = "dmf"
+    target = _connection(db_session)
+
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["detail"]["engine"] == "dmf"
+
+
+def test_rest_export_carries_the_engine_and_reimports(client: TestClient, db_session: Any) -> None:
+    src = _suite_with_checks(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    assert all(c["engine"] == "gx" for c in document["checks"])
+    # And a pre-engine document (no key) still imports as gx.
+    for c in document["checks"]:
+        del c["engine"]
+    target = _connection(db_session)
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    )
+    assert resp.status_code == 201

@@ -349,6 +349,63 @@ def test_run_outcomes_stateful_kind_without_executor_errors_per_check() -> None:
     assert "baseline-diff run path" in outcome.error_message
 
 
+# ───────────────────── engine partition (ADR 0036) ───────────────────
+
+
+def test_native_engine_check_errors_and_gx_siblings_still_run() -> None:
+    # ADR 0036 §5 run-time rule: an engine with no runner here lands the CHECK as
+    # a classified error — never a silent skip, never a raise that takes the
+    # suite's GX siblings down. Save-time validation refuses to author such a
+    # row today, so this is the defensive arm for rows that outlive their
+    # capability (map regression, out-of-band write).
+    gx_check, native_check = _checks(2)
+    native_check.engine = "dmf"
+    runner = FakeRunner(
+        outcome=SuiteOutcome(success=True, checks=[CheckOutcome("e1", success=True)])
+    )
+
+    outcomes = collect_outcomes(runner, table="T", schema=None, checks=[gx_check, native_check])
+
+    assert outcomes[0].success is True
+    assert outcomes[1].errored is True
+    assert outcomes[1].error_message is not None
+    assert "engine 'dmf'" in outcomes[1].error_message
+    # The GX batch saw ONLY the gx check — the native one never reached the runner.
+    assert runner.called_with is not None
+    assert len(cast(list[CheckSpec], runner.called_with["checks"])) == 1
+
+
+def test_native_engine_check_with_unhandled_kind_still_errors_not_raises() -> None:
+    # Review catch on the first cut: the unsupported-kind sweep iterated ALL
+    # checks, so a native row with an out-of-band kind was resolved twice — an
+    # error phase, then a suite-killing NotImplementedError. The sweep must see
+    # only the GX partition.
+    native = _monitor_check("telepathy", {})  # kind with no run path anywhere
+    native.engine = "dmf"
+    gx_check = _checks(1)[0]
+    runner = FakeRunner(
+        outcome=SuiteOutcome(success=True, checks=[CheckOutcome("e1", success=True)])
+    )
+
+    outcomes = collect_outcomes(runner, table="T", schema=None, checks=[gx_check, native])
+
+    assert outcomes[0].success is True
+    assert outcomes[1].errored is True
+
+
+def test_transient_check_without_engine_runs_as_gx() -> None:
+    # A transient (unflushed) Check has engine=None — the server default hasn't
+    # applied. The run path must treat that as 'gx' (what the flush would have
+    # written), or every dry-run of an unsaved check would error.
+    check = _checks(1)[0]
+    assert check.engine is None
+    runner = FakeRunner(
+        outcome=SuiteOutcome(success=True, checks=[CheckOutcome("e1", success=True)])
+    )
+    [outcome] = collect_outcomes(runner, table="T", schema=None, checks=[check])
+    assert outcome.success is True and not outcome.errored
+
+
 def test_run_outcomes_gate_is_per_kind_not_per_runner() -> None:
     # Capability is a SET of kinds (#429 altitude note): a runner supporting only
     # freshness must reject a volume check by NAME, so stateful kinds (#592/#593)

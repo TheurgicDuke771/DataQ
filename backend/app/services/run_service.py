@@ -47,6 +47,7 @@ from backend.app.db.chunked_dml import CHUNK_SIZE, chunked_dml
 from backend.app.db.models import (
     CHECK_ORDER,
     COMPARISON_KIND,
+    GX_ENGINE,
     RESULT_OPERATIONAL_STATUSES,
     RESULT_STATUSES,
     RUN_STATUSES,
@@ -225,12 +226,50 @@ def _run_outcome_phases(
 
     This composes with the connection-type runner selection (ADR 0011): `kind`
     chooses the *monitor*, `connection.type` chose the *adapter* (the runner)."""
-    expectation_idx = [i for i, c in enumerate(checks) if c.kind == _EXPECTATION_KIND]
-    monitor_idx = [i for i, c in enumerate(checks) if c.kind in SCALAR_MONITOR_KINDS]
-    stateful_idx = [i for i, c in enumerate(checks) if c.kind in STATEFUL_MONITOR_KINDS]
-    comparison_idx = [i for i, c in enumerate(checks) if c.kind == COMPARISON_KIND]
+
+    # Engine partition first (ADR 0036): everything below this line is the GX run
+    # path, so a check whose engine is native is split off before kind dispatch.
+    # No native engine has a runner yet, so today this arm is purely defensive —
+    # save-time validation refuses to author such a row — but a row can outlive
+    # its capability (engine revoked from the map, an out-of-band write), and the
+    # ADR's rule for that state is a classified per-check `error`, never a silent
+    # skip and never a raise that takes the suite's GX siblings down with it.
+    # A transient (unflushed) check has no server-default applied yet → treat
+    # None as 'gx', which is what the flush would have written.
+    def _engine(c: Check) -> str:
+        return c.engine or GX_ENGINE
+
+    for i, c in enumerate(checks):
+        if _engine(c) != GX_ENGINE:
+            yield OutcomePhase(
+                resolved=[
+                    (
+                        i,
+                        _executor_outcome(
+                            None,
+                            c,
+                            missing=(
+                                f"engine '{_engine(c)}' is not available on this "
+                                "connection — the check was authored for a "
+                                "platform-native engine this deployment cannot run "
+                                "(ADR 0036); re-check the connection's engine "
+                                "capabilities or re-point the check to 'gx'"
+                            ),
+                        ),
+                    )
+                ],
+                publishable=True,
+            )
+    checks_gx = [(i, c) for i, c in enumerate(checks) if _engine(c) == GX_ENGINE]
+    expectation_idx = [i for i, c in checks_gx if c.kind == _EXPECTATION_KIND]
+    monitor_idx = [i for i, c in checks_gx if c.kind in SCALAR_MONITOR_KINDS]
+    stateful_idx = [i for i, c in checks_gx if c.kind in STATEFUL_MONITOR_KINDS]
+    comparison_idx = [i for i, c in checks_gx if c.kind == COMPARISON_KIND]
     handled = {_EXPECTATION_KIND, *MONITOR_KINDS, COMPARISON_KIND}
-    unsupported = sorted({c.kind for c in checks if c.kind not in handled})
+    # Swept over the GX partition only: a native-engine check was already fully
+    # resolved above as a classified error, whatever its kind — raising for it
+    # here would resolve it twice and take its GX siblings down with it.
+    unsupported = sorted({c.kind for _, c in checks_gx if c.kind not in handled})
     if unsupported:
         raise NotImplementedError(f"no run path for check kind(s) {', '.join(unsupported)}")
 

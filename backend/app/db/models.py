@@ -80,6 +80,13 @@ def worst_severity(statuses: Iterable[str]) -> str | None:
 # constraint-valid but unused.
 CHECK_KINDS = ("expectation", "freshness", "volume", "schema_drift", "anomaly", "comparison")
 COMPARISON_KIND = "comparison"
+# Check engines (ADR 0036) — WHO evaluates a check, orthogonal to `kind` (what
+# is measured). `gx` is universal; native engines are unlocked per connection
+# type and validated per connection instance (`datasources.engines`). The full
+# vocabulary is constraint-valid from day one so native rows need no migration,
+# but which values a save accepts is decided by `engines_for`, never this tuple.
+CHECK_ENGINES = ("gx", "dmf", "dqx", "dataplex")
+GX_ENGINE = "gx"
 # DQ dimensions (ADR 0038) — the *semantic quality aspect* a check measures, a
 # third axis orthogonal to `kind` (how the monitor works) and `engine` (what
 # evaluates it). Closed vocabulary on purpose: coverage reporting ("this asset
@@ -462,6 +469,13 @@ class Connection(Base):
     # (test_connection → 502 without a stored credential), so the column stays
     # NULL-able for the W7 credential-less modes without a later migration.
     secret_ref: Mapped[str | None] = mapped_column(String(256))
+    # Per-engine capability flags (ADR 0036 §3): the test/re-auth probe (phase 2)
+    # stores, per native engine, whether THIS connection instance can actually run
+    # it plus a classified remediation when it can't (edition / grants — never raw
+    # exception text, the #828/#839 lesson). NULL = never probed; phase 1 gates by
+    # connection type alone and lands run-time unavailability as classified
+    # `error` results, so an unprobed connection is safe, not permissive.
+    engine_capabilities: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     #: Provenance, not lifecycle ownership — `SET NULL`, matching every other
     #: user-referencing FK that records *who did something* (`changed_by`,
     #: `owner_user_id`, `acknowledged_by`, `audit_events.actor_user_id`). The
@@ -719,6 +733,7 @@ class Check(Base):
     __tablename__ = "checks"
     __table_args__ = (
         _in_check("kind", CHECK_KINDS, "kind_valid"),
+        _in_check("engine", CHECK_ENGINES, "engine_valid"),
         _in_check("dimension", DQ_DIMENSIONS, "dimension_valid"),
         # ADR 0015: a comparison check carries its source (baseline) ref; every
         # other kind must not. Presence ⇔ kind, DB-enforced so the run path can
@@ -741,6 +756,11 @@ class Check(Base):
     kind: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default=text("'expectation'")
     )
+    # Evaluating engine (ADR 0036): who runs this check. Default 'gx'; a native
+    # engine is accepted on save only when the suite's connection offers it
+    # (`check_service.validate_engine`), and a row whose engine stops being
+    # available lands run-time as a classified `error` result, never a skip.
+    engine: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'gx'"))
     expectation_type: Mapped[str] = mapped_column(String(128), nullable=False)
     # DQ dimension (ADR 0038) — what quality aspect this check measures. Defaulted
     # from `expectation_type`/`kind` at author time and then STORED, so #889 can
@@ -846,6 +866,12 @@ class CheckVersion(Base):
     # a self-contained record). `config` is the GX expectation kwargs, as stored.
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Engine as at this version (ADR 0036). Snapshotted so restore reproduces the
+    # evaluator, not just the rule; deliberately NOT CHECK-constrained here for
+    # the same reason as `dimension` — history must stay writable if the
+    # vocabulary changes. Server default backfills pre-engine snapshots as 'gx',
+    # which is exact: 'gx' was the only evaluator that existed when they were cut.
+    engine: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'gx'"))
     expectation_type: Mapped[str] = mapped_column(String(128), nullable=False)
     # DQ dimension as at this version (ADR 0038). Snapshotted like every other
     # editable field: without it, viewing history would show a check's CURRENT
