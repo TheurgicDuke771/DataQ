@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "942962e11a82",
+  "strategy": "manual-commit",
+  "branch": "docs/v1.2-plan-stragglers",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/94/2962e11a82/0/metadata.json",
+      "transcript": "/94/2962e11a82/0/full.jsonl",
+      "compact_transcript": "/94/2962e11a82/0/transcript.jsonl",
+      "content_hash": "/94/2962e11a82/0/content_hash.txt",
+      "prompt": "/94/2962e11a82/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 347756,
+    "cache_read_tokens": 4390331,
+    "output_tokens": 8537,
+    "api_call_count": 14
+  }
+}
