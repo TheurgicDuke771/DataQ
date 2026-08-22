@@ -45,9 +45,9 @@ Use `gh pr diff <N>` if a PR number is provided. Otherwise read the files direct
 
 1. **CLAUDE.md §13 "current milestone" is stale.** If the documented "Current week:" / "Next milestone:" headline describes a week that appears already completed (based on merged PRs, open issues, or `docs/progress.md`), flag it with a suggested update.
 
-2. **"Pending" ADRs in `docs/site/adr/README.md` whose target week has passed.** Today's date is available via `date +%Y-%m-%d`. If an ADR listed under "Pending for Week N" still has no file and the week is past, flag it as overdue.
+2. **Publication location vs intent.** The site is rooted at `docs/site/` (`docs_dir` in `mkdocs.yml`) — a page publishes iff it lives there, and internal planning docs stay directly under `docs/`. Flag an internal-looking file (progress/retro/ops-log/posture/notes) sitting under `docs/site/`, a reference-looking page sitting outside it, or a page added under `docs/site/` that is in neither `nav:` nor `scripts/check-docs-publication.py`'s `PUBLISHED_UNLINKED` (CI's docs-publication gate will fail on that last one).
 
-3. **`context/DataQ_platform_roadmap.md` preamble missing or stale.** The preamble should note where the roadmap has been superseded by ADR decisions (ADF is orchestration not a datasource; Airflow was added post-roadmap; DQX deferred to v1.1). If the roadmap is modified without updating the preamble, flag it.
+3. **`context/DataQ_platform_roadmap.md` preamble missing or stale.** The preamble should note where the roadmap has been superseded by ADR decisions (ADF is orchestration not a datasource; Airflow was added post-roadmap; native engines are connection-anchored per ADR 0036 — DMF first, DQX trigger-gated). If the roadmap is modified without updating the preamble, flag it.
 
 4. **ADR status inconsistency.** `docs/site/adr/README.md` is the **single** ADR index — CLAUDE.md §9 only links to it. For every ADR file, the index must have a row and its status must agree with the ADR's own `Status:` line; flag missing rows and disagreements. Also flag any re-grown decision table in CLAUDE.md §9 (it was deliberately reduced to a pointer — duplication is the drift vector).
 
@@ -61,8 +61,8 @@ Use `gh pr diff <N>` if a PR number is provided. Otherwise read the files direct
 
 ### 🟢 Acceptable patterns
 
-- ADR in "Proposed" status with no file yet — expected before the target week.
-- Forward ADR numbers reserved in the `docs/site/adr/README.md` "Pending" table — placeholders, not dangling refs.
+- An ADR file whose Status is "Proposed" — a decision drafted ahead of acceptance, not an error.
+- ADR index rows whose Status carries an "(amended by NNNN — …)" note — that is the documented amendment convention, not drift.
 - Preamble notes in `context/DataQ_platform_roadmap.md` listing superseding decisions.
 - CLAUDE.md §13 correctly describing current in-progress work.
 
@@ -85,10 +85,11 @@ Follow the same steps as the `/adr-create` skill:
 ```markdown
 # ADR NNNN — <Human-readable title>
 
-- **Status:** Accepted
+- **Status:** Proposed
 - **Date:** YYYY-MM-DD
 - **Deciders:** @<github-handle>
 - **Consulted:** <optional>
+- **Amends:** <optional — partial override of an earlier ADR; add an inline amendment blockquote there>
 - **Supersedes:** <optional>
 - **Superseded by:** <optional>
 
@@ -134,7 +135,7 @@ When the user says "update the milestone to Week N" or "mark the week complete":
 
 When a new ADR file exists but is missing from `docs/site/adr/README.md`:
 - Read the current index table.
-- Append a row in the same format as existing rows: `| [NNNN](NNNN-slug.md) | Title | Status | Week |`
+- Append a row in the same format as existing rows — the table is **three** columns: `| [NNNN](NNNN-slug.md) | Title | Status |` (no Week column). If the new ADR amends an earlier one, also append "(amended by NNNN — <one-line scope>)" to the amended ADR's Status cell.
 - Stage the change; do not commit.
 
 ### Patch a CONTRIBUTING.md section
@@ -191,7 +192,7 @@ Rules:
 
 When a new subsystem is planned but not yet built (e.g., `backend/app/mcp/`, `backend/app/orchestration/`), the user may ask to pre-create a doc stub so the location and intent are clear from day one:
 
-- Create the stub at the expected path (e.g., `docs/mcp-tools.md`).
+- Create the stub at the expected path — and pick the location deliberately: `docs/site/<name>.md` **iff** it should publish (then it must also be added to `nav:` in `mkdocs.yml`, or CI's docs-publication gate fails); `docs/<name>.md` for an internal planning doc (never built).
 - Mark it clearly at the top: `> **Stub — to be filled in Week N.**`
 - Include the section headings the document will eventually need, left empty.
 - Track it: file a GitHub issue (or add it to `context/post-v1-roadmap.md` if post-v1).

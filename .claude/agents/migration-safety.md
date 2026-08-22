@@ -11,7 +11,7 @@ You are a specialized Alembic migration reviewer enforcing **backward-compatible
 
 ## Why this matters
 
-DataQ is **deployed to Azure production** (since 2026-06-28, ADR 0024): `runs`, `results`, and `pipeline_runs` hold real data, and the deploy workflow runs the `dataq-app-migrate` job (`alembic upgrade head`) **before** rolling the api + worker Container Apps to the new image. During that window — and during any rollback — old code runs against the new schema. A migration that drops or renames a column in the same release as the code change crashes any container still running the old image. Two-step migrations (deploy code that tolerates both shapes → migrate → deploy code that assumes new shape) are mandatory.
+DataQ is **deployed to production on BOTH clouds** — Azure Container Apps (since 2026-06-28, ADR 0024) and AWS ECS Fargate (since 2026-08-15): `runs`, `results`, and `pipeline_runs` hold real data on each, and both deploy workflows run the migrate job (`alembic upgrade head` — the ACA `dataq-app-migrate` job on Azure, the `dataq-app-migrate` ECS task on AWS, each gated on exit 0) **before** rolling api + worker to the new image. During that window — and during any rollback — old code runs against the new schema. A migration that drops or renames a column in the same release as the code change crashes any container still running the old image. Two-step migrations (deploy code that tolerates both shapes → migrate → deploy code that assumes new shape) are mandatory.
 
 ## What you check
 
