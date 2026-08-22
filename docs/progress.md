@@ -27,7 +27,7 @@
 | **v1 baseline** | `v1.0.0` tagged 2026-07-04 — 187/189 roadmap tasks; deployed to Azure Container Apps; ledger at [progress-v1.md](progress-v1.md) |
 | **v1.1 baseline** | `v1.1.0` — cycle ran 2026-07-04 → 2026-08-21 (6 weeks + the W7 stretch; first tagged 2026-08-15 at `b8d8278b`, then **re-tagged 2026-08-21 at the true close** — the stretch added 121 commits / 126 merged PRs / 55 closed issues, incl. RBAC ADR 0033, the MCP 8→46 expansion + honesty pass, the security-surface audit, and the compliance G1–G6 track). Ledger at [progress-v1.1.md](progress-v1.1.md); retro at [retro-v1.1.md](retro-v1.1.md) |
 | **Current cycle** | **v1.2 — 8 weeks, 2026-08-22 → 2026-10-16** (planned 2026-08-21 at the v1.1 close; epic [#1518](https://github.com/TheurgicDuke771/DataQ/issues/1518)). The arc: **W1** clears the user's infra decision gates (#590/#588) + the MCP honesty follow-ups; **W2–W4** build the DQ-intelligence track from [docs/post-v1-dq-intelligence-notes.md](post-v1-dq-intelligence-notes.md) (catalog expansion → server-side allowlist → `LLMProvider` seam → SQL-gen → suggestions) alongside compliance G2; **W5** platform-native engines (Snowflake DMF, ADR 0036) + notification channels; **W6** perf/scale hardening; **W7** feature burn-down; **W8** spikes/decisions + **cycle close** (the closing week is deliberately last). See [Cycle plan](#cycle-plan--v12-8-weeks-2026-08-22--2026-10-16) below. |
-| **Open issues** | **54** open repo-wide at planning (2026-08-21): the 52 re-homed from the closed `v1.1 Backlog` milestone into `v1.2 Week 1..8` + epic #1518 + [#1384](https://github.com/TheurgicDuke771/DataQ/issues/1384) (unmilestoned CloudFront→ALB TLS hop, needs a custom domain). `v1.2 Backlog` created **empty** as the default for new filings. |
+| **Open issues** | **55** open repo-wide at planning (2026-08-21): the 52 re-homed from the closed `v1.1 Backlog` milestone into `v1.2 Week 1..8`, epic #1518 (W8), plus the two never-backlogged AWS-security items caught in the final sweep — [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385) (ElastiCache at-rest + egress restriction → W7) and [#1384](https://github.com/TheurgicDuke771/DataQ/issues/1384) (CloudFront→ALB TLS hop — blocked on buying a custom domain + ACM, → `v1.2 Backlog`). `v1.2 Backlog` otherwise **empty** as the default for new filings. |
 | **Open PRs** | **0** at planning. |
 | **Coverage gates (CI-enforced, ≥80%)** | backend `--cov-fail-under=80` (~4,800 backend tests) · frontend all-src `lines: 80` (~1,000 tests) — every PR rides the same gates |
 
@@ -40,9 +40,10 @@ Everything open at the v1.1 close, re-homed by name into the weekly milestones b
 carried is lost). The two **decision gates** are the user's call, not the assistant's:
 [#590](https://github.com/TheurgicDuke771/DataQ/issues/590) (Azure estate fate) and
 [#588](https://github.com/TheurgicDuke771/DataQ/issues/588) (Snowflake leg retirement) —
-W1 schedules the *decision*, never presumes the outcome. One item stays unmilestoned by
-choice: [#1384](https://github.com/TheurgicDuke771/DataQ/issues/1384) (CloudFront→ALB
-cleartext hop — blocked on buying a custom domain + ACM, not on engineering).
+W1 schedules the *decision*, never presumes the outcome. One item sits in `v1.2 Backlog`
+rather than a week: [#1384](https://github.com/TheurgicDuke771/DataQ/issues/1384)
+(CloudFront→ALB cleartext hop — blocked on buying a custom domain + ACM, not on
+engineering).
 
 ---
 
@@ -164,6 +165,7 @@ batches land measured against the new baseline.
 | ⬜ | [#682](https://github.com/TheurgicDuke771/DataQ/issues/682) Webhook-auth metadata onto the `OrchestrationProvider` seam | refactor |
 | ⬜ | [#1314](https://github.com/TheurgicDuke771/DataQ/issues/1314) Alerting: already-logged-traceback downgrade leaks through log filtering | reliability |
 | ⬜ | [#1274](https://github.com/TheurgicDuke771/DataQ/issues/1274) Iceberg over S3-compatible storage: pyarrow ACCESS_DENIED + Test Connection blind | bug |
+| ⬜ | [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385) AWS: ElastiCache at-rest encryption + restrict subnet egress | security |
 
 **Exit gate:** each closed or rolled by name with a rationale comment.
 
