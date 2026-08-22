@@ -265,7 +265,7 @@ def test_connection_establishment_failure_propagates_out_of_the_runner() -> None
     runner = SnowflakeCheckRunner(cfg, "secret")
 
     class _DeadEngine:
-        def get(self):
+        def get(self) -> None:
             raise ConnectionError("warehouse unreachable")
 
     runner._engine = _DeadEngine()  # type: ignore[assignment]

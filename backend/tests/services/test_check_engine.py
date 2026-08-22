@@ -10,6 +10,8 @@ the runner registry doesn't know).
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from backend.app.datasources import registry
@@ -111,7 +113,7 @@ def _compat(engine: str = "dmf", **overrides: object) -> None:
 
     from backend.app.services.check_service import validate_engine_compatibility
 
-    kwargs: dict = {
+    kwargs: dict[str, Any] = {
         "kind": "expectation",
         "expectation_type": "dmf:null_count",
         "config": {"column": "order_id"},
