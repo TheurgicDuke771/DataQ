@@ -111,8 +111,12 @@ seam (schema-only, PII-redacted context).
 | [#124](https://github.com/TheurgicDuke771/DataQ/issues/124) | Add DQ-dimension classification to checks (Completeness / Uniqueness / Validity / …) |
 | [#286](https://github.com/TheurgicDuke771/DataQ/issues/286) | Apache Iceberg v2 / v3 table-format support |
 
-*(The built-ins / LLM / marketplace work is design-captured but not yet filed as discrete issues —
-file from the detail doc when picked up.)*
+*(The built-ins / LLM / marketplace work was filed as discrete issues 2026-08-21:
+[#1509](https://github.com/TheurgicDuke771/DataQ/issues/1509) built-ins ·
+[#1510](https://github.com/TheurgicDuke771/DataQ/issues/1510) curated superset + allowlist ·
+[#1511](https://github.com/TheurgicDuke771/DataQ/issues/1511) `LLMProvider` seam ·
+[#1512](https://github.com/TheurgicDuke771/DataQ/issues/1512) LLM SQL-gen ·
+[#1513](https://github.com/TheurgicDuke771/DataQ/issues/1513) LLM check suggestions.)*
 
 **Engine-abstraction watch item (from maturity-assessment G-g):** the product's core capability
 rides a pinned GX Core with documented API drift (CLAUDE.md §11); the DQX swap-in shape exists

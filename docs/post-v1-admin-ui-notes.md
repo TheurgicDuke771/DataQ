@@ -23,7 +23,12 @@
 > else is recorded here for later.
 >
 > Related issues: **#411** (admin workspace-wide view) and **#412** (admin write
-> actions), both milestoned _v1.1 Backlog_ (the milestone formerly named _Backlog (post-v1 / testing)_).
+> actions) — **both since closed**, along with #389 (channel-neutral rename).
+> The two items below still open are tracked as
+> [#1514](https://github.com/TheurgicDuke771/DataQ/issues/1514) (reusable
+> notification channels) and
+> [#1516](https://github.com/TheurgicDuke771/DataQ/issues/1516) (the deferred
+> Profile / Workspace-Settings IA pickup) as of 2026-08-21.
 
 ## v1 access model (what actually ships)
 

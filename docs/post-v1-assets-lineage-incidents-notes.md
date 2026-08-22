@@ -1,12 +1,27 @@
 # Post-v1 notes — Assets, lineage & incidents (gap G-d design)
 
-> **Status: design for the next cycle's build (the #596 deliverable — no code in this
-> PR).** Gap G-d is the "usable in anger" gap: runs and alerts exist, but "what broke
-> downstream / who owns it / when was it resolved" doesn't — and that triad is what DQ
-> products are bought for. This doc pins the three objects (asset, lineage edge,
-> incident), their identity model, and the build order; the phase-1 issues it files are
-> the next cycle's generator input. Decision record: ADR
-> [0034](adr/0034-asset-entity-openlineage-identity-lineage-pull.md).
+> ## ✅ Built 2026-07-10/11 — this doc is the design record, not the plan
+>
+> **Every phase shipped:** the asset entity + backfill (#757), OpenLineage emission
+> (#758), dbt-manifest lineage edges (#759), the read-only asset view (#760/#772),
+> incident objects (#761/#775), the `LineageProvider` seam + Marquez reference impl
+> (#762/#776), and the phase-4 navigation inversion (#773/#782). Asset visibility was
+> revised by ADR [0037](adr/0037-workspace-visible-asset-identity.md) (workspace-visible
+> identity, grants guard suite-derived detail — supersedes §4's original derived-only
+> rule, struck below). Later additions: inventory sync (ADR 0040, #1103), asset paging
+> (#1105), scorecards (#889), MCP asset/incident tools (Tier 3B).
+> **The one designed item still open is the §3 ownership-routing second hop —
+> incidents route to the suite owner only; preferring `assets.owner_user_id` is
+> [#1515](https://github.com/TheurgicDuke771/DataQ/issues/1515).** DataHub stays
+> deferred-until-a-user-brings-one; Purview stays parked (both decisions recorded in §2).
+>
+> **Original status (2026-07-10):** design for the next cycle's build (the #596
+> deliverable — no code in this PR). Gap G-d is the "usable in anger" gap: runs and
+> alerts exist, but "what broke downstream / who owns it / when was it resolved"
+> doesn't — and that triad is what DQ products are bought for. This doc pins the three
+> objects (asset, lineage edge, incident), their identity model, and the build order;
+> the phase-1 issues it files are the next cycle's generator input. Decision record:
+> ADR [0034](adr/0034-asset-entity-openlineage-identity-lineage-pull.md).
 >
 > Related: **#596** (this doc), Themes 2/3/5/14 in
 > [context/post-v1-roadmap.md](https://github.com/TheurgicDuke771/DataQ/blob/main/context/post-v1-roadmap.md), ADR 0012 (monitor

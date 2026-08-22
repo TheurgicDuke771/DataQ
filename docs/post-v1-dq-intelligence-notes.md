@@ -1,6 +1,16 @@
 # Post-v1 notes — Expectation expansion, marketplace & LLM-assisted authoring (deferred design)
 
-> **Status: deferred to post-v1.** Captured so the design intent isn't lost. None of
+> **Status: deferred to post-v1 — now filed as discrete backlog issues (2026-08-21):**
+> [#1509](https://github.com/TheurgicDuke771/DataQ/issues/1509) (Theme 1 — the 5 GX
+> built-ins + the aggregate-stats decision) ·
+> [#1510](https://github.com/TheurgicDuke771/DataQ/issues/1510) (Theme 4a — curated
+> superset + the server-side allowlist) ·
+> [#1511](https://github.com/TheurgicDuke771/DataQ/issues/1511) (the `LLMProvider`
+> seam — the shared enabler) ·
+> [#1512](https://github.com/TheurgicDuke771/DataQ/issues/1512) (Theme 2 — LLM
+> SQL generator) · [#1513](https://github.com/TheurgicDuke771/DataQ/issues/1513)
+> (Theme 3 — LLM check suggestions).
+> Captured so the design intent isn't lost. None of
 > this is a v1 blocker — the v1 DQ loop (checks → results → trends → freshness/volume
 > monitors → alerts → MCP) stands on its own. These are the "intelligence" layer on
 > top of it.
