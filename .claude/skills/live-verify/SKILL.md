@@ -1,6 +1,6 @@
 ---
 name: live-verify
-description: Open an ad-hoc harness test window on Azure and verify a change against REAL datasources — wake the harness, run the flows, exercise the app (live-smoke Playwright lane / e2e_smoke.py bearer mode / MCP), record the readings, put the harness back to sleep. Use when a change touches a driver boundary (a value read from a DB connector, pyiceberg, pandas/pyarrow or a cloud SDK), before ticking any docs/feature-matrix cell, or when the user says "verify this live" / "run a harness window".
+description: Open an ad-hoc harness test window on Azure and verify a change against REAL datasources — wake the harness, run the flows, exercise the app (live-smoke Playwright lane / e2e_smoke.py bearer mode / MCP), record the readings, put the harness back to sleep. Use when a change touches a driver boundary (a value read from a DB connector, pyiceberg, pandas/pyarrow or a cloud SDK), before ticking any docs/site/feature-matrix.md cell, or when the user says "verify this live" / "run a harness window".
 disable-model-invocation: true
 ---
 
@@ -19,8 +19,9 @@ This skill is the repeatable procedure for getting that evidence.
 ## Cost gate — read before waking anything
 
 - The harness compute has been **stopped by default since 2026-07-04** (#590). Awake it burns **~CAD 17/day (~0.70/hour)**; stopped it costs ~0.
-- Azure was restored as **PayAsYouGo on 2026-07-17 with no spending limit** — awake resources bill real money, they do not fail closed.
-- **Therefore: never leave a window open.** `stop` runs in every exit path, including when the verification fails. If you are interrupted, stop the harness first and report second.
+- Azure runs as **PayAsYouGo** — awake resources bill real money. There IS a monthly account spend limit, and it fails in the worst way: on 2026-08-08 it **killed the window agent mid-poll while the harness stayed Running unattended for ~6h** (ops-log; extra burn ≈ CAD 4–5). Treat the limit as an agent-killer, not a cost ceiling.
+- **Therefore: never leave a window open.** `stop` runs in every exit path, including when the verification fails. If you are interrupted, stop the harness first and report second. **A window driven by an agent dies with the agent — the stop is not guaranteed** (the 2026-08-08 incident): after any window, verify the stop **against Azure** (`az containerapp list -g dataq-rg --query "[].{n:name,s:properties.runningStatus}" -o table`), never against the script's own log alone.
+- **Before choosing a Snowflake-touching leg (`--adf`, `--dbt`, the Snowflake DAG): check the rotation register in `docs/ops-log.md` first.** Short-lived Snowflake PATs (~15–25 days in practice) and ADF's stale inline `ls_snowflake` credential (2026-08-08 entry) can kill a leg before it starts — a dead credential then masquerades as the defect you came to verify.
 - If the user has not clearly asked for a live run, ask before waking. A window is an outward-facing, billable action.
 
 ## The harness script
@@ -101,7 +102,7 @@ For each expected reading:
 ~/Coding/Python/DataQ-harness/scripts/harness_window.sh status   # confirm everything is down
 ```
 
-`stop` also disarms the mockdata crons and the `dbt-lineage` nightly cron. Verify with `status`; do not assume.
+`stop` also disarms the mockdata crons and the `dbt-lineage` nightly cron. Verify with `status` AND against Azure directly (`az containerapp list …runningStatus…`); do not assume — the script's own log is not evidence the stop happened.
 
 ### 6. Record the evidence
 
@@ -110,6 +111,7 @@ A live run whose result is not written down has to be paid for twice.
 - **`docs/site/feature-matrix.md`** — tick a cell **only** for a datasource you just observed working. A ✅ with no live run is a claim, not a fact.
 - **CLAUDE.md §13** — the reading and the date, with the actual numbers (`"UC freshness 239.06h, lower/UPPER identical"` beats `"UC verified"`).
 - **A GitHub issue** for anything the run found — working-agreement #3, never a silent fix.
+- **`docs/ops-log.md`** — every harness start/stop gets an append-only entry with absolute UTC timestamps (CLAUDE.md §12; the settings.json hook will remind you, but write it as part of the window, not as an afterthought).
 - If the run **found a defect a test could not**, say so explicitly and name the boundary. That sentence is what turns one incident into a rule.
 
 ## Rules

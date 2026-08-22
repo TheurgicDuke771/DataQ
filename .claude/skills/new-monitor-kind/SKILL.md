@@ -1,6 +1,6 @@
 ---
 name: new-monitor-kind
-description: Add a new `check.kind` (monitor kind) end-to-end — registry, run-path routing, authoring gates, dimension derivation, dry-run, export/import, MCP, frontend catalog, docs and tests. Walks the exact traversal used by freshness/volume (#426/#437), comparison (ADR 0015, #791–#795) and schema_drift (#592), with the traps each one hit. Use when adding a kind from the ADR 0012 reserved set (`anomaly` is next) or when the user says "add a new monitor kind".
+description: Add a new `check.kind` (monitor kind) end-to-end — registry, run-path routing, authoring gates, dimension derivation, dry-run, export/import, MCP, frontend catalog, docs and tests. Walks the exact traversal used by freshness/volume (#426/#437), comparison (ADR 0015, #791–#795), schema_drift (#592) and anomaly (#593, #1117/#1119), with the traps each one hit. All six CHECK_KINDS are shipped — use when adding a genuinely NEW kind (which now always needs a constraint-widening migration first) or when the user says "add a new monitor kind".
 disable-model-invocation: true
 ---
 
@@ -10,27 +10,26 @@ disable-model-invocation: true
 
 `check.kind` is the ADR [0012](../../../docs/site/adr/0012-monitor-kind-seam.md) monitor-kind seam. Adding one is a **wide, ordered traversal** — registry → run path → authoring → classification → surfaces → docs — that is easy to half-finish. A half-finished kind is worse than none: it is dispatchable but unauthorable, or authorable but silently unclassified.
 
-This repo has now walked it four times. This skill is that traversal, plus the trap each walk hit.
+This repo has now walked it five times. This skill is that traversal, plus the trap each walk hit.
 
-**Reserved and remaining:** `anomaly` (v1.1 W5). Shipped: `freshness`/`volume` (#426/#437), `comparison` (#791–#795), `schema_drift` (#592).
+**Nothing is reserved-and-unbuilt:** all six `CHECK_KINDS` are shipped — `expectation`, `freshness`/`volume` (#426/#437), `comparison` (#791–#795), `schema_drift` (#592), `anomaly` (#593).
 
 ## Before you start
 
 1. Read ADR [0012](../../../docs/site/adr/0012-monitor-kind-seam.md), and the ADR for the kind if one exists (`comparison` → [0014](../../../docs/site/adr/0014-reconciliation-comparison-check-kind.md)/[0015](../../../docs/site/adr/0015-two-connection-comparison-check-model.md)). If the kind has no ADR and is non-trivial, write one first — use `/adr-create`.
 2. Read the closest precedent's PR diff end-to-end. Pick by shape:
    - **scalar** (one SQL aggregate → a badness number) → `freshness`/`volume`
-   - **stateful** (needs a stored baseline to compare against) → `schema_drift` (#592)
+   - **stateful** (needs a stored baseline to compare against) → `schema_drift` (#592), or `anomaly` (#593) — the closer precedent for a LEARNED baseline: it reuses `monitor_baselines` with **no migration** and returns `skip` on cold start (`backend/app/services/anomaly.py`)
    - **two-dataset** (source + target) → `comparison` (#791–#795)
 3. Decide the shape first. It determines whether `build_statement` is a real function or `None`, and that single choice drives the run-path routing for free.
 
 ## The traversal
 
-### 1. Does it need a migration? Usually no — check first
+### 1. It needs a migration — every unclaimed kind is now built
 
-`backend/app/db/models.py` `CHECK_KINDS` backs a real DB constraint (`_in_check("kind", CHECK_KINDS, "kind_valid")` on both `checks` and `monitor_baselines`).
+`backend/app/db/models.py` `CHECK_KINDS` backs a real DB constraint (`_in_check("kind", CHECK_KINDS, "kind_valid")` on both `checks` and `monitor_baselines`), and **all six values are shipped** — there is no reserved slot left to claim.
 
-- If your kind is **already in `CHECK_KINDS`** — `anomaly` is — **no migration is needed.** The constraint already admits it.
-- If it is not, you need an Alembic migration to widen the constraint, and it must land in its **own PR before** the code that writes the new value (working-agreement #30, two-step). Run `/agents migration-safety` on it.
+- A new kind therefore **always** needs an Alembic migration widening the constraint, landing in its **own PR before** the code that writes the new value (working-agreement #30, two-step). Run `/agents migration-safety` on it.
 
 ### 2. Register the strategy — the one required step
 
@@ -60,13 +59,13 @@ MONITOR_KIND_REGISTRY[MY_KIND] = MonitorKindStrategy(
 ### 3. Run path
 
 - **Scalar kinds** flow through the runners' `run_monitors` (`run_monitor_specs` / `run_monitors_over_engine`) with no new code — but each runner must **advertise** the kind: `supported_monitor_kinds` in `snowflake.py`, `unity_catalog.py`, `iceberg.py`, `flatfile.py`. A kind absent from a runner's set is refused at author time for that datasource, which is the correct default — widen deliberately, per datasource, with evidence it works there.
-- **Stateful kinds** need an executor the worker injects. See `backend/app/services/schema_drift.py` (owns the baseline store and its session) and its wiring in `backend/app/worker/tasks.py` + the partition doc in `backend/app/services/run_service.py`.
+- **Stateful kinds** need an executor the worker injects. See `backend/app/services/schema_drift.py` and `backend/app/services/anomaly.py` (each owns its baseline read/write and its session) and their wiring in `backend/app/worker/tasks.py` + the partition doc in `backend/app/services/run_service.py`.
 
 ### 4. Authoring gates — `backend/app/services/check_service.py`
 
 `_V1_SUPPORTED_KINDS` derives from `MONITOR_KINDS`, so registration widens it automatically. What is **not** automatic:
 
-- the per-datasource capability set your kind keys off (`MONITOR_CAPABLE_TYPES`, or a kind-specific one like `SCHEMA_DRIFT_CAPABLE_TYPES`)
+- the per-datasource capability set your kind keys off — there is now a registry, `_CAPABLE_TYPES_BY_KIND` in `check_service.py` (keyed entries for `schema_drift`/`anomaly`, `MONITOR_CAPABLE_TYPES` as the fallback); a new kind with its own capability set adds an entry there
 - any config guardrail that needs the DB (a real column, a resolvable target)
 - the `expectation_type` pairing — use `monitor_expectation_type(MY_KIND)` → `monitor:my_kind`. Never hand-write the string; the author path asserts kind↔type and the frontend catalog mirrors it.
 
@@ -90,7 +89,7 @@ Check `backend/app/services/suite_io_service.py` — the `if "dimension" in c` b
 
 | Surface | File | Needed? |
 |---|---|---|
-| Dry-run preview | `services/dryrun_service.py` | Only if the kind can be previewed without a run. It currently supports `expectation` + `schema_drift`; unsupported kinds must raise `DryRunUnsupportedError`, not fall through. |
+| Dry-run preview | `services/dryrun_service.py` | Only if the kind can be previewed without a run. It currently supports `expectation`, `schema_drift` and `anomaly`; unsupported kinds must raise `DryRunUnsupportedError`, not fall through. |
 | Export / import | `services/suite_io_service.py` | Validation is atomic — every kind validated before any row is written. Add the kind's guardrail alongside the `MONITOR_KINDS` / `COMPARISON_KIND` branches. |
 | Check API | `api/v1/checks.py` | Only for a kind-specific endpoint (e.g. schema_drift's rebaseline). |
 | MCP tools | `mcp/server.py` | `kind` is a passthrough string — update the **tool description** so an LLM knows the kind exists and when to pick it. Descriptions are LLM-facing (CLAUDE.md §10). |

@@ -8,7 +8,7 @@ set -euo pipefail
 dir="${1:-docs/site/adr}"
 
 # Highest existing NNNN prefix among NNNN-*.md files; 0 when the dir is empty/missing.
-last=$(ls "$dir"/[0-9][0-9][0-9][0-9]-*.md 2>/dev/null \
+last=$( (ls "$dir"/[0-9][0-9][0-9][0-9]-*.md 2>/dev/null || true) \
   | sed -E 's|.*/([0-9]{4})-.*|\1|' \
   | sort -n \
   | tail -1)

@@ -1,5 +1,5 @@
 <!--
-Per working-agreements #1, #3, #5, #11, #25:
+Per working-agreements #1, #2, #3, #4, #9, #11:
 - One functionality per PR (squash-merges into one commit on main)
 - Reference any related GitHub issue (Fixes #N for defect fixes)
 - Manually tested before merge; automated tests required (the ≥80% CI gate is live and blocking)

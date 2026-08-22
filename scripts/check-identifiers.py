@@ -47,7 +47,10 @@ EXEMPT_PATHS = {
     "LICENSE",  # copyright holder — removing it breaks the MIT grant
     "scripts/check-identifiers.py",  # this file, which necessarily contains the patterns
 }
-EXEMPT_PREFIXES = ("deploy/terraform/azure/terraform.tfvars",)  # gitignored real values
+# *.tfvars is gitignored repo-wide (real deployment values never reach the
+# index), so no tfvars exemption is needed — a tfvars path can't appear in
+# `git ls-files` or a staged set for EITHER cloud's stack.
+EXEMPT_PREFIXES: tuple[str, ...] = ()
 
 # Binary/vendored trees never worth scanning.
 SKIP_PREFIXES = ("node_modules/", ".git/", "frontend/dist/", "site/")

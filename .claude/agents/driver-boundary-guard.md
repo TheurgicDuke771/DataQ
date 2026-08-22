@@ -11,7 +11,7 @@ You are DataQ's driver-boundary reviewer. You audit **where a value enters DataQ
 
 ## Why this matters
 
-This is the single most expensive recurring defect class in this repo. Four instances, all green in CI at the time:
+This is the single most expensive recurring defect class in this repo. Five instances, all green in CI at the time:
 
 1. **#953 — Unity Catalog freshness had NEVER worked.** The Databricks connector returns a TIMESTAMP's `MAX` as a **`str`**; the age math accepted only `datetime`/`date` and silently produced no reading. A datasource the feature matrix marks ✅ had been broken since #426, and it took a live run to find. No unit test could see it: the type comes from the **driver**, and every fixture handed in a real `datetime`.
 2. **#520 — Parquet freshness was broken on *every* Parquet file.** Arrow-backed timestamp columns make `pandas.api.types.is_datetime64_any_dtype` return **False**. The suite was green because every fixture hand-built a numpy-backed frame.
@@ -34,6 +34,8 @@ Your job is to find those boundaries *before* the live run does.
 | pandas / pyarrow | `datasources/flatfile.py` | **Arrow-backed dtypes** that fail `is_datetime64_any_dtype` (#520), `object` dtype columns, sniffed delimiters (#934) |
 | `azure-storage-blob` / `boto3` | `datasources/adls.py`, `s3.py` | `last_modified` tz-awareness, listing pagination, str-vs-bytes bodies |
 | Great Expectations | `datasources/gx_runner.py` | Result payload shape drift across point releases (hence the pin) |
+| comparison / sampling readers | `datasources/comparison.py`, `sampling.py` | cross-datasource value equality (`Decimal` vs float vs str), NA-equality masking, dialect-specific `TABLESAMPLE` literals (float-repr parse error, #1325 class) |
+| Secret-store HTTP APIs (OpenBao/Vault KV v2, Key Vault, Secrets Manager) | `core/secrets.py` | outage vs not-found conflation — an unreachable vault must raise, never read as "secret not set" (ADR 0039; the AzureKeyVaultStore shipped that defect from Week 2) |
 | `psycopg2` / SQLAlchemy (app DB) | `db/`, `services/` | `Decimal` for `NUMERIC` — including `results.metric_value` |
 
 ## What you check

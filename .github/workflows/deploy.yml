@@ -1,8 +1,9 @@
 name: Deploy
 
-# Manual-only for now (workflow_dispatch): apply-ready scaffolding that never
-# fires on its own until the Azure resources exist + secrets/vars are set. Once
-# the infra is provisioned (see deploy/README.md), flip on the push trigger:
+# Manual-only (workflow_dispatch) BY POLICY, not by incompleteness: the Azure
+# infra is provisioned and live (deploy/README.md), but production rolls happen
+# on an explicit dispatch with the pre-/post-deploy checklists run around them —
+# same posture as deploy-aws.yml. To move to continuous deploy, add:
 #   push:
 #     branches: [main]
 on:
