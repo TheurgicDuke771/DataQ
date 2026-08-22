@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "506a659e6aba",
+  "strategy": "manual-commit",
+  "branch": "feature/1532-uc-sql-pushdown",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "backend/app/datasources/unity_catalog.py",
+    "backend/tests/datasources/test_unity_catalog.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/50/6a659e6aba/0/metadata.json",
+      "transcript": "/50/6a659e6aba/0/full.jsonl",
+      "compact_transcript": "/50/6a659e6aba/0/transcript.jsonl",
+      "content_hash": "/50/6a659e6aba/0/content_hash.txt",
+      "prompt": "/50/6a659e6aba/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 176,
+    "cache_creation_tokens": 108437,
+    "cache_read_tokens": 32875740,
+    "output_tokens": 60010,
+    "api_call_count": 88
+  }
+}
