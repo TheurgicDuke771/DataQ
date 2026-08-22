@@ -1,0 +1,3 @@
+Continue on DMF piece. 
+Also let's check a option if we can use databrick's compute [serverless or dedicated server] to execute the checks [instead of using in-memory pandas]. 
+Or do you think adding DQX will be more relevant?
