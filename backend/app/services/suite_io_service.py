@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.monitors import MONITOR_KINDS
+from backend.app.datasources.snowflake_dmf import DMF_ENGINE
 from backend.app.db.models import (
     COMPARISON_KIND,
     GX_ENGINE,
@@ -45,6 +46,7 @@ from backend.app.services.check_service import (
     validate_comparison_check,
     validate_dimension,
     validate_engine,
+    validate_engine_compatibility,
     validate_expectation_check,
     validate_kind,
     validate_lengths,
@@ -192,6 +194,15 @@ def import_suite(
         # capability) rather than dropping or silently converting the check.
         # Key absent = a pre-engine document = 'gx', which is what it ran as.
         validate_engine(c.get("engine", GX_ENGINE), connection_type=connection.type)
+        validate_engine_compatibility(
+            c.get("engine", GX_ENGINE),
+            kind=c["kind"],
+            expectation_type=c["expectation_type"],
+            config=c["config"],
+            warn_threshold=c["warn_threshold"],
+            fail_threshold=c["fail_threshold"],
+            critical_threshold=c["critical_threshold"],
+        )
         # Direct `Check(...)` construction below has no Pydantic layer of its own —
         # today the REST import route's `CheckDocument` model already enforces the
         # same 256/128 bounds, but this keeps the guarantee at the service layer
@@ -231,6 +242,10 @@ def import_suite(
                 config=c["config"],
                 connection_type=connection.type,
             )
+        elif c.get("engine", GX_ENGINE) == DMF_ENGINE:
+            # A dmf:* column metric — fully validated by
+            # validate_engine_compatibility above; not a GX expectation.
+            pass
         else:
             # Same author-time GX validation as check CRUD (#651) — an imported
             # document must not smuggle in checks a direct POST would 422.

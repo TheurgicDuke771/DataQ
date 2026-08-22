@@ -39,6 +39,7 @@ from backend.app.datasources.gx_runner import (
     to_suite_outcome,
 )
 from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
+from backend.app.datasources.snowflake_dmf import DMF_ENGINE, evaluate_dmf_check
 from backend.app.datasources.sql import LazyEngine
 
 __all__ = [
@@ -193,6 +194,11 @@ class SnowflakeCheckRunner:
     # every future registry entry and self-defeat the per-kind gate (a stateful
     # kind must be claimed by a runner only once it actually evaluates it).
     supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
+    # Native engines this runner evaluates (ADR 0036): the run path routes a
+    # check whose `engine` is advertised here to `run_native_check`; anything
+    # else lands as a classified per-check error. Same explicit-claim rule as
+    # the monitor set above.
+    supported_native_engines: ClassVar[frozenset[str]] = frozenset({DMF_ENGINE})
 
     def __init__(self, config: SnowflakeConfig, secret: str) -> None:
         self._config = config
@@ -272,6 +278,36 @@ class SnowflakeCheckRunner:
             checks=checks,
             name=f"suite-{table}",
             index_columns=index_columns,
+        )
+
+    def run_native_check(
+        self,
+        *,
+        kind: str,
+        expectation_type: str,
+        config: dict[str, Any],
+        table: str,
+        schema: str | None,
+    ) -> CheckOutcome:
+        """Evaluate ONE dmf-engine check via ad-hoc system-DMF SQL (ADR 0036).
+
+        Runs over the runner's shared engine (#427). Never raises: every
+        failure — bad config, missing grant, edition gate — is that check's
+        classified ``error`` outcome, computed inside `evaluate_dmf_check`.
+        """
+        from sqlalchemy import text
+
+        def fetch_scalar(statement: str) -> Any:
+            with self._engine.get().connect() as conn:
+                return conn.execute(text(statement)).scalar()
+
+        return evaluate_dmf_check(
+            fetch_scalar,
+            kind=kind,
+            expectation_type=expectation_type,
+            config=config,
+            table=table,
+            schema=schema or self._config.schema_,
         )
 
     def run_monitors(

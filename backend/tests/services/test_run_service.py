@@ -393,6 +393,58 @@ def test_native_engine_check_with_unhandled_kind_still_errors_not_raises() -> No
     assert outcomes[1].errored is True
 
 
+def test_native_engine_check_routes_to_the_runners_native_method() -> None:
+    # A runner that ADVERTISES the engine (#429 explicit-claim pattern) gets the
+    # native check routed to run_native_check as its own publishable phase; the
+    # GX sibling still goes through run_checks with only itself in the batch.
+    seen: list[dict[str, object]] = []
+
+    class _DmfCapable(FakeRunner):
+        supported_native_engines = frozenset({"dmf"})
+
+        def run_native_check(self, **kwargs: object) -> CheckOutcome:
+            seen.append(kwargs)
+            return CheckOutcome("dmf:null_count", success=True, metric_value=3.0)
+
+    gx_check, native_check = _checks(2)
+    native_check.engine = "dmf"
+    native_check.expectation_type = "dmf:null_count"
+    native_check.config = {"column": "order_id"}
+    runner = _DmfCapable(
+        outcome=SuiteOutcome(success=True, checks=[CheckOutcome("e1", success=True)])
+    )
+
+    outcomes = collect_outcomes(
+        cast(CheckRunner, runner), table="T", schema="S", checks=[gx_check, native_check]
+    )
+
+    assert outcomes[0].success is True
+    assert outcomes[1].metric_value == 3.0 and not outcomes[1].errored
+    assert seen == [
+        {
+            "kind": "expectation",
+            "expectation_type": "dmf:null_count",
+            "config": {"column": "order_id"},
+            "table": "T",
+            "schema": "S",
+        }
+    ]
+
+
+def test_advertised_engine_without_the_method_still_errors_cleanly() -> None:
+    # The capability-without-implementation drift hole (#429's mirror): a runner
+    # advertising 'dmf' with no run_native_check must land the check as a
+    # classified error, not an AttributeError/TypeError mid-run.
+    class _AllTalkNative(FakeRunner):
+        supported_native_engines = frozenset({"dmf"})  # no run_native_check
+
+    check = _checks(1)[0]
+    check.engine = "dmf"
+    runner = _AllTalkNative(outcome=SuiteOutcome(success=True, checks=[]))
+    [outcome] = collect_outcomes(cast(CheckRunner, runner), table="T", schema=None, checks=[check])
+    assert outcome.errored is True
+
+
 def test_transient_check_without_engine_runs_as_gx() -> None:
     # A transient (unflushed) Check has engine=None — the server default hasn't
     # applied. The run path must treat that as 'gx' (what the flush would have

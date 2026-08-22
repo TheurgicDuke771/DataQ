@@ -46,6 +46,13 @@ from backend.app.datasources.sampling import (
     SAMPLING_ROW_COUNT_CONFLICT,
     is_row_count_expectation,
 )
+from backend.app.datasources.snowflake_dmf import (
+    DMF_ENGINE,
+    DMF_EXPECTATION_TYPES,
+    DMF_KINDS,
+    DMF_UNBANDABLE_TYPES,
+)
+from backend.app.datasources.sql import is_sql_identifier
 from backend.app.db.models import (
     CHECK_ENGINES,
     CHECK_ORDER,
@@ -202,6 +209,83 @@ def validate_engine(engine: str, *, connection_type: str) -> None:
                 "connection_type": connection_type,
                 "offered": sorted(offered),
             },
+        )
+
+
+def validate_engine_compatibility(
+    engine: str,
+    *,
+    kind: str,
+    expectation_type: str,
+    config: dict[str, Any],
+    warn_threshold: Decimal | None,
+    fail_threshold: Decimal | None,
+    critical_threshold: Decimal | None,
+) -> None:
+    """The engine's supported matrix (ADR 0036 §4) — 422 for a kind/type/config
+    the engine cannot evaluate. Shared by create, update, restore and suite
+    import (the one-gate-per-rule discipline).
+
+    GX needs no arm here: the GX/monitor/custom-SQL validators already own its
+    matrix, and a ``dmf:*`` type under engine='gx' is rejected by GX's own
+    unknown-type gate. For DMF:
+
+    * kinds: ``expectation`` (the four ``dmf:*`` column metrics) and
+      ``freshness`` — the monitor validators own freshness config, and their
+      Snowflake capability/threshold rules apply unchanged. ``volume`` is NOT
+      in the matrix: ROW_COUNT has no ad-hoc invocation (see `snowflake_dmf`),
+      and the GX volume monitor's COUNT(*) pushes down identically.
+    * a column metric's config is exactly ``{"column": <identifier>}``.
+    * thresholds: the bandable metrics need a positive fail-or-critical
+      threshold (the silent-green rule — without one the metric is computed but
+      never banded); ``dmf:unique_count`` REFUSES thresholds, because
+      `severity.derive_status` bands higher-as-worse and a unique count
+      degrades downward — a threshold would invert its meaning. It runs as an
+      informational metric.
+    """
+    if engine != DMF_ENGINE:
+        return
+    if kind not in DMF_KINDS:
+        raise CheckConfigInvalidError(
+            f"the dmf engine cannot evaluate kind {kind!r} — it evaluates "
+            "freshness and the dmf:* column metrics",
+            detail={"engine": engine, "kind": kind, "supported_kinds": sorted(DMF_KINDS)},
+        )
+    if kind != "expectation":
+        return  # freshness/volume config is the monitor validators' job
+    if expectation_type not in DMF_EXPECTATION_TYPES:
+        raise CheckConfigInvalidError(
+            f"expectation_type {expectation_type!r} is not a dmf metric",
+            detail={"engine": engine, "supported_types": sorted(DMF_EXPECTATION_TYPES)},
+        )
+    unknown_keys = sorted(set(config) - {"column"})
+    if unknown_keys:
+        raise CheckConfigInvalidError(
+            f"a dmf column metric's config is exactly {{'column': …}}; unknown keys: "
+            f"{', '.join(unknown_keys)}",
+            detail={"expectation_type": expectation_type, "unknown_keys": unknown_keys},
+        )
+    if not is_sql_identifier(config.get("column")):
+        raise CheckConfigInvalidError(
+            "a dmf column metric needs a valid 'column' identifier in config",
+            detail={"expectation_type": expectation_type},
+        )
+    thresholds_set = any(
+        t is not None for t in (warn_threshold, fail_threshold, critical_threshold)
+    )
+    if expectation_type in DMF_UNBANDABLE_TYPES:
+        if thresholds_set:
+            raise CheckConfigInvalidError(
+                f"{expectation_type} does not accept thresholds: severity bands treat a "
+                "higher metric as worse, but a unique count degrades DOWNWARD — a "
+                "threshold would invert its meaning. It records the metric for trends.",
+                detail={"expectation_type": expectation_type},
+            )
+    elif not _has_positive_threshold(fail_threshold, critical_threshold):
+        raise CheckConfigInvalidError(
+            f"a {expectation_type} check needs a positive fail or critical threshold — "
+            "without one it can never fail (no threshold) or always fails (zero)",
+            detail={"expectation_type": expectation_type},
         )
 
 
@@ -745,6 +829,15 @@ def create_check(
     suite = get_suite(session, suite_id)  # 404 if the suite is missing
     validate_kind(kind)
     validate_engine(engine, connection_type=_connection_type(session, suite))
+    validate_engine_compatibility(
+        engine,
+        kind=kind,
+        expectation_type=expectation_type,
+        config=config,
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+        critical_threshold=critical_threshold,
+    )
     validate_lengths(name=name, expectation_type=expectation_type)
     validate_threshold_ordering(
         warn_threshold=warn_threshold,
@@ -779,6 +872,11 @@ def create_check(
             config=config,
             connection_type=_connection_type(session, suite),
         )
+    elif engine == DMF_ENGINE:
+        # A dmf:* column metric — its whole config was validated by
+        # validate_engine_compatibility above; it is not a GX expectation, so
+        # the GX construct-the-class gate (#651) has nothing to say about it.
+        pass
     else:
         validate_expectation_check(expectation_type, config)
         _reject_row_count_on_sampled_suite(session, suite, expectation_type)
@@ -848,6 +946,7 @@ def _validate_kind_specific_config(
     critical_threshold: Decimal | None,
     source_connection_id: uuid.UUID | None,
     validate_expectation_config: bool,
+    engine: str = GX_ENGINE,
 ) -> None:
     """The kind-specific validation branch shared by `update_check` and
     `restore_check_version` (#283) — factored out to ONE place so a check kind
@@ -888,6 +987,10 @@ def _validate_kind_specific_config(
             config=config,
             connection_type=_connection_type(session, suite),
         )
+    elif engine == DMF_ENGINE:
+        # dmf:* column metric — validated by validate_engine_compatibility at
+        # the caller; never a GX expectation, so the GX gate does not apply.
+        pass
     elif validate_expectation_config:
         validate_expectation_check(expectation_type, config)
         _reject_row_count_on_sampled_suite(session, get_suite(session, suite_id), expectation_type)
@@ -1017,6 +1120,19 @@ def update_check(
     validate_threshold_ordering(
         warn_threshold=new_warn, fail_threshold=new_fail, critical_threshold=new_critical
     )
+    # The engine matrix is validated on the EFFECTIVE post-patch state (ADR
+    # 0036): re-pointing a GX check to dmf without also supplying a dmf config
+    # must 422 here, not at run time.
+    new_engine = engine if engine is not None else (check.engine or GX_ENGINE)
+    validate_engine_compatibility(
+        new_engine,
+        kind=check.kind,
+        expectation_type=new_expectation_type,
+        config=new_config,
+        warn_threshold=new_warn,
+        fail_threshold=new_fail,
+        critical_threshold=new_critical,
+    )
     _validate_kind_specific_config(
         session,
         suite_id,
@@ -1025,6 +1141,7 @@ def update_check(
         config=new_config,
         fail_threshold=new_fail,
         critical_threshold=new_critical,
+        engine=new_engine,
         source_connection_id=(
             source_connection_id if source_connection_id is not None else check.source_connection_id
         ),
@@ -1232,6 +1349,15 @@ def restore_check_version(
         version.engine,
         connection_type=_connection_type(session, get_suite(session, suite_id)),
     )
+    validate_engine_compatibility(
+        version.engine,
+        kind=check.kind,
+        expectation_type=version.expectation_type,
+        config=version.config,
+        warn_threshold=version.warn_threshold,
+        fail_threshold=version.fail_threshold,
+        critical_threshold=version.critical_threshold,
+    )
     validate_threshold_ordering(
         warn_threshold=version.warn_threshold,
         fail_threshold=version.fail_threshold,
@@ -1245,6 +1371,7 @@ def restore_check_version(
         config=version.config,
         fail_threshold=version.fail_threshold,
         critical_threshold=version.critical_threshold,
+        engine=version.engine,
         source_connection_id=version.source_connection_id,
         # Restore always re-applies both fields (never a partial touch), so
         # always GX-validate — no PATCH-style "only if touched" escape valve.

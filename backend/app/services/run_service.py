@@ -229,37 +229,52 @@ def _run_outcome_phases(
 
     # Engine partition first (ADR 0036): everything below this line is the GX run
     # path, so a check whose engine is native is split off before kind dispatch.
-    # No native engine has a runner yet, so today this arm is purely defensive —
-    # save-time validation refuses to author such a row — but a row can outlive
-    # its capability (engine revoked from the map, an out-of-band write), and the
-    # ADR's rule for that state is a classified per-check `error`, never a silent
-    # skip and never a raise that takes the suite's GX siblings down with it.
+    # A native check routes to the RUNNER's `run_native_check` when the runner
+    # advertises the engine (`supported_native_engines`, the #429 explicit-claim
+    # pattern — SnowflakeCheckRunner advertises 'dmf'); each is its own
+    # publishable phase because each is an independent warehouse SELECT (honest
+    # per-check progress, like comparison). A runner that does NOT advertise the
+    # engine — the engine was revoked from the map, an out-of-band write, a
+    # datasource with no native engines — lands the check as a classified
+    # per-check `error`, never a silent skip and never a raise that takes the
+    # suite's GX siblings down with it (ADR 0036 §5). `run_native_check` itself
+    # never raises (failures are classified inside it), so a native phase can
+    # never poison its siblings either way.
     # A transient (unflushed) check has no server-default applied yet → treat
     # None as 'gx', which is what the flush would have written.
     def _engine(c: Check) -> str:
         return c.engine or GX_ENGINE
 
+    advertised = frozenset(getattr(runner, "supported_native_engines", frozenset()))
+    native_run = getattr(runner, "run_native_check", None)
     for i, c in enumerate(checks):
-        if _engine(c) != GX_ENGINE:
-            yield OutcomePhase(
-                resolved=[
-                    (
-                        i,
-                        _executor_outcome(
-                            None,
-                            c,
-                            missing=(
-                                f"engine '{_engine(c)}' is not available on this "
-                                "connection — the check was authored for a "
-                                "platform-native engine this deployment cannot run "
-                                "(ADR 0036); re-check the connection's engine "
-                                "capabilities or re-point the check to 'gx'"
-                            ),
-                        ),
-                    )
-                ],
-                publishable=True,
+        engine = _engine(c)
+        if engine == GX_ENGINE:
+            continue
+        if engine in advertised and callable(native_run):
+            outcome = cast(
+                CheckOutcome,
+                native_run(
+                    kind=c.kind,
+                    expectation_type=c.expectation_type,
+                    config=dict(c.config),
+                    table=table,
+                    schema=schema,
+                ),
             )
+        else:
+            outcome = _executor_outcome(
+                None,
+                c,
+                missing=(
+                    f"engine '{engine}' is not available on this "
+                    "connection — the check was authored for a "
+                    "platform-native engine this deployment cannot run "
+                    "(ADR 0036); re-check the connection's engine "
+                    "capabilities or re-point the check to 'gx'"
+                ),
+            )
+        yield OutcomePhase(resolved=[(i, outcome)], publishable=True)
     checks_gx = [(i, c) for i, c in enumerate(checks) if _engine(c) == GX_ENGINE]
     expectation_idx = [i for i, c in checks_gx if c.kind == _EXPECTATION_KIND]
     monitor_idx = [i for i, c in checks_gx if c.kind in SCALAR_MONITOR_KINDS]

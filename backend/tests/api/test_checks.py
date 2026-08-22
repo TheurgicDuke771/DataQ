@@ -2458,14 +2458,14 @@ def test_create_defaults_engine_to_gx(client: TestClient, db_session: Any) -> No
 def test_create_rejects_an_unoffered_engine_naming_the_offer(
     client: TestClient, db_session: Any
 ) -> None:
-    # 'dmf' is vocabulary-valid but unoffered until DmfCheckRunner registers
-    # (#895 slice 2): the 422 must carry what IS offered, not just refuse.
+    # 'dqx' is vocabulary-valid but trigger-gated (ADR 0036 §6): the 422 must
+    # carry what IS offered — which since slice 2 includes dmf on snowflake.
     sid = _suite_id(client, db_session)
-    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(engine="dmf"))
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(engine="dqx"))
     assert resp.status_code == 422
     detail = resp.json()["error"]["detail"]
-    assert detail["engine"] == "dmf"
-    assert detail["offered"] == ["gx"]
+    assert detail["engine"] == "dqx"
+    assert detail["offered"] == ["dmf", "gx"]
 
 
 def test_create_rejects_an_unknown_engine(client: TestClient, db_session: Any) -> None:
@@ -2509,3 +2509,43 @@ def test_version_history_api_shows_the_engine(client: TestClient, db_session: An
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
     versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
     assert versions[0]["engine"] == "gx"
+
+
+def test_create_a_dmf_check_end_to_end(client: TestClient, db_session: Any) -> None:
+    # Slice 2 (#895): dmf is offered on a snowflake connection — a dmf column
+    # metric authors through the real API and reads back with its engine.
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(
+            name="null count via dmf",
+            engine="dmf",
+            expectation_type="dmf:null_count",
+            config={"column": "order_id"},
+            fail_threshold=10,
+        ),
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["engine"] == "dmf"
+    assert body["expectation_type"] == "dmf:null_count"
+
+
+def test_create_dmf_with_a_gx_type_rejected_by_the_matrix(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(engine="dmf"))
+    assert resp.status_code == 422
+    assert "dmf:null_count" in str(resp.json()["error"]["detail"].get("supported_types"))
+
+
+def test_gx_engine_rejects_a_dmf_type(client: TestClient, db_session: Any) -> None:
+    # The inverse door: a dmf: type under engine=gx must fail GX validation, not
+    # slip through as an unknown expectation.
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(expectation_type="dmf:null_count"),
+    )
+    assert resp.status_code == 422
