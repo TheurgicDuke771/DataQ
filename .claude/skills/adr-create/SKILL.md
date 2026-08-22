@@ -28,14 +28,14 @@ User invokes this skill with a short topic for the ADR. Optional args:
 3. **Create the file** at `docs/site/adr/NNNN-<slug>.md` using the template below. Today's date in ISO format (`YYYY-MM-DD`). Deciders defaults to the current GitHub handle, resolved via `gh api /user --jq .login` (prepend `@`). Do NOT use `git config user.name` — that returns a display name (e.g. "Ada Lovelace") which produces an invalid `@mention`. If `gh api` fails (no auth, offline), fall back to asking the user for their GitHub handle.
 
 4. **Update the index** at `docs/site/adr/README.md`:
-   - Add a row to the "Index" table at the end (above any "Pending" section).
-   - If the new ADR was in the Pending list, remove it from there.
+   - Add a row to the "Index" table at the end — three columns: `| [NNNN](NNNN-slug.md) | Title | Status |`.
+   - If the new ADR **amends** an earlier one, also append `(amended by NNNN — <one-line scope>)` to the amended ADR's Status cell, and add an inline `> **Amendment (YYYY-MM-DD, ADR-NNNN):**` blockquote at the amended section of the older ADR (the documented convention — see 0028→0024, 0031→0013, 0033→0027).
 
 5. **Stage but do not commit.** The user runs `git add` + the commit themselves per working-agreement #1 (one functionality per commit, manual commit step).
 
 6. **Print next steps:**
    - "Open `docs/site/adr/NNNN-<slug>.md` and fill in Context / Decision / Consequences / Alternatives."
-   - "Branch suggestion: `docs/site/adr-NNNN-<slug>`"
+   - "Branch suggestion: `docs/adr-NNNN-<slug>`" (branch names follow CONTRIBUTING's `docs/<desc>` prefix — the docs/site/ move changed file paths, not branch naming)
    - "PR title suggestion: `docs: add ADR NNNN — <human title>`"
 
 ## Template
@@ -43,10 +43,11 @@ User invokes this skill with a short topic for the ADR. Optional args:
 ```markdown
 # ADR NNNN — <Human-readable title>
 
-- **Status:** Accepted
+- **Status:** Proposed
 - **Date:** YYYY-MM-DD
 - **Deciders:** @<github-handle>
 - **Consulted:** <optional, e.g. @product-owner, @security-team>
+- **Amends:** <optional, e.g. ADR-0024 — partial override; pair with an inline amendment blockquote there>
 - **Supersedes:** <optional, e.g. ADR-0007>
 - **Superseded by:** <optional, e.g. ADR-0042>
 
@@ -96,14 +97,14 @@ User invokes this skill with a short topic for the ADR. Optional args:
 
 - Don't reuse a number. If `docs/site/adr/0005-*.md` exists, the next one is `0006`, never `0005a` or `0005-v2`.
 - Don't auto-fill Decision/Context with boilerplate. Leave them as the template placeholders so the user must write the actual content.
-- Don't add the ADR to the "Pending" section of README — Pending is for ADRs known to be coming in a specific week but not yet written.
+- Don't invent a "Pending"/reservation section in the README — the index lists written ADRs only; a planned-but-unwritten decision lives as an issue, not an index row.
 
 ## Test scenarios
 
 Worked examples so the skill behaves consistently:
 
-1. **Plain decision.** `adr-create "use Pydantic Settings for config"` with `0022` as the latest →
-   helper prints `0023`; create `docs/site/adr/0023-use-pydantic-settings-for-config.md` with `Status: Accepted`, today's date, Deciders resolved from `gh api /user`; add the index row; stage only.
+1. **Plain decision.** `adr-create "use Pydantic Settings for config"` with `0022` as the latest (a worked example — the real head is far past that) →
+   helper prints `0023`; create `docs/site/adr/0023-use-pydantic-settings-for-config.md` with the template's `Status: Proposed` (pass `--status accepted` for a decided one), today's date, Deciders resolved from `gh api /user`; add the index row; stage only.
 2. **Proposed status + consulted.** `adr-create "adopt OpenTelemetry" --status proposed --consulted "@product-owner"` →
    `Status: Proposed` (title-cased from the lowercase arg), `Consulted: @product-owner`; Supersedes/Superseded-by labels left as empty placeholders.
 3. **Superseding an old ADR.** `adr-create "revised severity weights" --status accepted --supersedes 0005` →

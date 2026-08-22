@@ -35,7 +35,9 @@ A 404 means the feature isn't enabled for the repo — report that as a ⚠️ f
 
 ### 3. Local dependency audit (mirror of the synchronous CI gate)
 
-Mirror CI **exactly**: read the current invocations from `.github/workflows/ci.yml` (`backend-audit` and `frontend-audit` jobs) and run them verbatim — including the pinned `pip-audit` version and any `--ignore-vuln` flags present (the list is EMPTY since #553; an ignore only ever returns with a recorded acceptance + removal deadline, and running bare when CI runs bare keeps the outputs comparable). Frontend: `pnpm audit --audit-level=high` from `frontend/`.
+Mirror CI **exactly**: read the current invocations from `.github/workflows/ci.yml` (`backend-audit` and `frontend-audit` jobs) and run them verbatim — including the pinned `pip-audit` version and any `--ignore-vuln` flags present (the list is EMPTY since #553; an ignore only ever returns with a recorded acceptance + removal deadline, and running bare when CI runs bare keeps the outputs comparable). Frontend: **not** `pnpm audit` — npm retired the legacy audit endpoints 2026-07-15 (410), so CI (and you) run `node scripts/audit_bulk.cjs --audit-level=high` from `frontend/` (#877; the job name still says "pnpm audit" because it is the pinned required-check context).
+
+Also sweep the OTHER synchronous CI security gates, not just the audits: **Bandit** (`bandit -c pyproject.toml -r backend/app/` — judge by exit code, not warnings), **betterleaks** (step 4 below), and read the latest **CodeQL** run's findings (`gh api repos/TheurgicDuke771/DataQ/code-scanning/alerts --jq '.[] | select(.state=="open")'`). A weekly scan that never looks at SAST output isn't a scan.
 
 Running these here catches vulns published since the last PR merged. An advisory on CI's ignore list is accepted risk — mention it under "known/accepted", never as a new finding.
 
@@ -70,17 +72,13 @@ az role assignment list --scope $(az keyvault list --resource-group dataq-rg --q
   --query '[].{who:principalName, role:roleDefinitionName}' -o table
 ```
 
-Flag any principal that isn't the app's user-assigned managed identity, the deploy CI identity, or the owner. Also check the KV purge-protection tfvars decision if still open.
+Flag any principal that isn't the app's user-assigned managed identity, the deploy CI identity, or the owner. (KV purge-protection is a RECORDED decision — deliberately off for the demo-scoped vault, see `deploy/README.md`; don't re-litigate it, just flag if the vault's contents stop being demo-scoped.)
 
 ### 7. Credential-rotation register
 
-Check expiry/rotation status of the live credentials. The list below is a snapshot (as of 2026-07-02) — verify the **current** expiry from the Key Vault secret attributes / rotation notes each run; never report "clean" from the dates written here:
-- **Snowflake PAT** — 90-day lifetime; compute days remaining from last rotation.
-- **ADLS account SAS** — expires 2027-06-28.
-- **Databricks PAT** — rotation was REQUIRED after the #536/#538 traceback-locals leak; verify it happened.
-- Webhook shared secret (ADF) + Airflow HMAC signing key — rotate on any suspicion of exposure (hard-cutover per ADR 0006).
+Check expiry/rotation status of the live credentials — **the source of truth is `docs/ops-log.md`** (its "Expiring soon" register + rotation entries; CLAUDE.md §12 makes it the append-only record, and the credential-expiry surfacing (#838/#1024) reads real expiry off the credential where the platform exposes one). Do NOT re-assert dates from this file: read the ops-log register, then verify the nearest expiries against the live secret-store attributes. Known standing facts: Snowflake PATs have run ~15–25-day lifetimes in practice (not 90); the register also covers the ACCOUNTADMIN PAT and the dbt-artifacts SAS. Webhook shared secret (ADF) + Airflow/dbt HMAC signing keys rotate on any suspicion of exposure (hard-cutover per ADR 0006).
 
-Flag anything expiring within 30 days or with an unconfirmed required rotation.
+Flag anything expiring within 30 days or with an unconfirmed required rotation — and if a Snowflake credential is past due, say which harness legs it kills (`--adf`, `--dbt`, the Snowflake DAG) so a failed live-verify isn't misdiagnosed.
 
 ## How to report
 
