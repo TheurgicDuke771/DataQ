@@ -1,0 +1,13 @@
+shouldn't 1520, 1521 be in v1.2 week 1?
+Also update the githun project with new issues and milestones
+
+---
+
+can we move the .md files publish to github pages to a new sub-directory under @docs/  ?
+ how much chane will it needs?
+
+---
+
+lets do it [go with site] 
+once done check for missed relative link, dead liks, etc. 
+Also scan the old issues/pr/other exposed links if they would 404

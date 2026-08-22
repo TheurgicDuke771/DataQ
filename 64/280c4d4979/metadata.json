@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "64280c4d4979",
+  "strategy": "manual-commit",
+  "branch": "chore/docs-site-subdir",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/services/audit_service.py",
+    "backend/tests/db/test_architecture_er_sync.py",
+    "mkdocs.yml",
+    "scripts/check-docs-publication.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/64/280c4d4979/0/metadata.json",
+      "transcript": "/64/280c4d4979/0/full.jsonl",
+      "compact_transcript": "/64/280c4d4979/0/transcript.jsonl",
+      "content_hash": "/64/280c4d4979/0/content_hash.txt",
+      "prompt": "/64/280c4d4979/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 94,
+    "cache_creation_tokens": 47739,
+    "cache_read_tokens": 18856813,
+    "output_tokens": 29873,
+    "api_call_count": 47
+  }
+}
