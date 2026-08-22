@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "2c6c23f13822",
+  "strategy": "manual-commit",
+  "branch": "docs/staleness-sweep-2026-08-21",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/ISSUE_TEMPLATE/bug.md",
+    ".github/ISSUE_TEMPLATE/feature.md",
+    ".github/pull_request_template.md",
+    "README.md",
+    "docs/adr/README.md",
+    "docs/concepts.md",
+    "docs/contributing.md",
+    "docs/datasources-checks.md",
+    "docs/deployment-parity.md",
+    "docs/features.md",
+    "docs/getting-started.md",
+    "docs/recommended-usage.md",
+    "docs/rest-api.md",
+    "docs/runbook-faq.md",
+    "docs/security.md",
+    "docs/tutorial.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2c/6c23f13822/0/metadata.json",
+      "transcript": "/2c/6c23f13822/0/full.jsonl",
+      "compact_transcript": "/2c/6c23f13822/0/transcript.jsonl",
+      "content_hash": "/2c/6c23f13822/0/content_hash.txt",
+      "prompt": "/2c/6c23f13822/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 94,
+    "cache_creation_tokens": 102082,
+    "cache_read_tokens": 13242710,
+    "output_tokens": 48937,
+    "api_call_count": 47
+  }
+}

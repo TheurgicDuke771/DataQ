@@ -1,0 +1,4 @@
+Check what else is stale and update them. 
+Also update the Github project `DataQ Roadmap`. 
+Close out v1.1 [delete the existing tag, create new, create a release, update changelog, freeze v1.1 progress doc and other chores.] 
+Create v1.2 -> re-home the v1.1 backlogs to v1.2 week x -> create a new backlog milestone.
