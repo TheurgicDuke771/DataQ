@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "abc3fadcb691",
+  "strategy": "manual-commit",
+  "branch": "chore/automation-surface-reconcile",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ab/c3fadcb691/0/metadata.json",
+      "transcript": "/ab/c3fadcb691/0/full.jsonl",
+      "compact_transcript": "/ab/c3fadcb691/0/transcript.jsonl",
+      "content_hash": "/ab/c3fadcb691/0/content_hash.txt",
+      "prompt": "/ab/c3fadcb691/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 32589,
+    "cache_read_tokens": 3726707,
+    "output_tokens": 9851,
+    "api_call_count": 8
+  }
+}

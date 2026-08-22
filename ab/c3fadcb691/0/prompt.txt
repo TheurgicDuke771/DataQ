@@ -1,0 +1,1 @@
+Can you check if all the existing agents, skills, hooks, automation scripts and templates are relevant and up to date with the current state of the repo
