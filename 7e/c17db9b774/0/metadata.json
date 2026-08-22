@@ -1,0 +1,102 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "7ec17db9b774",
+  "session_id": "711f167b-508a-4e51-95da-48ba81e3b0b2",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-22T15:26:15.437069Z",
+  "branch": "chore/mcp-honesty-reviewer-agent",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".claude/agents/mcp-honesty-reviewer.md",
+    ".claude/settings.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "100dbbfa3795",
+  "checkpoint_transcript_start": 496,
+  "transcript_lines_at_start": 496,
+  "compact_transcript_start": 83,
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 68016,
+    "cache_read_tokens": 6013060,
+    "output_tokens": 29912,
+    "api_call_count": 24
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-security-scan-2026-08-22T14:23:27.773988Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "security-scan"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "5ffa6fe01370",
+      "timestamp": "2026-08-22T14:23:27.773988Z",
+      "native": {
+        "command": "/security-scan"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/security-scan",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "prompt-skill-claude-code-claude-code-setup:claude-automation-recommender-2026-08-22T15:04:42.278718Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "claude-code-setup:claude-automation-recommender"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "00f3bdac2ccc",
+      "timestamp": "2026-08-22T15:04:42.278718Z",
+      "native": {
+        "command": "/claude-code-setup:claude-automation-recommender"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/claude-code-setup:claude-automation-recommender",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-22T15:26:15.388644Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 0,
+    "total_lines_changed": 0,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 134,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/agents/mcp-honesty-reviewer.md": 123,
+        ".claude/settings.json": 4,
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}

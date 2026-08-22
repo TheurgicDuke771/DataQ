@@ -1,0 +1,19 @@
+/claude-code-setup:claude-automation-recommender
+
+---
+
+add the mcp honesty agent and hook
+
+---
+
+can we add any other criteria apart from the six, or are we mostly coverd?
+asking as those six identifies as part of issue not generic scan
+
+---
+
+yes. 
+Also check as very generic mcp server prespective - what user expects and what we are providing, any gap, mis-leading, non-verified data, etc.
+
+---
+
+commit the change and sync to main
