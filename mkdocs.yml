@@ -103,9 +103,7 @@ exclude_docs: |
   progress-v1.1.md
   retro-v1.md
   retro-v1.1.md
-  post-v1-admin-ui-notes.md
   post-v1-dq-intelligence-notes.md
-  post-v1-assets-lineage-incidents-notes.md
   compliance-posture.md
   ops-log.md
 
