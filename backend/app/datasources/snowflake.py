@@ -291,24 +291,25 @@ class SnowflakeCheckRunner:
     ) -> CheckOutcome:
         """Evaluate ONE dmf-engine check via ad-hoc system-DMF SQL (ADR 0036).
 
-        Runs over the runner's shared engine (#427). Never raises: every
-        failure — bad config, missing grant, edition gate — is that check's
-        classified ``error`` outcome, computed inside `evaluate_dmf_check`.
+        Runs over the runner's shared engine (#427). The connection is opened
+        BEFORE evaluation, mirroring `run_monitors_over_engine`: an unreachable
+        warehouse / dead credential propagates and fails the whole run like
+        every other path — the #419 always-alert channel and dead-credential
+        detection key off that — while a failure of the CHECK itself (bad
+        column, type gate, missing grant) is that check's classified ``error``
+        outcome, computed inside `evaluate_dmf_check`, which never raises.
         """
         from sqlalchemy import text
 
-        def fetch_scalar(statement: str) -> Any:
-            with self._engine.get().connect() as conn:
-                return conn.execute(text(statement)).scalar()
-
-        return evaluate_dmf_check(
-            fetch_scalar,
-            kind=kind,
-            expectation_type=expectation_type,
-            config=config,
-            table=table,
-            schema=schema or self._config.schema_,
-        )
+        with self._engine.get().connect() as conn:
+            return evaluate_dmf_check(
+                lambda statement: conn.execute(text(statement)).scalar(),
+                kind=kind,
+                expectation_type=expectation_type,
+                config=config,
+                table=table,
+                schema=schema or self._config.schema_,
+            )
 
     def run_monitors(
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]

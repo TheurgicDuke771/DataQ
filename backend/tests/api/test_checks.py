@@ -2549,3 +2549,41 @@ def test_gx_engine_rejects_a_dmf_type(client: TestClient, db_session: Any) -> No
         json=_payload(expectation_type="dmf:null_count"),
     )
     assert resp.status_code == 422
+
+
+def test_repointing_a_dmf_check_to_gx_revalidates_under_gx(
+    client: TestClient, db_session: Any
+) -> None:
+    # Review catch: an engine-only PATCH (dmf -> gx) used to skip GX validation,
+    # minting a gx check with a dmf:* type whose next run fails the whole suite.
+    sid = _suite_id(client, db_session)
+    created = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(
+            engine="dmf",
+            expectation_type="dmf:null_count",
+            config={"column": "order_id"},
+            fail_threshold=10,
+        ),
+    ).json()
+    resp = client.patch(f'/api/v1/suites/{sid}/checks/{created["id"]}', json={"engine": "gx"})
+    assert resp.status_code == 422
+    db_session.expire_all()
+    assert db_session.get(Check, uuid.UUID(created["id"])).engine == "dmf"
+
+
+def test_dmf_check_derives_its_dimension_in_the_response(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(
+            engine="dmf",
+            expectation_type="dmf:duplicate_count",
+            config={"column": "order_id"},
+            fail_threshold=100,
+        ),
+    )
+    assert resp.status_code == 201
+    assert resp.json()["dimension"] == "uniqueness"

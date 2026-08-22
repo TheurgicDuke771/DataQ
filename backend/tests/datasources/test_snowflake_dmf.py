@@ -206,3 +206,89 @@ def test_bad_config_reaching_run_time_is_an_error_outcome() -> None:
         schema=None,
     )
     assert outcome.errored
+
+
+def test_missing_table_error_is_not_read_as_a_privilege_problem() -> None:
+    # Snowflake 002003 says "does not exist or not authorized." — the tail must
+    # not fall through to the grants remediation (review catch on this slice).
+    def boom(statement: str) -> None:
+        raise RuntimeError(
+            "002003 (42S02): SQL compilation error: Object RETAIL.GONE does not "
+            "exist or not authorized."
+        )
+
+    outcome = evaluate_dmf_check(
+        boom,
+        kind="expectation",
+        expectation_type="dmf:null_count",
+        config={"column": "c"},
+        table="gone",
+        schema="retail",
+    )
+    assert outcome.errored
+    assert outcome.error_message is not None
+    assert "does not exist" in outcome.error_message
+    assert "DATA_METRIC_USER" not in outcome.error_message
+
+
+def test_negative_freshness_age_clamps_to_zero_like_the_monitor_path() -> None:
+    # Future-dated max / clock skew: the monitor path clamps at 0.0, so the DMF
+    # path must too or the same data trends differently per engine.
+    outcome = evaluate_dmf_check(
+        lambda s: -1800,
+        kind="freshness",
+        expectation_type="monitor:freshness",
+        config={"column": "ts"},
+        table="t",
+        schema=None,
+    )
+    assert not outcome.errored
+    assert outcome.metric_value == 0.0
+
+
+def test_connection_establishment_failure_propagates_out_of_the_runner() -> None:
+    # The open-before-evaluate rule (mirrors run_monitors_over_engine): an
+    # unreachable warehouse fails the RUN, it does not dissolve into per-check
+    # errors that let the run "complete" through an outage.
+    from backend.app.datasources.snowflake import SnowflakeCheckRunner, SnowflakeConfig
+
+    cfg = SnowflakeConfig.model_validate(
+        {
+            "account": "x",
+            "user": "u",
+            "database": "d",
+            "schema": "s",
+            "warehouse": "w",
+            "role": "r",
+        }
+    )
+    runner = SnowflakeCheckRunner(cfg, "secret")
+
+    class _DeadEngine:
+        def get(self):
+            raise ConnectionError("warehouse unreachable")
+
+    runner._engine = _DeadEngine()  # type: ignore[assignment]
+    with pytest.raises(ConnectionError):
+        runner.run_native_check(
+            kind="expectation",
+            expectation_type="dmf:null_count",
+            config={"column": "c"},
+            table="t",
+            schema=None,
+        )
+
+
+def test_dmf_types_derive_their_dimension() -> None:
+    # NULL here would render dmf-covered assets as scorecard coverage gaps
+    # (#889); unlike custom SQL each metric has exactly one honest dimension.
+    from backend.app.services.check_dimension import derive_dimension
+
+    assert derive_dimension(expectation_type="dmf:null_count", kind="expectation") == "completeness"
+    assert (
+        derive_dimension(expectation_type="dmf:null_percent", kind="expectation") == "completeness"
+    )
+    assert (
+        derive_dimension(expectation_type="dmf:duplicate_count", kind="expectation") == "uniqueness"
+    )
+    assert derive_dimension(expectation_type="dmf:unique_count", kind="expectation") == "uniqueness"

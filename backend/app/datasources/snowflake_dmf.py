@@ -137,7 +137,10 @@ def _freshness_outcome(scalar: Any, config: dict[str, Any]) -> CheckOutcome:
             error_message="FRESHNESS returned no value (empty table?), freshness can't be assessed",
             expected_value=expected,
         )
-    age_hours = float(scalar) / 3600.0
+    # Clamped at 0 like the monitor path (`_freshness_age_hours`): a max
+    # timestamp ahead of the warehouse clock must trend 0.0 on BOTH engines,
+    # or the same data trends differently per evaluator.
+    age_hours = max(float(scalar) / 3600.0, 0.0)
     return CheckOutcome(
         expectation_type=expectation_type,
         success=True,  # binary fallback; thresholds band the age (authoring requires one)
@@ -230,11 +233,14 @@ def _classify_dmf_error(exc: Exception) -> str:
             "(commonly TIMESTAMP_NTZ) is not supported by the DMF. Use the "
             "GX-engine freshness monitor for this column instead."
         )
-    if "invalid identifier" in text:
+    if "invalid identifier" in text or "does not exist or not authorized" in text:
+        # The second shape is Snowflake's missing-TABLE error (002003) — its
+        # "or not authorized" tail must not fall through to the privilege
+        # branch below, which would prescribe grants for a dropped table.
         return (
             "the configured column or table does not exist on the run target "
-            "(invalid identifier) — check the check's column and the suite's "
-            "run target"
+            "(or the role cannot see it) — check the check's column and the "
+            "suite's run target"
         )
     if "Unknown function" in text or "not authorized" in text or "Insufficient privileges" in text:
         return (

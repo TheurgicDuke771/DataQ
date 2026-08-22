@@ -1149,7 +1149,13 @@ def update_check(
         # rename or threshold tweak must stay possible on a pre-#651 check whose
         # stored config today's pinned GX rejects (there is no config backfill —
         # such a row would otherwise be un-editable until delete-and-recreate).
-        validate_expectation_config=(expectation_type is not None or config is not None),
+        # An ENGINE change counts as touching it (review catch on this slice):
+        # re-pointing dmf→gx hands the stored dmf:* type to the GX batch, and
+        # without re-validation that PATCH saves cleanly and the next run
+        # raises inside GX — failing the whole suite run.
+        validate_expectation_config=(
+            expectation_type is not None or config is not None or engine is not None
+        ),
     )
 
     if name is not None:

@@ -237,9 +237,11 @@ def _run_outcome_phases(
     # engine — the engine was revoked from the map, an out-of-band write, a
     # datasource with no native engines — lands the check as a classified
     # per-check `error`, never a silent skip and never a raise that takes the
-    # suite's GX siblings down with it (ADR 0036 §5). `run_native_check` itself
-    # never raises (failures are classified inside it), so a native phase can
-    # never poison its siblings either way.
+    # suite's GX siblings down with it (ADR 0036 §5). `run_native_check`
+    # classifies every CHECK-level failure inside itself, but deliberately lets
+    # a connection-establishment failure propagate — an unreachable warehouse
+    # fails the whole run operationally, the same story the GX and monitor
+    # paths tell about the same outage.
     # A transient (unflushed) check has no server-default applied yet → treat
     # None as 'gx', which is what the flush would have written.
     def _engine(c: Check) -> str:
