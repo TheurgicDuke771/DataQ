@@ -441,6 +441,10 @@ class Settings(BaseSettings):
     run_max_scan_bytes: int = Field(default=134_217_728, ge=0)
     run_max_scan_rows: int = Field(default=1_500_000, ge=0)
 
+    # UC SQL pushdown (#1532). Rollback guard: False restores the pre-#1532
+    # read-into-pandas routing for all non-custom-SQL checks.
+    uc_sql_pushdown: bool = True
+
     # ── Comparison checks (ADR 0015) ─────────────────────────────────────────
     # Default row cap per comparison side. Both sides materialize in worker
     # memory for the diff (#793), so this is a memory guardrail, not a tuning
