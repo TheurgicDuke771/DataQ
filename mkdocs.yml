@@ -100,6 +100,7 @@ nav:
 exclude_docs: |
   progress.md
   progress-v1.md
+  progress-v1.1.md
   retro-v1.md
   retro-v1.1.md
   post-v1-admin-ui-notes.md

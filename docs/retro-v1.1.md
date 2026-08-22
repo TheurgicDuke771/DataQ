@@ -125,3 +125,20 @@ and the remaining backlog burn-down candidates. Whatever remains at its close
 rolls to the next cycle's planning **by name**, per the standing rule. The next
 cycle's inputs are this document, the open follow-up graph above, and
 [context/post-v1-roadmap.md](../context/post-v1-roadmap.md).
+
+## Postscript — the stretch outcome (added 2026-08-21)
+
+The W7 stretch closed 2026-08-21 at **0 open** and outgrew "burn-down": 121
+commits / 126 merged PRs / 55 closed issues after the 08-15 tag, including four
+tracks that belong to v1.1's story — **workspace RBAC** (ADR 0033, #1396–#1400),
+the **MCP 8→46 expansion + honesty pass** (#529/#1424/#1444), the
+**security-surface audit** of both deployments (#1386–#1388), and the
+**compliance G1–G6 track** (ADR 0041 audit trail, warehouse-tag classification,
+residency, encryption posture, the compliance document set). Because of that,
+**`v1.1.0` was re-tagged at the true cycle close (2026-08-21)** — the original
+2026-08-15 tag at `b8d8278b` predated a third of the cycle's user-facing
+surface — and the GitHub release was cut from the moved tag. The rolled items
+landed as planned: the 52 remaining backlog issues were re-homed by name into
+the **v1.2 Week 1–8** milestones (epic #1518), `v1.1 Backlog` closed, and
+`v1.2 Backlog` opened empty. The v1.1 ledger froze at
+[progress-v1.1.md](progress-v1.1.md).
