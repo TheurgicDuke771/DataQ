@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "9c388f6fad14",
+  "strategy": "manual-commit",
+  "branch": "feature/895-engine-seam",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/9a9ccf49cc8c_check_engine_seam.py",
+    "backend/app/api/v1/checks.py",
+    "backend/app/datasources/engines.py",
+    "backend/app/db/models.py",
+    "backend/app/services/check_service.py",
+    "backend/app/services/run_service.py",
+    "backend/app/services/suite_io_service.py",
+    "backend/tests/api/test_checks.py",
+    "backend/tests/services/test_check_engine.py",
+    "backend/tests/services/test_run_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9c/388f6fad14/0/metadata.json",
+      "transcript": "/9c/388f6fad14/0/full.jsonl",
+      "compact_transcript": "/9c/388f6fad14/0/transcript.jsonl",
+      "content_hash": "/9c/388f6fad14/0/content_hash.txt",
+      "prompt": "/9c/388f6fad14/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 296,
+    "cache_creation_tokens": 352359,
+    "cache_read_tokens": 40893239,
+    "output_tokens": 102002,
+    "api_call_count": 148
+  }
+}
