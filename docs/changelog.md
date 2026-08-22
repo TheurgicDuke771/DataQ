@@ -3,9 +3,40 @@
 Notable, user-facing changes. Dates are the release/merge date. This is a curated summary —
 the per-PR history lives in the repo's commit log and pull requests.
 
-## Unreleased — v1.1 (in progress)
+## v1.1.0 — 2026-08-21
 
-Portability, auto-monitors, and polish on top of v1:
+Portability, auto-monitors, compliance-grade controls, and polish on top of v1. (First
+tagged 2026-08-15; the tag was moved to the true cycle close on 2026-08-21 after the
+stretch week landed the RBAC, MCP-expansion, security-audit and compliance tracks below.)
+
+- **Append-only audit trail (ADR 0041)** — every config mutation (35 routes: checks,
+  connections, shares, roles, schedules, credential rotations, …) writes an `audit_events`
+  row **inside the mutation's transaction**, with actor, before/after, and `request_id`;
+  **data reads are audited too**: reading a run's results, downloading a comparison
+  report, profiling a column or dry-running a check records who accessed which data and
+  **whether regulated data was actually surfaced**. Workspace-admin read endpoint
+  (`GET /api/v1/admin/audit-events`), own retention clock. Verified in production on both
+  clouds.
+- **Warehouse-tag PII classification** — DataQ reads the column classifications a
+  customer already applied in their own warehouse (Snowflake `dataq_classification` +
+  `PRIVACY_CATEGORY`, Unity Catalog `dataq_classification`) and feeds them into the
+  redaction ladder as a floor a suite policy cannot lift — on REST, MCP and alert
+  delivery. Plus an opt-in **fail-closed mode** (`require_classification`): nothing
+  row-level surfaces unless a column is explicitly cleared. Live-verified on both
+  warehouses.
+- **Redaction follows the destination** — an author's own interactive preview keeps its
+  values (and is audited); the same data headed to an LLM context, a file export or an
+  alert is redacted. Scalar `observed_value`s (a MAX/MIN is a real cell) now mask under
+  the same rules as lists, resolved against the check's **historical** config so editing
+  a check can never retroactively relabel old results.
+- **Residency & encryption posture** — a declared `DEPLOYMENT_REGION` surfaced at
+  `GET /api/v1/admin/deployment`, an IaC postcondition that fails the plan if the compute
+  environment leaves the declared region, and a per-resource encryption-at-rest table for
+  both reference deployments in the security docs.
+- **Compliance document set** — sub-processor disclosure, DPIA input sheet,
+  breach-notification runbook, and counsel-gated DPA/BAA templates, published on the docs
+  site.
+- **Hardened containers** — the backend image now runs as a non-root user.
 
 - ⚠️ **Workspace roles — Admin / Member / Viewer (ADR 0033)** — authorization is now two
   axes. Your **workspace role** says what kind of user you are; the existing per-suite
