@@ -9,8 +9,11 @@ value check, run it, read the result, and wired an alert.
 
 ## 0. Sign in
 
-Open the app URL and sign in through your identity provider (SSO). You land on the
-**Dashboard** — empty for now.
+Open the app URL and sign in — the local/eval stack defaults to an **email one-time code**
+(check the bundled Mailpit inbox at `http://localhost:8025`); a production deployment
+typically uses your **identity provider (SSO)**. See
+[Getting started](getting-started.md#choosing-an-auth-mode) for the three sign-in modes. You land on
+the **Dashboard** — empty for now.
 
 ## 1. Connect a datasource
 

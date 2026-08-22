@@ -1,6 +1,6 @@
 # Runbook & FAQ
 
-## Release checklist (v1)
+## Release checklist
 
 - All CI gates green on `main`; no open release-blocking issues on the current milestone.
 - **CHANGELOG updated at tag time** (minor/major releases; patch only if user-visible or
@@ -43,10 +43,11 @@ Manual checklist (the mutating tail):
   [AI assistants (MCP setup)](mcp-setup.md)) and run the 4 canonical queries
   (what failed today / run suite X / why did pipeline Y fail / add a null check).
 
-## Known limitations (v1)
+## Known limitations
 
-- **GX-only** check engine (Databricks DQX deferred to v1.1); batch-oriented (not
-  streaming).
+- **GX-only** check engine — platform-native engines are connection-anchored per ADR 0036
+  (Snowflake DMF is the first planned native engine, #895; Databricks DQX and Dataplex are
+  trigger-gated); batch-oriented (not streaming).
 - **Single tenant**, suite-level access sharing **plus a stored workspace role** — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. `WORKSPACE_ADMIN_EMAILS` is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.
 - Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
   deferred — you specify targets explicitly. JSON flat files deferred (CSV/Parquet in v1).
@@ -69,7 +70,7 @@ Azure and AWS are both live deployment targets behind the app's seams (ADR 0010/
 **Where do failed-row samples go?** Stored with the result, **PII-redacted**, and purged
 after a retention window — never written to logs.
 
-**Can an AI assistant use DataQ?** Yes — 33 MCP tools at `/mcp` (Claude Desktop / Claude.ai
+**Can an AI assistant use DataQ?** Yes — 46 MCP tools at `/mcp` (Claude Desktop / Claude.ai
 / Copilot / Cursor), OIDC-authenticated (Azure AD or Cognito) or via a PAT. See [AI assistants (MCP setup)](mcp-setup.md).
 
 **An asset shows no lineage — is that right?** Maybe not. "No lineage recorded" is what you
