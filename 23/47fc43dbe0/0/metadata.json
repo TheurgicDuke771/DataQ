@@ -1,0 +1,152 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "2347fc43dbe0",
+  "session_id": "a0cf6242-2ec0-4271-a2c8-d5169f19e16f",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-22T18:17:43.679713Z",
+  "branch": "feature/895-dmf-runner",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/datasources/test_catalog_gx_contract.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5",
+  "turn_id": "ab8944133d2c",
+  "checkpoint_transcript_start": 1846,
+  "transcript_lines_at_start": 1846,
+  "compact_transcript_start": 300,
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 270580,
+    "cache_read_tokens": 1700793,
+    "output_tokens": 2762,
+    "api_call_count": 5
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01XKmrjh5m2uX7FcFeo9tF1p",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "update-config"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ab8944133d2c",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 207,
+        "end": 208,
+        "entry_ids": [
+          "28678607-2d34-4d7a-a0b2-0c20a6b1a0a3"
+        ],
+        "tool_use_id": "toolu_01XKmrjh5m2uX7FcFeo9tF1p"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01XKmrjh5m2uX7FcFeo9tF1p"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: update-config",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01UZTya6gUVtD3dqeYemrq75",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ab8944133d2c",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1084,
+        "end": 1085,
+        "entry_ids": [
+          "e3cb3032-6d3e-4eda-82b9-d94b077ace9a"
+        ],
+        "tool_use_id": "toolu_01UZTya6gUVtD3dqeYemrq75"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01UZTya6gUVtD3dqeYemrq75"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01WDNxePub9bcmVanEyDxevW",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ab8944133d2c",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1732,
+        "end": 1733,
+        "entry_ids": [
+          "5e9ac739-13df-462b-be77-b6ce9e6a42a7"
+        ],
+        "tool_use_id": "toolu_01WDNxePub9bcmVanEyDxevW"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01WDNxePub9bcmVanEyDxevW"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 11
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-22T18:17:43.576772Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 1,
+    "total_committed": 0,
+    "total_lines_changed": 1,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 17,
+      "user_lines_removed": 1,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7,
+        "backend/tests/datasources/test_catalog_gx_contract.py": 10
+      },
+      "user_removed_per_file": {
+        "backend/tests/datasources/test_catalog_gx_contract.py": 1
+      }
+    }
+  ]
+}

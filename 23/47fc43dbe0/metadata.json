@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "2347fc43dbe0",
+  "strategy": "manual-commit",
+  "branch": "feature/895-dmf-runner",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/datasources/test_catalog_gx_contract.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/23/47fc43dbe0/0/metadata.json",
+      "transcript": "/23/47fc43dbe0/0/full.jsonl",
+      "compact_transcript": "/23/47fc43dbe0/0/transcript.jsonl",
+      "content_hash": "/23/47fc43dbe0/0/content_hash.txt",
+      "prompt": "/23/47fc43dbe0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 270580,
+    "cache_read_tokens": 1700793,
+    "output_tokens": 2762,
+    "api_call_count": 5
+  }
+}
