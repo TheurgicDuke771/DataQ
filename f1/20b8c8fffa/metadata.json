@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "f120b8c8fffa",
+  "strategy": "manual-commit",
+  "branch": "chore/automation-surface-reconcile",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".claude/agents/orchestration-abstraction-guard.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f1/20b8c8fffa/0/metadata.json",
+      "transcript": "/f1/20b8c8fffa/0/full.jsonl",
+      "compact_transcript": "/f1/20b8c8fffa/0/transcript.jsonl",
+      "content_hash": "/f1/20b8c8fffa/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 20797,
+    "cache_read_tokens": 5918401,
+    "output_tokens": 10288,
+    "api_call_count": 12
+  }
+}
