@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "ca4882f8a35c",
+  "strategy": "manual-commit",
+  "branch": "docs/notes-issue-refs-and-arch-sync",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/post-v1-admin-ui-notes.md",
+    "docs/post-v1-assets-lineage-incidents-notes.md",
+    "docs/post-v1-dq-intelligence-notes.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ca/4882f8a35c/0/metadata.json",
+      "transcript": "/ca/4882f8a35c/0/full.jsonl",
+      "compact_transcript": "/ca/4882f8a35c/0/transcript.jsonl",
+      "content_hash": "/ca/4882f8a35c/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 4471,
+    "cache_read_tokens": 1166538,
+    "output_tokens": 3406,
+    "api_call_count": 6
+  }
+}
