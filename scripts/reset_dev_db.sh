@@ -35,7 +35,7 @@ for i in $(seq 1 30); do
   sleep 1
 done
 for i in $(seq 1 30); do
-  docker compose exec -T openbao bao status >/dev/null 2>&1 && { ok "OpenBao ready"; break; }
+  docker compose exec -T -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status >/dev/null 2>&1 && { ok "OpenBao ready"; break; }
   [ "$i" -eq 30 ] && die "OpenBao did not become ready in time"
   sleep 1
 done
