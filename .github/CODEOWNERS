@@ -29,7 +29,7 @@
 
 # Docs & decisions (incl. the MkDocs site, #288 — docs owner signs off before release)
 /docs/                           @TheurgicDuke771
-/docs/adr/                       @TheurgicDuke771
+/docs/site/adr/                  @TheurgicDuke771
 /mkdocs.yml                      @TheurgicDuke771
 /requirements-docs.txt           @TheurgicDuke771
 /CLAUDE.md                       @TheurgicDuke771
