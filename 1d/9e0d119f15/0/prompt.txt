@@ -1,0 +1,35 @@
+Check the repo status. Roadmap. Open issues. And find out what is the most pressing item for DataQ currently. Rank them for top five. Plan of implementation and effort details for each of the items.
+
+---
+
+Check the repo status. Roadmap. Open issues. And find out what is the most pressing item for DataQ currently. Rank them for top five. Plan of implementation and effort details for each of the items. 
+Also, do the same exercise for enhancement or new feature edition point of view.
+
+---
+
+Is our local installation mature enough to retire the cloud ones?
+
+---
+
+okay, let's start with sf dmf. 
+Create three cognitive users. admin member viewer. 
+do not use my personal email. 
+use something random. [remove the existing ids]
+
+---
+
+go ahead[also add some proper display names]
+
+---
+
+Done - option A
+
+---
+
+yeah, lets start with DMF. 
+create few suits for each role [as applicable]
+
+---
+
+update the AWS connections. 
+And then start the DMF
