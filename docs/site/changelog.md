@@ -3,6 +3,22 @@
 Notable, user-facing changes. Dates are the release/merge date. This is a curated summary —
 the per-PR history lives in the repo's commit log and pull requests.
 
+## Unreleased
+
+### Changed
+
+- **Unity Catalog checks now execute on the Databricks SQL Warehouse by default**
+  (#1532): the built-in catalog expectations join custom SQL on one GX
+  Databricks-SQL batch, so the warehouse evaluates them and worker memory stays
+  flat regardless of table size (the Snowflake execution shape). Suites with a
+  declared sample, `expect_column_values_to_be_of_type`, and unrecognised types
+  stay on the previous read-into-pandas path; `UC_SQL_PUSHDOWN=false` restores
+  the old routing wholesale. ⚠ Checks evaluated by the warehouse follow *its*
+  semantics — most visibly `expect_column_values_to_match_regex`, which now uses
+  Spark/Java regex instead of Python `re` on Unity Catalog; a pattern relying on
+  Python-only constructs may report differently. Flip the flag if a check's
+  behavior looks changed and file what you find.
+
 ## v1.1.0 — 2026-08-21
 
 Portability, auto-monitors, compliance-grade controls, and polish on top of v1. (First

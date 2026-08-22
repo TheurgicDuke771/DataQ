@@ -41,9 +41,11 @@ Iceberg (no data scan on any of them except the CSV sample). Re-baseline explici
 once a drift is expected and reviewed.
 
 ᶜ **Unity Catalog custom SQL is supported since v1.1.** It runs against a GX
-Databricks-SQL batch over the target table, while ordinary expectations keep the
-DataFrame batch — the split exists because `UnexpectedRowsExpectation` has no pandas
-metric provider, so custom SQL cannot use the DataFrame path. Verified against a live
+Databricks-SQL batch over the target table. Since v1.2 (#1532) ordinary catalog
+expectations run on that same SQL batch by default — the warehouse evaluates and the
+worker never materialises the table; the DataFrame batch remains for
+`expect_column_values_to_be_of_type`, suites with a declared sample, and the
+`UC_SQL_PUSHDOWN=false` rollback. Verified against a live
 Unity Catalog table, including the operational-`error` path when a column will not
 resolve. Custom SQL stays binary pass/fail on both SQL datasources (ADR 0019 §4 — a
 row count is not a bandable metric), so `metric_value` is null by design, not by

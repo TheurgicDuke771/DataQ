@@ -1611,23 +1611,24 @@ def test_schemaless_target_falls_back_to_frame_except_custom_sql(
     assert "schema" in (outcome.checks[1].error_message or "")
 
 
-def test_pushdown_row_count_is_not_refused_under_sampling(
-    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_declared_sample_wins_over_pushdown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The author asked for bounded evaluation; the sampling contract beats pushdown,
+    so the whole non-custom-SQL group stays on the (sampled) frame."""
     _pushdown_on(monkeypatch)
-    """Pushdown evaluates the real table, so the #595 C6 refusal no longer applies."""
     runner = _sampling_runner(SampleSpec(strategy="head", rows=50))
-    calls = _orders_sql_seam(runner, tmp_path, monkeypatch, rows=[(1, 10), (2, 20)])
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 3)
+    monkeypatch.setattr(
+        runner,
+        "_read_sampled_table",
+        lambda **_kw: (pd.DataFrame({"id": [1, 2, 3]}), {"strategy": "head", "rows": 50}),
+    )
     outcome = runner.run_checks(
         table="orders",
         schema="sales",
-        checks=[
-            CheckSpec("expect_table_row_count_to_be_between", {"min_value": 1, "max_value": 10})
-        ],
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
     )
-    assert len(calls) == 1
-    assert outcome.checks[0].errored is False
     assert outcome.checks[0].success is True
+    assert outcome.checks[0].sampling is not None
 
 
 def test_index_columns_forwarded_for_pushdown_and_dropped_for_pure_custom_sql(
@@ -1732,3 +1733,64 @@ def test_pushdown_default_is_on() -> None:
     from backend.app.core.config import Settings
 
     assert Settings.model_fields["uc_sql_pushdown"].default is True
+
+
+def test_index_column_clash_is_case_insensitive(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Databricks resolves identifiers case-insensitively; the clash compare must too."""
+    from backend.app.datasources import unity_catalog as uc_module
+    from backend.app.datasources.gx_runner import run_expectations as real
+
+    seen: list[Any] = []
+
+    def _spy(*args: Any, **kwargs: Any) -> Any:
+        seen.append(kwargs.get("index_columns"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(uc_module, "run_expectations", _spy)
+    _pushdown_on(monkeypatch)
+    runner = _uc_runner()
+    _orders_sql_seam(runner, tmp_path, monkeypatch, rows=[(1, 10)])
+    runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "ID"})],
+        index_columns=["id"],
+    )
+    assert seen == [None]
+
+
+def test_a_clash_group_failure_keeps_the_kept_groups_outcomes(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failure evaluating the no-index group errors only ITS checks; the kept
+    group's already-computed outcomes survive."""
+    from backend.app.datasources import unity_catalog as uc_module
+    from backend.app.datasources.gx_runner import run_expectations as real
+
+    def _fail_second(*args: Any, **kwargs: Any) -> Any:
+        if kwargs.get("name", "").startswith("suite-uc-sql-noidx"):
+            raise RuntimeError("warehouse auto-stopped mid-run")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(uc_module, "run_expectations", _fail_second)
+    _pushdown_on(monkeypatch)
+    runner = _uc_runner()
+    _orders_sql_seam(runner, tmp_path, monkeypatch, rows=[(1, 10)])
+    outcome = runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[
+            CheckSpec("expect_column_values_to_not_be_null", {"column": "id"}),
+            CheckSpec(
+                "expect_column_values_to_be_between",
+                {"column": "amt", "min_value": 0, "max_value": 100},
+            ),
+        ],
+        index_columns=["id"],
+    )
+    assert outcome.success is False
+    assert outcome.checks[0].errored is True
+    assert outcome.checks[1].errored is False
+    assert outcome.checks[1].success is True

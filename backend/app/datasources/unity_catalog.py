@@ -502,12 +502,15 @@ class UnityCatalogCheckRunner:
         SQL batch (default since #1532): the audited pushdown types + custom SQL
         (#1179 — its metrics have no pandas provider, so it can NEVER run on the
         frame). Pandas frame: `to_be_of_type`, unaudited types, schema-less or
-        invalid targets (custom SQL alone errors there), and everything when
-        `uc_sql_pushdown` is off. Groups re-merge positionally (`run_service`
-        zips onto `checks`); a batch is only built for a non-empty group.
+        invalid targets (custom SQL alone errors there), everything when
+        `uc_sql_pushdown` is off, and any suite with a DECLARED sample — the
+        author asked for bounded evaluation, so the sampling contract wins over
+        pushdown. Groups re-merge positionally (`run_service` zips onto
+        `checks`); a batch is only built for a non-empty group.
         """
         pushdown_on = (
             get_settings().uc_sql_pushdown
+            and self._sampling is None
             and self._sql_target_problem(table=table, schema=schema) is None
         )
 
@@ -684,14 +687,16 @@ class UnityCatalogCheckRunner:
             # A check on a column that is ALSO an index column runs without the
             # index request: the locator query would select the column twice and
             # Databricks' arrow layer refuses ("Can't unify schema with duplicate
-            # field names" — live-found, #1532). Its unexpected values ARE the
-            # locators, so nothing is lost.
-            clash = [
+            # field names" — live-found, #1532). Databricks resolves identifiers
+            # case-insensitively, so the clash compare must too. The unexpected
+            # values ARE the locators, so nothing is lost.
+            index_lower = {c.lower() for c in index_columns or ()}
+            clash_set = {
                 i
                 for i, spec in enumerate(checks)
-                if index_columns and spec.kwargs.get("column") in index_columns
-            ]
-            if not clash:
+                if str(spec.kwargs.get("column", "")).lower() in index_lower
+            }
+            if not clash_set:
                 return run_expectations(
                     context,
                     batch_definition=batch_definition,
@@ -699,25 +704,40 @@ class UnityCatalogCheckRunner:
                     name=f"suite-uc-sql-{table}",
                     index_columns=index_columns,
                 )
-            keep = [i for i in range(len(checks)) if i not in set(clash)]
+            keep = [i for i in range(len(checks)) if i not in clash_set]
+            clash = sorted(clash_set)
             outcomes: dict[int, CheckOutcome] = {}
             success = True
             if keep:
+                kept_checks = [checks[i] for i in keep]
                 kept = run_expectations(
                     context,
                     batch_definition=batch_definition,
-                    checks=[checks[i] for i in keep],
+                    checks=kept_checks,
                     name=f"suite-uc-sql-{table}",
-                    index_columns=index_columns,
+                    # Same rule as the top of this method: a keep group that is
+                    # pure custom SQL has no use for the index request.
+                    index_columns=(
+                        None
+                        if all(is_custom_sql(s.expectation_type) for s in kept_checks)
+                        else index_columns
+                    ),
                 )
                 success = kept.success
                 outcomes.update(zip(keep, kept.checks, strict=True))
-            clashed = run_expectations(
-                context,
-                batch_definition=batch_definition,
-                checks=[checks[i] for i in clash],
-                name=f"suite-uc-sql-noidx-{table}",
-            )
+            clashed_checks = [checks[i] for i in clash]
+            try:
+                clashed = run_expectations(
+                    context,
+                    batch_definition=batch_definition,
+                    checks=clashed_checks,
+                    name=f"suite-uc-sql-noidx-{table}",
+                )
+            except Exception as exc:
+                # Error ONLY the not-yet-evaluated group; the keep group's real
+                # outcomes are already computed and must survive.
+                log.exception("uc_sql_batch_unavailable", table=table)
+                clashed = self._sql_group_errored(clashed_checks, classify_failure_reason(exc))
             success = success and clashed.success
             outcomes.update(zip(clash, clashed.checks, strict=True))
             return SuiteOutcome(success=success, checks=[outcomes[i] for i in range(len(checks))])
@@ -755,12 +775,12 @@ class UnityCatalogCheckRunner:
 
     @staticmethod
     def _sql_group_errored(checks: list[CheckSpec], reason: str) -> SuiteOutcome:
-        """One operational `error` outcome per custom-SQL check, siblings untouched.
+        """One operational `error` outcome per check in the SQL group, siblings untouched.
 
-        The custom-SQL group could not be evaluated at all. That is this group's
-        own error, not the run's — the expectations on the DataFrame batch
-        evaluated fine and must still be persisted (#122) — so the failure is
-        expressed as per-check outcomes rather than an exception. ``reason`` must
+        The SQL group (custom SQL + pushdown types) could not be evaluated. That
+        is this group's own error, not the run's — the expectations on the
+        DataFrame batch evaluated fine and must still be persisted (#122) — so
+        the failure is expressed as per-check outcomes. ``reason`` must
         already be safe to persist verbatim: either DataQ-authored from the
         user's own configuration, or `classify_failure_reason` output.
         """
