@@ -6,7 +6,7 @@ implements only the `ConnectionAdapter` seam (config validation + connectivity
 test), never `CheckRunner`.
 
 The connection points at an Airflow **webserver REST API** (the polling-fallback
-channel from [ADR 0007](../../docs/adr/0007-airflow-callback-model.md): the
+channel from [ADR 0007](../../docs/site/adr/0007-airflow-callback-model.md): the
 `dagRuns` endpoint backfills runs for DAGs that don't adopt the HMAC callback
 snippet). It is distinct from the webhook signing key — that HMAC secret lives
 in Key Vault and is consumed by the (separate) Airflow event receiver.

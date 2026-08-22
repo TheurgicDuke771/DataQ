@@ -1,4 +1,4 @@
-"""The audit seam — ADR [0041](../../../docs/adr/0041-history-audit-strategy.md) phase 1 (#1318).
+"""The audit seam — ADR [0041](../../../docs/site/adr/0041-history-audit-strategy.md), phase 1.
 
 One append-only `audit_events` table records **deliberate acts by a principal**.
 This module owns the three things that make such a table safe to write:

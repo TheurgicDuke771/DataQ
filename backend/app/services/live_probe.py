@@ -4,7 +4,7 @@ A live probe opens a datasource with stored credentials, returns real cell
 values, and **persists nothing**: the column profiler, the check dry-run, and
 the column lister. Both of the product's data-protection pipelines — the
 redaction ladder and the G1 access audit (ADR
-[0041](../../../docs/adr/0041-history-audit-strategy.md)) — hang off a persisted
+[0041](../../../docs/site/adr/0041-history-audit-strategy.md)) — hang off a persisted
 `Result` row. A live probe has none, so it fell outside **both**, for one
 structural reason. That is why #1419 (dry-run returns an unredacted
 `observed_value`) and #1479 (profiler and dry-run emit no access event) are one

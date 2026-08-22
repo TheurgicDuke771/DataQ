@@ -1,7 +1,7 @@
 """`lineage.pull` — the pull-parse-upsert path against a real Postgres (db_session).
 
 The compose round-trip (emitter → Marquez → pull) is a manual/compose verification
-(see docs/orchestration.md); here a **fake `LineageProvider`** returns canned,
+(see docs/site/orchestration.md); here a **fake `LineageProvider`** returns canned,
 real-shaped Marquez graphs so the DB-side contract is exercised without a live catalog:
 edges upsert with ``source='marquez'`` + NULL connection_id, coexist with dbt edges
 without duplication, dedupe idempotently, prune when they vanish, and fail open.

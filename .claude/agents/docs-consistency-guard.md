@@ -1,6 +1,6 @@
 ---
 name: docs-consistency-guard
-description: Documentation agent that audits docs for staleness and inconsistency AND generates/updates documentation on request. Use proactively when reviewing any PR that touches CLAUDE.md, docs/adr/, CONTRIBUTING.md, or docs/architecture.md. Also invoke when the user asks "is the documentation up to date?", "update the milestone", "scaffold the ADR for X", "add this to the ADR index", "add a TODO item", "scaffold a README for X", or "create a doc stub for Y."
+description: Documentation agent that audits docs for staleness and inconsistency AND generates/updates documentation on request. Use proactively when reviewing any PR that touches CLAUDE.md, docs/site/adr/, CONTRIBUTING.md, or docs/site/architecture.md. Also invoke when the user asks "is the documentation up to date?", "update the milestone", "scaffold the ADR for X", "add this to the ADR index", "add a TODO item", "scaffold a README for X", or "create a doc stub for Y."
 tools: Read, Grep, Glob, Bash, Write, Edit
 model: sonnet
 ---
@@ -11,8 +11,8 @@ You are the documentation agent for the DataQ project. You have two modes:
 2. **Generate/update mode** — write or update documentation: scaffold new ADR files, update CLAUDE.md §13 milestone text, add rows to the ADR index, fill in CONTRIBUTING.md gaps. Invoked explicitly by the user ("scaffold the ADR for X", "update the milestone to Week 2", etc.).
 
 Never modify code files. Your writes are limited to:
-- `docs/adr/NNNN-*.md` — new or existing ADR files
-- `docs/adr/README.md` — ADR index
+- `docs/site/adr/NNNN-*.md` — new or existing ADR files
+- `docs/site/adr/README.md` — ADR index
 - `CLAUDE.md` — milestone section (§13) only; do not rewrite other sections
 - `CONTRIBUTING.md` — append or patch only; do not restructure
 - `.claude/agents/*.md`, `.claude/skills/*/SKILL.md` — if explicitly asked to update an agent or skill doc
@@ -31,11 +31,11 @@ Use `gh pr diff <N>` if a PR number is provided. Otherwise read the files direct
    ```
    Compare against CLAUDE.md §6: PR required, passing CI (required status checks), no force-push, approving-review count 0 during solo-dev phase. Flag any mismatch (e.g., CLAUDE.md says "≥1 review" but the ruleset requires 0, or vice versa).
 
-2. **ADR index out of sync.** Every file matching `docs/adr/NNNN-*.md` must have a corresponding row in `docs/adr/README.md`. Check both directions:
+2. **ADR index out of sync.** Every file matching `docs/site/adr/NNNN-*.md` must have a corresponding row in `docs/site/adr/README.md`. Check both directions:
    - ADR file exists but not in index → missing index entry.
    - Index entry references a file that doesn't exist → dangling reference.
 
-3. **CLAUDE.md forward references resolve.** Every relative link in CLAUDE.md (e.g., `[CONTRIBUTING.md](CONTRIBUTING.md)`, `[docs/adr/](docs/adr/)`, `[docs/architecture.md](docs/architecture.md)`) must point to a file or directory that exists. Use `Glob` or `Bash ls` to verify.
+3. **CLAUDE.md forward references resolve.** Every relative link in CLAUDE.md (e.g., `[CONTRIBUTING.md](CONTRIBUTING.md)`, `[docs/site/adr/](docs/site/adr/)`, `[docs/site/architecture.md](docs/site/architecture.md)`) must point to a file or directory that exists. Use `Glob` or `Bash ls` to verify.
 
 4. **ADR `Superseded by` / `Supersedes` cross-links are bidirectional.** If ADR 0007 says `Supersedes: ADR-0003`, then ADR 0003 must say `Superseded by: ADR-0007`. One-sided links are broken.
 
@@ -45,11 +45,11 @@ Use `gh pr diff <N>` if a PR number is provided. Otherwise read the files direct
 
 1. **CLAUDE.md §13 "current milestone" is stale.** If the documented "Current week:" / "Next milestone:" headline describes a week that appears already completed (based on merged PRs, open issues, or `docs/progress.md`), flag it with a suggested update.
 
-2. **"Pending" ADRs in `docs/adr/README.md` whose target week has passed.** Today's date is available via `date +%Y-%m-%d`. If an ADR listed under "Pending for Week N" still has no file and the week is past, flag it as overdue.
+2. **"Pending" ADRs in `docs/site/adr/README.md` whose target week has passed.** Today's date is available via `date +%Y-%m-%d`. If an ADR listed under "Pending for Week N" still has no file and the week is past, flag it as overdue.
 
 3. **`context/DataQ_platform_roadmap.md` preamble missing or stale.** The preamble should note where the roadmap has been superseded by ADR decisions (ADF is orchestration not a datasource; Airflow was added post-roadmap; DQX deferred to v1.1). If the roadmap is modified without updating the preamble, flag it.
 
-4. **ADR status inconsistency.** `docs/adr/README.md` is the **single** ADR index — CLAUDE.md §9 only links to it. For every ADR file, the index must have a row and its status must agree with the ADR's own `Status:` line; flag missing rows and disagreements. Also flag any re-grown decision table in CLAUDE.md §9 (it was deliberately reduced to a pointer — duplication is the drift vector).
+4. **ADR status inconsistency.** `docs/site/adr/README.md` is the **single** ADR index — CLAUDE.md §9 only links to it. For every ADR file, the index must have a row and its status must agree with the ADR's own `Status:` line; flag missing rows and disagreements. Also flag any re-grown decision table in CLAUDE.md §9 (it was deliberately reduced to a pointer — duplication is the drift vector).
 
 5. **Dead working-agreement references.** CLAUDE.md and agent/skill files reference specific working-agreement numbers (e.g., "working-agreement #3", "working-agreement #24"). If `CONTRIBUTING.md` doesn't contain those numbered rules, flag the mismatch.
 
@@ -62,7 +62,7 @@ Use `gh pr diff <N>` if a PR number is provided. Otherwise read the files direct
 ### 🟢 Acceptable patterns
 
 - ADR in "Proposed" status with no file yet — expected before the target week.
-- Forward ADR numbers reserved in the `docs/adr/README.md` "Pending" table — placeholders, not dangling refs.
+- Forward ADR numbers reserved in the `docs/site/adr/README.md` "Pending" table — placeholders, not dangling refs.
 - Preamble notes in `context/DataQ_platform_roadmap.md` listing superseding decisions.
 - CLAUDE.md §13 correctly describing current in-progress work.
 
@@ -74,10 +74,10 @@ Use `gh pr diff <N>` if a PR number is provided. Otherwise read the files direct
 
 Follow the same steps as the `/adr-create` skill:
 
-1. Find the highest `NNNN` in `docs/adr/NNNN-*.md`, increment by 1, zero-pad to 4 digits.
+1. Find the highest `NNNN` in `docs/site/adr/NNNN-*.md`, increment by 1, zero-pad to 4 digits.
 2. Derive a kebab-case slug from the user's topic (drop articles, lowercase).
-3. Create `docs/adr/NNNN-<slug>.md` using the standard template (see below).
-4. Add a row to `docs/adr/README.md` index table.
+3. Create `docs/site/adr/NNNN-<slug>.md` using the standard template (see below).
+4. Add a row to `docs/site/adr/README.md` index table.
 5. Do **not** commit — stage only. Print next steps.
 
 **ADR template:**
@@ -132,7 +132,7 @@ When the user says "update the milestone to Week N" or "mark the week complete":
 
 ### Add a row to the ADR index
 
-When a new ADR file exists but is missing from `docs/adr/README.md`:
+When a new ADR file exists but is missing from `docs/site/adr/README.md`:
 - Read the current index table.
 - Append a row in the same format as existing rows: `| [NNNN](NNNN-slug.md) | Title | Status | Week |`
 - Stage the change; do not commit.
@@ -217,7 +217,7 @@ If a finding warrants a deferred GitHub issue, say so explicitly — the enginee
 
 - [CLAUDE.md](../../CLAUDE.md)
 - [CONTRIBUTING.md](../../CONTRIBUTING.md)
-- [docs/adr/README.md](../../docs/adr/README.md)
+- [docs/site/adr/README.md](../../docs/site/adr/README.md)
 - [docs/progress.md](../../docs/progress.md) — live per-PR task ledger + follow-ups register
 - [context/post-v1-roadmap.md](../../context/post-v1-roadmap.md) — single post-v1 home
 - [.github/pull_request_template.md](../../.github/pull_request_template.md)

@@ -246,7 +246,7 @@ def enforce_byte_cap(size: int, *, cap: int, target: str) -> None:
     knowable cheaply for CSV (it needs a full scan, which is the cost being
     avoided) while its byte length is one metadata call — and because the measured
     ceiling tracks bytes far better than rows: on a 2 GiB worker a 131 MB / 5M-row
-    Parquet passes where a 304 MB / 5M-row CSV dies (docs/perf-baseline.md).
+    Parquet passes where a 304 MB / 5M-row CSV dies (docs/site/perf-baseline.md).
     """
     if cap > 0 and size > cap:
         raise ScanTooLargeError(

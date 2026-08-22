@@ -47,12 +47,12 @@ only to EU personal data.
 | **Encryption at rest** — Azure platform-managed keys on Postgres / Key Vault / Storage (default) | Azure platform default (not asserted in IaC — see gap G5) | GDPR Art 32 / HIPAA §164.312(a)(2)(iv) |
 | **Access control** — two axes: suite-scoped authz (owned-or-shared) **and** stored workspace roles (Admin / Member / Viewer), OIDC SSO (Azure AD + Cognito validated) | suite authz, `users.role` (ADR 0033), generic OIDC client + `fastapi-azure-auth` | GDPR Art 32 / HIPAA §164.312(a)(1) |
 | **Config-change history** — Type-4 snapshot tables (`check_versions`, `connection_versions`); credentials never snapshotted | ADR 0020 | GDPR Art 5(2) accountability (partial) |
-| **Cross-entity audit log** — append-only `audit_events`: every config mutation by a principal (actor, action, entity, before/after, `request_id`), written **inside the mutation's transaction** so an applied change and its record cannot diverge. Per-entity payload allow-list — no credential, no warehouse data. Workspace-admin read endpoint; own retention clock | ADR [0041](adr/0041-history-audit-strategy.md), #1318 | GDPR Art 5(2)/30 accountability; HIPAA §164.312(b) **partial** — config events only, data *reads* are #431 |
+| **Cross-entity audit log** — append-only `audit_events`: every config mutation by a principal (actor, action, entity, before/after, `request_id`), written **inside the mutation's transaction** so an applied change and its record cannot diverge. Per-entity payload allow-list — no credential, no warehouse data. Workspace-admin read endpoint; own retention clock | ADR [0041](site/adr/0041-history-audit-strategy.md), #1318 | GDPR Art 5(2)/30 accountability; HIPAA §164.312(b) **partial** — config events only, data *reads* are #431 |
 | **Data residency is deployable** — provider-agnostic seams (ADR 0010); a controller can deploy into their own jurisdiction's region | ADR 0010 / 0013 | GDPR Ch. V transfers |
 | **(Post-v1) LLM transfer minimization** — schema-only, PII-redacted context; local-endpoint option; no key-proxy | [`docs/post-v1-dq-intelligence-notes.md`](post-v1-dq-intelligence-notes.md) | GDPR Ch. V / HIPAA minimum-necessary |
 
 > **Access-control row — workspace roles are now stored, and manageable in-app (ADR
-> [0033](adr/0033-workspace-roles-rbac.md), shipped #740–#742).**
+> [0033](site/adr/0033-workspace-roles-rbac.md), shipped #740–#742).**
 > Authorization is two orthogonal axes. The **workspace role** (`users.role`:
 > `admin | member | viewer`) says what kind of principal you are; the **per-suite grant**
 > (`view` / `edit`) says what you may touch. Both are enforced server-side on REST and MCP
@@ -91,7 +91,7 @@ only to EU personal data.
 > tracked with **#431**. This entry is distinct from the G1 *read*-access audit below, which is
 > still open.
 
-> **Decided change to the Access-control row — ADR [0027](adr/0027-suite-permission-model-workspace-admin.md) / [#482](https://github.com/TheurgicDuke771/DataQ/issues/482) (build pending).**
+> **Decided change to the Access-control row — ADR [0027](site/adr/0027-suite-permission-model-workspace-admin.md) / [#482](https://github.com/TheurgicDuke771/DataQ/issues/482) (build pending).**
 > The suite-permission model is being revised so the **workspace-admin is an implicit
 > admin on *every* suite** with **workspace-wide visibility** (Dashboard/Suites/Results),
 > while normal users are capped at `edit`/`view` (grantable suite-`admin` is removed).
@@ -114,7 +114,7 @@ G4 #434 · G5 #435**.
 **Requirement:** HIPAA §164.312(b) **audit controls** require a durable record of *who
 accessed which PHI*. GDPR accountability (Art 5(2) / 30) wants processing records too.
 **Current state (updated 2026-08-17):** the *"revisit ADR 0020"* instruction has been
-discharged — ADR [0041](adr/0041-history-audit-strategy.md) **accepts** the cross-entity
+discharged — ADR [0041](site/adr/0041-history-audit-strategy.md) **accepts** the cross-entity
 audit log, and **phase 1 has shipped** (#1318): an append-only `audit_events` table, an
 `audit_service` seam with a per-entity payload allow-list, every one of the 35 mutating
 `/api/v1` routes either audited or explicitly exempted behind a route-table coverage
@@ -325,7 +325,7 @@ classifications from **Snowflake** (`dataq_classification` plus Snowflake's own
 `PRIVACY_CATEGORY`) and **Unity Catalog** (`dataq_classification`), caches them on the
 asset on each run, and feeds them to the governance floor of the redaction ladder — the
 rung a suite policy cannot lift, on REST *and* MCP. The convention is documented for
-customers in [docs/security.md](security.md).
+customers in [docs/security.md](site/security.md).
 
 **A fixed convention rather than a per-connection mapping**, deliberately: a mapping would
 make itself an unreviewed security control, where one typo silently un-masks a column.
@@ -408,7 +408,7 @@ described the deploy as "region-pinned to US (westus3)", which turned out to be 
 and is corrected below: the **database** is in West US 3, the **app** is in West US 2, and
 nothing had noticed.
 **Shipped (2026-08-18).** A documented **residency posture** per resource class in
-[docs/security.md](security.md), a `DEPLOYMENT_REGION` declaration
+[docs/security.md](site/security.md), a `DEPLOYMENT_REGION` declaration
 surfaced at `GET /api/v1/admin/deployment` (workspace-admin only) so the posture is
 readable without shell access, and — the part that is a control rather than a document —
 an IaC **postcondition** that fails the plan when the shared Azure Container Apps
@@ -426,7 +426,7 @@ sample is cached) and the WAFv2 ACL, which exists only in `us-east-1` regardless
 stack's region and holds rules, not data. Both are true of every AWS deployment.
 
 **The shared-Postgres split below is not on that page**, and that was a later correction
-(#1472): it is a fact about *this* estate, and `docs/security.md` is published to the
+(#1472): it is a fact about *this* estate, and `docs/site/security.md` is published to the
 public docs site while this file is not. See "the concrete regions live here" at the end
 of this section for the reasoning — in short, a published snapshot of live infrastructure
 is a claim that rots silently, which is exactly how the false matrix row below arose.
@@ -454,12 +454,12 @@ permanently-firing check is noise people learn to skip — it would have masked 
 drift that matters. An accepted exception must not cost you the detector.
 
 **The constraint this places on a future deployment is stated in
-[docs/security.md](security.md):** an operator whose regime cares about sub-national
+[docs/security.md](site/security.md):** an operator whose regime cares about sub-national
 placement, or who deploys into the EU where a two-region split could straddle adequacy
 boundaries, must consolidate rather than inherit this exception.
 
 **The concrete regions live here and not on the published page, deliberately.**
-`docs/security.md` ships to the public docs site; this file is in `exclude_docs`. DataQ is
+`docs/site/security.md` ships to the public docs site; this file lives outside `docs/site/`, so it is never built. DataQ is
 customer-deployed, so *our* regions are a property of one demo estate that will differ for
 every operator — publishing them states somebody else's posture as if it were the product's.
 
@@ -490,7 +490,7 @@ review would flag, and the fix is a one-line assert.
 **Resolution (2026-08-17).** The original framing — *"satisfied … but our OpenTofu neither
 asserts it nor offers CMK, **and it's undocumented (no evidence for a customer security
 review)**"* — named documentation as the actual deliverable, and that is what shipped:
-[docs/security.md](security.md) now carries a **per-resource at-rest table for both
+[docs/security.md](site/security.md) now carries a **per-resource at-rest table for both
 reference deployments** (what is encrypted, with which key, with a first-party citation),
 which is the artifact a security reviewer asks for.
 
@@ -507,7 +507,7 @@ Two corrections to this gap's premises, both recorded rather than quietly droppe
   control.
 
 **CMK is deferred, with three independent reasons** (full detail in
-[docs/security.md](security.md)): it is **creation-time-only** on Azure Postgres and
+[docs/security.md](site/security.md)): it is **creation-time-only** on Azure Postgres and
 therefore a data migration rather than a toggle; our IaC does not own the database server
 (1-server subscription cap → shared server, declared as a `data` source); and our Key Vault
 is deliberately purge-protection-off, which makes it the wrong custodian for a key whose
@@ -521,20 +521,20 @@ at-rest encryption is off beside an encrypted RDS.
 Tracked as [#1452](https://github.com/TheurgicDuke771/DataQ/issues/1452) (this gap
 was originally "listed so it isn't forgotten" and then tracked nowhere — exactly the
 failure mode this section warned about, which is why the issue exists). Shipped
-2026-08-21 under [docs/compliance/](compliance/sub-processors.md), all published on
+2026-08-21 under [docs/compliance/](site/compliance/sub-processors.md), all published on
 the docs site:
 
-- **[Sub-processor / third-party disclosure](compliance/sub-processors.md)** — every
+- **[Sub-processor / third-party disclosure](site/compliance/sub-processors.md)** — every
   external service the software can send data to, enumerated-not-derived (the same
   rule as the residency posture), with the update process that keeps it current
   (same-PR rule for new outbound calls + the rule-39 quarterly audit as backstop).
-- **[DPIA input sheet](compliance/dpia-input-sheet.md)** — the personal-data
+- **[DPIA input sheet](site/compliance/dpia-input-sheet.md)** — the personal-data
   inventory only we can supply: both data classes, per-location retention and
   controls, and the honest open items (#432 erasure, #1267 scalar-cell sweep,
   #1460 tamper-evidence) stated rather than implied closed.
-- **[Breach-notification runbook](compliance/breach-notification-runbook.md)** —
+- **[Breach-notification runbook](site/compliance/breach-notification-runbook.md)** —
   reference-deployment procedure + a template for customer deployments.
-- **[DPA / BAA templates](compliance/dpa-baa-templates.md)** — drafted with accurate
+- **[DPA / BAA templates](site/compliance/dpa-baa-templates.md)** — drafted with accurate
   technical annexes and marked **counsel-review-required**; explicitly NOT an
   engineering sign-off. Consent/lawful-basis guidance stays with the deploying
   organization (controller-side by construction).

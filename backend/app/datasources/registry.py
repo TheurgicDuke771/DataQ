@@ -408,7 +408,7 @@ _TARGET_RESOLVERS: dict[str, Callable[[dict[str, Any], str], ResolvedTarget]] = 
 #: Datasources whose runner materialises rows in the worker, and which therefore
 #: accept a ``sampling`` block on their run target (#595). Snowflake is absent on
 #: purpose, not by oversight: its runner pushes every expectation down as SQL and
-#: never holds rows (200M rows with flat worker memory — docs/perf-baseline.md),
+#: never holds rows (200M rows with flat worker memory — docs/site/perf-baseline.md),
 #: so a sampling spec there would change nothing while stamping "sampled" on every
 #: result — a claim the data does not support. Iceberg is absent because its
 #: sampled read is not built yet (`pyiceberg` scan limit/row-filter pushdown,

@@ -92,6 +92,6 @@ Be concrete about the failing input. "The Databricks connector returns `'2026-07
 ## Source documents (your authority)
 
 - `CLAUDE.md` §13 — the recorded lesson and the five instances of this shape
-- `docs/feature-matrix.md` — which datasources claim to support what (a ✅ with no live run is a claim, not a fact)
+- `docs/site/feature-matrix.md` — which datasources claim to support what (a ✅ with no live run is a claim, not a fact)
 - `backend/tests/support/adversarial.py` — where adversarial input batteries belong
 - `.claude/skills/live-verify/SKILL.md` — how to get the evidence when a unit test cannot

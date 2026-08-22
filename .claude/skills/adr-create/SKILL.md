@@ -1,6 +1,6 @@
 ---
 name: adr-create
-description: Scaffold a new Architecture Decision Record under docs/adr/ with auto-numbered filename, standard frontmatter (Status / Date / Deciders / optional Consulted / Supersedes / Superseded by), and the canonical sections (Context, Decision, Consequences, Alternatives considered, Related). Use when the user wants to capture a significant architectural decision, or asks "let's ADR that."
+description: Scaffold a new Architecture Decision Record under docs/site/adr/ with auto-numbered filename, standard frontmatter (Status / Date / Deciders / optional Consulted / Supersedes / Superseded by), and the canonical sections (Context, Decision, Consequences, Alternatives considered, Related). Use when the user wants to capture a significant architectural decision, or asks "let's ADR that."
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 ## Purpose
 
-Create a new ADR in `docs/adr/` that follows the conventions documented in `docs/adr/README.md` and is consistent with the ADRs already in the repo.
+Create a new ADR in `docs/site/adr/` that follows the conventions documented in `docs/site/adr/README.md` and is consistent with the ADRs already in the repo.
 
 ## Usage
 
@@ -19,23 +19,23 @@ User invokes this skill with a short topic for the ADR. Optional args:
 
 ## Steps
 
-1. **Determine the next ADR number.** Run the bundled helper — `.claude/skills/adr-create/next-number.sh` — which reads `docs/adr/NNNN-*.md`, finds the highest number, increments by 1, and zero-pads to 4 digits (prints `0001` when the dir is empty/missing). Use its output verbatim instead of re-inferring the number by hand.
+1. **Determine the next ADR number.** Run the bundled helper — `.claude/skills/adr-create/next-number.sh` — which reads `docs/site/adr/NNNN-*.md`, finds the highest number, increments by 1, and zero-pads to 4 digits (prints `0001` when the dir is empty/missing). Use its output verbatim instead of re-inferring the number by hand.
 
 2. **Derive a kebab-case slug** from the user's topic. Drop articles. Examples:
    - "Severity tier weights" → `severity-tier-weights`
    - "Use Pydantic Settings for config" → `use-pydantic-settings-for-config`
 
-3. **Create the file** at `docs/adr/NNNN-<slug>.md` using the template below. Today's date in ISO format (`YYYY-MM-DD`). Deciders defaults to the current GitHub handle, resolved via `gh api /user --jq .login` (prepend `@`). Do NOT use `git config user.name` — that returns a display name (e.g. "Ada Lovelace") which produces an invalid `@mention`. If `gh api` fails (no auth, offline), fall back to asking the user for their GitHub handle.
+3. **Create the file** at `docs/site/adr/NNNN-<slug>.md` using the template below. Today's date in ISO format (`YYYY-MM-DD`). Deciders defaults to the current GitHub handle, resolved via `gh api /user --jq .login` (prepend `@`). Do NOT use `git config user.name` — that returns a display name (e.g. "Ada Lovelace") which produces an invalid `@mention`. If `gh api` fails (no auth, offline), fall back to asking the user for their GitHub handle.
 
-4. **Update the index** at `docs/adr/README.md`:
+4. **Update the index** at `docs/site/adr/README.md`:
    - Add a row to the "Index" table at the end (above any "Pending" section).
    - If the new ADR was in the Pending list, remove it from there.
 
 5. **Stage but do not commit.** The user runs `git add` + the commit themselves per working-agreement #1 (one functionality per commit, manual commit step).
 
 6. **Print next steps:**
-   - "Open `docs/adr/NNNN-<slug>.md` and fill in Context / Decision / Consequences / Alternatives."
-   - "Branch suggestion: `docs/adr-NNNN-<slug>`"
+   - "Open `docs/site/adr/NNNN-<slug>.md` and fill in Context / Decision / Consequences / Alternatives."
+   - "Branch suggestion: `docs/site/adr-NNNN-<slug>`"
    - "PR title suggestion: `docs: add ADR NNNN — <human title>`"
 
 ## Template
@@ -87,14 +87,14 @@ User invokes this skill with a short topic for the ADR. Optional args:
 - **Date is today's date** in ISO format.
 - **Consulted, Supersedes, Superseded by are optional** — include the label even if empty so future editors see the slot.
 - **Body sections in this exact order:** Context → Decision → Consequences (with Positive/Negative subheadings) → Alternatives considered → Related.
-- **Slug must match the convention** in `docs/adr/README.md`: lowercase, kebab-case, no leading article.
+- **Slug must match the convention** in `docs/site/adr/README.md`: lowercase, kebab-case, no leading article.
 - **Filename matches title:** `NNNN-<slug>.md` where the slug is also derivable from the H1 title.
 - **README index is the source of truth** for which ADRs exist. Always update it.
 - **Do not commit.** Stage only. The user commits manually so they can review the diff.
 
 ## Anti-patterns to avoid
 
-- Don't reuse a number. If `docs/adr/0005-*.md` exists, the next one is `0006`, never `0005a` or `0005-v2`.
+- Don't reuse a number. If `docs/site/adr/0005-*.md` exists, the next one is `0006`, never `0005a` or `0005-v2`.
 - Don't auto-fill Decision/Context with boilerplate. Leave them as the template placeholders so the user must write the actual content.
 - Don't add the ADR to the "Pending" section of README — Pending is for ADRs known to be coming in a specific week but not yet written.
 
@@ -103,11 +103,11 @@ User invokes this skill with a short topic for the ADR. Optional args:
 Worked examples so the skill behaves consistently:
 
 1. **Plain decision.** `adr-create "use Pydantic Settings for config"` with `0022` as the latest →
-   helper prints `0023`; create `docs/adr/0023-use-pydantic-settings-for-config.md` with `Status: Accepted`, today's date, Deciders resolved from `gh api /user`; add the index row; stage only.
+   helper prints `0023`; create `docs/site/adr/0023-use-pydantic-settings-for-config.md` with `Status: Accepted`, today's date, Deciders resolved from `gh api /user`; add the index row; stage only.
 2. **Proposed status + consulted.** `adr-create "adopt OpenTelemetry" --status proposed --consulted "@product-owner"` →
    `Status: Proposed` (title-cased from the lowercase arg), `Consulted: @product-owner`; Supersedes/Superseded-by labels left as empty placeholders.
 3. **Superseding an old ADR.** `adr-create "revised severity weights" --status accepted --supersedes 0005` →
    new ADR gets `Supersedes: ADR-0005`; remind the user (in next-steps output) to flip ADR-0005's status to `Superseded by ADR-NNNN` in a follow-up edit.
 4. **Deprecation without replacement.** `adr-create "retire the X seam" --status deprecated` →
    `Status: Deprecated`, no Superseded-by needed.
-5. **Empty repo / first ADR.** `docs/adr/` missing → helper prints `0001`; create `0001-<slug>.md`.
+5. **Empty repo / first ADR.** `docs/site/adr/` missing → helper prints `0001`; create `0001-<slug>.md`.

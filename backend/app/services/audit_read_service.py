@@ -1,5 +1,5 @@
 """The workspace-admin read surface and retention sweep for `audit_events`
-— ADR [0041](../../../docs/adr/0041-history-audit-strategy.md) phase 1 (#1318).
+— ADR [0041](../../../docs/site/adr/0041-history-audit-strategy.md) phase 1 (#1318).
 
 Two things live here and they are opposites, which is why the module says so out
 loud: one hands an auditor the record, the other destroys it on a clock. The

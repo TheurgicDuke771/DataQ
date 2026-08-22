@@ -16,7 +16,7 @@
 > top of it.
 >
 > **The big enabler (already true in v1):** there is **no server-side expectation
-> allowlist** — [`gx_runner`](datasources/gx_runner.py) title-cases *any*
+> allowlist** — [`gx_runner`](../backend/app/datasources/gx_runner.py) title-cases *any*
 > `expectation_type` string into a GX class, and `checks.config` is free-form JSONB.
 > So "add an expectation" / "wire in a check" is mostly a **frontend-catalog + config-
 > validation** problem, not a backend-engine one. That's why the items below are

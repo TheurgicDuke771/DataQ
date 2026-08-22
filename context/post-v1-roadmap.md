@@ -21,8 +21,8 @@
 
 **Detailed design docs** (the "why" + the shape):
 - [post-v1-dq-intelligence-notes.md](../docs/post-v1-dq-intelligence-notes.md) — expectation expansion, LLM-assisted authoring, marketplace
-- ~~post-v1-admin-ui-notes.md~~ — **deleted at the v1.1 close (2026-08-21)**: superseded by ADR [0033](../docs/adr/0033-workspace-roles-rbac.md) (which records the decision AND the reversal of this doc's defer-RBAC stance); live remnants filed as [#1514](https://github.com/TheurgicDuke771/DataQ/issues/1514) / [#1516](https://github.com/TheurgicDuke771/DataQ/issues/1516)
-- ~~post-v1-assets-lineage-incidents-notes.md~~ — **deleted at the v1.1 close (2026-08-21)**: fully shipped; durable decision records are ADRs [0034](../docs/adr/0034-asset-entity-openlineage-identity-lineage-pull.md)/[0037](../docs/adr/0037-workspace-visible-asset-identity.md)/[0040](../docs/adr/0040-warehouse-inventory-sync-table-enumeration-seam.md); the one unbuilt design item is [#1515](https://github.com/TheurgicDuke771/DataQ/issues/1515)
+- ~~post-v1-admin-ui-notes.md~~ — **deleted at the v1.1 close (2026-08-21)**: superseded by ADR [0033](../docs/site/adr/0033-workspace-roles-rbac.md) (which records the decision AND the reversal of this doc's defer-RBAC stance); live remnants filed as [#1514](https://github.com/TheurgicDuke771/DataQ/issues/1514) / [#1516](https://github.com/TheurgicDuke771/DataQ/issues/1516)
+- ~~post-v1-assets-lineage-incidents-notes.md~~ — **deleted at the v1.1 close (2026-08-21)**: fully shipped; durable decision records are ADRs [0034](../docs/site/adr/0034-asset-entity-openlineage-identity-lineage-pull.md)/[0037](../docs/site/adr/0037-workspace-visible-asset-identity.md)/[0040](../docs/site/adr/0040-warehouse-inventory-sync-table-enumeration-seam.md); the one unbuilt design item is [#1515](https://github.com/TheurgicDuke771/DataQ/issues/1515)
 - [compliance-posture.md](../docs/compliance-posture.md) — GDPR / CCPA-CPRA / HIPAA technical controls + gap list
 
 **The big picture:** v1 ships the DQ loop (checks → results → trends → freshness/volume monitors
@@ -78,7 +78,7 @@ scale-aware execution (G-b, Theme 7) → incident/lineage design doc (G-d).
 
 ## Theme 1 — Monitor kinds (the remaining reserved kinds)
 
-ADR [0012](../docs/adr/0012-monitor-kind-seam.md) reserved five non-expectation monitor kinds behind the
+ADR [0012](../docs/site/adr/0012-monitor-kind-seam.md) reserved five non-expectation monitor kinds behind the
 `check.kind` discriminator + numeric `metric_value`. **`freshness` + `volume` shipped end-to-end
 in Week 7** (out of roadmap — run engine #426 + authoring UI #437). The rest stay reserved:
 
@@ -87,7 +87,7 @@ in Week 7** (out of roadmap — run engine #426 + authoring UI #437). The rest s
 | `freshness`, `volume` | ✅ **shipped** (W7, #426/#437) | ADR 0012 |
 | `schema_drift` | 🔵 reserved (422 today) | ADR 0012 |
 | `anomaly` | 🔵 reserved (422 today); needs a baseline/seasonality model | ADR 0012 |
-| `comparison` (cross-dataset reconciliation) | 🔵 reserved; reuse the FastAPI_DataComparison engine; two-connection model **decided 2026-07-11** (build in v1.1 W3) | ADR [0014](../docs/adr/0014-reconciliation-comparison-check-kind.md) → ADR [0015](../docs/adr/0015-two-connection-comparison-check-model.md) |
+| `comparison` (cross-dataset reconciliation) | 🔵 reserved; reuse the FastAPI_DataComparison engine; two-connection model **decided 2026-07-11** (build in v1.1 W3) | ADR [0014](../docs/site/adr/0014-reconciliation-comparison-check-kind.md) → ADR [0015](../docs/site/adr/0015-two-connection-comparison-check-model.md) |
 
 **Monitor-engine follow-ups** (from the #426/#437 landings):
 | # | Title |
@@ -123,7 +123,7 @@ seam (schema-only, PII-redacted context).
 rides a pinned GX Core with documented API drift (CLAUDE.md §11); the DQX swap-in shape exists
 for the UC runner only. If GX churn continues (or DQX/v1.1 lands), generalise that runner-level
 engine seam beyond UC so the check engine is a pluggable impl, not a hard dependency.
-**Discharged 2026-07-17:** [ADR 0036](../docs/adr/0036-connection-anchored-check-engines.md)
+**Discharged 2026-07-17:** [ADR 0036](../docs/site/adr/0036-connection-anchored-check-engines.md)
 decides the abstraction (engines are connection-anchored capabilities; `check.engine` per check;
 `kind` ⊥ `engine`); umbrella issue
 [#895](https://github.com/TheurgicDuke771/DataQ/issues/895) tracks the build — Snowflake DMF
@@ -165,7 +165,7 @@ has no LLM dependency and can ship alone).
 
 ## Theme 3 — Admin, access model & UI/IA
 
-Full design: ~~post-v1-admin-ui-notes.md~~ (deleted at the v1.1 close — see ADR [0033](../docs/adr/0033-workspace-roles-rbac.md), which superseded its defer-RBAC stance and shipped the roles console). v1 ships suite-level sharing
+Full design: ~~post-v1-admin-ui-notes.md~~ (deleted at the v1.1 close — see ADR [0033](../docs/site/adr/0033-workspace-roles-rbac.md), which superseded its defer-RBAC stance and shipped the roles console). v1 ships suite-level sharing
 + a read-only workspace-admin view (#289). A full RBAC console is gold-plating for a single-tenant
 trusted-team tool; the market leaders lead with checks→results→trends→alerts, not user-lifecycle.
 
@@ -179,7 +179,7 @@ trusted-team tool; the market leaders lead with checks→results→trends→aler
 | _(no issue yet)_ | **First-run onboarding + empty-state pass** — guided connect → suite → check → run path and designed empty states. Low value for the current solo deployment, first-touch-critical for any marketplace/BYOL evaluator (ADR 0013); cheap to retrofit now vs. embarrassing at listing time. |
 | _(no issue yet)_ | **Bulk operations on checks** — multi-select enable/disable/severity/snooze; one-at-a-time editing doesn't survive 50-check suites. |
 
-**DataQ-issued API keys / service tokens (#461, ADR [0026](../docs/adr/0026-auth-api-keys-and-principal-seam.md) proposed).** Auth today is Azure-AD-only (delegated/SSO) for both REST and `/mcp` — the deepest remaining vendor lock-in (the `get_current_user` seam has one real impl; `users.aad_object_id` is Azure-shaped) and it blocks BYOL-on-AWS/GCP (ADR 0013) and headless/programmatic access (a long-lived scoped key beats a ~60-min refreshing token for CI / always-on MCP clients). The fix is a **second authenticator behind the same `get_current_user` seam** so the **REST API and MCP accept it identically** — never MCP-only — which also finally *exercises* the seam (ADR 0010). Phase it: **user-scoped PATs first** (inherit the owner's per-suite grants → zero new authz; optional read-only down-scope), defer standalone **service-account principals** (they force generalizing `aad_object_id` → a generic principal with pluggable identity bindings + non-user suite sharing). Credential bar: hashed-at-rest + show-once + prefix + expiry + revocation + audit, in a new `api_keys` table (not the retrievable-secret SecretStore), with key lifecycle tied to the owner so it can't outlive a deactivated account.
+**DataQ-issued API keys / service tokens (#461, ADR [0026](../docs/site/adr/0026-auth-api-keys-and-principal-seam.md) proposed).** Auth today is Azure-AD-only (delegated/SSO) for both REST and `/mcp` — the deepest remaining vendor lock-in (the `get_current_user` seam has one real impl; `users.aad_object_id` is Azure-shaped) and it blocks BYOL-on-AWS/GCP (ADR 0013) and headless/programmatic access (a long-lived scoped key beats a ~60-min refreshing token for CI / always-on MCP clients). The fix is a **second authenticator behind the same `get_current_user` seam** so the **REST API and MCP accept it identically** — never MCP-only — which also finally *exercises* the seam (ADR 0010). Phase it: **user-scoped PATs first** (inherit the owner's per-suite grants → zero new authz; optional read-only down-scope), defer standalone **service-account principals** (they force generalizing `aad_object_id` → a generic principal with pluggable identity bindings + non-user suite sharing). Credential bar: hashed-at-rest + show-once + prefix + expiry + revocation + audit, in a new `api_keys` table (not the retrievable-secret SecretStore), with key lifecycle tied to the owner so it can't outlive a deactivated account.
 
 ### Accessibility & inclusive UI (design-captured 2026-07-04 — a genuine blind spot)
 
@@ -376,7 +376,7 @@ adapter only on real demand.
 Oracle / Teradata / SAP HANA (real enterprise demand, heavy drivers + licensing — build on a
 concrete prospect, not speculatively); **MongoDB** (same no-SQL-dialect logic as Cosmos, same
 routing answer: via Trino's connector or a mirror); **Kafka / streaming** (not batch — that's the
-DQX v1.1 lane, ADR [0003](../docs/adr/0003-gx-only-for-v1.md)); **Delta / Iceberg table formats
+DQX v1.1 lane, ADR [0003](../docs/site/adr/0003-gx-only-for-v1.md)); **Delta / Iceberg table formats
 on raw object storage** — Iceberg is already tracked as [#286](https://github.com/TheurgicDuke771/DataQ/issues/286)
 (Theme 2); a `delta` flat-file format would slot next to the JSON row above.
 
@@ -420,8 +420,8 @@ Captured in ADRs / progress.md, not yet broken into backlog issues:
 
 | Item | Where | Note |
 |---|---|---|
-| **DQX engine** for UC streaming/DLT | ADR [0003](../docs/adr/0003-gx-only-for-v1.md) | v1.1 — same `UnityCatalogCheckRunner` interface; UI `engine: gx \| dqx` toggle |
-| **Reconciliation two-connection model** | ADR [0014](../docs/adr/0014-reconciliation-comparison-check-kind.md) → ADR [0015](../docs/adr/0015-two-connection-comparison-check-model.md) (decided 2026-07-11) | `comparison` monitor kind unblocked — build in v1.1 W3 |
+| **DQX engine** for UC streaming/DLT | ADR [0003](../docs/site/adr/0003-gx-only-for-v1.md) | v1.1 — same `UnityCatalogCheckRunner` interface; UI `engine: gx \| dqx` toggle |
+| **Reconciliation two-connection model** | ADR [0014](../docs/site/adr/0014-reconciliation-comparison-check-kind.md) → ADR [0015](../docs/site/adr/0015-two-connection-comparison-check-model.md) (decided 2026-07-11) | `comparison` monitor kind unblocked — build in v1.1 W3 |
 | **HashiCorp Vault** `SecretStore` spike | harness README (was HARNESS_TODO §5) | validates the ADR 0010/0013 seam (Key Vault = one impl) |
 | **Performance/scale harness** | ADR 0021 / harness README | the script behind #327/#323 above |
 | **Dark mode / marketing page** | — | prototype deferrals → **Theme 12** below |
@@ -448,7 +448,7 @@ palette** (the shipped indigo theme stands).
 ## Theme 13 — MCP tool expansion (candidate endpoints)
 
 **Tier 1 — DELIVERED 2026-08-17 (issue [#529](https://github.com/TheurgicDuke771/DataQ/issues/529),
-ADR [0008](../docs/adr/0008-mcp-server.md) amendment).** All eleven Tier 1 tools below shipped,
+ADR [0008](../docs/site/adr/0008-mcp-server.md) amendment).** All eleven Tier 1 tools below shipped,
 bringing the MCP server from 8 to **19 tools** (17 read-only + 2 mutating). Every new tool is the
 same thin service-layer wrapper with `require_permission` authz + sample redaction as the
 original 8 (`backend/app/mcp/server.py`); `list_connections` returns metadata + health only

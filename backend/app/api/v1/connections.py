@@ -34,7 +34,7 @@ reads costs nothing that the Admin gate is protecting.
 ⚠️ **Breaking change for Members.** Before this, *any* authenticated user could
 delete or re-credential the connection every suite in the workspace ran on.
 Deployments where non-admins managed connections must promote those users to
-Admin before upgrading — see CHANGELOG and docs/security.md.
+Admin before upgrading — see CHANGELOG and docs/site/security.md.
 """
 
 from __future__ import annotations

@@ -354,7 +354,7 @@ class UnityCatalogCheckRunner:
         Both strategies bound the transfer **at the SQL warehouse**, so the worker
         never receives the rows it is not going to look at — the whole point, given
         the UC read is the hungriest full-load path measured (~925 MiB for 1M rows;
-        2M OOM-killed the child — docs/perf-baseline.md).
+        2M OOM-killed the child — docs/site/perf-baseline.md).
 
         * ``head`` → ``LIMIT rows + 1``. The extra row distinguishes "the table has
           exactly N rows" (a complete read, reported ``sampled=False``) from "the

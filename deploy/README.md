@@ -3,12 +3,12 @@
 How DataQ v1 is deployed to **Azure and AWS — two parallel, independently live
 deployments**, not a primary and a fallback. Infrastructure for both is **in-repo
 OpenTofu** (`deploy/terraform/azure/` and `deploy/terraform/aws/`, both applied —
-[ADR 0024](../docs/adr/0024-app-deployment-infrastructure.md)); each app rolls out via
+[ADR 0024](../docs/site/adr/0024-app-deployment-infrastructure.md)); each app rolls out via
 its own workflow (Azure: [.github/workflows/deploy.yml](../.github/workflows/deploy.yml);
 AWS: [.github/workflows/deploy-aws.yml](../.github/workflows/deploy-aws.yml), both
 `workflow_dispatch`). Both stacks are **live** — this is the runbook to provision a
-fresh environment and to deploy a new image, on either cloud. Related: [ADR 0025](../docs/adr/0025-production-image-pip-slim.md)
-(slim+pip image), [ADR 0023](../docs/adr/0023-container-image-registry-ghcr.md) (GHCR).
+fresh environment and to deploy a new image, on either cloud. Related: [ADR 0025](../docs/site/adr/0025-production-image-pip-slim.md)
+(slim+pip image), [ADR 0023](../docs/site/adr/0023-container-image-registry-ghcr.md) (GHCR).
 
 This guide is written Azure-first because Azure was built first and most of the prose
 below (Key Vault, Azure AD, Container Apps) describes it in detail; the [AWS
@@ -25,7 +25,7 @@ below is the how.
 
 ### 1. What you must change (never ship the eval/dev defaults)
 
-The prebuilt-image quickstart ([docs/getting-started](../docs/getting-started.md)) boots
+The prebuilt-image quickstart ([docs/getting-started](../docs/site/getting-started.md)) boots
 into **email-OTP sign-in by default** (#1150) — a bundled Mailpit catcher stands in for
 an SMTP relay, uses a passwordless DB, and binds to loopback. Dev-bypass (no
 authentication at all) is an **explicit two-variable downgrade**
@@ -64,7 +64,7 @@ mode for you. A production deployment must flip all of the following. Values liv
 | `AUTH_OTP_VERIFY_MIN_SECONDS` | `0.5` | the same **floor** on `POST /api/v1/auth/otp/verify` ([#1141](https://github.com/TheurgicDuke771/DataQ/issues/1141)). Every rejected code answers a byte-identical 401, but an address with a **live code outstanding** pays an `UPDATE … RETURNING` + commit that an address with none never pays — and that difference is cheap to set up, because a code is minted **only for an allow-listed address**, so one `otp/request` against the address being probed (uniform `ok` either way, revealing nothing itself) creates it for the price of a per-email quota slot. Every 401 is held to this minimum. A **successful** verification is deliberately **not** padded (a 200 already separates itself, to a caller who by definition knows the code), so real sign-ins stay snappy; neither is the 503 for an unconfigured deployment. Half the request-side floor because there is no SMTP tail to clear — only two DB round trips. **`0` disables it — re-opens the #1141 timing channel.** Same caveat: a DB round trip slower than the floor overruns it. |
 | **Frontend OTP mode** | `DATAQ_AUTH_MODE=otp` (already the eval default, #1150) | set `DATAQ_AUTH_MODE=otp` **together with** the backend block above — these are **two coordinated selectors** (ADR 0032 decision 2) and neither can infer the other. Backend OTP on + frontend on `oidc` ⇒ the SPA shows an OIDC flow against an IdP that is not configured; frontend `otp` + backend off ⇒ the code form 503s. |
 | `COMPARISON_MAX_ROWS` | `100000` | default per-side row cap for `comparison` checks (ADR 0015) — both sides materialize in worker memory for the diff, so this is a memory guardrail; over-cap runs **fail fast** (never a silently truncated diff). A check's `config.max_rows` overrides it. |
-| `RUN_MAX_SCAN_BYTES` | `134217728` (128 MiB) | scale-aware execution ([#595](https://github.com/TheurgicDuke771/DataQ/issues/595)) — hard cap on the size of a **flat file** a run may materialize. Checked by a one-call size probe *before* the download, so an over-cap target ends the run `failed` with a message naming the file, both numbers and this knob — instead of the kernel SIGKILLing the Celery child and the run sitting `running` until the stuck-run reaper ([#755](https://github.com/TheurgicDuke771/DataQ/issues/755)). Measured expansion is ~8–9× object bytes → worker RSS, so 128 MiB lands a full read near 1.2–1.3 GiB on the 2 GiB worker (`docs/perf-baseline.md` §W6). **Raise it only with the worker's memory limit in hand**; `0` disables the cap *and* the probe. Bypassed — deliberately — when the suite's run target declares `sampling`, because a sampled read is bounded by the sample. |
+| `RUN_MAX_SCAN_BYTES` | `134217728` (128 MiB) | scale-aware execution ([#595](https://github.com/TheurgicDuke771/DataQ/issues/595)) — hard cap on the size of a **flat file** a run may materialize. Checked by a one-call size probe *before* the download, so an over-cap target ends the run `failed` with a message naming the file, both numbers and this knob — instead of the kernel SIGKILLing the Celery child and the run sitting `running` until the stuck-run reaper ([#755](https://github.com/TheurgicDuke771/DataQ/issues/755)). Measured expansion is ~8–9× object bytes → worker RSS, so 128 MiB lands a full read near 1.2–1.3 GiB on the 2 GiB worker (`docs/site/perf-baseline.md` §W6). **Raise it only with the worker's memory limit in hand**; `0` disables the cap *and* the probe. Bypassed — deliberately — when the suite's run target declares `sampling`, because a sampled read is bounded by the sample. |
 | `RUN_MAX_SCAN_ROWS` | `1500000` | the same guardrail for **Unity Catalog**, where a `COUNT(*)` is exact and free so the cap is in rows. Sits between the 1M rung that passed and the 2M rung that OOM-killed the child. Also bounds a declared **sample** — a sample bigger than this is refused on its own terms. `0` disables the cap and the count probe. Neither cap applies to Snowflake, which pushes every expectation down as SQL and never materializes rows. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | unset | Azure Monitor / App Insights backend for spans + logs (observability, OTel — ADR 0010). |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | generic OTLP/HTTP backend for spans + logs (#589) — any OTLP consumer (Tempo/Jaeger/Datadog/Collector); set alongside App Insights for parity, or alone for a non-Azure deploy. |
@@ -105,8 +105,8 @@ mode for you. A production deployment must flip all of the following. Values liv
 ### 3. Cloud prerequisites
 
 DataQ is provider-agnostic by design — no cloud is baked into app code, and each
-target sits behind the same seams (ADR [0010](../docs/adr/0010-provider-agnostic-infrastructure-seams.md) /
-[0013](../docs/adr/0013-marketplace-distribution-and-anti-lock-in.md)). **Azure and AWS
+target sits behind the same seams (ADR [0010](../docs/site/adr/0010-provider-agnostic-infrastructure-seams.md) /
+[0013](../docs/site/adr/0013-marketplace-distribution-and-anti-lock-in.md)). **Azure and AWS
 are both supported and live today, at the same level** — neither is primary or a
 fallback for the other; the choice is the deployer's. GCP remains planned.
 
@@ -117,7 +117,7 @@ fallback for the other; the choice is the deployer's. GCP remains planned.
   Analytics (the frontend is a Container App, not a Static Web App — ADR 0028).
   (Free/trial tiers cap one ACA env + one Postgres
   server per subscription, so the app **shares** the RG/env/Postgres server with the
-  harness and namespaces its own DB + role — ADR [0024](../docs/adr/0024-app-deployment-infrastructure.md).)
+  harness and namespaces its own DB + role — ADR [0024](../docs/site/adr/0024-app-deployment-infrastructure.md).)
 - The **resource providers** and **app registrations** from §2 registered/created.
 - The **GHCR** backend package public. Then follow [One-time provisioning](#one-time-provisioning).
 
@@ -207,7 +207,7 @@ that, this app needs:
    > when cutting over from the SWA topology.
 5. **Azure Monitor → ADF webhook** alert rule (Week-7 task) — targets the public
    **frontend** origin (`<frontend>/api/v1/orchestration/events/adf`, proxied to the
-   internal api); configure after the first deploy. Per [ADR 0006](../docs/adr/0006-adf-webhook-authentication.md)
+   internal api); configure after the first deploy. Per [ADR 0006](../docs/site/adr/0006-adf-webhook-authentication.md)
    the shared secret rides the URL as a `?token=` query param, so don't
    hand-assemble it (wrong host / stale token after rotation / missing `?token=`
    are easy to get wrong — #92).
@@ -241,7 +241,7 @@ that, this app needs:
    Action Group webhook config; never commit it, and don't run this where the
    output is captured to a log (CI, `script`, screen-share). The secret has a
    single source of truth (Key Vault), so re-run after a rotation
-   ([ADR 0006](../docs/adr/0006-adf-webhook-authentication.md) is a hard cutover).
+   ([ADR 0006](../docs/site/adr/0006-adf-webhook-authentication.md) is a hard cutover).
 
    The token is placed in the URL **un-encoded**, and the receiver compares the
    *URL-decoded* `token` against the Key Vault value — so the webhook secret must
@@ -250,7 +250,7 @@ that, this app needs:
    the token in the pasted URL, or it will silently fail auth (401).
 
    The **Airflow** callback URL is the sibling endpoint but carries **no secret**
-   — it's HMAC-signed in a header ([ADR 0007](../docs/adr/0007-airflow-callback-model.md)),
+   — it's HMAC-signed in a header ([ADR 0007](../docs/site/adr/0007-airflow-callback-model.md)),
    with the signing key configured in the DAG snippet ([integrations/airflow/](../integrations/airflow/)),
    not the URL — so it's just `https://$API_HOST/api/v1/orchestration/events/airflow`.
 
@@ -523,9 +523,9 @@ Terraform, listed here so the table's Azure values aren't mistaken for the only 
   grant was first applied manually via Graph on 2026-07-03; if your state predates
   it, `tofu import` the existing grant instead of recreating:
   `tofu import azuread_application_pre_authorized.azure_cli_on_api <api-application-object-id>/preAuthorizedApplication/04b07795-8ddb-461a-bbee-02f9e1bf7b46`.
-  Interim posture per [ADR 0026](../docs/adr/0026-auth-api-keys-and-principal-seam.md)
+  Interim posture per [ADR 0026](../docs/site/adr/0026-auth-api-keys-and-principal-seam.md)
   (DataQ-issued API keys) — build deferred to post-v1 (decided 2026-07-03).
-- **Workspace-admins are superusers over every suite** ([ADR 0027](../docs/adr/0027-suite-permission-model-workspace-admin.md) / #482):
+- **Workspace-admins are superusers over every suite** ([ADR 0027](../docs/site/adr/0027-suite-permission-model-workspace-admin.md) / #482):
   anyone in `WORKSPACE_ADMIN_EMAILS` can read **all** suites' results — including
   failing-row samples (`results.sample_failures`), the one place PII/PHI lands —
   and manage/delete any suite. **Keep the allowlist minimal.** For a **PHI / regulated

@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 ## Purpose
 
-`check.kind` is the ADR [0012](../../../docs/adr/0012-monitor-kind-seam.md) monitor-kind seam. Adding one is a **wide, ordered traversal** — registry → run path → authoring → classification → surfaces → docs — that is easy to half-finish. A half-finished kind is worse than none: it is dispatchable but unauthorable, or authorable but silently unclassified.
+`check.kind` is the ADR [0012](../../../docs/site/adr/0012-monitor-kind-seam.md) monitor-kind seam. Adding one is a **wide, ordered traversal** — registry → run path → authoring → classification → surfaces → docs — that is easy to half-finish. A half-finished kind is worse than none: it is dispatchable but unauthorable, or authorable but silently unclassified.
 
 This repo has now walked it four times. This skill is that traversal, plus the trap each walk hit.
 
@@ -16,7 +16,7 @@ This repo has now walked it four times. This skill is that traversal, plus the t
 
 ## Before you start
 
-1. Read ADR [0012](../../../docs/adr/0012-monitor-kind-seam.md), and the ADR for the kind if one exists (`comparison` → [0014](../../../docs/adr/0014-reconciliation-comparison-check-kind.md)/[0015](../../../docs/adr/0015-two-connection-comparison-check-model.md)). If the kind has no ADR and is non-trivial, write one first — use `/adr-create`.
+1. Read ADR [0012](../../../docs/site/adr/0012-monitor-kind-seam.md), and the ADR for the kind if one exists (`comparison` → [0014](../../../docs/site/adr/0014-reconciliation-comparison-check-kind.md)/[0015](../../../docs/site/adr/0015-two-connection-comparison-check-model.md)). If the kind has no ADR and is non-trivial, write one first — use `/adr-create`.
 2. Read the closest precedent's PR diff end-to-end. Pick by shape:
    - **scalar** (one SQL aggregate → a badness number) → `freshness`/`volume`
    - **stateful** (needs a stored baseline to compare against) → `schema_drift` (#592)
@@ -70,7 +70,7 @@ MONITOR_KIND_REGISTRY[MY_KIND] = MonitorKindStrategy(
 - any config guardrail that needs the DB (a real column, a resolvable target)
 - the `expectation_type` pairing — use `monitor_expectation_type(MY_KIND)` → `monitor:my_kind`. Never hand-write the string; the author path asserts kind↔type and the frontend catalog mirrors it.
 
-### 5. Dimension — ADR [0038](../../../docs/adr/0038-dq-dimension-classification.md). **The #124 trap lives here.**
+### 5. Dimension — ADR [0038](../../../docs/site/adr/0038-dq-dimension-classification.md). **The #124 trap lives here.**
 
 Add an entry to `_BY_KIND` in `backend/app/services/check_dimension.py` **only if the kind's dimension is genuinely derivable from its shape**:
 
@@ -106,11 +106,11 @@ Check `backend/app/services/suite_io_service.py` — the `if "dimension" in c` b
 
 ### 8. Docs
 
-- `docs/feature-matrix.md` — a row per datasource. **Do not tick a cell you have not run live.** #953 was a ✅ that had never once worked.
+- `docs/site/feature-matrix.md` — a row per datasource. **Do not tick a cell you have not run live.** #953 was a ✅ that had never once worked.
 - `CLAUDE.md` §5 — move the kind from "reserved" to shipped, with the PR number.
 - `docs/progress.md` — the cycle-plan row.
 - ADR 0012 — amend its status list.
-- `docs/datasources-checks.md` / `docs/concepts.md` — user-facing description.
+- `docs/site/datasources-checks.md` / `docs/site/concepts.md` — user-facing description.
 
 ### 9. Tests
 

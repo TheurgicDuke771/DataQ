@@ -66,7 +66,7 @@ check "database_residency" {
       the expected region is '${coalesce(var.shared_pg_expected_location, var.azure_location)}'.
       This server holds the application's personal data, so a move is a residency
       change even when it looks routine. Confirm the new region is in the intended
-      JURISDICTION, then update the variable and the matrix in docs/security.md.
+      JURISDICTION, then update the variable and the matrix in docs/site/security.md.
     EOT
   }
 }

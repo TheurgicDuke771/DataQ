@@ -2,7 +2,7 @@
 
 This is the **producer** half of DataQ's Airflow integration. DataQ exposes a
 signed webhook receiver at `POST /api/v1/orchestration/events/airflow`
-([ADR 0007](../../docs/adr/0007-airflow-callback-model.md)); this snippet is what your
+([ADR 0007](../../docs/site/adr/0007-airflow-callback-model.md)); this snippet is what your
 DAGs POST to it. DataQ can't mutate your DAGs, so you add this yourself — it's
 copy-paste, stdlib-only, and fail-safe (a delivery failure never breaks a DAG).
 

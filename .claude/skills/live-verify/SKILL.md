@@ -82,7 +82,7 @@ Pick what matches the change:
       python -m backend.scripts.e2e_smoke
   ```
   The frontend nginx proxies `/api` to the internal api. Note `e2e_smoke.py` proves the **app layer**, not the datasources — it is a precondition, not the evidence.
-- **MCP:** the 4-query protocol smoke against live `/mcp/` (trailing slash matters — `docs/mcp-setup.md`).
+- **MCP:** the 4-query protocol smoke against live `/mcp/` (trailing slash matters — `docs/site/mcp-setup.md`).
 - **The actual reading:** trigger the suite whose check you are verifying and read the **result row** — `metric_value`, `observed_value`, the run status. This is the evidence; everything above is scaffolding.
 
 ### 4. Judge the reading — the part that matters
@@ -107,7 +107,7 @@ For each expected reading:
 
 A live run whose result is not written down has to be paid for twice.
 
-- **`docs/feature-matrix.md`** — tick a cell **only** for a datasource you just observed working. A ✅ with no live run is a claim, not a fact.
+- **`docs/site/feature-matrix.md`** — tick a cell **only** for a datasource you just observed working. A ✅ with no live run is a claim, not a fact.
 - **CLAUDE.md §13** — the reading and the date, with the actual numbers (`"UC freshness 239.06h, lower/UPPER identical"` beats `"UC verified"`).
 - **A GitHub issue** for anything the run found — working-agreement #3, never a silent fix.
 - If the run **found a defect a test could not**, say so explicitly and name the boundary. That sentence is what turns one incident into a rule.
@@ -123,5 +123,5 @@ A live run whose result is not written down has to be paid for twice.
 
 - `/agents driver-boundary-guard` — finds the boundaries *before* the live run does, and tells you which claims a unit test genuinely cannot settle
 - `deploy/README.md` — pre-deploy and post-deploy smoke checklists
-- `docs/runbook-faq.md` — the live-smoke runbook entry
-- ADR [0021](../../../docs/adr/0021-demo-test-data-environment-strategy.md) — why the harness lives outside this repo
+- `docs/site/runbook-faq.md` — the live-smoke runbook entry
+- ADR [0021](../../../docs/site/adr/0021-demo-test-data-environment-strategy.md) — why the harness lives outside this repo

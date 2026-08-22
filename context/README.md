@@ -7,7 +7,7 @@ imported. Two flavours live here: **backward-looking** original intent
 (`post-v1-roadmap.md`) — both feed planning/task-generation, neither is kept in
 sync with the code automatically.
 
-**Authority:** where this folder and [`docs/adr/`](../docs/adr/README.md) disagree,
+**Authority:** where this folder and [`docs/adr/`](../docs/site/adr/README.md) disagree,
 the **ADRs win** — they record decisions made *after* this material and
 deliberately supersede parts of it (e.g. ADF/Airflow are orchestration providers,
 not datasources; DQX is deferred to v1.1). Treat the roadmap here as the original

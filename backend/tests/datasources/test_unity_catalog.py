@@ -890,7 +890,7 @@ def test_supported_monitor_kinds_is_explicit() -> None:
 # ───────────────── scale-aware execution: sampling + guardrail (#595) ─────────
 #
 # The UC read is the hungriest full-load path measured (~925 MiB for 1M rows; 2M
-# OOM-killed the child — docs/perf-baseline.md), so both halves matter here. The
+# OOM-killed the child — docs/site/perf-baseline.md), so both halves matter here. The
 # SQL these tests pin is DataQ's own construction, captured at the
 # `pandas.read_sql_query` seam: what a live warehouse does with `TABLESAMPLE` is
 # a driver-boundary fact and is verified by a live run, not by a mock (#953).
