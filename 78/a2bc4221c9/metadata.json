@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "78a2bc4221c9",
+  "strategy": "manual-commit",
+  "branch": "feature/895-dmf-runner",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/snowflake.py",
+    "backend/app/datasources/snowflake_dmf.py",
+    "backend/app/services/check_dimension.py",
+    "backend/app/services/check_service.py",
+    "backend/app/services/run_service.py",
+    "backend/tests/api/test_checks.py",
+    "backend/tests/datasources/test_snowflake_dmf.py",
+    "docs/site/adr/0036-connection-anchored-check-engines.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/78/a2bc4221c9/0/metadata.json",
+      "transcript": "/78/a2bc4221c9/0/full.jsonl",
+      "compact_transcript": "/78/a2bc4221c9/0/transcript.jsonl",
+      "content_hash": "/78/a2bc4221c9/0/content_hash.txt",
+      "prompt": "/78/a2bc4221c9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 29440,
+    "cache_read_tokens": 11416829,
+    "output_tokens": 16145,
+    "api_call_count": 21
+  }
+}
