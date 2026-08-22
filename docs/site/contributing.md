@@ -30,7 +30,7 @@ Keep modules **short and plain-language**; link to the in-repo source of truth (
 ## Decision records
 
 Architecture decisions are recorded as **ADRs** in
-[`docs/adr/`](https://github.com/TheurgicDuke771/DataQ/tree/main/docs/adr).
+[`docs/adr/`](https://github.com/TheurgicDuke771/DataQ/tree/main/docs/site/adr).
 
 ## Ownership
 

@@ -14,7 +14,7 @@ _REDIS_STORE_REMOVED: Final = (
     "`docker compose up` starts the vault) and re-enter connection credentials. "
     "Then PURGE the old plaintext values, which outlive the switch: "
     "redis-cli --scan --pattern 'dataq:secret:*' | xargs -r redis-cli del. See "
-    "docs/adr/0039-openbao-self-hosted-secret-backend.md"
+    "docs/site/adr/0039-openbao-self-hosted-secret-backend.md"
 )
 
 # OTP-mailer transport defaults. Named constants (not inline literals) because
@@ -417,7 +417,7 @@ class Settings(BaseSettings):
     # run sits `running` for up to `stuck_run_threshold_minutes`, and no surface
     # ever attributes it to memory (#755).
     #
-    # Both defaults are read off measured numbers (docs/perf-baseline.md §W6),
+    # Both defaults are read off measured numbers (docs/site/perf-baseline.md §W6),
     # not guessed:
     #
     #   * BYTES for flat files, because a CSV's row count costs a full scan while

@@ -26,7 +26,7 @@ paying conda's full cost (base image + env + build friction) for none of its ben
 **Build the production image with pip on a multi-stage `python:3.13-slim`. Keep conda as the local-dev
 tool unchanged.**
 
-- **Multi-stage** ([backend/Dockerfile](../../backend/Dockerfile)): a `builder` stage (`python:3.13-slim`
+- **Multi-stage** ([backend/Dockerfile](../../../backend/Dockerfile)): a `builder` stage (`python:3.13-slim`
   + `build-essential`, discarded) installs `requirements.txt` into a `/opt/venv`; the `runtime` stage is
   `python:3.13-slim` + that venv + the app code. No compilers / apt lists in the final layer.
 - **Runtime deps only** — the image installs `requirements.txt`, not the dev/typecheck/tooling chain.

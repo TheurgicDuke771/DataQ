@@ -125,7 +125,7 @@ Browser ──HTTPS──► CloudFront (public surface, origin secret verified 
 ## Running DataQ without Azure
 
 Azure is **one implementation behind each seam, never the architecture** (ADR
-[0010](https://github.com/TheurgicDuke771/DataQ/blob/main/docs/adr/0010-provider-agnostic-infrastructure-seams.md)).
+[0010](https://github.com/TheurgicDuke771/DataQ/blob/main/docs/site/adr/0010-provider-agnostic-infrastructure-seams.md)).
 Every seam has a working non-Azure implementation, so a fresh clone runs the
 whole product — API, worker, scheduler, UI, checks — with **zero Azure
 configuration** (#591):

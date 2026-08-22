@@ -182,7 +182,7 @@ credential (`auth_type: token`, the default — sent as `Authorization: Bearer �
 | Astronomer (Astro) | ✅ via an Astro **Deployment API token** as the Bearer credential, with `base_url` set to the deployment's Airflow URL (`https://<org>.astronomer.run/<deployment-id>`) | **Untested** — no Astro deployment has been exercised; compatible by construction, not by observation (#800) |
 | MWAA / Cloud Composer | Likely, same Bearer shape | **Untested** |
 
-The DAG-callback snippet in [`integrations/airflow/`](../integrations/airflow/) is
+The DAG-callback snippet in [`integrations/airflow/`](../../integrations/airflow/) is
 host-agnostic — it POSTs an HMAC-signed event to DataQ and needs only outbound network
 access from the worker, so it applies unchanged on a managed deployment.
 

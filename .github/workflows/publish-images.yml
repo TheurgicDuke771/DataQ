@@ -21,7 +21,7 @@ name: Publish images (GHCR, multi-arch)
 #
 # ── Why this also runs on merge to `main` (#1057) ─────────────────────────────
 # `docker-compose.ghcr.yml` is fetched by evaluators from **main** (README +
-# docs/getting-started.md say so), while `:latest` used to move only on manual
+# docs/site/getting-started.md say so), while `:latest` used to move only on manual
 # dispatch. Those two versioned independently, so any merge that made the compose
 # file depend on new backend behaviour broke the documented eval flow until
 # someone remembered to dispatch this workflow.

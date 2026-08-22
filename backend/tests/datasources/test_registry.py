@@ -135,7 +135,7 @@ def test_sampling_is_REFUSED_on_a_datasource_that_cannot_honour_it(
     it is not, and the first evidence would be the OOM this feature prevents.
 
     Snowflake is excluded because it pushes every expectation down and never
-    materialises rows (200M rows, worker flat — docs/perf-baseline.md); Iceberg
+    materialises rows (200M rows, worker flat — docs/site/perf-baseline.md); Iceberg
     because its sampled read is not built yet. Both would be the same lie."""
     target = {
         "table": "orders",
