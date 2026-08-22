@@ -1,7 +1,12 @@
 # Performance baseline — all datasources
 
-> Captured **2026-07-10** against live warehouses. It measures, per datasource,
-> where DataQ's run path stops scaling and *how it fails* when it does.
+> Captured **2026-07-10** against live warehouses; **Unity Catalog's rows updated
+> 2026-08-22** after [#1532](https://github.com/TheurgicDuke771/DataQ/issues/1532)
+> moved its audited ordinary expectations (and, unconditionally since #1179,
+> custom SQL) onto SQL pushdown — both now tested to 200M rows with flat worker
+> memory, matching Snowflake's regime (see the dedicated section below). It
+> measures, per datasource, where DataQ's run path stops scaling and *how it
+> fails* when it does.
 
 ## TL;DR
 
@@ -10,7 +15,9 @@
 | **Snowflake** | SQL pushdown | **200M rows** (50M / 100M / 200M all green) | none found — worker memory flat | n/a |
 | **Flat file CSV** (ADLS) | full load into worker pandas | 2M rows (~121 MB CSV) | **2M → 5M** | prefork child SIGKILL |
 | **Flat file Parquet** (ADLS) | full load into worker pandas | 5M rows (~131 MB parquet) | **5M → 10M** | 5M+: child SIGKILL; 10M killed the whole container |
-| **Unity Catalog** | full load via SQL-warehouse `read_sql_table` | 1M rows | **1M → 2M** | child SIGKILL |
+| **Unity Catalog** — audited ordinary expectations | **SQL pushdown** (`UC_SQL_PUSHDOWN=true`, default since #1532) | **200M rows** (50M/100M/200M all green, worker memory flat) | none found — matches the Snowflake regime | n/a |
+| **Unity Catalog** — custom SQL (`unexpected_rows_expectation`) | **SQL batch**, unconditional (#1179 — no pandas metric provider exists) | **200M rows** (worker memory flat, run alongside the pushdown checks above) | none found | n/a |
+| **Unity Catalog** — unaudited types / sampled suites | frame load (`read_sql_table`) | 1M rows | **1M → 2M** (#595 guardrail now refuses 2M cleanly instead of OOM) | child SIGKILL past the size cap |
 | **Apache Iceberg** (native, ADR 0030) | full snapshot via `pyiceberg` → Arrow | 2M rows | **2M → 5M** | worker replica OOM-killed + recreated |
 | **AWS S3** | same code as ADLS (`flatfile.py` is shared) | not run live (no S3 credentials remain) | expect ≡ ADLS | ≡ ADLS |
 
@@ -271,5 +278,107 @@ that would stamp "sampled" on a result that was not.
   builds it — a watermark belongs on the run target beside `sampling`, and its
   result record should be the same shape as `sampling`, so the run-detail surface
   learns one vocabulary for "this verdict covers less than everything".
+
+---
+
+## v1.2 — UC SQL pushdown for ordinary expectations ([#1532](https://github.com/TheurgicDuke771/DataQ/issues/1532)/[#1533](https://github.com/TheurgicDuke771/DataQ/pull/1533))
+
+> Captured **2026-08-22**, live against the harness Databricks workspace. This
+> closes the one gap the v1.1 section above left open ("Unity Catalog needs a
+> live run") — it re-measures the UC leg now that the seven audited ordinary
+> expectations (not-null, unique, between, in-set, length, regex, row-count)
+> execute on the Databricks-SQL batch by default (`UC_SQL_PUSHDOWN=true`) instead
+> of the full pandas-frame load the earlier baseline measured.
+
+### Method
+
+Same shape as every prior rung: a 6-col order-lines table (`line_id`, `order_id`,
+`sku_id`, `qty`, `unit_price`, `line_ts`), created via
+`CREATE TABLE … AS SELECT … FROM range(n)` on the harness's Databricks Free
+Edition serverless SQL warehouse, run through the **real** `UnityCatalogCheckRunner`
+via the prod-parity rig (worker capped 1 CPU / 2 GiB, `celery --concurrency=4`),
+driven through the real REST API. Suite: the same 5 expectations as every other
+rung (not-null ×2, between ×2, unique ×1) — all five are in the audited pushdown
+allowlist. Worker memory sampled via `docker stats` at ~1 Hz; "wall" is
+`started_at` → `finished_at` from the run record.
+
+Two check groups were measured, both against the same tables: the **5-check
+pushdown suite** (not-null ×2, between ×2, unique ×1 — all in the audited
+allowlist) at every rung, plus **one custom-SQL check**
+(`unexpected_rows_expectation`, `SELECT * FROM {batch} WHERE qty < 1 OR qty > 20`)
+added to the 100M/200M suites to confirm its own ceiling, since it is a distinct
+code path (SQL-batch, unconditional — #1179) that the 1M/2M/50M rungs did not
+separately exercise.
+
+### Results
+
+| Rows | Checks | Pushdown | Outcome | Wall | Worker peak | Δ over idle baseline |
+|---|---|---|---|---|---|---|
+| 1M | 5 pushdown | **off** (frame load, pre-#1532 behavior) | 5/5 pass | 11.1 s | **1,588 MiB** (1.551 GiB) | +824 MiB (over 764 MiB) |
+| 1M | 5 pushdown | **on** (default) | 5/5 pass | 17.7 s | **935 MiB** | +15 MiB (over 920 MiB) |
+| 2M | 5 pushdown | **off** | **refused** — scan-cap guardrail | 1.7 s | 791 MiB | +0 |
+| 2M | 5 pushdown | **on** (default) | 5/5 pass | 16.6 s | **942 MiB** | +22 MiB (over 920 MiB) |
+| 50M | 5 pushdown | **on** (default) | 5/5 pass | 20.2 s | **968 MiB** | +48 MiB (over 920 MiB) |
+| 100M | 5 pushdown + 1 custom SQL | **on** (default; custom SQL is always SQL-batch) | 6/6 pass | 26.9 s | **962 MiB** | +2 MiB (over 960 MiB) |
+| 200M | 5 pushdown + 1 custom SQL | **on** (default; custom SQL is always SQL-batch) | 6/6 pass | 37.1 s | **968 MiB** | +8 MiB (over 960 MiB) |
+
+The 1M off/on pair is the clean isolated comparison — same table, same suite,
+back-to-back on freshly-restarted workers, only the `UC_SQL_PUSHDOWN` flag
+differs. 100M/200M are cumulative rungs on an already-warm worker, like the
+Snowflake ramp above.
+
+### Reading the table
+
+1. **UC now matches the Snowflake regime up to 200M rows, for both pushdown and
+   custom SQL.** The v1.1 section above measured UC as the *worst* full-load
+   runner: 1M passed at 1,681 MiB, 2M child-OOM'd within seconds. Pushed down,
+   worker memory stays flat (935 → 968 MiB) all the way to 200M — a 200×
+   increase in row count for a ~35 MiB memory delta, the same "cost scales with
+   the warehouse, not the worker" shape Snowflake showed at the same scale.
+   **Custom SQL was never the frame-load path to begin with** (#1179 made it
+   SQL-batch-only before #1532 existed) — it was previously miscategorized in
+   this doc's TL;DR alongside the frame-load fallback; the two are now split
+   into separate rows, and the 100M/200M runs confirm custom SQL scales exactly
+   like the audited pushdown types.
+2. **Memory drops ~55×** on the identical 1M table when isolating the flag:
+   824 MiB delta (frame) vs 15 MiB delta (pushdown). This is the offload the
+   #1532 rationale predicted — the warehouse's own compute (Photon/Spark under
+   the SQL layer) does the scan; the worker only receives pass/fail scalars.
+3. **Wall time went the other way at 1M** — pushdown was ~7s *slower* (17.7s vs
+   11.1s) — and this is a warehouse-warmth artifact, not a pushdown cost: the
+   serverless SQL warehouse had already been queried (table creation, earlier
+   pushdown runs) before the frame-path leg ran, so the frame read paid no cold
+   start while the isolated pushdown-off rerun did. It is **not** evidence that
+   pushdown is slower in general — every other pushdown rung (16.6 s at 2M up to
+   37.1 s at 200M) is in the same range, consistent with the Snowflake finding
+   that wall time is dominated by fixed orchestration + connection overhead, not
+   row count, once the warehouse is warm.
+4. **The #595 guardrail now catches the no-pushdown case cleanly.** With
+   `UC_SQL_PUSHDOWN=false`, the 2M table hit `RUN_MAX_SCAN_ROWS` (1.5M) and was
+   **refused in 1.7 s** with a message naming the table, the count, and the cap
+   — the "refuse, don't OOM" behavior #595 shipped for flat files now also
+   covers UC's frame-load fallback path, which didn't exist yet when the v1.1
+   section's raw 2M-OOM was measured.
+5. **200M was not a ceiling, just where this campaign stopped** — no failure
+   mode was found, matching Snowflake's "none found" row. A higher rung was not
+   attempted (no evidence it's needed; the harness Databricks Free Edition
+   serverless warehouse handled 200M rows of `CREATE TABLE … AS SELECT` in
+   ~10s).
+
+### Still open
+
+- **Unaudited types and sampled suites still take the frame path**, uncapped in
+  wall-time terms at whatever `RUN_MAX_SCAN_ROWS` admits. This campaign did not
+  re-measure `expect_column_values_to_be_of_type` in particular — it stays on
+  the frame path by design (pandas-dtype vs SQL-reflected-type mismatch,
+  unity_catalog.py:180-182) — since its numbers are unchanged from the v1.1
+  section.
+- **Widening the pushdown allowlist** stays a per-type audited decision
+  (unity_catalog.py:168-182) — each additional expectation type needs its own
+  live-verification pass before joining `SQL_PUSHDOWN_EXPECTATION_TYPES`.
+- **Beyond 200M** was not measured — this campaign matched Snowflake's tested
+  ceiling rather than exceeding it. Nothing in the pushdown/custom-SQL mechanism
+  (both are pure warehouse-side SQL, same as Snowflake's path) suggests a
+  worker-side wall would appear at a higher rung; it just wasn't tested.
 
 ---
