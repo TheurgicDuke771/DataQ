@@ -1,6 +1,7 @@
 import { Card, Empty, Flex, Progress, Typography } from 'antd';
 
 import type { PerformanceState, SuitePerformance as SuitePerf } from '../../api/dashboard';
+import { SEVERITY_SCALE } from '../../theme';
 
 /**
  * Suite Performance (prototype `SuitePerformance`): per-suite health from each suite's latest run,
@@ -11,10 +12,10 @@ interface SuitePerformanceProps {
 }
 
 const STATE_COLOR: Record<PerformanceState, string> = {
-  optimal: '#52c41a', // green-6
-  stable: '#faad14', // gold-6
-  critical: '#ff4d4f', // red-6
-  unknown: '#bfbfbf', // gray-5
+  optimal: SEVERITY_SCALE.good,
+  stable: SEVERITY_SCALE.warning,
+  critical: SEVERITY_SCALE.bad,
+  unknown: SEVERITY_SCALE.neutral,
 };
 
 const STATE_LABEL: Record<PerformanceState, string> = {
