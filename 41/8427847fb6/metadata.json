@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "418427847fb6",
+  "strategy": "manual-commit",
+  "branch": "feature/marketing-landing-page",
+  "checkpoints_count": 16,
+  "files_touched": [
+    ".github/workflows/docs.yml",
+    "CLAUDE.md",
+    "marketing/assets/dataq-demo.mp4",
+    "marketing/index.html",
+    "mkdocs.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/41/8427847fb6/0/metadata.json",
+      "transcript": "/41/8427847fb6/0/full.jsonl",
+      "compact_transcript": "/41/8427847fb6/0/transcript.jsonl",
+      "content_hash": "/41/8427847fb6/0/content_hash.txt",
+      "prompt": "/41/8427847fb6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 800,
+    "cache_creation_tokens": 1019540,
+    "cache_read_tokens": 169093586,
+    "output_tokens": 264059,
+    "api_call_count": 401
+  }
+}
