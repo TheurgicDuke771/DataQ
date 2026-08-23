@@ -19,7 +19,12 @@ function readStoredMode(): ThemeModePreference {
 }
 
 function systemPrefersDark(): boolean {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  } catch {
+    // matchMedia unsupported/unavailable — default to light.
+    return false;
+  }
 }
 
 export function ThemeModeProvider({ children }: { children: ReactNode }) {
@@ -27,7 +32,12 @@ export function ThemeModeProvider({ children }: { children: ReactNode }) {
   const [systemDark, setSystemDark] = useState(systemPrefersDark);
 
   useEffect(() => {
-    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    let mql: MediaQueryList;
+    try {
+      mql = window.matchMedia('(prefers-color-scheme: dark)');
+    } catch {
+      return;
+    }
     const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
     mql.addEventListener('change', onChange);
     return () => mql.removeEventListener('change', onChange);

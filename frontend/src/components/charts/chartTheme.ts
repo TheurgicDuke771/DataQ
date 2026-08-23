@@ -11,9 +11,9 @@ export const RESULT_STATUS_CHART_COLORS: Record<ResultStatus, string> = {
   pass: SEVERITY_SCALE.good,
   warn: SEVERITY_SCALE.warning,
   fail: SEVERITY_SCALE.bad,
-  critical: '#eb2f96', // magenta-6
+  critical: 'var(--dq-critical)', // magenta-6
   skip: SEVERITY_SCALE.neutral,
-  error: '#fa541c', // volcano-6
+  error: 'var(--dq-error)', // volcano-6
 };
 
 /** Run execution status → series hex (succeeded green · failed red · running indigo · …). */
@@ -32,7 +32,7 @@ export const RUN_STATUS_CHART_COLORS: Record<RunStatus, string> = {
 export const CHART_COLORS = {
   primary: 'var(--dq-primary)',
   grid: 'var(--dq-border)',
-  axis: '#8c8c8c',
+  axis: 'var(--dq-muted)',
 } as const;
 
 /** Shared recharts style props so axes/grid/tooltip are consistent across widgets. */

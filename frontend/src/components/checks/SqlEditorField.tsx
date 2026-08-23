@@ -7,6 +7,8 @@ import 'monaco-editor/languages/definitions/sql/register.js';
 // `esm/vs/` prefix is now implicit and the old deep path no longer resolves.
 import editorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 
+import { useThemeMode } from '../../themeMode/useThemeMode';
+
 /** Monaco SQL editor as an antd-Form-compatible controlled field (custom-SQL checks, ADR 0019). */
 self.MonacoEnvironment = { getWorker: () => new editorWorker() };
 loader.config({ monaco });
@@ -18,11 +20,13 @@ export default function SqlEditorField({
   value?: string;
   onChange?: (value: string) => void;
 }) {
+  const { resolvedMode } = useThemeMode();
   return (
-    <div style={{ border: '1px solid #d9d9d9', borderRadius: 6, overflow: 'hidden' }}>
+    <div style={{ border: '1px solid var(--dq-border)', borderRadius: 6, overflow: 'hidden' }}>
       <Editor
         height={180}
         defaultLanguage="sql"
+        theme={resolvedMode === 'dark' ? 'vs-dark' : 'vs'}
         value={value ?? ''}
         onChange={(next) => onChange?.(next ?? '')}
         options={{

@@ -233,7 +233,7 @@ export function LineageGraph({
               refY="4"
               orient="auto"
             >
-              <path d="M0,0 L8,4 L0,8 z" fill="#c4c8cf" />
+              <path d="M0,0 L8,4 L0,8 z" fill="var(--dq-graph-line)" />
             </marker>
           </defs>
 
@@ -243,7 +243,7 @@ export function LineageGraph({
               key={e.id}
               d={e.path}
               fill="none"
-              stroke="#c4c8cf"
+              stroke="var(--dq-graph-line)"
               strokeWidth={1.5}
               markerEnd="url(#dq-lineage-arrow)"
             />
@@ -331,9 +331,13 @@ function GraphNode({
         width={NODE_W}
         height={NODE_H}
         rx={8}
-        fill={node.isCenter ? 'var(--dq-selected-bg)' : '#ffffff'}
+        fill={node.isCenter ? 'var(--dq-selected-bg)' : 'var(--dq-surface)'}
         stroke={
-          node.isCenter ? 'var(--dq-primary)' : node.isMonitored ? '#91caff' : 'var(--dq-border)'
+          node.isCenter
+            ? 'var(--dq-primary)'
+            : node.isMonitored
+              ? 'var(--dq-monitored)'
+              : 'var(--dq-border)'
         }
         strokeWidth={node.isCenter ? 2 : 1}
       />
@@ -347,7 +351,7 @@ function GraphNode({
       >
         {truncate(leafName(node.name), 24)}
       </text>
-      <text x={10} y={38} fontSize={10} fill="#8c8c8c" style={{ pointerEvents: 'none' }}>
+      <text x={10} y={38} fontSize={10} fill="var(--dq-muted)" style={{ pointerEvents: 'none' }}>
         {/* The label, not the raw namespace: a node subtitle has ~28 characters, and
             an Iceberg namespace is a DSN — it truncated to `dev · postgresql+psy…`,
             which told the reader nothing. The full namespace stays in the <title>

@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Blocking, same-origin (the CSP script-src has no 'unsafe-inline') — sets
+         data-theme before first paint. See public/theme-init.js. -->
+    <script src="/theme-init.js"></script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>DataQ</title>
     <!-- Runtime auth/app config (ADR 0028). A blocking classic script, so it runs

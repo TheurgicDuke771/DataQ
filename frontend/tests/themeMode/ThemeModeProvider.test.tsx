@@ -129,4 +129,17 @@ describe('ThemeModeProvider', () => {
     expect(() => render(<Probe />)).toThrow('useThemeMode must be used within a ThemeModeProvider');
     spy.mockRestore();
   });
+
+  it('falls back to light — not a crash — when matchMedia is unsupported', () => {
+    // @ts-expect-error — simulating an environment with no matchMedia at all.
+    delete window.matchMedia;
+    expect(() =>
+      render(
+        <ThemeModeProvider>
+          <Probe />
+        </ThemeModeProvider>,
+      ),
+    ).not.toThrow();
+    expect(screen.getByTestId('resolved')).toHaveTextContent('light');
+  });
 });
