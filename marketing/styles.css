@@ -1,0 +1,632 @@
+/* DataQ marketing — global stylesheet: responsive layout knobs + the
+   design-system token set (mirrors frontend/src/theme.ts). */
+
+  /* Responsive knobs for the page layout below — breakpoints redefine
+     these custom properties rather than duplicating each rule. */
+  :root {
+    --hero-grid-cols: 1fr 1fr;
+    --hero-h1-size: 52px;
+    --feat-grid-cols: repeat(12, 1fr);
+    --feat-span-big: span 7;
+    --feat-span-big-row: span 2;
+    --feat-span-side: span 5;
+    --feat-4up-cols: repeat(4, 1fr);
+    --footer-grid-cols: 1.5fr 1fr 1fr 1fr;
+    --nav-gap: 24px;
+    --nav-padding: 0 32px;
+    --nav-links-display: flex;
+  }
+  @media (max-width: 860px) {
+    :root {
+      /* minmax(0, 1fr), not bare 1fr — a plain 1fr track still floors at
+         its content's intrinsic min-width (grid items default to
+         min-width: auto), which pushed the page wider than the viewport. */
+      --hero-grid-cols: minmax(0, 1fr);
+      --hero-h1-size: 38px;
+      --feat-grid-cols: minmax(0, 1fr);
+      --feat-span-big: span 1;
+      --feat-span-big-row: span 1;
+      --feat-span-side: span 1;
+      --feat-4up-cols: repeat(2, minmax(0, 1fr));
+      --footer-grid-cols: minmax(0, 1fr) minmax(0, 1fr);
+      --nav-padding: 0 20px;
+    }
+  }
+  /* Below this, brand + links + button no longer fit one row — drop the
+     links (all reachable from the footer) rather than wrap or scroll. */
+  @media (max-width: 640px) {
+    :root {
+      --nav-gap: 12px;
+      --nav-padding: 0 16px;
+      --nav-links-display: none;
+    }
+  }
+  @media (max-width: 480px) {
+    :root {
+      --feat-4up-cols: minmax(0, 1fr);
+      --footer-grid-cols: minmax(0, 1fr);
+    }
+  }
+
+/* ============================================================
+   DataQ Design System — global CSS entry point
+   Consumers link THIS file. It is an @import manifest only;
+   all real declarations live in the imported token files.
+   ============================================================ */
+
+/* ============================================================
+   DataQ — Webfonts (self-hosted)
+   Inter (UI + prose) and JetBrains Mono (data / SQL / paths).
+   Variable TTFs from the open-source families (SIL OFL 1.1 — see
+   assets/fonts/*-OFL.txt). A single variable file covers every weight.
+   ============================================================ */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("assets/fonts/inter.ttf") format('truetype');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("assets/fonts/inter-italic.ttf") format('truetype');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("assets/fonts/jetbrains-mono.ttf") format('truetype');
+}
+
+/* ============================================================
+   DataQ — Color tokens
+   Mirrors the shipped app theme (frontend/src/theme.ts): an INDIGO
+   primary on a soft-gray Ant Design canvas with white surfaces.
+   Status colors mirror the real severity model (ADR 0005 / 0016)
+   as surfaced through Ant Design Tag presets.
+   ============================================================ */
+
+:root {
+  /* ---- Brand: Indigo (primary accent) ---- */
+  --indigo-50:  #eef2ff;
+  --indigo-100: #e0e7ff;
+  --indigo-200: #c7d2fe;   /* primarySoft — logo light lobe, watermark */
+  --indigo-300: #a5b4fc;
+  --indigo-400: #818cf8;
+  --indigo-500: #6366f1;
+  --indigo-600: #4f46e5;   /* PRIMARY — buttons, active nav, links */
+  --indigo-700: #4338ca;   /* hover / pressed */
+  --indigo-800: #3730a3;
+  --indigo-900: #312e81;
+  --indigo-selected: #eef0fe; /* the one "selected" row/nav tint */
+
+  /* ---- Neutrals (gray canvas + ink) ---- */
+  --gray-0:   #ffffff;   /* card / header / sider surfaces */
+  --gray-50:  #fafbfc;   /* table header, subtle fills */
+  --gray-100: #f4f5f7;   /* app canvas (colorBgLayout) */
+  --gray-200: #eceef1;
+  --gray-300: #e6e8eb;   /* hairline border (header/sider/cards) */
+  --gray-400: #d4d7dd;
+  --gray-500: #9aa0aa;
+  --gray-600: #6b7280;   /* secondary text */
+  --gray-700: #4b5563;   /* body text */
+  --gray-800: #374151;
+  --ink:      #1f2430;   /* headings / primary text */
+
+  /* ---- Status: Ant Design preset hues (matches RESULT_STATUS_COLORS) ---- */
+  /* success / pass — green */
+  --green-500: #52c41a;  --green-bg: #f6ffed;  --green-border: #b7eb8f;
+  /* warning / warn / cancelled — gold */
+  --gold-500:  #faad14;  --gold-bg:  #fffbe6;  --gold-border:  #ffe58f;
+  /* error / fail / failed — red */
+  --red-500:   #ff4d4f;  --red-bg:   #fff2f0;  --red-border:   #ffccc7;
+  /* processing / running — blue */
+  --blue-500:  #1677ff;  --blue-bg:  #e6f4ff;  --blue-border:  #91caff;
+  /* critical — magenta (highest severity tier) */
+  --magenta-500: #eb2f96; --magenta-bg: #fff0f6; --magenta-border: #ffadd2;
+  /* error (engine fault) — volcano */
+  --volcano-500: #fa541c; --volcano-bg: #fff2e8; --volcano-border: #ffbb96;
+
+  /* ---- Datasource brand accents (connectionVisuals.tsx) ---- */
+  --src-snowflake:     #29b5e8;
+  --src-adls:          #0078d4;
+  --src-s3:            #ff9900;
+  --src-unity-catalog: #ff3621;
+  --src-adf:           #0078d4;
+  --src-airflow:       #017cee;
+
+  /* ============================================================
+     SEMANTIC ALIASES — reference these in components
+     ============================================================ */
+
+  /* Text */
+  --text-primary:   var(--ink);
+  --text-body:      var(--gray-700);
+  --text-secondary: var(--gray-600);
+  --text-muted:     var(--gray-500);
+  --text-on-dark:   #ffffff;
+  --text-accent:    var(--indigo-600);   /* links */
+  --text-inverse:   #ffffff;
+
+  /* Surfaces */
+  --bg-app:        var(--gray-100);       /* soft gray canvas */
+  --bg-card:       var(--gray-0);         /* white surfaces */
+  --bg-subtle:     var(--gray-50);
+  --bg-muted:      var(--gray-100);
+  --bg-header:     var(--gray-0);
+  --bg-sider:      var(--gray-0);
+  --bg-selected:   var(--indigo-selected);/* selected nav / row */
+  --bg-hover:      var(--gray-50);        /* row / list hover */
+
+  /* Actions (primary = indigo) */
+  --action-primary:        var(--indigo-600);
+  --action-primary-hover:  var(--indigo-500);
+  --action-primary-active: var(--indigo-700);
+  --action-on-primary:     #ffffff;
+
+  --action-secondary-fg:     var(--gray-700);
+  --action-secondary-border: var(--gray-300);
+  --action-secondary-hover:  var(--gray-50);
+
+  /* Borders */
+  --border:        var(--gray-300);
+  --border-input:  var(--gray-400);
+  --divider:       var(--gray-200);
+
+  /* Focus ring (indigo) */
+  --focus-ring: var(--indigo-600);
+
+  /* Surface / border aliases (neutral tonal layers) */
+  --surface-0: var(--gray-0);
+  --surface-1: var(--gray-50);
+  --surface-2: var(--gray-100);
+  --surface-3: var(--gray-200);
+  --surface-4: var(--gray-300);
+  --border-default: var(--gray-300);
+  --border-strong:  var(--gray-400);
+  --bg-panel-dark:  var(--ink);
+  --text-on-dark-dim: rgba(255,255,255,0.65);
+
+  /* ---- Result severity (DQ check result status) ---- */
+  --status-pass:      var(--green-500);   --status-pass-bg:     var(--green-bg);
+  --status-warn:      var(--gold-500);    --status-warn-bg:     var(--gold-bg);
+  --status-fail:      var(--red-500);     --status-fail-bg:     var(--red-bg);
+  --status-critical:  var(--magenta-500); --status-critical-bg: var(--magenta-bg);
+  --status-skip:      var(--gray-500);    --status-skip-bg:     var(--gray-100);
+  --status-error:     var(--volcano-500); --status-error-bg:    var(--volcano-bg);
+
+  /* ---- Run / pipeline execution status ---- */
+  --run-queued:    var(--gray-500);  --run-queued-bg:    var(--gray-100);
+  --run-running:   var(--blue-500);  --run-running-bg:   var(--blue-bg);
+  --run-succeeded: var(--green-500); --run-succeeded-bg: var(--green-bg);
+  --run-failed:    var(--red-500);   --run-failed-bg:    var(--red-bg);
+  --run-cancelled: var(--gold-500);  --run-cancelled-bg: var(--gold-bg);
+}
+
+/* ============================================================
+   DataQ — Typography tokens
+   Inter for all UI + prose (the app's fontFamily); 14px base to match
+   Ant Design. JetBrains Mono for SQL, schema paths, ids and metrics.
+   Headline scale mirrors Ant Design Typography.Title levels.
+   ============================================================ */
+
+:root {
+  /* ---- Families ---- */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas,
+               'Liberation Mono', monospace;
+
+  /* ---- Weights ---- */
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  /* ---- Headline scale (Ant Title levels) ---- */
+  --text-h1-size: 38px;  --text-h1-line: 46px;  --text-h1-track: -0.02em;  --text-h1-weight: 700;
+  --text-h2-size: 30px;  --text-h2-line: 38px;  --text-h2-track: -0.01em;  --text-h2-weight: 600;
+  --text-h3-size: 24px;  --text-h3-line: 32px;  --text-h3-track: -0.005em; --text-h3-weight: 600; /* page titles (level 3) */
+  --text-h4-size: 20px;  --text-h4-line: 28px;  --text-h4-track: 0;        --text-h4-weight: 600;
+  --text-h5-size: 16px;  --text-h5-line: 24px;  --text-h5-track: 0;        --text-h5-weight: 600;
+
+  /* ---- Body (14px base, Ant lineHeight ≈1.571) ---- */
+  --text-lg-size:   16px;  --text-lg-line:   24px;
+  --text-base-size: 14px;  --text-base-line: 22px;   /* default UI + prose */
+  --text-sm-size:   13px;  --text-sm-line:   20px;
+  --text-xs-size:   12px;  --text-xs-line:   18px;    /* captions, secondary 12px */
+
+  /* ---- Label / eyebrow ---- */
+  --text-label-size: 12px;  --text-label-line: 16px;  --text-label-track: 0.04em; --text-label-weight: 600;
+
+  /* ---- Mono / data ---- */
+  --text-code-size:    13px;  --text-code-line:    20px;
+  --text-code-sm-size: 12px;  --text-code-sm-line: 18px;
+}
+
+/* ============================================================
+   DataQ — Spacing, radius & layout tokens
+   8pt rhythm; radii + control metrics mirror the shipped Ant Design
+   theme (borderRadius 8 for controls, 12 for cards; 56px header,
+   220px sider).
+   ============================================================ */
+
+:root {
+  /* ---- Spacing scale (Ant 8pt rhythm, 4px micro) ---- */
+  --space-0:  0;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;   /* default gap / Flex gap=16 */
+  --space-5:  20px;
+  --space-6:  24px;   /* page padding / Flex gap=24 / Content padding */
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---- Layout aliases ---- */
+  --gutter:        24px;
+  --margin:        24px;   /* Content padding in App.tsx */
+  --container-max: 1200px;
+
+  /* ---- Radii (Ant: control 8, card 12) ---- */
+  --radius-sm:   4px;
+  --radius:      8px;    /* buttons / inputs / menu items (borderRadius:8) */
+  --radius-md:   8px;
+  --radius-lg:   12px;   /* cards / drawers (borderRadiusLG:12) */
+  --radius-xl:   16px;
+  --radius-full: 9999px; /* pills, avatars */
+
+  /* ---- Component metrics (Ant defaults / SHELL) ---- */
+  --sidebar-width: 220px;   /* SHELL.siderWidth */
+  --header-height: 56px;    /* SHELL.headerHeight */
+  --menu-item-height: 38px; /* Menu.itemHeight */
+  --control-height-sm: 24px;
+  --control-height:    32px;  /* Ant controlHeight */
+  --control-height-lg: 40px;
+  --track-height: 6px;
+}
+
+/* ============================================================
+   DataQ — Elevation & depth tokens
+   Ant Design keeps surfaces flat: 1px hairline borders define cards;
+   soft, neutral shadows appear on hover / overlays only.
+   ============================================================ */
+
+:root {
+  --shadow-none: none;
+
+  /* Level 1 resting — Ant's layered card shadow (very soft) */
+  --shadow-xs: 0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02);
+
+  /* Interactive elevation — hover lift */
+  --shadow-ambient: 0 4px 14px -4px rgba(31,36,48,0.12);
+  --shadow-hover:   0 6px 18px -6px rgba(31,36,48,0.16);
+
+  /* Overlays / dropdowns / drawers (Ant boxShadowSecondary) */
+  --shadow-overlay: 0 6px 16px 0 rgba(0,0,0,0.08), 0 3px 6px -4px rgba(0,0,0,0.12), 0 9px 28px 8px rgba(0,0,0,0.05);
+
+  /* Marketing float */
+  --shadow-float: 0 18px 40px -12px rgba(31,36,48,0.22);
+
+  /* ---- Focus ring (2px indigo, soft halo) ---- */
+  --ring-focus: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--focus-ring);
+  --ring-focus-soft: 0 0 0 3px color-mix(in srgb, var(--indigo-600) 16%, transparent);
+  --ring-focus-inset: inset 0 0 0 2px var(--focus-ring);
+
+  /* ---- Inset hairline (border substitute) ---- */
+  --ring-hairline: inset 0 0 0 1px var(--border);
+}
+
+/* ============================================================
+   DataQ — Dark theme (planned post-v1)
+   v1 ships LIGHT. This file lays the foundation so dark mode flips
+   with a single attribute and ZERO component changes — every override
+   below remaps the SEMANTIC layer (and the surface/border scale aliases
+   components read), never the components themselves.
+
+   Activate:  <html data-theme="dark">   (or on any subtree).
+   Auto (optional): see the prefers-color-scheme block at the bottom —
+   commented out so v1 stays light until the team opts in.
+
+   CONTRACT: components must reference semantic tokens (--bg-card,
+   --text-primary, --border, --surface-*, --status-*-bg, …), never raw
+   scale hexes. The light system already follows this; keep it that way
+   and dark mode is free.
+   ============================================================ */
+
+[data-theme="dark"] {
+  /* ---- Brand: indigo lifts slightly for contrast on dark ---- */
+  --indigo-selected: #1e1b4b;        /* selected nav / row tint */
+
+  /* ---- Surfaces (deep slate, not pure black) ---- */
+  --surface-canvas: #0d1117;         /* app background */
+  --surface-0:      #161b22;         /* cards / header / sider */
+  --surface-1:      #1c222b;         /* container-low / table header */
+  --surface-2:      #222933;         /* container */
+  --surface-3:      #2b333f;         /* container-high */
+  --surface-4:      #353e4b;         /* container-highest */
+
+  /* ---- Borders / hairlines (light alpha on dark) ---- */
+  --border-subtle:  #21262d;
+  --border-default: #2d343d;
+  --border-strong:  #3a424d;
+
+  /* ============================================================
+     SEMANTIC ALIASES — the override surface
+     ============================================================ */
+
+  /* Text */
+  --text-primary:    #e6e8eb;
+  --text-body:       #b6bcc6;
+  --text-secondary:  #9aa1ad;
+  --text-muted:      #6e7681;
+  --text-on-dark:    #e6e8eb;        /* on navy/indigo panels (already dark) */
+  --text-accent:     var(--indigo-300);
+  --text-inverse:    #161b22;
+
+  /* Backgrounds / surfaces */
+  --bg-app:        var(--surface-canvas);
+  --bg-card:       var(--surface-0);
+  --bg-subtle:     var(--surface-1);
+  --bg-muted:      var(--surface-2);
+  --bg-header:     var(--surface-0);
+  --bg-sider:      #12161d;           /* a touch deeper than cards */
+  --bg-selected:   var(--indigo-selected);
+  --bg-hover:      var(--surface-2);
+
+  /* Actions (indigo lightened so it reads on dark) */
+  --action-primary:        var(--indigo-500);
+  --action-primary-hover:  var(--indigo-400);
+  --action-primary-active: var(--indigo-600);
+  --action-on-primary:     #ffffff;
+
+  --action-secondary-fg:     var(--text-body);
+  --action-secondary-border: var(--border-strong);
+  --action-secondary-hover:  var(--surface-2);
+
+  /* Borders */
+  --border:        var(--border-default);
+  --border-input:  var(--border-strong);
+  --divider:       var(--border-subtle);
+
+  /* Focus ring base swaps to the card color for the inner gap */
+  --focus-ring: var(--indigo-400);
+
+  /* ---- Status fills: keep vivid hue, darken the soft tint ---- */
+  --status-pass:      #3fb950;  --status-pass-bg:     #122017;
+  --status-warn:      #d29922;  --status-warn-bg:     #221a0c;
+  --status-fail:      #f85149;  --status-fail-bg:     #2a1313;
+  --status-critical:  #db61a2;  --status-critical-bg: #271320;
+  --status-skip:      #6e7681;  --status-skip-bg:     #1c222b;
+  --status-error:     #ec6547;  --status-error-bg:    #281710;
+
+  /* Run / pipeline execution */
+  --run-queued:    #6e7681;  --run-queued-bg:    #1c222b;
+  --run-running:   #58a6ff;  --run-running-bg:   #0d1c2e;
+  --run-succeeded: #3fb950;  --run-succeeded-bg: #122017;
+  --run-failed:    #f85149;  --run-failed-bg:    #2a1313;
+  --run-cancelled: #d29922;  --run-cancelled-bg: #221a0c;
+
+  /* Status preset hues used directly by some cards */
+  --green-500: #3fb950;  --green-bg: #122017;  --green-border: #1f6f2e;
+  --gold-500:  #d29922;  --gold-bg:  #221a0c;  --gold-border:  #6b4f17;
+  --red-500:   #f85149;  --red-bg:   #2a1313;  --red-border:   #7d2b27;
+  --blue-500:  #58a6ff;  --blue-bg:  #0d1c2e;  --blue-border:  #1f4d7a;
+  --magenta-500: #db61a2; --magenta-bg: #271320; --magenta-border: #7a2f57;
+  --volcano-500: #ec6547; --volcano-bg: #281710; --volcano-border: #7d3a22;
+
+  /* ---- Elevation: borders carry depth; shadows go deeper/softer ---- */
+  --shadow-xs: 0 1px 2px 0 rgba(0,0,0,0.40);
+  --shadow-ambient: 0 4px 14px -4px rgba(0,0,0,0.55);
+  --shadow-hover:   0 6px 18px -6px rgba(0,0,0,0.6);
+  --shadow-overlay: 0 8px 24px -6px rgba(0,0,0,0.7);
+  --shadow-float:   0 20px 48px -14px rgba(0,0,0,0.75);
+}
+
+/* ---- Optional system-driven dark mode (opt in post-v1) ----
+   Uncomment to follow the OS preference automatically. Kept off so v1
+   ships light-only. The [data-theme="light"] guard lets a user override
+   back to light even when the OS is dark.
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-canvas: #0d1117;
+    ... (mirror the [data-theme="dark"] block above)
+  }
+}
+*/
+
+
+/* ============================================================
+   DataQ marketing — page layout & components
+   Hand-authored static page (#1561) — no build step.
+   ============================================================ */
+
+* { box-sizing: border-box; }
+html, body { margin: 0; font-family: var(--font-sans); color: var(--text-body); background: var(--bg-card); }
+a { color: inherit; }
+img { max-width: 100%; }
+
+/* ---- Nav ---- */
+.nav {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; gap: var(--nav-gap);
+  height: 64px; padding: var(--nav-padding);
+  background: rgba(255,255,255,0.85); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-left { flex: 1; display: flex; align-items: center; gap: var(--nav-gap); min-width: 0; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; flex: none; }
+.brand-name { font-family: var(--font-sans); font-weight: 700; font-size: 18px; color: var(--ink); letter-spacing: -0.01em; }
+.nav-links { display: var(--nav-links-display); gap: 24px; }
+.nav-links a { font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--text-body); text-decoration: none; }
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 32px; padding: 0 15px;
+  font-family: var(--font-sans); font-size: 14px; font-weight: 600; line-height: 1;
+  border-radius: var(--radius); border: 1px solid transparent;
+  cursor: pointer; white-space: nowrap; box-sizing: border-box;
+  transition: background .15s, border-color .15s, box-shadow .15s, transform .05s;
+  text-decoration: none;
+}
+.btn:active { transform: translateY(0.5px); }
+.btn-lg { height: 40px; padding: 0 20px; font-size: 15px; }
+.btn-primary { background: var(--action-primary); color: var(--action-on-primary); }
+.btn-primary:hover { background: var(--action-primary-hover); box-shadow: var(--shadow-ambient); }
+.btn-secondary { background: transparent; color: var(--action-secondary-fg); border-color: var(--action-secondary-border); }
+.btn-secondary:hover { background: var(--action-secondary-hover); }
+.btn-outline {
+  height: 40px; padding: 0 20px; border-radius: var(--radius); cursor: pointer;
+  background: transparent; border: 1px solid rgba(255,255,255,0.28); color: #fff;
+  font-family: var(--font-sans); font-size: 15px; font-weight: 600; text-decoration: none;
+  display: inline-flex; align-items: center;
+}
+.btn-outline:hover { background: rgba(255,255,255,0.06); }
+
+/* ---- Cards ---- */
+.card {
+  border-radius: var(--radius-lg); box-sizing: border-box;
+  background: var(--bg-card); border: 1px solid var(--border-default); color: var(--text-body);
+}
+.card-subtle { background: var(--bg-subtle); border: 1px solid var(--border); }
+
+/* ---- Status badge ---- */
+.status-badge { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 10px; border-radius: var(--radius-full); font-family: var(--font-sans); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.status-badge .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.status-pass { background: var(--status-pass-bg); color: var(--status-pass); }
+.status-pass .dot { background: var(--status-pass); }
+.status-warn { background: var(--status-warn-bg); color: var(--status-warn); }
+.status-warn .dot { background: var(--status-warn); }
+.status-fail { background: var(--status-fail-bg); color: var(--status-fail); }
+.status-fail .dot { background: var(--status-fail); }
+.status-critical { background: var(--status-critical-bg); color: var(--status-critical); }
+.status-critical .dot { background: var(--status-critical); }
+.status-succeeded { background: var(--run-succeeded-bg); color: var(--run-succeeded); }
+.status-succeeded .dot { background: var(--run-succeeded); }
+
+/* ---- Progress bar ---- */
+.progress-track { width: 100%; height: 4px; background: var(--surface-3); border-radius: var(--radius-full); overflow: hidden; }
+.progress-fill { height: 100%; border-radius: var(--radius-full); }
+.tone-pass { background: var(--status-pass); }
+.tone-warning { background: var(--status-warn); }
+.tone-fail { background: var(--status-fail); }
+
+/* ---- Hero ---- */
+.hero { background: var(--bg-app); border-bottom: 1px solid var(--border); }
+.hero-grid { max-width: 1200px; margin: 0 auto; padding: 80px 32px 96px; display: grid; grid-template-columns: var(--hero-grid-cols); gap: 56px; align-items: center; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px;
+  border-radius: var(--radius-full); background: var(--indigo-50); color: var(--indigo-700);
+  border: 1px solid var(--indigo-100); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+}
+.hero h1 { margin: 20px 0 0; font-family: var(--font-sans); font-size: var(--hero-h1-size); line-height: 1.08; font-weight: 700; letter-spacing: -0.025em; color: var(--ink); }
+.hero-sub { margin: 20px 0 0; font-size: 18px; line-height: 1.55; color: var(--text-secondary); max-width: 480px; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+.hero-meta { margin-top: 28px; font-size: 13px; color: var(--text-muted); }
+
+.hero-preview { position: relative; }
+.hero-glow { position: absolute; inset: -24px; background: radial-gradient(60% 60% at 70% 30%, rgba(79,70,229,0.16), transparent); filter: blur(8px); }
+.preview-card { position: relative; padding: 18px; box-shadow: var(--shadow-float); border-color: var(--border); }
+.preview-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.preview-head span { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.metric-card { padding: 14px; display: flex; flex-direction: column; min-width: 0; height: 100%; }
+.metric-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.metric-label { font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--text-secondary); }
+.metric-row { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.metric-value { font-family: var(--font-sans); font-size: 30px; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; color: var(--text-primary); }
+.metric-delta { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+.metric-delta.up { color: var(--status-pass); }
+.metric-delta.down { color: var(--status-fail); }
+.metric-footnote { margin-top: 16px; font-size: 12px; color: var(--text-muted); }
+.metric-card .progress-track { margin-top: 16px; }
+.results-list { padding: 14px; }
+.results-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.results-row .name { flex: 1; font-size: 12px; color: var(--text-body); }
+.results-row .progress-track { width: 80px; }
+.results-row .status-badge { width: 64px; justify-content: center; }
+
+/* ---- Features ---- */
+.features { background: var(--bg-card); }
+.features-inner { max-width: 1200px; margin: 0 auto; padding: 88px 32px; }
+.section-head { text-align: center; max-width: 640px; margin: 0 auto 48px; }
+.section-head h2 { margin: 0; font-size: 36px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); }
+.section-head p { margin: 14px 0 0; font-size: 17px; line-height: 1.55; color: var(--text-secondary); }
+
+.bento { display: grid; grid-template-columns: var(--feat-grid-cols); gap: 16px; }
+.icon-badge { width: 44px; height: 44px; border-radius: 10px; background: var(--indigo-50); color: var(--indigo-600); display: flex; align-items: center; justify-content: center; }
+.icon-badge.on-dark { background: rgba(129,140,248,0.18); color: var(--indigo-300); }
+
+.big-card { grid-column: var(--feat-span-big); grid-row: var(--feat-span-big-row); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px; }
+.big-card h3, .dark-card h3, .mid-card h3 { margin: 18px 0 0; font-size: 22px; font-weight: 600; }
+.big-card h3, .mid-card h3 { color: var(--text-primary); }
+.big-card p, .mid-card p { margin: 10px 0 0; font-size: 15px; line-height: 1.55; color: var(--text-secondary); }
+.big-card p { max-width: 460px; }
+
+.dark-card { grid-column: var(--feat-span-side); background: var(--ink); border-radius: var(--radius-lg); padding: 28px; display: flex; flex-direction: column; }
+.dark-card h3 { color: #fff; }
+.dark-card p { margin: 10px 0 0; font-size: 15px; line-height: 1.55; color: rgba(255,255,255,0.62); }
+
+.mid-card { grid-column: var(--feat-span-side); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px; }
+
+.small-grid { display: grid; grid-template-columns: var(--feat-4up-cols); gap: 16px; margin-top: 16px; }
+.small-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 22px; }
+.small-card .icon-inline { color: var(--indigo-600); display: inline-flex; }
+.small-card .title { margin-top: 14px; font-size: 16px; font-weight: 600; color: var(--text-primary); }
+.small-card .body { margin-top: 6px; font-size: 14px; line-height: 1.5; color: var(--text-secondary); }
+
+.feature-mock { margin-top: 20px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
+.mock-bars { display: flex; gap: 6px; margin-bottom: 12px; }
+.mock-bars .bar-col { flex: 1; height: 44px; display: flex; align-items: flex-end; }
+.mock-bars .bar { width: 100%; border-radius: 3px 3px 0 0; background: var(--indigo-400); }
+.mock-bars .bar.down { background: var(--red-500); }
+.mock-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+.mock-row .name { flex: 1; font-family: var(--font-mono); font-size: 12px; color: var(--text-body); }
+.mock-row .progress-track { width: 70px; }
+.mock-row .status-badge { width: 66px; justify-content: center; }
+
+/* ---- Closer ---- */
+.closer { background: var(--ink); position: relative; overflow: hidden; }
+.closer-mark { position: absolute; right: -80px; top: -60px; width: 360px; opacity: 0.06; }
+.closer-inner { max-width: 760px; margin: 0 auto; padding: 96px 32px; text-align: center; position: relative; }
+.closer h2 { margin: 0; font-size: 40px; font-weight: 700; letter-spacing: -0.02em; color: #fff; }
+.closer p { margin: 18px 0 0; font-size: 18px; line-height: 1.55; color: rgba(255,255,255,0.66); }
+.closer-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 32px; }
+
+/* ---- Footer ---- */
+.site-footer { background: var(--bg-card); }
+.footer-inner { max-width: 1200px; margin: 0 auto; padding: 56px 32px 32px; }
+.footer-grid { display: grid; grid-template-columns: var(--footer-grid-cols); gap: 32px; }
+.footer-brand { display: flex; align-items: center; gap: 10px; }
+.footer-brand span { font-weight: 700; font-size: 17px; color: var(--ink); }
+.footer-tagline { margin: 14px 0 0; font-size: 13px; line-height: 1.55; color: var(--text-muted); max-width: 260px; }
+.footer-col h4 { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.footer-col-links { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.footer-col-links a { font-size: 13px; color: var(--text-secondary); text-decoration: none; }
+.footer-bottom { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--divider); font-size: 13px; color: var(--text-muted); }
+.footer-bottom a { text-decoration: none; color: var(--text-muted); }
+
+/* ---- Demo modal ---- */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000; background: rgba(15,15,23,0.82);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.modal-overlay[hidden] { display: none; }
+.modal-box { position: relative; width: 100%; max-width: 960px; }
+.modal-close {
+  position: absolute; top: -44px; right: 0; width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: #fff; font-size: 28px; line-height: 1; cursor: pointer;
+}
+.modal-box video { width: 100%; max-height: 80vh; display: block; border-radius: var(--radius-lg); box-shadow: 0 24px 64px rgba(0,0,0,0.5); background: #000; }
