@@ -1,0 +1,14 @@
+Hey, I remember we discussed once dark theme as a post v1 item. 
+Can you check if there is any open issue for that, if not file one and assign it to v1.2 week 1 milestone.
+
+---
+
+your ADR link is wrong
+
+---
+
+there are few CodeQL alerts, can you triage them
+
+---
+
+Hey the landing page is not rendering properly in mobile screens, can you check
