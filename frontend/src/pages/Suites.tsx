@@ -52,7 +52,6 @@ import { SchedulesPanel } from '../components/suites/SchedulesPanel';
 import { SharePanel } from '../components/suites/SharePanel';
 import { isBatchTarget, summarizeTarget } from '../components/suites/suiteTarget';
 import { TriggersPanel } from '../components/suites/TriggersPanel';
-import { BRAND } from '../theme';
 import { downloadJson, toFilenameStem } from '../utils/download';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
@@ -85,7 +84,11 @@ function SuiteIdentity({
     >
       {conn && <ConnectionTypeAvatar type={conn.type} size={size} />}
       <Flex vertical gap={2} style={{ minWidth: 0, flex: 1 }}>
-        <Typography.Text strong ellipsis style={selected ? { color: BRAND.primary } : undefined}>
+        <Typography.Text
+          strong
+          ellipsis
+          style={selected ? { color: 'var(--dq-primary)' } : undefined}
+        >
           {suite.name}
         </Typography.Text>
         {conn ? (
@@ -269,7 +272,7 @@ function SuitesBody({
                   // `paddingBlock` deterministically, not by style-key serialization order.
                   paddingBlock: 12,
                   paddingInline: 16,
-                  background: isSelected ? BRAND.selectedBg : undefined,
+                  background: isSelected ? 'var(--dq-selected-bg)' : undefined,
                 }}
               >
                 <SuiteIdentity suite={suite} conn={conn} size={34} selected={isSelected} />

@@ -26,7 +26,7 @@ import { logout } from './auth/authClient';
 import { useOtpSession } from './auth/otpSessionContext';
 import { BrandMark } from './components/BrandMark';
 import { ProfileCompletionPrompt } from './components/profile/ProfileCompletionPrompt';
-import { BRAND, SHELL } from './theme';
+import { SHELL } from './theme';
 
 // Route components are code-split so the initial bundle doesn't ship every page
 // (and antd-heavy pages only load on navigation). Named exports → map to default.
@@ -117,7 +117,7 @@ export function App() {
             display: 'flex',
             alignItems: 'center',
             gap: 16,
-            borderBottom: `1px solid ${BRAND.border}`,
+            borderBottom: `1px solid var(--dq-border)`,
           }}
         >
           {narrow && (
@@ -140,7 +140,7 @@ export function App() {
                   narrow header, the brand otherwise wraps vertically (#692). */}
               <Typography.Text
                 strong
-                style={{ fontSize: 17, color: BRAND.ink, whiteSpace: 'nowrap' }}
+                style={{ fontSize: 17, color: 'var(--dq-ink)', whiteSpace: 'nowrap' }}
               >
                 DataQ
               </Typography.Text>
@@ -162,7 +162,7 @@ export function App() {
               // on mobile doesn't re-appear the next time we drop below `lg`.
               setDrawerOpen(false);
             }}
-            style={{ borderInlineEnd: `1px solid ${BRAND.border}`, height: '100%' }}
+            style={{ borderInlineEnd: `1px solid var(--dq-border)`, height: '100%' }}
           >
             {/* Desktop: the Sider *is* the nav. Narrow: it collapses to zero width
                 and the nav lives in the overlay Drawer below, so it never squeezes
@@ -185,12 +185,12 @@ export function App() {
               size={SHELL.siderWidth}
               styles={{
                 body: { padding: 0 },
-                header: { borderBottom: `1px solid ${BRAND.border}` },
+                header: { borderBottom: `1px solid var(--dq-border)` },
               }}
               title={
                 <Flex align="center" gap={8}>
                   <BrandMark size={20} />
-                  <Typography.Text strong style={{ color: BRAND.ink }}>
+                  <Typography.Text strong style={{ color: 'var(--dq-ink)' }}>
                     DataQ
                   </Typography.Text>
                 </Flex>
@@ -304,7 +304,7 @@ function SideNav({
         selectedKeys={selectedKeys}
         items={footerItems}
         onClick={onNavigate}
-        style={{ borderInlineEnd: 0, borderTop: `1px solid ${BRAND.border}`, paddingBlock: 8 }}
+        style={{ borderInlineEnd: 0, borderTop: `1px solid var(--dq-border)`, paddingBlock: 8 }}
       />
     </Flex>
   );
@@ -366,7 +366,7 @@ function UserMenu() {
       type: 'group',
       label: (
         <Flex vertical gap={2} style={{ padding: '4px 4px 8px' }}>
-          <Typography.Text strong style={{ color: BRAND.ink }}>
+          <Typography.Text strong style={{ color: 'var(--dq-ink)' }}>
             {user.name}
           </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -394,10 +394,10 @@ function UserMenu() {
   return (
     <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
       <Flex align="center" gap={8} style={{ cursor: 'pointer' }}>
-        <Avatar size="small" style={{ backgroundColor: BRAND.primary, flexShrink: 0 }}>
+        <Avatar size="small" style={{ backgroundColor: 'var(--dq-primary)', flexShrink: 0 }}>
           {initialsOf(user.name)}
         </Avatar>
-        <Typography.Text style={{ color: BRAND.ink }}>{user.name}</Typography.Text>
+        <Typography.Text style={{ color: 'var(--dq-ink)' }}>{user.name}</Typography.Text>
         <DownOutlined style={{ fontSize: 10, color: '#8c8c8c' }} />
       </Flex>
     </Dropdown>
