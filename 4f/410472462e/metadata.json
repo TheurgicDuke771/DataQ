@@ -5,20 +5,8 @@
   "branch": "feat/1562-dark-mode-phase4-monaco-lineage",
   "checkpoints_count": 1,
   "files_touched": [
-    "frontend/index.html",
     "frontend/public/theme-init.js",
-    "frontend/src/App.tsx",
-    "frontend/src/components/assets/LineageGraph.tsx",
-    "frontend/src/components/charts/chartTheme.ts",
-    "frontend/src/components/checks/SqlEditorField.tsx",
-    "frontend/src/components/dashboard/AssetHealthLead.tsx",
-    "frontend/src/components/dashboard/MetricCard.tsx",
-    "frontend/src/styles.css",
-    "frontend/src/theme.ts",
-    "frontend/src/themeMode/ThemeModeProvider.tsx",
-    "frontend/tests/components/SqlEditorField.test.tsx",
-    "frontend/tests/components/chartTheme.test.ts",
-    "frontend/tests/themeMode/ThemeModeProvider.test.tsx"
+    "frontend/src/theme.ts"
   ],
   "sessions": [
     {
@@ -26,14 +14,14 @@
       "transcript": "/4f/410472462e/0/full.jsonl",
       "compact_transcript": "/4f/410472462e/0/transcript.jsonl",
       "content_hash": "/4f/410472462e/0/content_hash.txt",
-      "prompt": ""
+      "prompt": "/4f/410472462e/0/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 2,
-    "cache_creation_tokens": 777,
-    "cache_read_tokens": 552749,
-    "output_tokens": 1066,
-    "api_call_count": 1
+    "input_tokens": 52,
+    "cache_creation_tokens": 29902,
+    "cache_read_tokens": 17944415,
+    "output_tokens": 9597,
+    "api_call_count": 26
   }
 }
