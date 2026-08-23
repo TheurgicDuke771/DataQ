@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "1a0ad9b7522c",
+  "strategy": "manual-commit",
+  "branch": "feat/1562-dark-mode-phase4-monaco-lineage",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/App.tsx",
+    "frontend/src/components/charts/chartTheme.ts",
+    "frontend/src/components/checks/SqlEditorField.tsx",
+    "frontend/src/styles.css",
+    "frontend/tests/components/SqlEditorField.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1a/0ad9b7522c/0/metadata.json",
+      "transcript": "/1a/0ad9b7522c/0/full.jsonl",
+      "compact_transcript": "/1a/0ad9b7522c/0/transcript.jsonl",
+      "content_hash": "/1a/0ad9b7522c/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 78,
+    "cache_creation_tokens": 27712,
+    "cache_read_tokens": 19228124,
+    "output_tokens": 15985,
+    "api_call_count": 39
+  }
+}
