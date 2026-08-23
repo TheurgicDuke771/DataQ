@@ -1,0 +1,8 @@
+There are more comments / doc-string [mostlu un-necessary] than code in the code base 
+some file have more line in comments than code. 
+Let's scan the the codebase and trim the un-necessary prose parts. 
+cut down the prose wherever possible, at this point it is becomming supply-chain risk.
+
+---
+
+make the ratio ~ <0.2 if possible accross the codebase. [but keep what is absolutely necessary, even if that exceed the limit] [frontend, backend, infra, and others]

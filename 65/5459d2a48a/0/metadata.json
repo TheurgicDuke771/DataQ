@@ -1,0 +1,120 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "655459d2a48a",
+  "session_id": "8868d076-d2d1-4ba7-a45f-f1ebc9ce3176",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-23T00:40:07.272884Z",
+  "branch": "chore/trim-prose",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/app/core/auth.py",
+    "backend/app/core/config.py",
+    "backend/app/core/logging.py",
+    "backend/app/core/rate_limit.py",
+    "backend/app/core/secret_names.py",
+    "backend/app/core/secrets.py",
+    "backend/app/datasources/flatfile.py",
+    "backend/app/datasources/monitors.py",
+    "backend/app/datasources/sampling.py",
+    "backend/app/db/models.py",
+    "backend/app/worker/beat_watchdog.py",
+    "backend/app/worker/celery_app.py",
+    "backend/app/worker/tasks.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5",
+  "turn_id": "a42707e5957d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 142,
+    "cache_creation_tokens": 324547,
+    "cache_read_tokens": 13158251,
+    "output_tokens": 71661,
+    "api_call_count": 75,
+    "subagent_tokens": {
+      "input_tokens": 98,
+      "cache_creation_tokens": 984554,
+      "cache_read_tokens": 7754755,
+      "output_tokens": 188203,
+      "api_call_count": 49
+    }
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-23T00:40:07.239647Z",
+    "agent_lines": 0,
+    "agent_removed": 144,
+    "human_added": 2331,
+    "human_modified": 6374,
+    "human_removed": 0,
+    "total_committed": 2374,
+    "total_lines_changed": 40565,
+    "agent_percentage": 0.35498582521878463,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1441,
+      "user_lines_removed": 4177,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7,
+        "backend/app/core/auth.py": 167,
+        "backend/app/core/config.py": 213,
+        "backend/app/core/logging.py": 90,
+        "backend/app/core/secret_names.py": 42,
+        "backend/app/core/secrets.py": 181,
+        "backend/app/datasources/flatfile.py": 157,
+        "backend/app/datasources/monitors.py": 97,
+        "backend/app/db/models.py": 282,
+        "backend/app/worker/beat_watchdog.py": 41,
+        "backend/app/worker/celery_app.py": 77,
+        "backend/app/worker/tasks.py": 87
+      },
+      "user_removed_per_file": {
+        "backend/app/core/auth.py": 446,
+        "backend/app/core/config.py": 660,
+        "backend/app/core/logging.py": 299,
+        "backend/app/core/secret_names.py": 136,
+        "backend/app/core/secrets.py": 506,
+        "backend/app/datasources/flatfile.py": 479,
+        "backend/app/datasources/monitors.py": 294,
+        "backend/app/db/models.py": 820,
+        "backend/app/worker/beat_watchdog.py": 105,
+        "backend/app/worker/celery_app.py": 216,
+        "backend/app/worker/tasks.py": 216
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 238,
+      "user_lines_removed": 645,
+      "agent_lines_added": 1568,
+      "agent_lines_removed": 4557,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7,
+        "backend/app/core/secrets.py": 22,
+        "backend/app/datasources/gx_runner.py": 17,
+        "backend/app/datasources/sampling.py": 23,
+        "backend/app/db/models.py": 18,
+        "backend/app/mcp/auth.py": 46,
+        "backend/app/services/run_service.py": 77,
+        "backend/app/worker/tasks.py": 28
+      },
+      "user_removed_per_file": {
+        "backend/app/core/secrets.py": 33,
+        "backend/app/datasources/gx_runner.py": 52,
+        "backend/app/datasources/sampling.py": 65,
+        "backend/app/db/models.py": 28,
+        "backend/app/mcp/auth.py": 129,
+        "backend/app/services/run_service.py": 241,
+        "backend/app/worker/tasks.py": 97
+      }
+    }
+  ]
+}

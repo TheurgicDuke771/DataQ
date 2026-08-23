@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "655459d2a48a",
+  "strategy": "manual-commit",
+  "branch": "chore/trim-prose",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/core/auth.py",
+    "backend/app/core/config.py",
+    "backend/app/core/logging.py",
+    "backend/app/core/rate_limit.py",
+    "backend/app/core/secret_names.py",
+    "backend/app/core/secrets.py",
+    "backend/app/datasources/flatfile.py",
+    "backend/app/datasources/monitors.py",
+    "backend/app/datasources/sampling.py",
+    "backend/app/db/models.py",
+    "backend/app/worker/beat_watchdog.py",
+    "backend/app/worker/celery_app.py",
+    "backend/app/worker/tasks.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/65/5459d2a48a/0/metadata.json",
+      "transcript": "/65/5459d2a48a/0/full.jsonl",
+      "compact_transcript": "/65/5459d2a48a/0/transcript.jsonl",
+      "content_hash": "/65/5459d2a48a/0/content_hash.txt",
+      "prompt": "/65/5459d2a48a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 142,
+    "cache_creation_tokens": 324547,
+    "cache_read_tokens": 13158251,
+    "output_tokens": 71661,
+    "api_call_count": 75,
+    "subagent_tokens": {
+      "input_tokens": 98,
+      "cache_creation_tokens": 984554,
+      "cache_read_tokens": 7754755,
+      "output_tokens": 188203,
+      "api_call_count": 49
+    }
+  }
+}
