@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "0867633b5295",
+  "strategy": "manual-commit",
+  "branch": "fix/ci-regressions-post-dependabot-batch",
+  "checkpoints_count": 6,
+  "files_touched": [
+    ".pre-commit-config.yaml",
+    "frontend/tests/pages/CheckNew.test.tsx",
+    "frontend/tests/pages/CheckNewMonitor.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/08/67633b5295/0/metadata.json",
+      "transcript": "/08/67633b5295/0/full.jsonl",
+      "compact_transcript": "/08/67633b5295/0/transcript.jsonl",
+      "content_hash": "/08/67633b5295/0/content_hash.txt",
+      "prompt": "/08/67633b5295/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 164,
+    "cache_creation_tokens": 254341,
+    "cache_read_tokens": 15727216,
+    "output_tokens": 34803,
+    "api_call_count": 82
+  }
+}
