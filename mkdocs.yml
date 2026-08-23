@@ -2,7 +2,7 @@ site_name: DataQ
 site_description: >-
   DataQ — a single-tenant data-quality monitoring platform built on Great
   Expectations. User-friendly guides + developer references.
-site_url: https://theurgicduke771.github.io/DataQ/
+site_url: https://theurgicduke771.github.io/DataQ/docs/
 repo_url: https://github.com/TheurgicDuke771/DataQ
 repo_name: TheurgicDuke771/DataQ
 edit_uri: edit/main/docs/site/
@@ -13,6 +13,9 @@ edit_uri: edit/main/docs/site/
 # the old exclude_docs allowlist, whose default-published failure mode put two
 # internal files (incl. the ops log) on the public site.
 docs_dir: docs/site
+# Built one level down so the Pages root (marketing/index.html, copied in by
+# the Docs workflow) can occupy the bare repo URL; docs live at /docs/.
+site_dir: site/docs
 
 theme:
   name: material

@@ -2,9 +2,9 @@
 
 > Data quality monitoring platform built around Great Expectations — Snowflake (DEV/QA/UAT), ADLS Gen2, S3, Unity Catalog (Databricks), Apache Iceberg (native read), with ADF + Airflow + dbt orchestration integrations.
 
-**📖 Documentation site: <https://theurgicduke771.github.io/DataQ/>** (MkDocs Material — quickstart, concepts, architecture, guides).
+**📖 Documentation site: <https://theurgicduke771.github.io/DataQ/docs/>** (MkDocs Material — quickstart, concepts, architecture, guides).
 
-**Status:** **v1.1.0 released (2026-08-21)** — the post-v1 cycle is complete (monitor kinds, assets/lineage/incidents, RBAC, the 46-tool MCP surface, compliance controls; see the [changelog](CHANGELOG.md)); v1.0.0 shipped 2026-07-04 off the 8-week roadmap (187/189). DataQ is **deployed live on two independent clouds — Azure and AWS** (Azure Container Apps and AWS ECS Fargate, each with its own API + worker + a runtime-configured frontend as the sole public surface, Key Vault/Secrets Manager, App Insights/CloudWatch+X-Ray, and orchestration polling), behind the same generic, provider-neutral seams (ADR [0028](docs/site/adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md)) — see [deployment parity](https://theurgicduke771.github.io/DataQ/deployment-parity/) for the side-by-side. Auth is a **generic OIDC client** (Azure AD and AWS Cognito both validated). The completed cycle ledgers are archived at [docs/progress-v1.md](docs/progress-v1.md) and [docs/progress-v1.1.md](docs/progress-v1.1.md); live v1.2 progress at [docs/progress.md](docs/progress.md).
+**Status:** **v1.1.0 released (2026-08-21)** — the post-v1 cycle is complete (monitor kinds, assets/lineage/incidents, RBAC, the 46-tool MCP surface, compliance controls; see the [changelog](CHANGELOG.md)); v1.0.0 shipped 2026-07-04 off the 8-week roadmap (187/189). DataQ is **deployed live on two independent clouds — Azure and AWS** (Azure Container Apps and AWS ECS Fargate, each with its own API + worker + a runtime-configured frontend as the sole public surface, Key Vault/Secrets Manager, App Insights/CloudWatch+X-Ray, and orchestration polling), behind the same generic, provider-neutral seams (ADR [0028](docs/site/adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md)) — see [deployment parity](https://theurgicduke771.github.io/DataQ/docs/deployment-parity/) for the side-by-side. Auth is a **generic OIDC client** (Azure AD and AWS Cognito both validated). The completed cycle ledgers are archived at [docs/progress-v1.md](docs/progress-v1.md) and [docs/progress-v1.1.md](docs/progress-v1.1.md); live v1.2 progress at [docs/progress.md](docs/progress.md).
 
 ## What it does
 
@@ -13,27 +13,27 @@
   Six check kinds: **GX expectations** (including **custom SQL** — rows returned =
   failures), **freshness / volume / schema-drift / anomaly monitors**, and **comparison**
   (reconcile two datasets across connections — ADR 0015); plus a column profiler and
-  dry-run preview on every datasource. [Feature matrix →](https://theurgicduke771.github.io/DataQ/feature-matrix/)
+  dry-run preview on every datasource. [Feature matrix →](https://theurgicduke771.github.io/DataQ/docs/feature-matrix/)
 - **Assets, lineage & incidents** — the table/file is a first-class entity: health rolled
   up across every suite that targets it, **table-level lineage** (a left-to-right graph of
   provenance and blast radius, from dbt's manifest or an OpenLineage catalog), and open
   incidents. Assets are the primary lens — the dashboard and sidebar lead with them (ADR
-  0034). [Concepts →](https://theurgicduke771.github.io/DataQ/concepts/)
+  0034). [Concepts →](https://theurgicduke771.github.io/DataQ/docs/concepts/)
 - **Quality by dimension** — every check is classified (accuracy, completeness,
   consistency, integrity, timeliness, uniqueness, validity), filled in automatically from
   the check type. The asset **scorecard** turns that into the question people actually
   ask: not just "are the checks passing" but **"what isn't being watched at all"** — an
   asset with no Timeliness checks says so, and never shows a green tick for it.
-  [Dimensions →](https://theurgicduke771.github.io/DataQ/datasources-checks/)
+  [Dimensions →](https://theurgicduke771.github.io/DataQ/docs/datasources-checks/)
 - **Three run modes** — run now (live progress + cancel), **cron schedules**
   (timezone/DST-aware), and **pipeline triggers**: ADF, Airflow **and dbt** runs are
-  monitored, and a successful pipeline can trigger the bound suite. [Scheduling →](https://theurgicduke771.github.io/DataQ/scheduling/) · [Orchestration →](https://theurgicduke771.github.io/DataQ/orchestration/)
+  monitored, and a successful pipeline can trigger the bound suite. [Scheduling →](https://theurgicduke771.github.io/DataQ/docs/scheduling/) · [Orchestration →](https://theurgicduke771.github.io/DataQ/docs/orchestration/)
 - **Severity + alerting** — warn/fail/critical tiers band each check's unexpected-%;
   alerts to **Teams / Slack / email** with severity-aware routing, first-failure dedup,
-  and per-check snooze. [Notifications →](https://theurgicduke771.github.io/DataQ/notifications/)
+  and per-check snooze. [Notifications →](https://theurgicduke771.github.io/DataQ/docs/notifications/)
 - **Results you can share** — dashboard health score + trends, per-run drill-down with
   **PII-redacted** failing-row samples, suite-level sharing (view/edit), admin control
-  centre. [Best practices →](https://theurgicduke771.github.io/DataQ/best-practices/)
+  centre. [Best practices →](https://theurgicduke771.github.io/DataQ/docs/best-practices/)
 
 ## Stack
 
@@ -62,7 +62,7 @@ Open **<http://localhost:3000>**, enter that address, and read the 6-digit code 
 
 > Prefer no sign-in at all? `DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up` is the explicit downgrade — every request becomes one fixed admin user. Omitting `DATAQ_SIGNIN_EMAIL` entirely stops the stack instead of choosing that for you.
 
-> Self-hosting with **your own** IdP — Azure AD, AWS Cognito, or any standards-compliant OIDC provider? The published frontend is **one generic image** — the compose eval runs it with `DATAQ_AUTH_MODE=otp`. For real SSO, **no rebuild**: run that same image with `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (auth config is injected at runtime, ADR 0028), and run the backend with `AUTH_DEV_BYPASS` off. See [Getting started](https://theurgicduke771.github.io/DataQ/getting-started/).
+> Self-hosting with **your own** IdP — Azure AD, AWS Cognito, or any standards-compliant OIDC provider? The published frontend is **one generic image** — the compose eval runs it with `DATAQ_AUTH_MODE=otp`. For real SSO, **no rebuild**: run that same image with `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (auth config is injected at runtime, ADR 0028), and run the backend with `AUTH_DEV_BYPASS` off. See [Getting started](https://theurgicduke771.github.io/DataQ/docs/getting-started/).
 
 ### Develop DataQ — from source
 
@@ -78,18 +78,18 @@ Backend at `http://localhost:8000` (Swagger at `/docs`), frontend at `http://loc
 
 ## MCP (AI assistant access)
 
-DataQ exposes 46 curated MCP tools at `/mcp` (streamable HTTP) — 23 read-only (suites, checks and their edit history, runs and results, assets and incidents, connections, schedules, trigger bindings, column policy, notification config and health), 18 that change state (author/update/delete/snooze/restore checks, trigger/cancel runs, update a suite's target and column policy, create/update/delete a schedule, create/update/delete a trigger binding, acknowledge/resolve an incident, import a suite), and 5 that persist nothing but open a live datasource connection with stored credentials — `profile_column`, `list_columns`, `dryrun_check`, `suggest_column_policy`, `test_connection` — so they're gated like writes, not reads. Full per-tool table: [AI assistants (MCP setup)](https://theurgicduke771.github.io/DataQ/mcp-setup/). `/mcp` mounts under **any** configured sign-in mode — OIDC SSO (Azure AD or AWS Cognito), email OTP (ADR [0032](docs/site/adr/0032-email-otp-signin.md)), or local dev-bypass — and stays unmounted, fail-closed, when none is configured (ADR [0008](docs/site/adr/0008-mcp-server.md)). Under SSO, present the same OIDC bearer token the web UI uses; under **email OTP the only accepted credential is a DataQ API key** (`dq_live_…`, a PAT — ADR [0026](docs/site/adr/0026-auth-api-keys-and-principal-seam.md)) — a raw JWT and a browser session cookie are both rejected there, since there is no IdP to validate a bearer against and a session is a browser-only credential.
+DataQ exposes 46 curated MCP tools at `/mcp` (streamable HTTP) — 23 read-only (suites, checks and their edit history, runs and results, assets and incidents, connections, schedules, trigger bindings, column policy, notification config and health), 18 that change state (author/update/delete/snooze/restore checks, trigger/cancel runs, update a suite's target and column policy, create/update/delete a schedule, create/update/delete a trigger binding, acknowledge/resolve an incident, import a suite), and 5 that persist nothing but open a live datasource connection with stored credentials — `profile_column`, `list_columns`, `dryrun_check`, `suggest_column_policy`, `test_connection` — so they're gated like writes, not reads. Full per-tool table: [AI assistants (MCP setup)](https://theurgicduke771.github.io/DataQ/docs/mcp-setup/). `/mcp` mounts under **any** configured sign-in mode — OIDC SSO (Azure AD or AWS Cognito), email OTP (ADR [0032](docs/site/adr/0032-email-otp-signin.md)), or local dev-bypass — and stays unmounted, fail-closed, when none is configured (ADR [0008](docs/site/adr/0008-mcp-server.md)). Under SSO, present the same OIDC bearer token the web UI uses; under **email OTP the only accepted credential is a DataQ API key** (`dq_live_…`, a PAT — ADR [0026](docs/site/adr/0026-auth-api-keys-and-principal-seam.md)) — a raw JWT and a browser session cookie are both rejected there, since there is no IdP to validate a bearer against and a session is a browser-only credential.
 
 Point any MCP client at `https://<your-dataq-host>/mcp/` (keep the **trailing slash** — `/mcp` 307-redirects and some clients drop the `Authorization` header on redirect) with an `Authorization: Bearer <token>` header. Once configured, all 46 tools are available to natural-language queries (e.g. *"what failed in the orders suite today?"*, *"run the orders suite on DEV"*).
 
-Per-client configuration (Claude Desktop / Claude.ai, VS Code / Copilot, Cursor), how to get a token, token hygiene, and troubleshooting: **[AI assistants (MCP setup)](https://theurgicduke771.github.io/DataQ/mcp-setup/)** on the docs site.
+Per-client configuration (Claude Desktop / Claude.ai, VS Code / Copilot, Cursor), how to get a token, token hygiene, and troubleshooting: **[AI assistants (MCP setup)](https://theurgicduke771.github.io/DataQ/docs/mcp-setup/)** on the docs site.
 
 ## Documentation
 
 | | |
 |---|---|
 | **Working agreements + commit/PR conventions** | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| **Documentation site (user guides)** | <https://theurgicduke771.github.io/DataQ/> · source in [docs/](docs/), built by [.github/workflows/docs.yml](.github/workflows/docs.yml) |
+| **Documentation site (user guides)** | <https://theurgicduke771.github.io/DataQ/docs/> · source in [docs/](docs/), built by [.github/workflows/docs.yml](.github/workflows/docs.yml) |
 | **Deployment guide + env-var reference** | [deploy/README.md](deploy/README.md) · [.env.app.example](.env.app.example) |
 | **Project guide for AI assistants** | [CLAUDE.md](CLAUDE.md) |
 | **Architecture diagram + invariants** | [docs/site/architecture.md](docs/site/architecture.md) |
