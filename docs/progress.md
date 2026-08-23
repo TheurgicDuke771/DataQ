@@ -27,7 +27,7 @@
 | **v1 baseline** | `v1.0.0` tagged 2026-07-04 — 187/189 roadmap tasks; deployed to Azure Container Apps; ledger at [progress-v1.md](progress-v1.md) |
 | **v1.1 baseline** | `v1.1.0` — cycle ran 2026-07-04 → 2026-08-21 (6 weeks + the W7 stretch; first tagged 2026-08-15 at `b8d8278b`, then **re-tagged 2026-08-21 at the true close** — the stretch added 121 commits / 126 merged PRs / 55 closed issues, incl. RBAC ADR 0033, the MCP 8→46 expansion + honesty pass, the security-surface audit, and the compliance G1–G6 track). Ledger at [progress-v1.1.md](progress-v1.1.md); retro at [retro-v1.1.md](retro-v1.1.md) |
 | **Current cycle** | **v1.2 — 8 weeks, 2026-08-22 → 2026-10-16** (planned 2026-08-21 at the v1.1 close; epic [#1518](https://github.com/TheurgicDuke771/DataQ/issues/1518)). The arc: **W1** clears the user's infra decision gates (#590/#588) + the MCP honesty follow-ups; **W2–W4** build the DQ-intelligence track from [docs/post-v1-dq-intelligence-notes.md](post-v1-dq-intelligence-notes.md) (catalog expansion → server-side allowlist → `LLMProvider` seam → SQL-gen → suggestions) alongside compliance G2; **W5** platform-native engines (Snowflake DMF, ADR 0036) + notification channels; **W6** perf/scale hardening; **W7** feature burn-down; **W8** spikes/decisions + **cycle close** (the closing week is deliberately last). See [Cycle plan](#cycle-plan--v12-8-weeks-2026-08-22--2026-10-16) below. |
-| **Open issues** | **55** open repo-wide at planning (2026-08-21): the 52 re-homed from the closed `v1.1 Backlog` milestone into `v1.2 Week 1..8`, epic #1518 (W8), plus the two never-backlogged AWS-security items caught in the final sweep — [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385) (ElastiCache at-rest + egress restriction → W7) and [#1384](https://github.com/TheurgicDuke771/DataQ/issues/1384) (CloudFront→ALB TLS hop — blocked on buying a custom domain + ACM, → `v1.2 Backlog`). `v1.2 Backlog` otherwise **empty** as the default for new filings. |
+| **Open issues** | **59** open repo-wide (2026-08-22). At planning (2026-08-21): **55** — the 52 re-homed from the closed `v1.1 Backlog` milestone into `v1.2 Week 1..8`, epic #1518 (W8), plus the two never-backlogged AWS-security items caught in the final sweep — [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385) (ElastiCache at-rest + egress restriction → W7) and [#1384](https://github.com/TheurgicDuke771/DataQ/issues/1384) (CloudFront→ALB TLS hop — blocked on buying a custom domain + ACM, → `v1.2 Backlog`). `v1.2 Backlog` otherwise **empty** as the default for new filings. |
 | **Open PRs** | **0** at planning. |
 | **Coverage gates (CI-enforced, ≥80%)** | backend `--cov-fail-under=80` (~4,800 backend tests) · frontend all-src `lines: 80` (~1,000 tests) — every PR rides the same gates |
 
@@ -81,6 +81,15 @@ needs the Snowflake half decided.
 
 **Exit gate:** #590/#588 decisions recorded by the user (and executed if teardown);
 #1392/#1257 discharged consistently with them; all six MCP honesty follow-ups closed.
+
+**Unplanned, user-directed (2026-08-22, in-week):** codebase-wide prose trim, PR
+[#1536](https://github.com/TheurgicDuke771/DataQ/pull/1536) — comment/docstring density
+cut to ~≤0.2 prose-to-code across backend/tests/alembic/frontend/infra (−27k lines,
+680 files; `mcp/server.py`'s LLM-facing docstrings deliberately untouched). Code proven
+unchanged four independent ways (docstring-stripped AST, TS token stream, YAML structural
+diff, heredoc-aware line diff); the /code-review pass returned 10 findings (garbled
+truncations, erased guard comments, one `argparse --help` behavior change) — all fixed
+pre-merge, load-bearing security/ops constraints restored in condensed form.
 
 ### v1.2 W2 — Expectation catalog + server-side allowlist (due 2026-09-04)
 
