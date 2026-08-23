@@ -8,7 +8,6 @@ import type {
   LineageSourceHealth,
   WarehouseLineageStatus,
 } from '../../api/assets';
-import { BRAND } from '../../theme';
 import { nameSegments } from './assetTree';
 import { namespaceLabel } from './namespaceLabel';
 import { type CenterAsset, NODE_H, NODE_W, buildLineageLayout } from './lineageLayout';
@@ -332,8 +331,10 @@ function GraphNode({
         width={NODE_W}
         height={NODE_H}
         rx={8}
-        fill={node.isCenter ? BRAND.selectedBg : '#ffffff'}
-        stroke={node.isCenter ? BRAND.primary : node.isMonitored ? '#91caff' : BRAND.border}
+        fill={node.isCenter ? 'var(--dq-selected-bg)' : '#ffffff'}
+        stroke={
+          node.isCenter ? 'var(--dq-primary)' : node.isMonitored ? '#91caff' : 'var(--dq-border)'
+        }
         strokeWidth={node.isCenter ? 2 : 1}
       />
       <text
@@ -341,7 +342,7 @@ function GraphNode({
         y={21}
         fontSize={12}
         fontWeight={600}
-        fill={BRAND.ink}
+        fill={'var(--dq-ink)'}
         style={{ pointerEvents: 'none' }}
       >
         {truncate(leafName(node.name), 24)}
@@ -361,7 +362,7 @@ function GraphNode({
       {/* Monitored must not be colour-only (WCAG 1.4.1): a filled dot marks it, so
           the state survives a colour-blind viewer and a greyscale print. */}
       {!node.isCenter && node.isMonitored && (
-        <circle cx={NODE_W - 12} cy={12} r={3.5} fill={BRAND.primary} />
+        <circle cx={NODE_W - 12} cy={12} r={3.5} fill={'var(--dq-primary)'} />
       )}
     </g>
   );

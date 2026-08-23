@@ -18,8 +18,12 @@ describe('chart status colours', () => {
     }
   });
 
-  it('maps every run status to a hex series colour', () => {
+  it('maps every run status to a hex series colour, except running (theme-reactive CSS var)', () => {
     for (const status of RUN_STATUSES) {
+      if (status === 'running') {
+        expect(RUN_STATUS_CHART_COLORS[status]).toBe('var(--dq-primary)');
+        continue;
+      }
       expect(RUN_STATUS_CHART_COLORS[status]).toMatch(/^#[0-9a-f]{6}$/i);
     }
   });

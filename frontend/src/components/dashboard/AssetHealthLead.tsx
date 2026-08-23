@@ -6,7 +6,6 @@ import { type AssetSummary, listAssets } from '../../api/assets';
 import { AssetHealthTag } from '../assets/AssetHealthTag';
 import { namespaceLabel } from '../assets/namespaceLabel';
 import { useAsyncData } from '../../hooks/useAsyncData';
-import { BRAND } from '../../theme';
 
 /**
  * Asset-health lead (`/dashboard`, ADR 0034 navigation inversion, #773) — the dashboard now
@@ -44,7 +43,7 @@ export function AssetHealthLead() {
       styles={{ body: { paddingTop: 12 } }}
       title={
         <Flex align="center" gap={8}>
-          <DatabaseOutlined style={{ color: BRAND.primary }} />
+          <DatabaseOutlined style={{ color: 'var(--dq-primary)' }} />
           <span>Asset health</span>
         </Flex>
       }
@@ -113,14 +112,14 @@ function AssetHealthBody({
     {
       label: 'Monitored',
       value: assets.filter((a) => a.suite_count > 0).length,
-      tone: BRAND.ink,
+      tone: 'var(--dq-ink)',
     },
     {
       label: 'Need attention',
       value: attention.length,
-      tone: attention.length ? '#cf1322' : BRAND.ink,
+      tone: attention.length ? '#cf1322' : 'var(--dq-ink)',
     },
-    { label: 'In progress', value: active.length, tone: BRAND.ink },
+    { label: 'In progress', value: active.length, tone: 'var(--dq-ink)' },
   ];
 
   return (

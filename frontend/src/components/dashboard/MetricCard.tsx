@@ -2,8 +2,6 @@ import { FallOutlined, RiseOutlined } from '@ant-design/icons';
 import { Card, Flex, Progress, Skeleton, Typography } from 'antd';
 import type { ReactNode } from 'react';
 
-import { BRAND } from '../../theme';
-
 /**
  * A single KPI tile on the dashboard (prototype `MetricCard`): a label, a large value, an optional
  * unit suffix, an optional progress bar, an optional period-over-period delta.
@@ -81,8 +79,8 @@ export function MetricCard({
               width: 32,
               height: 32,
               borderRadius: 8,
-              background: BRAND.selectedBg,
-              color: BRAND.primary,
+              background: 'var(--dq-selected-bg)',
+              color: 'var(--dq-primary)',
               flexShrink: 0,
             }}
           >
@@ -94,7 +92,10 @@ export function MetricCard({
           <Skeleton.Input active size="large" style={{ width: 96 }} />
         ) : (
           <Flex align="baseline" gap={6}>
-            <Typography.Title level={2} style={{ margin: 0, lineHeight: 1, color: BRAND.ink }}>
+            <Typography.Title
+              level={2}
+              style={{ margin: 0, lineHeight: 1, color: 'var(--dq-ink)' }}
+            >
               {value === null ? '—' : value}
             </Typography.Title>
             {unit && value !== null && (

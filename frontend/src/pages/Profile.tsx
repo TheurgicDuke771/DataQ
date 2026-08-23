@@ -8,7 +8,6 @@ import { useMe } from '../auth/useMe';
 import { useSaveDisplayName } from '../auth/useSaveDisplayName';
 import { ApiKeysPanel } from '../components/profile/ApiKeysPanel';
 import { Page } from '../components/layout/Page';
-import { BRAND } from '../theme';
 import { PageError } from '../components/feedback/PageError';
 import { errorMessage } from '../utils/errors';
 
@@ -60,7 +59,7 @@ export function Profile() {
 
       <Card>
         <Flex gap={16} align="center">
-          <Avatar size={56} style={{ backgroundColor: BRAND.primary }}>
+          <Avatar size={56} style={{ backgroundColor: 'var(--dq-primary)' }}>
             {initial}
           </Avatar>
           <Flex vertical gap={2}>
