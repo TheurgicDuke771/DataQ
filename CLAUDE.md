@@ -68,6 +68,7 @@ DataQ/
 ├── docs/
 │   ├── site/                    # everything PUBLISHED to the docs site (docs_dir) — guides, architecture.md, adr/, compliance/
 │   └── *.md                     # internal planning docs (progress/retro/ops-log/…) — outside docs_dir, never built
+├── marketing/                   # public GH Pages marketing site (index.html — the landing page); occupies the Pages ROOT, docs build one level down into site/docs/ (mkdocs.yml site_dir)
 ├── integrations/                # user-deployed snippets (NOT app code; e.g. Airflow DAG callback)
 │   └── airflow/                 # dataq_airflow_callback.py + setup README
 ├── scripts/

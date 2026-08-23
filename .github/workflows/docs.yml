@@ -6,12 +6,14 @@ on:
     branches: [main]
     paths:
       - docs/site/**
+      - marketing/**
       - mkdocs.yml
       - requirements-docs.txt
       - .github/workflows/docs.yml
   pull_request:
     paths:
       - docs/site/**
+      - marketing/**
       - mkdocs.yml
       - requirements-docs.txt
       - .github/workflows/docs.yml
@@ -37,6 +39,10 @@ jobs:
           python-version: "3.13"
       - run: pip install -r requirements-docs.txt
       - run: mkdocs build --strict
+      # Marketing landing page (+ its assets, e.g. the demo video) occupies
+      # the Pages root; docs build into site/docs/ (mkdocs.yml site_dir) so
+      # the two don't collide.
+      - run: cp -r marketing/. site/
       # Nothing to upload on a PR — the build IS the gate there.
       - uses: actions/upload-pages-artifact@v5
         if: github.event_name != 'pull_request'
