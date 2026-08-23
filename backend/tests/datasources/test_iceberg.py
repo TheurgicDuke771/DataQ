@@ -1,11 +1,4 @@
-"""Iceberg connection adapter + native read runner tests (ADR 0030, #716).
-
-No live catalog: ``pyiceberg.catalog.load_catalog`` and the runner's
-``_load_table`` seam are monkeypatched with fakes whose ``scan()`` returns a real
-``pyarrow`` table built from a canned frame — so GX (run_checks) and the pure
-monitor banding (run_monitors) run for real over the materialised data, while the
-catalog/scan I/O is faked. The adapter is DB-free, so these are pure unit tests.
-"""
+"""Iceberg connection adapter + native read runner tests (ADR 0030, #716)."""
 
 from __future__ import annotations
 
@@ -156,11 +149,10 @@ class _FakeScan:
 
 
 class _FakeTable:
-    """Stands in for a ``pyiceberg`` Table — ``scan()`` returns a real Arrow table
-    (optionally projected to ``selected_fields``) so the runner's materialisation
-    + GX + monitor math run for real. ``snapshot``/``schema_``/``files`` model the
-    metadata surface the #859 fast-paths read; the default (no snapshot) routes
-    monitors down the scan fallback, like a table with no metadata to trust."""
+    """Stands in for a ``pyiceberg`` Table — ``scan()`` returns a real Arrow table (optionally
+    projected to ``selected_fields``) so the runner's materialisation + GX + monitor math run
+    for real.
+    """
 
     def __init__(
         self,
@@ -361,7 +353,8 @@ class _FakeSchema:
 
 class _ProjectingScan:
     """Applies ``selected_fields`` projection + ``limit`` sampling to a real Arrow
-    table, so the helper's projection/limit levers are exercised for real."""
+    table, so the helper's projection/limit levers are exercised for real.
+    """
 
     def __init__(self, arrow: pa.Table, selected: tuple[str, ...], limit: int | None) -> None:
         self._arrow = arrow
@@ -379,7 +372,8 @@ class _ProjectingScan:
 
 class _SchemaTable:
     """A fake ``pyiceberg`` Table exposing ``schema()`` (for the no-scan lister)
-    and a projecting/limiting ``scan()`` (for the sampled read)."""
+    and a projecting/limiting ``scan()`` (for the sampled read).
+    """
 
     def __init__(self, df: pd.DataFrame) -> None:
         self._arrow = pa.Table.from_pandas(df, preserve_index=False)
@@ -464,7 +458,8 @@ def test_run_checks_null_sample_payload_json_serializes(
 ) -> None:
     """Live-crash regression (#751): a null cell in an Arrow-backed frame reaches the
     failing-check sample payload as ``pd.NA``, and result persistence JSON-serializes
-    that payload — the full outcome must round-trip through ``sanitize_json``."""
+    that payload — the full outcome must round-trip through ``sanitize_json``.
+    """
     import json
 
     from backend.app.core.jsonsafe import sanitize_json
@@ -487,7 +482,8 @@ def test_run_checks_timestamp_sample_payload_json_serializes(
 ) -> None:
     """#751-review sibling gap: a failing NON-null value on an Arrow-backed timestamp
     column reaches the sample payload as ``pd.Timestamp`` — that must also survive
-    ``sanitize_json`` → ``json.dumps``, not just the null-sentinel case."""
+    ``sanitize_json`` → ``json.dumps``, not just the null-sentinel case.
+    """
     import json
 
     from backend.app.core.jsonsafe import sanitize_json
@@ -517,7 +513,8 @@ def test_run_checks_timestamp_sample_payload_json_serializes(
 class TestCatalogCredential:
     def test_a_password_in_catalog_uri_is_rejected_outright(self) -> None:
         """`config` is stored and returned in plaintext AND becomes the asset's lineage
-        identity — so refuse the credential at the door rather than redacting forever."""
+        identity — so refuse the credential at the door rather than redacting forever.
+        """
         with pytest.raises(ValidationError) as exc:
             IcebergConfig(
                 catalog_type="sql",
@@ -561,7 +558,8 @@ class TestPropertiesCredential:
     """The connection editor now exposes `properties` as a plain key-value table
     (#1181) — a credential typed into a value there leaks exactly like one in
     `catalog_uri` (stored/returned in plaintext), so the model rejects it at
-    validation time rather than relying on a UI hint."""
+    validation time rather than relying on a UI hint.
+    """
 
     _REST_BASE: ClassVar[dict[str, str]] = {
         "catalog_type": "rest",
@@ -586,20 +584,23 @@ class TestPropertiesCredential:
 
     def test_a_uri_shaped_value_with_an_embedded_password_is_rejected(self) -> None:
         """Even under an innocuous-looking key, a URI-shaped VALUE that carries
-        its own password is the same #754/#826 leak by a different route."""
+        its own password is the same #754/#826 leak by a different route.
+        """
         with pytest.raises(ValidationError) as exc:
             IcebergConfig(**self._REST_BASE, properties={"jdbc.url": "postgresql://u:pw@h/db"})
         assert "jdbc.url" in str(exc.value)
 
     def test_identifier_class_keys_that_merely_contain_a_hint_word_are_allowed(self) -> None:
         """`s3.access-key-id` reads like it might match a name-hint but is an
-        IDENTIFIER, not a secret — explicitly exempt."""
+        IDENTIFIER, not a secret — explicitly exempt.
+        """
         cfg = IcebergConfig(**self._REST_BASE, properties={"s3.access-key-id": "AKIAEXAMPLE"})
         assert cfg.properties["s3.access-key-id"] == "AKIAEXAMPLE"
 
     def test_the_real_minio_properties_from_1181_validate_cleanly(self) -> None:
         """The concrete blocked case from #1181: non-secret catalog/storage
-        properties for a self-hosted MinIO warehouse must all pass."""
+        properties for a self-hosted MinIO warehouse must all pass.
+        """
         cfg = IcebergConfig(
             catalog_type="sql",
             catalog_uri="postgresql://catalog_user@host:5432/catalog",
@@ -624,7 +625,8 @@ class TestEveryReadPathGetsTheCatalogCredential:
     """Regression: `catalog_uri` is credential-less now, so ANY read path that resolves
     only the storage secret would connect to the catalog with no password (#754/#826).
     The runner path was wired first and the profiler/comparison paths were NOT — this
-    pins that every one of them goes through `iceberg_credentials`."""
+    pins that every one of them goes through `iceberg_credentials`.
+    """
 
     def _cfg(self) -> IcebergConfig:
         return IcebergConfig(
@@ -963,8 +965,6 @@ def test_freshness_unknown_column_on_real_schema_is_config_error(
 
 
 def test_supported_monitor_kinds_is_explicit() -> None:
-    # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise
-    # every future registry kind and self-defeat the per-kind gate. Widening
-    # this set is a conscious act, done when the runner actually implements
-    # the new kind.
+    # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise every future registry
+    # kind and self-defeat the per-kind gate.
     assert IcebergCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})

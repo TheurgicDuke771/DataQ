@@ -2,21 +2,7 @@ import { Alert, Card, Empty, Flex, Progress, Space, Tag, Tooltip, Typography } f
 
 import type { Scorecard } from '../../api/assets';
 
-/**
- * The asset DQ scorecard (#889) — per-dimension coverage and score.
- *
- * **Coverage is the point, not the score.** "This asset has no Timeliness checks
- * at all" is what a data lead acts on; a pass-rate never says that. So the
- * uncovered dimensions are given equal billing, visually distinct from a covered
- * dimension that is merely failing — those are different problems with different
- * fixes (write a check vs. fix the data).
- *
- * Three empty states that must never be conflated:
- *  - **no checks at all** → "no coverage", never a green 100;
- *  - **checks exist but none evaluated** (all skip/error) → "no signal", score
- *    hidden rather than shown as 0;
- *  - **checks evaluated** → a real score.
- */
+/** The asset DQ scorecard (#889) — per-dimension coverage and score. */
 
 const DIMENSION_HELP: Record<string, string> = {
   accuracy: 'Does the data match reality / a trusted source?',
@@ -43,10 +29,8 @@ export function ScorecardPanel({ scorecard }: { scorecard?: Scorecard | null }) 
   if (!scorecard) return null;
 
   const { covered, uncovered, unclassified_checks: unclassified } = scorecard;
-  // "No checks at all" is narrower than "nothing covered": an asset whose only
-  // checks are unclassified (custom SQL) has checks, they just aren't bucketed.
-  // Telling that user "no checks are classified yet" is right; telling the
-  // check-less user the same thing is wrong — they have nothing to classify.
+  // "No checks at all" is narrower than "nothing covered": an asset whose only checks are
+  // unclassified (custom SQL) has checks, they just aren't bucketed.
   const noChecksAtAll = covered.length === 0 && unclassified === 0;
 
   return (

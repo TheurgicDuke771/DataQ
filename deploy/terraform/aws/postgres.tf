@@ -1,6 +1,5 @@
-# RDS PostgreSQL — the app's own instance (this account is dedicated to this
-# deployment, so unlike Azure's shared-server pattern there's no sibling
-# harness stack to coordinate with).
+# RDS PostgreSQL — the app's own instance (this account is dedicated to this deployment, so unlike
+# Azure's shared-server pattern there's no sibling harness stack to coordinate with).
 
 resource "aws_db_subnet_group" "app" {
   name       = "dataq-app-db"
@@ -47,9 +46,8 @@ resource "aws_db_instance" "app" {
 
   db_subnet_group_name   = aws_db_subnet_group.app.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  # Not in a NAT'd private subnet (see main.tf's decision note) — kept
-  # unreachable from the internet by NOT setting a public IP, independent of
-  # the subnet's own IGW route.
+  # Not in a NAT'd private subnet (see main.tf's decision note) — kept unreachable from the internet
+  # by NOT setting a public IP, independent of the subnet's own IGW route.
   publicly_accessible = false
 
   # Bring-up posture, mirrors the Azure stack's key_vault_purge_protection

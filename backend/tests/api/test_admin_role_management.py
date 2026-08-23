@@ -1,12 +1,4 @@
-"""In-app role management — ADR 0033 slice #742.
-
-`PATCH /admin/users/{id}/role`, the last-admin guard, and the audit line.
-
-The guard is the part worth the care: it is a read-modify-write on an invariant
-("at least one stored-role admin survives"), which is the shape that is correct
-in every single-threaded test and wrong in production. The concurrency test below
-therefore uses two REAL database sessions rather than simulating the race.
-"""
+"""In-app role management — ADR 0033 slice #742."""
 
 from __future__ import annotations
 
@@ -68,7 +60,8 @@ def test_an_admin_can_set_any_role(client: TestClient, db_session: Any, new_role
 
 def test_a_non_admin_gets_403(client: TestClient, db_session: Any, as_role: Any) -> None:
     """Role management is Admin-only — asserted with a genuine member principal,
-    not the ambient dev-bypass identity (which is itself an admin)."""
+    not the ambient dev-bypass identity (which is itself an admin).
+    """
     _, headers = as_role("member")
     target = _user(db_session, "member")
 
@@ -83,7 +76,8 @@ def test_a_non_admin_gets_403(client: TestClient, db_session: Any, as_role: Any)
 
 def test_an_unknown_role_is_422(client: TestClient, db_session: Any) -> None:
     """The closed vocabulary is in the schema, so the framework rejects it before
-    the service is reached — and the OpenAPI doc tells a client what's allowed."""
+    the service is reached — and the OpenAPI doc tells a client what's allowed.
+    """
     target = _user(db_session, "member")
     resp = client.patch(f"/api/v1/admin/users/{target.id}/role", json={"role": "owner"})
     assert resp.status_code == 422
@@ -91,7 +85,8 @@ def test_an_unknown_role_is_422(client: TestClient, db_session: Any) -> None:
 
 def test_the_service_revalidates_the_role_itself(db_session: Any) -> None:
     """The service is callable directly (and is, by the endpoint's own tests), so
-    it must not depend on a router having filtered its input."""
+    it must not depend on a router having filtered its input.
+    """
     actor = _user(db_session, "admin")
     target = _user(db_session, "member")
     with pytest.raises(admin_service.RoleChangeRejectedError):
@@ -115,7 +110,8 @@ def test_the_response_carries_the_same_shape_as_the_list(
     client: TestClient, db_session: Any
 ) -> None:
     """A response shaped differently from the list it updates is how a table ends
-    up with one row rendering unlike its neighbours."""
+    up with one row rendering unlike its neighbours.
+    """
     target = _user(db_session, "member")
     _user(db_session, "admin")
 
@@ -157,7 +153,8 @@ def test_an_admin_can_be_demoted_when_another_stored_admin_exists(db_session: An
 
 def test_self_demotion_is_allowed_when_another_admin_exists(db_session: Any) -> None:
     """An admin stepping down is legitimate; the guard already covers the case
-    that makes it unsafe, so there is no separate self-demotion prohibition."""
+    that makes it unsafe, so there is no separate self-demotion prohibition.
+    """
     stepping_down = _user(db_session, "admin")
     _user(db_session, "admin")
 
@@ -172,17 +169,7 @@ def test_self_demotion_is_allowed_when_another_admin_exists(db_session: Any) -> 
 def test_an_allowlist_admin_does_not_satisfy_the_guard(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ADR 0033 decision 7's counting rule, and the reason it exists.
-
-    An allowlist-resolved admin is an *effective* admin — `is_workspace_admin`
-    says True — so the naive implementation counts them and permits the
-    demotion. But the env allowlist is a recovery path, not the invariant: the
-    entry can vanish on the next deploy, and the workspace is then left with no
-    admin at all and no in-app way to mint one.
-
-    So: an allowlisted user whose STORED role is `member` must not keep the guard
-    satisfied.
-    """
+    """ADR 0033 decision 7's counting rule, and the reason it exists."""
     only_stored_admin = _user(db_session, "admin")
     effective_only = _user(db_session, "member")
     monkeypatch.setenv("WORKSPACE_ADMIN_EMAILS", effective_only.email)
@@ -200,7 +187,8 @@ def test_an_allowlist_admin_does_not_satisfy_the_guard(
 
 def test_promoting_someone_first_then_demoting_works(db_session: Any) -> None:
     """The documented escape from the guard — and proof it is actually escapable.
-    A guard nobody can satisfy is a lockout, not a safeguard."""
+    A guard nobody can satisfy is a lockout, not a safeguard.
+    """
     only_admin = _user(db_session, "admin")
     successor = _user(db_session, "member")
 
@@ -212,20 +200,7 @@ def test_promoting_someone_first_then_demoting_works(db_session: Any) -> None:
 
 
 def test_concurrent_demotions_cannot_both_succeed(_db_engine: Any) -> None:
-    """The race the `FOR UPDATE` exists for — with two REAL, COMMITTED sessions.
-
-    Two admins demoting each other at the same time: without the row lock both
-    transactions read "there are 2 stored admins", both conclude the guard is
-    satisfied, and both commit — leaving zero admins. Each transaction is
-    individually valid, which is exactly why this cannot be caught by reasoning
-    about either one, and why simulating it with a patched counter would prove
-    only that the code calls the function it calls.
-
-    Deliberately does NOT use the `db_session` fixture: that session runs inside
-    an outer transaction which is rolled back and never commits, so its rows are
-    invisible to a second connection — the race could not even be set up on it.
-    These sessions commit for real, so the rows are cleaned up explicitly.
-    """
+    """The race the `FOR UPDATE` exists for — with two REAL, COMMITTED sessions."""
     from sqlalchemy.orm import Session as SASession
 
     engine = _db_engine
@@ -283,26 +258,7 @@ def test_concurrent_demotions_cannot_both_succeed(_db_engine: Any) -> None:
 
 
 def test_a_stale_in_session_read_cannot_bypass_the_guard(_db_engine: Any) -> None:
-    """The interleaving that reached zero stored admins (found in review).
-
-    The earlier cut captured `previous = target.role` from an UNLOCKED
-    `session.get` and gated the guard on it. `session.get` answers from the
-    identity map, so a row this session loaded earlier is returned **stale, with
-    no round trip** — which makes the race deterministic rather than a timing
-    accident:
-
-        stored admins {X}   (the acting user is deliberately not one)
-        A loads T (member) — e.g. rendering the Members table
-        B commits T→admin                                → admins {X, T}
-        C commits X→member                               → admins {T}
-        A now PATCHes T→viewer. The stale read says T was never an admin, so the
-        guard is skipped entirely → zero stored admins.
-
-    The fix decides from the locked `SELECT … FOR UPDATE`, which always round
-    trips. **Verified to fail against the pre-fix code** — a sequential version
-    of this test passed against both, which is precisely the "a test that cannot
-    express the failing case proves nothing" shape.
-    """
+    """The interleaving that reached zero stored admins (found in review)."""
     from sqlalchemy.orm import Session as SASession
 
     x_id, t_id, actor_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
@@ -313,9 +269,8 @@ def test_a_stale_in_session_read_cannot_bypass_the_guard(_db_engine: Any) -> Non
             [
                 User(id=x_id, aad_object_id=None, email=f"x-{x_id.hex[:8]}@e.io", role="admin"),
                 User(id=t_id, aad_object_id=None, email=f"t-{t_id.hex[:8]}@e.io", role="member"),
-                # NOT an admin: the service gates on the actor's role nowhere (the
-                # endpoint does), and making them one would leave the workspace a
-                # spare admin — the guard would never be the thing under test.
+                # NOT an admin: the service gates on the actor's role nowhere (the endpoint does),
+                # and making them one would leave the workspace a spare admin.
                 User(
                     id=actor_id,
                     aad_object_id=None,
@@ -382,7 +337,8 @@ def test_setting_the_dev_bypass_identity_to_its_current_role_is_a_no_op(
     client: TestClient, db_session: Any
 ) -> None:
     """The refusal must not contradict the idempotency rule: re-submitting the
-    role it already has is a no-op, not a 409."""
+    role it already has is a no-op, not a 409.
+    """
     client.get("/api/v1/me")
     bypass = db_session.query(User).filter(User.aad_object_id == DEV_BYPASS_AAD_OID).one()
 
@@ -399,7 +355,8 @@ def test_the_dev_bypass_identity_cannot_be_demoted(client: TestClient, db_sessio
     """It is force-written to `admin` on every request (#741), so accepting a
     demotion would 200 and silently revert on the next one — and *succeeding*
     would lock the only operator out of a stack that has no other door. Refused
-    with a reason instead."""
+    with a reason instead.
+    """
     client.get("/api/v1/me")  # materialize the bypass row
     bypass = db_session.query(User).filter(User.aad_object_id == DEV_BYPASS_AAD_OID).one()
     _user(db_session, "admin")  # so the last-admin guard is not what refuses
@@ -415,7 +372,8 @@ def test_the_dev_bypass_identity_cannot_be_demoted(client: TestClient, db_sessio
 def test_the_dev_bypass_identity_is_refused_by_email_too(db_session: Any) -> None:
     """Matched on EITHER marker. A row carrying the bypass email but no object id
     is what an OTP-mode stack leaves behind (ADR 0032 linking), so keying only on
-    `aad_object_id` would miss it."""
+    `aad_object_id` would miss it.
+    """
     actor = _user(db_session, "admin")
     lookalike = User(id=uuid.uuid4(), aad_object_id=None, email=DEV_BYPASS_EMAIL, role="admin")
     db_session.add(lookalike)
@@ -432,7 +390,8 @@ def test_a_role_change_emits_an_audit_line(db_session: Any) -> None:
     """Until ADR 0020's durable change log (#310) exists, this line IS the
     guarantee that a role change is never silent — so its CONTENTS are asserted
     field by field, not merely its presence. An audit line missing the actor is
-    not an audit line."""
+    not an audit line.
+    """
     actor = _user(db_session, "admin")
     target = _user(db_session, "viewer")
 
@@ -465,7 +424,8 @@ def test_no_audit_line_when_the_guard_refuses(
     db_session: Any, caplog: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The line is emitted after the commit precisely so it can never claim a
-    change that did not happen."""
+    change that did not happen.
+    """
     import logging
 
     monkeypatch.setenv("WORKSPACE_ADMIN_EMAILS", "")
@@ -484,11 +444,11 @@ def test_no_audit_line_when_the_guard_refuses(
 def test_the_users_list_exposes_stored_role_and_allowlist_flag(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The list must show the STORED role (what the editor writes) plus whether
-    the allowlist independently makes them an admin. Showing the *effective* role
-    alone would render a break-glass admin as `admin` and then appear to fail
-    when demoted — misrepresenting exactly the row an admin is most likely to
-    act on."""
+    """The list must show the STORED role (what the editor writes) plus whether the allowlist
+    independently makes them an admin. Showing the *effective* role alone would render a break-
+    glass admin as `admin` and then appear to fail when demoted — misrepresenting exactly the
+    row an admin is most likely to act on.
+    """
     break_glass = _user(db_session, "member")
     monkeypatch.setenv("WORKSPACE_ADMIN_EMAILS", break_glass.email)
     get_settings.cache_clear()

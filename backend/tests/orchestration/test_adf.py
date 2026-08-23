@@ -1,9 +1,4 @@
-"""ADF connection adapter tests — config validation + the HTTP test() probe.
-
-No live Azure: ``httpx.post`` / ``httpx.get`` are monkeypatched so the
-token-acquisition + factory-GET flow is exercised against canned responses. The
-adapter is GX-free and DB-free, so these are pure unit tests (no db_session).
-"""
+"""ADF connection adapter tests — config validation + the HTTP test() probe."""
 
 from typing import Any
 

@@ -128,9 +128,10 @@ const pipelineRun: PipelineRun = {
   created_at: '2026-06-11T00:00:00Z',
 };
 
-/** `listPipelineRuns` now resolves a page (`{ items, total }`, #1108) — this
- *  wraps a bare fixture array as a full (untruncated) page, the shape every
- *  test below needs unless it's exercising the truncation note itself. */
+/**
+ * `listPipelineRuns` now resolves a page (`{ items, total }`, #1108) — this wraps a bare fixture
+ * array as a full (untruncated) page.
+ */
 function pipelineRunsPage(items: PipelineRun[], total = items.length): PipelineRunListPage {
   return { items, total };
 }
@@ -317,9 +318,8 @@ describe('Results page', () => {
   });
 
   it('shows an honest truncation note when the monitored population exceeds the fetched page (#1108)', async () => {
-    // The tab fetches one capped page; a `total` bigger than that page's length
-    // means the table is silently NOT everything — #1108's actual defect on
-    // `/pipeline_runs` (and the identical gap on `/assets` before #925).
+    // The tab fetches one capped page; a `total` bigger than that page's length means the table is
+    // silently NOT everything.
     mockListRuns.mockResolvedValue(runsPage([]));
     mockListSuites.mockResolvedValue([]);
     mockListConnections.mockResolvedValue([]);
@@ -332,18 +332,14 @@ describe('Results page', () => {
     await waitFor(() =>
       expect(screen.getByText('Loaded the 1 most recent of 211 pipeline runs')).toBeInTheDocument(),
     );
-    // The advice must not send the user to filters that cannot possibly help:
-    // both selects are client-side over the page already fetched, so no choice
-    // reaches the 210 runs that were never loaded.
+    // The advice must not send the user to filters that cannot possibly help: both selects are
+    // client-side over the page already fetched.
     expect(screen.queryByText(/Narrow the provider or date filter/)).not.toBeInTheDocument();
     expect(screen.getByText(/filters below only narrow what's already loaded/)).toBeInTheDocument();
   });
 
   it('counts the FETCH, not the filtered table, in the pipeline truncation note (#1108)', async () => {
-    // The note sits above a client-side-filtered table. If it counted the
-    // filtered rows it would read "Loaded the 0 most recent of 211" over an
-    // empty table — or vanish — the moment a filter excluded everything. It
-    // describes the fetch, so it stays put and stays true.
+    // The note sits above a client-side-filtered table.
     mockListRuns.mockResolvedValue(runsPage([]));
     mockListSuites.mockResolvedValue([]);
     mockListConnections.mockResolvedValue([]);
@@ -365,9 +361,8 @@ describe('Results page', () => {
   });
 
   it('discloses truncation on the Runs tab too, not only the Pipeline tab (#1108)', async () => {
-    // `/runs` gained `X-Total-Count` in #1108, but the Runs tab — the PRIMARY
-    // runs surface — ignored it, so a 500-run workspace rendered its capped
-    // 200-row fetch as if complete. That is the exact silence #1108 names.
+    // `/runs` gained `X-Total-Count` in #1108, but the Runs tab — the PRIMARY runs surface —
+    // ignored it, so a 500-run workspace rendered its capped 200-row fetch as if complete.
     mockListRuns.mockResolvedValue(runsPage([succeededRun], 500));
     mockListSuites.mockResolvedValue([]);
     mockListConnections.mockResolvedValue([]);
@@ -451,24 +446,18 @@ describe('Results page', () => {
     await user.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
     await waitFor(() => expect(screen.getByText('nightly_orders_retry')).toBeInTheDocument());
 
-    // The null-reason row (pipelineRun) shows the usual em-dash placeholder in
-    // its Failure-reason cell — scoped via antd's own ellipsis-column class
-    // (`ant-table-cell-ellipsis`, unique to this column) since the row's "DQ
-    // run" cell also renders a '—' placeholder.
+    // The null-reason row (pipelineRun) shows the usual em-dash placeholder in its Failure-reason
+    // cell — scoped via antd's own ellipsis-column class (`ant-table-cell-ellipsis`, unique to
+    // this column) since the row's "DQ run" cell also renders a '—' placeholder.
     const nullRow = screen.getByText('daily_orders_load').closest('tr') as HTMLElement;
     const nullReasonCell = nullRow.querySelector('td.ant-table-cell-ellipsis');
     expect(nullReasonCell).toHaveTextContent('—');
 
-    // The long reason is present in the DOM as a whole string — the ellipsis
-    // is CSS-only (text-overflow), antd never clips the actual text node —
-    // wrapped in the tooltip's trigger element.
+    // The long reason is present in the DOM as a whole string — the ellipsis is CSS-only (text-
+    // overflow), antd never clips the actual text node — wrapped in the tooltip's trigger element.
     const trigger = screen.getByText(longReason);
 
-    // The bound has to live on the rendered element, not just on the column
-    // prop: under `scroll={{ x: 'max-content' }}` the column `width` is inert
-    // and this column rendered ~1900px wide in production (#1282). jsdom does
-    // no layout, so this can only assert that the bounding style is APPLIED —
-    // that it WORKS is measured in `e2e/results.spec.ts`.
+    // The bound has to live on the rendered element.
     expect(trigger).toHaveStyle({
       maxWidth: '260px',
       overflow: 'hidden',
@@ -511,9 +500,8 @@ describe('Results page', () => {
   });
 
   it('fetches runs once and shares them across both tabs (#349)', async () => {
-    // A run stamped with the pipeline run's marker so the Pipeline runs tab
-    // actually exercises the shared data (the "DQ run" column), not just an
-    // empty join.
+    // A run stamped with the pipeline run's marker so the Pipeline runs tab actually exercises the
+    // shared data (the "DQ run" column), not just an empty join.
     const triggeredRun: Run = {
       ...failedRun,
       id: 'rdq',
@@ -532,15 +520,13 @@ describe('Results page', () => {
     await waitFor(() => expect(screen.getAllByText('Orders quality').length).toBe(2));
     expect(mockListRuns).toHaveBeenCalledTimes(1);
 
-    // Switching to the Pipeline runs tab must reuse the same runs data rather
-    // than issuing a second `listRuns` call (that's the whole point of #349 —
-    // antd's lazy pane mount used to make this a fresh fetch).
+    // Switching to the Pipeline runs tab must reuse the same runs data rather than issuing a
+    // second `listRuns` call (that's the whole point of #349 — antd's lazy pane mount used to make
+    // this a fresh fetch).
     await user.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
     await waitFor(() => expect(screen.getByText('daily_orders_load')).toBeInTheDocument());
-    // The correlated DQ run tag proves the shared data actually reached this
-    // tab, not just that no second fetch happened. (The Runs tab, still
-    // mounted-but-hidden behind this one, also renders a 'failed' tag for the
-    // same run — scope to this row to disambiguate.)
+    // The correlated DQ run tag proves the shared data actually reached this tab, not just that no
+    // second fetch happened.
     const row = screen.getByText('daily_orders_load').closest('tr') as HTMLElement;
     expect(within(row).getByText('failed')).toBeInTheDocument();
 
@@ -556,17 +542,12 @@ describe('Results page', () => {
     renderResults();
     const user = userEvent.setup();
 
-    // Wait for the Runs tab to render past its loading Spin (the filter bar,
-    // including the Date Select, only mounts once the shared runs fetch
-    // resolves) before opening the Date filter.
+    // Wait for the Runs tab to render past its loading Spin (the filter bar, including the Date
+    // Select, only mounts once the shared runs fetch resolves) before opening the Date filter.
     await waitFor(async () => expect((await screen.findAllByRole('combobox')).length).toBe(5));
 
-    // Open the Date filter and confirm it offers exactly Results' own 'All
-    // time' entry plus every shared WINDOW_PRESETS label — so a change to the
-    // shared module (or a re-introduced local copy that drifts from it) shows
-    // up here. Match against the dropdown option content, not `title` — the
-    // currently-selected value ('All time') also carries a `title` on the
-    // closed Select, which would otherwise match twice.
+    // Open the Date filter and confirm it offers exactly Results' own 'All time' entry plus every
+    // shared WINDOW_PRESETS label.
     await user.click((await screen.findAllByRole('combobox'))[FILTER.date]);
     const optionSelector = '.ant-select-item-option-content';
     expect(await screen.findByText('All time', { selector: optionSelector })).toBeInTheDocument();
@@ -578,9 +559,8 @@ describe('Results page', () => {
   });
 
   it('shows PageError with a working retry when the initial runs load fails (#1114)', async () => {
-    // No prior successful load exists yet, so there is no last-good snapshot
-    // to fall back to — this must stay a full-page failure, not a blank/empty
-    // table pretending everything's fine.
+    // No prior successful load exists yet, so there is no last-good snapshot to fall back to — this
+    // must stay a full-page failure, not a blank/empty table pretending everything's fine.
     mockListRuns.mockRejectedValueOnce(new Error('boom'));
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
@@ -602,13 +582,8 @@ describe('Results page', () => {
   });
 
   it('keeps the last-good runs table + shows an inline warning when a background poll fails (#1114)', async () => {
-    // Regression coverage for the #1114 review finding: lifting the runs fetch
-    // to the parent (#349) means PipelineRunsTab's 30s poll — armed once that
-    // tab has been visited, since antd keeps panes mounted — also reloads the
-    // SAME shared runs data RunsTab reads. Before this fix, a poll failure
-    // flipped the shared state to 'error' and RunsTab's unconditional
-    // `if (status === 'error') return <PageError/>` blanked the whole Runs
-    // table+filters on a transient background hiccup that used to be cosmetic.
+    // Regression coverage for the #1114 review finding: lifting the runs fetch to the parent (#349)
+    // means PipelineRunsTab's 30s poll — armed once that tab has been visited.
     vi.useFakeTimers();
 
     mockListRuns.mockResolvedValueOnce(runsPage([succeededRun]));
@@ -620,12 +595,8 @@ describe('Results page', () => {
     await vi.advanceTimersByTimeAsync(0);
     await vi.waitFor(() => expect(screen.getByText('Orders quality')).toBeInTheDocument());
 
-    // Visit the Pipeline tab (arms its poll, which also reloads the shared
-    // runs data — see the effect in PipelineRunsTab), then return to Runs.
-    // fireEvent, not userEvent: userEvent's async helpers use real
-    // setTimeout-based delays internally, which hang forever under fake
-    // timers; fireEvent dispatches synchronously (same pattern as
-    // Settings.test.tsx's antd-tab clicks).
+    // Visit the Pipeline tab (arms its poll, which also reloads the shared runs data — see the
+    // effect in PipelineRunsTab), then return to Runs. fireEvent.
     fireEvent.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
     await vi.advanceTimersByTimeAsync(0);
     fireEvent.click(screen.getByRole('tab', { name: 'Runs' }));

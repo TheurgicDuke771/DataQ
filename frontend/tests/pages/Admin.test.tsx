@@ -21,9 +21,8 @@ vi.mock('../../src/api/admin', () => ({
   listAdminUsers: vi.fn(),
   listAdminAccess: vi.fn(),
   setAdminUserRole: vi.fn(),
-  // A VALUE export, not a function — the role editor iterates it to build its
-  // options, so omitting it from the mock takes the whole page's render down
-  // (which is exactly what it did).
+  // A VALUE export, not a function — the role editor iterates it to build its options, so omitting
+  // it from the mock takes the whole page's render down (which is exactly what it did).
   WORKSPACE_ROLES: ['admin', 'member', 'viewer'],
 }));
 

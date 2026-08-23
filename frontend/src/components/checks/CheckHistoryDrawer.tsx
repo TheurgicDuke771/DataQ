@@ -7,12 +7,8 @@ import { ConfigJson, HistoryDrawer } from '../HistoryDrawer';
 import { EXPECTATION_BY_TYPE } from './expectationCatalog';
 
 /**
- * Check version history (#280) — "see previous config before overwriting" —
- * plus restore (#283), on the shared `HistoryDrawer` shell (also used
- * read-only by connections, #654). Restore re-validates the snapshot against
- * TODAY's rules server-side and can 422 (e.g. a pre-#568 snapshot with
- * reversed thresholds); the confirm stays open on failure, mirroring the
- * suite delete/re-baseline confirm pattern.
+ * Check version history (#280) — "see previous config before overwriting" — plus restore (#283),
+ * on the shared `HistoryDrawer` shell (also used read-only by connections, #654).
  */
 export function CheckHistoryDrawer({
   open,
@@ -26,13 +22,15 @@ export function CheckHistoryDrawer({
   suiteId: string;
   /** The check whose history to show; null while none is selected. */
   check: { id: string; name: string } | null;
-  /** Whether the caller may restore a version — mirrors the editor's edit gate
-   *  (`canRunSuite`); a viewer sees history exactly as read-only as v1 did.
-   *  Defaults to false so an existing render site stays view-only. */
+  /**
+   * Whether the caller may restore a version — mirrors the editor's edit gate (`canRunSuite`); a
+   * viewer sees history exactly as read-only as v1 did.
+   */
   canRestore?: boolean;
-  /** Called after a successful restore so the editor reloads the check (the
-   *  live config just changed underneath it). Required only when `canRestore`
-   *  is true — a view-only drawer never fires it. */
+  /**
+   * Called after a successful restore so the editor reloads the check (the live config just
+   * changed underneath it).
+   */
   onRestored?: () => void;
   onClose: () => void;
 }) {
@@ -52,9 +50,7 @@ export function CheckHistoryDrawer({
       onRestored?.();
     } catch (err) {
       message.error(`Restore failed: ${errorMessage(err)}`);
-      // Re-throw so antd's Popconfirm ActionButton keeps the confirm OPEN on
-      // failure — resolving here would close it exactly like a success (the
-      // same #204 drift useConfirmDelete's `modal.confirm` guards against).
+      // Re-throw so antd's Popconfirm ActionButton keeps the confirm OPEN on failure.
       throw err;
     } finally {
       setRestoringVersion(null);

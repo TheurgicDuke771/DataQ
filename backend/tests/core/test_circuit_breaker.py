@@ -1,11 +1,4 @@
-"""The shared consecutive-failure breaker (#1135).
-
-`core.rate_limit` and `services.otp_service` both guard a Redis counter with this
-class. Its *behaviour* is asserted through each store in their own suites (that is
-where "we stopped dialling" is observable); what this file pins is the mechanism
-itself — the state machine, and the property that two instances cannot influence
-each other, which is the whole reason the extraction was allowed to happen.
-"""
+"""The shared consecutive-failure breaker (#1135)."""
 
 from __future__ import annotations
 
@@ -24,7 +17,8 @@ from backend.app.core.logging import configure_logging
 
 class _Clock:
     """A hand-cranked clock — the open window is a duration, and a test that had to
-    sleep through it would be slow AND flaky."""
+    sleep through it would be slow AND flaky.
+    """
 
     def __init__(self) -> None:
         self.t = 1000.0
@@ -39,7 +33,8 @@ def _breaker(clock: _Clock, **kw: object) -> CircuitBreaker:
 
 def test_it_trips_only_after_the_configured_run_of_consecutive_failures() -> None:
     """One unlucky call is not a brownout. Tripping on the first blip would hand the
-    guarded control to a single dropped packet."""
+    guarded control to a single dropped packet.
+    """
     clock = _Clock()
     breaker = _breaker(clock, trip_after=3)
 
@@ -53,7 +48,8 @@ def test_it_trips_only_after_the_configured_run_of_consecutive_failures() -> Non
 
 def test_a_success_resets_the_run_so_scattered_blips_never_trip_it() -> None:
     """The counter is CONSECUTIVE failures — a dependency that fails one call in
-    three is annoying, not degraded."""
+    three is annoying, not degraded.
+    """
     clock = _Clock()
     breaker = _breaker(clock, trip_after=3)
 
@@ -67,7 +63,8 @@ def test_a_success_resets_the_run_so_scattered_blips_never_trip_it() -> None:
 
 def test_the_window_closes_on_its_own_and_a_probe_success_resets_the_count() -> None:
     """Open must be a short, self-clearing state: a breaker that stays open is the
-    guarded control silently switched off."""
+    guarded control silently switched off.
+    """
     clock = _Clock()
     breaker = _breaker(clock, trip_after=2, open_seconds=5.0)
 
@@ -97,11 +94,11 @@ def test_a_failed_probe_re_opens_the_window_rather_than_hammering() -> None:
 
 
 def test_a_straggling_success_cannot_close_an_open_breaker() -> None:
-    """A degraded dependency serves a MIX of slow successes and failures, so a call
-    that passed the gate before the trip can resolve just after it. If that straggler
-    reset the state it would retroactively close a breaker other callers had
-    legitimately opened, and the breaker would flap under exactly the traffic it
-    exists to handle."""
+    """A degraded dependency serves a MIX of slow successes and failures, so a call that passed the
+    gate before the trip can resolve just after it. If that straggler reset the state it would
+    retroactively close a breaker other callers had legitimately opened, and the breaker would
+    flap under exactly the traffic it exists to handle.
+    """
     clock = _Clock()
     breaker = _breaker(clock, trip_after=2, open_seconds=5.0)
     breaker.record_failure()
@@ -113,13 +110,7 @@ def test_a_straggling_success_cannot_close_an_open_breaker() -> None:
 
 
 def test_two_breakers_share_no_state() -> None:
-    """The one property that makes ONE implementation safe for two subsystems.
-
-    `core.rate_limit` and the OTP counter store hit the same Redis for different
-    jobs. If they shared breaker state, an OTP brownout would switch off API rate
-    limiting — one subsystem's degradation disabling an unrelated control, which is
-    precisely what a breaker is supposed to prevent.
-    """
+    """The one property that makes ONE implementation safe for two subsystems."""
     clock = _Clock()
     a, b = _breaker(clock, trip_after=2), _breaker(clock, trip_after=2)
 
@@ -147,7 +138,8 @@ def test_reset_clears_both_halves_of_the_state() -> None:
 def test_the_log_events_are_named_after_the_owning_store() -> None:
     """Two breakers now emit these events, so an operator has to be able to tell
     which one moved — and ADR 0035 documents `rate_limit_store_breaker_open` by
-    name, so the prefix is a contract, not a cosmetic."""
+    name, so the prefix is a contract, not a cosmetic.
+    """
     configure_logging()
     buffer = io.StringIO()
     handler = logging.getLogger().handlers[0]
@@ -169,6 +161,7 @@ def test_the_log_events_are_named_after_the_owning_store() -> None:
 
 def test_the_shared_defaults_are_the_tuning_both_stores_inherit() -> None:
     """Pinned so a change to the shared tuning is a deliberate edit here, not a
-    silent retune of two subsystems at once."""
+    silent retune of two subsystems at once.
+    """
     assert DEFAULT_TRIP_AFTER == 5
     assert DEFAULT_OPEN_SECONDS == 5.0

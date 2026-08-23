@@ -58,10 +58,7 @@ const NotFound = lazy(() => import('./pages/NotFound').then((m) => ({ default: m
 
 const { Header, Sider, Content } = Layout;
 
-// Primary nav (top of the sider). Assets lead as the first-class browse lens
-// (ADR 0034 navigation inversion, #773) — right after Dashboard, above Suites;
-// suites stay available but secondary (the execution grain reached through the
-// asset). Pure presentation: the ADR 0027 authz semantics are untouched.
+// Primary nav (top of the sider).
 const NAV_ITEMS = [
   { key: '/dashboard', icon: <DashboardOutlined />, label: <Link to="/dashboard">Dashboard</Link> },
   { key: '/assets', icon: <DatabaseOutlined />, label: <Link to="/assets">Assets</Link> },
@@ -70,10 +67,7 @@ const NAV_ITEMS = [
   { key: '/results', icon: <BarChartOutlined />, label: <Link to="/results">Results</Link> },
   { key: '/profile', icon: <UserOutlined />, label: <Link to="/profile">Profile</Link> },
 ];
-// Footer nav (pinned to the bottom). Admin + Settings show only to workspace
-// admins (server-driven via /me) — the routes stay registered either way, so a
-// non-admin who deep-links hits the page's Forbidden state; this gate is for nav
-// convenience, not the security boundary.
+// Footer nav (pinned to the bottom).
 const ADMIN_FOOTER_ITEMS = [
   { key: '/admin', icon: <SafetyOutlined />, label: <Link to="/admin">Admin</Link> },
   { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">Settings</Link> },
@@ -96,19 +90,13 @@ const SELECTABLE_KEYS = [...NAV_ITEMS, ...ADMIN_FOOTER_ITEMS].map((i) => i.key);
 export function App() {
   const location = useLocation();
   const isAdmin = useIsWorkspaceAdmin();
-  // Narrow-viewport nav (#617, #801): below the `lg` breakpoint the Sider
-  // collapses to zero width and the nav moves into an overlay Drawer that floats
-  // *above* the content (a scrim behind it) instead of squeezing the page — so
-  // the content keeps its full width whether the nav is open or shut. AntD's
-  // built-in zero-width trigger floats over every page's heading, so it's
-  // disabled (`trigger={null}`) and replaced by a ☰ toggle in the Header, which
-  // has reserved space. Desktop is unchanged: the Sider *is* the nav.
+  // Narrow-viewport nav (#617, #801): below the `lg` breakpoint the Sider collapses to zero width
+  // and the nav moves into an overlay Drawer that floats *above* the content (a scrim behind it)
   const [narrow, setNarrow] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const footerItems = isAdmin ? [...ADMIN_FOOTER_ITEMS, DOC_ITEM] : [DOC_ITEM];
-  // Highlight the nav item whose path matches the current location — exact, or a
-  // sub-path at a segment boundary (so `/suites` matches `/suites/123` but not a
-  // sibling like `/suites-archive`). Plain startsWith would mis-highlight those.
+  // Highlight the nav item whose path matches the current location — exact, or a sub-path at a
+  // segment boundary (so `/suites` matches `/suites/123` but not a sibling like `/suites-archive`).
   const selectedKeys = SELECTABLE_KEYS.filter(
     (k) => location.pathname === k || location.pathname.startsWith(`${k}/`),
   );
@@ -137,9 +125,8 @@ export function App() {
               type="text"
               icon={<MenuOutlined />}
               aria-label="Toggle navigation"
-              // Only claim to control the drawer while it exists: AntD doesn't
-              // mount the panel (`#app-nav-drawer`) until first open, so an
-              // always-on `aria-controls` would dangle at nothing while closed.
+              // Only claim to control the drawer while it exists: AntD doesn't mount the panel
+              // (`#app-nav-drawer`) until first open.
               aria-controls={drawerOpen ? 'app-nav-drawer' : undefined}
               aria-expanded={drawerOpen}
               onClick={() => setDrawerOpen((o) => !o)}
@@ -291,14 +278,8 @@ export function App() {
 const noop = () => {};
 
 /**
- * The sider's nav content — the primary nav up top and the footer group (Admin ·
- * Settings · Documentation) pinned to the bottom by the flex layout, separated by
- * a hairline. The primary nav takes the slack and scrolls if it ever exceeds the
- * height, so the footer stays put.
- *
- * Shared by the desktop `<Sider>` and the narrow-viewport overlay `<Drawer>`
- * (#801). `onNavigate` fires after any nav click so the overlay can close itself;
- * on desktop it's a no-op.
+ * The sider's nav content — the primary nav up top and the footer group (Admin · Settings ·
+ * Documentation) pinned to the bottom by the flex layout, separated by a hairline.
  */
 function SideNav({
   selectedKeys,
@@ -337,11 +318,8 @@ function initialsOf(name: string): string {
 }
 
 /**
- * A very subtle brand watermark behind every page: the yin-yang mark bled off
- * the content area's bottom-right corner at low opacity. Decorative only
- * (`aria-hidden`, no pointer events). The mark is clipped by *this* layer
- * (`inset:0; overflow:hidden`), not by the Content itself — so real page
- * content can still overflow/scroll normally; only the watermark is clipped.
+ * A very subtle brand watermark behind every page: the yin-yang mark bled off the content area's
+ * bottom-right corner at low opacity.
  */
 function BrandWatermark() {
   return (
@@ -362,10 +340,8 @@ function BrandWatermark() {
 }
 
 /**
- * Header identity + account menu: an avatar/name button that opens a dropdown
- * with the signed-in identity and a Sign out action. Under dev-bypass there is
- * no real session, so Sign out is shown disabled (the affordance is visible, but
- * honest about there being nothing to end) rather than hidden entirely.
+ * Header identity + account menu: an avatar/name button that opens a dropdown with the signed-in
+ * identity and a Sign out action.
  */
 function UserMenu() {
   const user = useCurrentUser();
@@ -375,9 +351,8 @@ function UserMenu() {
   if (!user) return null;
 
   const onLogout = () => {
-    // OTP sign-out is a POST that revokes the session server-side and clears the
-    // cookie — not a redirect. The SPA cannot clear an HttpOnly cookie itself, so
-    // "sign out" that only forgot local state would leave a live session behind.
+    // OTP sign-out is a POST that revokes the session server-side and clears the cookie — not a
+    // redirect.
     if (authMode === 'otp') {
       signOutOtpSession();
       return;

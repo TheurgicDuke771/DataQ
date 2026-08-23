@@ -1,11 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-// TriggersPanel on the seeded suite's detail page: bind an orchestrator
-// pipeline (run-on-success, CLAUDE.md §4 — the one place a pipeline id meets a
-// suite), toggle it, and remove it. The binding is provider-agnostic
-// (`trigger_bindings`); the seeded ADF/Airflow connections make the providers
-// real, and a unique pipeline id keeps the composite key (provider, id, env)
-// collision-free across runs.
+// TriggersPanel on the seeded suite's detail page: bind an orchestrator pipeline (run-on-success,
+// CLAUDE.md §4 — the one place a pipeline id meets a suite), toggle it, and remove it.
 test.describe('Suite triggers panel', () => {
   const card = (page: import('@playwright/test').Page) =>
     page.locator('.ant-card').filter({ hasText: 'orchestrator pipeline' });
@@ -21,10 +17,9 @@ test.describe('Suite triggers panel', () => {
     const panel = card(page);
     const pipelineId = `e2e_pl_${Date.now()}`;
 
-    // Provider + Env are antd Selects: focus the combobox, wait for the
-    // dropdown, then Enter accepts the auto-highlighted FIRST option (an
-    // ArrowDown first would move to the second — rc-select pre-highlights
-    // option 0 when nothing is selected). First options: 'adf' / 'dev'.
+    // Provider + Env are antd Selects: focus the combobox, wait for the dropdown, then Enter
+    // accepts the auto-highlighted FIRST option (an ArrowDown first would move to the second — rc-
+    // select pre-highlights option 0 when nothing is selected).
     const provider = panel.getByLabel('Provider');
     await provider.click();
     await expect(page.locator('.ant-select-dropdown').last()).toBeVisible();

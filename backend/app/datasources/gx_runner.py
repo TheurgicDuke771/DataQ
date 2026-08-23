@@ -1,17 +1,4 @@
-"""Shared Great Expectations machinery for the datasource `CheckRunner`s.
-
-The GX-version-specific translation — snake_case `expectation_type` → GX class,
-and GX `ExpectationSuiteValidationResult` → our GX-agnostic `SuiteOutcome` DTOs —
-is identical across datasources. It lives here so every runner (Snowflake table,
-flat-file DataFrame, Unity Catalog later) reuses one implementation and the GX v1
-API is pinned in a single place (CLAUDE.md §5 — GX has drifted across releases).
-
-Each runner only differs in how it builds the GX *batch* (a Snowflake table
-asset vs an in-memory pandas asset); once it has a `batch_definition` it calls
-`run_expectations`, which registers the suite + validation definition and maps
-the result. Tests exercise these pure parts with constructed GX results and a
-canned DataFrame — no live datasource required.
-"""
+"""Shared GX machinery for the datasource `CheckRunner`s."""
 
 from __future__ import annotations
 
@@ -33,11 +20,8 @@ from backend.app.services.column_classification import value_signal_summary
 
 log = get_logger(__name__)
 
-# GX result keys that describe failing rows — copied into CheckOutcome.sample_failures.
-# These may contain real data, so they only ever reach logs / the read API via the
-# redactor. `unexpected_index_list` is the per-row list carrying the configured
-# identifier column(s) + the failing value — populated only when `index_columns` is
-# requested (#415); it makes a failing row *locatable*.
+# Failing-row keys copied into CheckOutcome.sample_failures. May contain real
+# data — they reach logs / the read API only via the redactor (#415).
 _SAMPLE_KEYS = (
     "partial_unexpected_list",
     "unexpected_count",
@@ -45,30 +29,15 @@ _SAMPLE_KEYS = (
     "unexpected_index_list",
 )
 
-# Upper bound on how many `unexpected_index_list` rows `_value_signal_summary_by_column`
-# examines (#1230 review) — the untruncated list can carry tens or hundreds of
-# thousands of rows on a badly-failing pandas-backed check, and each cell costs a
-# handful of regex matches plus a Shannon-entropy pass (`column_classification`'s
-# email/UUID/hash/encoded checks). Unbounded, that is O(rows x columns) of CPU
-# synchronously inside the Celery run path — the same "thousands of failing rows"
-# case #1196 itself calls out, just moved from an O(1) truncation to O(rows) work.
-# 5,000 rows is already a vastly better ratio estimate than the 20-row window this
-# fix exists to correct, while keeping worst-case cost bounded and predictable
-# regardless of how large the real failing population is.
+# Cap on rows `_value_signal_summary_by_column` examines (#1230) — unbounded,
+# the per-cell regex/entropy work is O(rows x columns) inside the Celery run path.
 _VALUE_SIGNAL_SUMMARY_ROW_CAP = 5_000
 
-# GX injects internal bookkeeping keys into expectation_config.kwargs at run time
-# (e.g. batch_id); strip them so expected_value persists only the check's own
-# parameters.
+# GX injects internal bookkeeping keys into kwargs at run time; strip them.
 _GX_INTERNAL_KWARGS = frozenset({"batch_id"})
 
-# The submission-position marker stamped into each expectation's `meta` so a result
-# can be re-keyed to the `CheckSpec` it came from — GX 1.17 `graph_validate` returns
-# results in a DIFFERENT order once any expectation errors (errored ones are appended
-# first, then the rest in submission order), so the run-service's positional zip onto
-# `checks` would otherwise cross-wire result rows to the wrong `check_id` (#767). GX
-# carries `expectation_config.meta` through verbatim to every result, so it survives
-# the reorder; it lives in `meta` (not `kwargs`), so it never leaks into `expected_value`.
+# Submission-position marker stamped into each expectation's `meta` (#767): GX 1.17 reorders results
+# once any expectation errors, cross-wiring the positional zip.
 _INDEX_META_KEY = "dataq_index"
 
 
@@ -77,20 +46,13 @@ class UnknownExpectationError(ValueError):
 
 
 def _expectation_class_name(expectation_type: str) -> str:
-    """snake_case GX type → PascalCase class name.
-
-    ``expect_column_values_to_not_be_null`` → ``ExpectColumnValuesToNotBeNull``.
-    """
+    """snake_case GX type → PascalCase class name."""
     return "".join(part.title() for part in expectation_type.split("_"))
 
 
 def _to_gx_expectation(spec: CheckSpec, index: int | None = None) -> Any:
-    """Build the concrete GX expectation for `spec`.
-
-    When ``index`` is given, stamp the check's submission position into the
-    expectation's ``meta`` (``dataq_index``) so `to_suite_outcome` can re-key the
-    result back to its spec regardless of the order GX returns results in (#767).
-    Merged with any caller-supplied ``meta`` in ``kwargs``.
+    """Build the concrete GX expectation for `spec`, stamping ``dataq_index``
+    into ``meta`` when ``index`` is given (#767).
     """
     class_name = _expectation_class_name(spec.expectation_type)
     expectation_cls = getattr(gxe, class_name, None)
@@ -113,40 +75,16 @@ def _to_gx_expectation(spec: CheckSpec, index: int | None = None) -> Any:
 
 
 def _is_identifier_index_list(value: Any) -> bool:
-    """A useful `unexpected_index_list` is a non-empty list of **row dicts** (the
-    identifier columns + failing value, from `unexpected_index_column_names`). A plain
-    COMPLETE run instead returns bare positional indices (``[1, 4, …]``) — not a
-    locator, so we drop those to keep the sample clean."""
+    """True for a non-empty list of row dicts; a plain COMPLETE run returns bare
+    positional indices, which are not locators and are dropped.
+    """
     return (
         isinstance(value, list) and len(value) > 0 and all(isinstance(row, dict) for row in value)
     )
 
 
 def _value_signal_summary_by_column(rows: list[Any]) -> dict[str, dict[str, int]]:
-    """Per-column `column_classification.value_signal_summary` over `rows` (#1230).
-
-    Called on `unexpected_index_list` BEFORE it gets truncated to `SAMPLE_ROW_CAP`
-    below, so the counts reflect the FULL failing population — the evidence window
-    the #1196 cap otherwise narrows to 20 rows for good, since the cap is applied
-    before this result ever reaches the database. Only `unexpected_index_list` gets
-    this treatment: `partial_unexpected_list` is capped by GX ITSELF at 20 on every
-    execution engine, so no full-population evidence for it ever existed to lose —
-    it is unaffected by, and out of scope for, #1230.
-
-    Groups `rows` (a list of ``{column: value}`` dicts) by column, then summarises
-    each column that has at least one non-null value. A column with none (e.g. every
-    row happened to have that identifier column NULL) is simply omitted — nothing
-    to prefer over the read-time fallback for that column.
-
-    Caller-gated on `len(rows) > SAMPLE_ROW_CAP` (see `_extract_sample_failures`):
-    below the cap nothing is lost by truncation, so persisting a summary would be
-    redundant with the rows already being stored in full.
-
-    `rows` is itself bounded to `_VALUE_SIGNAL_SUMMARY_ROW_CAP` first (#1230 review) —
-    without it, a badly-failing check's untruncated row count drives unbounded
-    per-cell regex/entropy work synchronously in the run path. 5,000 rows is still a
-    vastly better ratio estimate than the 20-row window this summary exists to fix.
-    """
+    """Per-column `column_classification.value_signal_summary` over `rows` (#1230)."""
     bounded_rows = rows[:_VALUE_SIGNAL_SUMMARY_ROW_CAP]
     by_column: dict[str, list[Any]] = defaultdict(list)
     for row in bounded_rows:
@@ -162,29 +100,7 @@ def _value_signal_summary_by_column(rows: list[Any]) -> dict[str, dict[str, int]
 
 
 def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
-    """Copy the failing-row keys out of a GX result, bounded to `SAMPLE_ROW_CAP` (#1196).
-
-    `gx_runner` always asks GX for ``result_format="COMPLETE"``. GX keeps
-    `partial_unexpected_list` capped at `partial_unexpected_count` (20) on every
-    execution engine, but under COMPLETE the **pandas** engine (flat-file / ADLS / S3 /
-    Iceberg) returns `unexpected_index_list` FULL and untruncated — every failing row —
-    so a check failing thousands of rows persisted a proportionally huge JSONB blob and
-    shipped it on every ``GET /runs/{id}``. The sample is a *sample*: the true totals
-    live in `unexpected_count`/`unexpected_percent`, which are scalars and therefore
-    pass through untouched, so the reported totals stay the real ones. The cap is
-    applied to every list-shaped sample key (not just `unexpected_index_list`) so the
-    persisted sample is bounded regardless of which engine or GX version produced it.
-
-    Before `unexpected_index_list` is truncated, and only when it is actually LONGER
-    than `SAMPLE_ROW_CAP` (below the cap nothing is lost — the persisted rows already
-    are the full population, so a summary would be redundant), `_value_signal_summary_by_column`
-    (#1230) captures a compact per-column value-signal summary over the (up to
-    `_VALUE_SIGNAL_SUMMARY_ROW_CAP`) untruncated rows and stores it under
-    `VALUE_SIGNAL_SUMMARY_KEY` alongside the capped rows — bounding storage to
-    O(columns), not O(rows), while letting read-time redaction classify from a much
-    larger population's ratios instead of the 20-row window the cap alone would
-    leave it with.
-    """
+    """Copy the failing-row keys out of a GX result, bounded to `SAMPLE_ROW_CAP` (#1196)."""
     sample: dict[str, Any] = {}
     for key in _SAMPLE_KEYS:
         if key not in result:
@@ -205,20 +121,7 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _bounded_observed_value(detail: dict[str, Any]) -> dict[str, Any] | None:
-    """Copy `observed_value` out of a GX result, bounded to `SAMPLE_ROW_CAP` (#1229).
-
-    Most expectations report a scalar `observed_value` (a row count, a mean, a
-    ratio) — that case passes through untouched. **Set-oriented** expectations
-    (`expect_column_distinct_values_to_be_in_set`, `..._to_equal_set`,
-    `expect_column_values_to_be_in_set`, and similar) instead report the full
-    *observed distinct-value set* — raw cell values, with no upper bound under
-    ``result_format="COMPLETE"``. Left uncapped, a high-cardinality column (an
-    email column, a customer reference) persists every distinct value it ever
-    saw. Same cap, same reasoning as `_extract_sample_failures`'s
-    `unexpected_index_list` truncation (#1196) — this is the adjacent column
-    that fix missed. Redaction/classification of the surviving list happens at
-    read time in `run_service.redact_observed_value`.
-    """
+    """Copy `observed_value` out of a GX result, bounded to `SAMPLE_ROW_CAP` (#1229)."""
     if "observed_value" not in detail:
         return None
     value = detail["observed_value"]
@@ -228,19 +131,7 @@ def _bounded_observed_value(detail: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _check_errored(exception_info: Any) -> tuple[bool, str | None]:
-    """Did this expectation raise while being evaluated? (GX `exception_info`).
-
-    GX (1.17) reports `exception_info` in two shapes per `ExpectationValidationResult`:
-
-    * a **flat** dict ``{'raised_exception': bool, 'exception_message': str|None,
-      ...}`` for a cleanly-evaluated expectation, and
-    * a dict **keyed by `MetricConfigurationID`** when a metric computation raised,
-      each value being a flat dict with its own ``raised_exception``.
-
-    Treat the check as errored if the flat form raised, or any keyed entry did;
-    return the first exception message for debuggability. An errored check is an
-    ``error`` result (#122), not a data ``fail``.
-    """
+    """Did this expectation raise while being evaluated? (GX `exception_info`)."""
     if not isinstance(exception_info, dict) or not exception_info:
         return False, None
     if "raised_exception" in exception_info:  # flat shape
@@ -259,7 +150,8 @@ def _expected_value(kwargs: Any) -> dict[str, Any] | None:
 
 def _submission_index(check_result: Any) -> int | None:
     """The ``dataq_index`` marker stamped into this result's expectation `meta`, or
-    ``None`` when absent (a manually-constructed / legacy result carrying no marker)."""
+    ``None`` when absent (a manually-constructed / legacy result carrying no marker).
+    """
     config = getattr(check_result, "expectation_config", None)
     meta = getattr(config, "meta", None)
     if isinstance(meta, dict):
@@ -270,15 +162,7 @@ def _submission_index(check_result: Any) -> int | None:
 
 
 def _in_submission_order(results: list[Any]) -> list[Any]:
-    """Re-key GX results back to submission order via the `dataq_index` marker (#767).
-
-    GX 1.17 `graph_validate` returns results in submission order *only* while nothing
-    errors; once any expectation errors it appends the errored ones first, so trusting
-    list order cross-wires results to the wrong check. Sorting by the stamped index
-    restores the 1:1 positional contract the run-service relies on. Falls back to GX's
-    order if *any* result lacks the marker (constructed results in unit tests), so the
-    legacy no-marker path is unchanged.
-    """
+    """Re-key GX results back to submission order via the `dataq_index` marker (#767)."""
     indexed: list[tuple[int, Any]] = []
     unmarked = 0
     for result in results:
@@ -289,9 +173,8 @@ def _in_submission_order(results: list[Any]) -> list[Any]:
             indexed.append((index, result))
     if unmarked:
         if indexed:
-            # Every production expectation is stamped, so a *partial* marker loss is
-            # anomalous — falling back silently would resurrect the #767 cross-wiring
-            # without a trace. Keep the fallback (never guess an order) but say so.
+            # Every production expectation is stamped, so a *partial* marker loss is anomalous —
+            # falling back silently would resurrect the #767 cross-wiring without a trace.
             log.warning(
                 "gx_results_partially_unmarked",
                 unmarked=unmarked,
@@ -303,15 +186,7 @@ def _in_submission_order(results: list[Any]) -> list[Any]:
 
 
 def to_suite_outcome(gx_result: Any) -> SuiteOutcome:
-    """Map a GX ExpectationSuiteValidationResult onto our GX-agnostic DTO.
-
-    Results are re-keyed to submission order via the `dataq_index` marker (#767)
-    before mapping, so the outcome list stays 1:1 with the submitted `CheckSpec`s
-    even when GX reorders errored expectations to the front.
-
-    Kept GX-translation-only (no datasource specifics) so it is unit-testable
-    with a constructed GX result, no live datasource required.
-    """
+    """Map a GX ExpectationSuiteValidationResult onto our GX-agnostic DTO."""
     outcomes: list[CheckOutcome] = []
     for check_result in _in_submission_order(list(gx_result.results)):
         config = check_result.expectation_config
@@ -342,7 +217,8 @@ def _execute(
     result_format: Any,
 ) -> SuiteOutcome:
     """Register the suite + validation definition (GX 1.x requires both on the
-    ephemeral per-run context before ``run()``) and map the result."""
+    ephemeral per-run context before ``run()``) and map the result.
+    """
     suite = context.suites.add(
         gx.ExpectationSuite(
             name=name,
@@ -367,19 +243,7 @@ def run_expectations(
     batch_parameters: dict[str, Any] | None = None,
     index_columns: list[str] | None = None,
 ) -> SuiteOutcome:
-    """Register the suite + validation definition for `batch_definition` and run.
-
-    The shared tail of every runner. `batch_parameters` carries the in-memory
-    DataFrame for a pandas asset; it stays `None` for an asset that resolves its own
-    batch (a SQL table), matching a bare ``run()``.
-
-    ``index_columns`` (#415) requests GX's ``unexpected_index_column_names`` so each
-    failing row is returned as a dict carrying those identifier column(s) + the failing
-    value — the locator the redactor can surface. GX evaluates the index metric per
-    expectation, so a **bad/absent** identifier column errors *every* check; we detect
-    that (all checks errored, only when an index was requested) and fall back to a plain
-    run, so the checks still evaluate — just without the row identifier.
-    """
+    """Register the suite + validation definition for `batch_definition` and run."""
     if not index_columns:
         return _execute(
             context,

@@ -3,15 +3,8 @@ import path from 'node:path';
 
 import { chromium } from '@playwright/test';
 
-// One interactive login per session: launches a HEADED browser at the live
-// URL, waits for a human to complete the real OIDC sign-in (MFA and all), then
-// serializes sessionStorage to a gitignored file the specs replay via
-// addInitScript. sessionStorage (not cookies/localStorage) because
-// oidc-client-ts keeps the signed-in user there (authClient.ts
-// WebStorageStateStore) — Playwright's built-in storageState can't capture it.
-//
-// The captured token expires like any AAD token (~1h); the file is reused
-// while fresh and re-captured otherwise.
+// One interactive login per session: launches a HEADED browser at the live URL, waits for a human
+// to complete the real OIDC sign-in (MFA and all).
 
 // cwd-relative (pnpm runs from frontend/): __dirname doesn't exist under ESM.
 export const SESSION_FILE = path.resolve('e2e-live', '.auth', 'session.json');

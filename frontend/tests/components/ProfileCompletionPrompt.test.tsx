@@ -9,10 +9,8 @@ import { useSaveDisplayName } from '../../src/auth/useSaveDisplayName';
 import { ProfileCompletionPrompt } from '../../src/components/profile/ProfileCompletionPrompt';
 import type { AsyncState } from '../../src/hooks/useAsyncData';
 
-// authMode is bound at module load (ADR 0028); this file pins it to 'otp' —
-// the only mode the prompt ever shows in. Non-otp coverage lives in its own
-// file below (a hoisted vi.mock can't vary per-test in one file — same reason
-// App.otpSignOut.test.tsx is separate from App.test.tsx).
+// authMode is bound at module load (ADR 0028); this file pins it to 'otp' — the only mode the
+// prompt ever shows in.
 vi.mock('../../src/auth/config', () => ({ authMode: 'otp' }));
 vi.mock('../../src/auth/useMe', () => ({ useMe: vi.fn() }));
 vi.mock('../../src/auth/useSaveDisplayName', () => ({ useSaveDisplayName: vi.fn() }));
@@ -101,14 +99,13 @@ describe('ProfileCompletionPrompt', () => {
     expect(screen.getByText('Welcome to DataQ')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
-    // The mechanism itself: sessionStorage, not React state, is what has to
-    // survive — a component remount (a route change, the next section below)
-    // starts with fresh state and would re-show the prompt if this weren't here.
+    // The mechanism itself: sessionStorage, not React state, is what has to survive — a component
+    // remount (a route change, the next section below) starts with fresh state and would re-show
+    // the prompt if this weren't here.
     expect(sessionStorage.getItem('dataq:profileCompletionPrompt:skipped')).toBe('1');
 
-    // A fresh mount (e.g. a route re-render) must stay dismissed from the very
-    // first render — no open→close transition to wait out, since `dismissed`
-    // is seeded from sessionStorage before the first paint.
+    // A fresh mount (e.g. a route re-render) must stay dismissed from the very first render — no
+    // open→close transition to wait out.
     unmount();
     renderPrompt();
     expect(screen.queryByText('Welcome to DataQ')).not.toBeInTheDocument();

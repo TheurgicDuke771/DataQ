@@ -1,11 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-// Lineage graph (#805). The demo seed lands a lineage neighbourhood around the
-// shared ANALYTICS.PUBLIC.ORDERS asset — two hops of provenance (RAW → STG) and
-// two of blast radius (MART → BI) — so the graph has real depth-≥2 structure to
-// lay out. We reach it the way a user does (via the assets tree), never by a
-// hardcoded id, so this runs against any freshly-seeded stack.
+// Lineage graph (#805).
 async function openOrdersAsset(page: Page) {
   await page.goto('/assets');
   await page

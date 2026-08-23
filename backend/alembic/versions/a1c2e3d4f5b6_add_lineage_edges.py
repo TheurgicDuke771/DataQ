@@ -1,24 +1,4 @@
-"""add lineage_edges cache (G-d dbt-manifest lineage, #759)
-
-ADR 0034 slice 2: a small `lineage_edges` cache of external truth — directed
-`upstream_asset_id → downstream_asset_id` edges keyed on
-`(upstream, downstream, source, connection_id)`, refreshed from the parsed dbt
-`manifest.json` (and, later, other lineage sources) by the connection whose
-refresh surfaced the edge. Blast radius walks these edges downstream from a
-failing asset.
-
-Additive & backward-compatible (CLAUDE.md migration rules): a brand-new table
-only; all three FKs CASCADE-delete — both endpoint assets (an edge is meaningless
-without either asset) and the refreshing `connection_id` (provenance + prune
-scope, NOT NULL so one project's prune never touches another's edges). No existing
-read path changes. `source` is un-CHECKed on purpose — lineage sources will grow
-and must not each need a migration.
-
-Revision ID: a1c2e3d4f5b6
-Revises: f8b9c0d1e2a3
-Create Date: 2026-07-10 00:00:00.000000+00:00
-
-"""
+"""add lineage_edges cache (G-d dbt-manifest lineage, #759)"""
 
 from __future__ import annotations
 

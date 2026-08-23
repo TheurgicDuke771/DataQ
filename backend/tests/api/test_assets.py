@@ -1,18 +1,4 @@
-"""Asset view API tests against a real Postgres (db_session) via TestClient.
-
-The **ADR 0037 three-layer rule is the point**: asset identity + lineage topology
-(incl. column pairs) reach every member; the aggregate rollup is workspace-true
-(over ALL composing suites — one verdict for every viewer); only the
-composing-suite list follows the ADR 0027 grants, the rest collapsing to
-`restricted_suite_count`. This exercises owner / edit-share / view-share /
-no-share / workspace-admin / ADR-0033 workspace-Viewer end to end through the
-HTTP surface — including that the suite boundary (names, runs) holds while
-identity flows, and that the Viewer role's `edit`→`view` cap
-(`suite_authz._cap_for_viewer`) is applied on THIS surface too, not just the
-suite endpoints its own tests cover.
-
-Skips without TEST_DATABASE_URL (JSONB/UUID need real Postgres).
-"""
+"""Asset view API tests against a real Postgres (db_session) via TestClient."""
 
 from __future__ import annotations
 
@@ -29,9 +15,8 @@ from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import suite_service
 
-# A fully-resolvable snowflake config (account+database+schema) so a suite target
-# resolves to a first-class asset (ADR 0034). Two suites on this connection with
-# the same target resolve to the SAME asset.
+# A fully-resolvable snowflake config (account+database+schema) so a suite target resolves to a
+# first-class asset (ADR 0034).
 _SF_CONFIG = {"account": "ab12345.eu-west-1", "database": "ANALYTICS", "schema": "PUBLIC"}
 _ADMIN_EMAIL = "admin@example.com"
 
@@ -155,7 +140,8 @@ def test_partial_grant_browse_is_workspace_true(client: TestClient, world: dict[
     """ADR 0037: a view-share on ONLY s1 still sees asset X with suite_count=2 —
     the rollup aggregates over ALL composing suites, identical for every viewer
     (a per-viewer partial would silently disagree between users). Asset Y arrives
-    as a full identity row too."""
+    as a full identity row too.
+    """
     viewer = _user(client_db(client), "viewer@example.com")
     _share(client_db(client), world["s1"], viewer, "view")
     _as(viewer)
@@ -180,7 +166,8 @@ def test_edit_share_sees_asset(client: TestClient, world: dict[str, Any]) -> Non
 def test_no_share_sees_full_rows_workspace_true(client: TestClient, world: dict[str, Any]) -> None:
     """ADR 0037 (supersedes #920's redacted rows): a member with ZERO grants gets
     every asset fully named with the workspace-true rollup — identity and the
-    aggregate verdict are workspace knowledge; only suite-derived detail is not."""
+    aggregate verdict are workspace knowledge; only suite-derived detail is not.
+    """
     outsider = _user(client_db(client), "outsider@example.com")
     _as(outsider)
     resp = client.get("/api/v1/assets")
@@ -208,12 +195,10 @@ def test_workspace_admin_sees_all(
 def test_viewer_role_browses_assets_like_any_grant_holder(
     client: TestClient, world: dict[str, Any]
 ) -> None:
-    """#1476: an ADR-0033 workspace-Viewer with a view-share is a distinct axis
-    from the ADR-0027 view-share itself (a stale comment here used to say this
-    axis was untested because the role didn't exist yet — it shipped 2026-08-16
-    and the comment was never updated). Reads are read-only either way, so this
-    is expected to behave identically to `test_partial_grant_browse_is_workspace_true` —
-    but "expected" is exactly why it was never pinned."""
+    """#1476: an ADR-0033 workspace-Viewer with a view-share is a distinct axis from the ADR-0027
+    view-share itself (a stale comment here used to say this axis was untested because the role
+    didn't exist yet — it shipped 2026-08-16 and the comment was never updated).
+    """
     viewer = _user(client_db(client), "viewer-role@example.com", role="viewer")
     _share(client_db(client), world["s1"], viewer, "view")
     _as(viewer)
@@ -254,7 +239,8 @@ def test_no_share_detail_opens_with_suite_boundary_intact(
 ) -> None:
     """ADR 0037: the detail opens for a member with zero grants — identity +
     workspace-true summary in full — while the ITEMIZED layer holds: no suite
-    names cross, only `restricted_suite_count`."""
+    names cross, only `restricted_suite_count`.
+    """
     outsider = _user(client_db(client), "outsider2@example.com")
     _as(outsider)
     resp = client.get(f"/api/v1/assets/{world['asset_x']}")
@@ -278,7 +264,8 @@ def test_unknown_asset_404(client: TestClient, world: dict[str, Any]) -> None:
 def test_detail_split_follows_the_grant(client: TestClient, world: dict[str, Any]) -> None:
     """The visible/restricted suite split moves with the grant, per suite: a
     view-share on s1 lists s1 by name and collapses s2 into the count — and the
-    workspace-true summary is identical either way."""
+    workspace-true summary is identical either way.
+    """
     viewer = _user(client_db(client), "outsider3@example.com")
     _share(client_db(client), world["s1"], viewer, "view")
     _as(viewer)
@@ -292,13 +279,12 @@ def test_detail_split_follows_the_grant(client: TestClient, world: dict[str, Any
 def test_viewer_role_caps_an_edit_share_to_view_on_the_asset_surface(
     client: TestClient, world: dict[str, Any]
 ) -> None:
-    """#1476: the interaction the stale N/A comment left unpinned. A workspace
-    Viewer's `edit`→`view` cap (`suite_authz._cap_for_viewer`) is proven against
-    the suite endpoints, but this asset detail response stamps `my_permission`
-    from its OWN call into `effective_permissions` (asset_view_service.py) — a
-    second call site the cap has to reach independently. Give the Viewer an
-    EDIT share (not view) so a missed cap would be visible: `my_permission`
-    would read `edit` instead of the correctly-clamped `view`."""
+    """#1476: the interaction the stale N/A comment left unpinned. A workspace Viewer's
+    `edit`→`view` cap (`suite_authz._cap_for_viewer`) is proven against the suite endpoints, but
+    this asset detail response stamps `my_permission` from its OWN call into
+    `effective_permissions` (asset_view_service.py) — a second call site the cap has to reach
+    independently.
+    """
     viewer = _user(client_db(client), "viewer-role-edit@example.com", role="viewer")
     _share(client_db(client), world["s1"], viewer, "edit")
     _as(viewer)
@@ -345,7 +331,8 @@ def test_total_count_header_matches_full_population(
     client: TestClient, world: dict[str, Any]
 ) -> None:
     """#925: `X-Total-Count` is the unfiltered population `list_visible_assets`
-    pages through — with no limit/offset, the world fixture's 2 assets."""
+    pages through — with no limit/offset, the world fixture's 2 assets.
+    """
     _as(world["owner"])
     resp = client.get("/api/v1/assets")
     assert resp.status_code == 200
@@ -356,15 +343,13 @@ def test_total_count_header_matches_full_population(
 def test_total_count_header_pins_truncation_beyond_the_page(
     client: TestClient, world: dict[str, Any]
 ) -> None:
-    """#925's actual defect: a page shorter than the full population must still
-    report the TRUE total via the header, so a client whose `limit` is smaller
-    than the workspace can tell a truncated page from a complete one — the body
-    alone (2 rows on a `limit=1` page) can't distinguish "that's everything" from
-    "there's more"."""
+    """#925's actual defect: a page shorter than the full population must still report the TRUE
+    total via the header, so a client whose `limit` is smaller than the workspace can tell a
+    truncated page from a complete one — the body alone (2 rows on a `limit=1` page) can't
+    distinguish "that's everything" from "there's more".
+    """
     db = client_db(client)
-    # 3 more bare (suite-less) assets — count_assets counts identity rows, not
-    # composing suites, so these are enough to push the population past a small
-    # page without seeding any suite/run machinery.
+    # 3 more bare (suite-less) assets — count_assets counts identity rows, not composing suites.
     for i in range(3):
         db.add(Asset(namespace="snowflake://ab12345.eu-west-1", name=f"EXTRA.T{i}"))
     db.commit()
@@ -390,7 +375,8 @@ def test_total_count_header_pins_truncation_beyond_the_page(
 
 def test_summary_flags_failed_and_active_runs(client: TestClient, world: dict[str, Any]) -> None:
     """An operationally-failed latest run (no results → no severity) and an
-    in-flight run surface as summary flags so the UI never rolls them up green."""
+    in-flight run surface as summary flags so the UI never rolls them up green.
+    """
     db = client_db(client)
     db.add(
         Run(
@@ -423,7 +409,8 @@ def test_ungranted_neighbour_arrives_fully_named_at_the_wire(
 ) -> None:
     """ADR 0037 (supersedes #845's anonymous node): lineage topology is identity,
     so a neighbour monitored by someone else's suite arrives named, with its TRUE
-    monitored flag — asserted at the wire, where the old redaction test looked."""
+    monitored flag — asserted at the wire, where the old redaction test looked.
+    """
     db = client_db(client)
     stranger = _user(db, "stranger2@example.com")
     conn = _connection(db, stranger)
@@ -459,7 +446,8 @@ def test_asset_with_only_unshared_suites_is_listed_and_openable(
     """ADR 0037: an asset someone *else* monitors is a full browse row AND an
     openable detail for any member — what stays closed is the suite grain (its
     suite is a count on detail, and the suite endpoint itself keeps 404-no-leak,
-    pinned in the suites API tests)."""
+    pinned in the suites API tests).
+    """
     db = client_db(client)
     stranger = _user(db, "stranger@example.com")
     conn = _connection(db, stranger)
@@ -484,17 +472,7 @@ def test_orphan_asset_after_composing_suite_deleted(
     """Deleting an asset's only composing suite (after it ran) orphans the asset. It stays
     visible — to **everyone**, not just admins (ADR 0034 amendment, #845/#846) — with an
     empty suites list and no health.
-
-    This reverses the earlier rule (orphans hidden from non-admins), deliberately. A
-    suite-less asset has no suites, runs, results or samples behind it — the delete
-    cascaded all of it (#540) — so there is no grant to protect and nothing to leak but
-    the *name*, which the lineage graph reveals the existence of regardless. Hiding it
-    bought no security and cost real correctness: browse and the detail endpoint
-    disagreed about what existed, and every unmonitored upstream in a lineage graph would
-    have rendered "restricted" to a non-admin when it is nothing of the sort.
-
-    The grant boundary that *does* stay closed is an asset with suites the caller cannot
-    view — see `test_asset_with_only_unshared_suites_is_404_and_unlisted`."""
+    """
     db = client_db(client)
     _seed_run(db, world["s3"], status="pass")  # the suite has run history
     suite_service.delete_suite(db, world["s3"].id)  # cascades runs/results (#540)
@@ -564,7 +542,8 @@ def _edge(db: Any, up: uuid.UUID, down: uuid.UUID, conn_id: uuid.UUID) -> Lineag
 def test_lineage_cycle_terminates_and_dedupes(client: TestClient, world: dict[str, Any]) -> None:
     """A cycle in `lineage_edges` (X → Y → X) must not hang the BFS; the peer
     node appears exactly once per direction (reachable BOTH upstream and
-    downstream), and the start asset never lists itself."""
+    downstream), and the start asset never lists itself.
+    """
     db = client_db(client)
     conn_id = world["conn"].id
     db.add(_edge(db, world["asset_x"], world["asset_y"], conn_id))
@@ -640,7 +619,8 @@ def test_patch_null_vs_omitted_field_semantics(
     client: TestClient, world: dict[str, Any], make_workspace_admin: Any
 ) -> None:
     """Through the real route: an OMITTED field is left untouched, an explicit
-    `null` clears it (`model_fields_set` discrimination)."""
+    `null` clears it (`model_fields_set` discrimination).
+    """
     admin = _user(client_db(client), _ADMIN_EMAIL)
     make_workspace_admin(_ADMIN_EMAIL)
     _as(admin)
@@ -670,7 +650,8 @@ def test_patch_unknown_field_rejected(
     client: TestClient, world: dict[str, Any], make_workspace_admin: Any
 ) -> None:
     """`extra="forbid"`: a typo'd field must 422, not silently no-op — with
-    omitted-vs-null semantics a swallowed typo would read as 'leave unchanged'."""
+    omitted-vs-null semantics a swallowed typo would read as 'leave unchanged'.
+    """
     admin = _user(client_db(client), _ADMIN_EMAIL)
     make_workspace_admin(_ADMIN_EMAIL)
     _as(admin)
@@ -735,7 +716,8 @@ def client_db(client: TestClient) -> Any:
 def test_column_lineage_pairs_reach_every_member(client: TestClient, world: dict[str, Any]) -> None:
     """#901 under ADR 0037: column pairs are schema metadata — identity — so an
     edge to an asset monitored by someone else's suite still returns its pairs in
-    full (the count-only redacted box is retired). Table-grain edges stay null."""
+    full (the count-only redacted box is retired). Table-grain edges stay null.
+    """
     db = client_db(client)
     stranger = _user(db, "stranger3@example.com")
     conn = _connection(db, stranger)
@@ -789,10 +771,7 @@ def test_json_null_columns_row_never_500s_the_asset_page(
     """#907 regression, pinned at the exact defect: a `columns` value of JSON `null`
     (what the pre-fix bulk upsert wrote for every no-pairs edge — NOT SQL NULL, so it
     passes `is_not(None)` filters) must render as a no-grain edge, never 500.
-
-    Written with a literal SQL cast because the fixed ORM type (`none_as_null=True`)
-    can no longer produce the value — exactly like the 339 rows the first prod
-    Snowflake refresh left behind."""
+    """
     from sqlalchemy import text as sql_text
 
     db = client_db(client)
@@ -826,7 +805,8 @@ def test_json_null_columns_row_never_500s_the_asset_page(
 
 def test_orm_none_columns_persists_as_sql_null(client: TestClient, world: dict[str, Any]) -> None:
     """#907 write side: a no-pairs edge written through the model must store SQL NULL
-    (queryable with IS NULL), not JSON null — `none_as_null=True` pinned."""
+    (queryable with IS NULL), not JSON null — `none_as_null=True` pinned.
+    """
     from sqlalchemy import text as sql_text
 
     db = client_db(client)
@@ -854,7 +834,8 @@ def test_browse_rows_are_byte_identical_across_viewers(
 ) -> None:
     """ADR 0037 pinned at the wire: the browse row for an asset monitored solely by
     a stranger's suite is BYTE-IDENTICAL for the stranger, an unrelated member, and
-    a workspace admin — identity and the workspace-true rollup, one truth for all."""
+    a workspace admin — identity and the workspace-true rollup, one truth for all.
+    """
     db = client_db(client)
     stranger = _user(db, "stranger4@example.com")
     conn = _connection(db, stranger)
@@ -911,11 +892,6 @@ def test_scorecard_is_workspace_true_across_viewers(
 ) -> None:
     """ADR 0037's core rule, applied to the scorecard: the aggregate covers ALL
     composing suites, so two people looking at the same asset see the same numbers.
-
-    Load-bearing by construction — the dimensioned check lives on **s2**, which the
-    viewer is NOT granted. A grant-scoped scorecard would omit it and the two cards
-    would differ. (Comparing two empty cards would pass no matter what the code
-    did, so the fixture must put the contribution behind the grant boundary.)
     """
     db = client_db(client)
     _seed_dimensioned_run(db, world["s2"], dimension="uniqueness", status="fail")
@@ -938,7 +914,8 @@ def test_unclassified_checks_are_reported_not_bucketed(
     client: TestClient, world: dict[str, Any]
 ) -> None:
     """The world fixture's check predates ADR 0038 (no dimension), which is exactly
-    the shape every existing check has. It must be counted, not filed anywhere."""
+    the shape every existing check has. It must be counted, not filed anywhere.
+    """
     _as(world["owner"])
     card = client.get(f"/api/v1/assets/{world['asset_x']}").json()["scorecard"]
     assert card["unclassified_checks"] == 1

@@ -1,9 +1,4 @@
-"""Comparison report download tests (ADR 0015 §4, #795) — real Postgres.
-
-The report must be derived from the REDACTED buckets (policy applied exactly
-like the run-detail read), 404 on unknown run/result, 422 on a non-comparison
-result, and never persist anything server-side. Skips without TEST_DATABASE_URL.
-"""
+"""Comparison report download tests (ADR 0015 §4, #795) — real Postgres."""
 
 import io
 import uuid

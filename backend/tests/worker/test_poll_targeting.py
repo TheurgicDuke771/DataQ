@@ -1,8 +1,4 @@
-"""Targeted poll (#492): provider/resource_name narrow the sweep.
-
-The alert-triggered poll-now path must poll only the alerting orchestrator —
-an alert storm must not amplify into full sweeps of every connection.
-"""
+"""Targeted poll (#492): provider/resource_name narrow the sweep."""
 
 import uuid
 from typing import Any

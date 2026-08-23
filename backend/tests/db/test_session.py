@@ -1,9 +1,5 @@
 """Unit tests for `backend/app/db/session.py`: the `get_db` dependency's transaction
 teardown (C3), and `_build_engine()`'s psycopg-only connect_args driver guard (#1266).
-
-Pure-unit (no DB): a fake session spies `rollback`/`close`. Asserts a failed
-request rolls back (so a poisoned transaction never reaches the pooled
-connection's next user) and re-raises, while a clean request just closes.
 """
 
 from collections.abc import Generator
@@ -55,13 +51,9 @@ def test_get_db_closes_without_rollback_on_success(monkeypatch: pytest.MonkeyPat
 def _captured_build_engine_connect_args(
     monkeypatch: pytest.MonkeyPatch, database_url: str
 ) -> dict[str, Any]:
-    """Shared scaffold: swaps in a fake `create_engine` that captures its kwargs
-    instead of dialing a real host, and a fake `get_settings()` returning
-    `database_url`, then calls `_build_engine()` and hands back the resulting
-    `connect_args`. Mirrors `tests/services/test_poll_lock_timeout.py`'s
-    `_captured_build_engine_connect_args` scaffold, parameterized on the URL so the
-    #1266 driver-guard tests below can exercise both a psycopg and a non-psycopg
-    `database_url` without touching the real `DATABASE_URL` env var / settings cache.
+    """Shared scaffold: swaps in a fake `create_engine` that captures its kwargs instead of dialing
+    a real host, and a fake `get_settings()` returning `database_url`, then calls
+    `_build_engine()` and hands back the resulting `connect_args`.
     """
     captured: dict[str, Any] = {}
 
@@ -89,7 +81,8 @@ def test_build_engine_keeps_psycopg_only_connect_args_for_the_psycopg2_driver(
 ) -> None:
     """The existing/default path: a `postgresql+psycopg2://` `database_url` (the
     `Settings` default) must still get the full connect_args set — the #1266 driver
-    guard must not accidentally drop them for the driver they were designed for."""
+    guard must not accidentally drop them for the driver they were designed for.
+    """
     connect_args = _captured_build_engine_connect_args(
         monkeypatch, "postgresql+psycopg2://user:pw@localhost:5432/dataq"
     )
@@ -105,17 +98,12 @@ def test_build_engine_keeps_psycopg_only_connect_args_for_the_psycopg2_driver(
 def test_build_engine_drops_psycopg_only_connect_args_for_a_non_psycopg_driver(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """#1266: `settings.database_url` has no scheme/driver validator and is
-    env-overridable via `DATABASE_URL`. If it ever resolved to a non-psycopg driver,
-    `create_engine()`'s first real connection attempt would raise `TypeError` on the
-    unrecognized `connect_timeout`/`keepalives*` kwargs — not gracefully.
-    `_build_engine()` must degrade to omitting them.
-
-    `options` is included here too: it is NOT portable across drivers (asyncpg has no
-    `options` connect kwarg at all — it uses `server_settings` instead), so it must be
-    dropped for a non-psycopg driver exactly like the other psycopg-only keys, rather
-    than reaching `create_engine` unconditionally and raising `TypeError` on a
-    different kwarg than before."""
+    """#1266: `settings.database_url` has no scheme/driver validator and is env-overridable via
+    `DATABASE_URL`. If it ever resolved to a non-psycopg driver, `create_engine()`'s first real
+    connection attempt would raise `TypeError` on the unrecognized
+    `connect_timeout`/`keepalives*` kwargs — not gracefully. `_build_engine()` must degrade to
+    omitting them.
+    """
     connect_args = _captured_build_engine_connect_args(
         monkeypatch, "postgresql+asyncpg://user:pw@localhost:5432/dataq"
     )

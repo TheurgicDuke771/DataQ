@@ -5,15 +5,7 @@ import { PassphraseField, SecretField } from './ConnectionTypeFields';
 import { activeAuthOption, composeSecret, CONNECTION_FORM_SPECS } from './connectionFormSpec';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 
-/**
- * Rotate a connection's stored credential. The backend verifies the new
- * credential against the datasource, so a bad value surfaces as an error and the
- * old credential is unaffected. The fields follow the connection's auth mode
- * (from CONNECTION_FORM_SPECS): the shared SecretField/PassphraseField render a
- * multi-line input for PEM keys plus the optional passphrase for key-pair modes,
- * composed the same way as on create (`composeSecret`). `connection === null`
- * means the modal is closed.
- */
+/** Rotate a connection's stored credential. */
 export function ReauthModal({
   connection,
   onClose,
@@ -43,9 +35,8 @@ export function ReauthModal({
 
   const onOk = async () => {
     if (!connection) return;
-    // antd's Modal `onOk` doesn't catch a rejected handler, so guard the
-    // validation rejection here (errors render inline) rather than letting it
-    // escape as an unhandled promise rejection.
+    // antd's Modal `onOk` doesn't catch a rejected handler, so guard the validation rejection here
+    // (errors render inline) rather than letting it escape as an unhandled promise rejection.
     let secret: string;
     let secretPassphrase: string | undefined;
     try {

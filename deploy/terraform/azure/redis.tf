@@ -1,13 +1,8 @@
-# Self-hosted Redis broker for Celery (decision: self-hosted Container App, not
-# Azure Cache for Redis — cheapest for a transient broker; no persistence needed).
-# Internal-only TCP ingress so only the api + worker in this environment reach it.
-# The api/worker connect over the environment's internal DNS using the short app
-# name: redis://dataq-app-redis:6379/0 (the full .internal FQDN does not connect
-# for raw TCP — same finding as the harness broker).
+# Self-hosted Redis broker for Celery (decision: self-hosted Container App, not Azure Cache for
+# Redis — cheapest for a transient broker; no persistence needed).
 
-# Defense-in-depth: even though ingress is internal-only (reachable solely from
-# within this Container Apps environment), the broker still requires a password
-# (--requirepass) so a compromised neighbour can't use it unauthenticated.
+# Defense-in-depth: even though ingress is internal-only, the broker still requires a
+# password (--requirepass) so a compromised neighbour can't use it unauthenticated.
 resource "random_password" "redis" {
   length  = 32
   special = false
@@ -40,14 +35,10 @@ resource "azurerm_container_app" "redis" {
     max_replicas = 1
     container {
       name = "redis"
-      # 7.x is a deliberate pin, not staleness: Redis 8 bundles the Vector Sets
-      # module, whose duplicate-HNSW-ID RESTORE path is an unpatched RCE. DataQ
-      # never issues VSET commands, and 7.x does not expose them at all. The
-      # internal ingress + --requirepass above are the second and third layers.
-      # Read #980 before bumping this to 8.x — Dependabot does not watch Docker
-      # images, so nothing else will raise it for you. The `redis` ignore rule in
-      # .github/dependabot.yml is NOT this: that one caps redis-py, the pip CLIENT
-      # library, per kombu's extra. Nothing automated covers this server image.
+      # 7.x is a deliberate SECURITY pin, not staleness: Redis 8 bundles the Vector Sets
+      # module, whose duplicate-HNSW-ID RESTORE path is an unpatched RCE. Read #980 before
+      # bumping to 8.x — Dependabot does NOT watch Docker images, nothing else will raise
+      # it (dependabot.yml's `redis` ignore rule caps redis-py, not this server image).
       image   = "redis:7-alpine" # public image — no registry auth
       cpu     = 0.5
       memory  = "1Gi"

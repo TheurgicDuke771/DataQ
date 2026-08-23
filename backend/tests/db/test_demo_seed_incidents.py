@@ -1,12 +1,4 @@
-"""The demo seed populates the Incidents panel (#761 fix batch, PR #775 review).
-
-`scripts/demo_data.py` seeds failing results — without the incident sync a fresh
-stack's AssetDetail showed an empty Incidents panel. `_seed_incidents` rolls the
-seeded runs through the REAL lifecycle engine (`sync_incidents_for_run`), so this
-asserts ≥1 open incident lands and that a re-run of the seed is idempotent (no
-spurious occurrence attaches to the same runs).
-
-Skips without TEST_DATABASE_URL."""
+"""The demo seed populates the Incidents panel (#761 fix batch, PR #775 review)."""
 
 from __future__ import annotations
 

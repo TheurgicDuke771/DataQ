@@ -1,12 +1,4 @@
-"""The seed shares its suites with the OTP operator (#1150).
-
-The local/eval stacks now sign you in as *yourself* rather than as the dev-bypass
-identity that owns every seeded row — so without an explicit share, an evaluator
-following the "comes up seeded with demo data" promise lands in an empty
-workspace and concludes the seed failed. This pins the share, its source
-precedence, and its idempotency.
-
-Skips without TEST_DATABASE_URL."""
+"""The seed shares its suites with the OTP operator (#1150)."""
 
 from __future__ import annotations
 
@@ -30,15 +22,10 @@ _MAILER: dict[str, Any] = {
 
 @pytest.fixture(autouse=True)
 def _isolate_signin_email_switch(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`_otp_operator_emails` falls back to the ambient `DATAQ_SIGNIN_EMAIL`
-    compose switch, and `scripts/setup.sh` sets that var in the gitignored
-    `.env` for every local stack (#1150 made OTP the local default). Without
-    this, any `Settings()` built in this module without an explicit allowlist
-    would silently pick up whatever a developer's own machine happens to have
-    exported — green in CI (which never sets it), red on a correctly
-    configured dev box (#1200). Tests that need the switch set still do so
-    explicitly via their own `monkeypatch.setenv`, which simply overrides this
-    default afterwards."""
+    """`_otp_operator_emails` falls back to the ambient `DATAQ_SIGNIN_EMAIL` compose switch, and
+    `scripts/setup.sh` sets that var in the gitignored `.env` for every local stack (#1150 made
+    OTP the local default).
+    """
     monkeypatch.delenv("DATAQ_SIGNIN_EMAIL", raising=False)
 
 
@@ -74,7 +61,8 @@ def test_the_compose_switch_is_the_fallback_when_the_allowlist_is_not_visible(
 ) -> None:
     """`scripts/setup.sh` seeds from the HOST, reading `.env.app` — which carries no
     mailer block, so a bare allowlist there would trip the fail-closed validator.
-    `DATAQ_SIGNIN_EMAIL` is the only signal available on that path."""
+    `DATAQ_SIGNIN_EMAIL` is the only signal available on that path.
+    """
     monkeypatch.setenv("DATAQ_SIGNIN_EMAIL", "  Operator@Example.com  ")
     assert _otp_operator_emails(Settings()) == ["operator@example.com"]
 
@@ -87,7 +75,8 @@ def test_the_allowlist_wins_over_the_switch(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_a_domain_only_allowlist_targets_nobody() -> None:
     """A domain names no individual mailbox; pre-creating rows for a whole domain
-    would be inventing users. Empty is the honest answer, not a guess."""
+    would be inventing users. Empty is the honest answer, not a guess.
+    """
     settings = Settings(**_MAILER, auth_otp_allowed_domains="acme.io")
     assert _otp_operator_emails(settings) == []
 
@@ -95,7 +84,8 @@ def test_a_domain_only_allowlist_targets_nobody() -> None:
 def test_neither_source_set_targets_nobody() -> None:
     """The dev-bypass downgrade: no OTP config at all, so no share and no
     surprise user row. The `_isolate_signin_email_switch` autouse fixture
-    already clears the switch; this test just relies on that default."""
+    already clears the switch; this test just relies on that default.
+    """
     assert _otp_operator_emails(Settings()) == []
 
 
@@ -143,7 +133,8 @@ def test_re_running_the_seed_grants_nothing_new(db_session: Any) -> None:
 def test_suites_owned_by_somebody_else_are_untouched(db_session: Any) -> None:
     """The seed shares what the SEED created, never a suite that happens to exist
     in the database — a local stack pointed at a populated dev DB must not quietly
-    hand a third party's suite to the address in `.env`."""
+    hand a third party's suite to the address in `.env`.
+    """
     owner, _suite = _owner_with_suite(db_session)
     stranger, stranger_suite = _owner_with_suite(db_session)
     settings = Settings(**_MAILER, auth_otp_allowed_emails="operator@example.com")

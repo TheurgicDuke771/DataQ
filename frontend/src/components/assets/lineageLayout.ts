@@ -1,22 +1,8 @@
 import type { LineageEdge, LineageNode } from '../../api/assets';
 
 /**
- * Lineage graph layout (#805) — pure, so the geometry is unit-testable without
- * rendering anything (kept out of the `.tsx`).
- *
- * The asset under view sits in the middle; its **upstream** provenance fans out to
- * the left and its **downstream** blast radius to the right, one column per hop.
- * The backend gives us each neighbour's hop `depth` and the *real* edges between
- * them (`lineage_edges`), so a depth-2 node is drawn hanging off the depth-1 node
- * it actually descends from — never off the centre it has no edge to.
- *
- * Signed-depth columns: upstream depth `d` → column `-d`, the centre → `0`,
- * downstream depth `d` → column `+d`. Sorting the distinct columns left-to-right
- * therefore lays provenance → asset → consumers out in reading order.
- *
- * No graph library: the layout is a layered DAG we can place ourselves, and an
- * inline SVG scrolls horizontally inside its card on a phone far more simply than
- * a pan/zoom canvas would (and adds no dependency to license-check).
+ * Lineage graph layout (#805) — pure, so the geometry is unit-testable without rendering anything
+ * (kept out of the `.tsx`).
  */
 
 export const NODE_W = 190;
@@ -58,13 +44,7 @@ export interface CenterAsset {
   env: string | null;
 }
 
-/**
- * Lay the neighbourhood out into hop columns and bezier edges.
- *
- * Edges whose endpoints aren't both in the neighbourhood are dropped rather than
- * drawn to nowhere (defensive: the backend only returns edges it traversed, but a
- * dangling edge must never throw or render a line into empty space).
- */
+/** Lay the neighbourhood out into hop columns and bezier edges. */
 export function buildLineageLayout(
   center: CenterAsset,
   upstream: LineageNode[],
@@ -78,12 +58,8 @@ export function buildLineageLayout(
       col: 0,
     },
   ];
-  // Nothing enforces an acyclic lineage graph (the per-direction BFS is cycle-safe
-  // via its own visited set, but the up-walk and down-walk are independent, and a
-  // catalog can emit a cycle). With A→B and B→A, B comes back as BOTH upstream and
-  // downstream — so place each asset once, first occurrence winning, or we'd emit
-  // two nodes sharing an id: duplicate React keys, and edges anchored to whichever
-  // copy `byId` happened to keep.
+  // Nothing enforces an acyclic lineage graph (the per-direction BFS is cycle-safe via its own
+  // visited set, but the up-walk and down-walk are independent, and a catalog can emit a cycle).
   const seen = new Set<string>([center.id]);
   const place = (n: LineageNode, col: number) => {
     if (seen.has(n.id)) return;

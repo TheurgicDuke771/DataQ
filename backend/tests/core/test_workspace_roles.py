@@ -1,21 +1,4 @@
-"""Workspace-role model + resolution seam — ADR 0033 slice #740.
-
-Three things are under test here, and they are deliberately separated:
-
-* **`resolve_role`** — the pure composition of the two admin sources (stored
-  `users.role` OR the `WORKSPACE_ADMIN_EMAILS` break-glass allowlist).
-* **`require_role`** — the coarse-axis FastAPI gate, exercised through a real
-  app + `TestClient` rather than by calling the closure directly. Calling the
-  function would prove the rank comparison and nothing about the `Depends`
-  composition, which is the half that actually breaks (a dependency factory that
-  forgets to annotate `current_user` fails at wiring time, not at rank time).
-* **The write-through rules** (`bootstrap_role` / `promoted_role`) and their two
-  real sign-in call sites, because the ADR's precedence decision lives in them.
-
-The `_reset_caches` autouse fixture (conftest) clears the cached `Settings`
-between tests, so `monkeypatch.setenv` + `get_settings.cache_clear()` is the
-supported way to vary the allowlist.
-"""
+"""Workspace-role model + resolution seam — ADR 0033 slice #740."""
 
 from __future__ import annotations
 
@@ -68,7 +51,8 @@ def test_role_rank_covers_every_stored_role() -> None:
     """`_ROLE_RANK` is written out by hand (so a reorder of `WORKSPACE_ROLES`
     can't silently invert the ladder). This is the guard that keeps the two in
     sync — without it, adding a fourth role would make `require_role` raise
-    `ValueError` for a role the CHECK constraint happily stores."""
+    `ValueError` for a role the CHECK constraint happily stores.
+    """
     assert set(ROLE_RANK) == set(WORKSPACE_ROLES)
     assert ROLE_RANK["viewer"] < ROLE_RANK["member"]
     assert ROLE_RANK["member"] < ROLE_RANK[ADMIN_ROLE]
@@ -88,7 +72,8 @@ def test_stored_role_resolves_as_itself_without_an_allowlist(
 def test_allowlist_raises_a_member_to_admin(monkeypatch: pytest.MonkeyPatch) -> None:
     """The bootstrap path: a stored `member` on the env allowlist IS an admin,
     which is what makes the upgrade a zero-config one for deployments that have
-    only ever had the allowlist."""
+    only ever had the allowlist.
+    """
     user = _user("ada@acme.io", "member")
     _allowlist(monkeypatch, "ada@acme.io")
     assert resolve_role(user) == ADMIN_ROLE
@@ -97,7 +82,8 @@ def test_allowlist_raises_a_member_to_admin(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_allowlist_raises_even_a_viewer(monkeypatch: pytest.MonkeyPatch) -> None:
     """Break-glass must work from ANY stored tier — an operator locked out of a
-    workspace whose admins all left may well have been demoted to viewer first."""
+    workspace whose admins all left may well have been demoted to viewer first.
+    """
     _allowlist(monkeypatch, "ada@acme.io")
     assert resolve_role(_user("ada@acme.io", "viewer")) == ADMIN_ROLE
 
@@ -110,7 +96,8 @@ def test_allowlist_is_matched_case_insensitively(monkeypatch: pytest.MonkeyPatch
 def test_allowlist_never_lowers_a_stored_admin(monkeypatch: pytest.MonkeyPatch) -> None:
     """The asymmetry that makes the env path recoverable rather than a second
     source of truth: absence from the allowlist is NOT a demotion signal. If it
-    were, removing one env entry would strip every in-app admin at once."""
+    were, removing one env entry would strip every in-app admin at once.
+    """
     _allowlist(monkeypatch, "someone@else.io")
     assert resolve_role(_user("ada@acme.io", ADMIN_ROLE)) == ADMIN_ROLE
     assert is_workspace_admin(_user("ada@acme.io", ADMIN_ROLE)) is True
@@ -119,7 +106,8 @@ def test_allowlist_never_lowers_a_stored_admin(monkeypatch: pytest.MonkeyPatch) 
 def test_is_workspace_admin_agrees_with_resolve_role(monkeypatch: pytest.MonkeyPatch) -> None:
     """The alias must stay an alias — these two are read by different gates
     (`require_workspace_admin` vs `require_role`) and a divergence would mean a
-    role that says one thing at the router and another at the suite ladder."""
+    role that says one thing at the router and another at the suite ladder.
+    """
     _allowlist(monkeypatch, "ada@acme.io")
     for email in ("ada@acme.io", "bob@acme.io"):
         for role in WORKSPACE_ROLES:
@@ -132,17 +120,10 @@ def test_is_workspace_admin_agrees_with_resolve_role(monkeypatch: pytest.MonkeyP
 
 @pytest.fixture
 def gated_client(db_session: Any) -> Iterator[TestClient]:
-    """A minimal app exposing one route per role tier, all behind `require_role`.
-
-    A throwaway app rather than the real one because #740 ships the seam and no
-    call sites — the enforcement points land in #741. Wiring it for real here is
-    what proves the factory composes with `get_current_user`; #741's own tests
-    then cover the specific endpoints.
-    """
+    """A minimal app exposing one route per role tier, all behind `require_role`."""
     app = FastAPI()
-    # The real app's handlers, not FastAPI's defaults — without them a
-    # `DataQError` propagates as a raw exception and the 403 envelope assertions
-    # below would be testing a 500.
+    # The real app's handlers, not FastAPI's defaults — without them a `DataQError` propagates as a
+    # raw exception and the 403 envelope assertions below would be testing a 500.
     register_exception_handlers(app)
 
     @app.get("/viewer-plus")
@@ -190,9 +171,8 @@ def test_require_role_enforces_the_full_matrix(
     db_session.commit()
     headers = _pat_headers(db_session, user)
 
-    # Hoisted out of the asserts on purpose (`test_assert_hygiene`): an assert
-    # that performs its own request vanishes under `python -O`, taking the
-    # request with it, and the test then passes while doing nothing.
+    # Hoisted out of the asserts on purpose (`test_assert_hygiene`): an assert that performs its own
+    # request vanishes under `python -O`, taking the request with it.
     viewer_resp = gated_client.get("/viewer-plus", headers=headers)
     member_resp = gated_client.get("/member-plus", headers=headers)
     admin_resp = gated_client.get("/admin-only", headers=headers)
@@ -205,7 +185,8 @@ def test_require_role_enforces_the_full_matrix(
 def test_require_role_403_carries_have_and_need(gated_client: TestClient, db_session: Any) -> None:
     """The uniform envelope: a denial must say what the caller HAS and what was
     NEEDED, the same shape the suite ladder reports, so a client can render one
-    message for both authz axes."""
+    message for both authz axes.
+    """
     user = _user(f"v-{uuid.uuid4().hex[:8]}@example.com", "viewer")
     db_session.add(user)
     db_session.commit()
@@ -219,7 +200,8 @@ def test_require_role_403_carries_have_and_need(gated_client: TestClient, db_ses
 
 def test_require_role_rejects_an_unknown_minimum() -> None:
     """Fails at import/wiring time, not at request time — a typo'd tier must not
-    become a route that silently admits everyone (or nobody)."""
+    become a route that silently admits everyone (or nobody).
+    """
     with pytest.raises(ValueError, match="unknown workspace role"):
         require_role("superuser")
 
@@ -251,8 +233,6 @@ def test_a_role_change_takes_effect_on_the_next_request_with_the_same_pat(
     """The whole reason no token-revocation machinery is needed: a PAT
     authenticates AS its user (ADR 0026), and the role is read per request from
     the row. Demote the user and the *already-issued* token demotes with them.
-
-    Asserted with ONE token across the change — re-minting would prove nothing.
     """
     user = _user(f"p-{uuid.uuid4().hex[:8]}@example.com", ADMIN_ROLE)
     db_session.add(user)
@@ -278,7 +258,8 @@ def test_a_promotion_takes_effect_on_the_next_request_too(
     gated_client: TestClient, db_session: Any
 ) -> None:
     """The other direction — a promoted user must not have to sign out and back
-    in, which is what a role cached in a session or token would have required."""
+    in, which is what a role cached in a session or token would have required.
+    """
     user = _user(f"q-{uuid.uuid4().hex[:8]}@example.com", "viewer")
     db_session.add(user)
     db_session.commit()
@@ -300,7 +281,8 @@ def test_a_promotion_takes_effect_on_the_next_request_too(
 def test_a_new_row_defaults_to_member(db_session: Any) -> None:
     """`server_default 'member'` — the value the migration backfills existing
     rows with, asserted against the real column rather than the Python default
-    (there is none; the default lives in the DDL)."""
+    (there is none; the default lives in the DDL).
+    """
     user = User(id=uuid.uuid4(), aad_object_id=None, email=f"d-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(user)
     db_session.commit()
@@ -311,7 +293,8 @@ def test_a_new_row_defaults_to_member(db_session: Any) -> None:
 def test_the_check_constraint_rejects_an_unknown_role(db_session: Any) -> None:
     """The database is the last line: a service-layer bug that writes 'owner'
     (a *suite* level, not a workspace role — the two vocabularies overlap on
-    'admin', which is exactly how such a bug would happen) must not persist."""
+    'admin', which is exactly how such a bug would happen) must not persist.
+    """
     user = User(
         id=uuid.uuid4(),
         aad_object_id=None,
@@ -352,15 +335,7 @@ def _suite_for(db_session: Any, owner: User) -> Suite:
 def test_a_stored_admin_is_implicit_suite_admin_with_an_empty_allowlist(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The regression the pre-#740 short-circuit would have caused.
-
-    The suite ladder's workspace-admin check used to `return False` immediately when
-    `WORKSPACE_ADMIN_EMAILS` was empty. That was sound when the allowlist was the
-    only source; with a stored role it is a silent authz hole in the direction
-    that matters — after #742, a workspace managed entirely in-app sets NO env
-    allowlist at all, so every stored admin would have lost implicit suite-admin
-    while `require_workspace_admin` still let them into `/admin`.
-    """
+    """The regression the pre-#740 short-circuit would have caused."""
     _allowlist(monkeypatch)  # explicitly empty — the pre-#740 short-circuit case
     owner = _user(f"o-{uuid.uuid4().hex[:8]}@example.com")
     admin = _user(f"a-{uuid.uuid4().hex[:8]}@example.com", ADMIN_ROLE)
@@ -399,7 +374,8 @@ def test_bootstrap_role_prefers_the_allowlist_over_the_signup_default(
     """ADR 0033 decision 8's precedence. An operator on BOTH lists must be stored
     `admin`, never `member`-stored-but-admin-effective — otherwise dropping the
     env entry later silently demotes the very admin #742's last-admin guard was
-    counting on."""
+    counting on.
+    """
     _allowlist(monkeypatch, "ada@acme.io")
     assert bootstrap_role("ada@acme.io", default="viewer") == ADMIN_ROLE
     assert bootstrap_role("bob@acme.io", default="viewer") == "viewer"
@@ -411,7 +387,8 @@ def test_should_promote_to_admin_is_true_only_for_the_allowlist(
 ) -> None:
     """The predicate every existing-row writer branches on. False must mean
     "write nothing", not "write the stored value back" — see the docstring; the
-    three call sites are covered individually below."""
+    three call sites are covered individually below.
+    """
     _allowlist(monkeypatch, "ada@acme.io")
     assert should_promote_to_admin("ada@acme.io") is True
     assert should_promote_to_admin("ADA@ACME.IO") is True
@@ -450,14 +427,7 @@ def test_otp_signup_allowlist_beats_the_default_role(
 def test_oidc_signup_uses_the_configured_default_role(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`AUTH_OIDC_DEFAULT_ROLE` — the OTP knob's twin on the SSO path.
-
-    ADR 0033 decision 8 specified the knob only for OTP, on the reasoning that an
-    OIDC issuer was already the deployment's identity boundary. #1386's
-    `OIDC_ALLOWED_DOMAINS` retired that reasoning: an operator can now admit a
-    whole domain on this path too, and without this knob "anyone at acme.io may
-    sign in" would necessarily also mean "anyone at acme.io may author suites".
-    """
+    """`AUTH_OIDC_DEFAULT_ROLE` — the OTP knob's twin on the SSO path."""
     monkeypatch.setenv("AUTH_OIDC_DEFAULT_ROLE", "viewer")
     _allowlist(monkeypatch)
     user = auth_mod._upsert_user(
@@ -484,7 +454,8 @@ def test_oidc_signup_allowlist_beats_the_default_role(
 
 def test_auth_oidc_default_role_rejects_admin() -> None:
     """Same reasoning as its OTP twin: a signup default must not become a third,
-    silent admin-minting mechanism."""
+    silent admin-minting mechanism.
+    """
     with pytest.raises(ValueError):
         Settings(auth_oidc_default_role="admin")
 
@@ -492,11 +463,11 @@ def test_auth_oidc_default_role_rejects_admin() -> None:
 def test_auth_otp_default_role_rejects_admin() -> None:
     """`admin` is deliberately not a signup default: it would make the signup
     allowlist a third, silent admin-minting mechanism beside the two the ADR
-    sanctions."""
+    sanctions.
+    """
     with pytest.raises(ValueError):
-        # The type: ignore IS the assertion's other half — the Literal rejects
-        # this statically, and pydantic must reject it at runtime too, because
-        # the value arrives from an env var that no annotation guards.
+        # The type: ignore IS the assertion's other half — the Literal rejects this statically, and
+        # pydantic must reject it at runtime too.
         Settings(auth_otp_default_role="admin")
 
 
@@ -505,7 +476,8 @@ def test_otp_sign_in_promotes_an_existing_row_on_the_allowlist(
 ) -> None:
     """Write-through on an EXISTING row — the step that turns an effective
     break-glass admin into a *stored* one, which is the only kind #742's guard
-    can count."""
+    can count.
+    """
     email = f"otp-{uuid.uuid4().hex[:8]}@example.com"
     _allowlist(monkeypatch)
     user = otp_service.resolve_or_create_user(db_session, email)
@@ -519,7 +491,8 @@ def test_otp_sign_in_promotes_an_existing_row_on_the_allowlist(
 
 def test_otp_sign_in_never_demotes(db_session: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """Signing in must not undo an in-app promotion just because the signer-in
-    is not on the env allowlist."""
+    is not on the env allowlist.
+    """
     email = f"otp-{uuid.uuid4().hex[:8]}@example.com"
     _allowlist(monkeypatch)
     user = otp_service.resolve_or_create_user(db_session, email)
@@ -567,7 +540,8 @@ def test_claiming_an_otp_row_from_aad_promotes_but_does_not_demote(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The identity-linking path (ADR 0032 decision 6) is a third writer of
-    `users.role` and must obey the same promote-only rule as the other two."""
+    `users.role` and must obey the same promote-only rule as the other two.
+    """
     email = f"link-{uuid.uuid4().hex[:8]}@example.com"
     _allowlist(monkeypatch)
     otp_row = otp_service.resolve_or_create_user(db_session, email)
@@ -586,17 +560,6 @@ def test_the_forced_role_survives_the_identity_claim_path(
 ) -> None:
     """`_upsert_user(role=...)` must force the role on EVERY branch, not just the
     two obvious ones.
-
-    The dev-bypass identity forces `admin` (#741). But `_upsert_user` has three
-    exits, not two: insert, on-conflict update, and — when the email index
-    collides with an **unlinked OTP row** — `_claim_unlinked_user`. A local stack
-    that previously ran in OTP mode leaves exactly such a row for
-    `dev-bypass@dataq.local`, so this is a real path, not a contrived one.
-
-    Unforwarded, the claim path falls back to the promote-only allowlist rule,
-    the bypass identity lands on `member`, and every connection route on the
-    local and published-eval stacks 403s — the failure this force exists to
-    prevent, reintroduced by the one branch nobody looks at.
     """
     _allowlist(monkeypatch)
     email = f"claim-{uuid.uuid4().hex[:8]}@example.com"
@@ -620,7 +583,8 @@ def test_the_forced_role_survives_the_conflict_retry(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The same invariant on the bounded-retry exit — the fourth way out of
-    `_upsert_user`, taken when a concurrent sign-in claims the row first."""
+    `_upsert_user`, taken when a concurrent sign-in claims the row first.
+    """
     _allowlist(monkeypatch)
     email = f"retry-{uuid.uuid4().hex[:8]}@example.com"
     oid = uuid.uuid4().hex[:32]
@@ -641,7 +605,8 @@ def test_the_dev_bypass_identity_recovers_admin_from_a_legacy_member_row(
 ) -> None:
     """An UPGRADE case: a local stack that already has a dev-bypass row from
     before #741 has it stored as `member`. The force must repair it on the next
-    request, or upgrading the local stack breaks connection management on it."""
+    request, or upgrading the local stack breaks connection management on it.
+    """
     _allowlist(monkeypatch)
     existing = auth_mod._upsert_user(
         db_session,
@@ -694,7 +659,8 @@ def test_me_reports_the_effective_role_not_the_stored_column(
     """A break-glass admin's row still says `member` until their next sign-in
     writes it through. `/me` must report what the GATES will do, not what the
     column happens to say — otherwise the frontend hides the Admin nav from
-    someone every admin endpoint would have let in."""
+    someone every admin endpoint would have let in.
+    """
     user = _user(f"me-{uuid.uuid4().hex[:8]}@example.com", "member")
     db_session.add(user)
     db_session.commit()
@@ -711,7 +677,8 @@ def test_me_dev_bypass_user_reports_admin(
 ) -> None:
     """Dev bypass is a single-operator mode and its one identity is the workspace
     admin (#741) — with NO allowlist configured, so this is the stored role, not
-    a break-glass resolution."""
+    a break-glass resolution.
+    """
     _allowlist(monkeypatch)
     body = me_client.get("/api/v1/me").json()
     assert body["email"] == DEV_BYPASS_EMAIL

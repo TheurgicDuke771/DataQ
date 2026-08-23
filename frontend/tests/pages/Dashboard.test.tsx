@@ -157,9 +157,8 @@ describe('Dashboard', () => {
   });
 
   it('shares date-window presets with the Results date filter (#349)', async () => {
-    // The range Segmented must offer exactly the shared WINDOW_PRESETS labels
-    // (no local 'Last 24h'/'7d'/'30d' copy that can drift from Results'). Scope
-    // to the radiogroup — the "Total Runs" footnote also renders "Last 7 days".
+    // The range Segmented must offer exactly the shared WINDOW_PRESETS labels (no local 'Last
+    // 24h'/'7d'/'30d' copy that can drift from Results').
     mockGet.mockResolvedValue(summary);
     renderPage();
     await screen.findByText('81.2');

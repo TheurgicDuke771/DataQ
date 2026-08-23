@@ -1,7 +1,4 @@
-# Non-secret configuration. Defaults are wired for the AWS parallel-deployment
-# bring-up. Override in terraform.tfvars (gitignored) — see
-# terraform.tfvars.example. Two required inputs have no default and will hang
-# OpenTofu on stdin if missing — always pass -input=false.
+# Non-secret configuration.
 
 variable "aws_region" {
   description = "AWS region for every resource in this stack."
@@ -104,21 +101,14 @@ variable "waf_max_body_bytes" {
   default     = 8192
 
   validation {
-    # The upper bound is the load-bearing half. WAF inspects at most 16KB of a
-    # CloudFront-scoped request body, so a threshold at or above that can never
-    # match: the rule would show as enabled in the console and enforce nothing.
-    # Fail the apply instead of shipping a control that is silently inert.
+    # The upper bound is the load-bearing half.
     condition     = var.waf_max_body_bytes > 0 && var.waf_max_body_bytes < 16384
     error_message = "waf_max_body_bytes must be between 1 and 16383: WAF inspects at most 16KB of a CloudFront body, so anything larger makes the rule unmatchable."
   }
 }
 
-# ── OIDC access gate (#1386) ────────────────────────────────────────────────
-# The second layer behind `allow_admin_create_user_only` in cognito.tf. Empty
-# (both) = every identity the pool issues a token for is admitted, which is the
-# backend default and is logged at WARNING on boot. Set at least one when the
-# pool is not strictly invite-only. Addresses are PII, so real values belong in
-# the gitignored terraform.tfvars, never here.
+# ── OIDC access gate (#1386) ──────────────────────────────────────────────── The second layer
+# behind `allow_admin_create_user_only` in cognito.tf.
 variable "oidc_allowed_emails" {
   description = "Comma-separated addresses allowed to hold a DataQ account via OIDC (OIDC_ALLOWED_EMAILS). Empty = no app-side gate."
   type        = string
@@ -131,10 +121,10 @@ variable "oidc_allowed_domains" {
   default     = ""
 }
 
-# Replaces the earlier email_username/email_from/email_to trio (#1368): the
-# stack now ships SES natively (ses.tf), so one address drives the whole
-# channel — it becomes the SES identity, the From:, and (sandbox) the sole
-# recipient; the SMTP login + password are derived resources, not inputs.
+# Replaces the earlier email_username/email_from/email_to trio (#1368): the stack now ships SES
+# natively (ses.tf), so one address drives the whole channel — it becomes the SES identity, the
+# From:, and (sandbox) the sole recipient; the SMTP login + password are derived resources, not
+# inputs.
 variable "alert_email" {
   description = "Verified SES identity for email alerts: the sender (From:), and the default recipient when alert_email_to is unset. Empty = email channel off. Requires the one-time SES verification click."
   type        = string

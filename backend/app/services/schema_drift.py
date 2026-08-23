@@ -1,42 +1,4 @@
-"""schema_drift monitor kind — the stateful baseline-diff engine (#592, ADR 0012).
-
-Unlike the scalar kinds (freshness/volume), schema_drift compares the target's
-CURRENT column shape against a persisted reference (`monitor_baselines`, #876):
-the first run captures the baseline; every later run diffs against it and the
-drifted-column count becomes the ADR-0016-banded ``metric_value``. Re-baselining
-deletes the stored row — the next run recaptures from the live target, so the
-API never runs datasource introspection on a request thread.
-
-The pieces:
-
-* :func:`introspect_columns` — the live column-name/type snapshot per datasource
-  (SQL via ``information_schema``, flat-file via the Parquet footer / a CSV
-  header sample, Iceberg from table metadata — no data scan anywhere except the
-  CSV dtype sample).
-* :func:`diff_schemas` — the pure diff (added / removed / type_changed), unit-
-  testable without a datasource or DB.
-* :func:`build_schema_drift_executor` — the per-run closure the worker injects
-  into ``run_service._run_outcomes`` (the comparison pattern, #794): it owns the
-  session, the baseline row, and introspection, and returns one
-  ``CheckOutcome`` per check via the registry's outcome strategy. Runners never
-  see stateful kinds — they have no DB.
-
-The `monitor_baselines` row itself is read/written through
-`services/monitor_baseline.py`, shared with the `anomaly` kind (#593).
-
-Type strings are the datasource's own spelling (``NUMBER(38,0)``, ``int64``,
-``string``): they are compared for equality within one datasource, never across
-datasources, so no cross-dialect normalisation is attempted. Baselines are
-metadata about the target's shape — no row data, no PII.
-
-Known limits, stated up front: CSV types come from pandas inference over a
-bounded row sample, so a value-shape change inside the sampled window (a NULL
-appearing in an int column → ``float64``) reports a type change even though the
-feed's declared schema never moved — ``ignore_columns`` or a re-baseline is the
-workaround for known-noisy columns. The flat-file paths now read through the
-``RangeReader`` seam (#882), so a Parquet footer costs a couple of small range
-GETs and a CSV sample a single head read — neither downloads the object.
-"""
+"""schema_drift monitor kind — the stateful baseline-diff engine (#592, ADR 0012)."""
 
 from __future__ import annotations
 
@@ -78,15 +40,15 @@ ColumnSpec = dict[str, str]
 
 _SQL_TYPES = frozenset({"snowflake", "unity_catalog"})
 _FILE_TYPES = frozenset({"adls_gen2", "s3"})
-# How many CSV rows the dtype inference samples — a header-only read types every
-# column `object`, which would report a phantom type change on the first run
-# after baselining from a sampled read. Small, bounded, header-adjacent.
+# How many CSV rows the dtype inference samples — a header-only read types every column `object`,
+# which would report a phantom type change on the first run after baselining from a sampled read.
 _CSV_TYPE_SAMPLE_ROWS = 1000
 
 
 class SchemaIntrospectionError(Exception):
     """The target's columns could not be introspected (unreachable datasource,
-    missing table/file). Carries a CLASSIFIED message — safe for result rows."""
+    missing table/file). Carries a CLASSIFIED message — safe for result rows.
+    """
 
 
 def diff_schemas(
@@ -95,13 +57,7 @@ def diff_schemas(
     *,
     ignore_columns: list[str] | None = None,
 ) -> dict[str, Any]:
-    """The pure schema diff: added / removed / type_changed vs the baseline.
-
-    Names are compared exactly as introspected (both sides come from the same
-    datasource path, so their spelling is consistent); ``ignore_columns``
-    matches case-insensitively — it is user-typed, and a case-mismatched ignore
-    silently ignoring nothing would be a footgun.
-    """
+    """The pure schema diff: added / removed / type_changed vs the baseline."""
     ignore = {name.lower() for name in (ignore_columns or ())}
     base = {c["name"]: c["type"] for c in baseline if c["name"].lower() not in ignore}
     cur = {c["name"]: c["type"] for c in current if c["name"].lower() not in ignore}
@@ -134,29 +90,15 @@ def _sql_columns(
     catalog: str | None,
     secret_store: SecretStore,
 ) -> list[ColumnSpec]:
-    """Column names+types from ``information_schema.columns`` (Snowflake / UC).
-
-    Identifiers are allowlist-validated before the (only) interpolation — the
-    optional catalog prefix; the schema/table land as BOUND parameters, matched
-    case-insensitively to mirror how the engines resolve unquoted identifiers.
-
-    The case-insensitive match is deliberate and stays after #476: this queries
-    ``information_schema`` for *metadata*, where the table name is a VALUE, not an
-    identifier — so a user who typed ``orders`` still finds ``ORDERS``. The
-    ambiguity that creates (several case-variant objects) is resolved below by
-    preferring the exact spelling and refusing a genuinely ambiguous reference,
-    rather than by narrowing the match.
-    """
+    """Column names+types from ``information_schema.columns`` (Snowflake / UC)."""
     effective_schema = resolve_effective_schema(connection, schema)
     validate_identifier(table)
     validate_identifier(effective_schema)
     if catalog is not None:
         validate_identifier(catalog)
     prefix = f"{catalog}." if catalog else ""
-    # Identifiers are validated above; every value is bound — so the Ruff S608 and
-    # bandit B608 markers on the line below are both intentional and both live. They
-    # carry only their test ids (#806): trailing prose is parsed as further ids by
-    # bandit and as a malformed directive by Ruff.
+    # Identifiers are validated above; every value is bound — so the Ruff S608 and bandit B608
+    # markers on the line below are both intentional and both live.
     query = text(
         f"SELECT table_schema, table_name, column_name, data_type "  # noqa: S608  # nosec B608
         f"FROM {prefix}information_schema.columns "
@@ -170,11 +112,8 @@ def _sql_columns(
         raise SchemaIntrospectionError(
             f"table {table!r} not found in information_schema (schema {effective_schema!r})"
         )
-    # Case-insensitive matching mirrors how the engines resolve unquoted
-    # identifiers — but it can match SEVERAL quoted case-variant objects (ORDERS
-    # and "Orders"), and merging their columns would baseline a union schema no
-    # real table has. Prefer the exact spelling; otherwise demand exactly one
-    # distinct object, and refuse (classified) when the reference is ambiguous.
+    # Case-insensitive matching mirrors how the engines resolve unquoted identifiers — but it can
+    # match SEVERAL quoted case-variant objects (ORDERS and "Orders").
     by_object: dict[tuple[str, str], list[ColumnSpec]] = {}
     for row_schema, row_table, name, data_type in rows:
         by_object.setdefault((str(row_schema), str(row_table)), []).append(
@@ -200,12 +139,6 @@ def _file_columns(
 ) -> list[ColumnSpec]:
     """Column names+types of a flat file: the Parquet footer schema (exact) or a
     bounded CSV sample (pandas dtype inference).
-
-    Both are **bounded reads** (#882): Parquet lands on its footer through
-    `RangeReader`, and the CSV sample is a head range. This runs on every
-    scheduled schema-drift run and on every dry-run preview, so downloading a
-    multi-GB object to read its column names was the #854 shape — full egress and
-    worker memory for a few hundred bytes of answer.
     """
     fmt = infer_file_format(path, file_format)
     secret = secret_store.get(connection.secret_ref or "")
@@ -216,9 +149,7 @@ def _file_columns(
         "secret": secret,
     }
     if fmt == "csv":
-        # A head range, not the object: enough for the header plus the type
-        # sample. A truncated final row is dropped rather than mis-typed — see
-        # `read_csv_head`.
+        # A head range, not the object: enough for the header plus the type sample.
         df = read_csv_head(**reader_args, rows=_CSV_TYPE_SAMPLE_ROWS)
         return [{"name": str(col), "type": str(dtype)} for col, dtype in df.dtypes.items()]
     import pyarrow.parquet as pq
@@ -232,7 +163,8 @@ def _iceberg_columns(
 ) -> list[ColumnSpec]:
     """Column names+types from Iceberg table metadata — the #859 drift leg: the
     schema is READ from ``metadata.json`` (via the loaded table's current
-    schema), never inferred from data files."""
+    schema), never inferred from data files.
+    """
     config = IcebergConfig.model_validate(connection.config)
     secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, secret_store)
     table = load_iceberg_table(config, secret, identifier, catalog_secret)
@@ -247,15 +179,7 @@ def introspect_columns(
     catalog: str | None,
     secret_store: SecretStore,
 ) -> list[ColumnSpec]:
-    """The live column snapshot for a run's resolved target, by connection type.
-
-    ``table`` is the run path's materialized target: a table name (SQL), the
-    ``namespace.table`` identifier (Iceberg), or the concrete file path
-    (flat-file — materialized by the batch resolver before this runs). Raises
-    :class:`SchemaIntrospectionError` with a classified message on any failure —
-    the raw adapter exception (which can carry DSNs/credential fragments) never
-    reaches a result row.
-    """
+    """The live column snapshot for a run's resolved target, by connection type."""
     try:
         if connection.type in _SQL_TYPES:
             return _sql_columns(
@@ -296,18 +220,7 @@ def build_schema_drift_executor(
     secret_store: SecretStore,
     persist: bool = True,
 ) -> Callable[[Check], CheckOutcome]:
-    """A per-run executor for schema_drift checks (the comparison pattern, #794).
-
-    First run (no stored baseline): captures the current snapshot as the
-    baseline (``captured_by`` NULL = run path) and reports a passing
-    "baseline captured" outcome. Later runs: diff current vs baseline →
-    the registry's outcome strategy bands the drifted-column count.
-
-    ``persist=False`` is the dry-run mode: nothing is written — a missing
-    baseline previews as "would capture", an existing one previews the live
-    diff. Introspection failure is the CHECK's operational error (#122), never
-    the run's — one unreachable target must not fail sibling checks.
-    """
+    """A per-run executor for schema_drift checks (the comparison pattern, #794)."""
 
     def executor(check: Check) -> CheckOutcome:
         try:
@@ -333,9 +246,8 @@ def build_schema_drift_executor(
                 "columns_checked": len(current),
             }
             if persist:
-                # Concurrency (two first runs of one suite racing) is handled by
-                # the shared store's ON CONFLICT DO NOTHING — see
-                # `monitor_baseline.insert_baseline_if_absent`.
+                # Concurrency (two first runs of one suite racing) is handled by the shared store's
+                # ON CONFLICT DO NOTHING — see `monitor_baseline.insert_baseline_if_absent`.
                 insert_baseline_if_absent(
                     session,
                     check_id=check.id,

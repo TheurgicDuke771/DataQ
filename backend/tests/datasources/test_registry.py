@@ -1,10 +1,4 @@
-"""Runner-registry dispatch tests (#146).
-
-`build_check_runner` routes by `connection.type` to the right `CheckRunner`
-builder, so the worker never branches on the type. Builders are exercised far
-enough to return a runner (no live connection — that's lazy), asserting the
-concrete runner class per type plus the error paths.
-"""
+"""Runner-registry dispatch tests (#146)."""
 
 import pytest
 
@@ -122,7 +116,8 @@ def test_a_sampling_block_resolves_on_every_full_load_datasource(
 
 def test_a_target_without_sampling_resolves_to_none() -> None:
     """The default has to stay "read everything" — a silently-applied cap would
-    change what every existing suite validates."""
+    change what every existing suite validates.
+    """
     assert resolve_target_shape("s3", {"path": "raw/orders.csv"}).sampling is None
 
 
@@ -133,10 +128,7 @@ def test_sampling_is_REFUSED_on_a_datasource_that_cannot_honour_it(
     """Refused at SAVE time, not ignored at run time. A silently-dropped sampling
     block leaves an author believing their nightly 100M-row suite is bounded when
     it is not, and the first evidence would be the OOM this feature prevents.
-
-    Snowflake is excluded because it pushes every expectation down and never
-    materialises rows (200M rows, worker flat — docs/site/perf-baseline.md); Iceberg
-    because its sampled read is not built yet. Both would be the same lie."""
+    """
     target = {
         "table": "orders",
         "schema": "sales",
@@ -149,7 +141,8 @@ def test_sampling_is_REFUSED_on_a_datasource_that_cannot_honour_it(
 def test_a_malformed_sampling_block_is_a_target_shape_error() -> None:
     """`SamplingConfigError` is translated to the target-shape error the service
     layer maps to a 422 — so a bad spec is an author-time complaint, not a run
-    that fails every night."""
+    that fails every night.
+    """
     with pytest.raises(TargetShapeError, match="strategy"):
         resolve_target_shape("s3", {"path": "a.csv", "sampling": {"strategy": "tail", "rows": 1}})
 
@@ -157,7 +150,8 @@ def test_a_malformed_sampling_block_is_a_target_shape_error() -> None:
 def test_the_sampling_spec_reaches_the_flat_file_runner() -> None:
     """The seam is only worth anything if the builder passes it through — a spec
     that resolves but never reaches the runner is the silent-drop failure with
-    extra steps."""
+    extra steps.
+    """
     sample = SampleSpec(strategy="head", rows=25)
     runner = build_check_runner(
         conn_type="s3",
@@ -188,7 +182,8 @@ def test_a_pushdown_runner_ignores_a_sampling_spec_rather_than_crashing() -> Non
     """Belt over the braces: `SAMPLING_CAPABLE_TYPES` already refuses this at save
     time, so it is unreachable through the normal path — but a builder that raised
     on an unexpected keyword would turn a stale target into a failed run instead of
-    an inert field."""
+    an inert field.
+    """
     runner = build_check_runner(
         conn_type="snowflake",
         config=_SNOWFLAKE_CONFIG,
@@ -200,14 +195,9 @@ def test_a_pushdown_runner_ignores_a_sampling_spec_rather_than_crashing() -> Non
 
 
 def test_every_sampling_capable_type_actually_threads_the_spec() -> None:
-    """J5. `SAMPLING_CAPABLE_TYPES` (which decides what SAVES) is a different
-    thing from whether a builder actually passes `sampling` to its runner — and
-    the pushdown builders swallow the kwarg via `**_`. Adding a type to the set
-    and forgetting the builder would therefore produce exactly the silent-drop
-    this feature refuses at save time: accepted, persisted, never honoured.
-
-    Asserted over the SET rather than per type, so a new entry is covered the
-    moment it is added rather than when someone remembers to write its test.
+    """J5. `SAMPLING_CAPABLE_TYPES` (which decides what SAVES) is a different thing from whether a
+    builder actually passes `sampling` to its runner — and the pushdown builders swallow the
+    kwarg via `**_`.
     """
     spec = SampleSpec(strategy="head", rows=7)
     config_by_type = {

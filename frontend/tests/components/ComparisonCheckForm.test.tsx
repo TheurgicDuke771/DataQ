@@ -62,11 +62,8 @@ describe('ComparisonCheckForm', () => {
   });
 
   it('hides the join-key Select dropdown arrow (styled as a plain tag input)', () => {
-    // Regression: a review on the #1310 antd-deprecation sweep caught that
-    // `suffix={null}` — the naive migration off the deprecated `suffixIcon` —
-    // is a no-op on antd's own Select (only rc-select's lower-level BaseSelect
-    // reads `suffix`; antd's Select still keys its icon off `suffixIcon`,
-    // antd/es/select/useIcons.js). `suffixIcon={null}` is the one that works.
+    // Regression: a review on the #1310 antd-deprecation sweep caught that `suffix={null}` — the
+    // naive migration off the deprecated `suffixIcon`.
     renderForm();
     const label = screen.getByText('Join key columns');
     const formItem = label.closest('.ant-form-item');

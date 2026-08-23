@@ -1,9 +1,4 @@
-"""S3 connection adapter tests — config validation + the head_bucket probe.
-
-No live AWS: ``boto3.client`` is monkeypatched so the head_bucket probe runs
-against a fake. The adapter is DB-free, so these are pure unit tests (no
-db_session).
-"""
+"""S3 connection adapter tests — config validation + the head_bucket probe."""
 
 from typing import Any
 
@@ -50,9 +45,9 @@ def test_validate_config_rejects_access_key_without_key_id() -> None:
 
 
 def test_validate_config_rejects_unknown_field() -> None:
-    # `endpoint` is deliberately the near-miss of the real `endpoint_url` field:
-    # extra="forbid" must still reject it rather than silently ignoring a typo
-    # that would leave the connection quietly pointing at AWS.
+    # `endpoint` is deliberately the near-miss of the real `endpoint_url` field: extra="forbid"
+    # must still reject it rather than silently ignoring a typo that would leave the connection
+    # quietly pointing at AWS.
     with pytest.raises(ValidationError):
         S3ConnectionAdapter().validate_config({**_ACCESS_KEY_CONFIG, "endpoint": "x"})
 
@@ -83,7 +78,8 @@ def test_validate_config_rejects_a_schemeless_endpoint_url() -> None:
 
 def test_validate_config_rejects_a_credential_in_the_endpoint_url() -> None:
     """`config` is plaintext JSONB — a credential here would be persisted outside
-    the secret store (#754/#826; same rule as `IcebergConfig.catalog_uri`)."""
+    the secret store (#754/#826; same rule as `IcebergConfig.catalog_uri`).
+    """
     with pytest.raises(ValidationError, match="must not embed a credential"):
         S3ConnectionAdapter().validate_config(
             {**_ACCESS_KEY_CONFIG, "endpoint_url": "https://AKIAKEY:secretkey@minio:9000"}
@@ -92,7 +88,8 @@ def test_validate_config_rejects_a_credential_in_the_endpoint_url() -> None:
 
 def test_validate_config_allows_a_username_only_endpoint_url() -> None:
     """A bare username is an identifier, not a credential — `uri_password` says so,
-    and rejecting it would be a false positive on a legitimate URL."""
+    and rejecting it would be a false positive on a legitimate URL.
+    """
     cfg = S3ConnectionAdapter().validate_config(
         {**_ACCESS_KEY_CONFIG, "endpoint_url": "https://tenant@minio:9000"}
     )
@@ -138,12 +135,7 @@ def test_test_head_buckets_with_access_key(monkeypatch: pytest.MonkeyPatch) -> N
 def test_test_targets_a_compatible_endpoint_with_path_addressing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A MinIO-shaped config must reach boto3 as endpoint + path addressing (#1063).
-
-    Both halves matter: without the endpoint the probe hits AWS, and without path
-    addressing boto3 resolves ``dataq-lake.minio:9000`` — a host that does not
-    exist — so head_bucket fails for a reason that looks like a network fault.
-    """
+    """A MinIO-shaped config must reach boto3 as endpoint + path addressing (#1063)."""
     calls: dict[str, Any] = {}
 
     class _FakeClient:
@@ -164,12 +156,7 @@ def test_test_targets_a_compatible_endpoint_with_path_addressing(
 
 
 def test_test_leaves_the_aws_client_untouched(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The no-endpoint path must be byte-identical to pre-#1063.
-
-    `endpoint_url=None` is boto3's own default, and `config.s3` stays unset rather
-    than being pinned to an addressing style — so adding S3-compatible support
-    cannot change how an existing AWS connection resolves.
-    """
+    """The no-endpoint path must be byte-identical to pre-#1063."""
     calls: dict[str, Any] = {}
 
     class _FakeClient:

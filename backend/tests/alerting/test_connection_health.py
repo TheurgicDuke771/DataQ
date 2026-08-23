@@ -1,20 +1,4 @@
-"""Tests for the connection poll-health alert (#837) — the *push* half of #828.
-
-The behaviours worth defending are the ones that made the original outage possible,
-so they are tested as failure modes, not happy paths:
-
-- **it fires on the crossing, not on every failing poll** — a connection whose
-  credential expired keeps failing every 10 minutes forever, and a `>=` here would send
-  144 alerts a day until the channel was muted, putting us right back in the dark;
-- **it signals recovery, but only if it ever alerted** — a single blip stays silent;
-- **the alert carries the CLASSIFIED reason, never the raw exception** — the real #828
-  exception carried the SAS query string, and an alert is the one place a credential
-  would leave DataQ's trust boundary;
-- **a broken channel can't take down the polling sweep** it is reporting on.
-
-DB-backed where the dispatch path needs a real `Connection` row; the render + crossing
-tests are pure. Skips without TEST_DATABASE_URL.
-"""
+"""Tests for the connection poll-health alert (#837) — the *push* half of #828."""
 
 from __future__ import annotations
 
@@ -47,18 +31,16 @@ from backend.app.worker.celery_app import celery_app
 from backend.tests.alerting.test_health_publish_composite import _Channel
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
-# The exact shape of the credential that leaked in #828: an ADLS SAS whose query string
-# rides in the exception message. If any renderer ever interpolates a raw exception, this
-# string is what shows up in the Teams card.
+# The exact shape of the credential that leaked in #828: an ADLS SAS whose query string rides in the
+# exception message.
 _SAS = "sig=abc%2Fdef%3D&se=2027-01-01&sp=rl"
 
 
 class _SpyHealthPublisher:
-    """Stands in for the top-level publisher `registry.get_health_publisher()` returns
-    (i.e. already past the composite's own fan-out/aggregation, which is covered
-    separately in ``test_health_publish_composite.py``). ``undeliverable`` simulates
-    every real channel quietly skipping as unconfigured — the #1101 shape: no
-    exception, nothing sent, so the composite raises ``AlertUndeliverableError``."""
+    """Stands in for the top-level publisher `registry.get_health_publisher()` returns (i.e.
+    already past the composite's own fan-out/aggregation, which is covered separately in
+    ``test_health_publish_composite.py``).
+    """
 
     def __init__(self, *, boom: bool = False, undeliverable: bool = False) -> None:
         self.reports: list[ConnectionHealthReport] = []
@@ -122,18 +104,14 @@ def _raise_channel_down(*_args: Any, **_kwargs: Any) -> None:
 def _raise_undeliverable(*_args: Any, **_kwargs: Any) -> None:
     """Stands in for the composite's own #1101 signal: every real channel quietly
     skipped as unconfigured, so nothing was sent and nothing raised on its own —
-    the composite is what turns that silence into this exception."""
+    the composite is what turns that silence into this exception.
+    """
     raise AlertUndeliverableError("no alert channel is configured")
 
 
 @pytest.fixture
 def dispatched(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
-    """Records what `_alert_connection_health` QUEUES, without running it.
-
-    The publish now happens in its own task (#842), so the sweep-side unit under
-    test is the decision plus the hand-off — asserting on a publisher spy here
-    would assert the old synchronous design back into existence.
-    """
+    """Records what `_alert_connection_health` QUEUES, without running it."""
     calls: list[tuple[str, str]] = []
 
     def _send_task(name: str, args: list[str], **_kwargs: Any) -> None:
@@ -171,15 +149,6 @@ def test_no_alert_storm_once_the_operator_has_been_told(
 ) -> None:
     """The #828 outage ran six days = ~864 consecutive failed polls. Every one past
     the crossing must be silent, or the channel gets muted and we are blind again.
-
-    What makes them silent is now the DELIVERED-alert flag, not the counter's `==`.
-    The fixture says so: `health_alerted_at` is set, because by sweep 144 an alert
-    has landed. The previous version of this test left it NULL and relied on the
-    equality — encoding the old model rather than the situation.
-
-    The streak EQUAL to the threshold is in the list deliberately (review finding):
-    without it, every case sits above the threshold, so a revert to `==` would keep
-    this test green and only the lowered-threshold test would catch it.
     """
     conn = _connection(db_session, health_alerted_at=datetime.now(UTC))
     tasks._alert_connection_health(
@@ -193,7 +162,8 @@ def test_a_lowered_threshold_still_alerts_a_connection_already_past_it(
 ) -> None:
     """#843's second half. Under the old `==` test a connection sitting at streak 40
     when the threshold dropped from 50 to 3 never lands on the equality again, so it
-    never alerted at all — silently, which is the worst way to not alert."""
+    never alerted at all — silently, which is the worst way to not alert.
+    """
     monkeypatch.setattr(get_settings(), "orchestration_poll_failure_alert_threshold", 3)
     conn = _connection(db_session)  # nothing delivered yet
     tasks._alert_connection_health(db_session, connection_id=conn.id, streak=40, recovered=False)
@@ -204,7 +174,8 @@ def test_threshold_zero_disables_the_push(
     db_session: Any, dispatched: list[tuple[str, str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Opting out of the push must not opt you out of the truth: #828's in-app health
-    badge and lineage warning are unconditional; only the notification is gated."""
+    badge and lineage warning are unconditional; only the notification is gated.
+    """
     monkeypatch.setattr(get_settings(), "orchestration_poll_failure_alert_threshold", 0)
     conn = _connection(db_session, health_alerted_at=datetime.now(UTC))
     tasks._alert_connection_health(db_session, connection_id=conn.id, streak=3, recovered=False)
@@ -221,7 +192,8 @@ def test_recovery_alerts_only_when_a_failing_alert_was_DELIVERED(
     """#843's first half. The old code recovered off the counter, so an operator could
     be told an alarm had ENDED that they were never told had BEGUN — the failing alert
     having been swallowed by a down channel, an unresolved webhook or a missing
-    secret, each a quiet no-op."""
+    secret, each a quiet no-op.
+    """
     conn = _connection(db_session, health_alerted_at=datetime.now(UTC))
     tasks._alert_connection_health(db_session, connection_id=conn.id, streak=5, recovered=True)
     assert dispatched == [(str(conn.id), HEALTH_RECOVERED)]
@@ -233,7 +205,8 @@ def test_recovery_is_silent_when_nothing_was_delivered(
 ) -> None:
     """Including a streak well PAST the threshold: what matters is that no alert
     landed, not how long it failed. A blip that self-healed, or a crossing whose
-    publish was swallowed, both leave nothing to sound an all-clear for."""
+    publish was swallowed, both leave nothing to sound an all-clear for.
+    """
     conn = _connection(db_session)  # health_alerted_at is NULL
     tasks._alert_connection_health(db_session, connection_id=conn.id, streak=streak, recovered=True)
     assert dispatched == []
@@ -248,7 +221,8 @@ def test_the_sweep_never_waits_on_a_channel(
     """#842: publishing used to run synchronously inside the connection loop inside
     the beat task — Teams (10s) + Slack (10s) + SMTP (15s) per crossing. When the
     outage is DataQ-side EVERY connection crosses on the same sweep, so ten of them
-    bolted ~6 minutes of blocking sends onto a task that beats every 10 minutes."""
+    bolted ~6 minutes of blocking sends onto a task that beats every 10 minutes.
+    """
     conn = _connection(db_session, consecutive_poll_failures=3)
     tasks._alert_connection_health(db_session, connection_id=conn.id, streak=3, recovered=False)
     assert dispatched  # it was queued…
@@ -274,7 +248,8 @@ def test_a_swallowed_publish_leaves_the_edge_open_to_retry(
 ) -> None:
     """The flag must mean "delivered", so a publish that quietly fails must NOT set
     it — otherwise the next sweep sees an outstanding alert nobody received, and the
-    eventual recovery announces the end of an alarm that never sounded."""
+    eventual recovery announces the end of an alarm that never sounded.
+    """
     conn = _connection(db_session, consecutive_poll_failures=3)
     monkeypatch.setattr(tasks, "get_session", lambda: db_session)
     monkeypatch.setattr(db_session, "close", lambda: None)
@@ -304,7 +279,8 @@ def test_a_malformed_queue_message_is_dropped_not_published(
 ) -> None:
     """Task args cross the broker as plain JSON, so the state literal is established
     here rather than assumed. An unknown edge must not publish an alert whose meaning
-    nobody can state."""
+    nobody can state.
+    """
     monkeypatch.setattr(tasks, "get_session", lambda: db_session)
     assert tasks.publish_connection_health(str(uuid.uuid4()), "sideways") is False
     assert spy.reports == []
@@ -342,7 +318,8 @@ def test_a_broken_channel_never_breaks_the_poll(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The safety property: notification failure is contained. A dead Slack webhook must
-    not raise out of the polling sweep it is reporting on."""
+    not raise out of the polling sweep it is reporting on.
+    """
     monkeypatch.setattr(registry, "get_health_publisher", lambda: _SpyHealthPublisher(boom=True))
     conn = _connection(db_session)
     assert not dispatch.publish_connection_health(
@@ -356,26 +333,11 @@ def test_a_broken_channel_never_breaks_the_poll(
 def test_every_channel_failing_logs_the_last_traceback_once_not_twice(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The bug (#1226): when EVERY channel fails, the composite already logs a full
-    traceback per failing channel (including the last, whose error it re-raises).
-    Before this fix, `dispatch.publish_connection_health`'s own `except Exception:
-    log.exception(...)` logged that same last-channel traceback a SECOND time. Now
-    it must downgrade to a warning — no `exc_info` — while the composite's own
-    per-channel logs (one per channel, real bugs it wants surfaced) are untouched.
-
-    Routed through a REAL `CompositePublisher` with `_Channel(fail=True)` — the
-    same double `test_health_publish_composite.py` already uses to exercise the
-    composite's own fan-out — unlike `_SpyHealthPublisher` above, which stands in
-    for the composite itself and so never exercises its own logging/marking.
-
-    #1261 moved the downgrade out of `dispatch.py` (now an unconditional
-    `log.exception(...)`) into the shared structlog processor
-    (`_downgrade_already_logged_exceptions`), so it must be passed explicitly to
-    `capture_logs()` — that helper clears the app's configured processor chain for
-    its duration and otherwise wouldn't run it. Its own `log_level` key is derived
-    from the bound-logger method name alone (`exception` → `error`, always, no
-    processor can change that), so the downgrade is asserted on the `level` key the
-    processor actually writes instead — the field the real JSON output carries."""
+    """The bug (#1226): when EVERY channel fails, the composite already logs a full traceback per
+    failing channel (including the last, whose error it re-raises). Before this fix,
+    `dispatch.publish_connection_health`'s own `except Exception: log.exception(...)` logged
+    that same last-channel traceback a SECOND time.
+    """
     monkeypatch.setattr(
         registry,
         "get_health_publisher",
@@ -392,11 +354,8 @@ def test_every_channel_failing_logs_the_last_traceback_once_not_twice(
     channel_events = [e for e in logs if e["event"] == "channel_health_publish_failed"]
     dispatch_events = [e for e in logs if e["event"] == "connection_health_publish_failed"]
 
-    # The composite still logs one full traceback per failing channel — that part
-    # of the contract is unchanged and must stay that way (two channels, two logs).
-    # Neither of these is marked at the moment it is logged (the composite only
-    # marks the LAST error, after the loop, right before re-raising it), so the
-    # processor is a no-op on both and `log_level` (method-name-derived) is enough.
+    # The composite still logs one full traceback per failing channel — that part of the contract is
+    # unchanged and must stay that way (two channels, two logs).
     assert len(channel_events) == 2
     assert all(e["log_level"] == "error" and e.get("exc_info") for e in channel_events)
 
@@ -413,7 +372,8 @@ def test_an_exception_the_composite_never_saw_still_gets_a_full_traceback(
     """The downgrade must be narrow: a bug that has nothing to do with the composite
     fan-out (here, `registry.get_health_publisher()` itself blowing up) is NOT
     pre-marked, so it must still surface with its full traceback — the fix must not
-    accidentally silence genuinely new failures."""
+    accidentally silence genuinely new failures.
+    """
 
     def _boom() -> Any:
         raise RuntimeError("registry misconfigured")
@@ -435,7 +395,8 @@ def test_an_exception_the_composite_never_saw_still_gets_a_full_traceback(
 
 def test_recovery_report_carries_no_reason(db_session: Any, spy: _SpyHealthPublisher) -> None:
     """A recovered connection still has last_poll_error set from the failure that
-    preceded it; the recovery alert must not present a stale error as current."""
+    preceded it; the recovery alert must not present a stale error as current.
+    """
     conn = _connection(db_session, last_poll_error="auth_failed")
     dispatch.publish_connection_health(db_session, connection_id=conn.id, state=HEALTH_RECOVERED)
     assert spy.reports[0].reason is None
@@ -473,14 +434,11 @@ def test_five_failing_sweeps_produce_exactly_one_alert(
     db_session: Any, spy: _SpyHealthPublisher, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """End-to-end through the real beat task: the poll fails five times in a row and the
-    operator is told once, at the 3rd — the crossing — with a classified reason."""
+    operator is told once, at the 3rd — the crossing — with a classified reason.
+    """
     conn = _connection(db_session)
     monkeypatch.setattr(tasks, "get_orchestration_provider", lambda _t: _RaisingProvider())
-    # Run the queued publish INLINE rather than stubbing it out. The point of this
-    # test is the whole chain — sweep decides, task publishes, delivery sets the
-    # flag, flag suppresses the next four sweeps — and a stub at the hand-off would
-    # verify only the first link. This is also what now proves the storm prevention
-    # comes from DELIVERY state and not from the counter's old `==`.
+    # Run the queued publish INLINE rather than stubbing it out.
     monkeypatch.setattr(tasks, "get_session", lambda: db_session)
     monkeypatch.setattr(db_session, "close", lambda: None)
     monkeypatch.setattr(
@@ -508,7 +466,8 @@ def test_five_failing_sweeps_produce_exactly_one_alert(
 def test_a_failing_alert_never_hides_why(db_session: Any, spy: _SpyHealthPublisher) -> None:
     """A card that says "poll failing" and omits the reason is barely better than the
     silence #828 was about. An unset reason degrades to a visible 'unknown', it does not
-    vanish (health_facts drops empty values)."""
+    vanish (health_facts drops empty values).
+    """
     conn = _connection(db_session, consecutive_poll_failures=3, last_poll_error=None)
     dispatch.publish_connection_health(db_session, connection_id=conn.id, state=HEALTH_FAILING)
     assert spy.reports[0].reason
@@ -520,7 +479,8 @@ def test_a_recovery_alert_cannot_mark_a_healthy_poll_as_failing(
 ) -> None:
     """The recovery alert must sit OUTSIDE the try that records a poll failure: if a
     notification raised in there, a poll that actually SUCCEEDED would be recorded as a
-    failure — corrupting the streak the alert keys on."""
+    failure — corrupting the streak the alert keys on.
+    """
 
     class _Exploding:
         def publish_health(self, session: Any, report: ConnectionHealthReport) -> None:
@@ -543,7 +503,8 @@ def test_a_recovery_alert_cannot_mark_a_healthy_poll_as_failing(
 
 def test_builder_never_derives_the_reason_from_an_exception(db_session: Any) -> None:
     """The reason is read from the CLASSIFIED column, so whatever the transport raised
-    (here: a SAS query string) is structurally unable to reach the report."""
+    (here: a SAS query string) is structurally unable to reach the report.
+    """
     conn = _connection(db_session, consecutive_poll_failures=3, last_poll_error="auth_failed")
     report = build_connection_health_report(conn, state=HEALTH_FAILING)
     assert report.reason == "auth_failed"
@@ -563,7 +524,8 @@ def test_no_channel_can_leak_a_credential(render: Any) -> None:
     """Belt-and-braces: even handed a report whose reason somehow contained a SAS, a
     renderer must not be the thing that ships it — the assertion is that the reason we
     pass through is the only field they read, so a classified reason renders and this
-    test would fail loudly the day someone interpolates an exception instead."""
+    test would fail loudly the day someone interpolates an exception instead.
+    """
     body = render(_report(reason="auth_failed"))
     assert "auth_failed" in body
     assert _SAS not in body
@@ -624,10 +586,6 @@ def test_only_one_of_two_racing_tasks_publishes(
     """Overlapping sweeps are expected — the 10-minute poll, the 30-minute gap
     recovery and the #492 poll-now can all be in flight — and two of them can read
     `health_alerted_at IS NULL` and queue a task each.
-
-    The old `==` design was safe against this by construction: only one of two
-    serialized streak values can equal the threshold. `>=` gave that up, so the task
-    claims the edge with one atomic conditional UPDATE and the loser does nothing.
     """
     conn = _connection(db_session, consecutive_poll_failures=3)
     monkeypatch.setattr(tasks, "get_session", lambda: db_session)
@@ -645,7 +603,8 @@ def test_a_failed_publish_releases_its_claim_so_the_next_sweep_retries(
 ) -> None:
     """The claim is taken BEFORE publishing, so a failed send must release it —
     otherwise the flag would read "an operator was told" when nobody was, which is
-    exactly the lie #843 removes."""
+    exactly the lie #843 removes.
+    """
     conn = _connection(db_session, consecutive_poll_failures=3)
     monkeypatch.setattr(tasks, "get_session", lambda: db_session)
     monkeypatch.setattr(db_session, "close", lambda: None)
@@ -655,12 +614,7 @@ def test_a_failed_publish_releases_its_claim_so_the_next_sweep_retries(
     db_session.refresh(conn)
     assert conn.health_alerted_at is None
 
-    # …and the retry, once the channel is back, succeeds. Flip the spy's own flag
-    # rather than `monkeypatch.undo()` — undo() reverts EVERY patch made through
-    # this test's `monkeypatch` fixture, including the `spy` FIXTURE's own
-    # `registry.get_health_publisher` replacement (both draw from the same
-    # function-scoped instance), which would silently fall through to the REAL,
-    # unconfigured registry composite and mask this test behind #1101's own bug.
+    # …and the retry, once the channel is back, succeeds.
     monkeypatch.setattr(spy, "_boom", False)
     assert tasks.publish_connection_health(str(conn.id), HEALTH_FAILING) is True
     db_session.refresh(conn)
@@ -673,7 +627,8 @@ def test_a_failed_recovery_publish_restores_the_outstanding_alert(
     """Symmetric to the above: clearing the flag is the RECOVERED claim, so a failed
     recovery send must put it back. Otherwise the alarm reads as closed to us while
     the operator was never told it ended — and the next real outage would then be
-    announced as if the first had been resolved."""
+    announced as if the first had been resolved.
+    """
     was = datetime.now(UTC)
     conn = _connection(db_session, health_alerted_at=was)
     monkeypatch.setattr(tasks, "get_session", lambda: db_session)
@@ -692,13 +647,11 @@ def test_a_failed_recovery_publish_restores_the_outstanding_alert(
 def test_a_workspace_with_no_configured_channel_never_stamps_the_flag(
     db_session: Any, spy: _SpyHealthPublisher, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The bug this closes: every real channel (Teams/Slack/email) quietly returns
-    ``False`` when unconfigured, and the old composite never raised for that — so on
-    the shipped default (zero alert channels configured) this used to claim
-    `health_alerted_at` with ZERO notifications sent, permanently suppressing the
-    edge. `AlertUndeliverableError` (raised by the composite when nothing was sent)
-    must make the task treat this exactly like a failed publish: release the claim
-    so the next sweep retries."""
+    """The bug this closes: every real channel (Teams/Slack/email) quietly returns ``False`` when
+    unconfigured, and the old composite never raised for that — so on the shipped default (zero
+    alert channels configured) this used to claim `health_alerted_at` with ZERO notifications
+    sent, permanently suppressing the edge.
+    """
     conn = _connection(db_session, consecutive_poll_failures=3)
     monkeypatch.setattr(tasks, "get_session", lambda: db_session)
     monkeypatch.setattr(db_session, "close", lambda: None)
@@ -716,7 +669,8 @@ def test_a_workspace_with_no_configured_channel_leaves_a_recovery_outstanding(
 ) -> None:
     """Symmetric to the failing edge: if every channel is unconfigured when the
     RECOVERED edge tries to fire, the outstanding alert must stay outstanding —
-    clearing it would silently tell nobody the incident ever ended."""
+    clearing it would silently tell nobody the incident ever ended.
+    """
     was = datetime.now(UTC)
     conn = _connection(db_session, health_alerted_at=was)
     monkeypatch.setattr(tasks, "get_session", lambda: db_session)
@@ -734,7 +688,8 @@ def test_a_workspace_with_one_configured_channel_that_sends_still_stamps_the_fla
 ) -> None:
     """The other half of the same contract: a channel that actually delivers must
     still result in the flag being stamped — #1101 must not turn every publish
-    into a no-op, only the zero-configured one."""
+    into a no-op, only the zero-configured one.
+    """
     conn = _connection(db_session, consecutive_poll_failures=3, last_poll_error="auth_failed")
     monkeypatch.setattr(tasks, "get_session", lambda: db_session)
     monkeypatch.setattr(db_session, "close", lambda: None)
@@ -751,7 +706,8 @@ def test_dispatch_returns_false_undeliverable_without_a_full_traceback(
 ) -> None:
     """At the dispatch seam (below the #842 claim), an all-unconfigured workspace
     must come back as an ordinary `False` — not bubble up as an unexpected
-    exception the way a genuinely broken channel does."""
+    exception the way a genuinely broken channel does.
+    """
     conn = _connection(db_session, consecutive_poll_failures=3)
     monkeypatch.setattr(spy, "publish_health", _raise_undeliverable)
 
@@ -767,7 +723,8 @@ def test_a_broken_decision_read_does_not_abort_the_sweep(
     """The decision's `session.get` runs on the SUCCESS path too, after every healthy
     poll — where it sits outside the caller's try/except. A transient DB error there
     must not starve every connection later in the sweep, which is the isolation #842
-    exists to strengthen."""
+    exists to strengthen.
+    """
     conn = _connection(db_session)
     monkeypatch.setattr(db_session, "get", _raise_channel_down)
 
@@ -784,17 +741,16 @@ def test_a_datasource_alerts_once_on_crossing_not_per_failing_run(
 ) -> None:
     """A dead credential fails EVERY run, forever. Without the delivery flag this
     would page on every run — #828's blindness recreated as an alert storm, which
-    is the thing #839's crossing design exists to prevent."""
+    is the thing #839's crossing design exists to prevent.
+    """
     from backend.app.worker import tasks
 
     conn = _connection(db_session)
     sent: list[str] = []
 
     def _fake_dispatch(cid: Any, kind: str) -> None:
-        # Stands in for the real dispatch AND its delivery record: the flag is
-        # written by `publish_connection_health` after a successful publish. A stub
-        # that only records the call leaves `outstanding` False forever, so this
-        # test would pass against code with no de-duplication at all.
+        # Stands in for the real dispatch AND its delivery record: the flag is written by
+        # `publish_connection_health` after a successful publish.
         sent.append(kind)
         conn.health_alerted_at = datetime.now(UTC)
         db_session.flush()
@@ -812,7 +768,8 @@ def test_a_datasource_recovery_needs_a_delivered_failure_first(
 ) -> None:
     """The #843 rule, on the run path too: never tell an operator an alarm ended
     that they were never told had begun. Publishing is best-effort, so 'we counted
-    a crossing' and 'they heard about it' are different facts."""
+    a crossing' and 'they heard about it' are different facts.
+    """
     from backend.app.worker import tasks
 
     sent: list[str] = []

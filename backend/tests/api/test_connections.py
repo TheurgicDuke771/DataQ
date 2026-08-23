@@ -1,11 +1,4 @@
-"""Connection endpoint tests against a real Postgres (db_session) via TestClient.
-
-get_db + get_secret_store are overridden to a shared test session and an
-in-memory store; the connectivity adapter is monkeypatched so /test needs no
-live warehouse. Auth runs in dev-bypass mode (conftest), which upserts the dev
-user into the same session for the created_by FK. Skips without
-TEST_DATABASE_URL.
-"""
+"""Connection endpoint tests against a real Postgres (db_session) via TestClient."""
 
 import uuid
 from collections.abc import Iterator
@@ -56,12 +49,7 @@ def _adf_payload(**overrides: Any) -> dict[str, Any]:
 
 
 class _WriteFailStore(FakeSecretStore):
-    """SecretStore whose set() fails — simulates Key Vault unreachable (#87).
-
-    `.delete()` is inherited from `FakeSecretStore`: a `dict.pop(name, None)`
-    against the store's always-empty `data` (nothing here ever writes
-    successfully) is already the no-op the original hand-rolled `pass` was.
-    """
+    """SecretStore whose set() fails — simulates Key Vault unreachable (#87)."""
 
     def set(self, name: str, value: str) -> None:
         raise SecretWriteError("key vault unreachable")
@@ -83,7 +71,8 @@ class _FailAdapter(_PassAdapter):
 class _OptionalSecretAdapter(_PassAdapter):
     """A `secret_optional=True` stand-in (the Iceberg/dbt shape, #351) — proves
     the route hands a credential-less adapter a real `None`, never "" or a
-    placeholder, and never 502s for the missing secret."""
+    placeholder, and never 502s for the missing secret.
+    """
 
     secret_optional = True
 
@@ -146,11 +135,6 @@ def test_a_blank_secret_is_rejected_rather_than_written(
     `min_length`, the service wrote the empty string straight through to the
     SecretStore and returned 200/201 — the connection then had no visible state
     until a run failed (the #954 blindness).
-
-    On PATCH it also punched a hole in #1401's redirect guard: `""` satisfied
-    "you re-supplied the credential" while destroying it, so a caller could move
-    a connection to their own host and blank the credential in one quiet request.
-    Caught in the #1403 review; `reauth` has carried this bound since it shipped.
     """
     api, store = client
     blank_create = api.post("/api/v1/connections", json=_create_payload(secret=""))
@@ -306,7 +290,8 @@ def test_delete_with_dependent_suite_is_409_envelope_not_500(
     client: tuple[TestClient, FakeSecretStore],
 ) -> None:
     """#753 at the wire: the FK conflict surfaces as the standard 409 error
-    envelope naming the dependent suites — never an unhandled 500."""
+    envelope naming the dependent suites — never an unhandled 500.
+    """
     api, _ = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
     suite = api.post("/api/v1/suites", json={"name": "uses-conn", "connection_id": cid})
@@ -319,10 +304,7 @@ def test_delete_with_dependent_suite_is_409_envelope_not_500(
     assert err["detail"]["total"] == 1
     assert err["detail"]["suites"][0]["name"] == "uses-conn"
 
-    # Removing the dependent unblocks the delete. The calls are hoisted OUT of the
-    # asserts (CodeQL py/side-effect-in-assert): under `python -O` assert bodies are
-    # stripped, so an in-assert request would silently never fire and the test would
-    # "pass" having exercised nothing.
+    # Removing the dependent unblocks the delete.
     suite_deleted = api.delete(f"/api/v1/suites/{suite.json()['id']}")
     assert suite_deleted.status_code == 204
     conn_deleted = api.delete(f"/api/v1/connections/{cid}")
@@ -355,12 +337,7 @@ def test_test_endpoint_failure_returns_502(
 
 
 def _ref(cid: str, payload: dict[str, object] | None = None) -> str:
-    """The vault key the service mints for a connection created from `_create_payload`.
-
-    Derived rather than hardcoded: `secret_ref` is deliberately not exposed on the
-    API response, and pinning a literal here is what made these tests break on a
-    naming change they have nothing to do with.
-    """
+    """The vault key the service mints for a connection created from `_create_payload`."""
     body = payload or _create_payload()
     return connection_secret_ref(
         connection_id=cid,
@@ -479,11 +456,11 @@ def test_draft_test_missing_secret_returns_502(
 def test_draft_test_snowflake_without_secret_still_502s_with_clear_message(
     client: tuple[TestClient, FakeSecretStore],
 ) -> None:
-    """Snowflake's credential is NOT optional (#351 review) — must still 502
-    with the clear "a credential is required" message rather than silently
-    letting a `None` through to the adapter. No adapter monkeypatch: the
-    REAL `SnowflakeConnectionAdapter` is used, and the 502 fires before the
-    adapter is ever invoked (so no network call happens either way)."""
+    """Snowflake's credential is NOT optional (#351 review) — must still 502 with the clear "a
+    credential is required" message rather than silently letting a `None` through to the
+    adapter. No adapter monkeypatch: the REAL `SnowflakeConnectionAdapter` is used, and the 502
+    fires before the adapter is ever invoked (so no network call happens either way).
+    """
     api, _ = client
     resp = api.post("/api/v1/connections/test", json=_draft_payload(secret=None))
     assert resp.status_code == 502
@@ -498,7 +475,8 @@ def test_draft_test_secret_optional_adapter_allows_missing_secret(
 ) -> None:
     """Iceberg/dbt (`secret_optional`) — a legitimate credential-less draft
     must not 502 just because `secret` is absent, and the adapter must
-    receive a real `None`, never "" or a placeholder."""
+    receive a real `None`, never "" or a placeholder.
+    """
     api, _ = client
     adapter = _OptionalSecretAdapter()
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: adapter)
@@ -517,7 +495,8 @@ def test_draft_test_iceberg_glue_catalog_with_no_secret_succeeds(
     """End-to-end against the REAL `IcebergConnectionAdapter` (only the
     network-touching `pyiceberg.catalog.load_catalog` call mocked out, the
     same pattern `test_iceberg.py` uses) — a Glue catalog needs no
-    credential, so a draft test with `secret=None` must pass."""
+    credential, so a draft test with `secret=None` must pass.
+    """
     api, _ = client
 
     class _FakeCatalog:
@@ -544,7 +523,8 @@ def test_draft_test_dbt_file_scheme_with_no_secret_succeeds(
     """End-to-end against the REAL `DbtConnectionAdapter` — a local `file://`
     artifacts path needs no credential (the connection docstring); a
     not-yet-published job is still a green test, so nothing needs to be
-    mocked or pre-created on disk."""
+    mocked or pre-created on disk.
+    """
     api, _ = client
     resp = api.post(
         "/api/v1/connections/test",
@@ -568,7 +548,8 @@ def test_test_endpoint_secret_optional_saved_connection_succeeds(
 ) -> None:
     """Saved-path parity: a connection saved with NO credential (a legitimate
     credential-less catalog) must still test green via `/connections/{id}/test`,
-    not 502 "connection has no stored credential to test with"."""
+    not 502 "connection has no stored credential to test with".
+    """
     api, _ = client
     created = api.post(
         "/api/v1/connections",
@@ -627,7 +608,8 @@ def test_create_catalog_secret_unsupported_type_returns_422(
     client: tuple[TestClient, FakeSecretStore],
 ) -> None:
     """Snowflake's config model has no `catalog_secret_name` field to point at —
-    the write must be rejected before anything is persisted."""
+    the write must be rejected before anything is persisted.
+    """
     api, store = client
     resp = api.post("/api/v1/connections", json=_create_payload(catalog_secret="nope"))
     assert resp.status_code == 422
@@ -665,7 +647,8 @@ def test_draft_test_iceberg_sql_catalog_with_catalog_secret_injects_password(
     """End-to-end against the REAL `IcebergConnectionAdapter` (only
     `pyiceberg.catalog.load_catalog` mocked out): a draft's `catalog_secret` —
     the raw value, since nothing is stored yet to name via `_secret_name` — must
-    reach the adapter and get injected into the catalog URI's userinfo."""
+    reach the adapter and get injected into the catalog URI's userinfo.
+    """
     api, _ = client
     captured: dict[str, Any] = {}
 
@@ -737,7 +720,8 @@ def test_draft_test_persists_nothing(
     client: tuple[TestClient, FakeSecretStore], db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The whole point of the endpoint: no `connections` row, no SecretStore
-    write — a failed OR a successful probe must leave both untouched."""
+    write — a failed OR a successful probe must leave both untouched.
+    """
     api, store = client
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
     ok = api.post("/api/v1/connections/test", json=_draft_payload())
@@ -773,7 +757,8 @@ def test_both_test_routes_resolve(
     """The static `/connections/test` and the parameterized
     `/connections/{connection_id}/test` are different path shapes (two segments
     vs three) — this pins down that both resolve to their own handler rather
-    than one shadowing the other."""
+    than one shadowing the other.
+    """
     api, _ = client
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
@@ -857,12 +842,7 @@ _ADLS_SAS = "sv=2022-11-02&ss=b&sp=rl&se=2026-07-29T05:59:59Z&sig=notarealsignat
 def test_credential_expiry_is_served_on_create_and_list(
     client: tuple[TestClient, FakeSecretStore],
 ) -> None:
-    """The date the UI badges on has to actually cross the API.
-
-    Everything upstream of this can be right — the SAS parsed, the column
-    written — and the warning still never reaches anyone if the response model
-    drops the field. That is the whole delivery path for #838's user-visible half.
-    """
+    """The date the UI badges on has to actually cross the API."""
     api, _ = client
     payload = {
         "name": "adls-lake",

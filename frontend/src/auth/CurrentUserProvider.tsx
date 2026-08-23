@@ -6,13 +6,8 @@ import { CurrentUserContext, type CurrentUser } from './currentUserContext';
 import { useOtpSession } from './otpSessionContext';
 
 /**
- * Provides the current user to the tree.
- *
- * - dev_bypass: static dev user.
- * - unconfigured: null (AuthGate shows the banner).
- * - real: derives from the OIDC user (useAuthUser).
- * - otp: derives from the resolved session (ADR 0032) — the `/me` body the verify
- *   response or the session probe returned.
+ * Provides the current user to the tree. - dev_bypass: static dev user. - unconfigured: null
+ * (AuthGate shows the banner). - real: derives from the OIDC user (useAuthUser). - otp: derives
  */
 export function CurrentUserProvider({ children }: { children: ReactNode }) {
   if (authMode === 'dev_bypass') {
@@ -27,12 +22,7 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
   return <CurrentUserContext.Provider value={null}>{children}</CurrentUserContext.Provider>;
 }
 
-/**
- * The OTP identity. `homeAccountId` carries the DataQ user id — MeProvider keys
- * its refetch on that value, so when the signed-in identity changes (sign out,
- * then sign in as someone else) the previous user's `/me` — and its
- * `is_workspace_admin` — is dropped rather than lingering.
- */
+/** The OTP identity. */
 function OtpCurrentUserProvider({ children }: { children: ReactNode }) {
   const { state } = useOtpSession();
   const me = state.status === 'signed_in' ? state.me : null;

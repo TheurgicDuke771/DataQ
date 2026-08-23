@@ -1,38 +1,4 @@
-"""Resolve a connection + suite target to an OpenLineage-shaped asset identity.
-
-ADR 0034 adopts the OpenLineage dataset naming spec (``namespace`` + ``name``)
-verbatim as the canonical asset key, so DataQ's identifiers match
-``openlineage-dbt``/Spark emissions byte-for-byte — a join, not a mapping
-layer, when lineage emission/pull lands (#758/#762). This module is the pure
-resolver: it never touches the network or a store, mirroring
-``run_target.resolve_target``'s shape (typed, small pure helpers).
-
-Per-datasource identity (see docs/post-v1-assets-lineage-incidents-notes.md
-§1 and ADR 0034):
-
-    snowflake      → snowflake://{normalized account}
-                     DB.SCHEMA.TABLE (upper unless quoted)
-    unity_catalog  → unitycatalog://{workspace host[:port]}
-                     catalog.schema.table (lower unless quoted)
-    adls_gen2      → abfss://{container}@{account}.dfs.core.windows.net
-                     {path or pattern base dir}
-    s3             → s3://{bucket}                              (no endpoint_url — AWS)
-                     s3://{endpoint host[:port]}/{bucket}        (endpoint_url set — #1064)
-                     {path or pattern base dir}
-    iceberg        → {catalog_uri with any password stripped, or "file"}
-                     {namespace.table verbatim}
-
-Snowflake/UC identifiers fold to the engine's *unquoted* case (Snowflake
-upper, UC lower) unless a part is double-quote/backtick wrapped, in which
-case the quotes are stripped and the inner case kept verbatim — the
-"engine-returned case" the OL clients replicate. Iceberg identifiers are
-case-sensitive as stored, so no folding is applied there.
-
-Orchestration connection types (adf/airflow/dbt) have no asset identity —
-they are never suite datasources (CLAUDE.md §4) — and raise ``ValueError``;
-callers (the suite-save hook) wrap this fail-soft rather than surfacing it
-to a caller who didn't ask for one.
-"""
+"""Resolve a connection + suite target to an OpenLineage-shaped asset identity."""
 
 from __future__ import annotations
 
@@ -43,9 +9,8 @@ from urllib.parse import urlparse
 
 from backend.app.core.uri_credentials import strip_uri_credentials
 
-# `pattern` is a **regex** (flatfile.py `re.compile`s it, first capture group =
-# batch key), not a glob — so the asset's directory prefix is the literal text
-# before the first regex metacharacter.
+# `pattern` is a **regex** (flatfile.py `re.compile`s it, first capture group = batch key), not a
+# glob — so the asset's directory prefix is the literal text before the first regex metacharacter.
 _REGEX_METACHARS = re.compile(r"[\\.^$*+?{}\[\]|()]")
 
 
@@ -60,12 +25,7 @@ class AssetIdentity:
 def resolve_asset_identity(
     conn_type: str, config: dict[str, Any], target: dict[str, Any]
 ) -> AssetIdentity:
-    """Resolve a connection's ``config`` + a suite's ``target`` to an `AssetIdentity`.
-
-    Raises `ValueError` if ``conn_type`` has no asset identity (orchestration
-    providers) or a required key is missing/empty on either dict — never
-    returns an empty namespace or name.
-    """
+    """Resolve a connection's ``config`` + a suite's ``target`` to an `AssetIdentity`."""
     if conn_type == "snowflake":
         return _resolve_snowflake(config, target)
     if conn_type == "unity_catalog":
@@ -80,17 +40,7 @@ def resolve_asset_identity(
 
 
 def normalize_snowflake_account(account: str) -> str:
-    """Normalize a Snowflake account identifier (openlineage's ``fix_account_name``).
-
-    Byte-compatible with openlineage-common (ADR 0034 decision 2). The hyphen
-    check is scoped to the **first dot-segment** only: an org-account form
-    (``{org}-{account}``) returns *just that first segment*, dropping anything
-    after a dot. Otherwise the locator is dot-segmented and defaulted — one
-    segment (bare locator) gets ``.us-west-1.aws`` appended; two segments
-    (locator + region — the region legitimately contains hyphens like
-    ``us-east-1``) get ``.aws`` appended; three or more segments are already
-    complete and pass through unchanged.
-    """
+    """Normalize a Snowflake account identifier (openlineage's ``fix_account_name``)."""
     account = account.strip()
     if not account:
         raise ValueError("snowflake account must be non-empty")
@@ -105,24 +55,12 @@ def normalize_snowflake_account(account: str) -> str:
 
 
 def format_snowflake_name(database: str, schema: str, table: str) -> str:
-    """Join a Snowflake ``DB.SCHEMA.TABLE`` into the OpenLineage ``name`` string.
-
-    Each part is folded to the engine's unquoted case (upper) unless double-quote
-    wrapped, exactly as :func:`_normalize_part` does — the one place that rule
-    lives, reused by both the suite-target resolver here and the dbt-manifest
-    canonicalizer (`lineage.edges`) so their identifiers match byte-for-byte.
-    """
+    """Join a Snowflake ``DB.SCHEMA.TABLE`` into the OpenLineage ``name`` string."""
     return ".".join(_normalize_part(part, engine="snowflake") for part in (database, schema, table))
 
 
 def format_unity_catalog_name(catalog: str, schema: str, table: str) -> str:
-    """Join a Unity Catalog ``catalog.schema.table`` into the OpenLineage ``name``.
-
-    Each part folds to the engine's unquoted case (lower) unless quote-wrapped,
-    exactly as :func:`_normalize_part` does — the one place that rule lives, reused
-    by both the suite-target resolver here and the dbt-manifest canonicalizer
-    (`lineage.edges`) for databricks/spark adapters so identifiers match byte-for-byte.
-    """
+    """Join a Unity Catalog ``catalog.schema.table`` into the OpenLineage ``name``."""
     return ".".join(
         _normalize_part(part, engine="unity_catalog") for part in (catalog, schema, table)
     )
@@ -168,19 +106,9 @@ def _resolve_adls_gen2(config: dict[str, Any], target: dict[str, Any]) -> AssetI
 def _resolve_s3(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
     bucket = _require(config, "bucket", "s3", "config")
     endpoint_url = _str_or_none(config.get("endpoint_url"))
-    # No endpoint_url means AWS: keep the namespace byte-stable at `s3://{bucket}` —
-    # this form is the OpenLineage naming-spec convention and is already persisted
-    # on `assets` rows in production; changing it forks every existing S3 asset
-    # and orphans its lineage/incidents. See ADR 0040 §6 / #1064.
-    #
-    # An endpoint_url set (#1063 — MinIO/Ceph/R2/Wasabi/Backblaze) means bucket
-    # names are only unique *within that endpoint*, so the endpoint authority joins
-    # the namespace: `s3://{host[:port]}/{bucket}`. `_s3_endpoint_authority` reads
-    # only `.hostname`/`.port` off the parsed URL, which never include userinfo —
-    # so even a credential-bearing endpoint_url (rejected at connection validation
-    # per #754/#826, but defend anyway per the `_resolve_iceberg` precedent) can't
-    # leak into a namespace that is persisted, returned by the read API, and
-    # rendered in the UI.
+    # No endpoint_url means AWS: keep the namespace byte-stable at `s3://{bucket}` — this form is
+    # the OpenLineage naming-spec convention and is already persisted on `assets` rows in
+    # production; changing it forks every existing S3 asset and orphans its lineage/incidents.
     namespace = (
         f"s3://{_s3_endpoint_authority(endpoint_url)}/{bucket}"
         if endpoint_url
@@ -190,27 +118,16 @@ def _resolve_s3(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity
     return AssetIdentity(namespace=namespace, name=name)
 
 
-#: Ports implied by the scheme, so an explicit `:443` on `https://` (or `:80` on
-#: `http://`) doesn't fork the namespace from the equivalent endpoint written
-#: without a port.
+#: Ports implied by the scheme, so an explicit `:443` on `https://` (or `:80` on `http://`) doesn't
+#: fork the namespace from the equivalent endpoint written without a port.
 _S3_DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
 def _s3_endpoint_authority(endpoint_url: str) -> str:
-    """``endpoint_url``'s host[:port] — scheme stripped, default port elided, lowercased.
-
-    Hostnames are case-insensitive, so a case difference in how an operator typed
-    the endpoint must not fork the asset identity into two rows for the same store
-    (ADR 0040 §6). ``urlparse().hostname`` already lower-cases and excludes any
-    userinfo, so this never re-derives a password into the namespace.
-    """
+    """``endpoint_url``'s host[:port] — scheme stripped, default port elided, lowercased."""
     parsed = urlparse(endpoint_url)
     host = parsed.hostname or ""
-    # `urlparse().hostname` STRIPS the brackets off an IPv6 literal; re-gluing a
-    # port with a bare `:` would then collide with another address's own groups
-    # (`[2001:db8::1]:9000` vs `[2001:db8::1:9000]` — different hosts, same
-    # string; review finding, verified live). Restore the brackets whenever the
-    # host itself contains `:` so the authority stays injective.
+    # `urlparse().hostname` STRIPS the brackets off an IPv6 literal.
     if ":" in host:
         host = f"[{host}]"
     port = parsed.port
@@ -220,15 +137,7 @@ def _s3_endpoint_authority(endpoint_url: str) -> str:
 
 def _resolve_iceberg(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
     catalog_uri = config.get("catalog_uri")
-    # NEVER let a credential into the identity (#826). The namespace is persisted on
-    # `assets`, returned by the read API, RENDERED IN THE UI, and shipped to catalogs
-    # inside a lineage query string — a password in here leaks by construction.
-    # `IcebergConfig` now refuses to store one, but strip defensively anyway: legacy
-    # rows exist, and this is the last gate before the value becomes an identity.
-    #
-    # Stripping also makes the identity STABLE: derived from a credential-bearing URI,
-    # the namespace would silently CHANGE when the password is rotated — forking the
-    # asset into a new row and orphaning its lineage and incidents.
+    # NEVER let a credential into the identity (#826).
     namespace = (
         strip_uri_credentials(catalog_uri.strip())
         if isinstance(catalog_uri, str) and catalog_uri.strip()
@@ -251,16 +160,7 @@ def _flatfile_name(target: dict[str, Any], conn_type: str) -> str:
 
 
 def _pattern_base_prefix(pattern: str) -> str:
-    """The literal directory prefix in front of the first regex metacharacter.
-
-    ``pattern`` is a **regex** (flatfile.py `re.compile`s it, first capture group
-    = batch key), so cut at the first regex metacharacter and keep the literal
-    text before it (the Spark flat-file-dataset convention: the asset is the
-    directory, not the per-file match). If that literal prefix contains a ``/``,
-    truncate to just after the last one (the directory); if it has no ``/`` but
-    is non-empty, use it as-is; if it is empty (a metacharacter leads the
-    pattern), fall back to the whole pattern verbatim rather than an empty name.
-    """
+    """The literal directory prefix in front of the first regex metacharacter."""
     match = _REGEX_METACHARS.search(pattern)
     prefix = pattern[: match.start()] if match else pattern
     if "/" in prefix:
@@ -273,34 +173,21 @@ def _pattern_base_prefix(pattern: str) -> str:
 
 
 def _normalize_part(part: str, *, engine: str) -> str:
-    """Fold one dotted-name segment to the engine's unquoted-identifier case.
-
-    A double-quote-wrapped (Snowflake) or double-quote/backtick-wrapped (UC)
-    part keeps its inner case verbatim once the quotes are stripped — the
-    engine-returned case for a quoted identifier. An unquoted part is folded
-    to the case the engine's catalog would report it in (Snowflake upper, UC
-    lower).
-    """
+    """Fold one dotted-name segment to the engine's unquoted-identifier case."""
     quote_chars = ('"',) if engine == "snowflake" else ('"', "`")
     for quote in quote_chars:
         if len(part) >= 2 and part.startswith(quote) and part.endswith(quote):
             inner = part[1:-1]
             if not inner:
-                # A quoted-empty identifier (`""`) slips past _require (the raw
-                # value is non-empty) but yields an empty dotted segment — reject
-                # it rather than key an asset on a malformed name like `DB.SCHEMA.`.
+                # A quoted-empty identifier (`""`) slips past _require (the raw value is non-empty)
+                # but yields an empty dotted segment.
                 raise ValueError("identifier part is empty after stripping quotes")
             return inner
     return part.upper() if engine == "snowflake" else part.lower()
 
 
 def _url_host(url: str) -> str:
-    """The host of ``url``, tolerating a scheme-less value.
-
-    ``urlparse`` puts a scheme-less host (``adb-1234.azuredatabricks.net``) in
-    ``path``, not ``netloc``; fall back to the first ``/``-segment of ``path`` so
-    a valid-but-scheme-less workspace/account URL still resolves a host.
-    """
+    """The host of ``url``, tolerating a scheme-less value."""
     parsed = urlparse(url)
     return parsed.netloc or parsed.path.split("/", 1)[0]
 

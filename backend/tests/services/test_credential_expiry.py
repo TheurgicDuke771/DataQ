@@ -1,19 +1,4 @@
-"""A credential's expiry becomes a fact about the connection (#838).
-
-The bug this pins is the one #828 left behind. #828 made an expired credential
-visible *once it broke something* — prod lineage had already been dark for six
-days by then. But the expiry was knowable the whole time: an Azure SAS prints
-`se=` inside itself. Nobody read it.
-
-Two failure modes matter here, and they are not symmetric:
-
-* **Silence on a credential that told us.** The #828 outage, repeated.
-* **A confident date on a credential that never said one.** Worse — the product
-  would be reassuring people about a token it cannot actually read.
-
-So the tests below check both directions on every path: the date appears where a
-credential states one, and NOTHING appears where it does not.
-"""
+"""A credential's expiry becomes a fact about the connection (#838)."""
 
 from __future__ import annotations
 
@@ -98,9 +83,8 @@ class TestAdapterSeam:
         assert registry.credential_expiry("dbt", s3_cfg, _SAS) is None
 
     def test_iceberg_reads_only_a_sas_shaped_secret_property(self) -> None:
-        # The secret fills whichever property the operator named, so the name is
-        # the only evidence of its shape. An account key with a SAS-looking value
-        # is not a SAS — and a SAS property is.
+        # The secret fills whichever property the operator named, so the name is the only evidence
+        # of its shape.
         base = {"catalog_type": "rest", "catalog_uri": "https://cat.example.com"}
         sas_cfg = {**base, "secret_property": "adls.sas-token.acct"}
         key_cfg = {**base, "secret_property": "adls.account-key.acct"}
@@ -159,9 +143,8 @@ class TestExpiryIsReadWhenTheCredentialIsWritten:
     def test_rotating_onto_a_non_expiring_credential_clears_the_old_date(
         self, db_session: Any
     ) -> None:
-        # The stale-warning failure: swap a SAS for a credential with no lifetime
-        # and the product would keep counting down to a date that no longer
-        # describes anything, until someone re-auths a connection that is fine.
+        # The stale-warning failure: swap a SAS for a credential with no lifetime and the product
+        # would keep counting down to a date that no longer describes anything.
         store = FakeSecretStore()
         conn = _adls(db_session, store)
         assert conn.credential_expires_at is not None
@@ -192,9 +175,7 @@ class TestSweep:
     def test_it_populates_a_credential_stored_before_the_feature_existed(
         self, db_session: Any
     ) -> None:
-        # Every connection in prod today predates this column. Without the sweep
-        # they stay unknown until someone happens to rotate them — i.e. the
-        # feature would do nothing for the credentials that already exist.
+        # Every connection in prod today predates this column.
         conn = _adls(db_session, FakeSecretStore())
         conn.credential_expires_at = None
         db_session.commit()
@@ -220,9 +201,7 @@ class TestSweep:
         assert conn.credential_expires_at == _LATER_EXPIRY
 
     def test_an_unreadable_secret_keeps_the_last_known_expiry(self, db_session: Any) -> None:
-        # "We couldn't check today" is not evidence the credential stopped
-        # expiring. Blanking the date on a Key Vault outage would silence the
-        # warning at the exact moment nobody can verify anything.
+        # "We couldn't check today" is not evidence the credential stopped expiring.
         conn = _adls(db_session, FakeSecretStore())
         assert conn.credential_expires_at == _SAS_EXPIRY
 
@@ -237,23 +216,15 @@ class TestSweep:
     def test_each_connection_is_committed_before_the_next_is_read(
         self, db_session: Any, monkeypatch: Any
     ) -> None:
-        # A sweep-long transaction would mean one failure at commit time throws
-        # away every OTHER connection's freshly-read expiry — and would let a
-        # credential rotated mid-sweep (those paths commit immediately) be
-        # clobbered by the sweep's stale in-memory copy: the lost-update shape
-        # #841 already fixed once on this table. Asserting the durable state
-        # DURING the sweep is what distinguishes per-row commits from a batch;
-        # asserting only the end state passes either way.
+        # A sweep-long transaction would mean one failure at commit time throws away every OTHER
+        # connection's freshly-read expiry.
         first = _adls(db_session, FakeSecretStore())
         second = _adls(db_session, FakeSecretStore())
         for conn in (first, second):
             conn.credential_expires_at = None
         db_session.commit()
 
-        # Count commits at the moment each credential is fetched. (The durable
-        # state can't be probed from another connection here — the `db_session`
-        # fixture holds the test inside a rolled-back transaction — but the
-        # commit ORDERING is exactly what separates per-row from batch.)
+        # Count commits at the moment each credential is fetched.
         store = FakeSecretStore({str(first.secret_ref): _SAS, str(second.secret_ref): _SAS})
         commits = 0
         commits_before_fetch: list[int] = []

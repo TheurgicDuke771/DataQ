@@ -1,32 +1,4 @@
-"""Auth seam: DataQ PAT · email-OTP session cookie · Azure AD token, + user upsert.
-
-Three authenticators, one `get_current_user` seam, resolved in a fixed order
-(ADR 0026 decision 1, extended by ADR 0032 decision 1):
-
-    1. `Authorization: Bearer dq_live_…`  → PAT, hashed lookup in `api_keys`
-    2. `Cookie: dataq_session=dq_sess_…`  → OTP session, hashed lookup in `sessions`
-    3. anything else in `Authorization`   → Azure AD token (`fastapi-azure-auth`)
-
-The branches are **disjoint by construction**, which is the #849 lesson made
-structural: a `dq_live_` bearer is never a valid JWT and must never reach a JWT
-validator (which logs what it cannot decode), and a request presenting a session
-cookie is decided by that cookie — it never falls through to another
-authenticator on failure. Every failure is the same uniform 401.
-
-Modes, picked once at import time from settings:
-
-- **Real mode** — `AZURE_TENANT_ID` + `AZURE_API_CLIENT_ID` set. Azure tokens are
-  validated by `fastapi-azure-auth` (issuer, audience, signature, expiry, scope;
-  OpenID config loaded at startup by `init_auth()` and refreshed automatically).
-- **OTP mode** — the `AUTH_EMAIL_*` block complete AND a non-empty signup
-  allowlist (`Settings.otp_auth_configured`, ADR 0032). Humans sign in with an
-  emailed code and carry a session cookie; PATs still work.
-- **Real + OTP** — both configured; the cookie is checked before the JWT branch.
-- **Dev bypass** — `ENVIRONMENT=dev` + `AUTH_DEV_BYPASS=true` + Azure vars empty.
-  No credential required; every request resolves to a fixed dev user.
-
-If nothing is configured, `init_auth` raises at startup — fail-closed.
-"""
+"""Auth seam: DataQ PAT · email-OTP session cookie · Azure AD / generic OIDC token."""
 
 import asyncio
 import hashlib
@@ -84,47 +56,16 @@ def _dev_bypass_allowed(settings: Settings) -> bool:
 
 
 class _PatAwareAzureScheme(SingleTenantAzureAuthorizationCodeBearer):
-    """The Azure scheme, taught to keep its hands off a DataQ PAT (#849).
-
-    `Security(azure_scheme)` is a FastAPI *dependency*, so it resolves **before**
-    `get_current_user`'s body runs — meaning the PAT-first ordering documented there was
-    never actually first. Every `dq_live_…` bearer was handed to a JWT validator, which
-    naturally failed to decode it and logged
-
-        log.warning('Malformed token received. %s. Error: %s', access_token, error)
-
-    …shipping the **raw PAT** — a live bearer credential — into App Insights on every
-    single PAT-authenticated request, plus an exception record for good measure.
-
-    A PAT is not a JWT and must never reach a JWT validator. Short-circuiting to ``None``
-    here makes the two branches genuinely disjoint (`get_current_user` then takes the PAT
-    path), removes the log line at its source, and stops the exception spam.
-
-    The logger-level redaction in `core.logging` (`_BEARER_TOKEN_RE`) stays as the
-    backstop — we do not control what a dependency logs, and the next library to echo a
-    token won't announce itself either.
-    """
+    """Azure scheme that short-circuits DataQ PATs and OTP session cookies (#849)."""
 
     async def __call__(
         self, request: HTTPConnection, security_scopes: SecurityScopes
     ) -> AzureUser | None:
-        # `HTTPConnection`, not `Request`, because that is what the library declares and
-        # what FastAPI may hand us: a WebSocket route secured with this scheme yields a
-        # `WebSocket` — also an HTTPConnection, but NOT a Request. Narrowing the type
-        # would have needed a `type: ignore[override]`, which silences precisely the check
-        # that would flag the mismatch (#849 review). Both carry `.headers`, which is all
-        # `_pat_token` reads.
+        # `HTTPConnection`, not `Request` — a WebSocket route hands a WebSocket.
         if _pat_token(request) is not None:
             return None
-        # Same short-circuit for an OTP session cookie (ADR 0032 decision 1): the
-        # cookie is checked before the JWT branch, and `Security(azure_scheme)`
-        # resolves before `get_current_user`'s body — so "before the JWT branch"
-        # has to mean *here*, not in the function that runs afterwards.
-        #
-        # Gated on OTP actually being enabled. Ungated, any client could disable
-        # JWT validation on an Azure-only deployment by attaching a junk
-        # `dataq_session` cookie — turning a cosmetic short-circuit into an auth
-        # bypass vector. `_otp_enabled` is the import-time mode flag.
+        # OTP short-circuit, gated on `_otp_enabled`: ungated, a junk `dataq_session` cookie would
+        # disable JWT validation on an Azure-only deployment — an auth bypass vector.
         if _otp_enabled and _session_token(request) is not None:
             return None
         user: AzureUser | None = await super().__call__(request, security_scopes)
@@ -144,25 +85,14 @@ def _build_azure_scheme(
         tenant_id=settings.azure_tenant_id,
         scopes={settings.azure_api_scope_uri: settings.azure_api_scope},
         allow_guest_users=settings.azure_allow_guest_users,
-        # auto_error=False so a failed Azure validation yields None instead of
-        # raising — get_current_user then rejects with the standard error
-        # envelope. Required for the PAT path (ADR 0026): a `dq_live_…` bearer
-        # is not a JWT and must not be force-rejected by the Azure scheme.
+        # auto_error=False: failed validation yields None and get_current_user
+        # rejects — required so a PAT bearer isn't force-rejected here (ADR 0026).
         auto_error=False,
     )
 
 
 def _json_dict(response: httpx.Response) -> dict[str, Any]:
-    """The response body as a parsed JSON object, or `ValueError`.
-
-    A 200 carrying an HTML error page (a proxy in front of the IdP), a JSON
-    scalar (`null`), or an `application/jwt` userinfo body must hit the same
-    fail-closed branch as an outage — `json.JSONDecodeError` is NOT an
-    `httpx.HTTPError`, so without this normalization it would escape the
-    outage guards as an unhandled 500 on the auth path (the #567 class).
-    `json.JSONDecodeError` subclasses `ValueError`, so callers catch
-    `(httpx.HTTPError, ValueError)` and get both shapes.
-    """
+    """The body as a parsed JSON object, or `ValueError`."""
     body = response.json()  # raises json.JSONDecodeError (a ValueError)
     if not isinstance(body, dict):
         raise ValueError("expected a JSON object body")
@@ -170,16 +100,7 @@ def _json_dict(response: httpx.Response) -> dict[str, Any]:
 
 
 def discover_oidc_config(issuer: str, *, timeout: float = 5.0) -> dict[str, Any]:
-    """Fetch an OIDC issuer's discovery document (parsed, unvalidated).
-
-    Synchronous and shared by every caller that needs a discovery field:
-    `OidcBearerScheme.load_config` below (wrapped in `asyncio.to_thread` — it
-    must not block the event loop), `mcp.auth.build_auth_provider` (genuinely
-    synchronous — fastmcp's auth provider is built at **module import time**,
-    before any async startup hook exists to call into), and `fetch_userinfo`
-    (#1346). One implementation, not a sync/async pair that could quietly
-    drift apart.
-    """
+    """Fetch an OIDC issuer's discovery document (parsed, unvalidated)."""
     response = httpx.get(f"{issuer.rstrip('/')}/.well-known/openid-configuration", timeout=timeout)
     response.raise_for_status()
     return _json_dict(response)
@@ -190,26 +111,16 @@ def discover_jwks_uri(issuer: str, *, timeout: float = 5.0) -> str:
     return str(discover_oidc_config(issuer, timeout=timeout)["jwks_uri"])
 
 
-# ── userinfo fallback (#1346) ────────────────────────────────────────────────
-#
-# Cognito access tokens carry no `email`/`name` (only sub/client_id/scope/…),
-# so identity claims a token omits are resolved from the issuer's standard
-# `userinfo` endpoint instead — provider-neutral: any token that already embeds
-# `email` (Azure AD, Keycloak defaults, …) never triggers the round-trip.
-#
-# The cache is keyed by the token's SHA-256 (never the raw bearer — it must not
-# sit in a long-lived dict a heap dump could read) and bounded: userinfo is one
-# extra HTTP call per token per TTL, not per request.
+# ── userinfo fallback (#1346) ──────────────────────────────────────────────── Cognito access
+# tokens carry no `email`/`name`.
 
 _USERINFO_TTL_SECONDS = 300.0
 _USERINFO_CACHE_MAX = 1024
 _userinfo_cache: dict[str, tuple[float, dict[str, Any]]] = {}
-#: Discovery documents are static per issuer for a process lifetime (the REST
-#: scheme resolves once at startup; this is the sync/MCP path's equivalent).
+#: Discovery documents are static per issuer for a process lifetime.
 _discovery_cache: dict[str, dict[str, Any]] = {}
-#: One lock for both caches: the REST validator mutates them from the event-loop
-#: thread while MCP tools (sync `def`s in worker threads) do the same — an
-#: unguarded eviction sweep can hit "dict changed size during iteration".
+#: One lock for both caches — the REST validator (event-loop thread) and MCP
+#: tools (worker threads) both mutate them.
 _oidc_cache_lock = threading.Lock()
 
 
@@ -237,12 +148,7 @@ def _userinfo_cache_put(token: str, claims: dict[str, Any]) -> None:
 
 
 def _cached_discovery(issuer: str, *, timeout: float = 5.0) -> dict[str, Any]:
-    """`discover_oidc_config`, memoized per issuer for the process lifetime.
-
-    Without this, every userinfo-cache miss (and EVERY sync `fetch_userinfo`
-    call against a provider that publishes no userinfo endpoint, for which
-    nothing else is ever cached) paid a discovery round-trip on top.
-    """
+    """`discover_oidc_config`, memoized per issuer for the process lifetime."""
     with _oidc_cache_lock:
         cached = _discovery_cache.get(issuer)
     if cached is not None:
@@ -254,12 +160,9 @@ def _cached_discovery(issuer: str, *, timeout: float = 5.0) -> dict[str, Any]:
 
 
 def _merge_userinfo(claims: dict[str, Any], userinfo: dict[str, Any]) -> dict[str, Any] | None:
-    """`claims` with `email`/`name` filled from `userinfo`, or None on sub mismatch.
-
-    OIDC Core §5.3.2: the client MUST verify the userinfo `sub` matches the
-    token's — a mismatch means the response describes someone else (an IdP bug
-    or a swapped response) and the sign-in must fail rather than mint a user
-    row from mixed identities.
+    """`claims` with `email`/`name` filled from `userinfo`, or None on sub mismatch
+    (OIDC Core §5.3.2 — a mismatched `sub` describes someone else; the sign-in
+    must fail rather than mint a user row from mixed identities).
     """
     if userinfo.get("sub") != claims.get("sub"):
         return None
@@ -270,16 +173,7 @@ def _merge_userinfo(claims: dict[str, Any], userinfo: dict[str, Any]) -> dict[st
 
 
 def fetch_userinfo(issuer: str, token: str, *, timeout: float = 5.0) -> dict[str, Any] | None:
-    """The issuer's userinfo response for `token` — sync, for `mcp.auth` (#1346).
-
-    Returns None when the provider publishes no `userinfo_endpoint` (it is
-    RECOMMENDED, not required — the caller proceeds with whatever the token
-    carried). Raises `httpx.HTTPError` on an outage and `ValueError` on a 200
-    whose body is not a JSON object (`_json_dict`): both are outages to
-    surface, never an empty identity (the ADR 0039 decision 6 lesson applied
-    to auth). The REST path (`OidcBearerScheme._verify`) does the same fetch
-    through its own async client; both share the TTL cache.
-    """
+    """The issuer's userinfo response for `token` — sync, for `mcp.auth` (#1346)."""
     cached = _userinfo_cache_get(token)
     if cached is not None:
         return cached
@@ -296,26 +190,7 @@ def fetch_userinfo(issuer: str, token: str, *, timeout: float = 5.0) -> dict[str
 
 
 class OidcBearerScheme:
-    """Provider-neutral OIDC bearer validator (ADR 0026 amendment).
-
-    Same PAT/OTP short-circuit discipline as `_PatAwareAzureScheme`, and the same
-    "never raise, return None on failure" contract as `auto_error=False` — but
-    speaks the *standard* (OIDC discovery + JWKS) instead of a vendor SDK
-    hardcoded to Microsoft's endpoints. `httpx` does the HTTP (this codebase's
-    established client, e.g. `OpenBaoSecretStore`); `PyJWT` does signature
-    verification (already an installed transitive of `fastapi-azure-auth`,
-    promoted to a direct pin since this class now imports it directly).
-
-    Returns the token's raw claims dict — there is no shared wrapper type to
-    mirror `AzureUser` with, and none is needed; `_extract_oidc_claims` reads it
-    the same way `_extract_claims` reads `AzureUser.claims`.
-
-    **RS256 only.** Every provider this was built against (Cognito, and RS256 is
-    the near-universal default for GCP Identity Platform/Okta/Auth0/Keycloak)
-    signs with RSA; a provider that signs with something else fails closed
-    (`_verify` returns `None`, i.e. the standard 401) rather than silently
-    accepting an unverified token — extend `_signing_key` if that's ever needed.
-    """
+    """Provider-neutral OIDC bearer validator (ADR 0026 amendment)."""
 
     def __init__(self, issuer: str, audience: str, *, timeout: float = 5.0) -> None:
         self._issuer = issuer.rstrip("/")
@@ -326,17 +201,7 @@ class OidcBearerScheme:
         self._userinfo_endpoint: str | None = None
 
     async def load_config(self) -> None:
-        """Resolve discovery endpoints and pre-warm the JWKS cache.
-
-        Called once from `init_auth()` — fail-closed at startup, mirroring
-        `azure_scheme.openid_config.load_config()`: a deployment must not report
-        healthy while unable to validate a single token.
-
-        `discover_oidc_config` is synchronous (shared with `mcp.auth`, which can
-        only call it synchronously — see its docstring), so it runs off the
-        event loop thread here rather than blocking it. `userinfo_endpoint` is
-        optional (absent → tokens must carry their own identity claims).
-        """
+        """Resolve discovery endpoints and pre-warm the JWKS cache."""
         config = await asyncio.to_thread(_cached_discovery, self._issuer)
         self._jwks_uri = str(config["jwks_uri"])
         userinfo_endpoint = config.get("userinfo_endpoint")
@@ -379,10 +244,8 @@ class OidcBearerScheme:
         try:
             key = self._signing_key(kid, jwks) if jwks is not None else None
             if key is None:
-                # Absent from the cache: either a genuinely unknown key, or the
-                # provider rotated its signing keys since the last fetch. Refresh
-                # once and retry before giving up — mirrors OpenBao's
-                # single-retry-then-surface discipline (`_send`).
+                # Unknown kid — the provider may have rotated its signing keys.
+                # Refresh once and retry before giving up.
                 key = self._signing_key(kid, await self._refresh_jwks())
         except (httpx.HTTPError, ValueError) as exc:
             # ValueError: a 200 whose body is not a JSON object (`_json_dict`).
@@ -396,29 +259,18 @@ class OidcBearerScheme:
                 key=key,
                 algorithms=["RS256"],
                 issuer=self._issuer,
-                # Audience is checked manually below, not via PyJWT's own
-                # `audience=` kwarg — see the docstring's Cognito note.
+                # Audience is checked manually below — see the Cognito note.
                 options={"verify_aud": False},
             )
         except jwt.PyJWTError:
             return None
         aud = claims.get("aud")
         aud_values = aud if isinstance(aud, list) else [aud] if aud else []
-        # Standard OIDC puts the client id in `aud`. AWS Cognito's ACCESS token —
-        # what the SPA actually sends as the bearer, matching how the Azure path
-        # also validates an access token — carries it as `client_id` instead;
-        # its ID token does carry `aud`, but that is not what arrives here. This
-        # is the one deliberately provider-aware line in an otherwise generic
-        # implementation; it needs confirming against a real Cognito token once
-        # one exists (this codebase's own rule for anything crossing a
-        # third-party token-shape boundary — code review alone cannot settle it).
+        # Standard OIDC puts the client id in `aud`; a Cognito ACCESS token (what the SPA sends)
+        # carries it as `client_id` instead.
         if self._audience not in aud_values and claims.get("client_id") != self._audience:
             return None
-        # #1346: a token that omits `email` (Cognito access tokens carry none)
-        # gets it from the issuer's userinfo endpoint. Fail-closed on an outage:
-        # provisioning a user row with an empty email is silent data poisoning
-        # (the second such row can never sign in — `uq_users_email_lower`),
-        # whereas a 401 is a visible, retryable failure.
+        # #1346: fill a missing `email` from userinfo.
         if not claims.get("email") and self._userinfo_endpoint is not None:
             userinfo = _userinfo_cache_get(token)
             if userinfo is None:
@@ -430,9 +282,8 @@ class OidcBearerScheme:
                     response.raise_for_status()
                     userinfo = _json_dict(response)
                 except (httpx.HTTPError, ValueError) as exc:
-                    # ValueError covers a 200 with a non-JSON / non-object body
-                    # (proxy error page, JSON null, signed-JWT userinfo) — same
-                    # fail-closed outcome as an outage, never a 500 (#567 class).
+                    # Non-object 200 → same fail-closed outcome as an outage,
+                    # never a 500 (#567 class).
                     log.warning("oidc_userinfo_unavailable", issuer=self._issuer, error=str(exc))
                     return None
                 _userinfo_cache_put(token, userinfo)
@@ -453,10 +304,9 @@ def _build_oidc_scheme(settings: Settings) -> OidcBearerScheme | None:
 
 
 def _bearer_token(request: HTTPConnection) -> str | None:
-    """The raw bearer token from the Authorization header, if any.
-
-    Takes `HTTPConnection` (the common base of `Request` and `WebSocket`) so the security
-    scheme can call it with whatever FastAPI injects — only `.headers` is read."""
+    """Raw bearer from the Authorization header, if any. Takes `HTTPConnection`
+    (the common base of `Request` and `WebSocket`); only `.headers` is read.
+    """
     header = request.headers.get("Authorization", "")
     scheme, _, token = header.partition(" ")
     if scheme.lower() == "bearer" and token.strip():
@@ -473,12 +323,9 @@ def _pat_token(request: HTTPConnection) -> str | None:
 
 
 def _session_token(request: HTTPConnection) -> str | None:
-    """The OTP session token from the cookie, if present and shaped like one.
-
-    Prefix-checked for the same reason the PAT branch is: it keeps the
-    authenticators disjoint, so a cookie set by something else on the same origin
-    cannot steer a request into the session branch. Reads `.cookies`, which both
-    `Request` and `WebSocket` expose (see `_bearer_token` on the type choice).
+    """The OTP session token from the cookie, if shaped like one. Prefix-checked
+    to keep the authenticators disjoint — a cookie set by something else on the
+    same origin must not steer a request into the session branch.
     """
     token = request.cookies.get(session_service.COOKIE_NAME)
     if token and token.startswith(session_service.TOKEN_PREFIX):
@@ -488,42 +335,22 @@ def _session_token(request: HTTPConnection) -> str | None:
 
 _settings = get_settings()
 azure_scheme: SingleTenantAzureAuthorizationCodeBearer | None = _build_azure_scheme(_settings)
-#: The deterministic Azure AD v2 issuer URL, written to `users.oidc_issuer` on
-#: every real-mode login (self-healing pre-existing rows — see the model
-#: docstring). Same coordinates `fastapi_azure_auth` itself validates against.
+#: Deterministic Azure AD v2 issuer, written to `users.oidc_issuer` on every
+#: real-mode login — the same coordinates fastapi_azure_auth validates against.
 _AZURE_ISSUER: str | None = (
     f"https://login.microsoftonline.com/{_settings.azure_tenant_id}/v2.0"
     if _settings.azure_tenant_id
     else None
 )
-#: The generic-OIDC counterpart to `azure_scheme` — mutually exclusive with it
-#: (`Settings._validate_generic_oidc`), so exactly one of the two is non-None.
+#: Mutually exclusive with `azure_scheme` — exactly one of the two is non-None.
 oidc_scheme: OidcBearerScheme | None = _build_oidc_scheme(_settings)
-#: Whether email OTP sign-in is configured — read once at import, like the Azure
-#: scheme, because the whole mode ladder is bound at import time (12-factor: change
-#: the env and restart).
+#: Read once at import — the whole mode ladder is bound at import time
+#: (12-factor: change the env and restart).
 _otp_enabled: bool = _settings.otp_auth_configured
 
 
 class IdentityConflictError(DataQError):
-    """Two identities claim one mailbox — the sign-in cannot be resolved to a user.
-
-    Raised when the upsert violates `uq_users_email_lower` (#735): the row is
-    keyed on `aad_object_id`, so a *different* object id arriving with an email
-    that case-collides with an existing row has no conflict target and hits the
-    email index instead. Without this it is an unhandled `IntegrityError`, i.e. a
-    500 on **every** login for that user (CONTRIBUTING rule 32 — never let a
-    database exception surface as an unhandled error).
-
-    409 rather than 401/403: the credential is valid, the workspace's identity
-    state is not — an operator has to resolve it (the same duplicate-email
-    resolution the 7d25617cfaf0 migration documents). ADR 0032 decision 6 is what
-    makes it a conflict at all: one user row per normalized email.
-
-    **Not** raised when the colliding row is an OTP identity (`aad_object_id IS
-    NULL`) — that is one human with two authenticators, which decision 6 says to
-    LINK, not to reject. See `_claim_unlinked_user`.
-    """
+    """Two identities claim one mailbox (`uq_users_email_lower`, #735)."""
 
     status_code = 409
     code = "identity_conflict"
@@ -539,41 +366,7 @@ def _claim_unlinked_user(
     oidc_issuer: str | None = None,
     role: str | None = None,
 ) -> User | None:
-    """Attach an AAD identity to an existing OTP-provisioned row, or return None.
-
-    The other half of ADR 0032 decision 6's linking rule. `otp_service` resolves
-    an OTP sign-in onto an existing AAD row by `lower(email)`; this is the reverse
-    direction, and without it the rule holds in only one direction: a person who
-    signed in with an emailed code first (leaving a row with `aad_object_id IS
-    NULL`) and later signed in through Azure AD would hit the email index, get an
-    `IdentityConflictError`, and be **permanently 409'd on every subsequent AAD
-    login** — with an error message telling them another account owns their
-    address, when in fact it is their own.
-
-    Deliberately narrow: it claims **only** a row whose `aad_object_id` is NULL.
-    A row already carrying a *different* object id is the genuine conflict #1131
-    exists for (two directory identities on one mailbox, which needs an operator),
-    and that path is unchanged.
-
-    The `IS NULL` predicate rides in the UPDATE, so the claim is atomic: two AAD
-    sign-ins racing for the same unlinked row cannot both succeed. The loser gets
-    `None` here and the caller retries the ordinary upsert, which now finds the
-    winner's `aad_object_id` as a conflict target.
-
-    `display_name` branches on `display_name_override` (#1139, migration
-    6230293aea96), not a plain overwrite: the row being claimed is exactly the
-    OTP-provisioned shape — email only, likely no name yet — so the incoming
-    AAD claim is a good one to seed *unless* the person already set their own
-    via `PATCH /me` before ever signing in through Azure AD, in which case
-    linking must not silently discard it. `COALESCE(User.display_name, claim)`
-    was the first cut here (and remains materially the same outcome for THIS
-    function, which runs once, at the moment of linking) — it was replaced to
-    use the same predicate as `_upsert_user` below, where COALESCE's actual
-    defect lives (it can't tell "someone set this" from "a first login seeded
-    it", so it also froze out every later legitimate claim rename). One
-    predicate for both call sites is what makes "override survives, no-override
-    syncs" hold as a single invariant instead of two similar-looking rules.
-    """
+    """Attach an AAD identity to an existing OTP-provisioned row, or None."""
     claimed = db.execute(
         update(User)
         .where(
@@ -590,16 +383,7 @@ def _claim_unlinked_user(
             ),
             last_seen_at=now,
             updated_at=now,
-            # Promote-only: the row being claimed already exists, so its stored
-            # role is authoritative and only the allowlist may raise it. See
-            # `should_promote_to_admin` for why the no-op branch writes NOTHING
-            # rather than the column's own value.
-            #
-            # `role` (the dev-bypass force) overrides that, and must: this is a
-            # real path to the bypass identity's row — an unlinked OTP row for
-            # `dev-bypass@dataq.local` from an earlier OTP-mode run is claimed
-            # here rather than by the ordinary upsert — and landing it on
-            # `member` would 403 every connection route on the local stack.
+            # Promote-only: the stored role is authoritative; only the allowlist may raise it.
             **({"role": role} if role is not None else admin_promotion_values(email)),
         )
         .returning(User)
@@ -608,8 +392,7 @@ def _claim_unlinked_user(
         db.rollback()
         return None
     db.commit()
-    # No email in the log line: `_PII_KEYS` redacts an `email` key, but the honest
-    # move is not to hand it over. The object id is enough to correlate.
+    # No email in the log line — the object id is enough to correlate.
     log.info("identity_linked_otp_row_to_aad", aad_object_id=aad_object_id, user_id=str(claimed.id))
     return claimed
 
@@ -624,14 +407,7 @@ def _upsert_user(
     role: str | None = None,
     _retrying: bool = False,
 ) -> User:
-    """Upsert the user this sign-in identifies, keyed on `aad_object_id`.
-
-    `role` forces a workspace role on BOTH branches (insert and conflict),
-    overriding the ordinary seed-then-promote-only rules. It exists for exactly
-    one caller — dev bypass, whose single identity is the workspace admin and has
-    no allowlist to be on. Leave it `None` everywhere else: an unconditional role
-    write on a real sign-in path would let a login undo an in-app demotion.
-    """
+    """Upsert the user this sign-in identifies, keyed on `aad_object_id`."""
     now = datetime.now(UTC)
     stmt = (
         insert(User)
@@ -640,11 +416,8 @@ def _upsert_user(
             oidc_issuer=oidc_issuer,
             email=email,
             display_name=display_name,
-            # Seeds a NEW row only (the conflict branch below is promote-only).
-            # `AUTH_OIDC_DEFAULT_ROLE` is the OIDC twin of the OTP knob: since
-            # #1386 this path can also be gated by a whole DOMAIN allowlist, so
-            # it needs the same "admit broadly, author narrowly" answer. The
-            # allowlist write-through still wins over it (inside `bootstrap_role`).
+            # Seeds a NEW row only (the conflict branch is promote-only); the
+            # allowlist write-through still wins inside `bootstrap_role`.
             role=role or bootstrap_role(email, default=get_settings().auth_oidc_default_role),
             last_seen_at=now,
         )
@@ -653,32 +426,11 @@ def _upsert_user(
             set_={
                 "email": email,
                 "oidc_issuer": oidc_issuer,
-                # Promote-only — see `should_promote_to_admin`. Omitted entirely
-                # (not written back as itself) when the address is not
-                # allowlisted, so this per-request upsert never participates in a
-                # race with an in-app role change it has no opinion about.
+                # Promote-only, and OMITTED entirely when not allowlisted — this
+                # per-request upsert must never race an in-app role change.
                 **({"role": role} if role is not None else admin_promotion_values(email)),
-                # Branches on `display_name_override` (#1139, migration
-                # 6230293aea96), not a plain overwrite AND not a bare COALESCE.
-                # This upsert runs on EVERY real-mode request (no session cache
-                # — the JWT is re-validated and re-claimed each time), so a
-                # plain overwrite would silently revert a `PATCH /me` override
-                # back to the AAD token's `name` claim on the user's very next
-                # request. A first cut used `COALESCE(User.display_name, claim)`
-                # instead — review on #1139 caught that it over-corrects: it
-                # can't distinguish "someone explicitly set this" from "a first
-                # login seeded it from the very same claim", so EVERY user's
-                # name froze at whatever their first login happened to claim,
-                # and a genuine Entra rename never synced again for anyone,
-                # override or not. The flag is the missing bit: sync the claim
-                # in whenever nobody has overridden it (True → False stays
-                # False → this row's whole life until a PATCH), and leave the
-                # self-service value alone once they have. The INSERT branch
-                # (`.values()` above) still seeds `display_name` from the claim
-                # on a brand-new row — `display_name_override` defaults False
-                # there (server_default, migration), so the very next login
-                # still syncs it, which is correct: nobody overrode anything
-                # yet.
+                # Branches on `display_name_override` (#1139): this upsert runs on EVERY real-mode
+                # request.
                 "display_name": case(
                     (User.display_name_override.is_(True), User.display_name),
                     else_=display_name,
@@ -693,14 +445,11 @@ def _upsert_user(
         user = db.execute(stmt).scalar_one()
         db.commit()
     except IntegrityError as exc:
-        # The `aad_object_id` conflict is HANDLED by on_conflict_do_update above,
-        # so anything reaching here is a different constraint — in practice
-        # `uq_users_email_lower`. Roll back: the session is otherwise poisoned for
-        # the rest of the request.
+        # `aad_object_id` conflicts are handled above, so this is a different constraint — in
+        # practice `uq_users_email_lower`.
         db.rollback()
-        # First, the benign reading of that collision: the colliding row is an OTP
-        # identity for the same human (ADR 0032 decision 6). Link it rather than
-        # reject the login.
+        # Benign reading first: the colliding row is an OTP identity for the
+        # same human (ADR 0032 decision 6) — link it, don't reject.
         if not _retrying:
             linked = _claim_unlinked_user(
                 db,
@@ -713,11 +462,8 @@ def _upsert_user(
             )
             if linked is not None:
                 return linked
-            # Nothing to claim. Either the row already carries a different object
-            # id (the real conflict, below), or a concurrent sign-in claimed it
-            # first — in which case the ordinary upsert now HAS a conflict target
-            # and succeeds. One bounded retry distinguishes the two; a second
-            # IntegrityError is the genuine conflict.
+            # Nothing to claim: a different oid (real conflict) or a concurrent
+            # sign-in won the claim — one bounded retry distinguishes the two.
             return _upsert_user(
                 db,
                 aad_object_id=aad_object_id,
@@ -727,11 +473,8 @@ def _upsert_user(
                 role=role,
                 _retrying=True,
             )
-        # Deliberately no email in the message or the log. The redactor covers
-        # both `email` and `aad_object_id` keys (core/logging.py `_PII_KEYS`), so
-        # the structured field below is safe — but the message travels in the HTTP
-        # error envelope, which the redactor does not touch, and naming the
-        # colliding address would tell any caller who else is in the workspace.
+        # No email in the message or the log: the message travels in the HTTP error envelope
+        # (untouched by the redactor).
         log.warning("identity_conflict_on_upsert", aad_object_id=aad_object_id)
         raise IdentityConflictError(
             "This sign-in could not be resolved to a user account: another account "
@@ -751,12 +494,9 @@ def _extract_claims(azure_user: AzureUser) -> tuple[str, str, str | None]:
 
 
 def _extract_oidc_claims(claims: dict[str, Any]) -> tuple[str, str, str | None]:
-    """The generic-OIDC counterpart to `_extract_claims`.
-
-    `sub` — RFC 7519's REQUIRED subject claim — not Azure's non-standard `oid`;
-    bare `claims["sub"]` on purpose, so a token missing it (a malformed/misissued
-    token, since every compliant OIDC provider sets it) fails loudly rather than
-    silently keying a row on an empty string.
+    """Generic-OIDC counterpart to `_extract_claims`. Bare `claims["sub"]` on
+    purpose: a token missing the REQUIRED subject claim must fail loudly, not
+    silently key a row on an empty string.
     """
     subject = str(claims["sub"])
     email = str(claims.get("email") or "")
@@ -766,11 +506,8 @@ def _extract_oidc_claims(claims: dict[str, Any]) -> tuple[str, str, str | None]:
 
 
 def _log_otp_mode_ready() -> None:
-    """Announce OTP mode WITHOUT logging a single address.
-
-    The allowlist is a workspace member list; `_PII_KEYS` redacts an `email` key,
-    but the honest fix is not to hand it over — so this reports a count and the
-    domains (an org identifier, not a person).
+    """Announce OTP mode WITHOUT logging a single address — count + domains only
+    (the allowlist is a workspace member list).
     """
     log.info(
         "auth_otp_mode_ready",
@@ -782,13 +519,9 @@ def _log_otp_mode_ready() -> None:
 
 
 async def init_auth() -> None:
-    """Wire app startup: load OIDC config in real mode, announce OTP mode, or fail-closed.
-
-    Called from the FastAPI lifespan. The fail-closed contract (ADR 0032 decision
-    2) is the point: a deployment must never come up looking healthy while being
-    unable to log anybody in. The *partial* OTP configurations are rejected even
-    earlier, by `Settings._validate_otp_auth`, so by the time we get here OTP is
-    either fully on or fully off.
+    """App-startup wiring (FastAPI lifespan). Fail-closed (ADR 0032 decision 2):
+    a deployment must never come up healthy while unable to log anybody in.
+    Partial OTP configs are already rejected by `Settings._validate_otp_auth`.
     """
     if azure_scheme is not None:
         await azure_scheme.openid_config.load_config()
@@ -799,8 +532,7 @@ async def init_auth() -> None:
             client_id=_settings.azure_api_client_id,
             scope=_settings.azure_api_scope_uri,
         )
-        # Both may be on at once (ADR 0032 decision 1's "real + otp"): AAD for the
-        # org's own identities, OTP for the people it has no directory entry for.
+        # Real + OTP may both be on at once (ADR 0032 decision 1).
         if _otp_enabled:
             _log_otp_mode_ready()
         return
@@ -814,14 +546,8 @@ async def init_auth() -> None:
             signup_allowlist=_settings.oidc_allowlist_configured,
         )
         if not _settings.oidc_allowlist_configured:
-            # The open state is the DEFAULT (a fail-closed default would lock a
-            # whole workspace out on upgrade), so it must at least be loud: with
-            # no app-side gate, DataQ admits every identity the issuer will
-            # issue a token for, which makes the IdP's own registration policy
-            # DataQ's access policy. That is fine for an invite-only tenant and
-            # is exactly how #1386 happened on a self-signup-enabled pool.
-            # Count + domains only, never the addresses themselves (PII) —
-            # mirrors `_log_otp_mode_ready`.
+            # The open state is the deliberate default (fail-closed would lock a workspace out on
+            # upgrade), so it must be LOUD: with no app-side gate.
             log.warning(
                 "auth_oidc_no_signup_allowlist",
                 issuer=_settings.oidc_issuer,
@@ -867,9 +593,8 @@ def _get_current_user_real(
     azure_user: Annotated[AzureUser | None, Security(azure_scheme)],
     db: Annotated[Session, Depends(get_db)],
 ) -> User:
-    # DataQ PAT first, by prefix (ADR 0026 — second authenticator behind the
-    # seam): a `dq_live_…` bearer is never a valid JWT, so the branches are
-    # disjoint. api_key_service raises the uniform 401 on any bad key.
+    # PAT first, by prefix (ADR 0026): a `dq_live_` bearer is never a valid JWT,
+    # so the branches are disjoint; api_key_service raises the uniform 401.
     pat = _pat_token(request)
     if pat is not None:
         return api_key_service.resolve_token(db, pat)
@@ -893,22 +618,16 @@ def _get_current_user_real_or_otp(
     azure_user: Annotated[AzureUser | None, Security(azure_scheme)],
     db: Annotated[Session, Depends(get_db)],
 ) -> User:
-    """Azure AD **and** email OTP both configured — PAT → session cookie → JWT.
-
-    A separate function rather than a branch inside `_get_current_user_real`
-    because the mode is bound at import time and the ladder below picks exactly
-    one; keeping them separate means the Azure-only deployment executes no OTP
-    code at all, and the two orderings are each independently readable.
+    """Azure AD and email OTP both configured — PAT → session cookie → JWT.
+    A separate function so the Azure-only deployment executes no OTP code.
     """
     pat = _pat_token(request)
     if pat is not None:
         return api_key_service.resolve_token(db, pat)
     cookie = _session_token(request)
     if cookie is not None:
-        # Decided here, and NOT falling through to the JWT branch on failure —
-        # the same disjointness the PAT branch has. `_PatAwareAzureScheme` has
-        # already short-circuited, so `azure_user` is None anyway; this is the
-        # explicit statement of the contract rather than a reliance on that.
+        # Decided here; never falls through to the JWT branch on failure — the
+        # same disjointness the PAT branch has.
         return session_service.resolve_token(db, cookie)
     if azure_user is None:
         raise DataQError(
@@ -925,28 +644,7 @@ def _get_current_user_real_or_otp(
 
 
 def _oidc_access_allowed(email: str, settings: Settings | None = None) -> bool:
-    """Whether `email` (already normalized) may hold a DataQ account via OIDC (#1386).
-
-    Mirrors `otp_service.is_signup_eligible`, with one deliberate difference in the
-    empty-allowlist case: OTP treats "no allowlist" as *nobody* (and refuses to
-    boot), while this returns True — see the `oidc_allowed_emails` field comment
-    in `core/config.py` for why a fail-closed default here would turn a routine
-    image bump into a workspace-wide lockout.
-
-    Checked on EVERY request, not only at first provisioning. Gating just the
-    insert would leave an already-provisioned identity in place after it is
-    removed from the allowlist, so the list would grant access but never revoke
-    it — this way it doubles as the kill-switch for an account that should no
-    longer be admitted.
-
-    `settings` is explicit (same shape as `is_signup_eligible`) because the THREE
-    callers do not share one settings source: the two REST dependencies read this
-    module's import-time `_settings`, while `mcp.auth` resolves its own via
-    `get_settings()`. They are the same object in a running process, but letting
-    each caller pass what it already holds is what keeps /mcp and /api from
-    diverging under a test override — which is precisely how the /mcp path came
-    to be missed in the first place.
-    """
+    """Whether `email` (already normalized) may hold a DataQ account via OIDC (#1386)."""
     s = settings or _settings
     if not s.oidc_allowlist_configured:
         return True
@@ -957,27 +655,8 @@ def _oidc_access_allowed(email: str, settings: Settings | None = None) -> bool:
 
 
 def _denied_identity(email: str) -> dict[str, str]:
-    """Log fields naming a REJECTED identity without logging the address.
-
-    `email=` cannot be used: `email` is in `core/logging.py`'s `_PII_KEYS`, so the
-    redactor replaces it and the line says nothing. Combined with the 403 body
-    deliberately not echoing the address, that would leave a misconfigured
-    allowlist with no diagnosable surface anywhere — the operator sees "somebody
-    was denied" and cannot find out who or why.
-
-    So: the DOMAIN (an org identifier, not a person — the same call
-    `_log_otp_mode_ready` makes) plus a short salt-free digest of the full
-    address. The digest is not reversible but IS stable, so one operator can
-    correlate "the user who says they can't get in" against a specific log line
-    by hashing the address they were given, and repeated denials from one
-    identity are visibly one identity rather than many.
-    """
-    # Normalized here rather than trusted from the caller: the digest's whole
-    # purpose is that an operator can reproduce it from an address a user gives
-    # them, and `Someone@Example.com` must hash to the same value the log line
-    # carries. Both current callers already normalize, so this is belt-and-braces
-    # — but a canonical-only-by-convention digest is a correlation key that
-    # quietly stops correlating.
+    """Log fields naming a REJECTED identity without logging the address."""
+    # Normalized here so any casing of the address reproduces the same digest.
     normalized = normalize_email(email)
     _, _, domain = normalized.partition("@")
     return {
@@ -987,19 +666,13 @@ def _denied_identity(email: str) -> dict[str, str]:
 
 
 def _resolve_generic_oidc_user(db: Session, oidc_claims: dict[str, Any]) -> User:
-    """Claims -> allowlist gate -> upserted `User`, for both generic-OIDC deps.
-
-    Deliberately ONE function called from both `_get_current_user_generic_oidc`
-    and `_get_current_user_generic_oidc_or_otp`: the two dependencies had byte-
-    identical bodies here, and a gate added to one and forgotten in the other
-    would leave the mode that also has OTP enabled silently ungated.
+    """Claims → allowlist gate → upserted `User` — ONE function for both
+    generic-OIDC deps, so a gate added to one cannot be forgotten in the other.
     """
     subject, email, display_name = _extract_oidc_claims(oidc_claims)
     email = normalize_email(email)
     if not _oidc_access_allowed(email):
-        # Deliberately 403, not 401: the token is VALID, so re-authenticating
-        # would loop the SPA forever. The address is not echoed back to the
-        # caller; `_denied_identity` is how an operator identifies them.
+        # 403, not 401: the token is VALID, so re-authenticating would loop the SPA forever.
         log.warning("auth_oidc_access_denied", mode="generic_oidc", **_denied_identity(email))
         raise DataQError(
             code="forbidden",
@@ -1040,8 +713,9 @@ def _get_current_user_generic_oidc_or_otp(
     oidc_claims: Annotated[dict[str, Any] | None, Security(oidc_scheme)],
     db: Annotated[Session, Depends(get_db)],
 ) -> User:
-    """Generic OIDC **and** email OTP both configured — the counterpart to
-    `_get_current_user_real_or_otp`."""
+    """Generic OIDC and email OTP both configured — the counterpart to
+    `_get_current_user_real_or_otp`.
+    """
     pat = _pat_token(request)
     if pat is not None:
         return api_key_service.resolve_token(db, pat)
@@ -1062,10 +736,8 @@ def _get_current_user_otp(
     db: Annotated[Session, Depends(get_db)],
 ) -> User:
     """OTP-only deployment (no Azure AD) — PAT → session cookie → uniform 401.
-
-    Declares no `Security(azure_scheme)` dependency, which is the whole reason it
-    exists: `_get_current_user_real` cannot serve this mode because that dependency
-    is `None` here and FastAPI would still try to resolve it.
+    Declares no `Security(azure_scheme)` dependency: the scheme is None here and
+    FastAPI would still try to resolve it.
     """
     pat = _pat_token(request)
     if pat is not None:
@@ -1084,41 +756,21 @@ def _get_current_user_dev_bypass(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
 ) -> User:
-    # PATs resolve in dev bypass too (same seam order as real mode), so the
+    # PATs resolve in dev bypass too — same seam order as real mode, so the
     # local stack can exercise the full PAT lifecycle without Azure.
     pat = _pat_token(request)
     if pat is not None:
         return api_key_service.resolve_token(db, pat)
-    # A session cookie resolves too — but, unlike the PAT branch above, an
-    # UNUSABLE one falls through to the bypass user instead of 401ing.
-    #
-    # The asymmetry is deliberate. Dev bypass is not an authenticator: its entire
-    # contract is "no credential is required", so refusing a request because of a
-    # credential nobody had to present is pure friction with no security value —
-    # the next request without the cookie is admitted anyway. The concrete case is
-    # a developer who ran an OTP-configured stack, kept the cookie, and switched
-    # the env back: they would otherwise be locked out of their own machine until
-    # they cleared browser storage. (The PAT branch keeps its 401 because #461's
-    # tests pin it and because a presented PAT is an explicit act.)
+    # Unlike the PAT branch, an UNUSABLE cookie falls through to the bypass user instead of 401ing:
+    # dev bypass's contract is "no credential required".
     cookie = _session_token(request)
     if cookie is not None:
         try:
             return session_service.resolve_token(db, cookie)
         except session_service.SessionAuthError:
             log.debug("dev_bypass_ignoring_unusable_session_cookie")
-    # The bypass identity is the workspace ADMIN (ADR 0033 / #741). Dev bypass is
-    # a single-operator mode by definition — no credential, exactly one identity,
-    # and it cannot coexist with a real IdP (`_dev_bypass_allowed`) or with
-    # anything but `ENVIRONMENT=dev`. Landing it on `member` would leave the
-    # local and published-eval stacks unable to create a connection at all, i.e.
-    # unable to do the first thing DataQ is for, and the demo seed depends on the
-    # same capability.
-    #
-    # Seeded via the allowlist-shaped `role=` below rather than left to
-    # `bootstrap_role`, because there is no email allowlist in this mode to put
-    # it on. The write is unconditional (not promote-only) for the same reason
-    # the tier is admin: there is no second user whose deliberate demotion this
-    # could be undoing.
+    # The bypass identity is the workspace ADMIN (ADR 0033 / #741): a single-operator mode, and
+    # `member` would leave the local/eval stacks unable to create a connection at all.
     user = _upsert_user(
         db,
         aad_object_id=DEV_BYPASS_AAD_OID,
@@ -1157,10 +809,8 @@ else:
 def require_workspace_admin(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
-    """FastAPI dependency gating the /admin endpoints — 403 for a non-admin.
-
-    Server-side authz (never a client toggle): a non-admin gets a real 403, which
-    the frontend renders as the forbidden page.
+    """Gate the /admin endpoints — 403 for a non-admin. Server-side authz,
+    never a client toggle.
     """
     if not is_workspace_admin(current_user):
         raise DataQError(
@@ -1172,22 +822,7 @@ def require_workspace_admin(
 
 
 def require_role(minimum: str) -> Callable[..., User]:
-    """Build a FastAPI dependency requiring at least `minimum` workspace role.
-
-    The coarse-axis sibling of `suite_authz.require_permission`: that one gates a
-    *resource*, this one gates a *capability the workspace grants at all*. Ranked
-    `viewer(1) < member(2) < admin(3)`, and the 403 carries `have`/`need` exactly
-    like the suite ladder so both axes report a denial in one shape.
-
-    Deliberately a dependency factory rather than three hand-written
-    dependencies: the enforcement points (#741) must all resolve the role through
-    `resolve_role`, and a factory makes that structural instead of a convention
-    each new call site could quietly break. Because it composes `get_current_user`,
-    the gate is identical for a browser session, an Azure AD / OIDC token, and a
-    PAT — there is no auth-mode branching to keep in sync.
-
-    Raises 403, never 404: unlike the suite ladder there is no existence to hide.
-    """
+    """Build a FastAPI dependency requiring at least `minimum` workspace role."""
     if minimum not in ROLE_RANK:
         raise ValueError(
             f"unknown workspace role: {minimum!r}"
@@ -1207,18 +842,7 @@ def require_role(minimum: str) -> Callable[..., User]:
     return dependency
 
 
-#: The two role gates the API layer actually uses, as annotated types (ADR 0033,
-#: #741). Named aliases rather than `Depends(require_role(...))` spelled out at
-#: each route, for the reason the factory exists at all: a gate that is a *type*
-#: reads at the signature — `current_user: AdminUser` says what the endpoint
-#: requires without the reader tracing a call — and there is exactly one place a
-#: tier's meaning can be changed.
-#:
-#: They also make the *absence* of a gate legible. On `connections`, the read
-#: routes deliberately keep the plain `Depends(get_current_user)`: Members must
-#: reference connections when authoring suites, so list/get stay
-#: authenticated-any (credentials are never in the payload at any tier). That
-#: reads as a decision beside `AdminUser` siblings, where three near-identical
-#: `Depends(...)` expressions would just read as an oversight.
+#: The two role gates the API layer uses (ADR 0033, #741) — aliases so a gate reads at the
+#: signature.
 AdminUser = Annotated[User, Depends(require_role(ADMIN_ROLE))]
 MemberUser = Annotated[User, Depends(require_role(DEFAULT_WORKSPACE_ROLE))]

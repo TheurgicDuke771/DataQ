@@ -1,10 +1,4 @@
-"""Tests for the Celery app config and request_id propagation signals.
-
-No broker is needed: the signal receivers are called directly with the same
-arguments Celery would pass, and the `request_id_var` ContextVar is inspected
-to assert propagation. The eager-mode case guards the bug fixed pre-merge —
-a blanket clear in task_postrun would drop the caller's request_id.
-"""
+"""Tests for the Celery app config and request_id propagation signals."""
 
 import uuid
 from collections.abc import Iterator
@@ -57,11 +51,9 @@ def test_create_celery_app_uses_redis_url_and_json() -> None:
 
 
 def test_beat_schedule_file_lives_in_the_temp_dir_not_the_cwd() -> None:
-    """The runtime image runs as a non-root user with a read-only /workspace
-    (#1408), so beat's schedule shelve must never land in the CWD — celery's
-    default. A regression here crashes beat at startup in EVERY deployed
-    environment, which silently kills all periodic tasks (the #405 blast
-    radius: orchestration polling, scheduled dispatch, gap recovery, sweeps)."""
+    """The runtime image runs as a non-root user with a read-only /workspace (#1408), so beat's
+    schedule shelve must never land in the CWD — celery's default.
+    """
     import os
     import tempfile
 
@@ -72,7 +64,8 @@ def test_beat_schedule_file_lives_in_the_temp_dir_not_the_cwd() -> None:
 def test_beat_schedule_registers_poll_and_gap_recovery() -> None:
     """Both orchestration beats are wired with the right tasks + intervals — the
     10-min poll (#171) and the 30-min gap-recovery sweep (B2). Guards against a
-    dropped entry silently disabling either schedule."""
+    dropped entry silently disabling either schedule.
+    """
     schedule = create_celery_app().conf.beat_schedule
     assert schedule["poll-orchestration-runs"]["task"] == "poll_orchestration_runs"
     assert schedule["poll-orchestration-runs"]["schedule"] == 600.0
@@ -83,20 +76,15 @@ def test_beat_schedule_registers_poll_and_gap_recovery() -> None:
 def test_beat_schedule_registers_orphan_asset_sweep() -> None:
     """The orphan-asset sweep (#770) is wired daily, same cadence as the
     sample-failures retention sweep — guards against a dropped entry silently
-    disabling the janitor."""
+    disabling the janitor.
+    """
     schedule = create_celery_app().conf.beat_schedule
     assert schedule["sweep-orphan-assets"]["task"] == "sweep_orphan_assets"
     assert isinstance(schedule["sweep-orphan-assets"]["schedule"], crontab)
 
 
 def test_beat_schedule_registers_orphan_secret_sweep() -> None:
-    """The orphan-SECRET sweep (#1059), daily like its asset sibling.
-
-    Also asserts the task NAME resolves to a registered task: a beat entry naming a
-    task that does not exist fails silently at runtime — beat logs and moves on —
-    which is the #405/#904 shape where periodic work quietly stopped while
-    everything reported healthy.
-    """
+    """The orphan-SECRET sweep (#1059), daily like its asset sibling."""
     app = create_celery_app()
     schedule = app.conf.beat_schedule
     assert schedule["sweep-orphan-secrets"]["task"] == "sweep_orphan_secrets"
@@ -107,16 +95,7 @@ def test_beat_schedule_registers_orphan_secret_sweep() -> None:
 
 
 def test_beat_schedule_registers_otp_purge_sweep() -> None:
-    """The OTP-code retention sweep (#1136), daily like its sibling janitors.
-
-    `otp_service.purge_expired_codes` shipped unit-tested in #1134 with no beat
-    entry — the #1099 shape one step earlier: a background obligation that was
-    never even WIRED, so nothing could silently stop running it, but nothing ran
-    it either. Registration is the half that rots silently, so this asserts both
-    the schedule entry AND that the task name it names actually resolves —
-    a beat entry naming a task that doesn't exist fails quietly at runtime
-    (the #405/#904 shape).
-    """
+    """The OTP-code retention sweep (#1136), daily like its sibling janitors."""
     app = create_celery_app()
     schedule = app.conf.beat_schedule
     assert schedule["purge-otp-codes"]["task"] == "purge_otp_codes"
@@ -126,26 +105,13 @@ def test_beat_schedule_registers_otp_purge_sweep() -> None:
     assert "purge_otp_codes" in app.tasks
 
 
-# Sub-hourly liveness intervals are fine: a beat restart resetting a countdown of
-# minutes delays a tick by minutes. Anything slower would cross the restart cadence
-# of the embedded-beat deployment and belongs on a wall clock instead.
+# Sub-hourly liveness intervals are fine: a beat restart resetting a countdown of minutes delays a
+# tick by minutes.
 _INTERVAL_CEILING_S = 1800.0
 
 
 def test_no_beat_entry_uses_an_interval_a_restart_can_starve() -> None:
-    """Every beat entry is either a short liveness interval or a wall-clock crontab.
-
-    The #1091 class: beat runs embedded in the worker (`worker -B`) with no
-    persisted state, so an INTERVAL schedule restarts its countdown on every
-    worker restart — and prod restarts more often than daily (revision rolls,
-    scaling, the #904 watchdog). A 24h interval therefore never fired: warehouse
-    lineage sat 10 days stale while beat's every-minute tasks ran fine, and the
-    only daily task that executed at all was the one #1024 kicks on beat start.
-
-    Guarding the CLASS, not the six names: any future beat entry added with a
-    slow interval re-introduces the bug, so the ceiling applies to every entry.
-    A `crontab` fires at a wall-clock moment and is indifferent to restarts.
-    """
+    """Every beat entry is either a short liveness interval or a wall-clock crontab."""
     schedule = create_celery_app().conf.beat_schedule
     assert schedule, "beat schedule unexpectedly empty"
     for name, entry in schedule.items():
@@ -162,10 +128,6 @@ def test_no_beat_entry_uses_an_interval_a_restart_can_starve() -> None:
 def test_every_beat_entry_names_a_registered_task() -> None:
     """Every beat entry's task NAME resolves to a registered task — generalized from
     the single #1070 assertion to the whole schedule (review finding on this PR).
-
-    A beat entry naming a task that does not exist fails SILENTLY at runtime — beat
-    logs and moves on, the #405/#904 shape — and this PR edits the task/schedule
-    pair of six entries at once, exactly where a typo would slip in unseen.
     """
     app = create_celery_app()
     import backend.app.worker.tasks  # noqa: F401  — registers the tasks
@@ -175,12 +137,7 @@ def test_every_beat_entry_names_a_registered_task() -> None:
 
 
 def test_daily_crontabs_are_staggered_not_a_midnight_herd() -> None:
-    """No two wall-clock entries share a fire minute (and none sits at 00:00).
-
-    The stagger is deliberate — six tasks include warehouse queries and vault
-    sweeps, and firing them as one batch turns a cheap daily cadence into a
-    thundering herd on the worker, the DB and the warehouses.
-    """
+    """No two wall-clock entries share a fire minute (and none sits at 00:00)."""
     schedule = create_celery_app().conf.beat_schedule
     moments = []
     for entry in schedule.values():
@@ -228,11 +185,7 @@ def test_restore_then_clear_in_worker_context() -> None:
 
 
 def test_clear_restores_prior_value_under_eager_mode() -> None:
-    """Eager mode: signals fire inside the caller's context.
-
-    postrun must restore the request's own request_id, not blow it away — the
-    regression this guards.
-    """
+    """Eager mode: signals fire inside the caller's context."""
     request_id_var.set("req-CALLER")
     task = _fake_task("req-CALLER")
     _restore_request_id(task=task)
@@ -315,11 +268,7 @@ def test_worker_lost_accepts_the_keyword_call_form(monkeypatch: pytest.MonkeyPat
 
 
 def test_ordinary_exceptions_are_left_to_the_task(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The task's own handlers already ran and classified the failure (#605).
-
-    Overwriting that with the generic memory reason would make real failures LESS
-    diagnosable — the opposite of what #755 is for.
-    """
+    """The task's own handlers already ran and classified the failure (#605)."""
     seen = _closed_run_ids(monkeypatch)
     celery_app._fail_run_on_worker_lost(
         task_id="t1",
@@ -330,12 +279,7 @@ def test_ordinary_exceptions_are_left_to_the_task(monkeypatch: pytest.MonkeyPatc
 
 
 def test_other_tasks_are_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Only run_suite has a run row to close.
-
-    The arg is a VALID uuid on purpose: an unparseable one would make this pass via
-    the run-id guard instead of the task-name guard, so deleting the name check
-    would not fail anything. (It did exactly that until a mutation check caught it.)
-    """
+    """Only run_suite has a run row to close."""
     seen = _closed_run_ids(monkeypatch)
     celery_app._fail_run_on_worker_lost(
         task_id="t1",
@@ -369,18 +313,15 @@ def test_handler_never_raises_out_of_the_signal(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_acks_late_stays_off_so_an_oom_run_is_not_redelivered() -> None:
-    """Early ack is what stops #755's poison-pill crash loop (25 local restarts).
-
-    Pinned as a test because it is a *default* we are relying on: flipping it to
-    late-ack would silently hand an OOM-killing run straight back to a fresh child.
-    """
+    """Early ack is what stops #755's poison-pill crash loop (25 local restarts)."""
     assert celery_app.celery_app.conf.task_acks_late is False
 
 
 class TestRedissSafeUrl:
     """#1363 — celery hard-rejects a rediss:// URL without ssl_cert_reqs, so the
     app defaults it rather than crash-looping on any TLS redis (the #1361 AWS
-    failure, generalized). Never weakens an explicit choice."""
+    failure, generalized). Never weakens an explicit choice.
+    """
 
     def test_plain_redis_url_untouched(self) -> None:
         url = "redis://:pw@host:6379/0"

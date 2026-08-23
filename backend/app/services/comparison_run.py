@@ -1,21 +1,4 @@
-"""Execute comparison checks inside a suite run (ADR 0015, #794).
-
-`build_comparison_executor` closes over the run's already-resolved target side
-(the suite's connection + materialized table/path) and returns a callable the
-run path invokes per `comparison` check: read both sides through the #792
-`DatasetReader` (source = the check's `source_connection_id` + `config.source`;
-target = the suite side, optionally projected by `config.target_query`), diff
-them with the #793 engine, and map the buckets onto a `CheckOutcome`.
-
-Failure semantics (#122): everything that prevents *evaluating* the diff — an
-unreadable side, an over-cap dataset, duplicate/NULL keys, a deleted source
-connection — is an operational ``error`` outcome, never a data-quality ``fail``
-and never a raised exception (one broken comparison must not fail its siblings'
-run). `DataQError` messages are ours and redaction-safe, so they surface
-verbatim; unexpected exceptions surface only their `classify_failure_reason`
-category (raw text can carry DSN/credential fragments) and are logged
-server-side.
-"""
+"""Execute comparison checks inside a suite run (ADR 0015, #794)."""
 
 from __future__ import annotations
 
@@ -57,13 +40,7 @@ def _error_outcome(check: Check, message: str) -> CheckOutcome:
 def _source_spec(
     source_conn: Connection, source_cfg: dict[str, Any], *, secret_store: SecretStore
 ) -> DatasetSpec:
-    """The check's `config.source` → a readable `DatasetSpec`.
-
-    A `query` projection is passed through (validated read-only at author time
-    and re-validated by the reader). A dataset spec goes through the same
-    `resolve_target` + batch materialization a suite target does, so flat-file
-    batch sources resolve to a concrete object exactly like a run's own target.
-    """
+    """The check's `config.source` → a readable `DatasetSpec`."""
     if "query" in source_cfg:
         return DatasetSpec(query=source_cfg["query"])
     resolved = run_target.resolve_target(source_conn.type, source_cfg)
@@ -79,7 +56,8 @@ def _source_spec(
 
 def _observed(result: Any) -> dict[str, Any]:
     """Bucket counts per grain — the shared identity fields plus either the
-    row-grain or the value-grain (#799) counters."""
+    row-grain or the value-grain (#799) counters.
+    """
     base = {
         "source_rows": result.source_rows,
         "target_rows": result.target_rows,
@@ -116,11 +94,7 @@ def build_comparison_executor(
     target_catalog: str | None,
     secret_store: SecretStore,
 ) -> ComparisonExecutor:
-    """An executor bound to this run's resolved target side.
-
-    ``target_table`` is the run's materialized table/path — the same value the
-    GX runner receives, so both check kinds validate the identical dataset.
-    """
+    """An executor bound to this run's resolved target side."""
 
     def execute(check: Check) -> CheckOutcome:
         cfg = dict(check.config)
@@ -151,9 +125,8 @@ def build_comparison_executor(
             target_df = read_dataset(
                 suite_connection, tgt_spec, max_rows=max_rows, secret_store=secret_store
             )
-            # Grain dispatch (#799): `comparison:columns` = FDC's per-column
-            # value grain; anything else (the canonical `comparison:records`)
-            # = row grain. Tolerance applies to both.
+            # Grain dispatch (#799): `comparison:columns` = FDC's per-column value grain; anything
+            # else (the canonical `comparison:records`) = row grain.
             engine = (
                 compare_columns
                 if check.expectation_type == "comparison:columns"
@@ -167,10 +140,8 @@ def build_comparison_executor(
                 tolerance=parse_tolerance(cfg.get("tolerance")),
             )
         except BatchNotFoundError:
-            # A routine "baseline hasn't landed yet" on a flat-file batch
-            # source — friendly and specific, not the generic UNKNOWN failure
-            # (the suite's own target gets a whole-run skip for this; a missing
-            # SOURCE batch is per-check, so it surfaces as this error result).
+            # A routine "baseline hasn't landed yet" on a flat-file batch source — friendly and
+            # specific.
             return _error_outcome(
                 check,
                 "comparison source batch not found — no file matched the source "
@@ -218,5 +189,6 @@ def build_comparison_executor(
 
 def has_comparison_checks(checks: list[Check]) -> bool:
     """Whether the run needs a comparison executor at all (cheap pre-check so
-    non-comparison suites build nothing extra)."""
+    non-comparison suites build nothing extra).
+    """
     return any(c.kind == COMPARISON_KIND for c in checks)

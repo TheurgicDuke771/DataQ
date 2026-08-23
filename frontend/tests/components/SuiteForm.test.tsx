@@ -23,9 +23,7 @@ const mockCreate = vi.mocked(createSuite);
 const mockUpdate = vi.mocked(updateSuite);
 const mockPreview = vi.mocked(previewBatchTarget);
 
-/** An axios error shaped like what the API client actually rejects with — the
- *  response interceptor has already swapped the envelope message onto
- *  `error.message` by the time a caller sees it (mirrors utils/errors.test.ts). */
+/** An axios error shaped like what the API client actually rejects with. */
 function batchPreviewFailure(
   status: number,
   code: string,
@@ -95,10 +93,8 @@ async function pickConnection(user: ReturnType<typeof userEvent.setup>, name: Re
 
 afterEach(() => {
   vi.clearAllMocks();
-  // `clearAllMocks` clears recorded calls but NOT queued `…Once` implementations,
-  // and the preview is debounced — a test can legitimately finish before its
-  // 400ms timer fires, leaving an unconsumed queue entry that the NEXT test's
-  // mount call would pick up instead of its own. Drain it explicitly.
+  // `clearAllMocks` clears recorded calls but NOT queued `…Once` implementations, and the preview
+  // is debounced — a test can legitimately finish before its 400ms timer fires.
   mockPreview.mockReset();
 });
 
@@ -199,13 +195,8 @@ describe('SuiteForm — flat-file batch target (#1180)', () => {
   it('reopens an existing batch target in batch mode with its fields populated', async () => {
     const user = userEvent.setup();
     mockUpdate.mockResolvedValue(suite());
-    // This target is already `active` (a suiteId + pattern) on first render, so
-    // the 400ms preview debounce (#1193) WILL fire — normally cancelled by
-    // unmount before it does, but that's a race, not a guarantee (#1254: an
-    // unmocked call resolves `undefined` from the bare `vi.fn()`, and `.then()`
-    // on `undefined` throws if the timer wins). Mock it like the "batch preview
-    // hint" describe block below does, since this test isn't asserting on the
-    // preview outcome anyway.
+    // This target is already `active` (a suiteId + pattern) on first render, so the 400ms preview
+    // debounce (#1193) WILL fire — normally cancelled by unmount before it does, but that's a race.
     mockPreview.mockResolvedValue('adls_flatfile/logistics_tracking/irrelevant.csv');
     renderForm({
       suite: suite({
@@ -276,10 +267,7 @@ describe('SuiteForm — flat-file batch target (#1180)', () => {
   });
 
   it('falls back to "latest" when the stored strategy is malformed, without crashing', async () => {
-    // The suite target is untyped JSONB (a hand-edited row, or a value from an
-    // older schema) — a stray `strategy` must not prefill the Select with an
-    // option that doesn't exist (the same class of bug asFileFormat guards
-    // against for file_format, mirrored here by asBatchStrategy).
+    // The suite target is untyped JSONB (a hand-edited row, or a value from an older schema).
     const user = userEvent.setup();
     mockUpdate.mockResolvedValue(suite());
     // Same #1254 debounce race: 'weekly' falls back to 'latest', which is
@@ -333,12 +321,7 @@ describe('SuiteForm — flat-file batch target (#1180)', () => {
   });
 });
 
-/** Assert the hint stops claiming a resolved path *before* the 400ms debounce
- *  fires. The window matters: once the timer fires the component sets `loading`
- *  on its own, so an unbounded `findByText`/`waitFor` would pass whether or not
- *  render drops a stale answer. A timer can fire late but never early, so the
- *  ceiling is what makes this discriminating; the floor only has to cover one
- *  antd `useWatch` flush + re-render (sub-millisecond in practice). */
+/** Assert the hint stops claiming a resolved path *before* the 400ms debounce fires. */
 async function expectStaleAnswerDropped(path: string) {
   await waitFor(
     () => {
@@ -411,9 +394,8 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
   });
 
   it('surfaces the classified reason alongside the generic message on a 502', async () => {
-    // The 502 message is deliberately generic (the backend never echoes an
-    // adapter exception); `detail.reason` is the classified half that says what
-    // to fix. Rendering only the message discards it.
+    // The 502 message is deliberately generic (the backend never echoes an adapter exception);
+    // `detail.reason` is the classified half that says what to fix.
     mockPreview.mockRejectedValueOnce(
       batchPreviewFailure(
         502,
@@ -470,9 +452,8 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
   });
 
   it('stays quiet (no call, no hint) until a pattern is entered', async () => {
-    // Edit mode (a real suiteId, connection fixed to the default adls-prod
-    // fixture) with the target field itself left blank — isolates the
-    // "no pattern yet" gate from the "no suiteId yet" one below.
+    // Edit mode (a real suiteId, connection fixed to the default adls-prod fixture) with the target
+    // field itself left blank.
     const user = userEvent.setup();
     renderForm({ suite: suite({ id: 's1', target: null }) });
 
@@ -487,10 +468,8 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
   });
 
   it('drops the previous answer the moment the spec changes, rather than relabelling it', async () => {
-    // The hint's whole point is before-you-save confidence, so it must never
-    // present an answer about spec A as the resolution of spec B. The 400ms
-    // debounce after an edit used to do exactly that: the old path stayed on
-    // screen, unlabelled as stale, describing a pattern the form no longer had.
+    // The hint's whole point is before-you-save confidence, so it must never present an answer
+    // about spec A as the resolution of spec B.
     mockPreview.mockResolvedValueOnce('orders/orders_20260601.csv');
     renderForm({
       suite: suite({
@@ -510,9 +489,8 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
   });
 
   it('does not re-show a previous answer when the batch key is cleared and re-entered', async () => {
-    // The active=false→true flip: emptying the batch key hides the hint, and
-    // typing a new one used to bring the OLD batch's path straight back —
-    // labelled as the resolution of a batch key it was never asked about.
+    // The active=false→true flip: emptying the batch key hides the hint, and typing a new one used
+    // to bring the OLD batch's path straight back.
     mockPreview.mockResolvedValueOnce('orders/orders_20260601.csv');
     renderForm({
       suite: suite({
@@ -574,9 +552,8 @@ describe('SuiteForm — sampling', () => {
   };
 
   it('offers the section only on datasources that accept a sampling block', async () => {
-    // Snowflake pushes every expectation down and never loads rows, so the
-    // backend answers a spec there with a 422 — a control whose only outcome is
-    // a save error is worse than no control.
+    // Snowflake pushes every expectation down and never loads rows, so the backend answers a spec
+    // there with a 422 — a control whose only outcome is a save error is worse than no control.
     const { rerender } = render(
       <AntApp>
         <SuiteForm
@@ -603,11 +580,8 @@ describe('SuiteForm — sampling', () => {
   });
 
   it('round-trips a stored sampling block: prefills it, and saves it back', async () => {
-    // The round trip is the assertion that matters. #1325's review found the API
-    // silently DROPPING this key (`SuiteTarget` is a closed model), which made
-    // the whole feature configurable only by writing the database by hand — so
-    // an editor that renders the block but loses it on save would reproduce that
-    // failure one layer up.
+    // The round trip is the assertion that matters. #1325's review found the API silently DROPPING
+    // this key (`SuiteTarget` is a closed model).
     const user = userEvent.setup();
     const stored = {
       catalog: 'main',
@@ -626,11 +600,10 @@ describe('SuiteForm — sampling', () => {
       </AntApp>,
     );
 
-    // Prefilled from the stored block — the block's presence IS the toggle.
-    // #1344: the prefill's one `form.setFieldsValue` call fans out to two
-    // independent `Form.useWatch` subscriptions (`sampling_enabled` gates the
-    // rows field, `sampling_enabled && sampling_strategy === 'random'` gates
-    // this one) — they can settle a render apart, so both fields need to be
+    // Prefilled from the stored block — the block's presence IS the toggle. #1344: the prefill's
+    // one `form.setFieldsValue` call fans out to two independent `Form.useWatch` subscriptions
+    // (`sampling_enabled` gates the rows field, `sampling_enabled && sampling_strategy ===
+    // 'random'` gates this one) — they can settle a render apart, so both fields need to be
     // awaited rather than just the first.
     expect(await screen.findByTestId('sampling-rows')).toHaveValue('5000');
     expect(await screen.findByTestId('sampling-seed')).toHaveValue('7');
@@ -672,18 +645,8 @@ describe('SuiteForm — sampling', () => {
   });
 
   it('hides the seed when the strategy switches to head, and saves the head spec', async () => {
-    // A head sample always reads the first rows in storage order and cannot be
-    // seeded; the backend 422s a seed there rather than let an author believe
-    // otherwise.
-    //
-    // Scope note, established by mutation-checking this test: it does NOT prove
-    // the stale-seed guard. Unmounting the seed `Form.Item` unregisters it, so
-    // `validateFields()` stops returning the value and there is no stale seed to
-    // drop at this layer — deleting `assembleTarget`'s `strategy === 'random'`
-    // condition leaves this test green. That guard is pinned in
-    // `suiteTarget.test.ts` ("drops a stale seed when the strategy is head"),
-    // which kills the mutant. What this test does prove is the visible
-    // behaviour: the field disappears and a head spec is what reaches the API.
+    // A head sample always reads the first rows in storage order and cannot be seeded; the backend
+    // 422s a seed there rather than let an author believe otherwise.
     const user = userEvent.setup();
     mockUpdate.mockResolvedValue(suite());
     render(
@@ -743,11 +706,7 @@ describe('SuiteForm — sampling', () => {
   });
 
   it('PRESERVES a stored block when the section never mounted (#1333 F3)', async () => {
-    // The silent-data-loss path. A snowflake connection does not render the
-    // sampling section, so `validateFields()` reports no `sampling_enabled` — and
-    // before the carry-forward, editing only the description rebuilt the target
-    // WITHOUT the stored row cap. No error, no warning, and the nightly suite
-    // reverts to the full scan the feature exists to prevent.
+    // The silent-data-loss path.
     const user = userEvent.setup();
     const stored = { table: 'ORDERS', sampling: { strategy: 'head', rows: 100_000 } };
     mockUpdate.mockResolvedValue(suite({ connection_id: 'conn-sf', target: stored }));
@@ -772,9 +731,6 @@ describe('SuiteForm — sampling', () => {
 
   it('surfaces the row-count conflict inline, naming the checks (#1333 F5)', async () => {
     // The backend refuses sampling on a suite holding a table row-count check.
-    // A toast makes the reader hold one half of a two-part conflict in their head
-    // while going to look at the other; this puts it on the control that caused
-    // it, with the obstacles named.
     const user = userEvent.setup();
     const err = new AxiosError('conflict');
     err.response = {

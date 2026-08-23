@@ -1,10 +1,4 @@
-"""Trigger-binding endpoint tests (TestClient + real Postgres).
-
-get_db is overridden to the shared test session; auth runs in dev-bypass mode
-(conftest) so the caller is the dev user. Suites created via the API are owned by
-that user (edit allowed); a directly-inserted suite with a different owner is
-used to exercise the access-control paths. Skips without TEST_DATABASE_URL.
-"""
+"""Trigger-binding endpoint tests (TestClient + real Postgres)."""
 
 import uuid
 from collections.abc import Iterator
@@ -79,7 +73,8 @@ def _payload(suite_id: str, **overrides: Any) -> dict[str, Any]:
 
 def _adf_connection(db_session: Any, *, env: str, factory: str) -> Connection:
     """An orchestration (ADF) connection — distinct from `_connection`'s
-    Snowflake stand-in, used for the #1186 ambiguous-URL warning tests."""
+    Snowflake stand-in, used for the #1186 ambiguous-URL warning tests.
+    """
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"adf-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
     db_session.flush()
@@ -116,14 +111,11 @@ def test_create_then_get_binding(client: TestClient, db_session: Any) -> None:
 
 
 def test_create_warns_on_cross_env_shared_url(client: TestClient, db_session: Any) -> None:
-    # Two ADF connections share one factory_name across envs — the live #1186
-    # shape. The binding is created against "dev"; the response must warn that
-    # "qa" shares the same resource.
+    # Two ADF connections share one factory_name across envs — the live #1186 shape.
     _adf_connection(db_session, env="dev", factory="shared-factory")
     _adf_connection(db_session, env="qa", factory="shared-factory")
-    # The suite's datasource is unrelated to the ADF connections above — a
-    # binding never references a connection_id (CLAUDE.md §4: orchestration
-    # providers cannot be a suite's datasource), only (provider, dag, env).
+    # The suite's datasource is unrelated to the ADF connections above — a binding never references
+    # a connection_id (CLAUDE.md §4: orchestration providers cannot be a suite's datasource).
     suite_id = _owned_suite(client, _connection(db_session).id)
 
     resp = client.post("/api/v1/trigger-bindings", json=_payload(suite_id, env="dev"))
@@ -145,9 +137,8 @@ def test_create_does_not_warn_without_a_shared_url(client: TestClient, db_sessio
 
 
 def test_disabled_binding_creation_does_not_warn(client: TestClient, db_session: Any) -> None:
-    # The ambiguity is real, but a disabled binding won't fire regardless — the
-    # warning isn't actionable yet, so it's suppressed until the binding is
-    # (re-)enabled.
+    # The ambiguity is real, but a disabled binding won't fire regardless — the warning isn't
+    # actionable yet, so it's suppressed until the binding is (re-)enabled.
     _adf_connection(db_session, env="dev", factory="shared-factory-2")
     _adf_connection(db_session, env="qa", factory="shared-factory-2")
     suite_id = _owned_suite(client, _connection(db_session).id)
@@ -198,9 +189,6 @@ def test_create_on_inaccessible_suite_is_404(
     client: TestClient, db_session: Any, as_role: Any
 ) -> None:
     # A suite the caller has no access to is hidden (404), not 403 — and no row.
-    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace
-    # admin since #741, and a workspace admin is implicit `admin` on EVERY suite
-    # (ADR 0027) — so it can never be "a user without access to this suite".
     _, headers = as_role("member")
     conn = _connection(db_session)
     suite = _unowned_suite(db_session, conn)
@@ -214,9 +202,8 @@ def test_create_with_view_only_is_forbidden(
 ) -> None:
     from backend.app.db.models import Share
 
-    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace
-    # admin since #741, and a workspace admin is implicit `admin` on EVERY suite
-    # (ADR 0027) — so it can never be "a user without access to this suite".
+    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace admin since #741,
+    # and a workspace admin is implicit `admin` on EVERY suite (ADR 0027).
     member, headers = as_role("member")
     conn = _connection(db_session)
     suite = _unowned_suite(db_session, conn)
@@ -236,13 +223,7 @@ def test_create_on_missing_suite_404(client: TestClient) -> None:
 def test_list_is_scoped_to_accessible_suites(
     client: TestClient, db_session: Any, as_role: Any
 ) -> None:
-    """Authenticated as a real **member**, not the ambient dev-bypass identity.
-
-    Dev bypass is a workspace *admin* (ADR 0033 / #741), and the list now honours
-    the admin's workspace-wide view — so running this as the ambient caller would
-    assert scoping about the one principal that is deliberately exempt from it.
-    The `as_role` fixture exists for exactly this.
-    """
+    """Authenticated as a real **member**, not the ambient dev-bypass identity."""
     actor, headers = as_role("member")
     conn = _connection(db_session)
     mine = Suite(
@@ -272,7 +253,8 @@ def test_list_gives_a_workspace_admin_every_binding(
 ) -> None:
     """Parity with `/schedules`, which has honoured the workspace-admin view since
     #488 — an admin seeing every schedule but only their own bindings is a
-    difference with no rationale behind it (ADR 0027)."""
+    difference with no rationale behind it (ADR 0027).
+    """
     _, headers = as_role("admin")
     conn = _connection(db_session)
     theirs = _unowned_suite(db_session, conn)

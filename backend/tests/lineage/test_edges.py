@@ -1,11 +1,4 @@
-"""`lineage.edges` tests against a real Postgres (db_session).
-
-Covers the full dbt-lineage refresh: namespace anchoring off existing assets,
-asset materialization for every manifest node, edge upsert, the AC convergence
-scenario (manifest v1 → v2: new edges appear, removed edges are pruned and vanish
-from blast radius), depth-capped blast radius, the no-anchor fail-soft skip, and
-env-preferred anchoring. Skips without TEST_DATABASE_URL.
-"""
+"""`lineage.edges` tests against a real Postgres (db_session)."""
 
 from __future__ import annotations
 
@@ -172,7 +165,8 @@ def test_upstream_provenance(db_session: Any) -> None:
 def test_neighbourhood_carries_hop_depth_and_the_real_edges(db_session: Any) -> None:
     """The graph view needs more than "what is reachable": it needs how far each
     node sits (to lay it out in hop columns) and which node connects to which (to
-    draw a truthful edge rather than a guessed one)."""
+    draw a truthful edge rather than a guessed one).
+    """
     conn = _connection(db_session, env="dev")
     _anchor(db_session, name=_ORDERS_HEADER, env="dev")
     refresh_dbt_edges(db_session, connection=conn, graph=_graph("v1"))
@@ -198,7 +192,8 @@ def test_neighbourhood_carries_hop_depth_and_the_real_edges(db_session: Any) -> 
 
 def test_neighbourhood_walks_both_directions_from_the_middle(db_session: Any) -> None:
     """From a node in the middle of the chain, both walks run and their edges union
-    into one DAG (the up-walk's edges are normalized to upstream→downstream too)."""
+    into one DAG (the up-walk's edges are normalized to upstream→downstream too).
+    """
     conn = _connection(db_session, env="dev")
     _anchor(db_session, name=_ORDERS_HEADER, env="dev")
     refresh_dbt_edges(db_session, connection=conn, graph=_graph("v1"))
@@ -279,15 +274,9 @@ def test_empty_graph_returns_none(db_session: Any) -> None:
 
 
 def test_prune_is_connection_scoped_across_projects(db_session: Any) -> None:
-    """Two dbt connections sharing table names: A's refresh must NOT prune B's edge.
-
-    The review's cross-project-corruption fix — the prune is scoped by
-    `(source, connection_id)`, so a refresh of project A never deletes project B's
-    live edges even when both manifests reference the same assets.
-    """
-    # Orchestrator connections are singletons per (type, env), so the two projects
-    # live in different envs; both pin the SAME `lineage_namespace` so they resolve
-    # the same shared asset rows regardless of env.
+    """Two dbt connections sharing table names: A's refresh must NOT prune B's edge."""
+    # Orchestrator connections are singletons per (type, env), so the two projects live in different
+    # envs.
     conn_a = _connection(db_session, env="dev")
     conn_b = _connection(db_session, env="qa")
     for c in (conn_a, conn_b):

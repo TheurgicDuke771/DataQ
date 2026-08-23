@@ -1,15 +1,6 @@
 import type { ThemeConfig } from 'antd';
 
-/**
- * App-wide Ant Design theme. Kept in one module so the brand palette and the
- * shell (App.tsx) read from the same tokens rather than hard-coding hexes.
- *
- * Design intent: move off the stock antd "navy-header admin template" look.
- * An indigo primary + a soft gray layout canvas (`colorBgLayout`) give the
- * white surfaces (header, sider, cards) depth and definition — so the page no
- * longer reads as a flat sea of white, and the empty space frames content
- * instead of just being blank.
- */
+/** App-wide Ant Design theme. */
 
 export const BRAND = {
   /** Indigo-600 — the primary accent (buttons, active nav, links). */

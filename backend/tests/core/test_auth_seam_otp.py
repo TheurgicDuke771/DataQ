@@ -1,22 +1,4 @@
-"""The three-authenticator seam order — PAT → session cookie → Azure JWT (#734).
-
-ADR 0032 decision 1 extends ADR 0026's seam with a browser credential. The
-properties that matter, and that these tests pin:
-
-* the order is fixed, and the branches are **disjoint** — a request decided by one
-  authenticator never falls through to another on failure (the #849 lesson made
-  structural: a credential of type A must never reach a validator for type B);
-* an expired or revoked session is a **uniform 401 on the next request**, checked
-  at the seam rather than merely stored;
-* the cookie short-circuit is gated on OTP actually being enabled, so it cannot
-  become an auth-bypass vector on an Azure-only deployment.
-
-The TestClient-level half runs against a purpose-built app mounting the real
-resolver, because the mode is bound at import time in `core.auth` and reloading it
-would not rebind the `get_current_user` name every router already captured. The
-resolver, the cookie parsing, the DataQError handler and the 401 envelope are all
-the production ones.
-"""
+"""The three-authenticator seam order — PAT → session cookie → Azure JWT (#734)."""
 
 from __future__ import annotations
 
@@ -68,7 +50,8 @@ def _azure_user(claims: dict[str, Any]) -> AzureUser:
 
 def test_only_a_correctly_prefixed_cookie_is_treated_as_a_session() -> None:
     """Prefix-checked like the PAT branch, so a cookie set by something else on
-    the same origin cannot steer a request into the session branch."""
+    the same origin cannot steer a request into the session branch.
+    """
     assert auth_mod._session_token(_request()) is None
     assert auth_mod._session_token(_request(cookie="")) is None
     assert auth_mod._session_token(_request(cookie="some-other-value")) is None
@@ -89,7 +72,8 @@ def test_otp_only_resolves_a_valid_session_cookie(db_session: Any) -> None:
 def test_otp_only_prefers_a_PAT_over_the_cookie(db_session: Any) -> None:
     """Seam order, asserted with BOTH credentials present and pointing at
     DIFFERENT users — the only arrangement that can tell precedence from
-    coincidence."""
+    coincidence.
+    """
     pat_owner, cookie_owner = _user(db_session), _user(db_session)
     _, pat = api_key_service.create_key(db_session, pat_owner, name="seam")
     _, cookie = session_service.create_session(db_session, cookie_owner)
@@ -135,7 +119,8 @@ def test_a_BAD_cookie_does_not_fall_through_to_the_azure_branch(db_session: Any)
     """The PAT branch's contract, applied to the cookie: presenting a credential
     and having it rejected is a 401, not an invitation to try the next
     authenticator. Falling through would mean a stale cookie silently changed
-    WHICH identity a request authenticated as."""
+    WHICH identity a request authenticated as.
+    """
     with pytest.raises(DataQError) as caught:
         auth_mod._get_current_user_real_or_otp(
             _request(cookie=session_service.TOKEN_PREFIX + "stale"),
@@ -224,10 +209,6 @@ async def test_the_azure_scheme_short_circuits_on_a_cookie_ONLY_when_otp_is_on(
 ) -> None:
     """`Security(azure_scheme)` resolves BEFORE the resolver body, so "the cookie is
     checked before the JWT branch" has to be enforced inside the scheme.
-
-    And it must be gated: ungated, any client could switch off JWT validation on an
-    Azure-only deployment by attaching a junk `dataq_session` cookie — a cosmetic
-    short-circuit turned into an auth-bypass vector.
     """
     from fastapi.security import SecurityScopes
     from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
@@ -269,14 +250,7 @@ def test_dev_bypass_resolves_a_VALID_session_cookie(db_session: Any) -> None:
 
 
 def test_dev_bypass_ignores_an_unusable_cookie(db_session: Any) -> None:
-    """A DELIBERATE asymmetry with the PAT branch (which 401s).
-
-    Dev bypass is not an authenticator — its entire contract is "no credential is
-    required" — so refusing a request over a credential nobody had to present is
-    friction with no security value: the next request without the cookie is
-    admitted anyway. The concrete case is a developer who ran an OTP-configured
-    stack, kept the cookie, and switched the env back.
-    """
+    """A DELIBERATE asymmetry with the PAT branch (which 401s)."""
     resolved = auth_mod._get_current_user_dev_bypass(
         _request(cookie=session_service.TOKEN_PREFIX + "leftover-from-another-stack"), db_session
     )
@@ -359,7 +333,8 @@ def test_the_401_bodies_are_byte_identical_for_expired_and_revoked(
     otp_client: TestClient, db_session: Any
 ) -> None:
     """One message for every failure mode — telling them apart would confirm to a
-    probing caller that the session was once real, or that somebody logged out."""
+    probing caller that the session was once real, or that somebody logged out.
+    """
     expired_user = _user(db_session)
     expired_row, expired = session_service.create_session(db_session, expired_user)
     expired_row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
@@ -382,18 +357,7 @@ def test_the_401_bodies_are_byte_identical_for_expired_and_revoked(
 
 
 def _api_routes() -> list[tuple[str, set[str]]]:
-    """Every (path, methods) pair the app serves, flattened.
-
-    FastAPI does not keep included routers' routes in `app.routes` — it stores a
-    `_IncludedRouter` wrapper holding the original router plus the prefix it was
-    mounted under. A naive flat scan therefore finds four routes and every "no
-    offenders" assertion below passes trivially. It did, on the first draft; the
-    `test_the_route_scan_actually_sees_the_api` guard below exists because of it.
-
-    Walked from the router objects rather than read out of `app.openapi()` so a
-    route marked `include_in_schema=False` — invisible in the schema, perfectly
-    reachable over HTTP — cannot slip past the CSRF audit.
-    """
+    """Every (path, methods) pair the app serves, flattened."""
     from backend.app.main import app
 
     found: list[tuple[str, set[str]]] = []
@@ -413,11 +377,7 @@ def _api_routes() -> list[tuple[str, set[str]]]:
 
 
 def test_the_route_scan_actually_sees_the_api() -> None:
-    """Guards the two audits below from becoming vacuous.
-
-    FastAPI wraps included routers, so a naive `app.routes` walk finds four routes
-    and every "no offenders" assertion passes trivially.
-    """
+    """Guards the two audits below from becoming vacuous."""
     paths = {path for path, _ in _api_routes()}
     assert len([p for p in paths if p.startswith("/api/v1/")]) > 50
     assert "/api/v1/me" in paths
@@ -427,10 +387,6 @@ def test_the_route_scan_actually_sees_the_api() -> None:
 def test_no_GET_route_in_the_api_mutates_state() -> None:
     """`SameSite=Lax` blocks cross-site POSTs but NOT cross-site GETs — so the
     cookie is only safe while every mutation is a POST/PATCH/PUT/DELETE.
-
-    Audited over the whole route table rather than by inspection, because the
-    invariant is broken by ADDING a route, not by editing an existing one — and a
-    review checklist does not run in CI.
     """
     mutating_verbs = {"POST", "PUT", "PATCH", "DELETE"}
     offenders = [
@@ -447,7 +403,8 @@ def test_no_GET_route_in_the_api_mutates_state() -> None:
 
 def test_the_logout_route_is_POST_only() -> None:
     """Login-CSRF's other half: a cross-site <img src> must not be able to sign a
-    user out, and a GET logout is exactly that."""
+    user out, and a GET logout is exactly that.
+    """
     logout = [methods for path, methods in _api_routes() if path == "/api/v1/auth/logout"]
     assert logout, "the logout route is not mounted"
     assert logout[0] == {"POST"}

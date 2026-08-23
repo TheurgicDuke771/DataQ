@@ -1,17 +1,4 @@
-"""Custom-SQL round-trip through the real GX path (ADR 0019).
-
-Locks the de-risked contract: a custom-SQL check runs as a GX
-``UnexpectedRowsExpectation`` against a SQL batch — ``{batch}`` substitution works
-and ``gx_runner`` maps **0 rows → success**, **≥1 row → failure**, with the
-unexpected row count surfaced as ``observed_value``. This guards against a GX
-upgrade silently changing that shape (CLAUDE.md §5 — GX's API drifts).
-
-``UnexpectedRowsExpectation`` is SQL-only, so (unlike the in-memory DataFrame
-runner tests) this needs a live SQL backend; the Postgres behind
-``TEST_DATABASE_URL`` stands in for the warehouse (which has no live connect in
-CI). Self-contained: it creates and drops its own probe table. Skips without
-``TEST_DATABASE_URL``.
-"""
+"""Custom-SQL round-trip through the real GX path (ADR 0019)."""
 
 from __future__ import annotations
 

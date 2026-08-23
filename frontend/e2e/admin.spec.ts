@@ -1,10 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-// Workspace-admin surfaces (#289 + ADR 0027): the dev-bypass identity is in
-// WORKSPACE_ADMIN_EMAILS (compose + CI), so /admin and /settings are reachable
-// and the admin-only footer nav renders. The webhook-config surface (#493) —
-// the supported way to obtain the ADF/Airflow inbound webhook URLs instead of
-// hand-assembling them (#92) — lives on Settings → Webhooks.
+// Workspace-admin surfaces (#289 + ADR 0027): the dev-bypass identity is in WORKSPACE_ADMIN_EMAILS
+// (compose + CI), so /admin and /settings are reachable and the admin-only footer nav renders.
 test.describe('Admin control centre', () => {
   test('renders the unscoped suites / members / access tables', async ({ page }) => {
     await page.goto('/admin');
@@ -27,29 +24,14 @@ test.describe('Admin control centre', () => {
 
     await page.getByRole('tab', { name: 'Webhooks' }).click();
     await expect(page.getByText('Inbound webhooks (orchestration)')).toBeVisible();
-    // One row per seeded orchestration provider; the ready-to-paste URL lives
-    // in a readonly input (getByText can't see input values), ADF's token
-    // masked behind the reveal toggle.
+    // One row per seeded orchestration provider; the ready-to-paste URL lives in a readonly input
+    // (getByText can't see input values), ADF's token masked behind the reveal toggle.
     await expect(page.getByText('Azure Data Factory', { exact: true })).toBeVisible();
     await expect(page.getByText('Apache Airflow', { exact: true })).toBeVisible();
     await expect(page.locator('input[readonly]').first()).toHaveValue(/orchestration\/events\//);
   });
 
-  // Role management (ADR 0033, #742). Runs against the real backend, so the
-  // last-admin guard and the dev-bypass refusal are exercised for real rather
-  // than mocked — which is the point: both are server-side decisions the UI
-  // deliberately does not attempt to predict.
-  //
-  // Two locator traps this spec hit in CI, both worth keeping in mind:
-  //
-  //  - The Admin page stacks THREE tables, and an email appears in more than one
-  //    of them (the Suites table shows the owner's address, Access grants shows
-  //    the grantee's). `main.locator('tr', { hasText: email }).first()` therefore
-  //    matched a row with no role select at all, and the click timed out. Scope
-  //    to the members table by the column header only it has.
-  //  - antd renders the CURRENT selection of every select with `title=<role>`,
-  //    so `getByTitle('viewer')` matches the open dropdown option *and* any row
-  //    already showing that role. Scope to the visible dropdown.
+  // Role management (ADR 0033, #742).
   const membersTable = (page: import('@playwright/test').Page) =>
     page
       .getByRole('main')
@@ -91,9 +73,8 @@ test.describe('Admin control centre', () => {
   });
 
   test('refuses to change the dev-bypass identity’s role, with a reason', async ({ page }) => {
-    // It is force-written to admin on every request (#741), so accepting the
-    // change would 200 and silently revert. The server refuses; the UI must
-    // surface WHY rather than a generic failure.
+    // It is force-written to admin on every request (#741), so accepting the change would 200 and
+    // silently revert.
     await page.goto('/admin');
     const row = memberRow(page, 'dev-bypass@dataq.local');
     await expect(row).toBeVisible();

@@ -1,29 +1,4 @@
-"""Request/task span instrumentation (WEEK7 A3 — App Insights spans).
-
-OTel-neutral core (ADR 0010): the OpenTelemetry SDK + FastAPI/Celery
-instrumentations are vendor-neutral; the exporter backends live behind the
-shared seam in ``otel.py`` (Azure Monitor and/or generic OTLP/HTTP — #589),
-resolved from settings. Tracing is on when **any** backend resolves an exporter
-(``otel.build_span_exporters``) — none ⇒ a complete no-op, matching the log
-pipeline's gate. Spans and logs (#524) now share the same seam and Resource
-(service.name).
-
-Deliberately the **exporter-only** Azure package (`azure-monitor-
-opentelemetry-exporter`), NOT the `azure-monitor-opentelemetry` distro: the
-distro auto-configures the logging pipeline and would double-configure the
-structlog log bridge in ``logging.py``.
-
-All exporter imports are lazy (repo convention, see ``secrets.py``) so
-deployments without telemetry never pay the import cost.
-
-Call-ordering constraint (learned the hard way in review): FastAPI
-instrumentation patches ``app.build_middleware_stack``, and Starlette builds
-the middleware stack on the FIRST ASGI call — which is the *lifespan scope
-itself*. So ``instrument_fastapi`` MUST run at module scope (before the app
-serves anything), never from inside the lifespan handler, or it silently
-instruments nothing. ``backend/tests/core/test_tracing.py`` pins this with a
-regression test against the real ``backend.app.main`` wiring.
-"""
+"""Request/task span instrumentation (WEEK7 A3 — App Insights spans)."""
 
 from __future__ import annotations
 
@@ -40,34 +15,17 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
-# URLs whose server spans are never recorded. Comma-separated regexes in the
-# opentelemetry-util-http `excluded_urls` format: each part is `re.search`ed
-# against the full request URL (scheme://host/path — the query string is not
-# part of the match), so patterns must be ANCHORED to path boundaries or a
-# hostname containing e.g. "healthz" would silently exclude every span.
-# - `/healthz$` — probe noise.
-# - `/api/v1/orchestration/events/` — the webhook receivers carry a secret in
-#   the query string (`?token=<secret>`, ADR 0006 / #494) which must never
-#   land in span attributes; exclusion happens before the span is created.
+# URLs whose server spans are never recorded.
 EXCLUDED_URLS: Final = "/healthz$,/api/v1/orchestration/events/"
 
 # Span attributes (old + new HTTP semconv) that may embed the request URL.
-# `_scrub_query_hook` rewrites them to the path so query strings — which can
-# carry PII (e.g. /users/search?q=<email>) — never reach App Insights. Same
-# posture as the request log: path only (#494).
 _URL_ATTRS: Final = ("http.url", "http.target", "url.full", "url.query")
 
 _provider: TracerProvider | None = None
 
 
 def configure_tracing(service_name: str) -> None:
-    """Install a TracerProvider exporting to the configured backend(s), or no-op.
-
-    Backends (Azure Monitor and/or generic OTLP/HTTP — #589) come from the shared
-    ``otel`` seam. Idempotent per process (the global tracer provider can only be
-    set once); safe to call from both the API module scope and the Celery
-    worker-process-init signal.
-    """
+    """Install a TracerProvider exporting to the configured backend(s), or no-op."""
     global _provider
     if _provider is not None:
         return
@@ -88,9 +46,8 @@ def configure_tracing(service_name: str) -> None:
         _provider = provider
         log.info("tracing_configured", service_name=service_name, exporters=len(exporters))
     except Exception:
-        # Same posture as the log bridge: an observability misconfig (bad OTLP
-        # endpoint/headers, SDK drift) must not crash the API lifespan or the celery
-        # worker-init signal. Leave _provider None so instrument_* no-op.
+        # Same posture as the log bridge: an observability misconfig (bad OTLP endpoint/headers, SDK
+        # drift) must not crash the API lifespan or the celery worker-init signal.
         log.warning("tracing_setup_failed", service_name=service_name, exc_info=True)
 
 
@@ -104,11 +61,7 @@ def _scrub_query_hook(span: Span, scope: dict[str, Any]) -> None:
 
 
 def instrument_fastapi(app: FastAPI) -> None:
-    """Emit a server span per request (minus EXCLUDED_URLS). No-op when tracing is off.
-
-    MUST be called at module scope, before the app's first ASGI call — see the
-    module docstring's call-ordering constraint.
-    """
+    """Emit a server span per request (minus EXCLUDED_URLS). No-op when tracing is off."""
     if _provider is None:
         return
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -122,13 +75,7 @@ def instrument_fastapi(app: FastAPI) -> None:
 
 
 def instrument_celery() -> None:
-    """Emit a span per Celery task run/publish. No-op when tracing is off.
-
-    Must run on BOTH sides: the worker (task/consumer spans, via
-    worker_process_init) AND the API process (producer spans + traceparent
-    header injection on publish — without it, task spans are orphaned root
-    traces unlinked from the triggering request).
-    """
+    """Emit a span per Celery task run/publish. No-op when tracing is off."""
     if _provider is None:
         return
     from opentelemetry.instrumentation.celery import CeleryInstrumentor
@@ -139,7 +86,8 @@ def instrument_celery() -> None:
 def tag_request_id(request_id: str) -> None:
     """Stamp the request_id onto the current span so App Insights spans can be
     joined to the structlog lines keyed on the same id. No-op when tracing is
-    off or no span is recording."""
+    off or no span is recording.
+    """
     if _provider is None:
         return
     from opentelemetry import trace

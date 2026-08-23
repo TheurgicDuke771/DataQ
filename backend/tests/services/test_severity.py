@@ -1,11 +1,6 @@
 """Severity derivation unit tests (ADR 0016). Pure, no DB / no GX (`custom_sql`,
 imported for its `CUSTOM_SQL_EXPECTATION_TYPE` constant, is FastAPI-error-shape-
 only — no DB/GX import of its own).
-
-Covers `extract_metric` (GX unexpected-% → Decimal | None, plus the custom-SQL
-unexpected row COUNT fallback, #1202) and `derive_status` (thresholds band the
-metric, higher = worse; thresholds override GX success; binary fallback when no
-thresholds or no metric).
 """
 
 from decimal import Decimal
@@ -70,16 +65,8 @@ def test_extract_metric_rejects_non_finite(bad: float) -> None:
     assert extract_metric(_outcome({"unexpected_percent": bad})) is None
 
 
-# ── extract_metric: custom-SQL row count fallback (ADR 0019, #1202) ──
-# `UnexpectedRowsExpectation` has no `unexpected_percent`; its badness scalar is
-# the unexpected row COUNT in `observed_value`. Datasource-agnostic by
-# construction: `gx_runner.to_suite_outcome` produces this exact `CheckOutcome`
-# shape for BOTH Snowflake (a plain SQL table batch) and Unity Catalog (the
-# Databricks-SQL batch, ADR 0019 amendment) — see
-# `test_gx_runner.py::test_to_suite_outcome_reads_custom_sql_row_count_as_observed_value`
-# and `test_unity_catalog.py::test_custom_sql_row_count_feeds_severity_metric_value`
-# for the two runner-level proofs that this function's input actually arrives in
-# this shape from each datasource.
+# ── extract_metric: custom-SQL row count fallback (ADR 0019, #1202) ── `UnexpectedRowsExpectation`
+# has no `unexpected_percent`; its badness scalar is the unexpected row COUNT in `observed_value`.
 
 
 def test_extract_metric_reads_custom_sql_row_count() -> None:
@@ -105,12 +92,9 @@ def test_extract_metric_custom_sql_returns_none_when_observed_value_absent(
 
 
 def test_extract_metric_does_not_read_observed_value_for_other_expectation_types() -> None:
-    """The `observed_value` fallback is scoped to `unexpected_rows_expectation`
-    ONLY. Plenty of ordinary GX expectations (e.g. `expect_table_row_count_to_equal`)
-    also set `observed_value`, and their observed value is a measured fact, not a
-    badness scalar — reading it here would silently start banding severity for
-    every expectation type that happens to report one, well beyond this issue's
-    scope."""
+    """The `observed_value` fallback is scoped to `unexpected_rows_expectation` ONLY. Plenty of
+    ordinary GX expectations (e.g.
+    """
     outcome = CheckOutcome(
         expectation_type="expect_table_row_count_to_equal",
         success=True,
@@ -233,7 +217,8 @@ def test_resolve_status_maps_an_errored_outcome_to_error() -> None:
 def test_resolve_status_maps_a_skipped_outcome_to_skip() -> None:
     """#593 cold start. It lives in `resolve_status` rather than in the caller so
     the dry-run PREVIEW and the persisted run cannot disagree — the single reason
-    this function exists."""
+    this function exists.
+    """
     outcome = CheckOutcome("monitor:anomaly", success=True, skipped=True)
     assert resolve_status(
         outcome, warn_threshold=None, fail_threshold=Decimal("3"), critical_threshold=None
@@ -242,7 +227,8 @@ def test_resolve_status_maps_a_skipped_outcome_to_skip() -> None:
 
 def test_a_skipped_outcome_never_persists_a_metric() -> None:
     """A cold-start score would be a number computed from too little history;
-    trending or baselining on it would launder a non-measurement into data."""
+    trending or baselining on it would launder a non-measurement into data.
+    """
     outcome = CheckOutcome("monitor:anomaly", success=True, skipped=True, metric_value=99.0)
     status, metric = resolve_status(
         outcome, warn_threshold=None, fail_threshold=Decimal("3"), critical_threshold=None
@@ -252,7 +238,8 @@ def test_a_skipped_outcome_never_persists_a_metric() -> None:
 
 def test_errored_wins_over_skipped() -> None:
     """They are mutually exclusive by construction, but the order is pinned: a
-    check that failed to evaluate must never be reported as merely skipped."""
+    check that failed to evaluate must never be reported as merely skipped.
+    """
     outcome = CheckOutcome("x", success=False, errored=True, skipped=True)
     assert resolve_status(
         outcome, warn_threshold=None, fail_threshold=None, critical_threshold=None
@@ -261,7 +248,8 @@ def test_errored_wins_over_skipped() -> None:
 
 def test_resolve_status_bands_a_monitor_metric_normally() -> None:
     """The control case: a non-operational outcome still goes through the ADR-0016
-    banding, so the two early returns above cannot swallow the normal path."""
+    banding, so the two early returns above cannot swallow the normal path.
+    """
     outcome = CheckOutcome("monitor:anomaly", success=True, metric_value=4.5)
     assert resolve_status(
         outcome, warn_threshold=Decimal("2"), fail_threshold=Decimal("3"), critical_threshold=None
@@ -273,7 +261,8 @@ def test_resolve_status_bands_a_monitor_metric_normally() -> None:
 
 def test_resolve_status_bands_a_custom_sql_check_with_thresholds() -> None:
     """A custom-SQL check WITH thresholds now bands on the unexpected row count,
-    exactly like a monitor metric or an unexpected-percent metric."""
+    exactly like a monitor metric or an unexpected-percent metric.
+    """
     outcome = _custom_sql_outcome(success=False, observed_value={"observed_value": 74})
     assert resolve_status(
         outcome,
@@ -286,13 +275,9 @@ def test_resolve_status_bands_a_custom_sql_check_with_thresholds() -> None:
 def test_resolve_status_custom_sql_without_thresholds_stays_binary_despite_populated_metric() -> (
     None
 ):
-    """CRITICAL constraint: thresholds are optional, and populating `metric_value`
-    must NOT turn today's binary (no-threshold) custom-SQL checks into something
-    that bands unexpectedly. A no-threshold check with 74 unexpected rows must
-    still resolve as a plain 'fail' (GX's own success/failure, ADR 0005's binary
-    fallback) — not 'warn'/'fail'/'critical' from some implicit banding — even
-    though `metric_value` is now populated and available for the trend view /
-    anomaly baseline to read later."""
+    """CRITICAL constraint: thresholds are optional, and populating `metric_value` must NOT turn
+    today's binary (no-threshold) custom-SQL checks into something that bands unexpectedly.
+    """
     outcome = _custom_sql_outcome(success=False, observed_value={"observed_value": 74})
     status, metric = resolve_status(
         outcome, warn_threshold=None, fail_threshold=None, critical_threshold=None

@@ -1,13 +1,4 @@
-"""`check_service.validate_threshold_ordering` tests (#568).
-
-Pure — no DB. `derive_status` (severity.py) assumes thresholds are ordered
-warn <= fail <= critical and non-negative; this is the author-time guard that
-enforces it before a bad set ever reaches that assumption. Shared by
-`create_check`, `update_check`, `suite_io_service.import_suite`, and the
-check-editor dry-run preview (`dryrun_service.dry_run_check`) — those wiring
-paths are exercised at the API layer in `tests/api/test_checks.py` and
-`tests/api/test_suites.py`; this file covers the validator itself.
-"""
+"""`check_service.validate_threshold_ordering` tests (#568)."""
 
 from __future__ import annotations
 

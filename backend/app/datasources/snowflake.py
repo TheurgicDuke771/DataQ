@@ -1,19 +1,4 @@
-"""Snowflake datasource adapter (GX Core 1.17).
-
-All Great-Expectations-specific machinery for Snowflake lives here, behind the
-`CheckRunner` seam in ``base.py`` — per CLAUDE.md, the GX version-specific API
-must not leak into the suite / check / result layer (GX v1 has drifted across
-point releases).
-
-The full GX chain (``add_snowflake`` → ``add_table_asset`` →
-``add_batch_definition_whole_table`` → ``ValidationDefinition.run``) connects to
-Snowflake at asset-build time, so ``run_checks`` cannot run without a live
-warehouse. Tests therefore exercise the GX-free parts directly — config
-validation, connection-string building, the snake_case→GX-class translation,
-and the GX-result→`CheckOutcome` mapping (fed a canned result) — and inject a
-fake `CheckRunner` elsewhere. End-to-end validation against a real Snowflake DEV
-warehouse is a tracked follow-up.
-"""
+"""Snowflake datasource adapter (GX Core 1.17)."""
 
 from __future__ import annotations
 
@@ -57,11 +42,7 @@ __all__ = [
 
 
 class SnowflakeConfig(BaseModel):
-    """Non-secret Snowflake connection config (the password comes from secrets).
-
-    Maps from ``Connection.config``. ``schema`` is aliased to ``schema_`` to
-    avoid shadowing pydantic's ``BaseModel.schema``.
-    """
+    """Non-secret Snowflake connection config (the password comes from secrets)."""
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
@@ -71,55 +52,25 @@ class SnowflakeConfig(BaseModel):
     schema_: str = Field(alias="schema")
     warehouse: str
     role: str | None = None
-    # Warehouse inventory sync opt-in (#919, ADR 0040): when true, the daily
-    # sync enumerates this connection's database into `assets`. Non-secret,
-    # default off — discovery is a choice, not a side effect of connecting.
+    # Warehouse inventory sync opt-in (#919, ADR 0040): when true, the daily sync enumerates this
+    # connection's database into `assets`.
     inventory_sync: bool = False
-    # Auth method. 'password' (default — back-compat for existing configs that
-    # carry no auth_type) puts the password in the DSN. 'key_pair' authenticates
-    # with an RSA private key passed as `private_key` connect-arg, and the DSN
-    # carries no password; the secret is either a bare PEM key or the JSON
-    # payload for passphrase-protected keys (see `_parse_key_pair_secret`).
-    # Both auth methods share the same SecretStore `secret_ref`.
+    # Auth method. 'password' (default — back-compat for existing configs that carry no auth_type)
+    # puts the password in the DSN. 'key_pair' authenticates with an RSA private key passed as
+    # `private_key` connect-arg, and the DSN carries no password; the secret is either a bare PEM
+    # key or the JSON payload for passphrase-protected keys (see `_parse_key_pair_secret`).
     auth_type: Literal["password", "key_pair"] = "password"
 
     @model_validator(mode="after")
     def _requires_role(self) -> SnowflakeConfig:
-        """Every Snowflake connection must carry a role, whatever the auth type.
-
-        GX mandates it: `REQUIRED_QUERY_PARAMS` in its snowflake datasource is
-        `{"warehouse", "role"}`, and `build_connection_string` only emits `role=`
-        when the config has one — so a role-less connection produces a DSN GX
-        rejects at `add_snowflake`, before any check evaluates.
-
-        This was previously scoped to `key_pair` only, on the reasoning that GX's
-        key-pair form mandates a role. The reasoning was right; the scope was
-        wrong — the requirement is GX's, not the auth method's (#1067). A
-        role-less password connection therefore **tested green and failed every
-        suite run**, because the connection test is deliberately GX-free (a plain
-        SQLAlchemy `SELECT 1`) and never sees the problem. Monitors kept working
-        (they bypass GX entirely), so the connection looked *partly* alive, which
-        made it harder to diagnose rather than easier.
-
-        Enforcing here makes it a 422 at create/edit/test time instead of an
-        opaque operational run failure later.
-        """
+        """Every Snowflake connection must carry a role, whatever the auth type."""
         if not self.role:
             raise ValueError("'role' is required (GX mandates it for every suite run)")
         return self
 
 
 def _parse_key_pair_secret(secret: str) -> tuple[str, bytes | None]:
-    """Split a key-pair secret payload into (PEM key, passphrase bytes or None).
-
-    Two shapes are accepted: a bare PEM string (an unencrypted key — the
-    original v1 form, unchanged) or a JSON object
-    ``{"private_key": "<PEM>", "passphrase": "<str>"}`` for passphrase-protected
-    keys. One SecretStore entry carries both parts so the connection keeps a
-    single `secret_ref` and rotation via re-auth stays atomic (#194).
-
-    Error messages never include payload content — they can carry key material.
-    """
+    """Split a key-pair secret payload into (PEM key, passphrase bytes or None)."""
     if not secret.lstrip().startswith("{"):
         return secret, None
     try:
@@ -135,20 +86,13 @@ def _parse_key_pair_secret(secret: str) -> tuple[str, bytes | None]:
 
 
 def _private_key_der(secret: str) -> bytes:
-    """Load the key-pair secret → DER PKCS8 bytes.
-
-    snowflake-connector's `private_key` connect-arg wants DER PKCS8, not PEM.
-    Passphrase-protected keys arrive as the JSON payload
-    (see `_parse_key_pair_secret`); bare PEM means an unencrypted key.
-    """
+    """Load the key-pair secret → DER PKCS8 bytes."""
     pem, passphrase = _parse_key_pair_secret(secret)
     try:
         key = serialization.load_pem_private_key(pem.encode(), password=passphrase)
     except TypeError as exc:
-        # cryptography reports passphrase-presence mismatches (encrypted key
-        # without a passphrase, or a passphrase for an unencrypted key) as
-        # TypeError; normalise to ValueError so callers see one failure type.
-        # Its messages state the mismatch only — no key/passphrase material.
+        # cryptography reports passphrase-presence mismatches (encrypted key without a passphrase,
+        # or a passphrase for an unencrypted key) as TypeError.
         raise ValueError(str(exc)) from exc
     return key.private_bytes(
         encoding=serialization.Encoding.DER,
@@ -158,11 +102,7 @@ def _private_key_der(secret: str) -> bytes:
 
 
 def build_connection_string(config: SnowflakeConfig, secret: str) -> str:
-    """Assemble a snowflake-sqlalchemy URL. User/password/params are URL-encoded.
-
-    For key-pair auth the DSN carries **no password** (the key rides in
-    connect-args, see `build_connect_args`); ``secret`` is then ignored here.
-    """
+    """Assemble a snowflake-sqlalchemy URL. User/password/params are URL-encoded."""
     params = {"warehouse": config.warehouse}
     if config.role:
         params["role"] = config.role
@@ -176,11 +116,7 @@ def build_connection_string(config: SnowflakeConfig, secret: str) -> str:
 
 
 def build_connect_args(config: SnowflakeConfig, secret: str) -> dict[str, Any]:
-    """SQLAlchemy `connect_args` carrying the key-pair credential, if any.
-
-    Empty for password auth (the password is in the DSN). For key-pair, the
-    loaded DER private key under `private_key` (the snowflake-connector arg).
-    """
+    """SQLAlchemy `connect_args` carrying the key-pair credential, if any."""
     if config.auth_type == "key_pair":
         return {"private_key": _private_key_der(secret)}
     return {}
@@ -189,39 +125,28 @@ def build_connect_args(config: SnowflakeConfig, secret: str) -> dict[str, Any]:
 class SnowflakeCheckRunner:
     """`CheckRunner` for Snowflake. Building the asset connects to the warehouse."""
 
-    # Runner-advertised monitor capability (#429): EXPLICITLY what this runner
-    # implements — never frozenset(MONITOR_KINDS), which would auto-advertise
-    # every future registry entry and self-defeat the per-kind gate (a stateful
-    # kind must be claimed by a runner only once it actually evaluates it).
+    # Runner-advertised monitor capability (#429): EXPLICITLY what this runner implements — never
+    # frozenset(MONITOR_KINDS).
     supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
-    # Native engines this runner evaluates (ADR 0036): the run path routes a
-    # check whose `engine` is advertised here to `run_native_check`; anything
-    # else lands as a classified per-check error. Same explicit-claim rule as
-    # the monitor set above.
+    # Native engines this runner evaluates (ADR 0036): the run path routes a check whose `engine` is
+    # advertised here to `run_native_check`; anything else lands as a classified per-check error.
     supported_native_engines: ClassVar[frozenset[str]] = frozenset({DMF_ENGINE})
 
     def __init__(self, config: SnowflakeConfig, secret: str) -> None:
         self._config = config
         self._connection_string = build_connection_string(config, secret)
-        # Key-pair auth: the loaded DER private key (under 'private_key'),
-        # consumed by the shared engine's connect-args and re-encoded for the
-        # GX kwargs form in run_checks; empty for password auth.
+        # Key-pair auth: the loaded DER private key (under 'private_key'), consumed by the shared
+        # engine's connect-args and re-encoded for the GX kwargs form in run_checks.
         self._connect_args = build_connect_args(config, secret)
-        # The runner's ONE lazily-built engine (#427) — every non-GX SQL
-        # touchpoint shares it (and its pooled session) instead of paying a
-        # fresh engine + auth handshake per call. Disposed by `close()`; the
-        # run path owns that lifecycle via `registry.owned_runner`. (GX's
-        # `run_checks` still builds its own engine internally from the
-        # connection string — not injectable.)
+        # The runner's ONE lazily-built engine (#427) — every non-GX SQL touchpoint shares it (and
+        # its pooled session) instead of paying a fresh engine + auth handshake per call.
         self._engine = LazyEngine(self._build_engine)
 
     def _build_engine(self) -> Any:
         from sqlalchemy import create_engine
 
-        # pool_pre_ping: the pooled session can sit idle across a long GX
-        # validation in a mixed suite — revalidate on checkout so a
-        # warehouse-side idle reap surfaces as a fresh connect, not a dead
-        # connection failing the monitors.
+        # pool_pre_ping: the pooled session can sit idle across a long GX validation in a mixed
+        # suite — revalidate on checkout so a warehouse-side idle reap surfaces as a fresh connect.
         return create_engine(
             self._connection_string,
             connect_args=self._connect_args or {},
@@ -242,13 +167,8 @@ class SnowflakeCheckRunner:
     ) -> SuiteOutcome:
         context = gx.get_context(mode="ephemeral")
         if self._config.auth_type == "key_pair":
-            # GX 1.17's supported key-pair form (KeyPairConnectionDetails): the
-            # connection as keyword args with a base64-DER private_key. The old
-            # kwargs['connect_args'] route never passed GX's datasource
-            # validation for a passwordless DSN — it was broken, not just
-            # deprecated (#195). Live-verified 2026-07-04: b64-DER works; a PEM
-            # string does not. GX requires `role` here; SnowflakeConfig's
-            # validator guarantees key-pair configs carry one.
+            # GX 1.17's supported key-pair form (KeyPairConnectionDetails): the connection as
+            # keyword args with a base64-DER private_key.
             datasource = context.data_sources.add_snowflake(
                 name=f"sf-{table}",
                 account=self._config.account,
@@ -289,16 +209,7 @@ class SnowflakeCheckRunner:
         table: str,
         schema: str | None,
     ) -> CheckOutcome:
-        """Evaluate ONE dmf-engine check via ad-hoc system-DMF SQL (ADR 0036).
-
-        Runs over the runner's shared engine (#427). The connection is opened
-        BEFORE evaluation, mirroring `run_monitors_over_engine`: an unreachable
-        warehouse / dead credential propagates and fails the whole run like
-        every other path — the #419 always-alert channel and dead-credential
-        detection key off that — while a failure of the CHECK itself (bad
-        column, type gate, missing grant) is that check's classified ``error``
-        outcome, computed inside `evaluate_dmf_check`, which never raises.
-        """
+        """Evaluate ONE dmf-engine check via ad-hoc system-DMF SQL (ADR 0036)."""
         from sqlalchemy import text
 
         with self._engine.get().connect() as conn:
@@ -314,13 +225,7 @@ class SnowflakeCheckRunner:
     def run_monitors(
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
     ) -> list[CheckOutcome]:
-        """Evaluate freshness/volume monitors via scalar SQL aggregates (no GX).
-
-        Runs over the runner's shared engine (#427 — one connection per run, no
-        per-call engine); Snowflake addresses the target as ``schema.table`` (the
-        database is in the DSN), so no catalog. A connection-level failure (can't
-        reach the warehouse) propagates, failing the run like the GX path; a bad
-        monitor errors only itself."""
+        """Evaluate freshness/volume monitors via scalar SQL aggregates (no GX)."""
         return run_monitors_over_engine(
             self._engine.get(),
             table=table,
@@ -336,11 +241,7 @@ def build_snowflake_runner(
     secret_ref: str | None,
     secret_store: SecretStore,
 ) -> SnowflakeCheckRunner:
-    """Build a runner from a `Connection` row's config + secret_ref.
-
-    Takes primitives (not the ORM model) to keep the adapter decoupled from the
-    DB layer.
-    """
+    """Build a runner from a `Connection` row's config + secret_ref."""
     if not secret_ref:
         raise ValueError("Snowflake connection requires secret_ref for the password / private key")
     sf_config = SnowflakeConfig.model_validate(config)
@@ -357,25 +258,15 @@ _TEST_NETWORK_TIMEOUT = 10
 class SnowflakeConnectionAdapter:
     """`ConnectionAdapter` for Snowflake — config validation + a SELECT 1 test."""
 
-    # #1401: `account` becomes `<account>.snowflakecomputing.com`, so it decides
-    # which host receives the password/key-pair. `warehouse`/`database`/`role`
-    # only select objects *within* an already-chosen account.
+    # #1401: `account` becomes `<account>.snowflakecomputing.com`, so it decides which host receives
+    # the password/key-pair.
     destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {"secret": ("account",)}
 
     def validate_config(self, raw: dict[str, Any]) -> SnowflakeConfig:
         return SnowflakeConfig.model_validate(raw)
 
     def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
-        """Open a connection and run ``SELECT 1``; raise on any failure.
-
-        Deliberately GX-free — a lightweight connectivity probe, not a suite run.
-        ``secret`` is typed ``str | None`` only because the `ConnectionAdapter`
-        Protocol is shared with types that genuinely have no credential
-        (#351) — Snowflake's password/key-pair is always mandatory, so a
-        missing one is a caller bug, not a legitimate no-credential draft; the
-        guard below turns that into a clear error instead of a confusing
-        failure inside SQLAlchemy.
-        """
+        """Open a connection and run ``SELECT 1``; raise on any failure."""
         if secret is None:
             raise ValueError("a credential is required to test a snowflake connection")
         from sqlalchemy import create_engine, text

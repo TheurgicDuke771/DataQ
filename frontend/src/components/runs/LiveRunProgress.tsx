@@ -27,23 +27,8 @@ function isTerminal(status: RunStatus): boolean {
 }
 
 /**
- * Live run-progress drawer — opens on a queued run and polls
- * `GET /runs/{id}/progress` until the run is terminal, showing the run
- * lifecycle, a completed/total bar, and per-check status (a spinner while a
- * check is still pending). An editor can cancel an in-flight run.
- *
- * **Nothing resolved yet is not the same as no progress (#318).** Results are
- * committed per execution phase, so monitor and comparison checks tick over one
- * at a time — but GX validates a suite of ordinary expectations as one atomic
- * batch, so a 30-check suite genuinely sits at `0 / 30` until it lands. A
- * percentage bar pinned at 0% for the whole run reads as *hung*, and that
- * misreport is the thing this component must not make. While `completed_checks`
- * is 0 on a live run it shows the server-measured elapsed time and a spinner
- * instead of the bar, and says in words why there is no percentage yet.
- *
- * Mounted controlled by `runId`; pass `null` to keep it closed. The body is
- * keyed by `runId` so opening a different run remounts and restarts polling
- * rather than continuing the prior run's loop.
+ * Live run-progress drawer — opens on a queued run and polls `GET /runs/{id}/progress` until the
+ * run is terminal, showing the run lifecycle, a completed/total bar.
  */
 export function LiveRunProgress({
   runId,
@@ -88,17 +73,11 @@ function LiveRunProgressBody({
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // `stopped` latches once the run reaches a terminal state (poll-observed or
-  // cancel-forced). It guards against a poll that was already in flight before a
-  // cancel resolving afterwards and clobbering the terminal status back to
-  // `running` (cancel is cooperative — the next poll can briefly still read the
-  // pre-cancel state). Terminal is sticky.
+  // `stopped` latches once the run reaches a terminal state (poll-observed or cancel-forced).
   const stoppedRef = useRef(false);
 
-  // Poll until terminal via a self-scheduling timeout (not setInterval, so a slow
-  // request can't pile up overlapping fetches). `active` guards a late resolution
-  // after unmount. A transient fetch error keeps polling (the live view
-  // self-heals when the endpoint recovers) — only a terminal status stops it.
+  // Poll until terminal via a self-scheduling timeout (not setInterval, so a slow request can't
+  // pile up overlapping fetches).
   useEffect(() => {
     let active = true;
     stoppedRef.current = false;
@@ -116,9 +95,8 @@ function LiveRunProgressBody({
       } catch (err) {
         if (!active || stoppedRef.current) return;
         setError(errorMessage(err, String(err)));
-        // Keep polling through a transient error rather than freezing the live
-        // view; the cadence is bounded by pollMs, and a terminal status / unmount
-        // still stops it.
+        // Keep polling through a transient error rather than freezing the live view; the cadence is
+        // bounded by pollMs, and a terminal status / unmount still stops it.
         timerRef.current = setTimeout(tick, pollMs);
       }
     };
@@ -159,21 +137,11 @@ function LiveRunProgressBody({
     progress;
   const terminal = isTerminal(status);
   const percent = total_checks > 0 ? Math.round((completed_checks / total_checks) * 100) : 0;
-  // A RUNNING run that has resolved nothing has no honest percentage to draw —
-  // see the component docstring.
-  //
-  // `queued` is excluded deliberately: it is a different state with a different
-  // cause (nothing has picked the run up yet), and showing "Running — no check
-  // has resolved yet" over it would mask exactly the never-dispatched / dead
-  // worker mode the stuck-run reaper exists to catch. It gets its own line.
-  //
-  // An empty suite is excluded too: it isn't waiting on anything, and the `Empty`
-  // below already explains it.
+  // A RUNNING run that has resolved nothing has no honest percentage to draw — see the component
+  // docstring.
   const queued = status === 'queued';
   const noProgressToShowYet = status === 'running' && completed_checks === 0 && total_checks > 0;
-  // Only render an elapsed time the server actually measured. `0` is a real
-  // reading (a run that just started), so the check is against null/undefined,
-  // not falsiness — and a queued run, which has none, correctly shows nothing.
+  // Only render an elapsed time the server actually measured.
   const elapsed =
     elapsed_ms === null || elapsed_ms === undefined ? null : formatDurationMs(elapsed_ms);
   // Per-status histogram of resolved checks (#316) — show only non-zero buckets;
@@ -266,10 +234,8 @@ function LiveRunProgressBody({
 }
 
 /**
- * A check's status cell: a resolved check shows its severity tag; a pending
- * check spins *while the run is live*, but on a terminal run (a check that never
- * produced a result — e.g. a cancelled run) it shows a neutral "not run" rather
- * than an eternal spinner.
+ * A check's status cell: a resolved check shows its severity tag; a pending check spins *while the
+ * run is live*, but on a terminal run (a check that never produced a result.
  */
 function CheckStatus({ status, terminal }: { status: ResultStatus | null; terminal: boolean }) {
   if (status === null) {

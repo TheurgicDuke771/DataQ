@@ -19,19 +19,12 @@ import { SuitePerformance } from '../components/dashboard/SuitePerformance';
 import { WINDOW_PRESETS } from '../components/shared/windowPresets';
 import { useAsyncData } from '../hooks/useAsyncData';
 
-/**
- * Enhanced Monitoring Dashboard (`/dashboard`, ADR 0022) — the post-login
- * landing. Phase 2.2 ships the KPI row + range selector; the Quality Trends
- * chart, Suite Performance bars, and Recent Runs table land in 2.3–2.5.
- *
- * Every KPI is backed by the summary endpoint — the prototype's "Total
- * Anomalies" and "Avg. Time to Resolution" tiles are intentionally omitted
- * (no query backs them yet; KPI honesty, ADR 0022 / 0018).
- */
+/** Enhanced Monitoring Dashboard (`/dashboard`, ADR 0022) — the post-login landing. */
 
-/** Range option label → trailing window in days for the summary query, shared
- *  with the Results date filter (`WINDOW_PRESETS`, #349) so the two surfaces'
- *  24h/7d/30d presets can't drift. Dashboard has no 'all' option. */
+/**
+ * Range option label → trailing window in days for the summary query, shared with the Results date
+ * filter (`WINDOW_PRESETS`, #349) so the two surfaces' 24h/7d/30d presets can't drift.
+ */
 type RangeLabel = (typeof WINDOW_PRESETS)[number]['label'];
 
 function pct(value: number | null): string | null {
@@ -41,9 +34,8 @@ function pct(value: number | null): string | null {
 export function Dashboard() {
   const [range, setRange] = useState<RangeLabel>('Last 7 days');
   const days = WINDOW_PRESETS.find((r) => r.label === range)?.days ?? 7;
-  // Re-fetch when the range changes: bump the fetcher via `reload` after the
-  // range state updates (both batch into one render → the effect re-runs with
-  // the new window).
+  // Re-fetch when the range changes: bump the fetcher via `reload` after the range state updates
+  // (both batch into one render → the effect re-runs with the new window).
   const { state, reload } = useAsyncData(() => getDashboardSummary(days));
 
   const onRangeChange = (value: RangeLabel) => {

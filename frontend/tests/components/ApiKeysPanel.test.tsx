@@ -27,10 +27,8 @@ const KEY: ApiKey = {
   name: 'ci-smoke',
   key_prefix: 'dq_live_ab12',
   created_at: '2026-07-01T10:00:00Z',
-  // Relative, not a fixed date: an "Active" fixture pinned to a hardcoded future
-  // timestamp is a test that fails on a calendar date rather than on a code
-  // change — and now that a token warns before it dies (#838), it would have
-  // started failing two weeks earlier still.
+  // Relative, not a fixed date: an "Active" fixture pinned to a hardcoded future timestamp is a
+  // test that fails on a calendar date rather than on a code change.
   expires_at: inDays(60),
   revoked_at: null,
   last_used_at: null,
@@ -69,9 +67,7 @@ describe('ApiKeysPanel', () => {
   });
 
   it('warns while a token is still working, not once it has stopped (#838)', async () => {
-    // Active-until-the-instant-it-is-Expired is a warning that arrives strictly
-    // after the breakage. A PAT is a credential like a connection's SAS and gets
-    // the same window: the state between the two is the only useful one.
+    // Active-until-the-instant-it-is-Expired is a warning that arrives strictly after the breakage.
     mockList.mockResolvedValue([{ ...KEY, expires_at: inDays(4) }]);
     renderPanel();
     expect(await screen.findByText('Expires in 4d')).toBeInTheDocument();
@@ -96,9 +92,8 @@ describe('ApiKeysPanel', () => {
     expect(await screen.findByText('dq_live_ab12THE_FULL_SECRET')).toBeInTheDocument();
     expect(screen.getByText('This token is shown only once')).toBeInTheDocument();
 
-    // Show-once invariant: after acknowledging (Done), reopening "New token"
-    // shows a fresh empty form — the plaintext is dropped from state (reset) and
-    // never re-rendered, and the list refetch carries metadata only (no `token`).
+    // Show-once invariant: after acknowledging (Done), reopening "New token" shows a fresh empty
+    // form — the plaintext is dropped from state (reset) and never re-rendered.
     await user.click(screen.getByRole('button', { name: 'Done' }));
     await user.click(await screen.findByRole('button', { name: /New token/ }));
     expect(screen.queryByText('dq_live_ab12THE_FULL_SECRET')).not.toBeInTheDocument();

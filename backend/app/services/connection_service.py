@@ -1,15 +1,4 @@
-"""Connection CRUD + connectivity test, datasource-type-agnostic.
-
-Drives the `connections` table and dispatches type-specific behaviour through
-the `ConnectionAdapter` registry — so this layer never branches on
-``connection.type``. Credentials are written through the `SecretStore`
-(`set`) and only ever referenced by `Connection.secret_ref`; the plaintext
-secret is never stored on the row or logged.
-
-FastAPI-free by design (like `run_service`): takes a `Session` + `SecretStore`,
-returns ORM models, raises `DataQError` subclasses. The API layer owns
-request/response shapes and dependency wiring.
-"""
+"""Connection CRUD + connectivity test, datasource-type-agnostic."""
 
 from __future__ import annotations
 
@@ -77,28 +66,14 @@ class ConnectionSecretWriteError(DataQError):
 
 
 class ConnectionInUseError(DataQError):
-    # A comparison check references this connection as its source (ADR 0015):
-    # the FK is ON DELETE RESTRICT, so surface a friendly 409 naming the
-    # dependents instead of letting the raw FK violation 500.
+    # A comparison check references this connection as its source (ADR 0015): the FK is ON DELETE
+    # RESTRICT.
     status_code = 409
     code = "connection_in_use"
 
 
 def _extra_secrets(config: Mapping[str, Any], secret_store: SecretStore) -> dict[str, str]:
-    """Resolve every *additional* credential a connection's config names, by convention.
-
-    Some types need more than one credential (an Iceberg SQL catalog: the storage key
-    AND the catalog DB password). Rather than smuggle the second into non-secret
-    `config` — the #754/#826 bug — config holds only the SecretStore **key name**, in a
-    field suffixed ``_secret_name``, and the caller (here) resolves it. `foo_secret_name`
-    → the adapter receives ``foo_secret=<value>``.
-
-    Generic on purpose: no branching on `connection.type`, so the seam keeps its "the
-    caller resolves secrets, adapters never touch the store" invariant (ADR 0011) no
-    matter how many credentials a future type needs. A named-but-missing secret is left
-    out rather than raising, so `test()` surfaces it as a connectivity failure with the
-    adapter's own message instead of a 500.
-    """
+    """Resolve every *additional* credential a connection's config names, by convention."""
     out: dict[str, str] = {}
     for key, value in config.items():
         if not key.endswith("_secret_name") or not isinstance(value, str) or not value:
@@ -120,56 +95,11 @@ class ForeignSecretReferenceError(DataQError):
 def _reject_foreign_secret_names(
     config: Mapping[str, Any], *, stored: Mapping[str, Any] | None
 ) -> None:
-    """Reject a `*_secret_name` a caller invented — closes #1118.
-
-    `*_secret_name` keys are **server-owned bookkeeping**, minted by
-    `_write_extra_secret` and pointed at a ref this connection owns. That
-    invariant was documented (see `_carry_over_secret_name_keys`) and enforced
-    nowhere, which made it a credential-exfiltration primitive:
-
-        1. read a victim connection's `catalog_secret_name` off `GET /connections`
-           (the list is workspace-global by design, and carries config)
-        2. create — or draft-test — a connection with `type=iceberg`, that
-           `catalog_secret_name`, and a `catalog_uri` pointing at a host you control
-        3. the server resolves the victim's real catalog credential and
-           `inject_uri_password()` sends it to your endpoint
-
-    SSRF plus exfiltration, out of the store the whole design exists to keep
-    credentials inside. ADR 0033's role gates narrowed *who* can reach the entry
-    points (both are Admin-only since #741) but did not close the class: an Admin
-    who may rotate credentials still may not READ them, and this turned the first
-    power into the second.
-
-    The rule is round-trip fidelity, not a blanket ban: a caller may send a
-    `*_secret_name` **only** if it is byte-identical to the one already stored on
-    that connection. That keeps the legitimate case working — a client that GETs
-    a connection, edits one field and PATCHes the whole config back — while
-    leaving no way to *introduce* a reference. With no stored row to compare
-    against (create, and the draft test, which persists nothing at all) any
-    `*_secret_name` is foreign by definition.
-
-    Deliberately raises rather than silently stripping the key: a request whose
-    meaning is quietly altered is how the caller ends up debugging a connection
-    that "lost" its catalog credential. The error names the field so a legitimate
-    client can fix its payload.
-
-    **Scope.** This governs the reference NAME only. The other half of the class
-    — echoing a `*_secret_name` back byte-identically (accepted here, by the
-    round-trip rule) while moving `catalog_uri` to a host you control — is closed
-    by `_reject_uncredentialed_redirect` (#1401), not here. Two guards because
-    they answer different questions: *may you name this secret* and *may this
-    secret go there*. Neither subsumes the other.
-    """
+    """Reject a `*_secret_name` a caller invented — closes #1118."""
     for key, value in config.items():
         if not key.endswith("_secret_name") or not isinstance(value, str):
             continue
-        # An EMPTY string is checked too, not skipped as "absent". `""` is not a
-        # ref, but it IS a present key — so `_carry_over_secret_name_keys` sees
-        # nothing to fill and the connection silently ends up with no catalog
-        # credential while the real secret stays live and unreferenced in the
-        # store: the #954 shape, self-inflicted, and a purge candidate. Blanking
-        # is not how a credential is removed (the row's deletion is), so it is a
-        # rejection like any other value the server did not put there.
+        # An EMPTY string is checked too, not skipped as "absent".
         if stored is None or stored.get(key) != value:
             raise ForeignSecretReferenceError(
                 f"'{key}' is set by the server and cannot be supplied or changed by a "
@@ -180,7 +110,8 @@ def _reject_foreign_secret_names(
 
 class CredentialRedirectError(DataQError):
     """A config change that moves a credential's destination without re-supplying
-    the credential (#1401)."""
+    the credential (#1401).
+    """
 
     status_code = 422
     code = "credential_redirect"
@@ -195,41 +126,7 @@ def _reject_uncredentialed_redirect(
     supplied_secret: str | None,
     supplied_extra_secrets: Mapping[str, str | None],
 ) -> None:
-    """Refuse to point a STORED credential at a new host — closes #1401.
-
-    #1400 stopped a caller introducing or repointing a `*_secret_name`. It left
-    the other half of the same class open: echo the victim's `catalog_secret_name`
-    back byte-identically (accepted, by the round-trip rule), change `catalog_uri`
-    to a listener you control, POST `/test`, and the server resolves the real
-    credential and sends it to you. Same for every other type — `account_url`,
-    `workspace_url`, `endpoint_url`, `base_url` — since the primary `secret_ref`
-    is resolved from the ROW and the destination from CONFIG, and only config was
-    guarded.
-
-    The rule is the one #1401 proposed: **a destination move requires
-    re-supplying every credential the connection stores.** That closes the vector
-    by construction rather than by enumeration — to send a credential somewhere
-    new you must already know it, so a stored secret can never reach a host its
-    holder didn't authenticate to. It is also defensible on its own terms: a
-    credential minted for one host has no business silently following the
-    connection to another, so re-supplying is the honest operation, not a tax.
-
-    Note what this is NOT: it is not an authorization check (that is ADR 0033 —
-    connection mutations are Admin-only) and not a claim that Admins are hostile.
-    It closes a *privilege conversion*: an Admin may rotate a credential, which
-    is not the same as being allowed to read one. The audit trail #1400 left in
-    place (`connection_versions.changed_by`) records the attempt; this stops it.
-
-    Asked **per credential slot**, not per connection: a connection may store two
-    credentials with different destinations (Iceberg's catalog password vs its
-    storage key), and demanding both for a move that only affects one would make
-    the guard fire on ordinary edits often enough to read as a bug. Only the slot
-    whose destination actually moved is asked for.
-
-    A slot with nothing stored is never asked for — there is no credential to
-    redirect, so there is nothing to protect. That is what keeps a credential-less
-    Iceberg catalog freely editable.
-    """
+    """Refuse to point a STORED credential at a new host — closes #1401."""
     moved: set[str] = set()
     missing: list[str] = []
     for slot, fields in sorted(destination_fields(conn_type).items()):
@@ -240,16 +137,14 @@ def _reject_uncredentialed_redirect(
             if not has_stored_secret or supplied_secret is not None:
                 continue
             missing.append("secret")
-        # An extra credential is "stored" iff config carries its ref, by the same
-        # `*_secret_name` suffix convention `_extra_secrets` resolves by — so a
-        # future second-credential slot needs no new branch here.
+        # An extra credential is "stored" iff config carries its ref, by the same `*_secret_name`
+        # suffix convention `_extra_secrets` resolves by.
         elif stored.get(f"{slot}_secret_name") and supplied_extra_secrets.get(slot) is None:
             missing.append(f"{slot}_secret")
         else:
             continue
-        # Only the fields belonging to a slot that actually WENT unsatisfied — a
-        # message naming a field the caller already covered sends them looking in
-        # the wrong place.
+        # Only the fields belonging to a slot that actually WENT unsatisfied — a message naming a
+        # field the caller already covered sends them looking in the wrong place.
         moved.update(slot_moved)
 
     if missing:
@@ -262,19 +157,7 @@ def _reject_uncredentialed_redirect(
 
 
 def _validate_extra_secret_supported(conn_type: str, config: Mapping[str, Any], field: str) -> None:
-    """Reject a `<field>_secret` a connection TYPE's config model can't receive.
-
-    `_extra_secrets` resolves any `*_secret_name` field generically, by
-    convention — but only `IcebergConfig` currently declares
-    `catalog_secret_name` (#754/#826/#1181). Every config model is
-    `extra="forbid"`, so handing e.g. a Snowflake connection a `catalog_secret`
-    would otherwise write a live credential into the store and only THEN find
-    out, on the next config read, that nothing can ever reference it back out
-    — the write already happened. Probing the adapter's own schema (rather than
-    branching on `conn_type == "iceberg"`) keeps this generic, like
-    `_extra_secrets` itself: any future type that adds a second credential slot
-    is covered automatically, no new `if` here.
-    """
+    """Reject a `<field>_secret` a connection TYPE's config model can't receive."""
     adapter = get_connection_adapter(conn_type)
     try:
         adapter.validate_config({**config, f"{field}_secret_name": "probe"})
@@ -291,13 +174,6 @@ def _write_extra_secret(
     """Write a connection's SECOND credential through the store and point
     `config.<field>_secret_name` at it — the create/update-time counterpart to
     `_extra_secrets` resolving it back out.
-
-    Mirrors the primary `secret_ref` idiom exactly: an already-stored ref is
-    reused verbatim (recomputing after a rename would point at a key that no
-    longer matches anything live), and a new one is minted with `kind=field`
-    only the first time. The ref lives IN `config` — there is no second column
-    for it — but the credential itself never does; only the SecretStore holds
-    that.
     """
     name_key = f"{field}_secret_name"
     ref = (conn.config or {}).get(name_key) or connection_secret_ref(
@@ -310,22 +186,7 @@ def _write_extra_secret(
 def _carry_over_secret_name_keys(
     old_config: Mapping[str, Any], new_config: dict[str, Any]
 ) -> dict[str, Any]:
-    """Preserve every `*_secret_name` key `old_config` has that `new_config` omits.
-
-    `update_connection`'s `config` parameter is a wholesale REPLACE, not a merge —
-    exactly like the primary credential's own `secret_ref` column is untouched by
-    it. A second credential's ref (#1181) has no column of its own, though; it
-    lives inside `config`, so a config-only PATCH that doesn't re-send it (e.g.
-    changing just `warehouse`) would otherwise silently drop it — the connection
-    would then read as having no catalog credential, while the credential itself
-    sits live and unreferenced in the store (the #954 shape, self-inflicted: a
-    real secret nobody can find because nothing points at it anymore).
-
-    These keys are server-owned bookkeeping — minted by `_write_extra_secret`,
-    never authored by a caller — so a caller is never expected to round-trip them,
-    and there is no legitimate "I want to unset this" case: rotation goes through
-    `catalog_secret`, not by omitting the key from `config`.
-    """
+    """Preserve every `*_secret_name` key `old_config` has that `new_config` omits."""
     carried = {
         key: value
         for key, value in old_config.items()
@@ -355,21 +216,15 @@ def _validate_env(env: str) -> None:
         raise ConnectionConfigInvalidError(f"invalid env {env!r}", detail={"allowed": list(ENVS)})
 
 
-# DB index that enforces one orchestration-provider connection per (type, env)
-# — see the connections migration (#72 / ADR 0004). Distinguished from the
-# (name, env) unique constraint so each violation gets an accurate 409 message.
+# DB index that enforces one orchestration-provider connection per (type, env) — see the connections
+# migration (#72 / ADR 0004).
 _ORCHESTRATOR_UNIQUE_INDEX = "uq_connections_orchestrator_type_env"
 
 
 def _conflict_from_integrity_error(
     exc: IntegrityError, *, conn_type: str, env: str
 ) -> ConnectionConflictError:
-    """Map a unique-violation to the right 409, by which constraint fired.
-
-    Postgres surfaces the violated constraint/index name on the driver
-    exception's ``diag``; use it to tell the orchestrator (type, env) singleton
-    breach apart from a duplicate (name, env).
-    """
+    """Map a unique-violation to the right 409, by which constraint fired."""
     diag = getattr(getattr(exc, "orig", None), "diag", None)
     constraint_name = getattr(diag, "constraint_name", None)
     if constraint_name == _ORCHESTRATOR_UNIQUE_INDEX:
@@ -386,15 +241,9 @@ def _conflict_from_integrity_error(
 def record_connection_version(
     session: Session, conn: Connection, *, actor_id: uuid.UUID | None
 ) -> ConnectionVersion:
-    """Append an immutable snapshot of `conn`'s current non-secret state as its
-    next version (a per-connection sequence starting at 1). The caller commits —
-    this only adds the row, so the snapshot and the create/update it records
-    commit atomically. The `(connection_id, version_no)` unique constraint is the
-    backstop against a concurrent double-write computing the same number (rare
-    under v1's single-tenant editing).
-
-    The credential is **not** snapshotted (see `ConnectionVersion`); only the
-    editable, non-secret fields. `conn.id` must be populated (flush first).
+    """Append an immutable snapshot of `conn`'s current non-secret state as its next version (a
+    per-connection sequence starting at 1). The caller commits — this only adds the row, so the
+    snapshot and the create/update it records commit atomically.
     """
     # MAX over no rows is NULL → None; `or 0` makes the first version 1.
     current_max = session.scalar(
@@ -416,61 +265,21 @@ def record_connection_version(
     return version
 
 
-# How far ahead the *backend* calls a credential "expiring soon" — used only for the
-# operator-facing log line the sweep emits. The UI applies its own window to the
-# stored timestamp (the API hands over a date, not a verdict), so the two are
-# independent by design: changing the badge's urgency must not require a deploy of
-# the worker, and vice versa.
+# How far ahead the *backend* calls a credential "expiring soon" — used only for the operator-facing
+# log line the sweep emits.
 CREDENTIAL_EXPIRY_WARN_DAYS = 14
 
 
 def _refresh_credential_expiry(conn: Connection, secret: str) -> None:
-    """Recompute `credential_expires_at` from the credential just written.
-
-    Called on every path that stores a secret, so a rotation moves the date
-    immediately instead of waiting up to a day for the sweep. **Always assigns**,
-    including ``None``: rotating an expiring SAS to a non-expiring account key must
-    clear the old date, or the product would keep warning about a credential that
-    no longer exists.
-    """
+    """Recompute `credential_expires_at` from the credential just written."""
     conn.credential_expires_at = credential_expiry(conn.type, conn.config, secret)
-    # Stamped whatever the outcome, INCLUDING when the expiry is None (#1024) —
-    # "we looked and this credential has no readable lifetime" is a different
-    # fact from "we have never looked", and only this column separates them.
+    # Stamped whatever the outcome, INCLUDING when the expiry is None (#1024) — "we looked and this
+    # credential has no readable lifetime" is a different fact from "we have never looked".
     conn.credential_expiry_checked_at = datetime.now(UTC)
 
 
 def refresh_credential_expiry(session: Session, *, secret_store: SecretStore) -> int:
-    """Re-read every stored credential's expiry; returns how many rows changed.
-
-    The sweep behind the daily beat task (#838). It exists for the three cases the
-    write path can't cover: credentials stored before this feature existed; a
-    credential rotated **outside** DataQ — which is exactly how the #828 SAS was
-    replaced, in the portal, with DataQ none the wiser; and a config edit that
-    changes what the credential *is* (an Iceberg `secret_property` moved off SAS)
-    without touching the secret, which would otherwise leave a date describing a
-    credential we no longer use.
-
-    Fail-soft **and committed per connection**, which is one property, not two.
-    Batching the whole sweep into a closing commit would mean (a) any failure at
-    commit time throws away every OTHER connection's freshly-read expiry, and
-    (b) a credential rotated through `update_connection`/`reauth_connection` —
-    which commit immediately — while the sweep held its stale in-memory copy
-    would be silently clobbered by it: the lost-update shape #841 already fixed
-    once on this very table. It also matters more here than in the sibling
-    janitors, because this is the only one doing per-row *network I/O* (a Key
-    Vault read), so a sweep-long transaction would be held open across every one
-    of them (`asset_service.sweep_orphan_assets`: "never holds … a sweep-long
-    transaction open"; `warehouse_refresh.refresh_connection_lineage` likewise
-    commits per connection).
-
-    So each connection is read, computed, and committed on its own, and any
-    failure — an unreadable secret (Key Vault down, secret deleted underneath us)
-    or a failed write — is logged and skipped, leaving that row's existing value
-    alone while the sweep continues. Deliberately NOT nulled on a read failure:
-    "we couldn't check today" is not evidence the credential stopped expiring,
-    and blanking the date would silence the warning at the worst possible moment.
-    """
+    """Re-read every stored credential's expiry; returns how many rows changed."""
     changed = 0
     conn_ids = list(session.scalars(select(Connection.id).where(Connection.secret_ref.isnot(None))))
     for conn_id in conn_ids:
@@ -489,13 +298,7 @@ def refresh_credential_expiry(session: Session, *, secret_store: SecretStore) ->
 def _refresh_one_credential_expiry(
     session: Session, conn_id: uuid.UUID, secret_store: SecretStore
 ) -> bool:
-    """Re-read one connection's credential expiry and commit it. True if it moved.
-
-    Re-loaded by id rather than carried over from the outer query: the sweep
-    commits between rows, which expires the session's identity map, and a
-    connection deleted while the sweep was running should simply drop out rather
-    than be resurrected by a stale in-memory copy.
-    """
+    """Re-read one connection's credential expiry and commit it. True if it moved."""
     conn = session.get(Connection, conn_id)
     if conn is None or conn.secret_ref is None:
         return False
@@ -509,10 +312,7 @@ def _refresh_one_credential_expiry(
 
 
 def _log_if_expiring(conn: Connection) -> None:
-    """Emit an operator-facing line for a credential at or near its end.
-
-    The date only — never the credential, and never the secret ref (#838 AC 3).
-    """
+    """Emit an operator-facing line for a credential at or near its end."""
     expires_at = conn.credential_expires_at
     if expires_at is None:
         return
@@ -538,26 +338,11 @@ def create_connection(
     secret_store: SecretStore,
     catalog_secret: str | None = None,
 ) -> Connection:
-    """Validate, persist, and (if given) write the credential(s).
-
-    The secret_ref is a READABLE, STORED name (``conn-<type>-<qualifier>-<env>-<id>``,
-    ADR 0039) — minted once here and never recomputed, since a later rename would
-    otherwise repoint at a key that does not exist. Unique
-    and safe as a Key Vault secret name. The credential is written through the
-    store; only the ref is persisted on the row.
-
-    ``catalog_secret`` is the SECOND credential a type may need (currently only
-    the Iceberg SQL-catalog DB password, #754/#826/#1181) — written the same
-    way, through `_write_extra_secret`, with `config.catalog_secret_name`
-    pointing at it rather than a dedicated column (`_extra_secrets` resolves it
-    back out generically). Rejected up front, before any row or secret write,
-    for a type whose config model has nowhere to put it.
-    """
+    """Validate, persist, and (if given) write the credential(s)."""
     _validated_config(conn_type, config)
     _validate_env(env)
-    # #1118: there is no stored row yet, so ANY `*_secret_name` in the payload
-    # names someone else's secret. Checked before the row and before any secret
-    # write, like every other up-front rejection here.
+    # #1118: there is no stored row yet, so ANY `*_secret_name` in the payload names someone else's
+    # secret.
     _reject_foreign_secret_names(config, stored=None)
     if catalog_secret is not None:
         _validate_extra_secret_supported(conn_type, config, "catalog")
@@ -586,10 +371,7 @@ def create_connection(
             _write_extra_secret(conn, catalog_secret, secret_store, field="catalog")
         # v1 snapshot — atomic with the insert (same commit).
         record_connection_version(session, conn, actor_id=created_by)
-        # And the audit event, also same-commit (ADR 0041 §2.1). The two are not
-        # redundant: the version table is the product's history drawer and
-        # cascades away with the connection; the audit event outlives it and is
-        # the only thing that can record the DELETE.
+        # And the audit event, also same-commit (ADR 0041 §2.1).
         audit_service.record_entity_change(
             session,
             action="connection.create",
@@ -602,9 +384,9 @@ def create_connection(
         session.rollback()
         raise _conflict_from_integrity_error(exc, conn_type=conn_type, env=env) from exc
     except SecretWriteError as exc:
-        # Credential store (e.g. Key Vault) unreachable — an upstream-dependency
-        # failure, not a client error. Roll the half-inserted row back and map to
-        # 502 (like ConnectionTestFailedError), not a generic 500.
+        # Credential store (e.g. Key Vault) unreachable — an upstream-dependency failure, not a
+        # client error. Roll the half-inserted row back and map to 502 (like
+        # ConnectionTestFailedError), not a generic 500.
         session.rollback()
         log.warning("connection_secret_write_failed", type=conn_type, env=env)
         raise ConnectionSecretWriteError(
@@ -618,78 +400,24 @@ def create_connection(
 
 @dataclass(frozen=True)
 class DatasourceHealth:
-    """Run-derived health for a DATASOURCE connection (#954).
-
-    #839 gave orchestration connections a health signal because something polls
-    them. Nothing polls a datasource, so a dead credential stayed invisible until
-    a suite run failed — and then surfaced only as the run's failure reason, on the
-    run, not on the connection. Two prod Snowflake connections sat dead for weeks
-    behind that gap; finding out why meant reading worker logs.
-
-    Derived rather than stored, deliberately: a datasource connection's health IS
-    its recent runs, so a second persisted copy could disagree with them (the
-    `#845`/`#847` drift class). Nothing to backfill and nothing to keep in sync.
-
-    `reason` is `runs.failure_reason`, which is already classified at the point of
-    failure (#605) — this never re-classifies and never sees raw driver text.
-    """
+    """Run-derived health for a DATASOURCE connection (#954)."""
 
     last_run_at: datetime | None = None
     consecutive_failures: int = 0
     reason: str | None = None
 
 
-# How far back the consecutive-failure streak is counted. A dead credential fails
-# every run, so the exact depth only bounds the number a long-broken connection
-# reports ("20+" is as actionable as "134"), while keeping the query bounded.
+# How far back the consecutive-failure streak is counted.
 _HEALTH_RUN_WINDOW = 20
 
 
 def datasource_health(
     session: Session, connection_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, DatasourceHealth]:
-    """Run-derived health per connection, in ONE query for the whole set.
-
-    **Streaks are per SUITE, rolled up (#998).** The badge claims "this connection
-    is unusable" — i.e. the credential is dead — and merging every suite's runs
-    before counting does not answer that. On a connection carrying several suites,
-    one genuinely-broken suite running hourly fills the head of the window and
-    badges a connection whose credential is fine, sending the operator to re-auth
-    something that works. Per-suite windows also remove the run-frequency skew:
-    a daily suite is no longer crowded out of a shared 20-run window by an hourly
-    one.
-
-    So each suite gets its own window and its own leading-failure streak, and the
-    connection is reported degraded **only when every suite that has run is
-    failing** — which is what "the credential is dead" actually looks like. One
-    suite still succeeding proves the connection is reachable, so it clears the
-    connection-level signal even while that other suite stays broken (a per-suite
-    problem belongs on the suite, not here).
-
-    ``consecutive_failures`` is then the **minimum** streak across those suites —
-    the strongest claim true of all of them ("every suite has failed at least N
-    times running"), rather than a maximum that would overstate the newest
-    failure's reach.
-
-    Connections with no runs are absent from the mapping. That is "unknown", which
-    the UI must not render as healthy — the same rule the poll-health columns carry.
-    """
+    """Run-derived health per connection, in ONE query for the whole set."""
     if not connection_ids:
         return {}
     # LATERAL top-N per suite, not a window over everything (#999).
-    #
-    # The window form ranked every run of every suite and then kept `rn <= 20`,
-    # so the work grew with a suite's whole history to answer a question about 20
-    # rows — on every connections page load. Measured on a seeded table it was
-    # linear in history (8ms → 33ms → 195ms at 1k/4k/16k runs per suite), and
-    # adding the index alone only halved the constant; it does not bound the scan.
-    #
-    # `LIMIT 20` inside the lateral, backed by `ix_runs_suite_created`
-    # (suite_id, created_at DESC, id DESC), lets Postgres stop after 20 index
-    # entries per suite. Measured flat across the same sizes.
-    #
-    # Partitioned by SUITE (#998), so each suite gets its own window rather than
-    # competing for a shared one with whatever runs most often.
     recent = (
         select(
             Run.suite_id.label("suite_id"),
@@ -728,9 +456,8 @@ def datasource_health(
     health: dict[uuid.UUID, DatasourceHealth] = {}
     for conn_id, suites in per_connection.items():
         last_run_at = max(created for _s, _r, created in suites)
-        # Degraded only when EVERY suite that has run is failing — a single
-        # succeeding suite proves the connection itself is reachable, so the
-        # connection-level signal clears even while another suite stays broken.
+        # Degraded only when EVERY suite that has run is failing — a single succeeding suite proves
+        # the connection itself is reachable.
         if any(streak == 0 for streak, _r, _c in suites):
             health[conn_id] = DatasourceHealth(last_run_at=last_run_at)
             continue
@@ -746,16 +473,7 @@ def datasource_health(
 
 
 def _leading_failure_streak(runs: Sequence[Any]) -> tuple[int, str | None]:
-    """Leading failures in newest-first order, plus the newest failure's reason.
-
-    Only a SUCCEEDED run clears the streak — it is the one status that proves the
-    datasource is usable. `queued`/`running` have not answered yet and `cancelled`
-    was stopped by a human, so none is evidence of anything and they are skipped
-    rather than treated as recovery. Breaking on any non-failure (the first
-    version of this) let a single cancelled or in-flight run at the head hide a
-    real failure streak directly beneath it — and `consecutive_poll_failures`,
-    which this mirrors, likewise resets only on a genuine successful poll.
-    """
+    """Leading failures in newest-first order, plus the newest failure's reason."""
     streak = 0
     reason: str | None = None
     for run in runs:
@@ -802,38 +520,23 @@ def update_connection(
     actor_id: uuid.UUID | None = None,
     catalog_secret: str | None = None,
 ) -> Connection:
-    """Partial update of name / config / secret(s). Type and env are immutable.
-
-    Records a new `ConnectionVersion` only when a snapshotted field (name/config)
-    changed — a secret-only update (credential rotation) is not config history and
-    records no version (mirrors `reauth_connection`). ``catalog_secret`` rotates the
-    connection's SECOND credential (currently only the Iceberg SQL-catalog DB
-    password, #754/#826/#1181) the same way — this is that type's rotation path,
-    since there is no dedicated catalog-secret reauth-with-verify endpoint.
-    """
+    """Partial update of name / config / secret(s). Type and env are immutable."""
     conn = get_connection(session, connection_id)
     # Capture before commit: a unique violation rolls back and expires the
     # instance, so read the (immutable) type/env now for the conflict message.
     conn_type, conn_env = conn.type, conn.env
-    # Same reasoning for the audit payload, and it must be taken before any field
-    # below is mutated — a snapshot read afterwards would record the new state as
-    # the old one, which is worse than no `before` at all.
+    # Same reasoning for the audit payload, and it must be taken before any field below is mutated —
+    # a snapshot read afterwards would record the new state as the old one.
     audit_before = audit_service.snapshot("connection", conn)
 
     if config is not None:
         _validated_config(conn.type, config)
-        # #1118: a client may echo back the `*_secret_name` it read off this
-        # connection (the GET → edit one field → PATCH the whole config flow),
-        # but may not introduce or repoint one. Compared against the row's
-        # CURRENT config, before `_carry_over_secret_name_keys` merges the two —
-        # afterwards the caller's value and the server's are indistinguishable.
+        # #1118: a client may echo back the `*_secret_name` it read off this connection (the GET →
+        # edit one field → PATCH the whole config flow), but may not introduce or repoint one.
         _reject_foreign_secret_names(config, stored=conn.config or {})
         stored_config = conn.config or {}
-        # Compare against the MERGED config, not the raw payload: a PATCH that
-        # omits `catalog_secret_name` has it carried over, so judging the raw
-        # payload would read every partial update as "dropped the field" — and,
-        # worse, an omitted destination field would read as a move to None and
-        # demand credentials for an edit that changed nothing.
+        # Compare against the MERGED config, not the raw payload: a PATCH that omits
+        # `catalog_secret_name` has it carried over.
         merged_config = _carry_over_secret_name_keys(stored_config, config)
         _reject_uncredentialed_redirect(
             conn.type,
@@ -846,43 +549,19 @@ def update_connection(
         was_syncing = bool(stored_config.get("inventory_sync"))
         conn.config = merged_config
         if was_syncing and not bool((conn.config or {}).get("inventory_sync")):
-            # Turning the ADR 0040 toggle OFF ends the sync, so the outcome state
-            # describes something that no longer happens (#1104). Cleared HERE, not
-            # only in the daily sweep, because the sweep can't see the intervening
-            # window: toggled off at 09:00 and back on at 09:05 never presents an
-            # opted-out row to the next tick, and every `ConnectionRead` consumer
-            # would meanwhile read "failing since <old date>" for a sync that has
-            # not been attempted since. Failing state must never outlive its cause.
+            # Turning the ADR 0040 toggle OFF ends the sync, so the outcome state describes
+            # something that no longer happens (#1104).
             conn.inventory_sync_last_attempted_at = None
             conn.inventory_sync_last_error = None
             conn.inventory_sync_failing_since = None
     if catalog_secret is not None:
-        # After the `config is not None` branch above, so an invalid CONFIG
-        # 422s with the accurate reason rather than the catalog-support probe
-        # tripping first over a field that was never the actual problem.
+        # After the `config is not None` branch above.
         _validate_extra_secret_supported(conn.type, conn.config, "catalog")
     if name is not None:
         conn.name = name
-    # Snapshot only a *real* name/config change. `is_modified` reports net changes,
-    # so a no-op PATCH (fields re-sent at their current values) doesn't mint a
-    # duplicate version (mirrors `check_service.update_check`). Captured **before**
-    # the secret write(s) so a credential rotation — which dirties `secret_ref` /
-    # `config.catalog_secret_name` — is not counted as config history (a
-    # secret-only update records no version).
+    # Snapshot only a *real* name/config change.
     versioned_change = session.is_modified(conn)
     # Catalog secret FIRST, primary secret LAST — deliberately, not incidentally.
-    # Neither store write is part of the DB transaction (a `SecretStore.set` is
-    # live the instant it returns; `session.rollback()` below can undo the ORM
-    # state but never that), so on a two-secret PATCH the write ORDER decides
-    # which failure mode is possible. The catalog secret's ref is fresh far more
-    # often than not (most connections set it once, at creation) — a failure here
-    # leaves at worst a stranded ref the orphan sweep already covers (#372/#1059),
-    # and the PRIMARY credential — the one everything else depends on — is never
-    # touched. Doing it the other way round would let a primary rotation succeed
-    # in the vault, then a catalog-write failure roll back only the DB's belief
-    # about it while the live credential has already changed underneath — the
-    # rollback can't put the old value back, so the connection would be silently
-    # running on an unverified new primary secret the caller was told 502'd.
     if catalog_secret is not None:
         try:
             _write_extra_secret(conn, catalog_secret, secret_store, field="catalog")
@@ -895,9 +574,7 @@ def update_connection(
             ) from exc
 
     if secret is not None:
-        # `or` — not a recompute. An existing ref is authoritative: the row may have
-        # been renamed since, and rebuilding the name from the CURRENT name would
-        # write to a key nothing points at while the live credential goes stale.
+        # `or` — not a recompute.
         secret_ref = conn.secret_ref or connection_secret_ref(
             connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type
         )
@@ -917,15 +594,9 @@ def update_connection(
 
     try:
         # Snapshot the post-update state, atomic with the update (same commit).
-        # Inside the try: recording reads `MAX(version_no)`, which autoflushes the
-        # pending name/config change — so a (name, env) collision can surface here
-        # rather than at commit, and must map to the same conflict error.
         if versioned_change:
             record_connection_version(session, conn, actor_id=actor_id)
-        # Audited on EVERY update, including a secret-only rotation that records
-        # no version. That asymmetry is the point: `versioned_change` is about
-        # CONFIG history, and a credential rotation is precisely the act ADR 0020
-        # shipped with no record at all.
+        # Audited on EVERY update, including a secret-only rotation that records no version.
         audit_service.record_entity_change(
             session,
             action="connection.update",
@@ -946,15 +617,7 @@ def update_connection(
 
 
 def _reresolve_suite_assets(session: Session, conn: Connection) -> None:
-    """Re-point every targeted suite on `conn` at the asset its target now resolves to.
-
-    A config change (account / database / workspace_url / container / bucket — every
-    field the OpenLineage identity keys on) moves the asset identity, so a suite bound
-    to `conn` would otherwise keep a **stale, confidently-wrong** `asset_id` that every
-    later run stamps (worse than NULL for lineage/incidents — ADR 0034). Fail-soft:
-    `resolve_and_upsert_asset` never raises; an unresolvable target leaves `asset_id`
-    NULL and the update still succeeds.
-    """
+    """Re-point every targeted suite on `conn` at the asset its target now resolves to."""
     suites = list(
         session.scalars(
             select(Suite).where(Suite.connection_id == conn.id, Suite.target.isnot(None))
@@ -980,19 +643,7 @@ def reauth_connection(
     secret_store: SecretStore,
     actor_id: uuid.UUID | None = None,
 ) -> None:
-    """Rotate an existing connection's credential and verify it, in one step.
-
-    The "fix an expired token" path. Unlike `update_connection` (which stores a
-    secret but never checks it) and `test_connection` (which checks but can't
-    rotate), re-auth writes the new credential **and** probes connectivity with
-    it through the same adapter path as ``/test``.
-
-    The credential is rotated *before* the probe, so a failed probe
-    (`ConnectionTestFailedError`, 502) means the freshly supplied credential is
-    itself bad — the old, expired one is already replaced. A store-write failure
-    (`ConnectionSecretWriteError`, 502) happens before any row change, so the
-    existing credential is left untouched.
-    """
+    """Rotate an existing connection's credential and verify it, in one step."""
     conn = get_connection(session, connection_id)
     before = audit_service.snapshot("connection", conn)
     secret_ref = conn.secret_ref or connection_secret_ref(
@@ -1011,17 +662,7 @@ def reauth_connection(
     # The "fix an expired token" path is exactly where the new expiry matters most:
     # the badge that prompted the rotation must clear on the same request (#838).
     _refresh_credential_expiry(conn, secret)
-    # The event ADR 0020 shipped as a known hole: a credential rotation left no
-    # trace of any kind. It records THAT the credential rotated and WHICH pointer
-    # it now resolves through — never a before/after of the value, which is not in
-    # the database to begin with (`config` holds `*_secret_name` pointers only).
-    #
-    # Recorded here, BEFORE the verify probe, deliberately. The rotation has
-    # already happened at this point — the docstring above says so in as many
-    # words: a failed probe means the freshly supplied credential is bad and the
-    # old one is *already replaced*. Recording only on a successful probe would
-    # leave the most alarming outcome — the credential was changed and does not
-    # work — as the one case with no audit trail.
+    # The event ADR 0020 shipped as a known hole: a credential rotation left no trace of any kind.
     audit_service.record_entity_change(
         session,
         action="connection.reauth",
@@ -1061,11 +702,11 @@ def _dependent_suites_detail(
     actor_id: uuid.UUID,
     actor_is_admin: bool,
 ) -> dict[str, Any] | None:
-    """The 409 detail for suites still bound to the connection, or None when
-    clear. Suite NAMES are grant-scoped (ADR 0027/0037) — the sample lists only
-    suites the actor can view; the rest surface as a `restricted` count, never
-    names (#927 review: naming a stranger's suites in a 409 would defeat the
-    suite endpoint's 404-no-leak one request over)."""
+    """The 409 detail for suites still bound to the connection, or None when clear. Suite NAMES are
+    grant-scoped (ADR 0027/0037) — the sample lists only suites the actor can view; the rest
+    surface as a `restricted` count, never names (#927 review: naming a stranger's suites in a
+    409 would defeat the suite endpoint's 404-no-leak one request over).
+    """
     total = session.scalar(
         select(func.count()).select_from(Suite).where(Suite.connection_id == connection_id)
     )
@@ -1103,7 +744,8 @@ def _dependent_source_checks_detail(
 ) -> dict[str, Any] | None:
     """The 409 detail for comparison checks sourcing this connection (ADR 0015),
     or None when clear. Check names ride their suite's grant — same gating as
-    `_dependent_suites_detail`."""
+    `_dependent_suites_detail`.
+    """
     total = session.scalar(
         select(func.count()).select_from(Check).where(Check.source_connection_id == connection_id)
     )
@@ -1114,10 +756,8 @@ def _dependent_source_checks_detail(
         session.execute(
             select(Check.name, Check.suite_id)
             .where(Check.source_connection_id == connection_id, Check.suite_id.in_(viewable))
-            # Shared key (#318 G5): a same-transaction batch of checks ties on
-            # `created_at`, so an untie-broken LIMIT 10 could return a different
-            # sample each call — on a preview whose whole job is to tell the user
-            # what a delete would affect.
+            # Shared key (#318 G5): a same-transaction batch of checks ties on `created_at`, so an
+            # untie-broken LIMIT 10 could return a different sample each call.
             .order_by(*CHECK_ORDER)
             .limit(10)
         )
@@ -1145,11 +785,7 @@ def delete_connection(
     actor_is_admin: bool = False,
 ) -> None:
     conn = get_connection(session, connection_id)
-    # Delete guard #1 (#753): suites still run against this connection. No
-    # cascade is offered — deleting a connection must never silently take a
-    # suite (and its checks/runs/results, #540) with it; the user deletes or
-    # repoints the suites first, and the 409 counts them (naming only the ones
-    # the actor's grants cover).
+    # Delete guard #1 (#753): suites still run against this connection.
     suites_detail = _dependent_suites_detail(
         session, conn.id, actor_id=actor_id, actor_is_admin=actor_is_admin
     )
@@ -1159,10 +795,8 @@ def delete_connection(
             "delete or repoint them first",
             detail=suites_detail,
         )
-    # Delete guard #2 (ADR 0015): comparison checks referencing this connection
-    # as their source hold an ON DELETE RESTRICT FK. Bounded sample + true
-    # total, `truncated`-flagged so a scripted remediation can't mistake the
-    # sample for the full set.
+    # Delete guard #2 (ADR 0015): comparison checks referencing this connection as their source hold
+    # an ON DELETE RESTRICT FK.
     checks_detail = _dependent_source_checks_detail(
         session, conn.id, actor_id=actor_id, actor_is_admin=actor_is_admin
     )
@@ -1173,19 +807,12 @@ def delete_connection(
             detail=checks_detail,
         )
     secret_ref = conn.secret_ref
-    # Every SECOND credential's ref too (#1181) — `*_secret_name` by convention,
-    # same as `_extra_secrets`/`_write_extra_secret` — captured before the row
-    # goes away. Deleting the row alone would otherwise leave a real, live
-    # credential permanently orphaned in the store (the #372/#1059 convention
-    # this mirrors: an entity delete removes what it owns; the orphan sweep
-    # only REPORTS by default, so nothing else would ever clean this up).
+    # Every SECOND credential's ref too (#1181) — `*_secret_name` by convention, same as
+    # `_extra_secrets`/`_write_extra_secret` — captured before the row goes away.
     extra_secret_refs = [
         v for k, v in (conn.config or {}).items() if k.endswith("_secret_name") and v
     ]
-    # Snapshot BEFORE the delete. Once this commits, `connection_versions`
-    # cascades away with the row, so this payload is the ONLY surviving record of
-    # what the connection was — the structural reason `audit_events.entity_id`
-    # carries no foreign key.
+    # Snapshot BEFORE the delete.
     audit_before = audit_service.snapshot("connection", conn)
     session.delete(conn)
     try:
@@ -1199,12 +826,8 @@ def delete_connection(
         )
         session.commit()
     except IntegrityError as exc:
-        # TOCTOU backstop: a suite or comparison check created between the
-        # pre-checks and this commit trips its FK — re-derive the SAME detail
-        # shape the pre-checks raise (the dependents exist now, that's why the
-        # FK fired) and 409, never a raw 500 (#753/#927 review). Any other
-        # integrity failure is not this race; re-raise. (pipeline_runs no longer
-        # reaches here — its FK cascades, migration a3b4c5d6e7f8.)
+        # TOCTOU backstop: a suite or comparison check created between the pre-checks and this
+        # commit trips its FK.
         session.rollback()
         cause = str(exc.orig)
         if "fk_suites_connection_id_connections" in cause:
@@ -1226,9 +849,8 @@ def delete_connection(
             )
             or {"connection_id": str(connection_id)},
         ) from exc
-    # Best-effort remove the orphaned credential(s) from the store (#372, #1181) —
-    # after the row is gone, and fail-soft (delete never raises), so a store
-    # hiccup can't 500 a successful delete.
+    # Best-effort remove the orphaned credential(s) from the store (#372, #1181) — after the row is
+    # gone, and fail-soft (delete never raises), so a store hiccup can't 500 a successful delete.
     if secret_ref:
         secret_store.delete(secret_ref)
     for ref in extra_secret_refs:
@@ -1242,15 +864,7 @@ def test_connection(
     *,
     secret_store: SecretStore,
 ) -> None:
-    """Resolve the connection's secret and probe live connectivity.
-
-    Raises `ConnectionTestFailedError` (502) on a missing credential — UNLESS
-    the adapter's `secret_optional` (#351: Iceberg's credential-less catalog,
-    dbt's local `file://` artifacts path) says a stored connection with no
-    `secret_ref` is legitimate, in which case `None` is handed to the adapter
-    exactly like a genuinely credential-less config always has been — or any
-    adapter-reported connectivity failure.
-    """
+    """Resolve the connection's secret and probe live connectivity."""
     conn = get_connection(session, connection_id)
     adapter = get_connection_adapter(conn.type)
     secret_optional = getattr(adapter, "secret_optional", False)
@@ -1277,9 +891,8 @@ def test_connection(
             connection_id=str(connection_id),
             error_type=type(exc).__name__,
         )
-        # Don't echo the adapter exception to the client — it can carry DSN /
-        # credential fragments (it's also kept out of the logs above). The
-        # original is preserved as __cause__ for server-side traceback only.
+        # Don't echo the adapter exception to the client — it can carry DSN / credential fragments
+        # (it's also kept out of the logs above).
         raise ConnectionTestFailedError(
             "connection test failed", detail={"connection_id": str(connection_id)}
         ) from exc
@@ -1298,41 +911,6 @@ def test_draft_connection(
 ) -> None:
     """Probe connectivity for an UNSAVED draft (#351) — no `connections` row, no
     `SecretStore` write, ever.
-
-    The "test before you save" counterpart to `create_connection` +
-    `test_connection`: it runs the SAME type/config validation
-    `create_connection` runs (an invalid type or config 422s exactly like a real
-    create would — `_validated_config`) and then the SAME adapter `.test()` call
-    `test_connection` makes, but against the config/secret straight off the
-    request instead of a persisted `Connection` row and a SecretStore read.
-    `env`, when given, is validated the same way `create_connection` validates
-    it, but plays no role in the probe itself (no adapter's `test()` takes it —
-    the (type, env) orchestrator-singleton check it feeds is a CREATE-time
-    constraint, not a connectivity fact), so a caller that hasn't picked one yet
-    still gets a full connectivity check.
-
-    **`*_secret_name` is REFUSED on this path (#1118).** It used to be resolved
-    here — the reasoning being that such a field names an existing store entry
-    rather than writing one — but that is precisely what made this endpoint a
-    credential-exfiltration primitive: a caller could name a *victim*
-    connection's ref (readable off `GET /connections`) while pointing
-    `catalog_uri` at a host they control, and the server would fetch the real
-    credential and send it there. A draft has no row, so it owns no refs, so
-    there is no such thing as a legitimate one here.
-
-    Nothing is lost: ``catalog_secret`` is the RAW value straight off the draft
-    request (#1181) and is handed to the adapter directly, under the same
-    `catalog_secret` kwarg `_extra_secrets` would have produced. That is the
-    supported way to test a second credential before saving.
-    `secret_store.set` is never called anywhere on this path, for either secret.
-
-    Raises `ConnectionConfigInvalidError` (422) for an unknown type or invalid
-    config, and `ConnectionTestFailedError` (502) for a missing credential —
-    UNLESS the adapter's `secret_optional` (#351: Iceberg's credential-less
-    catalog, dbt's local `file://` artifacts path) says a blank secret is a
-    legitimate draft, in which case `None` flows straight to the adapter — or
-    any adapter-reported connectivity failure. Matches `test_connection`'s
-    contract exactly, so the frontend's failure handling doesn't fork per route.
     """
     _validated_config(conn_type, config)
     if env is not None:
@@ -1340,9 +918,8 @@ def test_draft_connection(
     # #1118 — a draft owns no secret refs, so every `*_secret_name` is foreign.
     _reject_foreign_secret_names(config, stored=None)
     if catalog_secret is not None:
-        # Same guard `create_connection`/`update_connection` run — a draft for a
-        # type whose config model has no `catalog_secret_name` field must 422
-        # the same way a real create would, not silently swallow the value.
+        # Same guard `create_connection`/`update_connection` run — a draft for a type whose config
+        # model has no `catalog_secret_name` field must 422 the same way a real create would.
         _validate_extra_secret_supported(conn_type, config, "catalog")
     adapter = get_connection_adapter(conn_type)
     secret_optional = getattr(adapter, "secret_optional", False)
@@ -1351,15 +928,13 @@ def test_draft_connection(
         raise ConnectionTestFailedError(
             "a credential is required to test this connection", detail={"type": conn_type}
         )
-    # Normalize a blank string to None — the wire payload can hand in "" where
-    # `create_connection`'s own contract only ever sees `str | None`; both mean
-    # "no credential", and the adapter (Iceberg/dbt) only branches on `is None`.
+    # Normalize a blank string to None — the wire payload can hand in "" where `create_connection`'s
+    # own contract only ever sees `str | None`; both mean "no credential".
     secret = secret or None
 
-    # No `_extra_secrets(config, ...)` here — the guard above rejected every
-    # `*_secret_name`, so there is nothing to resolve and nothing this path can
-    # be made to read out of the store (#1118). The raw draft value is the only
-    # second credential a draft can carry.
+    # No `_extra_secrets(config, ...)` here — the guard above rejected every `*_secret_name`, so
+    # there is nothing to resolve and nothing this path can be made to read out of the store
+    # (#1118).
     extra_secrets: dict[str, str] = {}
     if catalog_secret:
         extra_secrets["catalog_secret"] = catalog_secret
@@ -1372,9 +947,8 @@ def test_draft_connection(
             type=conn_type,
             error_type=type(exc).__name__,
         )
-        # Same rationale as `test_connection`: never echo the adapter exception
-        # to the client (DSN/credential fragments), original kept as __cause__
-        # for the server-side traceback only.
+        # Same rationale as `test_connection`: never echo the adapter exception to the client
+        # (DSN/credential fragments), original kept as __cause__ for the server-side traceback only.
         raise ConnectionTestFailedError(
             "connection test failed", detail={"type": conn_type}
         ) from exc

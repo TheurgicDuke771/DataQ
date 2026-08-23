@@ -1,28 +1,4 @@
-"""add FK indexes on join columns (#42)
-
-Postgres does not auto-create indexes on foreign-key columns. This
-migration adds them for the 8 FK columns that lacked coverage:
-
-- connections.created_by, suites.connection_id, suites.created_by,
-  checks.suite_id, results.check_id, shares.user_id,
-  pipeline_runs.connection_id, trigger_bindings.suite_id.
-
-Why backward-compatible: indexes are pure read-side metadata; no
-column changes, no constraint changes, no data rewrites. Old code
-keeps working, new code is faster on the join paths these columns
-participate in (suite listing, cascade deletes, share lookups,
-pipeline-run-by-connection queries).
-
-Note for production: when this runs against a populated DB, switch
-each op.create_index to use postgresql_concurrently=True (and
-postgresql_using='btree'), and disable Alembic's transactional DDL
-for the migration. The non-concurrent form below is fine today
-because the DB is empty.
-
-Revision ID: cf42d364f74b
-Revises: 923dab15eb8c
-Create Date: 2026-05-28 14:44:27.308203+00:00
-"""
+"""add FK indexes on join columns (#42)"""
 
 from collections.abc import Sequence
 

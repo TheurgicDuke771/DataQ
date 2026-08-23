@@ -14,10 +14,8 @@ import type { ReactNode } from 'react';
 import type { ConnectionType } from '../../api/connections';
 
 /**
- * Per-datasource visual identity (icon + brand-ish accent) so the connection
- * list reads as recognisable products rather than a wall of identical cards.
- * Single source for the glyph + colour — the card avatar and anywhere else that
- * wants a type marker both read from here.
+ * Per-datasource visual identity (icon + brand-ish accent) so the connection list reads as
+ * recognisable products rather than a wall of identical cards.
  */
 const TYPE_VISUAL: Record<ConnectionType, { icon: ReactNode; color: string }> = {
   snowflake: { icon: <CloudOutlined />, color: '#29b5e8' },

@@ -1,24 +1,4 @@
-"""Snowflake warehouse-native lineage provider tests (#858).
-
-The OBJECT_DEPENDENCIES tier is exercised against the REAL captured payload
-(`backend/tests/fixtures/lineage_native/snowflake_object_dependencies.json` — 200 rows
-from the live demo account, 2026-07-17 spike), NOT hand-written rows: per #823, a fixture
-we authored ourselves can pass while the real shape fails.
-
-The GET_LINEAGE traversal (#892) and the Snowpark-scratch stitch (#912) ride their own
-REAL captures, taken from live **prod Enterprise** on 2026-07-28
-(`sf_get_lineage_projected.json`, `sf_access_history_snowpark_projected.json`) — the
-edition that could not be observed when #858 shipped. Where a capture cannot express a
-case (the surviving Snowpark rows are TEMP→TEMP only: the physical endpoints of those
-pipelines fell out of ACCESS_HISTORY's retention), the REAL rows are augmented with
-minimal same-shaped synthetic rows, and every such test says so at the point of use.
-The 0A000 / not-authorized descents remain fake-driven — a live Enterprise account
-cannot produce them.
-
-Identity is pinned BYTE-FOR-BYTE against `services.asset_identity` — the whole premise of
-warehouse-native lineage (no fold needed) is that these match, so if they ever diverge the
-edges would 404 against `assets` exactly as the dbt path did (#823).
-"""
+"""Snowflake warehouse-native lineage provider tests (#858)."""
 
 from __future__ import annotations
 
@@ -49,14 +29,7 @@ _CONFIG: dict[str, Any] = {"account": _ACCOUNT, "database": "DATAQ_DB"}
 
 @contextmanager
 def _captured_lineage_logs(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[EventDict]]:
-    """`capture_logs`, with the provider's module logger REBOUND INSIDE the capture.
-
-    `configure_logging()` sets `cache_logger_on_first_use=True`, so once any earlier
-    test in the suite has run it, `warehouse_snowflake.log` holds a cached bound logger
-    and bypasses the processors `capture_logs` installs — the capture then yields an
-    EMPTY list and every assertion passes vacuously (the #1056 lesson: green alone, red
-    never). Rebinding forces the capture to see the events.
-    """
+    """`capture_logs`, with the provider's module logger REBOUND INSIDE the capture."""
     with capture_logs() as logs:
         monkeypatch.setattr(
             warehouse_snowflake,
@@ -68,7 +41,8 @@ def _captured_lineage_logs(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[Eve
 
 def _object_dependencies_rows() -> list[tuple[Any, ...]]:
     """The captured OBJECT_DEPENDENCIES payload as (col, …) tuples in the query's
-    SELECT order — what a SQLAlchemy `.all()` returns."""
+    SELECT order — what a SQLAlchemy `.all()` returns.
+    """
     raw = json.loads((_FIXTURES / "snowflake_object_dependencies.json").read_text())
     return [
         (
@@ -85,10 +59,8 @@ def _object_dependencies_rows() -> list[tuple[Any, ...]]:
     ]
 
 
-#: The columns `_from_get_lineage` SELECTs, in order — the fixture keeps all 16 of the
-#: capture's `SELECT *` columns, so the loader projects by NAME. (Named columns, not
-#: `SELECT *`: a positional read silently mis-binds if Snowflake ever inserts a column,
-#: which would build edges out of the wrong fields instead of failing loudly.)
+#: The columns `_from_get_lineage` SELECTs, in order — the fixture keeps all 16 of the capture's
+#: `SELECT *` columns, so the loader projects by NAME.
 _GET_LINEAGE_SELECT = (
     "source_object_database",
     "source_object_schema",
@@ -106,13 +78,7 @@ _GET_LINEAGE_SELECT = (
 
 
 def _get_lineage_rows(tag: str) -> list[tuple[Any, ...]]:
-    """One captured GET_LINEAGE result, projected into the SELECT's column order.
-
-    The capture harness stringified every value (`list(map(str, row))`), so a real NULL
-    is the literal `"None"` in the fixture; the driver returns `None`. Mapping it back
-    here keeps the fixture verbatim while handing the provider the shape the connector
-    actually produces — a `"None"` string would have quietly become a column pair.
-    """
+    """One captured GET_LINEAGE result, projected into the SELECT's column order."""
     raw = json.loads((_FIXTURES / "sf_get_lineage_projected.json").read_text())[tag]
     index = {key: position for position, key in enumerate(raw["keys"])}
     return [
@@ -141,13 +107,6 @@ class _Result:
 class _FakeConn:
     """A SQLAlchemy-connection double that routes each query to a canned result by a
     substring of the SQL text. `raises` maps a substring → an exception to throw.
-
-    **One seed table is served by default** (#892): the GET_LINEAGE tier now enumerates
-    seeds through the ADR 0040 `INFORMATION_SCHEMA.TABLES` read BEFORE it calls
-    GET_LINEAGE, so a conn with no seeds would skip the tier without ever reaching the
-    `raises={"GET_LINEAGE": …}` gate — every ladder-descent test below would then pass
-    for the wrong reason (vacuously). Callers that want a different seed list (or none)
-    override the `INFORMATION_SCHEMA.TABLES` key explicitly.
     """
 
     def __init__(
@@ -189,7 +148,8 @@ _DEFAULT_SEED_ROWS: list[Any] = [("RETAIL", "ORDERS_HEADER")]
 class _GetLineageConn(_FakeConn):
     """A `_FakeConn` that answers GET_LINEAGE **per (object, direction)**, the way the
     real function does — a single canned result would make the traversal look like it
-    works while actually replaying one seed's rows for every seed."""
+    works while actually replaying one seed's rows for every seed.
+    """
 
     def __init__(self, lineage: dict[tuple[str, str], list[Any]], **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -208,7 +168,8 @@ class _GetLineageConn(_FakeConn):
 
 def _feature_unsupported_error() -> Exception:
     """A stand-in for the connector's ProgrammingError with Snowflake's edition-gate
-    SQLSTATE 0A000 (`Unsupported feature 'Data Lineage'`)."""
+    SQLSTATE 0A000 (`Unsupported feature 'Data Lineage'`).
+    """
 
     class _ProgrammingError(Exception):
         sqlstate = "0A000"
@@ -281,9 +242,8 @@ def test_object_dependencies_dedupes_and_drops_self_edges() -> None:
 
 
 def test_access_history_empty_with_activity_falls_through_to_floor() -> None:
-    # Scoped-empty ACCESS_HISTORY (Standard silent-empty, an all-COPY database, or
-    # an idle window all look identical) → the union degrades to the floor, with an
-    # honest skip reason instead of the old edition-gating guess (#911).
+    # Scoped-empty ACCESS_HISTORY (Standard silent-empty, an all-COPY database, or an idle window
+    # all look identical) → the union degrades to the floor.
     conn = _FakeConn(
         results={
             "ACCESS_HISTORY ah": [],  # the FLATTEN join — empty
@@ -300,7 +260,8 @@ def test_access_history_unions_with_the_floor_never_replaces_it() -> None:
     """#911 review: the two sources are COMPLEMENTARY — a winning DML tier must not
     erase the view-dependency graph (a view is never a DML write, so ACCESS_HISTORY
     can never re-observe it; under the snapshot-prune regime, replacement would have
-    PRUNED the whole dbt view chain on the next refresh)."""
+    PRUNED the whole dbt view chain on the next refresh).
+    """
     conn = _FakeConn(
         results={
             "ACCESS_HISTORY ah": [
@@ -328,10 +289,8 @@ def test_access_history_unions_with_the_floor_never_replaces_it() -> None:
 
 
 def test_everything_empty_is_the_floors_true_empty() -> None:
-    # Scoped DML log empty AND the current-state dependency view empty → a true,
-    # prunable empty answered by the floor (the current-state authority) — never a
-    # guess about edition gating (#911: the union removed the corroboration heuristic;
-    # a confident empty now requires BOTH sources to have answered empty).
+    # Scoped DML log empty AND the current-state dependency view empty → a true, prunable empty
+    # answered by the floor (the current-state authority).
     conn = _FakeConn(
         results={"ACCESS_HISTORY ah": [], "OBJECT_DEPENDENCIES": []},
         raises={"GET_LINEAGE": _feature_unsupported_error()},
@@ -361,11 +320,7 @@ def test_get_lineage_0a000_descends_the_ladder() -> None:
 
 
 def test_get_lineage_supported_but_empty_descends_with_an_honest_reason() -> None:
-    # GET_LINEAGE IS supported (no gate raised) but observed nothing. The skip note must
-    # say THAT — not the false "unsupported on this edition" an Enterprise operator
-    # would otherwise see (a hard-coded label was the original bug) — and the tier must
-    # descend rather than return a confident empty: this tier PRUNES, so an empty win
-    # here would wipe the floor's real view graph on the next refresh (#911).
+    # GET_LINEAGE IS supported (no gate raised) but observed nothing.
     conn = _FakeConn(results={"GET_LINEAGE": [], "ACCESS_HISTORY ah": []})
     result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
     note = next(s for s in result.skipped_tiers if s.startswith("get_lineage"))
@@ -435,12 +390,11 @@ def test_floor_failure_is_unavailable_not_empty() -> None:
 
 
 def test_an_unclassified_access_history_failure_skips_just_that_tier() -> None:
-    """Before #1228, `_from_access_history`'s bare `raise` on an unclassified
-    failure propagated a RAW exception type straight out of `fetch_edges`'s
-    `except _FeatureUnsupportedError` handler — discarding the floor's already-
-    successful OBJECT_DEPENDENCIES read and aborting the whole pull over a blip
-    on the DML-only half. It must now descend: the floor's edges are returned,
-    non-prunable, with a classified (exception-type-only, #902) skip reason."""
+    """Before #1228, `_from_access_history`'s bare `raise` on an unclassified failure propagated a
+    RAW exception type straight out of `fetch_edges`'s `except _FeatureUnsupportedError` handler
+    — discarding the floor's already- successful OBJECT_DEPENDENCIES read and aborting the whole
+    pull over a blip on the DML-only half.
+    """
     conn = _FakeConn(
         results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
         raises={
@@ -463,7 +417,8 @@ def test_an_unclassified_access_history_failure_skips_just_that_tier() -> None:
 def test_an_access_history_confirmed_denial_stays_prunable() -> None:
     """The other half of the same descent: a CONFIRMED per-object denial (edition
     gate / missing grant) recurs identically every cycle, so it must stay
-    prunable — only the UNCLASSIFIED case above suspends the prune."""
+    prunable — only the UNCLASSIFIED case above suspends the prune.
+    """
     conn = _FakeConn(
         results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
         raises={
@@ -478,11 +433,12 @@ def test_an_access_history_confirmed_denial_stays_prunable() -> None:
 
 
 def test_a_floor_failure_after_a_successful_traversal_returns_the_traversal() -> None:
-    """Before #1228, a floor failure AFTER a successful GET_LINEAGE traversal
-    raised `WarehouseLineageUnavailableError`, discarding `top.edges` outright.
-    `prunable=False` (#1220) exists precisely so this can descend instead: the
-    traversal's own edges are real, observed lineage — losing them to an
-    unrelated floor blip is worse than returning them degraded."""
+    """Before #1228, a floor failure AFTER a successful GET_LINEAGE traversal raised
+    `WarehouseLineageUnavailableError`, discarding `top.edges` outright. `prunable=False`
+    (#1220) exists precisely so this can descend instead: the traversal's own edges are real,
+    observed lineage — losing them to an unrelated floor blip is worse than returning them
+    degraded.
+    """
     conn = _GetLineageConn(
         {
             ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
@@ -503,12 +459,9 @@ def test_a_floor_failure_after_a_successful_traversal_returns_the_traversal() ->
 
 
 def test_a_confirmed_floor_denial_after_a_successful_traversal_stays_prunable() -> None:
-    """Review finding on #1263: the first #1228 fix for this site marked EVERY
-    floor failure transient unconditionally. A CONFIRMED per-object denial on
-    OBJECT_DEPENDENCIES (a role permanently missing that one grant) recurs
-    identically every cycle, so treating it as transient would suspend the
-    snapshot prune FOREVER — the same failure the per-seed loop already guards
-    against. Only an UNCLASSIFIED failure (the sibling test above) may do that."""
+    """Review finding on #1263: the first #1228 fix for this site marked EVERY floor failure
+    transient unconditionally.
+    """
     conn = _GetLineageConn(
         {
             ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
@@ -524,21 +477,18 @@ def test_a_confirmed_floor_denial_after_a_successful_traversal_stays_prunable() 
     assert result.degraded_reason is not None
     assert "not authorized" in result.degraded_reason
     assert "transient" not in result.degraded_reason
-    # #1264: this floor denial fires AFTER a successful GET_LINEAGE traversal, so
-    # the message must name the tier that actually failed, not the one that just
-    # worked.
+    # #1264: this floor denial fires AFTER a successful GET_LINEAGE traversal, so the message must
+    # name the tier that actually failed, not the one that just worked.
     assert "OBJECT_DEPENDENCIES" in result.degraded_reason
     assert "GET_LINEAGE grant" not in result.degraded_reason
 
 
 def test_a_confirmed_floor_denial_stays_non_prunable_if_the_traversal_was_already_partial() -> None:
-    """Review finding on #1263 (caught live, reproduced independently by multiple
-    review passes): the fix above folded in the floor's OWN classification but
-    dropped `partial` — the flag `fetch_edges` already set moments earlier from
-    an UNCLASSIFIED failure on a different seed's GET_LINEAGE call. A traversal
-    that is itself known-incomplete must stay non-prunable no matter how the
-    unrelated floor failure classifies — combining "confirmed floor denial" with
-    "already-partial top tier" must NOT cancel out to prunable=True."""
+    """Review finding on #1263 (caught live, reproduced independently by multiple review passes):
+    the fix above folded in the floor's OWN classification but dropped `partial` — the flag
+    `fetch_edges` already set moments earlier from an UNCLASSIFIED failure on a different seed's
+    GET_LINEAGE call.
+    """
 
     class _OneSeedUnclassifiedFails(_GetLineageConn):
         def execute(self, statement: Any, params: dict[str, Any] | None = None) -> _Result:
@@ -582,7 +532,8 @@ def test_source_tag_is_snowflake() -> None:
 
 def _not_authorized_error() -> Exception:
     """The live shape: role lacks the ACCOUNT_USAGE grant → 002003 compilation error
-    (Snowflake deliberately blurs missing-object and missing-grant into one message)."""
+    (Snowflake deliberately blurs missing-object and missing-grant into one message).
+    """
 
     class _ProgrammingError(Exception):
         sqlstate = "02000"
@@ -596,7 +547,8 @@ def _not_authorized_error() -> Exception:
 def test_not_authorized_tier_descends_instead_of_aborting() -> None:
     """A least-privilege role (e.g. SNOWFLAKE.GOVERNANCE_VIEWER) can read the lower
     tiers while the GET_LINEAGE probe's table is denied — the denied tier must skip
-    with a reason, not abort the tiers the role CAN read (#902)."""
+    with a reason, not abort the tiers the role CAN read (#902).
+    """
     conn = _FakeConn(
         results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
         raises={
@@ -619,7 +571,8 @@ def test_not_authorized_tier_descends_instead_of_aborting() -> None:
 def test_fully_denied_account_is_unavailable_not_empty() -> None:
     """Every tier denied (no ACCOUNT_USAGE grant at all — the live DATAQ_READER
     shape): the pull reports unavailable so the refresh freezes the cache; it must
-    never read as a confident empty graph (#828)."""
+    never read as a confident empty graph (#828).
+    """
     conn = _FakeConn(
         raises={
             "GET_LINEAGE": _not_authorized_error(),
@@ -645,7 +598,8 @@ def test_access_history_query_is_scoped_and_bound() -> None:
     """The scope lives in the SQL (contractual, #908): both endpoints Table-domain,
     both in the connection's database via a BOUND param (no interpolation), and a
     bounded lookback — the unscoped account-wide sweep is what shipped Snowpark
-    scratch and a dropped schema as browsable assets."""
+    scratch and a dropped schema as browsable assets.
+    """
     conn = _access_history_conn([])
     SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
     sql = next(s for s in conn.executed if "ACCESS_HISTORY ah" in s)
@@ -693,10 +647,6 @@ def test_missing_database_is_unavailable() -> None:
 def test_snowpark_ephemera_rows_never_become_edges() -> None:
     """The #912 contract, rewritten: a SNOWPARK_TEMP_* identity may never appear as an
     edge endpoint — but a COMPLETE chain through one is stitched, not dropped.
-
-    Before #912 both halves of this test were "no edge at all", which is why a real
-    dependency could vanish: `ORDERS → TEMP → ORDERS_WIDE` rendered ORDERS_WIDE with
-    zero upstreams, indistinguishable from genuinely unlineaged.
     """
     rows = [
         # a complete chain: physical → scratch → physical
@@ -727,7 +677,8 @@ def test_snowpark_ephemera_rows_never_become_edges() -> None:
 def test_column_pairs_extracted_from_direct_sources() -> None:
     """objects_modified[].columns[].directSources → column_pairs (#908). The pair
     attaches ONLY to the edge whose upstream is the direct source's table — a second
-    source table in the same statement belongs to its own edge's row."""
+    source table in the same statement belongs to its own edge's row.
+    """
     cols_json = json.dumps(
         [
             {
@@ -759,7 +710,8 @@ def test_column_pairs_extracted_from_direct_sources() -> None:
 def test_real_capture_empty_direct_sources_yield_no_pairs() -> None:
     """The REAL captured Enterprise payload (2026-07-18): every historical write is
     COPY-from-stage, so every ``columns[].directSources`` is EMPTY — the extractor
-    must yield zero pairs from it, never fabricate (the #823 discipline)."""
+    must yield zero pairs from it, never fabricate (the #823 discipline).
+    """
     raw = json.loads((_FIXTURES / "sf_access_history_columns_projected.json").read_text())
     provider = SnowflakeLineageProvider()
     ns = f"snowflake://{normalize_snowflake_account(_ACCOUNT)}"
@@ -781,9 +733,7 @@ def test_malformed_columns_json_never_breaks_the_pull() -> None:
 
 
 def test_quoted_database_config_scopes_by_exact_inner_case() -> None:
-    # A quoted database ("DataQ_Db") is stored by ACCOUNT_USAGE in its exact inner
-    # case — blanket .upper() would exact-match nothing and turn a config nuance into
-    # a silently empty (and prunable!) graph (#911 review).
+    # A quoted database ("DataQ_Db") is stored by ACCOUNT_USAGE in its exact inner case.
     conn = _FakeConn(
         results={"ACCESS_HISTORY ah": [], "OBJECT_DEPENDENCIES": []},
         raises={"GET_LINEAGE": _feature_unsupported_error()},
@@ -842,15 +792,7 @@ def test_column_pairs_capped_per_edge() -> None:
 
 
 def test_a_non_table_row_mid_stream_skips_only_itself() -> None:
-    """A FUNCTION/PROCEDURE endpoint must skip THAT ROW, not stop the scan.
-
-    The spike killed nothing when `continue` became `break` — because every
-    fixture that exercised the filter had its non-table row at the END, where the
-    two are indistinguishable. Put one in the MIDDLE and the mutant silently drops
-    every remaining edge: not an error, not an empty graph, just a lineage graph
-    quietly missing its tail. That is the #845-class omission — asserting "nothing
-    feeds this view" when we simply stopped looking.
-    """
+    """A FUNCTION/PROCEDURE endpoint must skip THAT ROW, not stop the scan."""
     rows = [
         ("DB", "S", "UP_A", "TABLE", "DB", "S", "DOWN_A", "VIEW"),
         # the poison pill, deliberately BETWEEN two good rows
@@ -881,7 +823,8 @@ def test_both_endpoints_must_be_table_like_not_just_one() -> None:
     """The domain guard is `or` over the NEGATIVES — i.e. both endpoints must be
     table-like. Flipping it to `and` admits an edge with one FUNCTION endpoint,
     which materializes a stored procedure as a data asset (the class of bug that
-    put Stages in the graph on the first live pull)."""
+    put Stages in the graph on the first live pull).
+    """
     rows = [("DB", "S", "SOME_FN", "FUNCTION", "DB", "S", "DOWN", "TABLE")]
     conn = _FakeConn(
         results={"OBJECT_DEPENDENCIES": rows},
@@ -895,13 +838,7 @@ def test_both_endpoints_must_be_table_like_not_just_one() -> None:
 
 
 def test_a_half_parseable_access_history_row_is_dropped_whole() -> None:
-    """`up is not None AND down is not None` — an `or` here emits a half-edge.
-
-    A non-3-part object name yields `None` from `_identity_from_qualified`. With
-    `or`, a row whose SOURCE parses but whose TARGET does not still passes the
-    guard and builds an edge with a None endpoint — a malformed edge written to
-    `lineage_edges`, which is worse than the dropped row it replaces.
-    """
+    """`up is not None AND down is not None` — an `or` here emits a half-edge."""
     rows = [
         # target is a 2-part name → unparseable; source is fine
         ("DB.S.GOOD_SOURCE", "NOT_THREE_PART", None),
@@ -923,14 +860,7 @@ def test_a_half_parseable_access_history_row_is_dropped_whole() -> None:
 
 
 def test_the_top_tier_success_reports_its_own_tier_and_no_skips() -> None:
-    """The ladder tests assert DESCENT; this one asserts the shape of a top-tier win.
-
-    It used to stand in for the deferred traversal via a monkeypatched
-    `_from_get_lineage`, with a docstring saying the branch was unreachable in
-    production. Since #892 the branch is REAL, so the test rides the real captured
-    payload instead: `tier` is rendered on the asset graph ("view-level only",
-    "current as of…"), and a top-tier win must name itself and apologise for nothing.
-    """
+    """The ladder tests assert DESCENT; this one asserts the shape of a top-tier win."""
     conn = _GetLineageConn(
         {
             ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
@@ -944,20 +874,13 @@ def test_the_top_tier_success_reports_its_own_tier_and_no_skips() -> None:
     assert result.skipped_tiers == ()  # nothing was skipped — the first tier answered
     assert result.degraded_reason is None  # and nothing to apologise for
     assert result.edges
-    # The top tier no longer returns early (#1110 review): GET_LINEAGE is bounded
-    # (500 seeds, distance 2) while OBJECT_DEPENDENCIES is not, so the floor IS always
-    # consulted and unioned in underneath a top-tier win — the fake's floor answers
-    # empty here, so the union changes nothing about the asserted edges above.
+    # The top tier no longer returns early (#1110 review): GET_LINEAGE is bounded (500 seeds,
+    # distance 2) while OBJECT_DEPENDENCIES is not.
     assert any("OBJECT_DEPENDENCIES" in sql for sql in conn.executed)
 
 
 def test_sqlstate_is_read_through_the_sqlalchemy_wrapper() -> None:
-    """SQLAlchemy wraps the driver error; the SQLSTATE lives on `.orig`.
-
-    Untested until now, and it is the STRUCTURED half of the edition-gate check —
-    the message-text half would mask its loss on any error whose text happens to
-    match, so a broken `.orig` walk could sit here silently.
-    """
+    """SQLAlchemy wraps the driver error; the SQLSTATE lives on `.orig`."""
 
     class _DriverError(Exception):
         sqlstate = "0A000"
@@ -986,14 +909,7 @@ def _sf(schema: str, table: str, database: str = "DATAQ_DB") -> str:
 
 
 def test_get_lineage_traversal_builds_the_real_captured_chain() -> None:
-    """The real DOWNSTREAM capture of `RETAIL.ORDERS_HEADER` (distance 2), byte-for-byte.
-
-    The load-bearing fact the capture settles: **each row is a DIRECT source→target
-    edge**, and `distance` is hops-from-seed. Two of these three rows are distance-2 and
-    neither has the seed as an endpoint — reading `distance` as "the seed depends on
-    this" would fabricate ORDERS_HEADER→MART_* edges the warehouse never asserted, which
-    is why the expected set is pinned exactly rather than by containment.
-    """
+    """The real DOWNSTREAM capture of `RETAIL.ORDERS_HEADER` (distance 2), byte-for-byte."""
     conn = _GetLineageConn(
         {
             ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
@@ -1018,7 +934,8 @@ def test_get_lineage_traversal_builds_the_real_captured_chain() -> None:
 def test_get_lineage_skips_the_masked_row_in_the_real_capture() -> None:
     """The real UPSTREAM capture of `STG_ORDERS` carries a redacted endpoint: `***` name
     parts, `source_status='MASKED'`, domain STAGE. Neither a `***` asset nor a stage may
-    reach the graph — only the one real edge does."""
+    reach the graph — only the one real edge does.
+    """
     conn = _GetLineageConn(
         {("DATAQ_DB.ANALYTICS_STG.STG_ORDERS", "UPSTREAM"): _get_lineage_rows("gl_up_stg_orders")},
         results={"INFORMATION_SCHEMA.TABLES": [("ANALYTICS_STG", "STG_ORDERS")]},
@@ -1032,15 +949,7 @@ def test_get_lineage_skips_the_masked_row_in_the_real_capture() -> None:
 
 
 def test_a_masked_row_is_skipped_even_when_its_domain_is_table_like() -> None:
-    """The mutation-killing half of the masked-row contract.
-
-    The REAL masked row happens to be a STAGE, so the domain allowlist drops it anyway
-    — removing the mask check outright leaves the fixture test above green, i.e. that
-    test alone proves nothing about masking. GET_LINEAGE redacts objects of ANY domain
-    the role cannot see, so this row is the real shape (`***` + MASKED) with a
-    table-like domain: synthetic on purpose, and the only thing standing between a
-    redacted object and a `***.***.***` asset row.
-    """
+    """The mutation-killing half of the masked-row contract."""
     masked = (
         "***", "***", "***", "TABLE", "MASKED", None,
         "DATAQ_DB", "RETAIL", "T", "TABLE", "ACTIVE", None,
@@ -1061,10 +970,6 @@ def test_a_non_table_domain_row_mid_stream_skips_only_itself() -> None:
     """The #898 shape, ported to this tier: a STAGE endpoint must skip THAT ROW, not
     stop the scan. Put the poison pill in the MIDDLE — at the end, `continue` and
     `break` are indistinguishable and a mutant that silently drops the tail survives.
-
-    The REAL captured STAGE row is also MASKED, so the mask check retires it before the
-    domain guard ever runs; this ACTIVE stage (Snowflake reports one whenever the role
-    CAN see it) is what exercises the guard at all.
     """
     rows = [
         (
@@ -1092,7 +997,8 @@ def test_a_non_table_domain_row_mid_stream_skips_only_itself() -> None:
 def test_a_row_with_a_null_name_part_and_a_self_edge_are_both_dropped() -> None:
     """Two malformed shapes that must never reach `assets`: a NULL name part (which
     would build a `DATAQ_DB.None.T` identity — `format_snowflake_name` stringifies
-    whatever it is handed) and a self-edge (an in-place rebuild, not lineage)."""
+    whatever it is handed) and a self-edge (an in-place rebuild, not lineage).
+    """
     rows = [
         (
             "DATAQ_DB", None, "SRC", "TABLE", "ACTIVE", None,
@@ -1115,16 +1021,10 @@ def test_a_row_with_a_null_name_part_and_a_self_edge_are_both_dropped() -> None:
 
 
 def test_an_unclassified_failure_on_the_first_call_now_descends_the_ladder() -> None:
-    """Flips the pin this test used to encode (#1109): the old body asserted that an
-    unclassified error on the FIRST GET_LINEAGE call propagates and fails the WHOLE
-    pull — a deliberate carry-over from the pre-#892 single-probe shape, where one
-    call and "the whole tier" were the same thing. #892 made the tier a per-seed
-    traversal of up to 2xN calls (N = seeds), so a transient blip on call 1 of a
-    thousand now costs a graph the floor tier would have answered fine — sharper than
-    the old contract intended, hence the flip: this tier now skips (a classified
-    reason, exception TYPE only per #902) exactly like the seed-enumeration failure
-    above, and the floor/ACCESS_HISTORY union still answers instead of the pull
-    raising.
+    """Flips the pin this test used to encode (#1109): the old body asserted that an unclassified
+    error on the FIRST GET_LINEAGE call propagates and fails the WHOLE pull — a deliberate
+    carry-over from the pre-#892 single-probe shape, where one call and "the whole tier" were
+    the same thing.
     """
     conn = _GetLineageConn(
         {},
@@ -1148,20 +1048,16 @@ def test_an_unclassified_failure_on_the_first_call_now_descends_the_ladder() -> 
     assert "connection reset" not in result.degraded_reason
     # The tier aborted on the very first call — the second seed was never tried.
     assert len([sql for sql in conn.executed if "GET_LINEAGE" in sql]) == 1
-    # …and descending is only HALF the fix (#1109 review). This result is a floor-only
-    # view of a database whose GET_LINEAGE tier we simply could not read: absence of a
-    # top-tier edge here is not evidence it is gone. Marked non-prunable so the snapshot
-    # refresh accretes instead of wiping the previously-cached richer graph on a blip.
+    # …and descending is only HALF the fix (#1109 review).
     assert result.prunable is False
     assert "transient" in reason  # and an operator can tell a blip from an edition gate
 
 
 def test_a_confirmed_first_call_failure_stays_prunable() -> None:
-    """The other half of #1109's review finding, and the reason `prunable` is not just
-    "did we descend": an EDITION GATE (or a missing grant) is a confirmed, structural
-    answer — this account will say the same thing next cycle, so the floor's graph IS
-    the current truth and the refresh must still prune against it. Marking every descent
-    non-prunable would freeze a genuinely-removed dependency in the cache forever.
+    """The other half of #1109's review finding, and the reason `prunable` is not just "did we
+    descend": an EDITION GATE (or a missing grant) is a confirmed, structural answer — this
+    account will say the same thing next cycle, so the floor's graph IS the current truth and
+    the refresh must still prune against it.
     """
     conn = _GetLineageConn(
         {},
@@ -1178,11 +1074,10 @@ def test_a_confirmed_first_call_failure_stays_prunable() -> None:
 
 
 def test_a_transient_skip_and_a_dead_floor_report_both_halves() -> None:
-    """A total denial must still raise (never read as an empty graph) — and must say
-    what happened FIRST (#1109 review): with GET_LINEAGE blipped and the floor then
-    unreadable, the GET_LINEAGE half is the more diagnostic one ("the warehouse is
-    unhappy" vs "one view is unreadable"), and it was being dropped on the way out.
-    Both halves are constructed strings, so #902 still holds for the joined message.
+    """A total denial must still raise (never read as an empty graph) — and must say what happened
+    FIRST (#1109 review): with GET_LINEAGE blipped and the floor then unreadable, the
+    GET_LINEAGE half is the more diagnostic one ("the warehouse is unhappy" vs "one view is
+    unreadable"), and it was being dropped on the way out.
     """
     conn = _GetLineageConn(
         {},
@@ -1203,7 +1098,8 @@ def test_a_transient_skip_and_a_dead_floor_report_both_halves() -> None:
 def test_get_lineage_walks_both_directions_and_dedupes_across_seeds() -> None:
     """All three real captures at once. Every seed is walked UPSTREAM *and* DOWNSTREAM
     (an edge is observable from either end, and a role may see only one), and the same
-    edge observed from two seeds collapses to one."""
+    edge observed from two seeds collapses to one.
+    """
     conn = _GetLineageConn(
         {
             ("DATAQ_DB.ANALYTICS_STG.STG_ORDERS", "UPSTREAM"): _get_lineage_rows(
@@ -1240,7 +1136,8 @@ def test_get_lineage_walks_both_directions_and_dedupes_across_seeds() -> None:
 
 def test_get_lineage_query_binds_the_object_and_direction() -> None:
     """The seed name and direction are BOUND params, never interpolated — a table name
-    is warehouse-controlled text reaching a SQL string (the #428 rule)."""
+    is warehouse-controlled text reaching a SQL string (the #428 rule).
+    """
     conn = _GetLineageConn(
         {
             ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
@@ -1260,7 +1157,8 @@ def test_get_lineage_query_binds_the_object_and_direction() -> None:
 
 def test_get_lineage_seed_cap_truncates_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
     """Overflow walks the first N in catalog order and SAYS SO — a silently-capped
-    traversal reads as a complete graph (the no-silent-caps rule, ADR 0040 §5)."""
+    traversal reads as a complete graph (the no-silent-caps rule, ADR 0040 §5).
+    """
     monkeypatch.setenv("WAREHOUSE_LINEAGE_MAX_SEEDS", "1")
     get_settings.cache_clear()
     try:
@@ -1320,7 +1218,8 @@ def test_get_lineage_column_grain_rides_the_row_pair() -> None:
 def test_a_later_seed_failure_is_skipped_not_fatal() -> None:
     """The first call proved the feature exists, so a later seed failing is a per-object
     problem (dropped object, a revoked grant on one table): it skips and the rest of the
-    traversal still lands. Aborting would lose a whole graph over one table."""
+    traversal still lands. Aborting would lose a whole graph over one table.
+    """
 
     class _OneSeedFails(_GetLineageConn):
         def execute(self, statement: Any, params: dict[str, Any] | None = None) -> _Result:
@@ -1341,11 +1240,7 @@ def test_a_later_seed_failure_is_skipped_not_fatal() -> None:
     result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
     assert result.tier == LineageTier.SNOWFLAKE_GET_LINEAGE
     assert len(result.edges) == 3
-    # …but a partial SUCCESS is still partial (#1109 review). Before, the ONLY trace of
-    # the lost calls was a `get_lineage_seed_failures` structlog line — a run that lost
-    # a MAJORITY of its calls returned a normal top-tier result, and the snapshot
-    # refresh then pruned every edge those calls would have re-observed. Now it says so
-    # on the result, and declines to license the prune.
+    # …but a partial SUCCESS is still partial (#1109 review).
     partial = next(s for s in result.skipped_tiers if "traversal call(s) failed" in s)
     assert "2 of 4" in partial  # both directions of the one dead seed, out of 2 seeds x 2
     assert "transient" in partial
@@ -1354,15 +1249,9 @@ def test_a_later_seed_failure_is_skipped_not_fatal() -> None:
 
 
 def test_a_confirmed_per_seed_denial_is_reported_but_still_prunes() -> None:
-    """The seed-level counterpart of `test_a_confirmed_first_call_failure_stays_prunable`,
-    and the sharpest edge of the whole `prunable` mechanism (#1109 review): a role that
-    cannot resolve ONE object fails that object on EVERY refresh, forever. Counting a
-    confirmed per-object denial as transient would therefore suspend the snapshot prune
-    permanently — dropped views frozen in the cache for good, a failure that never
-    self-heals, strictly worse than the blip this mechanism exists to survive.
-
-    So the denial is REPORTED (an operator wants to see it) but stays prunable, and the
-    reason says which kind it was rather than mislabelling it a blip.
+    """The seed-level counterpart of `test_a_confirmed_first_call_failure_stays_prunable`, and the
+    sharpest edge of the whole `prunable` mechanism (#1109 review): a role that cannot resolve
+    ONE object fails that object on EVERY refresh, forever.
     """
 
     class _OneSeedDenied(_GetLineageConn):
@@ -1399,7 +1288,8 @@ def test_a_clean_full_traversal_is_prunable_and_undegraded() -> None:
     """The control for the two tests above — without it, `prunable is False` proves
     nothing (a field hard-wired to False would satisfy them both). A traversal where
     every call landed is a complete observation of the tier: no skip note, no degrade,
-    and the snapshot prune stays armed."""
+    and the snapshot prune stays armed.
+    """
     conn = _GetLineageConn(
         {
             ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
@@ -1415,13 +1305,9 @@ def test_a_clean_full_traversal_is_prunable_and_undegraded() -> None:
 
 
 def test_get_lineage_only_scratch_traversal_descends_not_a_confident_empty() -> None:
-    """#1110 review, item 1: the PRE-stitch raw GET_LINEAGE rows can be non-empty purely
-    from a dead-end SNOWPARK_TEMP_* hop (a real row, gone before the stitch completes),
-    while the POST-stitch edge set is empty. The emptiness check must run on the
-    post-stitch set — checking `raw` passes the `not len(raw)` guard and returns a
-    confident `()` as a top-tier win, which under this snapshot-regime provider prunes
-    the floor's persisted graph on the next refresh (exactly what the guard exists to
-    prevent).
+    """#1110 review, item 1: the PRE-stitch raw GET_LINEAGE rows can be non-empty purely from a
+    dead-end SNOWPARK_TEMP_* hop (a real row, gone before the stitch completes), while the POST-
+    stitch edge set is empty.
     """
     rows = [
         (
@@ -1444,7 +1330,8 @@ def test_get_lineage_only_scratch_traversal_descends_not_a_confident_empty() -> 
 def test_get_lineage_stitches_the_scratch_it_traverses_through() -> None:
     """GET_LINEAGE can walk straight through Snowpark scratch too, so the #912 stitch
     runs on BOTH tiers — a per-tier copy is how the two column-pair caps drifted apart
-    in the first place (#911)."""
+    in the first place (#911).
+    """
     rows = [
         (
             "DATAQ_DB", "RETAIL", "ORDERS", "TABLE", "ACTIVE", None,
@@ -1469,7 +1356,8 @@ def test_the_real_snowpark_capture_materializes_no_scratch_assets() -> None:
     """The captured 365d Snowpark rows, unaugmented: three NULL-source stage uploads and
     three STAGE→TABLE scratch hops, with no physical endpoint anywhere (the PERF writes
     aged out of ACCESS_HISTORY). Nothing real can be attached to, so nothing is emitted
-    — and critically, no `SNOWPARK_TEMP_*` identity is either."""
+    — and critically, no `SNOWPARK_TEMP_*` identity is either.
+    """
     result = SnowflakeLineageProvider().fetch_edges(
         _access_history_conn(_snowpark_rows()), connection_config=_CONFIG
     )
@@ -1477,15 +1365,7 @@ def test_the_real_snowpark_capture_materializes_no_scratch_assets() -> None:
 
 
 def test_the_real_snowpark_chain_stitches_once_its_endpoints_are_present() -> None:
-    """The #912 acceptance criterion, on the real payload.
-
-    The capture's own chain is `SNOWPARK_TEMP_STAGE_TV3UJWGFTG →
-    SNOWPARK_TEMP_TABLE_KJ20JIM48W` — a genuine Snowpark materialization carrying its
-    real `columns` blob. Its physical endpoints fell out of the retention window, so
-    they are added here as two MINIMAL SYNTHETIC rows of exactly the captured shape
-    (3-part name, 3-part name, columns blob). Everything between them is real, and the
-    collapse is what the ticket asks for: `A → TEMP → TEMP → B` ⇒ `A → B`.
-    """
+    """The #912 acceptance criterion, on the real payload."""
     real = [
         row for row in _snowpark_rows() if row[0] == "DATAQ_DB.PERF.SNOWPARK_TEMP_STAGE_TV3UJWGFTG"
     ]
@@ -1508,7 +1388,8 @@ def test_the_real_snowpark_chain_stitches_once_its_endpoints_are_present() -> No
 def _direct_sources(written: str, source_column: str, source_table: str) -> str:
     """One `objects_modified[].columns` blob of the captured shape, with a populated
     `directSources` (every REAL capture's is empty — see
-    `test_real_capture_empty_direct_sources_yield_no_pairs`)."""
+    `test_real_capture_empty_direct_sources_yield_no_pairs`).
+    """
     return json.dumps(
         [
             {
@@ -1527,7 +1408,8 @@ def _direct_sources(written: str, source_column: str, source_table: str) -> str:
 
 def test_column_pairs_compose_across_a_scratch_hop() -> None:
     """Both hops carry directSources → the composed pair joins over the bridging scratch
-    column, so a stitched edge keeps the column grain the two hops jointly evidence."""
+    column, so a stitched edge keeps the column grain the two hops jointly evidence.
+    """
     rows = [
         (
             "DATAQ_DB.RETAIL.ORDERS_HEADER",
@@ -1551,10 +1433,11 @@ def test_column_pairs_compose_across_a_scratch_hop() -> None:
 
 def test_a_table_grain_hop_makes_the_stitched_edge_table_grain() -> None:
     """The second hop reports no column sources — the REAL captured shape, where every
-    `directSources` is empty. Composition must degrade to table grain, never carry the
-    first hop's pairs through as if they described the whole chain: that would claim
-    `SUBTOTAL → TMP_TOTAL` is a mapping into ORDERS_WIDE, about which the composed edge
-    has no evidence at all."""
+    `directSources` is empty. Composition must degrade to table grain, never carry the first
+    hop's pairs through as if they described the whole chain: that would claim `SUBTOTAL →
+    TMP_TOTAL` is a mapping into ORDERS_WIDE, about which the composed edge has no evidence at
+    all.
+    """
     rows = [
         (
             "DATAQ_DB.RETAIL.ORDERS_HEADER",
@@ -1593,12 +1476,6 @@ def test_a_chain_past_the_depth_cap_is_dropped_and_counted(
     """Bounded against scratch chains (#912 AC-2). Over-depth drops the edge — but the
     COUNTER is the point: the pre-#912 drop was silent, and establishing whether it was
     biting took manual archaeology against prod.
-
-    The count is pinned EXACTLY at 1 (#1110 review): this is a single linear chain with
-    one over-depth path, so it must be counted once — `_resolve` used to count it when
-    the depth cap was exceeded, and `stitched_edges` counted it AGAIN when that same
-    chain then resolved to nothing, logging 2 for one dropped chain. A `>= 1` assertion
-    cannot see that regression; only the exact count can.
     """
     with _captured_lineage_logs(monkeypatch) as logs:
         result = SnowflakeLineageProvider().fetch_edges(
@@ -1613,7 +1490,8 @@ def test_a_chain_past_the_depth_cap_is_dropped_and_counted(
 
 def test_the_stitch_counters_are_logged_once_per_pull(monkeypatch: pytest.MonkeyPatch) -> None:
     """`ephemeral_rows_seen` / `stitched_edges` / `ephemeral_chains_dropped` — the
-    explicit ask on #912, following the `dropped_names` precedent."""
+    explicit ask on #912, following the `dropped_names` precedent.
+    """
     rows = [
         ("DATAQ_DB.RETAIL.ORDERS", "DATAQ_DB.PERF.SNOWPARK_TEMP_TABLE_X", None),
         ("DATAQ_DB.PERF.SNOWPARK_TEMP_TABLE_X", "DATAQ_DB.PERF.ORDERS_WIDE", None),
@@ -1632,7 +1510,8 @@ def test_the_stitch_counters_are_logged_once_per_pull(monkeypatch: pytest.Monkey
 
 def test_a_scratch_cycle_terminates_without_emitting_anything() -> None:
     """A malformed/looping payload must not hang the worker: the memo is seeded BEFORE
-    the recursion (the dbt port's cycle guard), so a back-edge resolves to nothing."""
+    the recursion (the dbt port's cycle guard), so a back-edge resolves to nothing.
+    """
     rows = [
         ("DATAQ_DB.RETAIL.A", "DATAQ_DB.PERF.SNOWPARK_TEMP_TABLE_1", None),
         ("DATAQ_DB.PERF.SNOWPARK_TEMP_TABLE_1", "DATAQ_DB.PERF.SNOWPARK_TEMP_TABLE_2", None),
@@ -1646,7 +1525,8 @@ def test_a_scratch_cycle_terminates_without_emitting_anything() -> None:
 
 def test_a_scratch_fan_out_reattaches_every_physical_descendant() -> None:
     """One scratch object feeding two real tables yields two stitched edges — the union
-    of `up(TEMP) x down(TEMP)` the ticket describes, not just the first."""
+    of `up(TEMP) x down(TEMP)` the ticket describes, not just the first.
+    """
     rows = [
         ("DATAQ_DB.RETAIL.ORDERS", "DATAQ_DB.PERF.SNOWPARK_TEMP_TABLE_X", None),
         ("DATAQ_DB.PERF.SNOWPARK_TEMP_TABLE_X", "DATAQ_DB.PERF.WIDE_A", None),

@@ -11,14 +11,8 @@ import {
 import { ResponsiveChart } from '../charts/ResponsiveChart';
 
 /**
- * Quality Trends (prototype `QualityTrends`): succeeded vs failed runs per day
- * over the selected window, as a stacked bar. Maps the summary's `trend` (a
- * zero-filled daily series, ADR 0022) onto the run-status chart palette so the
- * bars read the same green/red as the run-status tags elsewhere.
- *
- * Rendered in a light card rather than the prototype's dark panel — the app's
- * theme is a light canvas (theme.ts) and a single dark card would fight it; the
- * data, palette, and legend match the prototype.
+ * Quality Trends (prototype `QualityTrends`): succeeded vs failed runs per day over the selected
+ * window, as a stacked bar.
  */
 interface QualityTrendsProps {
   trend: TrendPoint[];

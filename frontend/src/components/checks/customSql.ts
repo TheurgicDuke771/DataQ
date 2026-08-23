@@ -1,12 +1,4 @@
-/**
- * Client-side mirror of the backend custom-SQL guardrail (ADR 0019) for inline
- * editor feedback. The backend `custom_sql.validate_query` is the authoritative
- * boundary (and runs with extra="forbid" + a least-privilege role); this is a
- * lighter, best-effort pre-check so the editor flags an obviously non-read-only
- * or multi-statement query before the save round-trips to a 422.
- *
- * Kept pure (no React) so it's unit- and mutation-testable in isolation.
- */
+/** Client-side mirror of the backend custom-SQL guardrail (ADR 0019) for inline editor feedback. */
 
 /** The GX expectation a custom-SQL check maps to (ADR 0019). */
 export const CUSTOM_SQL_EXPECTATION_TYPE = 'unexpected_rows_expectation';
@@ -16,10 +8,8 @@ export const CUSTOM_SQL_QUERY_KEY = 'unexpected_rows_query';
 export const isCustomSql = (expectationType: string | undefined): boolean =>
   expectationType === CUSTOM_SQL_EXPECTATION_TYPE;
 
-// State-mutating / proc-invoking statement keywords — a read-only check query
-// must contain none of them (as a bareword, after strings/comments are stripped).
-// `comment` / `replace` are omitted (common column name / `replace()` function),
-// matching the backend set.
+// State-mutating / proc-invoking statement keywords — a read-only check query must contain none of
+// them (as a bareword, after strings/comments are stripped).
 export const FORBIDDEN_KEYWORDS = new Set([
   'insert',
   'update',
@@ -55,10 +45,8 @@ export const FORBIDDEN_KEYWORDS = new Set([
 ]);
 
 /**
- * Replace comments and string literals with spaces in a single left-to-right pass
- * so neither can mask the other. Backtick is intentionally NOT a quote (Snowflake
- * / Unity Catalog don't delimit strings with it). Returns `null` if a string or
- * block comment is left unterminated — the caller fails closed.
+ * Replace comments and string literals with spaces in a single left-to-right pass so neither can
+ * mask the other.
  */
 function stripNonCode(sql: string): string | null {
   let out = '';
@@ -110,10 +98,7 @@ const TRAILING = /[\s;]+$/;
 const LEADING_KEYWORD = /^[\s(]*([a-zA-Z]+)/;
 const WORD = /[a-zA-Z_]+/g;
 
-/**
- * Best-effort read-only / single-statement check. Returns an error message, or
- * `null` if the query looks acceptable. The backend is authoritative.
- */
+/** Best-effort read-only / single-statement check. */
 export function validateCustomSqlQuery(query: string | undefined): string | null {
   if (!query || !query.trim()) return 'Enter a SQL query.';
 

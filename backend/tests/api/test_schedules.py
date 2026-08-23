@@ -1,10 +1,4 @@
-"""Schedule endpoint tests (TestClient + real Postgres).
-
-Mirrors the trigger-binding tests: get_db is overridden to the shared test
-session, auth runs in dev-bypass mode (conftest) so the caller is the dev user,
-and suites created via the API are owned by that user. Skips without
-TEST_DATABASE_URL.
-"""
+"""Schedule endpoint tests (TestClient + real Postgres)."""
 
 import uuid
 from collections.abc import Iterator
@@ -98,7 +92,8 @@ def test_create_rejects_bad_cron(client: TestClient, db_session: Any) -> None:
 
 def test_create_rejects_impossible_calendar_cron(client: TestClient, db_session: Any) -> None:
     """A syntactically-valid but unsatisfiable cron (Feb 30) is a clean 422, not a
-    500 — croniter.is_valid passes it but it never fires."""
+    500 — croniter.is_valid passes it but it never fires.
+    """
     suite_id = _owned_suite(client, _connection(db_session).id)
     resp = client.post("/api/v1/schedules", json=_payload(suite_id, cron="0 0 30 2 *"))
     assert resp.status_code == 422
@@ -116,9 +111,8 @@ def test_create_rejects_unknown_timezone(client: TestClient, db_session: Any) ->
 def test_create_on_inaccessible_suite_is_404(
     client: TestClient, db_session: Any, as_role: Any
 ) -> None:
-    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace
-    # admin since #741, and a workspace admin is implicit `admin` on EVERY suite
-    # (ADR 0027) — so it can never be "a user without access to this suite".
+    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace admin since #741,
+    # and a workspace admin is implicit `admin` on EVERY suite (ADR 0027).
     _, headers = as_role("member")
     suite = _unowned_suite(db_session, _connection(db_session))
     resp = client.post("/api/v1/schedules", json=_payload(str(suite.id)), headers=headers)
@@ -129,9 +123,8 @@ def test_create_on_inaccessible_suite_is_404(
 def test_create_with_view_only_is_forbidden(
     client: TestClient, db_session: Any, as_role: Any
 ) -> None:
-    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace
-    # admin since #741, and a workspace admin is implicit `admin` on EVERY suite
-    # (ADR 0027) — so it can never be "a user without access to this suite".
+    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace admin since #741,
+    # and a workspace admin is implicit `admin` on EVERY suite (ADR 0027).
     member, headers = as_role("member")
     suite = _unowned_suite(db_session, _connection(db_session))
     db_session.add(Share(suite_id=suite.id, user_id=member.id, permission="view"))
@@ -144,9 +137,8 @@ def test_create_with_view_only_is_forbidden(
 def test_list_is_scoped_to_accessible_suites(
     client: TestClient, db_session: Any, as_role: Any
 ) -> None:
-    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace
-    # admin since #741, and a workspace admin is implicit `admin` on EVERY suite
-    # (ADR 0027) — so it can never be "a user without access to this suite".
+    # A genuine MEMBER principal: the ambient dev-bypass identity is a workspace admin since #741,
+    # and a workspace admin is implicit `admin` on EVERY suite (ADR 0027).
     member, headers = as_role("member")
     conn = _connection(db_session)
     mine = _owned_suite(client, conn.id)
@@ -176,9 +168,8 @@ def test_list_is_scoped_to_accessible_suites(
 def test_workspace_admin_lists_schedules_workspace_wide(
     client: TestClient, db_session: Any, make_workspace_admin: Any
 ) -> None:
-    # A workspace-admin's schedules list spans every suite (ADR 0027, #488),
-    # mirroring the REST suites/runs/dashboard visibility — including a schedule
-    # on a suite they neither own nor are shared on.
+    # A workspace-admin's schedules list spans every suite (ADR 0027, #488), mirroring the REST
+    # suites/runs/dashboard visibility.
     conn = _connection(db_session)
     theirs = _unowned_suite(db_session, conn)
     db_session.add(

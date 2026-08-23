@@ -1,23 +1,4 @@
-"""ADLS Gen2 (Azure Data Lake Storage) connection adapter.
-
-A flat-file datasource (CLAUDE.md §4): DQ checks run against files in a
-container. Week 2 ships only the `ConnectionAdapter` seam (config validation +
-connectivity `test`); the GX pandas/ABFS `CheckRunner` that reads the files is a
-Week-3 concern.
-
-**Auth — v1 supports SAS only.** The roadmap lists managed-identity *and* SAS,
-but managed identity has no stored secret and is only meaningfully testable once
-DataQ runs on Azure with an ambient identity — so it (and the broader
-``connections.secret_ref`` nullability change) is deferred to Week 7. A
-``managed_identity`` config is accepted by the schema but rejected with a clear
-message in v1; use a SAS token (held in the SecretStore).
-
-``test`` builds a ``BlobServiceClient`` from the account URL + SAS and reads the
-container's properties — a green test means the endpoint is reachable, the SAS
-authenticates, and the container exists. The Azure SDK is imported lazily (per
-``core/secrets.py``) so non-ADLS deployments don't pay the import cost; like the
-other adapters it runs live and fails-soft pending real credentials.
-"""
+"""ADLS Gen2 (Azure Data Lake Storage) connection adapter."""
 
 from __future__ import annotations
 
@@ -33,12 +14,7 @@ _TEST_TIMEOUT_SECONDS = 10
 
 
 class AdlsConfig(BaseModel):
-    """Non-secret ADLS Gen2 connection config (the SAS token comes from secrets).
-
-    Maps from ``Connection.config``. ``account_url`` is the storage endpoint
-    (e.g. ``https://<account>.blob.core.windows.net``); ``container`` is the
-    filesystem. The SAS token is resolved from the SecretStore at test time.
-    """
+    """Non-secret ADLS Gen2 connection config (the SAS token comes from secrets)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -73,32 +49,19 @@ class AdlsConnectionAdapter:
         return AdlsConfig.model_validate(raw)
 
     def credential_expiry(self, raw: dict[str, Any], secret: str, **_: Any) -> datetime | None:
-        """When this connection's SAS stops working (#838), or ``None``.
-
-        The credential IS the expiry notice — a SAS prints `se=` in its own text —
-        so this is a read, not an estimate. It is exactly this connection type
-        whose silent expiry left prod lineage dark for six days (#828).
-        """
+        """When this connection's SAS stops working (#838), or ``None``."""
         return azure_sas_expiry(secret)
 
     def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
-        """Read the container's properties via SAS; raise on any failure.
-
-        ``secret`` is the SAS token. Retries are disabled so an auth/endpoint
-        failure surfaces immediately rather than after the SDK's retry budget.
-        Typed ``str | None`` only because the shared `ConnectionAdapter`
-        Protocol also serves credential-less types (#351) — an ADLS SAS is
-        always mandatory, so the guard below turns a missing one into a clear
-        error rather than a confusing SDK failure.
-        """
+        """Read the container's properties via SAS; raise on any failure."""
         if secret is None:
             raise ValueError("a credential is required to test an ADLS Gen2 connection")
         from azure.storage.blob import BlobServiceClient
 
         config = self.validate_config(raw)
-        # The azure-storage-blob surface is only partially typed (e.g. close() is
-        # unannotated); treat the client as dynamic so strict mypy doesn't flag
-        # no-untyped-call on the SDK methods.
+        # The azure-storage-blob surface is only partially typed (e.g. close() is unannotated);
+        # treat the client as dynamic so strict mypy doesn't flag no-untyped-call on the SDK
+        # methods.
         client: Any = BlobServiceClient(
             account_url=config.account_url,
             credential=secret,

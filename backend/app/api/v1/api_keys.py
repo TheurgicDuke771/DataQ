@@ -1,10 +1,4 @@
-"""Personal access tokens (PATs) — mint / list / revoke (ADR 0026 phase 1, #461).
-
-User-scoped: every route operates on the caller's own keys. The plaintext token
-appears exactly once, in the creation response; list/read return metadata only
-(prefix, expiry, revocation, last-used). Revocation is a soft mark
-(`revoked_at`), keeping the row for audit.
-"""
+"""Personal access tokens (PATs) — mint / list / revoke (ADR 0026 phase 1, #461)."""
 
 import uuid
 from datetime import datetime
@@ -63,7 +57,8 @@ def create_api_key(
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiKeyCreated:
     """Mint a PAT that authenticates as you (`Authorization: Bearer dq_live_…`)
-    on the REST API and `/mcp` alike, inheriting your per-suite access."""
+    on the REST API and `/mcp` alike, inheriting your per-suite access.
+    """
     key, token = svc.create_key(
         db, current_user, name=payload.name, expires_in_days=payload.expires_in_days
     )
@@ -93,5 +88,6 @@ def revoke_api_key(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     """Revocation is immediate (the key stops authenticating) and idempotent.
-    Another user's key 404s — indistinguishable from a nonexistent one."""
+    Another user's key 404s — indistinguishable from a nonexistent one.
+    """
     svc.revoke_key(db, current_user, key_id)

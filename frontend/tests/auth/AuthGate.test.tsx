@@ -71,15 +71,7 @@ describe('AuthGate', () => {
   });
 });
 
-/**
- * The `otp` gate (ADR 0032, #736).
- *
- * Four states, and the pair that is easy to conflate is the point of this block:
- * `probing` and `error` must BOTH stay off the sign-in form. Showing it while
- * probing makes every reload look like a sign-out; showing it during an API
- * outage invites the user to burn a single-use code at a server that cannot
- * check it.
- */
+/** The `otp` gate (ADR 0032, #736). */
 describe('AuthGate — otp mode', () => {
   async function renderOtpGate(state: unknown, actions: Record<string, unknown> = {}) {
     vi.doMock('../../src/auth/config', () => ({ authMode: 'otp', DEV_USER: {} }));

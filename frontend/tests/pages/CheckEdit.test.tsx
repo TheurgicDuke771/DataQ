@@ -251,9 +251,8 @@ describe('CheckEdit — restore a version (#283)', () => {
   });
 });
 
-// Issue #768 — expect_column_values_to_be_of_type's `type_` field needs a
-// datasource-tailored hint (GX compares against different type vocabularies per
-// execution engine), rendered only for this expectation.
+// Issue #768 — expect_column_values_to_be_of_type's `type_` field needs a datasource-tailored hint
+// (GX compares against different type vocabularies per execution engine).
 describe('CheckEdit — type_ hint (issue #768)', () => {
   const typeCheck: Check = {
     id: 'chk2',
@@ -339,10 +338,7 @@ describe('CheckEdit — re-deriving on an expectation-type change (#124 review)'
     const user = userEvent.setup();
     mockGetSuite.mockResolvedValue(suite);
     mockGetConnection.mockResolvedValue(connection);
-    // Stored 'accuracy' on a between-check. Switching the type to a unique-check
-    // must NOT keep 'accuracy' while the help below claims the value is
-    // "defaulted from the check type" — that ships a uniqueness check filed as
-    // accuracy, looking like a deliberate override forever.
+    // Stored 'accuracy' on a between-check.
     mockGetCheck.mockResolvedValue(existing);
     renderPage();
 
@@ -354,13 +350,7 @@ describe('CheckEdit — re-deriving on an expectation-type change (#124 review)'
   });
 });
 
-// #593 — the anomaly monitor kind. Also regression coverage for the PR #1117
-// review finding: BEFORE this PR's catalog entry landed, `EXPECTATION_BY_TYPE`
-// had no `monitor:anomaly` spec, so `spec` resolved to `undefined` here and
-// `buildCheckPayload`'s `formToConfig(undefined, ...)` returned `{}` — editing
-// (and re-saving) an anomaly check created out-of-band (API/MCP) silently wiped
-// its config. The catalog entry is the fix; the round-trip test below is the
-// regression guard.
+// #593 — the anomaly monitor kind.
 describe('CheckEdit — anomaly monitor (#593)', () => {
   const rowCountAnomaly: Check = {
     id: 'chk3',

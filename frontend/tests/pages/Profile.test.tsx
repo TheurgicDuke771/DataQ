@@ -11,9 +11,8 @@ import { useSaveDisplayName } from '../../src/auth/useSaveDisplayName';
 import type { AsyncState } from '../../src/hooks/useAsyncData';
 import { Profile } from '../../src/pages/Profile';
 
-// The ApiKeysPanel on the profile fetches the user's PATs on mount; stub the
-// client so the page tests don't hit the network (its own behaviour is covered
-// in ApiKeysPanel.test.tsx).
+// The ApiKeysPanel on the profile fetches the user's PATs on mount; stub the client so the page
+// tests don't hit the network (its own behaviour is covered in ApiKeysPanel.test.tsx).
 vi.mock('../../src/api/apiKeys', () => ({
   listApiKeys: vi.fn().mockResolvedValue([]),
   createApiKey: vi.fn(),
@@ -22,10 +21,8 @@ vi.mock('../../src/api/apiKeys', () => ({
   PAT_MAX_EXPIRY_DAYS: 365,
 }));
 
-// The name-edit affordance (#1139) goes through the shared save hook; stubbed
-// here so this file can assert the interaction without a real PATCH — the
-// hook's own PATCH→MeContext→otp-session fan-out is covered in
-// useSaveDisplayName.test.tsx.
+// The name-edit affordance (#1139) goes through the shared save hook; stubbed here so this file can
+// assert the interaction without a real PATCH.
 const saveDisplayName = vi.fn();
 vi.mock('../../src/auth/useSaveDisplayName', () => ({ useSaveDisplayName: vi.fn() }));
 
@@ -93,11 +90,8 @@ describe('Profile', () => {
   // ── display-name edit affordance (#1139) — every mode, not just otp ────────
 
   describe('editing the display name', () => {
-    // antd's Typography editable textarea confirms on blur as well as Enter
-    // (`Editable`'s onBlur → confirmChange, unconditionally) — blur is the
-    // reliable one to drive from a test, since userEvent's synthetic Enter
-    // keyCode doesn't reach rc-component's own keyCode-compared handler in
-    // jsdom. Real browsers get both paths; this only exercises one of them.
+    // antd's Typography editable textarea confirms on blur as well as Enter (`Editable`'s onBlur →
+    // confirmChange, unconditionally) — blur is the reliable one to drive from a test.
     const blurTheTextbox = () => userEvent.tab();
 
     it('saves the new name through the shared hook', async () => {
@@ -143,12 +137,8 @@ describe('Profile', () => {
     });
 
     it('does not PATCH the email in as the name on a bare blur (null display_name)', async () => {
-      // Regression: for a null-display_name user, the rendered/editable value is
-      // the EMAIL (the `name = display_name ?? email` fallback). The unchanged-
-      // value guard must compare against what's actually shown — comparing
-      // against the nullable `display_name` instead means email !== null is
-      // ALWAYS true, so a stray click-in-then-blur with no edit at all would
-      // silently PATCH the person's own email address in as their display name.
+      // Regression: for a null-display_name user, the rendered/editable value is the EMAIL (the
+      // `name = display_name ?? email` fallback).
       renderProfile({ ...me, data: { ...me.data, display_name: null } });
 
       await userEvent.click(screen.getByRole('button', { name: 'Edit your display name' }));

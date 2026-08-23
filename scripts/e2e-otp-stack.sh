@@ -1,39 +1,12 @@
 #!/usr/bin/env bash
 # Bring up the backend half of the email-OTP browser lane (ADR 0032, #736).
-#
-#   scripts/e2e-otp-stack.sh
-#
-# Starts, in order (the order is load-bearing):
-#   1. the SMTP sink        (backend/scripts/e2e_otp_smtp_sink.py) on :1025 / :1080
-#      (NOTE: the compose stack's mailpit also binds 127.0.0.1:1025 — with the
-#      compose stack up, set OTP_SMTP_PORT to a free port or stop mailpit first;
-#      CI has no compose stack, so the default is fine there)
-#   2. a second api process (uvicorn, OTP mode) on :8100
-#
-# The sink emits a self-signed certificate at startup and the api must trust it
-# BEFORE it boots: `Settings` validates `AUTH_EMAIL_CA_BUNDLE` names an existing
-# file at startup (#1146), and `OtpMailer` loads it into the SMTP connection's own
-# `SSLContext` — scoped to the mailer only, unlike the process-wide `SSL_CERT_FILE`
-# this lane used before #1146 shipped (which would have also reconfigured trust
-# for every other TLS client the api starts). So the sink has to be up and its
-# cert path known before uvicorn is launched — hence one script rather than two
-# independent background steps.
-#
-# Why a SECOND api at all: `backend/app/core/auth.py` picks its authenticator at
-# IMPORT time, and OTP wins over dev-bypass. One process cannot serve both the
-# existing dev-bypass lane and this one.
-#
-# Playwright starts the Vite dev server (:3100) itself; see
-# frontend/playwright.config.ts and frontend/e2e-otp/README.md.
-#
-# Environment (all optional):
-#   DATABASE_URL     defaults to dataq:dataq@localhost:5432/dataq_e2e — true of
-#                    CI's service container only; local setups have a generated
-#                    POSTGRES_PASSWORD (setup.sh), so pass DATABASE_URL explicitly
-#   OTP_API_PORT     8100
-#   OTP_SMTP_PORT    1025
-#   OTP_SINK_PORT    1080
-#   OTP_STATE_DIR    where the cert + pid files go (default: a mktemp dir)
+# Starts, in order (the order is load-bearing): 1. the SMTP sink on :1025/:1080
+# (NOTE: the compose stack's mailpit also binds 127.0.0.1:1025 — set OTP_SMTP_PORT
+# or stop mailpit first; CI has no compose stack), 2. a second api (uvicorn, OTP
+# mode) on :8100 — auth mode is picked at IMPORT time, so one process cannot serve
+# both lanes. The api must trust the sink's self-signed cert BEFORE boot (#1146),
+# hence one script. Optional env (DATABASE_URL, OTP_SMTP_PORT, ...) documented in
+# frontend/e2e-otp/README.md.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,10 +15,7 @@ cd "$REPO_ROOT"
 OTP_API_PORT="${OTP_API_PORT:-8100}"
 OTP_SMTP_PORT="${OTP_SMTP_PORT:-1025}"
 OTP_SINK_PORT="${OTP_SINK_PORT:-1080}"
-# An explicit template, and no `-t`. BSD mktemp (macOS) appends its own X's to a
-# `-t` prefix; GNU mktemp (Linux, and therefore CI) rejects it outright —
-# "too few X's in template" — so `-t dataq-otp-lane` works locally and fails in
-# CI, which is exactly what it did. A full template path is portable to both.
+# An explicit template, and no `-t`.
 OTP_STATE_DIR="${OTP_STATE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/dataq-otp-lane.XXXXXX")}"
 mkdir -p "$OTP_STATE_DIR"
 
@@ -70,27 +40,16 @@ curl -sf -o /dev/null "http://127.0.0.1:${OTP_SINK_PORT}/healthz" || {
 }
 echo "smtp sink up (smtp :${OTP_SMTP_PORT}, capture api :${OTP_SINK_PORT})"
 
-# ── 2. api in OTP mode ───────────────────────────────────────────────────────
-# The SMTP password is GENERATED here and lives only in this process's env — no
-# credential, not even a throwaway one, goes into a tracked file. The sink accepts
-# any credentials; what matters is that the api's real AUTH exchange happens.
-#
-# `otp_mailer_key` is the SecretStore LOOKUP NAME, not a value: `EnvSecretStore`
-# maps `otp-e2e-smtp` → `KV_SECRET_OTP_E2E_SMTP`, so the two lines below have to
-# stay in step. It is held in a variable and referenced further down rather than
-# written inline as `AUTH_EMAIL_PASSWORD_SECRET_NAME=<literal>` — a generic
-# credential scanner sees a `…PASSWORD…=` assignment two lines under a
-# `…USERNAME=` one and reports a hardcoded username/password pair, which
-# GitGuardian duly did. Please don't re-inline it.
+# ── 2. api in OTP mode ─────────────────────────────────────────────────────── The SMTP password is
+# GENERATED here and lives only in this process's env — no credential, not even a throwaway one.
 otp_mailer_key=otp-e2e-smtp
 export KV_SECRET_OTP_E2E_SMTP="$(openssl rand -hex 16)"
 
 export DATABASE_URL="${DATABASE_URL:-postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_e2e}"
 export ENVIRONMENT=dev
 export SECRET_STORE=env
-# Explicitly OFF: OTP would win anyway (auth.py's branch order), but a lane whose
-# correctness depends on a tie-break is a lane that silently becomes a bypass the
-# day that order changes.
+# Explicitly OFF: OTP would win anyway (auth.py's branch order), but a lane whose correctness
+# depends on a tie-break is a lane that silently becomes a bypass the day that order changes.
 export AUTH_DEV_BYPASS=false
 export AUTH_EMAIL_SMTP_HOST=localhost
 export AUTH_EMAIL_SMTP_PORT="$OTP_SMTP_PORT"
@@ -100,10 +59,7 @@ export AUTH_EMAIL_PASSWORD_SECRET_NAME="$otp_mailer_key"
 # Domain-wide, so each spec can mint its own unique address (see e2e-otp/fixtures.ts).
 export AUTH_OTP_ALLOWED_DOMAINS=dataq.local
 export WORKSPACE_ADMIN_EMAILS=otp-admin@dataq.local
-# Raised, NOT disabled. The per-mailbox cap stays ON so the lane proves it does
-# not break a legitimate flow; the ceiling is simply above what the suite uses,
-# including Playwright's CI retries. Setting it to 0 would switch off a mail-bomb
-# control and prove nothing about it.
+# Raised, NOT disabled.
 export AUTH_OTP_REQUEST_PER_EMAIL_PER_10MIN=50
 # The middleware is off for the same reason the dev-bypass lane turns it off
 # (#796): the suite shares one per-IP bucket and would 429 mid-run.
@@ -111,10 +67,7 @@ export RATE_LIMIT_ENABLED=false
 # Plain HTTP lane: without this the api would infer Secure=false anyway, but
 # being explicit keeps the lane honest about what it is exercising.
 export AUTH_SESSION_COOKIE_SECURE=false
-# Trust ONLY the sink's throwaway certificate, and ONLY for the OTP mailer's own
-# connection (#1146) — not the whole process the way SSL_CERT_FILE would (that
-# would also reconfigure every other TLS client this api starts, were there any
-# in this lane).
+# Trust ONLY the sink's throwaway certificate, and ONLY for the OTP mailer's own connection (#1146).
 export AUTH_EMAIL_CA_BUNDLE="$OTP_STATE_DIR/sink-cert.pem"
 
 uvicorn backend.app.main:app --host 127.0.0.1 --port "$OTP_API_PORT" \

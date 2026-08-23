@@ -14,10 +14,8 @@ import {
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 
 /**
- * Dedicated full-page add-connection flow (GX-Cloud style): step 1 picks a source
- * from the categorized grid (Orchestration first — ADR 0022), step 2 fills the
- * type-specific form (shared with the edit page via `ConnectionForm`). Editing an
- * existing connection is the dedicated `/connections/:id/edit` page.
+ * Dedicated full-page add-connection flow (GX-Cloud style): step 1 picks a source from the
+ * categorized grid (Orchestration first — ADR 0022).
  */
 export function ConnectionNew() {
   const navigate = useNavigate();

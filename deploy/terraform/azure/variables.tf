@@ -22,20 +22,6 @@ variable "azure_location" {
 }
 
 # The region the shared PostgreSQL server is EXPECTED to be in (G4/#434).
-#
-# Null means "wherever azure_location says" — right for any ordinary deployment,
-# and it keeps the `check` in postgres.tf silent. Set it only where the app is
-# attached to a server someone else created, in a region this stack does not
-# choose; that makes the mismatch a recorded decision instead of unexplained drift.
-#
-# A variable rather than prose, and null rather than a baked-in region, because
-# both alternatives break the detector: comparing against `azure_location`
-# unconditionally would warn on every plan of an exception-carrying deployment, and
-# a hard-coded default would hand that same permanently-firing warning to everyone
-# else. A check people learn to skip masks the drift that matters — the server
-# moving to another *jurisdiction*, which is the unit GDPR Ch. V keys on.
-#
-# The value itself belongs in a deployment's own tfvars, not in this repo.
 variable "shared_pg_expected_location" {
   description = "Region the shared PostgreSQL server is expected in. Null = same as azure_location; set it only where an accepted exception applies (see #1465)."
   type        = string
@@ -45,10 +31,7 @@ variable "shared_pg_expected_location" {
 
 # ── Shared Postgres (the app's DB lives on the harness's single server) ───────
 
-# No default, deliberately. This names a PRE-EXISTING server that this stack does
-# not create, so there is no value that is correct for more than one deployment —
-# and a committed default would publish the maintainers' server name in a public
-# repo. Set it in your own (gitignored) tfvars; Terraform fails clearly if unset.
+# No default, deliberately.
 variable "shared_pg_server_name" {
   description = "Name of the pre-existing Postgres Flexible Server hosting the app's database. The app's database + least-privilege role live here (provisioned out-of-band — see README)."
   type        = string
@@ -135,8 +118,6 @@ variable "workspace_admin_emails" {
 }
 
 # Email alerting addresses (PII → set in the gitignored tfvars, not committed).
-# Empty = email channel off (the publisher self-no-ops). The Gmail app-password
-# lives in Key Vault as `channel-email-password`; these are just the addresses.
 variable "email_username" {
   description = "SMTP login / sender for the email alert channel (e.g. a Gmail address). Empty = off."
   type        = string

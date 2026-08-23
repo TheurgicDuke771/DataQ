@@ -1,13 +1,5 @@
 #!/usr/bin/env bash
 # Reset the local dev database: drop everything, re-migrate, re-seed.
-# Usage: ./scripts/reset_dev_db.sh
-#
-# Recovers from a *drifted* dev DB — e.g. `alembic_version` pointing at head
-# while the tables are gone (after a manual drop, an interrupted migration, or a
-# half-reset volume). In that state `alembic upgrade head` is a silent no-op, so
-# the app/tests hit "relation does not exist". This nukes and repaves instead.
-#
-# Operates on the docker-compose Postgres using creds from .env.
 
 set -euo pipefail
 

@@ -1,9 +1,4 @@
-"""Tests for the TeamsPublisher — per-suite config, webhook resolution, policy.
-
-DB-backed: a suite (+ optional notification config row) drives delivery. A
-dict-backed fake SecretStore stands in for Key Vault. Skips without
-TEST_DATABASE_URL.
-"""
+"""Tests for the TeamsPublisher — per-suite config, webhook resolution, policy."""
 
 from __future__ import annotations
 
@@ -110,7 +105,8 @@ def test_cleartext_http_webhook_is_skipped(
 ) -> None:
     """An http:// workspace webhook must never be POSTed. The workspace value is never
     write-validated (only per-suite webhooks are), so without this check the alert — and
-    everything it carries — would go over the wire in cleartext (matches Slack, #639)."""
+    everything it carries — would go over the wire in cleartext (matches Slack, #639).
+    """
     suite = _suite(db_session)
     post = _CapturePost()
     monkeypatch.setattr(httpx, "post", post)

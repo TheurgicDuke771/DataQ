@@ -2,9 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { type FailureKind, fetchFailure } from '../utils/errors';
 
-/** Three-state result of an async fetch. The error branch keeps `error` (the
- *  message, what every consumer reads) and adds the HTTP facts (#910) so a
- *  page-level failure can render the dedicated error page for its status. */
+/** Three-state result of an async fetch. */
 export type AsyncState<T> =
   | { status: 'loading' }
   | { status: 'ok'; data: T }
@@ -17,20 +15,8 @@ export type AsyncState<T> =
     };
 
 /**
- * Fetch on mount (and on `reload()`), with a cancelled-guard so a late
- * resolution after unmount doesn't set state, and rejection normalised to a
- * string `error`. Shared by the data pages (Home, Connections, …) so the
- * cancelled-effect dance lives in one place rather than being re-derived per page.
- *
- * `reload` re-runs the fetcher (e.g. after a mutation) while keeping the current
- * data visible until the refetch resolves — no flash back to the loading state.
- *
- * The fetcher receives an `AbortSignal` (#1107) that fires on unmount AND on
- * every `reload()` (a fresh nonce aborts whatever the previous one started) —
- * a multi-request fetcher (e.g. a paged walk) can check it per iteration to
- * stop issuing further requests once the caller has moved on, instead of
- * relying solely on the `cancelled` guard below to suppress the eventual
- * `setState`. Callers that don't need it can just ignore the parameter.
+ * Fetch on mount (and on `reload()`), with a cancelled-guard so a late resolution after unmount
+ * doesn't set state, and rejection normalised to a string `error`.
  */
 export function useAsyncData<T>(fetcher: (signal: AbortSignal) => Promise<T>): {
   state: AsyncState<T>;

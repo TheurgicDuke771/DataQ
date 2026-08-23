@@ -17,9 +17,8 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
 const mockHistory = vi.mocked(listCheckHistory);
 const mockBaseline = vi.mocked(getCheckBaseline);
 
-// recharts' SVG doesn't lay out under jsdom (zero-size container, same lesson
-// as QualityTrends.test.tsx) — these assert the chrome, empty/error states, and
-// the a11y table fallback (real DOM rows), not rendered chart pixels.
+// recharts' SVG doesn't lay out under jsdom (zero-size container, same lesson as
+// QualityTrends.test.tsx) — these assert the chrome, empty/error states.
 
 const expectationCheck = {
   id: 'c1',
@@ -90,10 +89,8 @@ describe('CheckTrend', () => {
   });
 
   it('shows a plain-text thresholds caption (a11y mirror of the chart bands) when set', async () => {
-    // recharts' SVG doesn't lay out under jsdom (see the module-level note), so
-    // this asserts the real DOM text caption rather than the chart's own
-    // ReferenceLine labels — which is exactly the a11y fallback #594 requires:
-    // a screen reader gets nothing from the SVG either.
+    // recharts' SVG doesn't lay out under jsdom (see the module-level note), so this asserts the
+    // real DOM text caption rather than the chart's own ReferenceLine labels.
     mockHistory.mockResolvedValue([
       { run_id: 'r1', status: 'pass', metric_value: 1, created_at: '2026-06-10T00:00:00Z' },
     ]);
@@ -132,9 +129,7 @@ describe('CheckTrend', () => {
   });
 
   it('computes the seasonal anomaly band from only the current UTC weekday, mirroring eligible_values', async () => {
-    // Pin "now" to a Friday (UTC) so the weekday filter is deterministic. Fake
-    // only `Date` (not timers): RTL's `findByText`/`waitFor` polling relies on
-    // real `setTimeout`, which faking wholesale would stall against forever.
+    // Pin "now" to a Friday (UTC) so the weekday filter is deterministic.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-07-31T12:00:00Z'));
 
@@ -160,9 +155,8 @@ describe('CheckTrend', () => {
     });
     render(<CheckTrend suiteId="s1" check={anomalyCheck} />);
 
-    // Hand-computed over the Friday-only, last-2 subset [130, 150] — NOT all 5
-    // observations, and NOT the naive last-2-of-any-weekday [150, 8888]:
-    // mean = 140; sample stddev (n-1) = sqrt(((130-140)^2 + (150-140)^2) / 1) = sqrt(200) ≈ 14.142.
+    // Hand-computed over the Friday-only, last-2 subset [130, 150] — NOT all 5 observations, and
+    // NOT the naive last-2-of-any-weekday [150, 8888]: mean = 140.
     expect(
       await screen.findByText(/Anomaly baseline — learned band for Fridays/),
     ).toBeInTheDocument();
@@ -207,10 +201,7 @@ describe('CheckTrend', () => {
     expect(
       await screen.findByText(/Anomaly baseline — collecting observations \(1 so far/),
     ).toBeInTheDocument();
-    // The dishonest phrasing this replaces was "learned band (mean ± …σ)"
-    // unconditionally; that specific claim must not appear here (the copy's own
-    // "need at least 2 for a learned band" mention doesn't count — it's the
-    // honest disclaimer, not the claim).
+    // The dishonest phrasing this replaces was "learned band (mean ± …σ)" unconditionally.
     expect(screen.queryByText(/learned band \(mean/)).not.toBeInTheDocument();
   });
 

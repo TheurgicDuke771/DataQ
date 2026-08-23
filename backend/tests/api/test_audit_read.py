@@ -1,12 +1,4 @@
-"""The workspace-admin audit read surface — ADR 0041 phase 1 (#1318).
-
-`GET /api/v1/admin/audit-events`. Three things are worth testing here and the
-first is the one that matters: the gate. This endpoint serves the record of every
-privilege change and every credential rotation in the workspace, so it is exactly
-the endpoint whose authz must not be assumed from the router's decorator.
-
-Skips without TEST_DATABASE_URL.
-"""
+"""The workspace-admin audit read surface — ADR 0041 phase 1 (#1318)."""
 
 from __future__ import annotations
 
@@ -61,13 +53,7 @@ def _event(db_session: Any, **kw: Any) -> AuditEvent:
 
 @pytest.mark.parametrize("role", ["member", "viewer"])
 def test_a_non_admin_is_refused(client: TestClient, db_session: Any, role: str) -> None:
-    """The gate, asserted rather than assumed from the router decorator.
-
-    This endpoint serves every privilege change and credential rotation in the
-    workspace. A `viewer` is tested alongside a `member` because "read-only" is
-    the role most likely to be waved through by a reviewer reasoning that a GET is
-    harmless — the whole point of an audit log is that reading it is not.
-    """
+    """The gate, asserted rather than assumed from the router decorator."""
     app.dependency_overrides[get_current_user] = lambda: _user(db_session, role)
     resp = client.get("/api/v1/admin/audit-events")
     assert resp.status_code == 403, resp.text
@@ -88,7 +74,8 @@ def test_an_admin_reads_the_log_newest_first(client: TestClient, db_session: Any
 def test_filters_narrow_by_entity_and_actor(client: TestClient, db_session: Any) -> None:
     """The three filters exist to match the three indexes the migration created —
     a filter with no index behind it is a full scan of the biggest table in the
-    system."""
+    system.
+    """
     admin = _user(db_session, "admin")
     target = uuid.uuid4()
     _event(db_session, entity_id=target, actor_user_id=admin.id)
@@ -108,9 +95,6 @@ def test_a_full_page_says_so_rather_than_looking_complete(
     """`truncated` exists because a page of `limit` rows is otherwise
     indistinguishable from "that is all there is" — and on an audit log, "there
     are no more events" is a conclusion someone may act on.
-
-    Computed against the real total, not from `len(events) == limit`, which is
-    wrong on the exact-boundary page — asserted below.
     """
     entity = uuid.uuid4()
     for _ in range(3):
@@ -129,11 +113,6 @@ def test_a_full_page_says_so_rather_than_looking_complete(
 def test_the_page_size_is_capped(client: TestClient, db_session: Any) -> None:
     """An uncapped page is a way to pull the whole table through the API one
     request at a time, and this is the table an attacker most wants wholesale.
-
-    Seeds MORE than the cap, which the first version of this test did not — with
-    a handful of rows, `limit=100000` returns a handful either way, so the
-    assertion held with the cap removed. Mutation-checking is what caught it: a
-    ceiling test that never reaches the ceiling tests nothing.
     """
     from backend.app.services.audit_read_service import MAX_PAGE_SIZE
 
@@ -157,9 +136,8 @@ def test_the_page_size_is_capped(client: TestClient, db_session: Any) -> None:
     body = resp.json()
     assert len(body["events"]) == MAX_PAGE_SIZE
     assert body["total"] == MAX_PAGE_SIZE + 1
-    # …and the honesty field must reflect the cap, not the request: an operator
-    # who asked for everything and silently got 200 rows would read this page as
-    # the whole log.
+    # …and the honesty field must reflect the cap, not the request: an operator who asked for
+    # everything and silently got 200 rows would read this page as the whole log.
     assert body["truncated"] is True
 
 
@@ -168,12 +146,6 @@ def test_paging_is_stable_across_same_transaction_events(
 ) -> None:
     """Postgres freezes `now()` per transaction, so events written together share
     `occurred_at` EXACTLY — a suite create and its checks, for instance.
-
-    Ordering on the timestamp alone leaves those rows in an arbitrary order that
-    can differ between the two queries backing two pages, so a row can repeat on
-    one page and vanish from the next. The `id` tie-break is what makes paging
-    deterministic; without it this test is flaky rather than failing, which is why
-    it compares full pagination against a single read.
     """
     entity = uuid.uuid4()
     stamp = datetime.now(UTC)
@@ -204,11 +176,6 @@ def test_an_actor_deleted_since_the_event_is_still_attributable(
     """`actor_user_id` is `ON DELETE SET NULL`, so the denormalized `actor_label`
     is the only thing keeping the event legible afterwards — which is the entire
     reason the column exists.
-
-    Both fields are served: they agree almost always, and differ exactly when the
-    actor was renamed or removed. That difference is information an auditor wants
-    ("done by someone who no longer exists"), not a discrepancy to hide by serving
-    only one.
     """
     actor = _user(db_session, "admin")
     entity = uuid.uuid4()
@@ -226,14 +193,7 @@ def test_an_actor_deleted_since_the_event_is_still_attributable(
 def test_an_unknown_entity_type_is_refused_not_answered_with_an_empty_page(
     client: TestClient, db_session: Any
 ) -> None:
-    """A typo must not be able to say "nothing happened".
-
-    An unvalidated filter that matches nothing returns `total: 0`, and on THIS
-    table an empty page is a statement about the workspace, not about the query —
-    the #828 class, in the place it is least affordable. The write path already
-    refuses an undeclared entity type, so the read path reuses that vocabulary
-    rather than inventing a second one.
-    """
+    """A typo must not be able to say "nothing happened"."""
     resp = client.get("/api/v1/admin/audit-events?entity_type=cheque")
     assert resp.status_code == 422, resp.text
     body = resp.json()["error"]
@@ -248,18 +208,6 @@ def test_a_naive_since_is_read_as_utc(client: TestClient, db_session: Any) -> No
     """A naive datetime compared against a `timestamptz` column is interpreted in
     the DATABASE session's `TimeZone`, so the same request would cover a different
     period depending on server configuration.
-
-    An audit query that quietly covers a different window than the one asked for
-    is worse than one that refuses, and it is invisible: the response looks
-    perfectly well-formed.
-
-    **The session timezone is moved off UTC deliberately, and the test is
-    worthless without it.** The first version ran against the default UTC session,
-    where a naive and an aware timestamp mean the same instant — so it passed with
-    the coercion deleted. Mutation-checking caught that. `America/New_York` is
-    chosen because it is four hours off UTC in August, comfortably larger than the
-    one-hour window under test, so a mis-read boundary changes the answer rather
-    than merely nudging it.
     """
     db_session.execute(text("SET TIME ZONE 'America/New_York'"))
     entity = uuid.uuid4()
@@ -270,10 +218,8 @@ def test_a_naive_since_is_read_as_utc(client: TestClient, db_session: Any) -> No
     naive = (now - timedelta(hours=1)).replace(tzinfo=None).isoformat()
     aware = (now - timedelta(hours=1)).isoformat()
 
-    # `params=` rather than an f-string URL: an aware ISO timestamp ends in
-    # `+00:00`, and a bare `+` in a query string decodes to a SPACE, so the
-    # interpolated version 422s on a malformed datetime and the test would be
-    # comparing two failures rather than two windows.
+    # `params=` rather than an f-string URL: an aware ISO timestamp ends in `+00:00`, and a bare `+`
+    # in a query string decodes to a SPACE.
     def _total(since_value: str) -> int:
         resp = client.get(
             "/api/v1/admin/audit-events",
@@ -287,13 +233,7 @@ def test_a_naive_since_is_read_as_utc(client: TestClient, db_session: Any) -> No
 
 
 def test_the_page_states_the_retention_window(client: TestClient, db_session: Any) -> None:
-    """Pagination honesty is not the only honesty this page needs.
-
-    A query for a window older than `AUDIT_RETENTION_DAYS` returns `total: 0`,
-    which is indistinguishable from "nothing happened then" — the single most
-    misleading answer an audit log can give. `retained_since` lets a reader tell
-    "no events" from "no longer retained".
-    """
+    """Pagination honesty is not the only honesty this page needs."""
     from backend.app.core.config import get_settings
 
     body = client.get("/api/v1/admin/audit-events?limit=1").json()
@@ -307,7 +247,8 @@ def test_a_disabled_sweep_reports_no_retention_horizon(
 ) -> None:
     """`null`, not a date. "Nothing has been swept" is a different statement from
     "swept back to the beginning of time", and collapsing them would be the same
-    conflation `retained_since` exists to prevent."""
+    conflation `retained_since` exists to prevent.
+    """
     from backend.app.services import audit_read_service
 
     page = audit_read_service.list_events(db_session, limit=1, retention_days=0)

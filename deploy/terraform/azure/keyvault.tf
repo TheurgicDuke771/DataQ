@@ -1,17 +1,4 @@
-# Key Vault — the app's runtime SecretStore (SECRET_STORE=azure_key_vault). It
-# holds the datasource connection credentials the app writes/reads via the API at
-# runtime, plus the pre-seeded orchestration webhook secrets. RBAC authorization
-# (not access policies): the UAMI gets a custom get+list+set role so the app can
-# CREATE/rotate connection credentials at runtime (SecretStore.set) — read-only
-# would 502 every connection-create-with-secret (#622), and the built-in Officer
-# would over-grant delete/purge; the deployer gets the built-in Secrets Officer so
-# Terraform can seed the webhook secrets.
-#
-# NOTE: boot-critical config (DATABASE_URL / REDIS_URL / App Insights) is injected
-# as inline Container App secrets in containerapps.tf, NOT via KV references — that
-# decouples first-revision activation from KV-RBAC propagation delay (the classic
-# "secret ref fails on the very first apply" gotcha). The vault is still exercised
-# end-to-end by the UAMI read path + the webhook secrets below.
+# Key Vault — the app's runtime SecretStore (SECRET_STORE=azure_key_vault).
 
 resource "azurerm_key_vault" "app" {
   name                       = "dataq-app-kv-${random_string.suffix.result}"
@@ -33,15 +20,7 @@ resource "azurerm_role_assignment" "kv_deployer" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
-# App identity -> get/list/SET secrets at runtime (DefaultAzureCredential). It needs
-# write so the connection manager can persist/rotate credentials via the API
-# (SecretStore.set) — read-only broke connection-create-with-secret (#622).
-#
-# Least privilege: a CUSTOM role scoped to get + list + set + soft-delete only, NOT
-# the built-in "Key Vault Secrets Officer" (which also grants purge/backup/restore
-# the app never uses). Keeps the app identity's blast radius to exactly its
-# operations: SecretStore.get/set (connection credentials) + delete (orphan cleanup
-# on connection/webhook delete, #372). No purge — soft-delete is enough for cleanup.
+# App identity -> get/list/SET secrets at runtime (DefaultAzureCredential).
 resource "azurerm_role_definition" "app_kv_secrets_rw" {
   name        = "DataQ App KV Secrets RW ${random_string.suffix.result}"
   scope       = azurerm_key_vault.app.id
@@ -79,9 +58,8 @@ resource "time_sleep" "kv_rbac_propagation" {
   depends_on      = [azurerm_role_assignment.kv_deployer]
 }
 
-# ── Pre-seeded webhook secrets (orchestration event auth) ────────────────────
-# Names match deploy/.env.app.prod.example (ADF_WEBHOOK_SECRET_NAME etc.). Values
-# are generated; rotate via the provider rotation path (ADR 0006/0007).
+# ── Pre-seeded webhook secrets (orchestration event auth) ──────────────────── Names match
+# deploy/.env.app.prod.example (ADF_WEBHOOK_SECRET_NAME etc.).
 
 resource "random_password" "adf_webhook" {
   length  = 40

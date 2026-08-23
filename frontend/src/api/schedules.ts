@@ -1,13 +1,6 @@
 import { api } from './client';
 
-/**
- * Schedules — cron-driven suite runs (A7). A schedule fires a run of its suite
- * on a 5-field cron cadence in a given IANA timezone; the backend precomputes
- * `next_run_at` and a Celery-beat tick dispatches due schedules. Managing a
- * schedule needs `edit` on the suite (backend-gated); listing needs `view`.
- * This is the only place a suite acquires an unattended run cadence — distinct
- * from trigger bindings (run-on-pipeline-success, CLAUDE.md §4).
- */
+/** Schedules — cron-driven suite runs (A7). */
 
 /** Mirrors the backend `ScheduleRead`. */
 export interface Schedule {
@@ -54,11 +47,7 @@ export async function deleteSchedule(id: string): Promise<void> {
   await api.delete(`/schedules/${id}`);
 }
 
-/**
- * IANA timezones for the schedule editor. `Intl.supportedValuesOf` is the
- * runtime's own list (no hardcoded table to drift); falls back to UTC on the
- * rare engine that lacks it. UTC is hoisted to the front as the default.
- */
+/** IANA timezones for the schedule editor. */
 export function timezoneOptions(): string[] {
   const supported =
     typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];

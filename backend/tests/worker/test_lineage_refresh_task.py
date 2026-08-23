@@ -1,12 +1,4 @@
-"""`refresh_dbt_lineage` worker task tests (ADR 0034, #759).
-
-The dbt-manifest lineage refresh moved OFF the orchestration ingest path into this
-Celery task (own session, own single secret fetch) so the webhook ACK / poll loop
-never blocks on artifact IO. These exercise the task body (`_refresh_dbt_lineage`)
-end-to-end against a real Postgres with a monkeypatched provider, plus the fail-open
-posture for every step (no connection / no capability / no secret / no manifest /
-parse blow-up). Skips without TEST_DATABASE_URL.
-"""
+"""`refresh_dbt_lineage` worker task tests (ADR 0034, #759)."""
 
 from __future__ import annotations
 

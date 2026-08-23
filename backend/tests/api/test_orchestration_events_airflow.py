@@ -1,10 +1,4 @@
-"""Airflow webhook endpoint tests via TestClient against a real Postgres.
-
-Auth is HMAC-SHA256 over the raw body in X-DataQ-Signature (ADR 0007), so the
-test computes the signature over the exact bytes it sends. get_db +
-get_secret_store are overridden; the store is seeded with the signing key.
-Skips without TEST_DATABASE_URL.
-"""
+"""Airflow webhook endpoint tests via TestClient against a real Postgres."""
 
 import hashlib
 import hmac
@@ -129,10 +123,8 @@ def test_missing_signature_returns_401(client: tuple[TestClient, FakeSecretStore
 
 
 def test_non_ascii_signature_is_clean_auth_error_not_typeerror() -> None:
-    # ASGI decodes header bytes 0x80-0xFF as latin-1 -> a non-ASCII str, which
-    # hmac.compare_digest rejects with TypeError. (httpx won't even send such a
-    # header, so this asserts the auth fn directly.) The byte-compare must yield
-    # a clean WebhookAuthError, not a TypeError → 500.
+    # ASGI decodes header bytes 0x80-0xFF as latin-1 -> a non-ASCII str, which hmac.compare_digest
+    # rejects with TypeError.
     from backend.app.api.v1.orchestration import WebhookAuthError, _authenticate_airflow
 
     store = FakeSecretStore(initial={get_settings().airflow_webhook_secret_name: _SIGNING_KEY})

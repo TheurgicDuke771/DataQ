@@ -1,25 +1,4 @@
-"""Role-gated enforcement — ADR 0033 slice #741.
-
-The behaviour-changing slice: it closes the standing hole where *any*
-authenticated user could delete or re-credential the connection every suite in
-the workspace ran on.
-
-Callers here are always real principals authenticated by PAT (`as_role`), never
-the ambient dev-bypass identity — which is itself a workspace admin (#741), so
-using it would make every 403 assertion below pass for the wrong reason. That is
-not a hypothetical: it is exactly how eight pre-existing tests in this repo
-started failing when the gates landed, and each had to be re-pointed at a real
-member before it proved anything again.
-
-Four things are covered, in the order they can fail:
-
-1. The connection matrix — including which routes deliberately stay open.
-2. Suite creation, on BOTH doors (create and import).
-3. The Viewer share-cap, both belts, including the cases a grant-time check
-   structurally cannot cover (legacy rows, demotion after the grant).
-4. MCP parity — the ACs call for it explicitly, and it is satisfied structurally
-   rather than by a second set of gates.
-"""
+"""Role-gated enforcement — ADR 0033 slice #741."""
 
 from __future__ import annotations
 
@@ -65,13 +44,6 @@ _SF_CONFIG = {
 }
 
 #: Sentinels for probes needing a REAL row, substituted in `_assert_tool_denies`.
-#:
-#: Both exist for the same reason: these tools look the row up BEFORE gating, so a
-#: fabricated id returns "run not found" / "check not found" — both in the
-#: accepted-denial vocabulary — and the sweep passes without the authz gate ever
-#: being reached. The run sentinel was added when that was noticed for `run_id`;
-#: the check one was missed until a reviewer mutation-verified it, which is the
-#: whole argument for checking that a guard can fail rather than trusting it.
 _REAL_RUN = "<a real run, substituted at probe time>"
 _REAL_CHECK = "<a real check, substituted at probe time>"
 _REAL_SCHEDULE = "<a real schedule, substituted at probe time>"
@@ -187,7 +159,8 @@ def test_delete_connection_is_admin_only(
     client: TestClient, db_session: Any, as_role: Any, role: str
 ) -> None:
     """The hole this slice exists to close: before #741, a `view`-only user could
-    delete the connection every suite in the workspace ran on."""
+    delete the connection every suite in the workspace ran on.
+    """
     actor, headers = as_role(role)
     conn = _connection(db_session, actor)
     resp = client.delete(f"/api/v1/connections/{conn.id}", headers=headers)
@@ -203,7 +176,8 @@ def test_reauth_connection_is_admin_only(
     client: TestClient, db_session: Any, as_role: Any, role: str
 ) -> None:
     """Re-auth rotates a stored credential — the same power as delete, by another
-    name, which is why it is gated with it and not with `test`."""
+    name, which is why it is gated with it and not with `test`.
+    """
     actor, headers = as_role(role)
     conn = _connection(db_session, actor)
     resp = client.post(
@@ -218,7 +192,8 @@ def test_test_connection_is_member_plus(
 ) -> None:
     """Deliberately looser than create/delete (ADR 0033's matrix): a Member
     authoring a suite must be able to check that a connection works. Viewers are
-    excluded — the probe opens an outbound connection with stored credentials."""
+    excluded — the probe opens an outbound connection with stored credentials.
+    """
     actor, headers = as_role(role)
     conn = _connection(db_session, actor, secret_store)
     resp = client.post(f"/api/v1/connections/{conn.id}/test", headers=headers)
@@ -227,15 +202,7 @@ def test_test_connection_is_member_plus(
 
 @pytest.mark.parametrize("role", ROLES)
 def test_draft_connection_test_is_admin_only(client: TestClient, as_role: Any, role: str) -> None:
-    """STRICTER than the saved-connection `/test` beside it, and deliberately.
-
-    The saved probe uses config an admin already stored; this one probes config
-    the CALLER supplies — including `*_secret_name` fields resolved against the
-    flat SecretStore namespace, which is #1118 (name a victim connection's secret,
-    point the endpoint at a host you control). Member+ would have handed that
-    surface to exactly the tier this slice just denied connection-write to, in
-    support of a Create form that tier cannot open.
-    """
+    """STRICTER than the saved-connection `/test` beside it, and deliberately."""
     _, headers = as_role(role)
     payload = {"type": "snowflake", "env": "dev", "config": dict(_SF_CONFIG), "secret": "p"}
     resp = client.post("/api/v1/connections/test", json=payload, headers=headers)
@@ -249,9 +216,6 @@ def test_connection_reads_stay_open_to_every_tier(
     """The deliberate non-gate. Members reference connections when authoring
     suites, and no tier can read a credential back out at all (`has_secret`
     only), so widening reads costs nothing the Admin gate is protecting.
-
-    Asserted rather than left implicit: "we chose not to gate this" and "we
-    forgot to gate this" look identical in a diff.
     """
     actor, headers = as_role(role)
     conn = _connection(db_session, actor)
@@ -269,7 +233,8 @@ def test_connection_reads_stay_open_to_every_tier(
 def test_role_cannot_be_spoofed_through_the_request_body(client: TestClient, as_role: Any) -> None:
     """Adversarial: the role is read from the authenticated principal, never from
     input. A `role` field in the payload must not be honoured — and, because the
-    create schema forbids extras, must not be quietly ignored either."""
+    create schema forbids extras, must not be quietly ignored either.
+    """
     _, headers = as_role("viewer")
     payload = _create_payload() | {"role": "admin"}
     resp = client.post("/api/v1/connections", json=payload, headers=headers)
@@ -281,19 +246,7 @@ def test_role_cannot_be_spoofed_through_the_request_body(client: TestClient, as_
 def test_the_probe_endpoint_is_admin_only(
     client: TestClient, as_role: Any, role: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The third door, found by review rather than by the matrix.
-
-    `POST /_probe/snowflake-suite` is mounted unconditionally and had only
-    `get_current_user` on it, while `ensure_probe_fixtures` creates a
-    **Connection** (Admin-only) *and* a caller-owned **Suite** (Member+) and then
-    dispatches a run. A Viewer calling it would have obtained both, straight
-    around the two gates this slice adds.
-
-    Gated at the stricter of the two things it does. This is the shape worth
-    remembering: the gates went on the resources' *own* routes, and a sibling
-    endpoint that creates the same resources by another name was invisible to
-    that reasoning.
-    """
+    """The third door, found by review rather than by the matrix."""
     _, headers = as_role(role)
     resp = client.post("/api/v1/_probe/snowflake-suite", headers=headers)
     # Admin gets past the gate (whatever the probe then does about a missing
@@ -324,7 +277,8 @@ def test_import_suite_requires_member(
 ) -> None:
     """Import is the SECOND door onto suite creation. A role gate applied to only
     one of two doors is not a gate — and a Viewer who imported would become an
-    owner, which the capability matrix forbids outright."""
+    owner, which the capability matrix forbids outright.
+    """
     actor, headers = as_role(role)
     conn = _connection(db_session, actor)
     resp = client.post(
@@ -343,7 +297,8 @@ def test_import_suite_requires_member(
 
 def test_granting_edit_to_a_viewer_is_rejected(db_session: Any, as_role: Any) -> None:
     """Belt one, at grant time: the admin doing the granting gets an explanatory
-    error instead of a grant that silently does nothing."""
+    error instead of a grant that silently does nothing.
+    """
     owner, _ = as_role("admin")
     viewer, _ = as_role("viewer")
     suite = _suite(db_session, owner, _connection(db_session, owner))
@@ -361,7 +316,8 @@ def test_granting_edit_to_a_viewer_is_rejected(db_session: Any, as_role: Any) ->
 
 def test_granting_view_to_a_viewer_is_allowed(db_session: Any, as_role: Any) -> None:
     """The cap is on `edit`, not on sharing — a Viewer's whole purpose is to be
-    given read access."""
+    given read access.
+    """
     owner, _ = as_role("admin")
     viewer, _ = as_role("viewer")
     suite = _suite(db_session, owner, _connection(db_session, owner))
@@ -389,7 +345,8 @@ def test_updating_a_share_to_edit_for_a_viewer_is_rejected(db_session: Any, as_r
 
 def test_a_legacy_edit_share_is_capped_at_view(db_session: Any, as_role: Any) -> None:
     """Belt two, the case belt one structurally cannot reach: a row that already
-    exists. Written straight to the table, exactly as a pre-#741 grant would be."""
+    exists. Written straight to the table, exactly as a pre-#741 grant would be.
+    """
     owner, _ = as_role("admin")
     viewer, _ = as_role("viewer")
     suite = _suite(db_session, owner, _connection(db_session, owner))
@@ -400,13 +357,7 @@ def test_a_legacy_edit_share_is_capped_at_view(db_session: Any, as_role: Any) ->
 
 
 def test_demotion_after_a_grant_takes_effect_immediately(db_session: Any, as_role: Any) -> None:
-    """The case that makes the cap load-bearing rather than belt-and-braces.
-
-    Roles resolve per request precisely so a demotion lands on the next request
-    (ADR 0033 decision 7). A demotion that left a stale `edit` share live would
-    make that guarantee false exactly where it matters most — no share row is
-    rewritten here, only the role.
-    """
+    """The case that makes the cap load-bearing rather than belt-and-braces."""
     owner, _ = as_role("admin")
     member, _ = as_role("member")
     suite = _suite(db_session, owner, _connection(db_session, owner))
@@ -425,7 +376,8 @@ def test_a_demoted_owner_keeps_view_not_owner(db_session: Any, as_role: Any) -> 
     """A Viewer who created a suite before being demoted is still read-only —
     that is what the tier means. They keep `view` rather than losing the suite
     entirely, because existence-hiding would be a worse surprise than losing the
-    buttons; an admin (implicit on every suite) can still manage it."""
+    buttons; an admin (implicit on every suite) can still manage it.
+    """
     creator, _ = as_role("member")
     suite = _suite(db_session, creator, _connection(db_session, creator))
     assert suite_authz.effective_permission(db_session, suite, creator.id) == "owner"
@@ -440,10 +392,6 @@ def test_a_demoted_owner_keeps_view_not_owner(db_session: Any, as_role: Any) -> 
 def test_batch_and_single_agree_for_every_role(db_session: Any, as_role: Any, role: str) -> None:
     """`effective_permissions` (which stamps the suites LIST) must agree with
     `effective_permission` (which the detail view and every gate use).
-
-    Not a redundant assertion: a list offering Edit and Delete on suites whose
-    detail view then 403s is worse than no cap at all — the user is told they can
-    do something the server has already decided they cannot.
     """
     owner, _ = as_role("admin")
     actor, _ = as_role(role)
@@ -467,7 +415,8 @@ def test_a_viewer_cannot_reach_an_edit_gated_endpoint(
     """The cap propagates to every `edit`-gated surface for free — checks,
     schedules, trigger bindings, notifications and run-triggering all gate through
     `require_permission`. Asserted on one of them so the propagation is proven
-    rather than assumed; a Viewer holding a legacy `edit` share is the case."""
+    rather than assumed; a Viewer holding a legacy `edit` share is the case.
+    """
     owner, _ = as_role("admin")
     actor, headers = as_role(role)
     suite = _suite(db_session, owner, _connection(db_session, owner))
@@ -483,27 +432,7 @@ def test_a_viewer_cannot_reach_an_edit_gated_endpoint(
 
 
 def test_every_mcp_tool_declares_a_gate_and_the_registry_matches() -> None:
-    """The tripwire for #741's blind spot: MCP calls services DIRECTLY.
-
-    Every role gate #741 added lives on a REST route. A new MCP tool that created
-    a suite or mutated a connection would bypass all of them silently — the tool
-    layer never touches the router.
-
-    Asserted as an **exact set** against `support/mcp_gates.GATES`, not by
-    intersecting with a list of forbidden names. A name list only catches the
-    names someone thought of: `add_connection` or `new_suite` would sail straight
-    through. An exact set fails on ANY new tool, which is the point.
-
-    The gate now lives in that table as **data rather than a comment**, because
-    the old bare set of names could catch a tool being added but not a tool being
-    added with the *wrong* gate — a name in the wrong comment group looks exactly
-    like a name in the right one. Declaring it makes the sweep below possible:
-    adding a row here is adding an enforcement test, not just a manifest entry.
-
-    If you are adding a tool: add it to `GATES` with the gate it actually calls,
-    and make sure that is one of (a) read-only, (b) `suite_authz.require_permission`,
-    or (c) `server._require_role`.
-    """
+    """The tripwire for #741's blind spot: MCP calls services DIRECTLY."""
     import asyncio
 
     from backend.app.mcp.server import mcp
@@ -516,7 +445,8 @@ def test_every_mcp_tool_declares_a_gate_and_the_registry_matches() -> None:
 def test_every_declared_gate_is_a_known_gate() -> None:
     """A typo'd gate value would match no sweep and therefore be enforced by
     nothing — while still passing the registry tripwire, which only compares
-    keys. Cheap guard against the table quietly opting a tool out."""
+    keys. Cheap guard against the table quietly opting a tool out.
+    """
     from backend.tests.support.mcp_gates import GATES, KNOWN_GATES
 
     unknown = {name: gate for name, gate in GATES.items() if gate not in KNOWN_GATES}
@@ -527,7 +457,8 @@ def test_read_gated_tools_really_take_no_suite_id() -> None:
     """`read` is the one gate with no denial to assert, which makes it the one
     place a tool could be parked to escape every sweep. It is only defensible for
     a tool that has no suite to gate ON — so that is what is checked, against the
-    advertised schema."""
+    advertised schema.
+    """
     import asyncio
 
     from backend.app.mcp.server import mcp
@@ -548,17 +479,7 @@ def test_read_gated_tools_really_take_no_suite_id() -> None:
 def test_no_mcp_tool_that_should_deny_a_viewer_lets_one_through(
     db_session: Any, as_role: Any, monkeypatch: pytest.MonkeyPatch, tool_name: str
 ) -> None:
-    """The RBAC sweep: EVERY Viewer-denied tool, not one representative sample.
-
-    This used to test `trigger_suite_run` alone and reason that the rest were
-    covered "for free" because they call the same primitive. That reasoning is
-    right about the primitive and says nothing about whether a given tool
-    actually calls it — which is the only thing that can regress.
-
-    The Viewer holds a **legacy `edit` share**: the exact state a naive "viewers
-    never have edit" assumption gets wrong, and the reason the cap is enforced at
-    the point of use rather than only when a share is granted.
-    """
+    """The RBAC sweep: EVERY Viewer-denied tool, not one representative sample."""
     owner, _ = as_role("admin")
     viewer, _ = as_role("viewer")
     suite = _suite(db_session, owner, _connection(db_session, owner))
@@ -569,17 +490,7 @@ def test_no_mcp_tool_that_should_deny_a_viewer_lets_one_through(
 
 
 def test_mcp_exposes_no_admin_only_capability_by_design() -> None:
-    """The `role:admin` sweep below is empty, and that is the invariant — not an
-    oversight.
-
-    Every Admin-only capability in ADR 0033's matrix is a connection *mutation*
-    (create / edit / delete / re-auth), and MCP deliberately exposes none of them:
-    a credential must never transit an LLM (#529's standing exclusion). So there
-    is nothing for a Member sweep to sweep.
-
-    Stated as a test so the empty parametrize reads as a decision rather than a
-    forgotten row — and the sweep activates the moment that changes.
-    """
+    """The `role:admin` sweep below is empty, and that is the invariant — not an oversight."""
     from backend.tests.support.mcp_gates import member_denied_tools as _admin_only
 
     assert _admin_only() == [], (
@@ -592,14 +503,7 @@ def test_mcp_exposes_no_admin_only_capability_by_design() -> None:
 def test_no_admin_only_mcp_tool_lets_a_member_through(
     db_session: Any, as_role: Any, monkeypatch: pytest.MonkeyPatch, tool_name: str
 ) -> None:
-    """`role:admin` needs its own principal, not the Viewer sweep's.
-
-    A tool declared `role:admin` but implemented with `minimum="member"` refuses a
-    Viewer perfectly well — so the Viewer sweep passes, and every Member in the
-    workspace can invoke an admin capability. Only a Member can tell the two
-    apart. The Member is even given an `edit` share, so a suite-ladder gate
-    cannot stand in for the role gate this row is asserting.
-    """
+    """`role:admin` needs its own principal, not the Viewer sweep's."""
     owner, _ = as_role("admin")
     member, _ = as_role("member")
     suite = _suite(db_session, owner, _connection(db_session, owner))
@@ -613,14 +517,7 @@ def test_no_admin_only_mcp_tool_lets_a_member_through(
 def test_suite_scoped_mcp_tools_deny_a_user_with_no_share(
     db_session: Any, as_role: Any, monkeypatch: pytest.MonkeyPatch, tool_name: str
 ) -> None:
-    """The other half: a Member in good standing, with no share on THIS suite.
-
-    Without this, a tool declared `suite:view` and gating on nothing at all would
-    pass every other sweep — a Viewer is not refused by a read they are entitled
-    to, so the Viewer sweep says nothing about view-gated tools. This is also what
-    covers `read:suite-optional`'s up-front gate, whose absence turns a denial
-    into a misleading empty list (#828).
-    """
+    """The other half: a Member in good standing, with no share on THIS suite."""
     owner, _ = as_role("admin")
     outsider, _ = as_role("member")
     suite = _suite(db_session, owner, _connection(db_session, owner))
@@ -641,9 +538,8 @@ def _assert_tool_denies(
 
     from backend.app.mcp import server as mcp_server
 
-    # Built BEFORE `pytest.raises`, deliberately: an unknown tool raises here, and
-    # inside the block that failure would be swallowed and re-reported as "denied
-    # for the wrong reason" — a missing probe silently reading as a pass.
+    # Built BEFORE `pytest.raises`, deliberately: an unknown tool raises here, and inside the block
+    # that failure would be swallowed and re-reported as "denied for the wrong reason".
     args = _viewer_probe_args(tool_name, suite)
     if args.get("run_id") == _REAL_RUN:
         run = Run(suite_id=suite.id, status="succeeded")
@@ -674,10 +570,8 @@ def _assert_tool_denies(
         db_session.commit()
         args = {**args, "binding_id": str(binding.id)}
     if args.get("incident_id") == _REAL_INCIDENT:
-        # A real incident on the probe suite, for the same reason as `_REAL_RUN`
-        # and `_REAL_CHECK`: `get_incident` resolves the row BEFORE the suite
-        # ladder, so a fabricated id raises "incident not found" — an accepted
-        # denial word — and the sweep would pass with the gate deleted.
+        # A real incident on the probe suite, for the same reason as `_REAL_RUN` and `_REAL_CHECK`:
+        # `get_incident` resolves the row BEFORE the suite ladder.
         asset = Asset(namespace="probe://authz", name=f"asset_{uuid.uuid4().hex[:8]}")
         incident_check = Check(
             suite_id=suite.id,
@@ -706,13 +600,8 @@ def _assert_tool_denies(
         db_session.add(check)
         db_session.commit()
         args = {**args, "check_id": str(check.id)}
-        # `restore_check_version` needs the *version* to exist too, and this check
-        # was inserted directly rather than through `check_service`, so it has no
-        # snapshots at all. Without this row the tool raises "check version not
-        # found" BEFORE reaching authz — and "not found" is in the accepted-denial
-        # vocabulary below, so the sweep would pass with the gate deleted. Exactly
-        # the vacuous pass `_REAL_RUN` and `_REAL_CHECK` were each added to close,
-        # one level deeper.
+        # `restore_check_version` needs the *version* to exist too, and this check was inserted
+        # directly rather than through `check_service`, so it has no snapshots at all.
         if "version_no" in args:
             db_session.add(
                 CheckVersion(
@@ -736,10 +625,8 @@ def _assert_tool_denies(
         tool(**args)
 
     message = str(exc.value).lower()
-    # Either axis is an acceptable denial — the suite ladder's forbidden/not-found,
-    # or the coarse role gate's. What is NOT acceptable is the call succeeding, or
-    # failing for an unrelated reason (a missing argument, a bad UUID), which would
-    # make this pass while proving nothing.
+    # Either axis is an acceptable denial — the suite ladder's forbidden/not-found, or the coarse
+    # role gate's.
     assert any(
         word in message
         for word in (
@@ -747,26 +634,15 @@ def _assert_tool_denies(
             "permission",
             "workspace role",
             "not found",
-            # `SuiteForbiddenError` from `load_visible_incident` names the level
-            # rather than using the word "permission". Added as a specific phrase,
-            # not a loose one like "requires": the vocabulary is narrow on purpose,
-            # since anything that also matches an argument-validation message would
-            # let a gateless tool pass by failing for the wrong reason.
+            # `SuiteForbiddenError` from `load_visible_incident` names the level rather than using
+            # the word "permission".
             "requires 'edit'",
         )
     ), f"{tool_name} denied for the wrong reason: {exc.value}"
 
 
 def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
-    """Minimal valid arguments per tool, so a sweep reaches the gate.
-
-    Deliberately valid: the point is that the call is stopped by *authorization*,
-    not by argument validation. Arguments that would 422 first would make every
-    row pass regardless of the gate.
-
-    A `raise`, not an `assert`: an assert vanishes under `-O`, and this is the
-    guard that stops a newly-declared tool from being silently skipped.
-    """
+    """Minimal valid arguments per tool, so a sweep reaches the gate."""
     sid = str(suite.id)
     per_tool: dict[str, dict[str, Any]] = {
         # suite:edit
@@ -822,10 +698,7 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
         "get_notification_config": {"suite_id": sid},
         "get_suite_results": {"suite_id": sid},
         "list_checks": {"suite_id": sid},
-        # These two take a RUN id and gate on the run's OWN suite. The sentinel is
-        # replaced with a real run by `_assert_tool_denies`: a fabricated id would
-        # return "run not found" before authz — an accepted denial word — and pass
-        # this test vacuously.
+        # These two take a RUN id and gate on the run's OWN suite.
         "get_run_results": {"run_id": _REAL_RUN},
         "get_run_status": {"run_id": _REAL_RUN},
         # incident:view — takes an incident id, so the sentinel is what makes the

@@ -1,37 +1,4 @@
-"""Column profiler — per-column statistics for the check editor.
-
-Given a target (a SQL table or a flat file) and a set of columns on a suite's
-connection, compute the stats an author needs before writing expectations: row
-count, null count / fraction, distinct count, min / max, and the most frequent
-values. Persists nothing — a read-only authoring aid (the check-editor "profile
-on table/file select" panel).
-
-`profile_connection` dispatches on the connection type:
-
-* **SQL datasources** (Snowflake + Unity Catalog) — aggregate the stats
-  in-warehouse in one round-trip, plus one *batched* top-values round-trip per
-  `_TOP_VALUES_BATCH` columns (#327 — it used to be one query per column, so a
-  50-column profile cost 51 sequential round-trips and now costs 3), via the
-  datasource's SQLAlchemy dialect. Unity Catalog adds a `catalog` so the table is qualified
-  `catalog.schema.table` (3-level namespace); Snowflake is `schema.table`.
-* **Flat-file datasources** (ADLS Gen2, S3) — download a *sample* of the file
-  (`_SAMPLE_ROWS` rows) into Pandas and compute the same stats locally. CSV and
-  Parquet are supported; stats are therefore over the sample, not the whole file.
-
-**SQL-injection safety.** For SQL datasources, table / schema / column names are
-caller-supplied and become SQL *identifiers* (they can't be bound parameters).
-Queries are built with the SQLAlchemy Core expression language (`select` /
-`table` / `column`) — never string formatting — so the dialect does the quoting
-and there is no raw-SQL sink. As defence-in-depth (and a clean early 422) each
-identifier is also validated against a strict allowlist. Flat-file columns are
-checked for existence against the loaded frame instead (a missing column is a
-clean 422, and Pandas indexing never builds SQL).
-
-Like the GX adapter, the pure pieces (identifier validation, query building,
-dataframe profiling, result assembly) are unit-testable without a live
-datasource; the I/O seams (`_open_connection`, `_read_dataframe`) are
-monkeypatched in tests, and a live smoke is deferred.
-"""
+"""Column profiler — per-column statistics for the check editor."""
 
 from __future__ import annotations
 
@@ -80,31 +47,13 @@ from backend.app.services.column_classification import ColumnClass, classify_col
 
 log = get_logger(__name__)
 
-# Formats the profiler can actually parse. NOT redundant with
-# flatfile.format_from_path (which only recognises path extensions): this also
-# validates the caller's `explicit` file_format override (an arbitrary string),
-# and is deliberately a *subset* of recognised formats — a format can be
-# recognised by path yet unsupported here, which should still 422 (#147).
+# Formats the profiler can actually parse.
 _SUPPORTED_FORMATS = {"csv", "parquet"}
 # Flat-file profiling reads at most this many rows — stats are over the sample.
 _SAMPLE_ROWS = 100_000
-#: Public alias — the MCP layer RETURNS this value (`profile_column`'s
-#: `sample_row_limit`), because a sampled profile whose cap the caller cannot see
-#: is a full-table statistic as far as any consumer can tell.
+#: Public alias — the MCP layer RETURNS this value (`profile_column`'s `sample_row_limit`).
 SAMPLE_ROWS = _SAMPLE_ROWS
-# How many columns share one batched top-values round-trip (#327). The batched
-# query joins one derived table per column (see `build_batched_top_values_query`),
-# and past a couple of dozen relations a planner stops enumerating join orders
-# exhaustively — Postgres switches to its genetic optimiser at 12 — so the batch
-# is bounded here rather than left to grow with the caller's column list.
-#
-# 25 is measured, not guessed. On a 50-column / 50k-row local Postgres the whole
-# top-values pass took ~270 ms at every chunk size from 8 to 25 and jumped to
-# ~820 ms as a single 50-way join, while round-trips fall monotonically with the
-# chunk size. 25 sits at the last point before that cliff, which puts the profile
-# endpoint's own 50-column cap at exactly TWO batched round-trips (previously 50)
-# and still bounds `suggest_policy_for_target` — the one caller that profiles
-# every column a target has — to a round-trip per 25 columns instead of per 1.
+# How many columns share one batched top-values round-trip (#327).
 _TOP_VALUES_BATCH = 25
 
 
@@ -152,7 +101,8 @@ class ColumnProfile:
 @dataclass(frozen=True)
 class ProfileResult:
     """A profiled target. Identity fields are type-specific: SQL datasources set
-    `table` / `schema`, flat-file datasources set `path` / `file_format`."""
+    `table` / `schema`, flat-file datasources set `path` / `file_format`.
+    """
 
     row_count: int
     columns: list[ColumnProfile]
@@ -167,15 +117,7 @@ class ProfileResult:
 
 
 def null_fraction(null_count: int, row_count: int) -> float:
-    """Fraction of rows that are null, guarding the empty-target divide-by-zero.
-
-    The one stat definition the SQL profiler (`assemble_profile`) and the pandas
-    profiler (`profile_dataframe`) can actually share — both must agree that a
-    0-row target reports `0.0`, not `1.0` or a `ZeroDivisionError` (#147). The
-    other contract points (distinct excludes nulls; top values are non-null,
-    highest-count-first) are structurally SQL-vs-pandas and can't share code, so
-    they're pinned by the parallel-path tests instead.
-    """
+    """Fraction of rows that are null, guarding the empty-target divide-by-zero."""
     return (null_count / row_count) if row_count else 0.0
 
 
@@ -183,14 +125,7 @@ def null_fraction(null_count: int, row_count: int) -> float:
 
 
 def validate_identifier(name: str | None) -> str:
-    """Validate `name` against the plain-identifier allowlist and return it.
-
-    Raises `ProfileIdentifierInvalidError` (422) for anything that isn't a plain
-    identifier per the shared `datasources.sql` allowlist (#428 — one source of
-    truth with the monitor engine's validator). The SQLAlchemy Core builders
-    quote safely on their own; this is defence-in-depth and turns an odd name
-    into a clean 422 instead of a quoted column that simply doesn't exist.
-    """
+    """Validate `name` against the plain-identifier allowlist and return it."""
     if name is None or not is_sql_identifier(name):
         raise ProfileIdentifierInvalidError(
             "not a valid table/schema/column identifier", detail={"identifier": name}
@@ -201,18 +136,7 @@ def validate_identifier(name: str | None) -> str:
 def _table(
     schema: str, table_name: str, catalog: str | None = None, dialect: Dialect | None = None
 ) -> Any:
-    """A Core table clause, optionally with a 3-level namespace (Unity Catalog).
-
-    Construction is the shared `datasources.sql.core_table` (#476 — one builder
-    with the monitor engine, so the two can't drift on quoting). Validating here
-    first is not redundant: it turns an odd name into a clean 422 with the
-    profiler's error shape, where `core_table`'s own guard is the last-resort
-    injection check and raises a bare `ValueError`.
-
-    ``dialect`` is required whenever ``catalog`` is given (#936) — it quotes the
-    3-part namespace's catalog/schema via the dialect's own identifier preparer;
-    see `datasources.sql.core_table`.
-    """
+    """A Core table clause, optionally with a 3-level namespace (Unity Catalog)."""
     validate_identifier(schema)
     validate_identifier(table_name)
     if catalog is not None:
@@ -227,11 +151,7 @@ def build_aggregate_query(
     catalog: str | None = None,
     dialect: Dialect | None = None,
 ) -> Select[Any]:
-    """One round-trip: row count + null/distinct/min/max per column.
-
-    Built with the Core expression language (no string SQL); identifiers are
-    validated then handed to `column()`/`table()`, which the dialect quotes.
-    """
+    """One round-trip: row count + null/distinct/min/max per column."""
     projection: list[Any] = [func.count().label("row_count")]
     for i, col in enumerate(columns):
         c: Any = column(folding_identifier(validate_identifier(col)))
@@ -242,33 +162,14 @@ def build_aggregate_query(
     return select(*projection).select_from(_table(schema, table_name, catalog, dialect))
 
 
-# Output labels for the top-values query. Deliberately `dq_`-prefixed rather than
-# the obvious `value` / `freq` (#327 review, P2): SQL resolves a bare name in
-# `ORDER BY` against the **output** aliases first, so a table with a column
-# literally named `freq` turned `ORDER BY count(*) DESC, freq` into
-# `ORDER BY count(*) DESC, count(*)` — the tie-break silently vanished, and in
-# the batched form the query's LIMIT then kept a different tie-set than the
-# `ROW_NUMBER()` ranked (whose `freq` still means the input column, since a
-# window in the SELECT list sees input columns), so kept rows could carry a rank
-# past `top_n`, join nothing, and disappear from the profile with no error.
-#
-# This was **pre-existing** in the per-column query, not introduced by the batch;
-# it is fixed here for both. The residual is a column literally named `dq_value`
-# or `dq_freq`, which the pg suite pins as still-correct because the tie-break
-# then resolves to that column either way (the alias and the input column are the
-# same expression) — the `freq` case was the one where they differed.
+# Output labels for the top-values query.
 _VALUE_LABEL = "dq_value"
 _FREQ_LABEL = "dq_freq"
 _RANK_LABEL = "dq_rn"
 
 
 def _grouped_column(col: str) -> tuple[Any, list[Any]]:
-    """The validated column expression + the ordering every top-values query uses.
-
-    One definition shared by `build_top_values_query` and the batched builder's
-    ``ROW_NUMBER()`` window, so the rank and the ``LIMIT`` can never be ordered by
-    subtly different expressions.
-    """
+    """The validated column expression + the ordering every top-values query uses."""
     c: Any = column(folding_identifier(validate_identifier(col)))
     return c, [func.count().desc(), c]
 
@@ -281,12 +182,7 @@ def build_top_values_query(
     catalog: str | None = None,
     dialect: Dialect | None = None,
 ) -> Select[Any]:
-    """Most frequent non-null values for one column (highest count first).
-
-    Emits ``dq_value`` / ``dq_freq``, not ``value`` / ``freq`` — see `_VALUE_LABEL`.
-    `_top_values_per_column` maps them back to the ``value``/``freq`` keys
-    `assemble_profile` consumes, so the label choice stays inside this module.
-    """
+    """Most frequent non-null values for one column (highest count first)."""
     c, ordering = _grouped_column(col)
     return (
         select(c.label(_VALUE_LABEL), func.count().label(_FREQ_LABEL))
@@ -306,60 +202,14 @@ def build_batched_top_values_query(
     catalog: str | None = None,
     dialect: Dialect | None = None,
 ) -> Select[Any]:
-    """Every column's top values in **one** round-trip (#327).
-
-    Shape: a rank driver (``1..top_n``) LEFT-joined to one derived table per
-    column, each of which is **literally `build_top_values_query`'s own statement**
-    with a ``ROW_NUMBER()`` added — not a re-implementation of it. Composing
-    rather than copying is what makes "same ``WHERE``, ``GROUP BY``, ``ORDER BY``
-    and ``LIMIT``" true by construction, so the batched and fallback paths cannot
-    drift apart in a later edit::
-
-        SELECT r.rn, t0.dq_value AS v_0, t0.dq_freq AS f_0, t1.dq_value AS v_1, …
-        FROM (SELECT 1 AS rn UNION ALL SELECT 2 AS rn …) AS dq_ranks r
-        LEFT JOIN (SELECT c0 AS dq_value, count(*) AS dq_freq,
-                          ROW_NUMBER() OVER (ORDER BY count(*) DESC, c0) AS dq_rn
-                   FROM tbl WHERE c0 IS NOT NULL GROUP BY c0
-                   ORDER BY count(*) DESC, c0 LIMIT n) AS t0 ON t0.dq_rn = r.rn
-        LEFT JOIN (…same for c1…) AS t1 ON t1.dq_rn = r.rn
-        ORDER BY r.rn
-
-    **Why a join and not the obvious ``UNION ALL`` of per-column selects.** That
-    was tried first and it is the trap #327 itself flagged. A union has to unify
-    the branches' column types, so every column's values land in one ``value``
-    projection: Postgres refuses ``integer``/``text`` outright, Snowflake
-    silently coerces the lot to ``VARCHAR``, and the profile's numbers come back
-    as strings on one dialect and not the other. Giving each column its own slot
-    and padding the other branches with ``NULL`` does not rescue it either — an
-    untyped ``NULL`` is resolved *pairwise, left to right*, so in a left-deep
-    union tree two ``NULL`` padding slots resolve to ``text`` before the branch
-    that owns the slot is ever reached, and Postgres then rejects the whole
-    statement (verified: ``UNION types text and timestamp … cannot be matched``).
-    A join never unifies anything: each column's value stays in its own output
-    column with its own type, so a NUMERIC arrives as a ``Decimal`` and a
-    TIMESTAMP as a datetime, exactly as the per-column path delivered them.
-
-    It is also the *small* shape — ``top_n`` rows of ``2N+1`` columns, rather
-    than the union's N-by-N projection over ``N * top_n`` rows. What it costs
-    instead is join planning, which is why `_TOP_VALUES_BATCH` caps N.
-
-    ``ROW_NUMBER()`` carries the per-column ordering across the join: a joined
-    result has no inherent order, and re-sorting *values* in Python would not
-    reproduce the warehouse's collation for a count tie. The outer ``ORDER BY``
-    plus the rank key make the emitted order the per-column query's order,
-    ties included.
-
-    Built with the Core expression language throughout, so the dialect quotes
-    every identifier and renders the joins/derived tables itself — no string SQL.
-    """
+    """Every column's top values in **one** round-trip (#327)."""
     if not columns:
         raise ValueError("build_batched_top_values_query needs at least one column")
     limit = int(top_n)
     if limit < 1:
         raise ValueError("build_batched_top_values_query needs a positive top_n")
-    # Ranks are loop counters, not caller input — `literal_column` keeps them out
-    # of the bind-parameter set and makes the driver a plain integer union, which
-    # has nothing to unify.
+    # Ranks are loop counters, not caller input — `literal_column` keeps them out of the bind-
+    # parameter set and makes the driver a plain integer union, which has nothing to unify.
     ranks = union_all(
         *[select(literal_column(str(rank)).label("rn")) for rank in range(1, limit + 1)]
     ).subquery("dq_ranks")
@@ -383,21 +233,6 @@ def collect_batched_top_values(
 ) -> dict[str, list[Mapping[str, Any]]]:
     """Un-pivot `build_batched_top_values_query`'s rows into the per-column shape
     `assemble_profile` consumes — ``{column: [{"value": …, "freq": int}, …]}``.
-
-    One row is one *rank*: column *i*'s rank-``rn`` value sits in ``v_i`` with its
-    count in ``f_i``. A column with fewer distinct values than ``top_n`` — or an
-    all-null column, which contributes nothing — simply has no match at that rank,
-    so the LEFT JOIN leaves both slots NULL. ``f_i`` is the presence marker rather
-    than ``v_i`` because it is the one that cannot be NULL for a real row (the
-    per-column query filters ``IS NOT NULL``, and a COUNT is never null).
-
-    Rows are re-sorted by ``rn`` rather than trusted in arrival order: the outer
-    ``ORDER BY`` already asks for it, and paying one sort makes the reader
-    independent of whether a given driver honours it.
-
-    Columns that contributed no rows at all are simply absent from the result —
-    `assemble_profile` renders a missing key as ``[]``, which is what the
-    per-column path's empty result set produced.
     """
     by_index: dict[int, list[Mapping[str, Any]]] = {}
     for row in sorted(rows, key=lambda item: int(item["rn"])):
@@ -414,16 +249,7 @@ def collect_batched_top_values(
 def build_columns_query(
     schema: str, table_name: str, catalog: str | None = None, dialect: Dialect | None = None
 ) -> Select[Any]:
-    """List a target's column names: `SELECT * FROM <target> LIMIT 0`.
-
-    Returns no rows, but the cursor still exposes the column names via
-    `result.keys()` — so it's a cheap, dialect-agnostic way to introspect columns
-    that reuses the same catalog-aware, allowlist-validated `_table` namespace as
-    the profiler (rather than the SQLAlchemy inspector, which is fiddly for Unity
-    Catalog's 3-level `catalog.schema.table`). `literal_column("*")` is a SQL
-    constant, not caller input — the only caller-supplied parts go through
-    `_table`'s identifier validation.
-    """
+    """List a target's column names: `SELECT * FROM <target> LIMIT 0`."""
     return (
         select(literal_column("*"))
         .select_from(_table(schema, table_name, catalog, dialect))
@@ -505,14 +331,7 @@ class _FileProfiler:
 
 @dataclass(frozen=True)
 class _IcebergProfiler:
-    """Iceberg profiling strategy: native ``pyiceberg`` read into pandas (ADR 0030).
-
-    NOT a `_SqlProfiler`: the Iceberg identifier is ``namespace.table`` (dotted),
-    which the SQL path's `validate_identifier` rejects, and there is no SQL engine —
-    the table is materialised and profiled in-pandas like the flat-file path. The
-    credential is **optional** (a local warehouse / vended-credentials REST catalog
-    has none), so this type is exempt from the `secret_ref` guard in
-    `resolve_profiler`, mirroring `build_iceberg_runner`."""
+    """Iceberg profiling strategy: native ``pyiceberg`` read into pandas (ADR 0030)."""
 
 
 _Profiler = _SqlProfiler | _FileProfiler | _IcebergProfiler
@@ -569,14 +388,6 @@ def resolve_profiler(
 ) -> _Profiler:
     """Validate that `connection` is profilable and its target is well-formed,
     returning the matched profiler strategy.
-
-    The one target-validation rule set shared by the profiler (`profile_connection`)
-    and the column lister (`list_columns`) so they can't drift: a type with no
-    profiler → `ProfileUnsupportedError` (422); a missing credential or a missing
-    target for that type (SQL needs `table`; Unity Catalog also needs `catalog`;
-    a flat-file type needs `path`) → `ProfileTargetInvalidError` (422). The
-    no-credential check is here (not left to the adapter) so it surfaces as a
-    clean 422 rather than a bare `ValueError` the connect guard would relabel 502.
     """
     profiler = _PROFILERS.get(connection.type)
     if profiler is None:
@@ -584,10 +395,8 @@ def resolve_profiler(
             f"column introspection is not supported for {connection.type!r} connections in v1",
             detail={"type": connection.type, "supported": sorted(_PROFILERS)},
         )
-    # Iceberg is credential-optional (like `build_iceberg_runner` / the ADLS/S3
-    # adapters) — a local warehouse or vended-credentials REST catalog has no
-    # secret. Every other type still requires a stored credential, surfaced as a
-    # clean 422 rather than a bare ValueError the connect guard would relabel 502.
+    # Iceberg is credential-optional (like `build_iceberg_runner` / the ADLS/S3 adapters) — a local
+    # warehouse or vended-credentials REST catalog has no secret.
     if not isinstance(profiler, _IcebergProfiler) and not connection.secret_ref:
         raise ProfileTargetInvalidError(
             "connection has no stored credential (secret_ref)", detail={"type": connection.type}
@@ -616,7 +425,8 @@ def resolve_profiler(
 def resolve_effective_schema(connection: Connection, schema: str | None) -> str:
     """The schema to qualify a SQL target with: the explicit `schema`, else the
     connection's configured default. Raises `ProfileIdentifierInvalidError` (422)
-    when neither is set. Shared by `profile_table` and `list_table_columns`."""
+    when neither is set. Shared by `profile_table` and `list_table_columns`.
+    """
     effective_schema = schema if schema is not None else connection.config.get("schema")
     if not isinstance(effective_schema, str):
         raise ProfileIdentifierInvalidError(
@@ -635,16 +445,7 @@ def _top_values_per_column(
     catalog: str | None,
     dialect: Dialect | None,
 ) -> dict[str, list[Mapping[str, Any]]]:
-    """The original path: one grouped-and-limited query per column, N round-trips.
-
-    Kept as an explicit, reachable fallback (#327's own instruction), not as dead
-    code — see `_fetch_top_values`.
-
-    The driver's ``dq_value``/``dq_freq`` labels (see `_VALUE_LABEL`) are mapped
-    to the ``value``/``freq`` keys `assemble_profile` consumes, so both fetch
-    paths hand it the identical plain-dict shape and the SQL label choice stays
-    an implementation detail of this module.
-    """
+    """The original path: one grouped-and-limited query per column, N round-trips."""
     return {
         col: [
             {"value": row[_VALUE_LABEL], "freq": row[_FREQ_LABEL]}
@@ -657,21 +458,7 @@ def _top_values_per_column(
 
 
 def _recover_transaction(conn: Any) -> None:
-    """Roll back so the fallback can run on a usable connection (#327 review, P1).
-
-    A server-side rejection of the batched statement leaves SQLAlchemy's autobegun
-    transaction **aborted** on Postgres-family engines: every subsequent statement
-    on that connection raises ``InFailedSqlTransaction`` until it is rolled back.
-    Without this the fallback was dead code exactly when it was needed — the
-    profile 502'd where the pre-#327 per-column path would have succeeded. Not
-    theoretical: reproduced against a live Postgres, and pinned by a test that
-    executes a genuinely failing statement rather than raising from Python.
-
-    Best-effort by design. The profiler only ever reads, so there is nothing to
-    lose by rolling back, and a connection object that cannot (a test double, an
-    autocommit-only driver) must not turn a recoverable batch failure into a hard
-    one — hence the broad catch and the log instead of a raise.
-    """
+    """Roll back so the fallback can run on a usable connection (#327 review, P1)."""
     try:
         conn.rollback()
     except Exception as exc:
@@ -688,39 +475,11 @@ def _fetch_top_values(
     catalog: str | None,
     dialect: Dialect | None,
 ) -> dict[str, list[Mapping[str, Any]]]:
-    """Top values for every column, batched, with the per-column path as fallback.
-
-    Runs `build_batched_top_values_query` in chunks of `_TOP_VALUES_BATCH` — the
-    #327 win, turning 1 + N round-trips into 1 + ceil(N / `_TOP_VALUES_BATCH`).
-
-    **Failure is handled per chunk, not per call** (#327 review, P5). A chunk that
-    the engine rejects is retried column-by-column *for that chunk's columns only*;
-    chunks that already succeeded are kept. Re-running everything would have made
-    the failure case cost more round-trips than the code this replaced (53 vs 51
-    on a 50-column, 2-chunk profile) and would recompute against the very
-    warehouse that just proved slow.
-
-    What is caught is deliberately narrow — ``SQLAlchemyError`` (whose subtree
-    includes ``DBAPIError``, i.e. every wrapped driver rejection) around the
-    ``execute`` only. A dialect disagreeing about the rank-join is what the
-    fallback exists for; a bug in `collect_batched_top_values` is *ours*, and a
-    broad catch spanning it would silently route every profile through the N+1
-    path forever behind one warning nobody alerts on — #327 un-fixed in practice,
-    with every test still green. Builder errors (a rejected identifier) are raised
-    outside the ``try`` for the same reason: retrying per column would only turn
-    one clean 422 into two round-trips and the same 422.
-
-    The fallback is also not silent: it logs ``profile_top_values_batch_fallback``
-    with the exception type and the chunk width, so a warehouse that always falls
-    back is visible in telemetry rather than merely slow. And it rolls the
-    connection back first — see `_recover_transaction`.
-    """
+    """Top values for every column, batched, with the per-column path as fallback."""
     if not columns:
         return {}
     if int(top_n) < 1:
-        # No top values were asked for. Both API surfaces bound `top_n` at >= 1 so
-        # this is unreachable in practice; answering in Python rather than issuing
-        # N `LIMIT 0` round-trips that can only return nothing (#327 review, m1).
+        # No top values were asked for.
         return {col: [] for col in columns}
 
     collected: dict[str, list[Mapping[str, Any]]] = {}
@@ -767,11 +526,6 @@ def profile_table(
     """Profile `columns` of a SQL `table` on `connection` (dispatched here for
     SQL datasource types). `catalog` qualifies the namespace for Unity Catalog
     (`catalog.schema.table`); Snowflake leaves it `None`.
-
-    Raises `ProfileIdentifierInvalidError` (422) for a bad catalog/schema/table/
-    column name (validated *before* any query runs), and `ProfileFailedError`
-    (502) if the profile can't execute — the adapter exception is never echoed
-    (it can carry DSN/credential fragments).
     """
     effective_schema = resolve_effective_schema(connection, schema)
     # Validate every identifier up front (422) before any query is built/run.
@@ -784,9 +538,8 @@ def profile_table(
 
     try:
         with _open_connection(connection, secret_store) as conn:
-            # A catalog-qualified (3-part, Unity Catalog) target needs the live
-            # connection's dialect to quote the catalog/schema (#936); a 2-part
-            # Snowflake target never reaches the code that would use it.
+            # A catalog-qualified (3-part, Unity Catalog) target needs the live connection's dialect
+            # to quote the catalog/schema (#936).
             dialect = conn.dialect if catalog is not None else None
             aggregate = (
                 conn.execute(
@@ -826,12 +579,7 @@ def profile_table(
 
 
 def infer_file_format(path: str, explicit: str | None) -> str:
-    """Resolve the file format from an explicit value or the path extension.
-
-    Raises `ProfileTargetInvalidError` (422) for an unknown/unsupported format —
-    the caller can always pass `file_format` to override extension guessing. The
-    extension mapping is shared with the runner (`flatfile.format_from_path`).
-    """
+    """Resolve the file format from an explicit value or the path extension."""
     fmt = explicit or format_from_path(path)
     if fmt not in _SUPPORTED_FORMATS:
         raise ProfileTargetInvalidError(
@@ -853,22 +601,13 @@ def _to_native(value: Any) -> Any:
         return None
     if isinstance(value, bool | int | float | str):
         return value
-    # Anything else a column can hold (bytes/binary, Decimal, UUID, …) → a display
-    # string, so a min/max/top value is always JSON-encodable, never a 500 at the
-    # response boundary. `bool` is matched above `int` since bool is an int.
+    # Anything else a column can hold (bytes/binary, Decimal, UUID, …) → a display string, so a
+    # min/max/top value is always JSON-encodable, never a 500 at the response boundary.
     return str(value)
 
 
 def _profile_columns(df: Any, *, columns: list[str], top_n: int) -> tuple[int, list[ColumnProfile]]:
-    """Row count + per-column stats for `columns` of an in-memory dataframe.
-
-    The datasource-neutral core of the pandas profiling path, shared by the
-    flat-file (`profile_dataframe`) and Iceberg (`profile_iceberg`) profilers so
-    they can't drift on the stats contract — only the `ProfileResult` identity
-    fields (`path`/`file_format` vs `table`) differ per datasource. Raises
-    `ProfileColumnNotFoundError` (422) if a requested column isn't in the frame —
-    a clean error instead of a KeyError 500.
-    """
+    """Row count + per-column stats for `columns` of an in-memory dataframe."""
     missing = [c for c in columns if c not in df.columns]
     if missing:
         raise ProfileColumnNotFoundError(
@@ -883,27 +622,13 @@ def _profile_columns(df: Any, *, columns: list[str], top_n: int) -> tuple[int, l
 def profile_dataframe(
     df: Any, *, columns: list[str], top_n: int, path: str, file_format: str
 ) -> ProfileResult:
-    """Compute per-column stats from an in-memory dataframe (pure, no I/O).
-
-    Raises `ProfileColumnNotFoundError` (422) if a requested column isn't in the
-    frame — a clean error instead of a KeyError 500.
-    """
+    """Compute per-column stats from an in-memory dataframe (pure, no I/O)."""
     row_count, profiles = _profile_columns(df, columns=columns, top_n=top_n)
     return ProfileResult(path=path, file_format=file_format, row_count=row_count, columns=profiles)
 
 
 def _profile_series(column: str, series: Any, *, row_count: int, top_n: int) -> ColumnProfile:
-    """Per-column stats, degrading a messy column to nulls instead of 500-ing.
-
-    `null_count` is always computable, but a real-world flat file can hold a
-    column the stats can't process: min/max raise on **uncomparable** mixed types
-    (e.g. ints and strings in one object column), and distinct/value_counts raise
-    on **unhashable** cells (nested list/dict values from Parquet). Each best-effort
-    stat is guarded independently — and broadly, since the exception type varies by
-    backend (a numpy object column raises `TypeError`, a pyarrow-backed Parquet
-    list/struct column raises `ArrowNotImplementedError`) — so one bad column yields
-    null stats for itself rather than failing the whole profile request.
-    """
+    """Per-column stats, degrading a messy column to nulls instead of 500-ing."""
     null_count = int(series.isna().sum())
     non_null = series.dropna()
     try:
@@ -942,29 +667,7 @@ def _read_dataframe(
     columns: list[str],
     secret_store: SecretStore,
 ) -> Any:
-    """Read `path` from the flat-file datasource into a sampled dataframe.
-
-    The live I/O seam (download/range-read + parse) — monkeypatched in tests.
-    Applies the two "load less data" levers from the pandas scaling guide:
-
-    * **column projection** — only the requested `columns` are parsed (CSV
-      `usecols`, Parquet `columns=`), so profiling 3 of 200 columns doesn't read
-      all 200. Unknown names are simply not selected; `profile_dataframe` then
-      reports genuinely-missing ones as a clean 422.
-    * **row sampling** — at most `_SAMPLE_ROWS` rows.
-
-    **Parquet** (#1001) goes through the `RangeReader` seam #882 gave column
-    listing, rather than downloading the whole object — see
-    `_read_parquet_sample` below.
-
-    **CSV stays on whole-object download**, deliberately. A CSV has no footer
-    and no fixed row width, so a bounded head range can only bound *bytes*, not
-    rows — on a wide file that silently caps the sample below `_SAMPLE_ROWS`
-    with no signal that it happened, changing reported distinct counts / top
-    values / min-max (the #839 lesson: a quietly-shrunk statistic is worse than
-    the egress it saves). Parquet has no such trap because its row groups are
-    self-describing, which is exactly why it's the format fixed here.
-    """
+    """Read `path` from the flat-file datasource into a sampled dataframe."""
     if not connection.secret_ref:
         raise ValueError("connection requires secret_ref for the credential")
     secret = secret_store.get(connection.secret_ref)
@@ -990,38 +693,7 @@ def _read_dataframe(
 def _read_parquet_sample(
     *, conn_type: str, config: dict[str, Any], path: str, secret: str, columns: list[str]
 ) -> Any:
-    """Sample a Parquet file's projected columns without downloading it (#1001).
-
-    Same `RangeReader` seam #882 gave column listing: `pq.ParquetFile` lands on
-    the footer with a couple of small range GETs regardless of object size, then
-    `iter_batches(columns=present)` streams row groups off the object — not the
-    file's other columns, and not its later rows once the sample is met. A row
-    group's batches are merged/split to fill up to `batch_size` (`_SAMPLE_ROWS`),
-    so the loop reliably stops after the first batch (rarely a second, for a
-    file whose row groups are much smaller than the sample) — "roughly one row
-    group's worth", never the whole object.
-
-    `dtype_backend="pyarrow"` parity with the old whole-object read is kept by
-    assembling the sample as a pyarrow `Table` and converting with
-    `types_mapper=pd.ArrowDtype`, including the empty-file edge (an empty
-    `Table` built straight from the footer's own field types, rather than an
-    untyped `pd.DataFrame()`).
-
-    The reader is opened with `chunk=STREAM_CHUNK`, not `RangeReader`'s default
-    256 KiB seeking window. The default is sized for landing on a footer with a
-    couple of small reads; `iter_batches` instead walks row groups sequentially
-    (and, within a row group, jumps between the projected columns' — not
-    necessarily contiguous — byte ranges), the same access pattern
-    `csv_row_count` already uses `STREAM_CHUNK` for. On a file with many small
-    row groups the seeking default turns into a storm of small range requests —
-    measured at 6.8x the object's own size and 92 requests on a 200 row-group
-    fixture. `STREAM_CHUNK` bounds that to a small, roughly constant number of
-    requests (2-3, regardless of row-group count) with total bytes read landing
-    close to the object's own size — not always strictly under it, since a
-    single-window cache still re-fetches once a jump lands outside the current
-    window, but never the unbounded multiplier a small window produces on an
-    adversarial row-group layout.
-    """
+    """Sample a Parquet file's projected columns without downloading it (#1001)."""
     import pandas as pd
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -1033,10 +705,8 @@ def _read_parquet_sample(
     available = set(parquet_file.schema.names)
     present = [c for c in columns if c in available]
     if not present:
-        # No requested column exists in the file — `profile_dataframe` reports
-        # the missing names as a clean 422 off `columns`, not off this frame, so
-        # what's returned here only needs to be an empty, columnless frame (the
-        # same shape a whole-object `pd.read_parquet(path, columns=[])` gives).
+        # No requested column exists in the file — `profile_dataframe` reports the missing names as
+        # a clean 422 off `columns`, not off this frame.
         return pd.DataFrame()
 
     schema = parquet_file.schema_arrow
@@ -1051,14 +721,11 @@ def _read_parquet_sample(
     if batches:
         table = pa.Table.from_batches(batches)
     else:
-        # A real, correctly-typed empty table (e.g. a header-only file) rather
-        # than an untyped `pd.DataFrame(columns=present)` — matches what the old
-        # whole-object `pd.read_parquet` produced for the same input.
+        # A real, correctly-typed empty table (e.g. a header-only file) rather than an untyped
+        # `pd.DataFrame(columns=present)`.
         table = pa.table({c: pa.array([], type=schema.field(c).type) for c in present})
-    # Parquet is already Arrow on disk; dtype_backend="pyarrow" keeps the buffers
-    # zero-copy instead of materialising a numpy copy. The stat helpers + the
-    # _to_native coercion are Arrow-scalar-safe (min/max → Python int/str,
-    # timestamps → Timestamp.isoformat, NA dropped before reductions).
+    # Parquet is already Arrow on disk; dtype_backend="pyarrow" keeps the buffers zero-copy instead
+    # of materialising a numpy copy.
     return table.to_pandas(types_mapper=pd.ArrowDtype).head(_SAMPLE_ROWS)
 
 
@@ -1071,13 +738,7 @@ def profile_file(
     top_n: int,
     secret_store: SecretStore,
 ) -> ProfileResult:
-    """Profile `columns` of a flat file on `connection` (ADLS Gen2 / S3).
-
-    Raises `ProfileTargetInvalidError` (422) for an unknown format,
-    `ProfileColumnNotFoundError` (422) for a missing column, and
-    `ProfileFailedError` (502) if the file can't be read — the underlying
-    exception is never echoed (it can carry credential/endpoint fragments).
-    """
+    """Profile `columns` of a flat file on `connection` (ADLS Gen2 / S3)."""
     fmt = infer_file_format(path, file_format)
     try:
         df = _read_dataframe(
@@ -1101,11 +762,7 @@ def _iceberg_identifier(table: str, namespace: str | None) -> str:
     """Fold the optional `namespace` into the ``namespace.table`` identifier
     ``pyiceberg`` addresses a table by — mirroring `run_target.resolve_target`'s
     Iceberg branch, so the profiler and the run path resolve the same table.
-
-    Also mirrors that branch's `_str_or_none` fold: a `None`, empty, or
-    whitespace-only `namespace` is not a real namespace and folds to the bare
-    `table` — otherwise ``namespace=" "`` would yield `" .orders"` here while the
-    run path resolves the bare `"orders"` for the same input (#721 code review)."""
+    """
     folded = namespace if isinstance(namespace, str) and namespace.strip() else None
     return f"{folded}.{table}" if folded else table
 
@@ -1113,20 +770,13 @@ def _iceberg_identifier(table: str, namespace: str | None) -> str:
 def _read_iceberg_dataframe(
     connection: Connection, *, identifier: str, columns: list[str], secret_store: SecretStore
 ) -> Any:
-    """Resolve an Iceberg connection's config + optional secret (exactly as
-    `build_iceberg_runner` does — the credential is optional), load the table
-    ONCE, validate the requested `columns` against its schema *before any scan*
-    (raising the same `ProfileColumnNotFoundError` the post-scan defence-in-depth
-    check in `_profile_columns` raises — same message/detail shape — so an
-    all-or-partially-invalid column list 422s without ever reading data), then
-    materialise the already-loaded table as a projected, sampled DataFrame.
-
-    The live I/O seam (catalog load + scan), monkeypatched in tests — the
-    Iceberg analogue of the flat-file profiler's `_read_dataframe`. Before this
-    fold, an all-invalid column list fell through to `read_iceberg_dataframe`'s
-    ``selected_fields=("*",)`` fallback, scanning every column before the 422
-    (#721 code review); that fallback now only fires for the `columns=None`
-    (list-every-column) case, never reachable from here."""
+    """Resolve an Iceberg connection's config + optional secret (exactly as `build_iceberg_runner`
+    does — the credential is optional), load the table ONCE, validate the requested `columns`
+    against its schema *before any scan* (raising the same `ProfileColumnNotFoundError` the
+    post-scan defence-in-depth check in `_profile_columns` raises — same message/detail shape —
+    so an all-or-partially-invalid column list 422s without ever reading data), then materialise
+    the already-loaded table as a projected, sampled DataFrame.
+    """
     config = IcebergConfig.model_validate(connection.config)
     secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, secret_store)
     table = load_iceberg_table(config, secret, identifier, catalog_secret)
@@ -1152,7 +802,8 @@ def _list_iceberg_columns(
     connection: Connection, *, identifier: str, secret_store: SecretStore
 ) -> list[str]:
     """Resolve config + optional secret and list the target's schema field names
-    (metadata only, no data scan) — the Iceberg column-listing I/O seam."""
+    (metadata only, no data scan) — the Iceberg column-listing I/O seam.
+    """
     config = IcebergConfig.model_validate(connection.config)
     secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, secret_store)
     return iceberg_column_names(config, secret, identifier, catalog_secret)
@@ -1167,15 +818,7 @@ def profile_iceberg(
     top_n: int,
     secret_store: SecretStore,
 ) -> ProfileResult:
-    """Profile `columns` of a natively-read Iceberg `table` on `connection` (#721).
-
-    Materialises a projected, sampled DataFrame via ``pyiceberg`` and reuses the
-    shared pandas profiling core — the Iceberg identifier is ``namespace.table``,
-    which the SQL path can't handle, so this never routes through `profile_table`.
-    Raises `ProfileColumnNotFoundError` (422) for a missing column and
-    `ProfileFailedError` (502) if the table can't be read — the underlying
-    exception is never echoed (it can carry catalog/credential fragments).
-    """
+    """Profile `columns` of a natively-read Iceberg `table` on `connection` (#721)."""
     identifier = _iceberg_identifier(table, namespace)
     try:
         df = _read_iceberg_dataframe(
@@ -1202,11 +845,7 @@ def list_iceberg_columns(
     namespace: str | None,
     secret_store: SecretStore,
 ) -> list[str]:
-    """Column (field) names of an Iceberg `table` on `connection` — no data scan.
-
-    Reads the table's schema field names (metadata only). Raises
-    `ProfileFailedError` (502) if the table can't be read (exception not echoed).
-    """
+    """Column (field) names of an Iceberg `table` on `connection` — no data scan."""
     identifier = _iceberg_identifier(table, namespace)
     try:
         return _list_iceberg_columns(connection, identifier=identifier, secret_store=secret_store)
@@ -1220,19 +859,7 @@ def list_iceberg_columns(
 
 
 def derive_column_policy(columns: list[ColumnProfile]) -> dict[str, Any]:
-    """Auto-derive a failing-sample redaction policy (#415) from a column profile.
-
-    Classifies each column by name + its sampled top-values and returns the
-    ``{identifier_column, pii_columns}`` shape stored on ``Suite.column_policy``:
-
-    * ``pii_columns`` — every column the classifier flags PII (masked in samples);
-    * ``identifier_column`` — the best row locator: the highest-cardinality column
-      classified IDENTIFIER (most unique → most useful to pinpoint a failing row),
-      ties broken by name. Omitted when no column looks like an identifier.
-
-    A convenience the author reviews and can override — the *stored* policy is
-    authoritative, and the datasource-tag layer (level 1) still overrules for masking.
-    """
+    """Auto-derive a failing-sample redaction policy (#415) from a column profile."""
     pii: list[str] = []
     identifiers: list[tuple[int, str]] = []  # (distinct_count, name) → pick the most unique
     for col in columns:
@@ -1262,13 +889,7 @@ def profile_connection(
     file_format: str | None = None,
     secret_store: SecretStore,
 ) -> ProfileResult:
-    """Dispatch to the SQL, flat-file, or Iceberg profiler based on the type.
-
-    Raises `ProfileUnsupportedError` (422) for a type with no profiler, and
-    `ProfileTargetInvalidError` (422) if the target for that type is missing
-    (a SQL/Iceberg type needs `table`; Unity Catalog also needs `catalog`; a
-    flat-file type needs `path`) or a credential-requiring connection has none.
-    """
+    """Dispatch to the SQL, flat-file, or Iceberg profiler based on the type."""
     profiler = resolve_profiler(connection, table=table, catalog=catalog, path=path)
     if isinstance(profiler, _IcebergProfiler):
         assert table is not None  # resolve_profiler enforced this for Iceberg
@@ -1318,12 +939,7 @@ def list_table_columns(
     catalog: str | None = None,
     secret_store: SecretStore,
 ) -> list[str]:
-    """Column names of a SQL `table` on `connection` (Snowflake / Unity Catalog).
-
-    Raises `ProfileIdentifierInvalidError` (422) for a bad catalog/schema/table
-    (validated before any query runs) and `ProfileFailedError` (502) if the
-    lookup can't execute — the adapter exception is never echoed.
-    """
+    """Column names of a SQL `table` on `connection` (Snowflake / Unity Catalog)."""
     effective_schema = resolve_effective_schema(connection, schema)
     # Validate every identifier up front (422) before any query is built/run.
     if catalog is not None:
@@ -1352,17 +968,7 @@ def list_file_columns(
     file_format: str | None,
     secret_store: SecretStore,
 ) -> list[str]:
-    """Column (header) names of a flat file on `connection` (ADLS Gen2 / S3).
-
-    Reads only the header or the Parquet footer schema — and, since #882, only
-    the *bytes* those need: Parquet lands on its footer through `RangeReader`,
-    CSV takes a head range. This is called from the check editor on every target
-    change, so downloading a multi-GB object to list column names was full egress
-    and worker memory for a few hundred bytes of answer.
-
-    Raises `ProfileTargetInvalidError` (422) for an unknown format and
-    `ProfileFailedError` (502) if the file can't be read (exception not echoed).
-    """
+    """Column (header) names of a flat file on `connection` (ADLS Gen2 / S3)."""
     # secret_ref presence is guaranteed by the dispatcher (`resolve_profiler`),
     # as in `profile_file`; a direct call without it surfaces as a read failure.
     fmt = infer_file_format(path, file_format)
@@ -1399,13 +1005,7 @@ def list_columns(
     file_format: str | None = None,
     secret_store: SecretStore,
 ) -> list[str]:
-    """List a target's column names, dispatching on the connection type.
-
-    Same target rules as `profile_connection` (a SQL/Iceberg type needs `table`;
-    Unity Catalog also needs `catalog`; a flat-file type needs `path`). Raises
-    `ProfileUnsupportedError` (422) for a type with no profiler and
-    `ProfileTargetInvalidError` (422) for a missing target/credential.
-    """
+    """List a target's column names, dispatching on the connection type."""
     profiler = resolve_profiler(connection, table=table, catalog=catalog, path=path)
     if isinstance(profiler, _IcebergProfiler):
         assert table is not None  # resolve_profiler enforced this for Iceberg
@@ -1435,15 +1035,7 @@ def suggest_policy_for_target(
     top_n: int = 20,
     secret_store: SecretStore,
 ) -> dict[str, Any]:
-    """List → profile → classify a target's columns into a redaction-policy suggestion.
-
-    The shared engine behind both the "Auto-detect" endpoint and the auto-classify
-    task (#634): introspect the target's column names, profile them for sample
-    values, then `derive_column_policy` into ``{identifier_column?, pii_columns}``.
-    Raises the profiler's ``ProfileUnsupportedError`` / ``ProfileTargetInvalidError``
-    (422s) for an unprofilable type or a missing/invalid target — the task treats
-    those as a fail-soft no-op; the endpoint surfaces them.
-    """
+    """List → profile → classify a target's columns into a redaction-policy suggestion."""
     columns = list_columns(
         connection,
         table=table,

@@ -1,13 +1,4 @@
-"""Round-trip tests for the user-facing dbt build callback snippet.
-
-The snippet (`integrations/dbt/dataq_dbt_callback.py`) is the *producer* half of the
-dbt integration; `backend/app/api/v1/orchestration.py` is the *consumer*. These
-tests load the snippet by path and assert producer and consumer agree on both axes:
-the HMAC the snippet signs is accepted by the receiver's `_authenticate_dbt`, and
-the JSON it builds (from a `run_results.json`) parses cleanly through
-`DbtProvider.parse_event`. If either side drifts (header name, signing input, field
-names, status map), a test here fails before a user's build silently does.
-"""
+"""Round-trip tests for the user-facing dbt build callback snippet."""
 
 import importlib.util
 import json

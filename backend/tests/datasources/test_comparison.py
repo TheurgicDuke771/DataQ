@@ -1,12 +1,4 @@
-"""Comparison engine tests (ADR 0015, #793) — pure frames, no I/O.
-
-Covers FDC bucket parity on identical-schema fixtures, the typed
-duplicate-key/missing-column refusals, NULL semantics (null==null matches;
-null-vs-value mismatches; a real "nan" string is NOT a null — the FDC
-astype(str) quirk this port fixes), per-side key mapping, column
-subset/intersection reconciliation, the mismatch-% scalar, sample caps, and
-an adversarial pass (unicode keys, mixed dtypes across sides, empty frames).
-"""
+"""Comparison engine tests (ADR 0015, #793) — pure frames, no I/O."""
 
 from typing import Any
 
@@ -197,9 +189,8 @@ def test_unicode_and_whitespace_keys() -> None:
 
 
 def test_datetimes_match_across_numpy_and_arrow_backends() -> None:
-    # Identical instants: numpy datetime64 renders "2026-01-01 10:00:00" while
-    # arrow timestamps render ISO-T with nanoseconds — the canonicalizer must
-    # make them equal (this exact skew comes from the #792 readers).
+    # Identical instants: numpy datetime64 renders "2026-01-01 10:00:00" while arrow timestamps
+    # render ISO-T with nanoseconds.
     ts = ["2026-01-01T10:00:00", "2026-01-02T00:00:00"]
     source = pd.DataFrame({"id": [1, 2], "ts": pd.to_datetime(ts)})
     target = pd.DataFrame(
@@ -210,9 +201,8 @@ def test_datetimes_match_across_numpy_and_arrow_backends() -> None:
 
 
 def test_datetime_rendering_not_data_dependent_within_column() -> None:
-    # numpy astype(str) renders an all-midnight column date-only, but flips to
-    # full timestamps once any row has a time component — two equal rows must
-    # not mismatch because an unrelated third row exists on one side.
+    # numpy astype(str) renders an all-midnight column date-only, but flips to full timestamps once
+    # any row has a time component.
     source = pd.DataFrame({"id": [1, 2], "ts": pd.to_datetime(["2026-01-01", "2026-01-02"])})
     target = pd.DataFrame(
         {
@@ -330,9 +320,7 @@ def _col_res(**kw: Any) -> Any:
 
 
 def test_columns_grain_buckets_fdc_parity() -> None:
-    # id=1: a matches, b mismatches. id=2: a null-in-target (additional_in_source
-    # for column a), b matches. id=3 only in source (its non-null values are
-    # additional_in_source). id=4 only in target.
+    # id=1: a matches, b mismatches. id=2: a null-in-target (additional_in_source for column a).
     source = pd.DataFrame({"id": [1, 2, 3], "a": ["x", "y", "z"], "b": [1, 2, None]})
     target = pd.DataFrame({"id": [1, 2, 4], "a": ["x", None, "q"], "b": [9, 2, 4]})
     res = _col_res(source=source, target=target)

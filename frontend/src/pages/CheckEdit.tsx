@@ -27,17 +27,7 @@ import { useAsyncAction } from '../hooks/useAsyncAction';
 import { apiFieldError } from '../utils/fieldErrors';
 import { useAsyncData } from '../hooks/useAsyncData';
 
-/**
- * Dedicated full-page edit-check flow (ADR 0022 — replaces the edit drawer). The
- * expectation Select (grouped by category) drives which config fields render; the
- * submitted `config` is rebuilt from only the selected expectation's declared
- * fields, so switching types never leaks stale kwargs. Creating a check is the
- * dedicated `/suites/:suiteId/checks/new` page. Version history is still a drawer
- * (the surviving drawer alongside Share) and now offers Restore (#283) when the
- * caller can edit — a successful restore reloads the page's suite/check/connection
- * fetch so the form re-seeds from the restored state. The fetch + form live in a
- * view keyed on the check id so a param-only route change reloads cleanly.
- */
+/** Dedicated full-page edit-check flow (ADR 0022 — replaces the edit drawer). */
 export function CheckEdit() {
   const { suiteId, checkId } = useParams<{ suiteId: string; checkId: string }>();
   return <CheckEditView key={checkId} suiteId={suiteId} checkId={checkId} />;
@@ -46,10 +36,8 @@ export function CheckEdit() {
 function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: string }) {
   const navigate = useNavigate();
   const back = () => navigate(suiteId ? `/suites/${suiteId}` : '/suites');
-  // Load the suite (target + datasource type) and the check together: the target
-  // drives the dry-run preview, the connection type gates Custom SQL (ADR 0019),
-  // and the check seeds the form. The connection only depends on the suite, so it
-  // chains off getSuite while getCheck runs alongside (not serially after both).
+  // Load the suite (target + datasource type) and the check together: the target drives the dry-run
+  // preview, the connection type gates Custom SQL (ADR 0019), and the check seeds the form.
   const { state, reload } = useAsyncData(async () => {
     if (!suiteId || !checkId) throw new Error('no check');
     const suiteP = getSuite(suiteId);
@@ -139,9 +127,9 @@ function CheckEditForm({
   // `kind` is immutable on update (a freshness check can't become an expectation),
   // so a monitor check locks its type — only its config + thresholds are editable.
   const isMonitor = check.kind !== 'expectation';
-  // Comparison checks (ADR 0015) edit only name + thresholds here — the
-  // source/dataset config is authored on the dedicated side-by-side page
-  // (recreate to re-shape; repointing stays an API affair for now).
+  // Comparison checks (ADR 0015) edit only name + thresholds here — the source/dataset config is
+  // authored on the dedicated side-by-side page (recreate to re-shape; repointing stays an API
+  // affair for now).
   const isComparison = check.kind === 'comparison';
 
   // Seed from the loaded check once.
@@ -150,9 +138,7 @@ function CheckEditForm({
       name: check.name,
       expectation_type: check.expectation_type,
       config: configToForm(EXPECTATION_BY_TYPE[check.expectation_type], check.config),
-      // The STORED value, not the derived default (ADR 0038): an override must
-      // survive a re-open, and a check saved as unclassified must not silently
-      // acquire a classification just because someone opened the editor.
+      // The STORED value, not the derived default (ADR 0038): an override must survive a re-open.
       dimension: check.dimension ?? undefined,
       warn_threshold: check.warn_threshold ?? undefined,
       fail_threshold: check.fail_threshold ?? undefined,
@@ -160,12 +146,8 @@ function CheckEditForm({
     });
   }, [check, form]);
 
-  // Changing the expectation type re-derives the dimension, mirroring the create
-  // page (which resets the whole form on type change). Without this the select
-  // keeps the OLD type's classification while the help text below it claims to be
-  // "defaulted from the check type" — and `buildCheckPayload` then sends the stale
-  // value explicitly, so a uniqueness check ends up filed as completeness and
-  // looks like a deliberate override forever.
+  // Changing the expectation type re-derives the dimension, mirroring the create page (which resets
+  // the whole form on type change).
   const initialType = check.expectation_type;
   useEffect(() => {
     if (selectedType && selectedType !== initialType) {
@@ -181,10 +163,8 @@ function CheckEditForm({
       return; // inline validation errors
     }
     await run(async () => {
-      // `kind` is immutable on update — omit it from the PATCH (don't rely on the
-      // backend silently ignoring an extra field). A comparison PATCH carries
-      // only name + thresholds: sending a rebuilt (empty) config would 422 on
-      // the comparison validator — and this page doesn't edit that config.
+      // `kind` is immutable on update — omit it from the PATCH (don't rely on the backend silently
+      // ignoring an extra field).
       const update = isComparison
         ? {
             name: values.name as string,
@@ -204,10 +184,8 @@ function CheckEditForm({
       try {
         await updateCheck(suiteId, check.id, update);
       } catch (err) {
-        // The backend names the field it refused on (e.g. the sampling to
-        // row-count conflict, #1333 F5). Put it there rather than in a toast that
-        // dismisses itself — this refusal is about the interaction between this
-        // check and the suite's run target, which takes a moment to read.
+        // The backend names the field it refused on (e.g. the sampling to row-count conflict, #1333
+        // F5).
         const api = apiFieldError(err);
         const field = api?.detail.field;
         if (api && typeof field === 'string') {
@@ -239,9 +217,7 @@ function CheckEditForm({
             placeholder="Select an expectation"
             // A monitor's kind is immutable, so lock the type for monitor checks.
             disabled={isMonitor}
-            // Grouped by category (antd optgroups). Pass the check's current type
-            // so Custom SQL / monitor categories stay selectable even before the
-            // connection loads.
+            // Grouped by category (antd optgroups).
             options={expectationsByCategoryFor(connectionType, check.expectation_type).map((g) => ({
               label: g.category,
               options: g.specs.map((e) => ({ value: e.type, label: e.label })),

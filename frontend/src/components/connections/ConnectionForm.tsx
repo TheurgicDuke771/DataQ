@@ -40,15 +40,8 @@ interface FormValues {
 type TestState = 'idle' | 'testing' | 'ok' | 'failed';
 
 /**
- * Create or edit a connection — the form body shared by the `/connections/new`
- * page (a type is picked first, then this renders) and the `/connections/:id/edit`
- * page (the drawer is retired in W6, ADR 0022). `connection === undefined` is
- * create mode (env is chosen + the credential is captured); editing locks type +
- * env (the backend `ConnectionUpdate` rejects changing them) and omits the secret
- * — credential rotation is the separate Re-auth flow. The one exception is a
- * config edit that moves where the credential is SENT (#1401): the backend
- * requires it back, so the field reappears rather than leaving the user at a
- * 422 they cannot answer.
+ * Create or edit a connection — the form body shared by the `/connections/new` page (a type is
+ * picked first.
  */
 export function ConnectionForm({
   type,
@@ -70,14 +63,8 @@ export function ConnectionForm({
   const [testState, setTestState] = useState<TestState>('idle');
   const [testError, setTestError] = useState<string>();
 
-  // Seed the form: an edit prefills name + config; a create seeds the new type's
-  // config defaults (e.g. the auth-type) and clears any fields left over from a
-  // previously-picked type. Re-runs on `type`/`connection` so re-picking a type
-  // on the new page can't leak the prior type's fields. `testState` needs no
-  // reset here: `ConnectionForm` only ever sees a *different* type or
-  // connection across a remount (the picker↔form ternary on the new page, the
-  // `key={connectionId}` remount on the edit page), so its `useState('idle')`
-  // initial value already starts fresh every time this effect's inputs change.
+  // Seed the form: an edit prefills name + config; a create seeds the new type's config defaults
+  // (e.g. the auth-type) and clears any fields left over from a previously-picked type.
   useEffect(() => {
     form.resetFields();
     if (connection) {
@@ -87,10 +74,8 @@ export function ConnectionForm({
     }
   }, [type, connection, form]);
 
-  // Only the selected auth mode's passphrase rides along — a value typed under
-  // a previously-picked mode is preserved in the form store after its field
-  // unmounts and must not wrap the secret. Shared by Create/Save and Test so
-  // the two can never compose the secret differently.
+  // Only the selected auth mode's passphrase rides along — a value typed under a previously-picked
+  // mode is preserved in the form store after its field unmounts and must not wrap the secret.
   const buildSecret = (values: FormValues): string | undefined =>
     values.secret
       ? composeSecret(
@@ -101,13 +86,9 @@ export function ConnectionForm({
         )
       : undefined;
 
-  // A field changed after a test ran — the green/red badge no longer
-  // describes what would actually be saved (repo precedent: Connections.tsx
-  // `clearHealth`, "the prior pass/fail no longer holds"). Edit mode is
-  // included on purpose: `onTest` there re-tests the SAVED connection, but an
-  // unsaved config edit still invalidates that verdict's relevance to what a
-  // Save would persist next — leaving a stale "Connected" badge up while the
-  // form no longer matches it would be exactly the lie #351 review flagged.
+  // A field changed after a test ran — the green/red badge no longer describes what would actually
+  // be saved (repo precedent: Connections.tsx `clearHealth`, "the prior pass/fail no longer
+  // holds").
   const onValuesChange = () => {
     if (testState !== 'idle') {
       setTestState('idle');
@@ -115,14 +96,8 @@ export function ConnectionForm({
     }
   };
 
-  // #1401: the backend refuses a config change that moves where this
-  // connection's stored credential is SENT unless the credential is re-supplied
-  // in the same request. Edit mode normally hides the secret entirely (rotation
-  // is the Re-auth flow), so without this the user would fill in a new
-  // `account_url`, press Save, and get a 422 naming a field the form does not
-  // show them — a dead end for a legitimate host migration. The comparison
-  // itself lives in `movedDestinationFields` so its first-render case is
-  // testable without a DOM.
+  // #1401: the backend refuses a config change that moves where this connection's stored credential
+  // is SENT unless the credential is re-supplied in the same request.
   const editedConfig = Form.useWatch('config', form) as Record<string, unknown> | undefined;
   const movedDestinations = isEdit
     ? movedDestinationFields(type, editedConfig, connection.config)
@@ -151,12 +126,7 @@ export function ConnectionForm({
       onSaved(saved);
     });
 
-  // Create mode: probe the config/secret just typed — nothing is persisted
-  // (#351). Edit mode: any config edits here are still unsaved, so testing
-  // them would report on a connection that doesn't exist yet; instead this
-  // re-tests the SAVED connection (identical call to the Connections list
-  // page's Test button) and the label says so, rather than silently testing
-  // the wrong thing.
+  // Create mode: probe the config/secret just typed — nothing is persisted (#351).
   const onTest = async () => {
     if (isEdit) {
       setTestState('testing');

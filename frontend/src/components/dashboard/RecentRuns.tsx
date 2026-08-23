@@ -14,21 +14,15 @@ import {
 } from '../results/resultsFormat';
 
 /**
- * Recent Runs (prototype `RecentRuns`) — a cross-suite feed of the latest runs
- * on the dashboard, each row deep-linking to the routed run-detail page. Fetches
- * its own slice (the summary endpoint carries aggregates, not run rows); the
- * runs are already suite-scoped by the backend. "View all" → the Results page.
- *
- * The prototype's "Anomalies" column is dropped — there's no anomaly count on a
- * run (KPI honesty, ADR 0022).
+ * Recent Runs (prototype `RecentRuns`) — a cross-suite feed of the latest runs on the dashboard,
+ * each row deep-linking to the routed run-detail page.
  */
 const RECENT_LIMIT = 8;
 
 export function RecentRuns() {
   const navigate = useNavigate();
-  // Only `items` — this widget is deliberately a "most recent N" view, so its
-  // truncation is the feature, not a silence to disclose (#1108). The Results
-  // page's Runs tab is the surface that must report the population total.
+  // Only `items` — this widget is deliberately a "most recent N" view, so its truncation is the
+  // feature, not a silence to disclose (#1108).
   const { state } = useAsyncData(async () => (await listRuns({ limit: RECENT_LIMIT })).items);
   const { state: suitesState } = useAsyncData(() => listSuites());
 

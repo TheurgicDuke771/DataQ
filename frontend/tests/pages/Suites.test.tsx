@@ -96,11 +96,8 @@ function check(overrides: Partial<Check> = {}): Check {
   };
 }
 
-// Selecting a suite navigates to /suites/:suiteId, so render both routes at the
-// same Suites component (the param drives which suite is shown).
-// `WithMe` supplies a resolved `/me` at admin — the page hides its authoring
-// controls until the caller's workspace role is known (ADR 0033, #743), and
-// these tests stand in for the dev-bypass identity, which is an admin (#741).
+// Selecting a suite navigates to /suites/:suiteId, so render both routes at the same Suites
+// component (the param drives which suite is shown).
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={['/suites']}>
@@ -477,9 +474,8 @@ describe('Suites', () => {
     renderPage();
     await user.click(await screen.findByText('orders-suite'));
 
-    // summarizeTarget renders the configured prefix/pattern/strategy, not a
-    // resolved filename — and the detail page must say so (#1205), unlike the
-    // single-file case below.
+    // summarizeTarget renders the configured prefix/pattern/strategy, not a resolved filename — and
+    // the detail page must say so (#1205), unlike the single-file case below.
     expect(await screen.findByText('raw/orders_(.*)\\.csv (latest)')).toBeInTheDocument();
     expect(screen.getByText('Configured, not resolved')).toBeInTheDocument();
   });

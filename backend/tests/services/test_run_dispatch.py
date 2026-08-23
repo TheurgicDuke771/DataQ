@@ -1,10 +1,4 @@
-"""Unit tests for run_dispatch — dispatch / revoke / dispatch-failure shape.
-
-No broker: celery_app.send_task is spied. Asserts the task is published by its
-registered name with the run id as the sole arg, that the captured task id is
-returned, that a publish failure propagates (callers own the stuck-run policy),
-and the canonical terminal-failed shape (#227).
-"""
+"""Unit tests for run_dispatch — dispatch / revoke / dispatch-failure shape."""
 
 import uuid
 from types import SimpleNamespace
@@ -44,16 +38,16 @@ def test_dispatch_run_sends_task_by_name_and_returns_task_id(
 
     task_id = run_dispatch.dispatch_run(run_id)
 
-    # Published by registered name (decoupled from worker.tasks — no import edge),
-    # with the run id stringified for JSON serialisation; the AsyncResult id is
-    # returned so the caller can store it on the run for later revoke.
+    # Published by registered name (decoupled from worker.tasks — no import edge), with the run id
+    # stringified for JSON serialisation.
     assert calls == [("run_suite", [str(run_id)])]
     assert task_id == "celery-task-123"
 
 
 def test_mark_dispatch_failed_sets_canonical_shape() -> None:
     """#227: one definition of the dispatch-failure shape — failed + finished_at
-    set, started_at left NULL (it never started)."""
+    set, started_at left NULL (it never started).
+    """
     run = Run(id=uuid.uuid4(), suite_id=uuid.uuid4(), status="queued")
     run_dispatch.mark_dispatch_failed(run)
     assert run.status == "failed"
@@ -95,7 +89,8 @@ def test_dispatch_run_propagates_broker_failure(monkeypatch: pytest.MonkeyPatch)
 
 def test_dispatch_or_fail_success_sets_task_id(monkeypatch: pytest.MonkeyPatch) -> None:
     """Happy path: the run keeps its `queued` status, gets the dispatched task id,
-    and the helper commits + returns True."""
+    and the helper commits + returns True.
+    """
     monkeypatch.setattr(run_dispatch, "dispatch_run", lambda _run_id: "task-9")
     session = _FakeSession()
     run = Run(id=uuid.uuid4(), suite_id=uuid.uuid4(), status="queued")
@@ -110,7 +105,8 @@ def test_dispatch_or_fail_success_sets_task_id(monkeypatch: pytest.MonkeyPatch) 
 
 def test_dispatch_or_fail_broker_failure_marks_failed(monkeypatch: pytest.MonkeyPatch) -> None:
     """Broker down: the helper records the canonical terminal-failed shape,
-    commits, and returns False (caller owns the 503 / log-and-skip policy)."""
+    commits, and returns False (caller owns the 503 / log-and-skip policy).
+    """
 
     def _boom(_run_id: uuid.UUID) -> str:
         raise RuntimeError("broker unreachable")

@@ -1,20 +1,4 @@
-"""Catalog↔GX contract test (#205).
-
-The check editor's ``expectationCatalog.ts`` is the frontend's source of truth
-for expectation ``type`` (snake_case → GX class) and each config field name
-(→ GX kwarg). The backend deliberately has NO server catalog — config is
-free-form kwargs title-cased to a GX class in ``gx_runner`` — so this coupling
-has zero compile-time check: a catalog typo or a GX point-release kwarg rename
-ships fine and only fails at suite-run time on the worker.
-
-This test pins the seam against the PINNED GX version, resolving each catalog
-entry through the very same ``_expectation_class_name``/``getattr`` path the
-runner uses. The input is ``tests/fixtures/expectation_catalog.json``, kept in
-lock-step with the live TS catalog by the frontend drift-guard
-(``frontend/tests/components/catalogContract.test.ts`` — regenerate with
-``UPDATE_CATALOG_FIXTURE=1``). A GX bump or a catalog edit that breaks the
-pairing now fails HERE, in CI, not on the worker.
-"""
+"""Catalog↔GX contract test (#205)."""
 
 import functools
 import json
@@ -34,7 +18,8 @@ _FIXTURE = Path(__file__).parent.parent / "fixtures" / "expectation_catalog.json
 @functools.cache
 def _catalog() -> list[dict[str, Any]]:
     """Parse lazily (and once): a missing/corrupt fixture must fail THESE tests,
-    not abort the whole session as a collection error."""
+    not abort the whole session as a collection error.
+    """
     with _FIXTURE.open() as f:
         data: list[dict[str, Any]] = json.load(f)
     return data
@@ -74,7 +59,8 @@ def test_fixture_is_present_and_nonempty() -> None:
 def test_comparison_entries_match_backend_canonical_types() -> None:
     """The comparison catalog entries (ADR 0015 + #799) must carry exactly the
     backend's canonical expectation_types; they bypass GX (no fields — the
-    dedicated side-by-side form authors them)."""
+    dedicated side-by-side form authors them).
+    """
     from backend.app.services.check_service import COMPARISON_EXPECTATION_TYPES
 
     entries = _comparisons()
@@ -109,7 +95,8 @@ def test_catalog_fields_are_accepted_gx_kwargs(entry: dict[str, Any] | None) -> 
 @pytest.mark.parametrize("entry", _expectation_params())
 def test_catalog_entry_constructs_with_representative_kwargs(entry: dict[str, Any] | None) -> None:
     """Beyond field-name membership: the class actually instantiates with the
-    catalog's fields populated (pydantic validators accept the shape)."""
+    catalog's fields populated (pydantic validators accept the shape).
+    """
     entry = entry if entry is not None else _expectations()[0]
     samples: dict[str, Any] = {
         "column": "ORDER_ID",
@@ -132,28 +119,21 @@ def test_catalog_entry_constructs_with_representative_kwargs(entry: dict[str, An
 
 def test_custom_sql_entry_matches_backend_constants() -> None:
     """ADR 0019: the custom-SQL type + query key are shared constants on both
-    sides; the catalog must carry exactly those."""
+    sides; the catalog must carry exactly those.
+    """
     entry = next(e for e in _catalog() if e["type"] == CUSTOM_SQL_EXPECTATION_TYPE)
     assert entry["fields"] == [QUERY_KEY]
 
 
-# Kinds the BACKEND supports that the frontend catalog does not offer yet, because
-# their authoring UI ships in a separate PR. Deliberately an explicit allowlist and
-# not a relaxed comparison: any OTHER divergence still fails, and this test starts
-# failing the moment the UI entry lands — which is precisely the reminder to empty
-# this set (and bump the `len(_monitors())` count above) in that PR.
-# Empty since #593's UI PR: the `anomaly` catalog entry landed (`monitor:anomaly`,
-# expectationCatalog.ts), so nothing is pending anymore.
+# Kinds the BACKEND supports that the frontend catalog does not offer yet, because their authoring
+# UI ships in a separate PR.
 _KINDS_PENDING_A_CATALOG_ENTRY: set[str] = set()
 
 
 def test_monitor_entries_match_backend_kinds() -> None:
     """Monitor kinds bypass GX (ADR 0012); their catalog types must match the
     backend's canonical `monitor:<kind>` mapping and known kinds.
-
-    The catalog may lag the backend by exactly the kinds listed above (a kind is
-    authorable through the API/MCP before its editor form exists) — it may never
-    LEAD it, and it may never carry a kind the backend does not know."""
+    """
     catalog_kinds = {e["kind"] for e in _monitors()}
     assert catalog_kinds == set(monitors.MONITOR_KINDS) - _KINDS_PENDING_A_CATALOG_ENTRY
     for entry in _monitors():
@@ -163,7 +143,8 @@ def test_monitor_entries_match_backend_kinds() -> None:
 def test_monitor_fields_match_engine_config_keys() -> None:
     """The monitor engine reads exactly these config keys (monitors.py):
     freshness → column; volume → min_rows/max_rows; anomaly → the AnomalyParams
-    shape (#593) — target_metric/column/window/min_points/seasonality."""
+    shape (#593) — target_metric/column/window/min_points/seasonality.
+    """
     by_kind = {e["kind"]: e["fields"] for e in _monitors()}
     assert by_kind[monitors.FRESHNESS] == ["column"]
     assert sorted(by_kind[monitors.VOLUME]) == ["max_rows", "min_rows"]
@@ -190,12 +171,6 @@ def _dimension_params() -> list[Any]:
 def test_catalog_dimension_matches_the_backend_derivation(entry: dict[str, Any]) -> None:
     """The editor pre-fills a check's dimension from the TS catalog, but the
     BACKEND derivation is what actually gets stored (ADR 0038).
-
-    If the two disagree, the author is shown one classification and a different
-    one is persisted — a silent wrong answer with no error anywhere, and one that
-    would quietly skew the #889 coverage view. There is no compile-time link
-    between a TS object literal and a Python dict, so this is the only thing
-    holding them together.
     """
     from backend.app.services.check_dimension import derive_dimension
 
@@ -208,7 +183,8 @@ def test_catalog_dimension_matches_the_backend_derivation(entry: dict[str, Any])
 
 def test_every_catalog_dimension_is_canonical() -> None:
     """A catalog value outside the vocabulary would pass the editor's select and
-    then 422 (or violate the table CHECK) at save time."""
+    then 422 (or violate the table CHECK) at save time.
+    """
     from backend.app.db.models import DQ_DIMENSIONS
 
     for entry in _catalog():
@@ -218,7 +194,8 @@ def test_every_catalog_dimension_is_canonical() -> None:
 def test_custom_sql_is_deliberately_unclassified_in_both_maps() -> None:
     """Pinned as a decision, not left as an accident (ADR 0038 §3): an arbitrary
     SQL predicate has no derivable dimension, and guessing one would put confident
-    nonsense in the scorecard."""
+    nonsense in the scorecard.
+    """
     from backend.app.services.check_dimension import derive_dimension
 
     entry = next(e for e in _catalog() if e["type"] == CUSTOM_SQL_EXPECTATION_TYPE)
@@ -227,26 +204,15 @@ def test_custom_sql_is_deliberately_unclassified_in_both_maps() -> None:
 
 
 def test_no_backend_mapping_is_missing_from_the_catalog() -> None:
-    """The reverse direction of the drift guard, and the dangerous one.
-
-    The per-entry test above walks the CATALOG, so a catalog entry that drifts is
-    caught. A key added to the BACKEND map with no catalog entry is not — and that
-    is the direction that produces a silent wrong answer: the backend is the
-    authority at write time, so the editor would show the author an empty select
-    while a classification they never saw gets stored.
-    """
+    """The reverse direction of the drift guard, and the dangerous one."""
     from backend.app.datasources.snowflake_dmf import DMF_EXPECTATION_TYPES
     from backend.app.services import check_dimension
 
     catalog_types = {e["type"] for e in _catalog()}
     catalog_kinds = {e["kind"] for e in _catalog()}
 
-    # The dmf:* types (ADR 0036 slice 2) are API-authorable only until slice 3
-    # lands the engine-aware catalog + editor selector (#895) — the hazard this
-    # guard exists for (the EDITOR storing a classification the author never
-    # saw) cannot occur for a type the editor cannot author. Slice 3 must
-    # delete this carve-out when it adds the catalog entries; leaving it would
-    # re-open the guard's blind spot for exactly these types.
+    # The dmf:* types (ADR 0036 slice 2) are API-authorable only until slice 3 lands the engine-
+    # aware catalog + editor selector (#895).
     orphan_types = (
         set(check_dimension._BY_EXPECTATION_TYPE) - catalog_types - set(DMF_EXPECTATION_TYPES)
     )

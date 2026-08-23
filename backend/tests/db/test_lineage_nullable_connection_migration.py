@@ -1,13 +1,4 @@
-"""Up/down test for the `1a2b3c4d5e6f_lineage_edges_nullable_connection` migration.
-
-Binds the migration module's own `upgrade()` / `downgrade()` to a live connection
-(the sibling `test_asset_description_migration` pattern) and asserts: `connection_id`
-nullability flips, the partial unique index appears/disappears, and `downgrade()`
-first deletes the NULL-connection rows it would otherwise strand (re-adding NOT NULL
-must not fail). All DDL runs inside the rolled-back test transaction.
-
-Skips without TEST_DATABASE_URL (needs real Postgres — partial indexes are dialect-
-specific)."""
+"""Up/down test for the `1a2b3c4d5e6f_lineage_edges_nullable_connection` migration."""
 
 from __future__ import annotations
 
@@ -60,10 +51,7 @@ def test_revision_chain() -> None:
 
 
 def test_up_down_up(db_session: Any) -> None:
-    """down (restore NOT NULL) → up (relax + index) → down, against live DDL.
-
-    `Base.metadata.create_all` already reflects the post-migration model (nullable +
-    partial index), so the pass starts with `downgrade()`."""
+    """down (restore NOT NULL) → up (relax + index) → down, against live DDL."""
     module = _load_migration()
     connection = db_session.connection()
     ctx = MigrationContext.configure(connection)

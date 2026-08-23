@@ -1,11 +1,4 @@
-"""One safe-message policy for every sink that shows an exception (#595 C5/C6).
-
-`safe_failure_reason` replaced three near-copies of the same isinstance branch —
-the monitor loop had one, the run path grew a second (narrower) one, and the
-dry-run preview had none at all. That last gap was the reported defect: a
-`ScanTooLargeError` naming the file, the cap and the knob reached a real run, and
-the preview of the very same target said "dry run could not execute".
-"""
+"""One safe-message policy for every sink that shows an exception (#595 C5/C6)."""
 
 from __future__ import annotations
 
@@ -45,13 +38,15 @@ def test_every_marked_error_this_feature_adds_keeps_its_remedy(
 ) -> None:
     """The point of the marker: these messages ARE the remedy. Classified, each
     becomes "the run failed to execute; see the server logs" — the undiagnosable
-    outcome #755 already delivers when the worker is OOM-killed instead."""
+    outcome #755 already delivers when the worker is OOM-killed instead.
+    """
     assert safe_failure_reason(exc) == str(exc)
 
 
 def test_an_unmarked_driver_error_is_still_classified() -> None:
     """The contract stays narrow. A driver message can echo a DSN, a credential
-    or a bound cell value, so it is read only to pick a category."""
+    or a bound cell value, so it is read only to pick a category.
+    """
     reason = safe_failure_reason(RuntimeError("login failed for user 'svc' at acct.example"))
     assert "svc" not in reason and "acct.example" not in reason
     assert reason == classify_failure_reason(RuntimeError("login failed"))
@@ -59,6 +54,7 @@ def test_an_unmarked_driver_error_is_still_classified() -> None:
 
 def test_a_marked_error_with_an_EMPTY_message_falls_back_to_classification() -> None:
     """A marked exception with nothing to say is worse than the generic sentence,
-    not better — an empty `failure_reason` renders as no reason at all."""
+    not better — an empty `failure_reason` renders as no reason at all.
+    """
     assert safe_failure_reason(_MarkedError("")) != ""
     assert safe_failure_reason(_MarkedError("")) == classify_failure_reason(_MarkedError(""))

@@ -1,9 +1,4 @@
-"""Trigger-binding CRUD endpoints — manage suite-run triggers (provider-agnostic).
-
-Thin HTTP layer over `trigger_binding_service`: a binding maps a successful
-orchestrator run (`provider`/`pipeline_or_dag_id`/`env`) to a `suite_id`. All
-validation, suite-permission gating, and conflict handling live in the service.
-"""
+"""Trigger-binding CRUD endpoints — manage suite-run triggers (provider-agnostic)."""
 
 from __future__ import annotations
 
@@ -53,9 +48,9 @@ class TriggerBindingRead(ApiModel):
     env: str
     suite_id: uuid.UUID
     enabled: bool
-    # Advisory, non-blocking warnings (#1186) — populated on create/update, always
-    # `[]` on a plain read (GET/list return the raw ORM row; `from_attributes`
-    # falls back to this default since `TriggerBinding` carries no such column).
+    # Advisory, non-blocking warnings (#1186) — populated on create/update, always `[]` on a plain
+    # read (GET/list return the raw ORM row; `from_attributes` falls back to this default since
+    # `TriggerBinding` carries no such column).
     warnings: list[TriggerBindingWarningRead] = Field(default_factory=list)
 
     @classmethod
@@ -108,9 +103,8 @@ def list_trigger_bindings(
     env: str | None = None,
     suite_id: uuid.UUID | None = None,
 ) -> list[TriggerBinding]:
-    # Workspace-wide for a workspace-admin (ADR 0027), matching `/schedules` — the
-    # two are the same kind of automation list, and an admin seeing every schedule
-    # but only their own bindings is a difference with no rationale behind it.
+    # Workspace-wide for a workspace-admin (ADR 0027), matching `/schedules` — the two are the same
+    # kind of automation list.
     return svc.list_bindings(
         db,
         user_id=current_user.id,

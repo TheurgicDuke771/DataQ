@@ -1,21 +1,4 @@
-"""Check dry-run — execute one ad-hoc check against live data, persist nothing.
-
-The "preview before saving" path for the check editor: build the datasource
-runner for the suite's connection, run a single `CheckSpec` against the suite's
-run target, and map the outcome to a preview (severity tier + the
-SQL-aggregatable metric + observed/expected), **without** creating a `Run` or
-`Result`. Reuses the severity derivation (ADR 0005/0016) and JSON sanitisation
-that the persisted run path uses.
-
-The runner and the target are resolved exactly like the worker run path
-(`build_check_runner` registry + `run_target`), so dry-run works on every
-datasource that has a `CheckRunner` — Snowflake, Unity Catalog, and flat files
-(ADLS / S3 / local) — with no per-type branching here (#532). Previewable kinds
-are `expectation`, `schema_drift` (#592) and `anomaly` (#593), each with its own
-preview shape; any other kind is a 422 rather than a silent fall-through.
-
-Synchronous + blocking (datasource connect + GX): the API runs it in a threadpool.
-"""
+"""Check dry-run — execute one ad-hoc check against live data, persist nothing."""
 
 from __future__ import annotations
 
@@ -66,9 +49,9 @@ class DryRunFailedError(DataQError):
 
 @dataclass(frozen=True)
 class DryRunOutcome:
-    # pass | warn | fail | critical, plus the operational statuses (#122/#593):
-    # `error` (unevaluable) and `skip` (precondition unmet — an anomaly preview,
-    # which has no check row and so can never have learned a baseline).
+    # pass | warn | fail | critical, plus the operational statuses (#122/#593): `error`
+    # (unevaluable) and `skip` (precondition unmet — an anomaly preview, which has no check row and
+    # so can never have learned a baseline).
     status: str
     metric_value: Decimal | None
     observed_value: dict[str, Any] | None
@@ -87,27 +70,9 @@ def dry_run_check(
     target: dict[str, Any] | None,
     secret_store: SecretStore,
 ) -> DryRunOutcome:
-    """Run one check against the suite's run ``target`` and return a preview.
-
-    ``target`` is the suite's run target (#215); it is resolved and materialized
-    the same way a persisted run does, so the preview runs against exactly what a
-    saved run would.
-
-    Clean 422s (not 500s): a kind with no preview shape, a targetless suite, an
-    orchestration-provider connection (no runner), a malformed target, or a
-    non-read-only custom-SQL query (ADR 0019). A flat-file *batch* target whose
-    file hasn't landed yet is `DryRunNoDataError` (422). `DryRunFailedError`
-    (502) if the run can't execute (no credential, unreachable datasource, bad
-    expectation). The adapter exception is never echoed — it can carry
-    DSN/credential fragments.
-    """
-    # #568: a preview must never accept a threshold set that a save would
-    # reject — same shared validator create_check/update_check use. Checked
-    # for EVERY kind this endpoint accepts (schema_drift's thresholds are
-    # banded on its persisted run path same as any other kind, even though
-    # its own dry-run preview never reaches the severity derivation below),
-    # so this sits above the schema_drift early return and the kind-gate,
-    # before the (slow, live) datasource connect.
+    """Run one check against the suite's run ``target`` and return a preview."""
+    # #568: a preview must never accept a threshold set that a save would reject — same shared
+    # validator create_check/update_check use.
     validate_threshold_ordering(
         warn_threshold=warn_threshold,
         fail_threshold=fail_threshold,
@@ -125,14 +90,10 @@ def dry_run_check(
             f"got {kind!r}",
             detail={"kind": kind},
         )
-    # Resolve the target the same way the run path does. Raises
-    # SuiteTargetInvalidError (422) for a targetless suite, a malformed target, or
-    # an orchestration-provider connection (never a datasource) — so the old
-    # per-type _SUPPORTED_TYPES gate is unnecessary.
+    # Resolve the target the same way the run path does.
     resolved = run_target.resolve_target(connection.type, target)
-    # Dry-run is the one path that *executes* the query before save, so the
-    # custom-SQL read-only guardrail (ADR 0019) must apply here too — outside the
-    # try, so a bad query is a clean 422, not a 502. No-op for other expectations.
+    # Dry-run is the one path that *executes* the query before save, so the custom-SQL read-only
+    # guardrail (ADR 0019) must apply here too — outside the try, so a bad query is a clean 422.
     validate_custom_sql_check(
         expectation_type=expectation_type,
         config=config,
@@ -146,10 +107,7 @@ def dry_run_check(
             secret_ref=connection.secret_ref,
             secret_store=secret_store,
             catalog=resolved.catalog,
-            # The suite target's row cap (#595). Threaded through so a preview
-            # reads what a real run would read — a dry-run against an over-cap
-            # target must refuse for the same reason, not quietly succeed by
-            # taking a path production never takes.
+            # The suite target's row cap (#595).
             sampling=resolved.sampling,
         )
     except UnsupportedConnectionTypeError as exc:
@@ -160,9 +118,8 @@ def dry_run_check(
             detail={"type": connection.type},
         ) from exc
     except Exception as exc:
-        # The builders resolve the secret eagerly — a missing/unreadable
-        # credential fails here, and is a datasource-side 502 (as it was before
-        # #532, when build + run shared one guard), never an opaque 500.
+        # The builders resolve the secret eagerly — a missing/unreadable credential fails here, and
+        # is a datasource-side 502 (as it was before #532, when build + run shared one guard).
         log.warning(
             "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
         )
@@ -174,9 +131,8 @@ def dry_run_check(
     # The runner exists from here — `owned_runner` releases its shared engine
     # pool (#427) on every exit path of the dry run.
     with owned_runner(runner):
-        # Materialize a flat-file batch target to a concrete file (lists the store) —
-        # a no-op for SQL / UC / literal flat-file targets. Batch-not-found is "no data
-        # yet", a clean 422; a bad credential / unreachable store while listing is a 502.
+        # Materialize a flat-file batch target to a concrete file (lists the store) — a no-op for
+        # SQL / UC / literal flat-file targets.
         try:
             table = run_target.materialize_path(
                 connection.type,
@@ -216,12 +172,8 @@ def dry_run_check(
             )
             raise DryRunFailedError(
                 "dry run could not execute against the datasource",
-                # The SAME policy the persisted run path uses (#595): a
-                # DataQ-authored `SafeMonitorError` — the scan-cap refusal naming
-                # the target, the cap and the knob — surfaces verbatim, everything
-                # else is classified. A preview that swallowed the remedy while the
-                # real run stated it would send an author looking for a datasource
-                # fault that does not exist.
+                # The SAME policy the persisted run path uses (#595): a DataQ-authored
+                # `SafeMonitorError` — the scan-cap refusal naming the target, the cap and the knob.
                 detail={"table": table, "reason": safe_failure_reason(exc)},
             ) from exc
 
@@ -231,12 +183,8 @@ def dry_run_check(
             fail_threshold=fail_threshold,
             critical_threshold=critical_threshold,
         )
-        # Preview exactly what a persisted run would record: an unevaluable check
-        # (#122) is 'error', not a misleading 'fail' tag, and surfaces the GX message
-        # — with the same SQL/parameter echo stripped (#1203). "Exactly what a
-        # persisted run would record" is the contract, and a dry-run is the FIRST
-        # place a broken custom-SQL check errors, so leaving it raw here would have
-        # kept the leak alive on the authoring path after `_build_result` closed it.
+        # Preview exactly what a persisted run would record: an unevaluable check (#122) is 'error',
+        # not a misleading 'fail' tag, and surfaces the GX message.
         if check_outcome.errored:
             error_message = strip_statement_echo(check_outcome.error_message)
             observed = {"error": error_message} if error_message else None
@@ -328,13 +276,6 @@ def _dry_run_anomaly(
 ) -> DryRunOutcome:
     """Preview an anomaly check (#593): take the live measurement, score it against
     the history the check would have, and report the outcome — writing nothing.
-
-    A dry-run has **no check row**, so there is no baseline to read and none may
-    be written; the preview is therefore always the cold-start `skip`. That is the
-    point rather than a limitation: it shows the author the real measured value
-    (is `row_count` 32,840 or 0?) and states plainly that the check stays silent
-    until it has `min_points` of history. Reporting a z-score off an empty
-    baseline would be exactly the silent-green this kind is designed not to emit.
     """
     from backend.app.datasources.monitors import (
         ANOMALY,
@@ -379,9 +320,7 @@ def _dry_run_anomaly(
         f"has {params.min_points} observations"
     )
     outcome = monitor_outcome(ANOMALY, scalar=payload, config=config, now=now)
-    # No thresholds: the preview's status comes from the outcome's own operational
-    # state (`skip`), and going through `resolve_status` is what guarantees the
-    # preview matches what a persisted run would record.
+    # No thresholds: the preview's status comes from the outcome's own operational state (`skip`).
     status, metric = resolve_status(
         outcome, warn_threshold=None, fail_threshold=None, critical_threshold=None
     )

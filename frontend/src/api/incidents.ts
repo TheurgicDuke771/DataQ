@@ -1,14 +1,8 @@
 import { api } from './client';
 
 /**
- * Incidents API — the stateful, deduped, evidence-carrying roll-up of the
- * per-result alert signal (ADR 0034 #761). Anchored to (asset, check); at most
- * one active incident per pair.
- *
- * **Authz is derived, never granted** (backend `incident_service`): an incident is
- * visible iff the caller can view its suite; ack/resolve require `edit` on that
- * suite. The client never scopes — it renders what the API returns and lets the
- * backend 403 an unpermitted action.
+ * Incidents API — the stateful, deduped, evidence-carrying roll-up of the per-result alert signal
+ * (ADR 0034 #761).
  */
 
 export type IncidentStatus = 'open' | 'acknowledged' | 'resolved';

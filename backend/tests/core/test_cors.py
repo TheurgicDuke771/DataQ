@@ -1,22 +1,4 @@
-"""CORS middleware ACTIVATION tests (#385).
-
-`test_config.py` covers `CORS_ALLOW_ORIGINS` string parsing; these cover the
-security-relevant wiring in `main.py` — that `CORSMiddleware` is added only
-when origins are configured, echoes exactly the allowlisted origin (never
-`*`), and ignores everything else.
-
-The middleware is attached at module scope from `get_settings()`, so each
-fixture reloads `backend.app.main` under the desired env (the
-`test_tracing.py` pattern) and reloads it again under the original env on
-teardown, so later tests import a `main` rebuilt with the real settings.
-(Other test modules keep working regardless: they bind `app` at collection
-time, before any reload here runs.)
-
-The "unconfigured" case sets CORS_ALLOW_ORIGINS to "" rather than deleting it:
-`Settings` also reads the gitignored `.env.app` dotenv, which `delenv` cannot
-mask — a developer with the key populated locally would flip the middleware
-back on. An empty env var overrides the dotenv and parses to [] (CORS off).
-"""
+"""CORS middleware ACTIVATION tests (#385)."""
 
 import importlib
 from collections.abc import Generator, Iterator
@@ -68,11 +50,11 @@ def test_middleware_absent_when_unconfigured(no_cors_client: TestClient) -> None
 
 
 def test_total_count_header_is_exposed_cross_origin(cors_client: TestClient) -> None:
-    """#925's paging total travels as a response header, and a cross-origin
-    SPA can only read headers listed in Access-Control-Expose-Headers — an
-    unexposed X-Total-Count would silently break paging exactly (and only) on
-    the split-origin deploy shape. Pins the request-id header for the same
-    reason; both were previously asserted nowhere (review finding)."""
+    """#925's paging total travels as a response header, and a cross-origin SPA can only read
+    headers listed in Access-Control-Expose-Headers — an unexposed X-Total-Count would silently
+    break paging exactly (and only) on the split-origin deploy shape. Pins the request-id header
+    for the same reason; both were previously asserted nowhere (review finding).
+    """
     resp = cors_client.get("/healthz", headers={"Origin": ALLOWED})
     exposed = {h.strip().lower() for h in resp.headers["access-control-expose-headers"].split(",")}
     assert "x-total-count" in exposed

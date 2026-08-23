@@ -1,7 +1,4 @@
-"""Notification-config endpoint tests (TestClient against real Postgres).
-
-Auth runs in dev-bypass (conftest). Skips without TEST_DATABASE_URL.
-"""
+"""Notification-config endpoint tests (TestClient against real Postgres)."""
 
 from __future__ import annotations
 

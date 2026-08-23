@@ -1,41 +1,4 @@
-"""Connection CRUD + connectivity-test endpoints.
-
-Thin HTTP layer over `connection_service`: validates request shapes, wires the
-current user + db session + secret store, and maps models onto responses. All
-business logic (validation dispatch, secret write-through, connectivity probe)
-lives in the service. Responses never carry secret material — only `has_secret`.
-
-Both `/test` routes (the saved-connection `/connections/{id}/test` and the
-draft `/connections/test`, #351) are sync ``def`` so FastAPI runs them in a
-worker thread; the datasource connect is blocking and must not stall the
-event loop.
-
-## Authorization (ADR 0033 / #741) — connections are the one workspace-global resource
-
-Connections are **shared infrastructure holding credentials**: they are not
-owned, not shared per-user, and every suite in the workspace runs on them. That
-is why the role gates here are the sharpest in the app, and why they are
-per-route rather than declared once on the router:
-
-    create / update / delete / reauth   AdminUser   — mutating shared credentialed infra
-    test (draft, unsaved)               AdminUser   — probes CALLER-SUPPLIED config
-    test (saved)                        MemberUser  — Members verify, Viewers do not probe
-    list / get / versions               any authenticated user
-
-The two `test` routes deliberately differ, and the split is about *whose config
-is being probed* rather than who is asking — see `test_draft_connection`.
-
-The read routes keeping the plain `get_current_user` is a **decision, not an
-omission**: a Member authoring a suite must be able to see and reference the
-connections available to them. No tier has ever been able to read a credential
-back out — responses carry `has_secret`, never secret material — so widening
-reads costs nothing that the Admin gate is protecting.
-
-⚠️ **Breaking change for Members.** Before this, *any* authenticated user could
-delete or re-credential the connection every suite in the workspace ran on.
-Deployments where non-admins managed connections must promote those users to
-Admin before upgrading — see CHANGELOG and docs/site/security.md.
-"""
+"""Connection CRUD + connectivity-test endpoints."""
 
 from __future__ import annotations
 
@@ -59,14 +22,8 @@ from backend.app.services import connection_service as svc
 router = APIRouter(tags=["connections"])
 
 
-# `None` is the "not supplied" signal on every credential field below, so an
-# EMPTY STRING is never a meaningful value — and it is actively harmful: the
-# service writes whatever it is handed straight to the SecretStore, so `""`
-# replaces a working credential with a blank one and returns 200. The connection
-# then has no visible state until a run fails (the #954 blindness). `reauth` has
-# carried `min_length=1` since it shipped; create/update did not, which also gave
-# #1401's redirect guard a hole — supplying `""` satisfied "you re-supplied the
-# credential" while destroying it. Caught in the #1403 review.
+# `None` is the "not supplied" signal on every credential field below, so an EMPTY STRING is never a
+# meaningful value.
 class ConnectionCreate(ApiModel):
     name: str = Field(min_length=1, max_length=128)
     type: str
@@ -107,64 +64,35 @@ class ConnectionRead(ApiModel):
     env: str
     config: dict[str, Any]
     has_secret: bool
-    #: `None` once the creating user is erased — the row outlives its author
-    #: (`ondelete=SET NULL`, #1319). Nullable in the schema, so nullable here:
-    #: a non-optional field would 500 on serialization instead.
+    #: `None` once the creating user is erased — the row outlives its author (`ondelete=SET NULL`,
+    #: #1319).
     created_by: uuid.UUID | None
 
-    # Poll health (#828) — orchestration connections only; NULL/0 elsewhere. A failing
-    # poll used to live purely in the logs, so a dead integration looked identical to a
-    # healthy-but-quiet one. `last_poll_error` is a CLASSIFIED reason, never raw
-    # exception text (which can carry a SAS/DSN/token).
+    # Poll health (#828) — orchestration connections only; NULL/0 elsewhere.
     last_polled_at: datetime | None = None
     last_poll_error: str | None = None
     consecutive_poll_failures: int = 0
 
-    # Run-derived health (#954) — DATASOURCE connections. Nothing polls a
-    # datasource, so a dead credential used to be invisible until a run failed,
-    # and then it showed on the RUN, not here: two prod Snowflake connections sat
-    # dead for weeks and diagnosing them meant reading worker logs. Derived from
-    # `runs`, never stored, so it cannot drift from the runs it describes.
-    # `last_run_error` is `runs.failure_reason`, already classified at the point of
-    # failure (#605) — never raw driver text.
+    # Run-derived health (#954) — DATASOURCE connections.
     last_run_at: datetime | None = None
     last_run_error: str | None = None
     consecutive_run_failures: int = 0
 
-    # Credential expiry (#838) — when the credential itself states one (a SAS prints
-    # `se=`). NULL means **unknown** (this credential type has no readable lifetime,
-    # or it has not been read yet), never "does not expire", so a client must render
-    # NULL as silence rather than reassurance. A date, never credential material.
+    # Credential expiry (#838) — when the credential itself states one (a SAS prints `se=`).
     credential_expires_at: datetime | None = None
-    # When the expiry was last read (#1024). NULL here means we have never looked,
-    # which the client must render as silence rather than as "nothing expires
-    # soon" — the two were indistinguishable before this field existed.
+    # When the expiry was last read (#1024).
     credential_expiry_checked_at: datetime | None = None
 
-    # Inventory-sync outcome (#1104) — opted-in `snowflake`/`unity_catalog`
-    # connections only (config.inventory_sync, ADR 0040); NULL/never-attempted on
-    # every other connection. A sync whose principal can't read the enumeration
-    # query used to fail every tick invisibly: toggle on, connection test green
-    # (the `SELECT 1` probe never exercises this query), zero assets ever appear,
-    # no surface said why. `inventory_sync_last_error` is a CLASSIFIED reason
-    # (never raw exception text); NULL means the last attempt succeeded.
-    # `inventory_sync_failing_since` is NULL whenever the connection is currently
-    # healthy (last attempt succeeded, or it has never been attempted).
+    # Inventory-sync outcome (#1104) — opted-in `snowflake`/`unity_catalog` connections only
+    # (config.inventory_sync, ADR 0040); NULL/never-attempted on every other connection.
     inventory_sync_last_attempted_at: datetime | None = None
     inventory_sync_last_error: str | None = None
     inventory_sync_failing_since: datetime | None = None
 
-    # Zero-table enumeration state (#1242) — a SUCCESSFUL sync that enumerates
-    # zero tables is not an error (Snowflake's INFORMATION_SCHEMA is
-    # privilege-filtered, not access-denied, so a role with no grants gets an
-    # empty result set rather than an exception; a genuinely empty database also
-    # legitimately enumerates zero). `inventory_sync_last_table_count` is the row
-    # count from the last SUCCESSFUL sync (NULL = never successfully synced, 0 =
-    # synced but nothing visible, >0 = synced N tables) — untouched by a failed
-    # attempt. `inventory_sync_zero_since` is set only when the count DROPS from a
-    # previously-recorded N>0 to 0 (the privilege-loss/dropped-database signal);
-    # a connection that has always enumerated zero never sets it, so that state
-    # renders as a neutral informational note rather than a flagged one.
+    # Zero-table enumeration state (#1242) — a SUCCESSFUL sync that enumerates zero tables is not
+    # an error (Snowflake's INFORMATION_SCHEMA is privilege-filtered, not access-denied, so a role
+    # with no grants gets an empty result set rather than an exception; a genuinely empty database
+    # also legitimately enumerates zero).
     inventory_sync_last_table_count: int | None = None
     inventory_sync_zero_since: datetime | None = None
 
@@ -178,9 +106,8 @@ class ConnectionRead(ApiModel):
             name=conn.name,
             type=conn.type,
             env=conn.env,
-            # `config` is non-secret by contract, but a URI-shaped field can smuggle a
-            # credential through it (#754) — scrub any URI password on the way out, so
-            # a row written before the config-level guard existed can't still leak.
+            # `config` is non-secret by contract, but a URI-shaped field can smuggle a credential
+            # through it (#754) — scrub any URI password on the way out.
             config=redact_config_uris(conn.config),
             has_secret=conn.secret_ref is not None,
             created_by=conn.created_by,
@@ -209,11 +136,8 @@ class ConnectionTestResult(ApiModel):
 
 
 class ConnectionDraftTest(ApiModel):
-    """The payload for `/connections/test` — everything `ConnectionCreate` needs
-    to probe connectivity, minus `name` (a draft has no row and needs none).
-    `env` is optional: it plays no role in the probe itself (only in the
-    orchestrator-singleton uniqueness check a real create enforces), so a caller
-    that hasn't picked one yet still gets a full connectivity check.
+    """The payload for `/connections/test` — everything `ConnectionCreate` needs to probe
+    connectivity, minus `name` (a draft has no row and needs none).
     """
 
     type: str
@@ -261,36 +185,7 @@ def test_draft_connection(
     current_user: AdminUser,
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> ConnectionTestResult:
-    """Probe the config/secret the user just typed — before Create is pressed.
-
-    Registered ahead of `/connections/{connection_id}/test` in file order, but
-    the two never actually collide: `/connections/test` is two path segments
-    (`connections`, `test`) and `/connections/{connection_id}/test` is three
-    (`connections`, `{connection_id}`, `test`), so Starlette can't route a
-    `/connections/test` request to the parameterized handler regardless of
-    registration order — `test_both_test_routes_resolve` pins this down.
-    Nothing is persisted: no `connections` row, no `SecretStore` write. Sync
-    `def` like the saved-connection `/test`: the datasource connect is blocking.
-
-    **Admin-only**, unlike the saved-connection `/test` beside it, which ADR
-    0033's matrix puts at Member+. The divergence is deliberate and it is about
-    *whose config is being probed*, not about who is asking:
-
-    - The saved `/test` probes a connection an **admin already created and
-      stored**. A Member verifying that it works learns nothing they could not
-      learn by running a suite against it.
-    - This one probes config the **caller supplies in the request body**. A
-      draft owns no stored secret refs, so `*_secret_name` is now **refused**
-      outright here rather than resolved (#1118) — but the config is still
-      wholly caller-chosen, which is enough on its own: this is the tier that
-      may point a probe at any host it likes.
-
-    Admin is therefore the honest tier, and it costs nothing: this endpoint
-    exists to serve the Create/Edit connection form, which is itself Admin-only
-    since #741. At Member+ it would hand the whole caller-supplied-probe surface
-    to precisely the tier #741 just denied connection-write to, in support of a
-    form that tier cannot open.
-    """
+    """Probe the config/secret the user just typed — before Create is pressed."""
     svc.test_draft_connection(
         payload.type,
         env=payload.env,

@@ -1,12 +1,4 @@
-"""Scale-aware execution core: the sampling spec, the scan guardrail (#595).
-
-Everything here is pure — the readers in `flatfile.py` / `unity_catalog.py` supply
-the real streams, and their tests exercise those. What this file pins is the part
-that decides *what* gets read and *what gets claimed about it afterwards*, which
-is where a quiet wrong answer would live: an off-by-one that turns a complete read
-into a "sample", a guardrail that reads a disabled cap as zero-allowed, or a
-selection pass that silently drops rows.
-"""
+"""Scale-aware execution core: the sampling spec, the scan guardrail (#595)."""
 
 from __future__ import annotations
 
@@ -38,7 +30,8 @@ from backend.app.datasources.sampling import (
 def test_absent_sampling_is_none_not_a_default_spec() -> None:
     """No block means "read everything", the historical behaviour — never a
     silently-applied default cap, which would change what every existing suite
-    validates."""
+    validates.
+    """
     assert parse_sample_spec(None) is None
 
 
@@ -73,7 +66,8 @@ def test_a_valid_random_spec_keeps_its_seed() -> None:
 )
 def test_a_malformed_spec_is_refused_not_coerced(raw: Any) -> None:
     """A spec that saves must be a spec that runs, so every shape problem is a
-    422 at author time rather than a surprise at 02:00."""
+    422 at author time rather than a surprise at 02:00.
+    """
     with pytest.raises(SamplingConfigError):
         parse_sample_spec(raw)
 
@@ -81,21 +75,24 @@ def test_a_malformed_spec_is_refused_not_coerced(raw: Any) -> None:
 def test_a_boolean_rows_is_refused_because_true_would_read_as_one_row() -> None:
     """`bool` is an `int` subclass: without the explicit guard, `rows: true`
     parses as a ONE-row sample and every check silently validates a single row.
-    The `monitors._anomaly_int` lesson, in a new place."""
+    The `monitors._anomaly_int` lesson, in a new place.
+    """
     with pytest.raises(SamplingConfigError, match="boolean"):
         parse_sample_spec({"strategy": "head", "rows": True})
 
 
 def test_an_integral_float_rows_is_accepted() -> None:
     """A JSON client sends `1000.0` for a whole number; refusing it would be a
-    wire-format complaint dressed as a validation error."""
+    wire-format complaint dressed as a validation error.
+    """
     spec = parse_sample_spec({"strategy": "head", "rows": 1000.0})
     assert spec == SampleSpec(strategy="head", rows=1000, seed=None)
 
 
 def test_a_seed_on_a_head_spec_is_refused_not_ignored() -> None:
     """Ignoring it would leave the author believing their head sample is
-    reproducible-random when it always reads the same first rows regardless."""
+    reproducible-random when it always reads the same first rows regardless.
+    """
     with pytest.raises(SamplingConfigError, match="seed"):
         parse_sample_spec({"strategy": "head", "rows": 10, "seed": 1})
 
@@ -116,7 +113,8 @@ def test_indices_are_sorted_for_a_seed_that_draws_them_unsorted() -> None:
     """The sort is load-bearing, not cosmetic: `take_indices` walks batches
     forwards and cannot revisit a position it has passed, so an unsorted list
     would silently DROP rows. Asserting `== sorted(...)` on one seed can pass by
-    luck, so this checks a seed whose raw draw is demonstrably out of order."""
+    luck, so this checks a seed whose raw draw is demonstrably out of order.
+    """
     raw = __import__("random").Random(3).sample(range(1000), 50)
     assert raw != sorted(raw), "pick a seed whose unsorted draw differs, or this proves nothing"
     assert sample_row_indices(total=1000, rows=50, seed=3) == sorted(raw)
@@ -132,12 +130,7 @@ def test_a_seed_makes_the_draw_reproducible_and_no_seed_does_not_pin_it() -> Non
 
 
 def test_a_sample_at_least_as_big_as_the_population_selects_nothing() -> None:
-    """The full-coverage case returns `None`, not the identity list (#595 J4).
-
-    `list(range(total))` is ~40 MB of Python ints at 1.4M rows, and `take_indices`
-    would then gather-copy every batch through it purely to reproduce the batches
-    it was handed. `None` tells the caller to read straight through; it still
-    reports `sampled=False`, because a complete read is not a sample."""
+    """The full-coverage case returns `None`, not the identity list (#595 J4)."""
     assert sample_row_indices(total=5, rows=5, seed=1) is None
     assert sample_row_indices(total=5, rows=99, seed=1) is None
 
@@ -174,7 +167,8 @@ def test_the_record_omits_a_seed_that_was_never_set() -> None:
 def test_a_sample_covering_everything_is_reported_as_not_sampled() -> None:
     """A "sample" of 1000 rows from a 12-row file saw the whole file. Claiming it
     was sampled would put a caveat on every small target, which trains users to
-    ignore the caveat that matters (#424/#1115)."""
+    ignore the caveat that matters (#424/#1115).
+    """
     record = sampling_record(
         SampleSpec(strategy="head", rows=1000), rows=12, total_rows=12, sampled=False
     )
@@ -196,7 +190,8 @@ def test_a_row_count_over_the_cap_is_refused_with_the_knob_named() -> None:
 
 def test_a_row_count_exactly_at_the_cap_is_allowed() -> None:
     """`>` not `>=`: a cap of N means N rows are permitted, which is what an
-    operator setting it to their measured ceiling expects."""
+    operator setting it to their measured ceiling expects.
+    """
     enforce_row_cap(1_500_000, cap=1_500_000, target="table 'ORDERS'")
 
 
@@ -222,7 +217,8 @@ def test_a_sample_bigger_than_the_row_cap_is_itself_refused() -> None:
     """Sampling is the way past the size probe *because* the read is bounded by
     the sample. That argument only holds while the sample fits, so the cap still
     applies to it — and the message names the sample, not the source, because the
-    sample is what the author set."""
+    sample is what the author set.
+    """
     with pytest.raises(ScanTooLargeError, match="sample of 5,000,000"):
         enforce_sample_cap(SampleSpec(strategy="head", rows=5_000_000), cap=1_500_000)
 
@@ -235,7 +231,8 @@ def test_the_refusal_carries_no_driver_text_so_it_can_be_persisted_verbatim() ->
     """`ScanTooLargeError` is `SafeMonitorError`-marked, which is what lets
     `run_service._failure_reason` surface it instead of classifying it. That is
     only sound because every word of it is DataQ-authored — this pins the marker
-    so a future subclass change can't quietly widen the redaction contract."""
+    so a future subclass change can't quietly widen the redaction contract.
+    """
     from backend.app.core.errors import SafeMonitorError
 
     assert issubclass(ScanTooLargeError, SafeMonitorError)
@@ -269,7 +266,8 @@ def test_take_head_slices_across_batch_boundaries() -> None:
 def test_take_head_stops_consuming_once_the_limit_is_reached() -> None:
     """The reader is a live stream: "stops early" is what makes a sampled read
     cheaper than a full one, so it is asserted on the generator, not just on the
-    returned rows."""
+    returned rows.
+    """
     consumed: list[int] = []
 
     def _stream() -> Any:
@@ -315,7 +313,8 @@ def test_take_indices_of_nothing_returns_nothing() -> None:
 def test_an_empty_selection_still_produces_a_correctly_typed_empty_frame() -> None:
     """A frame with no COLUMNS would make every check error with "column not
     found" instead of failing honestly against an empty dataset — the schema is
-    what keeps the verdict truthful."""
+    what keeps the verdict truthful.
+    """
     schema = pa.schema([("id", pa.int64()), ("name", pa.string())])
     frame = batches_to_frame([], schema=schema, arrow_backed=False)
     assert list(frame.columns) == ["id", "name"]
@@ -325,7 +324,8 @@ def test_an_empty_selection_still_produces_a_correctly_typed_empty_frame() -> No
 def test_arrow_backed_mirrors_the_unsampled_parquet_reader_dtypes() -> None:
     """`flatfile.read_dataframe` reads Parquet with `dtype_backend="pyarrow"`;
     if the sampled path did not, switching a suite to sampling could change a
-    check's verdict through a dtype change rather than through the data."""
+    check's verdict through a dtype change rather than through the data.
+    """
     batches = _batches(2)
     arrow = batches_to_frame(batches, schema=batches[0].schema, arrow_backed=True)
     numpy = batches_to_frame(batches, schema=batches[0].schema, arrow_backed=False)

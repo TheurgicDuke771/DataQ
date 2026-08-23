@@ -82,9 +82,8 @@ export function Connections() {
     }
   }, []);
 
-  // Drop a stale health result when the connection changes underneath it —
-  // after a re-auth, an edit, or a delete the prior pass/fail no longer holds,
-  // so the badge returns to idle until re-tested (and the map can't leak).
+  // Drop a stale health result when the connection changes underneath it — after a re-auth, an
+  // edit, or a delete the prior pass/fail no longer holds.
   const clearHealth = useCallback((id: string) => {
     setHealth((h) =>
       id in h ? Object.fromEntries(Object.entries(h).filter(([key]) => key !== id)) : h,
@@ -109,9 +108,8 @@ export function Connections() {
     onChanged: reload,
     onTest: testOne,
     onClearHealth: clearHealth,
-    // Server-derived, never a client-side decision (#743): every gated endpoint
-    // re-enforces with a 403. Threaded through `actions` so the card doesn't need
-    // its own hook call per row.
+    // Server-derived, never a client-side decision (#743): every gated endpoint re-enforces with a
+    // 403.
     canMutate,
     canAuthor,
   };
@@ -186,10 +184,8 @@ function ConnectionsBody({
   if (connections.length === 0) {
     return <Empty description="No connections configured yet" />;
   }
-  // Two top-level sections (Data sources / Orchestration) — the load-bearing
-  // distinction in DataQ (CLAUDE.md §4). Each renders as one even card grid (the
-  // per-type avatar already identifies the source), so cards stay large and
-  // evenly spaced rather than fragmenting into ragged per-type rows.
+  // Two top-level sections (Data sources / Orchestration) — the load-bearing distinction in DataQ
+  // (CLAUDE.md §4).
   const sections = CONNECTION_KINDS.map((kind) => ({
     kind,
     ofKind: connections.filter((c) => CONNECTION_KIND[c.type] === kind),
@@ -239,15 +235,7 @@ function HealthBadge({ health }: { health: HealthState }) {
   }
 }
 
-/**
- * "credential expires in 5d" / "credential expired", or nothing at all (#838).
- *
- * Renders only for a credential whose expiry is *readable and near* — an unknown
- * expiry produces no badge, because the alternative (a reassuring "valid" badge
- * on a credential we cannot actually read) is how a monitoring product lies.
- * A far-off expiry is also silent: a date on every card is noise that trains
- * people to ignore the one card that matters.
- */
+/** "credential expires in 5d" / "credential expired", or nothing at all (#838). */
 function CredentialExpiryBadge({
   expiresAt,
   checkedAt,
@@ -264,10 +252,7 @@ function CredentialExpiryBadge({
       </Tooltip>
     );
   }
-  // No expiry to show. That means one of two very different things, and saying
-  // nothing for both is what made an unchecked credential look safe (#1024):
-  //   never checked      -> we do not know; say so
-  //   checked, no expiry -> this credential type states none; stay silent, forever
+  // No expiry to show.
   if (!checkedAt) {
     return (
       <Tooltip title="DataQ has not read this credential's expiry yet. It is checked when the credential is written and on a periodic sweep.">
@@ -300,9 +285,7 @@ function ConnectionCard({
       onDone: actions.onChanged,
     });
 
-  // Every entry here mutates a connection, so the whole menu is Admin-only
-  // (ADR 0033). Rendered as nothing rather than as an empty dropdown: a trigger
-  // that opens to nothing reads as a broken control, not a withheld one.
+  // Every entry here mutates a connection, so the whole menu is Admin-only (ADR 0033).
   const menuItems = [
     { key: 'edit', label: 'Edit', onClick: () => actions.onEdit(connection) },
     { key: 'reauth', label: 'Re-authenticate', onClick: () => actions.onReauth(connection) },

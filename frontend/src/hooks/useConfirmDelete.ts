@@ -21,11 +21,8 @@ export type ConfirmDeleteOptions = {
 };
 
 /**
- * The danger-delete confirm modal shared by the connection / suite / check
- * delete sites: `modal.confirm({ okType: 'danger', … })` → success toast +
- * `onDone`, or an error toast plus a re-throw so the confirm modal stays open
- * on failure. The load-bearing `throw err` is exactly the bit that drifted when
- * this block was copy-pasted (#204); centralising it keeps it consistent.
+ * The danger-delete confirm modal shared by the connection / suite / check delete sites:
+ * `modal.confirm({ okType: 'danger', … })` → success toast + `onDone`.
  */
 export function useConfirmDelete() {
   const { message, modal } = App.useApp();

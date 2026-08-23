@@ -1,11 +1,4 @@
-"""Stateful monitor-kind dispatch (#593) — one executor callable, N engines.
-
-`run_service` takes a single `stateful_monitor_executor`; there are now two
-stateful kinds with different engines, so this is the routing between them. The
-failure this exists to prevent is a kind being silently handed to the WRONG
-engine — the half-finished-kind shape the registry's own module comment warns
-about.
-"""
+"""Stateful monitor-kind dispatch (#593) — one executor callable, N engines."""
 
 from __future__ import annotations
 
@@ -68,7 +61,8 @@ def _build(monkeypatch: pytest.MonkeyPatch, calls: list[str]) -> Any:
 def test_every_stateful_kind_has_an_engine() -> None:
     """The registry decides which kinds are stateful; this module decides how each
     one runs. A kind in the first set and missing from the second is dispatchable
-    but unrunnable — exactly the half-finished state the seam warns about."""
+    but unrunnable — exactly the half-finished state the seam warns about.
+    """
     assert set(STATEFUL_MONITOR_KINDS) == set(stateful_monitors._BUILDERS)
 
 
@@ -93,7 +87,8 @@ def test_an_unwired_stateful_kind_errors_that_check_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Not a crash and not a silent fall-through to the other engine: the check
-    reports its own operational error (#122) and its siblings still run."""
+    reports its own operational error (#122) and its siblings still run.
+    """
     calls: list[str] = []
     executor = _build(monkeypatch, calls)
     outcome = executor(_check("some_future_kind"))

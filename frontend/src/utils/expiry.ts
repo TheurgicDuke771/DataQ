@@ -1,15 +1,4 @@
-/**
- * "This credential is about to die" — one definition, every credential (#838).
- *
- * A connection's SAS and a DataQ PAT expire the same way and deserve the same
- * warning, so the window and the wording live here rather than being re-derived
- * per panel. Prod lineage was dark for six days behind an expired SAS; the point
- * of this module is that the product says so *before* something breaks.
- *
- * The threshold is the FRONTEND's, deliberately not the backend's: the API hands
- * over a date, not a verdict, so how loudly to warn is a presentation decision
- * that can change without redeploying the worker.
- */
+/** "This credential is about to die" — one definition, every credential (#838). */
 
 /** How far ahead a credential counts as "expiring soon". */
 export const CREDENTIAL_EXPIRY_WARN_DAYS = 14;
@@ -24,17 +13,7 @@ export type ExpiryStatus =
   | { kind: 'expiring'; daysLeft: number }
   | { kind: 'expired'; daysLeft: number };
 
-/**
- * Classify an ISO expiry timestamp against the warning window.
- *
- * `null`/absent/unparseable all collapse to `unknown` — a credential we cannot
- * read the lifetime of must never be shown as healthy on the strength of a
- * missing field.
- *
- * `daysLeft` is rounded UP so a credential with 18 hours left reads "1 day",
- * not "0 days": the number is a deadline, and rounding a deadline down makes it
- * look like it has already passed.
- */
+/** Classify an ISO expiry timestamp against the warning window. */
 export function expiryStatus(
   expiresAt: string | null | undefined,
   now: number = Date.now(),

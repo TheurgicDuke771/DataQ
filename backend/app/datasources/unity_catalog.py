@@ -1,23 +1,4 @@
-"""Unity Catalog (Databricks) connection adapter.
-
-A datasource (CLAUDE.md §4): DQ checks run against Unity Catalog tables via a
-Databricks SQL Warehouse. Week 2 ships only the `ConnectionAdapter` seam (config
-validation + connectivity `test`).
-
-**Runner seam note:** the *check-run* path for UC must sit behind a
-``UnityCatalogCheckRunner`` interface so v1.1 can swap GX for Databricks Labs DQX
-on DLT/streaming (CLAUDE.md §5, ADR 0003). That runner is Week-3 work and is
-deliberately **not** built here — this module is connection config + a
-connectivity probe only.
-
-Auth is a **personal access token (PAT)** — the v1 default, held in the
-SecretStore (no credential-less mode, so none of the ADLS/S3 ``secret_ref``
-nullability deferral applies). ``test`` opens a SQL-Warehouse connection and runs
-``SELECT 1`` — a green test means the workspace + warehouse are reachable and the
-PAT authenticates. ``databricks-sql-connector`` is imported lazily (per
-``core/secrets.py``); like the other adapters it runs live and fails-soft pending
-real credentials.
-"""
+"""Unity Catalog (Databricks) connection adapter."""
 
 from __future__ import annotations
 
@@ -61,13 +42,7 @@ log = get_logger(__name__)
 
 
 class UnityCatalogConfig(BaseModel):
-    """Non-secret Databricks/UC connection config (the PAT comes from secrets).
-
-    Maps from ``Connection.config``. ``workspace_url`` is the workspace root
-    (e.g. ``https://adb-1234.5.azuredatabricks.net``); ``warehouse_id`` is the
-    SQL Warehouse id, from which the connector's ``http_path`` is built. The PAT
-    is resolved from the SecretStore at test time.
-    """
+    """Non-secret Databricks/UC connection config (the PAT comes from secrets)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -102,15 +77,7 @@ class UnityCatalogConnectionAdapter:
         return UnityCatalogConfig.model_validate(raw)
 
     def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
-        """Open a SQL-Warehouse connection and run ``SELECT 1``; raise on failure.
-
-        ``secret`` is the Databricks PAT. Deliberately GX/DQX-free — a lightweight
-        connectivity probe, not a suite run. Typed ``str | None`` only because
-        the shared `ConnectionAdapter` Protocol also serves credential-less
-        types (#351) — a Databricks PAT is always mandatory, so the guard below
-        turns a missing one into a clear error rather than a confusing SDK
-        failure.
-        """
+        """Open a SQL-Warehouse connection and run ``SELECT 1``; raise on failure."""
         if secret is None:
             raise ValueError("a credential is required to test a Unity Catalog connection")
         from databricks import sql
@@ -141,19 +108,7 @@ def build_databricks_url(
     catalog: str | None = None,
     schema: str | None = None,
 ) -> str:
-    """SQLAlchemy URL for the Databricks SQL Warehouse (databricks dialect).
-
-    The PAT, http_path, `catalog` and `schema` are URL-encoded. Pinning `catalog`
-    sets the session default so a 2-level `schema.table` reference resolves to
-    `catalog.schema.table`; the profiler leaves it unset and qualifies the
-    namespace in the query instead.
-
-    `schema` is a session default too, and every caller but one leaves it unset
-    (they qualify the namespace themselves). The exception is GX's
-    `DatabricksSQLDatasource`, whose `DatabricksDsn` validator **requires**
-    `http_path`, `catalog` *and* `schema` on the URL before it will accept it —
-    see `UnityCatalogCheckRunner._sql_batch_definition` (#1179).
-    """
+    """SQLAlchemy URL for the Databricks SQL Warehouse (databricks dialect)."""
     url = (
         f"databricks://token:{quote_plus(token)}@{config.server_hostname}"
         f"?http_path={quote_plus(config.http_path)}"
@@ -165,21 +120,11 @@ def build_databricks_url(
     return url
 
 
-# The expectation types that need a SQL execution engine and therefore a SQL
-# batch, not this runner's pandas one (#1179). Exactly the ADR-0019 custom-SQL
-# expectation today. Declared as data — and pinned by a canary test — so the
-# routing rule in `run_checks` is inspectable and widening it is a deliberate
-# edit rather than something that happens by accident. `is_custom_sql` stays the
-# predicate the routing uses, so `services.custom_sql` remains the one source of
-# truth for what "custom SQL" means; this set exists to make the *invariant*
-# visible to the next person, not to duplicate that decision.
+# The expectation types that need a SQL execution engine and therefore a SQL batch, not this
+# runner's pandas one (#1179).
 SQL_BATCH_EXPECTATION_TYPES: frozenset[str] = frozenset({CUSTOM_SQL_EXPECTATION_TYPE})
 
-# Types that push down to the Databricks-SQL batch under `uc_sql_pushdown`
-# (#1532). Audited allowlist (live-verified per #953), widened only consciously;
-# anything else falls to the pandas frame. `expect_column_values_to_be_of_type`
-# is excluded: its authored `type_` values are pandas dtypes, and the SQL engine
-# checks reflected SQLAlchemy types — pushdown would flip existing checks.
+# Types that push down to the Databricks-SQL batch under `uc_sql_pushdown` (#1532).
 SQL_PUSHDOWN_EXPECTATION_TYPES: frozenset[str] = frozenset(
     {
         "expect_column_values_to_not_be_null",
@@ -192,52 +137,22 @@ SQL_PUSHDOWN_EXPECTATION_TYPES: frozenset[str] = frozenset(
     }
 )
 
-#: How far a Bernoulli ``TABLESAMPLE`` is over-drawn before the ``LIMIT`` trims it
-#: (#595). ``TABLESAMPLE (p PERCENT)`` keeps each row with probability p, so an
-#: exactly-sized draw comes back short about half the time; asking for 20% more
-#: makes a short read unlikely to fall short at any sample size worth taking,
-#: while the ``LIMIT`` keeps the transfer bounded either way.
+#: How far a Bernoulli ``TABLESAMPLE`` is over-drawn before the ``LIMIT`` trims it (#595).
 _SAMPLE_OVERSHOOT = 1.2
 
-#: Decimal places the percentage is rendered with. Load-bearing, not cosmetic:
-#: Databricks accepts only an INTEGER or DECIMAL literal in ``TABLESAMPLE``, and
-#: Python's float repr flips to scientific notation below 1e-4 — so a 100-row
-#: sample of a 200M-row table emitted ``TABLESAMPLE (6e-05 PERCENT)`` and failed
-#: with PARSE_SYNTAX_ERROR. The very-large-table case is the reason this feature
-#: exists, so it failed deterministically exactly where it mattered most.
+#: Decimal places the percentage is rendered with.
 _SAMPLE_PERCENT_DECIMALS = 6
 
-#: Floor for the computed percentage, and it MUST survive the formatting above —
-#: ``1e-06`` renders as ``0.000001`` at six places, and anything smaller would
-#: round to ``0.000000``. ``TABLESAMPLE (0 PERCENT)`` returns nothing, which is
-#: the vacuous-green outcome this floor exists to prevent.
+#: Floor for the computed percentage, and it MUST survive the formatting above — ``1e-06`` renders
+#: as ``0.000001`` at six places, and anything smaller would round to ``0.000000``.
 _MIN_SAMPLE_PERCENT = 0.000001
 
-#: Smallest expected draw the percentage is sized for, independent of how few
-#: rows were asked for. A Bernoulli draw sized for its exact target is a coin
-#: flip at small numbers — at an expected 1.2 rows, P(zero) is ~30%, and an empty
-#: frame passes every column expectation *vacuously* with a green run. Sizing for
-#: at least this many expected rows makes an empty draw astronomically unlikely
-#: (P(0) ≈ e^-100) and costs, at worst, transferring ~100 rows instead of one.
-#: The ``LIMIT`` still trims to what the author asked for, so the sample the
-#: checks see is unchanged — only the draw is made reliable.
+#: Smallest expected draw the percentage is sized for, independent of how few rows were asked for.
 _MIN_EXPECTED_DRAW_ROWS = 100
 
 
 def _sample_percent(rows: int, total: int) -> float:
-    """The ``TABLESAMPLE`` percentage that reliably draws at least ``rows`` of ``total``.
-
-    Two cases collapse to 100. ``rows >= total`` means the sample covers the whole
-    table, so there is nothing to narrow — the caller then reports ``sampled=False``
-    off the count, not off this number. ``total <= 0`` (an empty table, or a probe
-    that could not count) yields 100 because sampling everything of nothing is
-    still nothing, and it keeps the query legal rather than emitting a zero or
-    negative percentage.
-
-    Otherwise the percentage is the larger of (a) the ask plus `_SAMPLE_OVERSHOOT`
-    and (b) whatever draws `_MIN_EXPECTED_DRAW_ROWS` — see that constant for why
-    a small ask must not be taken literally.
-    """
+    """The ``TABLESAMPLE`` percentage that reliably draws at least ``rows`` of ``total``."""
     if total <= 0 or rows >= total:
         return 100.0
     wanted = max(rows * _SAMPLE_OVERSHOOT, float(_MIN_EXPECTED_DRAW_ROWS))
@@ -246,35 +161,15 @@ def _sample_percent(rows: int, total: int) -> float:
 
 
 def format_sample_percent(percent: float) -> str:
-    """Render ``percent`` as a fixed-point DECIMAL literal Databricks will parse.
-
-    Separate from `_sample_percent` and public so the formatting — the half that
-    actually broke (see `_SAMPLE_PERCENT_DECIMALS`) — is testable on its own,
-    without a warehouse and without reconstructing the statement around it.
-    """
+    """Render ``percent`` as a fixed-point DECIMAL literal Databricks will parse."""
     return f"{percent:.{_SAMPLE_PERCENT_DECIMALS}f}"
 
 
 class UnityCatalogCheckRunner:
-    """GX `CheckRunner` for Unity Catalog via the Databricks SQL Warehouse.
+    """GX `CheckRunner` for Unity Catalog via the Databricks SQL Warehouse."""
 
-    Since #1532 the default evaluator is a GX Databricks-SQL batch — the
-    warehouse executes the audited catalog expectations plus custom SQL (#1179),
-    worker memory stays flat (the Snowflake shape). The read-into-pandas path
-    remains for `expect_column_values_to_be_of_type`, unaudited types, and the
-    `uc_sql_pushdown=false` rollback. `run_checks` owns the routing.
-
-    `table` + `schema` come from `run_checks` (the suite's target); `catalog` is
-    fixed per run (held here). The two live seams are `_read_table` (reflect +
-    read the frame) and `_sql_batch_definition` (build the SQL batch), both
-    monkeypatched in tests; GX then runs through the shared `gx_runner`, so the
-    validation and result-mapping paths themselves are fully covered.
-    """
-
-    # Runner-advertised monitor capability (#429): EXPLICITLY what this runner
-    # implements — never frozenset(MONITOR_KINDS), which would auto-advertise
-    # every future registry entry and self-defeat the per-kind gate (a stateful
-    # kind must be claimed by a runner only once it actually evaluates it).
+    # Runner-advertised monitor capability (#429): EXPLICITLY what this runner implements — never
+    # frozenset(MONITOR_KINDS).
     supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
 
     def __init__(
@@ -289,31 +184,15 @@ class UnityCatalogCheckRunner:
         self._token = token
         self._catalog = catalog
         self._sampling = sampling
-        # The runner's ONE **runner-owned** lazily-built engine (#427), shared by
-        # the GX read (`_read_table`) AND `run_monitors` — a mixed suite
-        # (expectations + monitors) pays a single warehouse session instead of
-        # two. Disposed by `close()`; the run path owns that lifecycle via
-        # `registry.owned_runner`.
-        #
-        # A suite containing custom-SQL checks additionally pays a SECOND engine
-        # that GX builds and owns behind its own SQL datasource (#1179). It is
-        # deliberately not folded in here: `add_databricks_sql` takes a connection
-        # string, not an engine, so it cannot be injected. `_run_sql_checks`
-        # disposes it per call — see `_sql_batch_definition` for the one residual
-        # case that seam cannot reach. `pool_pre_ping` is not set on it (unlike
-        # this one) and does not need to be: GX connects during
-        # `add_databricks_sql` and the checks run immediately after, so there is
-        # no idle window for a warehouse auto-stop to open.
+        # The runner's ONE **runner-owned** lazily-built engine (#427), shared by the GX read
+        # (`_read_table`) AND `run_monitors`.
         self._engine = LazyEngine(self._build_engine)
 
     def _build_engine(self) -> Any:
         from sqlalchemy import create_engine
 
-        # pool_pre_ping: run_monitors may draw the connection _read_table checked
-        # in before a long GX validation — revalidate on checkout so a
-        # warehouse-side idle reap / auto-stop surfaces as a fresh connect, not a
-        # dead connection failing every monitor (the old per-call engine always
-        # got a fresh one).
+        # pool_pre_ping: run_monitors may draw the connection _read_table checked in before a long
+        # GX validation.
         return create_engine(
             build_databricks_url(self._config, self._token, catalog=self._catalog),
             pool_pre_ping=True,
@@ -324,26 +203,13 @@ class UnityCatalogCheckRunner:
         self._engine.close()
 
     def _read_table(self, *, table: str, schema: str | None) -> Any:
-        """Reflect + read the whole table into a DataFrame (live seam).
-
-        `read_sql_table` reflects through SQLAlchemy (proper dialect quoting), so
-        the table/schema identifiers are never string-formatted into SQL; the
-        pinned catalog + `schema` qualify it to `catalog.schema.table`.
-        """
+        """Reflect + read the whole table into a DataFrame (live seam)."""
         import pandas as pd
 
         return pd.read_sql_table(table, self._engine.get(), schema=schema)
 
     def _count_rows(self, *, table: str, schema: str | None) -> int:
-        """``COUNT(*)`` over the target — the size probe (live seam, #595).
-
-        A Core statement over `core_table`, so the identifiers are dialect-quoted
-        rather than interpolated, exactly like the monitor aggregates. The catalog
-        is applied only when a schema is present: a 2-part ``catalog.table`` is
-        resolved by Unity Catalog as ``schema.table`` — a *different object*, not
-        an error — so a schema-less target falls back to the session defaults the
-        URL already pins, which is what the unsampled `read_sql_table` does too.
-        """
+        """``COUNT(*)`` over the target — the size probe (live seam, #595)."""
         from sqlalchemy import func, select
 
         engine = self._engine.get()
@@ -359,35 +225,7 @@ class UnityCatalogCheckRunner:
     def _read_sampled_table(
         self, *, table: str, schema: str | None, sample: SampleSpec
     ) -> tuple[Any, dict[str, Any]]:
-        """A bounded sample of the target, pushed down to the warehouse (#595).
-
-        Both strategies bound the transfer **at the SQL warehouse**, so the worker
-        never receives the rows it is not going to look at — the whole point, given
-        the UC read is the hungriest full-load path measured (~925 MiB for 1M rows;
-        2M OOM-killed the child — docs/site/perf-baseline.md).
-
-        * ``head`` → ``LIMIT rows + 1``. The extra row distinguishes "the table has
-          exactly N rows" (a complete read, reported ``sampled=False``) from "the
-          table has more" without a second query.
-        * ``random`` → ``TABLESAMPLE (p PERCENT)`` sized from a ``COUNT(*)`` probe,
-          then ``LIMIT rows``, with ``REPEATABLE (seed)`` when the author set one.
-          Deliberately not ``ORDER BY rand() LIMIT n``, which is a global sort of
-          the whole table, and deliberately not ``TABLESAMPLE (n ROWS)``, which
-          Spark implements as a plain ``LIMIT`` — i.e. it would silently be a head
-          sample wearing a random label.
-
-        ``TABLESAMPLE ... PERCENT`` is Bernoulli, so it returns *about* p% and can
-        come back short. Three things keep that honest: the percentage is
-        over-drawn and floored at `_MIN_EXPECTED_DRAW_ROWS` expected rows, the
-        ``LIMIT`` trims the excess, and an **empty** draw from a non-empty table is
-        refused outright rather than reported as a green run over zero rows. The
-        row count actually obtained is what `sampling_record` reports — the record
-        states what was read, never what was asked for.
-
-        **Live verification of the warehouse's own behaviour is pending** (#953):
-        `TABLESAMPLE`/`REPEATABLE` semantics are a Databricks fact, and only a live
-        run is evidence for them. What is pinned here is the statement DataQ emits.
-        """
+        """A bounded sample of the target, pushed down to the warehouse (#595)."""
         import pandas as pd
         from sqlalchemy import text
 
@@ -400,12 +238,8 @@ class UnityCatalogCheckRunner:
         )
         total: int | None = None
         if sample.strategy == SAMPLE_HEAD:
-            # Interpolation is injection-safe: `qualified` is built from
-            # allowlist-checked identifiers and dialect-quoted by
-            # `qualified_sql_name`, and the limit is an `int`. Both suppressions
-            # are load-bearing (Ruff S608 and bandit B608 each flag the f-string)
-            # and carry only their test ids (#806) — trailing prose is parsed as
-            # further ids by bandit and as a malformed directive by Ruff.
+            # Interpolation is injection-safe: `qualified` is built from allowlist-checked
+            # identifiers and dialect-quoted by `qualified_sql_name`, and the limit is an `int`.
             statement = (
                 f"SELECT * FROM {qualified} LIMIT {sample.rows + 1}"  # noqa: S608  # nosec B608
             )
@@ -413,10 +247,6 @@ class UnityCatalogCheckRunner:
             total = self._count_rows(table=table, schema=schema)
             percent = format_sample_percent(_sample_percent(sample.rows, total))
             # `REPEATABLE (seed)` is what makes a seeded run actually reproducible.
-            # Without it the seed was accepted, persisted on every result, and
-            # ignored — the record claiming a property the query did not have,
-            # which is worse than not offering seeds at all. `seed` is an `int`
-            # (`parse_sample_spec`), so it is safe to interpolate.
             repeatable = f" REPEATABLE ({sample.seed})" if sample.seed is not None else ""
             statement = (
                 f"SELECT * FROM {qualified} "  # noqa: S608  # nosec B608
@@ -439,24 +269,7 @@ class UnityCatalogCheckRunner:
 
     @staticmethod
     def _require_non_empty_draw(frame: Any, *, table: str, total: int | None) -> None:
-        """Refuse a Bernoulli draw that came back EMPTY from a non-empty table (#595).
-
-        Every column expectation passes *vacuously* on zero rows, so an empty draw
-        would produce a fully green run asserting nothing — the exact
-        confidently-wrong outcome this codebase refuses elsewhere (a monitor with
-        no baseline `skip`s rather than fabricating a pass). `_sample_percent`'s
-        expected-rows floor makes this astronomically unlikely, but "unlikely"
-        is not "impossible", and the failure mode is silent, so it is checked
-        rather than assumed.
-
-        A **short** draw is deliberately NOT refused: the record reports the true
-        row count, so nothing is overstated — the author asked for at most N rows
-        and is told exactly how many were read. Only zero is a lie, because zero
-        rows cannot support the verdict the run would print.
-
-        A genuinely empty table (``total == 0``) reads back empty and that is the
-        truth, matching what the unsampled path does; it is not refused.
-        """
+        """Refuse a Bernoulli draw that came back EMPTY from a non-empty table (#595)."""
         if total and len(frame) == 0:
             raise SamplingDrawError(
                 f"the random sample of {table!r} returned no rows from a table of "
@@ -466,18 +279,7 @@ class UnityCatalogCheckRunner:
             )
 
     def _load_frame(self, *, table: str, schema: str | None) -> tuple[Any, dict[str, Any] | None]:
-        """The DataFrame the expectations run against, plus its sampling record.
-
-        Sampling **replaces** the row guardrail rather than stacking with it: a
-        sampled read is bounded by the sample size at the warehouse, so the table's
-        own size stops being a memory fact. What still has to fit is the sample,
-        which `enforce_sample_cap` checks.
-
-        Without a sample, the guardrail spends one ``COUNT(*)`` to refuse a table
-        that would not fit — cheap against the read it prevents, and skipped
-        entirely when the cap is disabled so an operator who turns it off pays
-        nothing for it.
-        """
+        """The DataFrame the expectations run against, plus its sampling record."""
         settings = get_settings()
         if self._sampling is not None:
             enforce_sample_cap(self._sampling, cap=settings.run_max_scan_rows)
@@ -497,17 +299,7 @@ class UnityCatalogCheckRunner:
         checks: list[CheckSpec],
         index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
-        """Evaluate `checks`, routing each to the batch its expectation can run on.
-
-        SQL batch (default since #1532): the audited pushdown types + custom SQL
-        (#1179 — its metrics have no pandas provider, so it can NEVER run on the
-        frame). Pandas frame: `to_be_of_type`, unaudited types, schema-less or
-        invalid targets (custom SQL alone errors there), everything when
-        `uc_sql_pushdown` is off, and any suite with a DECLARED sample — the
-        author asked for bounded evaluation, so the sampling contract wins over
-        pushdown. Groups re-merge positionally (`run_service` zips onto
-        `checks`); a batch is only built for a non-empty group.
-        """
+        """Evaluate `checks`, routing each to the batch its expectation can run on."""
         pushdown_on = (
             get_settings().uc_sql_pushdown
             and self._sampling is None
@@ -521,16 +313,12 @@ class UnityCatalogCheckRunner:
 
         sql_positions = [i for i, spec in enumerate(checks) if _routes_to_sql(spec)]
         frame_positions = [i for i, spec in enumerate(checks) if not _routes_to_sql(spec)]
-        # Keyed by submission position, never appended to: a missing key is a
-        # loud KeyError below rather than a silently short/misaligned outcome
-        # list, which `run_service`'s positional zip would map onto wrong checks.
+        # Keyed by submission position, never appended to: a missing key is a loud KeyError below
+        # rather than a silently short/misaligned outcome list.
         by_position: dict[int, CheckOutcome] = {}
         success = True
-        # A THIRD group when sampling is on: a table row-count expectation against
-        # a sampled frame measures the sample and reports it as the dataset's size
-        # (#595 C6), so it is refused per check rather than mismeasured. Carved out
-        # of the frame group only — a custom-SQL check runs against the whole table
-        # and is unaffected.
+        # A THIRD group when sampling is on: a table row-count expectation against a sampled frame
+        # measures the sample and reports it as the dataset's size (#595 C6).
         if self._sampling is not None and frame_positions:
             keep, refused = split_row_count_checks([checks[i] for i in frame_positions])
             if refused:
@@ -565,13 +353,7 @@ class UnityCatalogCheckRunner:
         checks: list[CheckSpec],
         index_columns: list[str] | None,
     ) -> SuiteOutcome:
-        """The historical UC path: read the table into pandas, validate that frame.
-
-        Bounded since #595 — by the suite target's sample where one is set, and by
-        the ``RUN_MAX_SCAN_ROWS`` probe otherwise. Only THIS group carries the
-        sampling record: the custom-SQL group next door evaluates against a SQL
-        batch over the whole table, so labelling it "sampled" would be false.
-        """
+        """The historical UC path: read the table into pandas, validate that frame."""
         df, sampling = self._load_frame(table=table, schema=schema)
         context = gx.get_context(mode="ephemeral")
         asset = context.data_sources.add_pandas(name="uc").add_dataframe_asset(name="table")
@@ -587,17 +369,7 @@ class UnityCatalogCheckRunner:
         return stamp_sampling(outcome, sampling)
 
     def _sql_target_problem(self, *, table: str, schema: str | None) -> str | None:
-        """Why this target can't back a SQL batch, or ``None`` when it can.
-
-        Two guards. A UC suite target may legally omit the schema (the DataFrame
-        read falls back to the session default), but GX's `DatabricksDsn`
-        requires one on the URL and an unqualified name would in any case resolve
-        against whatever the session default happens to be — a *wrong table* read
-        rather than an error. And the three identifiers are interpolated into the
-        DSN / asset, so they go through the shared #428 allowlist here: the
-        message names the user's own configuration only (never target data), so
-        it is safe to persist verbatim on the result row.
-        """
+        """Why this target can't back a SQL batch, or ``None`` when it can."""
         if schema is None:
             return (
                 "a Unity Catalog custom-SQL check needs the suite target's schema "
@@ -609,19 +381,7 @@ class UnityCatalogCheckRunner:
         return None
 
     def _sql_batch_definition(self, context: Any, *, table: str, schema: str) -> tuple[Any, Any]:
-        """A GX Databricks-SQL whole-table batch over the target (live seam).
-
-        Returns ``(datasource, batch_definition)`` — the datasource because GX
-        builds and owns the warehouse engine behind it, so the caller needs a
-        handle to close it (`_dispose_gx_engine`).
-
-        ``create_temp_table=False`` **pins GX's current default rather than
-        changing it** (`SQLDatasource.create_temp_table` is already False). It is
-        stated explicitly because the custom-SQL metrics wrap the batch selectable
-        directly and have no use for a temp table, so a future GX default flip
-        would silently start asking a SQL Warehouse to materialize one — the kind
-        of point-release drift CLAUDE.md §11 pins the GX version for.
-        """
+        """A GX Databricks-SQL whole-table batch over the target (live seam)."""
         datasource = context.data_sources.add_databricks_sql(
             name=f"uc-sql-{table}",
             connection_string=build_databricks_url(
@@ -629,26 +389,11 @@ class UnityCatalogCheckRunner:
             ),
             create_temp_table=False,
         )
-        # `add_databricks_sql` has ALREADY built and tested the engine by the time
-        # it returns (GX calls `test_connection()` -> `get_engine()` before it
-        # registers the datasource), so anything that raises below leaves a live
-        # warehouse session with no owner — the caller's `finally` can't reach it,
-        # because the tuple it would have bound never got returned.
-        #
-        # KNOWN RESIDUAL, recorded rather than implied away: if `add_databricks_sql`
-        # ITSELF raises — the likeliest failure, a stopped warehouse or a dead PAT
-        # — GX has already cached the engine on a datasource object we never get a
-        # reference to, so nothing can dispose it and it survives to GC. This seam
-        # cannot fix that; only GX could. It is also why the runner's `close()`
-        # (#427, `registry.owned_runner`) does NOT cover this engine: GX owns it,
-        # and the lifecycle is hand-rolled here on purpose.
+        # `add_databricks_sql` has ALREADY built and tested the engine by the time it returns (GX
+        # calls `test_connection()` -> `get_engine()` before it registers the datasource).
         try:
-            # `schema_name` is deprecated in GX 1.14+ ("pass the schema in your
-            # datasource's connection configuration instead") but still
-            # load-bearing: `DatabricksSQLDatasource` does not override `schema_`,
-            # so dropping it leaves `_effective_schema_name` None. The DSN pins the
-            # same schema as the session default, so the two agree — keep both
-            # until GX gives the datasource a schema field.
+            # `schema_name` is deprecated in GX 1.14+ ("pass the schema in your datasource's
+            # connection configuration instead") but still load-bearing: `DatabricksSQLDatasource`
             asset = datasource.add_table_asset(name=table, table_name=table, schema_name=schema)
             return datasource, asset.add_batch_definition_whole_table(name="whole_table")
         except Exception:
@@ -665,12 +410,6 @@ class UnityCatalogCheckRunner:
     ) -> SuiteOutcome:
         """Evaluate the SQL-batch group (custom SQL #1179, pushdown types #1532)
         on one Databricks-SQL batch.
-
-        ``index_columns`` is dropped for a pure custom-SQL group:
-        ``UnexpectedRowsExpectation`` never computes an index list, and the
-        request enables `run_expectations`' all-errored retry — a second
-        warehouse round-trip for the identical error. With pushdown checks
-        present it is load-bearing (failing-sample locators).
         """
         if all(is_custom_sql(spec.expectation_type) for spec in checks):
             index_columns = None
@@ -684,12 +423,9 @@ class UnityCatalogCheckRunner:
             datasource, batch_definition = self._sql_batch_definition(
                 context, table=table, schema=schema
             )
-            # A check on a column that is ALSO an index column runs without the
-            # index request: the locator query would select the column twice and
-            # Databricks' arrow layer refuses ("Can't unify schema with duplicate
-            # field names" — live-found, #1532). Databricks resolves identifiers
-            # case-insensitively, so the clash compare must too. The unexpected
-            # values ARE the locators, so nothing is lost.
+            # A check on a column that is ALSO an index column runs without the index request: the
+            # locator query would select the column twice and Databricks' arrow layer refuses
+            # ("Can't unify schema with duplicate field names" — live-found, #1532).
             index_lower = {c.lower() for c in index_columns or ()}
             clash_set = {
                 i
@@ -742,31 +478,8 @@ class UnityCatalogCheckRunner:
             outcomes.update(zip(clash, clashed.checks, strict=True))
             return SuiteOutcome(success=success, checks=[outcomes[i] for i in range(len(checks))])
         except Exception as exc:
-            # Building the SQL batch can fail on its own — GX tests the connection
-            # inside `add_databricks_sql` and validates the table inside
-            # `add_table_asset`, so an auto-stopped warehouse, an expired PAT
-            # (#954) or a missing grant raises HERE rather than inside a check.
-            #
-            # Letting that propagate would fail the whole run AND discard the
-            # DataFrame group's already-computed outcomes, which `run_checks`
-            # evaluated first — a blast radius the single-batch runner never had,
-            # and the opposite of what the target-shape branch above is careful
-            # to do. The datasource was demonstrably reachable moments earlier
-            # (the frame read succeeded), so "these checks could not be
-            # evaluated" is the honest report, not "the run died".
-            #
-            # The PERSISTED reason is classified, never the raw text: it lands
-            # verbatim in `results.observed_value` and is rendered in the UI, a
-            # sink the logger-level scrubber never sees, and a driver error can
-            # echo the PAT-bearing DSN (#849/#900).
-            #
-            # The LOG gets the full traceback, and deliberately so — that is the
-            # split #538 established. It disabled frame locals globally and added
-            # the `databricks://token:<PAT>@` userinfo scrub to `core/logging.py`
-            # precisely so tracebacks stay loggable; logging only an exception
-            # name here would leave an operator triaging a broken warehouse path
-            # with one word and no stack, and would also disguise a genuine
-            # programming error in our own code as a bland per-check failure.
+            # Building the SQL batch can fail on its own — GX tests the connection inside
+            # `add_databricks_sql` and validates the table inside `add_table_asset`.
             log.exception("uc_sql_batch_unavailable", table=table)
             return self._sql_group_errored(checks, classify_failure_reason(exc))
         finally:
@@ -775,15 +488,7 @@ class UnityCatalogCheckRunner:
 
     @staticmethod
     def _sql_group_errored(checks: list[CheckSpec], reason: str) -> SuiteOutcome:
-        """One operational `error` outcome per check in the SQL group, siblings untouched.
-
-        The SQL group (custom SQL + pushdown types) could not be evaluated. That
-        is this group's own error, not the run's — the expectations on the
-        DataFrame batch evaluated fine and must still be persisted (#122) — so
-        the failure is expressed as per-check outcomes. ``reason`` must
-        already be safe to persist verbatim: either DataQ-authored from the
-        user's own configuration, or `classify_failure_reason` output.
-        """
+        """One operational `error` outcome per check in the SQL group, siblings untouched."""
         return SuiteOutcome(
             success=False,
             checks=[
@@ -800,20 +505,7 @@ class UnityCatalogCheckRunner:
 
     @staticmethod
     def _dispose_gx_engine(datasource: Any) -> None:
-        """Close the warehouse session GX opened for its own SQL datasource.
-
-        GX builds and owns that engine internally (only a connection string goes
-        in), so the runner's `close()` can't reach it. Without this it survives
-        until the ephemeral context is garbage-collected — non-deterministic, and
-        a long-lived Celery worker would hold a Databricks session per run in the
-        meantime. Best-effort by design: a failure to tidy up must never replace
-        the outcome the caller is returning — including in the `finally` of a
-        call that is itself raising.
-
-        Only the exception TYPE is logged, never its text: the engine was built
-        from a URL carrying the PAT, and a driver/SQLAlchemy message is exactly
-        the shape that has echoed a credential before (#849).
-        """
+        """Close the warehouse session GX opened for its own SQL datasource."""
         try:
             datasource.get_engine().dispose()
         except Exception as exc:
@@ -822,11 +514,12 @@ class UnityCatalogCheckRunner:
     def run_monitors(
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
     ) -> list[CheckOutcome]:
-        """Evaluate freshness/volume monitors via scalar SQL aggregates over the SQL
-        Warehouse (no GX / no DataFrame read), over the runner's shared engine
-        (#427 — one connection per run, no per-call engine). The pinned
-        ``catalog`` qualifies the target as ``catalog.schema.table``. A connection
-        failure propagates; a bad monitor errors only itself."""
+        """Evaluate freshness/volume monitors via scalar SQL aggregates over the SQL Warehouse (no
+        GX / no DataFrame read), over the runner's shared engine (#427 — one connection per run,
+        no per-call engine). The pinned ``catalog`` qualifies the target as
+        ``catalog.schema.table``. A connection failure propagates; a bad monitor errors only
+        itself.
+        """
         return run_monitors_over_engine(
             self._engine.get(),
             table=table,
@@ -844,13 +537,7 @@ def build_unity_catalog_runner(
     catalog: str,
     sampling: SampleSpec | None = None,
 ) -> UnityCatalogCheckRunner:
-    """Build a runner from a UC `Connection`'s primitives + the target `catalog`.
-
-    Mirrors `build_snowflake_runner`: resolves the PAT eagerly and takes the raw
-    config dict (not the ORM model) to keep the adapter decoupled from `db/`.
-    ``sampling`` is the suite target's `SampleSpec` (#595); ``None`` keeps the
-    historical whole-table read (still guardrailed by ``RUN_MAX_SCAN_ROWS``).
-    """
+    """Build a runner from a UC `Connection`'s primitives + the target `catalog`."""
     if not secret_ref:
         raise ValueError("Unity Catalog connection requires secret_ref for the PAT")
     uc_config = UnityCatalogConfig.model_validate(config)

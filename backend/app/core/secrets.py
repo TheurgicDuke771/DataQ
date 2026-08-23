@@ -1,37 +1,4 @@
-"""Secret resolution abstraction.
-
-Three backends are supported, picked from `settings.secret_store`:
-
-- **EnvSecretStore** — reads secrets from env vars prefixed `KV_SECRET_`.
-  Host-only dev — convenient when running without a vault or an Azure tenant.
-  Name normalisation: `snowflake-uat-finance` → env var
-  `KV_SECRET_SNOWFLAKE_UAT_FINANCE`. **Per-process**: a secret written via
-  `set` is only visible to the writing process (#86), so it cannot serve a
-  compose stack where the API and the Celery worker are separate containers.
-
-- **OpenBaoSecretStore** — reads/writes secrets over the **KV v2 HTTP API**
-  (ADR 0039). The default for both compose stacks: it is shared across
-  processes (the API writes a credential, the worker reads it — #86) and,
-  unlike the plaintext Redis store it replaced, it encrypts at rest and puts
-  an auth boundary and an audit log in front of the values.
-
-  The contract is the *API*, not a vendor: the same mode works against
-  OpenBao (what we ship — MPL-2.0), Vault Community/Enterprise, or HCP Vault.
-  DataQ never distributes a BUSL-licensed server (CONTRIBUTING rule 40).
-
-- **AzureKeyVaultStore** — reads from Azure Key Vault via
-  `azure-identity` (DefaultAzureCredential) + `azure-keyvault-secrets`.
-  The production default for DataQ's own Azure deployment (ADR 0024), where
-  managed identity means there is no bootstrap credential to hold at all.
-
-- **AwsSecretsManagerStore** — reads/writes via `boto3`'s `secretsmanager`
-  client. The production default for DataQ's parallel AWS deployment, where
-  the ECS task's IAM role is the credential — same "no bootstrap secret to
-  hold" posture as the Key Vault store, one cloud over.
-
-The Azure and AWS SDKs are **lazy-imported** so deployments that don't use
-them don't pay the import cost.
-"""
+"""Secret resolution abstraction (ADR 0039)."""
 
 from __future__ import annotations
 
@@ -61,53 +28,33 @@ _ASM_MODE: Final = "aws_secrets_manager"
 _OPENBAO_MODE: Final = "openbao"
 _REDIS_MODE: Final = "redis"  # removed — ADR 0039; retained only for the shim below
 
-# KV v2 stores a MAP per path; DataQ's model is one opaque string per name, so every
-# value lives under one fixed field. Changing this orphans every existing secret.
+# Every value lives under one fixed KV v2 field; changing this orphans every
+# existing secret.
 _KV_FIELD: Final = "value"
-# Bounded timeout (seconds) — a degraded vault must not stall a request thread or a
-# Celery task. Mirrors marquez.py's `_TIMEOUT_SECONDS` rationale.
+# Bounded so a degraded vault cannot stall a request thread or a Celery task.
 _HTTP_TIMEOUT_SECONDS: Final = 5.0
-# Renew an AppRole token this many seconds BEFORE its lease actually ends (#1054).
-# Without a margin a token can expire between the staleness check and the server
-# handling the request — the mid-flight 403 this feature exists to remove. 60s
-# comfortably covers a request that queues behind a slow check run.
+# Renew an AppRole token this margin BEFORE its lease ends (#1054) — removes the
+# mid-flight 403 between the staleness check and the server handling the request.
 _TOKEN_RENEWAL_MARGIN_SECONDS: Final = 60
-# Upper bound applied to a server-reported lease before any arithmetic, so an absurd
-# value cannot raise OverflowError out of get/set/delete — which no caller guards.
+# Cap a server-reported lease before arithmetic so an absurd value cannot raise
+# OverflowError out of get/set/delete (which no caller guards).
 _MAX_LEASE_SECONDS: Final = 365 * 24 * 3600
 
 
 def _explain_status(status: int) -> str:
-    """Turn a KV v2 status into a cause an operator can act on.
-
-    The point is that these are NOT "secret missing" — see `OpenBaoSecretStore`.
-    """
+    """KV v2 status → operator-actionable cause; none of these mean "secret missing"."""
     if status == 403:
         return "permission denied — token invalid, expired, or lacking a policy for this path"
     if status == 503:
         return "vault sealed or standby — unseal it, or point OPENBAO_ADDR at the active node"
     if status == 404:
-        # On write/delete a 404 cannot mean "absent" — it means the ROUTE is absent.
+        # On write/delete a 404 means the ROUTE is absent, not the secret.
         return "no such KV mount — check OPENBAO_MOUNT"
     return "unexpected vault response"
 
 
 def _is_missing_mount(response: httpx.Response) -> bool:
-    """Distinguish the two things KV v2 answers 404 to.
-
-    An absent (or soft-deleted) secret under a live mount returns an EMPTY error
-    list; a mount that does not exist returns a populated one::
-
-        secret absent   → {"errors": []}
-        mount not found → {"errors": ["no handler for route \\"typo/data/x\\". …"]}
-
-    Both shapes captured from openbao/openbao v2.6.1. The distinction matters
-    because `OPENBAO_MOUNT` is operator-settable and production vaults commonly
-    mount per-team paths: one typo would otherwise report EVERY credential in the
-    workspace as "not set" — the exact masquerade this class exists to prevent
-    (#954). A body we cannot parse is treated as the benign case, since only the
-    populated-errors shape is positive evidence of a bad route.
-    """
+    """Distinguish KV v2's two 404s (shapes captured from openbao v2.6.1)."""
     try:
         errors = response.json().get("errors")
     except (ValueError, AttributeError):
@@ -116,31 +63,16 @@ def _is_missing_mount(response: httpx.Response) -> bool:
 
 
 class SecretNotFoundError(Exception):
-    """Raised when the secret genuinely is not there — and ONLY then.
-
-    Callers legitimately treat this as a *state* ("no webhook configured", "this
-    connection has no extra credential") and degrade gracefully. That is only safe
-    while the store never raises it for anything else — see
-    `SecretStoreUnavailableError`.
+    """Raised ONLY when the secret genuinely is not there — callers treat this as
+    a state and degrade gracefully, so an outage must never be folded into it
+    (see `SecretStoreUnavailableError`).
     """
 
 
 class SecretStoreUnavailableError(Exception):
-    """Raised when the store could not answer — deliberately NOT a subclass.
-
-    The distinction that matters is at the **type**, not in the message. Every
-    caller branches on the exception class and none reads the text
-    (`admin_service._safe_secret`, `notification_service._resolve_webhook_url`,
-    `connection_service._extra_secrets`, `alerting/email.py`), so a store that
-    folds "the vault is sealed" into `SecretNotFoundError` makes an admin page
-    render "not set", makes alert delivery skip silently, and makes a connection
-    run with a credential quietly omitted — during an outage, across every
-    connection at once.
-
-    ADR 0039 §6 originally claimed the Protocol forced a single exception type.
-    It does not: the Protocol below declares no exceptions at all. That premise
-    was wrong, and this class is the correction — it is what actually makes the
-    ADR's promise true, rather than true-in-the-log-message-only.
+    """The store could not answer — deliberately NOT a subclass. Callers branch
+    on the exception TYPE, never the message (ADR 0039 §6): folding an outage
+    into `SecretNotFoundError` renders it as unconfigured state everywhere.
     """
 
 
@@ -150,12 +82,8 @@ class SecretWriteError(Exception):
 
 @dataclass(frozen=True)
 class SecretInfo:
-    """One entry from a store listing: the name, and when the store first saw it.
-
-    `created_at` is what makes an orphan sweep safe (#1059) — it is the only signal
-    that separates "abandoned months ago" from "being written right now by a
-    connection-create that has not committed yet". A store that cannot supply it
-    reports ``None``, and the sweep must then refuse to purge rather than guess.
+    """One store-listing entry. `created_at=None` means unknown age — the orphan
+    sweep (#1059) must then refuse to purge rather than guess.
     """
 
     name: str
@@ -163,18 +91,9 @@ class SecretInfo:
 
 
 def _parse_vault_timestamp(raw: object) -> datetime | None:
-    """Parse a KV v2 `created_time` into an aware UTC datetime, or None.
-
-    OpenBao/Vault emit RFC 3339 with **nanosecond** precision
-    (``2026-07-27T04:53:23.123456789Z``). Verified against the pinned interpreter
-    rather than assumed: Python 3.13's `fromisoformat` accepts both the `Z` suffix
-    and >6 fractional digits, truncating to microseconds — so no pre-processing is
-    needed, and an earlier hand-rolled truncation here was dead code justified by a
-    false premise. If the Python pin ever moves backwards, this is the seam to fix.
-
-    What IS load-bearing is returning None rather than raising: this value crosses a
-    **driver boundary**, and the caller reads an unknown age as "too young to touch".
-    Any surprise from the server therefore fails towards *not deleting* a credential.
+    """Parse a KV v2 `created_time` (RFC 3339, nanosecond precision) into an
+    aware UTC datetime — or None, never raising: the value crosses a driver
+    boundary, and an unknown age fails towards *not deleting* a credential.
     """
     if not isinstance(raw, str) or not raw.strip():
         return None
@@ -192,11 +111,9 @@ class SecretStore(Protocol):
     def set(self, name: str, value: str) -> None: ...
 
     def delete(self, name: str) -> None:
-        """Best-effort removal of a secret (#372). Idempotent — a missing secret is a
-        clean no-op — and **fail-soft**: it never raises, since it only ever runs as
-        cleanup when the owning entity (connection / suite notification) is deleted or
-        its secret cleared, and that must not 500 on a store hiccup. Failures are
-        logged."""
+        """Best-effort removal (#372): idempotent and fail-soft — never raises
+        (cleanup must not 500 the owning entity's delete); failures are logged.
+        """
         ...
 
 
@@ -215,11 +132,7 @@ class EnvSecretStore:
         return value
 
     def set(self, name: str, value: str) -> None:
-        """Write into the process env. Dev only — NOT persisted across restarts.
-
-        Lets connection-CRUD exercise the write-through path locally without an
-        Azure tenant. Production uses AzureKeyVaultStore, which persists.
-        """
+        """Write into the process env — dev only, NOT persisted across restarts."""
         os.environ[_env_key(name)] = value
 
     def delete(self, name: str) -> None:
@@ -233,10 +146,8 @@ class AzureKeyVaultStore:
     def __init__(self, vault_url: str) -> None:
         self._vault_url = vault_url
         self._client: SecretClient | None = None
-        # Retained solely so `close()` can release it. The credential owns its OWN
-        # transport session per chained credential, separate from the SecretClient's
-        # pipeline — closing only the client would free half the sockets and leave
-        # the token-acquisition sessions open, i.e. the same leak class this fixes.
+        # Retained so close() can release it — the credential holds its OWN
+        # transport sessions, separate from the SecretClient's pipeline.
         self._credential: Any = None
         self._lock = threading.Lock()
 
@@ -265,12 +176,8 @@ class AzureKeyVaultStore:
                 f"Key Vault secret {name!r} at {self._vault_url} not set"
             ) from exc
         except Exception as exc:
-            # Throttling, an expired managed identity, a network fault, a vault
-            # firewall rule — none of these mean the secret is absent. This store
-            # wrapped them ALL in `SecretNotFoundError` before ADR 0039, so callers
-            # that degrade on "not found" have been silently mistaking a Key Vault
-            # outage for "nothing configured" in production. Same bug the OpenBao
-            # store would have shipped; fixed for both here.
+            # Throttling / identity / network faults are NOT "secret absent"
+            # (ADR 0039 §6).
             log.warning("keyvault_unavailable", name=name, error=str(exc))
             raise SecretStoreUnavailableError(
                 f"Key Vault at {self._vault_url} could not serve {name!r}: {exc}"
@@ -289,41 +196,28 @@ class AzureKeyVaultStore:
             ) from exc
 
     def delete(self, name: str) -> None:
-        """Best-effort soft-delete (#372). A missing secret is a clean no-op; any
-        other failure is logged, never raised (orphan cleanup must not 500 the
-        entity delete). Fires the delete; doesn't block on the soft-delete poller."""
+        """Best-effort soft-delete (#372): missing is a clean no-op; other
+        failures are logged, never raised. Doesn't block on the delete poller.
+        """
         from azure.core.exceptions import ResourceNotFoundError
 
         try:
             self._client_lazy().begin_delete_secret(name)
         except ResourceNotFoundError:
-            # Already absent (or soft-deleted) — deletion is idempotent, nothing to do.
+            # Already absent — deletion is idempotent.
             return
         except Exception as exc:
             log.warning("secret_delete_failed", name=name, error=str(exc))
 
     def list_secrets(self) -> list[SecretInfo]:
-        """Enumerate the vault's secrets for the orphan sweep (#1059).
-
-        Uses `list_properties_of_secrets`, which returns names and `created_on`
-        WITHOUT the values — deliberately: a sweep has no business reading
-        credentials, and fetching them would put every secret in the workspace
-        through this process's memory once a day for no reason.
-
-        Raises `SecretStoreUnavailableError` on failure rather than returning a
-        partial list. A truncated listing is indistinguishable from "these secrets
-        no longer exist", which in a sweep means "purge them" — so a half-answer
-        here is far more dangerous than no answer.
+        """Enumerate names + created_on for the orphan sweep (#1059) — never the
+        values. Raises `SecretStoreUnavailableError` rather than returning a
+        partial list: to the sweep, "absent from the listing" means "purge".
         """
         try:
             return [
-                # `created_on` comes straight off the SDK; whether it is tz-aware is
-                # the DRIVER's choice, not ours, and a naive value would raise
-                # TypeError when the sweep subtracts it from an aware `now` — swallowed
-                # by the task's blanket except into a silent "0 orphans". Normalised
-                # here at the boundary; the sweep normalises again where it subtracts,
-                # because a fixture that hand-builds an aware datetime asserts our
-                # model rather than the driver's (#953/#823).
+                # `created_on` may be tz-naive — the DRIVER's choice; normalise
+                # at the boundary or the sweep's aware subtraction raises (#953/#823).
                 SecretInfo(name=prop.name, created_at=as_utc_or_none(prop.created_on))
                 for prop in self._client_lazy().list_properties_of_secrets()
                 if prop.name
@@ -334,22 +228,7 @@ class AzureKeyVaultStore:
             ) from exc
 
     def close(self) -> None:
-        """Release the pooled client AND the credential (#1058). Idempotent.
-
-        Both, because they hold **separate** transport sessions: `SecretClient.close()`
-        closes only its own pipeline, while `DefaultAzureCredential` opens a session
-        per credential in its chain. Closing just the client would free half the
-        sockets — the same leak this method exists to fix.
-
-        Client first, then the credential it authenticates with, so nothing is asked
-        to use an already-closed credential on the way down.
-
-        Note the cost of the rebuild this permits: the next use re-runs the whole
-        `DefaultAzureCredential` discovery/token chain. Fine for a test reset; worth
-        weighing if the config hot-reload caller the reset docstring anticipates
-        ever lands. Same shape and same reasoning as `OpenBaoSecretStore.close` —
-        see there for why this is not on the Protocol.
-        """
+        """Release the pooled client AND the credential (#1058); idempotent."""
         with self._lock:
             client, self._client = self._client, None
             credential, self._credential = self._credential, None
@@ -360,24 +239,7 @@ class AzureKeyVaultStore:
 
 
 class AwsSecretsManagerStore:
-    """Resolves secrets from AWS Secrets Manager via the ECS task's IAM role.
-
-    Mirrors `AzureKeyVaultStore` deliberately: same lazy-client construction, same
-    exception-type discipline (an outage raises `SecretStoreUnavailableError`, never
-    `SecretNotFoundError` — the ADR 0039 decision 6 lesson applies to every store,
-    not just OpenBao's). `boto3` resolves the region and credential ambiently from
-    the task's IAM role, so there is no bootstrap credential for this class to hold.
-
-    `name` is namespaced under `settings.aws_secrets_manager_prefix` so more than one
-    DataQ install can share an account/region without colliding — the same reason
-    `OPENBAO_MOUNT` exists for a shared vault. The separator is inserted HERE, not
-    left to the operator's string: a bare `f"{prefix}{name}"` join would let prefixes
-    like `"team1"` and `"team1x"` collide on secrets `"xsecret"` / `"secret"`, which
-    is exactly the collision namespacing exists to prevent. OpenBao's mount doesn't
-    have this problem because `_path()` hardcodes the `/` between mount and name;
-    normalising here gives the ASM store the same guarantee regardless of whether
-    `AWS_SECRETS_MANAGER_PREFIX` was set with or without a trailing slash.
-    """
+    """Resolves secrets from AWS Secrets Manager via the task's IAM role."""
 
     def __init__(self, prefix: str) -> None:
         self._prefix = prefix.strip().rstrip("/")
@@ -406,10 +268,7 @@ class AwsSecretsManagerStore:
         except ClientError as exc:
             if exc.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
                 raise SecretNotFoundError(f"Secrets Manager secret {full_name!r} not set") from exc
-            # Throttling, an expired/unassigned task role, a network fault — none of
-            # these mean the secret is absent. Folding them into SecretNotFoundError
-            # is the exact masquerade that made the AKV store's pre-ADR-0039 shape a
-            # bug: an outage would read as "nothing configured" everywhere at once.
+            # Throttling / role / network faults are NOT "secret absent" (ADR 0039 §6).
             log.warning("secrets_manager_unavailable", name=full_name, error=str(exc))
             raise SecretStoreUnavailableError(
                 f"Secrets Manager could not serve {full_name!r}: {exc}"
@@ -428,10 +287,8 @@ class AwsSecretsManagerStore:
         from botocore.exceptions import ClientError
 
         full_name = self._full_name(name)
-        # Built in its own try, separate from the operation below: a construction
-        # failure (e.g. no region resolvable) must not propagate unwrapped past this
-        # method — connection_service maps SecretWriteError to a 502, and anything
-        # else bypasses that mapping and surfaces as a bare 500.
+        # Client-construction failures (e.g. no region) must surface as
+        # SecretWriteError (mapped to a 502), not bypass that mapping as a 500.
         try:
             client = self._client_lazy()
         except Exception as exc:
@@ -441,8 +298,7 @@ class AwsSecretsManagerStore:
         except ClientError as exc:
             if exc.response.get("Error", {}).get("Code") != "ResourceNotFoundException":
                 raise SecretWriteError(f"Secrets Manager secret {full_name!r}: {exc}") from exc
-            # First write for this name — Secrets Manager has no upsert; a secret
-            # must exist before `put_secret_value` can add a new version to it.
+            # First write — Secrets Manager has no upsert; create, then put.
             try:
                 client.create_secret(Name=full_name, SecretString=value)
             except ClientError as create_exc:
@@ -450,11 +306,8 @@ class AwsSecretsManagerStore:
                     raise SecretWriteError(
                         f"Secrets Manager secret {full_name!r}: {create_exc}"
                     ) from create_exc
-                # Lost a create race to a concurrent first-write (two Celery workers
-                # provisioning the same brand-new connection's credential at once) —
-                # the secret exists now, so THIS write can proceed as a normal put.
-                # One retry only: a second failure here is a genuine fault, not the
-                # race this branch exists to absorb.
+                # Lost the create race to a concurrent first write — the secret
+                # exists now; exactly one retry of the put.
                 try:
                     client.put_secret_value(SecretId=full_name, SecretString=value)
                 except Exception as retry_exc:
@@ -469,12 +322,9 @@ class AwsSecretsManagerStore:
             raise SecretWriteError(f"Secrets Manager secret {full_name!r}: {exc}") from exc
 
     def delete(self, name: str) -> None:
-        """Best-effort delete (#372); missing is a no-op, fail-soft.
-
-        `ForceDeleteWithoutRecovery=False` (the default) leaves the default ~30-day
-        recovery window — matching the AKV store's soft-delete, not the OpenBao
-        store's hard purge, since a vault-level purge-protection equivalent isn't
-        ours to override here either.
+        """Best-effort delete (#372); missing is a no-op, fail-soft. The default
+        (no ForceDelete) keeps the ~30-day recovery window — matching AKV's
+        soft-delete, not OpenBao's hard purge.
         """
         from botocore.exceptions import ClientError
 
@@ -489,19 +339,7 @@ class AwsSecretsManagerStore:
             log.warning("secret_delete_failed", name=full_name, error=str(exc))
 
     def list_secrets(self) -> list[SecretInfo]:
-        """Enumerate this install's secrets for the orphan sweep (#1059).
-
-        Without this, `sweep_orphan_secrets` duck-types its absence as "this store
-        cannot enumerate itself" and skips silently forever (see that function's
-        docstring) — on an AWS deployment that would mean the same credential-leak
-        protection Azure/OpenBao installs get never runs, with nothing surfacing the
-        gap. Secrets Manager's `ListSecrets` `Filters` do a SUBSTRING match on name,
-        not a prefix match, so a broader-than-needed server-side filter is narrowed
-        with a strict `startswith` client-side — an install whose prefix happens to
-        appear as a substring elsewhere in the account must not see (or later purge)
-        secrets it does not own. Returned names have the prefix stripped, so they
-        round-trip through `get`/`set`/`delete` exactly like every other store's.
-        """
+        """Enumerate this install's secrets for the orphan sweep (#1059)."""
         client = self._client_lazy()
         prefix_with_sep = f"{self._prefix}/"
         found: list[SecretInfo] = []
@@ -534,10 +372,8 @@ class AwsSecretsManagerStore:
         return found
 
     def close(self) -> None:
-        """Release the pooled boto3 client (#1058 pattern). Idempotent.
-
-        Duck-typed, not on the Protocol — see `OpenBaoSecretStore.close`. Guarded by
-        `getattr`/`callable` because older botocore client builds have no `close()`.
+        """Release the pooled boto3 client (#1058); idempotent. Duck-typed (see
+        `OpenBaoSecretStore.close`); guarded — older botocore builds lack close().
         """
         with self._lock:
             client, self._client = self._client, None
@@ -548,33 +384,7 @@ class AwsSecretsManagerStore:
 
 
 class OpenBaoSecretStore:
-    """Resolves secrets over the KV v2 HTTP API — OpenBao, Vault, or HCP (ADR 0039).
-
-    Deliberately speaks the **API and not a vendor SDK**: the three endpoints DataQ
-    needs are small and stable, and binding to the wire contract is what lets one
-    mode serve OpenBao (what we ship), Vault Community/Enterprise, and HCP Vault
-    without DataQ taking a position on the operator's server. Trading Azure lock-in
-    for HashiCorp lock-in would have missed the point of ADR 0010.
-
-        GET    /v1/{mount}/data/{name}      → value at .data.data.{_KV_FIELD}
-        POST   /v1/{mount}/data/{name}      → body {"data": {_KV_FIELD: value}}
-        DELETE /v1/{mount}/metadata/{name}  → purges every version
-        GET    /v1/{mount}/metadata?list=true → names, for the orphan sweep (#1059)
-        GET    /v1/{mount}/metadata/{name}  → created_time, for the orphan sweep
-
-    The last two need `list` on ``<mount>/metadata/`` and `read` on
-    ``<mount>/metadata/*``. A least-privilege policy written against the first three
-    alone leaves the sweep unable to date anything, which it reports as `unknown_age`
-    rather than as a clean vault.
-
-    **Failure modes stay distinguishable** (ADR 0039 decision 6). A missing secret
-    is 404; a dead/expired token is 403; a sealed or unreachable vault is 503 or a
-    transport error. The Protocol only lets us raise `SecretNotFoundError` here, so
-    the last two additionally emit a WARNING and name the cause in the message —
-    reporting "credential missing" for what is really "cannot reach the vault" is
-    precisely how #954's two dead Snowflake PATs stayed invisible until someone
-    read worker logs.
-    """
+    """Resolves secrets over the KV v2 HTTP API — OpenBao, Vault, or HCP (ADR 0039)."""
 
     def __init__(
         self,
@@ -587,55 +397,32 @@ class OpenBaoSecretStore:
         timeout: float = _HTTP_TIMEOUT_SECONDS,
         client: httpx.Client | None = None,
     ) -> None:
-        # Trailing slash stripped so the path join is unambiguous (mirrors marquez.py).
         self._addr = addr.rstrip("/")
-        # Phase-1 static token (ADR 0039 decision 4). Kept for dev mode and for
-        # deployments that have not moved to AppRole.
+        # Phase-1 static token (ADR 0039 decision 4); kept for dev and
+        # non-AppRole deployments.
         self._static_token = token
-        # Phase-2 AppRole (#1054). `role_id` is an identifier; `secret_id` is the
-        # credential. Both or neither — a half-configured AppRole is rejected at
-        # startup rather than silently falling back to the static token, because a
-        # silent downgrade of a credential path is a security regression, not a
-        # convenience.
-        # Normalised ONCE, here, and blank collapses to None. `.env.app.example` ships
-        # these keys blank (and `setup.sh` copies that file verbatim), and
-        # pydantic-settings resolves a present-but-empty value to "" — which is not
-        # None. Without this, `_role_id = ""` engaged AppRole mode with an empty
-        # credential: the process booted clean and then EVERY secret read, write and
-        # delete failed at runtime, which is the "dies mid-run in a worker" failure the
-        # ADR 0039 startup validator exists to prevent, reintroduced one layer down.
-        # The validator strips; so must the store, or the two disagree about what is
-        # configured. Whitespace-only is the same bug wearing a hat.
+        # AppRole (#1054): both or neither — never a silent static-token downgrade.
         self._role_id = (role_id or "").strip() or None
         self._secret_id = (secret_id or "").strip() or None
-        # The AppRole-issued token and the moment it stops being usable. Guarded by
-        # `_auth_lock`, which is SEPARATE from the client lock: logging in performs a
-        # request, and holding the client-construction lock across a network call
-        # would serialise every caller behind it.
+        # Guarded by `_auth_lock`, SEPARATE from the client lock: login performs
+        # a network call and must not serialise client construction.
         self._auth_token: str | None = None
-        # A `time.monotonic()` DEADLINE, not a wall-clock datetime — see `_token_is_stale`.
+        # A `time.monotonic()` DEADLINE, not wall-clock — see `_token_is_stale`.
         self._auth_expires_at: float | None = None
         self._auth_lock = threading.Lock()
         self._mount = mount.strip("/")
         self._timeout = timeout
-        # Injectable so tests can drive the real httpx request/response stack through
-        # a MockTransport — the URL building, header encoding, status handling and
-        # JSON decoding below are then genuinely exercised, not stubbed past.
+        # Injectable so tests drive the real httpx stack through a MockTransport.
         self._client = client
-        # Ownership, tracked at construction: `close()` may only close a pool this
-        # store built. An injected client belongs to its caller, and closing it would
-        # break a caller that reuses it (or a test that asserts on it afterwards).
+        # `close()` may only close a pool this store built — an injected client
+        # belongs to its caller.
         self._owns_client = client is None
         self._lock = threading.Lock()
 
     def _client_lazy(self) -> httpx.Client:
-        """One pooled client, built on first use (house pattern — see the AKV store).
-
-        A connection pool matters here: every check run resolves its connection's
-        credential, so a fresh TCP+TLS handshake per secret would be paid on the hot
-        path. The token is a client-level header — it travels in `X-Vault-Token`,
-        never the URL, since a query-string credential lands in access logs (the
-        ADR 0006 `?token=` shape the logging redactor exists to cover).
+        """One pooled client, built on first use — credential resolution is on
+        the hot path. The token travels per request in `X-Vault-Token`, never
+        the URL (a query-string credential lands in access logs).
         """
         if self._client is not None:
             return self._client
@@ -645,20 +432,7 @@ class OpenBaoSecretStore:
             return self._client
 
     def list_secrets(self) -> list[SecretInfo]:
-        """Enumerate the mount's secrets for the orphan sweep (#1059).
-
-        Two calls per secret, unavoidably: KV v2's LIST returns names only, so the
-        creation time needs a metadata GET each. That is N+1, and acceptable only
-        because this runs from a daily janitor over a workspace-sized set — never on
-        a request path. The values are never fetched (`metadata`, not `data`), so a
-        sweep cannot leak a credential into this process.
-
-        Raises `SecretStoreUnavailableError` on any failure of the LIST rather than
-        returning a partial list: to a sweep, "absent from the listing" means
-        "purge", so a truncated answer is worse than none. A per-name metadata
-        failure degrades to `created_at=None` instead, which the sweep reads as
-        "too young to touch" — the same safe direction.
-        """
+        """Enumerate the mount's secrets for the orphan sweep (#1059)."""
         list_path = f"/v1/{self._mount}/metadata"
         try:
             response = self._send("GET", list_path, params={"list": "true"})
@@ -668,8 +442,7 @@ class OpenBaoSecretStore:
                 f"OpenBao at {self._addr} unreachable while listing ({exc})"
             ) from exc
         if response.status_code == 404 and not _is_missing_mount(response):
-            # An empty KV mount answers 404 with no errors — genuinely zero secrets,
-            # not a fault. Distinct from a missing mount, which falls through below.
+            # An empty KV mount answers 404 with no errors — zero secrets, not a fault.
             return []
         if response.status_code != 200:
             self._log_transport_failure("<list>", response.status_code, response.text)
@@ -686,24 +459,19 @@ class OpenBaoSecretStore:
         return [
             SecretInfo(name=key, created_at=self._created_at(key))
             for key in keys
-            # KV v2 lists nested paths as a trailing-slash "directory" entry. DataQ
-            # writes flat names, so those are somebody else's secrets — skip rather
-            # than report them as orphan candidates.
+            # KV v2 lists nested paths as trailing-slash "directory" entries —
+            # somebody else's secrets, not orphan candidates.
             if isinstance(key, str) and not key.endswith("/")
         ]
 
     def _created_at(self, name: str) -> datetime | None:
-        """`created_time` from a secret's metadata, or None if it can't be read.
-
-        Fail-soft on purpose — see `list_secrets`. None means the sweep treats the
-        secret as too young to purge, so a metadata hiccup can never cause a delete.
+        """`created_time` from a secret's metadata, or None if unreadable —
+        fail-soft, so a metadata hiccup can never cause a delete.
         """
         try:
             response = self._send("GET", self._path("metadata", name))
         except (httpx.HTTPError, SecretStoreUnavailableError):
-            # Including the login failure: the documented degradation is "unknown
-            # age", which the sweep reads as "too young to purge". Letting this
-            # escape would abort the whole sweep instead.
+            # Including login failure — escaping would abort the whole sweep.
             return None
         if response.status_code != 200:
             return None
@@ -713,26 +481,7 @@ class OpenBaoSecretStore:
             return None
 
     def close(self) -> None:
-        """Release the pooled client, if this store built it (#1058).
-
-        Deliberately NOT on the `SecretStore` Protocol. 32 test doubles implement
-        that Protocol structurally and the `backend/tests` mypy gate (#418) checks
-        them, so adding a method there would force 32 no-op `close()` bodies to buy
-        one real one — churn out of proportion to the fix. `reset_secret_store_cache`
-        therefore duck-types it, which is also what lets any future store opt in
-        without touching the seam.
-
-        Idempotent, and safe to call on a store that is used again afterwards: an
-        owned handle is cleared, so `_client_lazy` rebuilds a fresh pool on next use.
-
-        A NOT-owned client is left entirely alone — not closed *and not detached*.
-        Detaching looks harmless but is worse than closing: the next call would
-        quietly build a real `httpx.Client(base_url=self._addr)` and open live
-        sockets to the vault, so a store injected with a `MockTransport` would
-        start doing real network I/O after any reset instead of failing loudly.
-        `reset_secret_store_cache` runs from an autouse fixture, so that would have
-        been a whole-suite hazard.
-        """
+        """Release the pooled client, if this store built it (#1058). Idempotent."""
         with self._lock:
             if not self._owns_client:
                 return
@@ -741,79 +490,34 @@ class OpenBaoSecretStore:
             client.close()
 
     def _headers(self) -> dict[str, str]:
-        """Auth travels **per request**, not baked into the client.
-
-        Deliberate: an injected client (tests, or any future caller supplying its own
-        pool) would otherwise silently carry no credential and every call would 403.
-        Binding auth to the request rather than the transport makes that impossible —
-        and with AppRole it is now also *required*, since the token changes over the
-        process's life and a client-level header would pin the first one forever.
-        OpenBao keeps Vault's `X-Vault-Token` header name for API compatibility.
+        """Auth travels per REQUEST, not baked into the client: an injected
+        client would carry no credential, and the AppRole token changes over the
+        process's life. OpenBao keeps Vault's `X-Vault-Token` header name.
         """
         token, _fresh = self._current_token()
         return {"X-Vault-Token": token}
 
     def _current_token(self) -> tuple[str, bool]:
-        """The token to present: the static one, or a live AppRole token (#1054).
-
-        AppRole tokens are renewed **proactively at request time** rather than by a
-        background thread. A thread would have to exist in both the API and every
-        Celery worker, would need its own shutdown path, and could wedge silently —
-        the #904 shape, where periodic work stopped while everything reported
-        healthy. Checking an expiry immediately before use cannot wedge: if the check
-        never runs, no request is being made either.
-        """
+        """The token to present: static, or a live AppRole token (#1054)."""
         if self._role_id is None:
-            # Static-token mode. `_build_store` and the Settings validator both
-            # guarantee one of the two is configured, so this cannot be None here.
+            # Static-token mode; `_build_store` guarantees one of the two is set.
             return self._static_token or "", False
         with self._auth_lock:
             if self._auth_token is None or self._token_is_stale():
                 self._login_locked()
-                # Freshly minted: a 403 on THIS request cannot mean "token expired",
-                # so `_send` must not spend another login trying to fix it.
+                # Freshly minted: a 403 on THIS request cannot mean "expired",
+                # so `_send` must not spend another login on it.
                 return self._auth_token or "", True
             return self._auth_token or "", False
 
     def _token_is_stale(self) -> bool:
-        """True when the cached token is inside the renewal margin.
-
-        The margin exists because a token that expires between this check and the
-        server handling the request would 403 — the exact mid-flight failure #1054
-        was filed about. An unknown expiry (`lease_duration: 0`, which is how a vault
-        reports a non-expiring token, or a lease we could not read) is treated as NOT
-        stale: re-logging in on every request would turn a root-equivalent token into
-        a login storm.
-
-        Measured on `time.monotonic()`, not the wall clock: this is a DURATION, and an
-        NTP step backwards would otherwise make an expired token read as fresh while a
-        step forwards forces a spurious login.
-        """
+        """True when the cached token is inside the renewal margin (#1054)."""
         if self._auth_expires_at is None:
             return False
         return time.monotonic() >= self._auth_expires_at
 
     def _lease_seconds(self, lease: object) -> float | None:
-        """Seconds until this token should be REPLACED, or None for "never expires".
-
-        `lease_duration` crosses a **driver boundary** — the value is whatever the
-        server (or a proxy in front of it) put in the JSON — so every plausible shape
-        is handled explicitly rather than by `isinstance(lease, int)`:
-
-        * a float or a numeric string (a proxy, or a non-OpenBao Vault build) must NOT
-          fall through to None, which would silently disable proactive renewal for the
-          whole process and degrade back to the reactive 403 path this feature
-          replaces — with nothing in the log saying so;
-        * `True` is an `int` in Python, so a bool must be rejected explicitly or it
-          becomes a 1-second lease, i.e. a login per request;
-        * an absurd value must not raise `OverflowError` out of `get`/`set`/`delete`,
-          which no caller guards — it would break the exception-type contract ADR 0039
-          decision 6 rests on.
-
-        The result is also floored at half the lease, so a short-TTL AppRole (a
-        hardened `token_ttl=60s` is a reasonable production setting) renews once
-        mid-life instead of before every single request.
-        """
+        """Seconds until the token should be REPLACED, or None for "never expires"."""
         if isinstance(lease, bool) or lease is None:
             return None
         try:
@@ -821,9 +525,8 @@ class OpenBaoSecretStore:
         except (TypeError, ValueError):
             log.warning("openbao_lease_unreadable", lease_type=type(lease).__name__)
             return None
-        # `math.isfinite` rather than the `x != x` NaN idiom: it says what is meant
-        # and CodeQL correctly reads the hand-rolled form as comparing identical
-        # values. Covers NaN and both infinities in one check.
+        # `math.isfinite` covers NaN and both infinities; CodeQL misreads the
+        # hand-rolled `x != x` idiom.
         if not math.isfinite(seconds) or seconds <= 0:
             return None
         # Cap before arithmetic so a nonsense value cannot overflow the clock.
@@ -831,17 +534,7 @@ class OpenBaoSecretStore:
         return max(seconds - _TOKEN_RENEWAL_MARGIN_SECONDS, seconds / 2, 1.0)
 
     def _login_locked(self) -> None:
-        """POST the AppRole login and cache the issued token. Caller holds `_auth_lock`.
-
-        Must never route through `_send`/`_headers`: both call `_current_token`, which
-        takes `_auth_lock`, and this is a plain `Lock`. A future refactor reaching for
-        the shared helper here deadlocks instantly.
-
-        Failure raises `SecretStoreUnavailableError`, never `SecretNotFoundError`: a
-        login that cannot complete is an outage or a bad credential, and reporting
-        either as "the secret is not there" is precisely the masquerade ADR 0039
-        decision 6 exists to prevent.
-        """
+        """POST the AppRole login and cache the token. Caller holds `_auth_lock`."""
         try:
             response = self._client_lazy().post(
                 "/v1/auth/approle/login",
@@ -852,9 +545,8 @@ class OpenBaoSecretStore:
                 f"OpenBao at {self._addr} unreachable during AppRole login ({exc})"
             ) from exc
         if response.status_code != 200:
-            # NEVER `response.text` here: a login error body can echo the submitted
-            # secret_id back, so only the status and its explanation are surfaced —
-            # in the log AND in the exception message, which ends up in tracebacks.
+            # NEVER `response.text` here: a login error body can echo the
+            # submitted secret_id — surface only the status + explanation.
             log.warning(
                 "openbao_approle_login_failed",
                 status=response.status_code,
@@ -872,22 +564,18 @@ class OpenBaoSecretStore:
                 f"OpenBao AppRole login returned an unreadable body ({exc})"
             ) from exc
         lease = auth.get("lease_duration")
-        # Expiry computed BEFORE the token is cached: if the lease is unreadable the
-        # store must not be left holding a new token against a previous token's expiry.
+        # Expiry computed BEFORE caching, so an unreadable lease can't pair a
+        # new token with the previous token's expiry.
         remaining = self._lease_seconds(lease)
         self._auth_expires_at = None if remaining is None else time.monotonic() + remaining
         self._auth_token = token
-        # Never log the token, only that one was obtained and for how long.
+        # Never log the token itself.
         log.info("openbao_approle_login", lease_duration=lease, renewable=auth.get("renewable"))
 
     def _forget_token_if_current(self, sent: str) -> None:
-        """Drop the cached token only if it is still the one that just got a 403.
-
-        Compare-and-swap, not an unconditional clear. The store is a process-wide
-        singleton shared by FastAPI request threads and Celery workers, so N threads
-        hitting a 403 together would otherwise each discard the token a peer had just
-        obtained and each log in again — N logins, and the "exactly one retry" bound
-        holds per call while failing per store, which is the case that matters.
+        """Compare-and-swap, not an unconditional clear: the store is a
+        process-wide singleton, and N threads 403ing together must not each
+        discard a peer's fresh token and log in again.
         """
         with self._auth_lock:
             if self._auth_token == sent:
@@ -895,46 +583,15 @@ class OpenBaoSecretStore:
                 self._auth_expires_at = None
 
     def _send(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
-        """One request, with a single re-login retry on 403 (#1054).
-
-        Every vault call goes through here so the recovery is uniform. Before this,
-        a token that died mid-flight — revoked, or expired past its lease — 403'd
-        every subsequent request until the process was RESTARTED, which is what
-        #1054 was filed about.
-
-        Exactly one retry, and only in AppRole mode:
-
-        * more than one would turn a genuinely bad `secret_id` into a login storm
-          against the vault, which is a worse failure than the one being fixed;
-        * in static-token mode there is nothing to re-acquire, so a 403 there is
-          the operator's answer and must surface unchanged.
-
-        A 403 that survives the retry falls through to the caller's existing status
-        handling, which logs `openbao_permission_denied` and raises
-        `SecretStoreUnavailableError` — never `SecretNotFoundError`.
-
-        CodeQL flags both `client.request()` calls below as py/partial-ssrf
-        (alerts #91/#92) because `path` carries a secret name that ultimately
-        traces back to `Connection.secret_ref`. Verified not exploitable and
-        left as-is rather than restructured: `client`'s `base_url` is
-        `self._addr`, set once in `__init__` from operator config, never from
-        a request; every caller reaches this through `_path()`, which prefixes
-        the hardcoded `/v1/{mount}/...` literal before the one variable
-        segment, so `path` can never be (or become, via `quote(name, safe="")`
-        percent-encoding every `/`, `:`, `@` etc.) an absolute URL that would
-        make httpx address a different host. Dismissed on GitHub as false
-        positive with this same evidence.
-        """
+        """One request, with a single re-login retry on 403 (#1054) — AppRole only."""
         token, fresh = self._current_token()
         client = self._client_lazy()
         response = client.request(method, path, headers={"X-Vault-Token": token}, **kwargs)
         if response.status_code != 403 or self._role_id is None:
             return response
         if fresh:
-            # The token was minted for THIS request, so a 403 cannot mean "expired" —
-            # it means the AppRole's policy does not cover this path. Re-logging in
-            # would buy nothing and, on a least-privilege vault, would cost one login
-            # per secret for the whole of a sweep. Surface it instead.
+            # Minted for THIS request: the 403 is a policy gap, not expiry —
+            # re-login would buy nothing. Surface it.
             return response
         log.info("openbao_token_rejected_relogin", path=path)
         self._forget_token_if_current(token)
@@ -942,28 +599,14 @@ class OpenBaoSecretStore:
         return client.request(method, path, headers={"X-Vault-Token": retry_token}, **kwargs)
 
     def _path(self, kind: str, name: str) -> str:
-        """KV v2 splits the value plane (`data`) from the version plane (`metadata`).
-
-        `name` is path-quoted with no safe characters: a secret name is caller data
-        (`Connection.secret_ref`), and an unescaped `/` would silently retarget the
-        read/write at a different KV path.
+        """`data` is the value plane, `metadata` the version plane. `name` is
+        path-quoted with no safe chars — it is caller data, and an unescaped
+        `/` would silently retarget a different KV path.
         """
         return f"/v1/{self._mount}/{kind}/{quote(name, safe='')}"
 
     def _log_transport_failure(self, name: str, status: int | None, error: str) -> None:
-        """Emit an operator-visible signal for every not-a-missing-secret failure.
-
-        Reached with a 404 only when the MOUNT is missing — `get` returns before this
-        for an absent secret, and on write/delete a 404 can only ever be the route.
-
-        The final `else` is load-bearing: an earlier version logged only 403 and 5xx,
-        which left the whole 400-499 band silent — and that band is where the likely
-        misconfigurations live. **400** is what a KV **v1** mount answers ("Invalid
-        path for a versioned K/V secrets engine"), **401** is what a gateway in front
-        of the vault returns when the vault's own 403 never reaches us, and **429** is
-        HCP rate-limiting under check-run load, where every connection resolves a
-        credential on the hot path. Silent is the one thing none of them may be.
-        """
+        """Operator-visible signal for every not-a-missing-secret failure."""
         if status == 403:
             log.warning("openbao_permission_denied", name=name, status=status)
         elif status == 404:
@@ -971,8 +614,7 @@ class OpenBaoSecretStore:
         elif status is None:
             log.warning("openbao_unreachable", name=name, status=status, error=error)
         elif status >= 500:
-            # The vault ANSWERED — a different investigation from a refused
-            # connection, so it does not share the `unreachable` event name.
+            # The vault ANSWERED — a different investigation from a refused connection.
             log.warning("openbao_server_error", name=name, status=status, error=error)
         else:
             log.warning("openbao_unexpected_status", name=name, status=status, error=error)
@@ -986,11 +628,8 @@ class OpenBaoSecretStore:
                 f"OpenBao at {self._addr} unreachable while reading {name!r} ({exc})"
             ) from exc
         if response.status_code == 404 and not _is_missing_mount(response):
-            # Genuinely absent, or soft-deleted — KV v2 returns 404 for both, so no
-            # further body inspection is needed to tell THOSE apart. This is the ONLY
-            # path in this method that may raise `SecretNotFoundError`; a 404 from a
-            # missing mount falls through, because reporting a typo'd OPENBAO_MOUNT as
-            # "credential missing" is the failure this class exists to prevent.
+            # Absent or soft-deleted — the ONLY `SecretNotFoundError` path here; a missing-mount 404
+            # falls through (a typo'd OPENBAO_MOUNT must not read as "credential missing").
             raise SecretNotFoundError(f"OpenBao secret {name!r} not set")
         if response.status_code != 200:
             self._log_transport_failure(name, response.status_code, response.text)
@@ -1001,9 +640,8 @@ class OpenBaoSecretStore:
         try:
             payload = response.json()
         except ValueError as exc:
-            # A 200 whose body is not JSON means we are not talking to the vault at
-            # all — a proxy error page, a captive portal, something else on :8200.
-            # That is an availability fault, not a malformed secret.
+            # A non-JSON 200 means we are not talking to the vault at all — an
+            # availability fault, not a malformed secret.
             self._log_transport_failure(name, response.status_code, "non-JSON body")
             raise SecretStoreUnavailableError(
                 f"OpenBao at {self._addr} returned a non-JSON 200 for {name!r} "
@@ -1012,9 +650,8 @@ class OpenBaoSecretStore:
         try:
             data = payload["data"]["data"]
         except (KeyError, TypeError) as exc:
-            # The KV **v1** envelope is `{"data": {...}}` with no inner "data", so this
-            # is the shape a v1 mount produces — a configuration fault, not a foreign
-            # secret, and it must not be reported as one.
+            # A KV **v1** mount's envelope has no inner "data" — a configuration
+            # fault, not a foreign secret.
             self._log_transport_failure(name, response.status_code, "unexpected envelope")
             raise SecretStoreUnavailableError(
                 f"OpenBao at {self._addr} returned an unexpected envelope for {name!r} "
@@ -1036,9 +673,8 @@ class OpenBaoSecretStore:
             )
             response.raise_for_status()
         except SecretStoreUnavailableError as exc:
-            # `set` promises `SecretWriteError`, which connection_service maps to a
-            # 502 `ConnectionSecretWriteError`. A login failure arriving as a
-            # different type would bypass that mapping and surface as a bare 500.
+            # `set` promises `SecretWriteError` (mapped to a 502); a login
+            # failure of another type would bypass that mapping as a bare 500.
             raise SecretWriteError(
                 f"OpenBao at {self._addr} could not be authenticated to write {name!r}"
             ) from exc
@@ -1056,37 +692,21 @@ class OpenBaoSecretStore:
             ) from exc
 
     def delete(self, name: str) -> None:
-        """Best-effort **purge** of every version (#372); missing is a no-op, fail-soft.
-
-        Targets `metadata/` rather than `data/` deliberately: `data/` soft-deletes only
-        the latest version and leaves the value recoverable, and the caller here is
-        orphan cleanup after the owning connection was deleted — leaving a recoverable
-        warehouse credential behind a deleted entity is the wrong default. (Key Vault
-        soft-deletes because purge protection is a vault-level policy there, not ours.)
-        """
+        """Best-effort purge of every version (#372); missing is a no-op, fail-soft."""
         try:
             response = self._send("DELETE", self._path("metadata", name))
         except SecretStoreUnavailableError as exc:
-            # An AppRole login failure surfaces as this, NOT as an httpx error, so it
-            # would otherwise escape the handler below and break `delete`'s fail-soft
-            # contract — which three call sites depend on by name
-            # (`connection_service` post-commit cleanup, the #1059 purge loop,
-            # `notification_service`). A vault outage must not 500 a delete whose row
-            # is already committed. Same "callers branch on exception TYPE" lesson as
-            # ADR 0039 decision 6, one seam further out.
+            # A login failure surfaces as this, not as httpx — it must not
+            # escape delete's fail-soft contract, which callers rely on by name.
             log.warning("secret_delete_failed", name=name, error=str(exc))
             return
         except httpx.HTTPError as exc:
-            # Route through the shared handler as well as the delete-specific line: a
-            # connection delete is often the FIRST vault call after a token expires,
-            # which makes it the cheapest early warning available — and an operator
-            # alerting on `openbao_permission_denied` would never see it if this path
-            # only ever emitted `secret_delete_failed`.
+            # Shared handler too: a delete is often the first vault call after a
+            # token expires — the cheapest early warning for permission alerting.
             self._log_transport_failure(name, None, str(exc))
             log.warning("secret_delete_failed", name=name, error=str(exc))
             return
-        # KV v2 answers 204 even for a name that never existed — deletion is already
-        # idempotent, so only a real error is worth a line.
+        # KV v2 answers 204 even for a name that never existed.
         if response.status_code not in (200, 204, 404):
             self._log_transport_failure(name, response.status_code, response.text)
             log.warning(
@@ -1094,10 +714,8 @@ class OpenBaoSecretStore:
                 name=name,
                 status=response.status_code,
                 error=_explain_status(response.status_code),
-                # The purge did NOT happen, so the credential is still live in the
-                # vault behind a now-deleted entity — the exact state ADR 0039 §7
-                # chose the metadata delete to avoid. Fail-soft keeps the entity
-                # delete working; this flag is what makes the leftover findable.
+                # The purge did NOT happen — the credential is still live behind
+                # a deleted entity; this flag makes the leftover findable.
                 credential_still_present=True,
             )
 
@@ -1135,12 +753,8 @@ def _build_store(settings: Settings) -> SecretStore:
             mount=settings.openbao_mount,
         )
     if settings.secret_store == _REDIS_MODE:
-        # ADR 0039 removed the plaintext Redis store. `Settings` already rejects this
-        # at startup with the same message; this is the backstop for a caller that
-        # hand-builds a settings object (tests, scripts) and so never ran that
-        # validator. The mode stays in the Literal for one cycle purely so operators
-        # get THIS message instead of a bare "Input should be 'env', 'openbao' or
-        # 'azure_key_vault'" that names no cause.
+        # Backstop for hand-built settings that skipped the Settings validator;
+        # the mode stays in the Literal one cycle so operators see this message.
         raise RuntimeError(_REDIS_STORE_REMOVED)
     return EnvSecretStore()
 
@@ -1159,30 +773,7 @@ def get_secret_store() -> SecretStore:
 
 
 def reset_secret_store_cache() -> None:
-    """Test-only: clear the cached store so the next call rebuilds it.
-
-    Closes the outgoing store's connection pool first (#1058). Test-only today, so
-    each leaked pool was one idle connection — but the leak is in the *reset*, not
-    in the tests, so it would become real the moment this is reused for config
-    hot-reload, which is exactly the plausible next caller.
-
-    `close()` is duck-typed rather than declared on the Protocol (see
-    `OpenBaoSecretStore.close`), and is called OUTSIDE the lock: it does socket I/O,
-    and the singleton is already detached, so *rebuilding* is independent of how
-    long the close takes.
-
-    That safety is about rebuilds, not about requests already in flight. Callers
-    hold a local reference to the store (`worker/tasks.py` resolves one per task),
-    and `_client_lazy` reads the handle outside the lock, so a concurrent `close()`
-    can still shut a pool between that read and the request. Harmless while this is
-    test-only and single-threaded; it is a genuine constraint for the config
-    hot-reload caller named above, which would be the multithreaded case.
-
-    **Fail-soft**, mirroring `SecretStore.delete`: this runs from an autouse test
-    fixture on every setup and teardown, so letting a store's `close()` raise would
-    turn one transport hiccup into a suite-wide cascade of errors. Releasing a pool
-    is cleanup; cleanup must not be the thing that fails.
-    """
+    """Test-only: clear the cached store so the next call rebuilds it."""
     global _store_singleton
     with _store_lock:
         store, _store_singleton = _store_singleton, None

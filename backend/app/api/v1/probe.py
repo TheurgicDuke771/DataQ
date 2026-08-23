@@ -1,29 +1,4 @@
-"""Week 1 exit-gate probe endpoint.
-
-Seeds the probe fixtures, creates a queued Run, and dispatches the ``run_suite``
-Celery task (GX → Snowflake DEV). Kept because it does in one call what the real
-API needs an already-seeded suite for.
-
-**The companion `GET /_probe/runs/{run_id}` was removed (#1039).** It read `runs`
-and `results` with **no suite-ownership check** — only `get_current_user` — so any
-authenticated user holding a run id could read any run's results, bypassing
-ADR 0027. A UUID is not a capability token, and run ids are treated as non-secret
-everywhere else in the product.
-
-It was also a second, weaker path to rows the real API already serves, which is
-how it came to be missed by #989's redaction sweep — a forgotten sibling is
-exactly what per-sink redaction fails to reach. Two bugs on one route in one PR
-was the argument for deleting rather than gating it.
-
-Read runs through `GET /api/v1/runs/{id}` and `/runs/{id}/results`, which enforce
-suite authz and redact.
-
-**Admin-only since #741.** `ensure_probe_fixtures` creates a `Connection` — which
-ADR 0033 makes an Admin-only resource — and a caller-owned `Suite`, which requires
-Member+. Left on the bare `get_current_user` it was a third door straight around
-both new gates: a Viewer could have called it and obtained a connection *and* a
-suite they owned. Gated at the stricter of the two things it does, not the looser.
-"""
+"""Week 1 exit-gate probe endpoint."""
 
 from __future__ import annotations
 

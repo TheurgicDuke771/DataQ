@@ -1,14 +1,4 @@
-"""Deleting a user must not 500 — #1319, and the prerequisite for #432 erasure.
-
-Three `created_by` foreign keys defaulted to `NO ACTION`, so deleting a user who
-had ever created a connection, a suite or a schedule raised `ForeignKeyViolation`.
-Latent only because v1 has no user-delete route at all; GDPR Art 17 erasure (#432)
-is what makes it live.
-
-Exercised through the ORM against real Postgres rather than by reading the model,
-because `ondelete` is enforced by the **database** — a model attribute asserts
-what we declared, and only a delete asserts what happens.
-"""
+"""Deleting a user must not 500 — #1319, and the prerequisite for #432 erasure."""
 
 from __future__ import annotations
 
@@ -20,13 +10,7 @@ from backend.app.db.models import Connection, Schedule, Suite, User
 
 
 def test_deleting_a_user_nulls_provenance_and_keeps_the_rows(db_session: Any) -> None:
-    """The children survive with `created_by` NULL.
-
-    Survival is the point, and it is the half a test could easily get wrong by
-    asserting only "no exception": CASCADE would also raise nothing, while
-    silently destroying every connection, suite and schedule the departing user
-    ever made — for a leaver in a real workspace, that is most of it.
-    """
+    """The children survive with `created_by` NULL."""
     author = User(aad_object_id=uuid.uuid4().hex, email=f"a-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(author)
     db_session.flush()
@@ -73,14 +57,7 @@ def test_deleting_a_user_nulls_provenance_and_keeps_the_rows(db_session: Any) ->
 
 
 def test_a_suite_with_no_author_grants_nobody_ownership(db_session: Any) -> None:
-    """The authz consequence, asserted rather than assumed.
-
-    `suite_authz` decides ownership with `suite.created_by == user_id`. A NULL
-    compares equal to nothing, so an authorless suite simply has no owner — which
-    is the safe direction. Asserted because the unsafe direction is a one-character
-    difference (`is None` handling that treated absence as a match), and it would
-    hand every user ownership of every suite whose author was erased.
-    """
+    """The authz consequence, asserted rather than assumed."""
     from backend.app.services.suite_authz import effective_permission
 
     author = User(aad_object_id=uuid.uuid4().hex, email=f"a-{uuid.uuid4().hex[:8]}@example.com")
@@ -111,17 +88,7 @@ def test_a_suite_with_no_author_grants_nobody_ownership(db_session: Any) -> None
 
 
 def test_an_ownerless_suite_stays_visible_in_the_admin_overview(db_session: Any) -> None:
-    """The consequence one PR over, and the reason it matters more than it looks.
-
-    `list_all_suites` inner-joined the author, so a suite whose creator was erased
-    dropped out of the Admin control centre **entirely** — while still running on
-    its schedules and still holding its shares. Invisible and active is the worst
-    combination available: an admin reviewing the workspace would not see the one
-    suite with nobody obviously responsible for it.
-
-    Found by review, on a file this change never touched — a widened column ages
-    every query that assumed it was NOT NULL.
-    """
+    """The consequence one PR over, and the reason it matters more than it looks."""
     from backend.app.services import admin_service
 
     author = User(aad_object_id=uuid.uuid4().hex, email=f"a-{uuid.uuid4().hex[:8]}@example.com")
@@ -163,14 +130,7 @@ def test_an_ownerless_suite_stays_visible_in_the_admin_overview(db_session: Any)
 
 
 def test_an_ownerless_suite_reports_no_owner_grant(db_session: Any) -> None:
-    """`list_all_access` is the other side, and it wants the OPPOSITE handling.
-
-    There, an erased author leaves no grant to report — a row with a null user
-    would render as a grant to nobody. Its absence is correct here, while its
-    absence from the suites overview above is not, which is exactly why the two
-    joins treat the null differently. Asserted so that "make them consistent"
-    cannot be applied later as a tidy-up.
-    """
+    """`list_all_access` is the other side, and it wants the OPPOSITE handling."""
     from backend.app.services import admin_service
 
     author = User(aad_object_id=uuid.uuid4().hex, email=f"a-{uuid.uuid4().hex[:8]}@example.com")

@@ -1,24 +1,7 @@
 # DataQ frontend image — build the Vite SPA, serve the static dist via nginx.
-# Build context = frontend/ :  docker build -f frontend/Dockerfile frontend/
-#
-# ONE generic image, nothing baked in (ADR 0028): no cloud, no secret, no
-# auth-bypass. Auth config is injected at RUNTIME — nginx serves /config.js from
-# the DATAQ_AUTH_* env below (envsubst at startup), and the SPA reads it before
-# the bundle runs. So the same image serves the eval stack (DATAQ_AUTH_MODE=bypass)
-# and a real deployment (DATAQ_AUTH_MODE=oidc + authority/clientId/scope) — set the
-# env at `docker run`, no rebuild. Replaces the #472 two-image (:latest/:dev) split.
-#
-# The deploy workflow builds + pushes this image and rolls the `dataq-app-frontend`
-# Container App (ADR 0028 §5 cutover — the Static Web App is gone; SWA couldn't
-# inject runtime config). See deploy/terraform/azure/frontend.tf.
 
-# Pin the build stage to the native BUILD platform (amd64 on CI runners) even for
-# an arm64 target image: a Vite SPA compiles to architecture-independent static
-# assets, so there's no reason to run `pnpm build` under arm64 QEMU emulation — it
-# only made the multi-arch publish pathologically slow / flaky (12min good case →
-# 45min stall, #512). buildx cross-builds: this stage runs native, and only the
-# tiny per-arch nginx `serve` stage below is built for each target platform, with
-# the arch-independent dist COPYed in. $BUILDPLATFORM is a buildx-predefined arg.
+# Pin the build stage to the native BUILD platform (amd64 on CI runners) even for an arm64 target
+# image: a Vite SPA compiles to architecture-independent static assets.
 FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 WORKDIR /app
 RUN corepack enable
@@ -30,9 +13,9 @@ COPY . .
 RUN pnpm build
 
 FROM nginx:1.27-alpine AS serve
-# Link the GHCR package to this repo (shows under the repo's Packages, lets the
-# repo's Actions GITHUB_TOKEN push it, and inherits anonymous-pull visibility —
-# ADR 0023, mirrors backend/Dockerfile).
+# Link the GHCR package to this repo (shows under the repo's Packages, lets the repo's Actions
+# GITHUB_TOKEN push it, and inherits anonymous-pull visibility — ADR 0023, mirrors
+# backend/Dockerfile).
 LABEL org.opencontainers.image.source="https://github.com/TheurgicDuke771/DataQ"
 LABEL org.opencontainers.image.description="DataQ frontend (React SPA served by nginx)"
 LABEL org.opencontainers.image.licenses="MIT"
@@ -40,21 +23,14 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # Template (not a static conf): the nginx entrypoint envsubst's it at startup so
 # the API upstream + auth config are runtime-configurable.
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
-# Security headers (#1387), `include`d from the template above. Deliberately NOT
-# in conf.d/ (auto-included into `http {}`, which would double every header) and
-# NOT a .template (it needs no substitution — the one runtime-dependent part,
-# the CSP, is assembled in the main template).
+# Security headers (#1387), `include`d from the template above.
 COPY nginx-security-headers.conf /etc/nginx/nginx-security-headers.conf
-# Opt into the nginx image's built-in resolver detection: its
-# 15-local-resolvers.envsh only exports ${NGINX_LOCAL_RESOLVERS} (the
-# /etc/resolv.conf nameservers, used by the proxy `resolver` directive) when this
-# flag is set. Cloud-neutral (ADR 0028) — no resolver IP baked in; works in
-# compose (127.0.0.11) and ACA/K8s (cluster DNS) alike.
+# Opt into the nginx image's built-in resolver detection: its 15-local-resolvers.envsh only exports
+# ${NGINX_LOCAL_RESOLVERS} (the /etc/resolv.conf nameservers, used by the proxy `resolver`
+# directive) when this flag is set.
 ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
-# Runtime config env (ADR 0028) — MUST be defined (even if empty) so envsubst
-# always substitutes them in /config.js; empty → SPA is unconfigured (fail-closed),
-# bypass needs an explicit DATAQ_AUTH_MODE=bypass. DATAQ_API_UPSTREAM defaults to
-# the compose `api` service.
+# Runtime config env (ADR 0028) — MUST be defined (even if empty) so envsubst always substitutes
+# them in /config.js; empty → SPA is unconfigured (fail-closed).
 ENV DATAQ_API_UPSTREAM=http://api:8000 \
     DATAQ_AUTH_MODE="" \
     DATAQ_AUTH_AUTHORITY="" \

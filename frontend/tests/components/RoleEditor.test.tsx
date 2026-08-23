@@ -67,9 +67,7 @@ describe('RoleEditor', () => {
   });
 
   it('shows the STORED role, not the effective one', () => {
-    // A break-glass allowlist admin: stored `member`, effectively admin. The
-    // editor writes the stored column, so showing `admin` would make demoting
-    // them look like it silently failed.
+    // A break-glass allowlist admin: stored `member`, effectively admin.
     renderEditor(user({ role: 'member', allowlist_admin: true }));
     expect(screen.getByTitle('member')).toBeInTheDocument();
     expect(screen.queryByTitle('admin')).not.toBeInTheDocument();
@@ -95,13 +93,8 @@ describe('RoleEditor', () => {
   });
 
   it('surfaces the server refusal verbatim and does not update the row', async () => {
-    // The last-admin guard's message tells the admin what to do instead
-    // ("promote another user to admin first"). A generic "failed to update role"
-    // would discard exactly that part.
-    // The axios interceptor swaps the error-envelope message onto `err.message`
-    // before any caller sees it, so THIS is the shape a component actually
-    // catches — mocking the raw response envelope would test a shape that never
-    // reaches here.
+    // The last-admin guard's message tells the admin what to do instead ("promote another user to
+    // admin first").
     mockSet.mockRejectedValue(
       new Error('cannot remove the last workspace admin — promote another user first'),
     );
@@ -120,17 +113,15 @@ describe('RoleEditor', () => {
   });
 
   it('stays enabled for the last admin — the guard is the server’s call', () => {
-    // Deliberately NOT disabled: a client-side "is this the last admin?" check
-    // would race the server, and would disagree with it about whether allowlist
-    // admins count (they do not). Better to let the server refuse and explain.
+    // Deliberately NOT disabled: a client-side "is this the last admin?" check would race the
+    // server, and would disagree with it about whether allowlist admins count (they do not).
     renderEditor(user({ role: 'admin' }));
     expect(screen.getByRole('combobox')).not.toBeDisabled();
   });
 
   it('refetches /me when an admin changes their OWN role', async () => {
-    // Without this, a self-demoting admin keeps `is_workspace_admin: true` in the
-    // shared context: the Admin nav and page keep rendering, and every later
-    // action fails with a raw 403 against a UI still insisting they are an admin.
+    // Without this, a self-demoting admin keeps `is_workspace_admin: true` in the shared context:
+    // the Admin nav and page keep rendering.
     currentMe = { status: 'ok', data: { id: 'u-1' } };
     const refreshed = { id: 'u-1', role: 'member', is_workspace_admin: false };
     mockSet.mockResolvedValue(user({ role: 'member' }));

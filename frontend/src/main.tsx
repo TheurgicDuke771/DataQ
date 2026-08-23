@@ -11,13 +11,8 @@ import { OtpSessionProvider } from './auth/OtpSessionProvider';
 import { completeSigninIfCallback } from './auth/authClient';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { appTheme } from './theme';
-// Self-hosted fonts (visual-fidelity pass, ADR 0022) — Inter for UI text,
-// JetBrains Mono for code/SQL/identifiers. Bundled via @fontsource (no external
-// CDN fetch, clears pnpm audit). Only the weights the design uses, and only the
-// **latin** subset — the UI is English; shipping cyrillic/greek/vietnamese
-// subsets would balloon the SWA asset count for glyphs we never render (a stray
-// non-latin data value just falls back to the system font). Imported before
-// styles.css so the @font-face rules register ahead of our overrides.
+// Self-hosted fonts (visual-fidelity pass, ADR 0022) — Inter for UI text, JetBrains Mono for
+// code/SQL/identifiers.
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-500.css';
 import '@fontsource/inter/latin-600.css';
@@ -32,9 +27,8 @@ if (!maybeRoot) {
 }
 const rootEl: HTMLElement = maybeRoot;
 
-// Auth lifecycle (issue #62, generic OIDC per ADR 0028): if this load is the IdP
-// redirect back, complete the code exchange BEFORE React renders so the first
-// paint reflects post-login state. Errors surface to the console + a static page.
+// Auth lifecycle (issue #62, generic OIDC per ADR 0028): if this load is the IdP redirect back,
+// complete the code exchange BEFORE React renders so the first paint reflects post-login state.
 async function bootstrap() {
   await completeSigninIfCallback();
   createRoot(rootEl).render(

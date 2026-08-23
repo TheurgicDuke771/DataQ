@@ -1,17 +1,4 @@
-"""Adversarial-input fixtures + a JSON-safety contract for data-ingesting code.
-
-Most of our bugs in data-handling code were *not* missing coverage — the lines
-ran, just never with hostile data. A profiler/runner that eats arbitrary user
-files has to survive columns it can't compare (mixed types), can't hash (nested
-cells), or can't JSON-encode (NaN/Inf, bytes). This module centralises that
-hostile-input set so any function that processes a DataFrame can be swept with
-the same battery, and asserts the one contract that matters at the edge: the
-output is **plain JSON** (no NaN/Inf, no exotic scalars) and never raised.
-
-`ADVERSARIAL_FRAMES` is `(id, DataFrame)` pairs, each a single column named
-``x``. Pass it to `pytest.mark.parametrize`. `assert_json_safe(value)` enforces
-the JSON contract on any emitted scalar/structure.
-"""
+"""Adversarial-input fixtures + a JSON-safety contract for data-ingesting code."""
 
 from __future__ import annotations
 
@@ -23,12 +10,7 @@ import pandas as pd
 
 
 def _parquet_roundtrip(frame: pd.DataFrame) -> pd.DataFrame:
-    """Round-trip through Parquet with the Arrow backend the profiler/runner use.
-
-    Arrow-backed columns raise *different* exception types than numpy ones (e.g.
-    ``ArrowNotImplementedError`` vs ``TypeError``), so the Arrow variants are the
-    ones that catch over-narrow ``except`` clauses.
-    """
+    """Round-trip through Parquet with the Arrow backend the profiler/runner use."""
     buf = io.BytesIO()
     frame.to_parquet(buf)
     buf.seek(0)
@@ -61,10 +43,5 @@ ADVERSARIAL_FRAMES: list[tuple[str, pd.DataFrame]] = [
 
 
 def assert_json_safe(value: Any) -> None:
-    """Assert `value` is plain JSON — no NaN/Inf, no types `json` can't encode.
-
-    `allow_nan=False` rejects the NaN/Inf the sanitiser is supposed to have
-    stripped; the default encoder rejects bytes / Decimal / numpy / datetime, so
-    a leaked exotic scalar fails here instead of at the HTTP boundary.
-    """
+    """Assert `value` is plain JSON — no NaN/Inf, no types `json` can't encode."""
     json.dumps(value, allow_nan=False)

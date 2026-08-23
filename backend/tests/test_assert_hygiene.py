@@ -1,38 +1,4 @@
-"""No side-effecting call may live inside an `assert` (#787).
-
-`python -O` strips assert statements **entirely** — not just the check, but
-everything inside them. So
-
-    assert client.post("/api/v1/suites", json=payload).status_code == 201
-
-loses the assertion *and the request*. The test doesn't fail; it stops doing
-anything at all, while still reporting green. That is worse than a wrong
-assertion, because a wrong assertion eventually fails on something.
-
-This is CodeQL's `py/side-effect-in-assert` shape (cf. #545). It is guarded here
-as a plain test rather than by turning on the CodeQL query, for two reasons: it
-runs on every `pytest` (so a contributor sees it before pushing, not after), and
-it names the exact file and line instead of a security-tab entry.
-
-Narrow, but not naive — the distinction cost a review round. It flags HTTP verbs
-that always mutate, and `get`/`request` only when the first argument is
-**URL-shaped**, which means all three of the ways this suite spells a URL:
-
-    client.get("/api/v1/suites")          # a literal
-    client.get(f"/api/v1/suites/{sid}")   # an f-string
-    limiter.get(PROBE)                    # a module-level string constant
-
-The first cut recognised only the literal, so it passed green while 59 real
-instances — more than the 83 it had just fixed — sat untouched in the same files,
-some of them the sibling lines of calls that *were* hoisted. A detector that
-matches only the shape you happened to think of reports "clean" for the same
-reason it found nothing.
-
-It stays narrow where narrowness is correct: `dict.get(key)` and
-`session.get(Model, pk)` are pure, and their first argument resolves to no URL,
-so neither is flagged. A guard that cries wolf is a guard someone eventually
-silences.
-"""
+"""No side-effecting call may live inside an `assert` (#787)."""
 
 from __future__ import annotations
 

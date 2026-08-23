@@ -1,15 +1,4 @@
-"""Suite sharing — grant / list / update / revoke per-user permissions.
-
-Managing shares requires `admin` on the suite (the owner always qualifies);
-listing collaborators requires `view`. The target must be a real user and not
-the suite's owner (the creator already has full, immutable access — a share row
-for them would be meaningless). All authorization flows through
-`suite_authz.require_permission`, so a caller without access gets a 404 (hidden)
-and one with insufficient level gets a 403.
-
-FastAPI-free: takes a `Session` + ids; the API layer passes `current_user.id` as
-the actor.
-"""
+"""Suite sharing — grant / list / update / revoke per-user permissions."""
 
 from __future__ import annotations
 
@@ -44,15 +33,14 @@ class ShareTargetInvalidError(DataQError):
     code = "share_target_invalid"
 
 
-# A share can only grant `view` or `edit`. `admin` is the workspace-admin
-# (implicit on every suite, never a share) and `owner` is the creator — neither
-# is grantable (ADR 0027 / #482).
+# A share can only grant `view` or `edit`.
 GRANTABLE_PERMISSIONS = ("view", "edit")
 
 
 def _reject_ungrantable_permission(suite_id: uuid.UUID, permission: str) -> None:
     """Defence-in-depth behind the API `SharePermission` Literal: reject any
-    permission a share can't carry (`admin`/`owner` or anything unknown)."""
+    permission a share can't carry (`admin`/`owner` or anything unknown).
+    """
     if permission not in GRANTABLE_PERMISSIONS:
         raise ShareTargetInvalidError(
             "share permission must be 'view' or 'edit' ('admin'/'owner' are not grantable)",
@@ -63,17 +51,7 @@ def _reject_ungrantable_permission(suite_id: uuid.UUID, permission: str) -> None
 def _reject_edit_share_to_viewer(
     session: Session, suite_id: uuid.UUID, target_user_id: uuid.UUID, permission: str
 ) -> None:
-    """Reject granting `edit` to a workspace **Viewer** (ADR 0033 decision 5).
-
-    The first of the two belts. This one exists to give the *admin doing the
-    granting* an immediate, explanatory error instead of a grant that silently
-    does nothing — `effective_permission` caps a Viewer at `view` regardless, so
-    without this the UI would happily show `edit` beside a user who cannot edit.
-
-    Resolves the target's EFFECTIVE role (`resolve_role`), not the stored column,
-    so a break-glass admin whose row still reads `member` is never mistaken for a
-    tier that can't hold `edit`.
-    """
+    """Reject granting `edit` to a workspace **Viewer** (ADR 0033 decision 5)."""
     if permission != "edit":
         return
     target = session.get(User, target_user_id)
@@ -92,11 +70,10 @@ def _reject_edit_share_to_viewer(
 def _reject_self_target(
     suite_id: uuid.UUID, actor_id: uuid.UUID, target_user_id: uuid.UUID
 ) -> None:
-    """Forbid an admin from changing/revoking their *own* share. A non-owner admin
-    who self-downgrades or self-revokes loses access mid-session, and every later
-    share mutation then 403s — bricking the share panel (#240). Self-management is
-    never a legitimate need here (the owner has immutable full access; a non-owner
-    leaving a suite is a separate flow we don't offer in v1)."""
+    """Forbid an admin from changing/revoking their *own* share. A non-owner admin who self-
+    downgrades or self-revokes loses access mid-session, and every later share mutation then
+    403s — bricking the share panel (#240).
+    """
     if target_user_id == actor_id:
         raise ShareTargetInvalidError(
             "cannot change or revoke your own share (would self-revoke your access)",
@@ -143,12 +120,7 @@ def grant_share(
     share = Share(suite_id=suite_id, user_id=target_user_id, permission=permission)
     session.add(share)
     try:
-        # Inside the try, and before the commit, for two reasons. The audit write
-        # is same-transaction and fail-closed (ADR 0041 §2.1) — a grant that is
-        # not recorded must not happen. And `record_entity_change` flushes to
-        # obtain the server-assigned id, which is where a duplicate share now
-        # raises `IntegrityError`; the existing handler below has to keep catching
-        # it, so the call belongs inside this block rather than above it.
+        # Inside the try, and before the commit, for two reasons.
         audit_service.record_entity_change(
             session,
             action="share.grant",
@@ -229,9 +201,8 @@ def revoke_share(
     require_permission(session, suite_id, actor_id, minimum="admin")
     _reject_self_target(suite_id, actor_id, target_user_id)
     share = _get_share(session, suite_id, target_user_id)
-    # Snapshot BEFORE the delete: the row is about to stop existing, and this
-    # payload is the only surviving record of what was revoked. Capturing it
-    # afterwards would read the expired instance.
+    # Snapshot BEFORE the delete: the row is about to stop existing, and this payload is the only
+    # surviving record of what was revoked.
     before = audit_service.snapshot("share", share)
     session.delete(share)
     audit_service.record_entity_change(

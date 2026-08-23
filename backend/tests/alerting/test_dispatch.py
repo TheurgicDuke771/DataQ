@@ -1,10 +1,4 @@
-"""Tests for the run-completion publish hook.
-
-DB-backed: status gating (only succeeded/failed publish; cancelled/running
-don't), the missing-run guard, the captured report shape, and — the safety
-property — that a publisher exception is swallowed so a broken channel can never
-fail the task. Skips without TEST_DATABASE_URL.
-"""
+"""Tests for the run-completion publish hook."""
 
 from __future__ import annotations
 

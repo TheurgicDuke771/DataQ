@@ -1,13 +1,4 @@
-"""NUL-byte rejection at the API boundary (#567) — TestClient over real Postgres.
-
-Pydantic's `str` accepts NUL (``\\x00``) but Postgres rejects it at INSERT for
-both text and JSONB, so before `ApiModel` these payloads escaped validation and
-died as driver ``ValueError`` → HTTP 500. The contract under test: **NUL
-anywhere in a request payload — top-level field, nested config value, dict key,
-list item, import document — is a structured 422**, and the same probes without
-NUL still succeed (the guard rejects the byte, not the shape). Skips without
-TEST_DATABASE_URL.
-"""
+"""NUL-byte rejection at the API boundary (#567) — TestClient over real Postgres."""
 
 import uuid
 from collections.abc import Iterator
@@ -149,7 +140,8 @@ def test_nul_in_update_payload_is_422(client: TestClient, db_session: Any) -> No
 
 def test_nul_in_query_param_is_422(client: TestClient, db_session: Any) -> None:
     """ApiModel guards bodies; the URL middleware closes the query-string vector
-    (a NUL str param otherwise reaches a SQL parameter -> the same driver 500)."""
+    (a NUL str param otherwise reaches a SQL parameter -> the same driver 500).
+    """
     resp = client.get("/api/v1/runs", params={"status": "succ\x00eeded"})
     assert resp.status_code == 422, f"expected 422, got {resp.status_code}: {resp.text}"
     body = resp.json()
@@ -170,7 +162,8 @@ def test_nul_free_query_still_served(client: TestClient, db_session: Any) -> Non
 
 def test_nul_free_unicode_still_accepted(client: TestClient, db_session: Any) -> None:
     """The guard rejects the NUL byte, not exotic-but-legit Unicode (control
-    chars, RTL override, emoji stay accepted — 1b in the qa-verifier battery)."""
+    chars, RTL override, emoji stay accepted — 1b in the qa-verifier battery).
+    """
     resp = client.post(
         "/api/v1/suites",
         json={"name": "ok ‮ 🎯 suite", "connection_id": _connection_id(db_session)},

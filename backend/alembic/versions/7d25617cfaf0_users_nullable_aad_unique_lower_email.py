@@ -120,15 +120,10 @@ down_revision: str | None = "70a054d4c469"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Must match `User.__table_args__` in `backend/app/db/models.py` exactly — the
-# model declares the same expression index so `create_all` test databases and
-# production agree (the #990 parity check compares the two).
+# Must match `User.__table_args__` in `backend/app/db/models.py` exactly.
 _EMAIL_LOWER_UQ = "uq_users_email_lower"
 
-# The two statements this revision quotes back to the operator. Constants, not
-# inline f-strings: nothing is interpolated into them (the downgrade message only
-# concatenates), which is both true and what keeps the SQL-injection linter from
-# reading a help message as query construction.
+# The two statements this revision quotes back to the operator.
 _NULL_AAD_COUNT_SQL = "SELECT count(*) FROM users WHERE aad_object_id IS NULL"
 _NULL_AAD_INSPECT_SQL = "SELECT id, email, created_at FROM users WHERE aad_object_id IS NULL;"
 

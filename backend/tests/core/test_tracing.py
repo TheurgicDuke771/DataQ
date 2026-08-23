@@ -1,12 +1,4 @@
-"""Tests for request/task span instrumentation (WEEK7 A3).
-
-The Azure exporter is stubbed with the SDK's InMemorySpanExporter so the whole
-configure → instrument → span-emit path runs for real without any network.
-`trace.set_tracer_provider` is process-global and set-once, so the autouse
-fixture no-ops it (both instrumentors receive the provider explicitly via
-``tracer_provider=``, so nothing here depends on the global) and shuts the
-provider down on teardown — no cross-test poisoning, no leaked export thread.
-"""
+"""Tests for request/task span instrumentation (WEEK7 A3)."""
 
 import importlib
 from types import SimpleNamespace
@@ -80,7 +72,8 @@ def test_configure_tracing_turns_on_with_only_otlp_endpoint(
 ) -> None:
     """#589: tracing is gated on ANY backend now, not just App Insights — an
     OTLP-only config (no connection string) must still stand up a provider and
-    export spans. The OTLP/HTTP exporter is swapped for an in-memory one."""
+    export spans. The OTLP/HTTP exporter is swapped for an in-memory one.
+    """
     exporter = InMemorySpanExporter()
     monkeypatch.setattr(
         "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter",
@@ -113,7 +106,8 @@ def test_configure_tracing_turns_on_with_only_otlp_endpoint(
 def test_configure_tracing_swallows_setup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """#628 review (HIGH): a telemetry misconfig must not crash configure_tracing —
     it runs in the API module scope AND the celery worker_process_init signal. On a
-    setup error it leaves _provider None (instrument_* no-op), never raises."""
+    setup error it leaves _provider None (instrument_* no-op), never raises.
+    """
     monkeypatch.setattr(
         tracing,
         "get_settings",
@@ -152,7 +146,8 @@ def test_spans_emitted_and_excluded_urls_and_query_scrubbed(
 ) -> None:
     """Enabled path: span per API request; none for /healthz or the webhook
     (its ?token= must never reach attributes, #494); query strings scrubbed
-    from URL attributes; request_id tag helper works inside a request."""
+    from URL attributes; request_id tag helper works inside a request.
+    """
     tracing.configure_tracing(service_name="dataq-api")
     assert tracing._provider is not None
 
@@ -201,7 +196,8 @@ def test_spans_emitted_and_excluded_urls_and_query_scrubbed(
 
 def test_excluded_urls_are_anchored() -> None:
     """`healthz` as a substring of a real path/host must NOT be excluded (review
-    finding: unanchored patterns re.search the full URL, hostname included)."""
+    finding: unanchored patterns re.search the full URL, hostname included).
+    """
     from opentelemetry.util.http import parse_excluded_urls
 
     excl = parse_excluded_urls(tracing.EXCLUDED_URLS)
@@ -214,11 +210,11 @@ def test_excluded_urls_are_anchored() -> None:
 def test_shipped_main_wiring_emits_request_spans(
     monkeypatch: pytest.MonkeyPatch, in_memory_exporter: InMemorySpanExporter
 ) -> None:
-    """Regression for the review finding that killed prod spans: Starlette
-    builds its middleware stack on the FIRST ASGI call (the lifespan scope), so
-    instrumentation must happen at module scope in main.py — instrumenting from
-    the lifespan handler silently emits nothing. Reload main with tracing
-    enabled and assert the real app produces server spans."""
+    """Regression for the review finding that killed prod spans: Starlette builds its middleware
+    stack on the FIRST ASGI call (the lifespan scope), so instrumentation must happen at module
+    scope in main.py — instrumenting from the lifespan handler silently emits nothing. Reload
+    main with tracing enabled and assert the real app produces server spans.
+    """
     monkeypatch.setenv("APPLICATIONINSIGHTS_CONNECTION_STRING", _CONN)
     # in_memory_exporter patched tracing.get_settings with a stub; the real
     # module-level wiring must read real (env-driven) settings instead.

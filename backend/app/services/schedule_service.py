@@ -1,19 +1,4 @@
-"""Schedule CRUD — cron-driven suite run schedules (A7).
-
-A `schedule` fires a suite run on a cron cadence: (`cron`, `timezone`) → `suite_id`.
-The beat dispatcher (`worker.tasks.dispatch_due_schedules`) *consumes* enabled,
-due schedules; this module lets users *manage* them. Mirrors
-`trigger_binding_service`: FastAPI-free (takes a `Session`, returns ORM models,
-raises typed `DataQError`s), and gated on the caller's suite permission
-(`edit` to create / change / delete, `view` to read) so you can't schedule a
-suite you can't access.
-
-`next_run_at` is kept consistent here: computed on create, and recomputed by
-`update_schedule` whenever the cron / timezone changes or a paused schedule is
-re-enabled (so re-enabling never fires an immediate backlog — `services.cron`
-returns the next *future* fire). Pausing leaves `next_run_at` as-is; the
-dispatcher's `enabled` filter excludes it regardless.
-"""
+"""Schedule CRUD — cron-driven suite run schedules (A7)."""
 
 from __future__ import annotations
 
@@ -45,13 +30,7 @@ def create_schedule(
     timezone: str = "UTC",
     enabled: bool = True,
 ) -> Schedule:
-    """Create a schedule. Requires `edit` on the target suite (404/403 otherwise).
-
-    The cron / timezone are validated (422 on either) and the first `next_run_at`
-    is computed before insert. The suite's run *target* is not required here — a
-    suite can be scheduled before its target is configured; the dispatcher
-    re-checks the target at fire time and skips (with a log) if still invalid.
-    """
+    """Create a schedule. Requires `edit` on the target suite (404/403 otherwise)."""
     # Proves the suite exists (404) and the caller may automate it (403).
     require_permission(session, suite_id, user_id, minimum="edit")
     next_run_at = cron.next_fire(cron_expr, timezone)  # validates cron + tz (422)
@@ -94,10 +73,10 @@ def list_schedules(
     include_all: bool = False,
 ) -> list[Schedule]:
     """Schedules on suites the user can access (owned or shared), newest first — or
-    on *every* suite when ``include_all`` (the workspace-admin view, ADR 0027)."""
-    # Reuse the single source of truth for suite visibility (suite_service) — the
-    # same owned-OR-shared subquery the suite + run reads use, so the authz rule
-    # can't silently diverge here.
+    on *every* suite when ``include_all`` (the workspace-admin view, ADR 0027).
+    """
+    # Reuse the single source of truth for suite visibility (suite_service) — the same owned-OR-
+    # shared subquery the suite + run reads use, so the authz rule can't silently diverge here.
     stmt = (
         select(Schedule)
         .where(
@@ -138,12 +117,7 @@ def update_schedule(
     timezone: str | None = None,
     enabled: bool | None = None,
 ) -> Schedule:
-    """Patch a schedule's cron / timezone / enabled flag. Requires `edit`.
-
-    `next_run_at` is recomputed when the cadence changes (cron or timezone) and
-    when a paused schedule is re-enabled, so re-enabling resumes from the next
-    future fire rather than firing every slot missed while paused.
-    """
+    """Patch a schedule's cron / timezone / enabled flag. Requires `edit`."""
     schedule = _get_owned(session, schedule_id, user_id, minimum="edit")
     audit_before = audit_service.snapshot("schedule", schedule)
 
@@ -188,9 +162,8 @@ def update_schedule(
 def delete_schedule(session: Session, schedule_id: uuid.UUID, *, user_id: uuid.UUID) -> None:
     """Delete a schedule. Requires `edit` on its suite."""
     schedule = _get_owned(session, schedule_id, user_id, minimum="edit")
-    # Deleting is how a schedule gets "paused" by a client with no update verb,
-    # and it discards the cron expression needed to restore it — so the `before`
-    # payload is what makes the act reversible by hand.
+    # Deleting is how a schedule gets "paused" by a client with no update verb, and it discards the
+    # cron expression needed to restore it.
     audit_before = audit_service.snapshot("schedule", schedule)
     session.delete(schedule)
     audit_service.record_entity_change(

@@ -1,15 +1,4 @@
-"""Workspace-wide poll-staleness check (#1052) — the signal that cannot lie.
-
-The defining test here is the first one: **the worker writes nothing at all and the
-alert still fires.** Every #905-class incident (#852, #854, the wedged broker
-reconnect) had a worker that looked alive and wrote nothing, so these tests never
-simulate a worker — they only arrange DB rows, which is exactly the information the
-check is allowed to use.
-
-Publisher delivery is faked at the seam (`get_health_publisher`), never mocked past
-it: the delivered-first tests depend on the real control flow between publish and
-the `workspace_health` flag write.
-"""
+"""Workspace-wide poll-staleness check (#1052) — the signal that cannot lie."""
 
 from __future__ import annotations
 
@@ -104,7 +93,8 @@ class TestTheAlertFiresWithoutTheWorker:
         self, db_session: Any, publisher: _CapturingPublisher
     ) -> None:
         """The #1052 acceptance test verbatim: nothing here simulates a worker —
-        two connections whose poll writes simply stopped are all it takes."""
+        two connections whose poll writes simply stopped are all it takes.
+        """
         _orch_connection(db_session, last_polled_at=NOW - timedelta(hours=2))
         _orch_connection(db_session, conn_type="adf", last_polled_at=NOW - timedelta(hours=3))
 
@@ -124,7 +114,8 @@ class TestTheAlertFiresWithoutTheWorker:
     ) -> None:
         """A poller that never ran at ALL (wrong image, task never registered) writes
         no `last_polled_at` anywhere — 'we have not looked yet' must not read as
-        'nothing to report' (#828), so `created_at` is the fallback reference."""
+        'nothing to report' (#828), so `created_at` is the fallback reference.
+        """
         _orch_connection(db_session, last_polled_at=None, created_at=NOW - timedelta(hours=1))
 
         assert svc.run_poll_staleness_check(db_session, now=NOW) == "alerted"
@@ -143,7 +134,8 @@ class TestTheAlertFiresWithoutTheWorker:
         self, db_session: Any, publisher: _CapturingPublisher
     ) -> None:
         """Nothing to poll ≠ polling is dead. A datasource connection (snowflake)
-        must not be counted into the orchestration population either."""
+        must not be counted into the orchestration population either.
+        """
         conn = Connection(
             name=f"snowflake-{uuid.uuid4().hex[:8]}",
             type="snowflake",
@@ -195,7 +187,8 @@ class TestDeliveredFirst:
     ) -> None:
         """The fresh-install trap (review finding): every channel unconfigured must
         NOT stamp the flag — the incident stays outstanding, and the first tick
-        after an operator wires a channel delivers the original edge."""
+        after an operator wires a channel delivers the original edge.
+        """
         undeliverable = _CapturingPublisher(undeliverable=True)
         monkeypatch.setattr(svc, "get_health_publisher", lambda: undeliverable)
         _orch_connection(db_session, last_polled_at=NOW - timedelta(hours=2))
@@ -204,9 +197,8 @@ class TestDeliveredFirst:
         flag = _flag(db_session)
         assert flag is None or flag.alerted_at is None
 
-        # The undeliverable path's rollback discarded this test's UNCOMMITTED
-        # fixture row (prod connections are long-committed); re-seed the same
-        # still-dead state before the second tick.
+        # The undeliverable path's rollback discarded this test's UNCOMMITTED fixture row (prod
+        # connections are long-committed); re-seed the same still-dead state before the second tick.
         _orch_connection(db_session, last_polled_at=NOW - timedelta(hours=2))
 
         # The operator wires up a channel; the loop is STILL dead — the edge
@@ -223,7 +215,8 @@ class TestDeliveredFirst:
     ) -> None:
         """Channels unconfigured AFTER a delivered failing edge: the operator was
         told about a failure and must not have the recovery silently dropped —
-        the flag stays set until a recovery actually goes out."""
+        the flag stays set until a recovery actually goes out.
+        """
         delivered = _CapturingPublisher()
         monkeypatch.setattr(svc, "get_health_publisher", lambda: delivered)
         _orch_connection(db_session, last_polled_at=NOW - timedelta(hours=2))
@@ -262,7 +255,8 @@ class TestDeliveredFirst:
     ) -> None:
         """Fresh polls with no delivered FAILING edge → silence, not an all-clear.
         An unprompted 'recovered' message is the #837 rule violated from the other
-        side: the operator's last delivered state must stay truthful."""
+        side: the operator's last delivered state must stay truthful.
+        """
         _orch_connection(db_session, last_polled_at=NOW - timedelta(minutes=1))
         assert svc.run_poll_staleness_check(db_session, now=NOW) == "ok"
         assert publisher.reports == []
@@ -272,20 +266,18 @@ class TestDeliveredFirst:
     ) -> None:
         """The edge fires once per transition, never once per tick (#837's edge-not-
         state rule) — a dead loop checked every 10 minutes must not page every 10
-        minutes."""
+        minutes.
+        """
         _orch_connection(db_session, last_polled_at=NOW - timedelta(hours=2))
         assert svc.run_poll_staleness_check(db_session, now=NOW) == "alerted"
         assert svc.run_poll_staleness_check(db_session, now=NOW + timedelta(hours=1)) == "ok"
         assert len(publisher.reports) == 1
 
 
-# ── #1186: trigger-binding env-mismatch near-miss marker ─────────────────────
-#
-# Unit-level coverage of `record_trigger_binding_env_near_miss` itself (the
-# integration path — reached from `orchestration_service._trigger_suites` on a
-# genuine env mismatch — is covered in test_orchestration_service.py). This
-# module owns the `workspace_health` write; these tests pin its upsert/dedupe
-# contract directly against the real table.
+# ── #1186: trigger-binding env-mismatch near-miss marker ───────────────────── Unit-level coverage
+# of `record_trigger_binding_env_near_miss` itself (the integration path — reached from
+# `orchestration_service._trigger_suites` on a genuine env mismatch — is covered in
+# test_orchestration_service.py).
 
 
 class TestTriggerBindingEnvNearMiss:
@@ -315,9 +307,8 @@ class TestTriggerBindingEnvNearMiss:
         ]
         rows = list(db_session.scalars(select(WorkspaceHealth)))
         assert len(rows) == 1  # deduped, not one row per call
-        # Only the FIRST call is a genuine insert — the caller uses this to
-        # throttle its own log line (the #852 log-amplification lesson): the
-        # row still bumps `updated_at` on every call, but repeats don't warn.
+        # Only the FIRST call is a genuine insert — the caller uses this to throttle its own log
+        # line (the #852 log-amplification lesson): the row still bumps `updated_at` on every call.
         assert occurrences == [True, False, False]
 
     def test_a_different_tuple_gets_its_own_row(self, db_session: Any) -> None:
@@ -339,9 +330,8 @@ class TestTriggerBindingEnvNearMiss:
         assert len(rows) == 2
 
     def test_key_is_deterministic_and_within_the_column_length(self, db_session: Any) -> None:
-        # A long Airflow DAG id (up to 256 chars) must still fit the 64-char
-        # `workspace_health.key` column — this is why the key is hashed, not the
-        # raw tuple concatenated.
+        # A long Airflow DAG id (up to 256 chars) must still fit the 64-char `workspace_health.key`
+        # column — this is why the key is hashed, not the raw tuple concatenated.
         long_dag_id = "x" * 256
         svc.record_trigger_binding_env_near_miss(
             db_session,
@@ -405,9 +395,8 @@ class TestListCurrentEnvNearMisses:
     def test_no_enabled_bindings_returns_empty_without_querying_workspace_health(
         self, db_session: Any
     ) -> None:
-        # A near-miss row could theoretically still exist from a since-deleted
-        # binding — with zero candidates to hash there is nothing to match it
-        # against, so it correctly can't be decoded back.
+        # A near-miss row could theoretically still exist from a since-deleted binding — with zero
+        # candidates to hash there is nothing to match it against.
         owner = _user(db_session)
         svc.record_trigger_binding_env_near_miss(
             db_session,
@@ -452,9 +441,8 @@ class TestListCurrentEnvNearMisses:
         assert svc.list_current_env_near_misses(db_session, user_id=owner.id) == []
 
     def test_a_binding_with_no_recorded_mismatch_yields_nothing(self, db_session: Any) -> None:
-        # An enabled binding generates candidate hashes, but none of them exist as
-        # a real workspace_health row unless the ingest path actually observed
-        # that exact mismatch.
+        # An enabled binding generates candidate hashes, but none of them exist as a real
+        # workspace_health row unless the ingest path actually observed that exact mismatch.
         owner = _user(db_session)
         suite = _suite(db_session, owner)
         _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
@@ -463,7 +451,8 @@ class TestListCurrentEnvNearMisses:
     def test_a_stale_row_past_the_recency_window_is_excluded(self, db_session: Any) -> None:
         """Mirrors the #1199 acceptance criterion: a near-miss that stopped
         recurring (fixed, or the pipeline stopped running) must not read as
-        still-current forever just because the row was never deleted."""
+        still-current forever just because the row was never deleted.
+        """
         owner = _user(db_session)
         suite = _suite(db_session, owner)
         _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
@@ -528,7 +517,8 @@ class TestListCurrentEnvNearMisses:
         """The #1186 root case this whole feature exists to catch: the same DAG id
         observed by TWO orchestrator connections in two different wrong envs. Both
         are live mismatches on the one binding — returning only the newer would
-        hide a real one behind another."""
+        hide a real one behind another.
+        """
         owner = _user(db_session)
         suite = _suite(db_session, owner)
         _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
@@ -549,7 +539,8 @@ class TestListCurrentEnvNearMisses:
         """Two mismatches recorded in the same ingest batch share a `func.now()`
         transaction timestamp to the microsecond. Without a total sort the order
         would be whatever Postgres happened to return, so the list — and the
-        per-binding badges built from it — could reshuffle between refreshes."""
+        per-binding badges built from it — could reshuffle between refreshes.
+        """
         owner = _user(db_session)
         suite = _suite(db_session, owner)
         _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
@@ -583,7 +574,8 @@ class TestListCurrentEnvNearMisses:
         """Trigger bindings are suite-owned config — `GET /trigger-bindings` scopes
         them to owned-or-shared suites, so this read must too. A stranger must not
         be able to enumerate the (provider, pipeline, env) of someone else's
-        binding by reading near-misses."""
+        binding by reading near-misses.
+        """
         owner = _user(db_session)
         stranger = _user(db_session)
         suite = _suite(db_session, owner)
@@ -644,14 +636,7 @@ class TestListCurrentEnvNearMisses:
 
 
 class TestNearMissWriteReadRoundTrip:
-    """Read/write coupling guard (#1199 review).
-
-    Every test above drives the write LEAF (`record_trigger_binding_env_near_miss`)
-    directly, so a change to `orchestration_service._record_env_near_misses` —
-    which is where the tuple that actually gets hashed is *chosen* — could silently
-    desync the two derivations and still ship green. This exercises the real
-    production write path end-to-end instead.
-    """
+    """Read/write coupling guard (#1199 review)."""
 
     def test_the_production_write_path_produces_rows_the_read_side_decodes(
         self, db_session: Any
@@ -687,7 +672,8 @@ class TestNearMissWriteReadRoundTrip:
         self, db_session: Any
     ) -> None:
         """The write side only considers ENABLED bindings; if that ever diverged
-        from the read side's identical filter the two would silently disagree."""
+        from the read side's identical filter the two would silently disagree.
+        """
         owner = _user(db_session)
         suite = _suite(db_session, owner)
         _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev", enabled=False)

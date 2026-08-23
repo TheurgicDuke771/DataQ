@@ -1,16 +1,4 @@
-"""Derive a comparison result's downloadable report (ADR 0015 §4, #795).
-
-Reports are **derived on demand from the persisted, already-redacted buckets —
-never stored**: a stored full-mismatch file would bypass the `sample_failures`
-redaction path, escape the PII-minimisation retention sweep, and assume an
-object store a BYOL deploy may not have. The caller passes the REDACTED sample
-(the same `redact_sample_failures` output the read API serves) plus the
-observed bucket counts; this module only formats.
-
-CSV: one flat table — a `bucket` discriminator column + the union of sample
-columns (spreadsheet-friendly, diffable). XLSX: a `summary` sheet (counts +
-mismatch-%) and one sheet per non-empty bucket.
-"""
+"""Derive a comparison result's downloadable report (ADR 0015 §4, #795)."""
 
 from __future__ import annotations
 
@@ -47,10 +35,8 @@ class ComparisonReportInvalidError(DataQError):
     code = "comparison_report_invalid"
 
 
-# Leading characters Excel/Sheets interpret as a formula — a cell carrying
-# warehouse data must never execute on the analyst's machine (CSV/XLSX formula
-# injection). The standard mitigation: prefix a single quote, which spreadsheet
-# apps render as literal text.
+# Leading characters Excel/Sheets interpret as a formula — a cell carrying warehouse data must never
+# execute on the analyst's machine (CSV/XLSX formula injection).
 _FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r")
 
 
@@ -129,7 +115,8 @@ def build_xlsx(sample: dict[str, Any] | None, observed: dict[str, Any] | None) -
 def _cell(value: Any) -> Any:
     """openpyxl accepts scalars only — anything structured renders as a string.
     Strings are formula-neutralized: openpyxl infers data_type 'f' for a
-    leading '=', which would make warehouse data executable on open."""
+    leading '=', which would make warehouse data executable on open.
+    """
     if value is None or isinstance(value, (int, float, bool)):
         return value
     return _neutralize(value if isinstance(value, str) else str(value))

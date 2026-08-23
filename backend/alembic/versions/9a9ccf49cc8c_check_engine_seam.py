@@ -1,29 +1,4 @@
-"""check engine seam — ADR 0036 slice 1 (#895)
-
-Additive schema for connection-anchored check engines:
-
-* ``checks.engine`` — WHO evaluates the check (default ``'gx'``), constrained to
-  the full ADR vocabulary (``gx``/``dmf``/``dqx``/``dataplex``) so native rows
-  need no later migration; which values a save actually accepts is decided by
-  the application capability map (`datasources.engines`), never the constraint.
-* ``check_versions.engine`` — the snapshot twin, so restore reproduces the
-  evaluator and history stays self-contained. Backfilled ``'gx'`` via the server
-  default, which is exact: 'gx' was the only evaluator when old snapshots were
-  cut. Deliberately unconstrained, like `kind`/`dimension` there — history must
-  not become unwritable if the vocabulary changes.
-* ``connections.engine_capabilities`` — nullable JSONB for the phase-2 per-engine
-  probe result (availability + classified remediation). NULL = never probed.
-
-Purely additive and backward-compatible: code deployed before this migration
-ignores all three columns; code deployed after reads ``'gx'`` everywhere, which
-is the behaviour that shipped before the seam. Server defaults are kept (not
-dropped post-backfill) — like ``checks.kind``, an INSERT from pre-seam code must
-keep landing as ``'gx'`` during the two-step deploy window.
-
-Tested up + down locally. Rollback: ``downgrade()`` drops the constraint and the
-three columns. Lossy only of engine selections and probe results, which cannot
-exist before the feature ships.
-"""
+"""check engine seam — ADR 0036 slice 1 (#895)"""
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql

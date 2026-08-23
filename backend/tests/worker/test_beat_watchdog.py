@@ -1,17 +1,4 @@
-"""Beat liveness watchdog (#904) — the decision logic, tested without threads.
-
-The bug being defended against has a very specific shape: the worker is UP,
-Celery says ``ready``, the schedule is armed, nothing raises — and no scheduled
-task executes for hours. It happened three times (2026-07-18, the #905 outage,
-2026-07-19) and every time a human had to notice and restart the revision.
-
-So the tests here are about the two ways a watchdog can be wrong, both worse
-than the bug:
-
-- **failing to kill** a genuinely wedged worker (the outage continues), and
-- **killing** one that is merely starting up, idle-but-fine, or looking at an
-  unreadable broker (a restart loop that buries the real cause — #852's lesson).
-"""
+"""Beat liveness watchdog (#904) — the decision logic, tested without threads."""
 
 from __future__ import annotations
 
@@ -84,7 +71,8 @@ def test_no_heartbeat_at_all_is_unknown() -> None:
 
 def test_read_returns_none_and_never_raises_when_the_store_is_down() -> None:
     """An exception on the watchdog thread would silently kill the watchdog —
-    the exact class of silent death this module exists to end."""
+    the exact class of silent death this module exists to end.
+    """
     assert wd.read_beat_tick(FakeStore(fail=True)) is None
 
 
@@ -141,7 +129,8 @@ def test_loop_kills_after_the_heartbeat_this_worker_produced_goes_stale() -> Non
 
 def test_loop_needs_consecutive_confirmations_before_killing() -> None:
     """Guard 5: one stale reading can be a clock step, so a single pass must not
-    kill — the streak has to survive `STALE_CONFIRMATIONS` iterations."""
+    kill — the streak has to survive `STALE_CONFIRMATIONS` iterations.
+    """
     import time
 
     booted = time.time() - 10_000
@@ -157,8 +146,7 @@ def test_loop_does_not_kill_while_the_heartbeat_is_fresh() -> None:
 
 
 def test_loop_does_not_kill_when_the_store_is_unreadable() -> None:
-    """Guard 2: restarting cannot fix a broker outage, and a crash loop would
-    bury it (#852)."""
+    """Guard 2: restarting cannot fix a broker outage, and a crash loop would bury it (#852)."""
     import time
 
     assert _run_loop(FakeStore(fail=True), started_at=time.time() - 10_000) == []
@@ -174,7 +162,8 @@ def test_loop_ignores_a_stale_key_left_by_a_PREVIOUS_worker() -> None:
     """Guard 3, the crash-loop bug found in review: the stamp never expires, so
     a predecessor's key is readable the instant a new worker boots. If that
     armed the watchdog, a worker that never consumes anything would kill itself
-    on someone else's tick, restart, and loop forever on an ever-staler key."""
+    on someone else's tick, restart, and loop forever on an ever-staler key.
+    """
     import time
 
     booted = time.time()
@@ -185,7 +174,8 @@ def test_loop_ignores_a_stale_key_left_by_a_PREVIOUS_worker() -> None:
 def test_loop_does_not_kill_while_tasks_are_running() -> None:
     """Guard 4: a stale beat with a busy pool is a long GX run holding the
     slots, not a wedge — hard-exiting would abort real work mid-flight and
-    strand its `runs` row."""
+    strand its `runs` row.
+    """
     import time
 
     booted = time.time() - 10_000
@@ -195,7 +185,8 @@ def test_loop_does_not_kill_while_tasks_are_running() -> None:
 
 def test_loop_recovers_the_streak_when_work_resumes() -> None:
     """A blip must not accumulate toward a kill: a stale reading followed by a
-    fresh one resets the streak, so the next stale reading starts from zero."""
+    fresh one resets the streak, so the next stale reading starts from zero.
+    """
     import time
 
     booted = time.time() - 10_000
@@ -215,7 +206,8 @@ def test_loop_recovers_the_streak_when_work_resumes() -> None:
 
 def test_negative_age_is_never_acted_on() -> None:
     """A backwards clock step yields a future-dated tick; that reading is
-    meaningless and must not count toward a kill."""
+    meaningless and must not count toward a kill.
+    """
     import time
 
     booted = time.time() - 10_000
@@ -224,13 +216,15 @@ def test_negative_age_is_never_acted_on() -> None:
 
 def test_active_task_count_is_zero_outside_a_worker() -> None:
     """'Unknown' must resolve to 0, never to 'busy' — a permanently-busy reading
-    would disarm the watchdog entirely."""
+    would disarm the watchdog entirely.
+    """
     assert wd.active_task_count() == 0
 
 
 def test_build_store_bounds_its_socket_timeouts() -> None:
     """The watchdog's own Redis client must never block forever (#854): an
-    untimed read hangs the one thread whose job is to notice hangs."""
+    untimed read hangs the one thread whose job is to notice hangs.
+    """
     client = wd.build_store("redis://localhost:6379/0")
     kwargs = client.connection_pool.connection_kwargs  # type: ignore[attr-defined]
     assert kwargs["socket_timeout"] == wd.REDIS_READ_TIMEOUT_S

@@ -1,9 +1,4 @@
-"""The publisher used when no notification channel is configured.
-
-Until a webhook is configured (per-suite or workspace) the seam still runs end to
-end — a report is built and dispatched — it just goes nowhere. This keeps the
-run-completion hook always-present and exercised.
-"""
+"""The publisher used when no notification channel is configured."""
 
 from __future__ import annotations
 
@@ -37,9 +32,9 @@ class NoopPublisher:
             state=report.state,
             consecutive_failures=report.consecutive_failures,
         )
-        # The explicit test double COUNTS as delivered — it exists so tests can
-        # exercise the stamped path; the real "nothing was sent" case is a real
-        # channel returning False (#1101, mirroring publish_poll_staleness).
+        # The explicit test double COUNTS as delivered — it exists so tests can exercise the
+        # stamped path; the real "nothing was sent" case is a real channel returning False (#1101,
+        # mirroring publish_poll_staleness).
         return True
 
     def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
@@ -48,7 +43,6 @@ class NoopPublisher:
             state=report.state,
             connection_count=report.connection_count,
         )
-        # The explicit test double COUNTS as delivered — it exists so tests can
-        # exercise the stamped path; the real "nothing was sent" case is a real
-        # channel returning False.
+        # The explicit test double COUNTS as delivered — it exists so tests can exercise the stamped
+        # path; the real "nothing was sent" case is a real channel returning False.
         return True

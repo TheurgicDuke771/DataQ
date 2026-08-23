@@ -201,9 +201,8 @@ describe('CheckNew — anomaly authoring (#593, stricter SQL-only gating than fr
     await user.click(screen.getByRole('button', { name: 'Create check' }));
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
-    // ...and never reach the submitted config, even though antd's Form
-    // preserves an unmounted field's last value by default — the backend
-    // REJECTS `column` when target_metric is row_count (#593).
+    // ...and never reach the submitted config, even though antd's Form preserves an unmounted
+    // field's last value by default.
     expect(mockCreate).toHaveBeenCalledWith(
       's1',
       expect.objectContaining({

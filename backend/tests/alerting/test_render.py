@@ -1,9 +1,4 @@
-"""Tests for the shared Slack/email render helpers (#416).
-
-Pure functions — no DB, no network — so they exercise the formatting branches
-(expected-vs-observed, metric fallback, redacted sample, metadata, truncation)
-directly on constructed DTOs.
-"""
+"""Tests for the shared Slack/email render helpers (#416)."""
 
 from __future__ import annotations
 

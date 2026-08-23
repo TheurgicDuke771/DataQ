@@ -1,29 +1,7 @@
-"""Human-readable names for SecretStore keys.
-
-A secret name is what an operator reads when they open the vault to rotate a
-credential by hand. `conn-<uuid>` told them nothing, and that is not a cosmetic
-complaint: rotating a credential means finding the right entry first, and #954
-(two dead Snowflake PATs, three weeks) is what "finding the right entry" costs
-when every name is a UUID.
-
-The generated shape is::
-
-    conn-<type>-<qualifier>-<env>-<short-id>
-    conn-snowflake-retail-dev-6729c4f9
-
-**Both halves earn their place.** The slug is what makes it findable. The short
-id is what makes a rename free: `secret_ref` is a STORED column, never
-recomputed, so a renamed connection keeps its original secret name — and without
-the id, renaming A→B while B's secret already exists would collide on a name
-that is supposed to be unique. With it, two connections can never generate the
-same key even if their names converge.
-
-**The charset is dictated by the strictest backend, not the current one.** Azure
-Key Vault permits only ``[0-9a-zA-Z-]`` (no underscores, dots or slashes) with a
-127-char limit; OpenBao's KV v2 is far looser but treats ``/`` as path nesting.
-Slugging to Key Vault's rules keeps one name valid in every store behind the
-seam (ADR 0010) — a name generated under OpenBao must still be writable if the
-deployment later moves to Key Vault, and vice versa.
+"""Human-readable SecretStore key names: ``conn-<type>-<qualifier>-<env>-<short-id>``
+(the slug makes a key findable — #954; the short id makes renames collision-free).
+Charset is dictated by the STRICTEST backend: Azure Key Vault's ``[0-9a-zA-Z-]``,
+127-char limit — one name must stay valid in every store behind the seam (ADR 0010).
 """
 
 from __future__ import annotations
@@ -33,37 +11,28 @@ import unicodedata
 from typing import Final
 from uuid import UUID
 
-# Key Vault's alphabet, and the tightest of the backends we support.
+# Key Vault's alphabet — the tightest of the supported backends.
 _ALLOWED: Final = re.compile(r"[^0-9a-zA-Z-]+")
 _DASHES: Final = re.compile(r"-{2,}")
 
-# Bound the readable part so the total stays well inside Key Vault's 127. Connection
-# names are free text and can be arbitrarily long; the id suffix is what guarantees
-# uniqueness, so truncating the slug costs readability, never correctness.
+# Slug bound keeps the total well inside Key Vault's 127; the id suffix guarantees
+# uniqueness, so truncation costs readability, never correctness.
 _MAX_SLUG: Final = 60
-# 8 hex chars of a UUID4: ~4.3e9 values, and it only has to be unique among the
-# connections that share a slug — collision is not a practical concern.
+# 8 hex chars of a UUID4 — unique enough among connections sharing a slug.
 _ID_CHARS: Final = 8
 
-# Hard bound on the free-text we run regexes over. `_PARENS` is polynomial —
-# `\([^)]*\)` rescans to the end from every "(", so a string of N unmatched "("
-# costs O(N²) (measured: 20k chars ≈ 115 ms). The API caps `name` at 128 today, so
-# this is not reachable through it — but that makes the safety a property of the
-# CALLER's validation rather than of this function, and this function is a library
-# any future caller may reach with unvalidated text. Bounding here makes the cost
-# unconditional. Generous vs the 128-char API cap, and far below the slug cap.
+# Hard bound on free text the regexes scan — makes the O(N²) safety unconditional
+# rather than a property of the CALLER's 128-char validation (this is a library).
 _MAX_INPUT: Final = 256
 
-# How a connection type appears in a vault key. Mirrors the hand-chosen prod names
-# (`conn-adls-landing`, not `conn-adls-gen2-landing`).
+# How a connection type appears in a vault key (mirrors the hand-chosen prod names).
 _TYPE_SLUGS: Final = {
     "adls_gen2": "adls",
     "unity_catalog": "unity-catalog",
 }
 
-# The words a DISPLAY NAME uses for each type, stripped from the qualifier so the
-# type is not repeated. Rarely a literal match for the type key — a user writes
-# "Azure Data Factory", the type is `adf` — which is why this table exists.
+# Words a DISPLAY NAME uses for each type, stripped from the qualifier — the overlap
+# is rarely literal ("Azure Data Factory" ↔ `adf`), which is why this table exists.
 _TYPE_WORDS: Final = {
     "adf": ("azure", "data", "factory"),
     "adls_gen2": ("adls", "gen2", "azure", "storage"),
@@ -77,14 +46,9 @@ _TYPE_WORDS: Final = {
 
 
 def _split_parentheticals(text: str) -> tuple[str, str]:
-    r"""Split `text` into (outside-parens, inside-parens) in ONE linear pass.
-
-    A regex (`\([^)]*\)`) is the obvious way and is quadratic: it rescans to the
-    end from every "(", so N unmatched "(" costs O(N^2) — 20k chars measured at
-    ~115 ms, and connection names are user text. A scan is linear by construction,
-    which is a property of the code rather than of an input bound someone might
-    later remove. Unbalanced "(" simply runs to the end, which is the same result
-    the regex gave for the balanced case and harmless for a display name.
+    """Split `text` into (outside-parens, inside-parens) in ONE linear pass. The
+    obvious regex (`\\([^)]*\\)`) is quadratic on unmatched "(" — ~115 ms at 20k chars
+    of user text — so a scan is used by construction, not by input bound.
     """
     outside: list[str] = []
     inside: list[str] = []
@@ -102,14 +66,10 @@ def _split_parentheticals(text: str) -> tuple[str, str]:
 
 
 def slugify(text: str) -> str:
-    """Reduce free text to Key Vault's ``[0-9a-zA-Z-]`` alphabet.
-
-    Unicode is transliterated rather than dropped where possible (``Ünïcodé`` →
-    ``Unicode``), so a non-ASCII connection name still yields something a human
-    recognises instead of an empty string.
+    """Reduce free text to Key Vault's ``[0-9a-zA-Z-]`` alphabet, transliterating
+    Unicode where possible (``Ünïcodé`` → ``Unicode``) rather than dropping it.
     """
-    # NFKD splits accented characters into base + combining mark; dropping the
-    # marks leaves the recognisable ASCII base letter.
+    # NFKD splits accented chars into base + combining mark; drop the marks.
     decomposed = unicodedata.normalize("NFKD", text[:_MAX_INPUT])
     ascii_only = decomposed.encode("ascii", "ignore").decode("ascii")
     slug = _ALLOWED.sub("-", ascii_only)
@@ -120,58 +80,17 @@ def slugify(text: str) -> str:
 def connection_secret_ref(
     *, connection_id: UUID | str, env: str, name: str, conn_type: str = "", kind: str = ""
 ) -> str:
-    """Build the vault key for a connection's primary — or a second — credential.
-
-    Shape: ``conn-<type>-<qualifier>-[<kind>-]<env>-<shortid>``, with redundant
-    parts dropped. Modelled on the names an operator had already chosen by hand
-    for 11 of the 13 production secrets (`conn-snowflake-retail`, `conn-adf-qa`,
-    …) — those were curated, so the generator earns its keep only by reproducing
-    that quality automatically.
-
-    ``kind`` distinguishes a SECOND credential stored against the same row (e.g.
-    ``"catalog"`` for an Iceberg SQL catalog's DB password, #754/#826/#1181) —
-    the same "separate refs on one row" idiom already used for the Slack/Teams
-    webhook secrets. Left blank, this reproduces the primary-credential shape
-    unchanged. Slugged like every other part, so a stray character can't make
-    the ref unwritable.
-
-    Three rules do the work, and each exists because the naive version produced a
-    name *worse* than what it replaced:
-
-    1. **Type leads.** Grouping by type is what makes a vault listing scannable
-       (`conn-adf-*`, `conn-snowflake-*`), and it is what the hand-naming did.
-    2. **Type words are stripped from the qualifier.** "Snowflake — Retail" under
-       type `snowflake` must not yield `snowflake-snowflake-retail`. `_TYPE_WORDS`
-       maps a type to the words a display name uses for it, because the overlap is
-       rarely literal (`adf` ↔ "Azure Data Factory").
-    3. **Parentheticals are dropped and `env` is deduplicated.** "(DATAQ_READER)"
-       is commentary, and "Azure Data Factory — QA" in env `qa` must not become
-       `…-qa-qa-…`.
-
-    Call this ONLY when minting a new ref. An existing `Connection.secret_ref` is
-    authoritative and must be reused verbatim — recomputing it after a rename
-    would point at a key that does not exist, and the credential would read as
-    missing (the #954 shape again, self-inflicted).
-
-    **`kind`/`env` are truncation-protected, not merely appended.** The naive
-    version built one long token list (`conn` + type + qualifier + kind + env)
-    and truncated the WHOLE joined string to `_MAX_SLUG` — so a sufficiently
-    long connection `name` pushed `kind` (and even `env`) past the cutoff
-    entirely, and the primary and catalog refs for the SAME connection came out
-    byte-identical (`_write_extra_secret` would then silently overwrite the
-    primary credential with the catalog one). The budget is now spent on the
-    free-text `qualifier` alone; `kind` and `env` are reserved space and always
-    survive, however long `name` is.
+    """Build the vault key ``conn-<type>-<qualifier>-[<kind>-]<env>-<shortid>`` (``kind`` names a
+    SECOND credential on the same row, e.g. ``"catalog"`` — #754/#826/#1181). Call ONLY when
+    minting a new ref: an existing `Connection.secret_ref` is authoritative — recomputing after
+    a rename points at a key that does not exist (#954).
     """
-    # The ONE input that never passes through `slugify`, while the signature invites
-    # `str`. An empty or dash-only id would emit `conn-…-dev-` — a trailing dash, which
-    # Key Vault rejects at the API. Every output of this module must be writable, so
-    # the id is filtered to the same alphabet and the whole ref is stripped below.
+    # The one input that never passes `slugify`; an empty/dash-only id would emit a
+    # trailing dash, which Key Vault rejects at the API.
     short_id = _ALLOWED.sub("", str(connection_id).replace("-", ""))[:_ID_CHARS]
     type_slug = _TYPE_SLUGS.get(conn_type, slugify(conn_type))
 
-    # Drop parenthesised commentary before slugging: it is detail for humans
-    # reading the connection list, not identity.
+    # Parenthesised commentary is detail for humans, not identity.
     bounded = name[:_MAX_INPUT]
     noise = set(_TYPE_WORDS.get(conn_type, ())) | set(type_slug.split("-"))
     outside, inside = _split_parentheticals(bounded)
@@ -181,17 +100,11 @@ def connection_secret_ref(
 
     qualifier = _qualify(outside)
     if not qualifier:
-        # Everything distinguishing lived inside the parentheses. Dropping it would
-        # reduce "Snowflake (Retail)" and "Snowflake (Payments)" to two keys differing
-        # only by 8 hex chars — reinstating the very "find the right entry" problem
-        # (#954) this module exists to remove. Fall back to the parenthetical content.
+        # Everything distinguishing lived inside the parentheses ("Snowflake (Retail)") — dropping
+        # it would reinstate the #954 find-the-right-entry problem.
         qualifier = _qualify(inside)
 
-    # `head` is free text and TRUNCATABLE; `tail` is the identity-bearing
-    # `kind`/`env` pair and must survive intact. Global order-preserving dedupe
-    # (matching the pre-#1181 behaviour exactly when `kind` is blank): a `tail`
-    # token already present in `head` — e.g. env "qa" already sitting inside the
-    # qualifier from "Azure Data Factory — QA" — is dropped rather than doubled.
+    # `head` is free text and truncatable; `tail` (kind/env) must survive intact.
     head = list(dict.fromkeys(["conn"] + (type_slug.split("-") if type_slug else []) + qualifier))
     tail: list[str] = []
     seen = set(head)
@@ -201,30 +114,21 @@ def connection_secret_ref(
             seen.add(token)
 
     tail_str = "-".join(tail)
-    # Reserve the tail's exact width (+1 for its join dash) out of the shared
-    # budget; whatever's left goes to the truncatable head. `max(..., 0)` is a
-    # safety floor only — `kind`/`env` are short, controlled words in practice,
-    # never long enough to threaten it.
+    # Reserve the tail's exact width out of the shared budget; the remainder goes to
+    # the truncatable head. max(..., 0) is a safety floor only.
     head_budget = max(_MAX_SLUG - len(tail_str) - (1 if tail_str else 0), 0)
     head_str = "-".join(head)[:head_budget].strip("-")
     slug = "-".join(part for part in (head_str, tail_str) if part)
-    # `.strip("-")` on the JOINED result, not on the halves: an id that filtered down
-    # to nothing would otherwise leave a trailing dash, and Key Vault rejects that at
-    # the API — a 500 on save rather than a test failure.
+    # .strip("-") on the JOINED result: an id filtered to nothing would leave a
+    # trailing dash, which Key Vault rejects at the API — a 500 on save.
     return "-".join(part for part in (slug, short_id) if part).strip("-") or "conn"
 
 
 def is_readable_ref(ref: str) -> bool:
-    """True only when `ref` has the shape THIS module mints.
-
-    Deliberately not "does not parse as a UUID". That weaker test counted every
-    hand-curated legacy name — `conn-snowflake-retail`, `conn-adf-qa`,
-    `conn-adls-landing` — as already-migrated, so a migration run would have
-    skipped 11 of the 13 production keys and reported success. The predicate is
-    what the migration keys its idempotency off, so it has to mean what it says.
-
-    The generated shape always ends in `-<short_id>`: up to 8 chars from a UUID's
-    hex, i.e. lowercase hex. A hand-named key ends in a word.
+    """True only when `ref` has the shape THIS module mints (ends in `-<hex id>`).
+    Deliberately NOT "does not parse as a UUID": that weaker test counted the
+    hand-curated legacy names as already-migrated, and the migration keys its
+    idempotency off this predicate.
     """
     if not ref.startswith("conn-"):
         return False

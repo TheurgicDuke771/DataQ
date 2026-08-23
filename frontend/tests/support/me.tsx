@@ -4,24 +4,7 @@ import type { WorkspaceRole } from '../../src/api/admin';
 import type { MeResponse } from '../../src/api/me';
 import { MeContext } from '../../src/auth/meContext';
 
-/**
- * Wrap a tree in a resolved `/me` at a given workspace role (ADR 0033, #743).
- *
- * Needed because `MeContext` defaults to `{ status: 'loading' }`, and the
- * role-aware pages treat "not yet known" as "render nothing role-dependent" —
- * deliberately, since showing a read-only shell during the fetch and then
- * popping controls in is worse than a beat of nothing. A page test that does not
- * provide `/me` therefore sees every gated control hidden, which is correct
- * behaviour and a useless test setup.
- *
- * `admin` is the default because it is what the pre-#743 tests were implicitly
- * exercising: the dev-bypass identity every page test stands in for IS a
- * workspace admin (#741). Pass another role to assert a restricted perspective.
- *
- * `meAt` is deliberately NOT exported: a `.tsx` file that exports both a
- * component and a helper trips `react-refresh/only-export-components`, which CI
- * treats as an error. Nothing outside needs it.
- */
+/** Wrap a tree in a resolved `/me` at a given workspace role (ADR 0033, #743). */
 function meAt(role: WorkspaceRole): MeResponse {
   return {
     id: 'me-1',

@@ -1,18 +1,4 @@
-"""add suite_notifications (per-suite alert delivery config)
-
-Revision ID: b2c3d4e5f6a7
-Revises: a1b2c3d4e5f6
-Create Date: 2026-06-26 00:00:00.000000+00:00
-
-Adds the ``suite_notifications`` table backing per-suite alert config: whether a
-suite's outcomes are delivered (``enabled``), the threshold (``alert_on`` —
-fail / warn / always), and an optional per-suite Teams webhook referenced by
-``webhook_secret_ref`` (the token-bearing URL lives in the SecretStore). One row
-per suite (unique), cascade-deleted with the suite.
-
-Backward-compatible: a brand-new table, no change to existing tables, no data
-rewrite, no two-step. Suites with no row use the default policy.
-"""
+"""add suite_notifications (per-suite alert delivery config)"""
 
 from collections.abc import Sequence
 

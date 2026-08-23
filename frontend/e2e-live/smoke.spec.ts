@@ -1,14 +1,6 @@
 import { expect, test } from './live-test';
 
 // Read-only live smoke against the DEPLOYED app + the ADR 0021 harness data.
-// Opt-in only (E2E_LIVE_BASE_URL) — never runs in CI. Signed in via the
-// sessionStorage captured by global-setup (real OIDC). Nothing here mutates:
-// triggering live runs / alert delivery stays on the manual checklist
-// (docs/site/runbook-faq.md).
-//
-// The expected suite is env-tunable: E2E_LIVE_SUITE (default the "Retail
-// Orders" demo suite the prod workspace carries; the harness flows also land
-// flow_a_snowflake / flow_b_* suites).
 const LIVE_SUITE = process.env.E2E_LIVE_SUITE || 'Retail Orders';
 
 test('dashboard renders live KPIs', async ({ page }) => {

@@ -25,11 +25,7 @@ _NOW = datetime(2026, 6, 29, 12, 0, 0, tzinfo=UTC)
 
 
 def _snowflake_sql(statement: object) -> str:
-    """Render a monitor statement as Snowflake would, whitespace-normalised.
-
-    The statement is deliberately never compiled in production (the connection's
-    own dialect renders it — #476), so these assertions pick a concrete dialect to
-    make the emitted SQL observable."""
+    """Render a monitor statement as Snowflake would, whitespace-normalised."""
     from snowflake.sqlalchemy import snowdialect
 
     return " ".join(str(statement.compile(dialect=snowdialect.SnowflakeDialect())).split())  # type: ignore[attr-defined]
@@ -60,11 +56,11 @@ def test_volume_statement_counts_rows_with_catalog() -> None:
 
 
 def test_upper_case_target_still_resolves() -> None:
-    """Upper-case is the DOMINANT real-world spelling — it's what the catalog
-    dropdown reports for every Snowflake object — and its emitted SQL changed with
-    #476 (`RETAIL.ORDERS` → `"RETAIL"."ORDERS"`). Both resolve to the same object
-    (Snowflake folds unquoted to upper), but the change must be pinned rather than
-    inferred."""
+    """Upper-case is the DOMINANT real-world spelling — it's what the catalog dropdown reports for
+    every Snowflake object — and its emitted SQL changed with #476 (`RETAIL.ORDERS` →
+    `"RETAIL"."ORDERS"`). Both resolve to the same object (Snowflake folds unquoted to upper),
+    but the change must be pinned rather than inferred.
+    """
     statement = build_monitor_statement(
         "volume", table="ORDERS", schema="RETAIL", catalog=None, config={}
     )
@@ -84,7 +80,8 @@ def test_table_only_qualification() -> None:
 def test_freshness_quotes_a_mixed_case_column() -> None:
     """The #476 defect. A column created as `"Amount"` is stored mixed-case and is
     only reachable quoted; the pre-Core builder interpolated it bare, so Snowflake
-    folded it to AMOUNT and the monitor failed with "invalid identifier"."""
+    folded it to AMOUNT and the monitor failed with "invalid identifier".
+    """
     statement = build_monitor_statement(
         "freshness", table="orders", schema="retail", catalog=None, config={"column": "Amount"}
     )
@@ -95,7 +92,8 @@ def test_lower_case_identifiers_stay_unquoted_so_they_still_fold() -> None:
     """The compatibility half, and the reason quoting is delegated to the dialect
     rather than applied unconditionally: a lower-case name must stay BARE so the
     warehouse folds it (`order_ts` → ORDER_TS) exactly as it did before #476.
-    Quoting everything would have broken every freshness monitor in existence."""
+    Quoting everything would have broken every freshness monitor in existence.
+    """
     statement = build_monitor_statement(
         "freshness", table="orders", schema="retail", catalog=None, config={"column": "order_ts"}
     )
@@ -109,9 +107,7 @@ def test_a_lower_case_reserved_word_is_not_quoted_into_oblivion() -> None:
     to the compiler's defaults, a column stored COPY (created unquoted as `copy`)
     would be emitted `"copy"` and stop resolving — reintroducing the exact #476
     failure for one word, on a path that worked before the fix.
-
-    So the quote decision is ours and depends only on case, never on the dialect's
-    reserved-word set."""
+    """
     statement = build_monitor_statement(
         "freshness", table="orders", schema="retail", catalog=None, config={"column": "copy"}
     )
@@ -121,14 +117,7 @@ def test_a_lower_case_reserved_word_is_not_quoted_into_oblivion() -> None:
 def test_three_part_names_quote_the_catalog_and_schema_per_dialect() -> None:
     """#936: a mixed-case catalog and schema now resolve correctly in the 3-part
     form, not just the table.
-
-    Core's `schema=` slot takes one string, so the `catalog.schema` namespace is
-    still pre-assembled by hand into one string — but each part now goes through
-    the SAME case-based "should I quote" decision as `folding_identifier`
-    (`sql._quote_namespace_part`), and a part that needs quoting is wrapped with
-    the DIALECT's own `identifier_preparer.quote_identifier` rather than a
-    hardcoded `"`. Was the KNOWN LIMIT pinned by this test's predecessor; inverted
-    now that the fix is in."""
+    """
     from snowflake.sqlalchemy import snowdialect
 
     statement = build_monitor_statement(
@@ -146,7 +135,8 @@ def test_three_part_names_stay_bare_when_already_lower_case() -> None:
     """The compatibility half of #936: an already-lower-case catalog/schema must
     stay BARE so the warehouse still folds it, exactly like `folding_identifier`'s
     rule for a plain column — quoting everything unconditionally would break every
-    existing lower-case 3-part target."""
+    existing lower-case 3-part target.
+    """
     from snowflake.sqlalchemy import snowdialect
 
     statement = build_monitor_statement(
@@ -165,7 +155,8 @@ def test_three_part_names_stay_bare_when_already_lower_case() -> None:
 def test_three_part_names_quote_with_databricks_backticks_too() -> None:
     """Same #936 fix, Unity Catalog's dialect: the catalog/schema quote character
     must come from THIS dialect's `identifier_preparer`, not a hardcoded `"` —
-    Databricks reads `"..."` as a string literal, not an identifier."""
+    Databricks reads `"..."` as a string literal, not an identifier.
+    """
     from databricks.sqlalchemy.base import DatabricksDialect
 
     statement = build_monitor_statement(
@@ -181,9 +172,8 @@ def test_three_part_names_quote_with_databricks_backticks_too() -> None:
 
 
 def test_catalog_without_dialect_is_rejected() -> None:
-    # A live dialect is required to quote the pre-assembled catalog.schema string
-    # (#936) — a catalog with no dialect is a caller bug, not user config, so it
-    # is not wrapped as MonitorConfigError like the identifier-shape checks below.
+    # A live dialect is required to quote the pre-assembled catalog.schema string (#936) — a catalog
+    # with no dialect is a caller bug, not user config.
     with pytest.raises(ValueError, match="no dialect"):
         build_monitor_statement("volume", table="orders", schema="sales", catalog="main", config={})
 
@@ -192,7 +182,8 @@ def test_quoting_follows_the_dialect_not_a_hardcoded_character() -> None:
     """Unity Catalog quotes with backticks and reads `"..."` as a STRING LITERAL,
     so hand-rolled `"`-quoting would not have fixed #476 — it would have silently
     turned the column reference into a constant. Pinning both dialects keeps the
-    fix from regressing into a hardcoded quote char."""
+    fix from regressing into a hardcoded quote char.
+    """
     from databricks.sqlalchemy.base import DatabricksDialect
 
     statement = build_monitor_statement(
@@ -225,7 +216,8 @@ def test_bad_identifiers_never_reach_the_emitted_sql(bad: str) -> None:
     """Belt-and-braces on the widening: Core quotes, so a rejected name must be
     refused at the allowlist rather than 'made safe' by quoting — otherwise the
     catalog.schema path (deliberately emitted UNQUOTED so the dots separate parts)
-    would become an interpolation hole."""
+    would become an interpolation hole.
+    """
     with pytest.raises(MonitorConfigError):
         build_monitor_statement("volume", table="t", schema=bad, catalog=None, config={})
     with pytest.raises(MonitorConfigError):
@@ -233,9 +225,7 @@ def test_bad_identifiers_never_reach_the_emitted_sql(bad: str) -> None:
 
 
 def test_unknown_kind_raises() -> None:
-    # A kind that is not in the registry at all. (`anomaly` used to stand in here,
-    # but it is a REGISTERED stateful kind since #593 — it refuses for a different
-    # reason, "no scalar-SQL form", which the test below pins separately.)
+    # A kind that is not in the registry at all.
     with pytest.raises(MonitorConfigError, match="unknown monitor kind"):
         build_monitor_statement("not_a_kind", table="T", schema=None, catalog=None, config={})
 
@@ -244,7 +234,8 @@ def test_unknown_kind_raises() -> None:
 def test_stateful_kinds_have_no_scalar_sql_form(kind: str) -> None:
     """A stateful kind is registered (so it is authorable and dispatchable) but has
     no `build_statement` — asking for one must refuse rather than fall through to a
-    sibling kind's query."""
+    sibling kind's query.
+    """
     with pytest.raises(MonitorConfigError, match="no scalar-SQL form"):
         build_monitor_statement(kind, table="T", schema=None, catalog=None, config={})
 
@@ -328,9 +319,7 @@ def test_volume_bad_range_raises(config: dict[str, object]) -> None:
 def test_monitor_kinds_exposed() -> None:
     assert monitors.MONITOR_KINDS == ("freshness", "volume", "schema_drift", "anomaly")
     assert monitors.SCALAR_MONITOR_KINDS == ("freshness", "volume")
-    # The partition is DERIVED from `build_statement is None`, not hand-listed —
-    # this pins that registering `anomaly` with no statement builder is the single
-    # step that routed it to the stateful executor path (#593).
+    # The partition is DERIVED from `build_statement is None`, not hand-listed.
     assert monitors.STATEFUL_MONITOR_KINDS == ("schema_drift", "anomaly")
 
 
@@ -338,9 +327,8 @@ def test_monitor_kinds_exposed() -> None:
 
 
 def test_evaluate_monitors_runs_each_in_order() -> None:
-    # evaluate_monitors stamps its own `now`, so the freshness timestamp must be
-    # relative to real now (not the fixed _NOW). A fake fetch_scalar keys off the
-    # statement: max(...) → a ~10h-old timestamp, count → a count.
+    # evaluate_monitors stamps its own `now`, so the freshness timestamp must be relative to real
+    # now (not the fixed _NOW).
     def fetch(statement: Any) -> object:
         is_max = "max" in str(statement).lower()
         return datetime.now(UTC) - timedelta(hours=10) if is_max else 1500
@@ -382,24 +370,12 @@ def test_evaluate_monitors_isolates_a_query_error() -> None:
         monitors=[MonitorSpec(kind="freshness", config={"column": "nope"})],
     )
     assert out[0].errored is True
-    # Classified, not raw (#900) — see the leak test below for why. The message is
-    # a fixed string chosen by category, so assert it IS one of those constants
-    # rather than that it contains the driver's wording.
+    # Classified, not raw (#900) — see the leak test below for why.
     assert out[0].error_message == classify_failure_reason(RuntimeError("invalid identifier"))
 
 
 def test_monitor_error_message_never_carries_raw_exception_text() -> None:
-    """A per-monitor failure must not write the driver's message into a result row (#900).
-
-    `error_message` flows into `results.observed_value` -> the run-detail API -> the
-    UI. That sink never passes the logger-level scrubber (CLAUDE.md §10 protects
-    logs, not DB columns), and Azure storage exceptions embed the full SAS-signed
-    URL in their text (#828) — so a raw `str(exc)` here persists a live credential
-    where any viewer of the run can read it.
-
-    Asserted on the pipeline, not on the classifier: this is the #849 lesson —
-    testing the scrub helper proves nothing about the path that forgot to call it.
-    """
+    """A per-monitor failure must not write the driver's message into a result row (#900)."""
     secret = "sig=abcdef1234567890SECRETSIGNATURE%3D"
 
     def fetch(_statement: Any) -> object:
@@ -514,9 +490,6 @@ def test_freshness_accepts_an_iso_string_scalar() -> None:
     """The Databricks SQL connector returns a TIMESTAMP column's MAX as a **str**,
     so every Unity Catalog freshness monitor errored with "is not a date/timestamp
     (got str)" — a documented-supported feature that had never once worked.
-
-    No unit test could have caught it: the type comes from the driver, and every
-    fixture here hands in a real datetime. It took running one against live UC.
     """
     ten_hours_ago = (_NOW - timedelta(hours=10)).replace(tzinfo=None)
     out = monitor_outcome(
@@ -541,14 +514,16 @@ def test_freshness_accepts_an_iso_string_with_an_offset() -> None:
 def test_freshness_refuses_an_unparseable_string(junk: str) -> None:
     """`fromisoformat`, not a permissive parser: a lenient one would invent an
     instant from junk, which is the flat-file epoch trap in another costume — a
-    confident wrong answer beats no answer only if it is right."""
+    confident wrong answer beats no answer only if it is right.
+    """
     with pytest.raises(MonitorConfigError, match="not a parseable timestamp"):
         monitor_outcome("freshness", scalar=junk, config={"column": "ts"}, now=_NOW)
 
 
 def test_the_error_names_the_source_not_a_fake_column() -> None:
     """The message used to read `freshness column 'MAX(created_ts)'` — the source
-    descriptor rendered where a column name belongs. Live output, so worth fixing."""
+    descriptor rendered where a column name belongs. Live output, so worth fixing.
+    """
     with pytest.raises(MonitorConfigError, match=r"freshness value from MAX\(ts\)"):
         monitor_outcome("freshness", scalar=12345, config={"column": "ts"}, now=_NOW)
 
@@ -560,9 +535,6 @@ def test_an_unparseable_freshness_cell_is_not_echoed_in_the_message() -> None:
     """The message is safe-marked, so it persists VERBATIM into `results` and is
     rendered in the UI, alerts and MCP output — none of which consult the suite's
     column policy. The offending cell therefore must not be in it.
-
-    Asserted on the persisted text, not on the exception object: the failure mode
-    is a value reaching a sink, so the assertion has to be about the sink.
     """
     outcomes = monitors.run_monitor_specs(
         lambda _spec: "not-a-timestamp-at-all",
@@ -582,7 +554,8 @@ def test_an_unparseable_freshness_cell_is_not_echoed_in_the_message() -> None:
 
 def test_the_message_still_names_the_source_so_the_error_stays_actionable() -> None:
     """Removing the value must not turn this into "something went wrong". The user
-    needs to know WHICH column, which is config and safe to state."""
+    needs to know WHICH column, which is config and safe to state.
+    """
     (outcome,) = monitors.run_monitor_specs(
         lambda _spec: "13/07/2026",
         monitors=[MonitorSpec(kind=monitors.FRESHNESS, config={"column": "order_ts"})],
@@ -595,7 +568,8 @@ def test_the_message_still_names_the_source_so_the_error_stays_actionable() -> N
 def test_a_non_string_scalar_carries_no_cell_at_all() -> None:
     """The type-mismatch branch names only the TYPE, never the value, so there is
     nothing to redact and `observed_value` stays empty. Pinned so a later edit
-    doesn't quietly start echoing there instead."""
+    doesn't quietly start echoing there instead.
+    """
     (outcome,) = monitors.run_monitor_specs(
         lambda _spec: 12345,
         monitors=[MonitorSpec(kind=monitors.FRESHNESS, config={"column": "order_ts"})],
@@ -645,20 +619,23 @@ def test_anomaly_rejects_malformed_config(config: dict[str, Any]) -> None:
 
 def test_anomaly_accepts_an_integral_float_window() -> None:
     """A JSON client can send a whole number as 14.0; that is the same window, and
-    rejecting it would be a 422 the author cannot act on."""
+    rejecting it would be a 422 the author cannot act on.
+    """
     assert monitors.anomaly_params(_anomaly_config(window=14.0)).window == 14
 
 
 def test_anomaly_rejecting_an_inapplicable_column_names_the_reason() -> None:
     """Silently ignoring it would leave the author believing the anomaly watches
-    that column when it watches COUNT(*)."""
+    that column when it watches COUNT(*).
+    """
     with pytest.raises(MonitorConfigError, match="row_count"):
         monitors.anomaly_params(_anomaly_config(column="loaded_at"))
 
 
 def test_anomaly_min_points_default_never_exceeds_a_small_window() -> None:
     """window=5 with the default min_points of 7 would skip forever. The default
-    clamps instead of producing a config that validates and never fires."""
+    clamps instead of producing a config that validates and never fires.
+    """
     params = monitors.anomaly_params(_anomaly_config(window=5))
     assert params.min_points == 5
 
@@ -673,7 +650,8 @@ def test_anomaly_freshness_metric_validates_and_keeps_the_column() -> None:
 
 def test_anomaly_retention_is_seven_windows_when_seasonal() -> None:
     """Seasonal scoring uses only same-weekday observations, so the raw ring has to
-    be seven times larger for the window to fill at all."""
+    be seven times larger for the window to fill at all.
+    """
     assert monitors.anomaly_params(_anomaly_config(window=14)).retained_observations == 14
     assert (
         monitors.anomaly_params(_anomaly_config(window=14, seasonality=True)).retained_observations
@@ -708,7 +686,8 @@ def test_anomaly_outcome_metric_is_the_z_score() -> None:
 def test_anomaly_cold_start_is_a_skip_not_a_pass() -> None:
     """The whole point of the kind's cold-start rule: a monitor that has learned
     nothing has asserted nothing, and a synthetic pass would count as a clean
-    check in the health score."""
+    check in the health score.
+    """
     outcome = monitor_outcome(
         "anomaly",
         scalar={"insufficient_history": True, "points": 3, "min_points": 7},
@@ -738,7 +717,8 @@ def test_anomaly_outcome_expected_value_carries_the_freshness_column() -> None:
 @pytest.mark.parametrize("payload", ["not-a-dict", 42, None, {"z_score": None}, {"z_score": True}])
 def test_anomaly_outcome_rejects_a_malformed_payload(payload: Any) -> None:
     """The executor is the only producer, but a payload without a numeric z must
-    raise rather than band `None` (or a bool, which is an int subclass) as a metric."""
+    raise rather than band `None` (or a bool, which is an int subclass) as a metric.
+    """
     with pytest.raises(MonitorConfigError):
         monitor_outcome("anomaly", scalar=payload, config=_anomaly_config(), now=_NOW)
 
@@ -752,7 +732,8 @@ def test_anomaly_outcome_rejects_a_malformed_payload(payload: Any) -> None:
 )
 def test_row_count_accepts_every_driver_spelling(scalar: Any, expected: int) -> None:
     """Snowflake returns a COUNT as Decimal, Databricks as int — the shared helper
-    is what keeps volume and anomaly accepting exactly the same set (#953)."""
+    is what keeps volume and anomaly accepting exactly the same set (#953).
+    """
     assert monitors.row_count_from_scalar(scalar) == expected
 
 

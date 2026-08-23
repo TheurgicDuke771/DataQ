@@ -1,15 +1,4 @@
-# DataQ frontend on Container Apps (ADR 0028 §5 cutover — replaces the Static Web
-# App, swa.tf). ONE generic nginx image (ghcr.io/theurgicduke771/dataq-frontend),
-# pulled anonymously (public GHCR package, ADR 0023). Nothing is baked in: the SPA
-# auth config + the /api proxy upstream are injected at RUNTIME via the DATAQ_*
-# env below (nginx envsubst → /config.js + the proxy_pass upstream). This is why
-# SWA couldn't host it — a static host can't inject runtime config.
-#
-# External ingress on 8080. The nginx conf reverse-proxies /api + /mcp to the api
-# Container App (same-origin, no CORS — the api keeps CORS_ALLOW_ORIGINS empty),
-# so this app is the **single public product surface**. The api is INTERNAL-only
-# (containerapps.tf), reached over the in-environment endpoint; external
-# orchestrator webhooks POST to this frontend (PUBLIC_BASE_URL) and are proxied in.
+# DataQ frontend on Container Apps (ADR 0028 §5 cutover — replaces the Static Web App, swa.tf).
 
 resource "azurerm_container_app" "frontend" {
   name                         = "dataq-app-frontend"
@@ -36,19 +25,15 @@ resource "azurerm_container_app" "frontend" {
       cpu    = 0.25
       memory = "0.5Gi"
 
-      # Proxy upstream — the api Container App's INTERNAL in-environment FQDN over
-      # plain HTTP (ACA's documented internal pattern; see local.api_internal_url).
-      # nginx forwards the upstream host as Host so Envoy routes it to the api.
-      # Internal = no public round-trip, and traffic never leaves the environment.
+      # Proxy upstream — the api Container App's INTERNAL in-environment FQDN over plain HTTP
+      # (ACA's documented internal pattern; see local.api_internal_url). nginx forwards the
+      # upstream host as Host so Envoy routes it to the api.
       env {
         name  = "DATAQ_API_UPSTREAM"
         value = local.api_internal_url
       }
 
-      # Runtime auth config (generic DATAQ_AUTH_* contract, ADR 0028). Real OIDC
-      # against Azure AD: mode=oidc + the SPA client + the tenant v2 authority +
-      # the full API scope. Validated end-to-end against this exact tenant in the
-      # #504 stage-3 pass. `mode=oidc` (anything != "bypass") keeps bypass OFF.
+      # Runtime auth config (generic DATAQ_AUTH_* contract, ADR 0028).
       env {
         name  = "DATAQ_AUTH_MODE"
         value = "oidc"
@@ -68,12 +53,7 @@ resource "azurerm_container_app" "frontend" {
         value = "api://${azuread_application.api.client_id}/${var.azure_api_scope}"
       }
 
-      # CSP connect-src tail (#1387). The ORIGIN only — deliberately not
-      # DATAQ_AUTH_AUTHORITY, which carries a path (`/<tenant>/v2.0`). A CSP
-      # source matches by path prefix, and Azure AD's token endpoint lives at
-      # `/<tenant>/oauth2/v2.0/token`, outside that prefix — so reusing the
-      # authority here would let discovery through and then block the code
-      # exchange. One host covers discovery, JWKS and token for Azure AD.
+      # CSP connect-src tail (#1387).
       env {
         name  = "DATAQ_CSP_CONNECT_SRC"
         value = "https://login.microsoftonline.com"
@@ -81,9 +61,8 @@ resource "azurerm_container_app" "frontend" {
     }
   }
 
-  # The Deploy workflow rolls the frontend image out-of-band (`az containerapp
-  # update --image <sha>`), same as the backend apps — ignore the image so an apply
-  # never resets it to var.frontend_image_tag. The first create still uses that tag.
+  # The Deploy workflow rolls the frontend image out-of-band (`az containerapp update --image
+  # <sha>`), same as the backend apps.
   lifecycle {
     ignore_changes = [template[0].container[0].image]
   }

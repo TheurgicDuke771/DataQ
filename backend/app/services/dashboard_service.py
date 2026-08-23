@@ -1,12 +1,5 @@
 """Dashboard aggregates — the read model behind the Enhanced Monitoring
 Dashboard (Week 6, ADR 0022).
-
-Every aggregate is **suite-scoped** through the same owned-or-shared filter the
-runs read model uses (`suite_service.accessible_suite_ids`), so the dashboard can
-never surface a run/result from a suite the caller can't see — the same reason
-reading Postgres directly (a Grafana panel) is rejected as the product surface
-(ADR 0018). Aggregation is done in SQL over the persisted `status` column
-(ADR 0005 health score) — never by reducing JSONB in Python (ADR 0012).
 """
 
 from __future__ import annotations
@@ -28,10 +21,8 @@ from backend.app.services.rollup import (
     performance_state,
 )
 
-# The ADR-0005 score math now lives in `services/rollup.py`, shared with the asset
-# view and the #889 scorecard (one helper, not one-per-consumer). Re-exported here
-# because the dashboard API/MCP layers and its tests import them from this module,
-# and because "the dashboard's health score" is still a meaningful name for them.
+# The ADR-0005 score math now lives in `services/rollup.py`, shared with the asset view and the #889
+# scorecard (one helper, not one-per-consumer).
 __all__ = [
     "DashboardSummary",
     "Kpis",
@@ -53,14 +44,10 @@ class Kpis:
     pass_rate: float | None
     total_runs: int
     active_connections: int
-    # ── #352 enrichments ──
-    # Mean run duration over the window (finished runs only); None when no run
-    # in the window finished.
+    # ── #352 enrichments ── Mean run duration over the window (finished runs only); None when no
+    # run in the window finished.
     avg_duration_ms: float | None = None
-    # Period-over-period deltas vs the previous equivalent window. Score/rate
-    # deltas are in POINTS (both are already percentages); runs/duration deltas
-    # are % change. None whenever either side has no data — an honest blank,
-    # never a fabricated 0 (KPI honesty, ADR 0022/0018).
+    # Period-over-period deltas vs the previous equivalent window.
     health_score_delta: float | None = None
     pass_rate_delta: float | None = None
     total_runs_delta_pct: float | None = None
@@ -102,12 +89,6 @@ def _status_counts(
 ) -> dict[str, int]:
     """Histogram of result statuses across accessible suites in ``[since, until)``
     (open-ended when ``until`` is None).
-
-    Counts only runs in `AGGREGATABLE_RUN_STATUSES` (#318). This restores what the
-    query used to mean rather than changing it: before per-phase commits, a run
-    that was still going or had failed contributed no rows here, so "every result
-    in the window" and "every result of a completed run" were the same set. They
-    are not any more, and the KPI cards and health score want the second.
     """
     stmt = (
         select(Result.status, func.count())
@@ -132,10 +113,6 @@ def _run_trend(
 ) -> list[TrendPoint]:
     """Per-day succeeded/failed run counts, zero-filled across the window so the
     chart has a contiguous x-axis even on quiet days.
-
-    Days are bucketed in UTC (``timezone('UTC', …)``) so SQL bucketing agrees
-    with the UTC zero-fill cursor below regardless of the DB session timezone —
-    otherwise a run near midnight could bucket into a day the cursor never emits.
     """
     day = func.date(func.timezone("UTC", Run.created_at))
     stmt = (
@@ -170,24 +147,9 @@ def _run_trend(
 def _suite_performance(
     session: Session, accessible: Select[tuple[uuid.UUID]]
 ) -> list[SuitePerformance]:
-    """Per-suite health from each suite's **latest** run, worst (lowest) first.
-
-    A suite whose latest run has no *countable* results is omitted — there is no
-    health to show. Since #318 that means the latest run is not in
-    `AGGREGATABLE_RUN_STATUSES`: still running (a partial set), or failed/
-    cancelled (which should have none, and whose stragglers must not be scored).
-    Without the status predicate a 30-check suite would render `critical` off its
-    first committed phase for the whole rest of the run.
-    """
-    # The shared latest-run-per-suite statement (#889) — kept in SQL here and
-    # inner-joined, which is what drops a suite whose latest run wrote no results.
-    #
-    # Narrowed to the two columns this join needs. The shared statement selects the
-    # whole Run entity (the asset view materialises it), and DISTINCT ON sorts
-    # EVERY run row for accessible suites, not just the surviving ones — so
-    # carrying `triggered_by`/`failure_reason` through would inflate the sort tuple
-    # from ~32 bytes to ~800 and raise work_mem spill risk on a large runs table.
-    # `with_only_columns` keeps the DISTINCT ON and ORDER BY intact.
+    """Per-suite health from each suite's **latest** run, worst (lowest) first."""
+    # The shared latest-run-per-suite statement (#889) — kept in SQL here and inner-joined, which is
+    # what drops a suite whose latest run wrote no results.
     latest = (
         latest_runs_per_suite_stmt(accessible).with_only_columns(Run.id, Run.suite_id).subquery()
     )
@@ -250,7 +212,8 @@ def _avg_duration_ms(
 ) -> float | None:
     """Mean run duration (finished - started, ms) over runs created in the
     window. Runs still in flight / never started are excluded; ``None`` when
-    nothing in the window finished (an honest blank, not 0)."""
+    nothing in the window finished (an honest blank, not 0).
+    """
     duration_s = func.extract("epoch", Run.finished_at - Run.started_at)
     stmt = (
         select(func.avg(duration_s))
@@ -280,7 +243,8 @@ def _delta_points(current: float | None, previous: float | None) -> float | None
 
 def _delta_pct(current: float | None, previous: float | None) -> float | None:
     """% change vs the previous window; ``None`` when previous is missing/zero
-    (a delta against nothing is meaningless, not +∞)."""
+    (a delta against nothing is meaningless, not +∞).
+    """
     if current is None or previous is None or previous == 0:
         return None
     return round((current - previous) / previous * 100.0, 1)
@@ -291,7 +255,8 @@ def dashboard_summary(
 ) -> DashboardSummary:
     """KPIs + run trend + per-suite performance for the caller's accessible suites
     over the trailing ``window_days`` — or every suite when ``include_all`` (the
-    workspace-admin view, ADR 0027)."""
+    workspace-admin view, ADR 0027).
+    """
     accessible = suite_service.accessible_suite_ids(user_id, include_all=include_all)
     since = _window_start(window_days)
     # Previous equivalent window, for period-over-period deltas (#352):

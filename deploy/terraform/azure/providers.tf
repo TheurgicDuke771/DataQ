@@ -1,8 +1,4 @@
-# Provider config. No credentials live here — auth comes from the ambient `az
-# login` session (Owner on the subscription) or ARM_*/AZURE_* env vars. This
-# stack applies as the Owner user (not the harness's Contributor-only SP), so it
-# CAN register resource providers (rp.tf) and create role assignments
-# (identity.tf / github_oidc.tf).
+# Provider config.
 
 provider "azurerm" {
   features {
@@ -17,9 +13,7 @@ provider "azurerm" {
 }
 
 provider "azuread" {
-  # Tenant comes from the az login session (Default Directory). Creating the
-  # GitHub-deploy app registration needs app-registration rights — fine as the
-  # directory owner.
+  # Tenant comes from the az login session (Default Directory).
 }
 
 provider "random" {}

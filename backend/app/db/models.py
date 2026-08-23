@@ -35,64 +35,37 @@ CONNECTION_TYPES = (
     "dbt",
 )
 RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
-# Result statuses. The four severity tiers (ADR 0005) are health-score-bearing —
-# the score aggregate sums their weights over N. The two operational statuses
-# (#122) are orthogonal: 'skip' = not evaluated, 'error' = evaluation threw
-# (distinct from 'fail', a successful evaluation that breached). Operational
-# statuses carry NO penalty weight and MUST be excluded from the health-score N
-# (i.e. aggregate WHERE status IN the four tiers only).
+# Severity tiers (ADR 0005) bear health-score weight; operational statuses (#122) carry NO weight
+# and MUST be excluded from the health-score N.
 RESULT_SEVERITY_TIERS = ("pass", "warn", "fail", "critical")
-# Backwards-compatible private alias (the tuple was private until #889 needed it
-# shared with the rollup module — the vocabulary is the same object).
+# Backwards-compatible alias (was private until #889).
 _RESULT_SEVERITY_TIERS = RESULT_SEVERITY_TIERS
 RESULT_OPERATIONAL_STATUSES = ("skip", "error")
 RESULT_STATUSES = _RESULT_SEVERITY_TIERS + RESULT_OPERATIONAL_STATUSES
-# Failing severity tiers (the non-`pass` tiers) → rank, worst last. The single
-# source for the discrete "which run outcome is worse" ordering shared by alert
-# dedup, the RunReport builder, and run-outcome rollups (#655) — derived from the
-# tier vocabulary above so it can't drift. Deliberately distinct from the
-# health-penalty *weights* in dashboard_service (ADR 0005), which weight `pass`
-# too and are a separate concept.
+# Failing tiers → rank, worst last — the ONE shared run-outcome ordering (#655); distinct from the
+# ADR 0005 health-penalty weights in dashboard_service.
 SEVERITY_RANK: dict[str, int] = {
     tier: rank for rank, tier in enumerate((t for t in _RESULT_SEVERITY_TIERS if t != "pass"), 1)
 }
-# The failing-tier set (keys of SEVERITY_RANK, worst last): the tiers that count as
-# "not clean" for alerting. Lives here with the rest of the severity vocabulary so
-# the set and the rank order have one source; the alerting layer imports it.
+# The failing-tier set, single-sourced with the rank order; alerting imports it.
 FAILING_TIERS: tuple[str, ...] = tuple(SEVERITY_RANK)
 
 
 def worst_severity(statuses: Iterable[str]) -> str | None:
-    """The highest failing tier present in ``statuses`` (``critical`` > ``fail`` >
-    ``warn``), or ``None`` when none breached — `pass`/`skip`/`error` never rank.
-
-    The single place the shared severity order is applied to pick a run's worst
-    outcome (#655), used by the RunReport builder and the run-outcome rollups so
-    they don't each re-implement the max-by-rank loop.
+    """Highest failing tier present (``critical`` > ``fail`` > ``warn``) or ``None``
+    when none breached — `pass`/`skip`/`error` never rank (#655).
     """
     present = [s for s in statuses if s in FAILING_TIERS]
     return max(present, key=lambda s: SEVERITY_RANK[s]) if present else None
 
 
-# Monitor-kind discriminator (ADR 0012; `comparison` reserved by ADR 0014,
-# modeled by ADR 0015). v1 wrote only 'expectation'; freshness/volume shipped
-# post-v1, `comparison` authors as of ADR 0015 (runner in #794); the rest are
-# constraint-valid but unused.
+# Monitor-kind discriminator (ADR 0012; `comparison` per ADR 0014/0015).
 CHECK_KINDS = ("expectation", "freshness", "volume", "schema_drift", "anomaly", "comparison")
 COMPARISON_KIND = "comparison"
-# Check engines (ADR 0036) — WHO evaluates a check, orthogonal to `kind` (what
-# is measured). `gx` is universal; native engines are unlocked per connection
-# type and validated per connection instance (`datasources.engines`). The full
-# vocabulary is constraint-valid from day one so native rows need no migration,
-# but which values a save accepts is decided by `engines_for`, never this tuple.
+# Check engines (ADR 0036) — WHO evaluates, orthogonal to `kind`.
 CHECK_ENGINES = ("gx", "dmf", "dqx", "dataplex")
 GX_ENGINE = "gx"
-# DQ dimensions (ADR 0038) — the *semantic quality aspect* a check measures, a
-# third axis orthogonal to `kind` (how the monitor works) and `engine` (what
-# evaluates it). Closed vocabulary on purpose: coverage reporting ("this asset
-# has no Timeliness checks") is meaningless against a set we don't control.
-# NULL is a real state — see `check_dimension.derive_dimension`, which is
-# deliberately partial.
+# DQ dimensions (ADR 0038) — third axis, orthogonal to `kind` and `engine`.
 DQ_DIMENSIONS = (
     "accuracy",
     "completeness",
@@ -105,35 +78,21 @@ DQ_DIMENSIONS = (
 PIPELINE_RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 ORCHESTRATION_PROVIDERS = ("adf", "airflow", "dbt")
 PERMISSIONS = ("view", "edit", "admin")
-# Coarse workspace roles (ADR 0033) — the axis ORTHOGONAL to `PERMISSIONS`
-# above. A role says what *kind* of user you are workspace-wide; a share says
-# what you may touch on one suite. Neither replaces the other: a Member with no
-# share on a suite still cannot see it. Deliberately a fixed enum on `users`,
-# not a roles table — groups/custom roles are recorded as deferred in the ADR.
-# Named Viewer (not Guest) because `AZURE_ALLOW_GUEST_USERS` already means
-# Entra B2B guests and two "guest" concepts would collide.
-# The singletons first, then the vocabulary built FROM them — so each literal
-# appears exactly once. Spelling "admin"/"member" both in the tuple and in the
-# constant beside it is how a rename ends up half-applied, and it also left
-# `ADMIN_ROLE` unreferenced in its own module (CodeQL py/unused-global-variable),
-# which is a fair complaint about the shape even though three modules import it.
+# Coarse workspace roles (ADR 0033) — orthogonal to per-suite PERMISSIONS; neither replaces the
+# other.
 ADMIN_ROLE = "admin"
 DEFAULT_WORKSPACE_ROLE = "member"
 VIEWER_ROLE = "viewer"
 WORKSPACE_ROLES = (ADMIN_ROLE, DEFAULT_WORKSPACE_ROLE, VIEWER_ROLE)
 ENVS = ("dev", "qa", "uat", "prod")
-# Per-suite alert delivery threshold (suite_notifications.alert_on). 'fail' =
-# fail/critical only, 'warn' = warn+, 'always' = every terminal run.
+# Per-suite alert threshold: 'fail' = fail/critical only, 'warn' = warn+, 'always' = all.
 ALERT_ON_POLICIES = ("fail", "warn", "always")
 
-# Incident lifecycle (ADR 0034 decision 4, #761). `open → acknowledged → resolved`;
-# a resolved row is never mutated back to open (reopen = a NEW incident linked via
-# `prior_incident_id`). The two non-resolved states are the "active" set the dedup
-# guarantee keys on: at most one active incident per (asset_id, check_id).
+# Incident lifecycle (ADR 0034 decision 4, #761): open → acknowledged → resolved; a resolved row
+# never reopens (a new incident links via `prior_incident_id`).
 INCIDENT_STATUSES = ("open", "acknowledged", "resolved")
 INCIDENT_ACTIVE_STATUSES = ("open", "acknowledged")
-# Who resolved an incident — a user (manual ack/resolve) or the engine (first
-# passing result for the pair, per-suite configurable). NULL until resolved.
+# Who resolved: a user, or the engine on the first passing result. NULL until resolved.
 INCIDENT_RESOLVED_BY = ("user", "auto")
 
 
@@ -164,42 +123,13 @@ def _in_check(column: str, values: tuple[str, ...], name: str) -> CheckConstrain
 
 
 class User(Base):
-    """A human identity. One row per person, keyed on their normalized email.
-
-    `aad_object_id` is **nullable** (ADR 0032 decision 6, #735): an email-OTP
-    user has no Azure AD identity. Its unique constraint stays — Postgres treats
-    NULLs as distinct, so any number of OTP users coexist while AAD users remain
-    one row per object id.
-
-    Despite the name, `aad_object_id` now holds the stable subject claim from
-    **any** configured OIDC issuer, not only Azure AD (ADR 0026 amendment,
-    provider-neutral auth) — kept as-is rather than renamed, since a rename would
-    be a backward-incompatible schema change for zero behavioral gain (its bare
-    `UNIQUE` constraint already gives cross-issuer uniqueness; real IdPs mint
-    opaque/random subject ids, so a collision between two different issuers'
-    values is not a realistic risk). `oidc_issuer` disambiguates *which* issuer
-    authenticated this row — nullable, and self-healing: both the Azure and the
-    generic-OIDC login paths write it on every login, so pre-existing rows pick
-    it up on their next sign-in rather than needing a backfill. A `NULL` issuer
-    on a row with a non-`NULL` `aad_object_id` reads as "a legacy Azure row that
-    has not yet re-logged-in" — not migrated, and not ambiguous with an OTP row
-    (which has `aad_object_id IS NULL` too, so it's covered by the same read).
+    """A human identity — one row per normalized email. `aad_object_id` is nullable
+    (OTP users have none, ADR 0032) and despite the name holds ANY OIDC issuer's
+    subject claim (a rename is a breaking schema change); `oidc_issuer` disambiguates.
     """
 
     __tablename__ = "users"
-    # Case-insensitive email uniqueness, because email is the identity key that an
-    # AAD sign-in and an OTP sign-in join on (ADR 0032 decision 6 — "one user row
-    # per normalized email"). `lower(...)` is the same normalization
-    # `Settings.is_admin_email` applies to WORKSPACE_ADMIN_EMAILS (see
-    # `core/config.py` — strip + lower), so the identity surface has one rule; the
-    # index cannot express the *strip* half, which stays application-level.
-    #
-    # A unique INDEX, not a unique constraint — Postgres cannot express a UNIQUE
-    # *constraint* over an expression at all, only an index. The name must match
-    # `uq_users_email_lower` in migration 7d25617cfaf0 exactly, so `create_all` test
-    # databases and production carry the same object under the same name (the #990
-    # parity check compares the two; see `ApiKey.__table_args__` below for why the
-    # name — not just the enforcement — is what matters).
+    # lower(email) unique INDEX — Postgres can't express a unique constraint over an expression.
     __table_args__ = (
         Index("uq_users_email_lower", text("lower(email)"), unique=True),
         _in_check("role", WORKSPACE_ROLES, "role_valid"),
@@ -207,37 +137,17 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     aad_object_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
-    # The OIDC issuer that authenticated this row (e.g. the Azure AD v2 tenant
-    # issuer, or a generic OIDC provider's `iss` claim) — see the class docstring.
-    # No uniqueness/index of its own; it's a descriptive pairing with
-    # `aad_object_id`, not an identity key by itself.
+    # Issuer that authenticated this row; descriptive pairing, not an identity key.
     oidc_issuer: Mapped[str | None] = mapped_column(String(512), nullable=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(256))
-    # True once a human has explicitly set their own name via `PATCH /me`
-    # (#1139) — distinguishes that from a name merely SEEDED by an AAD token
-    # claim or the OTP JIT-provisioning path. `_upsert_user`/`_claim_unlinked_user`
-    # (core/auth.py) sync `display_name` from the AAD claim only while this is
-    # False; once True, an AAD login never overwrites the self-service value.
-    # migration 6230293aea96.
+    # True once self-set via PATCH /me (#1139); while False, sign-in paths may sync the name from
+    # token claims — once True they never overwrite it.
     display_name_override: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
-    # The coarse workspace role — `admin | member | viewer` (ADR 0033, #740).
-    # `server_default 'member'` is what makes the migration additive: every row
-    # that predates the column lands on the tier that matches what it could
-    # already do (see the migration's docstring for why that is the *correct*
-    # historical value and not a placeholder).
-    #
-    # This column is the STORED half of workspace-admin; the other half is the
-    # `WORKSPACE_ADMIN_EMAILS` allowlist, which ADR 0033 decision 6 demotes to a
-    # bootstrap seed + lockout break-glass. `core.auth.is_workspace_admin` reads
-    # `role == 'admin' OR allowlisted`, so an existing deployment upgrades with
-    # zero config change. The sign-in paths write `admin` through on an
-    # allowlisted email, and — deliberately — **only ever promote**: an upsert
-    # never writes a role *down*, so dropping an env entry after the in-app
-    # admin exists cannot silently demote them out from under the last-admin
-    # guard (#742), which counts stored roles only.
+    # Stored half of workspace-admin (ADR 0033, #740); WORKSPACE_ADMIN_EMAILS is only a bootstrap
+    # seed + break-glass.
     role: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default=text(f"'{DEFAULT_WORKSPACE_ROLE}'")
     )
@@ -247,25 +157,14 @@ class User(Base):
 
 
 class ApiKey(Base):
-    """A DataQ-issued personal access token (PAT) — ADR 0026 phase 1 (#461).
-
-    The credential is a high-entropy random token shown once at creation; only
-    its SHA-256 hex digest is stored (a verifier secret — never retrievable, so
-    deliberately NOT in the SecretStore). The key authenticates as its owning
-    user through the same `get_current_user` seam as Azure AD, inheriting the
-    owner's per-suite grants — no separate authz model. `ondelete=CASCADE` ties
-    the lifecycle to the owner: deleting the user kills their keys.
+    """A DataQ-issued PAT (ADR 0026 phase 1, #461). Only the SHA-256 digest is stored
+    (never in the SecretStore); authenticates as its owner through `get_current_user`,
+    inheriting the owner's grants — no separate authz model.
     """
 
     __tablename__ = "api_keys"
-    # The uniqueness of `key_hash` is enforced by a unique INDEX, not a unique
-    # constraint — because that is what the migration actually created, and the
-    # model was the thing that was wrong (found by #990's parity check). The two
-    # are interchangeable for enforcement but NOT for identity: a constraint would
-    # be named `api_keys_key_hash_key` in every `create_all` test database while
-    # production carries `uq_api_keys_key_hash`, so any code keying on the
-    # constraint name — as `connection_service._conflict_from_integrity_error`
-    # does for connections — would behave differently in tests than in production.
+    # Unique INDEX, not constraint: a constraint would be auto-named differently in create_all test
+    # DBs vs prod (#990 parity), and code keying on constraint names would diverge.
     __table_args__ = (Index("uq_api_keys_key_hash", "key_hash", unique=True),)
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -273,10 +172,8 @@ class ApiKey(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    # First characters of the token (e.g. `dq_live_ab12`) — safe to list/log.
+    # First characters of the token (`dq_live_ab12`) — safe to list/log.
     key_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
-    # SHA-256 hex of the full token; the unique index above doubles as the O(1)
-    # auth lookup index.
     key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -286,41 +183,23 @@ class ApiKey(Base):
 
 
 class UserSession(Base):
-    """A browser sign-in session minted by email OTP — ADR 0032 decision 3 (#734).
-
-    Deliberately the **ApiKey mechanism, not the ApiKey table**: an opaque
-    `dq_sess_` token (~256 bits from `secrets.token_urlsafe`), only its SHA-256 hex
-    digest stored — a verifier secret, never retrievable, so never in the
-    SecretStore. The token rides an HttpOnly cookie, so the SPA never holds it.
-
-    **No refresh pair.** `expires_at` is a fixed horizon (default 24 h,
-    `AUTH_SESSION_TTL_HOURS`); re-running the OTP flow *is* the refresh. That is
-    what keeps this table a verifier store rather than a token-lifecycle system.
-    `revoked_at` is logout. Both are enforced **at the auth seam on every resolve**
-    (`session_service.resolve_token`) — a stored column that nothing checks is not
-    a session invalidation, and ADR 0032 makes the seam enforcement the testable
-    obligation.
-
-    Class name `UserSession`, table name `sessions`: `Session` is taken by
-    SQLAlchemy's ORM session in every module that would import this.
+    """An email-OTP browser session (ADR 0032 decision 3): opaque `dq_sess_` token,
+    SHA-256 digest stored. No refresh pair — fixed `expires_at`, re-running OTP is the
+    refresh; expiry/revocation enforced at the auth seam on every resolve. Named
+    `UserSession` because `Session` collides with SQLAlchemy's.
     """
 
     __tablename__ = "sessions"
-    # A unique INDEX, not a unique constraint — the same deliberate choice, for the
-    # same reason, as `ApiKey.__table_args__` above: the index name must be identical
-    # in a `create_all` test database and in production (the #990 parity check), and a
-    # constraint would be auto-named `sessions_token_hash_key` in one and
-    # `uq_sessions_token_hash` in the other. It doubles as the O(1) auth lookup index.
+    # Unique INDEX, not constraint — same #990 name-parity reason as ApiKey; doubles as the O(1)
+    # auth lookup index.
     __table_args__ = (Index("uq_sessions_token_hash", "token_hash", unique=True),)
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    # SHA-256 hex of the full token. SHA-256 (not argon2) for the same reason as a
-    # PAT: this is a high-entropy machine-generated secret with nothing to
-    # brute-force, and per-request verification must stay an indexed lookup rather
-    # than a KDF stretch (ADR 0026 rationale, restated in `api_key_service`).
+    # SHA-256, not a KDF: high-entropy machine token, per-request verify must stay an indexed lookup
+    # (ADR 0026 rationale).
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -329,22 +208,10 @@ class UserSession(Base):
 
 
 class OtpCode(Base):
-    """A one-time email sign-in code — ADR 0032 decision 4 (#734).
-
-    A 6-digit code is ~20 bits, so **the protection is the caps, not the hash**:
-    10-minute TTL, single use, at most `otp_service.MAX_ATTEMPTS` verifications,
-    and a re-request supersedes every outstanding code for the address. SHA-256 at
-    rest is defence-in-depth against a database read, not a work factor.
-
-    Keyed on the **normalized** email (strip + lower — the one rule shared with
-    `Settings.is_admin_email` and the `uq_users_email_lower` index), because a code
-    is requested before any `users` row need exist: this table is deliberately not
-    FK'd to `users`, or an ineligible/unknown address could not even be *counted*
-    without provisioning an identity for it.
-
-    `consumed_at` means "no longer usable" and covers both halves of that: a code
-    that was successfully redeemed, and one superseded by a newer request. One
-    column, because every reader asks the same question.
+    """A one-time email sign-in code (ADR 0032 decision 4). The protection is the
+    caps (TTL, single use, MAX_ATTEMPTS, supersede-on-re-request), not the hash.
+    Keyed on normalized email and deliberately NOT FK'd to `users` — a code is
+    requested before any user row need exist. `consumed_at` = redeemed OR superseded.
     """
 
     __tablename__ = "otp_codes"
@@ -352,38 +219,20 @@ class OtpCode(Base):
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     email: Mapped[str] = mapped_column(String(320), nullable=False)
-    # SHA-256 hex of the 6-digit code.
     code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # Verification attempts against THIS code. Incremented by an atomic
-    # `UPDATE … SET attempts = attempts + 1 … RETURNING` *before* the comparison, so
-    # two concurrent guesses can never both read the same pre-increment value and
-    # spend one attempt between them (see `otp_service.verify_code`).
+    # Incremented by an atomic UPDATE … RETURNING *before* the comparison, so two concurrent guesses
+    # can't share one pre-increment value (otp_service.verify_code).
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     created_at: Mapped[datetime] = _created_at()
 
 
 class Asset(Base):
-    """A first-class data asset — the browse/reason grain (ADR 0034, gap G-d).
-
-    Today "the table" exists only implicitly inside `Suite.target` JSONB. This
-    table promotes it to a shared primitive that lineage edges, incidents, and a
-    future catalog sync can all reference. Suites remain the execution/authz grain
-    (ADR 0027 untouched); assets are what users reason about. Two axes, like dbt
-    models-vs-jobs.
-
-    **Identity = the OpenLineage dataset naming spec** — `(namespace, name)` unique
-    together, adopted verbatim (including its quote-strip / engine-case / Snowflake
-    account normalization rules) so our identifiers match `openlineage-dbt` / Spark
-    emissions byte-for-byte, making future emission/pull interop a join, not a
-    mapping layer. Consequence accepted: DEV/QA accounts are *distinct* assets —
-    cross-env grouping is a UI concern over `env`, never an identity merge.
-
-    `connection_id` is a **provenance hint, not identity** (SET NULL on connection
-    delete — the asset outlives the connection that first surfaced it).
-    `owner_user_id` is the later incident-routing hop (§4). `first_seen`/`last_seen`
-    bound the accrete-not-delete cleanup posture.
+    """A first-class data asset (ADR 0034): the browse/reason grain; suites stay the
+    execution/authz grain. Identity = the OpenLineage dataset naming spec, adopted
+    verbatim — (namespace, name) unique; DEV/QA accounts are DISTINCT assets by design.
+    `connection_id` is a provenance hint, not identity (SET NULL on delete).
     """
 
     __tablename__ = "assets"
@@ -392,35 +241,20 @@ class Asset(Base):
     id: Mapped[uuid.UUID] = _uuid_pk()
     namespace: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    # From the resolving connection (the OL spec keys namespace on tenant/physical
-    # isolation, so env is metadata, not identity — see class docstring).
+    # Metadata, not identity (the OL spec keys namespace on physical isolation).
     env: Mapped[str | None] = mapped_column(String(16))
     connection_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("connections.id", ondelete="SET NULL")
     )
-    #: Warehouse-native column classification (G3, #433): `{column_lower:
-    #: "sensitive" | "public"}`, read from the warehouse's own tags on each run
-    #: and consumed as the governance FLOOR of the redaction ladder — the rung a
-    #: suite policy cannot lift.
-    #:
-    #: Lives on the asset rather than on each result deliberately: a tag added
-    #: *after* a sample was captured must still mask it, because a classification
-    #: is a statement about the data, not about the moment it was read. NULL and
-    #: `{}` mean the same thing to the redactor — no opinion, fall through — so an
-    #: unreadable tag source degrades to the pre-G3 behaviour rather than to a
-    #: clearance.
+    #: Warehouse-native column classification (G3, #433): the governance FLOOR of the redaction
+    #: ladder — a rung no suite policy can lift.
     column_tags: Mapped[dict[str, str] | None] = mapped_column(JSONB)
-    #: When `column_tags` was last read from the warehouse. For the operator, not
-    #: the code path: it distinguishes "never looked" from "looked and found
-    #: none", which are identical to the redactor and very different to someone
-    #: auditing why a column surfaced.
+    #: Distinguishes "never looked" from "looked and found none" for auditors.
     column_tags_refreshed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
-    # Free-text asset description (ADR 0034 §4, #760). Set only via the
-    # workspace-Admin-only `PATCH /assets/{id}` — the cheap, safe row on the 0033
-    # matrix; widened to composing-suite `edit` later if it chafes. Nullable.
+    # Set only via the workspace-Admin-only PATCH /assets/{id} (#760).
     description: Mapped[str | None] = mapped_column(Text)
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -436,11 +270,8 @@ class Connection(Base):
         _in_check("type", CONNECTION_TYPES, "type_valid"),
         _in_check("env", ENVS, "env_valid"),
         UniqueConstraint("name", "env", name="uq_connections_name_env"),
-        # Orchestration providers (ADF, Airflow) are singletons per env: at most
-        # one connection per (provider, env), the binding `trigger_bindings`
-        # assumes (ADR 0004, #72). Datasources are deliberately excluded — e.g.
-        # Snowflake DEV can have many connections (different databases) — so this
-        # is a *partial* unique index over the orchestration types only.
+        # Orchestration providers are singletons per (type, env) (ADR 0004, #72); partial index —
+        # datasources may legitimately repeat per env.
         Index(
             "uq_connections_orchestrator_type_env",
             "type",
@@ -460,176 +291,74 @@ class Connection(Base):
     config: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
-    # Nullable by design (PR #41 review): holds the SecretStore key (`conn-<id>`)
-    # once a credential is written, but is NULL for (a) the transient window
-    # between row flush and secret write in create_connection, and (b)
-    # credential-less auth — managed identity (ADLS) / IAM role (S3), deferred to
-    # Week 7 (ADR 0010/0011) — plus any unauthenticated source. v1 connection types
-    # are all secret-bearing and enforce presence in the service layer
-    # (test_connection → 502 without a stored credential), so the column stays
-    # NULL-able for the W7 credential-less modes without a later migration.
+    # Nullable by design: NULL during the row-flush→secret-write window and for credential-less auth
+    # modes (managed identity / IAM role, ADR 0010/0011).
     secret_ref: Mapped[str | None] = mapped_column(String(256))
-    # Per-engine capability flags (ADR 0036 §3): the test/re-auth probe (phase 2)
-    # stores, per native engine, whether THIS connection instance can actually run
-    # it plus a classified remediation when it can't (edition / grants — never raw
-    # exception text, the #828/#839 lesson). NULL = never probed; phase 1 gates by
-    # connection type alone and lands run-time unavailability as classified
-    # `error` results, so an unprobed connection is safe, not permissive.
+    # Per-engine capability flags (ADR 0036 §3), probe-written; classified remediation only, never
+    # raw exception text.
     engine_capabilities: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    #: Provenance, not lifecycle ownership — `SET NULL`, matching every other
-    #: user-referencing FK that records *who did something* (`changed_by`,
-    #: `owner_user_id`, `acknowledged_by`, `audit_events.actor_user_id`). The
-    #: alternative, RESTRICT-with-409, would make a user un-erasable because they
-    #: once created a suite, which is the wrong answer for GDPR Art 17 (#432).
-    #:
-    #: Nullable is what `SET NULL` requires; it does not mean "usually absent".
-    #: Every row written by the app sets it, and there is no path that clears it
-    #: except a user delete (#1319).
+    #: Provenance, not lifecycle ownership — SET NULL; RESTRICT would make a user un-erasable (GDPR
+    #: Art 17, #432/#1319).
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
-    # ── Poll health (#828) ────────────────────────────────────────────────────
-    # An orchestration poll that fails every 10 minutes used to be visible ONLY in the
-    # logs: the connection still read as configured, the lineage UI showed its normal
-    # empty state, and the beat task reported success with an `errors` count nobody saw.
-    # Prod lineage rotted for six days on an expired SAS and the product cheerfully said
-    # "nothing to see here". These three columns are what make that state *a fact about
-    # the connection* rather than a line in App Insights.
-    #
-    # NULL on every non-orchestration connection (and on any orchestration connection
-    # never yet polled) — "unknown", which the UI must not render as healthy.
+    # ── Poll health (#828): a failing poll as a fact about the connection ──── NULL on non-
+    # orchestration / never-polled rows = "unknown", never healthy.
     last_polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # A **classified**, redaction-safe reason — never raw exception text, which can
-    # carry a SAS/token/DSN (the #536 traceback-locals leak is the precedent). NULL
-    # means the last poll succeeded.
+    # Classified, redaction-safe reason — never raw exception text (#536 precedent).
     last_poll_error: Mapped[str | None] = mapped_column(String(512))
-    # Consecutive failures; reset to 0 on any success. The counter (not a bare boolean)
-    # is what lets the UI say "failing for ~6 days" instead of "failing", and what a
-    # future alert threshold rides on.
+    # Consecutive failures, reset on success; a counter (not a bool) so the UI can say "failing for
+    # ~6 days" and thresholds can ride on it.
     consecutive_poll_failures: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )
-    # When a poll-health FAILING alert was actually DELIVERED for this connection
-    # (#843) — NULL means no alert is outstanding. Not derivable from the counter:
-    # delivery is best-effort (a channel can be down, a webhook unresolved, a
-    # secret missing — all quiet no-ops), so a recovery edge keyed on the streak
-    # could announce the end of an alarm nobody was ever told about. Both edges
-    # ride this instead, which also fixes the threshold-change caveat: a
-    # connection already past a newly-lowered threshold never lands on `==` again,
-    # so keying on the counter meant it never alerted at all.
+    # When a FAILING alert was actually DELIVERED (#843); NULL = none outstanding.
     health_alerted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    # ── Credential expiry (#838) ──────────────────────────────────────────────
-    # When this connection's credential stops working, where the credential states
-    # its own expiry (an Azure SAS prints `se=`). #828 made an expired credential
-    # visible once it BROKE something; this is what lets the product say so first.
-    #
-    # A *derived cache of the credential*, not user state: recomputed on every
-    # secret write and by the daily sweep, so a rotation moves it the same day. It
-    # is stored rather than computed per request because the source of truth lives
-    # in the SecretStore — reading it on a list endpoint would mean one Key Vault
-    # round-trip per connection, per page load. (Contrast `datasource_health`
-    # (#954), derived live because its source — `runs` — is already in this DB.)
-    #
-    # NULL means **unknown**, never "does not expire": the type's credential has no
-    # readable lifetime (an S3 access key, a Snowflake key-pair), or it has never
-    # been read. The UI must render NULL as silence, not as reassurance.
-    #
-    # A date, never the credential: this column is safe to log, list, and render.
+    # ── Credential expiry (#838) ────────────────────────────────────────────── Derived CACHE of
+    # the credential's self-stated expiry.
     credential_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # When the expiry was last READ — stamped on every attempt, whatever the
-    # outcome (#1024). Without it, NULL above means both "this credential states
-    # no expiry" and "nobody has looked yet", and the UI cannot tell reassurance
-    # from ignorance. With it: NULL here = never looked (stay silent); set here +
-    # NULL above = looked, genuinely no expiry (stay silent, permanently).
+    # Stamped on every read attempt (#1024): NULL here = never looked; set here + NULL above =
+    # looked, genuinely no expiry.
     credential_expiry_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    # ── Warehouse-native lineage refresh state (#858) ────────────────────────────
-    # Per-connection state for the warehouse-lineage beat (snowflake / unity_catalog).
-    # All NULL on a connection never refreshed, and on every non-warehouse type.
-    #
-    # The incremental high-water mark for a LOG source (UC `table_lineage.event_time`).
-    # NULL for a snapshot source (Snowflake `OBJECT_DEPENDENCIES` — re-read whole).
+    # ── Warehouse-native lineage refresh state (#858) ──────────────────────────── All NULL on a
+    # connection never refreshed and on non-warehouse types.
     lineage_watermark: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # When the last refresh ran, and which tier answered — so the UI can qualify the
-    # graph ("view-level only", "current as of ~2h ago") instead of a bare empty state
-    # (#828). `lineage_last_tier` is a `LineageTier` value; `lineage_degraded_reason`
-    # is the human note when a richer tier was unavailable (edition-gated, missing grant).
+    # Last refresh time + answering tier (`LineageTier`), so the UI can qualify the graph instead of
+    # showing a bare empty state (#828).
     lineage_last_refresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     lineage_last_tier: Mapped[str | None] = mapped_column(String(64))
     lineage_degraded_reason: Mapped[str | None] = mapped_column(String(512))
-    # A **classified**, redaction-safe reason the last refresh could not run (mirrors
-    # `last_poll_error` — never raw exception text). NULL means the last refresh ran.
+    # Classified, redaction-safe (mirrors last_poll_error). NULL = last refresh ran.
     lineage_last_error: Mapped[str | None] = mapped_column(String(512))
 
-    # ── Inventory-sync outcome state (#1104) ─────────────────────────────────────
-    # An opted-in connection (`config.inventory_sync`, ADR 0040) whose principal
-    # can't read the enumeration query fails every daily tick — caught fail-soft and
-    # logged, correctly, so the sweep never aborts. But the USER-facing state before
-    # these columns was: toggle on, connection test green (the `SELECT 1` probe never
-    # exercises this query), zero assets ever appear, no surface says why — the #828
-    # shape again. These three columns mirror the `lineage_last_*` pattern above so a
-    # sync failure becomes a fact about the connection, not a line in App Insights.
-    #
-    # Stamped on EVERY attempt (success or failure); NULL means never attempted.
+    # ── Inventory-sync outcome state (#1104), mirrors lineage_last_* ───────────── (the connection
+    # test's SELECT 1 never exercises the enumeration query).
     inventory_sync_last_attempted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
-    # A CLASSIFIED, redaction-safe reason (never raw exception text — the
-    # `last_poll_error`/`lineage_last_error` precedent). NULL means the last
-    # attempt succeeded.
+    # Classified, redaction-safe. NULL means the last attempt succeeded.
     inventory_sync_last_error: Mapped[str | None] = mapped_column(String(512))
-    # When the CURRENT failure streak started; NULL whenever the connection is
-    # currently healthy (last attempt succeeded, or it has never been attempted).
-    # Set on the first failure after a success and left untouched by subsequent
-    # failures, so the UI can say "failing since <ts>" instead of just "failing" —
-    # cleared back to NULL on the next success.
+    # Start of the CURRENT failure streak ("failing since <ts>"); set on the first failure after a
+    # success, cleared on the next success, NULL while healthy.
     inventory_sync_failing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    # ── Zero-table enumeration state (#1242) ─────────────────────────────────────
-    # A SUCCESSFUL sync that enumerates zero tables is not an error — Snowflake's
-    # INFORMATION_SCHEMA is privilege-filtered, not access-denied, so a role missing
-    # every grant gets an empty result set, and a genuinely empty database enumerates
-    # zero tables legitimately too. Reusing `inventory_sync_last_error` for this would
-    # be a false alarm in the OTHER direction (the #828 "confident wrong answer" shape,
-    # mirrored). These two columns give "0 tables" its own honest state instead.
-    #
-    # The row count from the last SUCCESSFUL sync only — stamped alongside
-    # `inventory_sync_last_attempted_at` on success, left UNTOUCHED on a failed
-    # attempt (a failure has no count to report). NULL means never successfully
-    # synced, which is what makes "synced, 0 visible" (0) distinguishable from
-    # "never synced" (NULL) and from "synced, N>0" (>0).
+    # ── Zero-table enumeration state (#1242) ───────────────────────────────────── Zero tables is
+    # NOT an error (INFORMATION_SCHEMA is privilege-filtered; an empty DB is legitimate).
     inventory_sync_last_table_count: Mapped[int | None] = mapped_column(Integer)
-    # The privilege-loss / dropped-database signal: set the moment the count
-    # transitions from a previously-recorded N>0 down to 0, left untouched while
-    # it stays at 0 (so it reads "since <the drop>", not "since the most recent
-    # zero tick"), and cleared back to NULL the moment the count is >0 again. A
-    # connection that has ALWAYS enumerated zero never sets this — that stays the
-    # neutral, non-alarming "empty by design" state. Mirrors the
-    # `inventory_sync_failing_since` streak pattern above.
+    # Set when the count drops N>0 → 0, untouched while it stays 0, cleared when >0.
     inventory_sync_zero_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ConnectionVersion(Base):
-    """An immutable snapshot of a connection's editable, **non-secret** state,
-    written on create and after every successful name/config update — the source
-    for the connection "version history" view. Mirrors `check_versions`: per-entity
-    config history, not the cross-entity audit log (deferred — see #310).
-
-    Deliberately omits the credential: the secret lives only in the SecretStore
-    (referenced by `secret_ref`, a STORED pointer minted once and never recomputed
-    — readable since ADR 0039, no longer derivable from the id — not the
-    value), so it is never copied here. A credential rotation (`reauth`, or an
-    update that only changes the secret) therefore records **no** version — that is
-    an audit-log concern, not config history.
-
-    `version_no` is a per-connection sequence starting at 1 (unique with
-    `connection_id`). A version is cascade-deleted with its connection (history is
-    not retained past deletion — accepted), but survives its author (`changed_by`
-    is `SET NULL`).
+    """Immutable snapshot of a connection's editable, NON-secret state, written on
+    create and each successful name/config update. The credential is never copied —
+    a rotation records NO version. `version_no` is a per-connection sequence from 1;
+    rows cascade-delete with the connection but survive their author (SET NULL).
     """
 
     __tablename__ = "connection_versions"
@@ -643,15 +372,11 @@ class ConnectionVersion(Base):
         UUID(as_uuid=True), ForeignKey("connections.id", ondelete="CASCADE"), nullable=False
     )
     version_no: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Snapshot of the editable fields. type/env are immutable on a connection but
-    # snapshotted for a self-contained record; `config` is the non-secret
-    # datasource config as stored. No credential / secret_ref (see class docstring).
+    # type/env are immutable but snapshotted for a self-contained record.
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     env: Mapped[str] = mapped_column(String(16), nullable=False)
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    # Who authored this version. NULL for a system/unknown actor or once the user
-    # is removed — the snapshot must outlive its author (SET NULL, not CASCADE).
     changed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -661,9 +386,9 @@ class ConnectionVersion(Base):
 
     @property
     def changed_by_name(self) -> str | None:
-        """The author's display name (or email) for the history view, or None for
-        a system actor / removed user. Reads the eager-loaded `author` — callers
-        that serialize this must `selectinload(ConnectionVersion.author)`."""
+        """Author display name/email, or None for a system actor / removed user.
+        Callers that serialize this must `selectinload(ConnectionVersion.author)`.
+        """
         return (self.author.display_name or self.author.email) if self.author else None
 
 
@@ -681,43 +406,17 @@ class Suite(Base):
     connection_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("connections.id"), nullable=False
     )
-    # Datasource-shaped run target (#215): the table / flat-file path / Unity
-    # Catalog 3-level name the suite's checks run against. Shaped like the column
-    # profiler request (`table`/`schema`/`catalog`/`path`/`file_format`) and
-    # resolved per connection type to the runner's (table, schema, catalog) by
-    # `services.run_target.resolve_target`. NULL = targetless = not yet runnable.
-    # none_as_null: Python None must persist as SQL NULL, never JSON 'null' (#907 —
-    # suite_service passes an explicit target=None, and connection_service filters
-    # `target.isnot(None)`; JSON null would pass that filter).
+    # Datasource-shaped run target (#215), resolved by `run_target.resolve_target`.
     target: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
-    # The asset this suite's target resolves to (ADR 0034, gap G-d). Resolved from
-    # `target` + the connection config on save via OpenLineage identity naming.
-    # Nullable because resolution is fail-soft: a targetless or unresolvable suite
-    # keeps this NULL rather than blocking the save. `connection_id` provenance
-    # aside, this is the browse/reason link; SET NULL so an asset sweep never
-    # deletes a suite.
+    # Asset the target resolves to (ADR 0034); fail-soft NULL rather than blocking the save.
     asset_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL")
     )
-    # Column-redaction policy for failing-row samples (#415): which columns may be
-    # shown vs masked when surfacing `Result.sample_failures`. Shape:
-    # `{"identifier_column": str, "pii_columns": [str]}` — the identifier is always
-    # shown (so a failing row is locatable; must be non-PII) and `pii_columns` are
-    # always masked; unclassified columns still default-redact (security can't
-    # regress). NULL = no policy → the blanket-mask fallback. Suite-level for v1
-    # (a suite targets one table); shaped to promote to a connection/column catalog
-    # later. Auto-derivable from datasource classification/tags + name heuristics;
-    # this column stores the resolved/overridden policy.
+    # Column-redaction policy for failing-row samples (#415): `{"identifier_column": str,
+    # "pii_columns": [str]}` — identifier always shown, pii always masked.
     column_policy: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
-    #: Provenance, not lifecycle ownership — `SET NULL`, matching every other
-    #: user-referencing FK that records *who did something* (`changed_by`,
-    #: `owner_user_id`, `acknowledged_by`, `audit_events.actor_user_id`). The
-    #: alternative, RESTRICT-with-409, would make a user un-erasable because they
-    #: once created a suite, which is the wrong answer for GDPR Art 17 (#432).
-    #:
-    #: Nullable is what `SET NULL` requires; it does not mean "usually absent".
-    #: Every row written by the app sets it, and there is no path that clears it
-    #: except a user delete (#1319).
+    #: Provenance, not lifecycle ownership — SET NULL; RESTRICT would make a user un-erasable (GDPR
+    #: Art 17, #432/#1319).
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -735,9 +434,8 @@ class Check(Base):
         _in_check("kind", CHECK_KINDS, "kind_valid"),
         _in_check("engine", CHECK_ENGINES, "engine_valid"),
         _in_check("dimension", DQ_DIMENSIONS, "dimension_valid"),
-        # ADR 0015: a comparison check carries its source (baseline) ref; every
-        # other kind must not. Presence ⇔ kind, DB-enforced so the run path can
-        # trust a comparison row always has a source.
+        # ADR 0015: source ref presence ⇔ kind='comparison', DB-enforced so the run path can trust a
+        # comparison row always has a source.
         CheckConstraint(
             "(kind = 'comparison') = (source_connection_id IS NOT NULL)",
             name="comparison_source_presence",
@@ -751,43 +449,28 @@ class Check(Base):
         UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(256), nullable=False)
-    # Monitor-kind discriminator (ADR 0012). v1 = 'expectation' only; the run path
-    # dispatches on this, and v1.x auto-monitors slot in as new kinds.
+    # Monitor-kind discriminator (ADR 0012); the run path dispatches on this.
     kind: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default=text("'expectation'")
     )
-    # Evaluating engine (ADR 0036): who runs this check. Default 'gx'; a native
-    # engine is accepted on save only when the suite's connection offers it
-    # (`check_service.validate_engine`), and a row whose engine stops being
-    # available lands run-time as a classified `error` result, never a skip.
+    # Evaluating engine (ADR 0036).
     engine: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'gx'"))
     expectation_type: Mapped[str] = mapped_column(String(128), nullable=False)
-    # DQ dimension (ADR 0038) — what quality aspect this check measures. Defaulted
-    # from `expectation_type`/`kind` at author time and then STORED, so #889 can
-    # GROUP BY it in SQL and a user's override survives a re-read. Nullable
-    # because derivation is partial by design: custom SQL is an arbitrary
-    # predicate, and accuracy/integrity are never derivable. NULL = unclassified,
-    # which the scorecard renders as a coverage gap — never silently bucketed.
+    # DQ dimension (ADR 0038): derived at author time then STORED (SQL GROUP BY + override survival,
+    # #889).
     dimension: Mapped[str | None] = mapped_column(String(32))
-    # Comparison source ref (ADR 0015): the baseline connection this check diffs
-    # the suite's dataset (the target under test) against. Non-NULL exactly for
-    # kind='comparison' (table CHECK above). RESTRICT: deleting a referenced
-    # connection is blocked — the service pre-checks and 409s with the dependent
-    # checks rather than letting the FK error surface raw.
+    # Comparison baseline connection (ADR 0015); non-NULL exactly for kind='comparison'.
     source_connection_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("connections.id", ondelete="RESTRICT")
     )
-    # Optional severity thresholds (ADR 0005). NULL → the check is plain pass/fail.
+    # Optional severity thresholds (ADR 0005). NULL → plain pass/fail.
     warn_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
     fail_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
     critical_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
     config: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
-    # Alert snooze (suppression): mute this check's alerts until this moment (UTC).
-    # NULL or in the past = active. Operational state set via the snooze endpoint —
-    # NOT an editable config field, so it's excluded from the check PATCH and from
-    # `check_versions` snapshots (config history shouldn't churn on a snooze).
+    # Mute alerts until this moment (UTC); NULL/past = active.
     alert_snoozed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
@@ -796,20 +479,10 @@ class Check(Base):
 
 
 class MonitorBaseline(Base):
-    """The persisted reference state a *stateful* monitor kind diffs against
-    (#592, ADR 0012) — one CURRENT baseline per check.
-
-    ``schema_drift`` stores the column-name/type snapshot it compares the live
-    schema to; the W5 ``anomaly`` kind (#593) reuses this exact shape for its
-    metric-baseline parameters — one persistence shape, two consumers, which is
-    why the payload is a kind-shaped JSONB rather than schema-drift columns.
-
-    Semantics: UNIQUE per check (the current baseline — re-baseline REPLACES the
-    row, it doesn't append; history lives in `results`, not here). Cascade with
-    the check. ``captured_by`` records a manual re-baseline actor; NULL means the
-    run path captured it automatically (first run of the check). The baseline is
-    metadata about the target's *shape*, never row data — no PII concerns, no
-    retention sweep involvement.
+    """The CURRENT reference state a stateful monitor kind diffs against (#592,
+    ADR 0012) — UNIQUE per check; re-baseline REPLACES the row (history lives in
+    `results`). One kind-shaped JSONB serves schema_drift and anomaly (#593).
+    Shape metadata only, never row data — no PII / retention involvement.
     """
 
     __tablename__ = "monitor_baselines"
@@ -822,14 +495,13 @@ class MonitorBaseline(Base):
     check_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("checks.id", ondelete="CASCADE"), nullable=False
     )
-    # Denormalized from the check for queryability/debugging (which kinds hold
-    # baselines); the check's kind is the authority.
+    # Denormalized for queryability; the check's kind is the authority.
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
-    # Kind-shaped payload. schema_drift: {"columns": [{"name": ..., "type": ...}, ...]}.
     baseline: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     captured_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # NULL = captured automatically by the run path (first run of the check).
     captured_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -838,17 +510,10 @@ class MonitorBaseline(Base):
 
 
 class CheckVersion(Base):
-    """An immutable snapshot of a check's editable state, written on create and
-    after every successful update — the source for the "version history" drawer
-    ("see previous config before overwriting") and for restore (#283):
-    `check_service.restore_check_version` re-validates a chosen snapshot against
-    CURRENT rules and applies it, itself recording a new version (history is
-    additive — a restored row is never renumbered or deleted). This is per-check
-    config history, not the cross-entity audit log (deferred to v1.1).
-
-    `version_no` is a per-check sequence starting at 1 (unique with `check_id`).
-    Rows survive the check (`ondelete=SET NULL` on `changed_by` for a deleted
-    author) but are cascade-deleted with the check itself.
+    """Immutable snapshot of a check's editable state, written on create and each
+    update; source for the history drawer and restore (#283 — restore re-validates
+    and records a NEW version; history is additive). `version_no` is a per-check
+    sequence from 1; rows cascade-delete with the check, survive their author.
     """
 
     __tablename__ = "check_versions"
@@ -862,33 +527,23 @@ class CheckVersion(Base):
         UUID(as_uuid=True), ForeignKey("checks.id", ondelete="CASCADE"), nullable=False
     )
     version_no: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Snapshot of the editable check fields (kind is immutable but snapshotted for
-    # a self-contained record). `config` is the GX expectation kwargs, as stored.
+    # kind is immutable but snapshotted for a self-contained record.
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
-    # Engine as at this version (ADR 0036). Snapshotted so restore reproduces the
-    # evaluator, not just the rule; deliberately NOT CHECK-constrained here for
-    # the same reason as `dimension` — history must stay writable if the
-    # vocabulary changes. Server default backfills pre-engine snapshots as 'gx',
-    # which is exact: 'gx' was the only evaluator that existed when they were cut.
+    # Snapshotted so restore reproduces the evaluator (ADR 0036); deliberately NOT CHECK-constrained
+    # — history must stay writable if the vocabulary changes.
     engine: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'gx'"))
     expectation_type: Mapped[str] = mapped_column(String(128), nullable=False)
-    # DQ dimension as at this version (ADR 0038). Snapshotted like every other
-    # editable field: without it, viewing history would show a check's CURRENT
-    # classification against an OLD config, and a future restore would silently
-    # reclassify. Deliberately NOT CHECK-constrained here — a snapshot records
-    # what was, and history must not become unwritable if the vocabulary changes.
+    # Snapshotted like every editable field; deliberately NOT CHECK-constrained here (a snapshot
+    # records what was).
     dimension: Mapped[str | None] = mapped_column(String(32))
-    # Comparison source ref as a plain UUID — deliberately NO FK (ADR 0015/0020):
-    # a snapshot must outlive a later repoint + delete of the old source
+    # Plain UUID, deliberately NO FK (ADR 0015/0020): a snapshot must outlive a deleted source
     # connection, so history never blocks a connection delete.
     source_connection_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     warn_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
     fail_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
     critical_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
-    # Who authored this version. NULL for a system/unknown actor or once the user
-    # is removed — the snapshot must outlive its author (SET NULL, not CASCADE).
     changed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -898,9 +553,9 @@ class CheckVersion(Base):
 
     @property
     def changed_by_name(self) -> str | None:
-        """The author's display name (or email) for the history drawer, or None
-        for a system actor / removed user. Reads the eager-loaded `author` —
-        callers that serialize this must `selectinload(CheckVersion.author)`."""
+        """Author display name/email, or None for a system actor / removed user.
+        Callers that serialize this must `selectinload(CheckVersion.author)`.
+        """
         return (self.author.display_name or self.author.email) if self.author else None
 
 
@@ -911,23 +566,14 @@ class Run(Base):
         Index("ix_runs_suite_id", "suite_id"),
         Index("ix_runs_status", "status"),
         Index("ix_runs_asset_id", "asset_id"),
-        # Health ranking (#999): mirrors `datasource_health`'s LATERAL
-        # `ORDER BY created_at DESC, id DESC LIMIT 20` per suite, so Postgres
-        # stops after 20 index entries instead of walking a suite's whole
-        # history on every connections page load. `id DESC` is the tie-break —
-        # runs sharing a transaction-scoped `now()` need a total order or
-        # "newest" is arbitrary (#928).
+        # Health ranking (#999): mirrors datasource_health's per-suite LATERAL ORDER BY.
         Index(
             "ix_runs_suite_created",
             "suite_id",
             text("created_at DESC"),
             text("id DESC"),
         ),
-        # Trigger-dedup race guard (#308): one suite run per orchestration
-        # pipeline-run event. Partial — orchestration markers only
-        # (`<provider>:<pipeline>:<run_id>`); manual/probe/schedule markers
-        # legitimately repeat. Predicate mirrors the migration + the service's
-        # ON CONFLICT (orchestration_service._ORCH_TRIGGER_PREDICATE).
+        # Trigger-dedup race guard (#308): one suite run per orchestration event.
         Index(
             "uq_runs_suite_triggered_by",
             "suite_id",
@@ -941,48 +587,28 @@ class Run(Base):
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
-    # CASCADE (#540): runs (and their results, via the run_id FK) die with the
-    # suite — ADR 0020's accepted cascade posture. Without it a suite that had
-    # ever run 500'd on delete.
+    # CASCADE (#540): runs (and results) die with the suite (ADR 0020 posture).
     suite_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), nullable=False
     )
-    # The asset resolved from the suite's target, **stamped at dispatch** (ADR
-    # 0034): run history records the asset a run actually ran against, so it never
-    # rewrites when a suite's target later changes. Nullable — fail-soft, mirrors
-    # `Suite.asset_id`, and SET NULL so an asset sweep never deletes a run.
+    # Stamped at dispatch (ADR 0034): records the asset the run actually ran against, never
+    # rewritten by later target changes.
     asset_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL")
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     triggered_by: Mapped[str | None] = mapped_column(String(256))
-    # Celery task id of the dispatched run_suite task, captured at dispatch so a
-    # cancel can revoke a still-queued task. NULL until dispatched (or if dispatch
-    # failed). String(155): Celery ids are UUIDs but keep headroom.
+    # Captured at dispatch so cancel can revoke a still-queued task.
     celery_task_id: Mapped[str | None] = mapped_column(String(155))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # A redaction-safe, user-facing reason for a `failed` run (#605) — a fixed
-    # category message from `failure_classifier`, never raw adapter text (which can
-    # carry DSN/credential fragments). NULL for non-failed runs and for older rows.
+    # Redaction-safe classified reason for a `failed` run (#605) — never raw adapter text (can carry
+    # DSN/credential fragments).
     failure_reason: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = _created_at()
 
 
-#: The ONE ordering key for a suite's checks, and for anything listed *per check*.
-#:
-#: The ``id`` tie-break is load-bearing, not decoration: a suite's checks are
-#: routinely inserted in a single transaction (the check editor's bulk add, suite
-#: import, the demo seed), and Postgres' ``now()`` is transaction-start — so they
-#: genuinely share a ``created_at`` and ordering by it alone leaves the answer to
-#: the physical row order, which can change under the reader's feet.
-#:
-#: ``nulls_last`` matters only where this is used across an OUTER join
-#: (`run_service.list_results` keeps a result whose check was deleted rather than
-#: silently dropping the row); on the plain checks query Postgres already sorts
-#: ASC NULLS LAST, so the same key is correct in both places — which is the point
-#: of there being one key. Every surface a user compares against another must
-#: sort by this, or two views of the same checks disagree on refresh.
+#: The ONE ordering key for a suite's checks and anything listed per check.
 CHECK_ORDER = (Check.created_at.nulls_last(), Check.id)
 
 
@@ -992,27 +618,8 @@ class Result(Base):
         _in_check("status", RESULT_STATUSES, "status_valid"),
         Index("ix_results_run_id", "run_id"),
         Index("ix_results_check_id", "check_id"),
-        # Retention-sweep predicate support (#323) — two partial indexes, one
-        # per independently-swept column (`run_service._purge_column` runs
-        # `sample_failures` and `observed_value` as two separate UPDATEs).
-        # Each predicate is textually identical to the matching query's own
-        # WHERE clause (see `_purge_column`'s docstring) — that textual match
-        # is load-bearing, not cosmetic: Postgres only uses a partial index
-        # when it can prove the query implies the index predicate, and it
-        # proves that by matching expression trees, not by "this looks
-        # related." Both created CONCURRENTLY in the migration
-        # (`fbf4fe92e295`) so a plain `create_all`-built test DB and a
-        # migration-built one still agree here.
-        #
-        # `ix_results_unpurged_created` covers the `sample_failures` sweep.
-        # #323 review finding F2: the predicate folds in `sample_failures IS
-        # NOT NULL AND jsonb_typeof(sample_failures) <> 'null'`, not just
-        # `sample_failures_purged_at IS NULL` — a passing check's `sample_
-        # failures` is SQL NULL from the day it's written and never gets
-        # stamped (there is nothing to purge), so a `purged_at IS NULL`-only
-        # predicate would keep every passing-check row in the index forever,
-        # growing ~linearly with the table instead of tracking the sweep's
-        # actual (small, shrinking) working set.
+        # Retention-sweep partial indexes (#323), one per independently-swept column; each predicate
+        # is TEXTUALLY identical to its sweep query's WHERE.
         Index(
             "ix_results_unpurged_created",
             "created_at",
@@ -1021,13 +628,8 @@ class Result(Base):
                 "AND jsonb_typeof(sample_failures) <> 'null'"
             ),
         ),
-        # `ix_results_unpurged_observed` covers the `observed_value` sweep.
-        # #323 review finding F1: this half's predicate has no
-        # `sample_failures_purged_at` term at all, so it could never use
-        # `ix_results_unpurged_created` — without its own index it fell back
-        # to a full sequential scan on every batch (worse than the pre-#323
-        # single UPDATE, which scanned once; batching without this index
-        # would have scanned once per chunk).
+        # Covers the `observed_value` sweep (#323 F1) — its predicate shares no term with the index
+        # above, so without this it fell back to seq scans per batch.
         Index(
             "ix_results_unpurged_observed",
             "created_at",
@@ -1039,31 +641,21 @@ class Result(Base):
     run_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
     )
-    # CASCADE (#540): was the schema's only FK without an ondelete — a suite
-    # delete cascaded checks while runs→results rows still referenced them, so
-    # any suite that had ever run 500'd on delete (ADR 0020 accepts cascade).
+    # CASCADE (#540): without it a suite that had ever run 500'd on delete.
     check_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("checks.id", ondelete="CASCADE"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
-    # SQL-aggregatable scalar the check measured + per-check runtime (ADR 0012).
-    # metric_value is the trend/anomaly-friendly mirror of the JSONB observed_value;
-    # NULL where a check yields no meaningful scalar.
+    # SQL-aggregatable scalar + per-check runtime (ADR 0012); metric_value is the trend-friendly
+    # mirror of the JSONB observed_value, NULL when no scalar.
     metric_value: Mapped[Decimal | None] = mapped_column(Numeric)
     duration_ms: Mapped[int | None] = mapped_column(Integer)
-    # none_as_null on all three (#907): a None here means "absent", which must be
-    # SQL NULL — queryable with IS NULL and invisible to isnot(None) readers.
+    # none_as_null on all three (#907): None means "absent" and must be SQL NULL.
     observed_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     expected_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     sample_failures: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     sample_failures_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # How much of the dataset this check actually saw (#595). NULL = a complete
-    # read (and, for rows written before the column existed, unknown-but-complete
-    # — every runner read everything back then). Set only when the suite's run
-    # target declared a sampling strategy AND this check's group honoured it, so
-    # a pushdown monitor or a UC custom-SQL check beside a sampled expectation
-    # correctly stays NULL. Not row data — strategy, counts, and an optional seed
-    # — so it is outside the `sample_failures` retention/redaction path.
+    # How much of the dataset the check saw (#595).
     sampling: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[datetime] = _created_at()
 
@@ -1086,12 +678,8 @@ class Share(Base):
     permission: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = _created_at()
 
-    # Read-only convenience for enriching a share with the grantee's directory
-    # identity (email / display_name) so the sharing UI can name collaborators.
-    # ORM-only — no schema change. Default-lazy: the hot authz path
-    # (`effective_permission`) selects shares without ever reading `.user`, so
-    # the eager load is scoped to `list_shares` (selectinload) instead of taxing
-    # every permission check with a `users` join.
+    # Default-lazy on purpose: the hot authz path (`effective_permission`) must not pay a users
+    # join; `list_shares` selectinloads it.
     user: Mapped["User"] = relationship()
 
 
@@ -1107,10 +695,8 @@ class PipelineRun(Base):
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     provider: Mapped[str] = mapped_column(String(16), nullable=False)
-    # CASCADE (#753 review): observation rows are polled *through* this connection
-    # and are meaningless once it is gone — same rationale as lineage_edges. Without
-    # it, deleting any orchestration connection that had ever been polled 500'd on
-    # the bare FK (migration a3b4c5d6e7f8).
+    # CASCADE (#753): observation rows are meaningless once their polling connection is gone; the
+    # bare FK 500'd on delete (migration a3b4c5d6e7f8).
     connection_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("connections.id", ondelete="CASCADE"), nullable=False
     )
@@ -1159,24 +745,16 @@ class TriggerBinding(Base):
 
 
 class Schedule(Base):
-    """A cron schedule that fires a suite run automatically (A7).
-
-    The beat dispatcher (`worker.tasks.dispatch_due_schedules`) ticks every
-    minute and queries `enabled AND next_run_at <= now()` — an indexed scan, so
-    the cron is parsed only when a schedule actually fires, never per tick.
-
-    `next_run_at` is precomputed (`services.cron.next_fire`) on create and after
-    each fire / cron change. **No-backfill semantics**: a fire advances it to the
-    next *future* occurrence, so a downtime gap fires at most once on recovery
-    rather than backfilling every missed slot (correct for monitoring). `cron` is
-    a standard 5-field expression evaluated in `timezone` (IANA, DST-aware,
-    default UTC). Cascade-deleted with the suite.
+    """A cron schedule that fires a suite run (A7). The beat dispatcher scans
+    `enabled AND next_run_at <= now()` (indexed; cron parsed only on fire).
+    NO-BACKFILL: a fire advances `next_run_at` to the next FUTURE occurrence, so a
+    downtime gap fires at most once. `cron` is evaluated in `timezone` (DST-aware).
     """
 
     __tablename__ = "schedules"
     __table_args__ = (
         Index("ix_schedules_suite_id", "suite_id"),
-        # The dispatcher's hot path: due + enabled schedules, oldest-due first.
+        # The dispatcher's hot path.
         Index("ix_schedules_enabled_next_run_at", "enabled", "next_run_at"),
     )
 
@@ -1185,22 +763,14 @@ class Schedule(Base):
         UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), nullable=False
     )
     cron: Mapped[str] = mapped_column(String(128), nullable=False)
-    # IANA tz name the cron is evaluated in (e.g. 'America/New_York'); 'UTC' default.
+    # IANA tz name the cron is evaluated in.
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'UTC'"))
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
-    # Precomputed next fire (UTC). The dispatcher scans on this; never parses cron.
+    # Precomputed next fire (UTC); the dispatcher never parses cron on the scan.
     next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    # Last time the dispatcher fired this schedule (NULL until first fire).
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    #: Provenance, not lifecycle ownership — `SET NULL`, matching every other
-    #: user-referencing FK that records *who did something* (`changed_by`,
-    #: `owner_user_id`, `acknowledged_by`, `audit_events.actor_user_id`). The
-    #: alternative, RESTRICT-with-409, would make a user un-erasable because they
-    #: once created a suite, which is the wrong answer for GDPR Art 17 (#432).
-    #:
-    #: Nullable is what `SET NULL` requires; it does not mean "usually absent".
-    #: Every row written by the app sets it, and there is no path that clears it
-    #: except a user delete (#1319).
+    #: Provenance, not lifecycle ownership — SET NULL; RESTRICT would make a user un-erasable (GDPR
+    #: Art 17, #432/#1319).
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -1209,21 +779,10 @@ class Schedule(Base):
 
 
 class SuiteNotification(Base):
-    """Per-suite alert delivery config (one row per suite).
-
-    Decides *whether* a suite's run outcomes are delivered (``enabled``), at what
-    threshold (``alert_on``), and *where* — per-channel overrides that each fall
-    back to the workspace-level config when NULL:
-
-    * ``webhook_secret_ref`` — the per-suite **Teams** webhook (URL is
-      token-bearing, so only the SecretStore ref is stored, never the DB);
-    * ``slack_webhook_secret_ref`` — the per-suite **Slack** webhook, same shape (#633);
-    * ``email_recipients`` — the per-suite **email** recipients (comma-separated
-      addresses; not a secret, so stored inline), NULL → workspace ``EMAIL_TO`` (#633).
-
-    Suites with no row use the default policy (alert on warn+). The Teams / Slack /
-    email publishers read this when delivering (``alerting.*``). Cascade-deleted
-    with the suite.
+    """Per-suite alert delivery config (one row per suite): whether (`enabled`), at
+    what threshold (`alert_on`), and where — per-channel overrides falling back to
+    the workspace config when NULL. Suites with no row use the default policy
+    (alert on warn+). Cascade-deleted with the suite.
     """
 
     __tablename__ = "suite_notifications"
@@ -1237,25 +796,18 @@ class SuiteNotification(Base):
         UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), nullable=False
     )
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
-    # Delivery threshold (ADR 0005 tiers): 'fail' = fail/critical only, 'warn' =
-    # warn+, 'always' = every terminal run. Default 'warn' matches the no-config
-    # fallback (`notification_service.DEFAULT_ALERT_ON`) so saving a config
-    # doesn't silently change the threshold. See `alerting.routing.route_for`.
+    # Default 'warn' matches the no-config fallback so saving a config doesn't silently change the
+    # threshold.
     alert_on: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'warn'"))
-    # SecretStore key for the per-suite Teams webhook URL (NULL → workspace webhook).
-    # The URL is a secret; only the ref is stored here.
+    # Per-suite Teams webhook — URL is token-bearing, so only the SecretStore ref is stored (NULL →
+    # workspace webhook).
     webhook_secret_ref: Mapped[str | None] = mapped_column(String(256))
-    # SecretStore key for the per-suite Slack webhook URL (NULL → workspace Slack
-    # webhook). Same token-bearing shape as the Teams ref (#633).
+    # Per-suite Slack webhook ref, same shape (#633).
     slack_webhook_secret_ref: Mapped[str | None] = mapped_column(String(256))
-    # Per-suite email recipients — comma-separated addresses (NULL → workspace
-    # EMAIL_TO). Not a secret (addresses, not credentials), so stored inline (#633).
+    # Comma-separated addresses — not a secret, stored inline (NULL → EMAIL_TO, #633).
     email_recipients: Mapped[str | None] = mapped_column(String(1024))
-    # Auto-resolve an active incident on the first passing result for its
-    # (asset, check) pair (ADR 0034 decision 4, #761). On by default; a suite opts
-    # out to keep incidents open until a human resolves them. A suite with no
-    # notification row uses the default (auto-resolve on) —
-    # `incident_service.auto_resolve_enabled`.
+    # Auto-resolve an active incident on first passing result (ADR 0034, #761); no row means the
+    # default (on) — `incident_service.auto_resolve_enabled`.
     auto_resolve_incidents: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )
@@ -1264,35 +816,8 @@ class SuiteNotification(Base):
 
 
 class LineageEdge(Base):
-    """A directed upstream→downstream lineage edge between two assets (ADR 0034).
-
-    A refreshed **cache of external truth**, not a graph DataQ authors: each edge
-    is (re)discovered from a lineage `source` — ``'dbt'`` first (the parsed
-    `manifest.json` dependency graph, #759), ``'marquez'`` for catalog pull (#762) —
-    and keyed by provenance so the same edge from two sources — or two dbt projects
-    sharing tables — is distinct rows (no cross-source or cross-project merge).
-    ``last_seen`` bumps on every refresh that still observes the edge; a stale edge
-    (not re-seen in the latest refresh of its source) is pruned. Blast radius = walk
-    these edges downstream from a failing asset (`lineage.edges.downstream_assets`).
-
-    **Two provenance regimes, two dedup keys:**
-
-    - **Connection-scoped sources** (dbt) always carry a ``connection_id`` and key on
-      the full unique constraint ``(upstream, downstream, source, connection_id)`` —
-      so pruning one project's refresh never touches another's edges (the review's
-      cross-project-corruption fix).
-    - **Connection-less sources** (a catalog pull — a Marquez query has no DataQ
-      connection, #762) carry ``connection_id = NULL`` and key on the **partial**
-      unique index ``(upstream, downstream, source) WHERE connection_id IS NULL``
-      (Postgres treats NULLs as distinct in a plain unique constraint, so the full
-      constraint would never dedupe a NULL-connection row). Their prune is scoped to
-      ``(source, connection_id IS NULL)`` — it can never touch a dbt row.
-
-    Both endpoints CASCADE-delete: an edge is meaningless without either asset.
-    ``connection_id`` CASCADE-deletes and is **nullable** (nullable since #762 for the
-    connection-less pull sources above). ``source`` is un-CHECKed on purpose — lineage
-    sources will grow (catalog pull, OpenLineage receipt) and each new one must not
-    need a migration.
+    """A directed upstream→downstream edge (ADR 0034) — a refreshed CACHE of external truth, keyed
+    by provenance (no cross-source/cross-project merge); stale edges are pruned per source.
     """
 
     __tablename__ = "lineage_edges"
@@ -1304,10 +829,7 @@ class LineageEdge(Base):
             "connection_id",
             name="uq_lineage_edges_up_down_source_conn",
         ),
-        # Dedup key for connection-less sources (catalog pull, #762): a plain unique
-        # constraint treats each NULL connection_id as distinct, so pulled edges need a
-        # partial unique index on the (up, down, source) triple where connection_id is
-        # NULL — see migration 1a2b3c4d5e6f.
+        # Dedup key for connection-less sources (#762) — see migration 1a2b3c4d5e6f.
         Index(
             "uq_lineage_edges_up_down_source_nullconn",
             "upstream_asset_id",
@@ -1327,12 +849,10 @@ class LineageEdge(Base):
     downstream_asset_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("assets.id", ondelete="CASCADE"), nullable=False
     )
-    # Lineage source that surfaced this edge (e.g. 'dbt'). No CHECK — sources grow.
+    # No CHECK — sources grow.
     source: Mapped[str] = mapped_column(String(32), nullable=False)
-    # The connection whose refresh discovered this edge — provenance + prune scope
-    # (CASCADE: an edge is meaningless once its refreshing connection is gone).
-    # NULL for connection-less sources (a catalog pull — Marquez, #762 — has no DataQ
-    # connection); those dedupe via the partial unique index above.
+    # Provenance + prune scope (CASCADE); NULL for connection-less sources, which dedupe via the
+    # partial unique index above.
     connection_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("connections.id", ondelete="CASCADE")
     )
@@ -1342,64 +862,22 @@ class LineageEdge(Base):
     last_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    # Column-level refinement of this edge (#901): a JSONB list of
-    # ``[upstream_column, downstream_column]`` pairs from sources that offer the
-    # grain (UC ``system.access.column_lineage``). NULL = no pairs ever observed
-    # (the write path only records observed pairs — never ``[]``). Merged (union)
-    # on refresh for incremental sources — a log window only re-observes pairs
-    # whose queries ran inside it, and forgetting the rest would be a prune the
-    # never-prune regime forbids.
-    #
-    # ``none_as_null=True`` is load-bearing (#907): without it a bulk INSERT
-    # serializes Python ``None`` as JSON ``null`` — which is NOT SQL NULL, so it
-    # slips past ``columns.is_not(None)`` filters and the reader that then
-    # iterates it 500s. Found live on the first prod Snowflake refresh (339 rows).
+    # Column-level pairs (#901), union-merged on refresh (incremental sources only re-observe pairs
+    # inside their window — never prune).
     columns: Mapped[list[Any] | None] = mapped_column(JSONB(none_as_null=True))
 
 
 class Incident(Base):
-    """A stateful, deduped, evidence-carrying incident (ADR 0034 decision 4, #761).
-
-    An **alert** is a per-result notification (fire-and-forget — severity routing,
-    dedup, snooze; already shipped). An **incident** is the durable object those
-    signals roll up into, anchored to ``(asset_id, check_id)``: a failing result
-    opens one, repeat failures attach as *occurrences* (``occurrence_count`` +
-    ``last_seen_at``) rather than piling up new rows, and the first passing result
-    for the pair auto-resolves it (per-suite configurable). Alerts keep firing per
-    their own rules and reference the open incident.
-
-    **Dedup guarantee — at most one *active* incident per ``(asset_id, check_id)``.**
-    "Active" = ``status IN ('open', 'acknowledged')``; enforced by the partial
-    unique index ``uq_incidents_active_asset_check``, which the lifecycle engine's
-    ``INSERT … ON CONFLICT DO NOTHING`` targets so a concurrent second failing
-    result attaches an occurrence instead of racing in a duplicate (the #420
-    upsert-race discipline, one level up from alert dedup).
-
-    **Lifecycle** ``open → acknowledged → resolved`` with actor + timestamp per
-    transition (open = ``created_at``; ack = ``acknowledged_at``/``acknowledged_by``;
-    resolve = ``resolved_at``/``resolved_by``/``resolved_by_user_id``). A resolved
-    row is **never** mutated back to open — a resolved pair's next failure opens a
-    NEW incident linked to the prior one via ``prior_incident_id`` (the reopen
-    chain). ``suite_id`` is denormalized from the check's suite so visibility can
-    derive from suite grants (ADR 0027, same rule as the asset view #760) and
-    routing can reach the suite owner without a join.
-
-    ``evidence`` is the Theme-2 deterministic evidence card (layer 1, no LLM),
-    snapshotted at open and refreshed per occurrence — assembled from existing data
-    only and **never** carrying ``sample_failures`` content (PII rule).
-
-    Both ``asset_id`` and ``check_id`` CASCADE-delete (an incident is meaningless
-    without its anchor — the same posture as ``results``); ``suite_id`` CASCADEs
-    too. Actor FKs (``acknowledged_by``/``resolved_by_user_id``) SET NULL so an
-    incident outlives the user who acted on it; ``prior_incident_id`` SET NULLs so
-    pruning an old resolved incident never deletes its successor.
+    """A stateful, deduped, evidence-carrying incident (ADR 0034 decision 4, #761), anchored to
+    (asset_id, check_id); repeat failures attach as occurrences. Dedup guarantee: at most one
+    ACTIVE incident per pair, enforced by the partial unique index the engine's INSERT … ON
+    CONFLICT DO NOTHING targets (#420 discipline).
     """
 
     __tablename__ = "incidents"
     __table_args__ = (
         _in_check("status", INCIDENT_STATUSES, "incident_status_valid"),
-        # Single-sourced from INCIDENT_RESOLVED_BY so the vocabulary and the
-        # constraint can't drift (and CodeQL sees the constant used).
+        # Single-sourced from INCIDENT_RESOLVED_BY so vocabulary and constraint can't drift.
         CheckConstraint(
             "resolved_by IS NULL OR resolved_by IN ("
             + ", ".join(f"'{v}'" for v in INCIDENT_RESOLVED_BY)
@@ -1410,9 +888,8 @@ class Incident(Base):
         Index("ix_incidents_check_id", "check_id"),
         Index("ix_incidents_suite_id", "suite_id"),
         Index("ix_incidents_status", "status"),
-        # At most one ACTIVE (open|acknowledged) incident per (asset, check) — the
-        # dedup guarantee. Partial unique index; the engine's ON CONFLICT DO NOTHING
-        # targets it (index_where mirrors this predicate — keep the two in sync).
+        # The dedup guarantee; the engine's ON CONFLICT index_where mirrors this predicate — keep
+        # the two in sync.
         Index(
             "uq_incidents_active_asset_check",
             "asset_id",
@@ -1435,10 +912,10 @@ class Incident(Base):
         UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'open'"))
-    # Who resolved it ('user' | 'auto'); NULL until resolved.
+    # 'user' | 'auto'; NULL until resolved.
     resolved_by: Mapped[str | None] = mapped_column(String(16))
     occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
-    # Latest failing occurrence (bumps on every attach); open time = created_at.
+    # Latest failing occurrence; open time = created_at.
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -1452,34 +929,19 @@ class Incident(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     resolution_note: Mapped[str | None] = mapped_column(Text)
-    # Reopen chain: the prior (resolved) incident this one succeeds, or NULL for a
-    # first-ever incident on the pair. SET NULL so pruning an old one never orphans.
+    # Reopen chain; SET NULL so pruning an old incident never orphans its successor.
     prior_incident_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("incidents.id", ondelete="SET NULL")
     )
-    # Deterministic evidence card (layer 1) snapshot; never sample_failures content.
+    # Deterministic evidence card snapshot; never sample_failures content.
     evidence: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
 
 class WorkspaceHealth(Base):
-    """Workspace-level delivered-alert flags (#1052) — one row per signal key.
-
-    The workspace-wide poll-staleness alert has no ``Connection`` row to carry its
-    ``health_alerted_at``, so the #843 delivered-first discipline needs a home of its
-    own: ``alerted_at`` is written **after** a FAILING publish succeeds and cleared
-    after the RECOVERED publish — the same *state contract* as its per-connection
-    sibling, via a deliberately different *mechanism*. The sibling claims with a
-    conditional UPDATE and hands the slow send to a Celery task (#842); here the
-    send CANNOT go to Celery — the worker is the process whose deadness this signal
-    reports, and a worker-dispatched alert never fires during the exact incident it
-    exists for. So the API-side check holds this row ``FOR UPDATE SKIP LOCKED``
-    across the synchronous send instead. That #842-shaped lock-across-send is safe
-    HERE and only here: it is one dedicated row no other query touches, contending
-    replicas skip rather than queue, the loop runs off the request path, and the
-    hold is bounded by the channels' own timeouts. Keyed by signal name (not a
-    singleton row) so a future workspace-level flag adds a row, not a table.
+    """Workspace-level delivered-alert flags (#1052), one row per signal key — the #843 delivered-
+    first discipline for signals with no Connection row.
     """
 
     __tablename__ = "workspace_health"
@@ -1489,85 +951,34 @@ class WorkspaceHealth(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
-# ── Audit events (ADR 0041 phase 1, #1318) ─────────────────────────────────────
-#: Discriminator on `audit_events.action_class`. `config` = a principal changed
-#: configuration (phase 1). `access` = a principal READ regulated data (phase 2,
-#: G1/#431). One table, two classes, so retention, indexing and — if read volume
-#: ever demands it — physical partitioning can diverge per class without a second
-#: schema, a second authz gate, a second redaction seam, or a `UNION` behind
-#: "everything that happened to this suite" (ADR 0041 §2.1, §4).
+# ── Audit events (ADR 0041 phase 1, #1318) ───────────────────────────────────── Discriminator on
+# `audit_events.action_class`. `config` = a principal changed configuration (phase 1).
 AUDIT_ACTION_CLASSES = ("config", "access")
 
-#: Discriminator on `audit_events.actor_kind` — WHICH KIND of principal acted.
-#: There is deliberately **no `system` value** (ADR 0041 §2.1): machine writes are
-#: out of scope entirely, so a `system` actor would have no legitimate producer and
-#: would exist purely as an invitation to smuggle routine machine writes in under
-#: it. Add it only when a config-changing act by DataQ *on its own authority*
-#: actually exists, and name that act in the same change.
+#: Deliberately NO `system` value (ADR 0041 §2.1): machine writes are out of scope, and a `system`
+#: actor would invite smuggling them in.
 AUDIT_ACTOR_KINDS = ("user", "pat", "webhook")
 
 
 class AuditEvent(Base):
-    """An append-only record of a **deliberate act by a principal** (ADR 0041).
-
-    This is the record `check_versions` / `connection_versions` structurally cannot
-    be. A Type-4 snapshot table cascades away with its entity, so it can never
-    retain the one event an auditor most needs: the *delete*. The two mechanisms
-    keep distinct jobs and the split is the point — **Type-4 tables are the product
-    feature** (the version-history drawer, restore #1120: joinable, queryable by
-    `version_no`, safe to expose through the read API); **this table is the durable
-    record** (append-only, admin-gated, outlives its entity).
-
-    **`entity_id` deliberately carries no foreign key.** An FK leaves two options,
-    both self-defeating: CASCADE (the audit row dies with the entity — exactly the
-    failure this table exists to fix) or RESTRICT (the audit log makes deletion
-    impossible). The in-repo precedent is `CheckVersion.source_connection_id`, a
-    plain UUID with the same deliberate no-FK comment.
-
-    **Machine writes are out of scope** (ADR 0041 §2.1): a run insert, a
-    `lineage_edges` refresh, an `assets.last_seen` bump, an inventory sync, a
-    retention purge, and the bulk-DML deletes (the #770 asset sweep, the
-    sample-failure purge, the OTP-code and lineage-edge prunes). Auditing those
-    would bury the actor-attributable events in noise.
-
-    **Append-only is a guard against ACCIDENTAL in-app mutation, not
-    tamper-resistance**, and that distinction is recorded rather than implied. The
-    app owns its schema — the deployed stack creates the database `OWNER
-    dataq_app` and hands the migrate job the same `DATABASE_URL` as the api and
-    worker, so Alembic creates this table owned by `dataq_app`, which can `GRANT`
-    the revoked privileges straight back, or `TRUNCATE`/`DROP` it regardless of any
-    grant. The migration's `REVOKE UPDATE, DELETE` therefore stops a stray ORM call
-    or a careless bulk statement and **nothing stronger**. Splitting the role to
-    harden it is explicitly rejected: a second, less-trusted role in the `dataq`
-    database is precisely what the project's standing Postgres constraint forbids
-    (the referential-integrity check runs implicit casts as the referenced table's
-    owner). Real tamper-evidence needs cryptographic chaining anchored *outside*
-    the database and belongs to #431.
-
-    **No secret values and no warehouse data ever reach `before`/`after`** — see
-    `services/audit_service.py`, which owns the per-entity allow-list. An audit
-    payload is a JSONB write that never passes through structlog, so CLAUDE.md
-    §10's *redact at the logger, not the call site* rule genuinely does not cover
-    it; assuming it did would be the #849 shape in the one place the rule does not
-    reach.
+    """Append-only record of a deliberate act by a principal (ADR 0041) — the record the cascading
+    Type-4 snapshot tables structurally cannot keep (the delete). `entity_id` carries NO FK
+    deliberately: CASCADE loses the record, RESTRICT blocks deletion.
     """
 
     __tablename__ = "audit_events"
     __table_args__ = (
         _in_check("action_class", AUDIT_ACTION_CLASSES, "action_class_valid"),
         _in_check("actor_kind", AUDIT_ACTOR_KINDS, "actor_kind_valid"),
-        # "Everything that happened to this check/connection/suite", newest first —
-        # the entity-history read, and the reason `entity_type` leads the key.
+        # Entity-history read; `entity_type` leads the key.
         Index(
             "ix_audit_events_entity",
             "entity_type",
             "entity_id",
             text("occurred_at DESC"),
         ),
-        # The workspace-wide feed, newest first. Carries `action_class` as the
-        # leading column so a class-scoped sweep (retention, or a read-only
-        # `access` feed) never scans the other class's rows — the phase-2 read
-        # volume is expected to dwarf phase 1's.
+        # Workspace feed; `action_class` leads so a class-scoped sweep never scans the other class
+        # (phase-2 volume dwarfs phase 1's).
         Index(
             "ix_audit_events_class_occurred",
             "action_class",
@@ -1584,42 +995,28 @@ class AuditEvent(Base):
     id: Mapped[uuid.UUID] = _uuid_pk()
     occurred_at: Mapped[datetime] = _created_at()
     action_class: Mapped[str] = mapped_column(String(16), nullable=False)
-    #: Dotted `entity.verb`, e.g. `check.update`, `share.grant`,
-    #: `connection.reauth`, `user.role_change`. Free-form by design: a CHECK
-    #: constraint over the verb vocabulary would make a new audited action a
-    #: migration, and an audit row that cannot be written is a mutation that
-    #: cannot happen (the write is same-transaction and fail-closed).
+    #: Dotted `entity.verb`.
     action: Mapped[str] = mapped_column(String(64), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    #: NO foreign key — see the class docstring. Nullable because a few audited
-    #: acts have no single row (a bulk import's summary event).
+    #: NO foreign key — see the class docstring. Nullable for acts with no single row.
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    #: SET NULL, not CASCADE: the event must outlive its actor. `actor_label`
-    #: below is what keeps the record legible after that null.
+    #: SET NULL: the event must outlive its actor; `actor_label` keeps it legible.
     actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     actor_kind: Mapped[str] = mapped_column(String(16), nullable=False)
-    #: Denormalized identity **as at the time of the action**, so attribution
-    #: survives both the `SET NULL` above and a later rename. This is itself
-    #: personal data, and the tension with GDPR Art 17 erasure (G2/#432) is named
-    #: here rather than discovered later: an erasure must be able to
-    #: **pseudonymize this column in place** while keeping the event and its
-    #: timestamp. The machinery is #432's; this column shape is what makes it
-    #: possible (ADR 0041 §2.6.5).
+    #: Denormalized identity as at action time.
     actor_label: Mapped[str | None] = mapped_column(String(320))
     before: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     after: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    #: Correlates the event with the structured log line and the OTel span that
-    #: carry the same `dataq.request_id` (#525).
+    #: Correlates with the log line and OTel span carrying the same request id (#525).
     request_id: Mapped[str | None] = mapped_column(String(64))
 
     actor: Mapped["User | None"] = relationship()
 
     @property
     def actor_display(self) -> str | None:
-        """Best available attribution: the live user's label if the row survives,
-        else the denormalized snapshot taken at write time."""
+        """Live user label if the row survives, else the write-time snapshot."""
         if self.actor is not None:
             return self.actor.display_name or self.actor.email
         return self.actor_label

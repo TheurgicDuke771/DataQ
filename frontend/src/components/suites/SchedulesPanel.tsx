@@ -28,13 +28,7 @@ import { AsyncBody } from '../AsyncBody';
 import { formatTimestamp } from '../results/resultsFormat';
 import { errorMessage } from '../../utils/errors';
 
-/**
- * Suite-detail panel for cron-driven run schedules (A7). A schedule runs the
- * suite unattended on a 5-field cron cadence in an IANA timezone — distinct from
- * Triggers (run-on-pipeline-success). Anyone with `view` sees the schedules;
- * `edit`+ (`canManage`) gets the create / pause-toggle / delete controls, matching
- * the backend gate. Cron/timezone are validated server-side (422 → inline error).
- */
+/** Suite-detail panel for cron-driven run schedules (A7). */
 export function SchedulesPanel({ suiteId, canManage }: { suiteId: string; canManage: boolean }) {
   const { state, reload } = useAsyncData(() => listSchedules(suiteId));
 

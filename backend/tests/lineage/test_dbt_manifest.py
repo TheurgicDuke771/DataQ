@@ -1,10 +1,4 @@
-"""Pure unit tests for the dbt manifest parser (`lineage.dbt_manifest`).
-
-No DB / IO — bytes in, a `ManifestGraph` out. Pins the known harness graph
-(10 physical nodes / 8 table-level edges), the tests/operations filter, ephemeral
-collapse, the schema-version gate, and the adversarial-input battery (every
-malformed payload → `ManifestParseError`, never a bare KeyError/UnicodeDecodeError).
-"""
+"""Pure unit tests for the dbt manifest parser (`lineage.dbt_manifest`)."""
 
 from __future__ import annotations
 

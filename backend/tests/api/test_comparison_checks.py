@@ -1,10 +1,4 @@
-"""Comparison-check authoring tests (ADR 0015) against a real Postgres.
-
-Covers the two-connection model's authoring surface end-to-end through the API:
-the source-ref validation matrix, the kind⇔presence schema contract, source
-repointing, version snapshots, the connection-delete 409 guard, and the
-export/import (name, env) round-trip. Skips without TEST_DATABASE_URL.
-"""
+"""Comparison-check authoring tests (ADR 0015) against a real Postgres."""
 
 import uuid
 from collections.abc import Iterator
@@ -347,7 +341,8 @@ def test_source_connection_delete_blocked_then_allowed(client: TestClient, db_se
 
 def test_restore_a_comparison_check_to_a_prior_source(client: TestClient, db_session: Any) -> None:
     """The happy path: restoring an older version repoints the source back,
-    same as a manual PATCH would, and records a new (additive) version."""
+    same as a manual PATCH would, and records a new (additive) version.
+    """
     suite_conn = _connection(db_session)
     source_a = _connection(db_session)
     source_b = _connection(db_session)
@@ -370,16 +365,8 @@ def test_restore_a_comparison_check_to_a_prior_source(client: TestClient, db_ses
 def test_restore_of_a_repointed_source_after_its_connection_is_deleted_returns_422(
     client: TestClient, db_session: Any
 ) -> None:
-    """`CheckVersion.source_connection_id` carries NO FK by design (ADR 0015/0020
-    — "a snapshot must outlive a later repoint + delete of the old source
-    connection"). Once a check is repointed away from `source_a`, the RESTRICT
-    delete-guard no longer blocks deleting `source_a` (it only protects a
-    connection still referenced by a check's CURRENT state) — but v1's
-    snapshot still names it. Restoring v1 must re-validate through
-    `validate_comparison_check` (the same 404-on-missing-connection gate a
-    fresh create/update would hit) and 422, leaving the live check's current,
-    still-valid source (`source_b`) untouched — not resurrect a dangling
-    reference today's authoring path would refuse to create.
+    """`CheckVersion.source_connection_id` carries NO FK by design (ADR 0015/0020 — "a snapshot
+    must outlive a later repoint + delete of the old source connection").
     """
     suite_conn = _connection(db_session)
     source_a = _connection(db_session)
@@ -459,9 +446,8 @@ def test_import_rejects_comparison_without_source_ref(client: TestClient, db_ses
 
 
 def test_db_check_constraint_enforces_presence_iff_comparison(db_session: Any) -> None:
-    # Defence-in-depth below the service: the table CHECK rejects rows the
-    # validation layer would never write (comparison without ref; ref on
-    # expectation), so no future code path can persist an inconsistent row.
+    # Defence-in-depth below the service: the table CHECK rejects rows the validation layer would
+    # never write (comparison without ref; ref on expectation).
     from sqlalchemy.exc import IntegrityError
 
     owner = User(aad_object_id=uuid.uuid4().hex, email="c@example.com")
@@ -491,15 +477,10 @@ def test_db_check_constraint_enforces_presence_iff_comparison(db_session: Any) -
 def test_a_sampling_block_on_a_comparison_source_is_refused(
     client: TestClient, db_session: Any
 ) -> None:
-    """#595 C7. `config.source` goes through the same `resolve_target` a suite
-    target does, which now ACCEPTS a sampling block on a capable type — and
-    `comparison_run._source_spec` then drops it when it builds the `DatasetSpec`.
-    The author would save clean, believe the read is bounded, and get a run that
-    materialises the whole side: the silently-dropped sampling block the registry's
-    422 exists to prevent, arriving through a door that gate cannot see.
-
-    Threading sampling through the DatasetReader is real follow-up work; refusing
-    it is what keeps the gap honest in the meantime."""
+    """#595 C7. `config.source` goes through the same `resolve_target` a suite target does, which
+    now ACCEPTS a sampling block on a capable type — and `comparison_run._source_spec` then
+    drops it when it builds the `DatasetSpec`.
+    """
     target_conn = _connection(db_session)
     source_conn = _connection(db_session, conn_type="s3")
     suite_id = _suite_id(client, target_conn)

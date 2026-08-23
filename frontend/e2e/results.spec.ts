@@ -1,12 +1,8 @@
 import { expect, test } from '@playwright/test';
 
-// Seeded runs / results / pipeline-runs (backend/scripts/demo_data.py) read
-// through the real API and rendered on the in-app Results page (ADR 0018 — the
-// suite-scoped, redaction-aware surface, not Grafana). The seed lands, on the
-// "Orders quality" suite, two succeeded runs — a pass/pass/warn/fail severity
-// spread (seed:run:succeeded) and an operational-spectrum run with
-// critical/error/skip (seed:run:mixed) — plus a terminal-failed run, and three
-// monitored pipeline runs (the third carrying a full-length ADF error).
+// Seeded runs / results / pipeline-runs (backend/scripts/demo_data.py) read through the real API
+// and rendered on the in-app Results page (ADR 0018 — the suite-scoped, redaction-aware surface,
+// not Grafana).
 test.describe('Results page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/results');
@@ -21,19 +17,16 @@ test.describe('Results page', () => {
     await expect(page.getByText('succeeded').first()).toBeVisible();
     await expect(page.getByText('failed').first()).toBeVisible();
 
-    // Target the severity-spread run by its "Triggered by" marker (there are two
-    // succeeded runs now — this one and the operational-spectrum run). The row
-    // deep-links to the routed run-detail page (ADR 0022 — the drawer is gone).
+    // Target the severity-spread run by its "Triggered by" marker (there are two succeeded runs now
+    // — this one and the operational-spectrum run).
     await page
       .locator('tr.ant-table-row')
       .filter({ hasText: 'seed:run:succeeded' })
       .first()
       .click();
     await expect(page).toHaveURL(/\/results\/[0-9a-f-]+$/);
-    // Scoped to the interactive region (#345): the print-only PDF report
-    // renders a parallel copy of the check names/statuses (hidden outside a
-    // print context, but still in the DOM), which makes an unscoped
-    // page.getByText ambiguous under Playwright's strict-mode locators.
+    // Scoped to the interactive region (#345): the print-only PDF report renders a parallel copy of
+    // the check names/statuses (hidden outside a print context, but still in the DOM).
     const runDetail = page.getByTestId('rd-screen');
     await expect(runDetail.getByText('order_id not null')).toBeVisible();
     await expect(runDetail.getByText('amount in range')).toBeVisible();
@@ -51,9 +44,8 @@ test.describe('Results page', () => {
       .click();
     await expect(page).toHaveURL(/\/results\/[0-9a-f-]+$/);
 
-    // The seeded fail ("status in set") carries sample_failures; its tested
-    // column (`status`) is not PII, so the redactor surfaces the raw failing
-    // values (#226/#415/#417) instead of masking them.
+    // The seeded fail ("status in set") carries sample_failures; its tested column (`status`) is
+    // not PII.
     const row = page.locator('tr.ant-table-row').filter({ hasText: 'status in set' });
     await row.getByRole('button', { name: /expand/i }).click();
     await expect(page.getByText('unknwon')).toBeVisible();
@@ -85,14 +77,8 @@ test.describe('Results page', () => {
     await expect(page.getByText('upstream source timed out')).toBeVisible();
   });
 
-  // #1282: the column `width` + `ellipsis` that #1185/#1208 shipped were inert
-  // — `scroll={{ x: 'max-content' }}` sizes the table from its content, which
-  // neuters `table-layout: fixed` and demotes the colgroup width to a hint, so
-  // a long failure reason rendered at ~1900px with no ellipsis in production.
-  //
-  // This assertion has to live in Playwright: jsdom performs no layout, so the
-  // Vitest suite happily confirmed the ellipsis CLASS was applied while the
-  // bound did nothing. Measure the rendered box, not the props.
+  // #1282: the column `width` + `ellipsis` that #1185/#1208 shipped were inert — `scroll={{ x:
+  // 'max-content' }}` sizes the table from its content.
   test('bounds a long failure reason instead of stretching the table', async ({ page }) => {
     await page.getByRole('tab', { name: 'Pipeline runs' }).click();
 
@@ -113,13 +99,8 @@ test.describe('Results page', () => {
     expect(box.rendered).toBeLessThanOrEqual(260);
     expect(box.full).toBeGreaterThan(box.clientWidth);
 
-    // …and the table itself stays near the viewport rather than being dragged
-    // out to the length of the error string (the user-visible symptom: an
-    // unusably long horizontal scrollbar). Identified by its own column header
-    // rather than by position: `.ant-table table` unscoped matches the hidden
-    // Runs table first and measures 0, which passes this assertion no matter
-    // what the pipeline table does — a check that cannot fail is worse than no
-    // check.
+    // …and the table itself stays near the viewport rather than being dragged out to the length of
+    // the error string (the user-visible symptom: an unusably long horizontal scrollbar).
     const table = page
       .locator('.ant-table table')
       .filter({ has: page.getByRole('columnheader', { name: 'Failure reason' }) });
@@ -128,16 +109,7 @@ test.describe('Results page', () => {
     const viewport = page.viewportSize();
     expect(tableWidth).toBeLessThan((viewport?.width ?? 1280) * 1.5);
 
-    // Bounding the Provider-run id must not push its copy button onto a second
-    // line — that silently grew every row in the table from 56px to 77px when
-    // the bound was first set to 150px in a 200px cell (#1286). Another layout
-    // property jsdom cannot see, so it is asserted here.
-    //
-    // Scoped to the Airflow row, whose seeded run id is a real full-length
-    // `manual__<iso8601>` — a `max-width` only ever clips, so a short id makes
-    // this assertion pass at ANY bound and the guard silently goes inert. The
-    // `idClipped` assertion below is what keeps that honest: if the seed ever
-    // reverts to a tidy id, this test fails rather than quietly stops testing.
+    // Bounding the Provider-run id must not push its copy button onto a second line.
     const idBox = await table.evaluate((el) => {
       const headers = [...el.querySelectorAll('th')].map((th) => th.textContent?.trim());
       const idx = headers.indexOf('Provider run');
@@ -156,23 +128,14 @@ test.describe('Results page', () => {
     expect(idBox).toEqual({ idClipped: true, copyWrapped: false });
   });
 
-  // The run-detail Observed column is the other half of #1282, and the half the
-  // fix's own argument says only a browser can validate — so it gets its own
-  // measurement rather than riding on the pipeline-runs one. The seeded `error`
-  // result carries a full-length connector error for exactly this.
+  // The run-detail Observed column is the other half of #1282, and the half the fix's own argument
+  // says only a browser can validate.
   test('bounds a long observed_value on the run-detail page', async ({ page }) => {
     await page.locator('tr.ant-table-row').filter({ hasText: 'seed:run:mixed' }).first().click();
     await expect(page).toHaveURL(/\/results\/[0-9a-f-]+$/);
 
-    // Scoped to the interactive region (#345): the print-only RunReport renders
-    // a parallel, unbounded copy of the same payload.
-    //
-    // Targets the BOUNDED span, not the text: `getByText` resolves to the
-    // innermost match, which here is ScalarValue's inline `<code>` — its
-    // scrollWidth/clientWidth are both 0 and its rect is the full text width, so
-    // measuring it would fail even with the bound working. Matching on the bound
-    // itself also means removing the bound makes this test fail (no match)
-    // rather than silently measure something else.
+    // Scoped to the interactive region (#345): the print-only RunReport renders a parallel,
+    // unbounded copy of the same payload.
     const observed = page
       .getByTestId('rd-screen')
       .locator('td span[style*="max-width"]')

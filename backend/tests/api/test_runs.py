@@ -1,11 +1,4 @@
-"""Run trigger + read API tests against a real Postgres (db_session).
-
-get_db is overridden to the shared rolled-back session; auth runs in dev-bypass
-(conftest), which upserts the dev user used as `created_by` for API-created
-suites. `run_dispatch.dispatch_run` is stubbed by the autouse conftest fixture
-(`stub_run_dispatch`), so triggering never touches a broker; a test that needs
-the broker-failure path re-patches it. Skips without TEST_DATABASE_URL.
-"""
+"""Run trigger + read API tests against a real Postgres (db_session)."""
 
 import json
 import uuid
@@ -119,7 +112,8 @@ def test_trigger_stamps_suite_asset_id_on_run(
     client: TestClient, db_session: Any, stub_run_dispatch: list[str]
 ) -> None:
     """A manually-triggered run records the suite's resolved asset (ADR 0034):
-    run.asset_id == suite.asset_id at dispatch."""
+    run.asset_id == suite.asset_id at dispatch.
+    """
     dev = _user(db_session, "dev@ex")
     _as(dev)
     suite = _suite(db_session, dev, target={"table": "ORDERS"})
@@ -214,9 +208,8 @@ def test_list_runs_scoped_to_accessible_suites_newest_first(
     r1 = _run(db_session, mine, status="succeeded")
     r2 = _run(db_session, mine, status="failed")
     _run(db_session, theirs)  # not accessible to dev
-    # Postgres now() is transaction-scoped, so server-default created_at ties
-    # inside this single test transaction; set distinct values so the desc
-    # ordering is deterministic (in production each run is its own transaction).
+    # Postgres now() is transaction-scoped, so server-default created_at ties inside this single
+    # test transaction.
     r1.created_at = datetime(2026, 6, 1, tzinfo=UTC)
     r2.created_at = datetime(2026, 6, 2, tzinfo=UTC)
     db_session.commit()
@@ -262,10 +255,8 @@ def test_list_runs_filters_by_suite_and_status(client: TestClient, db_session: A
 
 
 def test_list_runs_includes_check_outcome_counts(client: TestClient, db_session: Any) -> None:
-    # #423: the runs list surfaces each run's DQ outcome (total/passed/worst-severity)
-    # — distinct from the run's execution `status`, which is `succeeded` even when
-    # checks fail. total/passed count *evaluated* checks; operational skip/error are
-    # excluded (matches the run-detail X/Y). A run with no results reports 0/0/None.
+    # #423: the runs list surfaces each run's DQ outcome (total/passed/worst-severity) — distinct
+    # from the run's execution `status`.
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     failing = _run(db_session, suite, status="succeeded")  # executed, but a check failed
@@ -328,7 +319,8 @@ def test_list_runs_total_count_header_matches_accessible_population(
     """#1108: `/runs` previously had `limit` only — no `offset`, no total, so a
     page shorter than `limit` could never be told apart from "that's everything".
     `X-Total-Count` reports the caller's ACCESSIBLE population (suite-scoped,
-    unlike the workspace-true `/assets` total), unaffected by the page size."""
+    unlike the workspace-true `/assets` total), unaffected by the page size.
+    """
     dev = _user(db_session, "dev@ex")
     other = _user(db_session, "other@ex")
     mine = _suite(db_session, dev, target={"table": "T"})
@@ -346,7 +338,8 @@ def test_list_runs_total_count_header_matches_accessible_population(
 
 def test_list_runs_total_count_header_respects_filters(client: TestClient, db_session: Any) -> None:
     """The header counts the SAME filtered population the list applies (#1108) —
-    a `status` filter narrows both, not just the page."""
+    a `status` filter narrows both, not just the page.
+    """
     dev = _user(db_session, "dev@ex")
     s = _suite(db_session, dev, target={"table": "T"})
     _run(db_session, s, status="succeeded")
@@ -361,7 +354,8 @@ def test_list_runs_total_count_header_respects_filters(client: TestClient, db_se
 
 def test_list_runs_pages_with_offset_no_duplicates(client: TestClient, db_session: Any) -> None:
     """`offset` actually pages `/runs` now (#1108), mirroring the `/pipeline_runs`
-    (#928) and `/incidents` (#772) paging shape."""
+    (#928) and `/incidents` (#772) paging shape.
+    """
     dev = _user(db_session, "dev@ex")
     s = _suite(db_session, dev, target={"table": "T"})
     for _ in range(5):
@@ -377,15 +371,7 @@ def test_list_runs_pages_with_offset_no_duplicates(client: TestClient, db_sessio
 
 
 def test_list_runs_rejects_an_unknown_status(client: TestClient, db_session: Any) -> None:
-    """A typo'd/wrong-case `status` must 422, not answer a confident empty page.
-
-    `/runs` validated nothing, so `?status=succeded` returned `200 []` with
-    `X-Total-Count: 0` — a total that asserts "no runs are in that status" about a
-    status that does not exist. That is the confidently-empty-answer class (#828),
-    already guarded on `/pipeline_runs`'s `provider` (#306) and `/incidents`'s
-    `state` (#570). Seed a real run first so an empty body could ONLY come from the
-    filter, never from an empty table.
-    """
+    """A typo'd/wrong-case `status` must 422, not answer a confident empty page."""
     dev = _user(db_session, "dev@ex")
     s = _suite(db_session, dev, target={"table": "T"})
     _run(db_session, s, status="succeeded")
@@ -413,11 +399,7 @@ def test_list_runs_rejects_an_unknown_status(client: TestClient, db_session: Any
 def test_list_runs_status_validated_before_the_total_header_is_computed(
     client: TestClient, db_session: Any
 ) -> None:
-    """The 422 must carry NO `X-Total-Count` at all.
-
-    A `0` alongside the error would still be an assertion about a population that
-    was never queried — the header has to be absent, not zero, when the filter is
-    rejected."""
+    """The 422 must carry NO `X-Total-Count` at all."""
     dev = _user(db_session, "dev@ex")
     _run(db_session, _suite(db_session, dev, target={"table": "T"}), status="succeeded")
     _as(dev)
@@ -431,7 +413,8 @@ def test_list_runs_status_gate_runs_for_a_named_suite_too(
     client: TestClient, db_session: Any
 ) -> None:
     """`?suite_id=…&status=<bogus>` 422s as well — the suite gate runs first, so
-    the status check must not be skipped on the branch that passes it."""
+    the status check must not be skipped on the branch that passes it.
+    """
     dev = _user(db_session, "dev@ex")
     s = _suite(db_session, dev, target={"table": "T"})
     _run(db_session, s, status="succeeded")
@@ -484,7 +467,8 @@ def test_get_run_returns_results(client: TestClient, db_session: Any) -> None:
 def test_get_run_detail_grafts_check_outcome_counts(client: TestClient, db_session: Any) -> None:
     """The detail endpoint must graft the data-quality outcome like the list does
     — a bare RunRead.model_validate(run) leaves checks_total/passed at 0/0 because
-    the ORM Run has no such columns (#571)."""
+    the ORM Run has no such columns (#571).
+    """
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     c1 = _check(db_session, suite, "pass-check")
@@ -502,9 +486,8 @@ def test_get_run_detail_grafts_check_outcome_counts(client: TestClient, db_sessi
     body = client.get(f"/api/v1/runs/{run.id}").json()
     assert (body["checks_total"], body["checks_passed"], body["worst_severity"]) == (2, 1, "warn")
 
-    # All-skip run (present Result rows, but every check operational): evaluated
-    # total is 0 via a present-but-zeroed tuple — the detail graft must render `—`
-    # (0/0/None), the truthy-tuple path distinct from the no-rows None path above.
+    # All-skip run (present Result rows, but every check operational): evaluated total is 0 via a
+    # present-but-zeroed tuple — the detail graft must render `—` (0/0/None).
     skip_run = _run(db_session, suite, status="succeeded")
     db_session.add(Result(run_id=skip_run.id, check_id=c1.id, status="skip"))
     db_session.commit()
@@ -522,7 +505,8 @@ def test_pre_dispatch_failure_checks_total_consistent_across_read_models(
     """A run that fails before any check executes has no Result rows: both the list
     and the detail report checks_total == 0 (the evaluated-outcome denominator,
     rendered `—`), while /progress reports the suite's *defined* check count. The
-    two are truthful about different things; list and detail must agree (#571)."""
+    two are truthful about different things; list and detail must agree (#571).
+    """
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     _check(db_session, suite, "a")
@@ -541,7 +525,8 @@ def test_pre_dispatch_failure_checks_total_consistent_across_read_models(
 
 def test_get_run_redacts_sample_failure_values(client: TestClient, db_session: Any) -> None:
     """Raw failing cell values must be masked before leaving DataQ; the numeric
-    counts and the row/column shape are kept (#226)."""
+    counts and the row/column shape are kept (#226).
+    """
 
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
@@ -655,7 +640,8 @@ def test_get_run_reports_null_redaction_state_when_sample_has_no_data_bearing_co
     client: TestClient, db_session: Any
 ) -> None:
     """Only aggregate counts (no row/value data at all) — there is nothing to have
-    redacted one way or the other, so the state must be null, not a guess."""
+    redacted one way or the other, so the state must be null, not a guess.
+    """
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
@@ -750,7 +736,8 @@ def test_progress_completed_run_reports_per_check_status_and_histogram(
     client: TestClient, db_session: Any
 ) -> None:
     """A finished run resolves each check to its result status; the histogram and
-    completed count reflect the persisted rows (incl. operational `error`)."""
+    completed count reflect the persisted rows (incl. operational `error`).
+    """
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     c_pass = _check(db_session, suite, "ok")
@@ -786,7 +773,8 @@ def test_progress_failed_run_has_terminal_status_and_no_results(
 ) -> None:
     """A failed run rolls back and writes no results, so per-check status stays
     null — consumers must read it together with the terminal `status='failed'`,
-    not treat null as 'still running' (the documented contract)."""
+    not treat null as 'still running' (the documented contract).
+    """
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     _check(db_session, suite, "a")
@@ -804,7 +792,8 @@ def test_progress_failed_run_has_terminal_status_and_no_results(
 def test_progress_queued_run_has_no_elapsed_yet(client: TestClient, db_session: Any) -> None:
     """`elapsed_ms` is null until the worker stamps `started_at` — a queued run has
     not been going for 0 ms, it has not been going at all, and the drawer must be
-    able to tell those apart (#318)."""
+    able to tell those apart (#318).
+    """
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     _check(db_session, suite, "a")
@@ -822,7 +811,8 @@ def test_progress_running_run_reports_server_measured_elapsed(
     """A running run with nothing resolved yet still reports how long it has been
     going — the honest affordance for the atomic GX batch (#318). Measured on the
     server clock, so a client with a skewed clock cannot render a run that started
-    90s ago as finishing in the future."""
+    90s ago as finishing in the future.
+    """
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     _check(db_session, suite, "a")
@@ -841,7 +831,8 @@ def test_progress_terminal_run_elapsed_stops_at_finished_at(
     client: TestClient, db_session: Any
 ) -> None:
     """Once terminal the elapsed time freezes at the run's own duration instead of
-    growing forever against `now()`."""
+    growing forever against `now()`.
+    """
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     _check(db_session, suite, "a")
@@ -861,7 +852,8 @@ def test_progress_reports_batched_pending_for_grouped_kinds(
 ) -> None:
     """`batched_pending` is what lets the drawer explain a stalled-looking 0/N from
     the run's real composition (#318 G6). An unresolved expectation resolves with
-    its whole GX batch, so the claim holds."""
+    its whole GX batch, so the claim holds.
+    """
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     _check(db_session, suite, "a")  # kind defaults to `expectation`
@@ -878,7 +870,8 @@ def test_progress_withholds_batched_pending_for_a_comparison_only_suite(
 ) -> None:
     """A comparison check resolves on its own, so the "they report together"
     explanation would be false — the whole point of sending this from the server
-    rather than inferring it from `completed_checks == 0`."""
+    rather than inferring it from `completed_checks == 0`.
+    """
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     conn_id = db_session.get(Suite, suite.id).connection_id
@@ -943,7 +936,8 @@ def test_cancel_non_terminal_run_marks_cancelled_and_revokes(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch, start_status: str
 ) -> None:
     """A queued or running run cancels: status→cancelled, finished_at set, and the
-    Celery task is revoked (best-effort) with the run's captured task id."""
+    Celery task is revoked (best-effort) with the run's captured task id.
+    """
     revoked: list[str | None] = []
     monkeypatch.setattr(run_dispatch, "revoke_run", lambda task_id: revoked.append(task_id))
 
@@ -1045,13 +1039,7 @@ def test_list_pipeline_runs_filters_by_provider_and_status(
 def _pipeline_runs_on_one_connection(
     db_session: Any, owner: User, *, count: int, provider: str = "adf"
 ) -> list[PipelineRun]:
-    """`count` pipeline runs sharing ONE connection.
-
-    `_pipeline_run` above mints a connection per call, which trips
-    `uq_connections_orchestrator_type_env` on the second row — an orchestrator is
-    singular per (type, env). Real pipeline runs all hang off one connection
-    anyway, so this is also the more faithful shape for paging tests.
-    """
+    """`count` pipeline runs sharing ONE connection."""
     conn = _connection(db_session, owner, type_=provider)
     runs = [
         PipelineRun(
@@ -1071,11 +1059,7 @@ def _pipeline_runs_on_one_connection(
 
 
 def test_list_pipeline_runs_pages_with_offset(client: TestClient, db_session: Any) -> None:
-    """`offset` actually pages, and never returns the same row twice (#928).
-
-    Before this, `offset` was not a parameter at all — FastAPI silently discarded
-    it, so a paging client re-read page 1 forever while believing it was advancing.
-    """
+    """`offset` actually pages, and never returns the same row twice (#928)."""
     owner = _user(db_session, "owner@ex")
     _pipeline_runs_on_one_connection(db_session, owner, count=5)
     _as(owner)
@@ -1097,7 +1081,8 @@ def test_pipeline_runs_total_count_header_matches_full_population(
 ) -> None:
     """#1108: `/pipeline_runs` had `offset` (#928) but no total — a page shorter
     than `limit` couldn't be told apart from "that's everything". `X-Total-Count`
-    reports the true population regardless of the page size."""
+    reports the true population regardless of the page size.
+    """
     owner = _user(db_session, "owner@ex")
     _pipeline_runs_on_one_connection(db_session, owner, count=5)
     _as(owner)
@@ -1112,7 +1097,8 @@ def test_pipeline_runs_total_count_header_respects_filters(
     client: TestClient, db_session: Any
 ) -> None:
     """The header counts the SAME `provider`/`status`-filtered population the
-    list applies (#1108) — not the unfiltered table."""
+    list applies (#1108) — not the unfiltered table.
+    """
     owner = _user(db_session, "owner@ex")
     _pipeline_run(db_session, owner, provider="adf", status="succeeded")
     _pipeline_run(db_session, owner, provider="airflow", status="failed")
@@ -1127,30 +1113,13 @@ def test_pipeline_runs_total_count_header_respects_filters(
 
 
 def test_pipeline_run_ordering_is_total_so_paging_cannot_skip() -> None:
-    """The paging order must be TOTAL — it ends in a unique column (#928).
-
-    Why this is a structural assertion and not a behavioural one, stated because
-    the behavioural version is tempting and worthless: the poll ingests a batch in
-    ONE transaction and Postgres' `now()` is transaction-scoped, so real batches
-    land with identical `created_at`. Ordering by that alone is not a total order,
-    and `LIMIT/OFFSET` over a non-total order may return a row on two pages while
-    never returning another.
-
-    *May.* Postgres is free to vary the order of tied rows but is not obliged to,
-    and in practice a small table with a stable plan returns them consistently. A
-    test that pages tied rows and asserts no duplicates therefore **passes against
-    the unfixed code** most of the time — verified: removing the `id` tie-break
-    left that test green. That is the #948 coin-flip lesson exactly, so this
-    asserts the invariant itself rather than waiting for the database to misbehave
-    on cue.
-    """
+    """The paging order must be TOTAL — it ends in a unique column (#928)."""
     from backend.app.services.orchestration_service import pipeline_run_order_by
 
     order = pipeline_run_order_by()
     assert len(order) >= 2, "a single non-unique sort key cannot be a total order"
-    # Totality is exactly "the final sort key is unique", so assert that property
-    # rather than the identity of one particular column — a different unique key
-    # would be equally correct, and this stays true if the ordering is reworked.
+    # Totality is exactly "the final sort key is unique", so assert that property rather than the
+    # identity of one particular column — a different unique key would be equally correct.
     final_key = order[-1].element
     final_name = getattr(final_key, "name", final_key)
     assert getattr(
@@ -1161,13 +1130,7 @@ def test_pipeline_run_ordering_is_total_so_paging_cannot_skip() -> None:
 def test_list_pipeline_runs_rejects_an_unknown_provider(
     client: TestClient, db_session: Any
 ) -> None:
-    """A typo'd provider must 422, not return a confident empty list (#306).
-
-    The pre-fix behaviour was `200 []` — indistinguishable from "this provider has
-    no runs", which is the confidently-empty-answer class (#828). Seed a real run
-    first so an empty body could ONLY come from the filter, never from an empty
-    table.
-    """
+    """A typo'd provider must 422, not return a confident empty list (#306)."""
     owner = _user(db_session, "owner@ex")
     _pipeline_run(db_session, owner, provider="adf", status="succeeded")
     _as(owner)
@@ -1187,13 +1150,7 @@ def test_list_pipeline_runs_rejects_an_unknown_provider(
 
 
 def test_list_pipeline_runs_rejects_an_unknown_status(client: TestClient, db_session: Any) -> None:
-    """`status` joins `provider` behind the same closed-vocabulary gate (#1108).
-
-    `provider` has 422'd since #306, but `status` flowed straight into the `WHERE`
-    — so `?status=succeded` answered `200 []` with `X-Total-Count: 0`, the exact
-    confidently-empty-answer shape (#828) the provider gate exists to prevent. The
-    422 must also carry no total: a `0` would assert something about a population
-    that was never queried."""
+    """`status` joins `provider` behind the same closed-vocabulary gate (#1108)."""
     owner = _user(db_session, "owner@ex")
     _pipeline_run(db_session, owner, provider="adf", status="succeeded")
     _as(owner)
@@ -1313,7 +1270,8 @@ def test_list_pipelines_one_row_per_pipeline_newest_active_first(
     client: TestClient, db_session: Any
 ) -> None:
     """Distinct (provider, pipeline, env) tuples each get a row; the most
-    recently-active pipeline leads."""
+    recently-active pipeline leads.
+    """
     owner = _user(db_session, "owner@ex")
     adf = _connection(db_session, owner, type_="adf")
     af = _connection(db_session, owner, type_="airflow")
@@ -1410,7 +1368,8 @@ def test_list_pipelines_newest_run_without_started_at_is_not_masked(
     """Regression: a fresh run whose event carried no start time (started_at
     NULL — realistic for a failure webhook) must still win its partition. Naive
     `started_at DESC NULLS LAST` would rank it last and surface the stale older
-    run instead; recency falls back to created_at."""
+    run instead; recency falls back to created_at.
+    """
     owner = _user(db_session, "owner@ex")
     conn = _connection(db_session, owner, type_="adf")
     # older run, fully timed, succeeded — inserted first (earlier created_at)
@@ -1443,8 +1402,7 @@ def test_list_pipelines_newest_run_without_started_at_is_not_masked(
 
 
 def test_list_pipelines_respects_limit(client: TestClient, db_session: Any) -> None:
-    """`limit` caps to the N most-recently-active pipelines (parity with
-    /pipeline_runs)."""
+    """`limit` caps to the N most-recently-active pipelines (parity with /pipeline_runs)."""
     owner = _user(db_session, "owner@ex")
     conn = _connection(db_session, owner, type_="adf")
     base = datetime(2026, 6, 1, tzinfo=UTC)
@@ -1518,9 +1476,8 @@ def _record_near_miss(
         binding_env=binding_env,
     )
     if updated_at is not None:
-        # Backdate the row directly, bypassing the write path's `func.now()`, so
-        # the "aged out of the recency window" case can be exercised without a
-        # real clock wait.
+        # Backdate the row directly, bypassing the write path's `func.now()`, so the "aged out of
+        # the recency window" case can be exercised without a real clock wait.
         key = workspace_health_service._near_miss_key(
             provider=provider,
             pipeline_or_dag_id=pipeline,
@@ -1553,7 +1510,8 @@ def test_list_near_misses_decodes_a_current_row(client: TestClient, db_session: 
 
 def test_list_near_misses_excludes_a_stale_row(client: TestClient, db_session: Any) -> None:
     """A near-miss whose `updated_at` has aged past the recency window reads as
-    resolved (fixed, or the pipeline stopped running) rather than ongoing."""
+    resolved (fixed, or the pipeline stopped running) rather than ongoing.
+    """
     owner = _user(db_session, "owner@ex")
     suite = _suite(db_session, owner)
     _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
@@ -1578,7 +1536,8 @@ def test_list_near_misses_excludes_a_stale_row(client: TestClient, db_session: A
 def test_list_near_misses_excludes_a_disabled_binding(client: TestClient, db_session: Any) -> None:
     """No ENABLED binding for the (provider, pipeline) → nothing to re-derive the
     candidate hash from, so a stray row (e.g. left over from before the binding
-    was disabled) can never be matched back to a tuple here."""
+    was disabled) can never be matched back to a tuple here.
+    """
     owner = _user(db_session, "owner@ex")
     suite = _suite(db_session, owner)
     _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev", enabled=False)
@@ -1605,7 +1564,8 @@ def test_list_near_misses_omits_bindings_on_inaccessible_suites(
     """The authz gate this endpoint hangs on (#1199 review). A trigger binding is
     suite-owned config — `GET /trigger-bindings` never shows a stranger someone
     else's binding, and neither may this route, or it becomes a workspace-wide
-    enumeration of (provider, pipeline_or_dag_id, binding_env) tuples."""
+    enumeration of (provider, pipeline_or_dag_id, binding_env) tuples.
+    """
     owner = _user(db_session, "owner@ex")
     stranger = _user(db_session, "stranger@ex")
     suite = _suite(db_session, owner)
@@ -1665,7 +1625,8 @@ def test_list_near_misses_returns_every_current_mismatch_on_one_binding(
 ) -> None:
     """The #1186 root case: one DAG id reported by two orchestrator connections in
     two different wrong envs. Both are live and both must surface — a UI that
-    showed only the first would hide a real mismatch behind another."""
+    showed only the first would hide a real mismatch behind another.
+    """
     owner = _user(db_session, "owner@ex")
     suite = _suite(db_session, owner)
     _binding(db_session, suite, provider="airflow", pipeline="flow_a", env="dev")
@@ -1702,7 +1663,8 @@ def test_get_run_surfaces_the_sampling_record_unredacted(
     """The UI half of #595's acceptance criterion: a check that passed on a sample
     must say so on the wire. The record is DataQ-authored metadata about the READ
     (a strategy name, three counts, an optional seed) — no target data — so unlike
-    `sample_failures` it passes through unredacted."""
+    `sample_failures` it passes through unredacted.
+    """
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     check = _check(db_session, suite, "c")
@@ -1729,7 +1691,8 @@ def test_a_result_from_a_complete_read_reports_no_sampling(
 ) -> None:
     """`null`, not a `sampled: false` object — so a client can branch on presence,
     and every result written before scale-aware execution reads correctly for free
-    rather than needing a backfill."""
+    rather than needing a backfill.
+    """
     dev = _user(db_session, "dev@ex")
     suite = _suite(db_session, dev, target={"table": "T"})
     check = _check(db_session, suite, "c")

@@ -1,11 +1,4 @@
-"""Unit tests for the MCP auth module (no DB, no network).
-
-Covers the four operating modes and user resolution: real Azure mode builds a
-JWTVerifier from the same tenant/audience/scope as the REST API; an OTP-only
-deployment builds the same composite with the JWT half absent, so a PAT is the
-only `/mcp` credential (#1128); dev-bypass builds none; and `resolve_current_user`
-reads the validated token's claims (or the dev-bypass user).
-"""
+"""Unit tests for the MCP auth module (no DB, no network)."""
 
 from types import SimpleNamespace
 from typing import Any
@@ -40,9 +33,7 @@ _OIDC: dict[str, Any] = {
     "oidc_audience": "dataq-client-id",
 }
 
-#: Nothing configured at all. Explicit about dev-bypass because the suite's own
-#: conftest exports `AUTH_DEV_BYPASS=true`, and `Settings` reads os.environ — so an
-#: "empty" Settings() is a *dev-bypass* Settings unless it says otherwise.
+#: Nothing configured at all.
 _NOTHING: dict[str, Any] = {"environment": "prod", "auth_dev_bypass": False}
 
 
@@ -74,9 +65,8 @@ def test_build_auth_provider_is_none_only_in_dev_bypass() -> None:
         pytest.param({**_OIDC, **_OTP, "environment": "prod"}, "generic_oidc", id="oidc-and-otp"),
         pytest.param({"environment": "dev", "auth_dev_bypass": True}, "dev_bypass", id="bypass"),
         pytest.param(_NOTHING, "disabled", id="nothing"),
-        # OTP outranks dev-bypass, exactly as it does in `core.auth`'s ladder:
-        # resolving a real auth configuration to the unauthenticated bypass would
-        # be a downgrade, and the two seams must not disagree about the mode.
+        # OTP outranks dev-bypass, exactly as it does in `core.auth`'s ladder: resolving a real auth
+        # configuration to the unauthenticated bypass would be a downgrade.
         pytest.param(
             {**_OTP, "environment": "dev", "auth_dev_bypass": True}, "pat_only", id="otp+bypass"
         ),
@@ -96,13 +86,7 @@ def test_mcp_enabled_covers_otp_only_and_still_fails_closed() -> None:
 
 
 def test_otp_only_builds_a_verifier_with_NO_jwt_half() -> None:
-    """The JWT half is absent, not unconfigured-but-present.
-
-    An OTP deployment has no directory to validate a JWT against. Building a
-    `JWTVerifier` with empty coordinates would be the dangerous shape — a
-    validator nobody can reason about — so the branch is structurally missing and
-    every non-PAT bearer is rejected without reaching any validator.
-    """
+    """The JWT half is absent, not unconfigured-but-present."""
     provider = auth.build_auth_provider(_settings(**_OTP, **_NOTHING))
     assert isinstance(provider, auth._PatOrJwtVerifier)
     assert provider._jwt is None
@@ -116,12 +100,7 @@ def test_azure_and_otp_together_keep_the_jwt_half() -> None:
 
 
 def test_an_unconfigured_deployment_gets_a_credential_requiring_verifier_not_none() -> None:
-    """The unreachable case degrades safely.
-
-    `mcp_enabled` is False here, so nothing mounts. If a future change ever mounts
-    it anyway, requiring a PAT means "nobody can authenticate" rather than
-    "everybody can" — the opposite of what returning `None` would have meant.
-    """
+    """The unreachable case degrades safely."""
     provider = auth.build_auth_provider(_settings(**_NOTHING))
     assert isinstance(provider, auth._PatOrJwtVerifier)
     assert provider._jwt is None
@@ -130,7 +109,8 @@ def test_an_unconfigured_deployment_gets_a_credential_requiring_verifier_not_non
 def test_build_auth_provider_generic_oidc_mode_is_pat_or_jwt_composite(monkeypatch: Any) -> None:
     """The MCP counterpart to `core.auth.OidcBearerScheme` — reuses fastmcp's
     already-generic `JWTVerifier`, just pointed at the configured issuer instead
-    of Azure's hardcoded endpoints (see `build_auth_provider`'s docstring)."""
+    of Azure's hardcoded endpoints (see `build_auth_provider`'s docstring).
+    """
     monkeypatch.setattr(auth, "discover_jwks_uri", lambda issuer: f"{issuer}/jwks.json")
     s = _settings(**_OIDC, environment="prod")
     provider = auth.build_auth_provider(s)
@@ -181,7 +161,8 @@ def test_resolve_user_requires_oid_no_subject_fallback(db_session: Any, monkeypa
 def test_resolve_user_generic_oidc_reads_sub(db_session: Any, monkeypatch: Any) -> None:
     """In `generic_oidc` mode, `sub` IS the right key — unlike Azure's pairwise
     `sub`, generic OIDC has no `oid`-shaped stable-directory alternative; `sub`
-    is the RFC 7519 REQUIRED subject claim."""
+    is the RFC 7519 REQUIRED subject claim.
+    """
     token = SimpleNamespace(claims={"sub": "cognito-sub-1", "email": "u@example.com"})
     monkeypatch.setattr(auth, "get_access_token", lambda: token)
     monkeypatch.setattr(auth, "get_settings", lambda: _settings(**_OIDC, environment="prod"))
@@ -193,7 +174,8 @@ def test_resolve_user_generic_oidc_reads_sub(db_session: Any, monkeypatch: Any) 
 
 def test_resolve_user_generic_oidc_has_no_guest_policy(db_session: Any, monkeypatch: Any) -> None:
     """The Azure B2B-guest concept doesn't apply to a generic provider — an
-    `acct` claim (Azure's guest signal) must not be inspected in this mode."""
+    `acct` claim (Azure's guest signal) must not be inspected in this mode.
+    """
     token = SimpleNamespace(claims={"sub": "cognito-sub-2", "acct": 1}, token="raw-jwt")
     monkeypatch.setattr(auth, "get_access_token", lambda: token)
     # No email in the claims → the #1346 userinfo path fires; neutralize it here
@@ -317,36 +299,19 @@ async def test_pat_only_verifier_rejects_a_bad_pat(db_session: Any, monkeypatch:
 @pytest.mark.parametrize(
     "bearer",
     [
-        # Deliberately NOT a decodable JWT: the branch under test never parses the
-        # token, and a structurally valid one trips secret scanners (GitGuardian
-        # flagged exactly that on the first push of this PR). Matches the
-        # placeholder convention already used above.
+        # Deliberately NOT a decodable JWT: the branch under test never parses the token.
         pytest.param("eyJhbGciOi.some.jwt", id="jwt-shaped"),
         pytest.param("opaque-bearer-that-is-not-a-dataq-token", id="opaque"),
         pytest.param("", id="empty"),
     ],
 )
 async def test_pat_only_verifier_rejects_every_non_pat_bearer_uniformly(bearer: str) -> None:
-    """No JWT branch exists here, so "rejected" must not mean "crashed".
-
-    The failure mode this pins is an `AttributeError` on `None.verify_token`,
-    which fastmcp would surface as a 500 with a traceback rather than the uniform
-    401 — a different answer for a raw JWT than for a bad PAT, i.e. an oracle
-    telling a caller which auth mode the deployment runs.
-    """
+    """No JWT branch exists here, so "rejected" must not mean "crashed"."""
     assert await _pat_only_verifier().verify_token(bearer) is None
 
 
 async def test_pat_only_verifier_rejects_a_session_token() -> None:
-    """`dq_sess_` stays a browser-only credential in this mode too (ADR 0032).
-
-    Worth its own case rather than folding into the parametrization above: in
-    pat_only mode the JWT branch is gone, so a regression that dropped the session
-    prefix guard would still return None here — and the *reason* would silently
-    change from "sessions are not an MCP credential" to "nothing but a PAT
-    validates". The prefix guard is what keeps the behaviour identical in every
-    mode, including the azure_ad one where the difference is a leaked credential.
-    """
+    """`dq_sess_` stays a browser-only credential in this mode too (ADR 0032)."""
     from backend.app.services import session_service
 
     verifier = _pat_only_verifier()
@@ -374,12 +339,6 @@ def test_resolve_user_pat_claim_missing_user_fails_closed(
 async def test_verifier_rejects_a_SESSION_token_before_the_jwt_branch(monkeypatch: Any) -> None:
     """`/mcp` is an explicit non-goal for sessions (ADR 0032 decision 1): a session
     is a browser credential, a PAT is the headless/MCP one.
-
-    The assertion is not merely "returns None" — the JWT verifier is spied on,
-    because the buggy version ALSO returns None, after handing a live credential to
-    a validator that logs what it cannot decode. That is the #849 leak shape
-    exactly, and the only thing that distinguishes the fix from the bug is that the
-    validator is never entered.
     """
     from backend.app.services import session_service
 
@@ -396,15 +355,7 @@ async def test_verifier_rejects_a_SESSION_token_before_the_jwt_branch(monkeypatc
 
 
 def test_the_mcp_layer_never_reads_a_cookie() -> None:
-    """The premise the `allowed_origins=["*"]` justification rests on (#734).
-
-    That relaxation is safe because CSRF needs an AMBIENT credential and /mcp has
-    none — every call is authenticated by an `Authorization` header. ADR 0032
-    introduced DataQ's first ambient credential, so the premise was re-checked
-    rather than assumed. This pins it structurally: if any MCP auth code ever
-    starts reading `request.cookies`, a browser holding a DataQ session becomes
-    forgeable from any origin, and the comment in `mcp/server.py` becomes false.
-    """
+    """The premise the `allowed_origins=["*"]` justification rests on (#734)."""
     import inspect
 
     from backend.app.mcp import auth as mcp_auth
@@ -417,22 +368,7 @@ def test_the_mcp_layer_never_reads_a_cookie() -> None:
 def test_a_request_carrying_ONLY_the_session_cookie_is_rejected_over_http(
     monkeypatch: Any,
 ) -> None:
-    """The end-to-end statement of the `allowed_origins=["*"]` premise (#734).
-
-    Mounts the real AUTHENTICATED MCP app and sends a real JSON-RPC request whose
-    only credential is a DataQ session cookie — the exact shape a hostile page
-    could induce a signed-in browser into making. It must 401: /mcp authenticates
-    from the `Authorization` header alone, so there is no ambient-credential path
-    to forge a request against, which is what makes the wide-open Origin policy
-    safe.
-
-    The module reload is load-bearing, not ceremony: `server.mcp` binds its auth
-    provider at IMPORT time (`FastMCP(..., auth=build_auth_provider())`), and the
-    suite imports it under dev-bypass — where the provider is None and the app is
-    unmounted-auth. Without the reload this test gets a 400 from the transport and
-    proves nothing about authentication. Reloaded back afterwards so the rest of
-    the suite sees the module it expects.
-    """
+    """The end-to-end statement of the `allowed_origins=["*"]` premise (#734)."""
     import importlib
 
     from fastapi import FastAPI
@@ -471,20 +407,7 @@ def test_a_request_carrying_ONLY_the_session_cookie_is_rejected_over_http(
 
 
 def _reload_server_in_otp_only_mode(monkeypatch: Any) -> Any:
-    """Reload `mcp.server` with ONLY the OTP block configured, and return it.
-
-    The reload is what makes this a test of the deployed shape rather than of a
-    helper: `server.mcp` binds its auth provider at IMPORT time, and the suite
-    imports it under dev-bypass.
-
-    Every OTHER mode is switched off explicitly, and that is load-bearing rather
-    than tidy. The suite's conftest exports `ENVIRONMENT=dev` + `AUTH_DEV_BYPASS=true`
-    process-wide, so without this the mount would be rescued by the bypass branch
-    and a mount assertion would pass with the OTP change reverted — verified by
-    reverting it. The Azure vars go for the mirror-image reason: `azure_ad` is
-    first in the ladder, so a stray one makes this an azure-mode test wearing an
-    OTP name.
-    """
+    """Reload `mcp.server` with ONLY the OTP block configured, and return it."""
     from backend.app.core.config import get_settings
 
     for var in ("AZURE_TENANT_ID", "AZURE_API_CLIENT_ID"):
@@ -519,22 +442,7 @@ def _restore_server(monkeypatch: Any) -> None:
 def test_otp_only_deployment_MOUNTS_mcp_and_still_serves_the_WHOLE_tool_surface(
     monkeypatch: Any,
 ) -> None:
-    """The headline of #1128: before this, an OTP deployment had no `/mcp` at all.
-
-    `build_mcp_app()` returned `None`, so `main.py` skipped the mount and the
-    whole tool surface the feature matrix advertises silently disappeared — even
-    though that deployment's PATs (the designated headless/MCP credential,
-    ADR 0032 §1) resolve without touching Azure.
-
-    Asserted as "otp-only serves the same set as the default mode", not as a tool
-    *count*. The count was a literal `8`, which made a routine tool addition
-    (#529) fail here for no reason anyone reading the failure could connect to
-    OTP — and, worse, invited the fix of bumping the number, which would keep the
-    test green while proving nothing. The set comparison is what this test
-    actually means, and it needs no maintenance as the surface grows. Exactly
-    *which* tools exist is pinned once, deliberately, in
-    `test_role_enforcement.py::test_the_mcp_tool_surface_is_exactly_...`.
-    """
+    """The headline of #1128: before this, an OTP deployment had no `/mcp` at all."""
     import asyncio
 
     from backend.app.mcp.server import mcp as default_mode_mcp
@@ -553,15 +461,7 @@ def test_otp_only_deployment_MOUNTS_mcp_and_still_serves_the_WHOLE_tool_surface(
 def test_otp_only_mcp_accepts_a_PAT_and_rejects_every_other_credential_over_http(
     db_session: Any, monkeypatch: Any
 ) -> None:
-    """The credential matrix for the new mode, end to end over real HTTP.
-
-    A PAT gets past authentication; a session token (as a bearer *or* as the
-    ambient cookie) and a JWT-shaped bearer do not. Asserting `!= 401` rather than
-    a success status for the PAT is deliberate: the request stops at the
-    streamable-HTTP transport for want of an MCP session handshake, and the
-    question this test answers is which credentials the *auth* layer admits —
-    inventing a full handshake here would test fastmcp, not DataQ.
-    """
+    """The credential matrix for the new mode, end to end over real HTTP."""
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -598,10 +498,8 @@ def test_otp_only_mcp_accepts_a_PAT_and_rejects_every_other_credential_over_http
             with_cookie = client.post("/mcp/", json=body, headers=accept)
 
         assert with_pat.status_code != 401, with_pat.text
-        # …and it got past auth into the PROTOCOL: the body is a JSON-RPC error
-        # from the transport (no MCP session handshake in this bare POST), not an
-        # auth challenge. Without this, "not 401" would also be satisfied by some
-        # future 403/500 that never authenticated anybody.
+        # …and it got past auth into the PROTOCOL: the body is a JSON-RPC error from the transport
+        # (no MCP session handshake in this bare POST), not an auth challenge.
         assert "jsonrpc" in with_pat.json(), with_pat.text
         assert with_session_bearer.status_code == 401, with_session_bearer.text
         assert with_jwt.status_code == 401, with_jwt.text
@@ -613,21 +511,7 @@ def test_otp_only_mcp_accepts_a_PAT_and_rejects_every_other_credential_over_http
 def test_an_otp_signed_in_user_can_mint_the_pat_that_mcp_then_accepts(
     db_session: Any, monkeypatch: Any
 ) -> None:
-    """The whole #1128 journey, joined up: sign in with a code → mint → call /mcp.
-
-    Mounting `/mcp` for PATs is only a feature if an OTP user can actually GET a
-    PAT, and that is a different code path — `POST /me/api-keys` behind
-    `get_current_user`, authenticated by the session cookie. Without this test the
-    two halves are each covered and the product claim ("OTP deployments get MCP")
-    is covered by neither.
-
-    The user row is deliberately built the way OTP provisions one — `aad_object_id
-    IS NULL` (#735) — so nothing here can quietly depend on an Azure identity. The
-    dependency override reproduces the import-time binding an OTP deployment has
-    (`get_current_user = _get_current_user_otp`), which is the same technique
-    `tests/core/test_auth_seam_otp.py` uses and for the same reason: the mode is
-    bound at import and reloading would not rebind the name the router captured.
-    """
+    """The whole #1128 journey, joined up: sign in with a code → mint → call /mcp."""
     import asyncio
     import uuid
 
@@ -673,7 +557,8 @@ def test_resolve_user_generic_oidc_fetches_userinfo_when_email_absent(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """A real Cognito access token has no email claim — it comes from userinfo,
-    fetched with the SAME raw bearer the client presented."""
+    fetched with the SAME raw bearer the client presented.
+    """
     token = SimpleNamespace(claims={"sub": "cognito-sub-3", "token_use": "access"}, token="raw-jwt")
     seen: list[tuple[str, str]] = []
 
@@ -721,13 +606,8 @@ def test_resolve_user_generic_oidc_userinfo_sub_mismatch_raises(
         auth.resolve_current_user(db_session)
 
 
-# ── OIDC access allowlist on /mcp (#1386) ────────────────────────────────────
-# Caught in review: `_resolve_generic_oidc_user` unified the two REST
-# dependencies, but `resolve_current_user` here is a THIRD generic-OIDC
-# resolver that called `_upsert_user` directly. A token the REST API 403s
-# authenticated fine at /mcp, was provisioned a users row, and got every tool
-# including `trigger_suite_run` — breaking the invariant the Azure-guest branch
-# in this very module states out loud.
+# ── OIDC access allowlist on /mcp (#1386) ──────────────────────────────────── Caught in review:
+# `_resolve_generic_oidc_user` unified the two REST dependencies.
 
 
 def test_mcp_generic_oidc_denies_an_address_off_the_allowlist(
@@ -746,7 +626,8 @@ def test_mcp_generic_oidc_denies_an_address_off_the_allowlist(
 
 def test_mcp_generic_oidc_denial_provisions_no_user_row(db_session: Any, monkeypatch: Any) -> None:
     """The whole point: /mcp must not be the path that creates the account the
-    REST API refuses to create."""
+    REST API refuses to create.
+    """
     token = SimpleNamespace(claims={"sub": "mcp-no-row-sub", "email": "nobody@evil.test"})
     monkeypatch.setattr(auth, "get_access_token", lambda: token)
     monkeypatch.setattr(
@@ -777,7 +658,8 @@ def test_mcp_generic_oidc_ungated_when_no_allowlist_is_set(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """Same documented default as the REST path — pinned on both surfaces so they
-    cannot drift apart in either direction."""
+    cannot drift apart in either direction.
+    """
     token = SimpleNamespace(claims={"sub": "mcp-ungated-sub", "email": "anyone@anywhere.test"})
     monkeypatch.setattr(auth, "get_access_token", lambda: token)
     monkeypatch.setattr(auth, "get_settings", lambda: _settings(**_OIDC, environment="prod"))
@@ -790,7 +672,8 @@ def test_mcp_generic_oidc_gate_matches_the_rest_gate_for_the_same_inputs(
 ) -> None:
     """The invariant itself, asserted directly rather than inferred from the two
     suites agreeing by coincidence: for one settings object and one address, /mcp
-    and /api must reach the same verdict."""
+    and /api must reach the same verdict.
+    """
     settings = _settings(**_OIDC, environment="prod", oidc_allowed_domains="example.com")
     for email, expected in [("ok@example.com", True), ("no@evil.test", False)]:
         assert core_auth._oidc_access_allowed(email, settings) is expected

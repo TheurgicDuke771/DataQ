@@ -5,17 +5,7 @@ import { BrandMark } from '../components/BrandMark';
 import { RESULT_STATUS_CHART_COLORS } from '../components/charts/chartTheme';
 import { BRAND } from '../theme';
 
-/**
- * The DataQ sign-in page. Grounded in the product's own subject — data quality
- * is the comparison of *expected* vs *observed*, banded by severity — so the
- * brand panel carries a small "expected → observed" ledger as its signature
- * element rather than generic marketing. Reuses the app's indigo + Inter system
- * and the shared balance mark, so the page reads as DataQ, not a template.
- *
- * Pure presentation: the parent (AuthGate) owns the OIDC sign-in redirect; this
- * component only renders the panel and reports the click + redirect-in-progress.
- * Provider-neutral (ADR 0028) — no IdP-specific branding.
- */
+/** The DataQ sign-in page. */
 export function LoginPage({ onSignIn, signingIn }: { onSignIn: () => void; signingIn: boolean }) {
   return (
     <LoginShell
@@ -38,12 +28,8 @@ export function LoginPage({ onSignIn, signingIn }: { onSignIn: () => void; signi
 }
 
 /**
- * The brand panel + action card chrome, shared by every auth mode's sign-in
- * screen (ADR 0028 OIDC, ADR 0032 email OTP).
- *
- * Extracted rather than copied: the CSS below is ~100 lines of bespoke layout and
- * motion, and a second sign-in screen that duplicated it would drift the moment
- * either was touched. The mode-specific part is only what goes inside the card.
+ * The brand panel + action card chrome, shared by every auth mode's sign-in screen (ADR 0028 OIDC,
+ * ADR 0032 email OTP).
  */
 export function LoginShell({
   title,
@@ -125,10 +111,8 @@ export function LoginShell({
 }
 
 /**
- * Illustrative check ledger (decorative, aria-hidden) — three real-shaped DQ
- * monitors that show the expected→observed comparison and that DataQ catches
- * failures, not just greens. Severity dots reuse the app-wide status palette
- * (RESULT_STATUS_CHART_COLORS) so they match the dashboard/results charts.
+ * Illustrative check ledger (decorative, aria-hidden) — three real-shaped DQ monitors that show
+ * the expected→observed comparison and that DataQ catches failures, not just greens.
  */
 const LEDGER_ROWS: {
   check: string;

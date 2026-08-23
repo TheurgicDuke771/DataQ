@@ -1,9 +1,4 @@
-"""Airflow connection adapter tests — config validation + the REST test() probe.
-
-No live Airflow: ``httpx.get`` is monkeypatched so the DAGs-probe flow is
-exercised against canned responses. The adapter is DB-free, so these are pure
-unit tests (no db_session).
-"""
+"""Airflow connection adapter tests — config validation + the REST test() probe."""
 
 from typing import Any
 

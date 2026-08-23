@@ -1,14 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-// SchedulesPanel (A7) on the seeded suite's detail page: full authoring
-// round-trip (add → pause → delete) plus the server-side cron validation
-// path (422 → error toast, no row). The dispatcher itself (60s beat) is
-// backend-tested; this proves the UI a user actually drives.
+// SchedulesPanel (A7) on the seeded suite's detail page: full authoring round-trip (add → pause →
+// delete) plus the server-side cron validation path (422 → error toast, no row).
 test.describe('Suite schedules panel', () => {
-  // Unique per attempt: `create_schedule` has no uniqueness guard, so a fixed
-  // cron would collide with a leftover row from an aborted run or a CI retry
-  // (duplicate row → strict-mode violation). Minute/hour derived from the
-  // clock keep the expression valid and effectively unique per attempt.
+  // Unique per attempt: `create_schedule` has no uniqueness guard, so a fixed cron would collide
+  // with a leftover row from an aborted run or a CI retry (duplicate row → strict-mode violation).
   const now = Date.now();
   const CRON = `${now % 60} ${Math.floor(now / 60_000) % 24} * * 2`;
 

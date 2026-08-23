@@ -8,17 +8,7 @@ import { login } from './authClient';
 import { authMode } from './config';
 import { useOtpSession } from './otpSessionContext';
 
-/**
- * Gates children behind auth. Four paths:
- * - dev_bypass: renders children directly.
- * - unconfigured: renders a setup-needed banner (no auth client, no children).
- * - real: renders the sign-in page when signed out, children when authenticated.
- * - otp: renders the two-step code form when signed out (ADR 0032), children when
- *   the session cookie resolves.
- *
- * The OIDC user comes from AuthProvider, and the OTP session from
- * OtpSessionProvider — both mounted above this in main.tsx.
- */
+/** Gates children behind auth. */
 export function AuthGate({ children }: { children: ReactNode }) {
   if (authMode === 'dev_bypass') return <>{children}</>;
   if (authMode === 'unconfigured') return <UnconfiguredBanner />;
@@ -26,17 +16,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   return <RealAuthGate>{children}</RealAuthGate>;
 }
 
-/**
- * The `otp` gate (ADR 0032). Four states, and the two that are easy to conflate
- * are kept apart on purpose:
- *
- * - `probing` shows a spinner. The session is an HttpOnly cookie, so until
- *   `GET /me` answers the SPA genuinely does not know — flashing the sign-in form
- *   here would make every reload look like a sign-out.
- * - `error` shows the failure and a retry, NOT the sign-in form: an unreachable
- *   API is not a signed-out user, and inviting somebody to type a code at a
- *   server that cannot verify it wastes the code (they are single-use).
- */
+/** The `otp` gate (ADR 0032). */
 function OtpAuthGate({ children }: { children: ReactNode }) {
   const { state, adopt, retry } = useOtpSession();
 

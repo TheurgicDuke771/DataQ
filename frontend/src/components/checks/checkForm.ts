@@ -4,10 +4,8 @@ import { COMPARISON_EXPECTATION_TYPE, fieldVisible } from './expectationCatalog'
 import { EXPECTATION_BY_TYPE, type DqDimension, type ExpectationSpec } from './expectationCatalog';
 
 /**
- * Pure check-authoring form helpers shared by the edit page (`CheckEdit`)
- * and the create page (`CheckNew`): the form↔payload conversions, so the two
- * surfaces can't drift on kwarg shaping. The matching field components live in
- * `checkFormFields.tsx`.
+ * Pure check-authoring form helpers shared by the edit page (`CheckEdit`) and the create page
+ * (`CheckNew`): the form↔payload conversions, so the two surfaces can't drift on kwarg shaping.
  */
 
 /** Split a comma-separated list field into trimmed, non-empty items. */
@@ -30,10 +28,8 @@ function formToConfig(
   const config: Record<string, unknown> = {};
   if (!spec) return config;
   for (const field of spec.fields) {
-    // A conditionally-hidden field (anomaly's `column`, #593) must never be
-    // submitted even if antd's Form preserved a stale value from before the
-    // author switched target_metric away — the backend actively REJECTS it,
-    // not just ignores it (`anomaly_params`: "known key, inapplicable metric").
+    // A conditionally-hidden field (anomaly's `column`, #593) must never be submitted even if
+    // antd's Form preserved a stale value from before the author switched target_metric away.
     if (!fieldVisible(field, raw)) continue;
     const value = raw[field.name];
     if (value === undefined || value === null || value === '') continue;
@@ -62,9 +58,7 @@ export function configToForm(
   return form;
 }
 
-/** Assemble the create/update payload from validated form values. Rebuilds
- *  `config` from only the selected expectation's fields, so switching types
- *  never leaks stale kwargs. */
+/** Assemble the create/update payload from validated form values. */
 export function buildCheckPayload(values: Record<string, unknown>): CheckCreate {
   const spec = EXPECTATION_BY_TYPE[values.expectation_type as string];
   return {
@@ -74,11 +68,7 @@ export function buildCheckPayload(values: Record<string, unknown>): CheckCreate 
     kind: spec?.kind ?? 'expectation',
     expectation_type: values.expectation_type as string,
     config: formToConfig(spec, (values.config ?? {}) as Record<string, unknown>),
-    // ADR 0038. Whatever the form holds, with NO spec fallback. The create page
-    // seeds the derived default via `initialValue`, so it is already in `values`
-    // there — while in EDIT mode a stored NULL must stay NULL. Falling back to
-    // `spec.dimension` here silently reclassified a check someone had
-    // deliberately left unclassified, just because they renamed it.
+    // ADR 0038.
     dimension: (values.dimension as DqDimension | undefined) ?? undefined,
     warn_threshold: numOrNull(values.warn_threshold),
     fail_threshold: numOrNull(values.fail_threshold),
@@ -86,9 +76,10 @@ export function buildCheckPayload(values: Record<string, unknown>): CheckCreate 
   };
 }
 
-/** Assemble a comparison check's payload (ADR 0015) from the side-by-side
- *  form's structured values — kept beside `buildCheckPayload` so the two
- *  payload shapes can't drift apart. */
+/**
+ * Assemble a comparison check's payload (ADR 0015) from the side-by-side form's structured values
+ * — kept beside `buildCheckPayload` so the two payload shapes can't drift apart.
+ */
 export function buildComparisonPayload(values: Record<string, unknown>): CheckCreate {
   const raw = (values.source ?? {}) as Record<string, unknown>;
   const source: Record<string, unknown> = {};

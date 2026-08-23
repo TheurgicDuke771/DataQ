@@ -12,17 +12,7 @@ export const RESEND_COOLDOWN_SECONDS = 30;
 /** Minutes a code stays valid — mirrors the backend's `CODE_TTL_MINUTES`. */
 const CODE_TTL_MINUTES = 10;
 
-/**
- * The **uniform** acknowledgement (ADR 0032 decision 4).
- *
- * The backend answers `{"status":"ok"}` for an eligible address, an ineligible
- * one, AND a throttled one — byte-identical, so that a stranger cannot use this
- * form to discover who has an account. The copy has to be uniform too: "we sent
- * you a code" would leak the very thing the response was built to hide, because
- * a user who is NOT eligible receives nothing and would learn that from the
- * mismatch. Hence the conditional phrasing, and hence no "resent!" success toast
- * either — every send says exactly this much and no more.
- */
+/** The **uniform** acknowledgement (ADR 0032 decision 4). */
 function eligibilityNotice(email: string) {
   return (
     <>
@@ -34,29 +24,13 @@ function eligibilityNotice(email: string) {
 
 type Step = 'email' | 'code';
 
-/**
- * Two-step email one-time-code sign-in (ADR 0032, #736).
- *
- * Step 1 takes an address, step 2 takes the code. On success the caller adopts
- * the returned `/me` body — the session itself is an HttpOnly cookie the verify
- * response set, which this component never sees and cannot store.
- *
- * Error copy is the SERVER's, always. The backend collapses wrong / expired /
- * already-used / out-of-attempts into one 401 with one message, deliberately, and
- * a friendlier client-side taxonomy on top of it would be a fabrication — the SPA
- * has no way to tell those cases apart and must not imply that it can.
- */
+/** Two-step email one-time-code sign-in (ADR 0032, #736). */
 export function OtpSignInPage({
   onSignedIn,
   cooldownSeconds = RESEND_COOLDOWN_SECONDS,
 }: {
   onSignedIn: (me: MeResponse) => void;
-  /**
-   * Seconds before "Resend code" re-arms. Overridable so a test can watch a real
-   * countdown expire in ~1s instead of faking timers around an async submit —
-   * fake timers plus in-flight promises here produced a hang, and a timing knob
-   * is a smaller price than a test that cannot express the case.
-   */
+  /** Seconds before "Resend code" re-arms. */
   cooldownSeconds?: number;
 }) {
   const [step, setStep] = useState<Step>('email');
@@ -85,9 +59,8 @@ export function OtpSignInPage({
         setCooldown(cooldownSeconds);
         return true;
       } catch (err) {
-        // A rejection here is a real fault — mail transport down (502), OTP not
-        // enabled on this deployment (503), or the per-IP limiter (429). It is
-        // NOT "that address is unknown": ineligible addresses resolve.
+        // A rejection here is a real fault — mail transport down (502), OTP not enabled on this
+        // deployment (503), or the per-IP limiter (429).
         setError(messageOf(err, 'Could not request a sign-in code. Try again shortly.'));
         return false;
       } finally {
@@ -230,14 +203,7 @@ export function OtpSignInPage({
   );
 }
 
-/**
- * The server's message when it sent one, our fallback when it did not.
- *
- * `api/client.ts` has already lifted the DataQ error envelope's human message
- * onto `error.message` (and appended a retry hint on a 429), so the axios default
- * "Request failed with status code 502" only surfaces when the backend genuinely
- * returned no envelope — a proxy error page, say.
- */
+/** The server's message when it sent one, our fallback when it did not. */
 function messageOf(err: unknown, fallback: string): string {
   const message = err instanceof Error ? err.message : '';
   if (!message || /^Request failed with status code/.test(message)) {

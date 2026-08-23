@@ -1,14 +1,4 @@
 # Shared CI retry helper (#539) — source this, don't execute it.
-#
-# Both Deploy-workflow transients this covers are idempotent to re-run:
-#   - `az containerapp update/job update` crashing on a transient ARM error
-#     (the containerapp extension's `_polish_bad_errors` masks 409/429-style
-#     responses as `KeyError: 'properties'` — Deploys #1/#2, 2026-07-02)
-#   - registry blips during image build/push (Docker Hub 502 on the base-image
-#     pull — Deploy #3)
-#
-# Usage:  retry <cmd> [args…]        # 3 attempts, 30s/60s backoff
-# The command's exit code is propagated from the final attempt.
 
 retry() {
   local attempt

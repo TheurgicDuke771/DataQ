@@ -1,11 +1,4 @@
-"""Wiring test for the `refresh_warehouse_lineage` beat entry point (#858, slice 3).
-
-Pure-unit (no DB / no network): the per-connection refresh + persistence is covered
-DB-backed in `tests/lineage/test_warehouse_connection_refresh.py`. Here we assert the
-beat task is **dark by default** (flag off → no session, returns 0), iterates only the
-warehouse connection types, is fail-soft per connection (one failing connection doesn't
-abort the sweep), and always closes its session.
-"""
+"""Wiring test for the `refresh_warehouse_lineage` beat entry point (#858, slice 3)."""
 
 from typing import Any
 

@@ -1,9 +1,4 @@
-"""Shared fixtures for the lineage tests.
-
-Env hygiene: every test starts with the OpenLineage transport vars unset and the
-cached client cleared, so tests can't leak configuration into each other (a stray
-``OPENLINEAGE_URL`` would otherwise flip the whole suite out of the dark path).
-"""
+"""Shared fixtures for the lineage tests."""
 
 from __future__ import annotations
 

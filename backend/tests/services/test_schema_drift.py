@@ -84,7 +84,8 @@ def _sql_connection() -> Connection:
 
 def test_sql_introspection_reads_information_schema(monkeypatch: pytest.MonkeyPatch) -> None:
     """The SQL path issues one bound-parameter information_schema query over the
-    profiler's connection seam and maps (column_name, data_type) rows."""
+    profiler's connection seam and maps (column_name, data_type) rows.
+    """
     captured: dict[str, Any] = {}
 
     class _Conn:
@@ -265,12 +266,7 @@ def _file_connection(conn_type: str = "s3") -> Connection:
 
 
 def _patch_object(monkeypatch: pytest.MonkeyPatch, content: bytes) -> list[tuple[int, int]]:
-    """Serve ``content`` over the BOUNDED read seam (#882) and record the ranges.
-
-    Introspection reads a Parquet footer or a bounded CSV sample, so it goes
-    through `RangeReader`/`read_range`, never the whole-object download. Stubbing
-    the range seam is what makes "it only read what it needed" observable.
-    """
+    """Serve ``content`` over the BOUNDED read seam (#882) and record the ranges."""
     from backend.app.datasources import flatfile
 
     ranges: list[tuple[int, int]] = []
@@ -304,7 +300,8 @@ def test_file_introspection_csv_sniffs_a_semicolon_delimiter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """#476: a mis-parsed `;` file collapses to one column, so drift would report
-    every real column added AND removed the first time the delimiter changed."""
+    every real column added AND removed the first time the delimiter changed.
+    """
     csv_bytes = b"id;email;amount\n1;a@x.io;10.5\n2;b@x.io;11.0\n"
     _patch_object(monkeypatch, csv_bytes)
     cols = introspect_columns(
@@ -344,7 +341,8 @@ def test_file_introspection_parquet_types_from_footer(monkeypatch: pytest.Monkey
 
 def test_iceberg_introspection_reads_schema_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     """The #859 drift leg: the snapshot comes from table METADATA (schema
-    fields), never a data read."""
+    fields), never a data read.
+    """
     from pyiceberg.schema import Schema
     from pyiceberg.types import LongType, NestedField, StringType
 
@@ -535,9 +533,8 @@ def test_dry_run_mode_never_persists(
 def test_concurrent_first_runs_do_not_blow_up_on_the_baseline_unique(
     graph: tuple[Session, Connection, Check], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Two concurrent first runs both see no baseline and both insert; the loser's
-    # write must be a silent no-op (ON CONFLICT DO NOTHING), never an
-    # IntegrityError that fails the whole run and discards sibling results.
+    # Two concurrent first runs both see no baseline and both insert; the loser's write must be a
+    # silent no-op (ON CONFLICT DO NOTHING).
     session, conn, check = graph
     from backend.app.db.models import MonitorBaseline
 

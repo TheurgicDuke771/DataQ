@@ -1,17 +1,4 @@
-"""DataQ-issued personal access tokens (PATs) — ADR 0026 phase 1 (#461).
-
-A PAT is a high-entropy random token (`dq_live_` + 43 url-safe chars,
-~256 bits) shown ONCE at creation. Only its SHA-256 hex digest is stored —
-sufficient hashing for a random machine secret (unlike a human password there
-is nothing to brute-force), and it keeps per-request verification an O(1)
-indexed lookup instead of an argon2/bcrypt stretch per call (GitHub/GitLab use
-the same scheme for their PATs; rationale recorded in ADR 0026).
-
-The token authenticates as its owning user through the same `get_current_user`
-seam as Azure AD — REST and `/mcp` identically — inheriting the owner's
-per-suite grants. Keys cascade-delete with the user (lifecycle tied to the
-account). The plaintext is never logged; log lines carry `key_prefix` only.
-"""
+"""DataQ-issued personal access tokens (PATs) — ADR 0026 phase 1 (#461)."""
 
 from __future__ import annotations
 
@@ -45,12 +32,7 @@ _LAST_USED_WRITE_INTERVAL = timedelta(seconds=60)
 
 
 class ApiKeyAuthError(DataQError):
-    """The presented token is unknown, revoked, or expired — always a 401.
-
-    One message for every failure mode: distinguishing 'unknown' from
-    'revoked'/'expired' would confirm to a probing caller that a credential
-    exists.
-    """
+    """The presented token is unknown, revoked, or expired — always a 401."""
 
     def __init__(self) -> None:
         super().__init__(
@@ -82,7 +64,8 @@ def create_key(
     expires_in_days: int = DEFAULT_EXPIRY_DAYS,
 ) -> tuple[ApiKey, str]:
     """Mint a PAT for `user`. Returns (row, plaintext) — the ONLY time the
-    plaintext exists server-side; it is never stored or logged."""
+    plaintext exists server-side; it is never stored or logged.
+    """
     if not 1 <= expires_in_days <= MAX_EXPIRY_DAYS:
         raise DataQError(
             code="api_key_expiry_invalid",
@@ -99,9 +82,8 @@ def create_key(
         expires_at=datetime.now(UTC) + timedelta(days=expires_in_days),
     )
     db.add(key)
-    # Records the mint and NEVER the token or its hash (ADR 0041 §2.5) — the
-    # allow-list for `api_key` omits `key_hash` entirely, so this cannot leak one
-    # by a later field being added.
+    # Records the mint and NEVER the token or its hash (ADR 0041 §2.5) — the allow-list for
+    # `api_key` omits `key_hash` entirely, so this cannot leak one by a later field being added.
     audit_service.record_entity_change(
         db,
         action="api_key.mint",
@@ -134,7 +116,8 @@ def list_keys(db: Session, user: User) -> list[ApiKey]:
 
 def revoke_key(db: Session, user: User, key_id: uuid.UUID) -> ApiKey:
     """Revoke one of the user's own keys. Idempotent; 404 for another user's key
-    (indistinguishable from nonexistent — no cross-user probing)."""
+    (indistinguishable from nonexistent — no cross-user probing).
+    """
     key = db.execute(
         select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == user.id)
     ).scalar_one_or_none()
@@ -143,9 +126,8 @@ def revoke_key(db: Session, user: User, key_id: uuid.UUID) -> ApiKey:
     if key.revoked_at is None:
         audit_before = audit_service.snapshot("api_key", key)
         key.revoked_at = datetime.now(UTC)
-        # Inside the `is None` guard, matching the log line: re-revoking an
-        # already-revoked key is idempotent and changes nothing, and an audit log
-        # that records non-events is one a reader learns to skim.
+        # Inside the `is None` guard, matching the log line: re-revoking an already-revoked key is
+        # idempotent and changes nothing.
         audit_service.record_entity_change(
             db,
             action="api_key.revoke",
@@ -165,11 +147,7 @@ def revoke_key(db: Session, user: User, key_id: uuid.UUID) -> ApiKey:
 
 
 def resolve_token(db: Session, token: str) -> User:
-    """Authenticate a presented PAT → its owning User, or raise ApiKeyAuthError.
-
-    O(1): unique-index lookup on the token's hash. Expiry/revocation checked on
-    the row; `last_used_at` refreshed at most once per interval.
-    """
+    """Authenticate a presented PAT → its owning User, or raise ApiKeyAuthError."""
     key = db.execute(select(ApiKey).where(ApiKey.key_hash == _hash(token))).scalar_one_or_none()
     now = datetime.now(UTC)
     if key is None or key.revoked_at is not None or key.expires_at <= now:

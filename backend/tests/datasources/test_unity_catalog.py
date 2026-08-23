@@ -1,9 +1,4 @@
-"""Unity Catalog connection adapter tests — config validation + the SELECT 1 probe.
-
-No live Databricks: ``databricks.sql.connect`` is monkeypatched so the
-warehouse probe runs against a fake. The adapter is DB-free, so these are pure
-unit tests (no db_session).
-"""
+"""Unity Catalog connection adapter tests — config validation + the SELECT 1 probe."""
 
 from typing import Any
 
@@ -159,9 +154,8 @@ _REAL_SQL_BATCH_DEF = UnityCatalogCheckRunner._sql_batch_definition
 
 @pytest.fixture(autouse=True)
 def _no_live_sql_batch(monkeypatch: pytest.MonkeyPatch) -> None:
-    # #1532: a check misrouted to the live SQL seam must fail loudly, not hang
-    # on DNS for the fake workspace host. Tests override per instance; a test
-    # of the real seam rebinds `_REAL_SQL_BATCH_DEF`.
+    # #1532: a check misrouted to the live SQL seam must fail loudly, not hang on DNS for the fake
+    # workspace host.
     def _refuse(self: Any, context: Any, *, table: str, schema: str) -> Any:
         pytest.fail(f"unexpected live SQL batch for {table!r} — misrouted check")
 
@@ -195,7 +189,8 @@ def test_build_databricks_url_pins_catalog() -> None:
 
 def test_build_databricks_url_pins_schema() -> None:
     """GX's `DatabricksDsn` refuses a URL without `schema` (#1179), so the SQL
-    batch needs it on the URL as well as on the asset."""
+    batch needs it on the URL as well as on the asset.
+    """
     cfg = UnityCatalogConfig.model_validate(_UC_CONFIG)
     url = build_databricks_url(cfg, "t", catalog="main", schema="go ld")
     assert "&catalog=main" in url
@@ -269,11 +264,10 @@ def test_run_checks_all_pass(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_databricks_sqlalchemy_dialect_is_installed() -> None:
-    """Dependency contract (#535): `_read_table` does
-    `create_engine('databricks://…')`, whose dialect lives in the separate
-    `databricks-sqlalchemy` package since databricks-sql-connector 4.x —
-    tests mock the runner seam, so without this check a missing dialect only
-    surfaces as a failed run in production. No network: dialect load only.
+    """Dependency contract (#535): `_read_table` does `create_engine('databricks://…')`, whose
+    dialect lives in the separate `databricks-sqlalchemy` package since databricks-sql-connector
+    4.x — tests mock the runner seam, so without this check a missing dialect only surfaces as a
+    failed run in production. No network: dialect load only.
     """
     from sqlalchemy import create_engine
 
@@ -292,7 +286,8 @@ def test_gx_read_and_monitors_share_one_engine(
 ) -> None:
     """A mixed suite (expectations + monitors) must pay ONE warehouse session:
     `_read_table` (the GX path) and `run_monitors` share the runner's lazy
-    engine (#427). Pinned by counting `create_engine` constructions."""
+    engine (#427). Pinned by counting `create_engine` constructions.
+    """
     import sqlalchemy
 
     from backend.app.datasources.base import MonitorSpec
@@ -359,19 +354,7 @@ def _sqlite_batch_seam(
     rows: list[int],
     monkeypatch: pytest.MonkeyPatch,
 ) -> list[dict[str, Any]]:
-    """Point the runner's SQL-batch seam at a real sqlite `feedback(rating)` table.
-
-    Returns a list that records each seam call's arguments, so a test can assert
-    the seam was (or was not) reached and with what target.
-
-    It also **arms the DataFrame seam to fail**, so a custom-SQL check that is
-    misrouted back to the pandas batch aborts loudly. That is load-bearing, not
-    belt-and-braces: `_read_table` builds a real `databricks://` engine, so the
-    unfixed routing makes these tests HANG on a DNS lookup for the fake
-    workspace host instead of failing — a regression this suite could then only
-    report as a CI timeout. A test that needs the frame (the mixed-suite case)
-    overrides it afterwards.
-    """
+    """Point the runner's SQL-batch seam at a real sqlite `feedback(rating)` table."""
     import sqlite3
 
     path = tmp_path / "uc.sqlite"
@@ -399,14 +382,7 @@ def _sqlite_batch_seam(
 def _forbid_dataframe_read(
     runner: UnityCatalogCheckRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Make the DataFrame seam fail loudly.
-
-    Every custom-SQL test arms this, and it is load-bearing rather than
-    belt-and-braces: `_read_table` builds a real `databricks://` engine, so a
-    custom-SQL check misrouted back to the pandas batch does not fail — it HANGS
-    on a DNS lookup for the fake workspace host. Verified against the pre-fix
-    routing: without this the suite reports a CI timeout instead of a defect.
-    """
+    """Make the DataFrame seam fail loudly."""
 
     def _must_not_read(**_kwargs: Any) -> Any:
         raise AssertionError("custom SQL must not trigger the full-table DataFrame read")
@@ -428,7 +404,8 @@ def test_custom_sql_passes_on_sql_batch_without_reading_a_dataframe(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The regression. A zero-row query passes — and the DataFrame read is never
-    even attempted, which is what makes this the SQL batch and not the old one."""
+    even attempted, which is what makes this the SQL batch and not the old one.
+    """
     runner = _uc_runner()
     calls = _sqlite_batch_seam(runner, tmp_path, rows=[1, 4, 5], monkeypatch=monkeypatch)
     outcome = runner.run_checks(
@@ -452,7 +429,8 @@ def test_custom_sql_failing_query_reports_the_unexpected_row_count(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Rows returned = failures, and the count is the `observed_value` — the exact
-    shape `test_custom_sql_gx.py` locks for the SQL path."""
+    shape `test_custom_sql_gx.py` locks for the SQL path.
+    """
     runner = _uc_runner()
     _sqlite_batch_seam(runner, tmp_path, rows=[1, 4, 5], monkeypatch=monkeypatch)
     outcome = runner.run_checks(
@@ -470,11 +448,12 @@ def test_custom_sql_failing_query_reports_the_unexpected_row_count(
 def test_custom_sql_row_count_feeds_severity_metric_value(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The Unity Catalog half of #1202: the UC SQL-batch outcome's `observed_value`
-    feeds `severity.extract_metric` the same way the Snowflake-shaped path does
-    (`test_gx_runner.py::test_to_suite_outcome_reads_custom_sql_row_count_as_observed_value`)
-    — proving the metric is populated identically regardless of which datasource
-    ran the check, per the issue's "no per-datasource divergence" requirement."""
+    """The Unity Catalog half of #1202: the UC SQL-batch outcome's `observed_value` feeds
+    `severity.extract_metric` the same way the Snowflake-shaped path does
+    (`test_gx_runner.py::test_to_suite_outcome_reads_custom_sql_row_count_as_observed_value`) —
+    proving the metric is populated identically regardless of which datasource ran the check,
+    per the issue's "no per-datasource divergence" requirement.
+    """
     runner = _uc_runner()
     _sqlite_batch_seam(runner, tmp_path, rows=[1, 4, 5], monkeypatch=monkeypatch)
     outcome = runner.run_checks(
@@ -491,7 +470,8 @@ def test_custom_sql_query_error_is_an_operational_error_not_a_crash(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A broken query must land as `errored` (→ an `error` result, #122), never
-    raise out of the runner and fail the whole run."""
+    raise out of the runner and fail the whole run.
+    """
     runner = _uc_runner()
     _sqlite_batch_seam(runner, tmp_path, rows=[1], monkeypatch=monkeypatch)
     outcome = runner.run_checks(
@@ -510,7 +490,8 @@ def test_mixed_suite_merges_both_batches_in_submission_order(
 ) -> None:
     """Custom SQL interleaved with ordinary expectations: every outcome must come
     back at its submitted position, because `run_service` zips outcomes onto its
-    own `checks` list — a shuffle would attribute results to the wrong check."""
+    own `checks` list — a shuffle would attribute results to the wrong check.
+    """
     runner = _uc_runner()
     _sqlite_batch_seam(runner, tmp_path, rows=[1, 4, 5], monkeypatch=monkeypatch)
     monkeypatch.setattr(
@@ -618,7 +599,8 @@ def test_custom_sql_without_a_schema_errors_only_itself(monkeypatch: pytest.Monk
     """A UC suite target may legally omit the schema, but GX's DSN cannot — and an
     unqualified name would silently resolve against the session default, i.e. read
     the WRONG table rather than fail. So the custom-SQL check errors; its siblings
-    on the DataFrame batch still evaluate and persist (#122)."""
+    on the DataFrame batch still evaluate and persist (#122).
+    """
     runner = _uc_runner()
 
     def _must_not_build(*_args: Any, **_kwargs: Any) -> Any:
@@ -657,7 +639,8 @@ def test_custom_sql_refuses_a_non_identifier_target(
 ) -> None:
     """The table/schema/catalog are interpolated into the DSN and the asset, so
     they go through the shared #428 allowlist FIRST — a hostile identifier must
-    error the check, never reach the URL builder."""
+    error the check, never reach the URL builder.
+    """
     runner = _uc_runner()
 
     def _must_not_build(*_args: Any, **_kwargs: Any) -> Any:
@@ -674,7 +657,8 @@ def test_custom_sql_refuses_a_non_identifier_target(
 
 def test_custom_sql_refuses_a_non_identifier_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     """The catalog is runner-held rather than per-call, so it needs its own case —
-    the loop that validates it would otherwise be provable by neither of the above."""
+    the loop that validates it would otherwise be provable by neither of the above.
+    """
     runner = UnityCatalogCheckRunner(
         config=UnityCatalogConfig.model_validate(_UC_CONFIG),
         token="t",
@@ -737,7 +721,8 @@ def test_an_unreachable_sql_batch_reports_a_classified_reason_not_driver_text(
     """`error_message` is persisted verbatim into `results.observed_value` and
     rendered in the UI — a sink the logger-level scrubber never sees. A driver
     error can echo the PAT-bearing DSN (#849/#900), so the reason must be
-    `classify_failure_reason` output, never `str(exc)`."""
+    `classify_failure_reason` output, never `str(exc)`.
+    """
     runner = _uc_runner()
 
     def _warehouse_down(*_args: Any, **_kwargs: Any) -> Any:
@@ -762,7 +747,8 @@ def test_a_failure_building_the_asset_still_disposes_the_engine(
     """`add_databricks_sql` builds AND tests the engine before it returns, so a
     later failure inside `_sql_batch_definition` (a table the role can't see)
     strands a live warehouse session: the caller's `finally` can't reach it,
-    because the tuple it would have bound never got returned."""
+    because the tuple it would have bound never got returned.
+    """
     runner = _uc_runner()
     # This test exercises the REAL seam (against a fake GX context).
     monkeypatch.setattr(runner, "_sql_batch_definition", _REAL_SQL_BATCH_DEF.__get__(runner))
@@ -801,13 +787,6 @@ def test_gx_engine_is_disposed_after_a_sql_run(
     """GX owns the engine behind its own SQL datasource, so the runner's `close()`
     can't reach it — `_run_sql_checks` must close it itself or a Celery worker
     holds a warehouse session per run.
-
-    Asserts the **SQLAlchemy engine** was disposed, not that our own wrapper was
-    called. Spying on the wrapper proves nothing: `_dispose_gx_engine` swallows
-    everything, so if GX ever renamed `get_engine()` the disposal would become a
-    permanent silent no-op and a wrapper-level spy would stay green — the
-    "fixture encodes our model" shape (#823/#520). The log assertion closes the
-    same hole from the other side.
     """
     from sqlalchemy.engine import Engine
 
@@ -838,19 +817,14 @@ def test_dispose_gx_engine_never_masks_the_outcome() -> None:
     caller is returning (or the exception it is propagating) with a shutdown
     error. It must swallow — and must not log the exception's MESSAGE, which can
     carry the PAT-bearing URL the engine was built from (#849).
-
-    Both halves are asserted. The message half used to be a docstring claim only,
-    which is the shape the repo has been bitten by: a later edit to
-    `log.warning(..., error=str(exc))` would have sailed through green.
     """
 
     class _Boom:
         def get_engine(self) -> Any:
             raise RuntimeError("databricks://token:dapi-SECRET@host failed to close")
 
-    # structlog's own capture, not `caplog`: this logger renders straight to
-    # stdout rather than through stdlib logging, so caplog sees nothing and the
-    # assertions below would pass vacuously against an empty list.
+    # structlog's own capture, not `caplog`: this logger renders straight to stdout rather than
+    # through stdlib logging.
     with capture_logs() as events:
         UnityCatalogCheckRunner._dispose_gx_engine(_Boom())  # no raise
 
@@ -865,21 +839,15 @@ def test_gx_exposes_the_databricks_sql_datasource() -> None:
     """Dependency contract, in the spirit of the dialect check above: the SQL
     batch is `context.data_sources.add_databricks_sql`. Tests substitute sqlite
     for it, so a GX upgrade that renamed or dropped it would otherwise surface
-    only as a failed production run. No network — attribute presence only."""
+    only as a failed production run. No network — attribute presence only.
+    """
     import great_expectations as gx
 
     assert hasattr(gx.get_context(mode="ephemeral").data_sources, "add_databricks_sql")
 
 
 def test_the_url_we_build_satisfies_gx_own_dsn_validator() -> None:
-    """The real gate on `build_databricks_url`, and the reason it grew `schema`.
-
-    `_sql_batch_definition` is 100% substituted by sqlite in these tests — the
-    #535 shape, where "CI never saw it because tests mock the runner seam". So
-    assert the URL against **GX's own `DatabricksDsn`**, which is what actually
-    rejects it, rather than against a substring of our own making. Network-free:
-    `validate_parts` only parses the query string.
-    """
+    """The real gate on `build_databricks_url`, and the reason it grew `schema`."""
     from great_expectations.compatibility import pydantic
     from great_expectations.datasource.fluent.databricks_sql_datasource import DatabricksDsn
 
@@ -899,23 +867,15 @@ def test_the_url_we_build_satisfies_gx_own_dsn_validator() -> None:
 
 
 def test_sql_batch_expectation_types_is_explicit() -> None:
-    """Canary, in the shape of `test_supported_monitor_kinds_is_explicit` (#429).
-
-    `run_checks` routes by exclusion — everything that is not custom SQL goes to
-    the pandas batch — so a future GX expectation with SqlAlchemy-only metrics
-    would silently reproduce #1179 instead of being routed. This pins today's
-    answer so widening it is a conscious edit with a failing test attached.
-    """
+    """Canary, in the shape of `test_supported_monitor_kinds_is_explicit` (#429)."""
     assert SQL_BATCH_EXPECTATION_TYPES == frozenset({"unexpected_rows_expectation"})
     # …and the routing predicate agrees with the declared set, so the two can't drift.
     assert all(is_custom_sql(t) for t in SQL_BATCH_EXPECTATION_TYPES)
 
 
 def test_supported_monitor_kinds_is_explicit() -> None:
-    # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise
-    # every future registry kind and self-defeat the per-kind gate. Widening
-    # this set is a conscious act, done when the runner actually implements
-    # the new kind.
+    # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise every future registry
+    # kind and self-defeat the per-kind gate.
     assert UnityCatalogCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})
 
 
@@ -960,7 +920,8 @@ def test_sample_percent_scales_the_draw_to_the_population() -> None:
 def test_sample_percent_never_rounds_a_tiny_draw_down_to_zero() -> None:
     """`TABLESAMPLE (0 PERCENT)` returns NOTHING — an empty frame that would read
     as "every check passed", on no rows. The floor is what stops a very small
-    sample of a very large table becoming a silent all-green run."""
+    sample of a very large table becoming a silent all-green run.
+    """
     percent = unity_catalog._sample_percent(1, 10**12)
     assert percent > 0
 
@@ -978,7 +939,8 @@ def test_a_head_sample_pushes_a_limit_down_and_never_counts(
     """The bound is applied AT the warehouse, so the worker never receives the
     rows it will not look at. A head sample also skips the COUNT probe entirely —
     it does not need the population size, and a needless warehouse round trip on
-    every scheduled run is the overhead #854 exists to remove."""
+    every scheduled run is the overhead #854 exists to remove.
+    """
     runner = _sampling_runner(SampleSpec(strategy="head", rows=50))
     monkeypatch.setattr(
         runner,
@@ -1016,7 +978,8 @@ def test_a_random_sample_pushes_tablesample_down_sized_from_the_count(
 ) -> None:
     """Deliberately not `ORDER BY rand() LIMIT n` (a global sort of the whole
     table) and deliberately not `TABLESAMPLE (n ROWS)`, which Spark implements as
-    a plain LIMIT — i.e. it would be a head sample wearing a random label."""
+    a plain LIMIT — i.e. it would be a head sample wearing a random label.
+    """
     runner = _sampling_runner(SampleSpec(strategy="random", rows=100, seed=1))
     monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 1_000)
     seen = _capture_query(monkeypatch, pd.DataFrame({"id": range(100)}))
@@ -1050,7 +1013,8 @@ def test_the_sampled_query_uses_the_dialects_own_quoting_not_a_hardcoded_quote(
 ) -> None:
     """Databricks reads `"..."` as a STRING LITERAL, so a hand-rolled double
     quote would not merely be ugly — it would silently select a constant. The
-    quote character has to come from the connection's dialect (#476)."""
+    quote character has to come from the connection's dialect (#476).
+    """
     runner = _sampling_runner(SampleSpec(strategy="head", rows=5))
     seen = _capture_query(monkeypatch, pd.DataFrame({"id": [1]}))
     runner._read_sampled_table(
@@ -1067,7 +1031,8 @@ def test_a_lower_case_target_stays_unquoted_so_the_warehouse_folds_it(
 ) -> None:
     """`folding_identifier`'s rule, inherited: an all-lower-case name is emitted
     bare so it folds exactly as it did before, and only a mixed-case one is
-    quoted. Quoting everything would break names created unquoted."""
+    quoted. Quoting everything would break names created unquoted.
+    """
     runner = _sampling_runner(SampleSpec(strategy="head", rows=5))
     seen = _capture_query(monkeypatch, pd.DataFrame({"id": [1]}))
     runner._read_sampled_table(
@@ -1082,7 +1047,8 @@ def test_a_schema_less_target_drops_the_catalog_rather_than_misresolving(
 ) -> None:
     """A 2-part `catalog.table` is resolved by Unity Catalog as `schema.table` —
     a DIFFERENT OBJECT, not an error. So a schema-less target falls back to the
-    session defaults the URL already pins, exactly as `read_sql_table` does."""
+    session defaults the URL already pins, exactly as `read_sql_table` does.
+    """
     runner = _sampling_runner(SampleSpec(strategy="head", rows=5))
     seen = _capture_query(monkeypatch, pd.DataFrame({"id": [1]}))
     runner._read_sampled_table(
@@ -1213,10 +1179,6 @@ def test_the_count_probe_runs_a_real_aggregate_over_the_target(
     load-bearing — a probe stubbed in every test would leave the one statement the
     refusal depends on unexecuted. Run against a real (sqlite) engine, like the
     #427 shared-engine test: the statement is Core, so the dialect renders it.
-
-    A schema-less target is used deliberately: it is the case where `core_table`
-    must NOT apply the pinned catalog, since a 2-part `catalog.table` resolves on
-    Unity Catalog as `schema.table` — a different object rather than an error.
     """
     import sqlalchemy
 
@@ -1245,7 +1207,8 @@ def test_an_over_cap_count_refuses_the_run_end_to_end(
 ) -> None:
     """The probe and the refusal wired together against a real engine, with the
     cap lowered under the seeded row count — so the guardrail is exercised on a
-    number it actually computed rather than one a stub handed it."""
+    number it actually computed rather than one a stub handed it.
+    """
     import sqlalchemy
 
     real_create_engine = sqlalchemy.create_engine
@@ -1284,12 +1247,10 @@ def test_an_over_cap_count_refuses_the_run_end_to_end(
 def test_the_percentage_never_renders_in_scientific_notation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """C1, the headline defect. Databricks accepts only an INTEGER or DECIMAL
-    literal in `TABLESAMPLE`, and Python's float repr flips to scientific below
-    1e-4 — so a 100-row sample of a 200M-row table emitted
-    `TABLESAMPLE (6e-05 PERCENT)` and died with PARSE_SYNTAX_ERROR. The
-    very-large-table case is the entire reason this feature exists, so it failed
-    deterministically exactly where it mattered most."""
+    """C1, the headline defect. Databricks accepts only an INTEGER or DECIMAL literal in
+    `TABLESAMPLE`, and Python's float repr flips to scientific below 1e-4 — so a 100-row sample
+    of a 200M-row table emitted `TABLESAMPLE (6e-05 PERCENT)` and died with PARSE_SYNTAX_ERROR.
+    """
     runner = _sampling_runner(SampleSpec(strategy="random", rows=100))
     monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 200_000_000)
     seen = _capture_query(monkeypatch, pd.DataFrame({"id": range(100)}))
@@ -1310,18 +1271,19 @@ def test_every_rendered_percentage_is_a_parseable_decimal_literal(rows: int, tot
     """The property, not one example: whatever `_sample_percent` returns must
     survive formatting as a plain decimal. A floor that renders as `1e-06`, or as
     `0.000000`, is no floor at all — the first is a syntax error and the second is
-    `TABLESAMPLE (0 PERCENT)`, which returns nothing."""
+    `TABLESAMPLE (0 PERCENT)`, which returns nothing.
+    """
     rendered = unity_catalog.format_sample_percent(unity_catalog._sample_percent(rows, total))
     assert "e" not in rendered.lower()
     assert float(rendered) > 0, f"{rendered} would sample zero rows"
 
 
 def test_a_tiny_sample_of_a_huge_table_is_still_drawn_reliably() -> None:
-    """C3's root cause, fixed in the sizing rather than only caught after the
-    fact. A Bernoulli draw sized for its exact target is a coin flip at small
-    numbers — at an expected 1.2 rows, P(zero) is ~30%, and an empty frame passes
-    every column expectation vacuously with a green run. The percentage is
-    floored at `_MIN_EXPECTED_DRAW_ROWS` expected rows so that cannot happen."""
+    """C3's root cause, fixed in the sizing rather than only caught after the fact. A Bernoulli
+    draw sized for its exact target is a coin flip at small numbers — at an expected 1.2 rows,
+    P(zero) is ~30%, and an empty frame passes every column expectation vacuously with a green
+    run.
+    """
     total = 200_000_000
     percent = unity_catalog._sample_percent(1, total)
     expected_rows = percent / 100.0 * total
@@ -1331,11 +1293,11 @@ def test_a_tiny_sample_of_a_huge_table_is_still_drawn_reliably() -> None:
 def test_a_seed_is_emitted_as_repeatable_not_merely_recorded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """C2. The docs promise "add a seed to make a run reproducible", the parser
-    accepts it and the record persists it — but the emitted SQL had no
-    `REPEATABLE`, so consecutive runs drew different rows while every result row
-    claimed reproducibility. Recording a property the query does not have is worse
-    than not offering seeds at all."""
+    """C2. The docs promise "add a seed to make a run reproducible", the parser accepts it and the
+    record persists it — but the emitted SQL had no `REPEATABLE`, so consecutive runs drew
+    different rows while every result row claimed reproducibility. Recording a property the
+    query does not have is worse than not offering seeds at all.
+    """
     runner = _sampling_runner(SampleSpec(strategy="random", rows=10, seed=42))
     monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 10_000)
     seen = _capture_query(monkeypatch, pd.DataFrame({"id": range(10)}))
@@ -1355,7 +1317,8 @@ def test_an_unseeded_sample_emits_no_repeatable_clause(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The complement: without a seed the draw must stay genuinely random, or
-    every unseeded monitor would inspect the same rows forever."""
+    every unseeded monitor would inspect the same rows forever.
+    """
     runner = _sampling_runner(SampleSpec(strategy="random", rows=10))
     monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 10_000)
     seen = _capture_query(monkeypatch, pd.DataFrame({"id": range(10)}))
@@ -1371,7 +1334,8 @@ def test_an_empty_draw_from_a_non_empty_table_is_refused(
     """C3. An empty frame passes EVERY column expectation vacuously, so the run
     would print a full green board while asserting nothing about a 10,000-row
     table. `_sample_percent`'s floor makes it astronomically unlikely, but the
-    failure mode is silent, so it is checked rather than assumed."""
+    failure mode is silent, so it is checked rather than assumed.
+    """
     runner = _sampling_runner(SampleSpec(strategy="random", rows=10))
     monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 10_000)
     _capture_query(monkeypatch, pd.DataFrame({"id": []}))
@@ -1390,7 +1354,8 @@ def test_an_empty_draw_from_a_GENUINELY_empty_table_is_not_refused(
     """The complement, and the reason the guard reads `total` rather than just
     the frame: an empty table really does yield an empty frame, and that is the
     truth — the same answer the unsampled path gives. Refusing it would make
-    sampling unusable on a table that is legitimately empty today."""
+    sampling unusable on a table that is legitimately empty today.
+    """
     runner = _sampling_runner(SampleSpec(strategy="random", rows=10))
     monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 0)
     _capture_query(monkeypatch, pd.DataFrame({"id": []}))
@@ -1408,7 +1373,8 @@ def test_a_SHORT_draw_is_accepted_and_reported_honestly(
     """Deliberately NOT refused. The record reports the true row count, so nothing
     is overstated — the author asked for at most N and is told exactly how many
     were read. Only ZERO is a lie, because zero rows cannot support the verdict
-    the run would print."""
+    the run would print.
+    """
     runner = _sampling_runner(SampleSpec(strategy="random", rows=100))
     monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 10_000)
     _capture_query(monkeypatch, pd.DataFrame({"id": range(63)}))
@@ -1457,7 +1423,8 @@ def test_a_row_count_expectation_runs_normally_without_sampling(
 ) -> None:
     """The refusal must be scoped to sampling: unsampled, the count IS the
     dataset's and the expectation is perfectly valid. A blanket ban would remove
-    a working check from every unsampled suite."""
+    a working check from every unsampled suite.
+    """
     runner = _runner_over(pd.DataFrame({"id": [1, 2, 3]}), monkeypatch)
     outcome = runner.run_checks(
         table="orders",
@@ -1613,7 +1580,8 @@ def test_schemaless_target_falls_back_to_frame_except_custom_sql(
 
 def test_a_declared_sample_wins_over_pushdown(monkeypatch: pytest.MonkeyPatch) -> None:
     """The author asked for bounded evaluation; the sampling contract beats pushdown,
-    so the whole non-custom-SQL group stays on the (sampled) frame."""
+    so the whole non-custom-SQL group stays on the (sampled) frame.
+    """
     _pushdown_on(monkeypatch)
     runner = _sampling_runner(SampleSpec(strategy="head", rows=50))
     monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 3)
@@ -1670,7 +1638,8 @@ def test_index_columns_forwarded_for_pushdown_and_dropped_for_pure_custom_sql(
 
 def test_pushdown_allowlist_partitions_the_catalog() -> None:
     """Every catalog expectation type is consciously routed: pushdown, frame
-    (`to_be_of_type`), or custom SQL. A new catalog entry must pick a side."""
+    (`to_be_of_type`), or custom SQL. A new catalog entry must pick a side.
+    """
     import json
     from pathlib import Path
 
@@ -1765,7 +1734,8 @@ def test_a_clash_group_failure_keeps_the_kept_groups_outcomes(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A failure evaluating the no-index group errors only ITS checks; the kept
-    group's already-computed outcomes survive."""
+    group's already-computed outcomes survive.
+    """
     from backend.app.datasources import unity_catalog as uc_module
     from backend.app.datasources.gx_runner import run_expectations as real
 

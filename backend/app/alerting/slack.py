@@ -1,14 +1,4 @@
-"""Slack ``ResultPublisher`` — posts a run's report to a Slack incoming webhook.
-
-The webhook is resolved **per-suite first, then the workspace one** (#633) — a
-suite can override the channel (its own incoming webhook) via its notification
-config, falling back to the workspace ``SLACK_WEBHOOK_SECRET_NAME``, exactly like
-the Teams publisher. Delivery follows the same per-suite policy — the suite's
-`enabled` flag and its `alert_on` threshold via :func:`routing.route_for` — so only
-the rendering and destination differ. No webhook resolving (neither per-suite nor
-workspace) is a quiet no-op, so the publisher is safe to keep in the registry
-composite even when Slack is off.
-"""
+"""Slack ``ResultPublisher`` — posts a run's report to a Slack incoming webhook."""
 
 from __future__ import annotations
 
@@ -38,11 +28,7 @@ _SEVERITY_EMOJI = {CRITICAL: ":rotating_light:", "fail": ":x:", "warn": ":warnin
 
 
 def render_slack_message(report: RunReport, route: Route) -> dict[str, object]:
-    """The Slack incoming-webhook payload (``text`` + Block Kit ``blocks``).
-
-    ``text`` is the notification fallback/summary; ``blocks`` render the card.
-    Pure — boundary DTO in, JSON body out — so it's unit-testable without a send.
-    """
+    """The Slack incoming-webhook payload (``text`` + Block Kit ``blocks``)."""
     if report.success:
         headline = (
             f":white_check_mark: DataQ — {report.suite_name}: "
@@ -113,12 +99,7 @@ def render_slack_message(report: RunReport, route: Route) -> dict[str, object]:
 
 
 def render_slack_health_message(report: ConnectionHealthReport) -> dict[str, object]:
-    """The Slack payload for a connection poll-health edge (#837).
-
-    Pure, and reads only the report's **classified** ``reason`` — the raw exception it
-    was derived from routinely carries the credential that failed to authenticate, and
-    must never reach a webhook.
-    """
+    """The Slack payload for a connection poll-health edge (#837)."""
     headline = render.health_headline(report)
     emoji = ":rotating_light:" if report.is_failing else ":white_check_mark:"
     blocks: list[dict[str, object]] = [
@@ -151,7 +132,8 @@ def render_slack_health_message(report: ConnectionHealthReport) -> dict[str, obj
 def render_slack_staleness_message(report: PollStalenessReport) -> dict[str, object]:
     """The Slack payload for the workspace poll-staleness edge (#1052). No action
     button — there is no single connection to link; the signal is that none of them
-    are being polled."""
+    are being polled.
+    """
     headline = render.staleness_headline(report)
     emoji = ":rotating_light:" if report.is_failing else ":white_check_mark:"
     blocks: list[dict[str, object]] = [
@@ -170,7 +152,8 @@ def render_slack_staleness_message(report: PollStalenessReport) -> dict[str, obj
 
 def _check_line(check: CheckReport) -> str:
     """One failing check as a Slack mrkdwn bullet: name · status · expected-vs-
-    observed · redacted sample (via the shared :mod:`render` formatter)."""
+    observed · redacted sample (via the shared :mod:`render` formatter).
+    """
     line = f"• *{check.check_name}* — `{check.status}`"
     detail = render.check_detail(check)
     return f"{line} — {detail}" if detail else line
@@ -193,13 +176,7 @@ class SlackPublisher:
         self._timeout = timeout
 
     def publish(self, session: Session, report: RunReport) -> None:
-        """Deliver to Slack per the run's suite notification policy.
-
-        Quiet no-op when no webhook resolves (neither per-suite nor workspace), the
-        suite disabled alerting, or the run is below the suite's threshold. Raises on
-        an HTTP error — the dispatch/composite layer isolates that so a flaky webhook
-        can't fail the run or block the other channels.
-        """
+        """Deliver to Slack per the run's suite notification policy."""
         config = notification_service.get_config(session, report.suite_id)
         if config is not None and not config.enabled:
             return
@@ -231,14 +208,7 @@ class SlackPublisher:
         )
 
     def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:
-        """Post a connection poll-health edge to the **workspace** Slack webhook (#837).
-
-        A connection has no suite, so no per-suite config or threshold applies — this
-        resolves the workspace webhook only (`resolve_slack_webhook(None, …)`), and the
-        send decision was already made at the threshold crossing. Returns whether a
-        message was actually posted (``False`` when unconfigured/ineligible — a quiet
-        skip must not read as delivered, #1101).
-        """
+        """Post a connection poll-health edge to the **workspace** Slack webhook (#837)."""
         webhook = notification_service.resolve_slack_webhook(
             None,
             secret_store=self._secret_store,
@@ -265,7 +235,8 @@ class SlackPublisher:
         """Post the workspace poll-staleness edge (#1052) to the workspace Slack
         webhook — same resolution as :meth:`publish_health`, but returning whether a
         message was actually posted (``False`` when unconfigured/ineligible — a quiet
-        skip must not read as delivered)."""
+        skip must not read as delivered).
+        """
         webhook = notification_service.resolve_slack_webhook(
             None,
             secret_store=self._secret_store,
@@ -288,11 +259,11 @@ class SlackPublisher:
         return True
 
     def _webhook_allowed(self, webhook: str) -> bool:
-        """SSRF guard at the request sink: only POST to an https URL on an allowlisted
-        Slack host. The scheme check matters for the WORKSPACE webhook too — it's never
-        write-validated (only per-suite webhooks are), so an http:// workspace URL would
-        otherwise be POSTed in cleartext (#639 review). Shared by the run + health paths
-        so neither can be hardened without the other."""
+        """SSRF guard at the request sink: only POST to an https URL on an allowlisted Slack host.
+        The scheme check matters for the WORKSPACE webhook too — it's never write-validated
+        (only per-suite webhooks are), so an http:// workspace URL would otherwise be POSTed in
+        cleartext (#639 review).
+        """
         parsed = urlparse(webhook)
         host = (parsed.hostname or "").lower()
         return parsed.scheme == "https" and any(

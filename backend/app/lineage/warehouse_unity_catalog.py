@@ -1,30 +1,4 @@
-"""Unity Catalog warehouse-native lineage provider (#858, ADR 0034).
-
-Reads ``system.access.table_lineage`` — Databricks' account-level lineage system table,
-an **append-only event log** (every table read/write emits a row with an ``event_time``).
-Verified against the real captured payload (2026-07-17 spike, 200 rows / 8 real edges).
-
-Two facts drive the design, both from the real payload:
-
-* **A lineage EDGE needs both endpoints.** Most rows have a NULL
-  ``target_table_full_name`` (a pure read-access event — someone SELECTed a table, no
-  write). Only rows with both ``source_table_full_name`` AND
-  ``target_table_full_name`` are a table→table dependency. Path-based sources (an
-  external file, ``source_type='PATH'`` with a NULL full name) are dropped — no table
-  identity.
-* **It is a LOG, so the refresh is INCREMENTAL and never prunes.** ``event_time`` is the
-  watermark: read forward from the last persisted mark, upsert, return the new mark. An
-  edge absent from the latest window is a historical fact, not a removed dependency —
-  pruning it would erase real lineage. (Contrast Snowflake ``OBJECT_DEPENDENCIES``, a
-  current-state view → snapshot-diff + prune.)
-
-``*_table_full_name`` arrives as ``catalog.schema.table`` in UC's own **lower** case, so
-:func:`asset_identity.format_unity_catalog_name` (which folds unquoted→lower, idempotent
-here) rebuilds an identity byte-identical to a suite-resolved UC asset — no fold step
-(the whole premise of warehouse-native lineage). The namespace is
-``unitycatalog://{workspace host}`` from the connection's ``workspace_url`` — the exact
-form `asset_identity._resolve_unity_catalog` produces.
-"""
+"""Unity Catalog warehouse-native lineage provider (#858, ADR 0034)."""
 
 from __future__ import annotations
 
@@ -55,12 +29,8 @@ _TABLE_TYPES = frozenset({"TABLE", "VIEW", "MATERIALIZED_VIEW", "STREAMING_TABLE
 # system.access.table_lineage retains 365d, so a first pull is bounded regardless.
 _DEFAULT_LOOKBACK_DAYS = 365
 
-# Safety re-scan window subtracted from the persisted watermark on each incremental
-# pull. system.access.table_lineage ingests with ~1-2h lag, so a statement whose
-# event_time is <= the last watermark can be INGESTED after the pull that set it — a
-# strict `> watermark` would miss it forever. Re-reading a bounded window before the
-# watermark closes that gap; the edge upsert is idempotent (ON CONFLICT bumps
-# last_seen), so re-reads are harmless. 6h comfortably exceeds the documented lag.
+# Safety re-scan window subtracted from the persisted watermark on each incremental pull.
+# system.access.table_lineage ingests with ~1-2h lag.
 _WATERMARK_SAFETY = timedelta(hours=6)
 
 # The shared defensive cap (#901/#908, lives in `warehouse`) — pairs are collected in
@@ -92,9 +62,8 @@ class UnityCatalogLineageProvider:
                 f"system.access.table_lineage ({type(exc).__name__}) — the SQL warehouse "
                 "principal needs SELECT on system.access and system tables enabled"
             ) from exc
-        # Column grain (#901): a refinement of the table edges, never a reason to fail
-        # them — a workspace where column_lineage is gated separately still gets table
-        # lineage, with an honest degrade note instead of a silent absence.
+        # Column grain (#901): a refinement of the table edges, never a reason to fail them — a
+        # workspace where column_lineage is gated separately still gets table lineage.
         degraded_reason: str | None = None
         try:
             edges = self._attach_column_pairs(conn, edges, since)
@@ -125,18 +94,7 @@ class UnityCatalogLineageProvider:
         connection_config: dict[str, object],
         limit: int | None = None,
     ) -> tuple[AssetIdentity, ...]:
-        """ADR 0040 — enumerate the workspace's tables from
-        ``system.information_schema.tables``.
-
-        A UC connection's boundary is the WORKSPACE (there is no per-connection
-        catalog, exactly like the lineage pull over ``system.access``), so scope
-        here means excluding what is categorically not user data: the ``system``
-        and ``__databricks_internal`` catalogs, Databricks' bundled ``samples``,
-        and every ``information_schema``. Managed/external tables, views,
-        materialized views and streaming tables are all real assets (the same
-        breadth the lineage domains accept). Identities use the catalog's own
-        lower-case strings verbatim — no fold (the #823-safe path).
-        """
+        """ADR 0040 — enumerate the workspace's tables from ``system.information_schema.tables``."""
         namespace = self._namespace(connection_config)
         sql = (
             "SELECT table_catalog, table_schema, table_name"
@@ -188,11 +146,8 @@ class UnityCatalogLineageProvider:
         the max ``event_time`` observed — the new watermark the caller persists. A pull
         with no new rows returns ``(dedupe([]), since)`` so the watermark never regresses.
         """
-        # A concrete, BOUND floor (never a SQL expression as a param value): event_time
-        # is compared with a bound timestamp — no interpolation, no injection surface.
-        # An incremental pull re-scans a safety window BEFORE the watermark so a
-        # late-ingested row (event_time <= watermark, ingested after the last pull) is
-        # not lost to a strict `>`; a first pull reads from the retention floor.
+        # A concrete, BOUND floor (never a SQL expression as a param value): event_time is compared
+        # with a bound timestamp — no interpolation, no injection surface.
         floor = (
             since - _WATERMARK_SAFETY
             if since is not None
@@ -244,18 +199,7 @@ class UnityCatalogLineageProvider:
         edges: tuple[LineageEdgePair, ...],
         since: datetime | None,
     ) -> tuple[LineageEdgePair, ...]:
-        """Refine the table edges with ``system.access.column_lineage`` pairs (#901).
-
-        Reads the same window as the table pull (same bound floor — no interpolation)
-        and joins on the table pair built from the row's SPLIT catalog/schema/name
-        columns through the same :func:`asset_identity.format_unity_catalog_name` the
-        table edges used — **by construction byte-identical**, where the raw
-        ``*_full_name`` string could diverge from the folded identity for a quoted
-        mixed-case table (review finding). A column row whose table pair produced no
-        table edge in this window is dropped (logged): a pair we can't anchor to an
-        edge would fabricate lineage the table grain never saw. Pairs are capped per
-        edge — a runaway wide-schema join must not balloon the edge row.
-        """
+        """Refine the table edges with ``system.access.column_lineage`` pairs (#901)."""
         if not edges:
             return edges
         floor = (

@@ -1,9 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-// Mobile overlay nav (#801). On a narrow (≤ lg) viewport the Sider collapses to
-// zero width and the nav moves into an overlay Drawer that floats *above* the
-// content with a scrim — it must never squeeze the page. Desktop behaviour is
-// covered by smoke.spec.ts; this pins the mobile layout at 390px (iPhone-class).
+// Mobile overlay nav (#801).
 test.describe('mobile overlay nav (390px)', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -16,9 +13,8 @@ test.describe('mobile overlay nav (390px)', () => {
     await expect(toggle).toBeVisible();
     await expect(page.getByRole('link', { name: 'Assets' })).toHaveCount(0);
 
-    // The Sider has collapsed to zero width; wait out its CSS width transition so
-    // the content has grown to the full viewport (390px, minus a hairline border).
-    // The invariant #801 is fixing: the nav must not eat content width.
+    // The Sider has collapsed to zero width; wait out its CSS width transition so the content has
+    // grown to the full viewport (390px, minus a hairline border).
     await expect(page.locator('.ant-layout-sider')).toHaveClass(/ant-layout-sider-zero-width/);
     const content = page.locator('.ant-layout-content');
     const fullWidth = async () => (await content.boundingBox())?.width ?? 0;

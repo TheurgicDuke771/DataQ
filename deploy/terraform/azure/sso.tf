@@ -1,10 +1,4 @@
-# Azure AD SSO app registrations (real auth in prod; AUTH_DEV_BYPASS=false). The
-# backend's init_auth() requires AZURE_API_CLIENT_ID + AZURE_TENANT_ID at startup
-# and validates v2 access tokens; the SPA (generic OIDC client, ADR 0028) uses
-# AZURE_SPA_CLIENT_ID with a redirect URI of the frontend origin. Two registrations:
-#   - API  (dataq-app-api-sso): exposes the `user_impersonation` scope, v2 tokens.
-#   - SPA  (dataq-app-spa): public single-page client, redirect = frontend origin,
-#                           pre-authorized on the API scope (no consent prompt).
+# Azure AD SSO app registrations (real auth in prod; AUTH_DEV_BYPASS=false).
 
 data "azuread_client_config" "current" {}
 
@@ -31,10 +25,7 @@ resource "azuread_application" "api" {
   }
 
   # The Application ID URI (api://<client_id>) is managed by the separate
-  # azuread_application_identifier_uri.api resource below. Without this, the
-  # provider treats the URI as drift on THIS resource and removes it on every
-  # apply — which strips the API's token audience and breaks SSO. Ignore it here;
-  # the dedicated resource stays the source of truth.
+  # azuread_application_identifier_uri.api resource below.
   lifecycle {
     ignore_changes = [identifier_uris]
   }
@@ -57,11 +48,9 @@ resource "azuread_application" "spa" {
   owners       = [data.azuread_client_config.current.object_id]
 
   single_page_application {
-    # Azure AD requires a trailing slash when there's no path segment; the OIDC
-    # client's redirect_uri is `${window.location.origin}/` to match exactly
-    # (frontend/src/auth/authClient.ts, generic OIDC per ADR 0028). The origin is
-    # the frontend Container App (ADR 0028 §5 cutover), computed from the env
-    # domain (local.frontend_url) to avoid a resource-reference cycle.
+    # Azure AD requires a trailing slash when there's no path segment; the OIDC client's
+    # redirect_uri is `${window.location.origin}/` to match exactly
+    # (frontend/src/auth/authClient.ts, generic OIDC per ADR 0028).
     redirect_uris = ["${local.frontend_url}/"]
   }
 
@@ -97,15 +86,7 @@ resource "azuread_application_pre_authorized" "spa_on_api" {
   permission_ids       = [random_uuid.api_scope.result]
 }
 
-# Pre-authorize the Microsoft Azure CLI (well-known first-party client id) on the
-# same scope, so operators can mint API bearers non-interactively for the live
-# smoke / MCP clients:
-#   az account get-access-token --resource api://<api-client-id>
-# Without this, the mint dies on AADSTS65001/650057 (the tenant can't dynamically
-# consent the CLI to a custom API). Mirrors the manual Graph PATCH applied
-# 2026-07-03 (W8 go-live smoke) so a future apply doesn't strip it — on first
-# apply, `terraform import` the existing grant instead of recreating it (see
-# deploy/README.md). Interim posture until ADR 0026 (DataQ-issued API keys).
+# Pre-authorize the Microsoft Azure CLI (well-known first-party client id) on the same scope.
 resource "azuread_application_pre_authorized" "azure_cli_on_api" {
   application_id       = azuread_application.api.id
   authorized_client_id = "04b07795-8ddb-461a-bbee-02f9e1bf7b46" # Microsoft Azure CLI

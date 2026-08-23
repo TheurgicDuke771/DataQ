@@ -137,9 +137,8 @@ describe('Settings', () => {
   });
 
   it('surfaces the failing SMTP stage when the pre-flight test fails', async () => {
-    // Shape the axios response interceptor already produces (client.ts folds
-    // the error-envelope's message into `err.message`) — the frontend never
-    // parses `error.detail.stage` itself; the backend's message already names it.
+    // Shape the axios response interceptor already produces (client.ts folds the error-envelope's
+    // message into `err.message`) — the frontend never parses `error.detail.stage` itself.
     mockTestAuthEmail.mockRejectedValue(
       new Error(
         "SMTP pre-flight failed at the 'auth' stage — see the server log for the underlying error type.",

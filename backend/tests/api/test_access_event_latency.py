@@ -1,36 +1,4 @@
-"""What the access write costs, and the shape of that cost — G1 / #431 AC-3.
-
-> Write path adds no measurable latency regression (documented check)
-
-**The honest answer, measured rather than claimed: the write costs about one
-Postgres commit — a few milliseconds — and it is on the request path.** It is not
-free, and this file says so rather than choosing a threshold that hides it.
-
-That is a deliberate decision, not an oversight, and the alternative was
-considered. The write could be moved off the request path with FastAPI's
-`BackgroundTasks`, which would take the client-visible cost to zero. It is not,
-for three reasons:
-
-1. **A deferred write can be lost.** A process that dies between sending the
-   response and running the task drops the event. For an ordinary metric that is
-   fine; for a HIPAA §164.312(b) audit control, "we usually record accesses" is
-   the property the control exists to rule out.
-2. **It would need a second mechanism for MCP**, which has no request/response
-   lifecycle to hang a background task on — so the two surfaces would have
-   different reliability, and the weaker one would be invisible.
-3. **A few milliseconds on a read that costs tens to hundreds in production is
-   not a material regression.** The local numbers below make the write look
-   expensive precisely because the local read is unusually cheap.
-
-So what is asserted here is the property that actually matters and is
-machine-independent: the cost is **O(1) in the number of results**, because the
-design is one event per READ. A wall-clock threshold would prove only that the
-machine was idle; a cost that does not grow with the data proves the design has
-not drifted into an event per result or a query per row.
-
-Absolute timings are printed on every run, so AC-3's "documented check" is a
-number someone can read, not an assertion that fires only when broken.
-"""
+"""What the access write costs, and the shape of that cost — G1 / #431 AC-3."""
 
 from __future__ import annotations
 
@@ -55,10 +23,7 @@ _LARGE = 50
 
 _ROUNDS = 5
 
-#: How much more the write may cost at 10x the results. Generous: the design cost
-#: is flat, so anything near 1.0 is the expected shape and the headroom absorbs
-#: ordinary jitter on a contended runner. An event-per-result design would land
-#: near 10.
+#: How much more the write may cost at 10x the results.
 _MAX_GROWTH = 3.0
 
 
@@ -154,13 +119,7 @@ def _overhead(client: TestClient, db_session: Any, monkeypatch: Any, results: in
 def test_the_access_write_cost_does_not_grow_with_the_result_count(
     client: TestClient, db_session: Any, monkeypatch: Any
 ) -> None:
-    """The machine-independent property: one event per READ, so the write is O(1).
-
-    A wall-clock threshold would prove only that the runner was idle. This
-    compares the write's cost at 5 results and at 50 — if the design ever drifts
-    to an event per result (or a query per row), the ratio goes to ~10 and this
-    fails on any machine.
-    """
+    """The machine-independent property: one event per READ, so the write is O(1)."""
     small = _overhead(client, db_session, monkeypatch, _SMALL)
     large = _overhead(client, db_session, monkeypatch, _LARGE)
 
@@ -178,12 +137,7 @@ def test_the_access_write_cost_does_not_grow_with_the_result_count(
 
 
 def test_one_event_per_read_not_one_per_result(client: TestClient, db_session: Any) -> None:
-    """The same property asserted directly, so it does not rest on timing at all.
-
-    Timing can be defeated by a fast machine; a row count cannot. This is the
-    assertion that actually holds the design in place — the measurement above
-    exists to document the cost, not to be the guard.
-    """
+    """The same property asserted directly, so it does not rest on timing at all."""
     run = _seed(db_session, _LARGE)
     resp = client.get(f"/api/v1/runs/{run.id}")
     assert resp.status_code == 200

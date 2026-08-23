@@ -20,15 +20,7 @@ import { formatTimestamp } from '../components/results/resultsFormat';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 import { PageError } from '../components/feedback/PageError';
 
-/**
- * Workspace-admin control centre (#173): all suites / members / access overview.
- *
- * Layout reconciled to the prototype (ADR 0022 AdminScreen): KPI MetricCards over
- * stacked tables, **no tabs**. Presentation only — same `/admin/{suites,users,
- * access}` endpoints. Access is server-driven (gated on `/me`'s
- * `is_workspace_admin`; the endpoints re-enforce with 403); a non-admin deep-link
- * sees the Forbidden page and no data is fetched.
- */
+/** Workspace-admin control centre (#173): all suites / members / access overview. */
 export function Admin() {
   const me = useMe();
 
@@ -57,10 +49,7 @@ function AdminOverview() {
   const suites = useAsyncData(listAdminSuites);
   const users = useAsyncData(listAdminUsers);
   const access = useAsyncData(listAdminAccess);
-  // Rows the admin has just re-roled, keyed by id. Overlaid on `users.state`
-  // rather than refetching the whole list: the PATCH response is the same shape
-  // as a list row (asserted by a backend test), so the row can be replaced
-  // exactly — and a refetch would reorder nothing but would flash the table.
+  // Rows the admin has just re-roled, keyed by id.
   const [rerolled, setRerolled] = useState<Record<string, AdminUser>>({});
   const userState = overlayUsers(users.state, rerolled);
 

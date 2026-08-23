@@ -1,10 +1,6 @@
 import { api } from './client';
 
-/**
- * Connections API — the eight configurable connection types (CLAUDE.md §4).
- * ADF, Airflow + dbt are orchestration providers, not datasources, but they are
- * still `connections` rows and managed through the same CRUD surface.
- */
+/** Connections API — the eight configurable connection types (CLAUDE.md §4). */
 
 export const CONNECTION_TYPES = [
   'snowflake',
@@ -19,11 +15,8 @@ export const CONNECTION_TYPES = [
 export type ConnectionType = (typeof CONNECTION_TYPES)[number];
 
 /**
- * Datasource vs orchestration is the load-bearing distinction in DataQ
- * (CLAUDE.md §4): datasources are stores you write checks against; ADF/Airflow
- * are orchestration providers we monitor + trigger from, never queryable. This
- * map is the single source for that split — the add-connection picker and the
- * sectioned list both derive their groups from it (no hardcoded lists elsewhere).
+ * Datasource vs orchestration is the load-bearing distinction in DataQ (CLAUDE.md §4): datasources
+ * are stores you write checks against.
  */
 export const CONNECTION_KINDS = ['datasource', 'orchestration'] as const;
 export type ConnectionKind = (typeof CONNECTION_KINDS)[number];
@@ -52,10 +45,8 @@ export const DATASOURCE_TYPES = typesOfKind('datasource');
 export const ORCHESTRATION_TYPES = typesOfKind('orchestration');
 
 /**
- * Coarser datasource grouping for the Results datasource-type filter (ADR 0022):
- * the two flat-file types (ADLS Gen2 + S3) share a runner shape and read as one
- * "Flat file" choice, while Snowflake and Unity Catalog stand alone. Orchestration
- * types map to `null` — they're never queryable, so they never back a suite/run.
+ * Coarser datasource grouping for the Results datasource-type filter (ADR 0022): the two flat-file
+ * types (ADLS Gen2 + S3) share a runner shape and read as one "Flat file" choice.
  */
 export const DATASOURCE_CATEGORIES = ['snowflake', 'flatfile', 'unity_catalog', 'iceberg'] as const;
 export type DatasourceCategory = (typeof DATASOURCE_CATEGORIES)[number];
@@ -79,10 +70,8 @@ export const DATASOURCE_CATEGORY_LABELS: Record<DatasourceCategory, string> = {
 };
 
 /**
- * Datasources GX can run a custom-SQL (`UnexpectedRowsExpectation`) query against
- * — mirrors the backend `custom_sql.SQL_QUERYABLE_TYPES` (ADR 0019). The custom-SQL
- * check category is offered only for these SQL-queryable types; flat files (ADLS /
- * S3) are DataFrame assets, not SQL, and the backend 422s custom-SQL on any other.
+ * Datasources GX can run a custom-SQL (`UnexpectedRowsExpectation`) query against — mirrors the
+ * backend `custom_sql.SQL_QUERYABLE_TYPES` (ADR 0019).
  */
 export const SQL_QUERYABLE_TYPES: ConnectionType[] = ['snowflake', 'unity_catalog'];
 
@@ -95,12 +84,8 @@ export const FILE_TYPES: ConnectionType[] = ['adls_gen2', 's3'];
 export const isFileDatasource = (type: ConnectionType): boolean => FILE_TYPES.includes(type);
 
 /**
- * Datasources whose runner can evaluate freshness/volume **monitors** — the SQL
- * datasources (in-warehouse aggregate), Iceberg (native `scan().count()` / a
- * column MAX, ADR 0030), and flat files (over the resolved batch, #520). Broader
- * than `SQL_QUERYABLE_TYPES`: neither Iceberg nor a flat file is SQL-queryable
- * (no custom-SQL). Mirrors the backend `check_service.MONITOR_CAPABLE_TYPES`
- * author gate.
+ * Datasources whose runner can evaluate freshness/volume **monitors** — the SQL datasources (in-
+ * warehouse aggregate), Iceberg (native `scan().count()` / a column MAX, ADR 0030).
  */
 export const MONITOR_CAPABLE_TYPES: ConnectionType[] = [
   'snowflake',
@@ -134,53 +119,34 @@ export interface Connection {
   env: ConnectionEnv;
   config: Record<string, unknown>;
   has_secret: boolean;
-  /** `null` once the creating user is erased — the row outlives its author
-   *  (`ondelete=SET NULL`, #1319). Nullable server-side, so nullable here:
-   *  a non-nullable mirror lets the compiler wave through the next consumer
-   *  that assumes an author is always present. */
+  /**
+   * `null` once the creating user is erased — the row outlives its author (`ondelete=SET NULL`,
+   * #1319).
+   */
   created_by: string | null;
-  /** Poll health (#828) — orchestration connections only. A failing poll used to be
-   *  visible ONLY in the logs, so a dead integration looked exactly like a healthy
-   *  quiet one. `last_poll_error` is a classified reason, never raw exception text. */
+  /** Poll health (#828) — orchestration connections only. */
   last_polled_at?: string | null;
   last_poll_error?: string | null;
   consecutive_poll_failures?: number;
-  /** Run-derived health (#954) — DATASOURCE connections. Nothing polls a datasource,
-   *  so a dead credential was invisible here until someone clicked Test: two prod
-   *  Snowflake connections sat dead for weeks. Derived from `runs`, so it cannot
-   *  disagree with them. `last_run_error` is already classified server-side (#605). */
+  /** Run-derived health (#954) — DATASOURCE connections. */
   last_run_at?: string | null;
   last_run_error?: string | null;
   consecutive_run_failures?: number;
-  /** When the credential itself says it stops working (#838) — a SAS prints `se=`.
-   *  NULL means UNKNOWN (no readable lifetime, or not yet read), never "does not
-   *  expire", so it must render as silence rather than reassurance. */
+  /** When the credential itself says it stops working (#838) — a SAS prints `se=`. */
   credential_expires_at?: string | null;
-  /** When the expiry was last READ (#1024). NULL means we have never looked, which
-   *  must render as "unknown" rather than as silence — silence reads as
-   *  reassurance, and before this field the two were indistinguishable. */
+  /** When the expiry was last READ (#1024). */
   credential_expiry_checked_at?: string | null;
-  /** Inventory-sync outcome (#1104) — opted-in snowflake/unity_catalog connections
-   *  only (config.inventory_sync, ADR 0040). A sync whose principal can't read the
-   *  enumeration query used to fail every tick invisibly: toggle on, connection test
-   *  green (the `SELECT 1` probe never exercises this query), zero assets ever
-   *  appear, no surface said why. `inventory_sync_last_error` is a classified
-   *  reason, never raw exception text; NULL means the last attempt succeeded.
-   *  `inventory_sync_failing_since` is NULL whenever currently healthy. */
+  /**
+   * Inventory-sync outcome (#1104) — opted-in snowflake/unity_catalog connections only
+   * (config.inventory_sync, ADR 0040).
+   */
   inventory_sync_last_attempted_at?: string | null;
   inventory_sync_last_error?: string | null;
   inventory_sync_failing_since?: string | null;
-  /** Zero-table enumeration state (#1242) — a SUCCESSFUL sync that enumerates zero
-   *  tables is not an error (Snowflake's INFORMATION_SCHEMA is privilege-filtered,
-   *  not access-denied, so a role with no grants gets an empty result set rather
-   *  than an exception; a genuinely empty database also legitimately enumerates
-   *  zero). `inventory_sync_last_table_count` is the row count from the last
-   *  successful sync: NULL = never successfully synced, 0 = synced but nothing
-   *  visible, >0 = synced N tables — untouched by a failed attempt.
-   *  `inventory_sync_zero_since` is set only when the count DROPS from a
-   *  previously-recorded N>0 to 0 (the privilege-loss/dropped-database signal); a
-   *  connection that has always enumerated zero never sets it, so that renders as
-   *  a neutral informational note rather than a flagged one. */
+  /**
+   * Zero-table enumeration state (#1242) — a SUCCESSFUL sync that enumerates zero tables is not an
+   * error (Snowflake's INFORMATION_SCHEMA is privilege-filtered, not access-denied.
+   */
   inventory_sync_last_table_count?: number | null;
   inventory_sync_zero_since?: string | null;
 }
@@ -198,9 +164,8 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
 };
 
 /**
- * The `name · type · ENV` label used by the connection-picker `Select` in the
- * suite create + import drawers. One definition so the format can't drift
- * between the two pickers.
+ * The `name · type · ENV` label used by the connection-picker `Select` in the suite create +
+ * import drawers.
  */
 export const connectionOptionLabel = (c: Connection): string =>
   `${c.name} · ${CONNECTION_TYPE_LABELS[c.type]} · ${envLabel(c.env)}`;
@@ -225,10 +190,7 @@ export async function testConnection(id: string): Promise<{ ok: boolean }> {
   return data;
 }
 
-/** Mirrors the backend `ConnectionCreate` schema (secrets are write-only).
- * `catalog_secret` is the SECOND credential a type may need — currently only
- * the Iceberg SQL/hive catalog's DB password (#754/#826/#1181); every other
- * type simply never sends it. */
+/** Mirrors the backend `ConnectionCreate` schema (secrets are write-only). */
 export interface ConnectionCreate {
   name: string;
   type: ConnectionType;
@@ -244,28 +206,21 @@ export async function createConnection(payload: ConnectionCreate): Promise<Conne
 }
 
 /**
- * A draft-test payload is exactly a create payload minus `name` — a draft has
- * no row and needs none (#351). Derived via `Omit` rather than redeclared, so
- * the two shapes can't drift apart.
+ * A draft-test payload is exactly a create payload minus `name` — a draft has no row and needs
+ * none (#351).
  */
 export type ConnectionDraftTest = Omit<ConnectionCreate, 'name'>;
 
 /**
- * Live connectivity test for an UNSAVED draft — the config/secret the user
- * just typed on `/connections/new`, probed before Create is pressed. Nothing
- * is persisted: no `connections` row, no SecretStore write. Same `{ ok }`
- * shape as the saved-connection `testConnection` above.
+ * Live connectivity test for an UNSAVED draft — the config/secret the user just typed on
+ * `/connections/new`, probed before Create is pressed.
  */
 export async function testDraftConnection(payload: ConnectionDraftTest): Promise<{ ok: boolean }> {
   const { data } = await api.post<{ ok: boolean }>('/connections/test', payload);
   return data;
 }
 
-/** Mirrors the backend `ConnectionUpdate` schema — type/env are immutable.
- * `catalog_secret` rotates the second (catalog) credential — unlike the
- * primary `secret` (rotation lives in the separate Re-auth flow), there is no
- * dedicated catalog-secret reauth-with-verify endpoint, so PATCH is that
- * credential's only rotation path (#1181). */
+/** Mirrors the backend `ConnectionUpdate` schema — type/env are immutable. */
 export interface ConnectionUpdate {
   name?: string;
   config?: Record<string, unknown>;
@@ -289,10 +244,8 @@ export async function reauthConnection(id: string, secret: string): Promise<{ ok
 }
 
 /**
- * Mirrors the backend `ConnectionVersionRead` — one immutable snapshot in a
- * connection's edit history (#654). Only the editable, non-secret fields are
- * versioned; no credential is ever present. `changed_by_name` is resolved
- * server-side (null for a system actor / removed user).
+ * Mirrors the backend `ConnectionVersionRead` — one immutable snapshot in a connection's edit
+ * history (#654).
  */
 export interface ConnectionVersion {
   version_no: number;

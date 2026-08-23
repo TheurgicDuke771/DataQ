@@ -52,9 +52,8 @@ def test_freshness_uses_the_freshness_dmf() -> None:
 
 
 def test_volume_is_refused_row_count_has_no_ad_hoc_form() -> None:
-    # Live-verified platform fact (2026-08-22): SNOWFLAKE.CORE.ROW_COUNT cannot
-    # be invoked directly, in any argument spelling — volume is not in the
-    # DMF matrix, and an out-of-band row must refuse cleanly.
+    # Live-verified platform fact (2026-08-22): SNOWFLAKE.CORE.ROW_COUNT cannot be invoked directly,
+    # in any argument spelling — volume is not in the DMF matrix.
     with pytest.raises(MonitorConfigError):
         _stmt(kind="volume", expectation_type="monitor:volume", config={"min_rows": 1})
 
@@ -124,9 +123,8 @@ def test_ntz_freshness_rejection_gets_the_type_guidance() -> None:
 
 
 def test_unknown_column_gets_the_identifier_guidance_not_connection_blame() -> None:
-    # The generic classifier read an unknown column as "connection or run
-    # target looks misconfigured" (live-observed) — the DMF classifier must
-    # name the actual problem.
+    # The generic classifier read an unknown column as "connection or run target looks
+    # misconfigured" (live-observed) — the DMF classifier must name the actual problem.
     def boom(statement: str) -> None:
         raise RuntimeError("000904 (42000): SQL compilation error: invalid identifier 'NOPE'")
 
@@ -247,9 +245,8 @@ def test_negative_freshness_age_clamps_to_zero_like_the_monitor_path() -> None:
 
 
 def test_connection_establishment_failure_propagates_out_of_the_runner() -> None:
-    # The open-before-evaluate rule (mirrors run_monitors_over_engine): an
-    # unreachable warehouse fails the RUN, it does not dissolve into per-check
-    # errors that let the run "complete" through an outage.
+    # The open-before-evaluate rule (mirrors run_monitors_over_engine): an unreachable warehouse
+    # fails the RUN.
     from backend.app.datasources.snowflake import SnowflakeCheckRunner, SnowflakeConfig
 
     cfg = SnowflakeConfig.model_validate(

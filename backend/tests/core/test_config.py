@@ -30,39 +30,15 @@ def test_cors_off_by_default() -> None:
     assert Settings().cors_allow_origin_list == []
 
 
-# ── Shipped env templates must actually load (#1072) ─────────────────────────
-#
-# scripts/setup.sh copies .env.app.example verbatim to .env.app, and Settings
-# reads env_file=".env.app" by default — so an unloadable template breaks the
-# documented from-scratch install. Nothing checked this, which is how a blank
-# bool sat in the template for two weeks (#1072, introduced by #776).
-#
-# The failure is specifically a PRESENT-BUT-EMPTY value on a field whose type
-# cannot parse "": `str | None` shrugs at it, `bool` raises. So the guard is
-# "construct Settings from the template", not "grep for blank keys" — the
-# former catches the whole class, including types nobody has added yet.
+# ── Shipped env templates must actually load (#1072) ───────────────────────── scripts/setup.sh
+# copies .env.app.example verbatim to .env.app, and Settings reads env_file=".env.app" by default.
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_env_app_template_plus_setup_sh_values_constructs_settings() -> None:
-    """The .env.app that setup.sh actually produces must load into Settings.
-
-    This models the documented from-scratch path: copy the template, then fill the
-    four keys setup.sh fills. It is deliberately NOT "the raw template loads" —
-    that would fail on blanks the template ships by design (OPENBAO_TOKEN), and
-    asserting it would encode the opposite of the templates-ship-blank rule.
-
-    Nor is `.env.example` asserted anywhere: it carries compose + frontend vars
-    (POSTGRES_*, VITE_*) and Settings is `extra="forbid"`, so it raises by design
-    (the #209 split).
-
-    This is the whole-class guard behind #1072 — it catches any unloadable value
-    in the shipped template, including on field types nobody has added yet.
-    """
-    # These four are what scripts/setup.sh writes into .env.app after copying the
-    # template; passed explicitly rather than as **dict so mypy can check them
-    # against Settings' typed __init__ (the tests tree is mypy-gated, #418).
+    """The .env.app that setup.sh actually produces must load into Settings."""
+    # These four are what scripts/setup.sh writes into .env.app after copying the template.
     Settings(
         _env_file=str(_REPO_ROOT / ".env.app.example"),
         database_url="postgresql+psycopg2://u:p@localhost:5432/dataq",
@@ -73,12 +49,7 @@ def test_env_app_template_plus_setup_sh_values_constructs_settings() -> None:
 
 
 def test_blank_valued_template_keys_are_parseable_types() -> None:
-    """The same guard one layer down, so a failure names the offending key.
-
-    `test_shipped_env_template_constructs_settings` proves the template loads;
-    this one says WHICH key broke it and what type it is, because the pydantic
-    error alone sent the last investigation to a lineage setting nobody touched.
-    """
+    """The same guard one layer down, so a failure names the offending key."""
     offenders: list[str] = []
     for template in (".env.app.example", ".env.example"):
         path = _REPO_ROOT / template

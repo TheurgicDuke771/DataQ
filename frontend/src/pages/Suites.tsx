@@ -61,11 +61,8 @@ import { errorMessage } from '../utils/errors';
 import { PageError } from '../components/feedback/PageError';
 
 /**
- * A suite's identity block — datasource avatar + name + connection/env — shared
- * by the browse-grid card and the master list row so the two never drift. The
- * name renders as plain text (never an `<h4>`), so only the detail panel owns
- * the suite heading. `description` is opt-in (the grid card shows it; the row
- * doesn't).
+ * A suite's identity block — datasource avatar + name + connection/env — shared by the browse-grid
+ * card and the master list row so the two never drift.
  */
 function SuiteIdentity({
   suite,
@@ -221,10 +218,8 @@ function SuitesBody({
   onEdit: (suite: Suite) => void;
   onDeleted: () => void;
 }) {
-  // Below `md` the side-by-side master-detail leaves ~0px for the detail pane
-  // (title wraps one char per line — #617 bug 1), so it stacks vertically.
-  // `=== false` (not `!screens.md`): useBreakpoint returns {} on the first
-  // render, and desktop must not flash the stacked layout.
+  // Below `md` the side-by-side master-detail leaves ~0px for the detail pane (title wraps one char
+  // per line — #617 bug 1), so it stacks vertically.
   const screens = Grid.useBreakpoint();
   const stacked = screens.md === false;
   if (state.status === 'loading') {
@@ -246,9 +241,8 @@ function SuitesBody({
   }
   const selected = suites.find((s) => s.id === selectedId) ?? null;
 
-  // Nothing selected → a full-width grid of suite cards that fills the page,
-  // rather than a narrow list beside a big empty panel. Picking one switches to
-  // the focused master-detail (the list stays, for quick switching).
+  // Nothing selected → a full-width grid of suite cards that fills the page, rather than a narrow
+  // list beside a big empty panel.
   if (!selected) {
     return <SuiteGrid suites={suites} connections={connections} onSelect={onSelect} />;
   }
@@ -271,9 +265,8 @@ function SuitesBody({
                 className="dq-suite-row"
                 style={{
                   cursor: 'pointer',
-                  // Longhand (not the `padding` shorthand) so it overrides the
-                  // shim's own `paddingBlock` deterministically, not by style-key
-                  // serialization order.
+                  // Longhand (not the `padding` shorthand) so it overrides the shim's own
+                  // `paddingBlock` deterministically, not by style-key serialization order.
                   paddingBlock: 12,
                   paddingInline: 16,
                   background: isSelected ? BRAND.selectedBg : undefined,
@@ -329,9 +322,8 @@ function SuiteGrid({
 }
 
 /**
- * A suite's browse-grid card — the vertical layout the Connections cards use
- * (avatar top-left + env tag top-right, then name, connection · type, and an
- * optional 2-line description) so the two list pages read the same on first open.
+ * A suite's browse-grid card — the vertical layout the Connections cards use (avatar top-left +
+ * env tag top-right, then name, connection · type.
  */
 function SuiteBrowseCard({
   suite,
@@ -397,11 +389,7 @@ function SuiteDetail({
   // Remounted (keyed by suite.id) when the selection changes → checks refetch.
   const { state, reload } = useAsyncData(() => listChecks(suite.id));
   const connection = connections.find((c) => c.id === suite.connection_id);
-  // Batch flat-file targets (#1180) store `pattern` instead of a literal `path` —
-  // that's the signal `summarizeTarget`/`isBatchTarget` share to render the
-  // configured prefix/pattern/strategy instead of a path. Detail-page display
-  // must say so explicitly (#1205): the pattern is what's SAVED, not a file
-  // that's been resolved — resolution only happens at run time.
+  // Batch flat-file targets (#1180) store `pattern` instead of a literal `path`.
   const targetSummary = summarizeTarget(suite.target);
   const isBatchFlatFileTarget = isBatchTarget(suite.target);
 
@@ -414,12 +402,7 @@ function SuiteDetail({
   // Triggering a run is edit-gated (matches the backend); a null target isn't runnable.
   const canRun = canRunSuite(suite);
 
-  // Open the live-progress drawer on the queued run rather than bouncing to
-  // /results — the user watches it execute (and can cancel). "Check-by-check" is
-  // what the drawer shows where the engine allows it (#318): monitor and
-  // comparison checks resolve individually, a GX expectation batch resolves as
-  // one, and the drawer says which it is looking at rather than implying the
-  // former everywhere.
+  // Open the live-progress drawer on the queued run rather than bouncing to /results.
   const { running, run } = useRunTrigger((queued) => setProgressRunId(queued.id));
 
   const onExport = async () => {
@@ -488,8 +471,6 @@ function SuiteDetail({
               </Button>
             ) : (
               // No target yet → not runnable; show why rather than a 422 on click.
-              // The <span> is required: a disabled antd Button has pointer-events:
-              // none, so the Tooltip must hover the wrapper, not the button.
               <Tooltip title="Set a run target (Edit) before running this suite">
                 <span style={{ cursor: 'not-allowed' }}>
                   <Button type="primary" icon={<PlayCircleOutlined />} disabled>
@@ -562,9 +543,10 @@ function ChecksList({
 }: {
   suiteId: string;
   state: AsyncState<Check[]>;
-  /** Edit capability — snooze/unsnooze AND re-baseline (#592) are edit-gated
-   *  on the backend, so the controls hide for view-only users (matching the
-   *  sibling panels). */
+  /**
+   * Edit capability — snooze/unsnooze AND re-baseline (#592) are edit-gated on the backend, so the
+   * controls hide for view-only users (matching the sibling panels).
+   */
   canEditChecks: boolean;
   onAdd: () => void;
   onEdit: (check: Check) => void;
@@ -620,9 +602,8 @@ function ChecksList({
           onChanged();
         } catch (err) {
           message.error(`Re-baseline failed: ${errorMessage(err)}`);
-          // Re-throw so antd keeps the confirm OPEN on failure — resolving here
-          // would close it exactly like a success (the #204 drift
-          // useConfirmDelete exists to prevent).
+          // Re-throw so antd keeps the confirm OPEN on failure — resolving here would close it
+          // exactly like a success (the #204 drift useConfirmDelete exists to prevent).
           throw err;
         }
       },

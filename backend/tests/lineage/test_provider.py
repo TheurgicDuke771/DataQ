@@ -1,8 +1,4 @@
-"""`lineage.provider` seam types — the node-kind contract (ADR 0034, #762).
-
-Pure, no DB / no network: the DTOs and the ``LineageNodeKind.coerce`` tolerance that
-makes "downstream isn't always a table" safe (an unmodelled kind parses, never crashes).
-"""
+"""`lineage.provider` seam types — the node-kind contract (ADR 0034, #762)."""
 
 from __future__ import annotations
 

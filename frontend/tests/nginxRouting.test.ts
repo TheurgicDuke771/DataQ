@@ -3,29 +3,7 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-/**
- * nginx SPA-routing invariants (prod-only regression, found live 2026-07-12).
- *
- * In production the SPA is served by nginx, not Vite. Vite's dev server has its own
- * SPA fallback, so **the Playwright e2e suite structurally cannot catch an nginx
- * routing bug** — which is exactly how this shipped: in-app navigation to /assets
- * worked perfectly, while every deep link, bookmark and browser-refresh 404'd.
- *
- * The collision: Vite emits its bundle to `dist/assets/`, which shares a path prefix
- * with the app's own `/assets` route (the ADR 0034 asset browse). Two mistakes each
- * break it independently, so both are pinned here:
- *
- *   1. A prefix `location /assets/ { try_files $uri =404; }` swallows the whole path
- *      space — `/assets/<uuid>` matched it and 404'd instead of reaching the SPA.
- *   2. `try_files $uri $uri/ /index.html` in `location /` makes nginx find the on-disk
- *      `assets/` DIRECTORY and issue its own 301 to `/assets/`, rebuilt from the
- *      INTERNAL scheme/port — handing the browser `http://…:8080/assets/`, which is
- *      unroutable, so the tab just hangs.
- *
- * This is a config assertion, not a semantic one: it cannot prove nginx behaves: for
- * that, serve `dist/` behind the real template and curl the routes. It does pin the
- * two exact mistakes so they cannot come back silently.
- */
+/** nginx SPA-routing invariants (prod-only regression, found live 2026-07-12). */
 // vitest runs with cwd = frontend/ (see the workspace root in vite config).
 const template = readFileSync(resolve(process.cwd(), 'nginx.conf.template'), 'utf8');
 
@@ -59,24 +37,10 @@ describe('nginx SPA routing (#802 /assets deep-link regression)', () => {
   });
 });
 
-/**
- * X-Forwarded-Proto forwarding (#1138) — a *security* invariant, not a routing one.
- *
- * This container never terminates TLS, so nginx's own `$scheme` is deterministically
- * `http`. `proxy_set_header X-Forwarded-Proto $scheme` therefore REPLACED the edge's
- * correct `https` with `http`, and the backend's `_cookie_secure()` — which infers
- * from exactly that header — dropped `Secure` from the OTP session cookie on a live
- * HTTPS deployment.
- *
- * Like the block above this is a config assertion: it cannot prove nginx behaves,
- * only that the exact mistake cannot come back silently. And it is the *only*
- * automated guard available — Vite serves the E2E lane, so no browser test ever
- * executes this file.
- */
+/** X-Forwarded-Proto forwarding (#1138) — a *security* invariant, not a routing one. */
 describe('nginx X-Forwarded-Proto (#1138 — OTP session cookie Secure inference)', () => {
-  // Block-matching deliberately terminates on a `}` **at the start of a line**, not
-  // on any `}`: the proxy bodies contain `${DATAQ_API_UPSTREAM}`, so a `[^}]*` scan
-  // stops inside the envsubst placeholder and silently matches nothing. (It did.)
+  // Block-matching deliberately terminates on a `}` **at the start of a line**, not on any `}`: the
+  // proxy bodies contain `${DATAQ_API_UPSTREAM}`.
   const proxyBlocks = [...directives.matchAll(/location[^\n]*\{\n.*?\n\s*\}/gs)]
     .map((m) => m[0])
     .filter((b) => b.includes('proxy_pass'));
@@ -116,9 +80,8 @@ describe('nginx X-Forwarded-Proto (#1138 — OTP session cookie Secure inference
   });
 
   it('leaves X-Forwarded-For on $proxy_add_x_forwarded_for (rate limiting reads it — ADR 0035)', () => {
-    // The #1138 fix touches the -Proto header only. -For is a different header
-    // with a different trust model (the limiter hops back a configured number of
-    // entries), and appending must stay appending.
+    // The #1138 fix touches the -Proto header only. -For is a different header with a different
+    // trust model (the limiter hops back a configured number of entries).
     for (const block of proxyBlocks) {
       expect(block).toMatch(/proxy_set_header\s+X-Forwarded-For\s+\$proxy_add_x_forwarded_for;/);
     }
@@ -126,17 +89,8 @@ describe('nginx X-Forwarded-Proto (#1138 — OTP session cookie Secure inference
 });
 
 /**
- * Security-header inheritance (#1387).
- *
- * nginx drops every inherited `add_header` at any level that declares one of its
- * own. Three locations here set their own `Cache-Control`, so the server-level
- * security-header block is silently absent from exactly those responses unless
- * the snippet is re-included — and one of them is `location /`, which serves
- * index.html. A missing CSP there is invisible: the page renders perfectly.
- *
- * These are CONFIG assertions and are honest about it (same caveat as the block
- * above): they pin the trap, they do not prove nginx emits the headers. The
- * behavioural proof is a real container + curl, run against the built image.
+ * Security-header inheritance (#1387). nginx drops every inherited `add_header` at any level that
+ * declares one of its own.
  */
 describe('nginx security headers (#1387 add_header inheritance)', () => {
   const SNIPPET_INCLUDE = 'include /etc/nginx/nginx-security-headers.conf;';

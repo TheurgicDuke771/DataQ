@@ -1,25 +1,4 @@
-"""Guardrails for custom-SQL checks (ADR 0019).
-
-A custom-SQL check is a GX ``UnexpectedRowsExpectation``: a normal
-``kind='expectation'`` check with ``expectation_type='unexpected_rows_expectation'``
-and ``config={'unexpected_rows_query': '<SQL with {batch}>'}``. It rides the
-existing model / runner / result path unchanged — the only thing v1 adds is this
-single guardrail, reused by every authoring path (check CRUD + suite import).
-
-Two checks:
-
-1. **Datasource gating** — custom-SQL is offered only for SQL-queryable
-   datasources (Snowflake, Unity Catalog). Flat-file stores (ADLS / S3) are GX
-   DataFrame assets, not SQL, so the query could never run there.
-2. **Read-only, single statement** — the query must be a single ``SELECT`` /
-   ``WITH`` statement with no DML/DDL/DCL. This is **best-effort, defence-in-depth,
-   not a SQL firewall** (ADR 0019): the real boundary is the connection's
-   least-privilege role. We strip string literals / quoted identifiers / comments
-   before scanning so a literal ``'delete'`` or a column named ``"update"`` is not
-   mistaken for a keyword, then require a read-only shape.
-
-FastAPI-free like the sibling services: raises ``DataQError`` subclasses.
-"""
+"""Guardrails for custom-SQL checks (ADR 0019)."""
 
 from __future__ import annotations
 
@@ -29,9 +8,7 @@ from typing import Any
 
 from backend.app.core.errors import DataQError
 
-# Trailing characters a single statement may end with (whitespace + a closing
-# semicolon). Stripped with str.rstrip (linear) rather than a `[;\s]+$` regex,
-# which is a polynomial-ReDoS sink on the user-provided query (CodeQL).
+# Trailing characters a single statement may end with (whitespace + a closing semicolon).
 _TRAILING_CHARS = string.whitespace + ";"
 
 # The GX expectation a custom-SQL check maps to (ADR 0019).
@@ -44,10 +21,6 @@ QUERY_KEY = "unexpected_rows_query"
 SQL_QUERYABLE_TYPES = frozenset({"snowflake", "unity_catalog"})
 
 # Statement keywords that mutate data, schema, permissions, or transaction state.
-# A read-only check query must contain none of them (as a bareword, after string
-# literals / quoted identifiers / comments are stripped). `replace` is deliberately
-# absent — it collides with the very common `replace()` string function; a
-# `CREATE OR REPLACE` is already caught by `create`.
 _FORBIDDEN_KEYWORDS = frozenset(
     {
         "insert",
@@ -64,11 +37,7 @@ _FORBIDDEN_KEYWORDS = frozenset(
         "commit",
         "rollback",
         "into",  # SELECT ... INTO <table> creates a table in some dialects
-        # Defence-in-depth: other state-changing / proc-invoking statements. These
-        # are already blocked at the leading position (not SELECT/WITH); listing
-        # them catches a CTE- or subquery-embedded occurrence too. `comment` and
-        # `replace` are deliberately omitted — they collide with a common column
-        # name and the `replace()` string function respectively.
+        # Defence-in-depth: other state-changing / proc-invoking statements.
         "call",
         "exec",
         "execute",
@@ -106,22 +75,6 @@ def is_custom_sql(expectation_type: str) -> bool:
 def _strip_noncode(sql: str) -> tuple[str, bool]:
     """Replace comments and string literals with spaces in a single left-to-right
     pass, leaving only executable code. Returns ``(code, well_formed)``.
-
-    A single pass (not sequential regexes) is required so neither construct can
-    mask the other: a ``--`` *inside* a string must not be read as a comment (which
-    could hide a trailing ``; DROP ...`` from the keyword scan), and a quote inside
-    a comment must not start a bogus string. Handles ``--`` line comments, ``/* */``
-    block comments, and ``'`` / ``"`` string/identifier quotes (``''``/``""``
-    doubled-escape).
-
-    **Backtick is intentionally NOT a quote here.** Our SQL datasources (Snowflake,
-    Unity Catalog) don't delimit strings with `` ` ``, so treating a backtick span as
-    a string would blank it out and let a ``; DROP`` hide inside it. Backticks stay
-    as code, so anything between them is keyword/`;`-scanned like the rest.
-
-    ``well_formed`` is ``False`` if a string or block comment is left unterminated:
-    the lexical analysis is then unreliable (the rest of the query was swallowed as
-    "string"/"comment"), so the caller must **fail closed** and reject.
     """
     out: list[str] = []
     i, n = 0, len(sql)
@@ -163,11 +116,7 @@ def _strip_noncode(sql: str) -> tuple[str, bool]:
 
 
 def validate_query(raw_query: Any) -> None:
-    """Reject a non-read-only or multi-statement custom-SQL query (422).
-
-    Best-effort lexical guard (ADR 0019), not a SQL firewall — paired with the
-    connection's least-privilege role as the real boundary.
-    """
+    """Reject a non-read-only or multi-statement custom-SQL query (422)."""
     if not isinstance(raw_query, str) or not raw_query.strip():
         raise CustomSqlInvalidError(
             f"custom-SQL check requires a non-empty {QUERY_KEY!r}",
@@ -215,11 +164,7 @@ def validate_query(raw_query: Any) -> None:
 def validate_custom_sql_check(
     *, expectation_type: str, config: dict[str, Any], connection_type: str
 ) -> None:
-    """Guardrail for a custom-SQL check; a no-op for any other expectation.
-
-    Rejects (422) a custom-SQL check on a non-SQL datasource, or one whose query
-    isn't a single read-only statement.
-    """
+    """Guardrail for a custom-SQL check; a no-op for any other expectation."""
     if not is_custom_sql(expectation_type):
         return
     if connection_type not in SQL_QUERYABLE_TYPES:

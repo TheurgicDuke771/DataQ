@@ -1,16 +1,4 @@
-"""The degraded-run banner in conftest (#977).
-
-These guard a piece of *diagnostic* code, which is exactly the kind that rots
-unnoticed: nothing else fails when it goes wrong, so the only signal is a
-person mistaking a third-coverage run for a green one — the failure this
-banner exists to prevent.
-
-Two of the three defects these lock down survived a manual four-state
-walkthrough of the feature. `trylast` was missed because every hand-check
-passed `--no-cov`, so the coverage table that buries the banner was never
-rendered; the psycopg-only `connect_args` was missed because every hand-check
-used a postgres URL. Both are cases the manual test could not express.
-"""
+"""The degraded-run banner in conftest (#977)."""
 
 from __future__ import annotations
 
@@ -42,7 +30,8 @@ def _banner(monkeypatch: Any, status: list[tuple[str, str | None]], **stats: lis
 
 def test_healthy_infra_prints_nothing(monkeypatch: Any) -> None:
     """A quiet gate is the whole point — noise on a healthy run trains people
-    to ignore it, which is how the banner would stop working."""
+    to ignore it, which is how the banner would stop working.
+    """
     out = _banner(monkeypatch, [("postgres (test DB)", None), ("secret store (env)", None)])
     assert out == ""
 
@@ -60,11 +49,8 @@ def test_degraded_infra_names_the_service_and_the_fix(monkeypatch: Any) -> None:
     assert "secret store (redis) —" not in out
 
 
-# --- the banner claims only what happened ----------------------------------
-#
-# A missing Postgres makes tests SKIP; a missing secret store makes them FAIL.
-# Reporting one as the other would be the same untrue-status defect the banner
-# is meant to catch.
+# --- the banner claims only what happened ---------------------------------- A missing Postgres
+# makes tests SKIP; a missing secret store makes them FAIL.
 
 
 def test_skips_are_reported_as_skips_not_failures(monkeypatch: Any) -> None:

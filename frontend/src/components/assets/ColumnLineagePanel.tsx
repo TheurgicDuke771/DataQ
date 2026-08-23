@@ -4,13 +4,8 @@ import type { LineageEdge, LineageNode } from '../../api/assets';
 import { nameSegments } from './assetTree';
 
 /**
- * Column-level lineage for the asset under view (#901) — the direct edges that carry
- * a column-grain refinement, as `upstream column → downstream column` mappings.
- * Shown in full to every member (ADR 0037 — column names are schema metadata, i.e.
- * identity, not measurement).
- *
- * Edges without the column grain are table-level only and are omitted; if no direct
- * edge carries the grain, the panel says so rather than rendering an empty card.
+ * Column-level lineage for the asset under view (#901) — the direct edges that carry a column-
+ * grain refinement, as `upstream column → downstream column` mappings.
  */
 export function ColumnLineagePanel({
   centerId,

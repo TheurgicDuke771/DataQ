@@ -47,9 +47,8 @@ EXEMPT_PATHS = {
     "LICENSE",  # copyright holder — removing it breaks the MIT grant
     "scripts/check-identifiers.py",  # this file, which necessarily contains the patterns
 }
-# *.tfvars is gitignored repo-wide (real deployment values never reach the
-# index), so no tfvars exemption is needed — a tfvars path can't appear in
-# `git ls-files` or a staged set for EITHER cloud's stack.
+# *.tfvars is gitignored repo-wide (real deployment values never reach the index), so no tfvars
+# exemption is needed.
 EXEMPT_PREFIXES: tuple[str, ...] = ()
 
 # Binary/vendored trees never worth scanning.
@@ -100,10 +99,8 @@ RULES: list[tuple[str, str, str]] = [
     ),
     (
         "azure-containerapp-host",
-        # 2-4 labels, hyphens allowed: a real ingress FQDN is
-        # <app>.<internal?>.<envname-suffix>.<region>.azurecontainerapps.io, and an
-        # exact-label-count pattern missed it. Found by testing the hook against the
-        # real value rather than by reading the regex.
+        # 2-4 labels, hyphens allowed: a real ingress FQDN is <app>.<internal?>.<envname-
+        # suffix>.<region>.azurecontainerapps.io, and an exact-label-count pattern missed it.
         r"\b[a-z0-9-]+(?:\.[a-z0-9-]+){1,4}\.azurecontainerapps\.io\b",
         "a live Container Apps ingress hostname",
     ),
@@ -134,9 +131,7 @@ RULES: list[tuple[str, str, str]] = [
     ),
 ]
 
-# A match is allowed when it is visibly a placeholder. Checked against the MATCHED
-# TEXT, so this cannot whitelist a real value that merely sits on a line mentioning
-# "example".
+# A match is allowed when it is visibly a placeholder.
 PLACEHOLDER = re.compile(
     r"example|acme|contoso|fabrikam|myaccount|mycompany|mylake|my-|your-|yourorg|"
     r"\bacct\b|\baccount\b|\bhost\b|\bworkspace\b|"

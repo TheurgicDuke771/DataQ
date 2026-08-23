@@ -86,10 +86,8 @@ describe('ConnectionNew', () => {
     expect(payload.secret ?? '').toBe(''); // no secret required for file://
   }, 15_000);
 
-  // The backend's blank-coercion design (#1063) rests on a claim about THIS form:
-  // that a cleared optional field submits "" rather than being omitted. That claim
-  // was asserted only in a backend docstring, so a change here could invalidate the
-  // backend's rationale with nothing failing. These two pin both halves.
+  // The backend's blank-coercion design (#1063) rests on a claim about THIS form: that a cleared
+  // optional field submits "" rather than being omitted.
   it('omits an untouched optional S3 endpoint, and submits "" for a cleared one', async () => {
     const user = userEvent.setup();
     mockCreate.mockResolvedValue({
@@ -112,11 +110,8 @@ describe('ConnectionNew', () => {
     await user.type(screen.getByLabelText('Access key ID'), 'AKIA');
     await user.type(screen.getByLabelText('Secret access key'), 'sekret');
 
-    // Addressing style: never touched → antd carries the key with `undefined`,
-    // which JSON serialization drops, so the backend never sees it and the model
-    // default (`auto`) applies.
-    // Endpoint URL: typed then cleared → antd yields "", which is precisely the
-    // value `normalize_endpoint_url` has to collapse back to "AWS".
+    // Addressing style: never touched → antd carries the key with `undefined`, which JSON
+    // serialization drops, so the backend never sees it and the model default (`auto`) applies.
     await user.type(screen.getByLabelText(/^Endpoint URL/), 'http://minio:9000');
     await user.clear(screen.getByLabelText(/^Endpoint URL/));
 
@@ -126,10 +121,8 @@ describe('ConnectionNew', () => {
     const { config } = mockCreate.mock.calls[0][0];
     expect(config.endpoint_url).toBe('');
     expect(config.addressing_style).toBeUndefined();
-    // Assert on the WIRE, not the in-memory object: `undefined` is dropped by JSON
-    // serialization, so what the API actually receives has no `addressing_style`
-    // key at all — which is why the backend can rely on its model default, while
-    // the cleared `endpoint_url` really does arrive as "".
+    // Assert on the WIRE, not the in-memory object: `undefined` is dropped by JSON serialization,
+    // so what the API actually receives has no `addressing_style` key at all.
     expect(JSON.parse(JSON.stringify(config))).toEqual({
       bucket: 'landing',
       region: 'us-east-1',
@@ -172,11 +165,8 @@ describe('ConnectionNew', () => {
     });
   }, 15_000);
 
-  // #1066: ConfigTextField used to append its own "(optional)" suffix on top of
-  // the one antd's `requiredMark="optional"` already renders for any field with
-  // no `required` rule, so every optional field doubled up
-  // ("Endpoint URL (optional)(optional)"). Assert the label carries the marker
-  // exactly once — this fails on the pre-fix code, which renders it twice.
+  // #1066: ConfigTextField used to append its own "(optional)" suffix on top of the one antd's
+  // `requiredMark="optional"` already renders for any field with no `required` rule.
   it('renders exactly one "(optional)" marker on an optional field label', async () => {
     const user = userEvent.setup();
     renderPage();
@@ -373,9 +363,8 @@ describe('ConnectionNew', () => {
   });
 
   it('clears a stale Connected badge as soon as a field changes after testing green', async () => {
-    // #351 review: a green test, then an edited host/secret, must not keep
-    // claiming Connected — repo precedent is Connections.tsx `clearHealth`
-    // ("the prior pass/fail no longer holds").
+    // #351 review: a green test, then an edited host/secret, must not keep claiming Connected —
+    // repo precedent is Connections.tsx `clearHealth` ("the prior pass/fail no longer holds").
     const user = userEvent.setup();
     mockTestDraft.mockResolvedValue({ ok: true });
     renderPage();

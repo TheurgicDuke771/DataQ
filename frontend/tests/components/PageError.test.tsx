@@ -49,10 +49,8 @@ describe('PageError (#910)', () => {
   });
 
   it('does NOT blame the service for a client-side failure (#930 review)', () => {
-    // A throw that never reached the network (an auth redirect rejecting
-    // in-flight, a TypeError in page code) used to paint a confident
-    // "503 — Service unavailable" over a perfectly healthy backend, sending
-    // the user — and support — after an outage that was not happening.
+    // A throw that never reached the network (an auth redirect rejecting in-flight, a TypeError in
+    // page code) used to paint a confident "503.
     renderError({ error: 'login_required', kind: 'client' });
     expect(screen.queryByText('503 — Service unavailable')).not.toBeInTheDocument();
     expect(screen.getByText('500 — Something went wrong')).toBeInTheDocument();

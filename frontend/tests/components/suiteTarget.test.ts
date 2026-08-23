@@ -32,10 +32,7 @@ describe('targetKind', () => {
 
 describe('assembleTarget', () => {
   it('returns a null target AND no error when nothing is filled (valid targetless suite)', () => {
-    // The all-blank short-circuit must yield a clean targetless suite, not a
-    // missing-field error — asserting error===undefined here pins that each
-    // kind's `if (all blank) return null` guard runs before the required-field
-    // checks (a dropped guard would still leave target=null but set an error).
+    // The all-blank short-circuit must yield a clean targetless suite, not a missing-field error.
     for (const kind of ['sql', 'uc', 'flatfile', 'iceberg'] as const) {
       const { target, error } = assembleTarget(kind, {});
       expect(target).toBeNull();
@@ -196,9 +193,8 @@ describe('assembleTarget', () => {
     });
 
     it('flags a section started by picking "specific" alone, rather than silently discarding it', () => {
-      // Picking 'specific' with everything else blank is a deliberate action —
-      // it must not silently fall through to the all-blank targetless case the
-      // way an untouched 'latest' default does.
+      // Picking 'specific' with everything else blank is a deliberate action — it must not silently
+      // fall through to the all-blank targetless case the way an untouched 'latest' default does.
       const { target, error } = assembleTarget('flatfile', {
         target_mode: 'batch',
         target_strategy: 'specific',
@@ -258,9 +254,8 @@ describe('summarizeTarget (#1180)', () => {
   });
 
   it('annotates a sampled target (#1333 m1)', () => {
-    // The Run Now confirmation and the Suites list would otherwise render a
-    // sampled and an unsampled suite identically — and "run this" is exactly the
-    // moment to know the run will read 100k rows of 5M.
+    // The Run Now confirmation and the Suites list would otherwise render a sampled and an
+    // unsampled suite identically.
     expect(
       summarizeTarget({ table: 'ORDERS', sampling: { strategy: 'head', rows: 100_000 } }),
     ).toBe('ORDERS · sampled: head 100k');
@@ -304,10 +299,10 @@ describe('asBatchStrategy (#1180)', () => {
   });
 
   it('narrows anything unsupported or absent to undefined, mirroring asFileFormat', () => {
-    // Same reasoning as asFileFormat: strategy is read out of an untyped
-    // JSONB bag, so a stray/malformed stored value (hand-edited row, an old
-    // schema) must not prefill the Strategy Select with a non-existent
-    // option — SuiteForm falls back to 'latest' when this returns undefined.
+    // Same reasoning as asFileFormat: strategy is read out of an untyped JSONB bag, so a
+    // stray/malformed stored value (hand-edited row, an old schema) must not prefill the Strategy
+    // Select with a non-existent option — SuiteForm falls back to 'latest' when this returns
+    // undefined.
     expect(asBatchStrategy('weekly')).toBeUndefined();
     expect(asBatchStrategy('LATEST')).toBeUndefined();
     expect(asBatchStrategy('')).toBeUndefined();
@@ -319,12 +314,7 @@ describe('asBatchStrategy (#1180)', () => {
 
 describe('SAMPLING_CAPABLE_TYPES', () => {
   it('names exactly the datasources the backend accepts a sampling block on', () => {
-    // A canary against the backend `registry.SAMPLING_CAPABLE_TYPES`. The
-    // absences are the point: Snowflake pushes every expectation down and never
-    // materialises rows (a sample there would change nothing while stamping
-    // "sampled" on every result), and Iceberg's sampled read is not built. Both
-    // are a 422 at save time server-side, so adding one here without adding it
-    // there would put a control in the editor whose only outcome is a save error.
+    // A canary against the backend `registry.SAMPLING_CAPABLE_TYPES`.
     expect([...SAMPLING_CAPABLE_TYPES].sort()).toEqual(['adls_gen2', 's3', 'unity_catalog']);
     const cases: [ConnectionType, boolean][] = [
       ['adls_gen2', true],
@@ -383,11 +373,7 @@ describe('assembleTarget — sampling', () => {
   });
 
   it('drops a stale seed when the strategy is head', () => {
-    // Switching random to head leaves the seed field populated. Sending it would
-    // be a 422 (the backend refuses a seed on head rather than let an author
-    // believe a head sample is seeded-random) — and a stored seed on a head spec
-    // would read as a reproducibility guarantee of a different kind than the one
-    // head actually gives.
+    // Switching random to head leaves the seed field populated.
     const { target } = assembleTarget(
       'flatfile',
       {
@@ -403,9 +389,8 @@ describe('assembleTarget — sampling', () => {
   });
 
   it('REFUSES rather than drops a sampling block on a pushdown datasource', () => {
-    // The silently-dropped block is the failure mode this whole feature is
-    // shaped against: an author would believe a nightly 100M-row suite is
-    // bounded when it is not, and the first evidence would be an OOM.
+    // The silently-dropped block is the failure mode this whole feature is shaped against: an
+    // author would believe a nightly 100M-row suite is bounded when it is not.
     const { target, error } = assembleTarget(
       'sql',
       { target_table: 'ORDERS', sampling_enabled: true, sampling_rows: 100 },
@@ -454,9 +439,8 @@ describe('assembleTarget — sampling', () => {
   });
 
   it('reports the datasource error first when both halves are wrong', () => {
-    // A missing path is the more fundamental problem and names the field the
-    // author must fix; stacking a sampling error on top would point at the wrong
-    // input.
+    // A missing path is the more fundamental problem and names the field the author must fix;
+    // stacking a sampling error on top would point at the wrong input.
     const { error } = assembleTarget(
       'flatfile',
       { target_format: 'csv', sampling_enabled: true, sampling_rows: 100 },
@@ -482,9 +466,8 @@ describe('targetSampling', () => {
   });
 
   it('narrows each field, so junk never prefills a control', () => {
-    // A present-but-malformed block still returns an object (there IS a block),
-    // with the unusable fields dropped — the Select falls back to its default
-    // rather than showing an option that does not exist.
+    // A present-but-malformed block still returns an object (there IS a block), with the unusable
+    // fields dropped.
     expect(targetSampling({ sampling: { strategy: 'HEAD', rows: '100', seed: null } })).toEqual({
       strategy: undefined,
       rows: undefined,
@@ -497,10 +480,8 @@ describe('assembleTarget — sampling carry-forward (#1333 F3)', () => {
   const stored = { strategy: 'head', rows: 100_000 } as const;
 
   it('PRESERVES a stored block when the sampling section never mounted', () => {
-    // `validateFields()` returns registered fields only, so an unmounted section
-    // reports no `sampling_enabled` at all. Treating that as "turned off" deletes
-    // the row cap on a save that only touched the description — silently, and the
-    // nightly suite reverts to the full scan the feature exists to prevent.
+    // `validateFields()` returns registered fields only, so an unmounted section reports no
+    // `sampling_enabled` at all.
     const { target, error } = assembleTarget(
       'flatfile',
       { target_path: 'raw/orders.csv' }, // no sampling_* keys — section not rendered

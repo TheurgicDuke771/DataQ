@@ -1,11 +1,4 @@
-"""Up/down test for the `c4e5a6b7d8f9_add_incidents` migration.
-
-Binds the migration module's own `upgrade()` / `downgrade()` to a live connection
-and asserts the `incidents` table (with its partial unique index) and the
-`suite_notifications.auto_resolve_incidents` column appear and disappear —
-exercising the real DDL. All runs inside the rolled-back `db_session` transaction.
-
-Skips without TEST_DATABASE_URL."""
+"""Up/down test for the `c4e5a6b7d8f9_add_incidents` migration."""
 
 from __future__ import annotations
 
@@ -54,7 +47,8 @@ def test_revision_chain() -> None:
 
 def test_up_down_up(db_session: Any) -> None:
     """down (drop) → up (create) → down (drop). `create_all` (the fixture) already
-    made the table + column, so the sequence starts by dropping them."""
+    made the table + column, so the sequence starts by dropping them.
+    """
     module = _load_migration()
     connection = db_session.connection()
     ctx = MigrationContext.configure(connection)

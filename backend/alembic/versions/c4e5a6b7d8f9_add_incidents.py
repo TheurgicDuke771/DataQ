@@ -1,28 +1,4 @@
-"""add incidents table + suite auto-resolve toggle (G-d phase 3)
-
-ADR 0034 (gap G-d) decision 4, #761: promote the fire-and-forget alert signal to
-a stateful, deduped, evidence-carrying **incident** anchored to
-``(asset_id, check_id)``. Lifecycle ``open → acknowledged → resolved``; repeat
-failures attach as occurrences instead of new rows; the first passing result for
-the pair auto-resolves it (per-suite configurable); reopen = a NEW incident
-linked to the prior via ``prior_incident_id``.
-
-Additive & backward-compatible (CLAUDE.md migration rules):
-  * a brand-new ``incidents`` table — nothing reads it until the #761 service
-    ships, so it is safe to deploy on its own (two-step discipline);
-  * one **NOT NULL DEFAULT true** column on ``suite_notifications``
-    (``auto_resolve_incidents``) — a default-carrying add is backward-compatible
-    (existing rows get ``true``, matching the no-config default), no backfill.
-
-The dedup guarantee — at most one *active* (open|acknowledged) incident per
-``(asset_id, check_id)`` — is a **partial unique index**; the lifecycle engine's
-``INSERT … ON CONFLICT DO NOTHING`` targets it (the #420 upsert-race discipline).
-
-Revision ID: c4e5a6b7d8f9
-Revises: f0a1b2c3d4e5
-Create Date: 2026-07-10 00:00:00.000000+00:00
-
-"""
+"""add incidents table + suite auto-resolve toggle (G-d phase 3)"""
 
 from __future__ import annotations
 

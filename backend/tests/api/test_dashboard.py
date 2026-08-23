@@ -1,10 +1,4 @@
-"""Dashboard summary API tests against a real Postgres (db_session).
-
-get_db is overridden to the shared rolled-back session; get_current_user is
-overridden per-test to act as a specific user. Verifies the endpoint shape,
-suite-scoping (the data is already scoped in the service), window validation,
-and a clean empty-workspace response. Skips without TEST_DATABASE_URL.
-"""
+"""Dashboard summary API tests against a real Postgres (db_session)."""
 
 from __future__ import annotations
 

@@ -1,11 +1,4 @@
-"""asset_service tests against a real Postgres (db_session).
-
-`resolve_and_upsert_asset` is the write-time hook that turns a suite's target
-into an `assets` row (ADR 0034). It must be an insert-or-reuse keyed on the
-OpenLineage `(namespace, name)` identity, and it must be fail-soft — an
-unresolvable target (orchestration connection, garbage config) returns None
-without raising. Skips without TEST_DATABASE_URL.
-"""
+"""asset_service tests against a real Postgres (db_session)."""
 
 import uuid
 from datetime import UTC, datetime
@@ -75,9 +68,6 @@ def test_second_call_same_identity_reuses_row_and_bumps_last_seen(db_session: An
     assert first is not None
 
     # Backdate last_seen so the upsert's `SET last_seen = now()` is observable.
-    # (Postgres now() is transaction-start time — fixed across both upserts in this
-    # single-transaction test — so a same-now comparison can't show the bump; a far
-    # past baseline can.)
     stale = datetime(2000, 1, 1, tzinfo=UTC)
     db_session.execute(update(Asset).where(Asset.id == first).values(last_seen=stale))
 
@@ -91,7 +81,8 @@ def test_second_call_same_identity_reuses_row_and_bumps_last_seen(db_session: An
 def test_different_env_or_connection_same_identity_reuses_row(db_session: Any) -> None:
     """Identity is (namespace, name) only — env/connection are provenance, not
     identity. Two connections resolving the same identity share one asset row,
-    and the second upsert overwrites env/connection_id (last-writer provenance)."""
+    and the second upsert overwrites env/connection_id (last-writer provenance).
+    """
     conn_a = _connection(db_session, env="dev")
     # A different connection (different env) but the SAME account/db → same identity.
     conn_b = _connection(db_session, env="qa")
@@ -109,7 +100,8 @@ def test_different_env_or_connection_same_identity_reuses_row(db_session: Any) -
 
 def test_distinct_snowflake_accounts_are_distinct_assets(db_session: Any) -> None:
     """DEV vs QA on different accounts are two assets by design (ADR 0034) —
-    grouping across envs is a UI concern over `env`, never an identity merge."""
+    grouping across envs is a UI concern over `env`, never an identity merge.
+    """
     dev = _connection(db_session, env="dev", config={**_SF_CONFIG, "account": "dev00001"})
     qa = _connection(db_session, env="qa", config={**_SF_CONFIG, "account": "qa00001"})
     target = {"table": "orders", "schema": "sales"}
@@ -138,16 +130,16 @@ def test_unresolvable_orchestration_connection_returns_none_no_raise(db_session:
 def test_upsert_db_error_returns_none_and_keeps_session_usable(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A GENUINE DB failure in the upsert is fail-soft AND rolls back only the
-    savepoint: the call returns None and a *subsequent* write+commit on the same
-    session still succeeds — proving the outer transaction wasn't left aborted (the
-    bug the old `db_session.execute` monkeypatch couldn't catch, since mocking the
-    seam never put the real DBAPI connection into a failed-transaction state)."""
+    """A GENUINE DB failure in the upsert is fail-soft AND rolls back only the savepoint: the call
+    returns None and a *subsequent* write+commit on the same session still succeeds — proving
+    the outer transaction wasn't left aborted (the bug the old `db_session.execute` monkeypatch
+    couldn't catch, since mocking the seam never put the real DBAPI connection into a failed-
+    transaction state).
+    """
     conn = _connection(db_session)  # resolvable identity
 
-    # Force a resolved identity with a NULL namespace so the real INSERT trips the
-    # assets.namespace NOT NULL constraint *inside* the savepoint. AssetIdentity is
-    # a frozen dataclass with no runtime validation → build one bypassing __init__.
+    # Force a resolved identity with a NULL namespace so the real INSERT trips the assets.namespace
+    # NOT NULL constraint *inside* the savepoint.
     bad = AssetIdentity.__new__(AssetIdentity)
     object.__setattr__(bad, "namespace", None)
     object.__setattr__(bad, "name", "x")
@@ -166,7 +158,8 @@ def test_upsert_db_error_returns_none_and_keeps_session_usable(
 
 def test_garbage_config_returns_none_no_raise(db_session: Any) -> None:
     """A datasource connection whose config is missing the keys the resolver needs
-    (legacy/half-configured) fails soft rather than blocking the caller."""
+    (legacy/half-configured) fails soft rather than blocking the caller.
+    """
     conn = _connection(db_session, type_="snowflake", config={"account": "ab12345.eu-west-1"})
     # No database/schema in config → resolution raises ValueError internally → None.
     assert resolve_and_upsert_asset(db_session, conn, {"table": "orders"}) is None

@@ -1,9 +1,4 @@
-"""dbt webhook endpoint tests via TestClient against a real Postgres.
-
-Auth is HMAC-SHA256 over the raw body in X-DataQ-Signature (ADR 0029), so the test
-computes the signature over the exact bytes it sends. get_db + get_secret_store are
-overridden; the store is seeded with the signing key. Skips without TEST_DATABASE_URL.
-"""
+"""dbt webhook endpoint tests via TestClient against a real Postgres."""
 
 import hashlib
 import hmac

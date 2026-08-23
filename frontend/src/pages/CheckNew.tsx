@@ -26,9 +26,8 @@ import { apiFieldError } from '../utils/fieldErrors';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 /**
- * Dedicated full-page check authoring flow (GX-Cloud style): pick a category →
- * pick an expectation → fill its config + thresholds. Editing an existing check
- * still uses the lighter drawer on the suite detail panel.
+ * Dedicated full-page check authoring flow (GX-Cloud style): pick a category → pick an expectation
+ * → fill its config + thresholds.
  */
 export function CheckNew() {
   const navigate = useNavigate();
@@ -38,20 +37,17 @@ export function CheckNew() {
   const [expectationType, setExpectationType] = useState<string>();
   const [form] = Form.useForm();
   const column = Form.useWatch(['config', 'column'], form) as string | undefined;
-  // Drives which conditional fields render (anomaly's `column`, #593 —
-  // ConfigField.showWhen) — the whole `config` object, not just one key, since
-  // the mechanism is generic and a future kind may condition on any field.
+  // Drives which conditional fields render (anomaly's `column`, #593 — ConfigField.showWhen) — the
+  // whole `config` object, not just one key.
   const configValues = Form.useWatch('config', form) as Record<string, unknown> | undefined;
   const { run, loading: submitting } = useAsyncAction('Create failed');
-  // Load the suite + its connection together: the run target (#215) drives the
-  // dry-run preview's table/schema, and the connection type gates the Custom-SQL
-  // category (ADR 0019 — SQL datasources only).
+  // Load the suite + its connection together: the run target (#215) drives the dry-run preview's
+  // table/schema, and the connection type gates the Custom-SQL category (ADR 0019 — SQL
+  // datasources only).
   const { state } = useAsyncData(async () => {
     if (!suiteId) throw new Error('no suite');
     const suite = await getSuite(suiteId);
-    // Best-effort: a suite may be readable while its connection isn't (shared
-    // suite). The connection only gates the Custom-SQL category — never let its
-    // absence break the rest of the page (target / dry-run / profiler).
+    // Best-effort: a suite may be readable while its connection isn't (shared suite).
     const connection = await getConnection(suite.connection_id).catch(() => null);
     // The comparison editor's source picker; best-effort like the connection.
     const connections = await listConnections().catch(() => []);
@@ -64,9 +60,8 @@ export function CheckNew() {
   const backToSuite = () => navigate(suiteId ? `/suites/${suiteId}` : '/suites');
   const spec = expectationType ? EXPECTATION_BY_TYPE[expectationType] : undefined;
 
-  // Start the config form clean each time an expectation is (re)picked — after
-  // the <Form> mounts (it only renders in the config step), so the store is
-  // connected and a re-pick can't leak the prior expectation's fields.
+  // Start the config form clean each time an expectation is (re)picked — after the <Form> mounts
+  // (it only renders in the config step).
   useEffect(() => {
     if (expectationType) form.resetFields();
   }, [expectationType, form]);
@@ -88,11 +83,8 @@ export function CheckNew() {
             : buildCheckPayload({ ...values, expectation_type: expectationType }),
         );
       } catch (err) {
-        // A refusal about the *chosen expectation* (the sampling to row-count
-        // conflict, #1333 F5) has no form field to land on here — the type was
-        // picked in the previous step, not in this form — so it becomes a
-        // persistent Alert instead of a toast. What matters is that it stays on
-        // screen while the author decides what to do about it.
+        // A refusal about the *chosen expectation* (the sampling to row-count conflict, #1333 F5)
+        // has no form field to land on here — the type was picked in the previous step.
         const api = apiFieldError(err);
         if (api && typeof api.detail.field === 'string') {
           setRefusal(api.message);

@@ -105,9 +105,8 @@ describe('LineageGraph (#805)', () => {
         onOpenAsset={vi.fn()}
       />,
     );
-    // The asset's own box stays on screen — an <Empty> icon in its place read as
-    // "there is nothing here", when the truth is "here is the asset, with nothing
-    // attached to it yet". The words still say so.
+    // The asset's own box stays on screen — an <Empty> icon in its place read as "there is nothing
+    // here", when the truth is "here is the asset, with nothing attached to it yet".
     const graph = screen.getByRole('img', { name: /Lineage graph/ });
     expect(graph).toBeInTheDocument();
     expect(graph.querySelectorAll('path[marker-end]')).toHaveLength(0);

@@ -15,21 +15,8 @@ import type { ResultStatus } from '../../api/runs';
 import { RESULT_STATUS_COLORS, formatTimestamp } from '../results/resultsFormat';
 
 /**
- * Incidents section on the asset page (ADR 0034 #761) — the *active* incidents
- * (open / acknowledged) on this asset, with occurrence count and edit-gated
- * ack/resolve. Resolved incidents are omitted here (the durable history + a full
- * incidents page defer to #773's navigation inversion — this is the "what is
- * broken right now" view).
- *
- * `permissionBySuite` maps each composing suite to the caller's level; ack/resolve
- * render only for `edit`/`admin`/`owner` — nav convenience, not the security
- * boundary (the backend 403s an unpermitted action regardless).
- *
- * Incidents stay suite-granted while the asset page opens to every member
- * (ADR 0037), so the list here can be a grant-filtered SUBSET. When suites
- * outside the viewer's access compose this asset (`restrictedSuiteCount`), the
- * panel must say so — a confident "No open incidents." under a workspace-true
- * red rollup would be the #828 misleading-empty-state class.
+ * Incidents section on the asset page (ADR 0034 #761) — the *active* incidents (open /
+ * acknowledged) on this asset, with occurrence count and edit-gated ack/resolve.
  */
 export function IncidentsPanel({
   assetId,

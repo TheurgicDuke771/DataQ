@@ -1,22 +1,4 @@
-"""Shared request/response model base for the v1 API.
-
-Every model in `backend/app/api/v1/` inherits `ApiModel` instead of Pydantic's
-`BaseModel` so cross-cutting input contracts live in exactly one place.
-
-The one contract today: **no NUL (``\\x00``) anywhere in a payload** (#567).
-Pydantic's `str` accepts NUL, but Postgres rejects it at INSERT time for both
-text columns and JSONB — so a hostile/binary-contaminated string in any
-persisted free-text field (suite/check/connection names, descriptions, nested
-check ``config`` values, import documents …) would otherwise surface as a
-driver ``ValueError`` → an unhandled 500 instead of a 422. Rejecting it at the
-validation boundary keeps the "bad input is never a 500" error-envelope
-guarantee and names the offending model in the standard validation error.
-
-The walk runs on the *raw* inbound payload (``mode="before"``), so nested
-dicts/lists — including dict *keys* — are covered before field parsing.
-Response models constructed from ORM objects pass through untouched (the
-walk only descends str/dict/list/tuple/set; DB data cannot contain NUL).
-"""
+"""Shared request/response model base for the v1 API."""
 
 from __future__ import annotations
 
@@ -24,19 +6,17 @@ from typing import Any, Final
 
 from pydantic import BaseModel, model_validator
 
-# The one paging-total header name for every list endpoint that carries one
-# (#925 introduced it on `/assets`; #1108 spread it to `/pipeline_runs`,
-# `/incidents`, and `/runs` rather than each endpoint inventing its own
-# convention). Defined here — not re-declared per router — so every caller
-# imports the SAME constant object; `main.py`'s CORS `expose_headers` and every
-# endpoint's response both reference it.
+# The one paging-total header name for every list endpoint that carries one (#925 introduced it on
+# `/assets`; #1108 spread it to `/pipeline_runs`, `/incidents`, and `/runs` rather than each
+# endpoint inventing its own convention).
 TOTAL_COUNT_HEADER: Final = "X-Total-Count"
 
 
 def total_count_responses(description: str) -> dict[int | str, dict[str, Any]]:
     """The OpenAPI `responses=` fragment documenting `TOTAL_COUNT_HEADER` on a
     200, shared verbatim by every list endpoint that sets it — one Swagger
-    shape instead of four independently-worded copies."""
+    shape instead of four independently-worded copies.
+    """
     return {
         200: {
             "headers": {
@@ -48,7 +28,8 @@ def total_count_responses(description: str) -> dict[int | str, dict[str, Any]]:
 
 def contains_nul(value: Any) -> bool:
     """True if a NUL (``\\x00``) appears in any string within ``value``
-    (recursing through dict keys/values and list/tuple/set items)."""
+    (recursing through dict keys/values and list/tuple/set items).
+    """
     if isinstance(value, str):
         return "\x00" in value
     if isinstance(value, dict):

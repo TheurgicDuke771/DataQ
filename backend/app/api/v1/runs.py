@@ -1,17 +1,4 @@
-"""Run / result / pipeline-run read API — the results surface (PR-C0b).
-
-Read-only views over `runs`, `results`, and `pipeline_runs` for the in-app
-results page. The DQ-run reads (`/runs`, `/runs/{id}`) are **suite-scoped**: the
-list filters to suites the caller can access and the detail gates on
-`require_permission(view)`, so per-suite sharing + existence-hiding hold exactly
-as for suites/checks (this is why reading Postgres directly — e.g. a Grafana
-panel — is rejected as the primary surface: it bypasses this authz + the sample
-redaction below). `/pipeline_runs` is orchestration monitoring, not suite-scoped,
-so it is gated on authentication only.
-
-Manual run *triggering* lives on `POST /suites/{id}/run` in `suites.py` (the
-suite-scoped, edit-gated write); this module owns the reads.
-"""
+"""Run / result / pipeline-run read API — the results surface (PR-C0b)."""
 
 from __future__ import annotations
 
@@ -54,30 +41,16 @@ class RunRead(ApiModel):
 
     id: uuid.UUID
     suite_id: uuid.UUID
-    # The asset resolved from the suite's target, stamped at dispatch (ADR 0034,
-    # #760) — run history records the asset it actually ran against. NULL for
-    # older rows / a targetless suite. Deferred to #760 by the #764 review.
+    # The asset resolved from the suite's target, stamped at dispatch (ADR 0034, #760) — run history
+    # records the asset it actually ran against.
     asset_id: uuid.UUID | None = None
     status: str  # queued | running | succeeded | failed | cancelled
     triggered_by: str | None
     started_at: datetime | None
     finished_at: datetime | None
     created_at: datetime
-    # Data-quality outcome — distinct from `status` (execution lifecycle): a run is
-    # `succeeded` even when checks fail. Lets the runs list flag failing checks
-    # without a drill-in. Grafted from `check_outcome_counts` on BOTH the list and
-    # the detail endpoint (a bare `RunRead.model_validate(run)` leaves these at the
-    # 0/0/None defaults — the ORM `Run` has no such columns — so the graft is what
-    # populates them; #571).
-    #
-    # `checks_total` counts **evaluated** checks (pass + warn/fail/critical),
-    # excluding operational skip/error (#122) — it is the data-quality-outcome
-    # denominator, deliberately NOT the suite's check count. It therefore differs
-    # from `GET /runs/{id}/progress`'s `total_checks`, which is the suite's *defined*
-    # check count: a run that fails before any check executes (bad-credential
-    # connection) evaluated nothing, so `checks_total == 0` (rendered `—`, not a
-    # misleading `0/N`) while progress still reports the suite size. Both are
-    # truthful about different things (#571).
+    # Data-quality outcome — distinct from `status` (execution lifecycle): a run is `succeeded` even
+    # when checks fail.
     checks_total: int = 0
     checks_passed: int = 0
     worst_severity: str | None = None  # warn | fail | critical | None (all passed)
@@ -88,44 +61,12 @@ class RunRead(ApiModel):
 
 class ResultRead(ApiModel):
     """One check's result within a run. `metric_value` is the SQL-aggregatable
-    badness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary
-    values (same fields the dry-run / probe already surface).
+    badness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary values.
 
-    `sample_failures` is the raw GX failing-row sample — it can carry real data,
-    so it is **redacted at the boundary** before it leaves DataQ (the numeric
-    counts are kept; the offending cell values are masked). See
-    `run_service.redact_sample_failures` for the policy and `_result_read` below
-    for why it is never auto-populated from the ORM object (#226).
-
-    `redaction` / `redacted_columns` (#424) make the redaction state explicit
-    metadata rather than something the frontend has to sniff from the values
-    (sniffing for a `"<redacted>"` sentinel breaks the moment a genuine cell
-    value equals it): `"full"` when every data-bearing column was masked,
-    `"none"` when every one was shown, `"partial"` for a mix, and `None` when
-    the sample carried no data-bearing content to redact one way or the other
-    (only aggregate counts, or no sample at all). `redacted_columns` names the
-    columns masked everywhere they appeared.
-
-    Both fields describe the failing-row list the run-detail table **renders**
-    (#1197): when `sample_failures` carries both `unexpected_index_list` and
-    `partial_unexpected_list` — two renderings of the same failing rows, of which
-    the UI shows exactly one — the label is derived from the displayed list only,
-    so it cannot understate the masking a viewer sees. Every list in the payload is
-    still redacted on its own merits, so a client that reads the *other* list should
-    judge it from its own values rather than from this label.
-
-    `sampling` (#595) says how much of the dataset this check actually saw:
-    `{"strategy", "requested_rows", "rows", "total_rows", "sampled", "seed"?}`.
-    `None` means a complete read — the default, and what every result written
-    before scale-aware execution means. Clients should show a "sampled" caveat
-    **only** when `sampling.sampled` is true: a sample larger than the dataset
-    covered everything, and labelling that a sample would cry wolf on every small
-    target. `total_rows` is legitimately `None` for a head sample that stopped
-    reading early rather than pay for a count, so `sampled` — not a
-    `rows < total_rows` comparison — is the field to branch on. It is per-result
-    because within one run a pushdown monitor and a sampled expectation can sit
-    side by side, and it carries no target data, so it is passed through
-    unredacted."""
+    `redaction` is tri-state (#424): full / partial / none — null means "no sample".
+    A "sampled" caveat must key on `sampling.sampled`, NOT rows < total_rows
+    (`total_rows` is legitimately null for head samples).
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -157,17 +98,9 @@ class CheckProgressRead(ApiModel):
 class RunProgressRead(ApiModel):
     """Compact live-progress view for polling: run lifecycle + per-check
     resolution + a status histogram + elapsed time. Lighter than the full
-    run+results detail.
-
-    **`completed_checks == 0` on a `running` run is normal, not stuck (#318).**
-    Results are committed per execution phase, so stateful-monitor and comparison
-    checks resolve one at a time — but GX validates every ordinary expectation as
-    one atomic batch, so a 30-expectation suite genuinely goes 0 → 30 in one step.
-    `elapsed_ms` is the field to render while nothing has resolved: a percentage
-    bar pinned at 0% for the whole run reads as hung, which is the misreport this
-    view is shaped to avoid. It is measured on the **server** clock (`finished_at`
-    once terminal, else now), so it is immune to client clock skew; `None` means
-    the run is still queued and has not started."""
+    run+results detail. `completed_checks == 0` on a running run is NORMAL
+    (checks resolve in batches, #318 — see `batched_pending`), not stuck.
+    """
 
     run_id: uuid.UUID
     suite_id: uuid.UUID
@@ -179,11 +112,8 @@ class RunProgressRead(ApiModel):
     started_at: datetime | None
     finished_at: datetime | None
     elapsed_ms: int | None = None
-    #: True when at least one unresolved check belongs to a kind that resolves as
-    #: a GROUP rather than one at a time (everything but `comparison`). Lets a
-    #: client explain a stalled-looking `0 / N` from the run's real composition
-    #: instead of guessing a mechanism — the guess is wrong for a monitor-only or
-    #: comparison-first suite that is merely slow.
+    #: True when at least one unresolved check belongs to a kind that resolves as a GROUP rather
+    #: than one at a time (everything but `comparison`).
     batched_pending: bool = False
 
 
@@ -211,7 +141,8 @@ _OUTCOME_FIELDS = ("checks_total", "checks_passed", "worst_severity")
 def _outcome_update(outcome: tuple[int, int, str | None] | None) -> dict[str, object]:
     """Map a `check_outcome_counts` tuple (or None for a run with no results) onto
     the RunRead outcome fields — shared by the list and detail endpoints so both
-    read models graft identically (#571)."""
+    read models graft identically (#571).
+    """
     return dict(zip(_OUTCOME_FIELDS, outcome or (0, 0, None), strict=True))
 
 
@@ -245,21 +176,17 @@ def list_runs(
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
 ) -> list[RunRead]:
-    # When a suite is named, gate on it up front so an inaccessible/unknown suite
-    # 404s (existence hidden) rather than silently returning []. With no suite,
-    # the service scopes to every suite the caller can access — or all suites for
-    # a workspace-admin (ADR 0027). require_permission already grants a
-    # workspace-admin `view` on a named suite, so the per-suite gate is consistent.
+    # When a suite is named, gate on it up front so an inaccessible/unknown suite 404s (existence
+    # hidden) rather than silently returning [].
     if suite_id is not None:
         require_permission(db, suite_id, current_user.id, minimum="view")
-    # A `status` outside the closed vocabulary is a 422, not a confident
-    # `200 []` + `X-Total-Count: 0` that reads as "no runs in that status"
-    # (#828; the same gate `/pipeline_runs` and `/incidents` apply).
+    # A `status` outside the closed vocabulary is a 422, not a confident `200 []` + `X-Total-Count:
+    # 0` that reads as "no runs in that status" (#828; the same gate `/pipeline_runs` and
+    # `/incidents` apply).
     svc.validate_read_filters(status=run_status)
     include_all = is_workspace_admin(current_user)
-    # The header carries the total (#1108, matching #925's /assets shape) — the
-    # response BODY stays a bare list so an existing caller keeps parsing it
-    # unchanged; only a caller that reads the header gains truncation visibility.
+    # The header carries the total (#1108, matching #925's /assets shape) — the response BODY stays
+    # a bare list so an existing caller keeps parsing it unchanged.
     response.headers[TOTAL_COUNT_HEADER] = str(
         svc.count_runs(
             db,
@@ -288,12 +215,7 @@ def list_runs(
 
 
 def _asset_column_tags(db: Session, suite: Any, run: Any = None) -> dict[str, str] | None:
-    """Thin alias for `run_service.asset_column_tags` — see its docstring.
-
-    Kept as a name in this module because the read path calls it in three places,
-    but the BODY moved to the service so the live-probe routes (#1419/#1479)
-    share one implementation rather than growing a second.
-    """
+    """Thin alias for `run_service.asset_column_tags` — see its docstring."""
     return svc.asset_column_tags(db, suite, run)
 
 
@@ -304,16 +226,7 @@ def _result_read(
     policy: dict[str, Any] | None = None,
     tags: dict[str, str] | None = None,
 ) -> ResultRead:
-    """Map a `Result` ORM row to `ResultRead`, redacting `sample_failures`.
-
-    Built field-by-field rather than via `model_validate(from_attributes)` so the
-    raw, PII-bearing `sample_failures` can never be auto-copied onto the wire —
-    redaction is the only path it can take out of here (#226). ``tested_column`` +
-    the suite ``policy`` drive column-aware redaction (#415): a non-PII tested
-    column's failing values surface; PII stays masked. Also grafts the
-    `redaction` state summary (#424), derived in the same pass over the same
-    already-persisted `sample_failures` — old rows get it for free at read time,
-    nothing to backfill."""
+    """Map a `Result` ORM row to `ResultRead`, redacting `sample_failures`."""
     sample, redaction, redacted_columns = svc.redact_sample_failures_with_state(
         result.sample_failures, tested_column=tested_column, policy=policy, tags=tags
     )
@@ -330,9 +243,8 @@ def _result_read(
         sample_failures=sample,
         redaction=redaction,
         redacted_columns=redacted_columns,
-        # Passed through verbatim (#595): the record holds a strategy name, three
-        # counts and an optional seed — DataQ-authored metadata about the READ, not
-        # target data — so it needs none of the redaction the sample above does.
+        # Passed through verbatim (#595): the record holds a strategy name, three counts and an
+        # optional seed — DataQ-authored metadata about the READ, not target data.
         sampling=result.sampling,
     )
 
@@ -340,31 +252,7 @@ def _result_read(
 def _exposed_result_ids(
     results: Sequence[ResultRead], *, expectation_types: Mapping[uuid.UUID, str | None]
 ) -> list[str]:
-    """Which of these results actually surfaced regulated data to the caller.
-
-    `redaction` is the state the redactor computed for THIS read: `full` means
-    everything row-level was masked, `null` means the result carried no row-level
-    content at all. Neither exposed anything, so neither belongs in the list an
-    investigator reads to answer "who saw the failing rows?".
-
-    `observed_value` is the OTHER door to raw cells and needs its own test, not a
-    null check — see `observed_value_exposes_cells`. The first version here asked
-    only whether it was non-None, which marked a fully-masked list and a plain row
-    count alike as exposures, so effectively every read was recorded as one.
-    `expectation_types` (`result.id` → `expectation_type`, #1486/#1489) is what
-    lets that test tell a max/min's literal cell apart from an aggregate
-    statistic that also happens to have a tested column. Keyed by **result**, not
-    check: `run_service.historical_check_context` resolves the expectation type
-    as of when EACH result was written, so two results for the same check taken
-    before/after an edit can legitimately resolve differently. A missing entry
-    (a deleted check with no version history) falls back to "not a known
-    cell-reporting type", same as before #1486.
-
-    Derived from the redacted output rather than from the stored row, deliberately
-    — the same column policy that decides what the caller sees decides what the
-    audit records, so the two can never disagree about whether an exposure
-    happened.
-    """
+    """Which of these results actually surfaced regulated data to the caller."""
     return [
         str(r.id)
         for r in results
@@ -383,17 +271,7 @@ def _audit_result_read(
     results: Sequence[ResultRead],
     expectation_types: Mapping[uuid.UUID, str | None],
 ) -> None:
-    """Record a read of a run's results (G1 / #431, `action_class='access'`).
-
-    ONE event per read, not per result: the act is "this person opened this run",
-    and N events for one page would bury the acts an investigator is looking for
-    under the mechanics of how the page is assembled. The individual result ids
-    are in the payload, so nothing is lost.
-
-    Records WHICH results exposed regulated data, never WHAT they contained (ADR
-    0041 §2.6.3) — copying samples into an append-only table with a longer
-    retention would defeat the #1253 purge and the #432 erasure path.
-    """
+    """Record a read of a run's results (G1 / #431, `action_class='access'`)."""
     exposed = _exposed_result_ids(results, expectation_types=expectation_types)
     audit_service.record_access(
         db,
@@ -426,14 +304,12 @@ def get_run(
     checks = {c.id: c for c in db.scalars(select(Check).where(Check.suite_id == run.suite_id))}
     policy = suite.column_policy
     tags = _asset_column_tags(db, suite, run)
-    # Per-RESULT (tested_column, expectation_type) as of when each result was
-    # written (#1489) — not the check's current state, which is freely editable
-    # after the fact and would silently re-label what old results show/audit.
+    # Per-RESULT (tested_column, expectation_type) as of when each result was written (#1489) — not
+    # the check's current state.
     context = svc.historical_check_context(db, results, checks)
-    # `Run` has no `results` relationship to validate a RunDetailRead from
-    # directly, so validate the run fields (as RunRead), graft the data-quality
-    # outcome (#571 — else checks_total/passed stay at the 0/0 default here), and
-    # attach the separately-fetched, redaction-gated results.
+    # `Run` has no `results` relationship to validate a RunDetailRead from directly, so validate
+    # the run fields (as RunRead), graft the data-quality outcome (#571 — else checks_total/passed
+    # stay at the 0/0 default here), and attach the separately-fetched, redaction-gated results.
     outcome = svc.check_outcome_counts(db, [run.id]).get(run.id)
     reads = [
         _result_read(
@@ -500,10 +376,9 @@ def cancel_run(
 ) -> RunRead:
     """Cancel a non-terminal run. `edit`-gated (same capability as triggering).
 
-    Marks the run `cancelled` and best-effort revokes its Celery task (dropping it
-    if still queued). An already-finished run (succeeded/failed/cancelled) → 409.
-    An in-flight run is stopped cooperatively by the worker (it won't overwrite a
-    `cancelled` status with results), so cancel may race a fast run to completion.
+    Marks the run `cancelled` and best-effort revokes its Celery task; an
+    already-finished run (succeeded/failed/cancelled) -> 409. Cancel may RACE a
+    fast run to completion — a 200 is not a guarantee the run stopped.
     """
     run = svc.get_run(db, run_id)
     if run is None:
@@ -547,12 +422,10 @@ def list_pipeline_runs(
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
 ) -> list[PipelineRunRead]:
-    """Paged (#928): before this, `limit` capped at 200 with no `offset`, so the
-    200 most recent runs were the only ones any client could ever see — and a
-    caller passing `?offset=` got it silently discarded by FastAPI and re-read
-    page 1 forever. A paging loop therefore "counted" 20,200 rows against a
-    211-row table. Matches the `/assets` paging shape — now including the
-    `X-Total-Count` header (#1108) that #928 left out.
+    """Paged (#928): before this, `limit` capped at 200 with no `offset`, so the 200 most recent
+    runs were the only ones any client could ever see — and a caller passing `?offset=` got it
+    silently discarded by FastAPI and re-read page 1 forever. A paging loop therefore "counted"
+    20,200 rows against a 211-row table.
     """
     orchestration_service.validate_read_filters(provider=provider, status=run_status)
     response.headers[TOTAL_COUNT_HEADER] = str(
@@ -587,13 +460,7 @@ def list_pipelines(
 
 
 class NearMissRead(ApiModel):
-    """A currently-active #1186 trigger-binding env mismatch (#1199).
-
-    Decoded from the `workspace_health` dedupe row: a succeeded pipeline/DAG run
-    keeps landing in `run_env`, but the only ENABLED binding for this
-    `(provider, pipeline_or_dag_id)` is scoped to `binding_env` — so the binding
-    has never fired and never will until one of the two envs is corrected.
-    """
+    """A currently-active #1186 trigger-binding env mismatch (#1199)."""
 
     provider: str
     pipeline_or_dag_id: str
@@ -619,18 +486,6 @@ def list_near_misses(
     writes on every ingest-time env mismatch, decoded back to their
     `(provider, pipeline_or_dag_id, run_env, binding_env)` tuple. Before this route
     the only way to see one was `psql` (#1199).
-
-    **Suite-scoped**, unlike its `/orchestration/pipelines` neighbour: a near-miss
-    is derived wholly from `trigger_binding` rows, which are suite-owned config, so
-    it obeys the same owned-or-shared rule `GET /trigger-bindings` applies (a
-    workspace-admin sees the lot, per ADR 0027). `pipeline_runs` — what
-    `/pipelines` and `/pipeline_runs` return — genuinely have no suite-ownership
-    concept, which is why those two are auth-only; borrowing that gate here would
-    have let any signed-in user enumerate the bindings on suites they cannot see.
-
-    Optional `suite_id` narrows to one suite's bindings — layered on top of the
-    access filter, never in place of it — so the Suite Triggers panel doesn't pull
-    the whole accessible workspace to render one suite's badges.
     """
     return [
         NearMissRead(
@@ -666,7 +521,8 @@ def download_comparison_report(
     """CSV/XLSX derived at request time from the persisted **redacted** buckets
     (ADR 0015 §4 — a stored file would bypass redaction and the retention
     sweep). Same authz + redaction as the run-detail read; format is chosen at
-    download time, nothing persists server-side."""
+    download time, nothing persists server-side.
+    """
     run = svc.get_run(db, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
@@ -686,16 +542,8 @@ def download_comparison_report(
         tags=_asset_column_tags(db, suite, run),
     )
     payload, media_type = build_report(fmt, sample=redacted, observed=result.observed_value)
-    # AFTER the render, not before: `build_report` can raise, and an event
-    # recording a download that never happened is worse than a missing one — a
-    # reader cannot tell it from a real access.
-    #
-    # A separate door to the same data, and a more consequential one: this hands
-    # the caller a FILE, which leaves the product entirely. `exposed=True`
-    # unconditionally — unlike the run-detail read there is no per-result
-    # redaction state to consult, and `observed_value` is passed to the report
-    # UNREDACTED, so a download that surfaced nothing is not a state this route
-    # can be in.
+    # AFTER the render, not before: `build_report` can raise, and an event recording a download that
+    # never happened is worse than a missing one — a reader cannot tell it from a real access.
     audit_service.record_access(
         db,
         action="comparison_report.download",

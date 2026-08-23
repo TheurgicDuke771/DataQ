@@ -1,11 +1,4 @@
-"""End-to-end rate-limit tests over the wired app (#725, ADR 0035).
-
-TestClient over `backend.app.main.app` — no DB fixtures needed: the limiter
-counts *before* routing, so 404/401/whatever from the inner route suffices (we
-only assert the 429 boundary, never the inner status). The `limiter` fixture
-enables limiting with low limits + an injected in-memory store and freezes time
-so a window boundary can't flake the counts.
-"""
+"""End-to-end rate-limit tests over the wired app (#725, ADR 0035)."""
 
 from __future__ import annotations
 
@@ -51,7 +44,8 @@ def limiter(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
 @pytest.fixture
 def ip_ceiling_limiter(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """Low per-IP bearer ceiling, high token cap — exercises the rotated-token
-    backstop (`rate_limit_ip_per_minute`) without the per-token bucket firing."""
+    backstop (`rate_limit_ip_per_minute`) without the per-token bucket firing.
+    """
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
     monkeypatch.setenv("RATE_LIMIT_AUTHENTICATED_PER_MINUTE", "100")  # token cap out of the way
     monkeypatch.setenv("RATE_LIMIT_IP_PER_MINUTE", "4")  # per-IP ceiling across all tokens
@@ -215,7 +209,8 @@ def test_webhook_unknown_segments_share_one_bucket(limiter: TestClient) -> None:
 def webhook_ceiling_limiter(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """High per-provider webhook cap, low webhook `ipall` ceiling — exercises the
     aggregate backstop (#785): per-provider buckets must not multiply the total
-    webhook budget one IP can spend by rotating the provider segment."""
+    webhook budget one IP can spend by rotating the provider segment.
+    """
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
     monkeypatch.setenv("RATE_LIMIT_WEBHOOK_PER_MINUTE", "50")  # provider cap out of the way
     monkeypatch.setenv("RATE_LIMIT_WEBHOOK_IP_PER_MINUTE", "4")  # aggregate ceiling
@@ -244,9 +239,7 @@ def test_rotating_provider_segments_hit_webhook_ip_ceiling(
 
 
 def test_auth_class_429s_separately_from_unauth(monkeypatch: pytest.MonkeyPatch) -> None:
-    # The `/api/v1/auth/*` prefix gets its own strict bucket — proving it is
-    # SEPARATE from the unauth class by asserting the unauth bucket still has
-    # headroom after the auth bucket 429s from the same IP.
+    # The `/api/v1/auth/*` prefix gets its own strict bucket.
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
     monkeypatch.setenv("RATE_LIMIT_AUTH_PER_MINUTE", "2")
     monkeypatch.setenv("RATE_LIMIT_UNAUTHENTICATED_PER_MINUTE", "3")
@@ -328,9 +321,7 @@ def test_bare_options_is_counted(limiter: TestClient) -> None:
 
 
 def test_mcp_mount_is_covered(limiter: TestClient) -> None:
-    # /mcp carries no bearer here → unauth class, limit 3. We assert the 429
-    # boundary only (never the inner status), and disable redirect-following so
-    # each call is exactly one middleware pass.
+    # /mcp carries no bearer here → unauth class, limit 3.
     for _ in range(3):
         resp = limiter.get("/mcp", follow_redirects=False)
         assert resp.status_code != 429
@@ -359,9 +350,8 @@ class _NoneStore:
 
 @pytest.fixture
 def failopen_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    # Enter the client (which runs configure_logging, resetting root handlers)
-    # in the fixture — BEFORE caplog installs its handler for the test body —
-    # else the client-enter would wipe caplog's capture handler.
+    # Enter the client (which runs configure_logging, resetting root handlers) in the fixture —
+    # BEFORE caplog installs its handler for the test body.
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
     monkeypatch.setenv("RATE_LIMIT_UNAUTHENTICATED_PER_MINUTE", "1")
     get_settings.cache_clear()
@@ -431,9 +421,8 @@ def test_sibling_ips_in_one_slash24_share_a_bucket(limiter: TestClient) -> None:
 
 
 def test_ipv4_mapped_ipv6_shares_the_dotted_quad_bucket(limiter: TestClient) -> None:
-    # A dual-stack chain can present the same client as `9.9.9.x` on one request
-    # and `::ffff:9.9.9.x` on another — both must land in the ONE /24 bucket
-    # (and never in a shared ::/64 that would collapse all IPv4 clients).
+    # A dual-stack chain can present the same client as `9.9.9.x` on one request and
+    # `::ffff:9.9.9.x` on another.
     resp = limiter.get(PROBE, headers={"X-Forwarded-For": "9.9.9.1"})
     assert resp.status_code != 429
     resp = limiter.get(PROBE, headers={"X-Forwarded-For": "::ffff:9.9.9.2"})
@@ -449,9 +438,6 @@ def test_ipv4_mapped_ipv6_shares_the_dotted_quad_bucket(limiter: TestClient) -> 
 
 def test_bearer_ipall_ceiling_keys_on_prefix(ip_ceiling_limiter: TestClient) -> None:
     # The combined #725+#789 attack: rotate a fresh bearer AND sibling pool IPs.
-    # Each request mints a fresh tok bucket, but the ipall ceiling (4) must
-    # accumulate across the /24 — pinning that the ceiling key uses the prefix
-    # bucket, not the raw /32.
     for i in range(4):
         h = {"Authorization": f"Bearer rot-{i}", "X-Forwarded-For": f"9.9.9.{10 + i}"}
         resp = ip_ceiling_limiter.get(PROBE, headers=h)
@@ -474,9 +460,8 @@ def test_webhook_bucket_keys_on_prefix(limiter: TestClient) -> None:
 
 
 def test_auth_bucket_keys_on_prefix(limiter: TestClient) -> None:
-    # #1127 (review follow-up): the `auth` class's per-IP bucket must ALSO
-    # accumulate across sibling /32s in one /24 — the same #789 folding proven
-    # above for `unauth` and `webhook` — not key on the raw, unfolded address.
+    # #1127 (review follow-up): the `auth` class's per-IP bucket must ALSO accumulate across sibling
+    # /32s in one /24 — the same #789 folding proven above for `unauth` and `webhook`.
     auth_path = "/api/v1/auth/otp/request"
     for i in range(2):  # AUTH limit = 2
         resp = limiter.post(auth_path, headers={"X-Forwarded-For": f"9.9.9.{30 + i}"})

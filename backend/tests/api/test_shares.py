@@ -1,10 +1,4 @@
-"""Suite-share endpoint tests against a real Postgres via TestClient.
-
-Access control needs *different* actors, so each request overrides
-get_current_user to the acting user (the dev-bypass default is bypassed). The
-owner is a real User; B/C/E are other users; a connection + suite are seeded
-directly. Skips without TEST_DATABASE_URL.
-"""
+"""Suite-share endpoint tests against a real Postgres via TestClient."""
 
 import uuid
 from collections.abc import Callable, Iterator
@@ -218,9 +212,7 @@ def test_update_missing_share_404(client: TestClient, db_session: Any) -> None:
 def test_admin_cannot_self_downgrade(
     client: TestClient, db_session: Any, make_workspace_admin: Callable[..., None]
 ) -> None:
-    # The self-target guard (#240) rejects an admin-capable actor managing their
-    # OWN share. With grantable admin removed (ADR 0027), the non-owner admin is
-    # now the workspace-admin — who self-targeting is still refused (422).
+    # The self-target guard (#240) rejects an admin-capable actor managing their OWN share.
     _owner, _b, c, _e, suite = _seed(db_session)
     make_workspace_admin(c.email)
     _as(c)

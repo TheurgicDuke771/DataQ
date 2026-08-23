@@ -4,11 +4,8 @@ import type { SampleStrategy } from './suites';
 import type { OrchestrationProvider } from './triggerBindings';
 
 /**
- * Runs / results / pipeline-runs API — the read surface behind the Results page
- * (backend `runs.py`, PR-C0b). The DQ-run reads are suite-scoped: the backend
- * filters to suites the caller can access, so this client never has to. Manual
- * run *triggering* (`runSuite` → `POST /suites/{id}/run`) lives here too, since
- * it produces a `Run`.
+ * Runs / results / pipeline-runs API — the read surface behind the Results page (backend
+ * `runs.py`, PR-C0b).
  */
 
 /** Run execution lifecycle — `status` is execution, not data quality. */
@@ -22,9 +19,10 @@ export type ResultStatus = 'pass' | 'warn' | 'fail' | 'critical' | 'skip' | 'err
 export interface Run {
   id: string;
   suite_id: string;
-  /** The asset resolved from the suite's target, stamped at dispatch (ADR 0034,
-   *  #760); null for older rows / a targetless suite. Links the run back to its
-   *  asset (#773). */
+  /**
+   * The asset resolved from the suite's target, stamped at dispatch (ADR 0034, #760); null for
+   * older rows / a targetless suite.
+   */
   asset_id?: string | null;
   status: RunStatus;
   triggered_by: string | null;
@@ -41,14 +39,7 @@ export interface Run {
   failure_reason: string | null;
 }
 
-/** Mirrors `ResultRead`. `sample_failures` is the GX failing-row sample, redacted
- *  at the API boundary (#226): the numeric counts are kept; the raw cell values
- *  are masked to `"<redacted>"`. `redaction` / `redacted_columns` (#424) are the
- *  authoritative signal for *how much* of that sample is masked — read these
- *  instead of sniffing `sample_failures` for the `"<redacted>"` sentinel, which
- *  breaks the moment a genuine value equals it. `redaction` is null when the
- *  sample carried no data-bearing content to redact one way or the other (only
- *  aggregate counts, or no sample at all). */
+/** Mirrors `ResultRead`. */
 export interface Result {
   id: string;
   check_id: string;
@@ -64,20 +55,7 @@ export interface Result {
   sampling?: ResultSampling | null;
 }
 
-/**
- * Mirrors the `results.sampling` record (backend `sampling.sampling_record`).
- *
- * **Branch on `sampled`, never on `rows < total_rows`.** `total_rows` is
- * legitimately null for a head sample that stopped reading rather than pay for a
- * count, and a "sample" that covered the whole dataset is not a sample —
- * labelling one would put a caveat on every small target and train the reader to
- * ignore the caveat that matters. The absence of the field entirely means a
- * complete read, which is also what every result written before scale-aware
- * execution means, so nothing needed backfilling.
- *
- * It is per **result**, not per run: within one run a volume monitor pushes its
- * `COUNT(*)` down and is exact while the expectations beside it saw 100k of 5M.
- */
+/** Mirrors the `results.sampling` record (backend `sampling.sampling_record`). */
 export interface ResultSampling {
   /** `head` (first N rows in storage order) or `random`. */
   strategy: SampleStrategy;
@@ -107,9 +85,8 @@ export interface CheckProgress {
 }
 
 /**
- * Mirrors `RunProgressRead` — the compact live-progress shape the run-progress
- * UI polls: run lifecycle + per-check resolution + a status histogram. Lighter
- * than the full run+results detail (`getRun`).
+ * Mirrors `RunProgressRead` — the compact live-progress shape the run-progress UI polls: run
+ * lifecycle + per-check resolution + a status histogram.
  */
 export interface RunProgress {
   run_id: string;
@@ -122,27 +99,13 @@ export interface RunProgress {
   started_at: string | null;
   finished_at: string | null;
   /**
-   * How long the run has been going, measured on the **server** clock (#318) —
-   * never recompute it from `started_at` against the browser's, which renders a
-   * negative or wildly wrong age whenever the two disagree. `null` while the run
-   * is still queued (it has not been going for 0 ms; it has not started).
-   *
-   * Read it whenever `completed_checks` is 0 on a live run: that is not a stalled
-   * run, it is a suite of GX expectations being validated as one atomic batch, so
-   * there is nothing to increment until it lands. Optional so a client pointed at
-   * an API that predates the field still type-checks.
+   * How long the run has been going, measured on the **server** clock (#318) — never recompute it
+   * from `started_at` against the browser's.
    */
   elapsed_ms?: number | null;
   /**
-   * True when at least one **unresolved** check belongs to a kind that resolves
-   * as a group rather than one at a time — every kind but `comparison` (#318).
-   *
-   * Show the "they report together" explanation only when this is true. The
-   * earlier copy inferred that mechanism from `completed_checks === 0`, which is
-   * wrong on every clause for a monitor-only or comparison-first suite that is
-   * simply slow. Optional so a client against an older API still type-checks, and
-   * `false` is the safe default: it withholds the claim rather than making an
-   * unsupported one.
+   * True when at least one **unresolved** check belongs to a kind that resolves as a group rather
+   * than one at a time — every kind but `comparison` (#318).
    */
   batched_pending?: boolean;
 }
@@ -162,19 +125,16 @@ export interface PipelineRun {
   created_at: string;
 }
 
-/** One page of `GET /pipeline_runs` — the body (`items`) plus the
- *  `provider`/`status`-filtered population `total`, read off the
- *  `X-Total-Count` header (#1108, the `/assets` `AssetListPage` shape #925).
- *  `total` can exceed `items.length` when the fetch is capped below the true
- *  population (e.g. the Results page's single `LIST_LIMIT`-row fetch) — that's
- *  the truncation a caller needs to render honestly rather than silently. */
+/**
+ * One page of `GET /pipeline_runs` — the body (`items`) plus the `provider`/`status`-filtered
+ * population `total`, read off the `X-Total-Count` header (#1108.
+ */
 export type PipelineRunListPage = ListPage<PipelineRun>;
 
-/** One page of `GET /runs` — the body (`items`) plus the caller-accessible
- *  population `total` from `X-Total-Count` (#1108). The total is scoped to the
- *  suites the caller can see (unlike `/assets`, which is workspace-true), and is
- *  the population the `limit`/`offset` slice into — so `items.length < total` is
- *  the only reliable way to know the page is truncated. */
+/**
+ * One page of `GET /runs` — the body (`items`) plus the caller-accessible population `total` from
+ * `X-Total-Count` (#1108).
+ */
 export type RunListPage = ListPage<Run>;
 
 export async function listRuns(params?: {
@@ -194,31 +154,19 @@ export async function getRun(runId: string): Promise<RunDetail> {
   return data;
 }
 
-/**
- * Trigger a run of a suite (`POST /suites/{id}/run`). Edit-gated; returns the
- * queued `Run` (HTTP 202). The backend resolves the suite's target up front, so
- * a targetless/misconfigured suite fails with 422, and a broker outage with 503.
- */
+/** Trigger a run of a suite (`POST /suites/{id}/run`). */
 export async function runSuite(suiteId: string): Promise<Run> {
   const { data } = await api.post<Run>(`/suites/${suiteId}/run`);
   return data;
 }
 
-/**
- * Poll a run's live progress (`GET /runs/{id}/progress`). Suite-scoped (view).
- * Cheaper than `getRun` — no observed/expected payloads — so it's the call the
- * live-progress UI hits on its polling interval.
- */
+/** Poll a run's live progress (`GET /runs/{id}/progress`). */
 export async function getRunProgress(runId: string): Promise<RunProgress> {
   const { data } = await api.get<RunProgress>(`/runs/${runId}/progress`);
   return data;
 }
 
-/**
- * Cancel a non-terminal run (`POST /runs/{id}/cancel`). Edit-gated; returns the
- * updated `Run`. An already-finished run → 409. Cancel is cooperative (best-effort
- * for an in-flight run), so it may race a fast run to completion.
- */
+/** Cancel a non-terminal run (`POST /runs/{id}/cancel`). */
 export async function cancelRun(runId: string): Promise<Run> {
   const { data } = await api.post<Run>(`/runs/${runId}/cancel`);
   return data;
@@ -234,9 +182,10 @@ export async function listPipelineRuns(params?: {
   return toListPage(data, headers);
 }
 
-/** Download a comparison result's derived report (ADR 0015 §4) — fetched with
- *  the authenticated client (a plain anchor carries no bearer), then saved via
- *  a transient object URL. Nothing persists server-side. */
+/**
+ * Download a comparison result's derived report (ADR 0015 §4) — fetched with the authenticated
+ * client (a plain anchor carries no bearer), then saved via a transient object URL.
+ */
 export async function downloadComparisonReport(
   runId: string,
   resultId: string,

@@ -1,8 +1,4 @@
-"""Tests for alert dedup — fire on first failure, suppress unchanged repeats.
-
-DB-backed: builds a suite with a sequence of runs and asserts which runs are
-"duplicate" (suppress) vs new (fire). Skips without TEST_DATABASE_URL.
-"""
+"""Tests for alert dedup — fire on first failure, suppress unchanged repeats."""
 
 from __future__ import annotations
 
@@ -63,7 +59,8 @@ def test_operational_rank_uses_the_shared_source() -> None:
     """#386/#655: dedup ranks via the shared ``db.models.SEVERITY_RANK``, not an
     independent copy, so it can't diverge from routing/suppression/run-outcome
     rollups. The operational-failure sentinel is ranked at ``fail`` from that
-    same source."""
+    same source.
+    """
     from backend.app.db.models import SEVERITY_RANK
 
     assert dedup._OPERATIONAL_RANK == SEVERITY_RANK["fail"]
@@ -156,9 +153,7 @@ def test_clean_run_is_never_a_duplicate(db_session: Any) -> None:
 
 
 def test_same_timestamp_prior_run_is_the_baseline(db_session: Any) -> None:
-    # Two runs sharing a created_at (a scheduling burst): the lower-id one is the
-    # baseline, so the same failure on the later run still dedups (strict `<` on
-    # created_at alone would have missed it and re-fired).
+    # Two runs sharing a created_at (a scheduling burst): the lower-id one is the baseline.
     suite = _suite(db_session)
     chk = _check(db_session, suite)
     when = _BASE + timedelta(minutes=1)
@@ -171,9 +166,8 @@ def test_same_timestamp_prior_run_is_the_baseline(db_session: Any) -> None:
     _result(db_session, r1, chk, "fail")
     _result(db_session, r2, chk, "fail")
     db_session.commit()
-    # UUID PKs are random, so the (created_at, id) total order — not insert order —
-    # decides which is "prior": the higher-id run dedups against the lower-id one,
-    # and exactly one alert fires for the burst pair.
+    # UUID PKs are random, so the (created_at, id) total order — not insert order — decides which is
+    # "prior": the higher-id run dedups against the lower-id one.
     later, earlier = (r2, r1) if r2.id > r1.id else (r1, r2)
     assert dedup.is_duplicate_alert(db_session, later) is True
     assert dedup.is_duplicate_alert(db_session, earlier) is False  # first → fires

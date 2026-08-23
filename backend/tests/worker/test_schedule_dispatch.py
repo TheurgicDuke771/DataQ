@@ -1,11 +1,4 @@
-"""Dispatcher tests for scheduled suite runs (A7) — real Postgres.
-
-Exercises `tasks._dispatch_due_schedules` against the DB (the `FOR UPDATE SKIP
-LOCKED` due-scan + per-schedule advance can't be faithfully faked). `dispatch_run`
-is stubbed by the autouse `stub_run_dispatch` conftest fixture, so no broker is
-needed; its return value (the captured run-ids) lets us assert a run was queued.
-Skips without TEST_DATABASE_URL.
-"""
+"""Dispatcher tests for scheduled suite runs (A7) — real Postgres."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -105,7 +98,8 @@ def test_invalid_target_skips_run_but_advances(
     db_session: Any, stub_run_dispatch: list[str]
 ) -> None:
     """A targetless suite can't resolve a table — the schedule is rolled forward
-    (so it won't hot-loop every tick) but no doomed run is queued."""
+    (so it won't hot-loop every tick) but no doomed run is queued.
+    """
     suite = _suite(db_session, target=None)
     sched = _schedule(db_session, suite, next_run_at=NOW - timedelta(minutes=1))
 
@@ -121,7 +115,8 @@ def test_invalid_target_skips_run_but_advances(
 
 def test_no_backfill_fires_once_for_long_gap(db_session: Any, stub_run_dispatch: list[str]) -> None:
     """An hourly schedule whose next_run_at is hours stale fires exactly once and
-    advances to the next *future* hour — not one run per missed slot."""
+    advances to the next *future* hour — not one run per missed slot.
+    """
     suite = _suite(db_session, target={"table": "ORDERS"})
     sched = _schedule(db_session, suite, cron="0 * * * *", next_run_at=NOW - timedelta(hours=5))
 
@@ -141,7 +136,8 @@ def test_impossible_cron_disables_schedule_without_crashing(
 ) -> None:
     """A schedule whose stored cron can never fire (Feb 30 — reachable only via a
     direct DB write that bypassed create-time validation) must disable itself, not
-    crash the whole dispatch tick and hot-loop every minute."""
+    crash the whole dispatch tick and hot-loop every minute.
+    """
     suite = _suite(db_session, target={"table": "ORDERS"})
     sched = _schedule(db_session, suite, cron="0 0 30 2 *", next_run_at=NOW - timedelta(minutes=1))
 
@@ -156,7 +152,8 @@ def test_impossible_cron_disables_schedule_without_crashing(
 
 def test_broker_failure_marks_run_failed(db_session: Any, monkeypatch: Any) -> None:
     """If the broker is unreachable at dispatch, the queued run is driven to
-    `failed` (never left stuck queued) and the outcome is counted."""
+    `failed` (never left stuck queued) and the outcome is counted.
+    """
     from backend.app.services import run_dispatch
 
     def _boom(_run_id: object) -> str:

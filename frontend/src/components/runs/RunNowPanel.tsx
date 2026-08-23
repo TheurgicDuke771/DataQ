@@ -27,18 +27,7 @@ import { useAsyncData } from '../../hooks/useAsyncData';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { LiveRunProgress } from './LiveRunProgress';
 
-/**
- * Run-now panel — a cross-suite run launcher (suite picker + env/datasource
- * readout). Distinct from the suite-detail Run button (which runs *one* suite in
- * context): here the user picks any suite they can run from the Results surface.
- * On trigger it hands off to the shared `LiveRunProgress` drawer, so the modal
- * closes and the run is watched live (check-by-check where the engine resolves
- * checks individually — see `LiveRunProgress` and #318). Alerting is configured
- * per suite (Notifications panel), not per run.
- *
- * Self-contained (owns its own data fetch + progress drawer) so it can drop onto
- * a dedicated Execution page unchanged.
- */
+/** Run-now panel — a cross-suite run launcher (suite picker + env/datasource readout). */
 export function RunNowPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   // The launcher hands the queued run to the live-progress drawer (closing the
   // modal first); `progress` carries the suite name for the drawer title.
@@ -69,9 +58,8 @@ export function RunNowPanel({ open, onClose }: { open: boolean; onClose: () => v
       <LiveRunProgress
         runId={progress?.run.id ?? null}
         suiteName={progress?.suiteName ?? null}
-        // Every runnable suite is edit+ (the picker filters to canRunSuite), and
-        // cancel is the same edit capability — so the launched run is always
-        // cancellable.
+        // Every runnable suite is edit+ (the picker filters to canRunSuite), and cancel is the same
+        // edit capability — so the launched run is always cancellable.
         canManage
         onClose={() => setProgress(null)}
       />

@@ -1,10 +1,4 @@
-"""Tests for the run-report builder + the report DTO.
-
-Two layers: pure helpers / DTO properties (no DB), and the DB-backed assembly —
-joining results to checks, deriving worst-severity + success, the target label,
-and (critically) that ``sample_failures`` raw rows are redacted at the seam.
-Skips the DB layer without TEST_DATABASE_URL.
-"""
+"""Tests for the run-report builder + the report DTO."""
 
 from __future__ import annotations
 
@@ -243,9 +237,8 @@ def test_build_report_run_url_none_without_base_url(
 
 
 def test_build_report_surfaces_non_pii_sample_values(db_session: Any) -> None:
-    # #415: a non-PII tested column's failing values surface (the LINE_TOTAL win) so
-    # an alert/Results viewer sees the actual bad data, not a blanket mask. Aggregates
-    # always pass through.
+    # #415: a non-PII tested column's failing values surface (the LINE_TOTAL win) so an
+    # alert/Results viewer sees the actual bad data, not a blanket mask.
     raw = {
         "unexpected_count": 2,
         "unexpected_percent": 50.0,

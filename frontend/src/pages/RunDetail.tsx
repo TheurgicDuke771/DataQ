@@ -44,22 +44,14 @@ import { PageError } from '../components/feedback/PageError';
 const SEVERITY_STATUSES = new Set<ResultStatus>(['pass', 'warn', 'fail', 'critical']);
 
 /**
- * Bound for the "Observed" cell — a structured `observed_value` payload
- * (schema_drift baselines, comparison buckets, anomaly stats) is unbounded in
- * principle. Deliberately NOT exported: importing this module from a Playwright
- * spec would drag the whole React/antd page into the test process, so
- * `e2e/results.spec.ts` restates the number and points back here. Keep the two
- * in step.
+ * Bound for the "Observed" cell — a structured `observed_value` payload (schema_drift baselines,
+ * comparison buckets, anomaly stats) is unbounded in principle.
  */
 const OBSERVED_COLUMN_WIDTH = 220;
 
 /**
- * Routed run-detail page (`/results/:runId`, ADR 0022) — replaces the run-detail
- * drawer so a run is deep-linkable and refreshable. Loads the run + its results
- * by id, plus the suite name and per-check names for display.
- *
- * Sample failing rows are surfaced in each check's expanded row, redacted at the
- * API boundary (#226): the counts are shown; the raw cell values are masked.
+ * Routed run-detail page (`/results/:runId`, ADR 0022) — replaces the run-detail drawer so a run
+ * is deep-linkable and refreshable.
  */
 export function RunDetail() {
   const navigate = useNavigate();
@@ -79,9 +71,8 @@ export function RunDetail() {
 
   const back = () => navigate('/results');
 
-  // The tab title (and the filename a browser's Save-as-PDF dialog suggests)
-  // identifies the run while it's loaded (#345 a11y ask), restored on
-  // navigating away rather than left stuck on a stale run's title.
+  // The tab title (and the filename a browser's Save-as-PDF dialog suggests) identifies the run
+  // while it's loaded (#345 a11y ask).
   useEffect(() => {
     if (state.status !== 'ok') return;
     const previous = document.title;
@@ -154,10 +145,8 @@ function RunDetailBody({
     return map;
   }, [checks]);
 
-  // "Checks passed" counts only evaluated (severity-tier) results — skip/error
-  // didn't evaluate a severity, so they're excluded from the denominator, same
-  // as the ADR-0005 health score (a run with skipped checks shouldn't read worse
-  // than its health).
+  // "Checks passed" counts only evaluated (severity-tier) results — skip/error didn't evaluate a
+  // severity, so they're excluded from the denominator.
   const evaluated = run.results.filter((r) => SEVERITY_STATUSES.has(r.status));
   const passed = evaluated.filter((r) => r.status === 'pass').length;
 
@@ -254,11 +243,8 @@ function DownloadMenu({
   const expectation = (id: string) => checks.get(id)?.expectation_type ?? '';
 
   const exportCsv = () => {
-    // `sampled` rides along (#1325 review F2): a downloaded row that says `pass`
-    // without saying it was measured on 100k of 5M is the same overclaim the
-    // in-app badge exists to prevent, and a spreadsheet outlives the page that
-    // would have qualified it. A flat column rather than the nested record — CSV
-    // has one cell, and "did this verdict cover everything" is the question.
+    // `sampled` rides along (#1325 review F2): a downloaded row that says `pass` without saying it
+    // was measured on 100k of 5M is the same overclaim the in-app badge exists to prevent.
     downloadCsv(
       `${stem}.csv`,
       ['check', 'expectation', 'status', 'metric_value', 'observed', 'sampled'],
@@ -293,20 +279,15 @@ function DownloadMenu({
         metric_value: r.metric_value,
         observed_value: r.observed_value,
         expected_value: r.expected_value,
-        // The whole record here, not just a flag: JSON is the machine-readable
-        // artifact most likely to feed downstream reporting, and the strategy,
-        // the rows seen and the population are what let a consumer judge the
-        // verdict rather than only discount it. `null` means a complete read.
+        // The whole record here, not just a flag: JSON is the machine-readable artifact most likely
+        // to feed downstream reporting, and the strategy.
         sampling: r.sampling ?? null,
       })),
     });
   };
 
-  // The PDF "export" is the browser's own print-to-PDF: `RunReport` (rendered
-  // once, always, in `RunDetail`) is a chrome-free print-only twin of this
-  // page, hidden on screen and shown only in a print context (`.print-only` /
-  // `.no-print` in styles.css) — so triggering it is just `window.print()`,
-  // zero new dependency (#345).
+  // The PDF "export" is the browser's own print-to-PDF: `RunReport` (rendered once, always, in
+  // `RunDetail`) is a chrome-free print-only twin of this page.
   const exportPdf = () => window.print();
 
   return (
@@ -325,12 +306,7 @@ function DownloadMenu({
   );
 }
 
-/** Failing-row sample for a check (#226). The API masks PII/unclassified cell
- *  values to "<redacted>" per column (#415) — some columns can surface
- *  genuinely (e.g. a non-PII tested column like `line_total`), so the header
- *  reports the actual `redaction` state (#424) rather than always claiming
- *  "values redacted": full masking, a partial mix, all-shown, or (when the
- *  sample had nothing data-bearing to redact either way) no claim at all. */
+/** Failing-row sample for a check (#226). */
 function SampleFailures({
   sample,
   redaction,
@@ -343,14 +319,8 @@ function SampleFailures({
   if (!sample) return null;
   const count = typeof sample.unexpected_count === 'number' ? sample.unexpected_count : null;
   const percent = typeof sample.unexpected_percent === 'number' ? sample.unexpected_percent : null;
-  // #1183: prefer `unexpected_index_list` when it's present and dict-shaped —
-  // those rows already carry the suite's configured identifier column(s)
-  // alongside the failing value(s), and are already API-redacted per column
-  // (the backend strips a non-dict `unexpected_index_list` before it ever
-  // reaches here — `gx_runner._is_identifier_index_list` — so dict shape is
-  // trustable). `partial_unexpected_list` (bare scalars → a single `value`
-  // column, no identifier) is the fallback for checks/engines that don't
-  // populate the index list.
+  // #1183: prefer `unexpected_index_list` when it's present and dict-shaped — those rows already
+  // carry the suite's configured identifier column(s) alongside the failing value(s).
   const indexList = sample.unexpected_index_list;
   const isIdentifierRows = (list: unknown): list is Record<string, unknown>[] =>
     Array.isArray(list) &&
@@ -366,14 +336,8 @@ function SampleFailures({
           : { value: entry },
       )
     : [];
-  // #1190 review: GX caps `partial_unexpected_list` at ~20 rows
-  // (`partial_unexpected_count`) on every engine, but under `result_format:
-  // COMPLETE` (always used by `gx_runner`) the pandas engine — flat-file/ADLS/S3
-  // and Iceberg — returns `unexpected_index_list` FULL and UNTRUNCATED (only the
-  // SQLAlchemy-backed engines, Snowflake/UC, stay capped there too). Since this
-  // component now prefers that list, cap what's actually rendered ourselves so a
-  // check with thousands of failing rows on a pandas-backed datasource can't
-  // dump thousands of DOM rows into a `pagination={false}` table.
+  // #1190 review: GX caps `partial_unexpected_list` at ~20 rows (`partial_unexpected_count`) on
+  // every engine.
   const MAX_SAMPLE_ROWS = 20;
   const displayRows = rows.slice(0, MAX_SAMPLE_ROWS);
   const hiddenRowCount = Math.max((count ?? rows.length) - displayRows.length, 0);
@@ -401,14 +365,8 @@ function SampleFailures({
     ),
   }));
 
-  // #424: the redaction claim must match reality — "values redacted" only when
-  // the whole sample was masked; a partial mix names how many columns were, and
-  // an all-shown or no-data-bearing-content sample makes no redaction claim.
-  // A partial state can carry an EMPTY redactedColumns list (#1115 review): the
-  // backend tracker also reports "partial" when an anonymous mask (a scalar
-  // partial_unexpected_list with no tested_column — nothing nameable) coincides
-  // with some other column being shown, so "0 columns redacted" would be
-  // false-adjacent — fall back to the unquantified phrasing instead.
+  // #424: the redaction claim must match reality — "values redacted" only when the whole sample was
+  // masked; a partial mix names how many columns were.
   const redactionLabel =
     redaction === 'full'
       ? 'values redacted'
@@ -475,9 +433,8 @@ function ResultsTable({
       dataIndex: 'check_id',
       render: (id: string, record: Result) => {
         const check = checks.get(id);
-        // One wrapper, whether or not the check still exists: the label differs,
-        // the annotations do not. A deleted check's row still carries the sampled
-        // caveat, because the caveat is about the VERDICT, not the check.
+        // One wrapper, whether or not the check still exists: the label differs, the annotations do
+        // not.
         return (
           <Flex gap={8} align="center" wrap>
             {check ? check.name : <Typography.Text code>{id.slice(0, 8)}</Typography.Text>}
@@ -511,21 +468,10 @@ function ResultsTable({
       render: (v: number | null) => (v === null ? '—' : v),
     },
     {
-      // Bounded width + ellipsis (#1207 — #1184's "verified-benign" scope-out
-      // didn't hold for every monitor kind: schema_drift's added/removed
-      // column lists and comparison's per-column buckets both scale with
-      // column count, and ScalarValue's formatScalar JSON.stringifies
-      // whatever shape observed_value is, unbounded. `ellipsis: { showTitle:
-      // false }` suppresses antd's own native-title hover so the Tooltip
-      // below is the only one — same pattern as `ellipsisColumn` (#1184),
-      // applied manually here since this column has a custom ScalarValue
-      // render rather than a plain string field. ScalarValue's own
-      // formatting (monospace, em-dash for null) is reused unchanged in
-      // both the cell and the tooltip.
-      //
-      // The bound that actually binds is `boundedTextStyle` on the span: the
-      // column `width` alone is inert under this table's `scroll.x =
-      // 'max-content'` (#1282 — see that helper for the why).
+      // Bounded width + ellipsis (#1207 — #1184's "verified-benign" scope-out didn't hold for
+      // every monitor kind: schema_drift's added/removed column lists and comparison's per-column
+      // buckets both scale with column count, and ScalarValue's formatScalar JSON.stringifies
+      // whatever shape observed_value is, unbounded.
       title: 'Observed',
       dataIndex: 'observed_value',
       width: OBSERVED_COLUMN_WIDTH,
@@ -551,9 +497,8 @@ function ResultsTable({
       dataSource={results}
       pagination={false}
       expandable={{
-        // Lazily fetch a check's metric trend only when its row is expanded —
-        // keyed by check_id so each row's chart fetches its own history. The
-        // redacted failing-row sample (if any) sits below the trend.
+        // Lazily fetch a check's metric trend only when its row is expanded — keyed by check_id so
+        // each row's chart fetches its own history.
         expandedRowRender: (record) => {
           const check = checks.get(record.check_id);
           if (!check) {

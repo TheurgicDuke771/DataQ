@@ -1,17 +1,4 @@
-"""Integration test for request_id correlation FastAPI -> Celery -> log (#75).
-
-Eager mode can't verify the mechanism (the task runs in the caller's context, so
-the request_id would appear even with no propagation). Instead this drives the
-real signal handlers across a *context boundary*: inject on the caller side,
-reset the ContextVar to None (simulating a fresh worker process after the broker
-hop), restore from the message header, and assert a log emitted during execution
-carries the request_id. Resetting to None is what proves propagation happens via
-the header, not via a same-context leak.
-
-The one link not exercised here is Celery serialising the custom header over a
-real broker onto task.request — documented protocol-v2 behaviour, confirmed by
-the compose worker.
-"""
+"""Integration test for request_id correlation FastAPI -> Celery -> log (#75)."""
 
 import json
 from types import SimpleNamespace

@@ -1,49 +1,4 @@
-"""Record-grain comparison engine (ADR 0015, #793) — the FDC diff port.
-
-Ports the semantics of FastAPI_DataComparison (MIT, same author) —
-`data_comparison/{record_comparison,column_comparison}.py` — as a pure frame
-diff: no report files, no result cache, no connection store (ADR 0014 §2:
-engine yes, app no). Given two already-bounded DataFrames (the #792
-`DatasetReader` enforces the row cap) and the check's join keys:
-
-* rows are keyed and outer-joined; key-only-in-source / key-only-in-target
-  become the **additional_in_source / additional_in_target** buckets (FDC's
-  ``left_only`` / ``right_only`` indicator semantics);
-* keys present on both sides compare their non-key columns — all equal →
-  **matched**, any difference → **mismatched**, with per-column mismatch
-  counts (FDC's column-grain detail);
-* values compare as **nullable strings** (FDC's ``handling_datatypes`` casts
-  both frames to ``str`` for dtype-neutral comparison; this port uses pandas
-  ``string`` dtype so real NULLs stay NULL instead of becoming the literal
-  ``"nan"`` — null==null matches, null-vs-value mismatches);
-* **duplicate join keys are a typed error** (never ambiguous buckets): FDC
-  silently ``drop_duplicates``-ed whole rows, which under-counts — a key that
-  appears twice on either side makes row pairing undefined, so the engine
-  refuses with samples of the offending keys;
-* the badness scalar is **mismatch-%** — non-matching rows over the union of
-  logical rows — feeding `metric_value` + ADR 0016 severity banding.
-
-Column reconciliation: explicit ``columns`` config wins; otherwise the
-intersection of non-key columns is compared and each side's extra columns are
-*reported* (``columns_only_in_*``), not an error — per-side SQL projections
-make strict FDC same-columns enforcement too rigid, and schema drift is
-visible in the result instead of hidden.
-
-Two grains share one alignment pass (#799): `compare_records` (row grain,
-above) and `compare_columns` (FDC's column grain — per-column mismatched /
-additional-per-side value buckets; a value null on the only side it exists on
-counts nowhere, FDC's ``dropna`` parity). The alignment merges **keys +
-row positions only** and gathers value columns for just the paired rows —
-FDC (and the first #793 port) pushed every value column through the outer
-merge's suffix machinery, copying the whole frame twice; see the benchmark
-note on the #799 PR.
-
-Numeric **tolerance** (#799, from the #808 review): an optional
-``{"absolute": a, "relative": r}`` config treats a numeric pair as equal when
-``|s - t| <= max(a, r · max(|s|, |t|))`` — float32-vs-float64 round-trips and
-engine-precision skew stop mismatching. Applies only to columns whose pair
-normalized numerically; one-sided NULLs still mismatch.
-"""
+"""Record-grain comparison engine (ADR 0015, #793) — the FDC diff port."""
 
 from __future__ import annotations
 
@@ -54,9 +9,8 @@ from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.datasources.base import SAMPLE_ROW_CAP
 
-# Cap on rows carried per sample bucket (→ `Result.sample_failures`, which is
-# retention-swept and redacted downstream; samples must stay small). Aliases the
-# one shared bound (#1196) so this path and the GX one can never drift apart.
+# Cap on rows carried per sample bucket (→ `Result.sample_failures`, which is retention-swept and
+# redacted downstream; samples must stay small).
 SAMPLE_LIMIT = SAMPLE_ROW_CAP
 
 # Cap on offending keys echoed in a duplicate-key error message.
@@ -66,7 +20,8 @@ _DUP_KEY_ECHO = 10
 class ComparisonInputError(DataQError):
     """The frames/keys cannot be compared as configured (missing key column,
     nothing to compare) — an authoring/data-shape problem, not a data-quality
-    failure. The run path maps it to an operational ``error`` result."""
+    failure. The run path maps it to an operational ``error`` result.
+    """
 
     status_code = 422
     code = "comparison_input_invalid"
@@ -74,7 +29,8 @@ class ComparisonInputError(DataQError):
 
 class DuplicateKeyError(DataQError):
     """Join keys are not unique on one side — row pairing would be undefined,
-    so the diff refuses rather than produce ambiguous buckets."""
+    so the diff refuses rather than produce ambiguous buckets.
+    """
 
     status_code = 422
     code = "comparison_duplicate_keys"
@@ -90,14 +46,7 @@ class KeyPair:
 
 @dataclass(frozen=True)
 class RecordComparisonResult:
-    """The diff outcome, shaped for `results` (ADR 0015 §4).
-
-    ``mismatch_percent`` is the badness scalar for `metric_value`/banding:
-    ``(mismatched + additional_in_source + additional_in_target) / union * 100``
-    where ``union`` is the number of distinct logical rows across both sides
-    (``matched + mismatched + additional_in_source + additional_in_target``).
-    Two empty sides → 0.0 (vacuously reconciled).
-    """
+    """The diff outcome, shaped for `results` (ADR 0015 §4)."""
 
     source_rows: int
     target_rows: int
@@ -127,7 +76,8 @@ class RecordComparisonResult:
 @dataclass(frozen=True)
 class Tolerance:
     """Numeric closeness for tolerance-aware equality (#799): equal when
-    ``|s - t| <= max(absolute, relative · max(|s|, |t|))``."""
+    ``|s - t| <= max(absolute, relative · max(|s|, |t|))``.
+    """
 
     absolute: float = 0.0
     relative: float = 0.0
@@ -136,7 +86,8 @@ class Tolerance:
 def parse_tolerance(raw: Any) -> Tolerance | None:
     """`config.tolerance` → `Tolerance`; None when absent. Raises
     `ComparisonInputError` on a malformed shape (author-time validation
-    mirrors this, so at run time it is defence in depth)."""
+    mirrors this, so at run time it is defence in depth).
+    """
     if raw is None:
         return None
     if (
@@ -159,15 +110,7 @@ def parse_tolerance(raw: Any) -> Tolerance | None:
 
 @dataclass(frozen=True)
 class ColumnComparisonResult:
-    """The column-grain outcome (#799 — FDC `column_comparison` parity).
-
-    Counts are **value slots**, not rows: per compared column, a paired row
-    contributes `matched` (equal, incl. both-null) or `mismatched` (both
-    present, different); a value present on only one side (key missing or
-    NULL opposite) is `additional_in_<side>`; a null value on its only side
-    counts nowhere (FDC ``dropna`` parity). ``mismatch_percent`` = non-matched
-    slots over all counted slots (0.0 when nothing was comparable).
-    """
+    """The column-grain outcome (#799 — FDC `column_comparison` parity)."""
 
     source_rows: int
     target_rows: int
@@ -219,7 +162,8 @@ def _reject_duplicate_keys(
 ) -> None:
     """Duplicate detection runs on the NORMALIZED keys (an int-1 and a "1" key
     are the same logical key), but the echoed samples come from the original
-    frame so the user sees their own values, not the canonical form."""
+    frame so the user sees their own values, not the canonical form.
+    """
     dup_mask = normalized.duplicated(subset=key_cols, keep=False)
     if bool(dup_mask.any()):
         dup_keys = (
@@ -238,7 +182,8 @@ def _reject_duplicate_keys(
 def _reject_null_keys(normalized: Any, key_cols: list[str], *, side: str) -> None:
     """NULL join keys are refused (SQL semantics: NULL joins nothing) — pandas'
     merge would silently pair NA keys across sides, welding two unrelated rows
-    into a fabricated match/mismatch."""
+    into a fabricated match/mismatch.
+    """
     null_counts = {c: int(normalized[c].isna().sum()) for c in key_cols}
     nulls = {c: n for c, n in null_counts.items() if n}
     if nulls:
@@ -263,14 +208,7 @@ def _is_datetime_like(s: Any) -> bool:
 
 
 def _canonical_datetime_strings(s: Any) -> Any:
-    """Render datetimes to one canonical form across backends.
-
-    numpy `datetime64.astype(str)` is whole-column data-dependent (an
-    all-midnight column renders date-only; one non-midnight value flips every
-    element) and ArrowDtype timestamps render ISO-T with nanoseconds — so
-    identical instants never string-match across the #792 readers. Canonical:
-    tz-aware values are converted to UTC then rendered naive; microsecond
-    precision (sub-µs is truncated — accepted, documented)."""
+    """Render datetimes to one canonical form across backends."""
     s = (
         s.astype("datetime64[ns, UTC]")
         if getattr(s.dt, "tz", None) is not None
@@ -285,7 +223,8 @@ def _canonical_datetime_strings(s: Any) -> Any:
 class _NormalizedPair:
     """One column normalized for comparison: the canonical `string` forms, plus
     the nullable-`Float64` pair when the column normalized numerically (the
-    tolerance-aware equality operand, #799)."""
+    tolerance-aware equality operand, #799).
+    """
 
     source_str: Any
     target_str: Any
@@ -296,25 +235,6 @@ class _NormalizedPair:
 def _normalize_pair(s: Any, t: Any) -> _NormalizedPair:
     """One column, both sides → comparable nullable-`string` series (plus the
     numeric pair when applicable — see `_NormalizedPair`).
-
-    The FDC dtype-neutralizer, null- and backend-safe:
-
-    * real NULL stays `pd.NA` (FDC's plain ``astype(str)`` turned NaN into the
-      literal ``"nan"``, which could match a genuine ``"nan"`` value);
-    * numbers are canonicalized through nullable ``Float64`` when the pair is
-      numeric-compatible — numpy coerces a NULL-carrying int column to float64
-      (``10`` → ``"10.0"``) while Arrow keeps ``int64`` (``"10"``): same
-      warehouse value, different string;
-    * datetimes are canonicalized via `_canonical_datetime_strings` (numpy vs
-      Arrow render identical instants differently, and numpy's rendering is
-      data-dependent within a column);
-    * a non-numeric/non-datetime side is adopted into the typed compare only
-      when it parses **losslessly** (else both compare as plain strings).
-
-    Accepted trades (documented): integers beyond float64's 2^53 exactness;
-    float32-vs-float64 columns compare by exact value unless the check sets a
-    numeric `tolerance` (#799); a tz-aware side compared against a naive side
-    is normalized to UTC-naive.
     """
     import pandas as pd
 
@@ -337,17 +257,14 @@ def _normalize_pair(s: Any, t: Any) -> _NormalizedPair:
         s_lossless = s_num or not bool((s2.isna() & s.notna()).any())
         t_lossless = t_num or not bool((t2.isna() & t.notna()).any())
         if s_lossless and t_lossless:
-            # Integer-only pairs canonicalize through Int64 so keys/values render
-            # "1", not "1.0" (samples echo these); any float involvement → Float64
-            # (the cross-backend NULL-int→float64 skew still lands here and still
-            # matches, since BOTH sides then render "10.0").
+            # Integer-only pairs canonicalize through Int64 so keys/values render "1", not "1.0"
+            # (samples echo these).
             if pd.api.types.is_integer_dtype(s2) and pd.api.types.is_integer_dtype(t2):
                 try:
                     s_f, t_f = s2.astype("Int64"), t2.astype("Int64")
                 except (TypeError, OverflowError):
-                    # uint64 above int64-max can't cast safely — fall back to the
-                    # Float64 canonical form (main's behavior) instead of erroring
-                    # a perfectly comparable column.
+                    # uint64 above int64-max can't cast safely — fall back to the Float64 canonical
+                    # form (main's behavior) instead of erroring a perfectly comparable column.
                     s_f, t_f = s2.astype("Float64"), t2.astype("Float64")
             else:
                 s_f, t_f = s2.astype("Float64"), t2.astype("Float64")
@@ -355,23 +272,15 @@ def _normalize_pair(s: Any, t: Any) -> _NormalizedPair:
             return _NormalizedPair(
                 s_f.astype("string"), t_f.astype("string"), source_num=s_f, target_num=t_f
             )
-    # Booleans compare as their string forms ("True"/"False") — deliberately
-    # NOT via the numeric branch (is_numeric_dtype(bool) is True in pandas, but
-    # canonicalizing True → "1.0" would mismatch a "True" string side).
+    # Booleans compare as their string forms ("True"/"False") — deliberately NOT via the numeric
+    # branch (is_numeric_dtype(bool) is True in pandas, but canonicalizing True → "1.0" would
+    # mismatch a "True" string side).
     return _NormalizedPair(s.astype("string"), t.astype("string"))
 
 
 @dataclass(frozen=True)
 class _AlignedSides:
-    """One shared alignment pass for both grains (#799).
-
-    The merge carries **keys + row positions only** — value columns are
-    gathered afterwards for exactly the rows each bucket needs, instead of
-    copying every value column through the outer merge's suffix machinery
-    (the FDC / first-port shape). `pairs` maps each compared column to its
-    normalized forms; positions are positional (both frames are reset to a
-    RangeIndex before merging).
-    """
+    """One shared alignment pass for both grains (#799)."""
 
     key_cols: list[str]
     compared: list[str]
@@ -393,11 +302,7 @@ def _align(
     keys: list[Any],
     columns: list[str] | None,
 ) -> _AlignedSides:
-    """Validate, normalize, and key-align the two sides (shared by both grains).
-
-    Raises `ComparisonInputError` / `DuplicateKeyError` — the run path maps
-    both to operational ``error`` results (#122), never data-quality failures.
-    """
+    """Validate, normalize, and key-align the two sides (shared by both grains)."""
     import numpy as np
     import pandas as pd
 
@@ -407,9 +312,8 @@ def _align(
     _require_columns(source_df, src_keys, side="source")
     _require_columns(target_df, tgt_keys, side="target")
 
-    # Rename target keys to the source names so the merge keys align (per-side
-    # key mapping, ADR 0015 §1). Non-key columns keep their own names — the
-    # compared set is resolved by name below.
+    # Rename target keys to the source names so the merge keys align (per-side key mapping, ADR 0015
+    # §1).
     rename_map = {p.target: p.source for p in key_pairs if p.target != p.source}
     collisions = [dst for dst in rename_map.values() if dst in target_df.columns]
     if collisions:
@@ -434,10 +338,8 @@ def _align(
     only_source = sorted(set(source_value_cols) - set(compared) - set(key_cols))
     only_target = sorted(set(target_value_cols) - set(compared) - set(key_cols))
 
-    # Name-collision guards (typed refusals, never silent wrong output):
-    # the alignment reserves `__dataq_pos*` in its keys+positions merge, and
-    # samples key compared columns as `<col>_src`/`<col>_tgt` beside the raw
-    # key names — a user column landing on either would overwrite silently.
+    # Name-collision guards (typed refusals, never silent wrong output): the alignment reserves
+    # `__dataq_pos*` in its keys+positions merge.
     reserved = {"__dataq_pos", "__dataq_pos_src", "__dataq_pos_tgt"} & set(key_cols + compared)
     if reserved:
         raise ComparisonInputError(
@@ -459,9 +361,8 @@ def _align(
     source_df = source_df.reset_index(drop=True)
     target_df = target_df.reset_index(drop=True)
 
-    # Normalize each (key + compared) column PAIRWISE so cross-backend dtype
-    # skew can't fabricate mismatches; dedup/NULL-check on the NORMALIZED keys
-    # (an int-1 and a "1" key are the same logical key).
+    # Normalize each (key + compared) column PAIRWISE so cross-backend dtype skew can't fabricate
+    # mismatches.
     pairs = {col: _normalize_pair(source_df[col], target_df[col]) for col in key_cols + compared}
     src_key_frame = pd.DataFrame({c: pairs[c].source_str for c in key_cols})
     tgt_key_frame = pd.DataFrame({c: pairs[c].target_str for c in key_cols})
@@ -503,13 +404,7 @@ def _gather(series: Any, positions: Any) -> Any:
 def _pair_equality(
     aligned: _AlignedSides, col: str, tolerance: Tolerance | None
 ) -> tuple[Any, Any, Any]:
-    """(eq, s, t) for `col` over the paired rows — NA-safe, tolerance-aware.
-
-    `string`-dtype ``eq()`` yields NA (not False) when exactly one side is
-    NULL — ``fillna(False)`` so null-vs-value counts as a difference instead
-    of silently masking as a match. With a `tolerance` and a numeric pair,
-    closeness also counts as equal (one-sided NULLs still differ).
-    """
+    """(eq, s, t) for `col` over the paired rows — NA-safe, tolerance-aware."""
     import numpy as np
     import pandas as pd
 
@@ -635,13 +530,6 @@ def compare_columns(
 ) -> ColumnComparisonResult:
     """Column-grain diff (#799 — FDC `column_comparison` parity): per compared
     column, count matched / mismatched / additional-per-side **value slots**.
-
-    FDC parity notes: a value present on one side while the other side's value
-    is NULL — or the key row is absent entirely — is `additional_in_<side>`
-    for that column (FDC's outer-join ``mismatch()`` split); a NULL value on
-    its only side counts nowhere (FDC's ``dropna``). Samples are shaped like
-    the record grain (`<col>_src` / `<col>_tgt` keys), so redaction and the
-    report writer treat both grains identically.
     """
     aligned = _align(source_df, target_df, keys=keys, columns=columns)
     if not aligned.compared:

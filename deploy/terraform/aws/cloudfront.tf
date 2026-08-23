@@ -1,18 +1,4 @@
 # CloudFront — the HTTPS front for the ALB (#1345).
-#
-# Cognito requires redirect URIs to be HTTPS (http:// is allowed only for
-# localhost), so the original HTTP-only-ALB design could never complete an
-# OIDC sign-in. With no custom domain chosen (that decision stands), the
-# cheapest valid HTTPS origin is CloudFront's own *.cloudfront.net domain with
-# the default certificate — additive to swap out later: pick a domain, add an
-# ACM cert + alias here, and the ALB/ECS layers don't change.
-#
-# This is a pass-through, not a CDN in anger: the default behavior disables
-# caching entirely (the app is a dynamic SPA + API; index.html must never be
-# stale, /api must never be cached) and forwards the full request via the
-# managed AllViewer policy. Static-asset caching can be added as a dedicated
-# /assets/* behavior later if it ever matters — nginx already serves
-# fingerprinted files.
 
 data "aws_cloudfront_cache_policy" "caching_disabled" {
   name = "Managed-CachingDisabled"
@@ -29,17 +15,16 @@ data "aws_cloudfront_origin_request_policy" "all_viewer" {
 }
 
 locals {
-  # Extensions Vite emits into dist/assets/, mirroring the nginx `location ~*`
-  # list (frontend/nginx.conf.template) so the two layers agree on what a static
-  # asset is. Anything under /assets/ NOT ending in one of these — notably the
-  # SPA's own /assets/:assetId route, whose ids are bare UUIDs — falls through to
-  # the uncached default behavior, which is what we want.
+  # Extensions Vite emits into dist/assets/, mirroring the nginx `location ~*` list
+  # (frontend/nginx.conf.template) so the two layers agree on what a static asset is.
   cacheable_asset_extensions = [
     "js", "mjs", "css", "map",
     "png", "jpg", "jpeg", "gif", "svg", "ico", "webp", "avif",
     "woff", "woff2", "ttf", "eot",
   ]
 
+  # Extension-matched DELIBERATELY: a bare /assets/* prefix would re-collide with the
+  # SPA's own /assets/:assetId route and edge-cache HTML as an asset (#1388 review).
   cacheable_asset_patterns = [for ext in local.cacheable_asset_extensions : "/assets/*.${ext}"]
 }
 
@@ -55,22 +40,8 @@ resource "aws_cloudfront_distribution" "app" {
     domain_name = aws_lb.app.dns_name
     origin_id   = "alb"
 
-    # Origin secret (#1355): stamped on every origin fetch and verified by the
-    # frontend nginx (DATAQ_ORIGIN_SECRET) — closes the residual gap alb.tf
-    # documents, where a third party's OWN distribution could origin-point at
-    # this ALB's discoverable DNS name through the shared CloudFront
-    # origin-facing ranges. CloudFront overwrites any viewer-sent header of
-    # the same name, so the value can't be probed through this distribution.
-    # (Visible in the distribution config to anyone with CloudFront read
-    # access — an origin-authentication token, not a user credential.)
-    #
-    # Residual, stated honestly (#1378 review): the edge→origin hop is plain
-    # HTTP (origin_protocol_policy http-only — no custom domain means no cert
-    # the ALB could serve), so the header transits that leg in cleartext. An
-    # on-path observer of AWS's edge→ALB path could read it; that adversary
-    # class already sees the whole session traffic on the same hop. Closing
-    # it = custom domain + ACM on the ALB + https-only, the documented
-    # follow-up in the README's known-gaps list.
+    # Origin secret (#1355): stamped on every origin fetch and verified by the frontend nginx
+    # (DATAQ_ORIGIN_SECRET) — closes the residual gap alb.tf documents.
     custom_header {
       name  = "X-DataQ-Origin-Secret"
       value = random_password.origin_secret.result
@@ -79,16 +50,11 @@ resource "aws_cloudfront_distribution" "app" {
     custom_origin_config {
       http_port  = 80
       https_port = 443
-      # The ALB listener is plain HTTP :80; TLS terminates at CloudFront. The
-      # ALB's security group admits only CloudFront's origin-facing address
-      # ranges (alb.tf) — see that file's note on what that does and does not
-      # guarantee (#1355).
+      # The ALB listener is plain HTTP :80; TLS terminates at CloudFront.
       origin_protocol_policy = "http-only"
       origin_ssl_protocols   = ["TLSv1.2"]
-      # Long warehouse-bound API calls (column profiler, dry-run, test-
-      # connection against a cold warehouse) routinely exceed CloudFront's 30s
-      # default; match the ALB's 60s idle timeout so CloudFront isn't the
-      # tightest hop (/code-review finding).
+      # Long warehouse-bound API calls (column profiler, dry-run, test- connection against a cold
+      # warehouse) routinely exceed CloudFront's 30s default.
       origin_read_timeout      = 60
       origin_keepalive_timeout = 60
     }
@@ -105,30 +71,8 @@ resource "aws_cloudfront_distribution" "app" {
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer.id
   }
 
-  # Fingerprinted build output — the ONE thing here that is safe to cache at the
-  # edge, and the only reason this distribution can absorb any load at all
-  # (#1388). With caching disabled everywhere, every asset request on every page
-  # load travelled the full CloudFront -> ALB -> nginx path, so the "CDN" in
-  # front of the app shed nothing: an L7 flood and a legitimate page load cost
-  # the origin exactly the same.
-  #
-  # Safe precisely because the filenames are content-hashed (nginx already serves
-  # them `immutable`, frontend/nginx.conf.template): a changed asset is a changed
-  # URL, so a long edge TTL can never serve a stale bundle.
-  #
-  # MATCHED BY EXTENSION, NOT BY THE `/assets/` PREFIX — deliberately, and this is
-  # the same collision that produced #802. Vite emits its bundle to `dist/assets/`,
-  # which shares a path prefix with the app's OWN `/assets/:assetId` SPA route
-  # (the ADR 0034 asset browse). A `/assets/*` behavior captures that route too
-  # and hands a *document* to a policy meant for immutable files; it happens not
-  # to break today only because `location /` sends `no-cache` and CloudFront
-  # honours it, i.e. correctness rests on an implicit dependency rather than on
-  # the routing. nginx solved this by matching the file extension
-  # (nginx.conf.template's `location ~*`), and this mirrors it. CloudFront
-  # path patterns take `*`/`?` but no regex, hence one behavior per extension.
-  #
-  # `/api/*`, `/mcp` and index.html get no behavior here at all — they must keep
-  # reaching the origin every time.
+  # Fingerprinted build output — the ONE thing here that is safe to cache at the edge, and the only
+  # reason this distribution can absorb any load at all (#1388).
   dynamic "ordered_cache_behavior" {
     for_each = local.cacheable_asset_patterns
     content {
@@ -139,9 +83,8 @@ resource "aws_cloudfront_distribution" "app" {
       cached_methods         = ["GET", "HEAD"]
       compress               = true
 
-      # No origin_request_policy: AllViewer would forward every header and make
-      # the cache key so specific that almost nothing would hit. CachingOptimized's
-      # own key (URL only, plus normalized encoding) is what makes this cache work.
+      # No origin_request_policy: AllViewer would forward every header and make the cache key so
+      # specific that almost nothing would hit.
       cache_policy_id = data.aws_cloudfront_cache_policy.caching_optimized.id
     }
   }

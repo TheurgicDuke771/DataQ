@@ -1,27 +1,4 @@
-"""add checks.source_connection_id — the comparison source ref (ADR 0015)
-
-ADR 0015 (two-connection comparison check model): the suite stays
-single-connection and supplies the target under test; a `comparison` check adds
-exactly one source (baseline) ref. This lands that ref:
-
-* `checks.source_connection_id` — nullable FK → connections, **ON DELETE
-  RESTRICT** (the service pre-checks and 409s; the FK is the backstop), indexed.
-* CHECK `comparison_source_presence`: presence ⇔ `kind = 'comparison'` — every
-  existing row is non-comparison with NULL, so the constraint validates
-  instantly with no backfill.
-* `check_versions.source_connection_id` — plain UUID snapshot column, **no FK**
-  (ADR 0020 self-containment: history must never block deleting a connection an
-  old version once pointed at).
-
-Additive & backward-compatible (CLAUDE.md migration rules): nullable columns,
-no defaults, no backfill; deployed code that predates the comparison authoring
-path never writes either column.
-
-Revision ID: b7c8d9e0f1a2
-Revises: 1a2b3c4d5e6f
-Create Date: 2026-07-12 00:00:00.000000+00:00
-
-"""
+"""add checks.source_connection_id — the comparison source ref (ADR 0015)"""
 
 from __future__ import annotations
 

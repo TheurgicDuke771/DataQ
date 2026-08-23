@@ -1,23 +1,4 @@
-"""Suite export / import — portable, connection-agnostic suite documents.
-
-A suite export is a plain dict (the API serialises it to JSON): the suite's
-`name` / `description` plus every check's authoring fields. It deliberately
-**omits** all DB-internal identity — `id`, `connection_id`, `created_by`,
-timestamps — so a document is a reusable template, not a row dump. Import binds
-the document to a *freshly chosen* connection and creates a new owned suite.
-
-Why connection-agnostic: a suite's checks describe table/column expectations,
-not a specific datasource row. Re-binding on import is the whole point (copy a
-QA suite onto the UAT connection). The connection is supplied at import time and
-validated like `create_suite` (422 on a missing connection).
-
-Import is **atomic**: every check kind is validated *before* any row is written,
-then the suite and its checks persist in a single commit — a bad document never
-leaves a half-imported suite behind.
-
-FastAPI-free like the sibling services: takes a `Session`, returns ORM models /
-dicts, raises `DataQError` subclasses.
-"""
+"""Suite export / import — portable, connection-agnostic suite documents."""
 
 from __future__ import annotations
 
@@ -73,17 +54,7 @@ class SuiteImportConnectionInvalidError(DataQError):
 
 
 def export_suite(session: Session, suite: Suite) -> dict[str, Any]:
-    """Build a portable document from an already-loaded, authorised suite.
-
-    The API resolves and authorises the suite via `require_permission`, then
-    passes it here. Checks are emitted in stable creation order so two exports of
-    an unchanged suite are byte-identical (diffable in version control).
-
-    A comparison check's source ref (ADR 0015) is serialized portably as the
-    connection's `(name, env)` — a raw UUID would never survive a workspace
-    move; import resolves it back (or 422s). The key is emitted only for
-    comparison checks, so pre-0015 documents and consumers are unaffected.
-    """
+    """Build a portable document from an already-loaded, authorised suite."""
     checks = sorted(suite.checks, key=lambda c: c.created_at)
     docs: list[dict[str, Any]] = []
     for c in checks:
@@ -97,9 +68,8 @@ def export_suite(session: Session, suite: Suite) -> dict[str, Any]:
             "fail_threshold": c.fail_threshold,
             "critical_threshold": c.critical_threshold,
         }
-        # Emitted only when non-default (ADR 0036), like `source_connection`
-        # below: pre-engine documents and consumers stay byte-identical, and a
-        # 'gx' check imports everywhere without the key saying so.
+        # Emitted only when non-default (ADR 0036), like `source_connection` below: pre-engine
+        # documents and consumers stay byte-identical.
         if c.engine != GX_ENGINE:
             doc["engine"] = c.engine
         if c.source_connection_id is not None:
@@ -118,13 +88,7 @@ def export_suite(session: Session, suite: Suite) -> dict[str, Any]:
 
 
 def _resolve_source_connection(session: Session, check_doc: dict[str, Any]) -> uuid.UUID:
-    """Resolve a comparison check's portable source ref to a connection id.
-
-    The document carries `source_connection: {"name", "env"}` (ADR 0015);
-    `(name, env)` is unique (`uq_connections_name_env`), so at most one row
-    matches. Missing key or no match → 422 naming the check, so a document
-    exported elsewhere fails imports with an actionable error, not a stray FK.
-    """
+    """Resolve a comparison check's portable source ref to a connection id."""
     ref = check_doc.get("source_connection")
     if not isinstance(ref, dict) or not ref.get("name") or not ref.get("env"):
         raise SuiteImportInvalidError(
@@ -153,13 +117,7 @@ def import_suite(
     connection_id: uuid.UUID,
     created_by: uuid.UUID,
 ) -> Suite:
-    """Create a new suite + checks from a document, bound to `connection_id`.
-
-    Raises `SuiteImportInvalidError` (422) for an unsupported document version or
-    an unsupported check kind, and `SuiteImportConnectionInvalidError` (422) if
-    the target connection does not exist. Atomic: validates everything before
-    writing, then commits the suite and all checks together.
-    """
+    """Create a new suite + checks from a document, bound to `connection_id`."""
     if version != EXPORT_VERSION:
         raise SuiteImportInvalidError(
             f"unsupported export version {version!r}; this server imports v{EXPORT_VERSION}",
@@ -178,21 +136,13 @@ def import_suite(
             "they trigger suites via trigger bindings",
             detail={"connection_id": str(connection_id), "type": connection.type},
         )
-    # Validate every check (kind + custom-SQL / monitor / comparison guardrails)
-    # up front so a bad document writes nothing. connection.type is known here,
-    # so the datasource-gating + config validation that CRUD applies also applies
-    # at import (custom-SQL: ADR 0019; freshness/volume monitors: ADR 0012;
-    # comparison source refs: ADR 0015). Comparison source refs travel as
-    # `(name, env)` and resolve to a connection id per check (index-aligned with
-    # `checks` for the construction below).
+    # Validate every check (kind + custom-SQL / monitor / comparison guardrails) up front so a bad
+    # document writes nothing. connection.type is known here.
     source_ids: list[uuid.UUID | None] = []
     for c in checks:
         validate_kind(c["kind"])
-        # ADR 0036 §5: a document carrying a native-engine check imports only
-        # where the target connection offers that engine — the same save-time
-        # validation as CRUD, marking the mismatch explicitly (422 naming the
-        # capability) rather than dropping or silently converting the check.
-        # Key absent = a pre-engine document = 'gx', which is what it ran as.
+        # ADR 0036 §5: a document carrying a native-engine check imports only where the target
+        # connection offers that engine — the same save-time validation as CRUD.
         validate_engine(c.get("engine", GX_ENGINE), connection_type=connection.type)
         validate_engine_compatibility(
             c.get("engine", GX_ENGINE),
@@ -203,11 +153,8 @@ def import_suite(
             fail_threshold=c["fail_threshold"],
             critical_threshold=c["critical_threshold"],
         )
-        # Direct `Check(...)` construction below has no Pydantic layer of its own —
-        # today the REST import route's `CheckDocument` model already enforces the
-        # same 256/128 bounds, but this keeps the guarantee at the service layer
-        # (the same reasoning as the MCP `create_check` fix, #813) rather than
-        # relying solely on the caller.
+        # Direct `Check(...)` construction below has no Pydantic layer of its own — today the REST
+        # import route's `CheckDocument` model already enforces the same 256/128 bounds.
         validate_lengths(name=c["name"], expectation_type=c["expectation_type"])
         # #568: an imported document must not smuggle in what a direct POST
         # would 422 — same shared validator create_check/update_check use.
@@ -263,11 +210,7 @@ def import_suite(
             kind=c["kind"],
             engine=c.get("engine", GX_ENGINE),
             expectation_type=c["expectation_type"],
-            # Key ABSENT (an older document) → derive, so an import behaves like
-            # fresh authoring. Key PRESENT — including an explicit null → take it
-            # verbatim: a null means "this check is unclassified", and deriving
-            # over it would re-create the very backfill ADR 0038 §5 forbids for
-            # every check that predates the migration.
+            # Key ABSENT (an older document) → derive, so an import behaves like fresh authoring.
             dimension=(
                 validate_dimension(c["dimension"])
                 if "dimension" in c
@@ -285,10 +228,7 @@ def import_suite(
     session.flush()  # assign check ids so each can carry a v1 snapshot (#280)
     for check in suite.checks:
         record_check_version(session, check, actor_id=created_by)
-    # ONE event for the import, not one per check. An import is a single
-    # deliberate act, and N per-check creates would drown the act that actually
-    # happened — `check_versions` already carries the per-check detail, and it is
-    # the audit log's job to record the act, not to mirror the writes.
+    # ONE event for the import, not one per check.
     audit_service.record_entity_change(
         session,
         action="suite.import",

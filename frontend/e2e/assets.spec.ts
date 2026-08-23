@@ -1,11 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-// The read-only Assets view (ADR 0034 gap G-d phase 2, #760; hierarchical browse
-// #802). The demo seed (backend/scripts/demo_data.py) lands TWO suites on the
-// ANALYTICS.PUBLIC.ORDERS table — "Orders quality" and "Orders volume" — with the
-// same run target, so they resolve to ONE asset. The asset detail therefore
-// renders health across ≥2 composing suites (the #760 acceptance criterion).
-// Visibility is derived from suite grants; the seed owner sees every suite.
+// The read-only Assets view (ADR 0034 gap G-d phase 2, #760; hierarchical browse #802).
 test.describe('Assets page', () => {
   test('drills the connection-rooted tree to an asset leaf and opens the detail', async ({
     page,

@@ -7,12 +7,8 @@ import {
 } from '../../src/auth/sessionEvents';
 
 /**
- * The leaf event bus that lets `api/client.ts` tell `OtpSessionProvider` a
- * session is gone without the two importing each other (ADR 0032, #736).
- *
- * Small, but it is the only path a server-side revocation has into the UI — if a
- * listener is dropped or an unsubscribe misses, a revoked session keeps rendering
- * an authenticated shell until the tab is reloaded.
+ * The leaf event bus that lets `api/client.ts` tell `OtpSessionProvider` a session is gone without
+ * the two importing each other (ADR 0032, #736).
  */
 beforeEach(() => resetSessionListeners());
 

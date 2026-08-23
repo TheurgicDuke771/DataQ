@@ -18,21 +18,13 @@ import { useAsyncData } from '../../hooks/useAsyncData';
 import { AsyncBody } from '../AsyncBody';
 import { errorMessage } from '../../utils/errors';
 
-/** The grantable levels, in ladder order, with human labels. `admin` is the
- *  workspace-admin (implicit on every suite, never granted) and `owner` is the
- *  creator — neither is grantable (ADR 0027 / #482). */
+/** The grantable levels, in ladder order, with human labels. */
 const PERMISSION_OPTIONS: { value: SharePermission; label: string }[] = [
   { value: 'view', label: 'Can view' },
   { value: 'edit', label: 'Can edit' },
 ];
 
-/**
- * Manage who can access a suite and at what level. Anyone with `view` can see
- * the collaborator list; only `owner`/`admin` (`canManage`) gets the add/change/
- * remove controls — matching the backend gate, which 403s an under-privileged
- * mutation regardless. Mounted only while open (`destroyOnHidden`), so the share
- * list refetches each time it's opened.
- */
+/** Manage who can access a suite and at what level. */
 export function SharePanel({
   open,
   suiteId,
@@ -70,11 +62,8 @@ function SharePanelBody({
   canManage: boolean;
 }) {
   const { state, reload } = useAsyncData(() => listShares(suiteId));
-  // Best-effort UX lock on the signed-in user's own row (OIDC UPN ≈ their share
-  // `email`): a non-owner admin self-revoking/-downgrading would brick the panel
-  // (every later mutation 403s). The durable guard is server-side
-  // (share_service._reject_self_target) since UPN can differ from mail and the
-  // API is reachable directly; this just hides the footgun in the common case. #240.
+  // Best-effort UX lock on the signed-in user's own row (OIDC UPN ≈ their share `email`): a non-
+  // owner admin self-revoking/-downgrading would brick the panel (every later mutation 403s).
   const currentEmail = useCurrentUser()?.username;
 
   return (
@@ -88,10 +77,7 @@ function SharePanelBody({
           {canManage && (
             <AddCollaborator
               suiteId={suiteId}
-              // The owner already has access, so they are never offered as a
-              // collaborator. With no owner there is nobody extra to exclude —
-              // filtering keeps a stray `null` out of the id list rather than
-              // silently matching a user whose id is nullish.
+              // The owner already has access, so they are never offered as a collaborator.
               excludedIds={[ownerId, ...shares.map((s) => s.user_id)].filter(
                 (id): id is string => id !== null,
               )}
@@ -174,8 +160,8 @@ function ShareRow({
             [<Tag key="perm">{share.permission}</Tag>]
           : isSelf
             ? [
-                // A manager's own row is locked: self-revoke/-downgrade would 403
-                // every later mutation and brick the panel (backend rejects it too,
+                // A manager's own row is locked: self-revoke/-downgrade would 403 every later
+                // mutation and brick the panel (backend rejects it too,
                 // share_service._reject_self_target). #240.
                 <Tooltip key="perm" title="You can’t change your own access">
                   <Tag>{share.permission} · You</Tag>
@@ -225,25 +211,17 @@ function AddCollaborator({
   const { message } = App.useApp();
   const [options, setOptions] = useState<UserSummary[]>([]);
   const [searching, setSearching] = useState(false);
-  // The PICKED USER, held in state rather than re-derived from `options` on each
-  // render. `options` is the transient result of the last directory search, so a
-  // derived lookup silently becomes `undefined` the moment the admin searches
-  // again — which un-clamped the permission Select while a viewer was still
-  // selected, and let Add POST `edit` for them: exactly the 422 this mirror
-  // exists to avoid.
+  // The PICKED USER, held in state rather than re-derived from `options` on each render.
   const [picked, setPicked] = useState<UserSummary>();
   const [permission, setPermission] = useState<SharePermission>('view');
   // A Viewer cannot hold `edit` (ADR 0033): the backend rejects the grant, and
-  // `effective_permission` caps them at `view` regardless. Mirrored here so the
-  // level is never offered — the server stays authoritative, this only stops us
-  // proposing something it will refuse.
+  // `effective_permission` caps them at `view` regardless.
   const userId = picked?.id;
   const targetIsViewer = picked?.role === 'viewer';
   const [adding, setAdding] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  // Monotonic token so a slow earlier search can't overwrite a newer one's
-  // results (last-wins); unmount bumps it to a sentinel to drop any in-flight
-  // response, and clears the pending debounce so it never fires post-unmount.
+  // Monotonic token so a slow earlier search can't overwrite a newer one's results (last-wins);
+  // unmount bumps it to a sentinel to drop any in-flight response.
   const latest = useRef(0);
   useEffect(
     () => () => {
@@ -284,9 +262,8 @@ function AddCollaborator({
     if (!userId) return;
     setAdding(true);
     try {
-      // Never send `edit` for a Viewer even if state got there some other way —
-      // the displayed value is already clamped above, and this keeps the request
-      // consistent with what the user was shown.
+      // Never send `edit` for a Viewer even if state got there some other way — the displayed value
+      // is already clamped above.
       const share = await grantShare(suiteId, {
         user_id: userId,
         permission: targetIsViewer ? 'view' : permission,
@@ -304,14 +281,8 @@ function AddCollaborator({
   };
 
   return (
-    // `wrap` + a search field that can actually shrink — the same shape TriggersPanel
-    // and SchedulesPanel already use for their control rows; this row was the one
-    // that never got it. An antd Select has a min-content width that `flex: 1` alone
-    // can't shrink past, so on a phone (342px content box) the row demanded 383px and
-    // pushed the Add button off-screen, making a suite unshareable from mobile (#829).
-    // At that width the search field and the permission picker share line 1 (160 + 8 +
-    // 110 ≤ 342) and the Add button wraps to line 2; at the drawer's desktop width the
-    // whole row fits on one line.
+    // `wrap` + a search field that can actually shrink — the same shape TriggersPanel and
+    // SchedulesPanel already use for their control rows; this row was the one that never got it.
     <Flex gap={8} align="center" wrap>
       <Select
         showSearch={{ filterOption: false, onSearch }}

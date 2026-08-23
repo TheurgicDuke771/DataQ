@@ -1,15 +1,4 @@
-"""Celery application for DataQ's async execution backbone.
-
-GX suite runs are dispatched from FastAPI and executed here so the request
-thread returns immediately (run created as ``queued``, worker drives it to
-``running`` → ``succeeded``/``failed``).
-
-The CLAUDE.md observability rule requires ``request_id`` correlation to flow
-FastAPI → Celery → GX. We carry it on the task message headers: the caller
-injects the active request_id on publish, and the worker restores it into the
-same ``request_id_var`` ContextVar the structlog processor chain reads from, so
-worker log lines correlate with the request that triggered them.
-"""
+"""Celery application for DataQ's async execution backbone."""
 
 import os
 import tempfile
@@ -36,25 +25,13 @@ from backend.app.core.tracing import configure_tracing, instrument_celery
 
 # Message-header key carrying the originating request_id across the broker.
 REQUEST_ID_HEADER = "request_id"
-# Attribute on task.request where prerun stashes the ContextVar reset handle
-# for postrun. Deliberately avoids the word "token" so it isn't mistaken for a
-# secret by Bandit / Ruff (B105 / S105).
+# Where prerun stashes the ContextVar reset handle for postrun. Deliberately
+# avoids the word "token" so Bandit/Ruff (B105/S105) don't flag it as a secret.
 _REQUEST_ID_RESET_ATTR = "_dataq_request_id_reset"
 
 
 def _rediss_safe_url(url: str) -> str:
-    """A ``rediss://`` URL celery will accept: default ``ssl_cert_reqs=required``.
-
-    Celery's redis backend hard-raises ``ValueError`` on any ``rediss://`` URL
-    without an explicit ``ssl_cert_reqs`` query parameter, so a TLS redis
-    (ElastiCache, Azure Cache, managed Vault-adjacent redis) crash-loops the
-    worker at boot and kills the api's producer on first dispatch (#1361 —
-    which fixed only the AWS Terraform's URL; this is the generic guard,
-    #1363). ``required`` is never weaker than what the operator asked for:
-    it is full certificate verification, and an explicit parameter — any
-    value, including a deliberate ``CERT_NONE`` — is left untouched.
-    Non-rediss URLs pass through byte-identical.
-    """
+    """A ``rediss://`` URL celery will accept: default ``ssl_cert_reqs=required``."""
     from urllib.parse import parse_qs, urlsplit
 
     parts = urlsplit(url)
@@ -77,53 +54,16 @@ def create_celery_app() -> Celery:
         accept_content=["json"],
         timezone="UTC",
         enable_utc=True,
-        # Surface a 'started' state so the run-status read-back can distinguish
-        # queued from running without waiting for completion.
+        # Surface 'started' so read-back can distinguish queued from running.
         task_track_started=True,
-        # Recycle a prefork child once it has grown past this resident size, so a
-        # big materialisation cannot ratchet the baseline up run-over-run and drop
-        # the effective ceiling for everything after it (#755 measured 956 -> 1188
-        # -> 1666 MiB across three runs). The child is replaced BETWEEN tasks, so
-        # this never interrupts a run in flight; it only stops memory creep.
-        # 0 disables.
+        # Recycle a prefork child past this resident size, BETWEEN tasks — stops
+        # memory creep (#755) without interrupting a run in flight. 0 disables.
         worker_max_memory_per_child=settings.worker_max_memory_per_child_kb or None,
-        # Deliberately NOT acks_late. With early ack (the default) a task the broker
-        # has already delivered is not redelivered when the child dies — which is
-        # exactly what stops an OOM-killing run from being handed straight back to a
-        # fresh child and killing it too (#755's poison-pill ask; a local crash loop
-        # of 25 restarts). Late ack would trade that for at-least-once delivery we
-        # do not want here: a half-executed suite re-run is worse than a failed one,
-        # and the run row is already driven to a terminal state by the
-        # `task_failure` handler below.
+        # Deliberately NOT acks_late: early ack stops an OOM-killing run from being redelivered to a
+        # fresh child (#755 poison pill).
         task_acks_late=False,
-        # Celery-beat schedule. The orchestration polling fallback (#171) runs
-        # every 10 min as the success channel for runs that produced no webhook;
-        # the task looks back further than the interval so nothing slips the gap.
-        # Beat runs EMBEDDED in the worker (`worker -B`) in dev AND prod alike
-        # (docker-compose.yml + deploy/terraform/azure/containerapps.tf) — there
-        # is no separate beat process, and beat state does not survive a restart.
-        #
-        # That is why every daily task below is a `crontab`, never an interval
-        # (#1091): an interval restarts its countdown when beat restarts, and the
-        # prod worker restarts more often than daily (ACA revision rolls, image
-        # deploys, the #904 watchdog), so a 24h interval NEVER fired — prod's warehouse
-        # lineage sat 10 days stale with beat's every-minute tasks running fine.
-        # A crontab fires at a wall-clock moment, indifferent to restarts. The
-        # times are staggered (not one thundering 00:00 batch) and UTC (timezone
-        # above). Trade-off, accepted: if beat happens to be DOWN at the moment,
-        # that day's tick is skipped rather than made up — restarts are seconds
-        # long so the window is tiny, and the staleness surface (#1052) reports
-        # a miss instead of leaving it invisible. Sub-hourly liveness intervals
-        # are unaffected — a reset countdown of minutes is noise.
-        #
-        # Gap recovery (B2) sweeps a wider 1-hour window every 30 min (plus once
-        # on beat startup, via the beat_init signal below) to re-ingest runs
-        # missed while the system was down — idempotent with the 10-min poll.
-        # Beat's schedule shelve goes in the temp dir, not the CWD default: the
-        # runtime image runs as a non-root user with a read-only /workspace
-        # (#1408), so a CWD write would crash beat at startup — and the state is
-        # disposable by design (see "beat state does not survive a restart"
-        # above), so nothing is lost by parking it somewhere ephemeral.
+        # Beat runs EMBEDDED in the worker (`worker -B`) in dev AND prod; beat state does not
+        # survive a restart.
         beat_schedule_filename=os.path.join(tempfile.gettempdir(), "dataq-celerybeat-schedule"),
         beat_schedule={
             "poll-orchestration-runs": {
@@ -134,126 +74,78 @@ def create_celery_app() -> Celery:
                 "task": "recover_orchestration_gaps",
                 "schedule": 1800.0,  # 30 minutes
             },
-            # Scheduled suite runs (A7): tick every minute, fire schedules whose
-            # precomputed next_run_at has passed. Minute granularity matches the
-            # finest standard cron resolution; the task is a cheap indexed scan
-            # when nothing is due.
+            # Scheduled suite runs (A7): minute granularity matches cron's finest
+            # standard resolution; a no-due tick is a cheap indexed scan.
             "dispatch-due-schedules": {
                 "task": "dispatch_due_schedules",
                 "schedule": 60.0,  # 1 minute
             },
-            # Result retention sweep: once a day, scrub `sample_failures` and
-            # list-shaped `observed_value` (the two potentially-PII result
-            # columns — #1253 extended this to the `observed_value` sibling)
-            # from results past the configured retention window. Keeps the row +
-            # `metric_value` so dashboard trends survive (ADR 0012); this is PII
-            # minimisation, not a history delete.
+            # Daily PII scrub of `sample_failures` + list-shaped `observed_value`
+            # (#1253); keeps the row + `metric_value` (ADR 0012).
             "purge-sample-failures": {
                 "task": "purge_sample_failures",
                 "schedule": crontab(hour="1", minute="17"),  # daily, 01:17 UTC
             },
-            # Stuck-run reaper (#309): every 10 min, fail runs orphaned in a
-            # non-terminal state past `stuck_run_threshold_minutes` (a run committed
-            # `queued` before `send_task`, or left `running` by a dead worker). The
-            # detection threshold (default 60 min) far exceeds the 10-min cadence, so
-            # the sweep interval only bounds detection latency, not false reaps.
+            # Stuck-run reaper (#309): the 60-min default threshold far exceeds
+            # the cadence, so the interval bounds latency, not false reaps.
             "reap-stuck-runs": {
                 "task": "reap_stuck_runs",
                 "schedule": 600.0,  # 10 minutes
             },
-            # Orphan-asset sweep (#770, ADR 0034): once a day (same cadence as the
-            # sample-failures retention sweep — this is a low-urgency accretion
-            # cleanup, not a liveness janitor), delete `assets` rows whose
-            # last_seen is frozen past `asset_orphan_retention_days` AND that no
-            # suite/run/lineage_edge still references.
+            # Orphan-asset sweep (#770, ADR 0034): daily low-urgency accretion cleanup.
             "sweep-orphan-assets": {
                 "task": "sweep_orphan_assets",
                 "schedule": crontab(hour="1", minute="37"),  # daily, 01:37 UTC
             },
-            # Orphan-SECRET sweep (#1059): once a day, reconcile the secret store
-            # against the rows that should own its entries. Daily and low-urgency for
-            # the same reason as the asset sweep — and REPORTING-ONLY unless
-            # SECRET_ORPHAN_PURGE is set, because the thing it would delete is a live
-            # warehouse credential.
+            # Orphan-secret sweep (#1059): REPORTING-ONLY unless SECRET_ORPHAN_PURGE
+            # is set — what it would delete is a live warehouse credential.
             "sweep-orphan-secrets": {
                 "task": "sweep_orphan_secrets",
                 "schedule": crontab(hour="1", minute="57"),  # daily, 01:57 UTC
             },
-            # Catalog lineage pull (#762, ADR 0034): once a day, pull lineage from the
-            # configured `LineageProvider` (Marquez) into the `lineage_edges` cache.
-            # Dark by default — the task no-ops (zero queries) unless LINEAGE_PROVIDER
-            # is set. Daily, not a liveness interval: a cache refresh of external truth
-            # whose freshness is deliberately bounded by the catalog's own cadence.
+            # Catalog lineage pull (#762, ADR 0034): dark by default — no-ops
+            # unless LINEAGE_PROVIDER is set.
             "refresh-lineage-pull": {
                 "task": "refresh_lineage_pull",
                 "schedule": crontab(hour="2", minute="17"),  # daily, 02:17 UTC
             },
-            # Beat liveness heartbeat (#904): every minute, a task whose only job is
-            # to prove the beat→broker→worker loop still EXECUTES. The watchdog
-            # thread reads its stamp and exits the process when it goes stale, so a
-            # worker that is up but consuming nothing gets restarted instead of
-            # silently stopping every scheduled task for hours.
+            # Beat liveness heartbeat (#904): proves the beat→broker→worker loop
+            # still EXECUTES; the watchdog thread reads its stamp.
             "beat-heartbeat": {
                 "task": "beat_heartbeat",
                 "schedule": 60.0,  # 1 minute
             },
-            # Warehouse-native lineage refresh (#858, ADR 0034): once a day, pull lineage
-            # for every Snowflake / Unity Catalog connection straight from the warehouse's
-            # own lineage views into `lineage_edges`. Dark by default — no-ops (zero
-            # queries) unless WAREHOUSE_LINEAGE_ENABLED. Same low-urgency daily cadence as
-            # the catalog pull: a cache refresh of external truth, freshness bounded by the
-            # warehouse view's own latency, not a liveness interval.
+            # Warehouse-native lineage refresh (#858, ADR 0034): dark by default —
+            # no-ops unless WAREHOUSE_LINEAGE_ENABLED.
             "refresh-warehouse-lineage": {
                 "task": "refresh_warehouse_lineage",
                 "schedule": crontab(hour="2", minute="37"),  # daily, 02:37 UTC
             },
-            # Credential-expiry refresh (#838): once a day, re-read the stated
-            # expiry of every stored credential that has one (an Azure SAS prints
-            # `se=`) into `connections.credential_expires_at`, so the product can
-            # warn BEFORE a credential dies rather than after it breaks something.
-            # Daily because an expiry date moves only on a rotation, and the
-            # warning window is measured in weeks — a cache refresh, not a
-            # liveness interval.
+            # Credential-expiry refresh (#838): warn BEFORE a credential dies;
+            # daily is enough — an expiry only moves on rotation.
             "refresh-credential-expiry": {
                 "task": "refresh_credential_expiry",
                 "schedule": crontab(hour="2", minute="57"),  # daily, 02:57 UTC
             },
-            # Warehouse inventory sync (#919, ADR 0040): once a day, enumerate every
-            # OPTED-IN connection's tables into `assets` so an unmonitored table is
-            # visible instead of nonexistent. Dark by default at the connection
-            # grain (per-connection `inventory_sync` config flag) — no global env
-            # gate. Daily like the other catalog-cadence refreshes; runs after the
-            # lineage refreshes so a first joint tick discovers tables before the
-            # NEXT lineage pass rather than racing this one.
+            # Warehouse inventory sync (#919, ADR 0040): per-connection opt-in, no global gate.
             "sync-asset-inventory": {
                 "task": "sync_asset_inventory",
                 "schedule": crontab(hour="3", minute="17"),  # daily, 03:17 UTC
             },
-            # Audit-log retention sweep (#1318, ADR 0041 §2.7): once a day, delete
-            # `audit_events` past `audit_retention_days` (default 365). Its own
-            # clock and its own setting, decoupled from the sample-failures sweep
-            # above on purpose — the two protect opposite things (a record of what
-            # people did vs. incidentally-captured personal data), so their
-            # sensible windows point in opposite directions. Off-peak and offset
-            # from its neighbours so the daily sweeps do not pile onto one minute.
+            # Audit-log retention (#1318, ADR 0041 §2.7): own clock and setting,
+            # decoupled from the PII sweep — their windows point opposite ways.
             "purge-audit-events": {
                 "task": "purge_audit_events",
                 "schedule": crontab(hour="4", minute="17"),  # daily, 04:17 UTC
             },
-            # OTP-code retention sweep (#1136): once a day, delete expired/spent
-            # `otp_codes` rows past `otp_codes_retention_hours` (default 24h, well
-            # past the 10-minute code TTL). Hygiene, not a security control — the
-            # per-code/per-email caps in `otp_service` are the security — but the
-            # table is PII (a plaintext address plus a sign-in-attempt timestamp)
-            # and would otherwise grow forever with no sweep. Same daily,
-            # low-urgency cadence as the sample-failures/orphan sweeps above.
+            # OTP-code retention (#1136): the table is PII (plaintext address +
+            # sign-in timestamp); hygiene, not a security control.
             "purge-otp-codes": {
                 "task": "purge_otp_codes",
                 "schedule": crontab(hour="3", minute="37"),  # daily, 03:37 UTC
             },
         },
     )
-    # Register task modules on worker boot (looks for backend.app.worker.tasks).
     app.autodiscover_tasks(["backend.app.worker"])
     return app
 
@@ -263,26 +155,16 @@ celery_app = create_celery_app()
 
 @setup_logging.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
 def _configure_celery_logging(**_kwargs: Any) -> None:
-    """Disable Celery's default logging and route worker logs through structlog.
-
-    Connecting any receiver to ``setup_logging`` tells Celery not to configure
-    logging itself, so our JSON + PII-redacting processor chain stays in force
-    inside the worker exactly as it is in the API.
+    """Route worker logs through structlog — connecting any receiver to
+    ``setup_logging`` stops Celery configuring logging itself, keeping the
+    JSON + PII-redacting chain in force.
     """
     configure_logging(service_name="dataq-worker")
 
 
 @worker_process_init.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
 def _configure_worker_tracing(**_kwargs: Any) -> None:
-    """Per-task spans to App Insights (A3, consumer side). No-op without a
-    connection string.
-
-    Hooked on ``worker_process_init`` (not module import) because the prefork
-    pool forks worker processes — the BatchSpanProcessor's export thread and
-    the instrumentation must be set up in each child, never inherited across
-    the fork. The PRODUCER side (traceparent injection on publish, which links
-    task spans to the triggering request) is instrumented in main.py.
-    """
+    """Per-task spans to App Insights; no-op without a connection string."""
     configure_tracing(service_name="dataq-worker")
     instrument_celery()
 
@@ -299,15 +181,7 @@ def _inject_request_id(headers: dict[str, Any] | None = None, **_kwargs: Any) ->
 
 @task_prerun.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
 def _restore_request_id(task: Any = None, **_kwargs: Any) -> None:
-    """Worker side: restore request_id from the message into the ContextVar.
-
-    Custom headers added in ``before_task_publish`` are exposed as attributes on
-    ``task.request`` under the protocol-v2 message format. We stash the reset
-    token on ``task.request`` so ``task_postrun`` can restore the *prior* value
-    rather than blindly clearing — under ``task_always_eager`` these signals run
-    in the caller's context, so a blanket reset would drop the request_id for
-    the rest of the request handler.
-    """
+    """Worker side: restore request_id from the message into the ContextVar."""
     rid = getattr(task.request, REQUEST_ID_HEADER, None) if task is not None else None
     if rid and task is not None:
         token = request_id_var.set(rid)
@@ -316,48 +190,25 @@ def _restore_request_id(task: Any = None, **_kwargs: Any) -> None:
 
 @task_postrun.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
 def _clear_request_id(task: Any = None, **_kwargs: Any) -> None:
-    """Worker side: restore the ContextVar to its pre-task value.
-
-    Only resets when ``task_prerun`` actually set it (token present), mirroring
-    the ``reset(token)`` pattern used by ``request_id_middleware`` in main.py.
-    """
+    """Restore the ContextVar to its pre-task value — only when prerun set it."""
     token = getattr(task.request, _REQUEST_ID_RESET_ATTR, None) if task is not None else None
     if token is not None:
         request_id_var.reset(token)
 
 
-#: One-off tasks dispatched when beat starts, each because its own schedule would
-#: otherwise leave a window unserved after a restart.
+#: One-off tasks dispatched when beat starts — each covers a window its own
+#: schedule would leave unserved after a restart.
 _ON_BEAT_START = (
-    # Catches runs that completed while the system was down; the 30-min beat alone
-    # would leave that window unswept until its first tick (B2).
+    # Sweeps runs that completed while the system was down (B2).
     "recover_orchestration_gaps",
-    # Populates `credential_expires_at` for credentials that state one (#1024).
-    # Its schedule is DAILY, which is right for a value that only moves on a
-    # rotation — but wrong for a cold start: a freshly deployed instance, or any
-    # connection whose credential predates #838, shows NULL until the first tick.
-    # NULL renders as "nothing expires soon", which is indistinguishable from
-    # "we have not looked yet", so the warning surface silently reads as reassuring
-    # for up to 24h. Prod had exactly this: every connection NULL after the
-    # 2026-07-26 deploy, including SAS-bearing ones whose expiry is right there in
-    # the token.
+    # Cold start: a NULL expiry reads as "nothing expires soon" for up to 24h (#1024).
     "refresh_credential_expiry",
 )
 
 
 @beat_init.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
 def _dispatch_startup_tasks(**_kwargs: Any) -> None:
-    """Kick the one-off startup tasks when the beat scheduler starts.
-
-    Tied to ``beat_init`` (one beat process per deployment) rather than worker
-    boot, so each fires **once** per restart instead of once per worker — no
-    thundering herd of identical sweeps on a multi-worker deploy. Enqueued by name
-    (decoupled from the task module) to the broker so a ready worker runs them.
-
-    Best-effort and **independently guarded**: a broker hiccup at startup must not
-    crash beat, and one task failing to enqueue must not skip the rest (the
-    schedule recovers shortly either way).
-    """
+    """Kick the one-off startup tasks when the beat scheduler starts."""
     log = get_logger(__name__)
     for name in _ON_BEAT_START:
         try:
@@ -368,19 +219,7 @@ def _dispatch_startup_tasks(**_kwargs: Any) -> None:
 
 @worker_ready.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
 def _start_beat_watchdog(**_kwargs: Any) -> None:
-    """Arm the beat liveness watchdog once this worker is consuming (#904).
-
-    Hooked on ``worker_ready`` (the main process, after the pool is up) rather
-    than ``worker_process_init`` (which fires in every prefork CHILD — N children
-    would mean N watchdogs racing to kill the same process, and a child's exit
-    would not restart the container anyway).
-
-    The watchdog reads the heartbeat the ``beat_heartbeat`` task writes on
-    execution and exits the process when it goes stale, so the platform restarts
-    a worker that is up but consuming nothing (#904/#905). Best-effort: it must
-    never prevent a worker from starting — a worker with no watchdog is the
-    status quo ante, a worker that won't boot is an outage.
-    """
+    """Arm the beat liveness watchdog once this worker is consuming (#904)."""
     settings = get_settings()
     stale_after = settings.beat_watchdog_stale_after_s
     if stale_after <= 0:
@@ -389,9 +228,8 @@ def _start_beat_watchdog(**_kwargs: Any) -> None:
     try:
         from backend.app.worker.beat_watchdog import build_store, start_watchdog
 
-        # build_store, never a bare from_url: its socket timeouts are what keep
-        # the watchdog thread from blocking forever on a half-open connection
-        # (#854's lesson, on the thread that exists to notice hangs).
+        # build_store, never bare from_url: its socket timeouts keep the watchdog
+        # thread from blocking forever on a half-open connection (#854).
         start_watchdog(
             build_store(settings.redis_url),
             stale_after_s=float(stale_after),
@@ -408,27 +246,7 @@ def _fail_run_on_worker_lost(
     sender: Any = None,
     **_kwargs: Any,
 ) -> None:
-    """Close a `run_suite` run whose worker child was killed mid-execution (#755).
-
-    Runs in the **parent** process. When the OOM killer SIGKILLs a prefork child,
-    nothing inside the task executes — not its `except`, not its `finally` — so the
-    run row would stay `running` until the stuck-run reaper fails it up to
-    `stuck_run_threshold_minutes` (default 60) later, with a reason that can only
-    say "did not complete in time". Celery, however, *knows* the child was lost and
-    raises `WorkerLostError` here, so the run can be failed immediately and the
-    reason can name memory rather than leave the user guessing.
-
-    Scoped narrowly on purpose:
-
-    * only `run_suite` — other tasks have no run row to close;
-    * only worker-death exceptions (`WorkerLostError` / `Terminated`). An ordinary
-      exception inside the task means the task's own handlers already ran and drove
-      the run to a terminal state with a properly classified reason; overwriting
-      that with the generic memory text would make real failures *less* diagnosable.
-
-    Fail-soft: this is a best-effort closer on an already-failing path, so it must
-    never raise out of the signal and mask the original error.
-    """
+    """Close a `run_suite` run whose worker child was killed mid-execution (#755)."""
     if getattr(sender, "name", None) != "run_suite":
         return
     if not isinstance(exception, (WorkerLostError, Terminated)):
@@ -450,11 +268,8 @@ def _fail_run_on_worker_lost(
 
 
 def _run_id_from_task_args(sender: Any, task_id: str | None) -> uuid.UUID | None:
-    """Recover the run id from the failed task's request, tolerating both call forms.
-
-    `run_suite` takes a single `run_id` string, dispatched positionally today — but
-    reading only `args[0]` would break silently the day someone calls it by keyword,
-    so both are accepted.
+    """Recover the run id from the failed task's request — positional today, but a
+    keyword call must not break silently, so both forms are accepted.
     """
     request = getattr(sender, "request", None)
     raw: Any = None

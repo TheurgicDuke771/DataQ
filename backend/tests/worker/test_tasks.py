@@ -1,10 +1,4 @@
-"""Tests for the run_suite Celery task orchestration.
-
-No Postgres, no GX, no broker: a fake Session serves the run graph from memory,
-``build_check_runner`` is monkeypatched to a fake CheckRunner, and the task
-core (`_run_suite`) is called directly. Real-DB integration coverage is a Week 8
-item (Postgres test fixtures).
-"""
+"""Tests for the run_suite Celery task orchestration."""
 
 import uuid
 from types import SimpleNamespace
@@ -46,16 +40,17 @@ class FakeSession:
 
     def scalar(self, _stmt: Any) -> Any:
         """`run_service._cancelled_mid_run` reads the status column (#318). This
-        double never simulates a concurrent cancel, so the run stays running."""
+        double never simulates a concurrent cancel, so the run stays running.
+        """
         run = self._objs.get(Run)
         return getattr(run, "status", None)
 
     def execute(self, _stmt: Any) -> Any:
-        """Stands in for the two Core statements the run path issues (#318): the
-        conditional succeeded-flip UPDATE and the discard DELETE. Reporting
-        ``rowcount=1`` means the flip always wins here, which matches `scalar`
-        above never reporting a cancel — the two must agree or the double
-        describes a state the DB could not be in."""
+        """Stands in for the two Core statements the run path issues (#318): the conditional
+        succeeded-flip UPDATE and the discard DELETE. Reporting ``rowcount=1`` means the flip
+        always wins here, which matches `scalar` above never reporting a cancel — the two must
+        agree or the double describes a state the DB could not be in.
+        """
         self.executed.append(_stmt)
         return SimpleNamespace(rowcount=1)
 
@@ -78,7 +73,8 @@ class FakeSession:
 
 def _sess(session: FakeSession) -> Session:
     """Type a ``FakeSession`` test double as ``Session`` for ``_run_suite``'s
-    signature (tests keep the ``FakeSession`` ref for `.added`/`.closed` asserts)."""
+    signature (tests keep the ``FakeSession`` ref for `.added`/`.closed` asserts).
+    """
     return cast(Session, session)
 
 
@@ -156,12 +152,10 @@ def test_run_suite_executes_and_persists(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_run_suite_unity_catalog_threads_target_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A Unity Catalog suite resolves its `catalog` (+ schema/table) from the
-    target (#215) and threads it to the runner builder + the runner — the worker
-    glue between `resolve_target` and `build_check_runner` that the registry/runner
-    unit tests can't cover on their own. (UC's run path is otherwise the same
-    in-process GX path as flat files; the live SQL-Warehouse read is the deferred
-    smoke seam.)"""
+    """A Unity Catalog suite resolves its `catalog` (+ schema/table) from the target (#215) and
+    threads it to the runner builder + the runner — the worker glue between `resolve_target` and
+    `build_check_runner` that the registry/runner unit tests can't cover on their own.
+    """
     run, suite, connection, checks = _graph(1)
     connection.type = "unity_catalog"
     connection.config = {
@@ -227,7 +221,8 @@ def test_run_suite_runner_build_failure_marks_failed(monkeypatch: pytest.MonkeyP
 
 def test_run_suite_invalid_connection_config_marks_failed() -> None:
     """Real adapter path: a connection.config that fails SnowflakeConfig
-    validation (missing required fields) drives the run to failed, not a crash."""
+    validation (missing required fields) drives the run to failed, not a crash.
+    """
     run, suite, connection, checks = _graph(1)
     connection.config = {}  # missing account/user/database/schema/warehouse
     session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
@@ -240,7 +235,8 @@ def test_run_suite_invalid_connection_config_marks_failed() -> None:
 
 def test_run_suite_targetless_suite_marks_failed() -> None:
     """A suite with no `target` (#215) can't resolve a table → the run fails
-    cleanly (suite_target_invalid) instead of running against an unknown table."""
+    cleanly (suite_target_invalid) instead of running against an unknown table.
+    """
     run, suite, connection, checks = _graph(1)
     suite.target = None
     session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
@@ -253,7 +249,8 @@ def test_run_suite_targetless_suite_marks_failed() -> None:
 def test_run_suite_already_cancelled_skips_execution(monkeypatch: pytest.MonkeyPatch) -> None:
     """A run cancelled while queued (cooperative cancel, A2): the worker sees the
     'cancelled' status on pickup and skips — no runner built, nothing persisted,
-    status left cancelled."""
+    status left cancelled.
+    """
     run, suite, connection, checks = _graph(1)
     run.status = "cancelled"
     session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
@@ -286,7 +283,8 @@ def _flatfile_batch_graph() -> tuple[Run, Suite, Connection, tuple[Check, ...]]:
 
 def test_run_suite_batch_target_materialized_to_path(monkeypatch: pytest.MonkeyPatch) -> None:
     """A flat-file batch target is materialized to a concrete path (live listing)
-    and that resolved path is what the runner executes against."""
+    and that resolved path is what the runner executes against.
+    """
     run, suite, connection, checks = _flatfile_batch_graph()
     session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
     runner = FakeRunner(
@@ -309,7 +307,8 @@ def test_run_suite_batch_target_materialized_to_path(monkeypatch: pytest.MonkeyP
 def test_run_suite_missing_batch_skips_without_running(monkeypatch: pytest.MonkeyPatch) -> None:
     """A genuinely-absent batch (BatchNotFoundError) is a skip, not a failure
     (#122): every check gets a `skip` Result, the run succeeds, and the adapter
-    is never executed."""
+    is never executed.
+    """
     run, suite, connection, checks = _flatfile_batch_graph()
     session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
     runner = FakeRunner(SuiteOutcome(success=True, checks=[]))
@@ -332,7 +331,8 @@ def test_run_suite_missing_batch_skips_without_running(monkeypatch: pytest.Monke
 
 def test_run_suite_batch_listing_failure_marks_failed(monkeypatch: pytest.MonkeyPatch) -> None:
     """A transport/listing error during materialization (not a missing batch) is a
-    real failure, not a skip."""
+    real failure, not a skip.
+    """
     run, suite, connection, checks = _flatfile_batch_graph()
     session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
     monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: FakeRunner(None))  # type: ignore[arg-type]
@@ -397,9 +397,8 @@ def test_run_suite_closes_runner_even_when_materialize_fails(
 def test_run_suite_closes_runner_when_execute_run_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The propagating-exception branch is the REASON the close is scoped by
-    # owned_runner — the handled-failure tests would also pass with a close on
-    # the return path.
+    # The propagating-exception branch is the REASON the close is scoped by owned_runner — the
+    # handled-failure tests would also pass with a close on the return path.
     run, suite, connection, checks = _graph(1)
     session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
     runner = ClosableFakeRunner(
@@ -465,9 +464,7 @@ def test_run_suite_brackets_run_with_lineage_hooks(monkeypatch: pytest.MonkeyPat
 
 
 def test_run_suite_crash_still_emits_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Review finding on #765: if _run_suite raises before driving the run to a
-    # terminal status, the START must still be closed with a terminal event
-    # (mapped to FAIL by the builder) before the exception propagates.
+    # Review finding on #765: if _run_suite raises before driving the run to a terminal status.
     run, suite, connection, checks = _graph(1)
     session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
     monkeypatch.setattr(tasks, "get_session", lambda: session)
@@ -492,15 +489,7 @@ def test_run_suite_crash_still_emits_terminal(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_run_suite_drives_the_datasource_health_edges(monkeypatch: Any) -> None:
-    """The run path must actually be WIRED to the health alert (#996).
-
-    Added because mutation found the hook unpinned: deleting the call from
-    `run_suite` broke no test, so the alerting could have shipped connected to
-    nothing — the same "looks wired up and isn't" shape as the dead mock in #976
-    and the unwired redaction sink in #989. Every other post-run hook here is
-    exercised through its own function; this asserts the CALL, which is the part
-    that was missing.
-    """
+    """The run path must actually be WIRED to the health alert (#996)."""
     from backend.app.worker import tasks
 
     calls: list[str] = []
@@ -526,7 +515,6 @@ def test_run_suite_drives_the_datasource_health_edges(monkeypatch: Any) -> None:
     tasks.run_suite(str(uuid.uuid4()))
 
     assert "health" in calls, "run_suite must drive the datasource health edges"
-    # After the outcome publish: the run's own report goes first, the connection
-    # -level edge second, so an operator reads "this run failed" before "this
-    # connection looks dead".
+    # After the outcome publish: the run's own report goes first, the connection -level edge second,
+    # so an operator reads "this run failed" before "this connection looks dead".
     assert calls == ["outcome", "health"]

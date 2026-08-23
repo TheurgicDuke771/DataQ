@@ -1,11 +1,4 @@
-"""Connection-type → adapter + runner registry.
-
-The single place that maps a ``Connection.type`` to its `ConnectionAdapter`
-(`get_connection_adapter`, all six types) and — for datasources only — to its
-`CheckRunner` builder (`build_check_runner`). Service/worker code dispatches
-through these and never branches on ``connection.type`` itself; adding a
-datasource is an entry here plus the adapter/runner, nothing else.
-"""
+"""Connection-type → adapter + runner registry."""
 
 from __future__ import annotations
 
@@ -48,11 +41,8 @@ class UnsupportedConnectionTypeError(ValueError):
     """Raised when no adapter is registered for a connection type."""
 
 
-# Datasource and orchestration-provider connection types share this one registry
-# (both implement the `ConnectionAdapter` seam); the run path keeps them apart —
-# only datasources get a `CheckRunner`. ADF, Airflow, and dbt are orchestration
-# providers, so their adapters live under `orchestration/`, not `datasources/`
-# (CLAUDE.md §4).
+# Datasource and orchestration-provider connection types share this one registry (both implement the
+# `ConnectionAdapter` seam); the run path keeps them apart — only datasources get a `CheckRunner`.
 _ADAPTERS: dict[str, ConnectionAdapter] = {
     "snowflake": SnowflakeConnectionAdapter(),
     "adls_gen2": AdlsConnectionAdapter(),
@@ -75,20 +65,7 @@ def get_connection_adapter(conn_type: str) -> ConnectionAdapter:
 
 
 def destination_fields(conn_type: str) -> dict[str, tuple[str, ...]]:
-    """Per credential slot, the config fields that decide where it is SENT (#1401).
-
-    Read by `connection_service.update_connection` to refuse a config change that
-    moves a destination without re-supplying that slot's credential — see the
-    `ConnectionAdapter` Protocol docstring for the full contract. Keys are
-    ``"secret"`` (the primary credential) and any extra-secret field name
-    (``"catalog"``).
-
-    Deliberately **not** ``getattr(adapter, "destination_fields", {})``. A missing
-    default would read as "this type has no redirectable destination", which is
-    the one answer that silently disables the guard; an adapter author who forgets
-    gets a loud failure instead, and `test_every_adapter_declares_destination_fields`
-    turns that failure into a CI error rather than a production one.
-    """
+    """Per credential slot, the config fields that decide where it is SENT (#1401)."""
     adapter = get_connection_adapter(conn_type)
     slots = getattr(adapter, "destination_fields", None)
     if slots is None:
@@ -103,21 +80,7 @@ def destination_fields(conn_type: str) -> dict[str, tuple[str, ...]]:
 def credential_expiry(
     conn_type: str, config: dict[str, Any], secret: str, **extra_secrets: Any
 ) -> datetime | None:
-    """When this connection's credential stops working (#838), or ``None``.
-
-    The one place that asks an adapter about credential lifetime, so callers never
-    branch on `connection.type`. ``None`` means **unknown** — the adapter doesn't
-    implement `ExpiringCredentialAdapter`, the credential carries no expiry, or the
-    read failed. It never means "does not expire".
-
-    Fail-soft by construction: a credential lifetime is an advisory signal, so a
-    surprising credential shape — or an unregistered type — must not break the
-    caller (connection CRUD, the daily sweep). The failure is logged with the
-    connection **type** but **without the secret and without the exception text**:
-    a malformed credential's error can quote the credential itself (the #536
-    precedent), while the type is a non-secret identifier and the only thing that
-    makes the line actionable.
-    """
+    """When this connection's credential stops working (#838), or ``None``."""
     try:
         adapter = get_connection_adapter(conn_type)
         if not isinstance(adapter, ExpiringCredentialAdapter):
@@ -153,10 +116,8 @@ class _RunnerBuilder(Protocol):
 def _snowflake_runner(
     *, config: dict[str, Any], secret_ref: str | None, secret_store: SecretStore, **_: Any
 ) -> CheckRunner:
-    # `sampling` is swallowed by `**_` on purpose: the Snowflake runner has no
-    # sampled mode because it never materialises rows, and `SAMPLING_CAPABLE_TYPES`
-    # already refuses the spec at save time — so reaching here with one set is
-    # impossible through the normal path and would be inert if it happened.
+    # `sampling` is swallowed by `**_` on purpose: the Snowflake runner has no sampled mode because
+    # it never materialises rows.
     return build_snowflake_runner(config=config, secret_ref=secret_ref, secret_store=secret_store)
 
 
@@ -224,17 +185,7 @@ def build_check_runner(
     catalog: str | None = None,
     sampling: SampleSpec | None = None,
 ) -> CheckRunner:
-    """Build the `CheckRunner` for ``conn_type`` from a connection's primitives.
-
-    Dispatches by type to the registered builder. Raises
-    `UnsupportedConnectionTypeError` for a type with no runner (e.g. an
-    orchestration provider, or Unity Catalog without a ``catalog``).
-
-    ``sampling`` (#595) is the suite target's `SampleSpec`, carried on
-    `ResolvedTarget`. Builders for pushdown datasources ignore it; the full-load
-    runners bound their read with it. It defaults to ``None`` so every existing
-    caller (probe, dry-run preview, tests) keeps the unsampled behaviour.
-    """
+    """Build the `CheckRunner` for ``conn_type`` from a connection's primitives."""
     builder = _RUNNER_BUILDERS.get(conn_type)
     if builder is None:
         raise UnsupportedConnectionTypeError(f"No check runner registered for type {conn_type!r}")
@@ -252,12 +203,7 @@ def close_check_runner(runner: object) -> None:
     """Release any datasource resources the runner holds — its shared SQL engine
     pool (#427). Runners without a ``close`` (flat-file, Iceberg — nothing pooled
     to release) are a no-op, so callers never branch on the runner type.
-
-    Best-effort by design: this runs inside the run path's ``finally``, so a
-    raising ``dispose()`` must never replace the in-flight result (it would turn
-    an already-terminal run into a task error that skips incident sync + alert
-    dispatch, or mask a dry-run's mapped 422/502 as a 500). Failures are logged,
-    never raised."""
+    """
     close = getattr(runner, "close", None)
     if not callable(close):
         return
@@ -273,13 +219,7 @@ def close_check_runner(runner: object) -> None:
 
 @contextmanager
 def owned_runner(runner: CheckRunner) -> Generator[CheckRunner]:
-    """Scope a runner's datasource resources to a ``with`` block (#427).
-
-    The run-owning paths (worker suite run, dry-run) wrap everything after
-    `build_check_runner` in this, so the shared engine pool is released on every
-    exit — normal, handled-failure, or propagating exception — without threading
-    a second function signature or hand-rolled try/finally through each caller.
-    """
+    """Scope a runner's datasource resources to a ``with`` block (#427)."""
     try:
         yield runner
     finally:
@@ -310,9 +250,8 @@ def _opt(value: Any) -> str | None:
 
 
 def _flatfile_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
-    # A batch target (regex `pattern`) resolves to a concrete path at run time; a
-    # literal target carries `path`. Mutually exclusive — both set is an ambiguous
-    # target, not a silent batch win.
+    # A batch target (regex `pattern`) resolves to a concrete path at run time; a literal target
+    # carries `path`.
     if "pattern" in target and target.get("path"):
         raise TargetShapeError(
             "flat-file target is ambiguous: set either 'path' (literal) or "
@@ -340,11 +279,8 @@ def _unity_catalog_target(target: dict[str, Any], conn_type: str) -> ResolvedTar
 
 
 def _iceberg_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
-    # Iceberg addresses a table by its ``namespace.table`` identifier (the namespace
-    # may itself be multi-level, ``a.b``). Fold the optional ``namespace`` into the
-    # identifier the native runner passes to ``catalog.load_table`` — carried in
-    # ``table``; Iceberg has no separate SQL schema, so schema/catalog stay None
-    # (ADR 0030).
+    # Iceberg addresses a table by its ``namespace.table`` identifier (the namespace may itself be
+    # multi-level, ``a.b``).
     table = _require(target, "table", conn_type)
     namespace = _opt(target.get("namespace"))
     return ResolvedTarget(
@@ -358,14 +294,7 @@ _BATCH_STRATEGIES = {"latest", "specific"}
 
 
 def _batch_spec(target: dict[str, Any]) -> BatchSpec:
-    """Validate + build a flat-file `BatchSpec` from a batch target (422 on bad shape).
-
-    Validates at save time what would otherwise only fail (or silently skip
-    forever) at run time: the regex must compile, and a ``specific`` strategy needs
-    a capture group in the pattern to extract the batch key — without one,
-    `resolve_batch` can never match a key, so every run would skip indefinitely and
-    mask the misconfiguration.
-    """
+    """Validate + build a flat-file `BatchSpec` from a batch target (422 on bad shape)."""
     pattern = _require(target, "pattern", "flat-file")
     try:
         compiled = re.compile(pattern)
@@ -405,25 +334,13 @@ _TARGET_RESOLVERS: dict[str, Callable[[dict[str, Any], str], ResolvedTarget]] = 
 }
 
 
-#: Datasources whose runner materialises rows in the worker, and which therefore
-#: accept a ``sampling`` block on their run target (#595). Snowflake is absent on
-#: purpose, not by oversight: its runner pushes every expectation down as SQL and
-#: never holds rows (200M rows with flat worker memory — docs/site/perf-baseline.md),
-#: so a sampling spec there would change nothing while stamping "sampled" on every
-#: result — a claim the data does not support. Iceberg is absent because its
-#: sampled read is not built yet (`pyiceberg` scan limit/row-filter pushdown,
-#: tracked separately); accepting the spec would be the same lie.
+#: Datasources whose runner materialises rows in the worker, and which therefore accept a
+#: ``sampling`` block on their run target (#595).
 SAMPLING_CAPABLE_TYPES: frozenset[str] = frozenset({"adls_gen2", "s3", "unity_catalog"})
 
 
 def _target_sampling(target: dict[str, Any], conn_type: str) -> SampleSpec | None:
-    """Parse + gate the optional ``sampling`` block on a run target.
-
-    Refusing an unsupported spec at *save* time (a 422) rather than ignoring it is
-    the point: a silently-dropped sampling block leaves an author believing their
-    nightly 100M-row suite is bounded when it is not, and the first evidence would
-    be the OOM this feature exists to prevent.
-    """
+    """Parse + gate the optional ``sampling`` block on a run target."""
     raw = target.get("sampling")
     if raw is None:
         return None
@@ -440,18 +357,7 @@ def _target_sampling(target: dict[str, Any], conn_type: str) -> SampleSpec | Non
 
 
 def resolve_target_shape(conn_type: str, target: dict[str, Any]) -> ResolvedTarget:
-    """The datasource-specific half of target resolution, or raise.
-
-    A type with no entry has no run path — every orchestration provider, and any
-    datasource whose author forgot this registration. Raising is the point: the
-    alternative is a suite that saves and then fails at run time.
-
-    The optional ``sampling`` block (#595) is grafted on afterwards rather than
-    threaded through each resolver: it is datasource-*agnostic* in shape (the same
-    strategy/rows/seed document everywhere) and datasource-*specific* only in
-    whether it is allowed at all, which `_target_sampling` decides from one set.
-    Putting it in every resolver would be five copies of one rule.
-    """
+    """The datasource-specific half of target resolution, or raise."""
     resolver = _TARGET_RESOLVERS.get(conn_type)
     if resolver is None:
         raise TargetShapeError(f"connection type {conn_type!r} has no run path (not a datasource)")

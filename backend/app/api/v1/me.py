@@ -15,9 +15,8 @@ from backend.app.services import user_service
 
 router = APIRouter(tags=["auth"])
 
-#: `users.display_name` is `String(256)` (backend/app/db/models.py) — kept in
-#: sync with the column, not re-derived from it, since a migration bumping the
-#: column doesn't retroactively loosen this validator.
+#: `users.display_name` is `String(256)` (backend/app/db/models.py) — kept in sync with the column,
+#: not re-derived from it.
 DISPLAY_NAME_MAX_LEN = 256
 
 
@@ -25,45 +24,24 @@ class MeResponse(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    # NULL for an identity with no Azure AD object id — e.g. an email-OTP user
-    # (ADR 0032 decision 6, #735). `response_model` validation is strict, so a
-    # non-optional annotation here would turn every /me call by such a user into a
-    # 500 the moment #734 starts provisioning them.
+    # NULL for an identity with no Azure AD object id — e.g. an email-OTP user (ADR 0032 decision 6,
+    # #735).
     aad_object_id: str | None
     email: str
     display_name: str | None
     last_seen_at: datetime | None
-    # The caller's EFFECTIVE workspace role (ADR 0033) — `admin | member |
-    # viewer`. Not the raw `users.role` column: it is stamped from
-    # `resolve_role`, so a break-glass allowlist admin whose stored row still
-    # says `member` reads as `admin` here, matching what every gate will
-    # actually do. Overrides the model_validate passthrough for exactly that
-    # reason (see the handler).
-    #
-    # The frontend mirrors this to decide what to RENDER (#743); the server
-    # stays the decider, same principle as the per-suite level stamping.
+    # The caller's EFFECTIVE workspace role (ADR 0033) — `admin | member | viewer`.
     role: str = DEFAULT_WORKSPACE_ROLE
-    # Whether this user may use the /admin endpoints — the frontend gates the
-    # Admin nav item + route on it (server-side authz still enforces; this only
-    # decides what to render). Not a User column: defaulted here so the passthrough
-    # fields still load straight off the ORM object, then stamped in the handler.
-    # Redundant with `role == 'admin'` and deliberately kept: it is the contract
-    # every existing client already reads, and removing it would be a breaking
-    # API change for zero gain.
+    # Whether this user may use the /admin endpoints — the frontend gates the Admin nav item + route
+    # on it (server-side authz still enforces; this only decides what to render).
     is_workspace_admin: bool = False
 
 
 @router.get("/me", response_model=MeResponse, summary="Get the current user")
 def me(current_user: Annotated[User, Depends(get_current_user)]) -> MeResponse:
-    """Return the authenticated user's profile plus their workspace-admin flag.
-
-    The identity the rest of the app keys off (resolved from the Azure AD token,
-    or the dev-bypass user locally); the SPA reads `is_workspace_admin` to gate
-    admin-only nav.
-    """
-    # model_validate keeps the passthrough fields automatic (a new User/MeResponse
-    # column is picked up without editing this handler); only the computed flag is
-    # stamped on.
+    """Return the authenticated user's profile plus their workspace-admin flag."""
+    # model_validate keeps the passthrough fields automatic (a new User/MeResponse column is picked
+    # up without editing this handler); only the computed flag is stamped on.
     resp = MeResponse.model_validate(current_user)
     resp.role = resolve_role(current_user)
     resp.is_workspace_admin = is_workspace_admin(current_user)
@@ -92,16 +70,7 @@ def update_me(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> MeResponse:
-    """Self-service profile update — currently just `display_name` (#1139).
-
-    Auth is the same generic `get_current_user` seam as the GET handler, so it
-    works identically for a cookie session, a PAT, or an Azure AD token — no
-    mode-specific branching. Exists mainly for email-OTP users, whose row is
-    JIT-provisioned with `display_name: NULL` (`otp_service.resolve_or_create_user`,
-    ADR 0032) since the sign-in flow is credential-only; an AAD user's token
-    already supplies a name (`_extract_claims`), but may still override it here —
-    the row is the one place both identity paths converge.
-    """
+    """Self-service profile update — currently just `display_name` (#1139)."""
     updated = user_service.update_display_name(db, current_user, payload.display_name)
     resp = MeResponse.model_validate(updated)
     resp.role = resolve_role(updated)

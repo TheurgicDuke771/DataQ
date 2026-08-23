@@ -1,9 +1,4 @@
-"""Flat-file IO + GX runner tests.
-
-Unlike the warehouse runners (which need a live datasource), the flat-file runner
-runs GX in-process on a pandas DataFrame — so the full run path is tested with a
-canned frame; only the network `download_bytes` is the deferred-smoke seam.
-"""
+"""Flat-file IO + GX runner tests."""
 
 import io
 from datetime import UTC, datetime
@@ -65,23 +60,23 @@ def test_sniff_delimiter_detects_each_supported_delimiter(sample: bytes, expecte
 )
 def test_sniff_delimiter_falls_back_to_comma_when_undecidable(sample: bytes) -> None:
     """An unsniffable sample must degrade to the pre-#476 behaviour, never raise —
-    a wrong-but-unchanged answer beats a 502 on a file that parses today."""
+    a wrong-but-unchanged answer beats a 502 on a file that parses today.
+    """
     assert flatfile.sniff_delimiter(sample) == ","
 
 
 def test_sniff_delimiter_ignores_a_truncated_trailing_row() -> None:
     """The sniff sample is a byte prefix, so the last line is usually cut. A
     fragment with mismatched field counts is what Sniffer keys off, so it must be
-    dropped — otherwise the delimiter flips depending on where the cut landed."""
+    dropped — otherwise the delimiter flips depending on where the cut landed.
+    """
     assert flatfile.sniff_delimiter(b"a;b;c\n1;2;3\n4;5") == ";"
 
 
 @pytest.mark.parametrize(
     ("sample", "expected"),
     [
-        # A foreign delimiter inside a quoted field, both directions. This is the
-        # exact silent-wrong-answer class the change exists to prevent, so it is
-        # pinned rather than left to Sniffer's current behaviour.
+        # A foreign delimiter inside a quoted field, both directions.
         (b'name,note\n"a;b;c",1\n"d;e;f",2\n', ","),
         (b'name;note\n"a,b,c";1\n"d,e,f";2\n', ";"),
         (b"\xef\xbb\xbfa;b\n1;2\n", ";"),  # UTF-8 BOM
@@ -98,11 +93,6 @@ def test_read_csv_bytes_bounds_the_sniff_sample_on_a_large_file(
     """`_SNIFF_BYTES` bounds the UTF-8 decode, so the runner — which reads whole
     objects by design — doesn't materialise a multi-GB file as a str just to pick
     a delimiter.
-
-    Asserted by observing the sample handed to the sniffer, not by parse
-    correctness: the bound is a RESOURCE property, and a correctness assertion
-    passes with or without the slice (verified by mutation), so it would pin
-    nothing.
     """
     seen: list[bytes] = []
 
@@ -121,7 +111,8 @@ def test_read_csv_bytes_bounds_the_sniff_sample_on_a_large_file(
 
 def test_sniff_delimiter_never_picks_a_delimiter_outside_the_allowlist() -> None:
     """Left free, csv.Sniffer nominates letters/spaces on prose-ish headers. The
-    allowlist keeps a bad guess bounded to a comma."""
+    allowlist keeps a bad guess bounded to a comma.
+    """
     assert flatfile.sniff_delimiter(b"name title\nalice engineer\nbob analyst\n") == ","
 
 
@@ -132,7 +123,8 @@ def test_read_csv_bytes_parses_a_semicolon_file_correctly() -> None:
 
 def test_read_csv_bytes_rewinds_a_consumed_buffer() -> None:
     """Callers may hand over a buffer already read (the sniff itself consumes it),
-    so the parse must not silently see zero bytes."""
+    so the parse must not silently see zero bytes.
+    """
     raw = io.BytesIO(b"a;b\n1;2\n")
     raw.read()
     df = flatfile.read_csv_bytes(raw)
@@ -146,7 +138,8 @@ def test_read_csv_bytes_passes_through_reader_kwargs() -> None:
 
 def test_read_dataframe_parses_a_semicolon_csv(monkeypatch: pytest.MonkeyPatch) -> None:
     """#476: a `;`-delimited file used to yield ONE bogus column (the whole header
-    line) with no error — a silent wrong answer for every check on that file."""
+    line) with no error — a silent wrong answer for every check on that file.
+    """
     monkeypatch.setattr(flatfile, "download_bytes", lambda **k: b"a;b\n1;2\n3;4\n")
     df = flatfile.read_dataframe(conn_type="s3", config={}, path="x.csv", secret="s")
     assert list(df.columns) == ["a", "b"] and len(df) == 2
@@ -204,13 +197,6 @@ def _patch_store(
 ) -> None:
     """Stub every live seam over ONE canned object: the metadata call (arrival time
     + byte size), the whole-object download, and the range reads (#882/#942/#595).
-
-    All of them serve the same bytes, so a test can assert *which* seam a code path
-    chose — the difference between "counted the rows" and "counted the rows
-    without pulling a 2 GB object" is invisible if the fake only exposes one way in.
-
-    ``size`` overrides the reported byte length independently of ``content``, so a
-    guardrail test can present a huge object without materialising one.
     """
     monkeypatch.setattr(
         flatfile,
@@ -276,7 +262,8 @@ def test_arrival_time_freshness_never_downloads_the_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The whole point of arrival-time freshness is that it costs a LISTING, not a
-    data read — otherwise it is strictly worse than the in-file MAX it replaces."""
+    data read — otherwise it is strictly worse than the in-file MAX it replaces.
+    """
     reads: list[int] = []
     _patch_store(monkeypatch, reads=reads)
     _monitor_runner().run_monitors(
@@ -289,7 +276,8 @@ def test_the_file_is_downloaded_at_most_once_across_monitors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Three content-needing monitors on one file must not pull the object three
-    times — the memo is the flat-file analogue of the SQL runners' one connection."""
+    times — the memo is the flat-file analogue of the SQL runners' one connection.
+    """
     reads: list[int] = []
     _patch_store(monkeypatch, reads=reads)
     out = _monitor_runner().run_monitors(
@@ -312,9 +300,7 @@ def test_a_failed_download_is_attempted_once_not_once_per_monitor(
     a failure unmemoised, so every later monitor retries the whole download — five
     monitors against a failing 2 GB object would be five full downloads, and a
     transient failure would produce inconsistent outcomes inside one run.
-
-    This is the #904 shape exactly: the defect lives in state carried ACROSS
-    iterations, which a single-iteration test can't see."""
+    """
     reads: list[int] = []
 
     def _boom(**_k: Any) -> bytes:
@@ -343,11 +329,10 @@ def test_a_read_failure_message_is_classified_never_the_raw_exception(
     """A monitor's error message is persisted to `results` and rendered in the UI,
     alerts and MCP output. Azure auth failures on this project have carried the SAS
     query string in their text (#828/#839), so the reason must be CLASSIFIED — the
-    raw exception is logged (where the redactor sits), never echoed outward."""
-    # A distinctive sentinel, NOT a credential-shaped string: CLAUDE.md forbids a
-    # credential in any tracked file even as a mock, and a realistic SAS here
-    # would trip secret scanning for no extra assurance — the property under test
-    # is "the raw exception text is not echoed", whatever that text happens to be.
+    raw exception is logged (where the redactor sits), never echoed outward.
+    """
+    # A distinctive sentinel, NOT a credential-shaped string: CLAUDE.md forbids a credential in any
+    # tracked file even as a mock.
     detail = "UPSTREAM-DETAIL-THAT-MUST-NOT-BE-ECHOED"
 
     def _boom(**_k: Any) -> bytes:
@@ -370,7 +355,8 @@ def test_a_missing_file_errors_rather_than_reporting_fresh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A missing object is exactly the incident arrival-time freshness exists to
-    catch, so a None arrival time must NOT read as age zero."""
+    catch, so a None arrival time must NOT read as age zero.
+    """
     _patch_store(monkeypatch, mtime=None)
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness")]
@@ -383,7 +369,8 @@ def test_an_unreachable_store_fails_the_whole_run_not_one_monitor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The open-connection-first contract the SQL and Iceberg runners keep: a bad
-    credential is a run failure, not N identical per-check errors."""
+    credential is a run failure, not N identical per-check errors.
+    """
 
     def _boom(**_k: Any) -> Any:
         raise RuntimeError("credential expired")
@@ -414,7 +401,8 @@ def test_an_all_null_freshness_column_cannot_be_assessed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An empty MAX must route through "can't be assessed", never age zero — a
-    silent green on a column that carries no timestamps at all."""
+    silent green on a column that carries no timestamps at all.
+    """
     _patch_store(monkeypatch, content=b"id,load_ts\n1,\n2,\n")
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
@@ -428,14 +416,6 @@ def test_freshness_column_works_on_a_real_parquet_round_trip(
 ) -> None:
     """Rides REAL Parquet bytes through the real `read_dataframe`, not a hand-built
     frame — because that difference was the whole bug.
-
-    `read_dataframe` reads Parquet with `dtype_backend="pyarrow"`, so a timestamp
-    column arrives as `timestamp[ns][pyarrow]`, for which `is_datetime64_any_dtype`
-    is **False**. Column freshness therefore failed on every Parquet file with
-    "your timestamp column is not a timestamp" — while the entire suite stayed
-    green, because every other fixture here builds a numpy-backed DataFrame by
-    hand. Same shape as the #823 lineage bug: the fixture encoded our mental model
-    instead of the real payload.
     """
     buf = io.BytesIO()
     pd.DataFrame(
@@ -465,7 +445,8 @@ def test_volume_works_on_a_real_parquet_round_trip(monkeypatch: pytest.MonkeyPat
 
 def test_arrow_backed_numeric_is_still_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     """The epoch-trap guard must survive the Arrow-dtype fix: widening the temporal
-    check must not accidentally let `int64[pyarrow]` through."""
+    check must not accidentally let `int64[pyarrow]` through.
+    """
     buf = io.BytesIO()
     pd.DataFrame({"id": [1, 2], "order_no": [1001, 1002]}).to_parquet(buf)
     _patch_store(monkeypatch, content=buf.getvalue())
@@ -482,7 +463,8 @@ def test_a_numeric_freshness_column_is_refused_not_read_as_epoch_offsets(
     """The nastiest failure mode this path can have. `pd.to_datetime` reads integers
     as epoch offsets, so a freshness monitor pointed at an id column would date the
     data to 1970 and fire CRITICAL staleness forever — a confident wrong answer,
-    and one that looks exactly like a real incident. It must refuse instead."""
+    and one that looks exactly like a real incident. It must refuse instead.
+    """
     _patch_store(monkeypatch, content=b"id,order_no\n1,1001\n2,1002\n")
     out = _monitor_runner().run_monitors(
         table="raw/orders.csv", schema=None, monitors=[_spec("freshness", column="order_no")]
@@ -495,15 +477,11 @@ def test_a_numeric_freshness_column_is_refused_not_read_as_epoch_offsets(
 def test_csv_string_timestamps_are_parsed_not_string_compared(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A CSV's timestamp column is object-dtype STRINGS (Parquet's is a real
-    datetime). Lexical max agrees with chronological max for ISO-8601, so the bug
-    hides behind the common format — this fixture picks one where they DISAGREE:
-    lexically "2026-Nov-30" > "2026-Dec-01" (N > D), chronologically it's the
-    reverse. A string max would report November as the newest data.
-
-    Deliberately unambiguous, too: a `29/06/2026` fixture would lean on pandas'
-    day-first *inference*, which is version-dependent and would make this test
-    assert the parser's guess rather than our behaviour."""
+    """A CSV's timestamp column is object-dtype STRINGS (Parquet's is a real datetime). Lexical max
+    agrees with chronological max for ISO-8601, so the bug hides behind the common format — this
+    fixture picks one where they DISAGREE: lexically "2026-Nov-30" > "2026-Dec-01" (N > D),
+    chronologically it's the reverse.
+    """
     _patch_store(
         monkeypatch,
         content=b"id,load_ts\n1,2026-Nov-30 00:00\n2,2026-Dec-01 00:00\n",
@@ -523,10 +501,7 @@ def test_a_mostly_unparseable_freshness_column_is_refused(
     would yield a confident metric derived from that ONE row — which then bands as
     critically stale forever. Same silent-wrong-answer class as the epoch trap:
     "you pointed at the wrong column" must surface as an error, not a number.
-
-    The junk is `pending`, deliberately NOT `n/a`: pandas maps `n/a` to NaN at
-    parse time, so it is dropped as a NULL long before this guard and behaves
-    correctly already. Only junk pandas keeps as a string reaches the coercion."""
+    """
     rows = b"".join(b"%d,pending\n" % i for i in range(9))
     _patch_store(monkeypatch, content=b"id,load_ts\n" + rows + b"9,2020-01-01\n")
     out = _monitor_runner().run_monitors(
@@ -539,7 +514,8 @@ def test_a_mostly_unparseable_freshness_column_is_refused(
 
 def test_a_minority_of_junk_still_parses_like_nulls(monkeypatch: pytest.MonkeyPatch) -> None:
     """The inverse guard: a few bad values behave like NULLs (matching `MAX` in
-    SQL), so the threshold must not turn ordinary dirty data into an outage."""
+    SQL), so the threshold must not turn ordinary dirty data into an outage.
+    """
     rows = b"".join(b"%d,2020-01-0%d\n" % (i, (i % 9) + 1) for i in range(9))
     _patch_store(monkeypatch, content=b"id,load_ts\n" + rows + b"9,n/a\n")
     out = _monitor_runner().run_monitors(
@@ -668,11 +644,10 @@ def test_run_checks_index_columns_capture_identifier(monkeypatch: pytest.MonkeyP
 
 def test_run_checks_index_list_is_capped_at_capture(monkeypatch: pytest.MonkeyPatch) -> None:
     """#1196: the pandas execution engine returns `unexpected_index_list` FULL under
-    `result_format="COMPLETE"` (unlike `partial_unexpected_list`, capped at 20 on every
-    engine). Real GX end to end over a frame with hundreds of failing rows: the captured
-    sample must be bounded, while the aggregate counts still report the true totals.
-    A unit test over `_extract_sample_failures` alone could not prove GX really hands us
-    the untruncated list — that shape comes from the engine, not from our model."""
+    `result_format="COMPLETE"` (unlike `partial_unexpected_list`, capped at 20 on every engine).
+    Real GX end to end over a frame with hundreds of failing rows: the captured sample must be
+    bounded, while the aggregate counts still report the true totals.
+    """
     failing = 500
     df = pd.DataFrame(
         {
@@ -715,11 +690,11 @@ def test_run_checks_bad_index_column_falls_back(monkeypatch: pytest.MonkeyPatch)
 def test_run_checks_errored_check_flagged_without_failing_siblings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A check that raises while evaluating (here: referencing a missing column)
-    is flagged `errored` via GX's per-expectation `exception_info` (#122) — real
-    GX end to end — while a sibling on a real column still evaluates cleanly. This
-    is the producer the run-service maps to `error`. (The `exception_info` shape
-    branches are unit-tested directly in `test_gx_runner.py`.)"""
+    """A check that raises while evaluating (here: referencing a missing column) is flagged
+    `errored` via GX's per-expectation `exception_info` (#122) — real GX end to end — while a
+    sibling on a real column still evaluates cleanly. This is the producer the run-service maps
+    to `error`.
+    """
     df = pd.DataFrame({"id": [1, 2, 3]})
     runner = _runner_over(df, monkeypatch)
     outcome = runner.run_checks(
@@ -741,14 +716,9 @@ def test_run_checks_errored_check_flagged_without_failing_siblings(
 def test_run_checks_errored_check_maps_to_its_own_spec_despite_gx_reorder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """#767: GX 1.17 `graph_validate` returns errored expectations FIRST, so the
-    outcome list order ≠ submission order once anything errors. The errored check
-    here is submitted **last** (so the reorder actively moves it to the front) — the
-    outcome must still land 1:1 with the submitted specs, keyed by `dataq_index`, or
-    the run-service's positional zip stamps result content onto the wrong `check_id`.
-
-    Pre-fix (verbatim GX order), `outcome.checks[2]` would be the *not-null-on-id*
-    result, not the errored one — the live cross-wiring."""
+    """#767: GX 1.17 `graph_validate` returns errored expectations FIRST, so the outcome list order
+    ≠ submission order once anything errors.
+    """
     df = pd.DataFrame({"id": [1, 2, 3], "amt": [10, 20, 30]})
     runner = _runner_over(df, monkeypatch)
     submitted = [
@@ -776,7 +746,8 @@ def test_run_checks_duplicate_identical_expectations_stay_distinct(
 ) -> None:
     """#767 duplicate-safety: two checks with the *same* type+kwargs are ambiguous to
     match by (type, kwargs), but the positional `dataq_index` marker keeps them 1:1
-    with submission order even when one errors and GX reorders."""
+    with submission order even when one errors and GX reorders.
+    """
     df = pd.DataFrame({"id": [1, 2, 3]})
     runner = _runner_over(df, monkeypatch)
     outcome = runner.run_checks(
@@ -855,13 +826,7 @@ def test_resolve_batch_unknown_strategy_raises() -> None:
 
 
 def _fake_listing(files: list[Any]) -> Any:
-    """A stub for `iter_files` that is a real GENERATOR, like the seam it replaces.
-
-    Deliberately not `iter(list)`: the live seam owns a client it releases in a
-    `finally`, so callers may close it — and a stub that isn't closeable would
-    hide a caller doing exactly that. A fixture must not be easier to satisfy than
-    the thing it stands in for.
-    """
+    """A stub for `iter_files` that is a real GENERATOR, like the seam it replaces."""
 
     def _gen(**_kwargs: Any) -> Any:
         yield from files
@@ -928,10 +893,8 @@ def test_flatfile_runner_survives_adversarial_frame(
     assert outcome.checks[0].expectation_type == "expect_table_row_count_to_be_between"
 
 
-# ── live-seam wrappers: download_bytes / list_files (W8 coverage audit) ──────
-# The boto3/azure SDK clients are the transport boundary; stubs stand in for
-# them so the dispatch (s3 vs adls), FileRef mapping, and close() discipline
-# are what's under test.
+# ── live-seam wrappers: download_bytes / list_files (W8 coverage audit) ────── The boto3/azure SDK
+# clients are the transport boundary; stubs stand in for them so the dispatch (s3 vs adls).
 
 _S3_CONFIG = {"bucket": "raw", "region": "us-west-2", "access_key_id": "AKIAX"}
 _ADLS_CONFIG = {"account_url": "https://acct.blob.core.windows.net", "container": "raw"}
@@ -961,7 +924,8 @@ def test_file_last_modified_s3_heads_the_exact_key(monkeypatch: pytest.MonkeyPat
     """A single metadata call, not a prefix listing: this runs on every scheduled
     monitor run, and `data/orders.csv` among dated siblings would otherwise drain
     every page each time — the unbounded-read-on-a-scheduled-path defect (#854).
-    Heading the exact key is also exact by construction rather than by filtering."""
+    Heading the exact key is also exact by construction rather than by filtering.
+    """
     stub = _HeadS3Stub()
     monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: stub)
     got = flatfile.file_last_modified(
@@ -976,7 +940,8 @@ def test_file_last_modified_s3_missing_object_is_none(
     monkeypatch: pytest.MonkeyPatch, code: str
 ) -> None:
     """Absent → None, which the caller turns into a per-check error. A missing file
-    is the incident this monitor exists to catch, so it must not read as fresh."""
+    is the incident this monitor exists to catch, so it must not read as fresh.
+    """
     monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: _HeadS3Stub(error_code=code))
     assert (
         flatfile.file_last_modified(
@@ -988,7 +953,8 @@ def test_file_last_modified_s3_missing_object_is_none(
 
 def test_file_last_modified_s3_other_errors_propagate(monkeypatch: pytest.MonkeyPatch) -> None:
     """This call is also the store-reachability probe, so an auth/permission failure
-    must fail the whole run rather than be mistaken for a missing file."""
+    must fail the whole run rather than be mistaken for a missing file.
+    """
     monkeypatch.setattr(
         flatfile, "_s3_client", lambda cfg, secret: _HeadS3Stub(error_code="AccessDenied")
     )
@@ -1142,12 +1108,7 @@ def test_s3_client_builds_with_failfast_timeouts() -> None:
 
 
 def test_s3_client_resolves_a_compatible_endpoint() -> None:
-    """A real boto3 client, so this proves boto3 *honoured* the kwargs (#1063).
-
-    Asserting on a recorded kwarg would only prove we passed something; the
-    question that matters is what the client ends up addressing, and that is
-    botocore's answer, not ours. Construction only — no network.
-    """
+    """A real boto3 client, so this proves boto3 *honoured* the kwargs (#1063)."""
     from backend.app.datasources.s3 import S3Config
 
     client = flatfile._s3_client(
@@ -1160,17 +1121,7 @@ def test_s3_client_resolves_a_compatible_endpoint() -> None:
 def test_s3_client_without_an_endpoint_still_resolves_aws(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The regression guard for every existing AWS connection (#1063).
-
-    If `auto` ever started pinning an addressing style unconditionally, this is
-    what would catch it — the AWS client must resolve the regional endpoint and
-    leave `config.s3` unset.
-
-    The ambient endpoint vars are cleared first: botocore >= 1.31 honours
-    `AWS_ENDPOINT_URL[_S3]`, so on a developer machine that exports one (which is
-    exactly what someone working against MinIO would do) this would otherwise fail
-    for a reason that has nothing to do with the code under test.
-    """
+    """The regression guard for every existing AWS connection (#1063)."""
     from backend.app.datasources.s3 import S3Config
 
     monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
@@ -1207,10 +1158,6 @@ def test_a_volume_monitor_never_materialises_the_file_as_a_dataframe(
 ) -> None:
     """#942's headline: a nightly row count on a multi-GB Parquet used to pull the
     whole object into worker memory and fully materialise it as a pandas frame.
-
-    Asserted by observing the SEAM taken, not the count — the count was always
-    right, which is exactly why this went unnoticed. A correctness-only assertion
-    passes with or without the fix.
     """
     reads: list[int] = []
     _patch_store(monkeypatch, content=_parquet(), reads=reads)
@@ -1227,7 +1174,8 @@ def test_a_parquet_row_count_reads_only_a_fraction_of_the_object(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Parquet states its own row count in the footer, so the count should cost a
-    couple of small range GETs rather than the object — whatever its size."""
+    couple of small range GETs rather than the object — whatever its size.
+    """
     content = _parquet(rows=20_000)
     ranges: list[tuple[int, int]] = []
     _patch_store(monkeypatch, content=content, ranges=ranges)
@@ -1255,7 +1203,8 @@ def test_volume_and_column_freshness_together_read_the_object_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """#942 AC 2. Column freshness genuinely needs the frame; volume must then come
-    off that frame rather than issuing a second, independent read of the same file."""
+    off that frame rather than issuing a second, independent read of the same file.
+    """
     reads: list[int] = []
     ranges: list[tuple[int, int]] = []
     _patch_store(monkeypatch, content=_parquet(), reads=reads, ranges=ranges)
@@ -1276,7 +1225,8 @@ def test_a_failing_row_count_is_attempted_once_not_once_per_monitor(
 ) -> None:
     """The count gets the same attempt-memo the frame has. Without it, three volume
     monitors on one target re-scan a failing object three times, and a transient
-    failure yields inconsistent outcomes inside a single run."""
+    failure yields inconsistent outcomes inside a single run.
+    """
     attempts: list[int] = []
     _patch_store(monkeypatch, content=_parquet())
 
@@ -1300,7 +1250,8 @@ def test_a_csv_head_read_drops_a_row_the_range_cut_in_half(
 ) -> None:
     """A byte range almost always ends mid-row, and a half-row parses as a COMPLETE
     row with empty trailing fields — silently changing an inferred dtype. So the
-    trailing partial line is discarded before parsing."""
+    trailing partial line is discarded before parsing.
+    """
     content = b"id,name\n" + b"".join(b"%d,abcdefghij\n" % i for i in range(200_000))
     _patch_store(monkeypatch, content=content)
     monkeypatch.setattr(flatfile, "_CSV_HEAD_BYTES", 5_000)
@@ -1315,7 +1266,8 @@ def test_a_csv_head_read_drops_a_row_the_range_cut_in_half(
 
 def test_a_range_reader_coalesces_small_sequential_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reading a footer apart in small steps must not become one request per step —
-    swapping one download for thousands of round trips is not an improvement."""
+    swapping one download for thousands of round trips is not an improvement.
+    """
     _patch_store(monkeypatch, content=b"x" * 100_000)
     reader = flatfile.RangeReader(conn_type="s3", config={}, path="x.parquet", secret="s")
 
@@ -1325,14 +1277,9 @@ def test_a_range_reader_coalesces_small_sequential_reads(monkeypatch: pytest.Mon
     assert reader.requests == 1
 
 
-# ── the range seam AT the driver boundary (#882) ──
-#
-# Every other IO primitive in this module has a test that stubs one level BELOW
-# it (`_s3_client` / `_blob_service`) and asserts the real call shape. The range
-# seam needs the same: every test above stubs `read_range`/`object_size`
-# themselves, so an off-by-one in the `Range` header — or the wrong metadata
-# field — would pass all of them and only surface against a live store. That is
-# the failure mode #953 cost us a whole feature to learn.
+# ── the range seam AT the driver boundary (#882) ── Every other IO primitive in this module has a
+# test that stubs one level BELOW it (`_s3_client` / `_blob_service`) and asserts the real call
+# shape.
 
 
 class _RangeS3Stub:
@@ -1355,7 +1302,8 @@ class _RangeS3Stub:
 
 def test_read_range_s3_asks_for_an_inclusive_byte_range(monkeypatch: pytest.MonkeyPatch) -> None:
     """`bytes=0-3` is FOUR bytes, not three. An off-by-one here silently drops a
-    byte off every window — which, on a Parquet footer, is a corrupt read."""
+    byte off every window — which, on a Parquet footer, is a corrupt read.
+    """
     stub = _RangeS3Stub()
     monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: stub)
 
@@ -1406,7 +1354,8 @@ class _RangeBlobStub:
 
 def test_read_range_adls_uses_offset_length_and_closes(monkeypatch: pytest.MonkeyPatch) -> None:
     """Azure takes offset+length, not an inclusive end — the one place the two
-    stores' range dialects differ, and the client still owes a close()."""
+    stores' range dialects differ, and the client still owes a close().
+    """
     stub = _RangeBlobStub()
     monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
 
@@ -1456,7 +1405,8 @@ def test_read_range_of_nothing_asks_the_store_for_nothing(
 
 def test_a_csv_with_only_a_header_counts_zero_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     """Zero rows is a real answer — and the one a volume monitor most needs to get
-    right, since "the producer wrote a header and no data" is an incident."""
+    right, since "the producer wrote a header and no data" is an incident.
+    """
     _patch_store(monkeypatch, content=b"id,name\n")
     assert flatfile.row_count(conn_type="s3", config={}, path="x.csv", secret="s") == 0
 
@@ -1465,7 +1415,8 @@ def test_a_head_read_of_a_file_smaller_than_the_window_keeps_every_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The trailing-partial-line trim must not fire when the range covered the whole
-    object — that would silently discard a genuinely-complete last row."""
+    object — that would silently discard a genuinely-complete last row.
+    """
     _patch_store(monkeypatch, content=b"id,name\n1,a\n2,b\n3,c")  # no trailing newline
     df = flatfile.read_csv_head(conn_type="s3", config={}, path="x.csv", secret="s", rows=100)
     assert len(df) == 3
@@ -1476,7 +1427,8 @@ def test_a_head_read_of_a_file_exactly_the_window_size_keeps_its_last_row(
 ) -> None:
     """The boundary the first cut of this got wrong: an object whose size EQUALS the
     window was read completely, but "I got a full window" was taken as evidence of
-    truncation, so its real last row was dropped."""
+    truncation, so its real last row was dropped.
+    """
     content = b"id,name\n1,a\n2,bcd"
     monkeypatch.setattr(flatfile, "_CSV_HEAD_BYTES", len(content))
     _patch_store(monkeypatch, content=content)
@@ -1489,11 +1441,11 @@ def test_a_head_read_of_a_file_exactly_the_window_size_keeps_its_last_row(
 def test_a_malformed_freshness_column_errors_only_its_own_monitor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The isolation contract `run_monitor_specs` exists to keep. Deciding up front
-    whether the frame is needed must not evaluate a bad column config OUTSIDE the
-    per-monitor guard: that raises out of `run_monitors`, fails the whole run, and
-    persists nothing — so one hand-edited config would take down every sibling
-    check on the target."""
+    """The isolation contract `run_monitor_specs` exists to keep. Deciding up front whether the
+    frame is needed must not evaluate a bad column config OUTSIDE the per-monitor guard: that
+    raises out of `run_monitors`, fails the whole run, and persists nothing — so one hand-edited
+    config would take down every sibling check on the target.
+    """
     _patch_store(monkeypatch)
 
     out = _monitor_runner().run_monitors(
@@ -1514,7 +1466,8 @@ def test_a_malformed_freshness_column_errors_only_its_own_monitor(
 
 def test_resolve_batch_consumes_a_one_shot_iterator(monkeypatch: pytest.MonkeyPatch) -> None:
     """The listing is streamed, so resolution gets ONE pass over it. A second pass
-    would silently see an exhausted iterator and pick from nothing."""
+    would silently see an exhausted iterator and pick from nothing.
+    """
     files = iter(_BATCH_FILES)
     assert flatfile.resolve_batch(files, pattern=_PATTERN) == "data/orders_2026-06-03.csv"
 
@@ -1522,11 +1475,6 @@ def test_resolve_batch_consumes_a_one_shot_iterator(monkeypatch: pytest.MonkeyPa
 def test_resolve_batch_holds_only_the_running_best_not_the_listing() -> None:
     """#943's actual defect: every matching object was retained in a list, on a path
     that runs per scheduled run, for a prefix whose history only grows.
-
-    Asserted by RETENTION — weakrefs to each yielded entry, checked after the fold.
-    A correctness assertion passes either way (the answer was always right), and a
-    "did it stream?" assertion is easy to write so loosely that it measures the
-    test's own bookkeeping instead of the code's.
     """
     import gc
     import weakref
@@ -1536,9 +1484,7 @@ def test_resolve_batch_holds_only_the_running_best_not_the_listing() -> None:
 
     def _huge() -> Any:
         for index, year in enumerate(range(2000, 4000)):
-            # Measure BEFORE creating this entry, so our own loop variable isn't
-            # counted. Measuring after the fold returns would prove nothing — every
-            # local dies at return, so even a full materialisation looks clean.
+            # Measure BEFORE creating this entry, so our own loop variable isn't counted.
             if index and index % 500 == 0:
                 gc.collect()
                 peak.append(sum(1 for ref in seen if ref() is not None))
@@ -1584,7 +1530,8 @@ def test_resolve_batch_holds_only_the_running_best_not_the_listing() -> None:
 def test_the_streaming_fold_picks_what_the_old_max_did(files: Any, kwargs: Any) -> None:
     """Equivalence guard for the rewrite. `max()` returns the FIRST maximal element;
     a fold using `>` keeps the first too — but only if written that way, and a
-    `>=` would silently flip every tie. Pinned against the original formulation."""
+    `>=` would silently flip every tie. Pinned against the original formulation.
+    """
     import re as _re
 
     compiled = _re.compile(kwargs["pattern"])
@@ -1608,7 +1555,8 @@ def test_a_runaway_prefix_is_refused_rather_than_answered_from_a_partial_scan(
 ) -> None:
     """Both stores list ASCENDING, so the newest key — the one `latest` wants — is
     exactly what a truncated scan misses. Answering from a partial listing would
-    return a confidently wrong, older batch; refusing is the honest outcome."""
+    return a confidently wrong, older batch; refusing is the honest outcome.
+    """
     monkeypatch.setattr(flatfile, "_BATCH_LISTING_MAX", 3)
     monkeypatch.setattr(
         flatfile,
@@ -1627,7 +1575,8 @@ def test_a_runaway_prefix_does_not_read_as_a_missing_batch(
 ) -> None:
     """`BatchNotFoundError` means "the data hasn't landed" and SKIPS the run (#122).
     A refused listing is a failure, not an absence — conflating them would turn a
-    broken target into a run that quietly reports success every night."""
+    broken target into a run that quietly reports success every night.
+    """
     assert not issubclass(flatfile.BatchListingTooLargeError, flatfile.BatchNotFoundError)
 
 
@@ -1636,7 +1585,8 @@ def test_iter_files_releases_the_adls_client_when_abandoned_early(
 ) -> None:
     """The generator holds the client open across yields, so a caller that stops
     early must still return it to the pool — otherwise a refused listing leaks a
-    connection on every scheduled run."""
+    connection on every scheduled run.
+    """
     stub = _BlobStub()
     monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
 
@@ -1655,13 +1605,6 @@ def test_resolve_batch_file_closes_the_listing_when_resolution_refuses(
 ) -> None:
     """The same release, through the real call path: raising mid-listing must not
     skip the client's close().
-
-    This pins the OUTCOME, not the mechanism — and cannot distinguish them: on
-    CPython the abandoned generator is finalised by refcounting the moment
-    `resolve_batch` raises, so the client is released with or without the explicit
-    `closing()`. The explicit form is kept anyway rather than depending on a
-    refcounting detail no other implementation guarantees; verified by mutation
-    that this test does not prove it, so nobody later reads it as if it did.
     """
     stub = _BlobStub()
     monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
@@ -1745,7 +1688,8 @@ def test_a_head_sample_larger_than_the_file_reports_a_complete_read(
 ) -> None:
     """The off-by-one that matters: reading `rows + 1` is what distinguishes "the
     file has exactly N rows" from "the file has more". Getting this wrong puts a
-    "sampled" caveat on every small target, which trains users to ignore it."""
+    "sampled" caveat on every small target, which trains users to ignore it.
+    """
     frame, record = _sampled(
         monkeypatch,
         content=_csv_bytes(12),
@@ -1762,7 +1706,8 @@ def test_a_head_sample_of_exactly_the_file_length_is_not_a_sample(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The boundary the probe row exists for: 12 rows requested, 12 rows in the
-    file. Nothing was left behind, so the verdict is complete."""
+    file. Nothing was left behind, so the verdict is complete.
+    """
     frame, record = _sampled(
         monkeypatch,
         content=_csv_bytes(12),
@@ -1854,7 +1799,8 @@ def test_sampling_an_empty_file_yields_a_typed_empty_frame_not_a_crash(
 ) -> None:
     """A header-only CSV is a real landing-zone state. The frame must keep its
     COLUMNS, or every check errors with "column not found" instead of failing
-    honestly against zero rows."""
+    honestly against zero rows.
+    """
     frame, record = _sampled(
         monkeypatch,
         content=b"id,name\n",
@@ -1888,10 +1834,6 @@ def test_a_sampled_head_read_never_pulls_the_whole_object(
     downloads the object would be the same OOM wearing a caveat — so this asserts
     the SEAM (no whole-object download, bounded range bytes), not the row count,
     which is right either way.
-
-    The object is deliberately built much larger than the head window, so "it read
-    less than the file" is a real property rather than an accident of a fixture
-    that fits in one range.
     """
     content = _csv_bytes(900_000)
     assert len(content) > 4 * flatfile._CSV_HEAD_BYTES, "fixture must dwarf the head window"
@@ -1918,7 +1860,8 @@ def test_a_sampled_run_stamps_every_result_with_what_it_saw(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The acceptance criterion in one test: a check that passed on a sample must
-    say so, on the result row rather than only in the run log."""
+    say so, on the result row rather than only in the run log.
+    """
     _patch_store(monkeypatch, content=_csv_bytes(500))
     runner = flatfile.FlatFileCheckRunner(
         conn_type="s3",
@@ -1943,7 +1886,8 @@ def test_an_unsampled_run_records_no_sampling_claim(
 ) -> None:
     """`None` — not a `sampled: false` record — so the read API's "complete read"
     case is the same shape for a suite that never opted in and for every result
-    written before the feature existed."""
+    written before the feature existed.
+    """
     _patch_store(monkeypatch, content=_csv_bytes(20))
     runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
     outcome = runner.run_checks(
@@ -1959,7 +1903,8 @@ def test_an_oversized_file_is_refused_before_it_is_downloaded(
 ) -> None:
     """#755's failure mode, inverted: instead of SIGKILLing the child and leaving
     the run `running` for an hour with no memory-attributed reason, the run ends
-    with a sentence naming the knob."""
+    with a sentence naming the knob.
+    """
     reads: list[int] = []
     _patch_store(monkeypatch, content=_csv_bytes(10), reads=reads, size=999_000_000)
     runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
@@ -1978,7 +1923,8 @@ def test_a_sampled_run_is_allowed_past_the_byte_cap(
 ) -> None:
     """Sampling is the sanctioned way past the size probe: the read is bounded by
     the sample, so the object's own size stops being a memory fact. If the cap
-    still applied, the feature would be unreachable exactly where it is needed."""
+    still applied, the feature would be unreachable exactly where it is needed.
+    """
     _patch_store(monkeypatch, content=_csv_bytes(500), size=999_000_000)
     runner = flatfile.FlatFileCheckRunner(
         conn_type="s3",
@@ -2017,10 +1963,7 @@ def test_a_disabled_byte_cap_lets_a_huge_file_through(
     """The off-switch has to actually be off — a cap of 0 read as "zero bytes
     allowed" would refuse every run on the operator's own instruction to stop
     checking.
-
-    It must also stop *probing*: an operator who disables the guardrail should not
-    keep paying a metadata round trip per run for a number nobody reads. Asserted
-    on the seam, because "the run succeeded" is true either way."""
+    """
     _set_cap(monkeypatch, "RUN_MAX_SCAN_BYTES", 0)
     _patch_store(monkeypatch, content=_csv_bytes(10), size=999_000_000)
     stats: list[int] = []
@@ -2045,7 +1988,8 @@ def test_a_store_that_reports_no_size_is_not_refused(
 ) -> None:
     """A missing content-length is not evidence of a large file. Refusing on an
     unknown size would break every run against a store that omits the header — a
-    guardrail failing closed on ignorance, which is worse than the risk it guards."""
+    guardrail failing closed on ignorance, which is worse than the risk it guards.
+    """
     monkeypatch.setattr(flatfile, "file_stat", lambda **k: flatfile.FileStat(_LANDED, None))
     monkeypatch.setattr(flatfile, "download_bytes", lambda **k: _csv_bytes(5))
     runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
@@ -2060,11 +2004,10 @@ def test_a_store_that_reports_no_size_is_not_refused(
 def test_a_column_freshness_monitor_on_an_oversized_file_errors_only_itself(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The guardrail covers the monitor path too — a column-freshness monitor
-    pulls the same whole object a check run does. It must NOT sample instead: a
-    MAX over a sample is a *smaller* maximum, so a sampled freshness monitor
-    reports healthy data as critically stale. Arrival-time freshness never touches
-    the frame, so it stays available beside the refused one."""
+    """The guardrail covers the monitor path too — a column-freshness monitor pulls the same whole
+    object a check run does. It must NOT sample instead: a MAX over a sample is a *smaller*
+    maximum, so a sampled freshness monitor reports healthy data as critically stale.
+    """
     content = b"id,load_ts\n1,2026-06-29T00:00:00\n"
     _patch_store(monkeypatch, content=content, size=999_000_000)
     runner = flatfile.FlatFileCheckRunner(
@@ -2086,11 +2029,11 @@ def test_a_column_freshness_monitor_on_an_oversized_file_errors_only_itself(
 def test_the_refusal_message_survives_the_monitor_loops_classifier(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`run_monitor_specs` classifies unmarked exceptions into a generic sentence,
-    because a driver message can carry a credential (#828/#900). This one is
-    DataQ-authored, so it is `SafeMonitorError`-marked and persists verbatim —
-    otherwise the most actionable error in the feature would read "the run failed
-    to execute"."""
+    """`run_monitor_specs` classifies unmarked exceptions into a generic sentence, because a driver
+    message can carry a credential (#828/#900). This one is DataQ-authored, so it is
+    `SafeMonitorError`-marked and persists verbatim — otherwise the most actionable error in the
+    feature would read "the run failed to execute".
+    """
     _patch_store(monkeypatch, content=b"id,load_ts\n1,2026-06-29T00:00:00\n", size=999_000_000)
     out = _monitor_runner().run_monitors(
         table="raw/huge.csv",
@@ -2105,7 +2048,8 @@ def test_the_monitor_guardrail_costs_no_extra_metadata_call(
 ) -> None:
     """The establishment probe already asks the store for this object's metadata,
     and it now returns the size alongside the arrival time. A second HEAD per run
-    on a per-schedule path is exactly the overhead #854 exists to remove."""
+    on a per-schedule path is exactly the overhead #854 exists to remove.
+    """
     stats: list[int] = []
 
     def _stat(**_k: Any) -> Any:
@@ -2130,7 +2074,8 @@ def test_a_csv_head_window_grows_until_it_holds_the_requested_rows(
     """A head sample bigger than the starting window must not come back short.
     The failure this guards is silent: a truncated read yields FEWER rows, every
     check still evaluates, and the run reports a clean verdict on a fraction of
-    the data it claimed."""
+    the data it claimed.
+    """
     content = _csv_bytes(400_000)
     ranges: list[tuple[int, int]] = []
     _patch_store(monkeypatch, content=content, ranges=ranges)
@@ -2154,7 +2099,8 @@ def test_a_csv_head_sample_keeps_the_unsampled_readers_dtypes(
 ) -> None:
     """Turning sampling on must not change a check's verdict through a DTYPE
     change. CSV head goes through `read_csv_bytes` exactly like a full read, so
-    the two frames must type identically over the same rows."""
+    the two frames must type identically over the same rows.
+    """
     content = _csv_bytes(50)
     _patch_store(monkeypatch, content=content)
     sampled, _ = flatfile.read_sampled_dataframe(
@@ -2174,7 +2120,8 @@ def test_a_csv_head_sample_respects_a_non_comma_delimiter(
     """#476's defect, in the new reader: a `;`-delimited file parsed with the
     pandas default comma yields ONE column named after the whole header — and
     every column check then errors, or worse, a row-count check passes on garbage.
-    The sampled path shares the sniffing seam precisely so it cannot regress."""
+    The sampled path shares the sniffing seam precisely so it cannot regress.
+    """
     content = b"id;name\n" + b"".join(f"{i};n{i}\n".encode() for i in range(50))
     _patch_store(monkeypatch, content=content)
     frame, _ = flatfile.read_sampled_dataframe(
@@ -2193,7 +2140,8 @@ def test_a_csv_head_sample_never_splits_a_row_across_the_window_boundary(
     """A byte range almost always ends mid-row, and a half-row parses as a
     COMPLETE row with empty trailing fields — silently changing an inferred dtype
     (a truncated `12345` becomes `123`). The last partial line is dropped for the
-    same reason `read_csv_head` drops it."""
+    same reason `read_csv_head` drops it.
+    """
     # Rows are wide enough that the first window is guaranteed to cut one.
     wide = b"id,payload\n" + b"".join(f"{i},{'x' * 500}\n".encode() for i in range(10_000))
     _patch_store(monkeypatch, content=wide)
@@ -2214,11 +2162,7 @@ def test_a_csv_head_sample_never_splits_a_row_across_the_window_boundary(
 
 
 def _quoted_csv(rows: int) -> bytes:
-    """A CSV whose every row carries an embedded newline inside a quoted field.
-
-    The layout C4 is about: legal RFC 4180, handled perfectly by the full read,
-    and a byte-range cut at the last raw `\\n` lands *inside* the quotes.
-    """
+    """A CSV whose every row carries an embedded newline inside a quoted field."""
     body = b"".join(f'{i},"line one\nline two {i}"\n'.encode() for i in range(rows))
     return b"id,note\n" + body
 
@@ -2238,11 +2182,9 @@ def _quoted_csv(rows: int) -> bytes:
     ],
 )
 def test_the_row_boundary_is_quote_aware(raw: bytes, expected: bytes) -> None:
-    """C4. A newline is NOT a row boundary — a quoted field may contain one, and
-    cutting there leaves an unterminated quote that pandas rejects outright with
-    "EOF inside string". `csv_row_count` already refuses to equate the two; this
-    is the same rule for the head path, including the ``""`` escape (which adds
-    two quotes, so parity still answers "am I inside a field")."""
+    """C4. A newline is NOT a row boundary — a quoted field may contain one, and cutting there
+    leaves an unterminated quote that pandas rejects outright with "EOF inside string".
+    """
     assert flatfile.trim_to_row_boundary(raw) == expected
 
 
@@ -2252,7 +2194,8 @@ def test_a_head_sample_of_a_quoted_csv_parses_instead_of_raising(
     """C4 end to end. Before the quote-aware cut this raised
     `pandas.errors.ParserError: EOF inside string` — on a file the unsampled read
     handles perfectly, intermittently, decided by nothing but where the growing
-    window happened to land."""
+    window happened to land.
+    """
     content = _quoted_csv(60_000)
     _patch_store(monkeypatch, content=content)
 
@@ -2277,7 +2220,8 @@ def test_the_bounded_schema_head_read_is_quote_aware_too(
 ) -> None:
     """The same defect lived in `read_csv_head` (#882) before #595 touched it —
     the schema/profile read every schema-drift run and dry-run preview takes. Age
-    is not a disposition (CONTRIBUTING 3a), and both paths now share one cut."""
+    is not a disposition (CONTRIBUTING 3a), and both paths now share one cut.
+    """
     _patch_store(monkeypatch, content=_quoted_csv(200_000))
     frame = flatfile.read_csv_head(conn_type="s3", config={}, path="raw/q.csv", secret="s", rows=5)
     assert list(frame.columns) == ["id", "note"]
@@ -2289,7 +2233,8 @@ def test_a_row_count_expectation_is_refused_on_a_sampled_flat_file(
 ) -> None:
     """C6. The expectation would observe the SAMPLE and report it as the file's
     size — a healthy 5M-row file with `min_value=4M` failing critically forever.
-    Per-check `error` (#122), so its siblings on the same frame still evaluate."""
+    Per-check `error` (#122), so its siblings on the same frame still evaluate.
+    """
     _patch_store(monkeypatch, content=_csv_bytes(500))
     runner = flatfile.FlatFileCheckRunner(
         conn_type="s3",
@@ -2326,7 +2271,8 @@ def test_a_refused_row_count_check_carries_no_sampling_record(
 ) -> None:
     """The record describes a READ, and a refused check performed none — claiming
     it saw 10 rows would be the overclaim the field exists to prevent. Its message
-    already names sampling as the cause."""
+    already names sampling as the cause.
+    """
     _patch_store(monkeypatch, content=_csv_bytes(500))
     runner = flatfile.FlatFileCheckRunner(
         conn_type="s3",
@@ -2350,7 +2296,8 @@ def test_a_row_count_expectation_runs_normally_on_an_unsampled_flat_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Scoped to sampling: unsampled, the count IS the file's and the expectation
-    is valid. A blanket ban would delete a working check from every suite."""
+    is valid. A blanket ban would delete a working check from every suite.
+    """
     _patch_store(monkeypatch, content=_csv_bytes(5))
     runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
     outcome = runner.run_checks(
@@ -2369,11 +2316,9 @@ def test_a_row_count_expectation_runs_normally_on_an_unsampled_flat_file(
 def test_a_file_that_shrank_between_the_count_and_the_take_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """J1. A random sample is inherently two passes — count, then take — and a
-    landing zone is exactly where an object is re-uploaded between them. If it
-    shrank, drawn positions fall past the new end and the take comes back short
-    while `total_rows` still reports the old population: a sample both smaller and
-    less representative than the record claims, with nothing saying so."""
+    """J1. A random sample is inherently two passes — count, then take — and a landing zone is
+    exactly where an object is re-uploaded between them.
+    """
     big = _csv_bytes(1_000)
     small = _csv_bytes(20)
     calls: list[int] = []
@@ -2405,7 +2350,8 @@ def test_a_random_sample_covering_the_whole_file_never_builds_an_index_list(
     """J4. `list(range(total))` is ~40 MB of Python ints at 1.4M rows, and
     `take_indices` would gather-copy every batch through it purely to reproduce
     the batches it was handed — all for a "sample" that changes nothing. Asserted
-    on the SEAM, because the returned frame is identical either way."""
+    on the SEAM, because the returned frame is identical either way.
+    """
     _patch_store(monkeypatch, content=_csv_bytes(30))
     monkeypatch.setattr(
         flatfile,

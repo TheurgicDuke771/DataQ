@@ -1,32 +1,4 @@
-"""S3 connection adapter — AWS S3 and any S3-compatible store.
-
-A flat-file datasource (CLAUDE.md §4): DQ checks run against files in a bucket.
-Week 2 ships only the `ConnectionAdapter` seam (config validation + connectivity
-`test`); the GX pandas/S3 `CheckRunner` that reads the files is a Week-3 concern.
-
-**Not only AWS** (#1063). Set ``endpoint_url`` and the same connection addresses
-MinIO, Ceph/RadosGW, Cloudflare R2, Wasabi, Backblaze B2, SeaweedFS or an on-prem
-gateway — they all speak the S3 API, and boto3 reaches any of them by endpoint.
-Left unset, every request resolves the AWS regional endpoint exactly as before.
-The endpoint/addressing decision itself lives in `core/s3_endpoint.py`, shared with
-the other two places that build an S3 client (`datasources/flatfile.py` for the
-read paths, `orchestration/dbt.py` for the artifacts poll) so all three reach the
-same store — the `core/credential_expiry.py` pattern.
-
-**Auth — v1 supports static access keys only.** The roadmap lists IAM role *and*
-access key, but an IAM role has no stored secret and is only meaningfully
-testable once DataQ runs on AWS with an instance/task role — so it (and the
-broader ``connections.secret_ref`` nullability change) is deferred to Week 7. An
-``iam_role`` config is accepted by the schema but rejected with a clear message
-in v1; use an access key (``access_key_id`` in config, secret access key in the
-SecretStore).
-
-``test`` issues ``head_bucket`` — a green test means the credentials authenticate
-and the bucket is reachable. ``boto3`` is imported lazily (per ``core/secrets.py``)
-so non-S3 deployments don't pay the import cost; retries are disabled so an
-auth/endpoint failure surfaces immediately. Like the other adapters it runs live
-and fails-soft pending real credentials.
-"""
+"""S3 connection adapter — AWS S3 and any S3-compatible store."""
 
 from __future__ import annotations
 
@@ -46,12 +18,7 @@ _TEST_TIMEOUT_SECONDS = 10
 
 
 class S3Config(BaseModel):
-    """Non-secret S3 connection config (the secret access key comes from secrets).
-
-    Maps from ``Connection.config``. ``access_key_id`` is the non-secret half of
-    the static credential; the secret access key is resolved from the SecretStore
-    at test time.
-    """
+    """Non-secret S3 connection config (the secret access key comes from secrets)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -88,24 +55,15 @@ class S3Config(BaseModel):
 class S3ConnectionAdapter:
     """`ConnectionAdapter` for AWS S3 — config validation + a head_bucket probe."""
 
-    # #1401: `endpoint_url` (#1063, the S3-compatible path) redirects the signed
-    # request to any host. `region` does not — it only varies which AWS endpoint
-    # boto3 derives, all of them AWS-controlled.
+    # #1401: `endpoint_url` (#1063, the S3-compatible path) redirects the signed request to any
+    # host.
     destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {"secret": ("endpoint_url",)}
 
     def validate_config(self, raw: dict[str, Any]) -> S3Config:
         return S3Config.model_validate(raw)
 
     def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
-        """Issue ``head_bucket`` with the static credential; raise on any failure.
-
-        ``secret`` is the secret access key. Retries are disabled so an
-        auth/permission/endpoint failure surfaces immediately. Typed
-        ``str | None`` only because the shared `ConnectionAdapter` Protocol
-        also serves credential-less types (#351) — an S3 secret key is always
-        mandatory, so the guard below turns a missing one into a clear error
-        rather than a confusing SDK failure.
-        """
+        """Issue ``head_bucket`` with the static credential; raise on any failure."""
         if secret is None:
             raise ValueError("a credential is required to test an S3 connection")
         import boto3

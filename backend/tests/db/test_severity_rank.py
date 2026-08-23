@@ -1,11 +1,4 @@
-"""Drift guards for the single severity-rank source (#655).
-
-`db.models.SEVERITY_RANK` is the one canonical "which run outcome is worse"
-ordering — alert dedup, the RunReport builder, run-outcome rollups and the
-alerting `FAILING_TIERS` set all derive from it rather than keeping independent
-copies. These tests pin that single source so a new/reordered tier can't
-silently diverge them.
-"""
+"""Drift guards for the single severity-rank source (#655)."""
 
 from __future__ import annotations
 
@@ -50,9 +43,8 @@ def test_worst_severity_picks_the_highest_failing_tier() -> None:
 
 
 def test_alerting_base_reexports_the_same_object() -> None:
-    # The alerting layer imports FAILING_TIERS from its own base module (an explicit
-    # re-export of the db.models source); prove it's the same object so a consumer
-    # can't pick up a stale copy.
+    # The alerting layer imports FAILING_TIERS from its own base module (an explicit re-export of
+    # the db.models source); prove it's the same object so a consumer can't pick up a stale copy.
     from backend.app.alerting.base import FAILING_TIERS as BASE_FAILING_TIERS
 
     assert BASE_FAILING_TIERS is FAILING_TIERS

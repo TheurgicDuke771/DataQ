@@ -165,9 +165,8 @@ describe('SamplePolicyPanel', () => {
   });
 
   it('flows an iceberg namespace into both the column-introspection and suggest requests (#721)', async () => {
-    // Iceberg targets store `{table, namespace?}` — the namespace must ride along
-    // into listColumns (dropdown introspection) and the Auto-detect suggestion,
-    // mirroring ColumnProfilePanel's extractProfileTarget handling.
+    // Iceberg targets store `{table, namespace?}` — the namespace must ride along into listColumns
+    // (dropdown introspection) and the Auto-detect suggestion.
     mockGet.mockResolvedValue({ identifier_column: null, pii_columns: [] });
     mockListColumns.mockResolvedValue(['loaded_at']);
     mockSuggest.mockResolvedValue({ identifier_column: null, pii_columns: [] });

@@ -1,9 +1,4 @@
-"""Unit tests for the rate-limit primitives (#725, ADR 0035).
-
-Pure — no TestClient / DB. Policy resolution, client-IP extraction, the two
-stores, and the warn-once fail-open stamp. The middleware wired into the app is
-exercised end-to-end in `backend/tests/api/test_rate_limiting.py`.
-"""
+"""Unit tests for the rate-limit primitives (#725, ADR 0035)."""
 
 from __future__ import annotations
 
@@ -52,9 +47,8 @@ def test_webhook_prefix_wins_even_with_bearer() -> None:
 
 @pytest.mark.parametrize("provider", sorted(rate_limit._WEBHOOK_PROVIDERS))
 def test_webhook_key_folds_known_provider(provider: str) -> None:
-    # Each provider gets its own per-IP bucket (#785), so a burst on one can't
-    # crowd out another's callbacks from the same egress IP. Parametrized over
-    # the production set so a newly added provider is exercised automatically.
+    # Each provider gets its own per-IP bucket (#785), so a burst on one can't crowd out another's
+    # callbacks from the same egress IP.
     _, _, key = _resolve_policy(
         f"/api/v1/orchestration/events/{provider}", None, "9.9.9.9", _settings()
     )
@@ -70,10 +64,8 @@ def test_webhook_key_trailing_path_still_folds_provider() -> None:
 
 @pytest.mark.parametrize("segment", ["nonesuch", "", "adf\x00", "ADF"])
 def test_webhook_unknown_segment_shares_bare_ip_bucket(segment: str) -> None:
-    # NB: ASGI hands the middleware the percent-DECODED path, so an encoded
-    # probe like `adf%00` arrives here as the raw "adf\x00" — test that layer.
-    # Unknown segments must NOT mint fresh buckets (a scanner rotating the path
-    # would never 429) — they all share the bare per-IP bucket.
+    # NB: ASGI hands the middleware the percent-DECODED path, so an encoded probe like `adf%00`
+    # arrives here as the raw "adf\x00" — test that layer.
     _, _, key = _resolve_policy(
         f"/api/v1/orchestration/events/{segment}", None, "9.9.9.9", _settings()
     )
@@ -81,9 +73,7 @@ def test_webhook_unknown_segment_shares_bare_ip_bucket(segment: str) -> None:
 
 
 def test_webhook_providers_match_orchestration_registry() -> None:
-    # `_WEBHOOK_PROVIDERS` derives from the shared `db.models.ORCHESTRATION_PROVIDERS`
-    # vocabulary; this pins that vocabulary to the orchestration registry so a
-    # provider registered there can't silently land in the shared bare-IP bucket.
+    # `_WEBHOOK_PROVIDERS` derives from the shared `db.models.ORCHESTRATION_PROVIDERS` vocabulary.
     from backend.app.orchestration.registry import _PROVIDERS
 
     assert rate_limit._WEBHOOK_PROVIDERS == frozenset(_PROVIDERS)
@@ -172,10 +162,8 @@ def test_bucket_ip_full_mask_disables_grouping() -> None:
 
 
 def test_bucket_ip_ipv4_mapped_ipv6_unwraps_to_ipv4() -> None:
-    # A dual-stack `[::]` listener's socket peer (and some proxy XFF chains)
-    # carries `::ffff:a.b.c.d`. Folding that as IPv6 would put the ENTIRE IPv4
-    # internet into one ::/64 bucket; it must unwrap and fold as IPv4, keying
-    # identically to its dotted-quad twin.
+    # A dual-stack `[::]` listener's socket peer (and some proxy XFF chains) carries
+    # `::ffff:a.b.c.d`.
     s = _settings()
     assert rate_limit._bucket_ip("::ffff:9.9.9.1", s) == "9.9.9.0/24"
     assert rate_limit._bucket_ip("::ffff:9.9.9.1", s) == rate_limit._bucket_ip("9.9.9.2", s)
@@ -393,13 +381,7 @@ def test_warn_store_unavailable_once_per_window(monkeypatch: pytest.MonkeyPatch)
 
 
 class _SickRedis:
-    """A Redis client that is UP but slow — the case socket timeouts don't help with.
-
-    Each pipeline execute sleeps, then raises, exactly as a socket timeout does.
-    Counts its calls so a test can assert the breaker stopped making them, which is
-    the actual fix; asserting only "returns None" would pass without a breaker at
-    all, since fail-open already returns None.
-    """
+    """A Redis client that is UP but slow — the case socket timeouts don't help with."""
 
     def __init__(self, *, delay: float = 0.02) -> None:
         self.delay = delay
@@ -443,12 +425,7 @@ async def _hit(store: rate_limit.RedisStore, n: int) -> None:
 async def test_the_breaker_stops_calling_a_sick_redis(
     monkeypatch: pytest.MonkeyPatch, _clean_breaker: object
 ) -> None:
-    """The fix, stated as the thing that actually changes: CALLS STOP.
-
-    Fail-open already returned None on every failure, so a test asserting None
-    would pass with no breaker at all. What #784 changes is that we stop dialling a
-    struggling Redis — and therefore stop paying its timeout on the hot path.
-    """
+    """The fix, stated as the thing that actually changes: CALLS STOP."""
     sick = _SickRedis()
     monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)
     store = rate_limit.RedisStore()
@@ -466,7 +443,8 @@ async def test_a_tripped_breaker_returns_without_awaiting_the_timeout(
 ) -> None:
     """The user-visible symptom: app p99 becomes Redis p99. Timed, because "we
     skipped the call" and "the request got fast again" are different claims and only
-    the second one is what the incident is about."""
+    the second one is what the incident is about.
+    """
     sick = _SickRedis(delay=0.05)
     monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)
     store = rate_limit.RedisStore()
@@ -486,7 +464,8 @@ async def test_a_single_failure_does_not_trip_it(
     monkeypatch: pytest.MonkeyPatch, _clean_breaker: object
 ) -> None:
     """One unlucky request is not a brownout. Tripping on the first blip would hand
-    the whole API's enforcement to a single dropped packet."""
+    the whole API's enforcement to a single dropped packet.
+    """
     sick = _SickRedis()
     monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)
     store = rate_limit.RedisStore()
@@ -502,7 +481,8 @@ async def test_a_success_resets_the_count_so_scattered_blips_never_trip_it(
 ) -> None:
     """The counter is CONSECUTIVE failures. A Redis that fails one request in five
     is annoying, not degraded, and must not open the breaker — otherwise enforcement
-    lapses across the whole API for a fault nobody would call an outage."""
+    lapses across the whole API for a fault nobody would call an outage.
+    """
     healthy, sick = _HealthyRedis(), _SickRedis()
     current: list[object] = [sick]
     monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: current[0])
@@ -524,20 +504,19 @@ async def test_it_probes_once_the_window_passes_and_closes_on_success(
     monkeypatch: pytest.MonkeyPatch, _clean_breaker: object
 ) -> None:
     """Open must be a short, self-clearing state — ADR 0035 biases to availability
-    over enforcement, and a breaker that stays open is enforcement silently off."""
+    over enforcement, and a breaker that stays open is enforcement silently off.
+    """
     sick = _SickRedis()
     monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)
     store = rate_limit.RedisStore()
     await _hit(store, rate_limit._BREAKER_TRIP_AFTER)
     assert await store.incr_windows(["k"]) is None  # open
-    # …and asserted as GATED, not merely as another failure: without this the test
-    # passes with the breaker removed entirely, since fail-open returns None either
-    # way (review finding — the same trap the timed test above exists to avoid).
+    # …and asserted as GATED, not merely as another failure: without this the test passes with the
+    # breaker removed entirely, since fail-open returns None either way (review finding — the same
+    # trap the timed test above exists to avoid).
     assert sick.calls == rate_limit._BREAKER_TRIP_AFTER
 
-    # Redis recovers, and the window passes. The shifted clock is `_breaker_now`
-    # (monotonic, #1135) — `_now` is the wall clock feeding the WINDOW INDEX, which
-    # is a different job and must not be dragged around by breaker tests.
+    # Redis recovers, and the window passes.
     healthy = _HealthyRedis()
     monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: healthy)
     monkeypatch.setattr(
@@ -579,14 +558,7 @@ async def test_a_failed_probe_re_opens_it_rather_than_hammering(
 async def test_the_open_window_ignores_the_wall_clock(
     monkeypatch: pytest.MonkeyPatch, _clean_breaker: object
 ) -> None:
-    """The breaker's window is a DURATION, so it must ride a monotonic clock (#1135).
-
-    `_now` is wall-clock on purpose — it feeds the window index baked into the Redis
-    key, which every replica has to agree on. Wiring the breaker to it too would put
-    the open window at the mercy of NTP: a backward step extends the fail-open state
-    past the 5s ADR 0035 signs up for, and a forward step ends it early. Pinned here
-    because the two clocks look interchangeable at the call site and are not.
-    """
+    """The breaker's window is a DURATION, so it must ride a monotonic clock (#1135)."""
     sick = _SickRedis()
     monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)
     store = rate_limit.RedisStore()
@@ -613,11 +585,6 @@ async def test_a_straggling_success_cannot_close_an_open_breaker(
 ) -> None:
     """A degraded Redis serves a MIX of slow successes and timeouts, and every
     request is an independent asyncio task over shared module state.
-
-    So a request that passed the gate just before the trip can resolve just after
-    it — and if that straggler reset the state, it would retroactively close a
-    breaker other requests had legitimately opened, ~5s early. The breaker would
-    flap under exactly the traffic it exists to handle (review finding).
     """
     sick = _SickRedis()
     monkeypatch.setattr(rate_limit, "_get_redis_client", lambda: sick)

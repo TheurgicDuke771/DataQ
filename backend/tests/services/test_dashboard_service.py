@@ -1,10 +1,4 @@
-"""Tests for the dashboard aggregates service.
-
-Two layers: the pure ADR-0005 health-score math (no DB), and the DB-backed
-summary aggregation — scoping (owned-or-shared only), the window cutoff, the
-run trend zero-fill, and per-suite performance from the latest run. Skips
-without TEST_DATABASE_URL.
-"""
+"""Tests for the dashboard aggregates service."""
 
 from __future__ import annotations
 
@@ -109,18 +103,7 @@ def _run_with_results(
     age_days: float = 0.0,
     duration_s: float | None = None,
 ) -> Run:
-    """Seed a run plus its result rows.
-
-    ``run_status`` is the run's **execution** status, which is orthogonal to
-    whether its checks passed — a run whose every check came back ``critical``
-    still executed fine and is ``succeeded`` (the module docstring's own
-    distinction). Several of these fixtures used to pass ``failed`` together with
-    result rows, which is a state the system cannot produce: a failed run's
-    results are discarded, and since #318 the aggregates additionally refuse to
-    count rows from any run outside `AGGREGATABLE_RUN_STATUSES`. Passing an
-    impossible combination here would assert against a world the app never
-    creates.
-    """
+    """Seed a run plus its result rows."""
     when = datetime.now(UTC) - timedelta(days=age_days)
     run = Run(suite_id=suite.id, status=run_status, created_at=when)
     if duration_s is not None:
@@ -258,7 +241,8 @@ def test_avg_duration_over_finished_runs_only(db_session: Any) -> None:
 
 def test_avg_duration_excludes_clock_skewed_runs(db_session: Any) -> None:
     """finished < started (clock skew / backfill) must not poison the mean —
-    and an all-skewed window is an honest None, not a negative duration."""
+    and an all-skewed window is an honest None, not a negative duration.
+    """
     alice = _user(db_session)
     suite = _suite(db_session, alice)
     _run_with_results(
@@ -340,7 +324,8 @@ def test_deltas_none_when_previous_window_empty(db_session: Any) -> None:
 
 def test_previous_window_does_not_leak_into_current_kpis(db_session: Any) -> None:
     """The prior-window aggregates are bounded by `until` — a fail 10 days ago
-    must not lower the CURRENT 7d score."""
+    must not lower the CURRENT 7d score.
+    """
     alice = _user(db_session)
     suite = _suite(db_session, alice)
     _run_with_results(

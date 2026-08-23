@@ -12,12 +12,8 @@ import { useAsyncData } from '../../hooks/useAsyncData';
 import { errorMessage } from '../../utils/errors';
 
 /**
- * Suite-detail panel for the failing-sample redaction policy (#415): which column
- * locates a failing row (`identifier_column`, always shown) and which columns are
- * PII (`pii_columns`, always masked). The classifier auto-classifies incidental
- * columns at redaction time regardless; this pins the shown identifier + the masked
- * set. "Auto-detect" profiles + classifies the target for a suggestion. `view` reads,
- * `edit` (`canManage`) mutates — matching the backend gate.
+ * Suite-detail panel for the failing-sample redaction policy (#415): which column locates a
+ * failing row (`identifier_column`, always shown) and which columns are PII (`pii_columns`.
  */
 export function SamplePolicyPanel({ suite, canManage }: { suite: Suite; canManage: boolean }) {
   const { state, reload } = useAsyncData(() => getColumnPolicy(suite.id));
@@ -86,9 +82,8 @@ function SamplePolicyForm({
     };
   }, [suite.target]);
 
-  // Introspected columns (#635) — fetched lazily the first time a dropdown opens (a
-  // live warehouse round-trip, so not on mount). Degrades to free-tag entry when
-  // introspection is empty/unavailable: the Selects stay mode="tags".
+  // Introspected columns (#635) — fetched lazily the first time a dropdown opens (a live warehouse
+  // round-trip, so not on mount).
   const [cols, setCols] = useState<
     { status: 'idle' | 'loading' | 'error' } | { status: 'loaded'; columns: string[] }
   >({ status: 'idle' });
@@ -102,9 +97,8 @@ function SamplePolicyForm({
   };
 
   const introspected = cols.status === 'loaded' ? cols.columns : [];
-  // Union of the target's real columns + anything the user has already named, so a
-  // saved value renders even if introspection didn't return it (a view-hidden or
-  // newly-added column), and free-typing still works.
+  // Union of the target's real columns + anything the user has already named, so a saved value
+  // renders even if introspection didn't return it (a view-hidden or newly-added column).
   const known = Array.from(new Set([...(identifier ? [identifier] : []), ...pii]));
   const options = Array.from(new Set([...introspected, ...known])).map((c) => ({
     value: c,
@@ -147,9 +141,7 @@ function SamplePolicyForm({
   };
 
   const identifierIsPii = !!identifier && pii.includes(identifier);
-  // Auto-detect profiles a concrete target. A flat-file *batch* target (a `pattern`
-  // resolved to a file only at run time) has no fixed path to profile, so suggest
-  // would 422 — gate the button instead of letting it fail.
+  // Auto-detect profiles a concrete target.
   const canSuggest = !!suite.target && !suite.target.pattern;
 
   return (

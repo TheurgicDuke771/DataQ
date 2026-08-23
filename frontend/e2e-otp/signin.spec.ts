@@ -1,13 +1,6 @@
 import { expect, freshEmail, OTP_ADMIN_EMAIL, test } from './fixtures';
 
-/**
- * Email-OTP sign-in, end to end in a real browser (ADR 0032, #736).
- *
- * Everything below the browser is production code: a real api in `otp` mode, a
- * real `OtpMailer` doing a real STARTTLS + AUTH submission, a real `Set-Cookie`.
- * The only test-owned pieces are the SMTP server that catches the mail and the
- * `window.__DATAQ_CONFIG__` injection — which is itself the production contract.
- */
+/** Email-OTP sign-in, end to end in a real browser (ADR 0032, #736). */
 
 test('signs in with a mailed code and lands in the app', async ({ page, signIn }) => {
   const email = freshEmail('happy');
@@ -35,11 +28,8 @@ test('keeps no token in JS-readable storage — the session is the cookie only',
   page,
   signIn,
 }) => {
-  // ADR 0032 decision 3's central property, asserted in a real browser rather
-  // than inferred from the source: an XSS must find nothing to exfiltrate.
-  // dismissProfilePrompt: false — this spec doesn't touch the nav afterward,
-  // and dismissing the first-login prompt (#1139) itself writes a
-  // sessionStorage key by design, which would read as a false positive here.
+  // ADR 0032 decision 3's central property, asserted in a real browser rather than inferred from
+  // the source: an XSS must find nothing to exfiltrate. dismissProfilePrompt: false.
   await page.goto('/');
   await signIn.complete(freshEmail('storage'), { dismissProfilePrompt: false });
 
@@ -84,13 +74,6 @@ test('rejects a superseded code — a new request kills the previous one', async
   signIn,
 }) => {
   // This is the reachable, deterministic form of "the code is no longer valid".
-  //
-  // A genuinely TIME-expired code would need a 10-minute wait or a clock hack, and
-  // the api answers a single uniform 401 for wrong / expired / already-used /
-  // out-of-attempts — so at the boundary this exercises the same response and the
-  // same UI. What it additionally proves, which a plain wrong-code case cannot, is
-  // that re-requesting really does invalidate the earlier code server-side
-  // (ADR 0032 decision 4). The TTL arithmetic itself is backend-tested (#1134).
   const email = freshEmail('superseded');
   await page.goto('/');
   await signIn.requestCode(email);
@@ -126,9 +109,8 @@ test('a deep link while signed out lands on sign-in, not on the page', async ({ 
 });
 
 test('an OTP user gets the same role-gated nav as any other identity', async ({ page, signIn }) => {
-  // Issue AC 4: `useMe`/`MeProvider` are untouched by this mode, so the
-  // admin-nav gating must work off `/me` exactly as it does under SSO. The lane's
-  // api names this address in WORKSPACE_ADMIN_EMAILS.
+  // Issue AC 4: `useMe`/`MeProvider` are untouched by this mode, so the admin-nav gating must work
+  // off `/me` exactly as it does under SSO.
   await page.goto('/');
   await signIn.complete(OTP_ADMIN_EMAIL);
   await expect(page.getByRole('link', { name: 'Admin' })).toBeVisible();

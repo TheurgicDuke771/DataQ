@@ -1,12 +1,4 @@
-"""Up/down test for `a7b8c9d0e1f2_backfill_check_dimensions`.
-
-Binds the migration module's own `upgrade()`/`downgrade()` to a live connection
-and asserts the effect on real rows — the data movement is the whole point of
-this migration, so a structural check would prove nothing.
-
-All DDL/DML runs inside the `db_session`'s rolled-back transaction, so nothing
-persists. Skips without TEST_DATABASE_URL (needs real Postgres).
-"""
+"""Up/down test for `a7b8c9d0e1f2_backfill_check_dimensions`."""
 
 from __future__ import annotations
 
@@ -106,7 +98,8 @@ def test_upgrade_fills_only_derivable_nulls(db_session: Any) -> None:
 def test_upgrade_never_overwrites_an_existing_value(db_session: Any) -> None:
     """Only NULLs. The amendment's argument rests on there being no human-set
     dimension at backfill time — but the SQL must not depend on that being true,
-    or a re-run (or an out-of-order deploy) would silently reclassify."""
+    or a re-run (or an out-of-order deploy) would silently reclassify.
+    """
     suite_id = _seed(
         db_session,
         [("nulls", "expectation", "expect_column_values_to_not_be_null", "accuracy")],
@@ -127,7 +120,8 @@ def test_upgrade_is_idempotent(db_session: Any) -> None:
 def test_downgrade_clears_derived_values_but_keeps_a_user_override(db_session: Any) -> None:
     """The case the down path exists to protect. A user who reclassifies a check
     after the upgrade must not lose that on a rollback — so the downgrade clears
-    only values still equal to what this migration would have written."""
+    only values still equal to what this migration would have written.
+    """
     suite_id = _seed(
         db_session,
         [
@@ -148,10 +142,6 @@ def test_the_frozen_map_matched_the_live_derivation_when_written(db_session: Any
     """The migration inlines its map on purpose — it must describe its own point
     in history, not follow a live module. This pins that the two AGREED on
     2026-07-19.
-
-    If the live map later changes, this test fails: that is the prompt to decide
-    whether old rows should be re-derived, not a signal to sync the migration.
-    Update the expectation here and record the decision; never edit the migration.
     """
     from backend.app.services.check_dimension import derive_dimension
 

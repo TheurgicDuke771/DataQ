@@ -27,32 +27,15 @@ import { formatTimestamp } from '../components/results/resultsFormat';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 /**
- * Assets list (`/assets`, ADR 0034 gap G-d phase 2, #760; hierarchical browse
- * #802; server-side paging #925) — the read-only browse/reason surface over
- * data assets. Every member sees every asset (ADR 0037 — identity is workspace
- * knowledge), with health rolled up workspace-true across ALL composing suites.
- *
- * Two lenses over the same data, each fetching independently now that the
- * workspace can exceed one page (#925):
- * - **By source** (default) — a connection-rooted drill-down (namespace →
- *   database/catalog → schema → table); the leaves open the detail. Walks
- *   pages up to `TREE_HARD_BOUND` and renders an explicit truncation note if
- *   the workspace is bigger than that — never a silently partial tree.
- * - **All assets** — the flat table, real server-side paging (antd `Table`
- *   `pagination`, `TABLE_PAGE_SIZE` rows/page) driven by the `X-Total-Count` total.
+ * Assets list (`/assets`, ADR 0034 gap G-d phase 2, #760; hierarchical browse #802; server-side
+ * paging #925) — the read-only browse/reason surface over data assets.
  */
 export function Assets() {
   const navigate = useNavigate();
   const [view, setView] = useState<'tree' | 'table'>('tree');
   const onOpen = (id: string) => navigate(`/assets/${id}`);
-  // The completed tree walk (#1107), held by the parent so it survives the
-  // tree view unmounting/remounting on every Segmented toggle. `AssetsTreeView`
-  // reads it on mount and skips the fetch entirely when a complete walk is
-  // already there; a walk cut short by an abort never writes here (see
-  // `fetchAllAssetsForTree`), so a partial result can never be served as if it
-  // were the whole workspace. Reset only by remounting `Assets` itself
-  // (navigating away and back), which is the intended scope — one walk per
-  // page visit, exactly like the pre-#925 shared fetch.
+  // The completed tree walk (#1107), held by the parent so it survives the tree view
+  // unmounting/remounting on every Segmented toggle.
   const treeCache = useRef<AssetListPage | null>(null);
 
   return (
@@ -86,40 +69,22 @@ export function Assets() {
 
 const EMPTY_DESCRIPTION = 'No assets yet — give a suite a run target and it will appear here.';
 
-/** Hard cap on how many rows the tree view will walk pages for (#925) — a tree
- *  render over an unbounded workspace would eventually hang the browser tab;
- *  this bounds the work and the truncation note below says so honestly rather
- *  than rendering a silently partial tree. Comfortably above any real
- *  workspace seen so far, and well past the point where a flat tree stops
- *  being a useful browse UI anyway — "All assets" paging is the answer beyond it. */
+/**
+ * Hard cap on how many rows the tree view will walk pages for (#925) — a tree render over an
+ * unbounded workspace would eventually hang the browser tab.
+ */
 const TREE_HARD_BOUND = 2000;
 /** One walked page — the server's own max (`_LIST_LIMIT_MAX` in
  *  `backend/app/api/v1/assets.py`), so the walk takes the fewest round trips. */
 const TREE_PAGE_SIZE = 200;
 
-/** Walk `/assets` pages until every asset is fetched, `TREE_HARD_BOUND` is hit,
- *  or the server stops returning rows — whichever comes first. The last guard
- *  is defensive: a `total` that the walk can never reach must not spin forever.
- *
- *  `signal` (#1107) is checked at the top of every iteration, so an
- *  unmount/toggle-away stops the walk from issuing any further page requests
- *  — before #1107 the loop had no way to hear about it and kept firing all
- *  the way to `TREE_HARD_BOUND` regardless of whether anything was still
- *  listening. It's also handed to `listAssets` so the axios layer aborts
- *  whichever request is actually in flight, not just the ones still queued.
- *  A walk cut short this way THROWS rather than returning the partial map —
- *  callers must never mistake "we stopped early" for "we fetched everything". */
+/**
+ * Walk `/assets` pages until every asset is fetched, `TREE_HARD_BOUND` is hit, or the server stops
+ * returning rows — whichever comes first.
+ */
 async function fetchAllAssetsForTree(signal: AbortSignal): Promise<AssetListPage> {
-  // Offset paging over a live population races concurrent writes (review
-  // finding): a delete below the cursor shifts later rows down (one is
-  // skipped), an insert shifts them up (one repeats), and a shrinking total
-  // could end the walk early AND suppress the truncation Alert. Mitigations,
-  // in order: duplicates are collapsed by id; `total` is pinned from the
-  // FIRST page so the loop's target cannot shrink mid-walk; the Alert
-  // compares against that same pinned total. A skipped row remains possible —
-  // inherent to offset paging without a server-side snapshot/cursor — and
-  // self-heals on the next visit; the sweep/lineage writers that make this
-  // real run on daily beats, so the window is narrow.
+  // Offset paging over a live population races concurrent writes (review finding): a delete below
+  // the cursor shifts later rows down (one is skipped), an insert shifts them up (one repeats).
   const byId = new Map<string, AssetSummary>();
   let total: number | null = null;
   let offset = 0;
@@ -147,11 +112,8 @@ function AssetsTreeView({
   cacheRef: RefObject<AssetListPage | null>;
 }) {
   const { state, reload } = useAsyncData<AssetListPage>((signal) => {
-    // A complete walk from an earlier mount of this view (a prior toggle to
-    // "By source" in this same page visit) is still good — nothing about the
-    // workspace population is invalidated by switching Segmented tabs, so
-    // re-walking every page from scratch would just be wasted round trips
-    // (the #1107 regression this whole cache exists to undo).
+    // A complete walk from an earlier mount of this view (a prior toggle to "By source" in this
+    // same page visit) is still good.
     if (cacheRef.current) return Promise.resolve(cacheRef.current);
     return fetchAllAssetsForTree(signal).then((data) => {
       cacheRef.current = data;
@@ -196,20 +158,13 @@ const TABLE_PAGE_SIZE = 50;
 
 function AssetsTableView({ onOpen }: { onOpen: (id: string) => void }) {
   const [page, setPage] = useState(1);
-  // Forward the abort signal (#1107 review) so switching pages quickly — or
-  // toggling away from the table entirely — cancels the superseded request at
-  // the network layer, the same treatment the tree walk got, instead of just
-  // leaving it to run to completion while nothing is listening for it.
+  // Forward the abort signal (#1107 review) so switching pages quickly — or toggling away from the
+  // table entirely — cancels the superseded request at the network layer.
   const { state, reload } = useAsyncData((signal) =>
     listAssets({ limit: TABLE_PAGE_SIZE, offset: (page - 1) * TABLE_PAGE_SIZE }, signal),
   );
-  // useAsyncData only re-fetches on `reload()` (its effect keys off a nonce, not
-  // the fetcher identity — see its doc), so a page change must bump it
-  // explicitly, same pattern as Dashboard's range selector.
-  // setPage + reload land in ONE render because React batches event-handler
-  // state updates — the effect behind the bumped nonce then sees the new page.
-  // That coupling breaks if this ever moves behind an await/timeout (review
-  // note): keep both calls synchronous in the handler.
+  // useAsyncData only re-fetches on `reload()` (its effect keys off a nonce, not the fetcher
+  // identity — see its doc), so a page change must bump it explicitly.
   const onPageChange = (nextPage: number) => {
     setPage(nextPage);
     reload();
@@ -253,12 +208,7 @@ const KIND_ICON: Record<DatasourceKind, ReactNode> = {
   other: <FileOutlined />,
 };
 
-/**
- * Connection-rooted drill-down over the assets (#802). The tree is derived purely
- * from each asset's OL namespace + name (`buildAssetTree`); selecting a leaf (a
- * node carrying an `asset`) opens its detail. Folder nodes just expand. Env stays
- * visible as a per-leaf tag so DEV/QA assets read as distinct (ADR 0034).
- */
+/** Connection-rooted drill-down over the assets (#802). */
 function AssetsTree({ assets, onOpen }: { assets: AssetSummary[]; onOpen: (id: string) => void }) {
   const tree = useMemo(() => buildAssetTree(assets), [assets]);
   const treeData = useMemo(() => tree.map(toDataNode), [tree]);
@@ -328,11 +278,10 @@ function AssetsTable({
 }: {
   assets: AssetSummary[];
   onOpen: (id: string) => void;
-  /** Server-side pagination config (#925) — `dataSource` is already the
-   *  current page's rows, so `Table` must NOT re-slice it client-side; `false`
-   *  keeps the pre-#925 unpaginated rendering for callers that pass a
-   *  already-complete list (none left in this file, but the prop stays
-   *  optional so the component doesn't force paging on every caller). */
+  /**
+   * Server-side pagination config (#925) — `dataSource` is already the current page's rows, so
+   * `Table` must NOT re-slice it client-side.
+   */
   pagination?: TablePaginationConfig | false;
 }) {
   const columns: ColumnsType<AssetSummary> = [

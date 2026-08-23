@@ -1,9 +1,4 @@
-"""Connection service tests against a real Postgres (db_session).
-
-CRUD + secret write-through use a fake in-memory SecretStore; the connectivity
-test monkeypatches the adapter so no live warehouse is needed. Skips without
-TEST_DATABASE_URL (CI provides an ephemeral Postgres).
-"""
+"""Connection service tests against a real Postgres (db_session)."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -58,11 +53,7 @@ _UC_CONFIG = {
 
 class _PassAdapter:
     def validate_config(self, raw: dict[str, Any]) -> Any:
-        # `_validated_config` only checks that this doesn't raise — the return
-        # value is unused, and `BaseModel()` (the shape this once returned) is
-        # a Pydantic v2 error to instantiate directly. That was dead code until
-        # `test_draft_connection` (#351) became the first path in this file to
-        # actually call `_validated_config` with a monkeypatched adapter.
+        # `_validated_config` only checks that this doesn't raise — the return value is unused.
         return None
 
     def test(self, raw: dict[str, Any], secret: str) -> None:
@@ -92,7 +83,8 @@ class _OptionalSecretAdapter(_PassAdapter):
 def _author_of(row: Any) -> uuid.UUID:
     """`created_by` is `UUID | None` since #1319 (SET NULL on user delete), but a
     row this test just seeded always has one — narrow rather than cast, so a real
-    None fails loudly here instead of inside the service."""
+    None fails loudly here instead of inside the service.
+    """
     author = row.created_by
     assert author is not None
     return cast(uuid.UUID, author)
@@ -130,9 +122,8 @@ def test_create_persists_row_and_writes_secret(db_session: Any) -> None:
     assert conn.id is not None
     assert conn.type == "snowflake"
     assert conn.config["account"] == "ab12345.eu-west-1"
-    # The ref is READABLE (ADR 0039 / #1060) — an operator has to find this entry
-    # in the vault by eye to rotate it. Asserted via the generator rather than a
-    # literal so a format tweak doesn't break unrelated tests.
+    # The ref is READABLE (ADR 0039 / #1060) — an operator has to find this entry in the vault by
+    # eye to rotate it.
     assert conn.secret_ref == connection_secret_ref(
         connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type
     )
@@ -222,12 +213,9 @@ def test_update_changes_name_and_config(db_session: Any) -> None:
 
 
 def test_turning_inventory_sync_off_clears_its_outcome_state(db_session: Any) -> None:
-    """#1104: the three `inventory_sync_*` columns describe the last sync ATTEMPT, so
-    when the toggle goes off they must go blank — a failing state must never outlive
-    its cause. Cleared here rather than only in the daily sweep because the sweep
-    cannot see the window: toggled off at 09:00 and back on at 09:05 never presents an
-    opted-out row to the next tick, and every reader would meanwhile be told the
-    connection is "failing since <old date>" for a sync nobody has attempted since."""
+    """#1104: the three `inventory_sync_*` columns describe the last sync ATTEMPT, so when the
+    toggle goes off they must go blank — a failing state must never outlive its cause.
+    """
     from datetime import UTC, datetime
 
     conn = _create(db_session, FakeSecretStore(), config={**_SF_CONFIG, "inventory_sync": True})
@@ -248,7 +236,8 @@ def test_turning_inventory_sync_off_clears_its_outcome_state(db_session: Any) ->
 
 def test_an_unrelated_config_edit_keeps_the_inventory_sync_state(db_session: Any) -> None:
     """The clear is bound to the toggle going OFF, not to "config changed" — wiping
-    the state on any edit would hide a live, still-failing sync."""
+    the state on any edit would hide a live, still-failing sync.
+    """
     from datetime import UTC, datetime
 
     conn = _create(db_session, FakeSecretStore(), config={**_SF_CONFIG, "inventory_sync": True})
@@ -269,7 +258,8 @@ def test_an_unrelated_config_edit_keeps_the_inventory_sync_state(db_session: Any
 
 def test_update_config_reresolves_bound_suite_assets(db_session: Any) -> None:
     """A config change that moves the OpenLineage identity re-points every targeted
-    suite on the connection at the new asset (ADR 0034) — never a stale asset_id."""
+    suite on the connection at the new asset (ADR 0034) — never a stale asset_id.
+    """
     conn = _create(db_session, FakeSecretStore())  # _SF_CONFIG: database=ANALYTICS
     suite = suite_service.create_suite(
         db_session,
@@ -343,7 +333,8 @@ def test_delete_unknown_raises_not_found(db_session: Any) -> None:
 
 def test_delete_with_dependent_suites_raises_409_not_500(db_session: Any) -> None:
     """#753: a connection still referenced by suites must 409 with the dependents
-    named (bounded sample + true total), never surface the raw FK violation."""
+    named (bounded sample + true total), never surface the raw FK violation.
+    """
     from backend.app.services import suite_service
 
     store = FakeSecretStore()
@@ -379,7 +370,8 @@ def test_delete_with_dependent_suites_raises_409_not_500(db_session: Any) -> Non
 def test_delete_409_hides_suite_names_outside_the_actors_grants(db_session: Any) -> None:
     """#927 review: suite NAMES are grant-scoped (ADR 0027) — a caller with no
     grant on a dependent suite gets the count, never the name (the suite endpoint
-    404-no-leaks it; this 409 must not defeat that one request over)."""
+    404-no-leaks it; this 409 must not defeat that one request over).
+    """
     store = FakeSecretStore()
     conn = _create(db_session, store)
     stranger_owner = _user(db_session)
@@ -414,7 +406,8 @@ def test_delete_409_hides_suite_names_outside_the_actors_grants(db_session: Any)
 
 def test_delete_orchestration_connection_cascades_pipeline_runs(db_session: Any) -> None:
     """#927 review: pipeline_runs are observations polled THROUGH the connection —
-    they cascade with it (migration a3b4c5d6e7f8) instead of 500ing the delete."""
+    they cascade with it (migration a3b4c5d6e7f8) instead of 500ing the delete.
+    """
     from backend.app.db.models import PipelineRun
 
     store = FakeSecretStore()
@@ -503,7 +496,8 @@ def test_test_connection_secret_optional_no_secret_ref_succeeds(
 def test_test_connection_secret_required_adapter_unaffected(db_session: Any) -> None:
     """A `secret_optional`-unaware adapter (the default) keeps the old
     behavior — this is `test_test_connection_without_secret_raises` above,
-    reasserted here as the explicit negative half of the #351 parity pair."""
+    reasserted here as the explicit negative half of the #351 parity pair.
+    """
     conn = _create(db_session, FakeSecretStore(), secret=None)
     with pytest.raises(ConnectionTestFailedError, match="no stored credential"):
         svc.test_connection(db_session, conn.id, secret_store=FakeSecretStore())
@@ -556,7 +550,8 @@ def test_draft_test_secret_optional_adapter_allows_missing_secret(
 ) -> None:
     """Iceberg/dbt (#351 `secret_optional`) — a legitimate credential-less
     draft must not 502 just because `secret` is absent, and the adapter must
-    receive a real `None`, never a placeholder."""
+    receive a real `None`, never a placeholder.
+    """
     adapter = _OptionalSecretAdapter()
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: adapter)
     svc.test_draft_connection(
@@ -573,7 +568,8 @@ def test_draft_test_secret_optional_adapter_normalizes_blank_string_to_none(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A wire payload can hand in `secret=""` where the internal contract only
-    ever sees `str | None` — both must mean "no credential" to the adapter."""
+    ever sees `str | None` — both must mean "no credential" to the adapter.
+    """
     adapter = _OptionalSecretAdapter()
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: adapter)
     svc.test_draft_connection(
@@ -654,9 +650,8 @@ def test_adf_in_different_env_is_allowed(db_session: Any) -> None:
 
 
 def test_second_airflow_same_env_raises_conflict(db_session: Any) -> None:
-    # The orchestrator singleton guard covers airflow too (partial index predicate
-    # is `type IN ('adf','airflow')`), so the second provider type is guarded
-    # without any new code.
+    # The orchestrator singleton guard covers airflow too (partial index predicate is `type IN
+    # ('adf','airflow')`), so the second provider type is guarded without any new code.
     store = FakeSecretStore()
     user = _user(db_session)
     kwargs = {
@@ -799,11 +794,8 @@ def test_update_secret_write_failure_raises_502(db_session: Any) -> None:
 
 # ────────── a SECOND credential — the Iceberg catalog secret (#1181) ─────────
 
-# `sqlite:///w` materialized a real 20KB database in whatever directory pytest
-# ran from — a stray, extensionless binary at the repo root that `.gitignore`'s
-# `*.sqlite` could not match, and which duly got committed. An in-memory URI
-# cannot leave an artifact anywhere; nothing here connects to it, the value only
-# has to be a valid catalog URI.
+# `sqlite:///w` materialized a real 20KB database in whatever directory pytest ran from — a stray,
+# extensionless binary at the repo root that `.gitignore`'s `*.sqlite` could not match.
 _ICEBERG_SQL_CONFIG = {"catalog_type": "sql", "catalog_uri": "sqlite:///:memory:"}
 
 
@@ -834,7 +826,8 @@ def test_create_iceberg_catalog_secret_alone_works_credential_less_storage(
     db_session: Any,
 ) -> None:
     """A credential-less catalog storage layer (Iceberg's `secret_optional`) must
-    not block a catalog-only credential from being stored."""
+    not block a catalog-only credential from being stored.
+    """
     store = FakeSecretStore()
     conn = svc.create_connection(
         db_session,
@@ -874,7 +867,8 @@ def test_create_catalog_secret_unsupported_type_raises_config_invalid(
     db_session: Any,
 ) -> None:
     """Only a config model that declares `catalog_secret_name` (Iceberg today)
-    can receive one — a Snowflake connection has nowhere to put it."""
+    can receive one — a Snowflake connection has nowhere to put it.
+    """
     store = FakeSecretStore()
     with pytest.raises(ConnectionConfigInvalidError):
         _create(db_session, store, catalog_secret="should-not-write")
@@ -953,7 +947,8 @@ def test_update_catalog_secret_write_failure_raises_502(db_session: Any) -> None
 
 def test_create_catalog_secret_write_failure_rolls_back(db_session: Any) -> None:
     """The main secret writes fine; the catalog secret fails — the whole create
-    must roll back, not leave a half-written row + orphaned storage secret."""
+    must roll back, not leave a half-written row + orphaned storage secret.
+    """
 
     class _CatalogFailsStore(FakeSecretStore):
         def set(self, name: str, value: str) -> None:
@@ -978,13 +973,11 @@ def test_create_catalog_secret_write_failure_rolls_back(db_session: Any) -> None
 
 
 def test_update_writes_catalog_secret_before_the_primary_secret(db_session: Any) -> None:
-    """On a two-secret PATCH, the catalog write must happen BEFORE the primary
-    rotation: neither store write is part of the DB transaction, so if the
-    CATALOG write fails after the primary already succeeded, the connection
-    would be silently running on an unverified new primary credential the
-    caller was told 502'd (no rollback can undo an already-live vault write).
-    Ordering catalog-first means a catalog failure leaves the primary
-    untouched — the worse corruption is structurally impossible."""
+    """On a two-secret PATCH, the catalog write must happen BEFORE the primary rotation: neither
+    store write is part of the DB transaction, so if the CATALOG write fails after the primary
+    already succeeded, the connection would be silently running on an unverified new primary
+    credential the caller was told 502'd (no rollback can undo an already-live vault write).
+    """
     conn = svc.create_connection(
         db_session,
         name="harness-iceberg",
@@ -1022,12 +1015,12 @@ def test_update_writes_catalog_secret_before_the_primary_secret(db_session: Any)
 
 
 def test_config_only_update_preserves_catalog_secret_name(db_session: Any) -> None:
-    """`update_connection`'s `config` param wholesale-REPLACES `conn.config` — the
-    catalog secret's ref lives INSIDE config (no column of its own), so a
-    config-only PATCH that doesn't re-send `catalog_secret_name` must not drop
-    it: that key is server-owned bookkeeping, never something a caller is
-    expected to round-trip, exactly like `secret_ref` (its own column) is never
-    touched by a config-only PATCH."""
+    """`update_connection`'s `config` param wholesale-REPLACES `conn.config` — the catalog secret's
+    ref lives INSIDE config (no column of its own), so a config-only PATCH that doesn't re-send
+    `catalog_secret_name` must not drop it: that key is server-owned bookkeeping, never
+    something a caller is expected to round-trip, exactly like `secret_ref` (its own column) is
+    never touched by a config-only PATCH.
+    """
     store = FakeSecretStore()
     conn = svc.create_connection(
         db_session,
@@ -1042,9 +1035,9 @@ def test_config_only_update_preserves_catalog_secret_name(db_session: Any) -> No
     )
     ref = conn.config["catalog_secret_name"]
 
-    # A config-only update that changes something unrelated and does NOT
-    # resend catalog_secret_name — the realistic caller shape (the frontend
-    # seeds the whole `connection.config`, but a direct API caller need not).
+    # A config-only update that changes something unrelated and does NOT resend catalog_secret_name
+    # — the realistic caller shape (the frontend seeds the whole `connection.config`, but a direct
+    # API caller need not).
     svc.update_connection(
         db_session,
         conn.id,
@@ -1059,14 +1052,7 @@ def test_config_only_update_preserves_catalog_secret_name(db_session: Any) -> No
 
 
 def test_blanking_a_catalog_secret_name_is_rejected(db_session: Any) -> None:
-    """`""` is not "absent" — it is a present key with a non-ref value.
-
-    Skipping it would let a PATCH silently strip the connection's catalog
-    credential: `_carry_over_secret_name_keys` sees the key IS present, so it
-    carries nothing, and the row ends up pointing at no secret while the real one
-    stays live and unreferenced in the store — the #954 shape, self-inflicted,
-    and a purge candidate. Blanking is not how a credential is removed.
-    """
+    """`""` is not "absent" — it is a present key with a non-ref value."""
     store = FakeSecretStore()
     conn = svc.create_connection(
         db_session,
@@ -1095,9 +1081,6 @@ def test_blanking_a_catalog_secret_name_is_rejected(db_session: Any) -> None:
 def test_a_faithfully_resent_catalog_secret_name_is_accepted(db_session: Any) -> None:
     """A client that GETs a connection, edits one field and PATCHes the whole
     config back must keep working — `catalog_secret_name` and all.
-
-    This is the case that stops #1118's fix being a blanket ban: the rule is
-    round-trip fidelity, not "never send this field".
     """
     store = FakeSecretStore()
     conn = svc.create_connection(
@@ -1124,14 +1107,10 @@ def test_a_faithfully_resent_catalog_secret_name_is_accepted(db_session: Any) ->
 
 
 def test_repointing_catalog_secret_name_at_another_ref_is_rejected(db_session: Any) -> None:
-    """#1118. This used to be the documented behaviour — "the explicit value
-    wins" — and it was the exfiltration primitive itself: repoint a connection's
-    `catalog_secret_name` at a VICTIM connection's ref (readable off
-    `GET /connections`), point `catalog_uri` at a host you control, and the next
-    test resolves the victim's real credential and sends it there.
-
-    `*_secret_name` is server-owned bookkeeping; a caller may echo one back but
-    never introduce or move one.
+    """#1118. This used to be the documented behaviour — "the explicit value wins" — and it was the
+    exfiltration primitive itself: repoint a connection's `catalog_secret_name` at a VICTIM
+    connection's ref (readable off `GET /connections`), point `catalog_uri` at a host you
+    control, and the next test resolves the victim's real credential and sends it there.
     """
     store = FakeSecretStore()
     victim = svc.create_connection(
@@ -1175,7 +1154,8 @@ def test_repointing_catalog_secret_name_at_another_ref_is_rejected(db_session: A
 def test_create_rejects_any_caller_supplied_secret_name(db_session: Any) -> None:
     """The other door onto the same attack: skip the update and just CREATE a
     connection already pointed at someone else's secret. There is no stored row
-    to round-trip against, so any `*_secret_name` is foreign by definition."""
+    to round-trip against, so any `*_secret_name` is foreign by definition.
+    """
     store = FakeSecretStore()
     victim = svc.create_connection(
         db_session,
@@ -1208,7 +1188,8 @@ def test_create_rejects_any_caller_supplied_secret_name(db_session: Any) -> None
 def test_the_draft_test_refuses_to_resolve_any_secret_name(db_session: Any) -> None:
     """The trace-less variant #1116 added — no row is written, so an exfiltration
     through it leaves nothing behind to notice afterwards. A draft owns no refs,
-    so every `*_secret_name` is refused outright rather than resolved."""
+    so every `*_secret_name` is refused outright rather than resolved.
+    """
     store = FakeSecretStore()
     victim = svc.create_connection(
         db_session,
@@ -1241,18 +1222,6 @@ def test_the_draft_test_refuses_to_resolve_any_secret_name(db_session: Any) -> N
 def test_moving_catalog_uri_while_echoing_the_secret_name_is_rejected(db_session: Any) -> None:
     """#1401, the exact attack. #1400 closed the reference-NAME half; this is the
     other one, and it survives every guard that existed before:
-
-      1. GET the victim connection — `catalog_secret_name` is in the config the
-         list endpoint returns, by design.
-      2. PATCH it back **byte-identically** (accepted — that IS the round-trip
-         rule `_reject_foreign_secret_names` deliberately allows) while pointing
-         `catalog_uri` at a host you control.
-      3. POST /test. `_extra_secrets` resolves the real catalog password and
-         `inject_uri_password` sends it to your listener.
-
-    Admin-only and audit-trailed since #741/#1400, so this is a privilege
-    conversion rather than an open door: an Admin who may ROTATE a credential
-    must not thereby be able to READ one.
     """
     store = FakeSecretStore()
     conn = svc.create_connection(
@@ -1293,7 +1262,8 @@ def test_moving_a_destination_is_allowed_when_the_credential_is_resupplied(
     """The legitimate move must still work — the guard closes the vector by
     requiring the credential, not by forbidding migration. Re-supplying proves
     the caller already knows the secret, so nothing is disclosed by sending it
-    somewhere new."""
+    somewhere new.
+    """
     store = FakeSecretStore()
     conn = svc.create_connection(
         db_session,
@@ -1324,7 +1294,8 @@ def test_moving_snowflake_account_without_the_password_is_rejected(db_session: A
     """The PRIMARY `secret_ref` has the same exposure, on every type — it is
     resolved from the ROW while the destination comes from CONFIG, so only config
     was ever guarded. Snowflake's `account` becomes the hostname the password is
-    presented to."""
+    presented to.
+    """
     store = FakeSecretStore()
     conn = _create(db_session, store)
 
@@ -1345,10 +1316,6 @@ def test_editing_a_non_destination_field_needs_no_credential(db_session: Any) ->
     """The guard must not tax ordinary editing. `warehouse` selects an object
     *within* an already-authenticated account — it cannot move where the password
     goes — so a PATCH that touches only it proceeds untouched.
-
-    Asserted explicitly because a guard that fires on every config change would
-    pass the rejection tests above just as happily while making the connection
-    editor unusable.
     """
     store = FakeSecretStore()
     conn = _create(db_session, store)
@@ -1366,11 +1333,11 @@ def test_editing_a_non_destination_field_needs_no_credential(db_session: Any) ->
 def test_a_partial_patch_that_omits_the_secret_name_is_not_read_as_a_move(
     db_session: Any,
 ) -> None:
-    """`update_connection`'s config is a wholesale REPLACE, and
-    `_carry_over_secret_name_keys` fills the omitted `*_secret_name` back in. The
-    redirect guard therefore has to compare against the MERGED config: comparing
-    against the raw payload would see the carried-over key as a change and demand
-    credentials for an edit that moved nothing."""
+    """`update_connection`'s config is a wholesale REPLACE, and `_carry_over_secret_name_keys`
+    fills the omitted `*_secret_name` back in. The redirect guard therefore has to compare
+    against the MERGED config: comparing against the raw payload would see the carried-over key
+    as a change and demand credentials for an edit that moved nothing.
+    """
     store = FakeSecretStore()
     conn = svc.create_connection(
         db_session,
@@ -1399,10 +1366,6 @@ def test_every_adapter_declares_destination_fields() -> None:
     not silently ship unprotected. `registry.destination_fields` refuses to
     default for exactly this reason (the default would be the fail-open answer);
     this turns that refusal into a CI error the moment an adapter is added.
-
-    ADF's empty mapping is asserted by name — empty is the one value that
-    disables the guard, so it must be a recorded decision (its authority is a
-    hardcoded Microsoft endpoint) rather than something a reader has to trust.
     """
     for conn_type in registry._ADAPTERS:
         slots = registry.destination_fields(conn_type)
@@ -1412,10 +1375,7 @@ def test_every_adapter_declares_destination_fields() -> None:
             continue
         assert slots, f"{conn_type!r} declares no destination fields"
         for slot, fields in slots.items():
-            # A slot key must name a credential `update_connection` can actually
-            # receive. A typo'd key guards NOTHING and says so nowhere: the guard
-            # would look up `<typo>_secret_name`, find nothing stored, and
-            # conclude there is no credential to protect.
+            # A slot key must name a credential `update_connection` can actually receive.
             assert slot in {"secret", "catalog"}, f"{conn_type!r} names unknown slot {slot!r}"
             assert fields, f"{conn_type!r} slot {slot!r} names no fields"
 
@@ -1423,17 +1383,6 @@ def test_every_adapter_declares_destination_fields() -> None:
 def test_moving_a_rest_catalog_uri_asks_for_the_primary_token(db_session: Any) -> None:
     """The review-caught hole in the first cut of this guard, and the reason
     `catalog_uri` is listed under BOTH slots.
-
-    `catalog_properties` puts both credentials at that one address: the catalog
-    password is injected into `props["uri"]`, and `props[secret_property] = secret`
-    is sent TO that uri — for a REST catalog `secret_property` is `token`, which
-    pyiceberg presents as `Authorization: Bearer …`.
-
-    So on the commonest REST shape — a `secret_ref` and NO `catalog_secret_name` —
-    listing `catalog_uri` under the `catalog` slot alone waved the move straight
-    through: the catalog slot found nothing stored and skipped, and the `secret`
-    slot's other fields hadn't moved. Every other test here reaches `catalog_uri`
-    through the catalog slot, which is exactly why none of them saw it.
     """
     store = FakeSecretStore()
     conn = svc.create_connection(
@@ -1475,10 +1424,6 @@ def test_moving_the_warehouse_asks_for_the_storage_key_not_the_catalog_password(
     catalog password (no primary secret), and `warehouse` belongs to the storage
     slot — so moving it asks for nothing, because there is no storage credential
     to redirect.
-
-    The inverse of `test_moving_catalog_uri_...`, and the reason
-    `destination_fields` is per-slot: a flat set would make this edit demand the
-    catalog DB password, which steers a different subsystem entirely.
     """
     store = FakeSecretStore()
     conn = svc.create_connection(
@@ -1531,7 +1476,8 @@ def test_delete_removes_the_catalog_secret_alongside_the_primary(db_session: Any
 
 def test_delete_without_a_catalog_secret_does_not_choke(db_session: Any) -> None:
     """A connection with no second credential (the common case) must delete
-    exactly as it always has — no `catalog_secret_name` key to even look for."""
+    exactly as it always has — no `catalog_secret_name` key to even look for.
+    """
     store = FakeSecretStore()
     conn = _create(db_session, store)  # plain snowflake, no catalog_secret
     svc.delete_connection(db_session, conn.id, secret_store=store, actor_id=_author_of(conn))
@@ -1546,7 +1492,8 @@ def test_draft_test_catalog_secret_unsupported_type_raises_config_invalid(
 ) -> None:
     """`test_draft_connection` must reject a `catalog_secret` for a type with no
     `catalog_secret_name` field exactly like `create_connection` does — a draft
-    is nothing MORE permissive than a real create just because nothing persists."""
+    is nothing MORE permissive than a real create just because nothing persists.
+    """
     with pytest.raises(ConnectionConfigInvalidError):
         svc.test_draft_connection(
             "snowflake",
@@ -1623,7 +1570,8 @@ def test_secret_only_update_records_no_version(db_session: Any) -> None:
 
 def test_noop_update_records_no_version(db_session: Any) -> None:
     """A PATCH that re-sends the current name/config (no net change) must not mint
-    a duplicate version — `is_modified` reports no change."""
+    a duplicate version — `is_modified` reports no change.
+    """
     conn = _create(db_session, FakeSecretStore())
     svc.update_connection(
         db_session,
@@ -1637,7 +1585,8 @@ def test_noop_update_records_no_version(db_session: Any) -> None:
 
 def test_create_without_secret_still_snapshots_v1(db_session: Any) -> None:
     """The credential-less create path still records v1 (conn.id is flushed before
-    the snapshot regardless of whether a secret is written)."""
+    the snapshot regardless of whether a secret is written).
+    """
     conn = _create(db_session, FakeSecretStore(), secret=None)
     versions = _versions(db_session, conn.id)
     assert [v.version_no for v in versions] == [1]
@@ -1682,15 +1631,7 @@ def _run_on(
     minutes_ago: int = 0,
     suite: Suite | None = None,
 ) -> Run:
-    """One run against a suite on `conn`, at an EXPLICIT time.
-
-    `created_at` is set rather than defaulted because Postgres' `now()` is
-    transaction-scoped: runs seeded in one test transaction otherwise share a
-    timestamp, recency falls through to the `id` tie-break, and `id` is a random
-    UUID — so "the newest run" would be arbitrary and this test would be a coin
-    flip. (The same tied-timestamp trap #928 fixed for the pipeline-run feed;
-    real runs are each their own transaction and do differ.)
-    """
+    """One run against a suite on `conn`, at an EXPLICIT time."""
     suite = suite or db_session.scalars(select(Suite).where(Suite.connection_id == conn.id)).first()
     if suite is None:
         suite = Suite(
@@ -1728,12 +1669,7 @@ def test_datasource_health_reports_a_failure_streak(db_session: Any) -> None:
 
 
 def test_datasource_health_streak_resets_after_one_success(db_session: Any) -> None:
-    """The streak counts LEADING failures, so one good run clears it.
-
-    This is the case a naive `count(status='failed')` gets wrong: it would report
-    2 for a connection that is working right now, and the badge would cry wolf
-    forever after a single historical blip.
-    """
+    """The streak counts LEADING failures, so one good run clears it."""
     conn = _create(db_session, FakeSecretStore())
     _run_on(db_session, conn, status="failed", reason="old failure", minutes_ago=3)
     _run_on(db_session, conn, status="failed", reason="old failure", minutes_ago=2)
@@ -1747,7 +1683,8 @@ def test_datasource_health_streak_resets_after_one_success(db_session: Any) -> N
 
 def test_datasource_health_omits_a_connection_with_no_runs(db_session: Any) -> None:
     """No runs is UNKNOWN, not healthy — absent from the mapping so the UI cannot
-    render it as a green tick (the rule the poll-health columns already carry)."""
+    render it as a green tick (the rule the poll-health columns already carry).
+    """
     conn = _create(db_session, FakeSecretStore())
     db_session.commit()
     assert svc.datasource_health(db_session, [conn.id]) == {}
@@ -1761,9 +1698,8 @@ def test_datasource_health_is_one_query_for_many_connections(db_session: Any) ->
     for conn in conns:
         _run_on(db_session, conn, status="failed", reason="boom")
     db_session.commit()
-    # Materialise the ids BEFORE recording: reading `.id` off post-commit expired
-    # objects issues refresh SELECTs that are the test's own doing, not the
-    # function's.
+    # Materialise the ids BEFORE recording: reading `.id` off post-commit expired objects issues
+    # refresh SELECTs that are the test's own doing, not the function's.
     ids = [c.id for c in conns]
 
     statements: list[str] = []
@@ -1778,27 +1714,14 @@ def test_datasource_health_is_one_query_for_many_connections(db_session: Any) ->
         event.remove(db_session.bind, "before_cursor_execute", _record)
 
     assert len(health) == 4
-    # Count the HEALTH query specifically (its lateral alias is unmistakable), not
-    # session bookkeeping like SAVEPOINTs — asserting on the total would be
-    # brittle against unrelated session behaviour while proving less.
-    #
-    # Keyed on `recent_runs` since #999 replaced the window function with a
-    # LATERAL top-N. A marker naming the implementation has to move when the
-    # implementation does; the alternative — matching "SELECT ... FROM runs" —
-    # would quietly match a future N+1 and pass.
+    # Count the HEALTH query specifically (its lateral alias is unmistakable), not session
+    # bookkeeping like SAVEPOINTs.
     health_queries = [s for s in statements if "recent_runs" in s.lower()]
     assert len(health_queries) == 1, f"expected one batched query, issued {len(health_queries)}"
 
 
 def test_datasource_health_a_cancelled_run_does_not_clear_the_streak(db_session: Any) -> None:
-    """Only a SUCCEEDED run proves the connection works (#954 review finding).
-
-    The first version broke on any non-failure, so a single cancelled or still-
-    running run at the head of the list hid a real failure streak directly
-    beneath it — the connection went quietly un-badged while every actual run
-    was failing. `queued`/`running` have not answered yet and `cancelled` was
-    stopped by a human; none of them is evidence the credential works.
-    """
+    """Only a SUCCEEDED run proves the connection works (#954 review finding)."""
     conn = _create(db_session, FakeSecretStore())
     _run_on(db_session, conn, status="failed", reason="creds rejected", minutes_ago=3)
     _run_on(db_session, conn, status="failed", reason="creds rejected", minutes_ago=2)
@@ -1831,14 +1754,7 @@ def _suite_on(db_session: Any, conn: Connection, name: str) -> Suite:
 
 
 def test_one_broken_suite_does_not_badge_a_working_connection(db_session: Any) -> None:
-    """The #998 false positive, pinned.
-
-    A broken suite running often used to fill the shared window and badge a
-    connection whose credential is fine — sending the operator to re-authenticate
-    something that works. A suite still succeeding proves the datasource is
-    reachable, so the CONNECTION-level signal must clear even while that other
-    suite stays broken (a per-suite problem belongs on the suite).
-    """
+    """The #998 false positive, pinned."""
     conn = _create(db_session, FakeSecretStore())
     broken = _suite_on(db_session, conn, "broken-hourly")
     healthy = _suite_on(db_session, conn, "healthy-daily")
@@ -1882,12 +1798,7 @@ def test_a_connection_is_degraded_only_when_every_suite_is_failing(db_session: A
 
 
 def test_a_busy_suite_cannot_crowd_a_quiet_one_out_of_the_window(db_session: Any) -> None:
-    """Each suite gets its OWN window (#998 AC 2).
-
-    With a shared 20-run window, 25 failures on a chatty suite would evict the
-    quiet suite's success entirely and the connection would read as dead. Per-suite
-    windows make the quiet suite's verdict independent of the noisy one's volume.
-    """
+    """Each suite gets its OWN window (#998 AC 2)."""
     conn = _create(db_session, FakeSecretStore())
     noisy = _suite_on(db_session, conn, "noisy")
     quiet = _suite_on(db_session, conn, "quiet")
@@ -1905,7 +1816,8 @@ def test_a_busy_suite_cannot_crowd_a_quiet_one_out_of_the_window(db_session: Any
 def test_checked_at_is_stamped_even_when_there_is_no_readable_expiry(db_session: Any) -> None:
     """The whole point. A Snowflake PAT states no expiry, so `credential_expires_at`
     stays NULL — but "we looked and there is none" must be distinguishable from
-    "nobody has looked", or the absence of a warning reads as reassurance."""
+    "nobody has looked", or the absence of a warning reads as reassurance.
+    """
     conn = _create(db_session, FakeSecretStore())  # a type with no readable expiry
 
     assert conn.credential_expires_at is None
@@ -1916,7 +1828,8 @@ def test_a_connection_written_before_the_feature_reads_as_unchecked(db_session: 
     """Prod's actual state after the 2026-07-26 deploy: rows whose secret predates
     #838. They must NOT claim to have been checked — the migration deliberately
     does not backfill, because stamping "checked" for rows nobody read would
-    assert exactly the thing this column exists to distinguish."""
+    assert exactly the thing this column exists to distinguish.
+    """
     conn = _create(db_session, FakeSecretStore())
     conn.credential_expiry_checked_at = None  # simulate a pre-feature row
     db_session.commit()
@@ -1928,19 +1841,7 @@ def test_a_connection_written_before_the_feature_reads_as_unchecked(db_session: 
 def test_renaming_a_connection_never_moves_its_secret_ref(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """THE invariant of readable names, and the one the suite could not express.
-
-    `secret_ref` is stored, never recomputed. Rename a connection and the generated
-    name changes — but the credential still lives under the ORIGINAL key, so
-    recomputing would point at a key that does not exist and the credential would
-    read as missing: "#954 again, self-inflicted", as the module docstring puts it.
-
-    Every existing rotate/reauth test creates a connection and never renames it, so
-    the recomputed ref is byte-identical to the stored one and a recompute passes
-    unnoticed — the "fixture encodes our model" shape. Removing the `conn.secret_ref
-    or` guard from update AND reauth left all 2828 tests green; this is the test that
-    fails.
-    """
+    """THE invariant of readable names, and the one the suite could not express."""
     store = FakeSecretStore()
     conn = _create(db_session, store)
     original_ref = conn.secret_ref

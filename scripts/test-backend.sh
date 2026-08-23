@@ -1,24 +1,5 @@
 #!/usr/bin/env bash
-# Run the backend test suite locally against the docker-compose Postgres + Redis,
-# so the DB-backed tests (~1,000 of the ~4,800-test suite) RUN instead of skipping
-# (they need real Postgres for gen_random_uuid()/jsonb — see
-# backend/tests/conftest.py). This mirrors what CI does. Without these services
-# `pytest` still passes, just skipping the DB tests.
-#
-#   scripts/test-backend.sh                      # full suite
-#   scripts/test-backend.sh -k notifications -x  # extra pytest args pass through
-#
-# NOTE: a bare PATH argument does NOT narrow the run — the script always passes
-# backend/tests, so an extra path only widens it; and the repo-wide
-# --cov-fail-under=80 in addopts would fail a genuine subset anyway. Narrow with
-# -k/-x (or run pytest directly with -o addopts= for targeted coverage).
-#
-# Safe: tests run against a dedicated `dataq_test` database (create_all/drop_all +
-# per-test rollback), never the dev `${POSTGRES_DB}` with your seed data.
-#
-# DATAQ_E2E=1 below is the explicit opt-in the one real-broker E2E test
-# (test_probe_e2e) requires in addition to DATABASE_URL + REDIS_URL — see its
-# module docstring for why DATABASE_URL alone stopped being a reliable signal.
+# Run the backend test suite locally against the docker-compose Postgres + Redis.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

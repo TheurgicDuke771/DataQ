@@ -1,12 +1,4 @@
-"""Up/down test for the `f0a1b2c3d4e5_add_asset_description` migration.
-
-The migration adds a single nullable `assets.description` column. This binds the
-migration module's own `upgrade()` / `downgrade()` to a live connection via an
-Alembic `Operations` context and asserts the column appears and disappears —
-exercising the real DDL, not just the module's structure. All DDL runs inside the
-`db_session`'s rolled-back transaction, so nothing persists.
-
-Skips without TEST_DATABASE_URL (needs real Postgres)."""
+"""Up/down test for the `f0a1b2c3d4e5_add_asset_description` migration."""
 
 from __future__ import annotations
 
@@ -45,11 +37,7 @@ def test_revision_chain() -> None:
 
 
 def test_up_down_up(db_session: Any) -> None:
-    """down (drop) → up (add) → down (drop) against the live `assets` table.
-
-    `Base.metadata.create_all` (the test fixture) already created the column, so
-    the sequence starts by dropping it, then re-adds and re-drops — covering both
-    `downgrade()` and `upgrade()` DDL in one pass."""
+    """down (drop) → up (add) → down (drop) against the live `assets` table."""
     module = _load_migration()
     connection = db_session.connection()
     ctx = MigrationContext.configure(connection)
