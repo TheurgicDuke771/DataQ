@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "1230c54ac2d8",
+  "strategy": "manual-commit",
+  "branch": "feat/1562-dark-mode-phase2-infrastructure",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "frontend/src/ThemedShell.tsx",
+    "frontend/src/main.tsx",
+    "frontend/src/styles.css",
+    "frontend/src/theme.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/12/30c54ac2d8/0/metadata.json",
+      "transcript": "/12/30c54ac2d8/0/full.jsonl",
+      "compact_transcript": "/12/30c54ac2d8/0/transcript.jsonl",
+      "content_hash": "/12/30c54ac2d8/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 222,
+    "cache_creation_tokens": 100988,
+    "cache_read_tokens": 42932789,
+    "output_tokens": 50536,
+    "api_call_count": 111
+  }
+}
