@@ -4,15 +4,18 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { type Connection, getConnection } from '../../src/api/connections';
+import { type Connection, getConnection, listConnections } from '../../src/api/connections';
 import { type Check, createCheck, getSuite, type Suite } from '../../src/api/suites';
 import { CheckNew } from '../../src/pages/CheckNew';
 
 // Monitor authoring (ADR 0012) is SQL-datasource-gated, so this suite mocks a
 // Snowflake connection — only then do the Freshness/Volume categories appear.
+// listConnections is a real (jsdom-XHR) call unless mocked — jsdom 30 hangs such a
+// request against a relative URL with no server instead of rejecting quickly (jsdom 29
+// did), so the component's `state` never settles without this mock.
 vi.mock('../../src/api/connections', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/connections')>();
-  return { ...actual, getConnection: vi.fn() };
+  return { ...actual, getConnection: vi.fn(), listConnections: vi.fn() };
 });
 vi.mock('../../src/api/suites', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/suites')>();
@@ -22,6 +25,8 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
 const mockGetSuite = vi.mocked(getSuite);
 const mockGetConnection = vi.mocked(getConnection);
 const mockCreate = vi.mocked(createCheck);
+const mockListConnections = vi.mocked(listConnections);
+mockListConnections.mockResolvedValue([]);
 
 const suite: Suite = {
   id: 's1',
