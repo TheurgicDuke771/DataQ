@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "52253696ac06",
+  "strategy": "manual-commit",
+  "branch": "feat/1562-dark-mode-phase5-toggle-ui",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/styles.css",
+    "frontend/src/theme.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/52/253696ac06/0/metadata.json",
+      "transcript": "/52/253696ac06/0/full.jsonl",
+      "compact_transcript": "/52/253696ac06/0/transcript.jsonl",
+      "content_hash": "/52/253696ac06/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 14000,
+    "cache_read_tokens": 12150791,
+    "output_tokens": 6813,
+    "api_call_count": 20
+  }
+}
