@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "12e1967c5663",
+  "strategy": "manual-commit",
+  "branch": "feat/1562-dark-mode-phase5-toggle-ui",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/App.tsx",
+    "frontend/src/auth/LoginPage.tsx",
+    "frontend/src/components/ThemeToggle.tsx",
+    "frontend/tests/App.otpSignOut.test.tsx",
+    "frontend/tests/App.test.tsx",
+    "frontend/tests/components/ThemeToggle.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/12/e1967c5663/0/metadata.json",
+      "transcript": "/12/e1967c5663/0/full.jsonl",
+      "compact_transcript": "/12/e1967c5663/0/transcript.jsonl",
+      "content_hash": "/12/e1967c5663/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 130,
+    "cache_creation_tokens": 46164,
+    "cache_read_tokens": 37534450,
+    "output_tokens": 18034,
+    "api_call_count": 65
+  }
+}
