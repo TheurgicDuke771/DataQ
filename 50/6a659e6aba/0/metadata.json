@@ -154,6 +154,54 @@
   "session_metrics": {
     "turn_count": 12
   },
+  "summary": {
+    "intent": "Implement issue #1532: extend the Unity Catalog runner's two-batch split (from #1179) so ordinary expectation checks route through Databricks SQL Warehouse pushdown by default, with a rollback flag, tests, live verification, and PR merge.",
+    "outcome": "PR #1533 merged (squash commit f26d9207) with issue #1532 closed; pushdown is now the default UC execution path (pandas kept for to_be_of_type, sampled suites, unaudited types, and UC_SQL_PUSHDOWN=false rollback), live Databricks equivalence proven across 8 check shapes, full backend suite green (4,916 tests, 97.16%), mypy/bandit/black/ruff clean, all 14 CI checks green, and a follow-up issue (#1534) filed for a shared pre-existing exposure.",
+    "learnings": {
+      "repo": [
+        "UC runner's routing extends the #1179 two-batch split pattern; settings flag naming follows the #1323 rollback-guard convention and mirrors the existing profiler fallback toggle in profile_service.py",
+        "In Databricks, when index_columns collides with the checked column, GX's locator query selects that column twice, which the Databricks arrow layer refuses — colliding checks must run without the index request since their unexpected values are already the locators",
+        "Databricks resolves identifiers case-insensitively, so clash detection between index_columns and checked columns must casefold before comparing",
+        "Sampled suites must stay on the frame path — pushdown was silently ignoring the declared SampleSpec and flipping results, breaking the published sampling contract; decision made: sampling always wins over pushdown, which also restores consistency with the author-time row-count gate",
+        "COMPLETE result_format fetches all failing locator rows on SQL batches before applying the cap — a pre-existing #755-class exposure on the UC path, and shared with the Snowflake SQL path (filed as #1534)",
+        "Test files that don't guard against real settings can silently route to the live SQL seam and hang on DNS instead of failing fast"
+      ],
+      "code": [
+        {
+          "path": "backend/app/datasources/unity_catalog.py",
+          "finding": "run_checks rewritten to route ordinary expectations through SQL pushdown by default, threading index_columns into the SQL group for failing-sample capture while keeping the pure-custom-SQL optimization"
+        },
+        {
+          "path": "backend/app/datasources/unity_catalog.py",
+          "finding": "_run_sql_checks fixed for casefolded index/column clash detection, so a clash-group failure no longer discards the kept group's computed outcomes, and pure-custom-SQL keep groups drop the now-inert index request"
+        },
+        {
+          "path": "backend/app/core/config.py",
+          "finding": "Added UC_SQL_PUSHDOWN settings flag following the #1323 rollback-guard naming pattern, with the suite-wide default pinned off via conftest and shipped default on via a dedicated config test"
+        },
+        {
+          "path": "backend/tests/datasources/test_unity_catalog.py",
+          "finding": "Added an autouse file-level guard that fails loudly (2.66s) instead of hanging when a test misroutes to the real SQL seam; frame-lane legacy tests routed through _pushdown_off explicitly"
+        }
+      ],
+      "workflow": [
+        "Live end-to-end verification against a real warehouse (per issue #953) is treated as a mandatory final layer for dialect-specific facts that local mocks can't prove — it caught a real duplicate-column failure the unit tests missed",
+        "Running /code-review as a mandated post-PR step surfaced 10 real findings (sampling-contract break, case-fold bug, stale docs, unbounded-fetch issue) that shipped code review would have missed",
+        "When a test file's failure mode is a silent hang (DNS timeout) rather than an error, add an autouse guard that asserts routing/config before the real test body runs, so misroutes fail in seconds instead of minutes",
+        "User feedback confirmed: trim comments to essentials, avoid prose explaining what code already shows — saved as a persistent preference"
+      ]
+    },
+    "friction": [
+      "Two separate pytest runs hung for 7+ minutes because new/changed tests silently routed to the real SQL seam and stalled on DNS; both had to be killed manually",
+      "The clash-detection fix changed correct behavior in a way that broke an earlier spy test whose check column happened to equal its index column — required retargeting that test to a non-colliding index",
+      "mypy attr-defined error surfaced only after the routing rewrite and needed a separate fix pass",
+      "The full backend suite exceeded its normal ~100s runtime post-change because another test file also began routing to the live SQL seam, requiring another kill-and-diagnose cycle before adding the conftest-level pushdown-off default"
+    ],
+    "open_items": [
+      "Change is merged but not yet deployed — will ship with the next roll of both clouds; changelog's Unreleased section is already written for it",
+      "Filed #1534 (milestoned W6) for the COMPLETE result_format unbounded locator-row fetch on SQL batches, shared between UC and Snowflake, still unfixed"
+    ]
+  },
   "initial_attribution": {
     "calculated_at": "2026-08-22T19:52:34.831399Z",
     "agent_lines": 399,
