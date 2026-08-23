@@ -5,13 +5,11 @@
   "branch": "feat/1562-dark-mode-phase4-monaco-lineage",
   "checkpoints_count": 1,
   "files_touched": [
-    "frontend/index.html",
-    "frontend/public/theme-init.js",
-    "frontend/src/components/charts/chartTheme.ts",
-    "frontend/src/components/dashboard/AssetHealthLead.tsx",
-    "frontend/src/components/dashboard/MetricCard.tsx",
     "frontend/src/styles.css",
-    "frontend/tests/components/chartTheme.test.ts"
+    "frontend/src/theme.ts",
+    "frontend/src/themeMode/ThemeModeProvider.tsx",
+    "frontend/tests/components/chartTheme.test.ts",
+    "frontend/tests/themeMode/ThemeModeProvider.test.tsx"
   ],
   "sessions": [
     {
@@ -23,10 +21,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 82,
-    "cache_creation_tokens": 27238,
-    "cache_read_tokens": 21359234,
-    "output_tokens": 16291,
-    "api_call_count": 41
+    "input_tokens": 46,
+    "cache_creation_tokens": 19712,
+    "cache_read_tokens": 12530198,
+    "output_tokens": 8830,
+    "api_call_count": 23
   }
 }
