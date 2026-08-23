@@ -178,4 +178,22 @@ describe('CheckHistoryDrawer — restore', () => {
     expect(popover?.style.pointerEvents).not.toBe('none');
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
   });
+
+  it('shows which engine each version ran on, so a restore across engines is never a surprise (ADR 0036)', async () => {
+    mockList.mockResolvedValue([
+      version({ version_no: 2, engine: 'dmf' }),
+      version({ version_no: 1, engine: 'gx' }),
+    ]);
+    renderDrawer();
+
+    expect(await screen.findByText('Snowflake DMF (native)')).toBeInTheDocument();
+    expect(screen.getByText('Great Expectations (gx)')).toBeInTheDocument();
+  });
+
+  it('reads a pre-0036 version with no engine field as gx', async () => {
+    mockList.mockResolvedValue([version({ version_no: 1, engine: undefined })]);
+    renderDrawer();
+
+    expect(await screen.findByText('Great Expectations (gx)')).toBeInTheDocument();
+  });
 });

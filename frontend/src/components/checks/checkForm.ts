@@ -66,6 +66,8 @@ export function buildCheckPayload(values: Record<string, unknown>): CheckCreate 
     // The monitor kinds (freshness/volume) carry a non-default kind; expectations
     // (incl. custom-SQL) stay 'expectation'. The backend defaults to 'expectation'.
     kind: spec?.kind ?? 'expectation',
+    // engine: 'gx' unless Freshness's picker (values.engine) or the spec fixes otherwise.
+    engine: (values.engine as string | undefined) ?? spec?.engine ?? 'gx',
     expectation_type: values.expectation_type as string,
     config: formToConfig(spec, (values.config ?? {}) as Record<string, unknown>),
     // ADR 0038.

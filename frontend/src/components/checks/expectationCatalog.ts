@@ -28,7 +28,11 @@ export type ExpectationCategory =
   | 'Schema'
   | 'Anomaly'
   | 'Custom SQL'
-  | 'Comparison';
+  | 'Comparison'
+  | 'Snowflake DMF';
+
+/** Check engine (ADR 0036). */
+export type CheckEngine = 'gx' | 'dmf';
 
 export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
   'Column values',
@@ -36,6 +40,7 @@ export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
   'Freshness',
   'Volume',
   'Schema',
+  'Snowflake DMF',
   'Anomaly',
   'Custom SQL',
   'Comparison',
@@ -145,6 +150,37 @@ export interface ExpectationSpec {
   fields: ConfigField[];
   /** Present for monitor kinds — drives the threshold block's help/bounds/required. */
   thresholds?: MonitorThresholdSpec;
+  /** Engine (ADR 0036); omitted = `gx`. Fixed `dmf` for the `dmf:*` types below. */
+  engine?: CheckEngine;
+  /** `dmf:unique_count` degrades downward — the backend rejects any threshold on it. */
+  noThresholds?: boolean;
+}
+
+/** Freshness's type — same string for both engines, so it's a choice rather than a second entry. */
+export const FRESHNESS_EXPECTATION_TYPE = 'monitor:freshness';
+
+/** Mirrors `engines_for('snowflake')` (`backend/app/datasources/engines.py`). */
+export function offersDmfEngine(connectionType: ConnectionType | undefined): boolean {
+  return connectionType === 'snowflake';
+}
+
+/** True only for Freshness on a Snowflake connection — the one spec with an engine choice. */
+export function showEngineChoiceFor(
+  spec: ExpectationSpec | undefined,
+  connectionType: ConnectionType | undefined,
+): boolean {
+  return spec?.type === FRESHNESS_EXPECTATION_TYPE && offersDmfEngine(connectionType);
+}
+
+/** The engine a check actually runs on. */
+export function effectiveEngineFor(
+  spec: ExpectationSpec | undefined,
+  connectionType: ConnectionType | undefined,
+  engineChoice: string | undefined,
+): CheckEngine {
+  if (spec?.engine) return spec.engine;
+  if (showEngineChoiceFor(spec, connectionType)) return (engineChoice as CheckEngine) ?? 'gx';
+  return 'gx';
 }
 
 const COLUMN: ConfigField = { name: 'column', label: 'Column', type: 'string' };
@@ -434,6 +470,61 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
       max: 100,
     },
   },
+  // Snowflake DMF (ADR 0036 §6) — own expectation types, not a GX toggle.
+  {
+    type: 'dmf:null_count',
+    engine: 'dmf',
+    dimension: 'completeness',
+    label: 'Null count (DMF)',
+    description:
+      'Snowflake’s system NULL_COUNT metric function, computed natively in the warehouse.',
+    category: 'Snowflake DMF',
+    fields: [COLUMN],
+    thresholds: {
+      help: 'Band the NULL count (higher = worse). A fail or critical threshold is required.',
+      requireFailOrCritical: true,
+    },
+  },
+  {
+    type: 'dmf:null_percent',
+    engine: 'dmf',
+    dimension: 'completeness',
+    label: 'Null percent (DMF)',
+    description:
+      'Snowflake’s system NULL_PERCENT metric function (0–100), computed natively in the warehouse.',
+    category: 'Snowflake DMF',
+    fields: [COLUMN],
+    thresholds: {
+      help: 'Band the NULL percent (0–100, higher = worse). A fail or critical threshold is required.',
+      max: 100,
+      requireFailOrCritical: true,
+    },
+  },
+  {
+    type: 'dmf:duplicate_count',
+    engine: 'dmf',
+    dimension: 'uniqueness',
+    label: 'Duplicate count (DMF)',
+    description:
+      'Snowflake’s system DUPLICATE_COUNT metric function, computed natively in the warehouse.',
+    category: 'Snowflake DMF',
+    fields: [COLUMN],
+    thresholds: {
+      help: 'Band the duplicate count (higher = worse). A fail or critical threshold is required.',
+      requireFailOrCritical: true,
+    },
+  },
+  {
+    type: 'dmf:unique_count',
+    engine: 'dmf',
+    noThresholds: true,
+    dimension: 'uniqueness',
+    label: 'Unique count (DMF)',
+    description:
+      'Snowflake’s system UNIQUE_COUNT metric function, computed natively in the warehouse. Degrades downward, so this type carries no thresholds — read the observed value directly.',
+    category: 'Snowflake DMF',
+    fields: [COLUMN],
+  },
 ];
 
 /** Lookup by expectation_type (for prefilling the editor in edit mode). */
@@ -469,6 +560,8 @@ const ANOMALY_CATEGORY: ExpectationCategory = 'Anomaly';
  */
 const MONITOR_CATEGORY_SET = new Set<ExpectationCategory>(MONITOR_CATEGORIES);
 
+const DMF_CATEGORY: ExpectationCategory = 'Snowflake DMF';
+
 /** Grouped catalog filtered for a suite's datasource. */
 export function expectationsByCategoryFor(
   connectionType: ConnectionType | undefined,
@@ -479,12 +572,14 @@ export function expectationsByCategoryFor(
 }[] {
   const sqlAllowed = connectionType !== undefined && isSqlQueryable(connectionType);
   const monitorAllowed = connectionType !== undefined && supportsMonitors(connectionType);
+  const dmfAllowed = offersDmfEngine(connectionType);
   const selectedCategory = alwaysIncludeType
     ? EXPECTATION_BY_TYPE[alwaysIncludeType]?.category
     : undefined;
   const allowed = (category: ExpectationCategory): boolean => {
     if (category === selectedCategory) return true;
     if (category === CUSTOM_SQL_CATEGORY || category === ANOMALY_CATEGORY) return sqlAllowed;
+    if (category === DMF_CATEGORY) return dmfAllowed;
     if (MONITOR_CATEGORY_SET.has(category)) return monitorAllowed;
     return true; // datasource-agnostic category
   };

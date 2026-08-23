@@ -98,6 +98,7 @@ describe('CheckNew', () => {
     expect(mockCreate).toHaveBeenCalledWith('s1', {
       name: 'status in set',
       kind: 'expectation',
+      engine: 'gx',
       expectation_type: 'expect_column_values_to_be_in_set',
       config: { column: 'status', value_set: ['active', 'closed', 'pending'] },
       // ADR 0038: the derived default is SENT, not left for the backend — the
@@ -220,6 +221,7 @@ describe('CheckNew — type_ hint (issue #768)', () => {
     expect(mockCreate).toHaveBeenCalledWith('s1', {
       name: 'amount is decimal',
       kind: 'expectation',
+      engine: 'gx',
       expectation_type: 'expect_column_values_to_be_of_type',
       config: { column: 'amount', type_: 'DECIMAL(38, 0)' },
       dimension: 'validity',

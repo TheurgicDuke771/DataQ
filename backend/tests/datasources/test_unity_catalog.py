@@ -1643,9 +1643,13 @@ def test_pushdown_allowlist_partitions_the_catalog() -> None:
     import json
     from pathlib import Path
 
+    from backend.app.datasources.snowflake_dmf import DMF_EXPECTATION_TYPES
+
     fixture = Path(__file__).parent.parent / "fixtures" / "expectation_catalog.json"
     catalog_types = {
-        e["type"] for e in json.loads(fixture.read_text()) if e["kind"] == "expectation"
+        e["type"]
+        for e in json.loads(fixture.read_text())
+        if e["kind"] == "expectation" and e["type"] not in DMF_EXPECTATION_TYPES
     }
     routed = (
         SQL_PUSHDOWN_EXPECTATION_TYPES

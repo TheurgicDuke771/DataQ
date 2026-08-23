@@ -116,6 +116,7 @@ describe('CheckEdit', () => {
     // `kind` is immutable on update, so the PATCH omits it.
     expect(mockUpdate).toHaveBeenCalledWith('s1', 'chk1', {
       name: 'amount range v2',
+      engine: 'gx',
       expectation_type: 'expect_column_values_to_be_between',
       config: { column: 'amount', min_value: 0, max_value: 100 },
       // The stored override survives an edit that never touches the field —
@@ -193,6 +194,120 @@ describe('CheckEdit', () => {
 
     // The form renders from the check even though the connection 403s.
     await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'));
+  });
+});
+
+describe('CheckEdit — Snowflake DMF engine (ADR 0036)', () => {
+  const existingFreshnessDmf: Check = {
+    id: 'chk2',
+    suite_id: 's1',
+    name: 'orders fresh',
+    kind: 'freshness',
+    engine: 'dmf',
+    expectation_type: 'monitor:freshness',
+    config: { column: 'loaded_at' },
+    dimension: 'timeliness',
+    warn_threshold: null,
+    fail_threshold: 48,
+    critical_threshold: null,
+    alert_snoozed_until: null,
+  };
+
+  it('prefills the Engine picker from the stored engine on a freshness check', async () => {
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(existingFreshnessDmf);
+    mockGetConnection.mockResolvedValue(connection);
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTitle('Snowflake DMF (native)')).toBeInTheDocument());
+  });
+
+  it('switches an existing freshness check from dmf to gx and saves it', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(existingFreshnessDmf);
+    mockGetConnection.mockResolvedValue(connection);
+    mockUpdate.mockResolvedValue(existingFreshnessDmf);
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTitle('Snowflake DMF (native)')).toBeInTheDocument());
+    await user.click(screen.getByLabelText('Engine'));
+    await user.click(await screen.findByTitle('Great Expectations (gx)'));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith(
+      's1',
+      'chk2',
+      expect.objectContaining({ engine: 'gx', expectation_type: 'monitor:freshness' }),
+    );
+  });
+
+  const existingDmfNullCount: Check = {
+    id: 'chk3',
+    suite_id: 's1',
+    name: 'order_id nulls',
+    kind: 'expectation',
+    engine: 'dmf',
+    expectation_type: 'dmf:null_count',
+    config: { column: 'order_id' },
+    dimension: 'completeness',
+    warn_threshold: null,
+    fail_threshold: 5,
+    critical_threshold: null,
+    alert_snoozed_until: null,
+  };
+
+  it('resolves the engine to gx (not left blank) when switching type into Freshness', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(existingDmfNullCount);
+    mockGetConnection.mockResolvedValue(connection);
+    mockUpdate.mockResolvedValue(existingDmfNullCount);
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('order_id'));
+    await user.click(screen.getByLabelText('Expectation'));
+    await user.click(await screen.findByRole('option', { name: 'Freshness' }));
+    await waitFor(() => expect(screen.getByTitle('Great Expectations (gx)')).toBeInTheDocument());
+    await user.type(await screen.findByLabelText('Timestamp column'), 'loaded_at');
+    await user.type(screen.getByLabelText('Fail ≥'), '48');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith(
+      's1',
+      'chk3',
+      expect.objectContaining({ engine: 'gx', expectation_type: 'monitor:freshness' }),
+    );
+  });
+
+  it('clears stale thresholds when switching to dmf:unique_count (unbandable)', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(existingDmfNullCount);
+    mockGetConnection.mockResolvedValue(connection);
+    mockUpdate.mockResolvedValue(existingDmfNullCount);
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText('Fail ≥')).toHaveValue('5'));
+    await user.click(screen.getByLabelText('Expectation'));
+    await user.click(await screen.findByTitle('Unique count (DMF)'));
+    expect(screen.queryByLabelText('Fail ≥')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith(
+      's1',
+      'chk3',
+      expect.objectContaining({
+        expectation_type: 'dmf:unique_count',
+        warn_threshold: null,
+        fail_threshold: null,
+        critical_threshold: null,
+      }),
+    );
   });
 });
 
@@ -431,6 +546,7 @@ describe('CheckEdit — anomaly monitor (#593)', () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate).toHaveBeenCalledWith('s1', 'chk3', {
       name: 'orders row-count anomaly',
+      engine: 'gx',
       expectation_type: 'monitor:anomaly',
       config: { target_metric: 'row_count', window: 21, min_points: 10, seasonality: true },
       dimension: undefined,

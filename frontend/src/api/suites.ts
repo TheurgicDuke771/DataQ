@@ -124,6 +124,9 @@ export interface Check {
   suite_id: string;
   name: string;
   kind: string;
+  /** Check engine (ADR 0036) — `gx` (default) or `dmf` on a Snowflake connection.
+   *  Optional so pre-0036 fixtures need no change. */
+  engine?: string;
   expectation_type: string;
   /** DQ dimension (ADR 0038). `null` = unclassified — render it as a coverage
    *  gap, never bucket it silently. Optional so pre-0038 fixtures need no change. */
@@ -156,6 +159,9 @@ export async function getCheck(suiteId: string, checkId: string): Promise<Check>
 export interface CheckCreate {
   name: string;
   kind?: string;
+  /** Check engine (ADR 0036) — omit for `gx`; `dmf` is offered only on a
+   *  Snowflake connection (validated server-side, ADR 0036 §5). */
+  engine?: string;
   expectation_type: string;
   /** DQ dimension (ADR 0038). Omit to take the backend's derived default. */
   dimension?: string | null;
@@ -170,6 +176,9 @@ export interface CheckCreate {
 /** Mirrors `CheckUpdate` — all fields optional; kind is immutable. */
 export interface CheckUpdate {
   name?: string;
+  /** Check engine (ADR 0036) — switch an existing check between `gx`/`dmf`
+   *  (e.g. a freshness check, the one type both engines evaluate). */
+  engine?: string;
   expectation_type?: string;
   /** Re-classifiable at any time (ADR 0038 §2). */
   dimension?: string | null;
@@ -222,6 +231,10 @@ export interface CheckVersion {
   version_no: number;
   name: string;
   kind: string;
+  /** ADR 0036 — a restore reinstates this unconditionally, so history must
+   *  show which evaluator it would bring back. Optional so pre-0036 fixtures
+   *  need no change. */
+  engine?: string;
   expectation_type: string;
   config: Record<string, unknown>;
   warn_threshold: number | null;
