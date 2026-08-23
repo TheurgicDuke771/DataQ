@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "3da85ecedd9b",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-1552-dmf-engine-picker",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3d/a85ecedd9b/0/metadata.json",
+      "transcript": "/3d/a85ecedd9b/0/full.jsonl",
+      "compact_transcript": "/3d/a85ecedd9b/0/transcript.jsonl",
+      "content_hash": "/3d/a85ecedd9b/0/content_hash.txt",
+      "prompt": "/3d/a85ecedd9b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 8242,
+    "cache_read_tokens": 5975478,
+    "output_tokens": 3733,
+    "api_call_count": 9
+  }
+}

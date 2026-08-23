@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bz3giyyft</task-id>
+<tool-use-id>toolu_011uHX7zytbSSxgppKbhjbkB</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d6683d42-dad1-4a22-9c40-68611e202599/tasks/bz3giyyft.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR CI to completion" completed (exit code 0)</summary>
+</task-notification>
