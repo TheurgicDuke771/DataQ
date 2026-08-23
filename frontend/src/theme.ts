@@ -1,4 +1,4 @@
-import type { ThemeConfig } from 'antd';
+import { theme as antdTheme, type ThemeConfig } from 'antd';
 
 /** App-wide Ant Design theme. */
 
@@ -17,6 +17,16 @@ export const BRAND = {
   ink: '#1f2430',
 } as const;
 
+/** Dark-mode counterpart of BRAND (#1562). */
+export const DARK_BRAND = {
+  primary: '#818cf8',
+  primarySoft: '#3730a3',
+  selectedBg: 'rgba(129, 140, 248, 0.16)',
+  canvas: '#0d1117',
+  border: '#30363d',
+  ink: '#e6edf3',
+} as const;
+
 /** Shared shell metrics so App.tsx and the theme agree. */
 export const SHELL = {
   headerHeight: 56,
@@ -31,43 +41,52 @@ export const SEVERITY_SCALE = {
   neutral: '#bfbfbf',
 } as const;
 
-export const appTheme: ThemeConfig = {
-  token: {
-    colorPrimary: BRAND.primary,
-    colorInfo: BRAND.primary,
-    colorLink: BRAND.primary,
-    colorTextHeading: BRAND.ink,
-    colorBgLayout: BRAND.canvas,
-    borderRadius: 8,
-    fontFamily:
-      "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-    // Code / SQL / identifiers — JetBrains Mono (self-hosted via @fontsource),
-    // falling back to the platform monospace stack.
-    fontFamilyCode:
-      "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace",
-    fontSize: 14,
-  },
-  components: {
-    Layout: {
-      headerBg: '#ffffff',
-      headerHeight: SHELL.headerHeight,
-      headerPadding: '0 24px',
-      siderBg: '#ffffff',
-      bodyBg: BRAND.canvas,
+export type AppThemeMode = 'light' | 'dark';
+
+export function getAppTheme(mode: AppThemeMode): ThemeConfig {
+  const brand = mode === 'dark' ? DARK_BRAND : BRAND;
+  const surfaceBg = mode === 'dark' ? '#161b22' : '#ffffff';
+  const tableHeaderBg = mode === 'dark' ? '#161b22' : '#fafbfc';
+
+  return {
+    algorithm: mode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+    token: {
+      colorPrimary: brand.primary,
+      colorInfo: brand.primary,
+      colorLink: brand.primary,
+      colorTextHeading: brand.ink,
+      colorBgLayout: brand.canvas,
+      borderRadius: 8,
+      fontFamily:
+        "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+      // Code / SQL / identifiers — JetBrains Mono (self-hosted via @fontsource),
+      // falling back to the platform monospace stack.
+      fontFamilyCode:
+        "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace",
+      fontSize: 14,
     },
-    Menu: {
-      // Rounded, inset nav items read as a modern sidebar rather than full-bleed rows.
-      itemBorderRadius: 8,
-      itemMarginInline: 8,
-      itemHeight: 38,
-      itemSelectedBg: BRAND.selectedBg,
-      itemSelectedColor: BRAND.primary,
+    components: {
+      Layout: {
+        headerBg: surfaceBg,
+        headerHeight: SHELL.headerHeight,
+        headerPadding: '0 24px',
+        siderBg: surfaceBg,
+        bodyBg: brand.canvas,
+      },
+      Menu: {
+        // Rounded, inset nav items read as a modern sidebar rather than full-bleed rows.
+        itemBorderRadius: 8,
+        itemMarginInline: 8,
+        itemHeight: 38,
+        itemSelectedBg: brand.selectedBg,
+        itemSelectedColor: brand.primary,
+      },
+      Card: {
+        borderRadiusLG: 12,
+      },
+      Table: {
+        headerBg: tableHeaderBg,
+      },
     },
-    Card: {
-      borderRadiusLG: 12,
-    },
-    Table: {
-      headerBg: '#fafbfc',
-    },
-  },
-};
+  };
+}
