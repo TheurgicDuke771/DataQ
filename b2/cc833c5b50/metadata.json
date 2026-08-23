@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "b2cc833c5b50",
+  "strategy": "manual-commit",
+  "branch": "feat/1562-dark-mode-phase4-monaco-lineage",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/index.html",
+    "frontend/public/theme-init.js",
+    "frontend/src/components/charts/chartTheme.ts",
+    "frontend/src/components/dashboard/AssetHealthLead.tsx",
+    "frontend/src/components/dashboard/MetricCard.tsx",
+    "frontend/src/styles.css",
+    "frontend/tests/components/chartTheme.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b2/cc833c5b50/0/metadata.json",
+      "transcript": "/b2/cc833c5b50/0/full.jsonl",
+      "compact_transcript": "/b2/cc833c5b50/0/transcript.jsonl",
+      "content_hash": "/b2/cc833c5b50/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 82,
+    "cache_creation_tokens": 27238,
+    "cache_read_tokens": 21359234,
+    "output_tokens": 16291,
+    "api_call_count": 41
+  }
+}
