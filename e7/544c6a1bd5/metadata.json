@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "e7544c6a1bd5",
+  "strategy": "manual-commit",
+  "branch": "fix/1561-marketing-static-page",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/docs.yml",
+    "marketing/assets/fonts/inter-italic.ttf",
+    "marketing/assets/fonts/inter.ttf",
+    "marketing/assets/fonts/jetbrains-mono.ttf",
+    "marketing/assets/mark.svg",
+    "marketing/index.html",
+    "marketing/script.js",
+    "marketing/styles.css"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e7/544c6a1bd5/0/metadata.json",
+      "transcript": "/e7/544c6a1bd5/0/full.jsonl",
+      "compact_transcript": "/e7/544c6a1bd5/0/transcript.jsonl",
+      "content_hash": "/e7/544c6a1bd5/0/content_hash.txt",
+      "prompt": "/e7/544c6a1bd5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 298,
+    "cache_creation_tokens": 260918,
+    "cache_read_tokens": 32242718,
+    "output_tokens": 91507,
+    "api_call_count": 149
+  }
+}
