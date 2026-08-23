@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App';
 import { useIsWorkspaceAdmin } from '../src/auth/useMe';
 import { useCurrentUser } from '../src/auth/useCurrentUser';
+import { ThemeModeProvider } from '../src/themeMode/ThemeModeProvider';
 
 // The shell composes AuthGate + nav + lazy routes; the hooks are its inputs.
 // dev_bypass keeps AuthGate a passthrough so the Layout itself is under test.
@@ -42,9 +43,11 @@ const devUser = {
 
 function renderAt(path: string) {
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <App />
-    </MemoryRouter>,
+    <ThemeModeProvider>
+      <MemoryRouter initialEntries={[path]}>
+        <App />
+      </MemoryRouter>
+    </ThemeModeProvider>,
   );
 }
 

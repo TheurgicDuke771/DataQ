@@ -25,6 +25,7 @@ import { useIsWorkspaceAdmin } from './auth/useMe';
 import { logout } from './auth/authClient';
 import { useOtpSession } from './auth/otpSessionContext';
 import { BrandMark } from './components/BrandMark';
+import { ThemeToggle } from './components/ThemeToggle';
 import { ProfileCompletionPrompt } from './components/profile/ProfileCompletionPrompt';
 import { SHELL } from './theme';
 
@@ -146,6 +147,7 @@ export function App() {
               </Typography.Text>
             </Flex>
           </Link>
+          <ThemeToggle />
           <UserMenu />
         </Header>
         <Layout>

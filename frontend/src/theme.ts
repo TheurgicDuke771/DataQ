@@ -17,7 +17,12 @@ export const BRAND = {
   ink: '#1f2430',
 } as const;
 
-/** Dark-mode counterpart of BRAND (#1562). */
+/**
+ * Dark counterpart of BRAND — must match styles.css's `:root[data-theme='dark']`.
+ * Duplicated rather than read from CSS: antd's `algorithm` derives hover/active
+ * shades from token.colorPrimary/colorBgLayout at JS time and can't do that math
+ * on a `var(...)` string.
+ */
 export const DARK_BRAND = {
   primary: '#818cf8',
   primarySoft: '#3730a3',
@@ -49,8 +54,10 @@ export type AppThemeMode = 'light' | 'dark';
 
 export function getAppTheme(mode: AppThemeMode): ThemeConfig {
   const brand = mode === 'dark' ? DARK_BRAND : BRAND;
-  const surfaceBg = mode === 'dark' ? '#161b22' : '#ffffff';
-  const tableHeaderBg = mode === 'dark' ? '#161b22' : '#fafbfc';
+  // Plain pass-through overrides (unlike token.colorPrimary/colorBgLayout below,
+  // which the algorithm derives shades from) — safe to read the CSS var directly.
+  const surfaceBg = 'var(--dq-surface)';
+  const tableHeaderBg = 'var(--dq-surface)';
 
   return {
     algorithm: mode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
@@ -75,7 +82,7 @@ export function getAppTheme(mode: AppThemeMode): ThemeConfig {
         headerHeight: SHELL.headerHeight,
         headerPadding: '0 24px',
         siderBg: surfaceBg,
-        bodyBg: brand.canvas,
+        bodyBg: 'var(--dq-canvas)',
       },
       Menu: {
         // Rounded, inset nav items read as a modern sidebar rather than full-bleed rows.

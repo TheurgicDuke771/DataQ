@@ -126,7 +126,9 @@ const LEDGER_ROWS: {
 ];
 
 // Deep-indigo extensions of the BRAND.primary scale for the panel canvas; the
-// rest of the palette comes straight from the shared theme tokens.
+// rest of the palette comes straight from the shared theme tokens. Deliberately
+// NOT wired to data-theme (#1562) — this branded panel is fixed regardless of
+// the app's light/dark setting, same as the marketing site.
 const PANEL_FROM = '#312e81'; // indigo-900
 const PANEL_TO = '#1e1b4b'; // indigo-950
 
