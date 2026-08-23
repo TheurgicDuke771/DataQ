@@ -25,8 +25,8 @@ interface MetricCardProps {
   loading?: boolean;
 }
 
-const DELTA_GOOD = '#3f8600';
-const DELTA_BAD = '#cf1322';
+const DELTA_GOOD = 'var(--dq-delta-good)';
+const DELTA_BAD = 'var(--dq-delta-bad)';
 
 function DeltaBadge({
   delta,

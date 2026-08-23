@@ -398,7 +398,7 @@ function UserMenu() {
           {initialsOf(user.name)}
         </Avatar>
         <Typography.Text style={{ color: 'var(--dq-ink)' }}>{user.name}</Typography.Text>
-        <DownOutlined style={{ fontSize: 10, color: '#8c8c8c' }} />
+        <DownOutlined style={{ fontSize: 10, color: 'var(--dq-muted)' }} />
       </Flex>
     </Dropdown>
   );

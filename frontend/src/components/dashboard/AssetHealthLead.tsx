@@ -117,7 +117,7 @@ function AssetHealthBody({
     {
       label: 'Need attention',
       value: attention.length,
-      tone: attention.length ? '#cf1322' : 'var(--dq-ink)',
+      tone: attention.length ? 'var(--dq-delta-bad)' : 'var(--dq-ink)',
     },
     { label: 'In progress', value: active.length, tone: 'var(--dq-ink)' },
   ];

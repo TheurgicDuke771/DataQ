@@ -12,6 +12,18 @@
   --dq-canvas: #f4f5f7;
   --dq-border: #e6e8eb;
   --dq-ink: #1f2430;
+  --dq-surface: #ffffff; /* card/panel background, distinct from --dq-canvas behind it */
+  --dq-muted: #8c8c8c; /* secondary text/icons — legible enough on both themes unchanged */
+  --dq-severity-good: #52c41a; /* green-6 — legible on both themes unchanged */
+  --dq-severity-warning: #faad14; /* gold-6 */
+  --dq-severity-bad: #ff4d4f; /* red-6 */
+  --dq-severity-neutral: #bfbfbf; /* gray-5 */
+  --dq-graph-line: #c4c8cf; /* lineage-graph edges + arrowheads */
+  --dq-monitored: #91caff; /* the lineage-graph "monitored node" border accent */
+  --dq-delta-good: #3f8600; /* metric-delta / attention-count text */
+  --dq-delta-bad: #cf1322;
+  --dq-critical: #eb2f96; /* chart severities beyond the good/warning/bad/neutral scale */
+  --dq-error: #fa541c;
 
   /* Elevation — resting + interactive-hover (depth without heavy borders). */
   --dq-shadow-rest: 0 1px 3px rgba(16, 24, 40, 0.06);
@@ -32,6 +44,13 @@
   --dq-canvas: #0d1117;
   --dq-border: #30363d;
   --dq-ink: #e6edf3;
+  --dq-surface: #161b22;
+  --dq-graph-line: #6b7280;
+  --dq-monitored: #69b1ff;
+  --dq-delta-good: #73d13d;
+  --dq-delta-bad: #ff7875;
+  --dq-critical: #eb2f96;
+  --dq-error: #fa541c;
 
   --dq-shadow-rest: 0 1px 3px rgba(0, 0, 0, 0.5);
   --dq-shadow-hover: 0 8px 20px rgba(0, 0, 0, 0.6);
