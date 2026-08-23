@@ -1,0 +1,82 @@
+Check CI status on PR #1564 (fix/1561-marketing-static-page) with `gh pr checks 1564`. If all required checks are green, tell the user it's ready to merge (don't merge without asking). If anything failed, investigate and fix. Then move on to issue #1562 (dark mode / theme toggle) per the user's earlier instruction to pick up both #1561 and #1562 — #1561 is now handled, so start scoping #1562.
+
+---
+
+<task-notification>
+<task-id>a67f239d13cabc470</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/09b5d6ff-6db9-4e32-8c3d-92f290fc95fa/tasks/a67f239d13cabc470.output</output-file>
+<status>completed</status>
+<summary>Agent "Scope dark mode implementation surface" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All the pieces are gathered. Here's the full report.
+
+## 1. `appTheme` / `ConfigProvider` wiring + existing theme mechanism
+
+- **Wired in**: `frontend/src/main.tsx` (lines 13, 36) — `ConfigProvider theme={appTheme}` wraps the whole tree at the top level, outside `AntApp`, `AuthProvider`, `MeProvider`, `BrowserRouter`. A theme toggle would need a piece of state above this `ConfigProvider`, or `main.tsx` needs a small wrapper component so `appTheme` can be swapped reactively (currently it's a static const imported once — `ConfigProvider` is fed a fixed object, no state).
+- **No existing theme-switching mechanism, React context, or user-preference storage for theme.** Confirmed by grep: `localStorage` is used nowhere in `src/`. `sessionStorage` is used in exactly two places, both unrelated to theming:
+  - `frontend/src/auth/authClient.ts:47` — OIDC `WebStorageStateStore` (auth library internal).
+  - `frontend/src/components/profile/ProfileCompletionPrompt.tsx:17,25` — a one-tab "skip this onboarding prompt" flag (`SKIP_STORAGE_KEY`), not a durable preference.
+- `frontend/src/theme.ts` exports `appTheme`, `BRAND`, and `SHELL` (confirmed already read by you) — no `algorithm` key set (so no `theme.darkAlgorithm` wiring at all yet), no `cssVar` mode enabled either (antd v6 supports `cssVar: true` for CSS-variable output, which would materially simplify a dark-mode pass — not currently used).
+- `frontend/src/App.tsx` and other files consume `BRAND`/`SHELL` directly as JS constants for inline `style={{...}}` (border colors, ink color, etc.) rather than reading current theme tokens from context — meaning a runtime theme switch needs these to become reactive too, not just the antd `ConfigProvider` tokens.
+
+## 2. Profile / Workspace Settings UI (issue #1516's eventual home)
+
+- **Profile page**: `frontend/src/pages/Profile.tsx` (`/profile`) — currently shows avatar, editable display name, workspace role, "last seen", and an alert-channels blurb, plus `&lt;ApiKeysPanel /&gt;`. No existing "preferences" section/card.
+- **Settings page**: `frontend/src/pages/Settings.tsx` (`/settings`, admin-only, gated by `me.data.is_workspace_admin`) — tabbed (General / Secrets / Webhooks / Notifications / Danger zone). This is **workspace-level** settings, not per-user, so it's probably the wrong home for a personal dark-mode toggle unless you want it workspace-wide.
+- **Existing per-user-preference pattern**: `frontend/src/api/me.ts` defines `MeResponse` and `updateMe(displayName)` which does `api.patch('/me', { display_name })`. This is the one real precedent for a per-user setting — backend `PATCH /me`, consumed via `frontend/src/auth/useSaveDisplayName.ts` and `frontend/src/auth/MeProvider.tsx`/`useMe.ts`. `MeResponse` currently has no `theme`/`preferences` field, so persisting theme choice via this endpoint would need a backend schema change (a new `theme_preference` column + PATCH support) — there is no lighter-weight per-user KV/settings store visible in the frontend api/ layer. If you want zero backend work initially, `localStorage` is the only currently-used-nowhere-but-available client-only fallback (issue #1516 implies the backend-persisted version is the "eventual" state, i.e., localStorage-first is an acceptable v1 per the issue framing).
+
+## 3. Hardcoded light-only colors outside the antd token system
+
+**Charts (Recharts, only chart lib in use — confirmed in `package.json`: `"recharts": "^3.10.1"`, no `@ant-design/charts`/echarts):**
+- `frontend/src/components/charts/chartTheme.ts` — the central chart color module. ~11 hex literals: `RESULT_STATUS_CHART_COLORS` (6 severities), `RUN_STATUS_CHART_COLORS` (5 run states, one of which reads `BRAND.primary` not hex), plus `CHART_COLORS.axis = '#8c8c8c'`, `CHART_COLORS.grid` from `BRAND.border`. This is the single best leverage point — all the chart widgets import from here.
+- `frontend/src/components/charts/ResponsiveChart.tsx` — no hardcoded colors itself (shared wrapper), but every Recharts consumer passes `contentStyle={TOOLTIP_STYLE}` / `GRID_PROPS` from chartTheme, so fixing chartTheme fixes tooltip/grid across all charts.
+- Consumers wired to chartTheme (would auto-inherit a fix): `frontend/src/components/checks/CheckTrend.tsx` (also has one extra literal: `stroke="#fff"` on line 272, a dot outline, plus inline `rgba(0,0,0,...)` isn't here but see QualityTrends), `frontend/src/components/dashboard/QualityTrends.tsx` (one extra inline literal: `cursor={{ fill: 'rgba(0,0,0,0.04)' }}` on line 46 — a light-only tooltip cursor tint not routed through chartTheme).
+- `frontend/src/components/dashboard/SuitePerformance.tsx` — its own separate `STATE_COLOR` map, 4 hex literals (`optimal`/`stable`/`critical`/`unknown`), duplicating severity semantics outside chartTheme — not reusing `RESULT_STATUS_CHART_COLORS`. Used for both a `Typography.Text` color and a `Progress strokeColor`.
+- `frontend/src/components/assets/ScorecardPanel.tsx` — a local `scoreColour()` function, 3 hex literals as score-band thresholds (`#52c41a`/`#faad14`/`#ff4d4f`), same green/gold/red semantics reinvented a third time.
+- `frontend/src/components/dashboard/MetricCard.tsx` — `DELTA_GOOD = '#3f8600'`, `DELTA_BAD = '#cf1322'` (2 literals) for the up/down delta indicator, plus uses `BRAND.primary`/`BRAND.ink` directly (2 more) for inline styles.
+- `frontend/src/components/dashboard/AssetHealthLead.tsx` — one literal, `tone: attention.length ? '#cf1322' : BRAND.ink` (line 121), same "bad" red as MetricCard but independently defined.
+
+**Status badge / severity model (`Tag color=...`):** the app mostly does the right thing already — it routes severity/run-state through antd's **named preset tag colors** (`success`/`warning`/`error`/`processing`/`default`/`magenta`/`volcano`), which auto-adapt reasonably well under antd's dark algorithm, rather than raw hex. Central definitions:
+- `frontend/src/components/results/resultsFormat.ts` — `RUN_STATUS_COLORS`, `RUN_BAR_STATUS`, `RESULT_STATUS_COLORS`, `pipelineStatusColor()` — all antd preset-name strings, no hex. This is the canonical severity/run-status → color mapping used by `RunDetail`, `Results`, dashboard, etc.
+- `frontend/src/components/assets/health.ts` — `SEVERITY_HEALTH`, `STATUS_HEALTH`, `RUN_FAILED_HEALTH` — also antd preset names, feeding `frontend/src/components/assets/AssetHealthTag.tsx`.
+- Total `Tag color=` call sites across the app: **39 occurrences in 26 files** (grep count) — these are the "would need a look" surface for a theme QA pass, though most just reference the above preset-name constants rather than hardcoding new hex, so they likely need no code change, just visual verification.
+- The chart-color duplication (chartTheme vs SuitePerformance vs ScorecardPanel — 3 separate green/gold/red hex trios) is the real severity-color tech debt: 3 independent definitions of essentially the same 3-tier severity palette that a dark-mode pass would have to update in lockstep (or better, consolidate into one shared token module first).
+
+**Monaco editor**: `frontend/src/components/checks/SqlEditorField.tsx` — no `theme` prop is passed to the `&lt;Editor&gt;` component at all (lines 23–35 `options={...}`, no `theme:`), so Monaco silently uses its own default `'vs'` (light) theme unconditionally. No `'vs-dark'` or `monaco.editor.defineTheme`/`setTheme` call exists anywhere in the repo (confirmed via grep — zero hits). This is a hard offender: Monaco will stay white-on-black-text regardless of app theme until a `theme` prop (or `monaco.editor.setTheme`) is added and wired to the app's mode. Also one adjacent hardcoded style: `border: '1px solid #d9d9d9'` wrapping the editor (line 22).
+
+**Login page** (outside the authenticated shell, so may be a deliberately separate "brand" surface, not necessarily in scope for the toggle, but worth flagging): `frontend/src/auth/LoginPage.tsx` — 9 hex literals total, including a dedicated indigo gradient panel (`PANEL_FROM = '#312e81'`, `PANEL_TO = '#1e1b4b'`) and a chunk of **raw CSS-in-JS via a template literal** (`background: #ffffff`, `color: #ffffff` ×3, `color: #6b7280` ×2, `color: #9098a4`) — this looks like an actual `&lt;style&gt;` string block, not `ConfigProvider` tokens, so it's fully outside antd's theme system and would need its own dark variant or be intentionally excluded (many apps keep the login screen always-dark/branded regardless of the app's light/dark preference).
+
+**Other stray inline hex** (smaller, one-off, mostly muted-gray icon/text tints that may or may not need touching):
+- `frontend/src/pages/ConnectionNew.tsx:115` — `color: '#bfbfbf'` on an arrow icon.
+- `frontend/src/pages/AssetDetail.tsx:348` — `color: '#8c8c8c'` on an icon.
+- `frontend/src/main.tsx:63` — `color:#a00` in the hardcoded bootstrap-failure fallback HTML string (edge case, pre-React-mount error path).
+- `frontend/src/components/connections/connectionVisuals.tsx` — **not a themeable offender**, intentionally: 8 literals are per-vendor brand colors (Snowflake blue, S3 orange, Databricks red, etc.) for connection-type icons — these should likely stay fixed in both themes (they're product branding, not UI chrome), just maybe need contrast-checking against a dark card background.
+- `frontend/src/components/assets/LineageGraph.tsx` — the largest concentration (21 hex-ish matches by rough count, ~5 confirmed color-context): raw `&lt;svg&gt;` elements with hardcoded `fill`/`stroke` (`fill="#c4c8cf"` arrow marker, `stroke="#c4c8cf"` edges, `fill={node.isCenter ? BRAND.selectedBg : '#ffffff'}` node background, `stroke={... : '#91caff' ...}` monitored-node border, `fill="#8c8c8c"` subtitle text) — since it's inline SVG (not CSS/antd tokens), every one of these needs manual updating or a CSS-variable-driven approach for the SVG to invert properly in dark mode. This is a concentrated, self-contained file — good candidate for an early proof-of-concept.
+
+## 4. Existing CSS custom-property / design-token layer
+
+Yes — there is a partial one, and it's explicitly future-proofed for exactly this: **`frontend/src/styles.css`** (lines 1–25) defines a `:root { --dq-primary; --dq-primary-soft; --dq-selected-bg; --dq-row-hover; --dq-canvas; --dq-border; --dq-ink; --dq-shadow-rest; --dq-shadow-hover; --dq-ease; --dq-motion-fast; --dq-motion-base; }` block, with a comment stating: *"Keeping them semantic means a post-v1 dark theme can override this one block (e.g. `:root[data-theme='dark']`) and the whole CSS layer inherits for free."* — i.e., the CSS layer was designed with this issue in mind and is a small, contained, easy override target (~7 color tokens + 2 shadow tokens).
+
+However, this CSS-variable layer is a **separate, parallel system** from `theme.ts`'s `BRAND`/`appTheme` — they're documented as "mirrors" of each other but there's no single source of truth; both would need updating for a dark variant, and nothing currently reads CSS variables from JS (or vice versa) to keep them in sync. Everything else (the antd `ConfigProvider` tokens in `theme.ts`, and the ~10 files importing `BRAND` for inline `style={{}}`) bypasses this CSS layer entirely and goes through JS constants + inline styles instead. So: **three parallel theming surfaces** exist today — (a) antd `ThemeConfig` (`appTheme`), (b) the `BRAND`/`SHELL` JS constants consumed via inline styles in ~10 files, (c) the `--dq-*` CSS custom properties in `styles.css` — none of which currently talk to each other or to a runtime "which mode" signal.
+
+## 5. Scope estimate
+
+- **Files importing `BRAND`/`SHELL` from theme.ts directly** (need to become theme-reactive, not just re-themed): 10 files (`App.tsx`, `main.tsx`, `LoginPage.tsx`, `BrandMark.tsx`, `chartTheme.ts`, `AssetHealthLead.tsx`, `MetricCard.tsx`, `LineageGraph.tsx`, `Suites.tsx`, `Profile.tsx`).
+- **Files with genuine hardcoded-color-in-color-context hits** (need a look/fix): ~12 files identified above with confidence (`chartTheme.ts`, `ResponsiveChart.tsx`'s consumers `CheckTrend.tsx`/`QualityTrends.tsx`, `SuitePerformance.tsx`, `ScorecardPanel.tsx`, `MetricCard.tsx`, `AssetHealthLead.tsx`, `SqlEditorField.tsx`, `LineageGraph.tsx`, `LoginPage.tsx`, `ConnectionNew.tsx`, `AssetDetail.tsx`, `styles.css`).
+- **`Tag color=` call sites to visually QA** (likely no code change, preset names already used): 39 occurrences / 26 files.
+- **Total frontend TS/TSX source files**: 128, for scale reference.
+- **New/changed infra needed regardless of file count**: a theme-mode context/provider above `ConfigProvider` in `main.tsx`, a persistence mechanism (localStorage now, `PATCH /me` later per #1516 — `MeResponse` needs a new field for the backend-persisted path), a `data-theme` attribute wired to the `:root[data-theme='dark']` CSS override, an antd `algorithm: theme.darkAlgorithm` (or `cssVar` mode) switch, a Monaco `theme` prop wired to the same signal, and consolidation of the 3 duplicate severity-color trios (chartTheme/SuitePerformance/ScorecardPanel) so they don't drift independently under dark mode.
+
+Given one genuinely new context/provider + ~12 substantive file touches + a real backend field (per #1516) + Monaco/SVG-specific handling, this reads as **medium** scope — not a trivial `ConfigProvider algorithm` flip (there's real duplicated-token debt to clean up first for it to look right), but also not sprawling — most of the app already routes color through a small number of shared modules (`resultsFormat.ts`, `health.ts`, `chartTheme.ts`) rather than being scattered per-component.</result>
+<usage><subagent_tokens>75925</subagent_tokens><tool_uses>29</tool_uses><duration_ms>143627</duration_ms></usage>
+</task-notification>
+
+---
+
+Two things to check: (1) CI on PR #1564 via `gh pr checks 1564` — if all required checks are green, tell the user it's ready to merge (wait for their go-ahead, don't merge yet). (2) The #1562 dark-mode scoping agent (a67f239d13cabc470) — if it has completed, synthesize its findings into a concrete implementation plan for issue #1562 and present it to the user before writing any code.
+
+---
+
+merge 1564
+then 5 phase dark theme
