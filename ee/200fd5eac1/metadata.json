@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "ee200fd5eac1",
+  "strategy": "manual-commit",
+  "branch": "fix/landing-page-mobile-responsive",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ee/200fd5eac1/0/metadata.json",
+      "transcript": "/ee/200fd5eac1/0/full.jsonl",
+      "compact_transcript": "/ee/200fd5eac1/0/transcript.jsonl",
+      "content_hash": "/ee/200fd5eac1/0/content_hash.txt",
+      "prompt": "/ee/200fd5eac1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1172,
+    "cache_creation_tokens": 1594975,
+    "cache_read_tokens": 280285595,
+    "output_tokens": 336020,
+    "api_call_count": 587
+  }
+}
