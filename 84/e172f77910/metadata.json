@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "84e172f77910",
+  "strategy": "manual-commit",
+  "branch": "chore/trim-prose",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "backend/app/db/models.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/84/e172f77910/0/metadata.json",
+      "transcript": "/84/e172f77910/0/full.jsonl",
+      "compact_transcript": "/84/e172f77910/0/transcript.jsonl",
+      "content_hash": "/84/e172f77910/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 128,
+    "cache_creation_tokens": 85686,
+    "cache_read_tokens": 18794478,
+    "output_tokens": 38098,
+    "api_call_count": 64
+  }
+}
