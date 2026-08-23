@@ -1,6 +1,7 @@
 import { Alert, Card, Empty, Flex, Progress, Space, Tag, Tooltip, Typography } from 'antd';
 
 import type { Scorecard } from '../../api/assets';
+import { SEVERITY_SCALE } from '../../theme';
 
 /** The asset DQ scorecard (#889) — per-dimension coverage and score. */
 
@@ -16,11 +17,10 @@ const DIMENSION_HELP: Record<string, string> = {
 
 const titleCase = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
 
-/** ADR-0005 bands, matching the dashboard's performance states. */
 function scoreColour(score: number): string {
-  if (score >= 90) return '#52c41a';
-  if (score >= 60) return '#faad14';
-  return '#ff4d4f';
+  if (score >= 90) return SEVERITY_SCALE.good;
+  if (score >= 60) return SEVERITY_SCALE.warning;
+  return SEVERITY_SCALE.bad;
 }
 
 export function ScorecardPanel({ scorecard }: { scorecard?: Scorecard | null }) {

@@ -23,6 +23,14 @@ export const SHELL = {
   siderWidth: 220,
 } as const;
 
+/** Shared good/warning/bad/neutral scale — antd's green-6/gold-6/red-6/gray-5. */
+export const SEVERITY_SCALE = {
+  good: '#52c41a',
+  warning: '#faad14',
+  bad: '#ff4d4f',
+  neutral: '#bfbfbf',
+} as const;
+
 export const appTheme: ThemeConfig = {
   token: {
     colorPrimary: BRAND.primary,

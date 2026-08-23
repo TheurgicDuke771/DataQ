@@ -1,5 +1,5 @@
 import type { ResultStatus, RunStatus } from '../../api/runs';
-import { BRAND } from '../../theme';
+import { BRAND, SEVERITY_SCALE } from '../../theme';
 
 /**
  * Chart colour tokens + shared axis/grid styling for the recharts-based dashboard widgets (ADR
@@ -8,21 +8,21 @@ import { BRAND } from '../../theme';
 
 /** Severity → series hex (pass green · warn gold · fail red · critical magenta). */
 export const RESULT_STATUS_CHART_COLORS: Record<ResultStatus, string> = {
-  pass: '#52c41a', // green-6
-  warn: '#faad14', // gold-6
-  fail: '#ff4d4f', // red-6
+  pass: SEVERITY_SCALE.good,
+  warn: SEVERITY_SCALE.warning,
+  fail: SEVERITY_SCALE.bad,
   critical: '#eb2f96', // magenta-6
-  skip: '#bfbfbf', // gray-5
+  skip: SEVERITY_SCALE.neutral,
   error: '#fa541c', // volcano-6
 };
 
 /** Run execution status → series hex (succeeded green · failed red · running indigo · …). */
 export const RUN_STATUS_CHART_COLORS: Record<RunStatus, string> = {
-  queued: '#bfbfbf', // gray-5
+  queued: SEVERITY_SCALE.neutral,
   running: BRAND.primary, // indigo — matches the brand "in-flight" accent
-  succeeded: '#52c41a', // green-6
-  failed: '#ff4d4f', // red-6
-  cancelled: '#faad14', // gold-6
+  succeeded: SEVERITY_SCALE.good,
+  failed: SEVERITY_SCALE.bad,
+  cancelled: SEVERITY_SCALE.warning,
 };
 
 /**
