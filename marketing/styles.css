@@ -432,18 +432,82 @@
   --shadow-float:   0 20px 48px -14px rgba(0,0,0,0.75);
 }
 
-/* ---- Optional system-driven dark mode (opt in post-v1) ----
-   Uncomment to follow the OS preference automatically. Kept off so v1
-   ships light-only. The [data-theme="light"] guard lets a user override
-   back to light even when the OS is dark.
-
+/* ---- System-driven dark mode ----
+   This page has no JS toggle (no localStorage, no data-theme attribute
+   ever set) — it follows the OS preference only, via the exact same
+   overrides as the [data-theme="dark"] block above. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root {
+    --indigo-selected: #1e1b4b;
     --surface-canvas: #0d1117;
-    ... (mirror the [data-theme="dark"] block above)
+    --surface-0:      #161b22;
+    --surface-1:      #1c222b;
+    --surface-2:      #222933;
+    --surface-3:      #2b333f;
+    --surface-4:      #353e4b;
+    --border-subtle:  #21262d;
+    --border-default: #2d343d;
+    --border-strong:  #3a424d;
+
+    --text-primary:    #e6e8eb;
+    --text-body:       #b6bcc6;
+    --text-secondary:  #9aa1ad;
+    --text-muted:      #6e7681;
+    --text-on-dark:    #e6e8eb;
+    --text-accent:     var(--indigo-300);
+    --text-inverse:    #161b22;
+
+    --bg-app:        var(--surface-canvas);
+    --bg-card:       var(--surface-0);
+    --bg-subtle:     var(--surface-1);
+    --bg-muted:      var(--surface-2);
+    --bg-header:     var(--surface-0);
+    --bg-sider:      #12161d;
+    --bg-selected:   var(--indigo-selected);
+    --bg-hover:      var(--surface-2);
+
+    --action-primary:        var(--indigo-500);
+    --action-primary-hover:  var(--indigo-400);
+    --action-primary-active: var(--indigo-600);
+    --action-on-primary:     #ffffff;
+
+    --action-secondary-fg:     var(--text-body);
+    --action-secondary-border: var(--border-strong);
+    --action-secondary-hover:  var(--surface-2);
+
+    --border:        var(--border-default);
+    --border-input:  var(--border-strong);
+    --divider:       var(--border-subtle);
+
+    --focus-ring: var(--indigo-400);
+
+    --status-pass:      #3fb950;  --status-pass-bg:     #122017;
+    --status-warn:      #d29922;  --status-warn-bg:     #221a0c;
+    --status-fail:      #f85149;  --status-fail-bg:     #2a1313;
+    --status-critical:  #db61a2;  --status-critical-bg: #271320;
+    --status-skip:      #6e7681;  --status-skip-bg:     #1c222b;
+    --status-error:     #ec6547;  --status-error-bg:    #281710;
+
+    --run-queued:    #6e7681;  --run-queued-bg:    #1c222b;
+    --run-running:   #58a6ff;  --run-running-bg:   #0d1c2e;
+    --run-succeeded: #3fb950;  --run-succeeded-bg: #122017;
+    --run-failed:    #f85149;  --run-failed-bg:    #2a1313;
+    --run-cancelled: #d29922;  --run-cancelled-bg: #221a0c;
+
+    --green-500: #3fb950;  --green-bg: #122017;  --green-border: #1f6f2e;
+    --gold-500:  #d29922;  --gold-bg:  #221a0c;  --gold-border:  #6b4f17;
+    --red-500:   #f85149;  --red-bg:   #2a1313;  --red-border:   #7d2b27;
+    --blue-500:  #58a6ff;  --blue-bg:  #0d1c2e;  --blue-border:  #1f4d7a;
+    --magenta-500: #db61a2; --magenta-bg: #271320; --magenta-border: #7a2f57;
+    --volcano-500: #ec6547; --volcano-bg: #281710; --volcano-border: #7d3a22;
+
+    --shadow-xs: 0 1px 2px 0 rgba(0,0,0,0.40);
+    --shadow-ambient: 0 4px 14px -4px rgba(0,0,0,0.55);
+    --shadow-hover:   0 6px 18px -6px rgba(0,0,0,0.6);
+    --shadow-overlay: 0 8px 24px -6px rgba(0,0,0,0.7);
+    --shadow-float:   0 20px 48px -14px rgba(0,0,0,0.75);
   }
 }
-*/
 
 
 /* ============================================================
@@ -466,7 +530,7 @@ img { max-width: 100%; }
 }
 .nav-left { flex: 1; display: flex; align-items: center; gap: var(--nav-gap); min-width: 0; }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; flex: none; }
-.brand-name { font-family: var(--font-sans); font-weight: 700; font-size: 18px; color: var(--ink); letter-spacing: -0.01em; }
+.brand-name { font-family: var(--font-sans); font-weight: 700; font-size: 18px; color: var(--text-primary); letter-spacing: -0.01em; }
 .nav-links { display: var(--nav-links-display); gap: 24px; }
 .nav-links a { font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--text-body); text-decoration: none; }
 
@@ -530,7 +594,7 @@ img { max-width: 100%; }
   border-radius: var(--radius-full); background: var(--indigo-50); color: var(--indigo-700);
   border: 1px solid var(--indigo-100); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
 }
-.hero h1 { margin: 20px 0 0; font-family: var(--font-sans); font-size: var(--hero-h1-size); line-height: 1.08; font-weight: 700; letter-spacing: -0.025em; color: var(--ink); }
+.hero h1 { margin: 20px 0 0; font-family: var(--font-sans); font-size: var(--hero-h1-size); line-height: 1.08; font-weight: 700; letter-spacing: -0.025em; color: var(--text-primary); }
 .hero-sub { margin: 20px 0 0; font-size: 18px; line-height: 1.55; color: var(--text-secondary); max-width: 480px; }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
 .hero-meta { margin-top: 28px; font-size: 13px; color: var(--text-muted); }
@@ -561,7 +625,7 @@ img { max-width: 100%; }
 .features { background: var(--bg-card); }
 .features-inner { max-width: 1200px; margin: 0 auto; padding: 88px 32px; }
 .section-head { text-align: center; max-width: 640px; margin: 0 auto 48px; }
-.section-head h2 { margin: 0; font-size: 36px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); }
+.section-head h2 { margin: 0; font-size: 36px; font-weight: 700; letter-spacing: -0.02em; color: var(--text-primary); }
 .section-head p { margin: 14px 0 0; font-size: 17px; line-height: 1.55; color: var(--text-secondary); }
 
 .bento { display: grid; grid-template-columns: var(--feat-grid-cols); gap: 16px; }
@@ -609,7 +673,7 @@ img { max-width: 100%; }
 .footer-inner { max-width: 1200px; margin: 0 auto; padding: 56px 32px 32px; }
 .footer-grid { display: grid; grid-template-columns: var(--footer-grid-cols); gap: 32px; }
 .footer-brand { display: flex; align-items: center; gap: 10px; }
-.footer-brand span { font-weight: 700; font-size: 17px; color: var(--ink); }
+.footer-brand span { font-weight: 700; font-size: 17px; color: var(--text-primary); }
 .footer-tagline { margin: 14px 0 0; font-size: 13px; line-height: 1.55; color: var(--text-muted); max-width: 260px; }
 .footer-col h4 { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .footer-col-links { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
@@ -630,3 +694,13 @@ img { max-width: 100%; }
   background: transparent; border: none; color: #fff; font-size: 28px; line-height: 1; cursor: pointer;
 }
 .modal-box video { width: 100%; max-height: 80vh; display: block; border-radius: var(--radius-lg); box-shadow: 0 24px 64px rgba(0,0,0,0.5); background: #000; }
+
+/* ---- Component overrides for system-driven dark mode ----
+   .eyebrow / .icon-badge use raw --indigo-50/100/700 (pale tints designed
+   for a white surface, not remapped by the token block above) — swap to
+   the same translucent-indigo recipe .icon-badge.on-dark already uses. */
+@media (prefers-color-scheme: dark) {
+  .nav { background: rgba(13,17,23,0.85); }
+  .eyebrow { background: rgba(129,140,248,0.16); color: var(--indigo-300); border-color: rgba(129,140,248,0.28); }
+  .icon-badge { background: rgba(129,140,248,0.18); color: var(--indigo-300); }
+}
