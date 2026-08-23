@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "b4295a78e226",
+  "strategy": "manual-commit",
+  "branch": "fix/1562-marketing-dark-mode",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "marketing/styles.css"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b4/295a78e226/0/metadata.json",
+      "transcript": "/b4/295a78e226/0/full.jsonl",
+      "compact_transcript": "/b4/295a78e226/0/transcript.jsonl",
+      "content_hash": "/b4/295a78e226/0/content_hash.txt",
+      "prompt": "/b4/295a78e226/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 54029,
+    "cache_read_tokens": 18163258,
+    "output_tokens": 12483,
+    "api_call_count": 28
+  }
+}
