@@ -1,0 +1,217 @@
+<task-notification>
+<task-id>brz82apj7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d6683d42-dad1-4a22-9c40-68611e202599/tasks/brz82apj7.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR CI run to completion without piping (preserve exit code)" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bg26kaupt</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d6683d42-dad1-4a22-9c40-68611e202599/tasks/bg26kaupt.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch main-branch CI run to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>br498yloy</task-id>
+<tool-use-id>toolu_0111nCG3Q8WySZurmUzEUPQn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d6683d42-dad1-4a22-9c40-68611e202599/tasks/br498yloy.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch Azure deploy workflow to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aea605cf642c89ab7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d6683d42-dad1-4a22-9c40-68611e202599/tasks/aea605cf642c89ab7.output</output-file>
+<status>completed</status>
+<summary>Agent "Authenticated Azure UI walkthrough" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Mobile nav drawer opens cleanly, all links reachable, "Admin" correctly highlighted as active. This confirms navigation functionality on mobile. That completes the verification sweep.
+
+## Post-Deploy Verification Report — DataQ Azure (dependency bump deploy)
+
+**Session-injection approach: WORKED.** Navigated to `/dashboard`, injected the captured `oidc.user:...` sessionStorage key via `browser_evaluate`, reloaded — landed directly on the authenticated Dashboard as "DataQ Admin" (no redirect to Microsoft login). Session held across all 16 page loads in this pass (roughly 40 minutes of token lifetime remaining at capture, well within the `exp` claims).
+
+**Summary: everything is clean.** Zero console errors/warnings and zero non-2xx `/api/v1/*` responses across every page checked, on both desktop (1440×900) and mobile (390×844) viewports.
+
+### Desktop (1440×900) — all verified with real data, 0 console errors, 0 failed API calls
+- **Dashboard** — asset health (4 monitored/3 need attention), Data Integrity Score 90.9%, Pass Rate 73.2%, Quality Trends chart, Suite Performance, Recent Runs table all rendered with live data. APIs: `/me`, `/assets`, `/runs?limit=8`, `/suites`, `/dashboard/summary` all 200.
+- **Connections** — 9 data-source cards + Orchestration section rendered (Snowflake ×4, Iceberg, ADLS ×2, Unity Catalog ×2), credential states and "runs failing" badges visible. `/connections` 200.
+- **Suites** — 5 suites listed (probe-snowflake-suite, Flat File — Logistics Tracking, Iceberg — Purchase Orders, Unity Catalog — Feedback (all paths), Snowflake — Orders (all paths)) matching the known-data list. `/suites`, `/connections` 200.
+- **Suite detail** (Snowflake — Orders, all paths) — opened successfully; trigger-bindings, near-misses, schedules, notifications, column-policy, checks all loaded 200.
+- **Results** (Runs tab) — 77 runs, paginated, filters present. `/runs?limit=200` 200.
+- **Run detail** (Flat File — Logistics Tracking, succeeded 4/6) — opened from the table; run + suite + checks all loaded 200.
+- **Assets** — list rendered. `/assets?limit=200&amp;offset=0` 200.
+- **Profile** — rendered, `/me` + `/me/api-keys` 200.
+- **Admin** — reachable as workspace admin (confirms role gating unaffected by the deploy); `/admin/suites`, `/admin/users`, `/admin/access` all 200.
+
+### Mobile (390×844) — all verified, 0 console errors, 0 failed API calls, 0 horizontal page overflow
+Every page above was re-checked at 390×844 with `document.documentElement.scrollWidth === clientWidth === 390` (no page-level horizontal scroll):
+- **Dashboard, Connections, Suites, Suite detail, Assets, Profile, Admin** — sidebar correctly collapses to a hamburger ("Toggle navigation"), content reflows into a single column, no overlapping/clipped controls.
+- **Results** — the runs table itself scrolls horizontally inside its own wrapper (`.ant-table-content`, `overflow-x: auto`, wrapper 326px vs table content 1189px) while the page body stays at 390px — correct pattern, not a page-level overflow bug.
+- **Run detail** — opened on mobile, rendered cleanly, no overflow.
+- **Mobile nav drawer** — opened via the hamburger, all 8 links (Dashboard/Assets/Connections/Suites/Results/Profile + Admin/Settings/Documentation) reachable and tappable, active route ("Admin") correctly highlighted.
+
+### Console / network errors found
+**None.** No warnings, no errors, no 4xx/5xx on any `/api/v1/*` call across 16 page loads × desktop/mobile.
+
+### Conclusion
+Nothing broke from the 10 dependency bumps + CI-fix commit. Both frontend (React/Vite/Ant Design/axios stack — the bumped `jsdom`/`typescript-eslint`/`@types/react-dom`/`@testing-library/user-event`/`@playwright/test` are dev/test-only and wouldn't affect runtime anyway) and backend (`snowflake-connector-python`, `uvicorn`, `azure-keyvault-secrets`, `mypy`, `setuptools`) are serving correctly in production. Auth, role-gating (Admin reachable), data rendering, and responsive layout are all intact post-deploy. No rollback indicated.
+
+Screenshots saved under `/Users/arijit/Coding/Python/DataQ/` (repo root, per Playwright MCP's allowed-roots restriction): `dashboard-desktop.png`, `connections-desktop.png`, `suites-desktop.png`, `suite-detail-desktop.png`, `results-desktop.png`, `run-detail-desktop.png`, `assets-desktop.png`, `profile-desktop.png`, `admin-desktop.png`, and the `*-mobile.png` / `admin-mobile-nav-open.png` counterparts.</result>
+<usage><subagent_tokens>178483</subagent_tokens><tool_uses>120</tool_uses><duration_ms>475702</duration_ms></usage>
+</task-notification>
+
+---
+
+There is no option to choose engine type [dmf/gx for snowflake] in the UI, can you check if it is added?
+
+---
+
+<task-notification>
+<task-id>a111043a37caea45a</task-id>
+<tool-use-id>toolu_01L1jJaKF1BKwGWBErpKvvSM</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d6683d42-dad1-4a22-9c40-68611e202599/tasks/a111043a37caea45a.output</output-file>
+<status>completed</status>
+<summary>Agent "Check for engine selector in check UI" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>This confirms the `CheckCreate`/`CheckUpdate` TypeScript interfaces don't even declare an `engine` field, so the frontend has no path to send one even if it wanted to.
+
+## Report
+
+**1. No UI control exists.** Grep of `frontend/src/pages/CheckNew.tsx`, `CheckEdit.tsx`, and all files in `frontend/src/components/checks/` for `engine`/`dmf`/`DMF_ENGINE`/`GX_ENGINE` returns zero matches for any selector/dropdown/radio — the only "engine" hits are unrelated prose comments about "execution engine" (SQL dialect vs pandas dtype) in `expectationCatalog.ts:159,162,164` and `checkFormFields.tsx:66`.
+
+**2. Frontend payload never sends `engine`.** `frontend/src/components/checks/checkForm.ts:62-77` (`buildCheckPayload`) and `:83-...` (`buildComparisonPayload`) build the `CheckCreate` object with `name`, `kind`, `expectation_type`, `config`, `dimension`, and threshold fields — no `engine` key. The `CheckCreate`/`CheckUpdate` TS interfaces (`frontend/src/api/suites.ts:156-182`) don't even declare an `engine` property, so there's no typed path to pass one. `createCheck` (`suites.ts:184-185`) just POSTs this payload as-is.
+
+**3. Backend fully accepts `engine`.** `backend/app/api/v1/checks.py:42` — create schema: `engine: str = Field(default="gx", min_length=1, max_length=32)`; line 60 — update schema: `engine: str | None = Field(default=None, ...)`; lines 78, 298 — response schemas include `engine: str`. `backend/app/services/check_service.py` has `validate_engine()` (line 139), `GX_ENGINE`/`DMF_KINDS` constants, and `engine` params threaded through create/update service functions (lines 637, 755, 857).
+
+**Conclusion:** The plumbing exists end-to-end on the backend and it defaults every check to `"gx"`, but the frontend has no UI control and no payload field to select `dmf` — a user cannot create/edit a DMF-engine check through the UI at all.</result>
+<usage><subagent_tokens>24123</subagent_tokens><tool_uses>10</tool_uses><duration_ms>26039</duration_ms></usage>
+</task-notification>
+
+---
+
+Also for UC [push-down vs in memory] - this one might be deliberate, can you check
+
+---
+
+Okay, 
+File an issue for the engine picker UI, and then start working on it.
+
+---
+
+<task-notification>
+<task-id>a2f4b62c75fdb4ef1</task-id>
+<tool-use-id>toolu_01WiiuTGh7FiJfixtSsZ8FZT</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d6683d42-dad1-4a22-9c40-68611e202599/tasks/a2f4b62c75fdb4ef1.output</output-file>
+<status>completed</status>
+<summary>Agent "Reuse/simplification/efficiency/altitude/conventions angles" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed both formulas are byte-identical across the two files, each used in exactly two spots (render an `EngineField`, gate the dry-run preview). Findings below.
+
+**1. Reuse/duplication — `showEngineChoice` formula duplicated verbatim**
+- File/line: `frontend/src/pages/CheckNew.tsx:68-69` and `frontend/src/pages/CheckEdit.tsx:139-140`
+- Summary: `spec?.type === FRESHNESS_EXPECTATION_TYPE &amp;&amp; offersDmfEngine(connectionType)` is copy-pasted identically in both pages.
+- Cost: Both already import `FRESHNESS_EXPECTATION_TYPE`/`offersDmfEngine` from `expectationCatalog.ts`, which is exactly where a `showEngineChoiceFor(spec, connectionType)` helper belongs — a future third engine or a rule change (e.g. offering the choice on a second type) means finding and editing both call sites, with no compiler error if one is missed.
+
+**2. Reuse/duplication — `effectiveEngine` formula duplicated verbatim**
+- File/line: `frontend/src/pages/CheckNew.tsx:70` and `frontend/src/pages/CheckEdit.tsx:141`
+- Summary: `spec?.engine ?? (showEngineChoice ? (engineChoice ?? 'gx') : 'gx')` is identical in both files.
+- Cost: Same maintenance hazard as #1 — this and `showEngineChoice` are pure functions of `(spec, connectionType, engineChoice)` with no page-local state, so both are natural candidates for `checkForm.ts` (which already centralizes `buildCheckPayload`) or `expectationCatalog.ts`.
+
+**3. Altitude — dry-run gate is a fragile per-spot `=== 'gx'` check, not a shared predicate**
+- File/line: `frontend/src/pages/CheckNew.tsx:166` and `frontend/src/pages/CheckEdit.tsx:272`
+- Summary: `!spec?.kind &amp;&amp; effectiveEngine === 'gx'` is the actual "can this be dry-run" rule, inlined at both render sites rather than expressed as a named helper (e.g. `canDryRun(spec, effectiveEngine)`).
+- Cost: The comment above each site ("neither is GX") is doing the explanatory work a function name should do; when a third engine is added (per ADR 0036's `check.engine` being extensible), someone must remember both spots implement the same gate — this is precisely the "two doors, one rule" failure shape the codebase's own progress notes call out repeatedly (RBAC/MCP gate-duplication incidents) as a recurring defect class here.
+
+**4. Simplification — `effectiveEngine` can't diverge from `showEngineChoice` in a way that matters, but the expression re-derives `showEngineChoice`'s condition instead of composing it**
+- File/line: `frontend/src/pages/CheckNew.tsx:70`, `frontend/src/pages/CheckEdit.tsx:141`
+- Summary: `effectiveEngine` recomputes the ternary on `showEngineChoice` (a local const already in scope) — fine as written, but once extracted per #1/#2 the two helpers should compose (`effectiveEngine = spec?.engine ?? (showEngineChoiceFor(...) ? engineChoice ?? 'gx' : 'gx')`) rather than being two independently-copy-pasted formulas, since today a future edit to the freshness/Snowflake condition would need to change it in 4 places (2 files × 2 consts) instead of 1.
+
+I capped this at 4 (both reuse duplications plus the altitude gate plus the composition note are the highest-value, all pointing at the same root cause: `showEngineChoice`/`effectiveEngine`/the dry-run gate all belong in `expectationCatalog.ts` next to `offersDmfEngine`). No CLAUDE.md rule violations found — comments added are terse and load-bearing (explain *why*, e.g. the `noThresholds`/DMF_UNBANDABLE_TYPES rationale), consistent with the "keep it code, not prose" bar already enforced by #1536. `noThresholds` on `ExpectationSpec` (angle 4, second half) is not flagged — it mirrors a genuine backend constraint (`DMF_UNBANDABLE_TYPES`) that isn't derivable from any other client-side field, so it's the right altitude, not a bolted-on special case.</result>
+<usage><subagent_tokens>108622</subagent_tokens><tool_uses>2</tool_uses><duration_ms>31094</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a11e16e8c243a9e80</task-id>
+<tool-use-id>toolu_01N3SQqmcoViQx8YtAEKi9A6</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d6683d42-dad1-4a22-9c40-68611e202599/tasks/a11e16e8c243a9e80.output</output-file>
+<status>completed</status>
+<summary>Agent "Cross-file tracer angle C" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+**1. `frontend/src/api/suites.ts:230-242` (`CheckVersion` interface) + `frontend/src/components/checks/CheckHistoryDrawer.tsx:68-77` (`renderDetails`)**
+Summary: The backend's `CheckVersionRead` (backend/app/api/v1/checks.py:284-299) was deliberately given an `engine: str` field with the comment *"restore applies `version.engine` unconditionally, so history must show which evaluator a restore would reinstate"* — but the frontend `CheckVersion` TS interface has no `engine` field, and `CheckHistoryDrawer`'s `renderDetails` never renders it.
+Failure scenario: A user viewing a freshness check's version history sees only Expectation/Config/Thresholds for each snapshot. They click "Restore this version" on an old dmf-engine snapshot while the check is currently gx (or vice versa) — the restore silently flips the evaluator (GX batch-read vs native Snowflake DMF, with different data-egress/coverage semantics) with zero indication in the UI that this will happen, directly contradicting the backend's own stated reason for adding the field.
+
+**2. `frontend/src/pages/Suites.tsx:706`**
+Summary: The suite's check list item renders raw `check.expectation_type` text but never `check.engine`.
+Failure scenario: A suite with two `monitor:freshness` checks — one `gx`, one `dmf` — renders identically in the checks list ("monitor:freshness" under both names); a user can't tell from the list which one runs natively in Snowflake vs. via a GX batch read without opening each check individually.
+
+**3. `frontend/src/pages/RunDetail.tsx:243,454` and `frontend/src/components/results/RunReport.tsx:22-25`**
+Summary: Both the interactive run-detail table and the printable PDF report display `expectation_type` (or fall back to `kind`) per result row, but never `engine`.
+Failure scenario: Triaging a failed freshness check in a run report, a user can't distinguish "GX read the data out and computed staleness" from "Snowflake DMF computed it natively in-warehouse" — a materially different debugging/trust context (e.g. DMF failures are more likely warehouse/permission issues, GX failures more likely batch-resolution issues) that's now invisible outside the check editor.
+
+**4. Non-finding (verified clean) — `check_dimension.py` vs fixture**
+`backend/app/services/check_dimension.py:30-33` maps `dmf:null_count`→completeness, `dmf:null_percent`→completeness, `dmf:duplicate_count`→uniqueness, `dmf:unique_count`→uniqueness — exact match to the four new fixture entries in `expectation_catalog.json`. No drift.
+
+**5. Non-finding (verified clean) — `expectationsByCategoryFor` / `EXPECTATION_CATEGORIES`**
+No other frontend consumer references `EXPECTATION_CATEGORIES` or calls `expectationsByCategoryFor` besides `CheckNew.tsx`/`CheckEdit.tsx` and their own tests, so the new `'Snowflake DMF'` category can't leak into an unrelated summary/count view.
+
+**6. Non-finding (verified clean) — `SeverityThresholdFields`/`noThresholds`**
+Only `CheckNew.tsx` and `CheckEdit.tsx` render `SeverityThresholdFields`; `ImportSuiteDrawer.tsx` is raw-JSON-only (no threshold UI to gate), and `CheckTrend.tsx` already degrades gracefully when all three thresholds are `null` (as `dmf:unique_count` always will be), so no `noThresholds` gap there.
+
+Most actionable: finding #1 is the strongest — it directly contradicts an explicit backend design comment, and #2/#3 are the same "engine is now a real, user-relevant fact but is displayed nowhere outside the editor" gap recurring in the two other places a check is shown.</result>
+<usage><subagent_tokens>126968</subagent_tokens><tool_uses>20</tool_uses><duration_ms>105546</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a71af79349f7cfc6d</task-id>
+<tool-use-id>toolu_01FvWuLtuf5mByuv5jrpgLZE</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d6683d42-dad1-4a22-9c40-68611e202599/tasks/a71af79349f7cfc6d.output</output-file>
+<status>completed</status>
+<summary>Agent "Correctness angle A - line by line scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+**1. `frontend/src/pages/CheckEdit.tsx` lines ~156–166 (the type-switch `useEffect`) — engine picker goes blank (not `'gx'`) when switching *into* Freshness from a different type, and the stale prior engine silently survives the save.**
+
+Summary: The effect resets `engine` to `undefined` when the newly-selected type is Freshness, intending `EngineField`'s `initialValue="gx"` to re-seed it. But `EngineField` (a class-based `Form.Item`) mounts synchronously during React's commit phase — before this `useEffect` (a passive effect) runs. At mount time the field's `initialValue` only applies if the store's current value is `undefined`; here the store still holds the *previous* type's engine (e.g. `'dmf'` from a `dmf:null_count` check), so `initialValue` is skipped. Only afterward does the effect explicitly overwrite `engine` to `undefined`, leaving the Select rendered with no selection.
+
+failure_scenario: Open the editor for an existing `dmf:null_count` check (`check.kind === 'expectation'` so the type Select is *not* disabled; `check.engine === 'dmf'`). Switch its expectation type to Freshness via the Select. The Engine picker renders blank instead of defaulting visibly to "Great Expectations (gx)". `effectiveEngine` computes to `'gx'` in-page (so e.g. dry-run gating "looks" GX), but `buildCheckPayload` sends `engine: (values.engine ?? spec?.engine)` = `undefined ?? undefined` = `undefined`, which is dropped by `JSON.stringify` and omitted from the PATCH body entirely. The backend then leaves the check's `engine` column untouched — the persisted check silently keeps `engine: 'dmf'` even though the UI displayed no selection and the user never touched the picker. The two CheckEdit tests added in this PR (prefill, dmf→gx switch) only exercise the *same-type* engine toggle, not this type-switch path, so nothing catches it.
+
+**2. `frontend/src/pages/CheckEdit.tsx` lines ~156–166 and ~262 — stale `warn/fail/critical_threshold` values leak into the payload when switching to `dmf:unique_count` (`noThresholds: true`), and the backend rejects the save.**
+
+Summary: `SeverityThresholdFields` is now conditionally rendered (`{!spec?.noThresholds &amp;&amp; ...}`), but the type-switch `useEffect` only resets `dimension` and `engine` — it never clears `warn_threshold`/`fail_threshold`/`critical_threshold`. Antd's Form store retains a field's value after it unmounts (no `resetFields()` call here, unlike `CheckNew`), and `buildCheckPayload` reads `values.warn_threshold` etc. unconditionally, with no `noThresholds` gating.
+
+failure_scenario: Edit an existing check that has, say, `fail_threshold: 5` set (e.g. a `dmf:null_count` or any expectation with thresholds authored), then switch its expectation type in the Select to `dmf:unique_count`. The threshold fields disappear from the UI (correctly, per `noThresholds`), but the form store still holds `fail_threshold: 5`. On Save, `buildCheckPayload` includes `fail_threshold: 5` in the PATCH even though no threshold field is visible — the backend's `DMF_UNBANDABLE_TYPES` check rejects it, so the user's save fails with a confusing validation error for a field they can't see or edit. (This is a regression specific to this PR: before it, `SeverityThresholdFields` was always rendered unconditionally, so there was no way for a "hidden but submitted" threshold value to exist.)
+
+**3. `frontend/src/components/checks/checkForm.ts` line ~72 — `buildCheckPayload`'s engine fallback has no `'gx'` default, unlike the pages' own `effectiveEngine`, so the two can diverge whenever `values.engine` is unexpectedly `undefined`.**
+
+Summary: `engine: (values.engine as string | undefined) ?? spec?.engine` can resolve to `undefined` (and get dropped from the JSON payload) in exactly the scenario in Finding 1, while both `CheckNew.tsx` and `CheckEdit.tsx` compute a same-shaped `effectiveEngine` that *does* fall back to `'gx'`. The UI-visible gating (e.g. dry-run availability) and the actually-submitted payload can therefore disagree about what engine is being saved.
+
+failure_scenario: Same as Finding 1 — the page's own gating logic believes `effectiveEngine === 'gx'`, but the network payload omits `engine` and the backend keeps whatever the check previously had.
+
+**4. `frontend/src/pages/CheckEdit.tsx` — `noThresholds` initial-load case not covered, but worth double-checking: does the *initial seed* effect ever populate stale thresholds for a `noThresholds` check on first load?**
+
+Lower confidence / worth verifying: the initial seed effect (`useEffect` on `[check, form]`) sets `warn_threshold`/`fail_threshold`/`critical_threshold` from `check.*` unconditionally, even when `check.expectation_type` is `dmf:unique_count` (where these should always be `null` server-side per `DMF_UNBANDABLE_TYPES`). This is likely harmless in practice (the backend should never have stored a threshold on such a check), but it means the frontend has no defensive stripping of thresholds for `noThresholds` types anywhere — reinforcing that Finding 2's leak has no safety net at the `buildCheckPayload` layer either.
+
+**5. `frontend/src/components/checks/checkFormFields.tsx` `EngineField` — `initialValue` prop is defined but never passed by either caller.**
+
+Minor/cosmetic: `EngineField` accepts an `initialValue` prop, but both `CheckNew.tsx` (`&lt;EngineField /&gt;`) and `CheckEdit.tsx` (`&lt;EngineField /&gt;`) call it with no props, always defaulting to `'gx'`. `CheckEdit` instead relies on a separate `setFieldsValue` effect to seed the real value, which works for the initial-load case (verified) but is the same mechanism implicated in Finding 1 for the type-switch case. Not a bug on its own, but the unused parameter suggests the type-switch reset (`engine: undefined`) was written assuming `initialValue` would be re-applied on remount, which — per Finding 1 — it is not, since `EngineField` isn't actually remounting in that flow (it may already be mounted from a prior render, or mounts before the store is cleared).</result>
+<usage><subagent_tokens>141371</subagent_tokens><tool_uses>6</tool_uses><duration_ms>285769</duration_ms></usage>
+</task-notification>

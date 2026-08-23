@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "d61f8240280c",
+  "strategy": "manual-commit",
+  "branch": "feat/dmf-engine-picker-ui",
+  "checkpoints_count": 12,
+  "files_touched": [
+    "backend/tests/datasources/test_catalog_gx_contract.py",
+    "backend/tests/datasources/test_unity_catalog.py",
+    "backend/tests/fixtures/expectation_catalog.json",
+    "frontend/src/api/suites.ts",
+    "frontend/src/components/checks/checkForm.ts",
+    "frontend/src/components/checks/checkFormFields.tsx",
+    "frontend/src/components/checks/expectationCatalog.ts",
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/src/pages/CheckNew.tsx",
+    "frontend/tests/pages/CheckEdit.test.tsx",
+    "frontend/tests/pages/CheckNewMonitor.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d6/1f8240280c/0/metadata.json",
+      "transcript": "/d6/1f8240280c/0/full.jsonl",
+      "compact_transcript": "/d6/1f8240280c/0/transcript.jsonl",
+      "content_hash": "/d6/1f8240280c/0/content_hash.txt",
+      "prompt": "/d6/1f8240280c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 686,
+    "cache_creation_tokens": 398120,
+    "cache_read_tokens": 162473295,
+    "output_tokens": 167889,
+    "api_call_count": 343,
+    "subagent_tokens": {
+      "input_tokens": 124,
+      "cache_creation_tokens": 199454,
+      "cache_read_tokens": 7874464,
+      "output_tokens": 20797,
+      "api_call_count": 62
+    }
+  }
+}
