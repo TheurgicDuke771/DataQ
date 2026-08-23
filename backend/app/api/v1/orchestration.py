@@ -1,25 +1,4 @@
-"""Orchestration event webhook receivers (ADF + Airflow + dbt).
-
-Machine-to-machine channels (no Azure AD user), each authenticated per its
-provider's constraints, then funnelled through the same provider-agnostic
-ingestion (`ingest_event`): resolve provider → parse to `RunUpdate` → persist.
-
-- `POST /orchestration/events/adf` — Azure Monitor. Auth = shared secret in the
-  ``token`` query parameter, constant-time vs the Key Vault secret (ADR 0006:
-  Azure Monitor webhooks can't set custom headers).
-- `POST /orchestration/events/airflow` — our DAG callback snippet. Auth =
-  HMAC-SHA256 over the **raw body** in the ``X-DataQ-Signature`` header,
-  constant-time vs the Key Vault signing key (ADR 0007: we author the snippet,
-  so it can sign a header).
-- `POST /orchestration/events/dbt` — our post-build callback snippet. Same
-  HMAC-SHA256 / ``X-DataQ-Signature`` scheme as Airflow, keyed on the dbt signing
-  secret (ADR 0029).
-
-Per ADR 0006/0007 each returns **200 for every well-formed, authenticated
-event** — including ignored / unattributable ones — so the sender does not
-retry-storm; only bad auth (401) or a malformed body (422) is an error. Adding a
-provider is a sibling route + its provider class — no new persistence code.
-"""
+"""Orchestration event webhook receivers (ADF + Airflow + dbt)."""
 
 from __future__ import annotations
 
@@ -68,16 +47,7 @@ async def _ack_event(
     update: RunUpdate | AlertPing,
     secret_store: SecretStore,
 ) -> EventAck:
-    """Provider-agnostic tail of both webhook routes: persist or poll-now.
-
-    An `AlertPing` (#492 — a run-anonymous alert, e.g. Azure Monitor's Common
-    Alert Schema) has no runId to upsert, so a *fired* ping becomes an
-    immediate **targeted** poll (the poll ingests the real run identities
-    within seconds); a *resolved* one is noise. Everything else is the normal
-    `ingest_event` upsert + trigger path. The ack is honest: ``reconciling``
-    only when the poll actually enqueued (a broker hiccup degrades to
-    ``ignored`` — the 10-min beat recovers).
-    """
+    """Provider-agnostic tail of both webhook routes: persist or poll-now."""
     if isinstance(update, AlertPing):
         log.info(
             "orchestration_alert_ping",
@@ -143,11 +113,7 @@ _SIGNATURE_HEADER = "X-DataQ-Signature"
 
 
 def _authenticate_airflow(body: bytes, signature: str | None, secret_store: SecretStore) -> None:
-    """Verify the HMAC-SHA256 over the raw body against the header (ADR 0007).
-
-    The signing key resolves from the SecretStore; the expected digest is hex.
-    The signature is never logged.
-    """
+    """Verify the HMAC-SHA256 over the raw body against the header (ADR 0007)."""
     settings = get_settings()
     try:
         key = secret_store.get(settings.airflow_webhook_secret_name)
@@ -158,9 +124,8 @@ def _authenticate_airflow(body: bytes, signature: str | None, secret_store: Secr
         raise WebhookNotConfiguredError("Airflow webhook receiver is not configured") from exc
 
     expected = hmac.new(key.encode("utf-8"), body, hashlib.sha256).hexdigest()
-    # Compare on UTF-8 bytes: hmac.compare_digest raises TypeError on non-ASCII
-    # str, so a caller-supplied non-ASCII signature must not reach it as str
-    # (else 500 instead of 401).
+    # Compare on UTF-8 bytes: hmac.compare_digest raises TypeError on non-ASCII str, so a caller-
+    # supplied non-ASCII signature must not reach it as str (else 500 instead of 401).
     if not signature or not hmac.compare_digest(
         signature.encode("utf-8"), expected.encode("utf-8")
     ):
@@ -188,11 +153,7 @@ async def receive_airflow_event(
 
 
 def _authenticate_dbt(body: bytes, signature: str | None, secret_store: SecretStore) -> None:
-    """Verify the HMAC-SHA256 over the raw body against the header (ADR 0029).
-
-    Identical scheme to the Airflow callback (`_authenticate_airflow`) but keyed on
-    the dbt signing secret; the signature is never logged.
-    """
+    """Verify the HMAC-SHA256 over the raw body against the header (ADR 0029)."""
     settings = get_settings()
     try:
         key = secret_store.get(settings.dbt_webhook_secret_name)

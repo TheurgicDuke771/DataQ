@@ -1,22 +1,4 @@
-"""Aggregates count only runs whose result set is complete (#318 G3).
-
-Per-phase commits mean a `running` run has a genuinely partial set of result rows,
-and a `failed`/`cancelled` one can retain stragglers — the run path's compensating
-DELETE is best-effort, and the stuck-run reaper flips a dead worker's status
-without owning the transaction that wrote them.
-
-Before #318 every one of these readers was *accidentally* correct: a run that had
-not finished had written nothing, so "all results in the window" and "all results
-of a completed run" were the same set. `rollup.AGGREGATABLE_RUN_STATUSES` makes the
-second one explicit, at each reader that presents numbers as a **suite's or an
-asset's quality**.
-
-Each test seeds the partial/stranded state directly rather than racing a real run:
-the readers cannot tell how the rows got there, and a test that had to win a race
-to be meaningful would be a flake.
-
-Skips without `TEST_DATABASE_URL` (the `db_session` fixture).
-"""
+"""Aggregates count only runs whose result set is complete (#318 G3)."""
 
 from __future__ import annotations
 
@@ -59,7 +41,8 @@ def _suite(db: Any, owner: User) -> Suite:
 
 def _run_with_results(db: Any, suite: Suite, *, status: str, result_statuses: list[str]) -> Run:
     """A run in ``status`` carrying ``result_statuses`` — including the combinations
-    only a mid-flight or reaped run produces."""
+    only a mid-flight or reaped run produces.
+    """
     run = Run(suite_id=suite.id, status=status)
     db.add(run)
     db.flush()
@@ -78,7 +61,8 @@ def test_a_running_runs_partial_results_do_not_score_the_suite(db_session: Any) 
     """The dashboard case, and the one a user would actually hit: a 30-check suite
     whose first committed phase happened to fail would otherwise render `critical`
     (1/1 fail) for the entire rest of the run — a red board caused by nothing but
-    the order the phases ran in."""
+    the order the phases ran in.
+    """
     alice = _user(db_session)
     suite = _suite(db_session, alice)
     _run_with_results(db_session, suite, status="running", result_statuses=["critical"])
@@ -91,7 +75,8 @@ def test_a_running_runs_partial_results_do_not_score_the_suite(db_session: Any) 
 
 def test_a_completed_runs_results_still_score_the_suite(db_session: Any) -> None:
     """The control: the filter must exclude the incomplete, not everything. Without
-    this pair a reader that returned nothing at all would pass the test above."""
+    this pair a reader that returned nothing at all would pass the test above.
+    """
     alice = _user(db_session)
     suite = _suite(db_session, alice)
     _run_with_results(db_session, suite, status="succeeded", result_statuses=["pass", "fail"])
@@ -105,7 +90,8 @@ def test_a_completed_runs_results_still_score_the_suite(db_session: Any) -> None
 def test_stranded_rows_on_a_failed_run_are_not_counted(db_session: Any) -> None:
     """The reaped-worker / failed-discard case. A `failed` run is supposed to carry
     no results; when it does anyway, the aggregate must not adopt them — which is
-    what lets the DELETE stay best-effort instead of load-bearing."""
+    what lets the DELETE stay best-effort instead of load-bearing.
+    """
     alice = _user(db_session)
     suite = _suite(db_session, alice)
     _run_with_results(db_session, suite, status="failed", result_statuses=["critical", "critical"])
@@ -118,7 +104,8 @@ def test_stranded_rows_on_a_failed_run_are_not_counted(db_session: Any) -> None:
 def test_status_histograms_opt_in_filter(db_session: Any) -> None:
     """The shared primitive both ways, since its default is deliberately *off*:
     the runs table shows one named run's live outcome and must keep seeing partials
-    (#425), while the asset scorecard must not."""
+    (#425), while the asset scorecard must not.
+    """
     alice = _user(db_session)
     suite = _suite(db_session, alice)
     live = _run_with_results(db_session, suite, status="running", result_statuses=["pass", "fail"])
@@ -133,7 +120,8 @@ def test_status_histograms_opt_in_filter(db_session: Any) -> None:
 def test_runs_table_still_shows_a_live_runs_partial_outcome(db_session: Any) -> None:
     """The counter-case for the whole finding: `check_outcome_counts` is what the
     runs table renders as `3 / 7 passed`, and blanking it mid-run would be a
-    regression of #425 dressed up as a fix."""
+    regression of #425 dressed up as a fix.
+    """
     alice = _user(db_session)
     suite = _suite(db_session, alice)
     live = _run_with_results(db_session, suite, status="running", result_statuses=["pass", "fail"])
@@ -143,11 +131,9 @@ def test_runs_table_still_shows_a_live_runs_partial_outcome(db_session: Any) -> 
 
 
 def test_dedup_reads_no_per_check_signature_from_a_failed_run(db_session: Any) -> None:
-    """A failed run is *defined* as having no per-check signature — that is what
-    collapses it to the operational sentinel so two consecutive dead-worker
-    failures dedup as one alert (#419). Reading stranded rows instead would give it
-    a per-check signature, which either splits the operational alerts apart or
-    matches a genuine prior alert and silences the one that mattered."""
+    """A failed run is *defined* as having no per-check signature — that is what collapses it to
+    the operational sentinel so two consecutive dead-worker failures dedup as one alert (#419).
+    """
     alice = _user(db_session)
     suite = _suite(db_session, alice)
     stranded = _run_with_results(db_session, suite, status="failed", result_statuses=["critical"])

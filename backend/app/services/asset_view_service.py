@@ -1,32 +1,4 @@
-"""Read-only asset view — the browse/reason surface over `assets` (ADR 0034, #760).
-
-Assets are what users *reason about*; suites remain how checks *execute* (ADR 0034
-guiding principle). This module aggregates, per asset, the suites that target it +
-their latest run health + the lineage neighbourhood, for the `/assets` API.
-
-**The ADR 0037 three-layer rule (supersedes ADR 0034 decision 5 + #845/#846/#920):**
-
-- **Identity & topology are workspace knowledge.** Every authenticated member sees
-  every asset's full identity (name, namespace, env, description, owner,
-  ``last_seen``) and the full lineage neighbourhood — named nodes, real edges, and
-  column-level pairs. Nothing here is redacted, anonymized, or 404'd: the detail
-  endpoint opens for every existing asset, and only a truly unknown id 404s.
-- **Aggregate verdicts are workspace-true.** The health rollup (``worst_severity``,
-  check counts, run-state flags, ``suite_count``) is computed over **all** composing
-  suites for **every** viewer — one truth per asset, never a per-viewer partial that
-  silently disagrees between users (#889's two-verdicts-on-one-page problem).
-- **Itemized evaluation stays behind the ADR 0027 suite grants.** The per-suite
-  breakdown on the detail page lists only suites the caller can view — derived
-  from `suite_authz.effective_permissions` (the same owned/shared/workspace-admin
-  resolution that labels the rows, so listing and labeling can never disagree);
-  the rest collapse to ``restricted_suite_count`` — a count, never names.
-  Suite/run/result/sample/incident endpoints keep their own grant scoping and
-  404-no-leak at the suite grain.
-
-Asset-metadata mutation (owner, description) is workspace-Admin-only — enforced at
-the API layer (`require_workspace_admin`), not here; `update_asset_metadata` is the
-plain persistence half.
-"""
+"""Read-only asset view — the browse/reason surface over `assets` (ADR 0034, #760)."""
 
 from __future__ import annotations
 
@@ -70,7 +42,8 @@ log = get_logger(__name__)
 class AssetNotFoundError(DataQError):
     """Raised when an asset id names no asset. Identity is workspace-visible
     (ADR 0037), so — unlike the suite endpoints — there is no no-leak case here:
-    every existing asset opens for every member."""
+    every existing asset opens for every member.
+    """
 
     status_code = 404
     code = "asset_not_found"
@@ -79,7 +52,8 @@ class AssetNotFoundError(DataQError):
 class AssetOwnerInvalidError(DataQError):
     """The `owner_user_id` on a metadata update names no existing user — checked
     up front (the share-grant FK-precheck idiom, `share_service.grant_share`) so a
-    bad id is a clean 422, never a raw FK IntegrityError surfacing as 500."""
+    bad id is a clean 422, never a raw FK IntegrityError surfacing as 500.
+    """
 
     status_code = 422
     code = "asset_owner_invalid"
@@ -87,16 +61,7 @@ class AssetOwnerInvalidError(DataQError):
 
 @dataclass(frozen=True)
 class RunOutcome:
-    """A suite's latest run outcome — execution status + the data-quality summary.
-
-    ``worst_severity`` is the highest failing tier among evaluated checks (warn <
-    fail < critical), or ``None`` when all passed / nothing evaluated. ``run_id`` /
-    timestamps are ``None`` when the suite has never run.
-
-    ``has_error`` / ``has_skip`` are the run's **operational** results (#122) — a
-    check the datasource threw on, or one whose precondition wasn't met. They are
-    deliberately *not* severity: they say nothing about data quality, only about
-    whether DataQ could evaluate at all, and so feed connection health (#803)."""
+    """A suite's latest run outcome — execution status + the data-quality summary."""
 
     run_id: uuid.UUID | None = None
     status: str | None = None
@@ -124,18 +89,6 @@ class AssetSummary:
     """List-row aggregation for one asset — **workspace-true** (ADR 0037): every
     field is identical for every viewer, and the health axes aggregate over ALL
     composing suites regardless of the caller's grants. One verdict per asset.
-
-    **Two orthogonal health axes (#803).** The old single "health" conflated them:
-
-    - *Suite health* (data quality, ADR 0005) — ``worst_severity`` over the
-      **evaluated** checks, plus ``checks_total``/``checks_passed``. Operational
-      results never rank here, so a datasource DataQ couldn't reach reads as "no
-      data", never as a green "passing" nor as a red data failure.
-    - *Connection health* (reachability) — ``has_operational_error`` /
-      ``has_skip``: could DataQ execute against the datasource at all? Derived
-      **purely from the runs already recorded** (a latest run that `failed`, or
-      any ``error``/``skip`` result on one) — there is no connection-probe polling
-      loop behind this, by design.
     """
 
     id: uuid.UUID
@@ -151,15 +104,8 @@ class AssetSummary:
     checks_total: int
     checks_passed: int
     last_run_at: datetime | None
-    # ── connection health (reachability / execution) ──
-    # `has_failed_run`: any latest run whose *execution* `failed` (wrote no results).
-    # `has_active_run`: any latest run still `queued`/`running` (hasn't concluded).
-    # `has_cancelled_run`: any latest run `cancelled`. A cancelled run proves
-    #   nothing — if it was killed before a single check ran, we may never have
-    #   reached the datasource at all, so it must not roll up green.
-    # `has_operational_error`: a failed run OR any `error` result — DataQ could not
-    #   evaluate against the datasource. `has_skip`: any `skip` result (a
-    #   precondition, e.g. the batch hasn't landed, wasn't met) — degraded, not down.
+    # ── connection health (reachability / execution) ── `has_failed_run`: any latest run whose
+    # *execution* `failed` (wrote no results).
     has_failed_run: bool = False
     has_active_run: bool = False
     has_cancelled_run: bool = False
@@ -169,15 +115,7 @@ class AssetSummary:
 
 @dataclass(frozen=True)
 class LineageNode:
-    """A lineage neighbour — enough to render, no run data (ADR 0034 §2).
-
-    ``depth`` is the hop distance from the asset under view (1 = a direct
-    neighbour), which is what lets the UI lay the graph out in columns (#805)
-    instead of flattening every hop into one list.
-
-    Fully named for every member (ADR 0037): lineage topology is identity, and
-    identity is workspace knowledge. ``is_monitored`` is the true structural fact.
-    """
+    """A lineage neighbour — enough to render, no run data (ADR 0034 §2)."""
 
     id: uuid.UUID
     namespace: str
@@ -189,17 +127,7 @@ class LineageNode:
 
 @dataclass(frozen=True)
 class LineageEdgeRef:
-    """One edge of the neighbourhood DAG, as ``(upstream → downstream)`` asset ids.
-
-    The UI draws exactly these; without them a graph could only *guess* which node
-    at depth 2 hangs off which node at depth 1 (#805).
-
-    ``columns`` is the edge's column-level refinement (#901) when a warehouse source
-    recorded one — ``[upstream_column, downstream_column]`` pairs, unioned across the
-    sources that observed the edge, shown to every member (a column name is schema
-    metadata — identity, not measurement; ADR 0037). ``None`` ⇒ the edge simply has
-    no column grain (a table-level source recorded it).
-    """
+    """One edge of the neighbourhood DAG, as ``(upstream → downstream)`` asset ids."""
 
     source: uuid.UUID
     target: uuid.UUID
@@ -208,13 +136,7 @@ class LineageEdgeRef:
 
 @dataclass(frozen=True)
 class LineageSourceHealth:
-    """Whether the integrations that FEED lineage are actually working (#828).
-
-    Without this, an empty lineage graph is a lie by omission: "no lineage recorded" is
-    rendered identically whether the asset genuinely has no upstreams or whether the dbt
-    poll has been failing for six days behind an expired credential. The UI must be able
-    to tell the user which one it is looking at.
-    """
+    """Whether the integrations that FEED lineage are actually working (#828)."""
 
     connection_id: uuid.UUID
     name: str
@@ -229,13 +151,6 @@ class WarehouseLineageStatus:
     """A warehouse-native lineage source (Snowflake / UC) that is DEGRADED or FAILING —
     surfaced so a view-level-only or stale graph never reads as a confident full one
     (#828, #858 slice 4).
-
-    Distinct from :class:`LineageSourceHealth` (a dbt-poll failure counter): a warehouse
-    refresh has no poll counter, and its most important signal is the *tier* — a healthy
-    refresh can still be degraded (``OBJECT_DEPENDENCIES`` view-level only because the
-    account isn't Enterprise). ``degraded_reason`` is that "working but coarse" note;
-    ``last_error`` is a genuine refresh failure (classified). A source with neither is
-    healthy and is NOT listed (no banner over a clean full-tier graph).
     """
 
     connection_id: uuid.UUID
@@ -245,27 +160,14 @@ class WarehouseLineageStatus:
     degraded_reason: str | None
     last_error: str | None
     last_refreshed_at: datetime | None
-    # #1091: the refresh loop silently STOPPED — no error, no degradation, just no
-    # refresh within the staleness window. The prod incident this encodes: beat
-    # starvation left warehouse lineage 9 days old while two UC connections carried
-    # zero errors and zero degraded reasons and therefore matched nothing above.
+    # #1091: the refresh loop silently STOPPED — no error, no degradation, just no refresh within
+    # the staleness window.
     stale: bool = False
 
 
 @dataclass(frozen=True)
 class DimensionScore:
-    """One row of the asset DQ scorecard (#889, ADR 0038).
-
-    `checks_total` counts checks that EXIST, so a check authored today counts as
-    coverage before it has ever run. `checks_evaluated` counts those that actually
-    produced a severity in the latest run — `skip`/`error` and never-run checks are
-    excluded (#122 / ADR 0005), and it is the score's denominator.
-
-    `score` is the ADR-0005 severity-weighted score over that dimension's results,
-    or `None` when nothing evaluated. **`None` is not zero and not 100** — the UI
-    must render it as "no signal", because "we ran nothing" and "everything
-    failed" are opposite facts.
-    """
+    """One row of the asset DQ scorecard (#889, ADR 0038)."""
 
     dimension: str
     # Checks that EXIST in this dimension — the coverage number. Not a result
@@ -282,19 +184,7 @@ class DimensionScore:
 
 @dataclass(frozen=True)
 class Scorecard:
-    """Per-dimension coverage + score for an asset, **workspace-true** (ADR 0037).
-
-    Aggregated over ALL composing suites' latest runs, so every viewer sees the
-    same numbers — the "two verdicts on one page" problem this module's docstring
-    names is exactly #889's.
-
-    The valuable half is `uncovered`, not `covered`: "this asset has no Timeliness
-    checks at all" is immediately actionable, where a pass-rate is not. And
-    `unclassified_checks` keeps that honest — checks whose dimension is NULL
-    (ADR 0038: custom SQL, or anything nobody classified) are counted but NOT
-    bucketed, because filing them under a dimension they may not belong to would
-    make `uncovered` a lie.
-    """
+    """Per-dimension coverage + score for an asset, **workspace-true** (ADR 0037)."""
 
     covered: list[DimensionScore]
     uncovered: list[str]
@@ -306,7 +196,8 @@ class AssetDetail:
     """Asset detail: the workspace-true summary + the caller's per-suite breakdown
     + lineage. ``suites`` lists only suites the caller can view (ADR 0027);
     ``restricted_suite_count`` is how many more compose the asset — those still
-    roll into ``summary`` (workspace-true, ADR 0037) but stay unnamed."""
+    roll into ``summary`` (workspace-true, ADR 0037) but stay unnamed.
+    """
 
     summary: AssetSummary
     suites: list[ComposingSuite]
@@ -315,13 +206,11 @@ class AssetDetail:
     upstream: list[LineageNode] = field(default_factory=list)
     downstream: list[LineageNode] = field(default_factory=list)
     lineage_edges: list[LineageEdgeRef] = field(default_factory=list)
-    # Non-empty ⇒ a lineage source is broken, so the graph below may be stale or empty
-    # for a reason that has nothing to do with this asset. Never show a clean empty
-    # state over a broken integration.
+    # Non-empty ⇒ a lineage source is broken, so the graph below may be stale or empty for a reason
+    # that has nothing to do with this asset.
     failing_lineage_sources: list[LineageSourceHealth] = field(default_factory=list)
-    # Warehouse-native lineage sources that are degraded (coarser tier) or failing — so
-    # the graph can be qualified ("view-level only", "last refreshed 2h ago") rather than
-    # presented as complete + current (#828, #858).
+    # Warehouse-native lineage sources that are degraded (coarser tier) or failing — so the graph
+    # can be qualified ("view-level only".
     warehouse_lineage_status: list[WarehouseLineageStatus] = field(default_factory=list)
 
 
@@ -342,7 +231,8 @@ def _run_outcome(
     op_flags: tuple[bool, bool] | None = None,
 ) -> RunOutcome:
     """Assemble a `RunOutcome` from a suite's latest run + its check-outcome tuple
-    + its operational (`error`/`skip`) flags."""
+    + its operational (`error`/`skip`) flags.
+    """
     if run is None:
         return RunOutcome()
     total, passed, worst = outcome or (0, 0, None)
@@ -367,7 +257,8 @@ def _composing_suites(
 ) -> list[ComposingSuite]:
     """Build the per-suite breakdown for one asset's suites (sorted by name).
     Consumes the SAME ``RunOutcome`` map the workspace-true rollup reads, so the
-    listed rows and the rollup can never disagree about a run (#924 review)."""
+    listed rows and the rollup can never disagree about a run (#924 review).
+    """
     composing: list[ComposingSuite] = []
     for suite in suites:
         level = levels.get(suite.id)
@@ -387,13 +278,12 @@ def _composing_suites(
 def _latest_outcomes(session: Session, suites: list[Suite]) -> dict[uuid.UUID, RunOutcome]:
     """One ``RunOutcome`` per suite (empty for a never-run suite) — the single
     computation both the workspace-true rollup and the per-suite breakdown read.
-    Three grouped queries total (latest runs, check outcomes, operational flags)."""
+    Three grouped queries total (latest runs, check outcomes, operational flags).
+    """
     latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
     run_ids = [r.id for r in latest_runs.values()]
-    # An asset scorecard states how the ASSET is doing, so a partial or stranded
-    # result set must not contribute (#318). The run itself is still carried
-    # below, unfiltered, so a failed latest run keeps reporting its operational
-    # error — what is filtered is the counting, not the reporting.
+    # An asset scorecard states how the ASSET is doing, so a partial or stranded result set must not
+    # contribute (#318).
     outcomes = check_outcome_counts(session, run_ids, complete_runs_only=True)
     op_flags = operational_result_flags(session, run_ids)
     by_suite: dict[uuid.UUID, RunOutcome] = {}
@@ -406,29 +296,7 @@ def _latest_outcomes(session: Session, suites: list[Suite]) -> dict[uuid.UUID, R
 
 
 def _scorecard(session: Session, suite_ids: list[uuid.UUID], run_ids: list[uuid.UUID]) -> Scorecard:
-    """Per-dimension coverage + score for an asset (#889).
-
-    **Coverage comes from CHECKS, scores come from RESULTS**, and the distinction
-    is the whole feature. Deriving coverage from results — the obvious shortcut,
-    since results already carry the dimension via the join — makes "not covered"
-    mean "produced no result in the latest run": a `timeliness` check authored
-    today on a nightly suite would be reported as *missing* until tomorrow, and
-    the prescribed fix ("write a Timeliness check") would be exactly wrong. It
-    also regresses whenever a run hard-fails and rolls its results back.
-
-    So there are two queries: one over `checks` establishing what EXISTS, one over
-    `results` establishing how the latest run went.
-
-    **Workspace-true**: the caller passes every composing suite, never a
-    grant-filtered subset. A per-viewer score would put two different numbers on
-    one page for two people looking at the same asset — the exact problem ADR 0037
-    exists to prevent, and the one this module's docstring cites as #889's framing.
-
-    Checks with a NULL dimension (ADR 0038 — custom SQL, or unclassified) are
-    counted in `unclassified_checks` and deliberately left OUT of every bucket:
-    assigning them somewhere would corrupt that bucket's score and make
-    `uncovered` a lie.
-    """
+    """Per-dimension coverage + score for an asset (#889)."""
     # ── what exists (coverage) ──
     check_rows = session.execute(
         select(Check.dimension, func.count())
@@ -438,22 +306,15 @@ def _scorecard(session: Session, suite_ids: list[uuid.UUID], run_ids: list[uuid.
     checks_by_dimension = {d: n for d, n in check_rows if d is not None}
     unclassified = sum(n for d, n in check_rows if d is None)
 
-    # ── how the latest run went (score) ──
-    # A plain dict, NOT a defaultdict: reading `histograms[dim]` below would
-    # CREATE the key, silently mutating the mapping while iterating over coverage.
-    # Nothing downstream reads it here, but it made a deliberately-broken variant
-    # of this function pass its own regression test — the container should not
-    # change shape because something looked at it.
+    # ── how the latest run went (score) ── A plain dict, NOT a defaultdict: reading
+    # `histograms[dim]` below would CREATE the key, silently mutating the mapping while iterating
     histograms: dict[str, dict[str, int]] = {}
     if run_ids:
         result_rows = session.execute(
             select(Check.dimension, Result.status, func.count())
             .select_from(Result)
             .join(Check, Check.id == Result.check_id)
-            # Only runs whose result set is complete may be scored (#318) —
-            # `_latest_run_per_suite` deliberately returns the newest run whatever
-            # its status (the operational-error surface needs it), so the filter
-            # belongs on the rows being counted, not on the run being chosen.
+            # Only runs whose result set is complete may be scored (#318).
             .join(Run, Run.id == Result.run_id)
             .where(Result.run_id.in_(run_ids), Run.status.in_(AGGREGATABLE_RUN_STATUSES))
             .group_by(Check.dimension, Result.status)
@@ -483,7 +344,8 @@ def _scorecard(session: Session, suite_ids: list[uuid.UUID], run_ids: list[uuid.
 def _roll_up(asset: Asset, suite_outcomes: list[RunOutcome]) -> AssetSummary:
     """Roll the latest-run outcomes of ALL composing suites up into the asset-level
     health summary. Workspace-true (ADR 0037): the input is never grant-filtered,
-    so every viewer computes — and sees — the same verdict."""
+    so every viewer computes — and sees — the same verdict.
+    """
     statuses: list[str] = []
     checks_total = checks_passed = 0
     last_run_at: datetime | None = None
@@ -492,18 +354,16 @@ def _roll_up(asset: Asset, suite_outcomes: list[RunOutcome]) -> AssetSummary:
     for run in suite_outcomes:
         if run.worst_severity is not None:
             statuses.append(run.worst_severity)
-        # Execution state, distinct from check severity (see AssetSummary): a
-        # `failed` run wrote no results and must not roll up green; an active run
-        # hasn't concluded yet.
+        # Execution state, distinct from check severity (see AssetSummary): a `failed` run wrote no
+        # results and must not roll up green; an active run hasn't concluded yet.
         if run.status == "failed":
             has_failed_run = True
         elif run.status in ("queued", "running"):
             has_active_run = True
         elif run.status == "cancelled":
             has_cancelled_run = True
-        # Connection health (#803): a run that failed outright, or one that ran but
-        # whose checks threw, both mean DataQ could not evaluate against the
-        # datasource. `skip` is weaker — it executed, a precondition just wasn't met.
+        # Connection health (#803): a run that failed outright, or one that ran but whose checks
+        # threw, both mean DataQ could not evaluate against the datasource.
         if run.status == "failed" or run.has_error:
             has_operational_error = True
         if run.has_skip:
@@ -541,7 +401,8 @@ def count_assets(session: Session) -> int:
     """Total assets over the same population `list_visible_assets` pages through
     (#925) — unfiltered (ADR 0037: identity is workspace knowledge, not
     grant-scoped), so the count a client divides its `limit`/`offset` paging
-    against always matches what the list endpoint can actually return."""
+    against always matches what the list endpoint can actually return.
+    """
     return session.scalar(select(func.count()).select_from(Asset)) or 0
 
 
@@ -555,12 +416,7 @@ def list_visible_assets(
     with ``limit``/``offset`` — identical output for every caller (ADR 0037), which
     is why this takes no user: identity is workspace knowledge and the rollup is
     workspace-true (aggregated over ALL composing suites, never grant-filtered).
-
-    Pagination is applied at the SQL level over the *asset* page (not the suite
-    rows), so a page is a stable, deterministic slice regardless of how many
-    suites compose each asset. Callers that need to know whether this page is
-    truncated should pair this with `count_assets` (#925) — the total isn't
-    derivable from a page's length alone."""
+    """
     assets = list(
         session.scalars(
             select(Asset).order_by(Asset.namespace, Asset.name).limit(limit).offset(offset)
@@ -584,25 +440,15 @@ def get_visible_asset(
     """One asset's detail (workspace-true aggregation + the caller's per-suite
     breakdown + lineage). Opens for **every** member (ADR 0037) — only a truly
     unknown id raises `AssetNotFoundError` (404).
-
-    The caller shapes exactly one thing: which composing suites are *listed*
-    (their grants; ``include_all`` for a workspace-admin). Suites outside the
-    grants still roll into the summary — workspace-true, one verdict for every
-    viewer — but surface only as ``restricted_suite_count``: a count, never
-    names (suite names can reveal intent; the ADR 0027 boundary lives at the
-    suite grain, where its 404-no-leak is intact)."""
+    """
     asset = session.get(Asset, asset_id)
     if asset is None:
         raise AssetNotFoundError("asset not found", detail={"asset_id": str(asset_id)})
     all_suites = list(
         session.scalars(select(Suite).where(Suite.asset_id == asset_id).order_by(Suite.name))
     )
-    # ONE visibility derivation (#924 review): `effective_permissions` encodes the
-    # same owned/shared/workspace-admin rule `accessible_suite_ids` does (both
-    # resolve the admin off the same allowlist), and it must be called anyway to
-    # label the rows — so a suite is listed iff it has a label. A second SQL
-    # round-trip here would be a parallel encoding of the same rule, and its
-    # separate read is what opened the deleted-between-reads miscount window.
+    # ONE visibility derivation (#924 review): `effective_permissions` encodes the same
+    # owned/shared/workspace-admin rule `accessible_suite_ids` does (both resolve the admin off the
     levels = effective_permissions(session, all_suites, user_id)
     visible = [s for s in all_suites if include_all or levels.get(s.id)]
 
@@ -631,34 +477,15 @@ def get_visible_asset(
         upstream=_lineage_nodes(graph.upstream, has_suite),
         downstream=_lineage_nodes(graph.downstream, has_suite),
         lineage_edges=_lineage_edge_refs(session, graph.edges),
-        # Source-health advisories name workspace connections — which every member
-        # can already read off `GET /connections` (unscoped since Week 2), so there
-        # is nothing to gate (ADR 0037 retires the former stake gate). What matters
-        # is the #828 rule: never render a confident empty graph over a broken feed.
+        # Source-health advisories name workspace connections — which every member can already read
+        # off `GET /connections` (unscoped since Week 2).
         failing_lineage_sources=failing_lineage_sources(session),
         warehouse_lineage_status=warehouse_lineage_status(session),
     )
 
 
 def warehouse_lineage_status(session: Session) -> list[WarehouseLineageStatus]:
-    """Warehouse-native lineage sources that are degraded, failing — or STALE (#1091).
-
-    Workspace-wide (like `failing_lineage_sources`): a warehouse's lineage tier is a
-    property of the source, not the asset. Lists Snowflake / Unity Catalog connections
-    that have refreshed at least once AND are degraded (a coarser tier — e.g. Snowflake
-    OBJECT_DEPENDENCIES because the account isn't Enterprise), errored (the last refresh
-    failed), or **stale** — last refreshed longer ago than `LINEAGE_STALE_AFTER_HOURS`
-    (default 48h = 2x the daily beat cadence). A healthy full-tier CURRENT source is
-    omitted — no banner over a clean graph.
-
-    Staleness is independent of error/degraded, and that independence is the point:
-    the #1091 incident starved beat, so the refresh loop stopped WITHOUT recording
-    anything — two UC connections with zero errors and zero degraded reasons served
-    9-day-old lineage and matched none of the conditions above. Staleness is only
-    asserted while `WAREHOUSE_LINEAGE_ENABLED` is on: with the feature off there is no
-    refresh expectation to be stale against (and the cached edges' disposition is the
-    orphan-sweep's concern, not a per-source banner).
-    """
+    """Warehouse-native lineage sources that are degraded, failing — or STALE (#1091)."""
     settings = get_settings()
     stale_after_hours = settings.lineage_stale_after_hours
     stale_before = (
@@ -700,17 +527,7 @@ def warehouse_lineage_status(session: Session) -> list[WarehouseLineageStatus]:
 
 
 def failing_lineage_sources(session: Session) -> list[LineageSourceHealth]:
-    """Lineage-feeding connections whose poll is currently failing (#828).
-
-    Workspace-wide, not per-asset, and deliberately so: lineage arrives from a *source*
-    (a dbt project's manifest), not from the asset. If that source is down, every asset's
-    lineage is suspect — including the ones that legitimately have none — so the caveat
-    belongs on all of them.
-
-    Scoped to `dbt` because it is the only orchestration provider that feeds lineage
-    today (`read_manifest`, #759). Widening it means adding a provider, not rewriting
-    this: the filter rides the existing capability, not a hardcoded list of names.
-    """
+    """Lineage-feeding connections whose poll is currently failing (#828)."""
     rows = session.scalars(
         select(Connection).where(
             Connection.type == "dbt",
@@ -734,7 +551,8 @@ def summarize_asset(session: Session, asset: Asset) -> AssetSummary:
     """Roll one already-loaded asset up into its list-row summary — workspace-true
     (ADR 0037), so it takes no user. An asset with zero suites rolls up to an
     empty (no-run) health summary. Used by the admin PATCH response, where the
-    asset need not have suites to have metadata."""
+    asset need not have suites to have metadata.
+    """
     suites = list(session.scalars(select(Suite).where(Suite.asset_id == asset.id)))
     outcome_by_suite = _latest_outcomes(session, suites)
     return _roll_up(asset, [outcome_by_suite[s.id] for s in suites])
@@ -742,7 +560,8 @@ def summarize_asset(session: Session, asset: Asset) -> AssetSummary:
 
 def _monitored_ids(session: Session, ids: list[uuid.UUID]) -> set[uuid.UUID]:
     """Which of ``ids`` have ≥1 suite targeting them (globally — a structural fact,
-    not a grant). One grouped query for the whole neighbourhood (no N+1)."""
+    not a grant). One grouped query for the whole neighbourhood (no N+1).
+    """
     if not ids:
         return set()
     return {
@@ -760,7 +579,8 @@ def _lineage_edge_refs(
     """The neighbourhood's edges with their column-level refinement (#901), shown
     in full to every member (ADR 0037 — column names are schema metadata, i.e.
     identity). Column data is unioned across the sources that observed the edge
-    (two provenance rows for one asset pair are one drawn edge)."""
+    (two provenance rows for one asset pair are one drawn edge).
+    """
     if not edges:
         return []
     pairs: dict[tuple[uuid.UUID, uuid.UUID], set[tuple[str, str]]] = {}
@@ -777,10 +597,8 @@ def _lineage_edge_refs(
             func.jsonb_typeof(LineageEdge.columns) != "null",
         )
     ):
-        # Defensive shape check: `columns` is app-written JSONB, but a malformed
-        # value must degrade to "skipped", never 500 the asset page — LOUDLY (#907
-        # review: a silent skip is the confident-empty-state failure mode #828
-        # taught; an operator must be able to see the backfill missed rows).
+        # Defensive shape check: `columns` is app-written JSONB, but a malformed value must degrade
+        # to "skipped", never 500 the asset page.
         if not isinstance(cols, (list, tuple)):
             log.warning(
                 "lineage_edge_columns_malformed",
@@ -794,10 +612,8 @@ def _lineage_edge_refs(
             for entry in cols
             if isinstance(entry, (list, tuple)) and len(entry) == 2
         ]
-        # The loud-degradation contract covers ENTRIES too (#924 review): a
-        # wrong-arity/non-list item inside a well-formed list must not vanish
-        # silently — with every entry dropped the edge would render as
-        # "table-grain", indistinguishable from no column data at all.
+        # The loud-degradation contract covers ENTRIES too (#924 review): a wrong-arity/non-list
+        # item inside a well-formed list must not vanish silently.
         if len(valid) != len(cols):
             log.warning(
                 "lineage_edge_column_entries_malformed",
@@ -822,7 +638,8 @@ def _lineage_nodes(
 ) -> list[LineageNode]:
     """Map reachable lineage assets (+ their hop depth) to render-only nodes —
     fully named for every member (ADR 0037); ``is_monitored`` is the true
-    structural fact."""
+    structural fact.
+    """
     return [
         LineageNode(
             id=a.id,
@@ -846,14 +663,7 @@ def update_asset_metadata(
     set_description: bool = False,
     actor_id: uuid.UUID | None = None,
 ) -> Asset:
-    """Set an asset's owner and/or description (workspace-Admin-only; gated at API).
-
-    ``set_owner`` / ``set_description`` are the partial-update discriminators, so a
-    field can be explicitly cleared to ``None`` versus left untouched (mirrors the
-    suite PATCH's None-means-leave-alone problem, made explicit). Raises
-    `AssetNotFoundError` (404) for an unknown id — no authz derivation here, since a
-    workspace-admin sees every asset (ADR 0027) — and `AssetOwnerInvalidError` (422)
-    when ``owner_user_id`` names no existing user (FK pre-check, never a raw 500)."""
+    """Set an asset's owner and/or description (workspace-Admin-only; gated at API)."""
     asset = session.get(Asset, asset_id)
     if asset is None:
         raise AssetNotFoundError("asset not found", detail={"asset_id": str(asset_id)})

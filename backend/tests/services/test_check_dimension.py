@@ -1,8 +1,4 @@
-"""DQ-dimension derivation tests (ADR 0038, #124).
-
-Pure — no DB, no datasource. The map is a judgement call, so these tests are as
-much a record of the decision as a regression guard.
-"""
+"""DQ-dimension derivation tests (ADR 0038, #124)."""
 
 from __future__ import annotations
 
@@ -42,7 +38,8 @@ def test_derives_the_documented_dimension(expectation_type: str, kind: str, expe
 
 def test_every_derived_value_is_in_the_canonical_vocabulary() -> None:
     """A derived value outside DQ_DIMENSIONS would violate the table CHECK and
-    500 on insert — the map and the column must not drift."""
+    500 on insert — the map and the column must not drift.
+    """
     types = [
         "expect_column_values_to_not_be_null",
         "expect_table_row_count_to_be_between",
@@ -64,26 +61,26 @@ def test_every_derived_value_is_in_the_canonical_vocabulary() -> None:
 def test_custom_sql_has_no_derived_dimension() -> None:
     """An arbitrary SQL predicate cannot be classified. Returning a plausible
     guess would fill the #889 scorecard with confident nonsense; None renders as
-    the coverage gap it actually is."""
+    the coverage gap it actually is.
+    """
     assert (
         derive_dimension(expectation_type="unexpected_rows_expectation", kind="expectation") is None
     )
 
 
 def test_anomaly_has_no_derived_dimension() -> None:
-    """ADR 0038 §3, applied to #593. An anomaly's honest dimension depends on WHAT
-    it watches — `row_count` is completeness, `freshness_age_hours` is timeliness —
-    and derivation is handed only (expectation_type, kind), never the config. Both
-    plausible answers are wrong half the time, so the map deliberately omits the
-    kind: NULL renders as a coverage gap the author can fill, which is a true
-    statement, where a coin-flip guess would be a confident false one."""
+    """ADR 0038 §3, applied to #593. An anomaly's honest dimension depends on WHAT it watches —
+    `row_count` is completeness, `freshness_age_hours` is timeliness — and derivation is handed
+    only (expectation_type, kind), never the config.
+    """
     assert derive_dimension(expectation_type="monitor:anomaly", kind="anomaly") is None
 
 
 def test_accuracy_and_integrity_are_never_derived() -> None:
     """ADR 0038 §3. Whether data matches reality, or a relationship holds, is not
     knowable from a rule shape — these two exist only for the author to pick, and
-    a map that guessed them would be lying."""
+    a map that guessed them would be lying.
+    """
     derived = {
         derive_dimension(expectation_type=t, kind=k)
         for t, k in [
@@ -109,7 +106,8 @@ def test_accuracy_and_integrity_are_never_derived() -> None:
 def test_an_unknown_type_on_a_known_kind_falls_back_to_the_kind() -> None:
     """The map is keyed on expectation_type FIRST but falls back to kind, so a new
     spelling for an existing monitor kind still classifies rather than silently
-    landing unclassified."""
+    landing unclassified.
+    """
     assert derive_dimension(expectation_type="monitor:freshness_v2", kind="freshness") == (
         "timeliness"
     )
@@ -124,7 +122,8 @@ def test_an_unknown_type_and_kind_is_none_not_a_default() -> None:
 
 def test_an_explicit_dimension_overrides_the_derived_one() -> None:
     """Derivation is a guess about intent, not a fact: the same between-check is
-    Validity bounding a percentage and Accuracy asserting a reconciled total."""
+    Validity bounding a percentage and Accuracy asserting a reconciled total.
+    """
     assert (
         resolve_dimension(
             expectation_type="expect_column_values_to_be_between",
@@ -148,7 +147,8 @@ def test_no_explicit_dimension_falls_back_to_derivation() -> None:
 
 def test_explicit_none_means_derive_not_clear() -> None:
     """The PATCH convention: None is "not provided", so it must NOT wipe a
-    derivable classification back to unclassified."""
+    derivable classification back to unclassified.
+    """
     assert (
         resolve_dimension(expectation_type="monitor:freshness", kind="freshness", explicit=None)
         == "timeliness"

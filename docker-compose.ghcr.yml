@@ -1,65 +1,9 @@
-# DataQ — run from prebuilt GHCR images, NO source checkout required (#472).
-#
-#   export OPENBAO_TOKEN=$(openssl rand -hex 16)     # one-off; see "Secret store" below
-#   export DATAQ_SIGNIN_EMAIL=you@example.com        # who may sign in; see "Sign-in" below
-#   docker compose -f docker-compose.ghcr.yml up
-#
-# Brings up Postgres + Redis + the API + Celery worker + the UI, runs migrations
-# and seeds demo data, all from images published to GHCR (ADR 0023). This is the
-# "evaluate / self-host DataQ in 5 minutes" path; `git clone` + scripts/setup.sh
-# remains the contributor path (docker-compose.yml, with source bind-mounts).
-#
-# ── Sign-in: ONE switch, DATAQ_SIGNIN_EMAIL (#1150) ──────────────────────────
-# This stack signs you in with an EMAILED ONE-TIME CODE (ADR 0032), and bundles
-# the mailbox too (`mailpit` below) — so there is no SMTP relay to bring and
-# nothing leaves your machine. Enter the address you exported, then read the code
-# in the local web inbox at http://localhost:8025.
-#
-#   DATAQ_SIGNIN_EMAIL=you@example.com  → email one-time codes (the default)
-#   DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass
-#                                       → the EXPLICIT downgrade to dev-bypass:
-#                                         no sign-in at all, every request is one
-#                                         fixed user, and anyone who can reach
-#                                         the port is a workspace admin. Two
-#                                         variables, because the frontend's
-#                                         injected enum has no boolean companion
-#                                         and an empty one is fail-closed.
-#   DATAQ_SIGNIN_EMAIL unset            → compose refuses to start, naming both
-#
-# It used to be dev-bypass unconditionally. An eval stack's defaults ARE the
-# security posture people actually run (the same argument that moved the default
-# secret store off the plaintext one — ADR 0039), and "bypass by default" meant
-# anyone on the host was an admin of a tool that stores warehouse credentials.
-# Every AUTH_EMAIL_* value below is `${DATAQ_SIGNIN_EMAIL:+…}`, so an empty
-# address blanks the WHOLE mailer block — a partial one refuses to boot by design.
-#
-# Override the tags to pin a release instead of the moving stable pointers:
-#   DATAQ_BACKEND_TAG=v1.0.0 DATAQ_FRONTEND_TAG=v1.0.0 docker compose -f ... up
-#
-# Secret store: connection credentials go to OpenBao (ADR 0039), which replaced the
-# plaintext RedisSecretStore — an evaluator following this file used to put real
-# warehouse credentials into an unencrypted key-value store. A vault has no
-# "no auth" mode, so unlike Postgres/Redis below it needs ONE value from you, and
-# generating it here rather than defaulting it keeps every credential out of this
-# tracked file (CLAUDE.md §11). The vault runs in dev mode: in-memory, so a restart
-# drops stored credentials and connections must be re-entered.
-#
-# NOT for production: sign-in codes go to a local catcher that anyone with the
-# port can read (and the whole thing is bypassable — see the switch above),
-# Postgres runs trust-auth (no password, so no credential ships in this tracked
-# file) and Redis has none.
-# Because of that, every published port binds to 127.0.0.1 (loopback) ONLY — the
-# stack is reachable from your own machine but NOT from the LAN, so an
-# auth-bypassed API / passwordless DB is never exposed on a shared network. A
-# real deploy uses the OpenTofu stack (deploy/terraform/azure, ADR 0024).
+# DataQ — run from prebuilt GHCR images, NO source checkout required (#472). export
+# OPENBAO_TOKEN=$(openssl rand -hex 16) # one-off.
 
 x-backend-image: &backend-image "ghcr.io/theurgicduke771/dataq-backend:${DATAQ_BACKEND_TAG:-latest}"
 
-# Shared app env for api/worker/migrate. No .env files are read on this path, so
-# every key is inline. dataq@postgres has no password (trust auth); user + db
-# names are non-secret identifiers. SECRET_STORE=openbao (NOT env): api and worker
-# are separate containers, and EnvSecretStore is per-process — a credential the
-# api writes at runtime would be invisible to the worker (#86). The vault shares it.
+# Shared app env for api/worker/migrate.
 x-app-env: &app-env
   DATABASE_URL: "postgresql+psycopg2://dataq@postgres:5432/dataq"
   REDIS_URL: "redis://redis:6379/0"
@@ -69,30 +13,19 @@ x-app-env: &app-env
   # Only reached when the OTP block below is blank — OTP wins over dev-bypass in
   # `auth.py`, so this is the downgrade target, not a second mode running beside it.
   AUTH_DEV_BYPASS: "true"
-  # Email OTP sign-in against the bundled catcher. See the header for the switch.
-  # Each value defaults to the catcher and is overridable from your shell while
-  # the switch is set — `${SWITCH:+${KEY:-default}}`, so the switch still gates
-  # the whole block. (No `.env` files are read on this path, so unlike
-  # docker-compose.yml there is nothing here that could be silently shadowed.)
+  # Email OTP sign-in against the bundled catcher.
   AUTH_EMAIL_SMTP_HOST: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_HOST:-mailpit}}
   AUTH_EMAIL_SMTP_PORT: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_PORT:-1025}}
-  # A local catcher speaks no TLS — the case `none` exists for (#1146), warned on
-  # every send. The code and the SMTP password cross this compose network in the
-  # clear. **If you override the host above, override this too**: pointing a
-  # `none` mailer at a real relay puts your SMTP password on the wire in plaintext.
+  # A local catcher speaks no TLS — the case `none` exists for (#1146), warned on every send.
   AUTH_EMAIL_TLS_MODE: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_TLS_MODE:-none}}
-  # A SecretStore lookup NAME, never a value — the password is generated into the
-  # vault by the `otp-mail-secret` one-shot and read back by name. Kept AWAY from
-  # AUTH_EMAIL_USERNAME below on purpose: adjacent `…PASSWORD…` / `…USERNAME…`
-  # assignments read as a hardcoded credential pair to a generic secret scanner.
+  # A SecretStore lookup NAME, never a value — the password is generated into the vault by the `otp-
+  # mail-secret` one-shot and read back by name.
   AUTH_EMAIL_PASSWORD_SECRET_NAME: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_PASSWORD_SECRET_NAME:-dataq-local-smtp}}
   # Non-secret identifiers; mailpit accepts ANY credentials, so what matters is
   # only that the api's real SMTP AUTH exchange happens.
   AUTH_EMAIL_USERNAME: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_USERNAME:-dataq-local}}
   AUTH_EMAIL_FROM: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_FROM:-dataq@dataq.local}}
-  # Mandatory signup allowlist — there is no open registration (ADR 0032 decision
-  # 5). `?` (not `:?`) so an EMPTY value is the accepted downgrade while an UNSET
-  # one stops the stack with this message.
+  # Mandatory signup allowlist — there is no open registration (ADR 0032 decision 5).
   AUTH_OTP_ALLOWED_EMAILS: ${DATAQ_SIGNIN_EMAIL?set DATAQ_SIGNIN_EMAIL=you@example.com to sign in with an emailed code (read it at http://localhost:8025) — or set it EMPTY to opt into dev-bypass, which disables sign-in entirely}
   # Whoever booted the stack administers it. The dev-bypass identity stays listed
   # so the downgrade path still reaches /admin.
@@ -111,9 +44,8 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      # Distinct from docker-compose.yml's volume: this stack runs trust-auth, so
-      # it must never reuse a password-initialized data dir (auth config is fixed
-      # at init time) — sharing the name would collide in the same project dir.
+      # Distinct from docker-compose.yml's volume: this stack runs trust-auth, so it must never
+      # reuse a password-initialized data dir (auth config is fixed at init time).
       - ghcr_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dataq"]
@@ -132,11 +64,7 @@ services:
       timeout: 3s
       retries: 10
 
-  # Credential store (ADR 0039). Dev mode: auto-unsealed, in-memory, KV v2 at
-  # secret/. OpenBao rather than HashiCorp Vault because Vault Community is BUSL-1.1,
-  # which CONTRIBUTING rule 40 / ADR 0031 forbid us to distribute; OpenBao is the
-  # Linux Foundation fork at the pre-BUSL point (MPL-2.0). The app speaks the KV v2
-  # API, so OPENBAO_ADDR can point at a real Vault or HCP instead.
+  # Credential store (ADR 0039).
   openbao:
     image: openbao/openbao:2.6.1
     restart: unless-stopped
@@ -154,44 +82,24 @@ services:
       timeout: 3s
       retries: 10
 
-  # ── Bundled mail catcher — the local mailbox for OTP sign-in (#1150) ─────────
-  # Mailpit (MIT — CONTRIBUTING rule 40 / ADR 0031 clear) catches every message
-  # DataQ sends and serves it in a web inbox at http://localhost:8025. It is what
-  # makes email OTP the DEFAULT here instead of something you must first bring an
-  # SMTP relay for: no mailbox has to be real and nothing leaves this machine.
-  #
-  # Chosen over MailHog (also MIT, and named in #1149) for one hard requirement:
-  # DataQ's OTP mailer ALWAYS performs an SMTP AUTH exchange, and MailHog only
-  # advertises AUTH when handed a bcrypt credential file — which would mean
-  # shipping a credential in a tracked file (CLAUDE.md §11). Mailpit's
-  # MP_SMTP_AUTH_ACCEPT_ANY needs no file. MailHog is also effectively
-  # unmaintained (no release since 2020); Mailpit is current.
-  #
-  # Pinned, not :latest — same rule as the redis:7 / openbao / GX pins.
+  # ── Bundled mail catcher — the local mailbox for OTP sign-in (#1150) ───────── Mailpit (MIT.
   mailpit:
     image: axllent/mailpit:v1.30.6
     restart: unless-stopped
     environment:
-      # Both are required: without ACCEPT_ANY the server advertises no AUTH at all
-      # and smtplib's `login()` raises SMTPNotSupportedError; without
-      # ALLOW_INSECURE it refuses AUTH on an unencrypted socket, which is all this
-      # speaks. Accepting any credentials is safe ONLY because it is loopback-only
-      # and holds nothing but throwaway codes.
+      # Both are required: without ACCEPT_ANY the server advertises no AUTH at all and smtplib's
+      # `login()` raises SMTPNotSupportedError.
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
       MP_SMTP_AUTH_ALLOW_INSECURE: "true"
       MP_MAX_MESSAGES: "500"
     ports:
-      # Loopback ONLY, and more strictly than the rest of this file: this inbox
-      # holds LIVE sign-in codes for every allow-listed address, behind no
-      # authentication at all. On 0.0.0.0 anyone on the LAN could read a code and
-      # take over the account it was minted for.
+      # Loopback ONLY, and more strictly than the rest of this file: this inbox holds LIVE sign-in
+      # codes for every allow-listed address, behind no authentication at all.
       - "127.0.0.1:8025:8025"   # web inbox — open this to read your code
       - "127.0.0.1:1025:1025"   # SMTP
 
-  # One-shot: puts a generated SMTP password in the vault under the name the api
-  # looks it up by, then exits 0. The mailer has no "no password" path by design,
-  # and the dev-mode vault is in-memory — so this runs on every `up`. No-ops when
-  # OTP is off; never overwrites a name that already holds a value.
+  # One-shot: puts a generated SMTP password in the vault under the name the api looks it up by,
+  # then exits 0.
   otp-mail-secret:
     image: *backend-image
     restart: "no"
@@ -201,11 +109,8 @@ services:
       openbao:
         condition: service_healthy
 
-  # One-shot: migrate to head THEN seed the dev user + probe fixtures + demo data
-  # (seed_dev is idempotent, safe to re-run on every `up`). api/worker gate on its
-  # successful completion so the stack never serves an un-migrated/empty schema.
-  # Gets the full app env because the seed writes connection secrets via the
-  # (OpenBao-backed) SecretStore — hence the vault gate in depends_on.
+  # One-shot: migrate to head THEN seed the dev user + probe fixtures + demo data (seed_dev is
+  # idempotent.
   migrate:
     image: *backend-image
     restart: "no"
@@ -257,24 +162,13 @@ services:
       otp-mail-secret:
         condition: service_completed_successfully
 
-  # The UI image (nginx). One generic image (ADR 0028) — auth mode is injected at
-  # runtime. Serves the SPA and reverse-proxies /api + /mcp to the api service
-  # (DATAQ_API_UPSTREAM defaults to http://api:8000, baked into the image). Browse
-  # the whole app same-origin at http://localhost:3000.
+  # The UI image (nginx).
   frontend:
     image: "ghcr.io/theurgicduke771/dataq-frontend:${DATAQ_FRONTEND_TAG:-latest}"
     restart: unless-stopped
     environment:
-      # The SECOND of the two coordinated mode selectors (ADR 0032 decision 2) —
-      # the backend cannot infer this one, and vice versa. It now defaults to
-      # `otp`, matching the api block above.
-      #
-      # This is the one place the downgrade takes TWO variables rather than one:
-      # the injected contract is a single enum with no boolean companion (unlike
-      # the Vite dev server's VITE_AUTH_MODE + VITE_AUTH_DEV_BYPASS pair), and an
-      # empty enum is deliberately fail-closed — a "setup needed" banner, never a
-      # silent bypass. So opting out is:
-      #     DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass docker compose -f … up
+      # The SECOND of the two coordinated mode selectors (ADR 0032 decision 2) — the backend cannot
+      # infer this one, and vice versa.
       DATAQ_AUTH_MODE: ${DATAQ_AUTH_MODE:-otp}
     ports:
       - "127.0.0.1:3000:8080"

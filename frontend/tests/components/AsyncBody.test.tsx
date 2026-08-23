@@ -4,10 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { AsyncBody } from '../../src/components/AsyncBody';
 import type { AsyncState } from '../../src/hooks/useAsyncData';
 
-/**
- * The shared loading/error/ok ladder (#229). The `'ok'` branch is type-narrowed
- * through the render-prop, so the child receives the data, never the state.
- */
+/** The shared loading/error/ok ladder (#229). */
 describe('AsyncBody', () => {
   const renderChild = (data: string[]) => <div>rows: {data.length}</div>;
 

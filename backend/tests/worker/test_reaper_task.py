@@ -1,11 +1,4 @@
-"""Wiring test for the `reap_stuck_runs` beat entry point (#309).
-
-Pure-unit (no DB): the reaping behaviour is covered DB-backed in
-`tests/services/test_run_reaper.py`. Here we only assert the task reads the
-configured threshold, delegates to the service, returns the reaped count, and
-always closes its session. The task deliberately does NOT publish alerts (see
-`run_service.reap_stuck_runs`).
-"""
+"""Wiring test for the `reap_stuck_runs` beat entry point (#309)."""
 
 from types import SimpleNamespace
 from typing import Any

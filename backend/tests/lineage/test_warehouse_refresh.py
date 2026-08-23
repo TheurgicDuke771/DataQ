@@ -1,8 +1,4 @@
-"""warehouse-native lineage refresh tests (#858) — against the real test DB.
-
-Covers the connection-scoped upsert/prune, the never-prune-on-unavailable guard, the
-provenance isolation from dbt/marquez rows, and the empty-but-successful prune.
-"""
+"""warehouse-native lineage refresh tests (#858) — against the real test DB."""
 
 from __future__ import annotations
 
@@ -193,12 +189,9 @@ def test_empty_successful_pull_prunes_to_zero(
 def test_partial_pull_never_prunes_the_richer_cached_graph(
     sf_connection: Connection, db_session: Session
 ) -> None:
-    """#1109 review — the regression the descend-don't-abort fix would otherwise have
-    introduced. A transient blip inside the GET_LINEAGE tier makes the provider descend
-    and return a real, successful FLOOR-tier result. Under the snapshot regime that
-    result is normally the current truth, so `_persist` would prune every richer edge it
-    no longer mentions: one network hiccup, and the whole GET_LINEAGE half of the cached
-    graph is gone. `prunable=False` says the missing edges are UNOBSERVED, not absent.
+    """#1109 review — the regression the descend-don't-abort fix would otherwise have introduced. A
+    transient blip inside the GET_LINEAGE tier makes the provider descend and return a real,
+    successful FLOOR-tier result.
     """
     refresh_warehouse_edges(
         db_session,
@@ -226,9 +219,8 @@ def test_partial_pull_never_prunes_the_richer_cached_graph(
     names = {(u.split(".")[-1], d.split(".")[-1]) for u, d in _edges_for(db_session, sf_connection)}
     assert names == {("A", "B"), ("C", "D")}
 
-    # …and the NEXT clean pull prunes normally, so a genuinely removed dependency is at
-    # worst one cycle late — not frozen in the cache forever. Without this half, a
-    # `prunable` hard-wired to False would pass the assertion above.
+    # …and the NEXT clean pull prunes normally, so a genuinely removed dependency is at worst one
+    # cycle late — not frozen in the cache forever.
     outcome = refresh_warehouse_edges(
         db_session,
         connection=sf_connection,
@@ -272,11 +264,10 @@ def test_a_confirmed_degraded_pull_still_prunes(
 def test_partial_pull_does_not_wipe_column_pairs(
     sf_connection: Connection, db_session: Session
 ) -> None:
-    """Gating only the PRUNE would have left the other destructive half armed (#1109
-    review): a snapshot pull replaces `columns` verbatim, and the floor tier carries no
-    column pairs at all — so a cycle where GET_LINEAGE blipped would overwrite a real
-    column mapping with NULL while leaving the edge itself in place. Both halves are one
-    gate, so a partial pull accretes at column grain too.
+    """Gating only the PRUNE would have left the other destructive half armed (#1109 review): a
+    snapshot pull replaces `columns` verbatim, and the floor tier carries no column pairs at all
+    — so a cycle where GET_LINEAGE blipped would overwrite a real column mapping with NULL while
+    leaving the edge itself in place.
     """
     rich = WarehouseLineageResult(
         edges=(LineageEdgePair(_ident("SRC"), _ident("DST"), column_pairs=(("a", "b"),)),),
@@ -300,11 +291,9 @@ def test_partial_pull_does_not_wipe_column_pairs(
 def test_the_accreting_column_union_is_capped(
     sf_connection: Connection, db_session: Session
 ) -> None:
-    """#1109 review: each provider caps column pairs inside its own `_EdgeSet`, which
-    bounds ONE pull — but the persisted union accretes ACROSS pulls, so an ETL reporting
-    fresh pairs every cycle grew the edge's JSONB without bound. Reachable only on the
-    incremental path before; a partial snapshot now takes the same route, which is
-    exactly the cycle where it must not balloon.
+    """#1109 review: each provider caps column pairs inside its own `_EdgeSet`, which bounds ONE
+    pull — but the persisted union accretes ACROSS pulls, so an ETL reporting fresh pairs every
+    cycle grew the edge's JSONB without bound.
     """
 
     def _window(start: int) -> _StubProvider:
@@ -461,7 +450,8 @@ def test_incremental_refresh_merges_column_pairs_never_forgets(
     db_session: Session, sf_connection: Connection
 ) -> None:
     """A log window only re-observes pairs whose queries ran inside it — the union
-    with the persisted pairs is what keeps the never-prune promise at column grain."""
+    with the persisted pairs is what keeps the never-prune promise at column grain.
+    """
 
     def _incremental(pairs: tuple[tuple[str, str], ...]) -> _StubProvider:
         return _StubProvider(
@@ -509,7 +499,8 @@ def test_bulk_upsert_no_pairs_edge_stores_sql_null_not_json_null(
 ) -> None:
     """#907 pinned at the ACTUAL defect path — the multi-VALUES bulk upsert (the
     writer that produced prod's 339 JSON-null rows). ORM reads can't tell the two
-    nulls apart (both deserialize to Python None), so assert in SQL."""
+    nulls apart (both deserialize to Python None), so assert in SQL.
+    """
     from sqlalchemy import text as sql_text
 
     refresh_warehouse_edges(
@@ -543,7 +534,8 @@ def test_snapshot_refresh_replaces_column_pairs_never_accretes(
 ) -> None:
     """#911 review: for a snapshot source the pull IS the current truth — a pair the
     warehouse no longer reports (rewritten ETL) must go away, and a grain lost with a
-    revoked grant must clear rather than freeze at revocation time."""
+    revoked grant must clear rather than freeze at revocation time.
+    """
 
     def _snapshot(pairs: tuple[tuple[str, str], ...]) -> _StubProvider:
         return _StubProvider(

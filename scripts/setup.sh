@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # One-command dev environment setup from a fresh clone.
-# Usage: ./scripts/setup.sh
-# Requires: conda (miniconda/miniforge), docker, pnpm, git
 
 set -euo pipefail
 
@@ -10,11 +8,7 @@ step() { echo -e "${CYAN}▶ $1${NC}"; }
 ok()   { echo -e "${GREEN}✓ $1${NC}"; }
 die()  { echo -e "${RED}✗ $1${NC}" >&2; exit 1; }
 
-# set_env_kv <file> <key> <value> — set KEY=value, leaving an already-non-blank
-# value alone. Substitutes when the key is present (blank or not) and APPENDS when
-# it is absent: a plain `sed s|^KEY=.*|` is a silent no-op on a .env that predates
-# the key, which would leave the file short of a value compose then refuses to
-# start without — telling the user to run this script, which they just did.
+# set_env_kv <file> <key> <value> — set KEY=value, leaving an already-non-blank value alone.
 set_env_kv() {
   local file="$1" key="$2" value="$3"
   grep -qE "^${key}=..*$" "${file}" && return 0        # already set — keep it
@@ -36,38 +30,22 @@ command -v pnpm   >/dev/null || die "pnpm not found — run: npm install -g pnpm
 command -v git    >/dev/null || die "git not found"
 ok "Prerequisites OK"
 
-# ── Local env files ───────────────────────────────────────────────────────────
-# Two files (split in #209 so Settings can run extra="forbid"):
-#   .env     — infra/compose only (POSTGRES_*, VITE_*); compose substitutes ${...}
-#              from it and the postgres service reads it.
-#   .env.app — app config (DATABASE_URL, AZURE_*, …); the file Settings reads.
-# App code carries no DB credentials (config.py default is credential-less), so
-# host-side tooling (alembic, seed, uvicorn) needs DATABASE_URL from .env.app.
-# Create both from their templates on first run, then export so child processes
-# inherit them regardless of working dir (alembic runs from backend/, so a
-# CWD-relative dotenv lookup wouldn't find the root file).
+# ── Local env files ─────────────────────────────────────────────────────────── Two files (split in
+# #209 so Settings can run extra="forbid"): .env — infra/compose only (POSTGRES_*, VITE_*).
 step "Preparing .env / .env.app"
-# Local-dev DB credentials are GENERATED here, never shipped in the tracked
-# templates (those ship blank — we don't commit credentials, even mock ones).
-# The password must match across both files: .env's POSTGRES_PASSWORD (the
-# postgres container + the compose-built container DATABASE_URL) and .env.app's
-# host-side DATABASE_URL (alembic/seed/uvicorn). user/db are non-secret
-# identifiers; only the password is generated.
+# Local-dev DB credentials are GENERATED here, never shipped in the tracked templates (those ship
+# blank — we don't commit credentials, even mock ones).
 local_pg_user="dataq"
 local_pg_db="dataq"
-# Reuse a password already set in .env (so re-runs stay consistent); otherwise
-# generate a fresh hex one (URL-safe — no special chars to encode in
-# DATABASE_URL). `=..*` matches only a NON-blank value, so a blank line doesn't
-# count as "set".
+# Reuse a password already set in .env (so re-runs stay consistent); otherwise generate a fresh hex
+# one (URL-safe — no special chars to encode in DATABASE_URL).
 local_pg_password="$(sed -n 's/^POSTGRES_PASSWORD=\(..*\)$/\1/p' .env 2>/dev/null | head -n1 || true)"
 if [ -z "${local_pg_password}" ]; then
   local_pg_password="$(openssl rand -hex 16 2>/dev/null || date +%s | shasum | cut -c1-32)"
 fi
 
-# Same story for the OpenBao dev-mode root token (ADR 0039), except it must match
-# across .env (compose starts the vault with it) AND .env.app (the app authenticates
-# with it) — a mismatch 403s every credential read. Reuse whichever file already has
-# one so re-runs stay consistent.
+# Same story for the OpenBao dev-mode root token (ADR 0039), except it must match across .env
+# (compose starts the vault with it) AND .env.app (the app authenticates with it).
 local_bao_token="$(sed -n 's/^OPENBAO_TOKEN=\(..*\)$/\1/p' .env 2>/dev/null | head -n1 || true)"
 if [ -z "${local_bao_token}" ]; then
   local_bao_token="$(sed -n 's/^OPENBAO_TOKEN=\(..*\)$/\1/p' .env.app 2>/dev/null | head -n1 || true)"
@@ -76,17 +54,10 @@ if [ -z "${local_bao_token}" ]; then
   local_bao_token="$(openssl rand -hex 16 2>/dev/null || date +%s | shasum | cut -c1-32)"
 fi
 
-# Create each file from its template if missing, then BACK-FILL the local-dev
-# creds whenever the key is still blank — covers a fresh copy AND a pre-existing
-# file left blank (e.g. a manual `cp` of the now-blank template). Without the
-# back-fill, a blank POSTGRES_PASSWORD trips compose's `${VAR:?}` guard / mismatches
-# the host DATABASE_URL.
+# Create each file from its template if missing, then BACK-FILL the local-dev creds whenever the key
+# is still blank.
 [ -f .env ] || { cp .env.example .env; ok ".env created from .env.example"; }
-# Owner-only. `cp` inherits the umask (typically 644 = world-readable), which was
-# tolerable when these files held a local Postgres password and is not now: .env
-# carries the OpenBao root token, i.e. the key to EVERY credential in the vault
-# (ADR 0039). Applied to both files on every run, so an existing 644 file is
-# tightened too, not just a freshly-copied one.
+# Owner-only.
 chmod 600 .env 2>/dev/null || true
 if ! grep -qE '^POSTGRES_PASSWORD=..*$' .env; then
   sed -i.bak \
@@ -111,26 +82,13 @@ if ! grep -qE '^OPENBAO_TOKEN=..*$' .env.app; then
   set_env_kv .env.app OPENBAO_TOKEN "${local_bao_token}"
   ok ".env.app OpenBao token set (matches .env)"
 fi
-# Host-side dev (uvicorn/celery on your machine) reads these from .env.app; the
-# compose api/worker override the address to the in-network hostname. Appended for
-# a .env.app that predates ADR 0039 so a re-run leaves a complete file. SECRET_STORE
-# is deliberately NOT rewritten — an existing `redis` value raises at startup with
-# the migration path, and silently changing someone's configured mode is worse.
+# Host-side dev (uvicorn/celery on your machine) reads these from .env.app; the compose api/worker
+# override the address to the in-network hostname.
 set_env_kv .env.app OPENBAO_ADDR "http://localhost:8200"
 set_env_kv .env.app OPENBAO_MOUNT "secret"
 
-# ── Sign-in mode (#1150) ──────────────────────────────────────────────────────
-# The local stack boots into email one-time codes (ADR 0032) against the bundled
-# `mailpit` catcher — no SMTP relay to bring, codes readable at localhost:8025.
-# That needs ONE input we cannot invent: which address may sign in. The allowlist
-# is mandatory and the app refuses to boot with it empty (ADR 0032 decision 5), so
-# this prompt is what makes an OTP default viable at all.
-#
-# Written to the GITIGNORED .env (compose substitutes ${DATAQ_SIGNIN_EMAIL} from
-# it) — an address is personal data, and tracked files carry neither credentials
-# nor identities. Answering blank is the explicit downgrade to dev-bypass; the
-# variable is still written, empty, because compose distinguishes "set and empty"
-# (a decision) from "unset" (an omission, which stops the stack).
+# ── Sign-in mode (#1150) ────────────────────────────────────────────────────── The local stack
+# boots into email one-time codes (ADR 0032) against the bundled `mailpit` catcher.
 if ! grep -qE '^DATAQ_SIGNIN_EMAIL=' .env; then
   step "Choosing a sign-in mode"
   echo "  DataQ signs you in with a 6-digit code emailed to a local inbox"
@@ -142,9 +100,8 @@ if ! grep -qE '^DATAQ_SIGNIN_EMAIL=' .env; then
   echo "  the port is a workspace admin."
   echo ""
   signin_email=""
-  # `|| true` so a non-interactive run (CI, a piped installer) takes the blank
-  # answer instead of dying on a closed stdin — set DATAQ_SIGNIN_EMAIL in the
-  # environment beforehand to choose OTP without a TTY.
+  # `|| true` so a non-interactive run (CI, a piped installer) takes the blank answer instead of
+  # dying on a closed stdin.
   if [ -n "${DATAQ_SIGNIN_EMAIL-}" ]; then
     signin_email="${DATAQ_SIGNIN_EMAIL}"
     echo "  Using DATAQ_SIGNIN_EMAIL from the environment."
@@ -183,9 +140,8 @@ else
   ok "Conda env created"
 fi
 
-# ── Pre-commit hooks ──────────────────────────────────────────────────────────
-# First run compiles the betterleaks secret-scanning hook (language: golang); this
-# can take a minute. pre-commit (≥3.0) bootstraps its own Go — no system Go needed.
+# ── Pre-commit hooks ────────────────────────────────────────────────────────── First run compiles
+# the betterleaks secret-scanning hook (language: golang).
 step "Installing pre-commit hooks"
 conda run -n dataq pre-commit install --install-hooks
 ok "Pre-commit hooks installed"
@@ -195,10 +151,8 @@ step "Installing frontend dependencies (pnpm)"
 (cd frontend && pnpm install)
 ok "Frontend dependencies installed"
 
-# ── Docker services ───────────────────────────────────────────────────────────
-# OpenBao is NOT optional here: the seed step below writes connection credentials
-# through the SecretStore (seed_dev → demo_data → connection_service.set), so with
-# SECRET_STORE=openbao a missing vault fails the whole bootstrap on a fresh clone.
+# ── Docker services ─────────────────────────────────────────────────────────── OpenBao is NOT
+# optional here: the seed step below writes connection credentials through the SecretStore (seed_dev
 step "Starting Docker services (Postgres, Redis, OpenBao)"
 docker compose up -d postgres redis openbao
 ok "Docker services started"
@@ -230,9 +184,8 @@ step "Running Alembic migrations"
 conda run -n dataq sh -c "cd backend && alembic upgrade head"
 ok "Migrations applied"
 
-# ── Seed data ─────────────────────────────────────────────────────────────────
-# Run as a module (-m) so the repo root is on sys.path and `backend.*` imports
-# resolve; running the file directly would not put the root on the path.
+# ── Seed data ───────────────────────────────────────────────────────────────── Run as a module
+# (-m) so the repo root is on sys.path and `backend.*` imports resolve.
 step "Seeding dev data"
 conda run -n dataq python -m backend.scripts.seed_dev
 ok "Dev data seeded"

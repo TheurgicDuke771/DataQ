@@ -4,11 +4,8 @@ import { getUserManager, type User } from './authClient';
 import { AuthContext } from './authContext';
 
 /**
- * Subscribes to the OIDC UserManager and exposes the signed-in user to the tree
- * (the generic-client replacement for msal-react's MsalProvider + useMsal). In
- * dev_bypass / unconfigured modes getUserManager() is null, so this is a
- * passthrough with a null user — CurrentUserProvider and AuthGate dispatch by
- * auth mode, so nothing reads the user in those modes.
+ * Subscribes to the OIDC UserManager and exposes the signed-in user to the tree (the generic-
+ * client replacement for msal-react's MsalProvider + useMsal).
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const mgr = getUserManager();
@@ -26,9 +23,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const onCleared = () => setUser(null);
     mgr.events.addUserLoaded(onLoaded);
     mgr.events.addUserUnloaded(onCleared);
-    // A failed background silent-renew or an IdP-side sign-out doesn't fire
-    // userUnloaded — clear the user on those too, so the tree drops to the
-    // sign-in page instead of showing a stale, half-broken authenticated UI.
+    // A failed background silent-renew or an IdP-side sign-out doesn't fire userUnloaded — clear
+    // the user on those too, so the tree drops to the sign-in page instead of showing a stale.
     mgr.events.addSilentRenewError(onCleared);
     mgr.events.addUserSignedOut(onCleared);
     return () => {

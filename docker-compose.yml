@@ -1,90 +1,27 @@
-# Two env files (split in #209 so app Settings can run extra="forbid"):
-#   .env      — infra/compose only: POSTGRES_* (+ VITE_* for the frontend). This is
-#               the file compose auto-substitutes ${...} from. setup.sh creates it
-#               from .env.example. NOT loaded into the api/worker containers.
-#   .env.app  — app config (DATABASE_URL, AZURE_*, AUTH_DEV_BYPASS, SECRET_STORE, …):
-#               only keys the app's Settings recognizes. Loaded into api/worker/
-#               migrate via env_file below; created from .env.app.example.
-# DATABASE_URL is identical across migrate/api/worker. Postgres user/password/db
-# carry NO embedded defaults — they come from .env or the shell. The `:?` on the
-# canonical postgres block below makes compose fail fast if any is unset, rather
-# than baking credentials into the file.
+# Two env files (split in #209 so app Settings can run extra="forbid"): .env — infra/compose only:
+# POSTGRES_* (+ VITE_* for the frontend).
 x-database-url: &database-url "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
 
-# ── Sign-in mode: ONE switch, DATAQ_SIGNIN_EMAIL (#1150) ──────────────────────
-# This stack boots into **email one-time codes** (ADR 0032), not dev-bypass. The
-# bundled `mailpit` catcher below is the mailbox, so there is no SMTP relay to
-# bring: you type your address, DataQ mails a 6-digit code, and you read it in a
-# web inbox at http://localhost:8025.
-#
-#   DATAQ_SIGNIN_EMAIL=you@example.com   → OTP sign-in (the default; setup.sh
-#                                          writes it into your .env)
-#   DATAQ_SIGNIN_EMAIL=  (set, empty)    → the EXPLICIT downgrade to dev-bypass:
-#                                          no sign-in, every request is one fixed
-#                                          user, and anyone who can reach the port
-#                                          is a workspace admin
-#   unset                                → compose refuses to start, naming both
-#                                          options (the `?` guards below). A
-#                                          permissive auth posture is a decision,
-#                                          so it is never what you get by default.
-#
-# Mechanically: every AUTH_EMAIL_* value below is `${DATAQ_SIGNIN_EMAIL:+…}`, so
-# an empty address blanks the WHOLE mailer block at once. That matters — the
-# backend refuses to boot on a PARTIALLY configured block (ADR 0032 decision 2),
-# so a per-variable switch would turn the downgrade into a crash loop. With the
-# block empty the api falls back to `.env.app`'s AUTH_DEV_BYPASS.
-#
-# ⚠ These `environment:` values SHADOW `.env.app` — always, in EVERY state,
-# because a compose `environment:` key beats `env_file:` and `${VAR:+…}` still
-# EMITS the key (as "") when VAR is empty. So `.env.app` is NOT where you point
-# the compose stack at a real relay: those values would be silently discarded and
-# you would land in dev-bypass believing you had configured OTP.
-#
-# The override lives in the ROOT `.env` (or your shell) instead, on the app's own
-# key names, and each one is honoured only while the switch is set:
-#
-#     DATAQ_SIGNIN_EMAIL=you@example.com     # keep OTP on
-#     AUTH_EMAIL_SMTP_HOST=smtp.example.com  # …but use a real relay
-#     AUTH_EMAIL_TLS_MODE=starttls           # …with real TLS (see the note below)
-#
-# `.env.app` still governs host-side dev (uvicorn on your machine), which reads it
-# directly and sees none of this.
+# ── Sign-in mode: ONE switch, DATAQ_SIGNIN_EMAIL (#1150) ────────────────────── This stack boots
+# into **email one-time codes** (ADR 0032), not dev-bypass.
 x-otp-auth-env: &otp-auth-env
-  # Defaults to the bundled catcher; the ROOT `.env` overrides any of these while
-  # the switch is set. (`${SWITCH:+${KEY:-default}}`: the switch gates the whole
-  # block, the inner default is what you get when you don't override it.)
+  # Defaults to the bundled catcher; the ROOT `.env` overrides any of these while the switch is set.
   AUTH_EMAIL_SMTP_HOST: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_HOST:-mailpit}}
   AUTH_EMAIL_SMTP_PORT: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_PORT:-1025}}
-  # A local catcher on the compose network speaks no TLS, which is exactly the
-  # case `none` exists for (#1146) — it is loudly warned on every send, and
-  # deliberately so: the code and the SMTP password cross this network in the
-  # clear. **If you override the host above, override this too** — pointing a
-  # `none` mailer at a real relay puts your SMTP password on the wire in plaintext.
+  # A local catcher on the compose network speaks no TLS, which is exactly the case `none` exists
+  # for (#1146) — it is loudly warned on every send.
   AUTH_EMAIL_TLS_MODE: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_TLS_MODE:-none}}
-  # A SecretStore lookup NAME, never a value — the password is generated into the
-  # vault by the `otp-mail-secret` one-shot below and read back by name. Override
-  # it to a name YOU provisioned and the seeder leaves it alone (absent-only write).
-  #
-  # Kept AWAY from AUTH_EMAIL_USERNAME below on purpose: a generic credential
-  # scanner reads a `…PASSWORD…` assignment sitting next to a `…USERNAME…` one as
-  # a hardcoded credential pair, which GitGuardian duly reported the first time
-  # these were adjacent (same lesson as `scripts/e2e-otp-stack.sh`). Please don't
-  # move them back together.
+  # A SecretStore lookup NAME, never a value — the password is generated into the vault by the `otp-
+  # mail-secret` one-shot below and read back by name.
   AUTH_EMAIL_PASSWORD_SECRET_NAME: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_PASSWORD_SECRET_NAME:-dataq-local-smtp}}
   # Non-secret identifiers. Mailpit accepts ANY credentials (MP_SMTP_AUTH_ACCEPT_ANY),
   # so what matters is only that the api's real AUTH exchange happens.
   AUTH_EMAIL_USERNAME: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_USERNAME:-dataq-local}}
   AUTH_EMAIL_FROM: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_FROM:-dataq@dataq.local}}
-  # Signup allowlist — mandatory, there is no open registration (ADR 0032
-  # decision 5). `?` (not `:?`) so an EMPTY value is accepted as the downgrade
-  # while an UNSET one stops the stack with this message.
+  # Signup allowlist — mandatory, there is no open registration (ADR 0032 decision 5).
   AUTH_OTP_ALLOWED_EMAILS: ${DATAQ_SIGNIN_EMAIL?set DATAQ_SIGNIN_EMAIL=you@example.com to sign in with an emailed code (read it at http://localhost:8025) — or set it EMPTY to opt into dev-bypass, which disables sign-in entirely}
-  # Shadowed too, and blank by default — otherwise a lone `AUTH_OTP_ALLOWED_DOMAINS`
-  # left in `.env.app` would survive the downgrade, make the allowlist non-empty
-  # while every AUTH_EMAIL_* above is blank, and the fail-closed validator would
-  # refuse to boot on a *partial* block. Blanking the whole OTP surface together
-  # is what makes "switch empty" mean inert rather than broken. Set it in the ROOT
-  # `.env` (with the switch on) to admit a whole domain.
+  # Shadowed too, and blank by default — otherwise a lone `AUTH_OTP_ALLOWED_DOMAINS` left in
+  # `.env.app` would survive the downgrade.
   AUTH_OTP_ALLOWED_DOMAINS: ${DATAQ_SIGNIN_EMAIL:+${AUTH_OTP_ALLOWED_DOMAINS:-}}
   # Whoever booted the stack is its admin. The dev-bypass identity stays listed so
   # the downgrade path (and the Playwright bypass lane) keeps /admin drivable.
@@ -109,18 +46,13 @@ services:
       retries: 10
 
   redis:
-    # Pinned to 7.x deliberately — Redis 8 bundles the Vector Sets module, which
-    # carries an unpatched duplicate-HNSW-ID RCE (see #980 before bumping). Nothing
-    # in DataQ uses VSET; 7.x simply does not expose the command surface.
+    # Pinned to 7.x deliberately — Redis 8 bundles the Vector Sets module, which carries an
+    # unpatched duplicate-HNSW-ID RCE (see #980 before bumping).
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      # Loopback ONLY (#1407) — Redis carries no auth at all, so a LAN-wide bind
-      # hands anyone on the network the Celery broker: passively watch every task
-      # dispatched, flush the queue, or push crafted tasks. Matches the
-      # openbao/mailpit posture below and docker-compose.ghcr.yml. The api/worker
-      # containers reach it over the compose network ("redis:6379") regardless;
-      # this line only governs host-side access (redis-cli from your machine).
+      # Loopback ONLY (#1407) — Redis carries no auth at all, so a LAN-wide bind hands anyone on the
+      # network the Celery broker: passively watch every task dispatched, flush the queue.
       - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -128,35 +60,18 @@ services:
       timeout: 3s
       retries: 10
 
-  # Credential store for the api + worker (ADR 0039), replacing the plaintext
-  # RedisSecretStore. Runs in DEV MODE: auto-unsealed, in-memory, KV v2 mounted at
-  # secret/ — so restarting it DROPS every stored credential and connections must be
-  # re-entered. That is the deliberate dev trade (a persistent vault needs a storage
-  # backend and a manual unseal on every boot); production uses a real vault, or
-  # Azure Key Vault on the Azure deploy.
-  #
-  # OpenBao, not HashiCorp Vault: Vault Community has been BUSL-1.1 since 1.15, which
-  # CONTRIBUTING rule 40 / ADR 0031 forbid us to DISTRIBUTE. OpenBao is the Linux
-  # Foundation fork at the pre-BUSL point, MPL-2.0. The app speaks the KV v2 API, so
-  # pointing OPENBAO_ADDR at a real Vault or HCP instead works unchanged.
-  #
-  # Pinned, not :latest — same rule as the GX and redis:7 pins.
+  # Credential store for the api + worker (ADR 0039), replacing the plaintext RedisSecretStore.
   openbao:
     image: openbao/openbao:2.6.1
     restart: unless-stopped
-    # BAO_DEV_ROOT_TOKEN_ID is a CREDENTIAL, so it is never defaulted in this
-    # tracked file (CLAUDE.md §11) — scripts/setup.sh generates it into the
-    # gitignored .env, exactly as it does the local Postgres password. `:?` fails
-    # the stack with this message rather than starting an unreachable vault.
+    # BAO_DEV_ROOT_TOKEN_ID is a CREDENTIAL, so it is never defaulted in this tracked file
+    # (CLAUDE.md §11) — scripts/setup.sh generates it into the gitignored .env.
     environment:
       BAO_DEV_ROOT_TOKEN_ID: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
       BAO_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
     ports:
-      # Loopback ONLY — unlike the postgres line above, this holds the real
-      # warehouse credentials a developer entered, behind nothing but a root token
-      # sitting in .env on the same machine. Binding it to 0.0.0.0 would expose that
-      # to the LAN and invert the point of putting an auth boundary in front of the
-      # values (ADR 0039). Matches docker-compose.ghcr.yml.
+      # Loopback ONLY — unlike the postgres line above, this holds the real warehouse credentials a
+      # developer entered, behind nothing but a root token sitting in .env on the same machine.
       - "127.0.0.1:8200:8200"
     cap_add:
       # OpenBao locks its memory so secrets cannot be swapped to disk.
@@ -169,37 +84,19 @@ services:
       timeout: 3s
       retries: 10
 
-  # ── Bundled mail catcher — the local mailbox for OTP sign-in (#1150) ─────────
-  # Mailpit (MIT — rule 40 / ADR 0031 clear) catches every message DataQ sends and
-  # serves it in a web inbox at http://localhost:8025. It is what makes email OTP
-  # the DEFAULT sign-in here instead of something you must first bring an SMTP
-  # relay for: nothing leaves this machine, and no mailbox has to be real.
-  #
-  # Chosen over MailHog (also MIT, and named in #1149) for one hard requirement:
-  # `OtpMailer` ALWAYS performs an SMTP AUTH exchange, and MailHog only advertises
-  # AUTH when given a bcrypt credential file — which would mean shipping a
-  # credential in a tracked file (CLAUDE.md §11). Mailpit's MP_SMTP_AUTH_ACCEPT_ANY
-  # takes any credentials with no file at all. MailHog is also effectively
-  # unmaintained (no release since 2020); Mailpit is current.
-  #
-  # Pinned, not :latest — same rule as the GX / redis:7 / openbao pins.
+  # ── Bundled mail catcher — the local mailbox for OTP sign-in (#1150) ───────── Mailpit (MIT.
   mailpit:
     image: axllent/mailpit:v1.30.6
     restart: unless-stopped
     environment:
-      # Accept any username/password, over a plain connection. Both are required:
-      # without ACCEPT_ANY the server advertises no AUTH at all and smtplib's
-      # `login()` raises SMTPNotSupportedError; without ALLOW_INSECURE it refuses
-      # AUTH on an unencrypted socket, which is all this speaks.
+      # Accept any username/password, over a plain connection.
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
       MP_SMTP_AUTH_ALLOW_INSECURE: "true"
       # Everything is in memory — this is a test inbox, and sign-in codes are
       # single-use and expire in 10 minutes. Nothing here should outlive the stack.
       MP_MAX_MESSAGES: "500"
     ports:
-      # Loopback ONLY. This inbox holds live sign-in codes for every address on
-      # the allowlist, behind no authentication whatsoever — on 0.0.0.0 anyone on
-      # the LAN could read a code and take over the account it was minted for.
+      # Loopback ONLY.
       - "127.0.0.1:8025:8025"   # web inbox — open this to read your code
       - "127.0.0.1:1025:1025"   # SMTP, for host-side dev (uvicorn on your machine)
     healthcheck:
@@ -209,12 +106,8 @@ services:
       timeout: 3s
       retries: 10
 
-  # One-shot: puts a generated SMTP password in the vault under the name the api
-  # looks it up by, then exits 0 (see the module docstring for why the mailer has
-  # no "no password" path). No-ops when OTP is off. Runs on EVERY `up` because the
-  # dev-mode vault is in-memory; never overwrites a name that already has a value.
-  # If you restart the VAULT alone, this does not re-run and sign-in starts
-  # answering 503 `otp_email_not_configured` — `docker compose up -d` again fixes it.
+  # One-shot: puts a generated SMTP password in the vault under the name the api looks it up by,
+  # then exits 0 (see the module docstring for why the mailer has no "no password" path).
   otp-mail-secret:
     build:
       context: .
@@ -228,9 +121,8 @@ services:
       SECRET_STORE: ${SECRET_STORE:-openbao}
       OPENBAO_ADDR: http://openbao:8200
       OPENBAO_TOKEN: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
-      # The SAME block the api gets, not just the secret name: this process builds
-      # the same `Settings`, so a subset would leave it looking half-configured and
-      # the fail-closed validator would stop the stack here.
+      # The SAME block the api gets, not just the secret name: this process builds the same
+      # `Settings`.
       <<: *otp-auth-env
     volumes:
       - ./backend:/workspace/backend
@@ -239,9 +131,7 @@ services:
         condition: service_healthy
 
   # One-shot: applies Alembic migrations then exits 0. api/worker wait on it via
-  # service_completed_successfully so `docker compose up` never serves an
-  # un-migrated schema (#156). Mirrors setup.sh's `cd backend && alembic ...`
-  # because alembic.ini's script_location is relative to backend/.
+  # service_completed_successfully so `docker compose up` never serves an un-migrated schema (#156).
   migrate:
     build:
       context: .
@@ -253,11 +143,7 @@ services:
         required: false
     environment:
       DATABASE_URL: *database-url
-      # Carries the same auth block as everything else that builds `Settings`, even
-      # though it only runs alembic: otherwise a stray OTP key in `.env.app` could
-      # make THIS service the one that trips the fail-closed validator while the
-      # rest of the stack is fine, and `docker compose up` would die at the
-      # migration step with an auth error.
+      # Carries the same auth block as everything else that builds `Settings`.
       <<: *otp-auth-env
     volumes:
       - ./backend:/workspace/backend
@@ -266,8 +152,6 @@ services:
         condition: service_healthy
 
   # FastAPI + Celery share one image (backend/Dockerfile, conda env `dataq`).
-  # DATABASE_URL / REDIS_URL are overridden here to the in-network service
-  # hostnames (the .env defaults point at localhost for host-side dev).
   api:
     build:
       context: .
@@ -282,23 +166,15 @@ services:
     environment:
       DATABASE_URL: *database-url
       REDIS_URL: redis://redis:6379/0
-      # Shared across api + worker so a credential the API writes at runtime is
-      # readable by connection-driven worker runs (#86) — EnvSecretStore is
-      # per-process and cannot do that. NOTE: in openbao mode KV_SECRET_* env vars
-      # are NOT consulted (that's `env` mode); set SECRET_STORE=env if you rely on
-      # env-provided creds.
+      # Shared across api + worker so a credential the API writes at runtime is readable by
+      # connection-driven worker runs (#86) — EnvSecretStore is per-process and cannot do that.
       SECRET_STORE: ${SECRET_STORE:-openbao}
       OPENBAO_ADDR: http://openbao:8200
       OPENBAO_TOKEN: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
       # Sign-in mode + the bundled mail catcher — see x-otp-auth-env at the top.
-      # (Carries WORKSPACE_ADMIN_EMAILS too: who the admin is depends on which
-      # identity actually signs in, so the two cannot be set independently.)
       <<: *otp-auth-env
-      # Request throttling off in the dev stack (#796): dev-bypass traffic
-      # carries no bearer, so a local Playwright run lands in the per-IP
-      # unauthenticated class (120/min) and 429s mid-suite. The limiter has its
-      # own tests (#725, ADR 0035); set RATE_LIMIT_ENABLED=true in .env to
-      # exercise it manually.
+      # Request throttling off in the dev stack (#796): dev-bypass traffic carries no bearer, so a
+      # local Playwright run lands in the per-IP unauthenticated class (120/min) and 429s mid-suite.
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-false}
     volumes:
       # Bind-mount source for hot reload; the conda env in the image is untouched.
@@ -320,9 +196,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
-    # -B runs celery-beat embedded in the worker (the #171 orchestration polling
-    # schedule) — dev AND prod alike (containerapps.tf runs the same `worker -B`;
-    # there is no separate beat process anywhere, #1091).
+    # -B runs celery-beat embedded in the worker (the #171 orchestration polling schedule) — dev AND
+    # prod alike (containerapps.tf runs the same `worker -B`.
     command: celery -A backend.app.worker.celery_app worker -B --loglevel=INFO
     env_file:
       - path: .env.app
@@ -334,9 +209,7 @@ services:
       SECRET_STORE: ${SECRET_STORE:-openbao}
       OPENBAO_ADDR: http://openbao:8200
       OPENBAO_TOKEN: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
-      # Same auth block as the api. The worker never sends a sign-in code, but it
-      # loads the same `.env.app` — so if the two disagreed about whether OTP is
-      # configured, one of them would hit the fail-closed startup validator.
+      # Same auth block as the api.
       <<: *otp-auth-env
     volumes:
       - ./backend:/workspace/backend
@@ -352,13 +225,8 @@ services:
       otp-mail-secret:
         condition: service_completed_successfully
 
-  # React/Vite dev server. corepack pins pnpm from package.json's packageManager.
-  # node_modules is an anonymous volume so the host's (possibly macOS-built) copy
-  # doesn't clobber the container's. pnpm's ~300MB content-addressable store is
-  # relocated to /pnpm-store (OUTSIDE the ./frontend bind) and held in its own
-  # volume — so nothing leaks into, or creates an empty mountpoint under, the host
-  # working tree. The browser loads from localhost:3000 and the Vite proxy forwards
-  # /api + /mcp to the api service over the compose network.
+  # React/Vite dev server. corepack pins pnpm from package.json's packageManager. node_modules is an
+  # anonymous volume so the host's (possibly macOS-built) copy doesn't clobber the container's. pnp
   frontend:
     image: node:24-alpine
     restart: unless-stopped
@@ -366,16 +234,7 @@ services:
     command: sh -c "corepack enable && pnpm config set store-dir /pnpm-store && pnpm install && pnpm dev --host"
     environment:
       VITE_API_PROXY_TARGET: http://api:8000
-      # Pass the client-side auth vars into the Vite dev server. Only VITE_*
-      # vars are forwarded (DB/secret env stays out of the node container).
-      # Substituted from the project .env.
-      #
-      # The SECOND of the two coordinated mode selectors (ADR 0032 decision 2 —
-      # the backend cannot infer this one and vice versa), driven off the same
-      # DATAQ_SIGNIN_EMAIL switch so they cannot drift: an address here renders
-      # the code form, an empty one falls through to dev-bypass below. An explicit
-      # mode beats the bypass flag in `frontend/src/auth/config.ts`, which is what
-      # lets the flag keep its dev default without shadowing OTP.
+      # Pass the client-side auth vars into the Vite dev server.
       VITE_AUTH_MODE: ${DATAQ_SIGNIN_EMAIL:+otp}
       VITE_AUTH_DEV_BYPASS: ${VITE_AUTH_DEV_BYPASS:-true}
       VITE_AZURE_TENANT_ID: ${VITE_AZURE_TENANT_ID:-}
@@ -391,20 +250,8 @@ services:
     depends_on:
       - api
 
-  # ─────────────────────────── lineage (opt-in) ────────────────────────────
-  # Marquez (Apache-2.0) — the reference `LineageProvider` catalog (ADR 0034, #762):
-  # DataQ's OpenLineage emitter (#758) feeds it, and the daily `refresh_lineage_pull`
-  # beat task pulls the graph back into the `lineage_edges` cache. TWO extra containers
-  # (marquez + its own throwaway Postgres), gated behind the `lineage` **profile** so a
-  # plain `docker compose up` never starts them — bring them up explicitly with
-  #   docker compose --profile lineage up
-  # and point the app at Marquez by setting LINEAGE_PROVIDER=marquez, MARQUEZ_URL=
-  # http://marquez:5000, and OPENLINEAGE_URL=http://marquez:5000/api/v1/lineage in
-  # .env.app. See docs/site/orchestration.md for the emit→pull round-trip walkthrough.
-  #
-  # Marquez's newest release is 0.50.0 (2024-10); its slow cadence is an accepted
-  # low risk for a dev-time reference consumer (ADR 0034) — the /api/v1/lineage
-  # contract has been stable across releases.
+  # ─────────────────────────── lineage (opt-in) ──────────────────────────── Marquez (Apache-2.0) —
+  # the reference `LineageProvider` catalog (ADR 0034.
   marquez-db:
     image: postgres:16-alpine
     profiles: ["lineage"]
@@ -436,31 +283,19 @@ services:
       POSTGRES_PORT: 5432
       POSTGRES_DB: marquez
       POSTGRES_USER: marquez
-      # Unused (marquez-db runs trust auth) — kept only because Marquez's JDBC config
-      # requires the var to exist. Ships BLANK per the no-credentials-in-tracked-files
-      # rule (CLAUDE.md §11); set MARQUEZ_DB_PASSWORD in .env only if you point this at
-      # a real password-auth Postgres.
+      # Unused (marquez-db runs trust auth) — kept only because Marquez's JDBC config requires the
+      # var to exist.
       POSTGRES_PASSWORD: "${MARQUEZ_DB_PASSWORD:-}"
     ports:
-      # Host 5002/5003: macOS binds 5000 (AirPlay Receiver) by default. In-network the
-      # app still reaches http://marquez:5000; only host-side browsing uses 5002/5003.
-      # Loopback ONLY — Marquez's API is writable with no auth (#1407 class).
+      # Host 5002/5003: macOS binds 5000 (AirPlay Receiver) by default.
       - "127.0.0.1:5002:5000"
       - "127.0.0.1:5003:5001"
     depends_on:
       marquez-db:
         condition: service_healthy
 
-  # ── Local OTLP consumer (opt-in: `docker-compose --profile telemetry up`) ────
-  # The non-Azure half of the observability seam (#589/#591). DataQ exports spans
-  # AND logs over OTLP/HTTP whenever OTEL_EXPORTER_OTLP_ENDPOINT is set — App
-  # Insights is just one backend behind that seam (ADR 0010), so a local Jaeger
-  # gives the same traces with zero Azure. Set in `.env.app`:
-  #   OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318   (compose)
-  #   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 (host dev)
-  # UI on http://localhost:16686. Off by default: telemetry costs CPU and most
-  # local work doesn't need it — unset endpoint means telemetry is simply off,
-  # which is a supported posture, not a degraded one.
+  # ── Local OTLP consumer (opt-in: `docker-compose --profile telemetry up`) ──── The non-Azure half
+  # of the observability seam (#589/#591).
   jaeger:
     image: jaegertracing/all-in-one:1.62.0
     profiles: ["telemetry"]

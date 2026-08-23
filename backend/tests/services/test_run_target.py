@@ -1,12 +1,4 @@
-"""Unit tests for run_target.resolve_target / validate_target / materialize_path.
-
-`resolve_target` / `validate_target` are pure (no DB, no datasource): each
-datasource's required field, the targetless / wrong-datasource error paths, the
-flat-file path riding the runner's `table` slot, and the flat-file *batch* spec
-validation (#122/A4). `materialize_path` is the live step — its batch branch is
-exercised with `flatfile.resolve_batch_file` monkeypatched (the listing is the
-deferred-smoke seam); the non-batch branch is a pure pass-through.
-"""
+"""Unit tests for run_target.resolve_target / validate_target / materialize_path."""
 
 from typing import Any
 
@@ -232,18 +224,7 @@ def test_materialize_path_batch_without_secret_raises() -> None:
 
 
 def test_every_datasource_adapter_has_a_target_resolver() -> None:
-    """The "adding a datasource is one registry entry" contract, enforced.
-
-    Target-shape resolution used to live in an `if conn_type ==` chain in
-    `run_target.py`, so a new datasource needed an edit THERE as well as an
-    adapter + runner here — and the Iceberg addition (#716) duly forgot until
-    someone noticed. Now the shape sits beside the adapter, and this test fails
-    the moment the two drift.
-
-    Orchestration providers are excluded deliberately: they share the adapter
-    registry (they are `connections` rows too) but have no run path, which is the
-    distinction `resolve_target_shape` raises on.
-    """
+    """The "adding a datasource is one registry entry" contract, enforced."""
     from backend.app.datasources.registry import _ADAPTERS, _TARGET_RESOLVERS
     from backend.app.orchestration.registry import _PROVIDERS
 
@@ -318,10 +299,8 @@ def test_preview_batch_accepts_flatfile_types(
 def test_preview_batch_rejects_non_flatfile_connections(
     conn_type: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # No second hardcoded flat-file type set here: a batch spec carries no
-    # `table`/`path`, so every SQL datasource's shape rejects it and an
-    # orchestration provider has no run path at all — `resolve_target` is the one
-    # gate, and it must reject BEFORE anything touches the store.
+    # No second hardcoded flat-file type set here: a batch spec carries no `table`/`path`, so every
+    # SQL datasource's shape rejects it and an orchestration provider has no run path at all.
     def _boom(**_: Any) -> str:  # pragma: no cover - must never be reached
         raise AssertionError("resolve_batch_file must not be called for a non-flat-file type")
 
@@ -413,10 +392,8 @@ def test_preview_batch_maps_listing_too_large_to_invalid(monkeypatch: pytest.Mon
 
 
 def test_preview_batch_never_echoes_a_bare_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A bare ValueError is NOT a flat-file batch signal — it is an arbitrary
-    # adapter/driver error, and boto3/azure text routinely carries the endpoint,
-    # the account, or a token fragment. It must take the classified 502 path, the
-    # same way `dryrun_service` treats everything that is not BatchNotFoundError.
+    # A bare ValueError is NOT a flat-file batch signal — it is an arbitrary adapter/driver error,
+    # and boto3/azure text routinely carries the endpoint, the account, or a token fragment.
     leaky = "Invalid credentials for https://acct.blob.core.windows.net/?sig=SECRETTOKEN"
     with pytest.raises(BatchPreviewFailedError) as exc:
         _preview_s3(monkeypatch, ValueError(leaky))

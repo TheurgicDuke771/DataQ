@@ -1,9 +1,4 @@
-"""Check endpoint tests against a real Postgres (db_session) via TestClient.
-
-Checks are nested under a suite. A connection + suite are created per test for
-the FK chain; auth runs in dev-bypass (conftest). Skips without
-TEST_DATABASE_URL.
-"""
+"""Check endpoint tests against a real Postgres (db_session) via TestClient."""
 
 import uuid
 from collections.abc import Iterator
@@ -47,12 +42,7 @@ def _suite_id(
     conn_type: str = "snowflake",
     target: dict[str, Any] | None = None,
 ) -> str:
-    """Create a connection (ORM) + suite (API) and return the suite id.
-
-    `conn_type` lets a test pick the datasource (e.g. 's3' to exercise custom-SQL
-    datasource gating); defaults to Snowflake. `target` sets the suite's run
-    target (needed by dry-run, which resolves the target server-side).
-    """
+    """Create a connection (ORM) + suite (API) and return the suite id."""
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"owner-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
     db_session.flush()
@@ -112,9 +102,8 @@ def test_create_stores_thresholds_as_numbers(client: TestClient, db_session: Any
 
 
 def test_create_rejects_an_unknown_kind(client: TestClient, db_session: Any) -> None:
-    # Every kind in the schema CHECK is now authorable — #593 shipped the last
-    # reserved one — so the gate is pinned with a kind that exists nowhere. It must
-    # 422 at the service layer, not reach the DB and surface as a constraint 500.
+    # Every kind in the schema CHECK is now authorable — #593 shipped the last reserved one — so the
+    # gate is pinned with a kind that exists nowhere.
     sid = _suite_id(client, db_session)
     resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(kind="telepathy"))
     assert resp.status_code == 422
@@ -220,10 +209,8 @@ def test_update_rejects_inverted_thresholds(client: TestClient, db_session: Any)
 def test_update_rejects_when_only_touching_one_field_breaks_the_merged_state(
     client: TestClient, db_session: Any
 ) -> None:
-    # A PATCH that never mentions warn_threshold can still violate ordering once
-    # merged with the check's EXISTING warn_threshold — the effective post-patch
-    # state is what's validated, same pattern as the monitor guard's new_fail/
-    # new_critical merge.
+    # A PATCH that never mentions warn_threshold can still violate ordering once merged with the
+    # check's EXISTING warn_threshold — the effective post-patch state is what's validated.
     sid = _suite_id(client, db_session)
     cid = client.post(
         f"/api/v1/suites/{sid}/checks",
@@ -360,9 +347,8 @@ def test_update_revalidates_expectation_config(client: TestClient, db_session: A
 def test_create_accepts_long_but_legitimate_config_string(
     client: TestClient, db_session: Any
 ) -> None:
-    # A ~2k-char value-set member (or regex) runs fine on the worker, so the
-    # size cap must not reject it — it exists to block junk, not real kwargs
-    # (#651 follow-up: the original 1_000 cap was tighter than the runner).
+    # A ~2k-char value-set member (or regex) runs fine on the worker, so the size cap must not
+    # reject it — it exists to block junk.
     sid = _suite_id(client, db_session)
     resp = client.post(
         f"/api/v1/suites/{sid}/checks",
@@ -389,9 +375,8 @@ def test_create_rejects_oversized_config_dict_key(client: TestClient, db_session
 
 
 def test_oversized_string_422_does_not_echo_the_input(client: TestClient, db_session: Any) -> None:
-    # The 422 envelope is returned AND logged — a 100KB offending value (or a
-    # 100KB key on the path to a nested offender) must come back as a bounded
-    # path, never the input itself.
+    # The 422 envelope is returned AND logged — a 100KB offending value (or a 100KB key on the path
+    # to a nested offender) must come back as a bounded path, never the input itself.
     sid = _suite_id(client, db_session)
     huge = "v" * 100_000
     flat = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(config={"column": huge}))
@@ -408,9 +393,8 @@ def test_oversized_string_422_does_not_echo_the_input(client: TestClient, db_ses
 def test_deeply_nested_oversized_config_echo_is_bounded(
     client: TestClient, db_session: Any
 ) -> None:
-    # Per-segment truncation alone would still let the ACCUMULATED path grow
-    # ~200 chars per nesting level — 50 levels of 1k keys would echo a ~10KB
-    # path. The whole reported path is bounded, not just each segment.
+    # Per-segment truncation alone would still let the ACCUMULATED path grow ~200 chars per nesting
+    # level — 50 levels of 1k keys would echo a ~10KB path.
     sid = _suite_id(client, db_session)
     nested: Any = "v" * 100_000
     for i in range(50):
@@ -423,9 +407,8 @@ def test_deeply_nested_oversized_config_echo_is_bounded(
 
 
 def test_oversized_walk_tolerates_non_string_dict_keys() -> None:
-    # JSON transports only produce string keys, but the MCP tools / direct
-    # callers can hand the service arbitrary dicts — an int key must yield the
-    # normal 422, not a TypeError→500 from slicing the key.
+    # JSON transports only produce string keys, but the MCP tools / direct callers can hand the
+    # service arbitrary dicts — an int key must yield the normal 422.
     from backend.app.services.check_service import (
         CheckConfigInvalidError,
         validate_expectation_check,
@@ -440,9 +423,8 @@ def test_oversized_walk_tolerates_non_string_dict_keys() -> None:
 
 
 def test_unknown_expectation_type_echo_is_bounded() -> None:
-    # REST caps expectation_type at 128 chars, but the MCP tools call the
-    # service directly with no such cap — the service itself must bound what it
-    # echoes into the message and detail (#651 follow-up).
+    # REST caps expectation_type at 128 chars, but the MCP tools call the service directly with no
+    # such cap.
     from backend.app.services.check_service import (
         CheckConfigInvalidError,
         validate_expectation_check,
@@ -457,10 +439,7 @@ def test_unknown_expectation_type_echo_is_bounded() -> None:
 def test_patch_not_touching_expectation_skips_gx_validation(
     client: TestClient, db_session: Any
 ) -> None:
-    # A pre-#651 row can hold a config today's pinned GX rejects (there is no
-    # backfill). A rename or threshold tweak must still succeed — only a PATCH
-    # touching expectation_type/config re-validates (#651 follow-up: the
-    # original gate ran GX validation on every PATCH, bricking such rows).
+    # A pre-#651 row can hold a config today's pinned GX rejects (there is no backfill).
     sid = _suite_id(client, db_session)
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
     check = db_session.get(Check, uuid.UUID(cid))
@@ -508,11 +487,8 @@ def test_import_rejects_invalid_expectation_check(client: TestClient, db_session
 
 
 def test_import_suite_service_rejects_oversized_name(db_session: Any) -> None:
-    # The REST import route's `CheckDocument` Pydantic model already caps
-    # name/expectation_type at 256/128, but `suite_io_service.import_suite`
-    # builds `Check(...)` ORM objects directly with no Pydantic layer of its
-    # own — a direct caller must still get a clean 422, not a raw Postgres
-    # `StringDataRightTruncation` on the INSERT (#813 follow-up).
+    # The REST import route's `CheckDocument` Pydantic model already caps name/expectation_type at
+    # 256/128.
     from backend.app.services import suite_io_service
     from backend.app.services.check_service import CheckConfigInvalidError
 
@@ -738,7 +714,8 @@ def test_create_freshness_without_a_column_on_flatfile_returns_201(
     """#520's headline: a flat file can measure freshness from ARRIVAL time, which
     no SQL datasource can express. This is the case that catches "the producer
     stopped sending files" — invisible to an in-file MAX, since the newest file is
-    old but its rows look fresh."""
+    old but its rows look fresh.
+    """
     sid = _suite_id(client, db_session, conn_type="s3")
     payload = {**_freshness_payload(), "config": {}}
     resp = client.post(f"/api/v1/suites/{sid}/checks", json=payload)
@@ -752,7 +729,8 @@ def test_create_freshness_without_a_column_on_non_file_datasource_rejected(
     """A table has no arrival time, so a column-less freshness monitor there can
     never be evaluated. It must fail at AUTHOR time — the shared config validator
     allows the omission (for flat files), so without this gate the check would save
-    clean and then error on every run."""
+    clean and then error on every run.
+    """
     sid = _suite_id(client, db_session, conn_type=conn_type)
     payload = {**_freshness_payload(), "config": {}}
     resp = client.post(f"/api/v1/suites/{sid}/checks", json=payload)
@@ -781,9 +759,8 @@ def test_create_anomaly_monitor_on_sql_datasource_returns_201(
     body = resp.json()
     assert body["kind"] == "anomaly"
     assert body["expectation_type"] == "monitor:anomaly"
-    # ADR 0038: anomaly has no derivable dimension (it depends on the target
-    # metric, which derivation cannot see) — NULL is the honest answer and renders
-    # as a coverage gap rather than a confident guess.
+    # ADR 0038: anomaly has no derivable dimension (it depends on the target metric, which
+    # derivation cannot see).
     assert body["dimension"] is None
 
 
@@ -842,11 +819,11 @@ def test_create_anomaly_with_malformed_config_rejected(
 def test_create_anomaly_on_a_non_sql_datasource_rejected(
     client: TestClient, db_session: Any, conn_type: str
 ) -> None:
-    """Iceberg and flat files ARE monitor-capable for freshness/volume — they
-    compute those scalars natively inside their runners. A stateful kind never
-    reaches a runner, and the anomaly executor measures over a live SQL
-    connection, so the pairing is refused at author time rather than saved and
-    then erroring on every scheduled run."""
+    """Iceberg and flat files ARE monitor-capable for freshness/volume — they compute those scalars
+    natively inside their runners. A stateful kind never reaches a runner, and the anomaly
+    executor measures over a live SQL connection, so the pairing is refused at author time
+    rather than saved and then erroring on every scheduled run.
+    """
     sid = _suite_id(client, db_session, conn_type=conn_type)
     resp = client.post(f"/api/v1/suites/{sid}/checks", json=_anomaly_payload())
     assert resp.status_code == 422
@@ -855,7 +832,8 @@ def test_create_anomaly_on_a_non_sql_datasource_rejected(
 
 def test_update_anomaly_to_a_malformed_config_rejected(client: TestClient, db_session: Any) -> None:
     """The update path re-validates the POST-patch config, so a check cannot be
-    edited into a shape that create would have refused."""
+    edited into a shape that create would have refused.
+    """
     sid = _suite_id(client, db_session, conn_type="snowflake")
     created = client.post(f"/api/v1/suites/{sid}/checks", json=_anomaly_payload())
     check_id = created.json()["id"]
@@ -869,7 +847,8 @@ def test_update_anomaly_to_a_malformed_config_rejected(client: TestClient, db_se
 def test_rebaseline_works_for_an_anomaly_check(client: TestClient, db_session: Any) -> None:
     """The rebaseline endpoint gates on STATEFUL_MONITOR_KINDS (derived from the
     registry), so registering `anomaly` widened it with no endpoint change. 204
-    whether or not a baseline exists."""
+    whether or not a baseline exists.
+    """
     sid = _suite_id(client, db_session, conn_type="snowflake")
     created = client.post(f"/api/v1/suites/{sid}/checks", json=_anomaly_payload())
     check_id = created.json()["id"]
@@ -1191,7 +1170,8 @@ def test_restore_creates_a_new_version_with_the_snapshotted_config(
 def test_restore_of_the_current_version_is_a_noop(client: TestClient, db_session: Any) -> None:
     """Restoring the already-current version mints no duplicate — the same
     `session.is_modified` no-op-PATCH gating `update_check` already applies to a
-    manual no-op edit (see `test_noop_update_does_not_append_a_version`)."""
+    manual no-op edit (see `test_noop_update_does_not_append_a_version`).
+    """
     sid = _suite_id(client, db_session)
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
 
@@ -1249,7 +1229,8 @@ def test_restore_rejects_a_snapshot_invalid_under_current_threshold_ordering(
     """A version recorded before #568's ordering gate existed could hold reversed
     thresholds. Restoring it must re-validate against TODAY's rules and 422,
     leaving the live check exactly as it was — not silently reinstate a
-    configuration today's authoring path would refuse to create."""
+    configuration today's authoring path would refuse to create.
+    """
     sid = _suite_id(client, db_session)
     cid = client.post(
         f"/api/v1/suites/{sid}/checks",
@@ -1286,7 +1267,8 @@ def test_restore_rejects_a_snapshot_invalid_under_current_custom_sql_gating(
 ) -> None:
     """A legacy snapshot with a non-read-only query must not be reinstated —
     ADR 0019 gating is re-applied by the same `update_check` path a manual PATCH
-    goes through (see `test_update_custom_sql_to_non_readonly_query_rejected`)."""
+    goes through (see `test_update_custom_sql_to_non_readonly_query_rejected`).
+    """
     sid = _suite_id(client, db_session, conn_type="snowflake")
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_custom_sql_payload()).json()["id"]
     db_session.add(
@@ -1444,7 +1426,8 @@ def test_viewer_reads_baseline_outsider_cannot(client: TestClient, db_session: A
     """Mirrors `test_viewer_reads_versions_outsider_cannot`: a suite-scoped
     `view` share is enough to read the baseline (same `require_permission`
     dependency as `/history` and `/versions`), while a non-member gets 404 —
-    the suite's existence is hidden from outsiders, not just its baseline."""
+    the suite's existence is hidden from outsiders, not just its baseline.
+    """
     owner, b, e, sid = _owner_b_e_suite(db_session)
     _as(owner)
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
@@ -1547,7 +1530,8 @@ def _patch_runner(
 ) -> None:
     """Patch the runner registry so dry-run gets the fake runner for any datasource.
     When ``calls`` is given, it captures the kwargs `build_check_runner` was called
-    with (e.g. to assert the UC ``catalog`` is threaded through)."""
+    with (e.g. to assert the UC ``catalog`` is threaded through).
+    """
 
     def _fake_build(**kw: Any) -> _FakeRunner:
         if calls is not None:
@@ -1593,8 +1577,6 @@ def test_dryrun_rejects_inverted_thresholds(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # #568: a preview must never accept a threshold set a save would reject.
-    # Validated before the (live) datasource connect, so no runner mock is
-    # needed here — a mocked runner would prove nothing about this guard.
     sid = _suite_id(client, db_session, target=_SF_TARGET)
     resp = client.post(
         f"/api/v1/suites/{sid}/checks/dryrun",
@@ -1608,11 +1590,7 @@ def test_dryrun_rejects_inverted_thresholds_for_schema_drift(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # #568 follow-up (code review on PR #1113): schema_drift dry-run branches to
-    # `_dry_run_schema_drift` BEFORE the ordering guard used to run, so this kind
-    # slipped through with a 200 "pass" preview even though create/update band
-    # schema_drift's thresholds like any other kind and would 422 the save. The
-    # guard now sits above that branch — no runner/introspection mock needed,
-    # since a rejected threshold set never reaches the live datasource connect.
+    # `_dry_run_schema_drift` BEFORE the ordering guard used to run.
     sid = _suite_id(client, db_session, target=_SF_TARGET)
     resp = client.post(
         f"/api/v1/suites/{sid}/checks/dryrun",
@@ -1653,7 +1631,8 @@ def test_dryrun_previews_error_for_unevaluable_check(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A check GX can't evaluate previews as `error` — not a misleading `fail`
-    tag — so the editor preview matches what a persisted run would record (#122)."""
+    tag — so the editor preview matches what a persisted run would record (#122).
+    """
     sid = _suite_id(client, db_session, target=_SF_TARGET)
     _patch_runner(
         monkeypatch,
@@ -1682,7 +1661,8 @@ def test_dryrun_error_preview_carries_no_statement_or_parameter_echo(
     """#1203 on the authoring path: the dry-run preview surfaces the runner's error
     message straight to the check editor, so it needs the same strip the persisted
     path got. A broken custom-SQL check errors HERE first — leaving this raw would
-    have kept the leak alive on the surface a user hits before ever saving."""
+    have kept the leak alive on the surface a user hits before ever saving.
+    """
     statement_error = StatementError(
         "(snowflake.connector.errors.ProgrammingError) invalid identifier 'NOPE'",
         "SELECT * FROM RETAIL.ORDERS WHERE CUSTOMER_REF = %(ref)s",
@@ -1769,7 +1749,8 @@ def test_dryrun_anomaly_previews_the_cold_start_with_the_real_measurement(
     """A dry-run has no check row, so it can never have a baseline — the honest
     preview is the cold-start `skip`, carrying the value actually measured. A
     fabricated z-score off an empty history would be the exact silent-green the
-    kind exists to avoid."""
+    kind exists to avoid.
+    """
     _patch_anomaly_scalar(monkeypatch, 32840)
     sid = _suite_id(client, db_session, target=_SF_TARGET)
     resp = client.post(
@@ -1822,7 +1803,8 @@ def test_dryrun_anomaly_on_an_empty_table_is_a_clear_failure(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A missing MAX has no age; the preview must say so rather than report 0
-    hours, which would read as "perfectly fresh"."""
+    hours, which would read as "perfectly fresh".
+    """
     _patch_anomaly_scalar(monkeypatch, None)
     sid = _suite_id(client, db_session, target=_SF_TARGET)
     resp = client.post(
@@ -1883,9 +1865,7 @@ def test_dryrun_supports_unity_catalog_suite(
 def test_dryrun_supports_iceberg_suite(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # #721: Iceberg suites are previewable via the runner registry; the suite's
-    # optional namespace folds into the `namespace.table` identifier the runner
-    # receives as its `table` (as the real run path does — run_target.resolve_target).
+    # #721: Iceberg suites are previewable via the runner registry.
     sid = _suite_id(
         client, db_session, conn_type="iceberg", target={"table": "ORDERS", "namespace": "sales"}
     )
@@ -1935,9 +1915,8 @@ def test_dryrun_flatfile_batch_not_landed_returns_422(
 def test_dryrun_rejects_non_readonly_custom_sql_before_running(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Dry-run executes the query, so the custom-SQL guardrail must apply here too
-    # (ADR 0019 review): a non-read-only query is a 422 and the runner is never
-    # reached.
+    # Dry-run executes the query, so the custom-SQL guardrail must apply here too (ADR 0019 review):
+    # a non-read-only query is a 422 and the runner is never reached.
     sid = _suite_id(client, db_session, target=_SF_TARGET)
     runner = _FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
     _patch_runner(monkeypatch, runner)
@@ -2056,12 +2035,7 @@ def test_snooze_requires_edit_permission(client: TestClient, db_session: Any) ->
 def test_concurrent_check_edit_returns_409_not_500(
     client: TestClient, db_session: Any, monkeypatch: Any
 ) -> None:
-    """A version-snapshot collision on a concurrent edit is a benign 409, not a 500.
-
-    Simulate the race outcome: force the next snapshot to reuse an existing
-    `version_no`, so the commit trips `uq_check_versions_check_version` exactly as
-    a concurrent writer would. The handler must surface 409 `check_edit_conflict`.
-    """
+    """A version-snapshot collision on a concurrent edit is a benign 409, not a 500."""
     from backend.app.services import check_service
 
     sid = _suite_id(client, db_session)
@@ -2096,7 +2070,8 @@ def test_update_check_other_integrity_error_not_mislabelled_409(
 ) -> None:
     """Only the version-backstop collision is a 409; a *different* IntegrityError
     raised at the same commit must re-raise (not be mislabelled 'edited
-    concurrently'), exercising the narrowed `except` branch."""
+    concurrently'), exercising the narrowed `except` branch.
+    """
     from sqlalchemy.exc import IntegrityError
 
     from backend.app.services import check_service
@@ -2151,7 +2126,8 @@ def test_create_leaves_an_underivable_check_unclassified(
     client: TestClient, db_session: Any
 ) -> None:
     """NULL is a real state (ADR 0038 §3), not a failure — a custom-SQL predicate
-    genuinely cannot be classified, and the scorecard must see the gap."""
+    genuinely cannot be classified, and the scorecard must see the gap.
+    """
     sid = _suite_id(client, db_session)
     resp = client.post(
         f"/api/v1/suites/{sid}/checks",
@@ -2171,7 +2147,8 @@ def test_create_rejects_a_non_canonical_dimension(
 ) -> None:
     """The vocabulary is closed so coverage reporting can be truthful — a typo'd
     'timeliness ' would make "you have no Timeliness checks" a lie. Note
-    'freshness' is a KIND, not a dimension: the axes are easy to confuse."""
+    'freshness' is a KIND, not a dimension: the axes are easy to confuse.
+    """
     sid = _suite_id(client, db_session)
     resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(dimension=bad))
     assert resp.status_code == 422
@@ -2180,7 +2157,8 @@ def test_create_rejects_a_non_canonical_dimension(
 
 def test_dimension_is_reclassifiable_by_patch(client: TestClient, db_session: Any) -> None:
     """ADR 0038 §2 — derivation is a guess about intent, so the override must be
-    changeable after creation, not only at authoring time."""
+    changeable after creation, not only at authoring time.
+    """
     sid = _suite_id(client, db_session)
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
     resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"dimension": "integrity"})
@@ -2201,7 +2179,8 @@ def test_patch_rejects_a_non_canonical_dimension(client: TestClient, db_session:
 
 def test_patch_without_a_dimension_does_not_clear_it(client: TestClient, db_session: Any) -> None:
     """PATCH convention: None = "not provided". A rename must not silently wipe
-    the classification."""
+    the classification.
+    """
     sid = _suite_id(client, db_session)
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(dimension="accuracy")).json()[
         "id"
@@ -2213,7 +2192,8 @@ def test_patch_without_a_dimension_does_not_clear_it(client: TestClient, db_sess
 
 def test_version_history_snapshots_the_dimension(client: TestClient, db_session: Any) -> None:
     """Without the snapshot, history would show the CURRENT classification against
-    an OLD config — and a future restore would silently reclassify."""
+    an OLD config — and a future restore would silently reclassify.
+    """
     sid = _suite_id(client, db_session)
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
     client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"dimension": "validity"})
@@ -2244,7 +2224,8 @@ def test_a_row_count_expectation_is_refused_on_a_sampled_suite(
     """C6, save-time half. Against a sampled frame the expectation observes the
     SAMPLE and reports it as the dataset's size — a healthy 5M-row file with
     `min_value=4M` failing critically forever. Refused where the author is, not
-    silently mismeasured every night."""
+    silently mismeasured every night.
+    """
     suite_id = _suite_id(client, db_session, conn_type="s3", target=_SAMPLED_TARGET)
     resp = client.post(
         f"/api/v1/suites/{suite_id}/checks",
@@ -2279,7 +2260,8 @@ def test_turning_sampling_on_under_a_row_count_check_is_refused(
 ) -> None:
     """The OTHER direction. Without this the combination is reachable simply by
     doing it in the other order, and the check would start measuring the sample
-    while the suite still read as a healthy configuration."""
+    while the suite still read as a healthy configuration.
+    """
     suite_id = _suite_id(client, db_session, conn_type="s3", target={"path": "raw/orders.csv"})
     created = client.post(
         f"/api/v1/suites/{suite_id}/checks",
@@ -2319,12 +2301,7 @@ def test_turning_sampling_on_is_allowed_when_no_row_count_check_exists(
 def test_dryrun_surfaces_a_scan_cap_refusal_verbatim(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#595 C5. The preview must refuse for the SAME reason a real run does, with
-    the same remedy. Before the shared `safe_failure_reason` policy, the dry-run's
-    blanket `except` classified it into "dry run could not execute against the
-    datasource" — no cap size, no "set a sampling strategy" — while the real run
-    on the identical target printed the actionable sentence. An author would go
-    looking for a datasource fault that does not exist."""
+    """#595 C5. The preview must refuse for the same reason a real run does, same remedy."""
     from backend.app.datasources.sampling import ScanTooLargeError
 
     sid = _suite_id(client, db_session, target=_SF_TARGET)
@@ -2350,7 +2327,8 @@ def test_dryrun_still_classifies_an_ordinary_driver_error(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The exemption stays narrow — a driver message can echo a DSN or a bound
-    cell value, so it is read only to pick a category."""
+    cell value, so it is read only to pick a category.
+    """
     sid = _suite_id(client, db_session, target=_SF_TARGET)
     _patch_runner(
         monkeypatch,
@@ -2363,12 +2341,8 @@ def test_dryrun_still_classifies_an_ordinary_driver_error(
     assert "svc" not in reason and "acct.example" not in reason
 
 
-# ── live-probe disclosure seam (#1419 / #1479) ────────────────────────────────
-#
-# The destination rule: an author's own preview panel is INTERACTIVE, so it keeps
-# its values (that is the capability the fix refuses to trade away), while the
-# disclosure is recorded instead of prevented. Fail-closed suites still mask,
-# because that operator explicitly chose assurance over capability.
+# ── live-probe disclosure seam (#1419 / #1479) ──────────────────────────────── The destination
+# rule: an author's own preview panel is INTERACTIVE.
 
 
 def _pii_preview(
@@ -2388,9 +2362,7 @@ def _pii_preview(
                     CheckOutcome(
                         "x",
                         success=False,
-                        # `observed_value` as a LIST is the shape the redactor
-                        # acts on; `partial_unexpected_list` belongs to
-                        # `sample_failures` and is a different sink entirely.
+                        # `observed_value` as a LIST is the shape the redactor acts on.
                         observed_value={"observed_value": ["ada@example.com"]},
                     )
                 ],
@@ -2406,12 +2378,7 @@ def _pii_preview(
 def test_dryrun_keeps_values_for_the_author_and_audits_the_disclosure(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#1419: the preview must NOT lose the offending value to a policy artifact.
-
-    Seeing what the rule fired on is the entire purpose of a dry-run, so the fix
-    is accountability, not masking. If this ever flips to `<redacted>`, the
-    capability has been traded away again.
-    """
+    """#1419: the preview must NOT lose the offending value to a policy artifact."""
     resp = _pii_preview(client, db_session, monkeypatch, {"pii_columns": ["email"]})
     assert resp.status_code == 200
     assert resp.json()["observed_value"] == {"observed_value": ["ada@example.com"]}

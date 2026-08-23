@@ -1,14 +1,6 @@
 import { api } from './client';
 
-/**
- * Personal access tokens (PATs) — the caller's own DataQ-issued API keys (ADR 0026
- * phase 1, #461). A PAT authenticates as you (`Authorization: Bearer dq_live_…`) on
- * the REST API and `/mcp` alike, inheriting your per-suite access.
- *
- * User-scoped: every call operates on the signed-in user's keys. The plaintext
- * token is returned **exactly once**, by `createApiKey`; list/read expose metadata
- * only (prefix, expiry, revocation, last-used) — never the secret.
- */
+/** Personal access tokens (PATs) — the caller's own DataQ-issued API keys (ADR 0026 phase 1, #461). */
 
 /** Backend expiry bounds (`api_key_service`): no non-expiring keys. */
 export const PAT_DEFAULT_EXPIRY_DAYS = 90;

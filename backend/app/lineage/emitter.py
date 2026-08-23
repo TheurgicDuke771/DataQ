@@ -1,32 +1,4 @@
-"""The gated OpenLineage client + pure ``RunEvent`` builders (ADR 0034, #758).
-
-**Dark by default.** :func:`is_emission_configured` reads typed ``Settings`` fields
-(``openlineage_url`` / ``openlineage_disabled``) so a value in ``.env.app`` (which
-the process env never sees) still activates emission — plus the two library-owned
-advanced-transport env vars for the config-file path. With nothing set (or
-``OPENLINEAGE_DISABLED`` truthy) the client is never constructed, no openlineage
-transport is imported, and nothing is emitted. Mirrors ``core.otel`` (gate + lazy
-imports) and ``alerting.registry`` (lock-guarded cached singleton + a test reset).
-
-The builders are **pure** (no I/O): they turn a loaded run graph into a
-``RunEvent`` object. All openlineage imports are lazy (via :func:`_ol_event_v2` /
-inside the functions) so an unconfigured deployment never pays the import cost —
-the builders run only once a client is configured (dispatch returns first on the
-dark path), matching the repo convention (``secrets.py`` / ``otel.py``).
-
-**PII discipline (hard rule):** this module never reads ``Result.sample_failures``,
-``observed_value`` (beyond the single aggregate ``row_count`` key), or
-``expected_value``. Only the assertion outcome (pass/fail) + severity and a volume
-``rowCount`` leave the process. The scalar ``metric_value`` is deliberately **not**
-emitted (a volume monitor's ``metric_value`` is a banded deviation %, not the
-count). Some GX expectations put *actual failing column values* in
-``observed_value``, so it is excluded from the assertion facet — see
-:func:`_build_assertions`, the single statement of this rationale.
-
-**Fork-safety:** the cached client is reset per prefork child via a
-``worker_process_init`` handler in ``worker.celery_app`` (the #405 / ``core.tracing``
-prefork precedent) so a child never inherits a parent-constructed client.
-"""
+"""The gated OpenLineage client + pure ``RunEvent`` builders (ADR 0034, #758)."""
 
 from __future__ import annotations
 
@@ -62,25 +34,16 @@ _FACET_DOCUMENTATION = "documentation"
 # degraded OL receiver so an emit can't stall a run beyond this.
 _EMIT_TIMEOUT_SECONDS = 5.0
 
-# Advanced, library-owned transport config (a transport dict / config file). Kept
-# in raw env — the client resolves these itself; the plain URL path goes through
-# typed Settings so `.env.app` activates it too.
+# Advanced, library-owned transport config (a transport dict / config file).
 _ADVANCED_TRANSPORT_ENV_VARS = ("OPENLINEAGE__TRANSPORT__TYPE", "OPENLINEAGE_CONFIG")
 
-# Run status → terminal OpenLineage RunState. A non-terminal status here means the
-# run never reached a terminal state (a crash/reap after START) — map it to FAIL so
-# a START is never left dangling. cancelled → ABORT, succeeded → COMPLETE.
+# Run status → terminal OpenLineage RunState.
 _TERMINAL_STATES = {"succeeded": "COMPLETE", "failed": "FAIL", "cancelled": "ABORT"}
-# Failing result tiers → OpenLineage assertion severity, derived from the #657
-# single source (``FAILING_TIERS``) so a future tier can't silently drop its
-# severity here. `warn` stays `warn`; every other failing tier is an `error`.
-# `pass`/`skip`/`error` (operational) carry no severity (omitted).
+# Failing result tiers → OpenLineage assertion severity, derived from the #657 single source
+# (``FAILING_TIERS``) so a future tier can't silently drop its severity here.
 _SEVERITY_MAP = {tier: ("warn" if tier == "warn" else "error") for tier in FAILING_TIERS}
 
-# Lock-guarded cached singleton. `_client_configured` distinguishes "not yet
-# attempted / retry" from "attempted, cached None" (the dark path). A construction
-# failure does NOT latch (it retries next call); only "unconfigured" and "built"
-# latch. `_warned` keeps the construction-failure warning to once per process.
+# Lock-guarded cached singleton.
 _client: OpenLineageClient | None = None
 _client_configured = False
 _warned = False
@@ -90,11 +53,7 @@ _event_v2_module: Any = None
 
 
 def _ol_event_v2() -> Any:
-    """Memoized import of ``openlineage.client.event_v2``.
-
-    Never imported on the dark path — the builders that call this run only once a
-    client is configured (``dispatch`` returns before building otherwise).
-    """
+    """Memoized import of ``openlineage.client.event_v2``."""
     global _event_v2_module
     if _event_v2_module is None:
         from openlineage.client import event_v2
@@ -104,13 +63,7 @@ def _ol_event_v2() -> Any:
 
 
 def is_emission_configured() -> bool:
-    """True iff a transport is configured AND emission isn't explicitly disabled.
-
-    ``openlineage_disabled`` (from ``OPENLINEAGE_DISABLED``) forces the dark path
-    even with a URL set. Otherwise emission is on when ``openlineage_url`` is set,
-    or one of the library-owned advanced-transport vars
-    (``OPENLINEAGE__TRANSPORT__TYPE`` / ``OPENLINEAGE_CONFIG``) is present.
-    """
+    """True iff a transport is configured AND emission isn't explicitly disabled."""
     settings = get_settings()
     if settings.openlineage_disabled:
         return False
@@ -121,7 +74,8 @@ def is_emission_configured() -> bool:
 
 def _build_client() -> OpenLineageClient:
     """Construct the client — a URL gets a bounded-timeout HTTP transport; the
-    advanced path lets the library resolve its own transport from the env."""
+    advanced path lets the library resolve its own transport from the env.
+    """
     from openlineage.client import OpenLineageClient, OpenLineageClientOptions
 
     settings = get_settings()
@@ -134,14 +88,7 @@ def _build_client() -> OpenLineageClient:
 
 
 def get_openlineage_client() -> OpenLineageClient | None:
-    """The cached ``OpenLineageClient``, or ``None`` when emission is unconfigured.
-
-    Built once behind a lock and cached. Unconfigured → cached ``None`` with no
-    openlineage import (the dark path). Construction is fail-open **and does not
-    latch**: a bad transport config logs a warning once (``_warned``) and returns
-    ``None`` without caching it, so a transient failure self-heals on the next call
-    rather than going dark for the process lifetime.
-    """
+    """The cached ``OpenLineageClient``, or ``None`` when emission is unconfigured."""
     global _client, _client_configured, _warned
     if _client_configured:
         return _client
@@ -168,11 +115,7 @@ def get_openlineage_client() -> OpenLineageClient | None:
 
 
 def reset_openlineage_client_cache() -> None:
-    """Reset the cached client so the next call re-evaluates config.
-
-    Used by the ``worker_process_init`` fork-safety handler (so a prefork child
-    never inherits a parent-built client) and by tests.
-    """
+    """Reset the cached client so the next call re-evaluates config."""
     global _client, _client_configured, _warned
     with _client_lock:
         _client = None
@@ -184,12 +127,7 @@ def reset_openlineage_client_cache() -> None:
 
 
 def _event_time(run: Run, *, start: bool) -> str:
-    """A tz-aware ISO timestamp for the event.
-
-    START uses ``started_at``; a terminal event uses ``finished_at`` (falling back
-    to ``started_at``). A missing/naive value falls back to now / is assumed UTC so
-    the emitted timestamp is always tz-aware.
-    """
+    """A tz-aware ISO timestamp for the event."""
     moment = run.started_at if start else (run.finished_at or run.started_at)
     moment = moment or datetime.now(UTC)
     if moment.tzinfo is None:
@@ -203,19 +141,7 @@ def _severity_for(status: str) -> str | None:
 
 
 def _build_assertions(checks: list[Check], results: list[Result]) -> Any:
-    """A ``DataQualityAssertionsDatasetFacet`` — one assertion per (check, result).
-
-    ``assertion`` = the check's ``expectation_type`` (falling back to its ``kind``);
-    ``column`` = ``check.config["column"]`` when a string; ``success`` = the result
-    passed (``status == "pass"`` — every failing tier is ``False``); ``severity`` =
-    the mapped failing tier. Operational ``skip`` (not evaluated) and ``error`` (the
-    check could not run — bad connection, GX crash) are **omitted**: neither is a
-    data-quality verdict, so emitting them as ``success=False`` would read
-    downstream as a false "the data failed this check". Returns ``None`` when no
-    assertion survives so the facet is left off rather than emitted empty.
-
-    Carries no ``actual``/``expected`` — the module-docstring PII rule.
-    """
+    """A ``DataQualityAssertionsDatasetFacet`` — one assertion per (check, result)."""
     from openlineage.client.facet_v2 import data_quality_assertions_dataset as dqa
 
     checks_by_id = {check.id: check for check in checks}
@@ -241,15 +167,7 @@ def _build_assertions(checks: list[Check], results: list[Result]) -> Any:
 
 
 def _build_metrics(checks: list[Check], results: list[Result]) -> Any:
-    """A ``DataQualityMetricsInputDatasetFacet`` from the first ``volume`` monitor.
-
-    An ADR 0012 volume monitor's ``metric_value`` is the *deviation %* (the
-    banded scalar), not the count — the actual count lives in
-    ``observed_value["row_count"]`` (monitors.py), an aggregate-only dict for
-    volume, so reading this one well-known key stays within the PII rule.
-    Returns ``None`` when no volume result carries a usable count. Freshness
-    stays in the assertion entry only (no dedicated facet field).
-    """
+    """A ``DataQualityMetricsInputDatasetFacet`` from the first ``volume`` monitor."""
     from openlineage.client.facet_v2 import data_quality_metrics_input_dataset as dqm
 
     checks_by_id = {check.id: check for check in checks}
@@ -269,13 +187,7 @@ def _input_datasets(
     asset: Asset | None,
     graph: tuple[list[Check], list[Result]] | None = None,
 ) -> list[Any]:
-    """The event's input datasets — the target asset, when the asset row exists.
-
-    Only when ``asset`` is present is there a dataset to name (its OpenLineage
-    ``namespace``/``name``). ``graph`` = ``(checks, results)`` (terminal only)
-    attaches the DQ input facets; a START event passes ``None`` and emits a bare
-    input dataset.
-    """
+    """The event's input datasets — the target asset, when the asset row exists."""
     if asset is None:
         return []
     input_facets: dict[str, Any] = {}
@@ -298,7 +210,8 @@ def _job(suite: Suite) -> Any:
     """The OpenLineage ``Job`` for a suite: the **stable, unique** ``suite.<id>`` as
     the job name (suite names are renameable and not unique — keying on them forks
     or interleaves run histories), with the human-readable ``suite.name`` carried in
-    a ``DocumentationJobFacet`` for consumer display."""
+    a ``DocumentationJobFacet`` for consumer display.
+    """
     from openlineage.client.facet_v2 import documentation_job
 
     return _ol_event_v2().Job(
@@ -349,15 +262,7 @@ def build_terminal_event(
     checks: list[Check],
     results: list[Result],
 ) -> RunEvent:
-    """A terminal ``RunEvent`` (COMPLETE / FAIL / ABORT) with the DQ facets.
-
-    The event type maps from ``run.status`` (a non-terminal status — a crashed/reaped
-    run that emitted START but never reached terminal — maps to FAIL so the START is
-    never left dangling). The input dataset (when the asset exists) carries the
-    assertions + volume-metrics facets. A ``failed`` run adds an
-    ``ErrorMessageRunFacet`` from ``run.failure_reason`` — the classified,
-    redaction-safe string, never raw exception text (and never a stack trace).
-    """
+    """A terminal ``RunEvent`` (COMPLETE / FAIL / ABORT) with the DQ facets."""
     event_type = getattr(_ol_event_v2().RunState, _TERMINAL_STATES.get(run.status, "FAIL"))
     run_facets: dict[str, Any] = {}
     if run.status == "failed" and run.failure_reason:

@@ -1,19 +1,4 @@
-"""add schedules (cron-driven suite run schedules — A7)
-
-Revision ID: f7a8b9c0d1e2
-Revises: e6f7a8b9c0d1
-Create Date: 2026-06-20 00:00:00.000000+00:00
-
-Adds the ``schedules`` table backing the scheduling backend (A7): a cron
-expression + IANA timezone per suite that the beat dispatcher
-(``worker.tasks.dispatch_due_schedules``) fires on. ``next_run_at`` is the
-precomputed next fire (UTC); the dispatcher scans ``enabled, next_run_at`` (hot
-path) and only ever parses cron when a schedule actually fires. A schedule is
-cascade-deleted with its suite.
-
-Backward-compatible: a brand-new table, no change to existing tables, no data
-rewrite, no two-step.
-"""
+"""add schedules (cron-driven suite run schedules — A7)"""
 
 from collections.abc import Sequence
 

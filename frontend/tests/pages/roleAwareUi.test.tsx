@@ -9,22 +9,10 @@ import { listSuites } from '../../src/api/suites';
 import { Connections } from '../../src/pages/Connections';
 import { Suites } from '../../src/pages/Suites';
 
-/**
- * Role-aware UI — ADR 0033 slice #743.
- *
- * Every assertion here is about what is *offered*, never about what is
- * permitted: the server re-enforces each of these with a 403 (#741), and hiding
- * a control is presentation. The reason to hide it anyway is honesty — offering
- * an action that will be refused is a worse experience than not offering it.
- *
- * Both directions are asserted for every control. A test that only checks the
- * control is hidden for a Viewer passes just as happily against a page that
- * renders nothing at all.
- */
+/** Role-aware UI — ADR 0033 slice #743. */
 
-// Spread the real modules and override only the fetchers: a hand-listed mock
-// omits whatever else the page imports, and the omission surfaces as the whole
-// component throwing rather than as a missing-export message.
+// Spread the real modules and override only the fetchers: a hand-listed mock omits whatever else
+// the page imports.
 vi.mock('../../src/api/connections', async () => ({
   ...(await vi.importActual<typeof import('../../src/api/connections')>(
     '../../src/api/connections',
@@ -128,9 +116,7 @@ describe('Connections — role-aware controls', () => {
   });
 
   it('renders nothing role-dependent while /me is still loading', async () => {
-    // `null` is "not yet known", NOT "no permission". Showing the read-only hint
-    // during the fetch and then popping controls in is worse than a beat of
-    // nothing.
+    // `null` is "not yet known", NOT "no permission".
     role = null;
     renderPage(<Connections />);
     await screen.findByText('Connections');
@@ -142,18 +128,15 @@ describe('Connections — role-aware controls', () => {
 describe('Suites — role-aware controls', () => {
   beforeEach(() => {
     vi.mocked(listSuites).mockResolvedValue([] as never);
-    // The page loads connections too (it needs one before a suite can be
-    // created); without this the authoring buttons never leave their loading
-    // state and the assertions below would fail for an unrelated reason.
+    // The page loads connections too (it needs one before a suite can be created).
     vi.mocked(listConnections).mockResolvedValue([CONNECTION] as never);
   });
 
   it.each(['admin', 'member'] as const)('offers New suite + Import to a %s', async (r) => {
     role = r;
     renderPage(<Suites />);
-    // Regex, not an exact string: antd folds a transient loading icon (with its
-    // own "loading" aria-label) into the button's accessible name while the
-    // connection list settles, so an exact match is a race.
+    // Regex, not an exact string: antd folds a transient loading icon (with its own "loading" aria-
+    // label) into the button's accessible name while the connection list settles.
     expect(await screen.findByRole('button', { name: /New suite/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Import/ })).toBeInTheDocument();
   });

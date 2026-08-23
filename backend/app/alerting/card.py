@@ -1,12 +1,4 @@
-"""Render a ``RunReport`` as a Microsoft Teams message (Adaptive Card).
-
-Pure: the boundary DTO in, the JSON body a Teams incoming webhook accepts out —
-no I/O, no GX, no ORM. The card carries what an on-call needs to triage a failed
-run: suite + datasource + target, the pass/fail tally, and per-failing-check
-observed-vs-expected. Everything here is already redacted upstream
-(``CheckReport.sample_summary`` is counts-only; raw rows never reach the seam),
-so the renderer can format every field without a second PII pass.
-"""
+"""Render a ``RunReport`` as a Microsoft Teams message (Adaptive Card)."""
 
 from __future__ import annotations
 
@@ -39,12 +31,7 @@ _DEFAULT_COLOR = "attention"
 
 
 def render_teams_message(report: RunReport, route: Route) -> dict[str, Any]:
-    """The full Teams webhook payload for ``report`` (message + adaptive card).
-
-    ``route`` (from ``routing.route_for``) sets the prominence: the title colour
-    follows the urgency, and a critical ``mention_channel`` adds a channel-escalation
-    banner at the top.
-    """
+    """The full Teams webhook payload for ``report`` (message + adaptive card)."""
     return {
         "type": "message",
         "attachments": [
@@ -56,9 +43,6 @@ def render_teams_message(report: RunReport, route: Route) -> dict[str, Any]:
 def render_teams_health_message(report: ConnectionHealthReport) -> dict[str, Any]:
     """The Teams payload for a connection-health edge (#837) — same message envelope
     as a run card, a much smaller body: headline, impact, and the classified facts.
-
-    Pure, and it only reads the report's already-classified ``reason``, so no raw
-    exception text (and no credential inside one) can reach the webhook.
     """
     body: list[dict[str, Any]] = [
         _text(
@@ -95,7 +79,8 @@ def render_teams_health_message(report: ConnectionHealthReport) -> dict[str, Any
 def render_teams_staleness_message(report: PollStalenessReport) -> dict[str, Any]:
     """The Teams payload for the workspace poll-staleness edge (#1052) — the same
     small envelope as a health edge. No action button: there is no single connection
-    to link, because the signal is precisely that NONE of them are being polled."""
+    to link, because the signal is precisely that NONE of them are being polled.
+    """
     body: list[dict[str, Any]] = [
         _text(
             render.staleness_headline(report),
@@ -174,9 +159,8 @@ def _facts_block(report: RunReport) -> dict[str, Any]:
     # Owner / Environment / Triggered by / Started / Duration — the same shared
     # metadata the Slack + email renderers show (#661, #416 parity).
     facts += [{"title": label, "value": value} for label, value in render.run_metadata(report)]
-    # One minimal incident fact (ADR 0034 #761): how many active incidents this
-    # run's failing checks reference. Deep incident formatting on the card defers
-    # to the #773 navigation-inversion phase.
+    # One minimal incident fact (ADR 0034 #761): how many active incidents this run's failing checks
+    # reference.
     if report.incidents:
         new_count = sum(1 for card in report.incidents if card.is_new)
         facts.append(
@@ -208,7 +192,8 @@ def _compact(value: dict[str, Any] | None) -> str:
 
 def _text(text: str, **props: Any) -> dict[str, Any]:
     """An Adaptive Card ``TextBlock``. ``is_subtle``/``weight``/``size``/``color``/
-    ``spacing``/``wrap`` map to their camelCase card properties."""
+    ``spacing``/``wrap`` map to their camelCase card properties.
+    """
     block: dict[str, Any] = {"type": "TextBlock", "text": text}
     if props.pop("wrap", False):
         block["wrap"] = True

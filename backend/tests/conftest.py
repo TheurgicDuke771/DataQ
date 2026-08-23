@@ -5,43 +5,23 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
-# Set test-mode env vars BEFORE any backend.app.* import resolves. The auth
-# module computes its mode at import time from settings; without these the
-# TestClient lifespan would raise 'Auth not configured'.
+# Set test-mode env vars BEFORE any backend.app.* import resolves.
 os.environ.setdefault("ENVIRONMENT", "dev")
 os.environ.setdefault("AUTH_DEV_BYPASS", "true")
-# Rate limiting off by default in the suite (#725): otherwise the whole test
-# battery self-429s through the shared `ip:testclient` bucket when a compose
-# Redis is up. The dedicated rate-limit tests opt back in per-test.
+# Rate limiting off by default in the suite (#725): otherwise the whole test battery self-429s
+# through the shared `ip:testclient` bucket when a compose Redis is up.
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 # #1532: legacy UC tests exercise the frame lane; pushdown tests opt in.
 os.environ.setdefault("UC_SQL_PUSHDOWN", "false")
 
-# ── Test-DB resolution — also BEFORE any backend.app.* import (#1130) ─────────
-# This has to run here, ahead of the `pytest` / `backend.app.*` imports below, not
-# down with the rest of the "DB-backed test support" section: `from backend.app.core
-# import rate_limit` a few lines down pulls in `backend.app.core.auth`, which imports
-# `backend.app.db.session` at module scope — and `db.session` builds `SessionLocal`'s
-# engine from `Settings.database_url` the INSTANT it is first imported. If
-# `DATABASE_URL` is not already pointed at the test DB by then, that engine is wrong
-# for the rest of the process; `get_settings.cache_clear()` in `_reset_caches` cannot
-# fix it, because the engine object itself is never rebuilt.
-#
-# Resolution order for the test DB:
-#   1. TEST_DATABASE_URL if set explicitly (this is what CI does).
-#   2. Otherwise, the docker-compose Postgres using the .env creds, on a dedicated
-#      `dataq_test` database (auto-created if missing — see `_ensure_local_test_database`
-#      below). This is what makes a plain `pytest` — including editors like VS Code /
-#      PyCharm whose test runners invoke pytest directly, NOT via
-#      scripts/test-backend.sh — run the DB-backed tests instead of skipping, whenever
-#      the local Postgres is up.
-#   3. Neither available → the db_session fixture skips, so `pytest` still runs the
-#      pure-unit suite anywhere.
+# ── Test-DB resolution — also BEFORE any backend.app.* import (#1130) ───────── This has to run
+# here, ahead of the `pytest` / `backend.app.*` imports below.
 
 
 def _read_env_file() -> dict[str, str]:
     """Best-effort parse of the gitignored repo-root .env (the POSTGRES_* creds that
-    docker-compose + scripts/setup.sh use). Returns {} if it's absent."""
+    docker-compose + scripts/setup.sh use). Returns {} if it's absent.
+    """
     env: dict[str, str] = {}
     path = Path(__file__).resolve().parents[2] / ".env"
     if path.exists():
@@ -65,24 +45,13 @@ def _resolve_test_database_url() -> str | None:
 
 
 TEST_DATABASE_URL = _resolve_test_database_url()
-# If we defaulted to the local compose Postgres, export it so per-test skipif guards
-# that read os.environ['TEST_DATABASE_URL'] directly (e.g. the custom-SQL GX tests)
-# also run — not only the db_session fixture. setdefault → CI's explicit value wins.
-# We deliberately do NOT set REDIS_URL here, so the real-infra E2E test (needs a
-# live broker + worker) stays opt-in.
+# If we defaulted to the local compose Postgres, export it so per-test skipif guards that read
+# os.environ['TEST_DATABASE_URL'] directly (e.g. the custom-SQL GX tests) also run.
 if TEST_DATABASE_URL:
     os.environ.setdefault("TEST_DATABASE_URL", TEST_DATABASE_URL)
 
-# #1130: point DATABASE_URL at the same database, UNLESS the caller already set
-# DATABASE_URL explicitly — that is exactly the opt-in E2E signal (a real broker +
-# worker pointed at a real DATABASE_URL, scripts/test-backend.sh's own path). Without
-# this, `backend.app.db.session.SessionLocal` — which a handful of tests use directly
-# because they need a row COMMITTED and visible to a second session (see
-# tests/services/test_poll_lock_timeout.py) — falls back to the `Settings` default
-# `postgresql+psycopg2://localhost:5432/dataq`, i.e. the developer's DEV database,
-# and silently writes/collides there on every invocation that isn't
-# scripts/test-backend.sh (a bare `pytest`, VS Code / PyCharm test runners, an
-# agent's own runner).
+# #1130: point DATABASE_URL at the same database, UNLESS the caller already set DATABASE_URL
+# explicitly.
 if TEST_DATABASE_URL and not os.environ.get("DATABASE_URL"):
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
@@ -97,7 +66,8 @@ from backend.app.services import admin_service, otp_service  # noqa: E402
 @pytest.fixture(autouse=True)
 def _reset_caches() -> Iterator[None]:
     """Clear cached singletons between tests so settings + secret store + the
-    result publisher rebuild."""
+    result publisher rebuild.
+    """
     get_settings.cache_clear()
     secrets.reset_secret_store_cache()
     reset_result_publisher_cache()
@@ -109,15 +79,10 @@ def _reset_caches() -> Iterator[None]:
     secrets.reset_secret_store_cache()
     reset_result_publisher_cache()
     rate_limit.reset_rate_limit_state()
-    # The OTP per-email counter store is a module global like the rate limiter's
-    # (#734/#1127). Left set, an injected in-memory store would silently carry
-    # counts into unrelated tests — and left unset after a test injected one, a
-    # later test would reach for a real Redis client on the sign-in path.
+    # The OTP per-email counter store is a module global like the rate limiter's (#734/#1127).
     otp_service.reset_counter_state()
-    # The admin SMTP pre-flight throttle (#1147) holds its OWN store instance, for
-    # the reason `admin_service`'s section header gives (a shared instance shares a
-    # circuit breaker, so one subsystem's brownout disables the other's control).
-    # Two globals, therefore two resets — the second is not redundant.
+    # The admin SMTP pre-flight throttle (#1147) holds its OWN store instance, for the reason
+    # `admin_service`'s section header gives (a shared instance shares a circuit breaker.
     admin_service.reset_preflight_counter_state()
 
 
@@ -125,7 +90,8 @@ def _reset_caches() -> Iterator[None]:
 def make_workspace_admin(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     """Return a callable that puts the given emails in WORKSPACE_ADMIN_EMAILS for
     the current test (making those users workspace-admins). The autouse
-    `_reset_caches` fixture clears the cached Settings afterwards."""
+    `_reset_caches` fixture clears the cached Settings afterwards.
+    """
 
     def _make(*emails: str) -> None:
         monkeypatch.setenv("WORKSPACE_ADMIN_EMAILS", ",".join(emails))
@@ -136,19 +102,7 @@ def make_workspace_admin(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]
 
 @pytest.fixture
 def as_role(db_session: Any) -> "Callable[..., tuple[Any, dict[str, str]]]":
-    """Build a real user at a given workspace role, with PAT auth headers.
-
-    Returns `(user, headers)`. Needed because the DEV-BYPASS identity is a
-    workspace **admin** (ADR 0033 / #741 — dev bypass is a single-operator mode
-    and its one identity is the workspace), so it can no longer stand in for "a
-    non-admin caller". Tests that assert a 403, a `view`-only share, or any
-    not-an-admin behaviour must authenticate as a distinct principal; a PAT is
-    the seam that lets them, in every auth mode.
-
-    Prefer this over hand-rolling a `User` + key per test: the point is that the
-    caller is genuinely *not* the ambient identity, and a helper makes that
-    explicit at the call site.
-    """
+    """Build a real user at a given workspace role, with PAT auth headers."""
     import uuid as _uuid
 
     from backend.app.db.models import User as _User
@@ -174,15 +128,6 @@ def stub_run_dispatch(request: pytest.FixtureRequest, monkeypatch: pytest.Monkey
     """Stub `run_dispatch.dispatch_run` so any code path that triggers a suite run
     (the pipeline-success ungate #215, the probe, manual runs) never publishes to
     a real broker.
-
-    Returns the list of dispatched run-ids (as strings), so a test can assert
-    dispatch happened. Tests that need bespoke dispatch behaviour (e.g. the
-    broker-failure path) re-patch `run_dispatch.dispatch_run` themselves — their
-    function-scoped patch is applied after this autouse fixture and so wins. The
-    probe e2e test uses `apply_async` (a real publish), which this does not touch.
-
-    `@pytest.mark.real_dispatch` opts out entirely — for tests of `dispatch_run`
-    itself, which spy `celery_app.send_task` instead.
     """
     calls: list[str] = []
     if request.node.get_closest_marker("real_dispatch") is None:
@@ -209,18 +154,16 @@ def clean_kv_env(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.delenv(key, raising=False)
 
 
-# ── DB-backed test support ────────────────────────────────────────────────────
-# DB integration tests require a real Postgres (the models use JSONB / UUID /
-# gen_random_uuid(), which SQLite can't host). `TEST_DATABASE_URL`, `_read_env_file`
-# and `_resolve_test_database_url` are resolved up top, ahead of the `backend.app.*`
-# imports (#1130) — see the comment there for why.
+# ── DB-backed test support ──────────────────────────────────────────────────── DB integration
+# tests require a real Postgres (the models use JSONB / UUID / gen_random_uuid().
 
 
 def _ensure_local_test_database() -> None:
     """When we defaulted to the local `dataq_test` DB (TEST_DATABASE_URL unset),
     create it if missing — so a direct `pytest` works with only the compose Postgres
     up, no manual createdb. No-op when TEST_DATABASE_URL is set explicitly (CI: the
-    DB is provisioned by the workflow)."""
+    DB is provisioned by the workflow).
+    """
     if os.environ.get("TEST_DATABASE_URL"):
         return
     env = _read_env_file()
@@ -316,12 +259,7 @@ def _probe_postgres() -> str | None:
     except Exception:  # pragma: no cover - sqlalchemy is a hard dep
         return None  # can't probe → say nothing rather than cry wolf
 
-    # `connect_timeout` is a libpq/psycopg option. Passing it to any other driver
-    # raises at connect time, which would be swallowed below and reported as
-    # "not reachable" — a false alarm about a perfectly healthy database. Only
-    # attach it when the URL actually resolves to a psycopg-family driver — shared
-    # with the real engine-building call sites' guard (`backend/app/db/session.py`,
-    # `backend/alembic/env.py`) so this probe can't drift from their classification.
+    # `connect_timeout` is a libpq/psycopg option.
     from backend.app.db.pg_connect_args import psycopg_connect_args
 
     try:
@@ -350,7 +288,8 @@ def _probe_postgres() -> str | None:
 
 def _probe_secret_store() -> tuple[str, str | None]:
     """(backend_name, reason_unavailable). Only the redis backend can be *down* —
-    `env` is in-process and `azure_key_vault` is never used by the local suite."""
+    `env` is in-process and `azure_key_vault` is never used by the local suite.
+    """
     try:
         settings = get_settings()
         mode = settings.secret_store
@@ -391,12 +330,7 @@ def _infra_status() -> list[tuple[str, str | None]]:
 
 
 def pytest_report_header() -> list[str]:
-    """State infra reachability up front.
-
-    A convenience for plain `pytest`, NOT the guarantee — pytest gates header
-    output on `verbosity >= 0`, so `-q` discards these lines entirely. The
-    terminal-summary banner below is what actually holds under `-q`.
-    """
+    """State infra reachability up front."""
     lines = []
     for label, reason in _infra_status():
         lines.append(f"test infra: {label} — {'OK' if reason is None else reason.upper()}")
@@ -407,18 +341,7 @@ def pytest_report_header() -> list[str]:
 
 @pytest.hookimpl(trylast=True)
 def pytest_terminal_summary(terminalreporter: object) -> None:
-    """Re-state a degraded run immediately above the final summary line.
-
-    This is the load-bearing half: `-q` suppresses the header entirely (pytest
-    gates it on verbosity >= 0), and `-q` is exactly the invocation that hid the
-    problem.
-
-    `trylast=True` is REQUIRED, not tidiness. conftest hookimpls are registered
-    last and therefore called FIRST, so without it this banner prints *above*
-    pytest-cov's terminal summary — and `addopts` carries
-    `--cov-report=term-missing`, whose table is ~140 lines on the full suite.
-    The banner would scroll off exactly like the header it exists to back up.
-    """
+    """Re-state a degraded run immediately above the final summary line."""
     down = [(label, reason) for label, reason in _infra_status() if reason]
     if not down:
         return
@@ -431,9 +354,8 @@ def pytest_terminal_summary(terminalreporter: object) -> None:
     write("DEGRADED RUN — local test infrastructure was unavailable.", red=True, bold=True)
     for label, reason in down:
         write(f"  unavailable: {label} — {reason}", red=True)
-    # Only state what actually happened: a missing Postgres makes DB-backed tests
-    # SKIP, while a missing secret store makes them FAIL. Claiming skips on a run
-    # that had none would be the exact defect this banner exists to prevent.
+    # Only state what actually happened: a missing Postgres makes DB-backed tests SKIP, while a
+    # missing secret store makes them FAIL.
     if skipped:
         write(f"  {skipped} test(s) skipped — some of these need the missing service.", red=True)
     if broke:
@@ -453,12 +375,7 @@ def pytest_terminal_summary(terminalreporter: object) -> None:
 
 @pytest.fixture
 def db_session(_db_engine: object) -> "Iterator[object]":
-    """A transactional Session rolled back after each test for isolation.
-
-    join_transaction_mode="create_savepoint" lets code under test call
-    commit() freely — those commits land on a savepoint inside the outer
-    transaction, which is rolled back here, so tests never persist.
-    """
+    """A transactional Session rolled back after each test for isolation."""
     from sqlalchemy.orm import Session as SASession
 
     connection = _db_engine.connect()  # type: ignore[attr-defined]

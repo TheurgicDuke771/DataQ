@@ -1,13 +1,4 @@
-"""Drift guard: the ER diagram in docs/site/architecture.md tracks the real schema.
-
-The diagram is hand-maintained (docs rule: update it in the same PR as any
-model/migration change), so this pins the *table-level* contract both ways —
-a model table missing from the diagram, or a diagram entity naming a table
-that no longer exists, fails CI. Column-level sync stays a review concern
-(checking every attribute here would just duplicate the models file).
-
-Pure-unit: reads the markdown + `Base.metadata`; no DB.
-"""
+"""Drift guard: the ER diagram in docs/site/architecture.md tracks the real schema."""
 
 import re
 from pathlib import Path

@@ -1,15 +1,5 @@
-# Secrets Manager has two distinct owners, matching the Key Vault split on the
-# Azure stack (boot-critical secrets are inline Container App secrets there,
-# NOT Key Vault references — same reasoning applies here):
-#
-#   - Infra-owned bootstrap secrets (DATABASE_URL, REDIS_URL) — created by
-#     THIS Terraform stack, referenced directly by ARN in each ECS task
-#     definition's `secrets` block. Under `dataq-app-infra/`.
-#   - App-owned datasource-credential secrets — written by the app itself at
-#     runtime via `AwsSecretsManagerStore` (SECRET_STORE=aws_secrets_manager,
-#     backend/app/core/secrets.py), under `var.aws_secrets_manager_prefix`
-#     ("dataq/" by default). This stack only grants the IAM policy; it never
-#     creates or reads these values.
+# Secrets Manager has two distinct owners, matching the Key Vault split on the Azure stack (boot-
+# critical secrets are inline Container App secrets there, NOT Key Vault references.
 
 resource "aws_secretsmanager_secret" "database_url" {
   name = "dataq-app-infra/database-url"
@@ -29,11 +19,8 @@ resource "aws_secretsmanager_secret_version" "redis_url" {
   secret_string = local.redis_url
 }
 
-# The app's own runtime grant: get/put/create/delete/list on everything under
-# its prefix, plus ListSecrets (unavoidably unscoped — the List action family
-# has no resource-level restriction in Secrets Manager; AwsSecretsManagerStore
-# narrows this itself with a strict client-side prefix check — see
-# backend/app/core/secrets.py's list_secrets docstring).
+# The app's own runtime grant: get/put/create/delete/list on everything under its prefix, plus
+# ListSecrets (unavoidably unscoped.
 data "aws_iam_policy_document" "app_secrets_rw" {
   statement {
     sid = "AppSecretsReadWrite"
@@ -66,10 +53,7 @@ resource "aws_iam_role_policy" "worker_app_secrets" {
   policy = data.aws_iam_policy_document.app_secrets_rw.json
 }
 
-# Read-only grant on the infra-owned bootstrap secrets, for the ECS task
-# EXECUTION role — this is what actually injects them into the container via
-# the task definition's `secrets` block (distinct from the task role above,
-# which is the app's own runtime identity).
+# Read-only grant on the infra-owned bootstrap secrets, for the ECS task EXECUTION role.
 data "aws_iam_policy_document" "execution_infra_secrets_read" {
   statement {
     actions = ["secretsmanager:GetSecretValue"]

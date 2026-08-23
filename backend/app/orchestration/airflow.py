@@ -1,24 +1,4 @@
-"""Apache Airflow connection adapter (orchestration provider, not a datasource).
-
-Airflow is an orchestration provider (CLAUDE.md §4): DataQ observes its DAG runs
-and triggers suites on success — never a queryable datasource, so this module
-implements only the `ConnectionAdapter` seam (config validation + connectivity
-test), never `CheckRunner`.
-
-The connection points at an Airflow **webserver REST API** (the polling-fallback
-channel from [ADR 0007](../../docs/site/adr/0007-airflow-callback-model.md): the
-`dagRuns` endpoint backfills runs for DAGs that don't adopt the HMAC callback
-snippet). It is distinct from the webhook signing key — that HMAC secret lives
-in Key Vault and is consumed by the (separate) Airflow event receiver.
-
-Auth is **token-based by default** (a Bearer token in the SecretStore), with HTTP
-basic as an option (username in config, password in the SecretStore). ``test``
-probes `GET /api/v1/dags?limit=1` — the lightest authenticated stable-REST call —
-so a green test means the webserver is reachable, the REST API is enabled, and
-the credential authenticates. Like the other adapters it runs live but fails-soft
-pending real credentials; the connection-service test path wraps and never echoes
-the adapter exception, so tokens can't leak to the client.
-"""
+"""Apache Airflow connection adapter (orchestration provider, not a datasource)."""
 
 from __future__ import annotations
 
@@ -46,13 +26,7 @@ _TEST_TIMEOUT_SECONDS = 10.0
 
 
 class AirflowConfig(BaseModel):
-    """Non-secret Airflow REST connection config (the credential comes from secrets).
-
-    Maps from ``Connection.config``. ``base_url`` is the webserver root (e.g.
-    ``https://airflow.example.com``); the credential is a Bearer token
-    (``auth_type='token'``, v1 default) or the password for ``username``
-    (``auth_type='basic'``), resolved from the SecretStore at test time.
-    """
+    """Non-secret Airflow REST connection config (the credential comes from secrets)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -92,15 +66,7 @@ class AirflowConnectionAdapter:
         return AirflowConfig.model_validate(raw)
 
     def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
-        """GET the DAGs list (limit 1) with the credential; raise on any failure.
-
-        ``secret`` is the Bearer token (token auth) or the password (basic auth,
-        paired with ``config.username``). Typed ``str | None`` only because the
-        shared `ConnectionAdapter` Protocol also serves credential-less types
-        (#351) — an Airflow token/password is always mandatory, so the guard
-        below turns a missing one into a clear error rather than a confusing
-        auth-header failure.
-        """
+        """GET the DAGs list (limit 1) with the credential; raise on any failure."""
         if secret is None:
             raise ValueError("a credential is required to test an Airflow connection")
         config = self.validate_config(raw)
@@ -134,23 +100,7 @@ def _parse_dt(value: Any) -> datetime | None:
 
 
 class AirflowProvider:
-    """`OrchestrationProvider` for Apache Airflow — signed-callback parse (v1).
-
-    `parse_event` consumes the JSON our `on_*_callback` snippet POSTs (we author
-    it, so we own the shape): ``dag_id``, ``run_id``, ``state``, ``base_url``
-    (+ optional ``start_date`` / ``end_date`` / ``error``). The callback is
-    already authenticated (HMAC over the raw body, ADR 0007) and authoritative,
-    so there is **no REST enrichment** — `fetch_run_detail` is intentionally
-    unimplemented and the persistence layer skips enrichment for this provider.
-    ``run_id`` is the idempotency key for the `pipeline_runs` upsert, so it (with
-    ``dag_id`` / ``state`` / ``base_url``) is required; absence is a
-    `MalformedEventError` (422).
-
-    Unlike ADF, both success and failure arrive on this channel (the snippet sets
-    both `on_success_callback` and `on_failure_callback`); a ``success`` run is
-    what fires `trigger_bindings`. The `dagRuns` REST polling fallback
-    (`list_recent_runs`) for DAGs that don't adopt the snippet lands in Week 5.
-    """
+    """`OrchestrationProvider` for Apache Airflow — signed-callback parse (v1)."""
 
     provider = "airflow"
     resource_config_key = "base_url"
@@ -207,15 +157,7 @@ class AirflowProvider:
     def list_recent_runs(
         self, config: Mapping[str, Any], secret: str, since: datetime
     ) -> list[RunUpdate]:
-        """Poll recent DAG runs (**all states**) via the batch ``dagRuns/list`` endpoint.
-
-        POSTs ``{start_date_gte: since}`` across all DAGs (``~``) with **no state
-        filter** and maps each run to a `RunUpdate`. The poll records every state
-        for the monitor view (#490); trigger-on-success is enforced downstream in
-        ``ingest_polled_runs`` (only ``succeeded`` triggers, ADR 0004). DAG-run
-        states outside the status map are skipped; malformed rows are skipped;
-        transport/auth errors raise (the polling task fails soft per connection).
-        """
+        """Poll recent DAG runs (**all states**) via the batch ``dagRuns/list`` endpoint."""
         cfg = AirflowConfig.model_validate(dict(config))
         headers, auth = _auth(cfg, secret)
         response = httpx.post(

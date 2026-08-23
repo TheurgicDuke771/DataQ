@@ -1,8 +1,5 @@
-# ECS Fargate — api (internal, Cloud Map DNS), worker (Celery + embedded
-# beat, min=max=1 desired count — mirrors the Azure Container App's
-# min_replicas=1 rationale: it can't scale to zero because it runs beat), and
-# frontend (public via the ALB). All three run images from GHCR (public,
-# anonymous pull — ADR 0023), same as the Azure stack.
+# ECS Fargate — api (internal, Cloud Map DNS), worker (Celery + embedded beat, min=max=1 desired
+# count.
 
 resource "aws_ecs_cluster" "app" {
   name = "dataq-app"
@@ -10,10 +7,8 @@ resource "aws_ecs_cluster" "app" {
   tags = { Name = "dataq-app" }
 }
 
-# One shared security group for every ECS task: self-referencing ingress lets
-# api/worker/frontend talk to each other (and to Redis/RDS, which have their
-# own SGs allowing traffic FROM this one), plus a narrow allow from the ALB
-# SG for the frontend's published port.
+# One shared security group for every ECS task: self-referencing ingress lets api/worker/frontend
+# talk to each other (and to Redis/RDS, which have their own SGs allowing traffic FROM this one).
 resource "aws_security_group" "ecs_tasks" {
   name = "dataq-app-ecs-tasks"
   # EC2 SG descriptions allow ONLY a-zA-Z0-9. _-:/()#,@[]+=&;{}!$* (#1357) —
@@ -32,10 +27,8 @@ resource "aws_security_group" "ecs_tasks" {
 }
 
 resource "aws_security_group_rule" "ecs_tasks_self_ingress" {
-  # Narrower than "every port" on purpose: the only task-to-task call within
-  # this security group is frontend -> api on 8000 (Cloud Map DNS). worker
-  # and frontend serve nothing another task calls, so opening the full
-  # 0-65535 range would grant blast-radius no actual traffic pattern needs.
+  # Narrower than "every port" on purpose: the only task-to-task call within this security group is
+  # frontend -> api on 8000 (Cloud Map DNS). worker and frontend serve nothing another task calls.
   type                     = "ingress"
   from_port                = 8000
   to_port                  = 8000
@@ -53,10 +46,8 @@ resource "aws_security_group_rule" "ecs_tasks_from_alb" {
   source_security_group_id = aws_security_group.alb.id
 }
 
-# Cloud Map private DNS namespace — how the frontend reaches the api
-# internally (DATAQ_API_UPSTREAM=http://api.dataq.local:8000, alb.tf's
-# local.api_internal_url), the same role the Azure environment's
-# `.internal.<domain>` FQDN plays there.
+# Cloud Map private DNS namespace — how the frontend reaches the api internally
+# (DATAQ_API_UPSTREAM=http://api.dataq.local:8000, alb.tf's local.api_internal_url).
 resource "aws_service_discovery_private_dns_namespace" "app" {
   name = "dataq.local"
   vpc  = aws_vpc.app.id
@@ -86,15 +77,12 @@ locals {
   # local.app_env, with AWS-shaped values in place of the Azure ones.
   app_env = [
     { name = "ENVIRONMENT", value = var.environment },
-    # The jurisdiction this deployment DECLARES (G4/#434). Sourced from the same
-    # variable that places the resources, so the declaration and the placement
-    # cannot drift apart by editing one of them.
+    # The jurisdiction this deployment DECLARES (G4/#434).
     { name = "DEPLOYMENT_REGION", value = var.aws_region },
     { name = "LOG_LEVEL", value = "INFO" },
     { name = "SAMPLE_FAILURES_RETENTION_DAYS", value = "30" },
-    # Runtime SecretStore -> AWS Secrets Manager via the ECS task role (no
-    # bootstrap credential to hold — same "no credential at all" posture the
-    # Azure UAMI + Key Vault pairing has).
+    # Runtime SecretStore -> AWS Secrets Manager via the ECS task role (no bootstrap credential to
+    # hold — same "no credential at all" posture the Azure UAMI + Key Vault pairing has).
     { name = "SECRET_STORE", value = "aws_secrets_manager" },
     { name = "AWS_SECRETS_MANAGER_PREFIX", value = "${var.aws_secrets_manager_prefix}/" },
     # Real auth in prod (AUTH_DEV_BYPASS=false) via the generic OIDC path
@@ -102,19 +90,11 @@ locals {
     { name = "AUTH_DEV_BYPASS", value = "false" },
     { name = "OIDC_ISSUER", value = local.cognito_issuer },
     { name = "OIDC_AUDIENCE", value = aws_cognito_user_pool_client.spa.id },
-    # App-side access gate (#1386) — second layer behind cognito.tf's
-    # allow_admin_create_user_only. Empty = no gate (backend default, logged at
-    # WARNING on boot); see variables.tf.
+    # App-side access gate (#1386) — second layer behind cognito.tf's allow_admin_create_user_only.
     { name = "OIDC_ALLOWED_EMAILS", value = var.oidc_allowed_emails },
     { name = "OIDC_ALLOWED_DOMAINS", value = var.oidc_allowed_domains },
     { name = "WORKSPACE_ADMIN_EMAILS", value = var.workspace_admin_emails },
-    # Rate-limit per-IP keying (ADR 0035). Three proxies append to
-    # X-Forwarded-For on the way in — CloudFront (appends the viewer IP), the
-    # ALB (appends CloudFront's edge IP), and the frontend nginx
-    # ($proxy_add_x_forwarded_for appends the ALB IP) — so the real client is
-    # 3 entries from the right, same depth as the Azure stack's
-    # envoy+nginx+envoy chain. Confirm against one logged live XFF
-    # post-deploy, same as the Azure note.
+    # Rate-limit per-IP keying (ADR 0035).
     { name = "RATE_LIMIT_XFF_TRUSTED_HOPS", value = "3" },
     { name = "CORS_ALLOW_ORIGINS", value = "" },
     { name = "PUBLIC_BASE_URL", value = local.frontend_url },
@@ -122,14 +102,11 @@ locals {
     { name = "AIRFLOW_WEBHOOK_SECRET_NAME", value = "airflow-webhook-secret" },
     { name = "DBT_WEBHOOK_SECRET_NAME", value = "dbt-webhook-secret" },
     { name = "SLACK_WEBHOOK_SECRET_NAME", value = "channel-slack-webhook" },
-    # Spans + OTel logs → the ADOT sidecar on task-local loopback (#1369,
-    # adot.tf) → X-Ray / CloudWatch. The app half is the vendor-neutral
-    # core/otel.py (#589); this is just where its OTLP consumer lives.
+    # Spans + OTel logs → the ADOT sidecar on task-local loopback (#1369, adot.tf) → X-Ray /
+    # CloudWatch.
     { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "http://localhost:4318" },
-    # Email alert channel via SES (#1368, ses.tf) — everything derives from
-    # var.alert_email; empty leaves the channel off (config.py's gate). The
-    # SMTP password lives at dataq/channel-email-password in Secrets Manager,
-    # read through the app's own SecretStore at send time.
+    # Email alert channel via SES (#1368, ses.tf) — everything derives from var.alert_email; empty
+    # leaves the channel off (config.py's gate).
     { name = "EMAIL_SMTP_HOST", value = local.ses_smtp_host },
     { name = "EMAIL_SMTP_PORT", value = "587" },
     { name = "EMAIL_PASSWORD_SECRET_NAME", value = "channel-email-password" },
@@ -142,11 +119,8 @@ locals {
     { name = "WAREHOUSE_LINEAGE_ENABLED", value = "true" },
   ])
 
-  # Boot-critical secrets, injected via the task definition's `secrets` block
-  # (execution-role-read from the infra-owned Secrets Manager entries) —
-  # mirrors the Azure stack's inline-Container-App-secret pattern; same
-  # reasoning (decouple first-revision activation from any IAM-propagation
-  # delay on the app's OWN Secrets Manager grant).
+  # Boot-critical secrets, injected via the task definition's `secrets` block (execution-role-read
+  # from the infra-owned Secrets Manager entries).
   boot_secrets = [
     { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.database_url.arn },
     { name = "REDIS_URL", valueFrom = aws_secretsmanager_secret.redis_url.arn },
@@ -181,17 +155,13 @@ resource "aws_ecs_task_definition" "api" {
         }
       }
     },
-    # ADOT collector sidecar (#1369, adot.tf) — OTLP in on localhost:4318,
-    # traces → X-Ray, OTel logs → CloudWatch. NOTE ignore_changes below:
-    # adding/changing this on a LIVE stack needs `tofu apply -replace` on this
-    # task definition + an `update-service` to the new revision (README,
-    # "Rolling task-definition changes").
+    # ADOT collector sidecar (#1369, adot.tf) — OTLP in on localhost:4318, traces → X-Ray, OTel logs
+    # → CloudWatch.
     local.adot_container["api"],
   ])
 
-  # CI rolls the live image out-of-band (new task-def revision via
-  # `aws ecs register-task-definition` + `update-service`) — mirrors the
-  # Azure stack's `ignore_changes` on the container image, same reasoning.
+  # CI rolls the live image out-of-band (new task-def revision via `aws ecs register-task-
+  # definition` + `update-service`) — mirrors the Azure stack's `ignore_changes` on the container
   lifecycle {
     ignore_changes = [container_definitions]
   }
@@ -301,23 +271,12 @@ resource "aws_ecs_task_definition" "frontend" {
         { name = "DATAQ_AUTH_MODE", value = "oidc" },
         { name = "DATAQ_AUTH_AUTHORITY", value = local.cognito_issuer },
         { name = "DATAQ_AUTH_CLIENT_ID", value = aws_cognito_user_pool_client.spa.id },
-        # Scope override (#1347): Cognito has no offline_access scope and errors
-        # (invalid_scope) on the SPA's default list; refresh tokens are issued
-        # on the code grant regardless. Must match cognito.tf's
-        # allowed_oauth_scopes.
+        # Scope override (#1347): Cognito has no offline_access scope and errors (invalid_scope) on
+        # the SPA's default list; refresh tokens are issued on the code grant regardless.
         { name = "DATAQ_AUTH_SCOPE", value = "openid email profile" },
-        # Sign-out dialect (#1364): Cognito's /logout is not RP-Initiated-Logout-
-        # conformant — it needs client_id + logout_uri and 400s on the standard
-        # id_token_hint/post_logout_redirect_uri, stranding the user on a raw
-        # "Client does not exist" error page with the hosted-UI session alive.
+        # Sign-out dialect (#1364): Cognito's /logout is not RP-Initiated-Logout- conformant.
         { name = "DATAQ_AUTH_LOGOUT_STYLE", value = "cognito" },
-        # CSP connect-src tail (#1387). BOTH Cognito hosts are required and they
-        # are different services: oidc-client-ts fetches discovery + JWKS from
-        # the ISSUER host (cognito-idp.<region>.amazonaws.com) and then POSTs the
-        # code exchange to the HOSTED-UI domain (<prefix>.auth.<region>.
-        # amazoncognito.com). Omitting the second one yields a policy that passes
-        # discovery and then blocks the token exchange — i.e. sign-in fails at
-        # the last step, which is the least obvious way for this to break.
+        # CSP connect-src tail (#1387).
         {
           name = "DATAQ_CSP_CONNECT_SRC",
           value = join(" ", [
@@ -326,13 +285,8 @@ resource "aws_ecs_task_definition" "frontend" {
           ])
         },
       ]
-      # Origin-secret guard (#1355): nginx 403s any request not carrying the
-      # header CloudFront stamps on origin fetches (cloudfront.tf). Injected
-      # as a secret, not plaintext env. NOTE ignore_changes below: on a LIVE
-      # stack a plain apply never registers this — roll it with
-      # `tofu apply -replace` on this task definition + `update-service`
-      # (README, "Rolling task-definition changes"), or the guard silently
-      # stays fail-open while CloudFront stamps a header nobody checks.
+      # Origin-secret guard (#1355): nginx 403s any request not carrying the header CloudFront
+      # stamps on origin fetches (cloudfront.tf).
       secrets = [
         { name = "DATAQ_ORIGIN_SECRET", valueFrom = aws_secretsmanager_secret.origin_secret.arn },
       ]

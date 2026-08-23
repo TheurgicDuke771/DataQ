@@ -144,10 +144,8 @@ function meState(isAdmin: boolean): AsyncState<MeResponse> {
   };
 }
 
-// Clear in beforeEach (not only afterEach) so any call recorded between tests
-// by a late-flushing effect can never bleed into the next test's counts, THEN
-// default the user list to a resolved array so `users.find(...)` never sees
-// `undefined` (the OwnerBlock fetches it whenever an admin renders).
+// Clear in beforeEach (not only afterEach) so any call recorded between tests by a late-flushing
+// effect can never bleed into the next test's counts.
 beforeEach(() => {
   vi.clearAllMocks();
   mockAdminUsers.mockResolvedValue(ADMIN_USERS);
@@ -207,9 +205,8 @@ describe('AssetDetail page', () => {
   });
 
   it('reads Errors on the connection axis without touching data-quality health', async () => {
-    // A run that succeeded but whose checks threw: DataQ could not evaluate, so the
-    // connection axis errors and the data-quality axis honestly says "No data" —
-    // it must NOT go green, and it must NOT claim a data failure.
+    // A run that succeeded but whose checks threw: DataQ could not evaluate, so the connection axis
+    // errors and the data-quality axis honestly says "No data" — it must NOT go green.
     mockGet.mockResolvedValue({
       ...DETAIL,
       summary: {
@@ -247,9 +244,8 @@ describe('AssetDetail page', () => {
     expect(screen.getByText('1 upstream · 1 downstream')).toBeInTheDocument();
   });
 
-  // Regression: useAsyncData fetches on mount only, so an asset→asset navigation
-  // (first made possible by the #805 clickable lineage nodes) must REMOUNT the page
-  // — otherwise the new URL renders the previous asset's data.
+  // Regression: useAsyncData fetches on mount only, so an asset→asset navigation (first made
+  // possible by the #805 clickable lineage nodes) must REMOUNT the page.
   it('refetches when navigating from one asset to another (no stale detail)', async () => {
     mockGet.mockResolvedValue(DETAIL);
     render(
@@ -382,10 +378,8 @@ describe('AssetDetail page', () => {
   });
 
   it('fetches the user list once adminness resolves after mount (/me race)', async () => {
-    // AuthGate renders children before /me resolves, so an admin deep-linking
-    // into an asset first renders as non-admin. The OwnerBlock is MOUNT-gated on
-    // adminness: when /me flips is_workspace_admin to true, the block mounts and
-    // its on-mount fetch fires — no reload or full remount needed.
+    // AuthGate renders children before /me resolves, so an admin deep-linking into an asset first
+    // renders as non-admin.
     mockGet.mockResolvedValue(DETAIL);
     const { rerender } = render(pageTree(false));
     await screen.findByText('The canonical orders table');
@@ -457,11 +451,6 @@ describe('AssetDetail page', () => {
 });
 
 // #828 — the lineage empty state must never lie.
-//
-// Prod lineage was dark for six days behind an expired credential and this card said
-// "No lineage recorded for this asset", which is exactly what it says for an asset that
-// genuinely has no upstreams. A broken integration and an isolated table were
-// indistinguishable. These pin the difference.
 describe('AssetDetail — a failing lineage source (#828)', () => {
   it('warns instead of showing a clean empty state when a lineage source is failing', async () => {
     mockGet.mockResolvedValue({

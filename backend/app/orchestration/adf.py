@@ -1,20 +1,4 @@
-"""Azure Data Factory connection adapter (orchestration provider, not a datasource).
-
-ADF is an orchestration provider (CLAUDE.md §4): DataQ monitors its pipeline
-runs and triggers suites on success — it is never a queryable datasource, so
-this module implements only the `ConnectionAdapter` seam (config validation +
-connectivity test), never `CheckRunner`.
-
-The connection identifies one data factory (subscription / resource group /
-factory) and authenticates with an Azure AD service principal — `client_id` in
-config, the SP `client_secret` in the SecretStore. ``test`` proves both: it
-acquires a service-principal token (OAuth2 client-credentials) and GETs the
-factory through the ARM REST API, so a green test means the credentials are
-valid *and* the named factory is reachable. It uses ``httpx`` only — no Azure
-SDK dependency — and, like the Snowflake adapter, runs live but fails-soft
-pending real credentials (the connection-service test path wraps and never
-echoes the adapter exception, so tokens/secrets can't leak to the client).
-"""
+"""Azure Data Factory connection adapter (orchestration provider, not a datasource)."""
 
 from __future__ import annotations
 
@@ -49,12 +33,7 @@ _TEST_TIMEOUT_SECONDS = 10.0
 
 
 class ADFConfig(BaseModel):
-    """Non-secret ADF connection config (the SP client secret comes from secrets).
-
-    Maps from ``Connection.config``. Identifies one data factory plus the service
-    principal's non-secret half (`tenant_id` / `client_id`); the `client_secret`
-    is resolved from the SecretStore at test time and never stored here.
-    """
+    """Non-secret ADF connection config (the SP client secret comes from secrets)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -88,28 +67,13 @@ class ADFConnectionAdapter:
     """`ConnectionAdapter` for Azure Data Factory — config validation + live test."""
 
     # #1401: EMPTY, and deliberately so — not an oversight, and not a default.
-    # The client secret only ever goes to `_AAD_OAUTH_URL`, a hardcoded
-    # `login.microsoftonline.com` endpoint; `tenant_id` interpolates into its
-    # PATH, so no config field can move the authority. `subscription_id` /
-    # `resource_group` / `factory_name` address an ARM resource with a token
-    # already issued, not a credential-receiving host. If a future change lets
-    # config choose the authority (a sovereign-cloud endpoint, say), that field
-    # belongs here.
     destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {}
 
     def validate_config(self, raw: dict[str, Any]) -> ADFConfig:
         return ADFConfig.model_validate(raw)
 
     def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
-        """Acquire an SP token and GET the factory; raise on any failure.
-
-        ``secret`` is the service-principal client secret. A successful return
-        means the SP authenticated AND the named factory is reachable. Typed
-        ``str | None`` only because the shared `ConnectionAdapter` Protocol
-        also serves credential-less types (#351) — an ADF client secret is
-        always mandatory, so the guard below turns a missing one into a clear
-        error rather than a confusing token-acquisition failure.
-        """
+        """Acquire an SP token and GET the factory; raise on any failure."""
         if secret is None:
             raise ValueError("a credential is required to test an ADF connection")
         config = self.validate_config(raw)
@@ -130,9 +94,6 @@ class ADFConnectionAdapter:
 # ── Webhook receiver (OrchestrationProvider) ─────────────────────────────────
 
 # ADF RunStatus (and Azure Monitor monitorCondition) → DataQ PIPELINE_RUN_STATUSES.
-# Keys are lower-cased before lookup so casing differences across Azure payloads
-# don't matter. "fired" is the Common-Alert-Schema monitorCondition for a
-# failed-pipeline-runs alert — the v1 webhook is the failure channel (ADR 0004).
 _ADF_STATUS_MAP = {
     "succeeded": "succeeded",
     "failed": "failed",
@@ -157,24 +118,7 @@ def _parse_dt(value: Any) -> datetime | None:
 
 
 class AdfProvider:
-    """`OrchestrationProvider` for Azure Data Factory — webhook parse (v1).
-
-    `parse_event` consumes the JSON the Azure Monitor alert delivers, projected
-    to the fields DataQ needs (roadmap Week-2 task): ``factoryName``,
-    ``pipelineName``, ``runId``, ``status``, ``firedDateTime``. ``runId`` is the
-    idempotency key for the `pipeline_runs` upsert, so it is required; a missing
-    factory / pipeline / runId is a `MalformedEventError` (422). ``status``
-    defaults to ``failed`` when absent because the v1 ADF webhook is the failure
-    channel (success → trigger arrives via the REST polling path, ADR 0004).
-
-    Azure Monitor's **Common Alert Schema** (#492) is handled as a distinct
-    shape: a metric alert on ``PipelineFailedRuns`` names the factory
-    (``essentials.alertTargetIDs``) and the pipeline (the ``Name`` dimension)
-    but carries **no runId**, so it cannot be a `RunUpdate` — `parse_event`
-    returns an `AlertPing` instead and the receiver kicks an immediate poll,
-    which ingests the real run(s) with their true identities within seconds.
-    The legacy flat shape (custom webhook senders / tests) keeps working.
-    """
+    """`OrchestrationProvider` for Azure Data Factory — webhook parse (v1)."""
 
     provider = "adf"
     resource_config_key = "factory_name"
@@ -224,14 +168,7 @@ class AdfProvider:
 
     @staticmethod
     def _parse_common_alert(body: dict[str, Any]) -> AlertPing:
-        """Azure Monitor Common Alert Schema → `AlertPing` (#492).
-
-        Shape: ``{"schemaId": "azureMonitorCommonAlertSchema", "data":
-        {"essentials": {...}, "alertContext": {...}}}``. ``essentials`` is
-        required (its absence means a broken sender, 422); the factory and
-        pipeline are best-effort — the poll the ping triggers doesn't need
-        them, they only enrich the ack log.
-        """
+        """Azure Monitor Common Alert Schema → `AlertPing` (#492)."""
         data = body.get("data")
         if not isinstance(data, dict) or not isinstance(data.get("essentials"), dict):
             raise MalformedEventError(
@@ -279,13 +216,7 @@ class AdfProvider:
     def fetch_run_detail(
         self, config: Mapping[str, Any], secret: str, provider_run_id: str
     ) -> RunUpdate:
-        """Authoritative ARM REST lookup of one pipeline run → `RunUpdate`.
-
-        Used to enrich a thin webhook alert with the real status / timing /
-        message. Reuses the service-principal token flow; raises (httpx errors,
-        validation) on failure — the caller (`orchestration_service`) decides
-        whether to fail soft back to the parsed event.
-        """
+        """Authoritative ARM REST lookup of one pipeline run → `RunUpdate`."""
         cfg = ADFConfig.model_validate(dict(config))
         token = _acquire_token(cfg, secret)
         response = httpx.get(
@@ -320,15 +251,7 @@ class AdfProvider:
     def list_recent_runs(
         self, config: Mapping[str, Any], secret: str, since: datetime
     ) -> list[RunUpdate]:
-        """Poll the factory's recent runs (**all statuses**) via ARM queryPipelineRuns.
-
-        POSTs a ``lastUpdatedAfter=since`` / ``lastUpdatedBefore=now`` window with
-        **no status filter**, mapping each returned run to a `RunUpdate`. The poll
-        records every status for the monitor view (#490); trigger-on-success is
-        enforced downstream in ``ingest_polled_runs`` (only ``succeeded`` triggers
-        a suite, ADR 0004). Malformed rows are skipped rather than failing the whole
-        poll; transport/auth errors raise (the task fails soft per connection).
-        """
+        """Poll the factory's recent runs (**all statuses**) via ARM queryPipelineRuns."""
         cfg = ADFConfig.model_validate(dict(config))
         token = _acquire_token(cfg, secret)
         response = httpx.post(
@@ -347,9 +270,8 @@ class AdfProvider:
         )
         response.raise_for_status()
 
-        # Single page only: a `continuationToken` for >1 page of results in a
-        # 10-min window is not followed (overflow is picked up by a later poll).
-        # Fine for the v1 window sizes; revisit if a factory bursts >1 page/10min.
+        # Single page only: a `continuationToken` for >1 page of results in a 10-min window is not
+        # followed (overflow is picked up by a later poll).
         updates: list[RunUpdate] = []
         for item in response.json().get("value", []):
             raw_status = item.get("status")

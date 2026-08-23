@@ -1,10 +1,4 @@
-"""Tests for the run/result persistence service.
-
-No database or GX: a fake Session records what would be persisted, model
-instances are built in memory with explicit ids, and a fake CheckRunner returns
-canned outcomes (or raises). This keeps the service's lifecycle + mapping logic
-under test independent of Postgres and Snowflake.
-"""
+"""Tests for the run/result persistence service."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -34,19 +28,6 @@ from backend.tests.support.run_phases import collect_outcomes
 class FakeSession:
     """Records add_all'd rows; counts commits/rollbacks. `add_all_raises` simulates
     a persistence failure (e.g. DB error) after the adapter has already run.
-
-    Since #318 `execute_run` commits **per execution phase**, so this double has to
-    tell a staged row from a committed one — a rollback discards only the former.
-    `added` is the combined "what a reader would see" view the assertions use;
-    `_staged_from` marks where the uncommitted tail starts.
-
-    It also serves the two Core statements the run path now issues: the
-    `DELETE FROM results` that `discard_run_results` uses to clear *committed*
-    phases (a rollback alone can no longer reach them), and the conditional
-    `UPDATE runs SET status='succeeded' WHERE status='running'` that makes a
-    concurrent cancel win instead of being overwritten. `cancelled` makes the
-    UPDATE report zero rows — the double must agree with `scalar` about the run's
-    state, or it describes a row the DB could not hold.
     """
 
     def __init__(
@@ -100,7 +81,8 @@ class FakeSession:
 def _sess(session: FakeSession) -> Session:
     """Type a ``FakeSession`` test double as ``Session`` for the service signatures
     (the tests still hold the ``FakeSession`` ref for their `.added`/`.commits`
-    assertions; only the call arg is cast)."""
+    assertions; only the call arg is cast).
+    """
     return cast(Session, session)
 
 
@@ -163,7 +145,8 @@ def _monitor_check(kind: str, config: dict[str, object]) -> Check:
 
 class FakeMonitorRunner:
     """A SQL-datasource-like runner that handles both expectation (run_checks) and
-    monitor (run_monitors) kinds — so the kind-dispatch can route to each."""
+    monitor (run_monitors) kinds — so the kind-dispatch can route to each.
+    """
 
     supported_monitor_kinds = frozenset(MONITOR_KINDS)  # the #429 capability the gate reads
 
@@ -223,10 +206,8 @@ def test_run_outcomes_monitor_on_non_sql_runner_raises() -> None:
 
 
 def test_run_outcomes_rejects_runner_with_unrelated_run_monitors() -> None:
-    # The #429 AC: a runner that merely HAS a method named run_monitors (which an
-    # isinstance against the runtime_checkable Protocol would have accepted) but
-    # advertises no capability is rejected CLEANLY at the gate — never a TypeError
-    # from calling an unrelated method.
+    # The #429 AC: a runner that merely HAS a method named run_monitors (which an isinstance against
+    # the runtime_checkable Protocol would have accepted) but advertises no capability is rejected
     class _Impostor(FakeRunner):
         def run_monitors(self) -> None:  # unrelated signature — calling it would TypeError
             raise AssertionError("the gate must reject before calling this")
@@ -242,9 +223,8 @@ def test_run_outcomes_rejects_runner_with_unrelated_run_monitors() -> None:
 
 
 def test_run_outcomes_rejects_capability_without_implementation() -> None:
-    # The mirror hole of the old isinstance gate (#880 review): advertising
-    # kinds without run_monitors must reject as cleanly as the reverse — never
-    # an AttributeError at the call site.
+    # The mirror hole of the old isinstance gate (#880 review): advertising kinds without
+    # run_monitors must reject as cleanly as the reverse — never an AttributeError at the call site.
     class _AllTalk(FakeRunner):
         supported_monitor_kinds = frozenset(MONITOR_KINDS)  # no run_monitors at all
 
@@ -259,23 +239,7 @@ def test_run_outcomes_rejects_capability_without_implementation() -> None:
 
 
 def test_outcome_phases_shape_and_order() -> None:
-    """The phase shape #318's incremental progress rests on, asserted directly.
-
-    Two independent limits are encoded here and both are load-bearing:
-
-    * **granularity** — per check for the executor-driven `comparison`; ONE phase
-      for the whole expectation batch (GX validates atomically) and ONE for the
-      scalar monitors (`run_monitors` loads the frame once);
-    * **durability** — the stateful kinds are yielded LAST and `publishable=False`,
-      because their executors write `monitor_baselines` through the caller's
-      session. Committing them early would make a failed run's baseline permanent.
-      Last matters as much as unpublishable: a commit is transaction-wide, so
-      anything yielded after them would flush those writes anyway.
-
-    A future change that splits the GX batch, or that lets a stateful phase
-    publish, should update this test deliberately rather than discover it in
-    production.
-    """
+    """The phase shape #318's incremental progress rests on, asserted directly."""
     checks = [
         _monitor_check("schema_drift", {}),
         _checks(1)[0],
@@ -353,11 +317,8 @@ def test_run_outcomes_stateful_kind_without_executor_errors_per_check() -> None:
 
 
 def test_native_engine_check_errors_and_gx_siblings_still_run() -> None:
-    # ADR 0036 §5 run-time rule: an engine with no runner here lands the CHECK as
-    # a classified error — never a silent skip, never a raise that takes the
-    # suite's GX siblings down. Save-time validation refuses to author such a
-    # row today, so this is the defensive arm for rows that outlive their
-    # capability (map regression, out-of-band write).
+    # ADR 0036 §5 run-time rule: an engine with no runner here lands the CHECK as a classified error
+    # — never a silent skip, never a raise that takes the suite's GX siblings down.
     gx_check, native_check = _checks(2)
     native_check.engine = "dmf"
     runner = FakeRunner(
@@ -376,10 +337,8 @@ def test_native_engine_check_errors_and_gx_siblings_still_run() -> None:
 
 
 def test_native_engine_check_with_unhandled_kind_still_errors_not_raises() -> None:
-    # Review catch on the first cut: the unsupported-kind sweep iterated ALL
-    # checks, so a native row with an out-of-band kind was resolved twice — an
-    # error phase, then a suite-killing NotImplementedError. The sweep must see
-    # only the GX partition.
+    # Review catch on the first cut: the unsupported-kind sweep iterated ALL checks, so a native row
+    # with an out-of-band kind was resolved twice — an error phase.
     native = _monitor_check("telepathy", {})  # kind with no run path anywhere
     native.engine = "dmf"
     gx_check = _checks(1)[0]
@@ -394,9 +353,8 @@ def test_native_engine_check_with_unhandled_kind_still_errors_not_raises() -> No
 
 
 def test_native_engine_check_routes_to_the_runners_native_method() -> None:
-    # A runner that ADVERTISES the engine (#429 explicit-claim pattern) gets the
-    # native check routed to run_native_check as its own publishable phase; the
-    # GX sibling still goes through run_checks with only itself in the batch.
+    # A runner that ADVERTISES the engine (#429 explicit-claim pattern) gets the native check routed
+    # to run_native_check as its own publishable phase.
     seen: list[dict[str, object]] = []
 
     class _DmfCapable(FakeRunner):
@@ -432,9 +390,8 @@ def test_native_engine_check_routes_to_the_runners_native_method() -> None:
 
 
 def test_advertised_engine_without_the_method_still_errors_cleanly() -> None:
-    # The capability-without-implementation drift hole (#429's mirror): a runner
-    # advertising 'dmf' with no run_native_check must land the check as a
-    # classified error, not an AttributeError/TypeError mid-run.
+    # The capability-without-implementation drift hole (#429's mirror): a runner advertising 'dmf'
+    # with no run_native_check must land the check as a classified error.
     class _AllTalkNative(FakeRunner):
         supported_native_engines = frozenset({"dmf"})  # no run_native_check
 
@@ -446,9 +403,7 @@ def test_advertised_engine_without_the_method_still_errors_cleanly() -> None:
 
 
 def test_transient_check_without_engine_runs_as_gx() -> None:
-    # A transient (unflushed) Check has engine=None — the server default hasn't
-    # applied. The run path must treat that as 'gx' (what the flush would have
-    # written), or every dry-run of an unsaved check would error.
+    # A transient (unflushed) Check has engine=None — the server default hasn't applied.
     check = _checks(1)[0]
     assert check.engine is None
     runner = FakeRunner(
@@ -459,9 +414,8 @@ def test_transient_check_without_engine_runs_as_gx() -> None:
 
 
 def test_run_outcomes_gate_is_per_kind_not_per_runner() -> None:
-    # Capability is a SET of kinds (#429 altitude note): a runner supporting only
-    # freshness must reject a volume check by NAME, so stateful kinds (#592/#593)
-    # can land on some runners before others without re-entangling the seams.
+    # Capability is a SET of kinds (#429 altitude note): a runner supporting only freshness must
+    # reject a volume check by NAME.
     class _FreshnessOnly(FakeMonitorRunner):
         supported_monitor_kinds = frozenset({"freshness"})
 
@@ -476,19 +430,15 @@ def test_run_outcomes_gate_is_per_kind_not_per_runner() -> None:
 
 
 def test_run_outcomes_unsupported_kind_raises() -> None:
-    # Every kind in CHECK_KINDS now has a run path (#593 closed the last reserved
-    # one), so this pins the guard itself with a kind that exists nowhere: a check
-    # row whose kind the dispatcher cannot place must raise, never silently run as
-    # an expectation or vanish from the outcome list.
+    # Every kind in CHECK_KINDS now has a run path (#593 closed the last reserved one).
     runner = FakeRunner(outcome=SuiteOutcome(success=True, checks=[]))
     with pytest.raises(NotImplementedError, match="not_a_kind"):
         collect_outcomes(runner, table="T", schema=None, checks=[_monitor_check("not_a_kind", {})])
 
 
 def test_run_outcomes_comparison_errors_without_failing_siblings() -> None:
-    # ADR 0015: a comparison check on a caller that supplies no executor must
-    # yield a per-check operational `error` outcome — in order — while its
-    # expectation siblings still evaluate normally (#122).
+    # ADR 0015: a comparison check on a caller that supplies no executor must yield a per-check
+    # operational `error` outcome — in order.
     comparison = _monitor_check("comparison", {"source": {"table": "T"}, "keys": ["id"]})
     comparison.expectation_type = "comparison:records"
     checks = [_checks(1)[0], comparison, _checks(1)[0]]
@@ -608,7 +558,8 @@ def test_runner_exception_marks_failed_and_persists_no_results() -> None:
 
 def test_success_clears_a_stale_failure_reason() -> None:
     """A reaped-then-completed run must not surface as succeeded-with-a-reason:
-    the success path clears any failure_reason a prior reap stamped (#605)."""
+    the success path clears any failure_reason a prior reap stamped (#605).
+    """
     session = FakeSession()
     run = _run()
     run.failure_reason = "The run did not complete in time and was marked failed."
@@ -622,7 +573,8 @@ def test_success_clears_a_stale_failure_reason() -> None:
 
 def test_persistence_failure_marks_failed_not_stuck_running() -> None:
     """If add_all/commit fails after a successful run, the run must reach a
-    terminal 'failed' state (not stay 'running') and roll back partial inserts."""
+    terminal 'failed' state (not stay 'running') and roll back partial inserts.
+    """
     session = FakeSession(add_all_raises=RuntimeError("db connection lost"))
     run = _run()
     runner = FakeRunner(SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)]))
@@ -659,7 +611,8 @@ def test_empty_run_still_succeeds() -> None:
 
 def test_thresholds_derive_tier_and_persist_metric() -> None:
     """execute_run wires severity post-processing (ADR 0016): the unexpected-%
-    is banded against the check's thresholds and persisted as metric_value."""
+    is banded against the check's thresholds and persisted as metric_value.
+    """
     session = FakeSession()
     run = _run()
     check = Check(
@@ -689,7 +642,8 @@ def test_thresholds_derive_tier_and_persist_metric() -> None:
 def test_errored_check_maps_to_error_status_without_failing_siblings() -> None:
     """A check the runner could not evaluate (`outcome.errored`) is an operational
     `error` result (#122) — no severity, no metric — and never fails its siblings:
-    the sibling still maps to its tier and the RUN still succeeds."""
+    the sibling still maps to its tier and the RUN still succeeds.
+    """
     session = FakeSession()
     run = _run()
     checks = _checks(2)
@@ -720,20 +674,7 @@ def test_errored_check_maps_to_error_status_without_failing_siblings() -> None:
 
 
 def test_errored_sql_check_persists_no_statement_or_parameter_echo() -> None:
-    """#1203: a SQL engine's error message must not carry target data into
-    `observed_value`.
-
-    GX hands `to_suite_outcome` `exception_info.exception_message`, which on a SQL
-    execution engine is the rendering of a SQLAlchemy `StatementError` — the driver
-    message followed by `[SQL: …]` and `[parameters: …]`. Those bound values are
-    cells DataQ sent to the warehouse, and `observed_value` is outside both the
-    `sample_failures` retention sweep and the suite's column policy, so it reaches
-    the run-detail API, the UI, alerts and MCP output unmasked.
-
-    Built from a REAL `StatementError` (not a hand-written string) so the test
-    tracks SQLAlchemy's actual rendering rather than our idea of it. The same
-    wrapper covers Snowflake and Unity Catalog — `_build_result` is the one choke
-    point both reach, so neither can diverge."""
+    """#1203: a SQL engine's error message must not carry target data into `observed_value`."""
     statement_error = StatementError(
         "(snowflake.connector.errors.ProgrammingError) 100038 (22018): "
         "Numeric value 'ORD-9' is not recognized",
@@ -782,7 +723,8 @@ def test_redact_observed_value_strips_the_echo_from_an_already_persisted_row() -
     """#1203 read side: rows written before the fix still hold the echo, and
     `observed_value` has no retention sweep to age them out. `redact_observed_value`
     is what the run-detail API, the MCP tools and the alert builder all call, so
-    stripping there corrects the whole history in one place."""
+    stripping there corrects the whole history in one place.
+    """
     legacy = {
         "error": (
             "(databricks.sql.exc.ServerOperationError) cannot cast\n"
@@ -801,7 +743,8 @@ def test_redact_observed_value_strips_the_echo_from_an_already_persisted_row() -
 
 def test_redact_observed_value_strips_the_echo_alongside_an_unparsed_cell() -> None:
     """The two redactions compose: the #989 cell keeps its column-policy treatment
-    while the #1203 echo goes, so neither fix can shadow the other."""
+    while the #1203 echo goes, so neither fix can shadow the other.
+    """
     out = run_service.redact_observed_value(
         {
             "error": "(x.Error) boom\n[SQL: SELECT 1]\n[parameters: {'p': 'leaked'}]",
@@ -819,7 +762,8 @@ def test_redact_observed_value_strips_the_echo_alongside_an_unparsed_cell() -> N
 
 def test_errored_check_with_thresholds_is_still_error_not_banded() -> None:
     """Thresholds don't apply to an errored check — there's no metric to band, so
-    it must resolve to `error`, not slip through severity derivation as a tier."""
+    it must resolve to `error`, not slip through severity derivation as a tier.
+    """
     session = FakeSession()
     run = _run()
     check = Check(
@@ -849,10 +793,7 @@ def test_skipped_check_maps_to_skip_status_among_normal_siblings() -> None:
     """A per-check `skip` (#593 cold start) is the third operational outcome: it
     persists as `skip` with a NULL metric and its own explanatory payload, while
     its siblings still band normally and the RUN still succeeds.
-
-    Until now `skip` only ever arrived run-wide via `skip_run`, so this pins that
-    a mixed run persists cleanly (the status is a valid per-row value) rather than
-    tripping the CHECK constraint or being coerced to pass/fail."""
+    """
     session = FakeSession()
     run = _run()
     checks = _checks(3)
@@ -889,7 +830,8 @@ def test_skipped_check_maps_to_skip_status_among_normal_siblings() -> None:
 
 def test_skip_run_marks_all_checks_skip_and_run_succeeded() -> None:
     """skip_run (#122) records a `skip` Result per check without an adapter run,
-    and the run succeeds — it executed, it just had nothing to validate."""
+    and the run succeeds — it executed, it just had nothing to validate.
+    """
     session = FakeSession()
     run = _run()
     checks = _checks(3)
@@ -907,7 +849,8 @@ def test_skip_run_marks_all_checks_skip_and_run_succeeded() -> None:
 def test_cancel_during_execution_keeps_cancelled_and_persists_no_results() -> None:
     """If a cancel commits while GX is running, the worker must not overwrite it
     with a terminal success: refresh() sees the 'cancelled' status, the moot
-    results are rolled back, and the run stays cancelled (A2 cooperative guard)."""
+    results are rolled back, and the run stays cancelled (A2 cooperative guard).
+    """
     session = FakeSession(refresh_status="cancelled")  # a concurrent cancel landed
     run = _run()
     checks = _checks(1)
@@ -924,7 +867,8 @@ def test_cancel_during_execution_keeps_cancelled_and_persists_no_results() -> No
 
 def test_cancel_during_execution_that_also_errors_stays_cancelled() -> None:
     """A run cancelled mid-flight that then ALSO raises must stay 'cancelled', not
-    be masked as 'failed' (the cooperative guard applies on the failure path too)."""
+    be masked as 'failed' (the cooperative guard applies on the failure path too).
+    """
     session = FakeSession(refresh_status="cancelled")  # cancel landed during the run
     run = _run()
     runner = FakeRunner(raises=RuntimeError("warehouse dropped mid-run"))
@@ -940,7 +884,8 @@ def test_cancel_during_execution_that_also_errors_stays_cancelled() -> None:
 def test_non_expectation_kind_fails_run_without_invoking_runner() -> None:
     """A reserved (non-expectation) check kind has no runner in v1 (ADR 0012):
     the run fails loudly rather than silently feeding it to GX, and the adapter
-    is never called."""
+    is never called.
+    """
     session = FakeSession()
     run = _run()
     freshness = Check(
@@ -1008,11 +953,7 @@ def test_redact_sample_failures_masks_unknown_keys_and_nested_values() -> None:
 
 
 def test_redact_bounds_oversized_lists_from_already_persisted_rows() -> None:
-    """#1196: capture-time capping only protects NEW rows. Every result written
-    before it — a pandas-backed check that failed thousands of rows under GX's
-    uncapped `unexpected_index_list` — must stop shipping the whole list on every
-    run-detail load, so the read path re-applies the same bound (the #1115
-    read-time-derivation pattern: old rows corrected for free, nothing to backfill)."""
+    """#1196: capture-time capping only protects NEW rows."""
     rows = [{"ORDER_NUMBER": f"ORD-{i}", "LINE_TOTAL": -1.0 * i} for i in range(5_000)]
     out = run_service.redact_sample_failures(
         {
@@ -1033,21 +974,11 @@ def test_redact_bounds_oversized_lists_from_already_persisted_rows() -> None:
 
 
 def test_read_time_bound_classifies_over_the_full_list_not_the_capped_slice() -> None:
-    """#1196 review: bounding the payload must never widen what the payload reveals.
-
-    `column_classification._value_signal` is *ratio*-based (emails >= 50% of the
-    sampled values -> PII). A legacy oversized sample whose identifier-designated
-    column holds emails in 80% of 5,000 rows but only 45% of the FIRST 20 flips from
-    PII to shown the moment the classifier is fed the capped slice instead of the
-    persisted list — unmasking real addresses that were masked before the cap
-    existed. The emitted rows are capped; the classification input is not.
-    """
+    """#1196 review: bounding the payload must never widen what the payload reveals."""
     rows = [
         {
-            # `_policy_identifier` designates this column, so it shows unless the
-            # VALUE signal proves it sensitive — exactly the ratio the slice skews.
-            # 9 of the first 20 rows are emails (0.45 — under the 0.5 threshold),
-            # but nearly the whole 5,000-row list is (0.998 — well over it).
+            # `_policy_identifier` designates this column, so it shows unless the VALUE signal
+            # proves it sensitive.
             "CUSTOMER_REF": (f"user{i}@example.com" if i >= 11 else f"REF-{i}"),
             "LINE_TOTAL": -1.0 * i,
         }
@@ -1074,7 +1005,8 @@ def test_read_time_bound_classifies_over_the_full_list_not_the_capped_slice() ->
 
 def test_read_time_bound_classifies_the_full_partial_list_too() -> None:
     """The same rule on the scalar `partial_unexpected_list` path: `_known_sensitive`
-    judges the tested column over every persisted value, not the emitted window."""
+    judges the tested column over every persisted value, not the emitted window.
+    """
     values = [f"user{i}@example.com" if i >= 11 else f"REF-{i}" for i in range(5_000)]
     out = run_service.redact_sample_failures(
         {"partial_unexpected_list": values, "unexpected_count": 5_000},
@@ -1088,17 +1020,9 @@ def test_read_time_bound_classifies_the_full_partial_list_too() -> None:
 
 
 def test_redact_prefers_persisted_value_signal_summary_over_the_capped_window() -> None:
-    """Since #1196, `unexpected_index_list` is ALREADY capped to `SAMPLE_ROW_CAP` at
-    CAPTURE time for new rows — unlike the #1196-era legacy-row scenario above, there
-    is no larger persisted list here to fall back to; the 20 rows in the DB are all
-    there ever was. `gx_runner` now also persists a `value_signal_summary` alongside
-    those capped rows (#1230), computed over the FULL pre-cap population, so the read
-    path can still classify correctly.
-
-    Only 6 of these 20 capped rows are emails (30%, under the classifier's 50%
-    threshold) — judged on the capped window alone this column would misread as
-    "not PII" and get shown. The persisted summary says the true population was 60%
-    email, which must win.
+    """Since #1196, `unexpected_index_list` is ALREADY capped to `SAMPLE_ROW_CAP` at CAPTURE time
+    for new rows — unlike the #1196-era legacy-row scenario above, there is no larger persisted
+    list here to fall back to; the 20 rows in the DB are all there ever was.
     """
     capped_rows = [
         {"CUSTOMER_REF": (f"user{i}@x.com" if i < 6 else f"REF-{i}"), "QTY": -i}
@@ -1130,17 +1054,10 @@ def test_redact_prefers_persisted_value_signal_summary_over_the_capped_window() 
 
 
 def test_redact_prefers_the_persisted_summary_for_the_scalar_partial_unexpected_list_too() -> None:
-    """Review finding on #1230: the persisted `value_signal_summary` describes the
-    COLUMN, not `unexpected_index_list`'s own contents — so it's equally valid
-    evidence for the sibling scalar `partial_unexpected_list` (GX caps that list to
-    ~20 on every engine; that fact only means the LIST'S OWN population can't grow
-    the summary, not that the summary shouldn't be consulted when redacting it).
-
-    Only 6 of these 20 values are emails (30%, under the 50% threshold) — judged on
-    `partial_unexpected_list` alone this column reads "not PII" and would be shown.
-    The persisted summary (from the sibling `unexpected_index_list`'s full
-    pre-cap population) says the true population was 60% email, which must still
-    win here, exactly as it does for `unexpected_index_list` itself.
+    """Review finding on #1230: the persisted `value_signal_summary` describes the COLUMN, not
+    `unexpected_index_list`'s own contents — so it's equally valid evidence for the sibling
+    scalar `partial_unexpected_list` (GX caps that list to ~20 on every engine; that fact only
+    means the LIST'S OWN population can't grow the summary, not that the summary shouldn'
     """
     scalar_values = [(f"user{i}@x.com" if i < 6 else f"REF-{i}") for i in range(SAMPLE_ROW_CAP)]
     window_ratio = sum("@" in v for v in scalar_values) / SAMPLE_ROW_CAP
@@ -1164,7 +1081,8 @@ def test_redact_prefers_the_persisted_summary_for_the_scalar_partial_unexpected_
 
 def test_redact_prefers_the_persisted_summary_for_dict_shaped_partial_unexpected_list_too() -> None:
     """Same gap, the dict-row branch of `partial_unexpected_list` (multicolumn-style
-    expectations)."""
+    expectations).
+    """
     dict_rows = [
         {"CUSTOMER_REF": (f"user{i}@x.com" if i < 6 else f"REF-{i}")} for i in range(SAMPLE_ROW_CAP)
     ]
@@ -1189,7 +1107,8 @@ def test_redact_falls_back_to_the_capped_window_when_no_summary_is_persisted() -
     """Old rows — written before #1230, or from a non-pandas engine that never had a
     full population to summarise — carry no `value_signal_summary` key at all.
     Classification must fall back to the capped rows exactly as it did before this
-    change, not error and not silently over-mask."""
+    change, not error and not silently over-mask.
+    """
     capped_rows = [{"CUSTOMER_REF": f"REF-{i}", "QTY": -i} for i in range(SAMPLE_ROW_CAP)]
     out = run_service.redact_sample_failures(
         {"unexpected_index_list": capped_rows, "unexpected_count": SAMPLE_ROW_CAP},
@@ -1203,7 +1122,8 @@ def test_redact_falls_back_to_the_capped_window_when_no_summary_is_persisted() -
 def test_redact_ignores_a_malformed_persisted_summary() -> None:
     """A corrupt/hand-edited `value_signal_summary` (missing keys, wrong types) must
     not crash the read path or be trusted as evidence — it falls back to the capped
-    rows exactly like the no-summary case, per `column_classification._valid_summary`."""
+    rows exactly like the no-summary case, per `column_classification._valid_summary`.
+    """
     capped_rows = [{"CUSTOMER_REF": f"REF-{i}", "QTY": -i} for i in range(SAMPLE_ROW_CAP)]
     out = run_service.redact_sample_failures(
         {
@@ -1356,11 +1276,8 @@ def test_redact_datasource_tag_is_a_floor_override_cannot_unmask() -> None:
     assert out == {"unexpected_index_list": [{"ACCOUNT_REF": "<redacted>", "AMOUNT": -1}]}
 
 
-# ── redact_sample_failures_with_state (#424) ──────────────────────────────────
-# The header lied whenever ANY value surfaced after #415's column-aware masking:
-# it always said "values redacted". These test the tri-state summary the read
-# API now derives instead of the frontend sniffing for the "<redacted>" sentinel
-# (which breaks if a genuine value equals it).
+# ── redact_sample_failures_with_state (#424) ────────────────────────────────── The header lied
+# whenever ANY value surfaced after #415's column-aware masking: it always said "values redacted".
 
 
 def test_redact_state_none_for_a_none_sample() -> None:
@@ -1391,9 +1308,8 @@ def test_redact_state_full_when_every_column_masked() -> None:
 
 
 def test_redact_state_full_for_anonymous_masked_scalar_list_with_no_tested_column() -> None:
-    # No tested_column context → the scalar list masks with no column name to
-    # attribute the decision to. The mask must still register as "full" — the
-    # anonymous-masked path must not silently disappear from the summary.
+    # No tested_column context → the scalar list masks with no column name to attribute the decision
+    # to.
     sample, state, cols = run_service.redact_sample_failures_with_state(
         {"partial_unexpected_list": ["a@x.com", "b@y.com"]}
     )
@@ -1403,22 +1319,9 @@ def test_redact_state_full_for_anonymous_masked_scalar_list_with_no_tested_colum
 
 
 def test_redact_state_partial_with_no_nameable_column_from_anonymous_mask() -> None:
-    """#1115 review: an anonymous mask (no nameable column) can coincide with a
-    DIFFERENT column being shown in the SAME rendered list. That combination reports
-    "partial" with an EMPTY `redacted_columns` (there is a real mask, but nothing
-    nameable for it) — the API/frontend must not read empty `redacted_columns` as
-    "nothing was masked" when state is "partial".
-
-    It also pins #1197's guard. This sample renders nothing (a mixed dict/non-dict
-    `unexpected_index_list` fails the frontend's `isIdentifierRows`, and there is no
-    `partial_unexpected_list` to fall back to), so `_displayed_sample_key` returns
-    None and the displayed-list narrowing deliberately does NOT apply: with no winner
-    there is no loser to suppress, and #1115's union semantics stand unchanged. Drop
-    the `displayed_key is not None` guard and this reports None instead of "partial".
-
-    Before #1197 the property was demonstrated with the mask coming from a *different*
-    list (`partial_unexpected_list`) — which is exactly the cross-list accumulation
-    #1197 removed, since that list is not on screen when the index list is."""
+    """#1115 review: an anonymous mask (no nameable column) can coincide with a DIFFERENT column
+    being shown in the SAME rendered list.
+    """
     sample, state, cols = run_service.redact_sample_failures_with_state(
         {
             "unexpected_index_list": [
@@ -1440,12 +1343,7 @@ def test_redact_state_ignores_the_list_the_frontend_does_not_render() -> None:
     renderings of the same failing rows, and the run-detail table shows exactly one —
     the dict-shaped index list when present (#1190). Masking that happens only in the
     list nobody sees must not appear in the label for the table they do see.
-
-    Displayed: one row whose `ORDER_ID` surfaces as an identifier — everything on
-    screen is shown, so the honest claim is "values shown". The scalar
-    `partial_unexpected_list` beside it masks (no `tested_column` to authorise it),
-    which used to drag the label to "partial" over a table with nothing redacted in
-    it."""
+    """
     sample, state, cols = run_service.redact_sample_failures_with_state(
         {
             "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],  # displayed, all shown
@@ -1463,11 +1361,10 @@ def test_redact_state_ignores_the_list_the_frontend_does_not_render() -> None:
 
 
 def test_redact_state_masked_column_stays_named_when_the_other_list_would_show_it() -> None:
-    """The exact undercount #1197 describes: a column that masks in the DISPLAYED
-    index list but classifies as shown from the other list's own sample must still
-    appear in `redacted_columns`. `tested_column` names it in both, so the old
-    cross-list OR flipped it to "shown" and reported "values shown" over a table
-    whose every cell for that column read "<redacted>"."""
+    """The exact undercount #1197 describes: a column that masks in the DISPLAYED index list but
+    classifies as shown from the other list's own sample must still appear in
+    `redacted_columns`.
+    """
     sample, state, cols = run_service.redact_sample_failures_with_state(
         {
             # In the index list the column's own values are emails → PII → masked.
@@ -1488,7 +1385,8 @@ def test_redact_state_masked_column_stays_named_when_the_other_list_would_show_i
 
 def test_redact_state_falls_back_to_the_partial_list_when_no_index_rows_render() -> None:
     """Mirror of the frontend fallback: a non-dict `unexpected_index_list` renders
-    nothing, so `partial_unexpected_list` is the displayed list and sets the label."""
+    nothing, so `partial_unexpected_list` is the displayed list and sets the label.
+    """
     sample, state, cols = run_service.redact_sample_failures_with_state(
         {
             "unexpected_index_list": [1, 4, 7],  # bare positional indices — not rows
@@ -1504,17 +1402,7 @@ def test_redact_state_falls_back_to_the_partial_list_when_no_index_rows_render()
 
 
 def test_displayed_list_is_decided_on_the_capped_rows_the_frontend_receives() -> None:
-    """#1238 review: the winner must be picked from the same rows the UI tests.
-
-    The read path re-applies `SAMPLE_ROW_CAP` (#1196), so a payload whose first
-    `SAMPLE_ROW_CAP` `unexpected_index_list` entries are dicts but which carries a
-    non-dict beyond the cap ships an ALL-dict list to the frontend — which therefore
-    renders it. Deciding on the uncapped list would call `partial_unexpected_list`
-    the displayed one and suppress the tracker on the table actually on screen: this
-    fix's own bug, inverted.
-
-    Here the displayed index list masks `CUSTOMER_REF` (its values are emails) while
-    the scalar list would show it, so the two answers are distinguishable."""
+    """#1238 review: the winner must be picked from the same rows the UI tests."""
     rows: list[Any] = [{"CUSTOMER_REF": f"a{i}@x.com"} for i in range(SAMPLE_ROW_CAP)]
     rows.append("not-a-row")  # beyond the cap — never reaches the frontend
     sample, state, cols = run_service.redact_sample_failures_with_state(
@@ -1584,9 +1472,8 @@ def test_redact_state_partial_across_comparison_buckets() -> None:
 
 
 def test_redact_state_a_column_shown_anywhere_counts_as_shown() -> None:
-    # A column masked in one bucket but shown in another (rare, but the buckets are
-    # independent) must not report as "redacted" — OR-of-shown matches what a
-    # viewer actually saw somewhere in the sample.
+    # A column masked in one bucket but shown in another (rare, but the buckets are independent)
+    # must not report as "redacted".
     tracker = run_service._RedactionTracker()
     tracker.record("QTY", shown=False)
     tracker.record("QTY", shown=True)
@@ -1595,17 +1482,13 @@ def test_redact_state_a_column_shown_anywhere_counts_as_shown() -> None:
     assert cols == []
 
 
-# ── #1115 review: the catch-all masked branches must also register with the
-# tracker, or `summary()` UNDER-claims redaction — the mirror image of the bug
-# #424 fixed. Unreachable with today's two writers (gx_runner / comparison_run
-# only ever emit the recognized keys/shapes), but these are public helpers, so
-# an unrecognized key or a malformed row shape must not silently vanish.
+# ── #1115 review: the catch-all masked branches must also register with the tracker, or `summary()`
+# UNDER-claims redaction — the mirror image of the bug #424 fixed.
 
 
 def test_redact_state_full_for_an_unrecognized_key_with_no_column_context() -> None:
-    # A key the redactor doesn't recognize is masked (default-mask, #415) but has
-    # no column name to attribute the mask to — must still register as a real
-    # (anonymous) mask, not "nothing happened".
+    # A key the redactor doesn't recognize is masked (default-mask, #415) but has no column name to
+    # attribute the mask to — must still register as a real (anonymous) mask.
     sample, state, cols = run_service.redact_sample_failures_with_state(
         {"some_future_bucket": ["secret@x.com"]}
     )
@@ -1630,9 +1513,8 @@ def test_redact_state_partial_when_unrecognized_key_masks_alongside_a_shown_colu
 
 
 def test_redact_state_full_for_a_malformed_non_dict_row_in_index_list() -> None:
-    # `unexpected_index_list` is documented as row-dicts; a malformed non-dict
-    # entry still masks (via `_redact_row`'s non-dict fallback) but has no column
-    # identity — must still register as an anonymous mask.
+    # `unexpected_index_list` is documented as row-dicts; a malformed non-dict entry still masks
+    # (via `_redact_row`'s non-dict fallback) but has no column identity.
     sample, state, cols = run_service.redact_sample_failures_with_state(
         {"unexpected_index_list": ["not-a-row-dict"]}
     )
@@ -1667,7 +1549,8 @@ def test_redact_observed_value_passes_through_when_there_is_no_cell() -> None:
 def test_redact_observed_value_shows_a_non_sensitive_cell() -> None:
     """The diagnostic is the whole point: "your timestamp column has junk in it" is
     unactionable without the junk. A freshness column is the analogue of the tested
-    column in a failing sample, so it shows unless *known* sensitive."""
+    column in a failing sample, so it shows unless *known* sensitive.
+    """
     out = run_service.redact_observed_value(
         {
             "error": "…not a parseable timestamp",
@@ -1682,7 +1565,8 @@ def test_redact_observed_value_masks_a_policy_pii_cell() -> None:
     """The case #989 exists for. Before this, a freshness monitor pointed at a
     column the user had declared PII echoed that column's value into
     `results.observed_value` and out to the UI, alerts and MCP — bypassing the
-    redaction machinery that exists for exactly this."""
+    redaction machinery that exists for exactly this.
+    """
     out = run_service.redact_observed_value(
         {"unparsed_value": "not-a-date", "column": "email"},
         policy={"pii_columns": ["email"]},
@@ -1692,7 +1576,8 @@ def test_redact_observed_value_masks_a_policy_pii_cell() -> None:
 
 def test_redact_observed_value_masks_on_a_governance_tag_too() -> None:
     """Tags are the floor authority — a datasource-tagged column masks even with no
-    suite policy set, matching `redact_sample_failures`."""
+    suite policy set, matching `redact_sample_failures`.
+    """
     out = run_service.redact_observed_value(
         {"unparsed_value": "not-a-date", "column": "ssn"},
         tags={"ssn": "pii"},
@@ -1703,7 +1588,8 @@ def test_redact_observed_value_masks_on_a_governance_tag_too() -> None:
 def test_redact_observed_value_masks_when_the_column_is_unknown() -> None:
     """No column name means no way to consult the policy, so there is no basis to
     show the cell. Fail closed — the same default the sample path takes when it has
-    no tested-column context."""
+    no tested-column context.
+    """
     out = run_service.redact_observed_value({"unparsed_value": "not-a-date", "column": None})
     assert out is not None and out["unparsed_value"] != "not-a-date"
 
@@ -1719,10 +1605,8 @@ def test_redact_observed_value_shows_a_non_sensitive_scalar() -> None:
 
 
 def test_redact_observed_value_masks_a_scalar_for_a_pii_tested_column() -> None:
-    # #1482: a scalar observed_value is a real cell (max/min report the largest/
-    # smallest value IN the column), so it must mask under the same known-
-    # sensitive authority as the list branch — verified directly against the
-    # repro in the issue, not inferred from the list case alone.
+    # #1482: a scalar observed_value is a real cell (max/min report the largest/ smallest value IN
+    # the column), so it must mask under the same known- sensitive authority as the list branch.
     out = run_service.redact_observed_value(
         {"observed_value": "ada@example.com"},
         tested_column="email",
@@ -1743,10 +1627,8 @@ def test_redact_observed_value_masks_a_numeric_scalar_for_a_pii_tested_column() 
 
 
 def test_redact_observed_value_shows_a_table_level_scalar_with_no_tested_column() -> None:
-    # A table-level aggregate (a row count) has no tested_column at all — no
-    # column context means nothing to classify, so it passes through. This is
-    # the opposite default from the list branch (there, no context masks) because
-    # here the value isn't attributable to any column in the first place.
+    # A table-level aggregate (a row count) has no tested_column at all — no column context means
+    # nothing to classify, so it passes through.
     out = run_service.redact_observed_value({"observed_value": 34680})
     assert out == {"observed_value": 34680}
 
@@ -1765,9 +1647,8 @@ def test_observed_value_exposes_cells_ignores_a_measurement_scalar() -> None:
 
 
 def test_observed_value_exposes_cells_ignores_an_unclassified_expectation_type() -> None:
-    # No expectation_type context (a caller not yet passing it, or a deleted
-    # check) must not start treating every scalar as a cell — same conservative
-    # default as before #1486.
+    # No expectation_type context (a caller not yet passing it, or a deleted check) must not start
+    # treating every scalar as a cell — same conservative default as before #1486.
     assert run_service.observed_value_exposes_cells({"observed_value": "x@y.com"}) is False
 
 
@@ -1802,9 +1683,8 @@ def test_redact_observed_value_surfaces_a_non_pii_tested_columns_set() -> None:
 
 
 def test_redact_observed_value_masks_a_pii_tested_columns_set_by_name_heuristic() -> None:
-    # This is the exact exposure #1229 exists to close: expect_column_distinct_
-    # values_to_be_in_set on a high-cardinality email column persisted every
-    # distinct value it ever saw, unredacted.
+    # This is the exact exposure #1229 exists to close: expect_column_distinct_ values_to_be_in_set
+    # on a high-cardinality email column persisted every distinct value it ever saw, unredacted.
     out = run_service.redact_observed_value(
         {"observed_value": ["a@x.com", "b@y.com"]},
         tested_column="CUSTOMER_EMAIL",
@@ -1829,9 +1709,8 @@ def test_redact_observed_value_masks_a_set_with_no_tested_column() -> None:
 
 
 def test_redact_observed_value_re_caps_a_legacy_uncapped_set_at_read_time() -> None:
-    # A result persisted BEFORE the capture-time cap (#1229) existed must not keep
-    # shipping an unbounded payload on every read — same read-time re-cap reasoning
-    # `redact_sample_failures` already applies (#1196).
+    # A result persisted BEFORE the capture-time cap (#1229) existed must not keep shipping an
+    # unbounded payload on every read.
     values = [f"cust-{i}" for i in range(5_000)]
     out = run_service.redact_observed_value(
         {"observed_value": values},
@@ -1843,10 +1722,8 @@ def test_redact_observed_value_re_caps_a_legacy_uncapped_set_at_read_time() -> N
 
 
 def test_redact_observed_value_classifies_over_the_full_list_not_just_the_cap() -> None:
-    # Bounding what is emitted must never widen what is examined: if the PII
-    # signal only shows up after the first SAMPLE_ROW_CAP entries, the column must
-    # still mask — judging a legacy oversized sample on only its first 20 rows
-    # could otherwise flip a column from PII to shown.
+    # Bounding what is emitted must never widen what is examined: if the PII signal only shows up
+    # after the first SAMPLE_ROW_CAP entries, the column must still mask.
     safe_prefix = [f"id-{i}" for i in range(SAMPLE_ROW_CAP)]
     pii_tail = [f"user{i}@example.com" for i in range(500)]
     out = run_service.redact_observed_value(
@@ -1862,7 +1739,8 @@ def test_redact_observed_value_classifies_over_the_full_list_not_just_the_cap() 
 
 def test_a_sampled_outcome_is_persisted_on_the_result_row() -> None:
     """The acceptance criterion's storage half: a check that passed on a sample
-    must SAY so on the row a reader can query, not only in a worker log line."""
+    must SAY so on the row a reader can query, not only in a worker log line.
+    """
     session = FakeSession()
     run = _run()
     checks = _checks(1)
@@ -1888,7 +1766,8 @@ def test_a_sampled_outcome_is_persisted_on_the_result_row() -> None:
 def test_an_unsampled_outcome_leaves_the_column_null() -> None:
     """`None`, not a `sampled: false` record — so "complete read" is one shape for
     a suite that never opted in and for every row written before the column
-    existed, and a reader can branch on presence alone."""
+    existed, and a reader can branch on presence alone.
+    """
     session = FakeSession()
     runner = FakeRunner(
         SuiteOutcome(success=True, checks=[CheckOutcome(expectation_type="x", success=True)])
@@ -1902,7 +1781,8 @@ def test_an_unsampled_outcome_leaves_the_column_null() -> None:
 def test_an_errored_check_still_records_that_the_read_was_sampled() -> None:
     """The errored branch drops `observed_value` and the sample because neither
     exists for a check that never evaluated — but "this run was reading a sample"
-    is still true of the read that failed, and is often the explanation."""
+    is still true of the read that failed, and is often the explanation.
+    """
     session = FakeSession()
     record = {
         "strategy": "random",
@@ -1933,12 +1813,9 @@ def test_an_errored_check_still_records_that_the_read_was_sampled() -> None:
 
 
 def test_a_scan_refusal_surfaces_its_own_message_not_the_generic_classification() -> None:
-    """`classify_failure_reason` exists because a driver exception can echo a DSN
-    or a cell value (#605). `ScanTooLargeError` is DataQ's own sentence, built
-    from the user's run target and two settings integers — classifying it would
-    replace the single most actionable message in the feature ("this file is over
-    the cap, set a sampling strategy") with "see the server logs", which is
-    exactly the undiagnosable outcome #755 already produces."""
+    """`classify_failure_reason` exists because a driver exception can echo a DSN or a cell value
+    (#605).
+    """
     session = FakeSession()
     run = _run()
     runner = FakeRunner(
@@ -1959,7 +1836,8 @@ def test_a_scan_refusal_surfaces_its_own_message_not_the_generic_classification(
 def test_every_other_exception_is_still_classified() -> None:
     """The narrow `isinstance` must stay narrow: a driver error keeps its fixed,
     secret-free message. Pinned beside the exemption so widening the redaction
-    contract cannot happen silently."""
+    contract cannot happen silently.
+    """
     session = FakeSession()
     run = _run()
     runner = FakeRunner(raises=RuntimeError("login failed for user 'svc' at acct.example"))
@@ -1978,7 +1856,8 @@ def test_elapsed_ms_clamps_a_backwards_clock_to_zero() -> None:
     """`started_at` is written by the WORKER and `now()` is read in the API
     process, so a small clock difference between the two can put the start in the
     future. That must read as "0 ms so far", never as a negative age the UI would
-    render as `-00:03` — the display honesty rule, applied to a clock."""
+    render as `-00:03` — the display honesty rule, applied to a clock.
+    """
     run = _run()
     run.started_at = datetime.now(UTC) + timedelta(seconds=5)
     run.finished_at = None
@@ -1988,7 +1867,8 @@ def test_elapsed_ms_clamps_a_backwards_clock_to_zero() -> None:
 
 def test_elapsed_ms_reads_a_naive_timestamp_as_utc_instead_of_raising() -> None:
     """Everything DataQ writes is tz-aware, but a read model must not 500 on a row
-    that isn't (a hand-inserted row, a restore from a naive dump)."""
+    that isn't (a hand-inserted row, a restore from a naive dump).
+    """
     run = _run()
     run.started_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=30)
     run.finished_at = None

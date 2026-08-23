@@ -62,9 +62,8 @@ describe('AssetHealthLead (#773)', () => {
       page([
         asset({ id: 'a1', name: 'HEALTHY.ORDERS' }),
         asset({ id: 'a2', name: 'FAILING.ORDERS', worst_severity: 'fail' }),
-        // A run that failed operationally: the backend rolls that up as BOTH a
-        // failed run and an operational error (the #803 connection axis), and it
-        // still "needs attention" — DataQ couldn't evaluate the asset at all.
+        // A run that failed operationally: the backend rolls that up as BOTH a failed run and an
+        // operational error (the #803 connection axis), and it still "needs attention".
         asset({
           id: 'a3',
           name: 'RUNFAIL.ORDERS',
@@ -153,9 +152,8 @@ describe('AssetHealthLead (#773)', () => {
   });
 
   it('flags a truncated fetch using the real X-Total-Count total, with "of N" (#925)', async () => {
-    // 200 fetched (the old page-size cap) but the workspace actually has 240 —
-    // exactly the shape #925 fixes: the old heuristic (fetched >= 200) couldn't
-    // tell "capped at 200, more exist" apart from "workspace has exactly 200".
+    // 200 fetched (the old page-size cap) but the workspace actually has 240 — exactly the shape
+    // #925 fixes: the old heuristic (fetched >= 200) couldn't tell "capped at 200.
     mockListAssets.mockResolvedValue(
       page(
         Array.from({ length: 200 }, (_, i) => asset({ id: `a${i}`, name: `T.ASSET_${i}` })),
@@ -173,9 +171,8 @@ describe('AssetHealthLead (#773)', () => {
   });
 
   it('shows no truncation note when the fetch covers the whole workspace, even exactly at 200', async () => {
-    // #925 regression: total === fetched (workspace really does have exactly
-    // 200 assets) must NOT be reported as truncated — the old `>= LIST_CAP`
-    // heuristic would have flagged this false positive.
+    // #925 regression: total === fetched (workspace really does have exactly 200 assets) must NOT
+    // be reported as truncated.
     mockListAssets.mockResolvedValue(
       page(
         Array.from({ length: 200 }, (_, i) => asset({ id: `a${i}`, name: `T.ASSET_${i}` })),

@@ -1,30 +1,8 @@
 # AWS WAF on the CloudFront distribution (#1388).
-#
-# WHAT THIS IS FOR, precisely: the app's own rate limiter (ADR 0035) counts in
-# Redis, INSIDE the request path — every request it rejects has already crossed
-# CloudFront, the ALB, nginx and FastAPI, and cost a Redis round trip. It is also
-# deliberately fail-OPEN: when the store is unavailable it allows everything and
-# logs once, so the exact pressure most likely to hurt Redis is the pressure that
-# switches enforcement off. That is the right trade for a data-quality API (a
-# Redis blip must not black-hole the product), but it means there is no layer
-# that sheds load *before* it reaches the origin.
-#
-# This ACL is that layer. It is not a replacement for the app limiter — the app
-# limiter is per-token and per-provider and understands DataQ's classes; this is
-# a blunt per-IP ceiling an order of magnitude above it, sized to catch floods,
-# not to shape normal traffic.
-#
-# COST: a Web ACL is ~$5/month + ~$1/rule/month + ~$0.60 per million requests.
-# That is real money on a deployment whose whole point is being cheap, so this
-# stack keeps exactly two rules and no managed rule groups (those are ~$10-20/mo
-# each). `waf_enabled = false` removes the ACL entirely.
 
 locals {
   # Deliberately far above the app limiter's per-IP unauthenticated class
-  # (RATE_LIMIT_UNAUTHENTICATED_PER_MINUTE = 120/min): WAF's window is 5 minutes
-  # and its job is to stop a flood, not to duplicate policy. 120/min of legitimate
-  # traffic = 600 per 5 min, so the default leaves >3x headroom before WAF ever
-  # sees a request the app would have allowed.
+  # (RATE_LIMIT_UNAUTHENTICATED_PER_MINUTE = 120/min): WAF's window is 5 minutes and its job is to
   waf_rate_limit_5min = var.waf_rate_limit_per_5min
 }
 
@@ -40,14 +18,8 @@ resource "aws_wafv2_web_acl" "app" {
     allow {}
   }
 
-  # ── Rule 1: per-IP rate ceiling ────────────────────────────────────────────
-  # Counts requests per source IP over a trailing 5-minute window and blocks the
-  # offender until it drops back under. `FORWARDED_IP` is NOT used: the viewer
-  # address CloudFront sees is already the true client, and trusting a forwarded
-  # header at the edge would let an attacker pick their own bucket by sending a
-  # fabricated X-Forwarded-For — the same spoofing concern the app limiter
-  # handles with a fixed trusted-hop depth, except here there are no trusted hops
-  # in front of us at all.
+  # ── Rule 1: per-IP rate ceiling ──────────────────────────────────────────── Counts requests per
+  # source IP over a trailing 5-minute window and blocks the offender until it drops back under.
   rule {
     name     = "per-ip-rate-limit"
     priority = 1
@@ -70,27 +42,8 @@ resource "aws_wafv2_web_acl" "app" {
     }
   }
 
-  # ── Rule 2: oversized request bodies ───────────────────────────────────────
-  # DataQ's write surface is JSON — suites, checks, connection configs, custom
-  # SQL. None of it is megabytes. A body far above that is either a mistake or
-  # someone probing for a parser limit, and rejecting it at the edge keeps it
-  # away from FastAPI's validation entirely. (nginx's own 1MB `client_max_body_size`
-  # is the existing backstop; this is the tighter, earlier one.)
-  #
-  # TWO calibration facts, both learned the hard way in review:
-  #
-  # 1. WAF inspects at most 16KB of a CloudFront-scoped body. A threshold at or
-  #    above that can never match, so the rule would sit in the console looking
-  #    enabled while enforcing nothing — `waf_max_body_bytes` is range-validated
-  #    in variables.tf precisely so that state is unreachable.
-  #
-  # 2. `POST /api/v1/suites/import` is genuinely unbounded-ish: it carries a whole
-  #    suite (every check's config, name, description, custom SQL). A 30-check
-  #    export plausibly clears 8KB, and a block here happens AT THE EDGE — the
-  #    request never reaches the origin, so there is no application log, no
-  #    request id, and no error the user can report usefully. A security control
-  #    whose false positive is invisible is worse than one slightly wider, so the
-  #    import path is scoped out and left to nginx's 1MB cap.
+  # ── Rule 2: oversized request bodies ─────────────────────────────────────── DataQ's write
+  # surface is JSON — suites, checks, connection configs, custom SQL.
   rule {
     name     = "oversized-body"
     priority = 2
@@ -108,9 +61,8 @@ resource "aws_wafv2_web_acl" "app" {
 
             field_to_match {
               body {
-                # A body larger than WAF can inspect is CONTINUEd rather than
-                # silently treated as empty — combined with GT this means an
-                # over-limit body still matches the rule instead of sailing past it.
+                # A body larger than WAF can inspect is CONTINUEd rather than silently treated as
+                # empty.
                 oversize_handling = "CONTINUE"
               }
             }

@@ -141,7 +141,8 @@ def test_get_current_user_real_upserts_from_claims(db_session: Any) -> None:
 
 def test_upsert_seeds_display_name_on_first_login(db_session: Any) -> None:
     """A brand-new row has no override yet, so the AAD claim seeds a real name
-    instead of leaving a bare email to render in shares/admin lists."""
+    instead of leaving a bare email to render in shares/admin lists.
+    """
     claims = {
         "oid": "44444444-5555-6666-7777-888888888888",
         "upn": "named@example.com",
@@ -157,12 +158,6 @@ def test_upsert_preserves_a_patch_me_override_across_relogin(db_session: Any) ->
     the JWT is re-validated and re-claimed each time), so a `PATCH /me` override
     must survive the user's very next request rather than being silently
     re-synced back to the AAD token's `name` claim.
-
-    The override is set through the real service call (`user_service.
-    update_display_name`, what the PATCH handler calls) — not by hand-setting
-    the column — so this pins the actual mechanism (`display_name_override`,
-    migration 6230293aea96), not an incidental side effect of some other
-    field's nullability.
     """
     claims = {
         "oid": "55555555-6666-7777-8888-999999999999",
@@ -184,7 +179,8 @@ def test_upsert_syncs_an_aad_rename_when_there_is_no_override(db_session: Any) -
     """The other direction of the same invariant — the one a bare COALESCE
     could never satisfy (#1139 review): nobody has ever explicitly set this
     person's name, so a legitimate rename in the directory (a new `name` claim
-    on a later login) must still land."""
+    on a later login) must still land.
+    """
     claims = {
         "oid": "66666666-7777-8888-9999-aaaaaaaaaaaa",
         "upn": "renamed@example.com",
@@ -238,7 +234,8 @@ def test_get_current_user_real_401_without_any_credential(db_session: Any) -> No
 
 def test_get_current_user_real_bad_pat_never_falls_through_to_azure(db_session: Any) -> None:
     """A dq_live_ bearer is decided by the PAT branch alone — even alongside a
-    (hypothetically) valid Azure identity, a bad PAT is a uniform 401."""
+    (hypothetically) valid Azure identity, a bad PAT is a uniform 401.
+    """
     azure_user = _azure_user({"oid": "33333333-4444-5555-6666-777777777777", "upn": "a@b.io"})
     with pytest.raises(DataQError) as excinfo:
         auth_mod._get_current_user_real(
@@ -326,7 +323,8 @@ def test_discover_jwks_uri_reads_the_oidc_discovery_document(
 ) -> None:
     """Shared by both `OidcBearerScheme.load_config` (async, via `asyncio.to_thread`)
     and `mcp.auth.build_auth_provider` (genuinely sync, import-time) — one
-    implementation, tested once, here."""
+    implementation, tested once, here.
+    """
 
     def fake_get(url: str, timeout: float) -> httpx.Response:
         assert url == "https://example-idp.test/.well-known/openid-configuration"
@@ -400,14 +398,10 @@ def test_get_current_user_generic_oidc_401_without_any_credential(db_session: An
     assert excinfo.value.status_code == 401
 
 
-# ── OIDC access allowlist (#1386) ────────────────────────────────────────────
-# The defect being pinned: a valid token from the issuer was sufficient to be
-# auto-provisioned a DataQ account, so a self-signup-enabled IdP (the AWS
-# Cognito pool, as shipped) let anyone on the internet in.
+# ── OIDC access allowlist (#1386) ──────────────────────────────────────────── The defect being
+# pinned: a valid token from the issuer was sufficient to be auto-provisioned a DataQ account.
 
-# Both generic-OIDC dependencies must be gated. They had byte-identical bodies,
-# so a gate added to one and missed on the other is the realistic regression —
-# hence parametrizing over both rather than testing the primary one twice.
+# Both generic-OIDC dependencies must be gated.
 _OIDC_DEPS = pytest.mark.parametrize(
     "dependency",
     [auth_mod._get_current_user_generic_oidc, auth_mod._get_current_user_generic_oidc_or_otp],
@@ -438,7 +432,8 @@ def test_oidc_allowlist_denial_provisions_no_user_row(
     db_session: Any, monkeypatch: pytest.MonkeyPatch, dependency: Any
 ) -> None:
     """The point of the gate is that the row never appears — a 403 that still
-    inserted would leave the account behind for any later path to resolve."""
+    inserted would leave the account behind for any later path to resolve.
+    """
     monkeypatch.setattr(auth_mod, "_settings", _oidc_settings(oidc_allowed_domains="example.com"))
     with pytest.raises(DataQError):
         dependency(
@@ -480,7 +475,8 @@ def test_oidc_allowlist_matches_case_insensitively_and_ignores_surrounding_space
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The allowlist and the token must normalize identically, or a capitalised
-    claim silently reads as ineligible against a lower-cased list."""
+    claim silently reads as ineligible against a lower-cased list.
+    """
     monkeypatch.setattr(
         auth_mod, "_settings", _oidc_settings(oidc_allowed_emails=" Invited@Example.COM , x@y.z ")
     )
@@ -496,7 +492,8 @@ def test_oidc_allowlist_tolerates_an_at_prefixed_domain_entry(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`@acme.io` is what an operator naturally writes; if it did not match, the
-    allowlist would reject everyone while looking correctly configured."""
+    allowlist would reject everyone while looking correctly configured.
+    """
     monkeypatch.setattr(auth_mod, "_settings", _oidc_settings(oidc_allowed_domains="@example.com"))
     user = auth_mod._get_current_user_generic_oidc(
         _request(),
@@ -511,7 +508,8 @@ def test_oidc_allowlist_unset_admits_everyone(
 ) -> None:
     """The documented default. Fail-OPEN here is deliberate (a fail-closed default
     would lock an existing workspace out on a routine image bump) — pinned so the
-    default can never be flipped silently in either direction."""
+    default can never be flipped silently in either direction.
+    """
     settings = _oidc_settings()
     assert settings.oidc_allowlist_configured is False
     monkeypatch.setattr(auth_mod, "_settings", settings)
@@ -527,7 +525,8 @@ def test_oidc_allowlist_revokes_an_already_provisioned_user(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Gating only the INSERT would let an identity provisioned while the list was
-    open keep its access forever — the list would grant but never revoke."""
+    open keep its access forever — the list would grant but never revoke.
+    """
     monkeypatch.setattr(auth_mod, "_settings", _oidc_settings())
     existing = auth_mod._get_current_user_generic_oidc(
         _request(),
@@ -551,7 +550,8 @@ def test_oidc_allowlist_denies_a_token_carrying_no_email(
 ) -> None:
     """Cognito access tokens carry no `email` — it is filled from the userinfo
     endpoint (#1346). If that round-trip fails the claim is empty, and an empty
-    address must not slip past a configured allowlist."""
+    address must not slip past a configured allowlist.
+    """
     monkeypatch.setattr(auth_mod, "_settings", _oidc_settings(oidc_allowed_domains="example.com"))
     with pytest.raises(DataQError) as excinfo:
         auth_mod._get_current_user_generic_oidc(
@@ -564,7 +564,8 @@ def test_oidc_allowlist_does_not_gate_pat_authentication(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A PAT is resolved before any OIDC claim exists, so the gate must not reach
-    it — otherwise turning the allowlist on would break every MCP/API client."""
+    it — otherwise turning the allowlist on would break every MCP/API client.
+    """
     user, token = _user_with_pat(db_session)
     monkeypatch.setattr(
         auth_mod, "_settings", _oidc_settings(oidc_allowed_emails="someone-else@example.com")
@@ -580,7 +581,8 @@ def test_azure_login_writes_the_deterministic_azure_issuer(
 ) -> None:
     """Self-healing (model docstring): every real-mode login — Azure included —
     now writes `oidc_issuer`, so pre-existing rows pick up an accurate value on
-    their next sign-in instead of needing a backfill."""
+    their next sign-in instead of needing a backfill.
+    """
     monkeypatch.setattr(auth_mod, "_AZURE_ISSUER", "https://login.microsoftonline.com/tenant/v2.0")
     user = auth_mod._get_current_user_real(
         _request(),
@@ -631,16 +633,10 @@ def _mock_oidc_transport(jwks: dict[str, Any], issuer: str) -> httpx.MockTranspo
 async def _loaded_scheme(
     monkeypatch: pytest.MonkeyPatch, issuer: str, jwks: dict[str, Any]
 ) -> auth_mod.OidcBearerScheme:
-    """An `OidcBearerScheme` with `load_config()` already run against mocked HTTP.
-
-    Discovery (`discover_jwks_uri`, shared with `mcp.auth`) is a synchronous,
-    module-level `httpx.get` call — patched here — separately from the JWKS
-    fetch itself, which goes through the scheme's own async `_client`.
-    """
+    """An `OidcBearerScheme` with `load_config()` already run against mocked HTTP."""
     scheme = auth_mod.OidcBearerScheme(issuer=issuer, audience="dataq-client-id")
-    # `httpx` here is the SAME module object `core.auth` imported (module identity,
-    # not a copy), so patching `.get` on it is visible to `discover_jwks_uri`
-    # inside `core.auth` too.
+    # `httpx` here is the SAME module object `core.auth` imported (module identity, not a copy), so
+    # patching `.get` on it is visible to `discover_jwks_uri` inside `core.auth` too.
     monkeypatch.setattr(
         httpx,
         "get",
@@ -696,7 +692,8 @@ async def test_oidc_scheme_accepts_cognito_style_client_id_claim(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """AWS Cognito access tokens carry `client_id`, not the standard `aud` — the
-    one deliberately provider-aware accommodation (class docstring)."""
+    one deliberately provider-aware accommodation (class docstring).
+    """
     issuer = "https://example-idp.test"
     private_key, public_jwk = _rsa_keypair()
     scheme = await _loaded_scheme(monkeypatch, issuer, {"keys": [public_jwk]})
@@ -719,7 +716,8 @@ async def test_oidc_scheme_rejects_a_token_signed_by_the_wrong_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The actual signature-verification path, not just claim shape — a token
-    signed by a DIFFERENT key than the one published in the JWKS must fail."""
+    signed by a DIFFERENT key than the one published in the JWKS must fail.
+    """
     issuer = "https://example-idp.test"
     _legit_key, public_jwk = _rsa_keypair()
     forged_key, _forged_jwk = _rsa_keypair()
@@ -758,7 +756,8 @@ async def test_oidc_scheme_refreshes_jwks_once_on_an_unknown_kid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A provider that rotated its signing keys since the last fetch: one
-    refresh-and-retry, mirroring OpenBao's single-retry discipline."""
+    refresh-and-retry, mirroring OpenBao's single-retry discipline.
+    """
     issuer = "https://example-idp.test"
     private_key, public_jwk = _rsa_keypair()
     scheme = auth_mod.OidcBearerScheme(issuer=issuer, audience="dataq-client-id")
@@ -847,7 +846,8 @@ async def test_oidc_scheme_returns_none_when_the_refreshed_jwks_still_lacks_the_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A `kid` that genuinely doesn't exist anywhere — not a rotation, a bad
-    token — must fail after the one refresh-and-retry, not loop or raise."""
+    token — must fail after the one refresh-and-retry, not loop or raise.
+    """
     issuer = "https://example-idp.test"
     _private_key, public_jwk = _rsa_keypair()
     other_key, _other_jwk = _rsa_keypair()
@@ -866,7 +866,8 @@ async def test_oidc_scheme_verify_returns_none_when_jwks_refresh_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A network failure mid-refresh must degrade to the standard 401, not an
-    unhandled exception out of a FastAPI dependency."""
+    unhandled exception out of a FastAPI dependency.
+    """
     issuer = "https://example-idp.test"
     scheme = auth_mod.OidcBearerScheme(issuer=issuer, audience="dataq-client-id")
 
@@ -889,11 +890,8 @@ async def test_oidc_scheme_verify_returns_none_when_jwks_refresh_fails(
     assert await scheme._verify(token) is None
 
 
-# ── OidcBearerScheme: userinfo fallback (#1346) ──────────────────────────────
-#
-# Cognito access tokens carry no `email`/`name`; the scheme resolves them from
-# the issuer's userinfo endpoint. These tests drive the REAL verify path with
-# signed tokens — only HTTP is mocked.
+# ── OidcBearerScheme: userinfo fallback (#1346) ────────────────────────────── Cognito access
+# tokens carry no `email`/`name`; the scheme resolves them from the issuer's userinfo endpoint.
 
 
 @pytest.fixture(autouse=True)
@@ -991,7 +989,8 @@ async def test_oidc_scheme_userinfo_outage_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An unreachable userinfo endpoint is a 401, never an empty-email upsert —
-    provisioning email='' poisons the row (uq_users_email_lower)."""
+    provisioning email='' poisons the row (uq_users_email_lower).
+    """
     issuer = "https://example-idp.test"
     private_key, public_jwk = _rsa_keypair()
     scheme, _transport = await _scheme_with_userinfo(
@@ -1004,7 +1003,8 @@ async def test_oidc_scheme_userinfo_sub_mismatch_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """OIDC Core 5.3.2: userinfo describing a DIFFERENT subject must fail the
-    sign-in, not mint a user row from mixed identities."""
+    sign-in, not mint a user row from mixed identities.
+    """
     issuer = "https://example-idp.test"
     private_key, public_jwk = _rsa_keypair()
     scheme, _transport = await _scheme_with_userinfo(
@@ -1065,7 +1065,8 @@ async def test_oidc_scheme_no_userinfo_endpoint_proceeds_with_token_claims(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`userinfo_endpoint` is RECOMMENDED, not required — a provider without one
-    still authenticates; the token's own claims are all there is."""
+    still authenticates; the token's own claims are all there is.
+    """
     issuer = "https://example-idp.test"
     private_key, public_jwk = _rsa_keypair()
     # The original helper's discovery has NO userinfo_endpoint.
@@ -1117,7 +1118,8 @@ def test_fetch_userinfo_fetches_then_serves_from_cache(
 
 def test_userinfo_cache_never_stores_the_raw_token() -> None:
     """The cache key is a hash — the bearer itself must not sit in a long-lived
-    module dict (same posture as api_key_service's hashed lookup)."""
+    module dict (same posture as api_key_service's hashed lookup).
+    """
     auth_mod._userinfo_cache_put("raw-bearer-token", {"sub": "s"})
     assert "raw-bearer-token" not in auth_mod._userinfo_cache
     assert auth_mod._userinfo_cache_get("raw-bearer-token") == {"sub": "s"}
@@ -1136,7 +1138,8 @@ async def test_oidc_scheme_userinfo_malformed_200_fails_closed(
     """A 200 whose body is not a JSON object (proxy error page, JSON null,
     signed-JWT userinfo) is the same fail-closed 401 as an outage — never an
     unhandled decode error escaping the auth path as a 500 (#567 class;
-    /code-review finding on #1350)."""
+    /code-review finding on #1350).
+    """
     issuer = "https://example-idp.test"
     private_key, public_jwk = _rsa_keypair()
     scheme, _transport = await _scheme_with_userinfo(
@@ -1150,7 +1153,8 @@ def test_fetch_userinfo_memoizes_discovery_per_issuer(
 ) -> None:
     """A provider with NO userinfo endpoint caches nothing per-token, so without
     discovery memoization every call re-fetched the (static) discovery document
-    (/code-review finding on #1350)."""
+    (/code-review finding on #1350).
+    """
     discovery_calls: list[str] = []
 
     def fake_get(url: str, **kwargs: Any) -> httpx.Response:
@@ -1169,7 +1173,8 @@ def test_fetch_userinfo_malformed_200_raises_value_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The sync (MCP) path surfaces a non-object 200 as ValueError, which
-    resolve_current_user converts to McpAuthError — never an unhandled crash."""
+    resolve_current_user converts to McpAuthError — never an unhandled crash.
+    """
 
     def fake_get(url: str, **kwargs: Any) -> httpx.Response:
         if "well-known" in url:
@@ -1188,7 +1193,8 @@ def test_fetch_userinfo_malformed_200_raises_value_error(
 def test_denied_identity_names_the_caller_without_logging_the_address() -> None:
     """`email=` would be swallowed by `_PII_KEYS`, and the 403 body deliberately
     doesn't echo the address — so if this helper also said nothing, a
-    misconfigured allowlist would be undiagnosable from every surface at once."""
+    misconfigured allowlist would be undiagnosable from every surface at once.
+    """
     fields = auth_mod._denied_identity("Someone@Example.com")
     assert fields["email_domain"] == "example.com"
     # Stable (so repeated denials correlate) but not the address itself.
@@ -1203,7 +1209,8 @@ def test_denied_identity_names_the_caller_without_logging_the_address() -> None:
 
 def test_denied_identity_handles_an_address_with_no_domain() -> None:
     """An empty/garbled `email` claim reaches here (userinfo outage, #1346), and
-    the log line must still render rather than raise inside the denial path."""
+    the log line must still render rather than raise inside the denial path.
+    """
     fields = auth_mod._denied_identity("")
     assert fields["email_domain"] == "(none)"
     assert fields["email_digest"]

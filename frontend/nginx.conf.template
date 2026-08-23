@@ -1,110 +1,27 @@
-# Serve the built SPA AND reverse-proxy the API + MCP to the backend, so the
-# prebuilt UI image works same-origin without Azure Static Web App "linking"
-# (the no-clone `docker compose -f docker-compose.ghcr.yml up` path — #472).
-#
-# This is a TEMPLATE: the nginx image's entrypoint runs envsubst over
-# /etc/nginx/templates/*.template at startup, so ${DATAQ_API_UPSTREAM} is filled
-# from the env (default http://api:8000, set in frontend/Dockerfile; overridable
-# in compose). Only env vars that are actually set are substituted, so nginx's
-# own $uri / $host / $scheme runtime vars are left untouched.
+# Serve the built SPA AND reverse-proxy the API + MCP to the backend.
 
-# The client-facing scheme, forwarded upstream (#1138). NOT `$scheme`.
-#
-# This container never terminates TLS — it listens on plain HTTP :8080 and the
-# edge in front of it (Azure Container Apps' Envoy ingress, or whatever proxy a
-# BYO deployment puts there) does. So `$scheme` here is *deterministically*
-# `http` on every request, including ones the browser made over HTTPS. Sending
-# `X-Forwarded-Proto: $scheme` doesn't merely lose information — `proxy_set_header`
-# REPLACES the edge's correct `https` with our wrong `http`, so the API sees a
-# plaintext request and marks the OTP session cookie **without `Secure`** on a
-# live HTTPS deployment (ADR 0032; the backend's `_cookie_secure()` infers from
-# exactly this header).
-#
-# So: prefer what the edge told us, and fall back to `$scheme` only when there is
-# no edge header at all — the direct-connection case (compose, `docker run -p
-# 8080`), where `$scheme` genuinely IS the client-facing scheme.
-#
-# Trust boundary, stated plainly: this makes nginx trust an inbound header. That
-# is sound *because a client cannot reach this hop directly* — ACA's ingress is
-# the only route in, and Envoy sets `X-Forwarded-Proto` itself from the TLS
-# state, overwriting whatever the client sent. If you deploy this image with NO
-# TLS-terminating proxy in front and expose it straight to the internet, a client
-# CAN dictate the value; the only thing it influences is cookie-`Secure`
-# inference (it grants no authentication and no authorization), and the
-# belt-and-braces answer is to set `AUTH_SESSION_COOKIE_SECURE=true` explicitly
-# on the API — which stops consulting the header at all.
-#
-# `map` lives in the `http` context: this template renders into conf.d/, which
-# nginx includes inside `http { }`, so a top-level directive here is valid.
-#
-# The origin-secret guard's static "<secret>:<secret>" key is 2×40+1 = 81 bytes
-# with the terraform-generated 40-char secret — over the 64-byte default
-# map_hash_bucket_size, which aborts nginx at startup (#1380). 128 covers any
-# secret up to 63 chars. MUST precede the first `map` block: parsing a `map`
-# freezes the hash sizes, and a later directive is rejected as "duplicate".
+# The client-facing scheme, forwarded upstream (#1138).
 map_hash_bucket_size 128;
 map $http_x_forwarded_proto $dataq_forwarded_proto {
     default $http_x_forwarded_proto;
     ""      $scheme;
 }
 
-# ── Content-Security-Policy (#1387) ───────────────────────────────────────────
-# Assembled here rather than in nginx-security-headers.conf because the one part
-# that cannot be static is `connect-src`: the SPA's OIDC client fetches discovery,
-# JWKS and the token endpoint directly from the identity provider, and which
-# origins those are is a per-deployment runtime fact (ADR 0028 — one generic
-# image, nothing baked in).
-#
-# `DATAQ_CSP_CONNECT_SRC` is the whole tail of the connect-src list. It defaults
-# to `https:` in the Dockerfile, NOT to the empty string, and that default is
-# load-bearing: a BYO deployment that upgrades this image without setting the
-# variable must not have its sign-in silently broken by a policy it never opted
-# into. Deployments we control set explicit origins instead (both Terraform
-# stacks do), which is what actually makes the directive worth having.
-#
-# It cannot be derived from DATAQ_AUTH_AUTHORITY, which is why it is a separate
-# variable: an authority is a URL *with a path* (`…/<tenant>/v2.0` on Azure AD),
-# a CSP source matches by path prefix, and Azure's token endpoint sits at
-# `…/<tenant>/oauth2/v2.0/token` — outside that prefix. Deriving it would have
-# produced a policy that blocked the token exchange on exactly one cloud.
-#
-# Keyed on $host purely because `map` requires a source variable; the result is
-# the same for every host.
+# ── Content-Security-Policy (#1387) ─────────────────────────────────────────── Assembled here
+# rather than in nginx-security-headers.conf because the one part that cannot be static is `connect-
 map $host $dataq_csp {
     default "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; connect-src 'self' ${DATAQ_CSP_CONNECT_SRC}";
 }
 
-# ── Origin-secret guard (#1355) ───────────────────────────────────────────────
-# When DATAQ_ORIGIN_SECRET is set, every request must carry the matching
-# X-DataQ-Origin-Secret header or it is 403'd. The intended sender is a fronting
-# CDN/edge that stamps the header on origin fetches (AWS: CloudFront's custom
-# origin header, set in deploy/terraform/aws/cloudfront.tf) — closing the gap
-# where a THIRD PARTY's distribution origin-points at this container's
-# (discoverable) load-balancer DNS: their edge doesn't know the secret. Note
-# CloudFront overwrites any viewer-sent header of the same name with its own
-# configured value, so the secret cannot be probed through the legitimate
-# distribution either.
-#
-# When the variable is EMPTY (compose, BYOL, Azure — where ACA ingress is the
-# only route in), the guard is fully open, including for requests that happen
-# to carry the header. That is what the two-level map encodes:
-#   rendered key = "<secret>:<request header>"
-#   - secret empty  → key starts with ":" → the `~^:` regex allows everything
-#   - secret set    → only the exact "<secret>:<secret>" concatenation allows;
-#     an nginx map's exact match beats its regexes, and the secret is generated
-#     alphanumeric (terraform `special = false`), so it can never contain the
-#     ":" delimiter or map metacharacters.
+# ── Origin-secret guard (#1355) ─────────────────────────────────────────────── When
+# DATAQ_ORIGIN_SECRET is set, every request must carry the matching X-DataQ-Origin-Secret header or
 map "${DATAQ_ORIGIN_SECRET}:$http_x_dataq_origin_secret" $dataq_origin_bad {
     default 1;
     "~^:"   0;
     "${DATAQ_ORIGIN_SECRET}:${DATAQ_ORIGIN_SECRET}" 0;
 }
 
-# Second level: exempt the load balancer's OWN health check, which reaches the
-# container directly (not through the CDN) and so can never carry the header.
-# /_alb-health is served locally below and probes nothing but nginx itself —
-# the frontend target's health must mean "nginx + bundle up", not "the api is
-# up" (#1349). Exact map keys beat the regex, so the exemption wins.
+# Second level: exempt the load balancer's OWN health check.
 map "$dataq_origin_bad:$uri" $dataq_origin_reject {
     default 0;
     "~^1:"  1;
@@ -120,37 +37,22 @@ server {
     # Don't advertise the exact nginx build in every response / error page.
     server_tokens off;
 
-    # Security headers (#1387). Covers every location that does NOT declare its
-    # own `add_header`; the three that do re-include this file, because nginx
-    # drops inherited add_headers at any level that sets one. See the file
-    # header for why that is not avoidable here.
+    # Security headers (#1387).
     include /etc/nginx/nginx-security-headers.conf;
 
-    # Origin-secret guard (#1355, maps above). Server-level so no location can
-    # be forgotten; a bare `return` in an `if` at server context is one of the
-    # two forms nginx's own docs bless ("if is evil" applies to content
-    # handlers, not to return/rewrite).
+    # Origin-secret guard (#1355, maps above).
     if ($dataq_origin_reject) {
         return 403;
     }
 
-    # Local health endpoint for the load balancer's target-group check (exempt
-    # from the guard above — the LB probes the container directly, without the
-    # CDN's header). Deliberately serves from nginx itself: frontend health
-    # means "nginx + bundle up", never "the api is up" (#1349).
+    # Local health endpoint for the load balancer's target-group check (exempt from the guard above
+    # — the LB probes the container directly, without the CDN's header).
     location = /_alb-health {
         default_type text/plain;
         return 200 'ok';
     }
 
-    # Runtime app config (ADR 0028). Rendered from DATAQ_AUTH_* env by the same
-    # startup envsubst, served BEFORE the app bundle so the SPA reads it
-    # synchronously (window.__DATAQ_CONFIG__). One generic image, nothing baked.
-    # This exact-match location wins over the static /config.js stub in the bundle.
-    # Empty values → the SPA treats auth as unconfigured (fail-closed); dev-bypass
-    # requires an explicit DATAQ_AUTH_MODE=bypass. no-cache so a restart with new
-    # env takes effect. (Auth values are URLs/ids/scopes — no single-quote/$ to
-    # break the returned string.)
+    # Runtime app config (ADR 0028).
     location = /config.js {
         default_type application/javascript;
         add_header Cache-Control "no-cache";
@@ -159,35 +61,11 @@ server {
         return 200 'window.__DATAQ_CONFIG__={"auth":{"mode":"${DATAQ_AUTH_MODE}","authority":"${DATAQ_AUTH_AUTHORITY}","clientId":"${DATAQ_AUTH_CLIENT_ID}","apiScope":"${DATAQ_AUTH_API_SCOPE}","scope":"${DATAQ_AUTH_SCOPE}","logoutStyle":"${DATAQ_AUTH_LOGOUT_STYLE}"}};';
     }
 
-    # Runtime DNS resolver from the running container's /etc/resolv.conf. The nginx
-    # image's own 15-local-resolvers.envsh (enabled via NGINX_ENTRYPOINT_LOCAL_RESOLVERS
-    # in the Dockerfile) exports the resolv.conf nameservers into the variable
-    # substituted below, before the startup envsubst, so this is cloud-neutral
-    # (ADR 0028): compose's embedded DNS (127.0.0.11), ACA/K8s cluster DNS, etc. —
-    # no resolver IP baked into the image (a literal 127.0.0.11 would break in ACA).
-    # Resolving the upstream through a variable (below) defers DNS to request time,
-    # so this image starts even while the api is still coming up and survives an api
-    # restart (new IP) — a literal proxy_pass host is resolved once at startup and
-    # would hard-crash nginx if the api isn't up yet.
+    # Runtime DNS resolver from the running container's /etc/resolv.conf.
     resolver ${NGINX_LOCAL_RESOLVERS} ipv6=off valid=10s;
 
-    # REST API — same-origin /api/* forwarded to the backend. proxy_pass uses a
-    # variable, so the original URI isn't auto-appended; $request_uri carries the
-    # full path + query (/api/v1/...) through unchanged.
-    #
-    # Host is intentionally NOT overridden to the browser's $host: when the
-    # upstream is a real hostname behind a routing front-door (ACA's Envoy routes
-    # external ingress by the app FQDN), the Host must match the upstream, or the
-    # request is misrouted (404). nginx's default is Host = $proxy_host (the
-    # upstream host), which is correct for BOTH compose (`api:8000`, uvicorn
-    # ignores it) and ACA (the api FQDN). proxy_ssl_server_name sends the matching
-    # TLS SNI for the https (ACA) upstream; it's a no-op for the http (compose) one.
-    #
-    # proxy_http_version 1.1 is REQUIRED: nginx proxies as HTTP/1.0 by default, and
-    # Azure Container Apps' ingress rejects HTTP/1.0 with "426 Upgrade Required" —
-    # so /api + /healthz must force 1.1 (like /mcp already does). Clearing the
-    # Connection header keeps upstream keep-alive clean. (uvicorn in compose is fine
-    # with either, so this is safe for the local path too.)
+    # REST API — same-origin /api/* forwarded to the backend. proxy_pass uses a variable, so the
+    # original URI isn't auto-appended.
     location /api/ {
         set $dataq_upstream "${DATAQ_API_UPSTREAM}";
         proxy_pass $dataq_upstream$request_uri;
@@ -197,18 +75,13 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $dataq_forwarded_proto;
-        # Verified above, stripped here (#1355 review): the origin secret must
-        # not ride into the backend request context, where a traceback-locals
-        # capture (#536 class) or a dependency's header logging (#849 class)
-        # could surface it.
+        # Verified above, stripped here (#1355 review): the origin secret must not ride into the
+        # backend request context.
         proxy_set_header X-DataQ-Origin-Secret "";
     }
 
-    # Liveness probe — the api's top-level /healthz (NOT under /api), proxied here
-    # so it stays externally reachable through the product host now that the api has
-    # no public ingress (ADR 0028 §5). Exact-match so it can't shadow an SPA route;
-    # without this, /healthz would fall through to the SPA index.html below. Same
-    # Host/SNI + HTTP/1.1 handling as /api (ACA 426s HTTP/1.0).
+    # Liveness probe — the api's top-level /healthz (NOT under /api), proxied here so it stays
+    # externally reachable through the product host now that the api has no public ingress (ADR 0028
     location = /healthz {
         set $dataq_upstream "${DATAQ_API_UPSTREAM}";
         proxy_pass $dataq_upstream$request_uri;
@@ -218,10 +91,8 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $dataq_forwarded_proto;
-        # Verified above, stripped here (#1355 review): the origin secret must
-        # not ride into the backend request context, where a traceback-locals
-        # capture (#536 class) or a dependency's header logging (#849 class)
-        # could surface it.
+        # Verified above, stripped here (#1355 review): the origin secret must not ride into the
+        # backend request context.
         proxy_set_header X-DataQ-Origin-Secret "";
     }
 
@@ -237,24 +108,13 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $dataq_forwarded_proto;
-        # Verified above, stripped here (#1355 review): the origin secret must
-        # not ride into the backend request context, where a traceback-locals
-        # capture (#536 class) or a dependency's header logging (#849 class)
-        # could surface it.
+        # Verified above, stripped here (#1355 review): the origin secret must not ride into the
+        # backend request context.
         proxy_set_header X-DataQ-Origin-Secret "";
     }
 
-    # Long-cache the fingerprinted build output; never cache index.html (it points
-    # at the current asset hashes).
-    #
-    # **Matched on the FILE, not on the `/assets/` prefix** — and that is load-bearing.
-    # Vite emits its bundle to `dist/assets/`, which collides head-on with the app's
-    # own `/assets` SPA route (the ADR 0034 asset browse). A prefix `location /assets/`
-    # swallows that whole path space: `/assets/<uuid>` matched here, hit `=404`, and
-    # never reached the SPA fallback — so every asset deep link, bookmark and
-    # browser-refresh 404'd in production while in-app navigation looked perfectly fine.
-    # A regex location also takes precedence over the prefix `location /`, so the real
-    # build files still get the immutable long-cache they need.
+    # Long-cache the fingerprinted build output; never cache index.html (it points at the current
+    # asset hashes).
     location ~* ^/assets/.+\.(?:js|mjs|css|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot)$ {
         try_files $uri =404;
         expires 1y;
@@ -264,20 +124,12 @@ server {
         include /etc/nginx/nginx-security-headers.conf;
     }
 
-    # SPA fallback: any non-file path returns index.html so client-side routes
-    # (deep links like /results/:runId, /assets/:assetId) resolve to the app.
-    #
-    # No `$uri/` in try_files — deliberately. With it, a request for `/assets` found
-    # the on-disk `assets/` DIRECTORY and nginx issued its own 301 to `/assets/`,
-    # rebuilt from the *internal* scheme/port — so the browser was handed
-    # `http://…:8080/assets/` (plaintext, unroutable container port) and simply hung.
-    # An SPA never wants directory-index redirects; every non-file path is a route.
+    # SPA fallback: any non-file path returns index.html so client-side routes (deep links like
+    # /results/:runId, /assets/:assetId) resolve to the app.
     location / {
         try_files $uri /index.html;
         add_header Cache-Control "no-cache";
-        # Re-included: the add_header above cancels inheritance (#1387). This is
-        # the location that serves index.html, so without this line the CSP and
-        # frame-ancestors would be absent from the one response that needs them.
+        # Re-included: the add_header above cancels inheritance (#1387).
         include /etc/nginx/nginx-security-headers.conf;
     }
 }

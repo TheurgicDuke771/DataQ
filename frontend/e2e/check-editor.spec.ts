@@ -1,13 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-// The check-editor variants beyond the plain expectation form (already covered
-// in suites.spec.ts): the freshness + volume + anomaly monitor kinds (ADR 0012,
-// #593) and the Monaco-backed custom-SQL editor (ADR 0019). Custom SQL and
-// anomaly are SQL-only (the seeded suite targets Snowflake, which is why they're
-// offered here at all); freshness/volume also run on flat files since #520,
-// which is why the timestamp column is REQUIRED here (on a flat-file suite it is
-// optional and blank means file-arrival time). Each authoring loop creates →
-// verifies on the suite detail → deletes.
+// The check-editor variants beyond the plain expectation form (already covered in suites.spec.ts):
+// the freshness + volume + anomaly monitor kinds (ADR 0012.
 test.describe('Check editor variants', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/suites');

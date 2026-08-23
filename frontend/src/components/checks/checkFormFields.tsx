@@ -27,14 +27,11 @@ import {
 } from './expectationCatalog';
 
 /**
- * Shared check-form field components, used by both the edit page (`CheckEdit`)
- * and the create page (`CheckNew`): the dynamic config-field renderer
- * and the severity-threshold block. Pure conversions live in `checkForm.ts`.
+ * Shared check-form field components, used by both the edit page (`CheckEdit`) and the create page
+ * (`CheckNew`): the dynamic config-field renderer and the severity-threshold block.
  */
 
-// Monaco lives in its own lazy chunk, pulled in only when a custom-SQL ('sql')
-// field renders. The wrapper is the direct Form.Item child so antd's value/onChange
-// injection reaches the editor through the Suspense boundary.
+// Monaco lives in its own lazy chunk, pulled in only when a custom-SQL ('sql') field renders.
 const LazySqlEditor = lazy(() => import('./SqlEditorField'));
 
 function SqlEditorControl({
@@ -60,21 +57,16 @@ export function ConfigFieldItem({
   /** Suite's connection type — drives the `type_` field's datasource-tailored
    *  help (issue #768). Every other field ignores it. */
   connectionType?: ConnectionType;
-  /** Live sibling config values (the same object `fieldVisible`/`showWhen`
-   *  reads). Only a `maxFrom` field uses it, to compute its dynamic ceiling —
-   *  every other field ignores it. */
+  /** Live sibling config values (the same object `fieldVisible`/`showWhen` reads). */
   configValues?: Record<string, unknown>;
 }) {
   const label = field.optional ? `${field.label} (optional)` : field.label;
   const rules: Rule[] = field.optional ? [] : [{ required: true }];
-  // `expect_column_values_to_be_of_type`'s `type_` field: GX compares against a
-  // different type vocabulary per execution engine (SQL dialect type vs pandas
-  // dtype) — swap in the datasource-tailored hint over the catalog's generic
-  // fallback help.
+  // `expect_column_values_to_be_of_type`'s `type_` field: GX compares against a different type
+  // vocabulary per execution engine (SQL dialect type vs pandas dtype).
   const help = field.name === TYPE_FIELD_NAME ? typeFieldHint(connectionType) : field.help;
-  // A required list of only delimiters ("," / " , ") is non-empty (so it passes
-  // `required`) but parses to zero items — reject it inline rather than letting
-  // the check save with an empty value_set that only fails later at GX run time.
+  // A required list of only delimiters ("," / " , ") is non-empty (so it passes `required`) but
+  // parses to zero items.
   if (field.type === 'list' && !field.optional) {
     rules.push({
       validator: (_: unknown, value: unknown) =>
@@ -83,12 +75,8 @@ export function ConfigFieldItem({
           : Promise.reject(new Error('Enter at least one value')),
     });
   }
-  // `maxFrom` (anomaly's `min_points` <= `window`, #593 review): a submit-time
-  // check, not just the InputNumber's `max` prop below — that prop only bounds
-  // FUTURE typing/stepping, so it can't retroactively flag an already-committed
-  // value (e.g. the untouched min_points=7 default) once a sibling field
-  // (window) shrinks past it. An inline error, not an auto-clamp, so the value
-  // shown is always the value that would be saved.
+  // `maxFrom` (anomaly's `min_points` <= `window`, #593 review): a submit-time check, not just the
+  // InputNumber's `max` prop below — that prop only bounds FUTURE typing/stepping.
   const dynamicMax =
     field.type === 'number' && field.maxFrom && typeof configValues?.[field.maxFrom] === 'number'
       ? (configValues[field.maxFrom] as number)
@@ -104,9 +92,8 @@ export function ConfigFieldItem({
     });
   }
   if (field.type === 'sql') {
-    // Inline mirror of the backend read-only guardrail (ADR 0019) for fast
-    // feedback; the backend is authoritative. `required` is covered by the same
-    // check (empty → message), so it replaces the bare required rule.
+    // Inline mirror of the backend read-only guardrail (ADR 0019) for fast feedback; the backend is
+    // authoritative.
     return (
       <Form.Item
         name={['config', field.name]}
@@ -131,17 +118,12 @@ export function ConfigFieldItem({
       label={label}
       rules={rules}
       extra={help}
-      // CREATE-mode pre-fill (mirrors the backend's own default, e.g. anomaly's
-      // window=14 — ConfigField.defaultValue docstring). No-op in edit mode: the
-      // stored value is already in the form store by the time this Form.Item
-      // mounts (`configToForm`), and antd only applies `initialValue` when the
-      // store has no value yet.
+      // CREATE-mode pre-fill (mirrors the backend's own default, e.g. anomaly's window=14 —
+      // ConfigField.defaultValue docstring).
       initialValue={field.defaultValue}
       valuePropName={field.type === 'boolean' ? 'checked' : 'value'}
-      // `maxFrom`: re-run this field's rules (and — via the parent's
-      // `configValues` watch — recompute `dynamicMax` below) whenever the
-      // sibling field changes, so an untouched min_points flags itself the
-      // moment window shrinks past it, not only on the next edit to min_points.
+      // `maxFrom`: re-run this field's rules (and — via the parent's `configValues` watch —
+      // recompute `dynamicMax` below) whenever the sibling field changes.
       dependencies={field.maxFrom ? [['config', field.maxFrom]] : undefined}
     >
       {field.type === 'number' ? (
@@ -161,19 +143,7 @@ export function ConfigFieldItem({
   );
 }
 
-/**
- * The DQ-dimension select (ADR 0038) — *what quality aspect* this check measures.
- *
- * Pre-filled with the spec's derived default as a real selected value, not a
- * placeholder: what the author sees is what gets stored. Always editable, because
- * derivation is a guess about intent — the same between-check is Validity bounding
- * a percentage and Accuracy asserting a reconciled total.
- *
- * For an underivable type (custom SQL) it starts empty and stays optional, since
- * "unclassified" is a legitimate outcome the scorecard renders as a coverage gap.
- * Deliberately NOT required: forcing a guess would fill the coverage view with
- * noise, which is exactly what it exists to surface.
- */
+/** The DQ-dimension select (ADR 0038) — *what quality aspect* this check measures. */
 export function DimensionField({
   spec,
   initialValue,
@@ -186,10 +156,7 @@ export function DimensionField({
     <Form.Item
       name="dimension"
       label="DQ dimension"
-      // Only the CREATE page seeds the derived default. In edit mode the stored
-      // value drives the field: applying the default there would silently
-      // reclassify a check deliberately saved as unclassified, just because
-      // someone opened the editor.
+      // Only the CREATE page seeds the derived default.
       initialValue={initialValue}
       extra={
         derived
@@ -198,10 +165,7 @@ export function DimensionField({
       }
     >
       <Select
-        // Clearable ONLY when the type has no derived default. Blank means
-        // "derive" to the backend, not "clear" — so on a derivable type a clear
-        // affordance would silently restore the default on create, and be a
-        // no-op on edit. Where there IS no default, blank genuinely stores NULL.
+        // Clearable ONLY when the type has no derived default.
         allowClear={derived === undefined}
         placeholder="Unclassified"
         options={DQ_DIMENSIONS.map((d: DqDimension) => ({
@@ -213,15 +177,7 @@ export function DimensionField({
   );
 }
 
-/**
- * The optional warn / fail / critical severity-threshold inputs (ADR 0016).
- *
- * For GX expectations the bands are the unexpected-% (0–100). A `monitor` spec
- * overrides the help text + bounds (freshness = age-hours, unbounded; volume =
- * deviation-%, 0–100) and can make a fail/critical threshold **required**
- * (freshness has no in-config bound, so without one it can never fail — the #426
- * silent-green guard, also enforced by the backend 422).
- */
+/** The optional warn / fail / critical severity-threshold inputs (ADR 0016). */
 export function SeverityThresholdFields({ monitor }: { monitor?: MonitorThresholdSpec }) {
   const required = monitor?.requireFailOrCritical ?? false;
   const heading = required
@@ -230,13 +186,8 @@ export function SeverityThresholdFields({ monitor }: { monitor?: MonitorThreshol
   const help =
     monitor?.help ??
     'Band the GX unexpected-% to warn / fail / critical (higher = worse). Leave blank for a binary pass/fail.';
-  // "At least one of fail/critical is set to a POSITIVE value" — attached to
-  // ONLY the fail field (so a single error message renders, not one under
-  // each), with a dependency on critical so filling critical clears it.
-  // Mirrors the backend's `_has_positive_threshold` exactly (freshness AND
-  // anomaly): checking mere set-ness let `fail_threshold: 0` pass client-side
-  // and then 422 at the server, because a ZERO threshold is the inverse
-  // footgun to a missing one — it would always fail rather than never.
+  // "At least one of fail/critical is set to a POSITIVE value" — attached to ONLY the fail field
+  // (so a single error message renders, not one under each).
   const failOrCriticalRule: Rule = ({ getFieldValue }) => ({
     validator: () => {
       if (!required) return Promise.resolve();
@@ -248,13 +199,8 @@ export function SeverityThresholdFields({ monitor }: { monitor?: MonitorThreshol
         : Promise.reject(new Error('Set a fail or critical threshold'));
     },
   });
-  // #568: mirror the backend's ordering guard (`check_service.
-  // validate_threshold_ordering`) so an inverted set (e.g. warn=90/fail=50/
-  // critical=10) 422s here instead of round-tripping to the server. Only pairs
-  // that are BOTH set are compared — an unset threshold has no bound, same as
-  // the backend. Each pairwise check lives on the "upper" field of the pair
-  // (matching the `failOrCriticalRule` placement above), so exactly one message
-  // renders per violation instead of one under every field.
+  // #568: mirror the backend's ordering guard (`check_service. validate_threshold_ordering`) so an
+  // inverted set (e.g. warn=90/fail=50/ critical=10) 422s here instead of round-tripping to the ser
   const failOrderRule: Rule = ({ getFieldValue }) => ({
     validator: () => {
       const warn = getFieldValue('warn_threshold');

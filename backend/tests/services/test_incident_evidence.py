@@ -1,10 +1,4 @@
-"""Evidence-card assembly tests (ADR 0034 #761) against a real Postgres.
-
-The card is assembled from existing data only and **must never carry
-``sample_failures`` content** (PII). This exercises each layer + the redaction
-guarantee end to end.
-
-Skips without TEST_DATABASE_URL."""
+"""Evidence-card assembly tests (ADR 0034 #761) against a real Postgres."""
 
 from __future__ import annotations
 
@@ -112,7 +106,8 @@ def test_card_has_identity_and_failing_result(db_session: Any, world: dict[str, 
 
 def test_card_never_carries_sample_failures(db_session: Any, world: dict[str, Any]) -> None:
     """The PII floor: even a result stuffed with raw failing rows yields a card
-    with NO sample content anywhere."""
+    with NO sample content anywhere.
+    """
     secret = "victim@example.com"
     run = _run(db_session, world["suite"])
     result = Result(
@@ -136,11 +131,7 @@ def test_card_never_carries_sample_failures(db_session: Any, world: dict[str, An
 
 
 def test_metric_trend_layer(db_session: Any, world: dict[str, Any]) -> None:
-    # Three historical results + the latest breach. `created_at` is set explicitly
-    # with increasing timestamps: the `db_session` fixture runs everything in ONE
-    # transaction, so `func.now()` (transaction-start) would tie every row and make
-    # the newest-first ordering nondeterministic (in production each run commits in
-    # its own transaction, so timestamps differ naturally).
+    # Three historical results + the latest breach.
     base = datetime(2026, 7, 1, 12, 0, 0, tzinfo=UTC)
     for i, metric in enumerate((0.1, 0.2, 0.3)):
         r = _run(db_session, world["suite"])
@@ -212,7 +203,8 @@ def test_blast_radius_layer(db_session: Any, world: dict[str, Any]) -> None:
 
 def test_upstream_pipeline_layer_with_delay(db_session: Any, world: dict[str, Any]) -> None:
     """A run triggered by an orchestration pipeline gets the upstream pipeline run +
-    a delay-vs-history number (this run slower than the prior baseline)."""
+    a delay-vs-history number (this run slower than the prior baseline).
+    """
     conn_id = world["conn"].id
     now = datetime.now(UTC)
     # Prior baseline: a fast succeeded run (60s).
@@ -287,7 +279,8 @@ def test_raising_layer_degrades_to_none_other_layers_intact(
     db_session: Any, world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """One broken layer (blast radius here) degrades to None with the rest of the
-    card intact — the best-effort docstring made true."""
+    card intact — the best-effort docstring made true.
+    """
     from backend.app.services import incident_evidence
 
     def boom(*args: Any, **kwargs: Any) -> Any:
@@ -312,7 +305,8 @@ def test_raising_layer_never_poisons_incident_sync(
     db_session: Any, world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A broken evidence layer must not take the run's whole incident sync down —
-    the incident still opens (with the degraded card)."""
+    the incident still opens (with the degraded card).
+    """
     from sqlalchemy import select
 
     from backend.app.db.models import Incident
@@ -336,7 +330,8 @@ def test_raising_layer_never_poisons_incident_sync(
 
 def test_observed_value_sample_list_keys_stripped(db_session: Any, world: dict[str, Any]) -> None:
     """[PII] GX can mirror sample-bearing list keys into observed_value; the card
-    must strip them while keeping the sanctioned scalar aggregates (#416)."""
+    must strip them while keeping the sanctioned scalar aggregates (#416).
+    """
     secret = "leak-victim@example.com"
     run = _run(db_session, world["suite"])
     result = Result(

@@ -1,9 +1,4 @@
-"""Tests for the lineage dispatch choke point — the fail-open contract.
-
-The dark path must touch nothing (proved by a session that raises on any access);
-a configured-but-broken emit must be swallowed (proved by a client whose ``emit``
-raises). DB-backed cases use the shared ``db_session`` fixture.
-"""
+"""Tests for the lineage dispatch choke point — the fail-open contract."""
 
 from __future__ import annotations
 

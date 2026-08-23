@@ -1,12 +1,4 @@
-"""Unity Catalog warehouse-native lineage provider tests (#858).
-
-The table_lineage tier runs against the REAL captured payload
-(`uc_table_lineage_projected.json` — 200 rows / 8 unique edges from the live demo workspace,
-2026-07-17 spike), NOT hand-written rows (#823). Identity is pinned byte-for-byte
-against `services.asset_identity`; the incremental `event_time` watermark and the
-edge-requires-both-endpoints rule (most rows are pure read-access, target NULL) are
-exercised against the real distribution.
-"""
+"""Unity Catalog warehouse-native lineage provider tests (#858)."""
 
 from __future__ import annotations
 
@@ -30,7 +22,8 @@ _CONFIG: dict[str, Any] = {"workspace_url": _WORKSPACE}
 def _table_lineage_rows(*, since: datetime | None = None) -> list[tuple[Any, ...]]:
     """The captured table_lineage payload as SELECT-order tuples — filtered to the
     columns (and the >since / both-endpoints WHERE) the provider's query applies, so
-    the fake reproduces what the warehouse would return, not the raw file."""
+    the fake reproduces what the warehouse would return, not the raw file.
+    """
     raw = json.loads((_FIXTURES / "uc_table_lineage_projected.json").read_text())
     out = []
     for r in raw:
@@ -66,7 +59,8 @@ class _Result:
 
 def _column_lineage_rows(*, since: datetime | None = None) -> list[tuple[Any, ...]]:
     """The captured column_lineage payload (#901 — 200 real rows, 2026-07-18 live
-    session) as SELECT-order tuples, filtered like the provider's WHERE clause."""
+    session) as SELECT-order tuples, filtered like the provider's WHERE clause.
+    """
     raw = json.loads((_FIXTURES / "uc_column_lineage_projected.json").read_text())
     out = []
     for r in raw:
@@ -97,7 +91,8 @@ def _column_lineage_rows(*, since: datetime | None = None) -> list[tuple[Any, ..
 class _FakeConn:
     """Routes the provider's queries to the captured fixtures — table_lineage and
     column_lineage discriminated off the statement text — honoring the bound :since
-    so the incremental watermark is exercised for real."""
+    so the incremental watermark is exercised for real.
+    """
 
     def __init__(
         self, *, raises: Exception | None = None, column_raises: Exception | None = None
@@ -166,14 +161,12 @@ def test_incremental_since_reads_only_newer_events() -> None:
 
 
 def test_incremental_bound_floor_is_watermark_minus_safety_window() -> None:
-    # The query re-scans a safety window BEFORE the watermark so a late-ingested row
-    # (event_time <= watermark, ingested after the last pull) is not lost to a strict
-    # `>`. The returned watermark still never regresses below `since`.
+    # The query re-scans a safety window BEFORE the watermark so a late-ingested row (event_time <=
+    # watermark, ingested after the last pull) is not lost to a strict `>`.
     from backend.app.lineage.warehouse_unity_catalog import _WATERMARK_SAFETY
 
-    # A mark AFTER every event: the safety window (6h) still doesn't reach the July
-    # payload, so nothing is re-read and the watermark stays put — proving both the
-    # floor offset and the never-regress guarantee in one case.
+    # A mark AFTER every event: the safety window (6h) still doesn't reach the July payload, so
+    # nothing is re-read and the watermark stays put.
     mark = datetime(2027, 1, 1, tzinfo=UTC)
     conn = _FakeConn()
     result = UnityCatalogLineageProvider().fetch_edges(conn, connection_config=_CONFIG, since=mark)
@@ -207,7 +200,8 @@ def test_source_tag_is_unity_catalog() -> None:
 
 def test_column_pairs_attach_to_their_table_edge() -> None:
     """The captured column_lineage rows refine the edges from the captured
-    table_lineage payload — the join is on full names, byte-for-byte (#823)."""
+    table_lineage payload — the join is on full names, byte-for-byte (#823).
+    """
     result = UnityCatalogLineageProvider().fetch_edges(_FakeConn(), connection_config=_CONFIG)
     by_name = {(e.upstream.name, e.downstream.name): e for e in result.edges}
     key = (
@@ -226,7 +220,8 @@ def test_column_pairs_attach_to_their_table_edge() -> None:
 def test_column_grain_failure_degrades_never_fails_table_edges() -> None:
     """column_lineage gated separately from table_lineage (a real UC grant shape):
     the table edges still land, with an honest degrade note instead of a silent
-    absence — and never an Unavailable that would freeze the cache (#828)."""
+    absence — and never an Unavailable that would freeze the cache (#828).
+    """
     conn = _FakeConn(column_raises=RuntimeError("PERMISSION_DENIED: column_lineage"))
     result = UnityCatalogLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
     assert len(result.edges) > 0
@@ -251,12 +246,8 @@ def test_healthy_column_grain_sets_no_degrade_note() -> None:
     ("workspace_url", "expected_host"),
     [
         ("https://adb-123.4.azuredatabricks.net", "adb-123.4.azuredatabricks.net"),
-        # No scheme — `urlparse` puts the whole thing in `path`, not `netloc`, so the
-        # fallback split is the ONLY thing that finds the host. A connection saved
-        # without `https://` is an ordinary user mistake, and the mutants here
-        # (dropping the split, or its maxsplit) leave the namespace holding the
-        # trailing path too — which silently stops matching the assets the suite
-        # resolver created, exactly the #823 identity-divergence shape.
+        # No scheme — `urlparse` puts the whole thing in `path`, not `netloc`, so the fallback split
+        # is the ONLY thing that finds the host.
         ("adb-123.4.azuredatabricks.net", "adb-123.4.azuredatabricks.net"),
         ("adb-123.4.azuredatabricks.net/some/path", "adb-123.4.azuredatabricks.net"),
     ],
@@ -271,14 +262,7 @@ def test_namespace_derives_the_host_with_or_without_a_scheme(
 
 
 def test_the_watermark_travels_as_a_bind_parameter_not_inline_text() -> None:
-    """`event_time > :since` must stay a BOUND parameter.
-
-    The watermark is a value we interpolate into warehouse SQL on a scheduled
-    path; formatting it into the query text would be a string-built predicate over
-    non-constant input — the shape #428's identifier allowlist exists to prevent
-    elsewhere. The spike could not kill the query-text mutants (the stub does not
-    parse SQL), but this one property is both assertable and the one that matters.
-    """
+    """`event_time > :since` must stay a BOUND parameter."""
     captured: list[tuple[str, dict[str, Any] | None]] = []
 
     class _Recording(_FakeConn):
@@ -294,10 +278,8 @@ def test_the_watermark_travels_as_a_bind_parameter_not_inline_text() -> None:
     for sql, params in table_queries:
         assert ":since" in sql  # a placeholder, not a formatted literal
         bound = (params or {}).get("since")
-        # Deliberately NOT `== since`: the provider re-reads a small overlap window
-        # behind the watermark, so the bound value is `since` minus that margin. The
-        # contract under test is that the value travels BOUND and never reaches the
-        # query text — not what the margin happens to be.
+        # Deliberately NOT `== since`: the provider re-reads a small overlap window behind the
+        # watermark, so the bound value is `since` minus that margin.
         assert isinstance(bound, datetime)
         assert bound <= since
         assert "2026-07" not in sql  # no formatted date literal anywhere in the SQL

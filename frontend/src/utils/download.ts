@@ -1,8 +1,4 @@
-/**
- * Trigger a browser download of `content` as a file. Builds an object-URL blob
- * and clicks a transient anchor — the standard no-backend "save this" path. The
- * URL is revoked immediately after the click so the blob doesn't leak.
- */
+/** Trigger a browser download of `content` as a file. */
 export function downloadText(filename: string, content: string, mime: string): void {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -21,17 +17,8 @@ export function downloadJson(filename: string, data: unknown): void {
 }
 
 /**
- * Quote a CSV cell per RFC 4180: a field containing a comma, double-quote, or
- * newline is wrapped in double-quotes with inner quotes doubled. `null`/
- * `undefined` become an empty field. An object should be JSON-stringified by
- * the caller before it gets here.
- *
- * Text cells are also guarded against spreadsheet formula injection (CWE-1236):
- * a value starting with `=`, `+`, `-`, `@`, tab, or CR makes Excel/Sheets
- * evaluate it as a formula, so we prefix such text with an apostrophe to force
- * it literal. Exported check names / expectations are user-authored and could
- * start with these. Numbers/booleans are emitted as-is (they can't carry a
- * formula payload, and we don't want a negative metric turned into text).
+ * Quote a CSV cell per RFC 4180: a field containing a comma, double-quote, or newline is wrapped
+ * in double-quotes with inner quotes doubled.
  */
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
@@ -52,10 +39,8 @@ export function downloadCsv(filename: string, headers: string[], rows: unknown[]
 }
 
 /**
- * Turn an arbitrary label into a safe, lowercase filename stem: non-word
- * characters collapse to underscores, runs trim to one, leading/trailing
- * underscores drop. Falls back to `fallback` when nothing usable remains (e.g.
- * a name of only punctuation).
+ * Turn an arbitrary label into a safe, lowercase filename stem: non-word characters collapse to
+ * underscores, runs trim to one, leading/trailing underscores drop.
  */
 export function toFilenameStem(label: string, fallback = 'suite'): string {
   const stem = label

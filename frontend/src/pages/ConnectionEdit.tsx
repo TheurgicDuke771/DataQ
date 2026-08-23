@@ -10,17 +10,10 @@ import { ConnectionForm } from '../components/connections/ConnectionForm';
 import { ConnectionHistoryDrawer } from '../components/connections/ConnectionHistoryDrawer';
 import { useAsyncData } from '../hooks/useAsyncData';
 
-/**
- * Dedicated full-page edit-connection flow (ADR 0022 — replaces the edit drawer).
- * Type + env are immutable and shown read-only; the secret is omitted (rotation is
- * the separate Re-auth flow). Reuses `ConnectionForm` with the create page. The
- * fetch + form live in a view keyed on the connection id so a param-only route
- * change reloads cleanly.
- */
+/** Dedicated full-page edit-connection flow (ADR 0022 — replaces the edit drawer). */
 export function ConnectionEdit() {
-  // Key the view by the id so a param-only navigation between two edit URLs
-  // (no unmount under react-router) remounts → refetches + reseeds, rather than
-  // leaving the previous connection's data in the form.
+  // Key the view by the id so a param-only navigation between two edit URLs (no unmount under
+  // react-router) remounts → refetches + reseeds.
   const { connectionId } = useParams<{ connectionId: string }>();
   return <ConnectionEditView key={connectionId} connectionId={connectionId} />;
 }

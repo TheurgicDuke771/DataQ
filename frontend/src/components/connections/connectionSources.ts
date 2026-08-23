@@ -1,13 +1,6 @@
 import { CONNECTION_TYPES, type ConnectionType } from '../../api/connections';
 
-/**
- * Presentation grouping for the add-connection source picker (ADR 0022 prototype).
- * Finer than the load-bearing datasource/orchestration split (`CONNECTION_KIND`):
- * it fans the four datasources into product-shaped buckets, listed first (a suite
- * always needs a datasource), with **Orchestration** last — it's *optional* (suites
- * also run on a cron schedule or on demand). Picker-only; the runtime datasource-vs-
- * orchestration distinction still flows through `CONNECTION_KIND`.
- */
+/** Presentation grouping for the add-connection source picker (ADR 0022 prototype). */
 export const SOURCE_CATEGORIES = [
   'Warehouses',
   'Lakehouses',
@@ -55,9 +48,10 @@ export interface SourceGroup {
   note: string;
 }
 
-/** Source types grouped by category in display order (datasources first,
- *  Orchestration last), each group in canonical `CONNECTION_TYPES` order. Empty
- *  categories are dropped. */
+/**
+ * Source types grouped by category in display order (datasources first, Orchestration last), each
+ * group in canonical `CONNECTION_TYPES` order.
+ */
 export function sourcesByCategory(): SourceGroup[] {
   return SOURCE_CATEGORIES.map((category) => ({
     category,

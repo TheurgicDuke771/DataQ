@@ -1,11 +1,5 @@
 """`check_service.validate_engine` + the `datasources.engines` capability map
 (ADR 0036 slice 1, #895).
-
-Pure — no DB. The wiring through CRUD / import / restore is exercised at the API
-layer in `tests/api/test_checks.py`; this file covers the validator and the two
-invariants the seam rests on: **gx is universal** (every datasource type offers
-it) and **offered ⇒ runnable** (the capability map never names a connection type
-the runner registry doesn't know).
 """
 
 from __future__ import annotations
@@ -31,10 +25,8 @@ def test_gx_is_universal_across_datasource_types() -> None:
 
 
 def test_engine_map_matches_registry() -> None:
-    # Offered ⇒ runnable: the map's key set is exactly the set of types with a
-    # registered CheckRunner builder. A datasource added to one and not the
-    # other either can't author checks (missing here) or authors checks that
-    # cannot run (missing there).
+    # Offered ⇒ runnable: the map's key set is exactly the set of types with a registered
+    # CheckRunner builder.
     assert set(_OFFERED) == set(registry._RUNNER_BUILDERS)
 
 
@@ -79,11 +71,8 @@ def test_snowflake_offers_dmf() -> None:
 
 
 def test_offered_native_engines_are_runnable() -> None:
-    # Offer ⇔ runner support (ADR 0036's offered ⇒ runnable, at the engine
-    # grain): every native engine a type offers must be advertised by that
-    # type's runner class, and no runner may advertise an engine the map
-    # doesn't offer (an advertised-but-unoffered engine would be unreachable
-    # dead capability).
+    # Offer ⇔ runner support (ADR 0036's offered ⇒ runnable, at the engine grain): every native
+    # engine a type offers must be advertised by that type's runner class.
     from backend.app.datasources.snowflake import SnowflakeCheckRunner
 
     native_by_type = {"snowflake": SnowflakeCheckRunner.supported_native_engines}
@@ -130,9 +119,8 @@ def test_dmf_column_metric_with_column_and_threshold_passes() -> None:
 
 
 def test_gx_engine_is_a_noop_here() -> None:
-    # GX's own validators (GX gate, monitor validators) own its matrix — even a
-    # dmf: type under gx is not THIS validator's business (the GX unknown-type
-    # gate rejects it downstream).
+    # GX's own validators (GX gate, monitor validators) own its matrix — even a dmf: type under gx
+    # is not THIS validator's business (the GX unknown-type gate rejects it downstream).
     _compat(engine="gx", expectation_type="dmf:null_count", fail_threshold=None)
 
 
@@ -144,9 +132,8 @@ def test_dmf_rejects_kinds_outside_its_matrix(kind: str) -> None:
 
 
 def test_dmf_freshness_defers_to_the_monitor_validators() -> None:
-    # freshness config is validate_monitor_check's job; this validator only
-    # checks the kind is in the matrix. (volume is OUT of the matrix entirely:
-    # ROW_COUNT has no ad-hoc invocation — a live-verified platform fact.)
+    # freshness config is validate_monitor_check's job; this validator only checks the kind is in
+    # the matrix.
     _compat(kind="freshness", expectation_type="monitor:freshness", config={})
 
 

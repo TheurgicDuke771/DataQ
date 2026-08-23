@@ -111,10 +111,8 @@ def test_operational_failure_not_suppressed(db_session: Any) -> None:
 
 
 def test_operational_failure_alerts_even_with_snoozed_rows(db_session: Any) -> None:
-    # #387: a run that failed to *execute* must always alert, even if it happens to
-    # carry only snoozed failing rows (a future partial-failure path) — an execution
-    # failure isn't per-check snoozable. Without the status=='failed' guard the query
-    # below would see failing⊆snoozed and wrongly suppress; the guard forbids that.
+    # #387: a run that failed to *execute* must always alert, even if it happens to carry only
+    # snoozed failing rows (a future partial-failure path).
     suite = _suite(db_session)
     chk = _check(db_session, suite, snoozed_until=_NOW + timedelta(hours=2))
     run = _run_with(db_session, suite, [(chk, "fail")], status="failed")

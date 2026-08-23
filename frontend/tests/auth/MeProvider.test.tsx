@@ -65,10 +65,8 @@ describe('MeProvider', () => {
 // ── a throttled first /me must not become an error page (#788) ──────────────
 
 describe('MeProvider under rate limiting', () => {
-  // Restore in afterEach, NOT at the end of each test body: a test that FAILS
-  // never reaches its last line, so fake timers leak into the next test and it
-  // times out for a reason that has nothing to do with what it asserts. Found by
-  // mutating the retry away — three real failures plus one cascaded phantom.
+  // Restore in afterEach, NOT at the end of each test body: a test that FAILS never reaches its
+  // last line.
   afterEach(() => vi.useRealTimers());
 
   const throttled = (retryAfterSeconds: number) =>
@@ -81,9 +79,8 @@ describe('MeProvider under rate limiting', () => {
     });
 
   it('retries a 429 instead of painting an error, and shows the answer when it lands', async () => {
-    // The reachable case: the per-IP unauth bucket is shared across endpoints, so
-    // a burst anywhere can 429 the FIRST /me — and an admin would lose the Admin
-    // nav to a failure that resolves itself in seconds.
+    // The reachable case: the per-IP unauth bucket is shared across endpoints, so a burst anywhere
+    // can 429 the FIRST /me.
     vi.useFakeTimers();
     mockFetchMe.mockRejectedValueOnce(throttled(1)).mockResolvedValueOnce(adminMe);
 

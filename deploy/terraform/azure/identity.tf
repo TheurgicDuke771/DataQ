@@ -1,8 +1,4 @@
-# User-assigned managed identity for the api + worker container apps. The app's
-# SecretStore (SECRET_STORE=azure_key_vault) authenticates to Key Vault via
-# DefaultAzureCredential, which resolves THIS identity at runtime to read the
-# datasource connection secrets. The Key Vault Secrets User role assignment lives
-# in keyvault.tf (it needs the vault id).
+# User-assigned managed identity for the api + worker container apps.
 
 resource "azurerm_user_assigned_identity" "app" {
   name                = "dataq-app-id"

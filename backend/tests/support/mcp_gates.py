@@ -1,62 +1,11 @@
-"""The declared authorization gate of every MCP tool — one table, four sweeps.
-
-The #741 tripwire used to be a bare set of tool *names* with the gating rationale
-in a comment beside each group. That caught a new tool being added, which is what
-it existed for, but it could not catch a tool being added with the **wrong** gate:
-a comment saying "suite-scoped writes" is not something a test can check, and a
-name added to the wrong comment group looks identical to one added to the right
-one.
-
-So the gate is declared as data instead, and `test_role_enforcement.py` *drives*
-enforcement from it — adding a row is adding a test, not just a manifest entry.
-
-**Every gate value below drives at least one sweep**, deliberately. An earlier
-draft only drove the Viewer-denied rows, which meant a tool declared `suite:view`
-with no gate at all passed both tests — the table's own claim about it was
-unverified, in a file whose entire purpose is to make such claims checkable.
-
-`GATES` values:
-
-- ``read`` — genuinely no per-resource gate, and nothing to enforce. Either
-  workspace-scoped (`list_connections`, mirroring its REST route) or scoped
-  wholly by an accessible-suite subquery with no id to name. A Viewer is
-  *supposed* to reach these. This is the one value with no sweep, because there
-  is no denial to assert; `test_read_gated_tools_really_take_no_suite_id` pins
-  the claim that they have no suite argument to gate on, so a tool cannot be
-  parked here to escape the sweeps.
-- ``read:suite-optional`` — scoped by an accessible-suite subquery, AND
-  `require_permission(minimum="view")` when the optional `suite_id` argument is
-  passed. Both halves matter: without the subquery the list leaks, without the
-  up-front gate a named-but-inaccessible suite returns `[]`, which reads as
-  "nothing is wired up" (#828) instead of a denial.
-- ``suite:view`` — `require_permission(minimum="view")`.
-- ``suite:edit`` — `require_permission(minimum="edit")`, which
-  `suite_authz._cap_for_viewer` feeds, so a Viewer is refused even holding a
-  legacy `edit` share.
-- ``incident:view`` / ``incident:edit`` — reached through
-  `incident_service.load_visible_incident`, which resolves the ADR 0027 ladder on
-  the incident's *suite* (404-no-leak on a suite the caller cannot view; ``edit``
-  additionally required to act). Distinct from ``suite:view``/``suite:edit``
-  because the tool takes an **incident** id, so the sweep must materialise a real
-  incident on the probe suite — a fabricated id 404s before authz and would pass
-  the sweep vacuously.
-- ``role:member`` / ``role:admin`` — `server._require_role`, the coarse ADR 0033
-  axis, for capabilities with no suite to hang a resource gate on. Kept as two
-  distinct values rather than one "role gate" bucket: collapsing them would let a
-  tool declared `role:admin` but implemented with `minimum="member"` pass every
-  test, handing an admin capability to every Member.
-"""
+"""The declared authorization gate of every MCP tool — one table, four sweeps."""
 
 from __future__ import annotations
 
 #: Tool name → its declared authorization gate. Keep alphabetical within a group.
 GATES: dict[str, str] = {
-    # ── no per-resource gate ─────────────────────────────────────────────────
-    # `list_assets` and `get_asset` are here by ADR 0037's explicit decision, not
-    # by omission: asset identity + the aggregate rollup are workspace knowledge,
-    # visible to every member and identical for all of them. Only `get_asset`'s
-    # composing-suite LIST is grant-filtered, and that filtering happens inside
-    # `asset_view_service`, not at a gate.
+    # ── no per-resource gate ───────────────────────────────────────────────── `list_assets` and
+    # `get_asset` are here by ADR 0037's explicit decision.
     "get_adf_pipeline_status": "read",
     "get_asset": "read",
     "get_health_score": "read",
@@ -81,12 +30,8 @@ GATES: dict[str, str] = {
     "get_suite_results": "suite:view",
     "list_check_versions": "suite:view",
     "list_checks": "suite:view",
-    # ── writes (and live probes) gated on the suite ──────────────────────────
-    # `profile_column` is here, not with the reads: it persists nothing, but it
-    # opens a live datasource connection with stored credentials, which is why
-    # its REST twin gates on `edit` and not `view`. It sat in the "read-only"
-    # comment group before this table existed — exactly the miscategorisation a
-    # comment cannot catch and a driven test can.
+    # ── writes (and live probes) gated on the suite ────────────────────────── `profile_column` is
+    # here, not with the reads: it persists nothing.
     "cancel_run": "suite:edit",
     "create_check": "suite:edit",
     "create_schedule": "suite:edit",
@@ -110,11 +55,8 @@ GATES: dict[str, str] = {
     "ack_incident": "incident:edit",
     "get_incident": "incident:view",
     "resolve_incident": "incident:edit",
-    # ── workspace-role gated: no suite to hang a resource gate on ───────────
-    # `test_connection` spends a stored credential against a remote system;
-    # `import_suite` CREATES a suite, so there is no existing resource whose
-    # ladder could gate it. Both are Member+ in ADR 0033's normative matrix, and
-    # both mirror their REST twin's `MemberUser`.
+    # ── workspace-role gated: no suite to hang a resource gate on ─────────── `test_connection`
+    # spends a stored credential against a remote system; `import_suite` CREATES a suite.
     "import_suite": "role:member",
     "test_connection": "role:member",
 }
@@ -122,14 +64,10 @@ GATES: dict[str, str] = {
 #: Gates whose tools must refuse a **Viewer**.
 VIEWER_DENIED_GATES = frozenset({"suite:edit", "incident:edit", "role:member", "role:admin"})
 
-#: Gates whose tools must refuse a **Member** — admin-only capabilities. Separate
-#: from the Viewer set precisely so `role:admin` cannot be satisfied by a
-#: `minimum="member"` implementation.
+#: Gates whose tools must refuse a **Member** — admin-only capabilities.
 MEMBER_DENIED_GATES = frozenset({"role:admin"})
 
 #: Gates whose tools must refuse a user with **no share on the named suite**.
-#: Covers `read:suite-optional` too: its up-front gate is the half that turns a
-#: misleading empty list into an honest denial.
 OUTSIDER_DENIED_GATES = frozenset(
     {"suite:view", "suite:edit", "incident:view", "incident:edit", "read:suite-optional"}
 )

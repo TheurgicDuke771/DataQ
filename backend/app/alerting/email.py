@@ -1,13 +1,4 @@
-"""Email (SMTP) ``ResultPublisher`` — sends a run's report as an email.
-
-Workspace-level: one sender (SMTP submission with STARTTLS) and a fixed
-recipient list. The password (e.g. a Gmail app-password) is resolved from the
-SecretStore by name; the rest of the SMTP coordinates are non-secret config.
-Delivery follows the **same** per-suite policy as the other publishers (the
-suite's `enabled` flag + `alert_on` threshold via :func:`routing.route_for`);
-only the rendering + transport differ. Unconfigured (no recipients / username /
-password secret) is a quiet no-op.
-"""
+"""Email (SMTP) ``ResultPublisher`` — sends a run's report as an email."""
 
 from __future__ import annotations
 
@@ -79,11 +70,7 @@ def render_text_body(report: RunReport) -> str:
 
 
 def render_html_body(report: RunReport) -> str:
-    """Minimal HTML body (inline-styled, email-client safe).
-
-    Two tables: a **run details** key/value table (suite, owner, datasource,
-    target, severity + the shared run metadata) and a **failing-checks** table
-    (Status · Check · Details). Everything the alert carries is tabular (#661)."""
+    """Minimal HTML body (inline-styled, email-client safe)."""
     colour = "#16a34a" if report.success else "#dc2626"
     th = (
         "padding:6px 10px;text-align:left;border-bottom:2px solid #d1d5db;"
@@ -154,11 +141,7 @@ def render_health_subject(report: ConnectionHealthReport) -> str:
 
 
 def render_health_text_body(report: ConnectionHealthReport) -> str:
-    """Plain-text body for a connection poll-health edge.
-
-    Reads only the report's **classified** ``reason``; the raw exception (which can
-    carry a SAS/DSN/token) never reaches the mailer.
-    """
+    """Plain-text body for a connection poll-health edge."""
     lines = [render.health_headline(report), ""]
     lines.extend(f"{label}: {value}" for label, value in render.health_facts(report))
     lines += ["", render.health_impact(report)]
@@ -233,7 +216,8 @@ def _esc(value: str) -> str:
 class EmailPublisher:
     """Sends a run's report over SMTP (STARTTLS) to the per-suite recipients, else
     the workspace ``EMAIL_TO`` (#633). The SMTP transport (host/port/credentials/
-    sender) is workspace-level and mandatory; only the recipient list is per-suite."""
+    sender) is workspace-level and mandatory; only the recipient list is per-suite.
+    """
 
     def __init__(
         self,
@@ -257,13 +241,7 @@ class EmailPublisher:
         self._timeout = timeout
 
     def publish(self, session: Session, report: RunReport) -> None:
-        """Send the email per the run's suite notification policy.
-
-        Quiet no-op when the SMTP transport is unconfigured, no recipients resolve
-        (neither per-suite nor workspace), the suite disabled alerting, or the run is
-        below the suite's threshold. Raises on an SMTP error — the composite layer
-        isolates it so a flaky mailer can't fail the run or block the other channels.
-        """
+        """Send the email per the run's suite notification policy."""
         # The SMTP transport is workspace-level and mandatory (recipients are per-suite).
         if not (self._username and self._password_secret_name and self._sender):
             return
@@ -301,13 +279,7 @@ class EmailPublisher:
         )
 
     def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:
-        """Email a connection poll-health edge to the **workspace** recipients (#837).
-
-        A connection has no suite, so there is no per-suite recipient override to
-        resolve — this goes to ``EMAIL_TO``. Returns whether a message was actually
-        sent (``False`` on any quiet-skip gate, including an unresolvable password —
-        nothing left this process, #1101).
-        """
+        """Email a connection poll-health edge to the **workspace** recipients (#837)."""
         if not (self._username and self._password_secret_name and self._sender):
             return False
         if not self._recipients:
@@ -336,7 +308,8 @@ class EmailPublisher:
         """Email the workspace poll-staleness edge (#1052) to the workspace
         recipients — same transport gating as :meth:`publish_health`, but returning
         whether a message was actually sent (``False`` on any quiet-skip gate,
-        including an unresolvable password — nothing left this process)."""
+        including an unresolvable password — nothing left this process).
+        """
         if not (self._username and self._password_secret_name and self._sender):
             return False
         if not self._recipients:
@@ -375,7 +348,8 @@ class EmailPublisher:
     def _send(self, message: EmailMessage, *, password: str) -> None:
         """SMTP submission over STARTTLS. Shared by the run + health paths so the
         transport (and its TLS context) is implemented exactly once — a security
-        property that must not be able to differ between two copies of it."""
+        property that must not be able to differ between two copies of it.
+        """
         context = ssl.create_default_context()
         with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=self._timeout) as server:
             server.starttls(context=context)

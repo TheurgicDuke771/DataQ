@@ -1,19 +1,4 @@
-"""Read-only asset view API (ADR 0034, gap G-d phase 2, #760).
-
-Assets are the browse/reason grain over the suite execution grain. This surface
-lists the assets a caller can see and drills into one — its composing suites +
-their latest run health + the lineage neighbourhood.
-
-**The ADR 0037 three-layer rule:** asset identity + lineage topology (incl.
-column pairs) are visible to every member; the aggregate rollup is
-workspace-true (over ALL composing suites — one verdict for every viewer); only
-the itemized layer — the composing-suite list — is filtered to the caller's
-ADR 0027 grants, with the rest collapsing to `restricted_suite_count`. All of
-that lives in `asset_view_service`; this module is a thin HTTP layer.
-
-Asset-metadata mutation (`PATCH`) is **workspace-Admin-only** (ADR 0034 §4) —
-gated by `require_workspace_admin`, the same 403 the /admin surface uses.
-"""
+"""Read-only asset view API (ADR 0034, gap G-d phase 2, #760)."""
 
 from __future__ import annotations
 
@@ -64,15 +49,6 @@ class AssetSummaryRead(ApiModel):
     """List-row aggregation for one asset — **workspace-true** (ADR 0037): every
     field is identical for every viewer, aggregated over ALL composing suites.
     Carries **two orthogonal health axes** (#803) the UI renders separately:
-
-    - *Suite health* (data quality) — `worst_severity` / `checks_*` over the
-      **evaluated** checks of the composing suites' latest runs;
-      `worst_severity` is null when all passed or nothing has run. Operational
-      results never rank here.
-    - *Connection health* (reachability) — `has_operational_error` / `has_skip`
-      (plus the execution states below): could DataQ execute against the
-      datasource at all? Derived from the recorded runs only — no connection-probe
-      polling loop.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -93,9 +69,8 @@ class AssetSummaryRead(ApiModel):
     # suite's latest run `failed` / still `queued`/`running`.
     has_failed_run: bool
     has_active_run: bool
-    # Connection health (#803): a failed run OR any `error` result → DataQ could not
-    # evaluate against the datasource; `skip` → a precondition wasn't met (degraded);
-    # `cancelled` → the run was killed, so it proves nothing (never rolls up green).
+    # Connection health (#803): a failed run OR any `error` result → DataQ could not evaluate
+    # against the datasource; `skip` → a precondition wasn't met (degraded).
     has_cancelled_run: bool
     has_operational_error: bool
     has_skip: bool
@@ -105,10 +80,7 @@ class LineageNodeRead(ApiModel):
     """A lineage neighbour — OpenLineage identity + whether it is monitored. No
     run data (blast-radius browse only; ADR 0034 §2). Fully named for every
     member (ADR 0037 — lineage topology is identity).
-
-    `depth` is the hop distance from the asset under view (1 = a direct neighbour):
-    the graph view lays nodes out in hop columns rather than flattening every hop
-    into one list (#805)."""
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -118,11 +90,8 @@ class LineageNodeRead(ApiModel):
     env: str | None
     is_monitored: bool
     depth: int
-    # TRANSITION SHIM (#924 review — remove after one release): the pre-ADR-0037
-    # SPA bundle computes `redacted = !isCenter && !is_accessible` per node; with
-    # the field absent, every neighbour in a cached tab renders as an unclickable
-    # "🔒 Restricted" box until a hard refresh. Constant True keeps old bundles
-    # rendering correctly through the deploy window; nothing reads it server-side.
+    # TRANSITION SHIM (#924 review — remove after one release): the pre-ADR-0037 SPA bundle computes
+    # `redacted = !isCenter && !is_accessible` per node; with the field absent.
     is_accessible: bool = True
 
 
@@ -130,11 +99,7 @@ class LineageEdgeRead(ApiModel):
     """One edge of the lineage neighbourhood, `source` (upstream) → `target`
     (downstream) asset id. The UI draws exactly these — without them a graph could
     only guess which depth-2 node hangs off which depth-1 node (#805).
-
-    `columns` is the edge's column-level refinement (#901) where a warehouse source
-    recorded one — `[upstream_column, downstream_column]` pairs, shown to every
-    member (ADR 0037 — column names are schema metadata). Null ⇒ the edge has no
-    column grain (a table-level source recorded it)."""
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -144,14 +109,7 @@ class LineageEdgeRead(ApiModel):
 
 
 class LineageSourceHealthRead(ApiModel):
-    """A lineage-feeding connection whose poll is currently failing (#828).
-
-    Present so the UI can never render a clean "no lineage recorded" empty state over a
-    broken integration — the failure mode that let prod lineage rot for six days behind
-    an expired credential while the product reported nothing wrong.
-
-    `last_error` is a **classified** reason, never raw exception text.
-    """
+    """A lineage-feeding connection whose poll is currently failing (#828)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -166,11 +124,6 @@ class LineageSourceHealthRead(ApiModel):
 class WarehouseLineageStatusRead(ApiModel):
     """A warehouse-native lineage source (Snowflake / UC) that is degraded or failing —
     so the graph can be qualified rather than shown as complete + current (#828, #858).
-
-    `tier` is the source that answered (e.g. `snowflake_object_dependencies`);
-    `degraded_reason` is the "working but coarse" note (view-level only, Enterprise
-    needed); `last_error` is a **classified** refresh failure. A healthy full-tier source
-    is not listed.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -182,19 +135,13 @@ class WarehouseLineageStatusRead(ApiModel):
     degraded_reason: str | None = None
     last_error: str | None = None
     last_refreshed_at: datetime | None = None
-    # #1091: the refresh loop silently stopped — no error, no degradation, just no
-    # refresh within LINEAGE_STALE_AFTER_HOURS. Rendered as its own qualifier so a
-    # frozen graph never reads as a current one.
+    # #1091: the refresh loop silently stopped — no error, no degradation, just no refresh within
+    # LINEAGE_STALE_AFTER_HOURS.
     stale: bool = False
 
 
 class DimensionScoreRead(ApiModel):
-    """One scorecard row (#889, ADR 0038).
-
-    `score` is `null` when nothing evaluated — which is NOT zero and NOT 100. The
-    UI must render "no signal", because "we ran nothing" and "everything failed"
-    are opposite facts that a 0 would conflate.
-    """
+    """One scorecard row (#889, ADR 0038)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -212,11 +159,6 @@ class DimensionScoreRead(ApiModel):
 class ScorecardRead(ApiModel):
     """Per-dimension coverage + score, **workspace-true** (ADR 0037) — identical
     for every viewer who can see the asset.
-
-    `uncovered` is the actionable half: dimensions with no checks at all. Checks
-    with no dimension (ADR 0038 — custom SQL, or unclassified) are reported in
-    `unclassified_checks` and deliberately NOT bucketed, since filing them under a
-    dimension they may not belong to would make `uncovered` a lie.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -230,7 +172,8 @@ class AssetDetailRead(ApiModel):
     """Asset detail: the workspace-true summary + the caller's per-suite breakdown
     + upstream/downstream lineage. `suites` lists only suites the caller can view
     (ADR 0027); `restricted_suite_count` is how many more compose the asset — they
-    roll into `summary` (workspace-true) but stay unnamed."""
+    roll into `summary` (workspace-true) but stay unnamed.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -252,9 +195,7 @@ class AssetMetadataUpdate(ApiModel):
     explicit `null` clears it, an omitted field leaves it unchanged — the two are
     distinguished via `model_fields_set` at the route so `owner_user_id: null`
     means "unassign" rather than "leave as is".
-
-    `extra="forbid"`: because omitted-vs-null is semantically load-bearing here, a
-    typo'd field name (`descripton`) must be a 422, not a silently-ignored no-op."""
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -285,12 +226,7 @@ def list_assets(
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
 ) -> list[svc.AssetSummary]:
-    # Workspace-true (ADR 0037): identical rows for every member — the service
-    # takes no user. Auth still required (the dependency), like every surface.
-    # The header carries the total (#925) — the response BODY stays a bare list
-    # so every existing caller (incl. old frontend bundles across a deploy
-    # window) keeps parsing it unchanged; only a caller that reads the header
-    # gains truncation visibility.
+    # Workspace-true (ADR 0037): identical rows for every member — the service takes no user.
     response.headers[TOTAL_COUNT_HEADER] = str(svc.count_assets(db))
     return svc.list_visible_assets(db, limit=limit, offset=offset)
 

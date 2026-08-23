@@ -1,35 +1,4 @@
-"""Request rate limiting on every public surface (#725, ADR 0035).
-
-One HTTP middleware, registered on the parent FastAPI app as the *innermost*
-user middleware (see `backend/app/main.py`), so a 429 still exits through
-CORSMiddleware (cross-origin browsers see the 429, not an opaque CORS error)
-and through `request_id_middleware` (429s get `X-Request-ID` + the structured
-request log). Being on the parent app — not a route dependency — is what lets it
-also cover the mounted FastMCP sub-app at `/mcp`.
-
-Algorithm: a fixed-window counter (60s). The window index is baked *into* the
-Redis key (`rl:{cls}:{key}:{window}`), so there is no read-modify-EXPIRE race —
-the key simply changes at each window boundary, and EXPIRE is pure garbage
-collection at 2x the window. Counting is one round-trip (INCR + EXPIRE pipeline).
-
-Fail-open: any store error → the request is allowed (a Redis outage disables
-limiting, logged once per window — never a hard-down on the whole API).
-
-The `default` (bearer) class carries a dual-key ceiling: besides the per-token
-bucket it also increments a per-IP `ipall` bucket counting ALL bearer traffic
-from one IP, so an attacker rotating a fresh random `Bearer <nonce>` per request
-(which would otherwise mint a fresh `tok:` bucket every time and never 429) is
-still capped by `rate_limit_ip_per_minute`. The `webhook` class carries the same
-dual-key shape (#785): its primary bucket is per provider + IP (so one noisy
-orchestrator can't crowd out another's callbacks), and a per-IP `ipall` ceiling
-(`rate_limit_webhook_ip_per_minute`) bounds the aggregate one IP can spend
-across provider buckets. Both counters move in one pipelined round trip.
-
-"Per-IP" everywhere above means per address PREFIX (#789 — IPv4 /24, IPv6 /64
-by default, configurable): keying on the full address lets a rotating NAT/proxy
-pool spread a burst across sibling addresses so no bucket ever fills. See
-`_bucket_ip`.
-"""
+"""Request rate limiting on every public surface (#725, ADR 0035)."""
 
 from __future__ import annotations
 
@@ -62,40 +31,27 @@ log = get_logger(__name__)
 WINDOW_SECONDS: Final = 60
 _GC_SECONDS: Final = WINDOW_SECONDS * 2  # EXPIRE horizon — pure GC, never the limit boundary
 
-# Exempt surfaces. /healthz is hardcoded (not config) — the liveness probe must
-# never be throttleable. A genuine CORS preflight (OPTIONS carrying Origin +
-# Access-Control-Request-Method) is exempted in the middleware; a bare OPTIONS is
-# counted like any other request.
+# /healthz is hardcoded (not config) — the liveness probe must never be
+# throttleable. Genuine CORS preflights are exempted in the middleware.
 _EXEMPT_PATHS: Final = frozenset({"/healthz"})
 _WEBHOOK_PREFIX: Final = "/api/v1/orchestration/events/"
-# Unauthenticated auth-surface endpoints (OTP mint/verify, #1127) — matched on
-# the path PREFIX before the bearer branch, like `webhook`, so a bearer-carrying
-# request cannot dodge the strict cap by presenting a token. Per-IP only; the
-# per-email counters (ADR 0032 §8, #734) are a separate, service-level layer
-# this middleware cannot implement (it has no access to the parsed body).
+# Matched on path PREFIX before the bearer branch, so a bearer-carrying request cannot dodge the
+# strict cap.
 _AUTH_PREFIX: Final = "/api/v1/auth/"
 
-# The provider segments that get their OWN per-IP webhook bucket (#785), so a
-# burst from one provider can't crowd out another's callbacks when both egress
-# through the same IP. Sourced from the shared provider vocabulary in `db.models`
-# (already a transitive dependency via `core.auth`); a sync test pins it to the
-# orchestration registry. An UNKNOWN segment falls into the shared bare-IP
-# bucket: folding arbitrary path segments into the key would let a scanner mint
-# a fresh bucket per request and never 429.
+# Known providers get their OWN per-IP webhook bucket (#785).
 _WEBHOOK_PROVIDERS: Final = frozenset(ORCHESTRATION_PROVIDERS)
 
-# An IPv4 host with a `:port` suffix (proxies sometimes append one). IPv6 is left
-# untouched (it has its own colons) and validated as-is.
+# IPv4 host with a `:port` suffix (proxies sometimes append one). IPv6 has its
+# own colons and is validated as-is.
 _IPV4_PORT_RE: Final = re.compile(r"^(\d{1,3}(?:\.\d{1,3}){3}):\d+$")
 
 
 class RateLimitStore(Protocol):
     async def incr_windows(self, keys: Sequence[str]) -> list[int] | None:
-        """Increment every key in `keys` and return the new counts, aligned to
-        `keys` order, in ONE round trip.
-
-        `None` signals the store is unavailable → the middleware fails open for
-        the whole batch (a single fail-open signal, never a partial result).
+        """Increment every key and return the new counts aligned to `keys`, in
+        ONE round trip. `None` = store unavailable → the middleware fails open
+        for the whole batch (never a partial result).
         """
         ...
 
@@ -106,7 +62,8 @@ _redis_client: AsyncRedis[Any] | None = None
 
 def _get_redis_client() -> AsyncRedis[Any]:
     """Lazily build the shared async Redis client. Short timeouts so a slow/down
-    Redis fails fast into the fail-open path rather than stalling the request."""
+    Redis fails fast into the fail-open path rather than stalling the request.
+    """
     global _redis_client
     if _redis_client is None:
         from redis.asyncio import from_url
@@ -119,39 +76,19 @@ def _get_redis_client() -> AsyncRedis[Any]:
     return _redis_client
 
 
-#: Consecutive store failures that trip the breaker, and how long it then stays
-#: open. Tuned for a brownout, not an outage: five failures is well past a single
-#: unlucky request, and five seconds is short enough that enforcement resumes
-#: promptly once Redis recovers — the deliberate bias of ADR 0035 is availability
-#: over enforcement, so an open breaker must never be a long-lived state.
+#: Tuned for a brownout, not an outage: ADR 0035 biases availability over
+#: enforcement, so an open breaker must never be a long-lived state.
 _BREAKER_TRIP_AFTER = DEFAULT_TRIP_AFTER
 _BREAKER_OPEN_SECONDS = DEFAULT_OPEN_SECONDS
 
 
 def _breaker_now() -> float:
-    """Clock for the breaker's open window — MONOTONIC, deliberately not `_now`.
-
-    Two different clocks for two different jobs, and mixing them is a real bug:
-
-    * `_now()` is `time.time()` because the fixed WINDOW INDEX rides in the Redis
-      key and every replica has to agree on which window it is in. That is an
-      absolute, shared instant, so it must be wall-clock.
-    * The breaker's open window is a DURATION on one process. A wall clock can be
-      stepped backwards by NTP, and a backward step mid-window extends the open
-      state by however far the clock moved — i.e. rate limiting stays off longer
-      than the 5s ADR 0035 signs up for, precisely when clock skew is being
-      corrected. `time.monotonic` cannot move backwards.
-
-    Kept as a module-level indirection (mirroring `otp_service._breaker_now`) so a
-    test can shift the window without sleeping through it.
-    """
+    """Monotonic clock for the breaker's open window — deliberately not `_now`."""
     return time.monotonic()
 
 
-#: THIS middleware's breaker — the mechanism lives in `core.circuit_breaker` and is
-#: shared with `services.otp_service`'s counter store (#1135), but the *state* is
-#: per-instance on purpose: an OTP brownout must never switch off API rate limiting,
-#: nor the reverse.
+#: The breaker MECHANISM is shared with `services.otp_service` (#1135); the STATE is per-instance so
+#: an OTP brownout can never switch off API rate limiting, nor the reverse.
 _BREAKER: Final = CircuitBreaker(
     name="rate_limit_store",
     trip_after=_BREAKER_TRIP_AFTER,
@@ -174,35 +111,12 @@ def _breaker_record_success() -> None:
 
 
 class RedisStore:
-    """Fixed-window counter in Redis via a single INCR+EXPIRE pipeline.
-
-    Stateless (the client is module-level). ANY exception → `None`, the
-    fail-open signal — a Redis hiccup must never 500 or block the request.
-
-    **A breaker guards the hot path against a slow-but-alive Redis (#784).** The
-    socket timeouts bound the penalty when Redis is *down*, and fail-open kicks in
-    fast. They do nothing when it is *up and degraded* — a GC pause, a noisy
-    neighbour — because every request across /api, /mcp and the webhooks then
-    serially waits out the full timeout, so the app's p99 becomes Redis's p99
-    while we keep hammering a struggling server. After `_BREAKER_TRIP_AFTER`
-    consecutive failures the store stops calling Redis for `_BREAKER_OPEN_SECONDS`
-    and returns the fail-open signal immediately.
-
-    Reopening is a single probe, with no extra state: once the window has passed
-    the next request simply goes through. If it fails the breaker re-opens; if it
-    succeeds the counter resets. Deliberately not per-key or per-worker-coordinated
-    — this is a cheap guard against a brownout, and the counting itself must not
-    become the cost it exists to avoid.
-
-    The breaker MECHANISM lives in `core.circuit_breaker` and is shared with the OTP
-    per-email counter store (#1135); the STATE is this module's alone, so an OTP
-    brownout cannot switch rate limiting off (nor the reverse).
-    """
+    """Fixed-window counter in Redis via a single INCR+EXPIRE pipeline."""
 
     async def incr_windows(self, keys: Sequence[str]) -> list[int] | None:
         if _breaker_is_open():
-            # Fail open WITHOUT awaiting: the whole point is to stop paying the
-            # timeout on every request while Redis is unwell.
+            # Fail open WITHOUT awaiting — stop paying the timeout per request
+            # while Redis is unwell.
             return None
         try:
             pipe = _get_redis_client().pipeline(transaction=True)
@@ -210,8 +124,8 @@ class RedisStore:
                 pipe.incr(key)
                 pipe.expire(key, _GC_SECONDS)  # unconditional GC; the window is in the key
             results = await pipe.execute()
-            # Results interleave INCR, EXPIRE per key → the even-indexed entries
-            # are the INCR counts, aligned to `keys`.
+            # Results interleave INCR, EXPIRE per key → even-indexed entries are
+            # the INCR counts, aligned to `keys`.
             counts = [int(results[i]) for i in range(0, len(results), 2)]
         except Exception:
             _breaker_record_failure()
@@ -222,10 +136,9 @@ class RedisStore:
 
 # ── In-memory store (test-only; never an automatic fallback) ─────────────────
 class InMemoryStore:
-    """Process-local fixed-window counter — injected only in tests.
-
-    Never used as an automatic fallback for a down Redis (that would silently
-    per-process-fragment the limit); the production fail path is fail-open.
+    """Process-local fixed-window counter — injected only in tests. Never an
+    automatic fallback for a down Redis (that would silently fragment the limit
+    per process); the production fail path is fail-open.
     """
 
     def __init__(self, *, clock: Callable[[], float] | None = None) -> None:
@@ -234,8 +147,7 @@ class InMemoryStore:
 
     async def incr_windows(self, keys: Sequence[str]) -> list[int] | None:
         now = self._clock()
-        # Prune on write: drop entries older than the GC horizon so the dict can't
-        # grow unbounded across windows.
+        # Prune on write so the dict can't grow unbounded across windows.
         stale = [k for k, (_, ts) in self._counts.items() if now - ts > _GC_SECONDS]
         for k in stale:
             del self._counts[k]
@@ -266,7 +178,8 @@ def set_store_for_testing(store: RateLimitStore | None) -> None:
 
 def reset_rate_limit_state() -> None:
     """Test hook: clear the store override, the lazy Redis client, and the
-    warn-once stamp (mirrors the reset-hook pattern in `core/secrets.py`)."""
+    warn-once stamp (mirrors the reset-hook pattern in `core/secrets.py`).
+    """
     global _store_override, _redis_client, _store_unavailable_warned_window
     _store_override = None
     _redis_client = None
@@ -275,11 +188,8 @@ def reset_rate_limit_state() -> None:
 
 
 def _now() -> float:
-    """Indirection so tests can monkeypatch the middleware's time source.
-
-    Wall clock, because it feeds the fixed WINDOW INDEX baked into the Redis key —
-    an absolute instant every replica must agree on. The breaker's open window is a
-    per-process duration and uses `_breaker_now` (monotonic) instead; see there.
+    """Test-monkeypatchable time source. Wall clock — it feeds the window index
+    every replica must agree on; the breaker uses `_breaker_now` (monotonic).
     """
     return time.time()
 
@@ -299,22 +209,7 @@ def _is_ip(value: str) -> bool:
 
 
 def _client_ip(request: Request, trusted_hops: int) -> str:
-    """The client IP for per-IP buckets.
-
-    X-Forwarded-For is a comma-separated chain — each trusted proxy appends the
-    peer it saw. Exactly `trusted_hops` proxies are trusted to append (config
-    `RATE_LIMIT_XFF_TRUSTED_HOPS`), so the real client is the entry
-    `trusted_hops` from the right (`entries[len - hops]`). Picking a fixed depth
-    from the right is what survives a multi-proxy chain: a single-proxy compose
-    setup uses hops=1 (rightmost), while the ACA public-envoy→nginx→internal-
-    envoy chain uses hops=3.
-
-    If the chain is SHORTER than `trusted_hops`, the request did not traverse the
-    expected proxy stack, so the whole XFF header is untrustworthy → fall back to
-    the socket peer (never `entries[0]`, the most spoofable position). Whitespace
-    is tolerated and an IPv4 `:port` suffix stripped; a garbage candidate or a
-    missing peer falls back to `"unknown"`.
-    """
+    """The client IP for per-IP buckets."""
     xff = request.headers.get("x-forwarded-for")
     if xff and trusted_hops >= 1:
         entries = [e.strip() for e in xff.split(",")]
@@ -329,24 +224,7 @@ def _client_ip(request: Request, trusted_hops: int) -> str:
 
 
 def _bucket_ip(ip: str, settings: Settings) -> str:
-    """The per-IP bucket key component: `ip` folded onto its address prefix (#789).
-
-    Keying per full /32 dilutes the cap against a rotating NAT/proxy pool — the
-    pool spreads a burst across many sibling addresses so no single bucket ever
-    fills (observed live: 200 requests over 11 distinct IPs in one /24, none near
-    the cap). Folding onto a configurable prefix (IPv4 `rate_limit_ipv4_prefix`,
-    default /24; IPv6 `rate_limit_ipv6_prefix`, default /64 — one subscriber's
-    standard allocation) makes the whole pool share one bucket. The prefix length
-    rides in the key, so retuning the mask starts fresh buckets rather than
-    cross-counting. A non-address (`"unknown"`) passes through unchanged.
-
-    An IPv4-mapped IPv6 address (`::ffff:a.b.c.d` — what a dual-stack `[::]`
-    listener's socket peer or a proxy-written XFF entry carries) is unwrapped and
-    folded as IPv4: every mapped address lives in `::ffff:0:0/96`, so folding it
-    at /64 would collapse the ENTIRE IPv4 internet into one `::/64` bucket — one
-    abusive client would 429 all unauthenticated IPv4 traffic — and the same
-    client would key differently as `a.b.c.d` vs `::ffff:a.b.c.d`.
-    """
+    """`ip` folded onto its address prefix (#789); a non-address passes through."""
     try:
         addr = ipaddress.ip_address(ip)
     except ValueError:
@@ -362,17 +240,7 @@ def _bucket_ip(ip: str, settings: Settings) -> str:
 def _resolve_policy(
     path: str, bearer: str | None, ip: str, settings: Settings
 ) -> tuple[str, int, str]:
-    """Resolve (class, per-minute limit, bucket key) for a request.
-
-    Order matters: the webhook (machine) path and the auth (OTP mint/verify)
-    path are BOTH keyed per-IP EVEN when a bearer is present, checked before the
-    bearer branch, so neither can be dodged by presenting a token. A known
-    provider segment (adf/airflow/dbt) is folded into the webhook key so each
-    provider gets an independent per-IP bucket (#785). Otherwise a bearer
-    buckets per sha256(token) and the unauthenticated path per client-IP. The
-    raw token is never used as a key — only its hash — so it is never logged or
-    stored.
-    """
+    """Resolve (class, per-minute limit, bucket key) for a request."""
     if path.startswith(_WEBHOOK_PREFIX):
         provider = path[len(_WEBHOOK_PREFIX) :].split("/", 1)[0]
         prefix = f"{provider}:" if provider in _WEBHOOK_PROVIDERS else ""
@@ -390,10 +258,8 @@ def _warn_store_unavailable_once(window: int, *, path: str, cls: str, key: str) 
     if _store_unavailable_warned_window == window:
         return
     _store_unavailable_warned_window = window
-    # Path only (never request.url / query string), class, and key KIND (tok/ip) —
-    # never the key value. The kind's value domain is pinned to {tok, ip} — a
-    # provider-folded webhook key (`adf:ip:…`, #785) still reports "ip" so log
-    # queries keyed on the documented domain keep matching.
+    # Path only (never the full URL / query string) and the key KIND, never the key value; a
+    # provider-folded webhook key still reports "ip" so log queries keyed on the documented {tok.
     log.warning(
         "rate_limit_store_unavailable",
         path=path,
@@ -408,8 +274,8 @@ async def rate_limit_middleware(
     settings = get_settings()
     if not settings.rate_limit_enabled:
         return await call_next(request)
-    # Only a GENUINE CORS preflight is exempt — OPTIONS carrying both Origin and
-    # Access-Control-Request-Method. A bare OPTIONS is counted like any request.
+    # Only a GENUINE CORS preflight (Origin + Access-Control-Request-Method) is
+    # exempt; a bare OPTIONS is counted like any request.
     if (
         request.method == "OPTIONS"
         and "origin" in request.headers
@@ -421,22 +287,16 @@ async def rate_limit_middleware(
         return await call_next(request)
 
     bearer = _bearer_token(request)
-    # Every per-IP key site (policy key + the ipall ceilings) uses the PREFIX
-    # bucket (#789), so a NAT/proxy pool rotating sibling addresses can't dilute
-    # the cap. The raw client address is never a key input past this point.
+    # Every per-IP key site uses the PREFIX bucket (#789); the raw client
+    # address is never a key input past this point.
     ip = _bucket_ip(_client_ip(request, settings.rate_limit_xff_trusted_hops), settings)
     cls, limit, key = _resolve_policy(path, bearer, ip, settings)
 
     now = int(_now())
     window = now // WINDOW_SECONDS
 
-    # The `default` (bearer) class gets a SECOND per-IP `ipall` bucket that counts
-    # all bearer traffic from one IP, closing the rotated-token bypass (a fresh
-    # random bearer mints a fresh tok bucket but shares the ipall ceiling). The
-    # `webhook` class gets the same dual-key shape (#785): its primary bucket is
-    # per provider + IP, so without an `ipall` ceiling one IP could spend
-    # (providers + 1) x the webhook cap by rotating the segment. The unauth class
-    # stays single-key — it is already per-IP on its one bucket.
+    # `default` and `webhook` add a per-IP `ipall` ceiling: rotating bearers / provider segments
+    # mints fresh primary buckets but shares the ceiling.
     keys = [f"rl:{cls}:{key}:{window}"]
     if cls == "default":
         keys.append(f"rl:default:ipall:{ip}:{window}")

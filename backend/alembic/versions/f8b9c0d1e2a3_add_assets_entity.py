@@ -1,34 +1,4 @@
-"""add assets entity + suite/run asset_id linkage + target backfill (G-d phase 1)
-
-ADR 0034 (gap G-d): promote "the table" — implicit today inside `Suite.target`
-JSONB — to a first-class `assets` row that lineage edges, incidents, an asset
-page, and catalog sync can all reference. Identity = the OpenLineage dataset
-naming spec (`namespace` + `name`, unique together), adopted verbatim.
-
-Additive & backward-compatible (CLAUDE.md migration rules): a brand-new table
-plus two **nullable** FK columns (`suites.asset_id`, `runs.asset_id`, both
-`ON DELETE SET NULL`). No existing read path breaks; the columns start NULL and
-are populated by the resolver hooks going forward, so the code that reads them
-(ADR 0034 build set) can ship in a later PR.
-
-Backfill: every existing suite with a non-null target is resolved to an asset
-row and linked. Resolution is **fail-soft** — a suite whose config/target can't
-be resolved (bad/legacy shape, orchestration-type connection) is skipped with
-its `asset_id` left NULL, exactly mirroring the runtime hook. Runs are **not**
-backfilled: run history records the asset a run actually ran against and must not
-be rewritten from a suite's current target (a design decision, ADR 0034).
-
-The backfill logic below is a **deliberately frozen, self-contained copy** of
-`app/services/asset_identity.resolve_asset_identity` as of this revision — a
-migration must not import app code (the app evolves; a migration is a fixed
-historical step). Keep the two in sync only by re-freezing in a *new* migration
-if the identity rules ever change.
-
-Revision ID: f8b9c0d1e2a3
-Revises: e716a1b2c3d4
-Create Date: 2026-07-10 00:00:00.000000+00:00
-
-"""
+"""add assets entity + suite/run asset_id linkage + target backfill (G-d phase 1)"""
 
 from __future__ import annotations
 
@@ -58,9 +28,8 @@ _REGEX_METACHARS = re.compile(r"[\\.^$*+?{}\[\]|()]")
 
 
 def _normalize_snowflake_account(account: str) -> str:
-    # openlineage `fix_account_name`: hyphen check scoped to the first dot-segment
-    # (org-account form returns only that segment); locator regions legitimately
-    # contain hyphens (`us-east-1`) so must still get `.aws` appended.
+    # openlineage `fix_account_name`: hyphen check scoped to the first dot-segment (org-account form
+    # returns only that segment).
     account = account.strip()
     if not account:
         raise ValueError("empty account")
@@ -127,7 +96,8 @@ def _resolve_identity(
     conn_type: str, config: dict[str, Any], target: dict[str, Any]
 ) -> tuple[str, str]:
     """Return ``(namespace, name)`` or raise ``ValueError`` — frozen copy of
-    `asset_identity.resolve_asset_identity` as of this revision."""
+    `asset_identity.resolve_asset_identity` as of this revision.
+    """
     if conn_type == "snowflake":
         account = _require(config, "account", "snowflake", "config")
         database = _require(config, "database", "snowflake", "config")
@@ -175,11 +145,7 @@ def _resolve_identity(
 
 
 def _backfill_assets() -> None:
-    """Resolve every existing targeted suite to an asset row and link it.
-
-    Insert-or-reuse keyed on ``(namespace, name)`` (dedup across suites that
-    share a target); env + connection_id come from the suite's connection.
-    Unresolvable suites are skipped (asset_id left NULL) — fail-soft."""
+    """Resolve every existing targeted suite to an asset row and link it."""
     bind = op.get_bind()
     suites = (
         bind.execute(

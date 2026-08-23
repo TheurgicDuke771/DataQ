@@ -1,9 +1,4 @@
-"""User-directory search endpoint tests against a real Postgres via TestClient.
-
-The search backs the sharing UI's collaborator picker. Seeds a handful of users
-directly, then exercises the substring match, the minimum-length floor, the
-limit cap, and LIKE-wildcard escaping. Skips without TEST_DATABASE_URL.
-"""
+"""User-directory search endpoint tests against a real Postgres via TestClient."""
 
 import uuid
 from collections.abc import Iterator
@@ -74,12 +69,6 @@ def test_summary_omits_sensitive_fields(client: TestClient, db_session: Any) -> 
     authenticated user, so a field must never arrive here by accident. Equality
     (not a subset check) is what makes a new column a failing test rather than a
     silent widening.
-
-    `role` was added in #743 as a considered widening: the share picker has to
-    know whether a candidate is a Viewer, or it offers `edit` levels the backend
-    (ADR 0033) will refuse. It is coarse workspace metadata of the same kind as
-    the email and display name already here — not a credential, not a per-suite
-    grant, and not an identity key. `aad_object_id` in particular stays out.
     """
     _user(db_session, "alice@acme.io", display_name="Alice")
     db_session.commit()
@@ -95,7 +84,8 @@ def test_summary_reports_the_effective_role(
     """The EFFECTIVE role, not the stored column — because that is what
     `share_service` checks when it rejects an `edit` grant. A break-glass
     allowlist admin whose row still reads `member` can hold `edit`, and a picker
-    reading the stored value would wrongly refuse them."""
+    reading the stored value would wrongly refuse them.
+    """
     from backend.app.core.config import get_settings
 
     user = _user(db_session, "ada@acme.io", display_name="Ada")

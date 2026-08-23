@@ -1,36 +1,4 @@
-"""#457 — trip-wire for partial-index / predicate drift across OrchestrationProviders.
-
-The trigger-dedup unique index on `runs` is PARTIAL: it only covers rows whose
-`triggered_by` carries an orchestration prefix. That predicate is spelled in three
-places — the model's `__table_args__`, the migration that created it, and the
-service constant used for the `ON CONFLICT` upsert — and all three must list every
-provider in `ORCHESTRATION_PROVIDERS`.
-
-**What this module checks.** The two Python spellings — the model's
-`__table_args__` and the service constant — against `ORCHESTRATION_PROVIDERS` and
-against each other.
-
-The third spelling, the migration, is covered by `test_migration_parity.py`
-(#990) — specifically by its *second* check, which compares the literals in each
-partial-index predicate against the live database. Alembic's own
-`compare_metadata` is blind to a partial index's WHERE clause, so the first
-check alone would not have caught this; that was measured, not assumed. Widen
-the model's predicate without shipping the migration and
-`uq_runs_suite_triggered_by` is reported there by name.
-
-Until that existed this module could only say so in prose: widen the vocabulary,
-the model and the service correctly, ship no migration, and every test stayed
-green while production's predicate was stale and dedup silently lapsed for the
-new provider.
-
-Adding a provider without widening them is silent: dedup simply stops applying to
-the new provider's runs, so a re-delivered webhook creates a duplicate run instead
-of being rejected. Nothing fails, nothing logs — you find out from duplicate rows.
-
-dbt (ADR 0029) was added and the widening WAS done by hand (migration
-`c1d2e3f4a5b6`), which is exactly why this guard is worth having: it worked that
-time, and there was no test that would have noticed if it hadn't.
-"""
+"""#457 — trip-wire for partial-index / predicate drift across OrchestrationProviders."""
 
 from __future__ import annotations
 
@@ -59,12 +27,7 @@ def test_model_partial_index_covers_every_orchestration_provider() -> None:
 
 
 def test_service_upsert_predicate_covers_every_orchestration_provider() -> None:
-    """The `ON CONFLICT` predicate must match the index it targets.
-
-    Postgres only uses a partial unique index for conflict resolution when the
-    statement's `index_where` matches it, so a service predicate that drifts from
-    the model's turns the upsert into a plain insert — duplicates, no error.
-    """
+    """The `ON CONFLICT` predicate must match the index it targets."""
     assert _covered_prefixes(str(_ORCH_TRIGGER_PREDICATE)) == set(ORCHESTRATION_PROVIDERS)
 
 

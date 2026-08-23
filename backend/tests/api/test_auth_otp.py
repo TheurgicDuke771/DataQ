@@ -1,15 +1,4 @@
-"""The three OTP endpoints over real HTTP (#734).
-
-The property most of this file exists to defend is **anti-enumeration** (ADR 0032
-decision 4): eligible, ineligible and throttled requests must be indistinguishable
-to the caller. That is asserted on the raw response BYTES plus the status code and
-headers — not on "both are 200" — because the leak that matters is any observable
-difference at all.
-
-The other half is the cookie: HttpOnly, SameSite=Lax, `Path=/`, no Domain, and
-`Secure` conditioned on the deployment rather than hard-coded (the dev-vs-prod
-footgun that silently drops the cookie on a plain-HTTP stack).
-"""
+"""The three OTP endpoints over real HTTP (#734)."""
 
 from __future__ import annotations
 
@@ -37,7 +26,8 @@ LOGOUT_URL = "/api/v1/auth/logout"
 
 class _CapturingSMTP:
     """Captures the outbound message instead of speaking SMTP. Class-level so a
-    test can read what (if anything) the endpoint sent."""
+    test can read what (if anything) the endpoint sent.
+    """
 
     sent: ClassVar[list[str]] = []
 
@@ -67,15 +57,11 @@ def _otp_settings(**overrides: Any) -> Settings:
         "auth_email_from": "dataq@example.com",
         "auth_email_password_secret_name": "auth-email-password",
         "auth_otp_allowed_domains": "acme.io",
-        # The constant-time floor (#1137) is OFF for the rest of this file: it is a
-        # deliberate *sleep* on every uniform response, and paying the production
-        # default (1s) on ~40 requests would add a minute to the suite for no signal.
-        # The floor's own tests set it explicitly, and one of them pins the default,
-        # so switching it off here cannot hide a regression in the shipped value.
+        # The constant-time floor (#1137) is OFF for the rest of this file: it is a deliberate
+        # *sleep* on every uniform response.
         "auth_otp_request_min_seconds": 0,
-        # Same reasoning for the verify-side floor (#1141) — it sleeps on every 401,
-        # and this file raises a lot of them. Its own tests set it explicitly and one
-        # pins the shipped default.
+        # Same reasoning for the verify-side floor (#1141) — it sleeps on every 401, and this file
+        # raises a lot of them.
         "auth_otp_verify_min_seconds": 0,
     }
     base.update(overrides)
@@ -85,7 +71,8 @@ def _otp_settings(**overrides: Any) -> Settings:
 @pytest.fixture
 def otp_env(db_session: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
     """The app wired for OTP mode: our DB session, a stub secret store, a captured
-    SMTP transport, and an in-memory per-email counter."""
+    SMTP transport, and an in-memory per-email counter.
+    """
     import smtplib
 
     state: dict[str, Any] = {
@@ -99,10 +86,7 @@ def otp_env(db_session: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[s
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_settings] = lambda: state["settings"]
     # A test may swap `otp_env["store"]` mid-test (see
-    # test_a_missing_password_secret_and_a_sealed_vault_are_DIFFERENT_errors
-    # below); it re-invokes override_secret_store at the swap point to point the
-    # override at the new store, rather than this fixture reading through the
-    # dict on every call.
+    # test_a_missing_password_secret_and_a_sealed_vault_are_DIFFERENT_errors below).
     override_secret_store(app, state["store"])
     try:
         yield state
@@ -122,12 +106,7 @@ def _address() -> str:
 
 
 def _last_code(db: Any, email: str) -> str:
-    """The plaintext code, recovered by brute-forcing the stored hash.
-
-    Only 10^6 candidates, and the test knows the address — which is precisely the
-    point being made elsewhere about entropy. Cheaper than threading a capture hook
-    through the mailer, and it exercises the real stored value.
-    """
+    """The plaintext code, recovered by brute-forcing the stored hash."""
     row = (
         db.query(OtpCode)
         .filter(OtpCode.email == email, OtpCode.consumed_at.is_(None))
@@ -156,12 +135,7 @@ def test_an_eligible_request_returns_ok_and_mails_a_code(client: TestClient) -> 
 def test_eligible_ineligible_and_throttled_are_BYTE_IDENTICAL(
     client: TestClient, otp_env: dict[str, Any]
 ) -> None:
-    """The whole anti-enumeration property, asserted on raw bytes.
-
-    Comparing `.json()` would miss a difference in key order or whitespace, and
-    comparing only the status would miss a body that named the reason. An attacker
-    diffs responses, not our intentions.
-    """
+    """The whole anti-enumeration property, asserted on raw bytes."""
     otp_env["settings"] = _otp_settings(auth_otp_request_per_email_per_10min=1)
 
     eligible = client.post(REQUEST_URL, json={"email": _address()})
@@ -189,7 +163,8 @@ def test_a_throttled_address_is_not_mailed_again(
     client: TestClient, otp_env: dict[str, Any]
 ) -> None:
     """A 429 here would be a perfect oracle — an ineligible address is never
-    counted at all, so "did it throttle?" answers "is it allow-listed?"."""
+    counted at all, so "did it throttle?" answers "is it allow-listed?".
+    """
     otp_env["settings"] = _otp_settings(auth_otp_request_per_email_per_10min=1)
     email = _address()
     client.post(REQUEST_URL, json={"email": email})
@@ -215,7 +190,8 @@ def test_a_throttled_address_is_not_mailed_again(
 )
 def test_hostile_request_payloads_are_422_never_500(client: TestClient, payload: Any) -> None:
     """NUL bytes and oversize input must never reach Postgres as a driver
-    ValueError → 500 (#567). `ApiModel` + the length caps do this at the boundary."""
+    ValueError → 500 (#567). `ApiModel` + the length caps do this at the boundary.
+    """
     response = client.post(REQUEST_URL, json=payload)
     assert response.status_code == 422, response.text
     assert response.json()["error"]["code"] in {"validation_error", "http_error"}
@@ -237,7 +213,8 @@ def test_hostile_verify_payloads_are_422_never_500(client: TestClient, payload: 
 
 def test_a_unicode_code_is_a_401_not_a_500(client: TestClient) -> None:
     """`hmac.compare_digest` raises TypeError on non-ASCII `str` — the trap the
-    orchestration webhooks document. A 500 here would be a DoS on the verify path."""
+    orchestration webhooks document. A 500 here would be a DoS on the verify path.
+    """
     email = _address()
     client.post(REQUEST_URL, json={"email": email})
     response = client.post(VERIFY_URL, json={"email": email, "code": "üñîçø"})
@@ -253,7 +230,8 @@ def test_an_smtp_failure_surfaces_as_502_with_no_quiet_no_op(
 ) -> None:
     """#734 AC. This is also the ONE place the uniform response is not uniform —
     documented in the module docstring of `api/v1/auth_otp.py`, and accepted
-    because it only diverges while the mail server is down."""
+    because it only diverges while the mail server is down.
+    """
     import smtplib
 
     class _BrokenSMTP(_CapturingSMTP):
@@ -270,7 +248,8 @@ def test_a_missing_password_secret_and_a_sealed_vault_are_DIFFERENT_errors(
     client: TestClient, otp_env: dict[str, Any]
 ) -> None:
     """ADR 0039 decision 6 through the HTTP layer: an outage is never reported as
-    "not configured", because the fixes are different."""
+    "not configured", because the fixes are different.
+    """
     otp_env["store"] = FakeSecretStore(raise_on_get=SecretNotFoundError("not set"))
     override_secret_store(app, otp_env["store"])
     not_set = client.post(REQUEST_URL, json={"email": _address()})
@@ -297,13 +276,8 @@ def test_the_endpoints_503_when_otp_is_not_configured(
         assert response.json()["error"]["code"] == "otp_not_configured"
 
 
-# ── request: the constant-time floor (#1137) ─────────────────────────────────
-#
-# The uniform BODY hid eligibility; the response TIME gave it back. An eligible
-# address pays Redis + two DB writes + a synchronous SMTP handshake; an ineligible
-# one pays a single in-memory set lookup. These tests use a mailer that returns
-# instantly — the WORST case for the property, since it makes the eligible path as
-# cheap as it can ever be, so anything the floor fails to cover shows up here.
+# ── request: the constant-time floor (#1137) ───────────────────────────────── The uniform BODY hid
+# eligibility; the response TIME gave it back.
 
 #: Short enough to keep the suite quick, long enough to dwarf handler overhead.
 _FLOOR = 0.4
@@ -313,7 +287,8 @@ def test_an_ineligible_response_is_held_as_long_as_an_eligible_one(
     client: TestClient, otp_env: dict[str, Any]
 ) -> None:
     """The enumeration channel, closed. Both branches must clear the floor —
-    asserting only "the eligible one is slow" would pass with no floor at all."""
+    asserting only "the eligible one is slow" would pass with no floor at all.
+    """
     import time
 
     otp_env["settings"] = _otp_settings(auth_otp_request_min_seconds=_FLOOR)
@@ -337,7 +312,8 @@ def test_a_throttled_response_is_held_to_the_floor_too(
     client: TestClient, otp_env: dict[str, Any]
 ) -> None:
     """Throttled is the third uniform branch, and the cheapest of the three once the
-    counter says no — it must not become the tell."""
+    counter says no — it must not become the tell.
+    """
     import time
 
     otp_env["settings"] = _otp_settings(
@@ -357,7 +333,8 @@ def test_a_throttled_response_is_held_to_the_floor_too(
 def test_the_floor_is_applied_once_not_twice(client: TestClient, otp_env: dict[str, Any]) -> None:
     """A floor applied in two places (service AND endpoint, say) would still hide
     eligibility — and would double every sign-in's latency while looking correct.
-    The bound is the tell: one floor, not two."""
+    The bound is the tell: one floor, not two.
+    """
     import time
 
     otp_env["settings"] = _otp_settings(auth_otp_request_min_seconds=_FLOOR)
@@ -397,7 +374,8 @@ def test_an_error_response_is_NOT_padded(
 
 def test_the_floor_can_be_switched_off(client: TestClient, otp_env: dict[str, Any]) -> None:
     """0 means no sleep at all — a dev/test escape hatch, and the documented cost is
-    that the timing channel is fully open again."""
+    that the timing channel is fully open again.
+    """
     import time
 
     otp_env["settings"] = _otp_settings(auth_otp_request_min_seconds=0)
@@ -410,7 +388,8 @@ def test_the_floor_can_be_switched_off(client: TestClient, otp_env: dict[str, An
 
 def test_the_shipped_floor_default_is_one_second() -> None:
     """The value that actually protects a deployment is the DEFAULT — every test
-    above overrides it, so without this the shipped number is unasserted."""
+    above overrides it, so without this the shipped number is unasserted.
+    """
     assert Settings().auth_otp_request_min_seconds == 1.0
 
 
@@ -428,20 +407,15 @@ def test_the_remainder_is_what_is_left_of_the_floor(
 ) -> None:
     """Sleeping a FIXED amount after variable work just shifts the distribution and
     leaves the eligible/ineligible difference intact — the pad has to be the
-    remainder. Clamped at zero so an overrun never sleeps a negative."""
+    remainder. Clamped at zero so an overrun never sleeps a negative.
+    """
     from backend.app.api.v1.auth_otp import _floor_remainder
 
     assert _floor_remainder(started, _FLOOR, now=now) == expected
 
 
-# ── verify: the same floor, one endpoint over (#1141) ────────────────────────
-#
-# `otp/verify` answers a byte-identical 401 for every failure, but the WORK behind
-# it splits on eligibility: an address with a live code runs `UPDATE … RETURNING`
-# plus a commit before the hash compare, while an address with none returns off the
-# first `SELECT`. Two requests is the whole attack — `otp/request` for the target
-# (uniform `ok`, tells you nothing) mints the row, then `verify` with any wrong code
-# times it.
+# ── verify: the same floor, one endpoint over (#1141) ──────────────────────── `otp/verify` answers
+# a byte-identical 401 for every failure.
 
 #: Same shape as `_FLOOR`, its own name so the two floors can never be confused.
 _VERIFY_FLOOR = 0.4
@@ -449,7 +423,8 @@ _VERIFY_FLOOR = 0.4
 
 def _verify_floor_settings() -> Settings:
     """Verify-side floor ON, request-side floor OFF — the setup `otp/request` call
-    is not what is being measured and must not add a second's wait to each test."""
+    is not what is being measured and must not add a second's wait to each test.
+    """
     return _otp_settings(auth_otp_verify_min_seconds=_VERIFY_FLOOR)
 
 
@@ -487,7 +462,8 @@ def test_an_ineligible_address_is_held_to_the_verify_floor_too(
 ) -> None:
     """The address an attacker actually probes is one they suspect is NOT allow-listed
     — its 401 comes off the cheapest path of all (no row can exist), so it is the
-    branch most likely to become the tell."""
+    branch most likely to become the tell.
+    """
     import time
 
     otp_env["settings"] = _verify_floor_settings()
@@ -509,7 +485,8 @@ def test_a_SUCCESSFUL_verification_is_NOT_padded(
     """The decision, pinned: only the uniform 401 is floored. A 200 already separates
     itself from a 401, and its caller knows the code by definition — so padding it
     would tax every real sign-in and hide nothing. "Pad everything" is the tempting
-    mistake, and it is the one that makes sign-in feel broken."""
+    mistake, and it is the one that makes sign-in feel broken.
+    """
     import time
 
     # A floor far larger than the assertion's bound, so "not padded" cannot pass by
@@ -531,7 +508,8 @@ def test_the_verify_floor_is_applied_once_not_twice(
     client: TestClient, otp_env: dict[str, Any]
 ) -> None:
     """One floor, not two — a second pad anywhere on the path would still hide
-    eligibility while doubling the wait, so the upper bound is the tell."""
+    eligibility while doubling the wait, so the upper bound is the tell.
+    """
     import time
 
     otp_env["settings"] = _verify_floor_settings()
@@ -548,7 +526,8 @@ def test_the_unconfigured_503_is_NOT_padded_on_verify(
 ) -> None:
     """A deployment with OTP switched off answers 503 for EVERY address, so it
     carries no per-address signal — and holding a worker thread for it would make an
-    unconfigured deployment slow as well as unusable."""
+    unconfigured deployment slow as well as unusable.
+    """
     import time
 
     otp_env["settings"] = Settings(auth_otp_verify_min_seconds=2.0)  # no AUTH_EMAIL_* block
@@ -564,7 +543,8 @@ def test_the_unconfigured_503_is_NOT_padded_on_verify(
 
 def test_the_verify_floor_can_be_switched_off(client: TestClient, otp_env: dict[str, Any]) -> None:
     """0 means no sleep at all — the dev/test escape hatch, with the documented cost
-    that the #1141 timing channel is fully open again."""
+    that the #1141 timing channel is fully open again.
+    """
     import time
 
     otp_env["settings"] = _otp_settings(auth_otp_verify_min_seconds=0)
@@ -578,7 +558,8 @@ def test_the_verify_floor_can_be_switched_off(client: TestClient, otp_env: dict[
 
 def test_the_shipped_verify_floor_default_is_half_a_second() -> None:
     """The value that actually protects a deployment is the DEFAULT — every test
-    above overrides it, so without this the shipped number is unasserted."""
+    above overrides it, so without this the shipped number is unasserted.
+    """
     assert Settings().auth_otp_verify_min_seconds == 0.5
 
 
@@ -628,12 +609,11 @@ def test_verify_returns_the_me_shape(client: TestClient, db_session: Any) -> Non
 def test_the_workspace_admin_flag_comes_through(
     client: TestClient, db_session: Any, make_workspace_admin: Any
 ) -> None:
-    """Via `WORKSPACE_ADMIN_EMAILS` in the environment, not a request-scoped
-    settings override, because that is how the flag is actually resolved:
-    `is_workspace_admin` reads the process-wide `get_settings()` — the same path
-    `/me` takes — so an override injected per request would prove nothing about
-    production. It also pins the case-insensitive match against a normalized
-    OTP-provisioned address."""
+    """Via `WORKSPACE_ADMIN_EMAILS` in the environment, not a request-scoped settings override,
+    because that is how the flag is actually resolved: `is_workspace_admin` reads the process-
+    wide `get_settings()` — the same path `/me` takes — so an override injected per request
+    would prove nothing about production.
+    """
     email = _address()
     make_workspace_admin(email.upper())
     client.post(REQUEST_URL, json={"email": email})
@@ -665,7 +645,8 @@ def test_the_secure_flag_follows_the_deployment_not_a_hardcoded_constant(
     """The single most likely dev-vs-prod footgun in this feature: with `Secure`
     hard-coded on, a plain-HTTP dev stack accepts the `Set-Cookie` and then never
     sends the cookie back — a successful sign-in followed by a 401, with nothing
-    in any log to explain it."""
+    in any log to explain it.
+    """
     otp_env["settings"] = _otp_settings(auth_session_cookie_secure=explicit)
     email = _address()
     client.post(REQUEST_URL, json={"email": email}, headers=headers)
@@ -739,7 +720,8 @@ def test_logout_is_idempotent_and_works_with_no_cookie(client: TestClient) -> No
 
 def test_logout_cannot_revoke_another_users_session(client: TestClient, db_session: Any) -> None:
     """Logout keys on the presented TOKEN, never on a user id from the body — so
-    there is nothing to forge."""
+    there is nothing to forge.
+    """
     victim = User(id=uuid.uuid4(), aad_object_id=uuid.uuid4().hex, email=_address())
     db_session.add(victim)
     db_session.commit()

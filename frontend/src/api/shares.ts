@@ -2,13 +2,8 @@ import type { WorkspaceRole } from './admin';
 import { api } from './client';
 
 /**
- * Suite sharing — grant/list/update/revoke per-user access to a suite, plus the
- * directory search that turns an email/name into the `user_id` a share keys on.
- *
- * Permission ladder (backend `suite_authz`): `view` < `edit` < `admin` < `owner`.
- * `admin` is the **workspace-admin**, implicit on every suite (never granted to a
- * normal user — ADR 0027); `owner` is the implicit, immutable creator. So only
- * `view`/`edit` are grantable. Managing shares needs `admin`; listing needs `view`.
+ * Suite sharing — grant/list/update/revoke per-user access to a suite, plus the directory search
+ * that turns an email/name into the `user_id` a share keys on.
  */
 
 /** Grantable share levels — `view`/`edit` only. NOT `admin` (the workspace-admin,
@@ -33,9 +28,7 @@ export interface UserSummary {
   id: string;
   email: string;
   display_name: string | null;
-  /** The user's EFFECTIVE workspace role (ADR 0033). Present so the share picker
-   *  can mirror the backend's rule — a Viewer cannot hold `edit` — rather than
-   *  offering a level the server will refuse. */
+  /** The user's EFFECTIVE workspace role (ADR 0033). */
   role: WorkspaceRole;
 }
 

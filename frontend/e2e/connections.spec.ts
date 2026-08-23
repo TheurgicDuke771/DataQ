@@ -60,9 +60,8 @@ test.describe('Connections page', () => {
     await env.click();
     await env.press('ArrowDown');
     await env.press('Enter');
-    // Role is required since #1067 — GX mandates it for every suite run, so the
-    // form blocks submit without it (a role-less connection would test green and
-    // fail every run).
+    // Role is required since #1067 — GX mandates it for every suite run, so the form blocks submit
+    // without it (a role-less connection would test green and fail every run).
     for (const label of ['Account', 'User', 'Database', 'Schema', 'Warehouse', 'Role']) {
       await page.getByLabel(label, { exact: true }).fill(`${label.toLowerCase()}-val`);
     }
@@ -93,11 +92,8 @@ test.describe('Connections page', () => {
     await expect(testAll).toBeEnabled();
     await testAll.click();
 
-    // With placeholder creds the tests fail-soft — we assert the health signal
-    // *appears* (testing → unreachable), not that connectivity succeeds. The
-    // settled failure badge reads "unreachable" (HealthBadge, Connections.tsx);
-    // "healthy" only if real creds happened to work. A transient "testing…"
-    // also counts — any of them proves the per-card health path ran end-to-end.
+    // With placeholder creds the tests fail-soft — we assert the health signal *appears* (testing →
+    // unreachable), not that connectivity succeeds.
     await expect(page.getByText(/testing…|unreachable|healthy/).first()).toBeVisible({
       timeout: 20_000,
     });

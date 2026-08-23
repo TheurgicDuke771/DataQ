@@ -1,8 +1,4 @@
-"""Validates the db_session fixture: real persistence + per-test rollback isolation.
-
-These run only when TEST_DATABASE_URL is set (CI Postgres service / local compose);
-they skip otherwise.
-"""
+"""Validates the db_session fixture: real persistence + per-test rollback isolation."""
 
 from typing import Any
 

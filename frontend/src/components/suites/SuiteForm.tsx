@@ -46,12 +46,7 @@ interface SuiteFormValues extends TargetFormValues {
 
 /**
  * Create or edit a suite — the form body shared by the `/suites/new` page and the
- * `/suites/:id/edit` page (the drawer is retired in W6, ADR 0022). `suite ===
- * undefined` is create mode (connection is chosen then locked); editing exposes
- * name/description + the run target (`connection_id` is immutable on the backend —
- * re-pointing orphans child checks). The target is datasource-shaped (#215): the
- * fields shown depend on the selected connection's type, and the target is optional
- * (a suite may stay targetless = not-yet-runnable, which disables Run until set).
+ * `/suites/:id/edit` page (the drawer is retired in W6, ADR 0022).
  */
 export function SuiteForm({
   suite,
@@ -81,10 +76,7 @@ export function SuiteForm({
   const activeConn = connections.find((c) => c.id === activeConnId);
   const kind = activeConn ? targetKind(activeConn.type) : null;
 
-  // Prefill once on mount/edit; create starts blank. A flat-file target is a
-  // batch selector iff it carries `pattern` (#1180) — mutually exclusive with
-  // the literal `path` per the backend `_flatfile_target` resolver, so the
-  // stored shape alone tells us which mode to reopen the form in.
+  // Prefill once on mount/edit; create starts blank.
   useEffect(() => {
     if (suite) {
       const pattern = targetString(suite.target, 'pattern');
@@ -104,9 +96,8 @@ export function SuiteForm({
         target_pattern: pattern,
         target_strategy: asBatchStrategy(targetString(suite.target, 'strategy')) ?? 'latest',
         target_batch: targetString(suite.target, 'batch'),
-        // A stored block IS the toggle — there is no separate "enabled" flag on
-        // the target, so its presence is the only truth about whether this suite
-        // samples (#595).
+        // A stored block IS the toggle — there is no separate "enabled" flag on the target, so its
+        // presence is the only truth about whether this suite samples (#595).
         sampling_enabled: sampling !== undefined,
         sampling_strategy: sampling?.strategy ?? 'head',
         sampling_rows: sampling?.rows,
@@ -122,12 +113,8 @@ export function SuiteForm({
     } catch {
       return; // validation errors render inline
     }
-    // Assemble the datasource-shaped target; flag a partially-filled section
-    // inline rather than letting the backend 422 on save.
-    // `stored` is the carry-forward that stops an unrelated edit from deleting a
-    // saved row cap: when the sampling section was never rendered, the form has
-    // no `sampling_enabled` to report and `assembleTarget` would otherwise build
-    // a target without it (#1333 F3).
+    // Assemble the datasource-shaped target; flag a partially-filled section inline rather than
+    // letting the backend 422 on save.
     const { target, error } = kind
       ? assembleTarget(kind, values, {
           connType: activeConn?.type,
@@ -138,9 +125,8 @@ export function SuiteForm({
       form.setFields([{ name: error.field, errors: [error.message] }]);
       return;
     }
-    // The backend update treats a null target as "leave unchanged" (it never
-    // clears a target back to NULL), so clearing the fields on a suite that has
-    // a target would silently keep the old one. Say so rather than no-op.
+    // The backend update treats a null target as "leave unchanged" (it never clears a target back
+    // to NULL), so clearing the fields on a suite that has a target would silently keep the old
     const hadTarget = isEdit && !!suite.target && Object.keys(suite.target).length > 0;
     if (hadTarget && target === null) {
       message.error('A run target can’t be removed once set — edit it to point elsewhere instead.');
@@ -163,11 +149,8 @@ export function SuiteForm({
         message.success(`${values.name}: ${isEdit ? 'saved' : 'created'}`);
         onSaved(saved);
       } catch (err) {
-        // The sampling ↔ row-count refusal names two things that conflict, and a
-        // toast makes the reader hold one of them in their head while going to
-        // look at the other. Put it on the control that caused it, with the
-        // conflicting checks named (#1333 F5); everything else keeps the generic
-        // handler.
+        // The sampling ↔ row-count refusal names two things that conflict, and a toast makes the
+        // reader hold one of them in their head while going to look at the other.
         const api = apiFieldError(err);
         const blocked = api ? detailNames(api.detail, 'checks') : [];
         if (api?.code === 'suite_target_invalid' && blocked.length > 0) {
@@ -227,21 +210,7 @@ export function SuiteForm({
   );
 }
 
-/**
- * The datasource-shaped run-target inputs. Optional as a whole (leave blank for a
- * not-yet-runnable suite); when started, the required field for the datasource is
- * enforced at submit by `assembleTarget`. Field names match `TargetFormValues`.
- *
- * Flat-file connections additionally offer a Single file / Batch pattern mode
- * toggle (#1180): Batch mode exposes the prefix/pattern/strategy inputs the
- * backend `resolve_batch`/`BatchSpec` already supports, previously reachable
- * only by hand-editing the stored target. `assembleTarget`'s client-side checks
- * are a light authoring aid and the backend's own 422 on save is still the
- * authoritative validator, but editing an existing suite additionally gets a
- * live "resolves to: `<path>`" hint (#1193, `BatchPreviewHint` below) against
- * the connection's real object listing — create mode has no suite id yet to
- * preview against, so it stays summary-only there.
- */
+/** The datasource-shaped run-target inputs. */
 export function TargetFields({
   kind,
   suiteId,
@@ -249,10 +218,7 @@ export function TargetFields({
 }: {
   kind: TargetKind;
   suiteId?: string;
-  /** Whether this connection's datasource accepts a `sampling` block (#595).
-   *  When false the section is not rendered at all, because the backend answers
-   *  a spec there with a 422 — offering a control whose only outcome is a save
-   *  error would be worse than not offering it. */
+  /** Whether this connection's datasource accepts a `sampling` block (#595). */
   canSample?: boolean;
 }) {
   const form = Form.useFormInstance();
@@ -370,20 +336,8 @@ export function TargetFields({
 }
 
 /**
- * The `sampling` authoring block (#595/#1325) — rendered only for the datasources
- * whose runners materialise rows (ADLS Gen2 / S3 / Unity Catalog).
- *
- * Off by default and framed as what it is: sampling changes what a verdict
- * *means*, so the copy says so at the point of the decision rather than leaving
- * the reader to discover it from a "Sampled" tag on the results page. The
- * strategy names carry the same honesty — `head` is "the first N rows in storage
- * order", not "a sample", because it is systematically biased toward whatever
- * the writer wrote first.
- *
- * Seed is shown for `random` only, mirroring the backend's refusal of a seed on
- * `head`: a head sample always reads the same first rows and cannot be seeded, so
- * offering the field there would promise reproducibility of a different kind than
- * the one it delivers.
+ * The `sampling` authoring block (#595/#1325) — rendered only for the datasources whose runners
+ * materialise rows (ADLS Gen2 / S3 / Unity Catalog).
  */
 function SamplingFields() {
   const form = Form.useFormInstance();
@@ -465,26 +419,20 @@ function SamplingFields() {
   );
 }
 
-/** The `error.code` values the batch preview (backend `services/run_target.py`)
- *  can 422 with — only `batch_preview_no_data` gets its own canned copy below;
- *  every other 422 (a malformed pattern, `specific` with no capture group, a
- *  non-flat-file connection, a prefix too broad to scan) carries a backend
- *  message that is safe to render, because the backend never echoes an adapter
- *  exception verbatim — anything it can't classify becomes a generic 502. */
+/**
+ * The `error.code` values the batch preview (backend `services/run_target.py`) can 422 with — only
+ * `batch_preview_no_data` gets its own canned copy below; every other 422 (a malformed pattern.
+ */
 const BATCH_PREVIEW_NO_DATA_CODE = 'batch_preview_no_data';
 
 interface BatchPreviewErrorEnvelope {
   error?: { code?: string; detail?: { reason?: unknown } };
 }
 
-/** Every non-idle state carries the exact spec it describes, so render can tell
- *  "this answer is about what the form says now" from "this answer is about what
- *  the form said 300ms ago". Without it the hint keeps asserting `Resolves to:
- *  <path>` through the whole debounce window after the author edits the pattern
- *  — and worse, re-shows a `latest` answer as if it were the resolution of a
- *  newly-entered `specific` batch key when `active` flips false→true. A preview
- *  whose entire purpose is before-you-save confidence must never label a stale
- *  answer as the current one. */
+/**
+ * Every non-idle state carries the exact spec it describes, so render can tell "this answer is
+ * about what the form says now" from "this answer is about what the form said 300ms ago".
+ */
 type BatchPreviewSpec = string;
 
 type BatchPreviewState =
@@ -495,27 +443,8 @@ type BatchPreviewState =
   | { status: 'error'; spec: BatchPreviewSpec; message: string };
 
 /**
- * Live "resolves to: `<path>`" hint next to the batch fields (#1193): debounces
- * `GET /suites/{id}/batch-preview` as prefix/pattern/strategy/batch change, so an
- * author gets the same before-you-save confidence a literal file path already
- * has, instead of finding out at the next scheduled run whether the pattern
- * actually matches anything. Mirrors `SharePanel`'s directory-search debounce
- * (a monotonic token so a slow earlier request can never overwrite a newer
- * one's result).
- *
- * Renders nothing without a `suiteId` (create mode — no suite to preview
- * against yet), without a pattern, or while `specific` is picked with no batch
- * key — those are exactly the states `assembleTarget` would also refuse to
- * resolve client-side, so there is nothing worth calling the backend for yet.
- *
- * All `setState` calls happen inside the debounce timer's callback or the
- * fetch's `.then`/`.catch` — never synchronously in the effect body — so this
- * never trips `react-hooks/set-state-in-effect`, and render only ever reads
- * `state` (never a ref), so it never trips `react-hooks/refs`. That would
- * otherwise leave a stale answer on screen for the whole debounce window, so
- * every answer carries the spec it is about and render falls back to
- * "Checking…" whenever that spec is no longer the form's — the deferred write
- * costs nothing as long as the display never mislabels what it is showing.
+ * Live "resolves to: `<path>`" hint next to the batch fields (#1193): debounces `GET
+ * /suites/{id}/batch-preview` as prefix/pattern/strategy/batch change.
  */
 function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
   const form = Form.useFormInstance();
@@ -531,10 +460,8 @@ function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
 
   const [state, setState] = useState<BatchPreviewState>({ status: 'idle' });
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  // Monotonic token so a slow earlier request can't overwrite a newer one's
-  // result (mirrors SharePanel's directory-search debounce); only ever read
-  // inside a callback (never during render), so it's exempt from the
-  // refs-during-render rule.
+  // Monotonic token so a slow earlier request can't overwrite a newer one's result (mirrors
+  // SharePanel's directory-search debounce); only ever read inside a callback (never during
   const token = useRef(0);
   useEffect(
     () => () => {
@@ -570,12 +497,8 @@ function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
             setState({ status: 'no-match', spec });
             return;
           }
-          // The 502's own message is deliberately generic ("could not list the
-          // datasource store") because the backend must never echo an adapter
-          // exception; the actionable half is the classified `detail.reason`
-          // (`failure_classifier` — bad credential vs unreachable vs
-          // misconfigured). Showing only the message throws away the only part
-          // that tells the author what to go fix.
+          // The 502's own message is deliberately generic ("could not list the datasource store")
+          // because the backend must never echo an adapter exception.
           const reason = typeof envelope?.detail?.reason === 'string' ? envelope.detail.reason : '';
           const message = [errorMessage(err), reason].filter(Boolean).join(' ');
           setState({ status: 'error', spec, message });

@@ -1,9 +1,4 @@
-"""S3-compatible endpoint helpers (#1063) — the shared endpoint/addressing decision.
-
-Pure functions, no boto3: this is the one place the *rules* are asserted, and the
-three client sites (`datasources/s3.py`, `datasources/flatfile.py`,
-`orchestration/dbt.py`) each assert that they actually apply them.
-"""
+"""S3-compatible endpoint helpers (#1063) — the shared endpoint/addressing decision."""
 
 import pytest
 
@@ -31,12 +26,7 @@ def test_endpoint_url_strips_trailing_slash_and_whitespace() -> None:
 
 @pytest.mark.parametrize("blank", [None, "", "   "])
 def test_blank_endpoint_url_means_aws(blank: str | None) -> None:
-    """Blank must collapse to None, not to the empty string.
-
-    boto3 treats ``endpoint_url=""`` as a real (and broken) endpoint, so a user
-    who clears the optional form field would otherwise break a working AWS
-    connection rather than reverting it to the default.
-    """
+    """Blank must collapse to None, not to the empty string."""
     assert normalize_endpoint_url(blank) is None
 
 

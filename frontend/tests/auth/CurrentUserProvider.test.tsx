@@ -75,13 +75,7 @@ describe('CurrentUserProvider', () => {
   });
 });
 
-/**
- * `otp` mode (ADR 0032, #736). The identity comes from the resolved session, not
- * from an OIDC profile — and `homeAccountId` deliberately carries the DataQ user
- * id, because MeProvider keys its refetch on that value: if it were a constant,
- * one user's `is_workspace_admin` would survive a sign-out into the next user's
- * session.
- */
+/** `otp` mode (ADR 0032, #736). */
 describe('CurrentUserProvider — otp mode', () => {
   const ME = {
     id: 'u-9',

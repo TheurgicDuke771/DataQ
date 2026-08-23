@@ -1,17 +1,4 @@
-"""Incident read + lifecycle API (ADR 0034 decision 4, gap G-d phase 3, #761).
-
-Incidents are the stateful, deduped, evidence-carrying roll-up of the per-result
-alert signal. This surface lists the incidents a caller can see, drills into one
-(with its deterministic evidence card), and lets them acknowledge / resolve.
-
-**Authz mirrors the asset-view matrix exactly (ADR 0027 / #760):** visibility is
-derived from suite grants — an incident is visible iff the caller can ``view`` its
-suite; a workspace-admin sees all; an incident wholly outside the caller's grants
-is **404-no-leak** (indistinguishable from a truly unknown id). Acknowledge /
-resolve are *operational* actions on the suite, so they require ``edit`` on it
-(owner/edit/admin/workspace-admin act; a view-share reads but 403s on mutate) —
-the same gate as triggering a run.
-"""
+"""Incident read + lifecycle API (ADR 0034 decision 4, gap G-d phase 3, #761)."""
 
 from __future__ import annotations
 
@@ -43,7 +30,8 @@ class IncidentRead(ApiModel):
     """List-row / summary view of an incident. ``check_name`` / ``asset_*`` are
     lifted from the snapshotted evidence card (fallbacks when absent) so the list
     renders without a join; ``latest_status`` is the breaching tier of the most
-    recent occurrence."""
+    recent occurrence.
+    """
 
     id: uuid.UUID
     asset_id: uuid.UUID
@@ -64,7 +52,8 @@ class IncidentRead(ApiModel):
 
 class IncidentDetailRead(IncidentRead):
     """Incident detail — the summary plus the full evidence card + transition
-    actors/notes + the reopen link."""
+    actors/notes + the reopen link.
+    """
 
     acknowledged_by: uuid.UUID | None
     resolved_by_user_id: uuid.UUID | None
@@ -76,7 +65,8 @@ class IncidentDetailRead(IncidentRead):
 
 class IncidentActionRequest(ApiModel):
     """Optional note on an ack / resolve. NUL bytes are rejected by ``ApiModel``;
-    the length cap keeps a hostile note off the unbounded Text column."""
+    the length cap keeps a hostile note off the unbounded Text column.
+    """
 
     model_config = ConfigDict(extra="forbid")
 

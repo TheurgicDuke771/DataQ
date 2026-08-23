@@ -1,10 +1,4 @@
-"""Tests for the orphan-secret sweep (#1059).
-
-The unit under test decides whether a live warehouse credential gets deleted, so the
-emphasis here is on the cases where it must REFUSE — an unreadable age, a
-still-referenced secret, a store that cannot enumerate itself. A sweep that
-over-deletes is unrecoverable once the purge is a KV metadata delete (ADR 0039 §7).
-"""
+"""Tests for the orphan-secret sweep (#1059)."""
 
 from __future__ import annotations
 
@@ -32,12 +26,10 @@ GRACE = timedelta(days=30)
 
 
 class _EnumerableStore(FakeSecretStore):
-    """A store that can enumerate itself via `list_secrets()` — only OpenBao/AKV
-    implement this for real; the sweep duck-types via `getattr` since
-    `EnvSecretStore` and every other test double lack it. `get`/`set` are
-    guarded because the sweep must never read or write a secret VALUE, only
-    enumerate and (on purge) delete; `.deleted` (inherited from
-    `FakeSecretStore`) records every name a successful `delete()` sees."""
+    """A store that can enumerate itself via `list_secrets()` — only OpenBao/AKV implement this for
+    real; the sweep duck-types via `getattr` since `EnvSecretStore` and every other test double
+    lack it.
+    """
 
     def __init__(self, secrets: list[SecretInfo]) -> None:
         super().__init__()
@@ -112,7 +104,8 @@ def test_referenced_secret_is_never_an_orphan(db_session: Session) -> None:
 def test_secret_inside_the_grace_period_is_held_back(db_session: Session) -> None:
     """The race this guards: a connection-create writes its secret, then its commit
     fails or is still in flight. Purging on age alone would delete the credential of
-    a connection being created right now."""
+    a connection being created right now.
+    """
     orphans, too_young, _unknown = find_orphan_secrets(
         db_session, secrets=[SecretInfo("conn-x-dev-abc123", RECENT)], grace=GRACE, now=NOW
     )
@@ -122,7 +115,8 @@ def test_secret_inside_the_grace_period_is_held_back(db_session: Session) -> Non
 
 def test_foreign_secrets_are_out_of_scope(db_session: Session) -> None:
     """A vault may be shared. Anything DataQ did not mint is never a candidate,
-    however old and however unreferenced."""
+    however old and however unreferenced.
+    """
     orphans, too_young, _unknown = find_orphan_secrets(
         db_session,
         secrets=[
@@ -142,7 +136,8 @@ def test_foreign_secrets_are_out_of_scope(db_session: Session) -> None:
 def test_slack_webhook_ref_is_registered(db_session: Session) -> None:
     """Slack and Teams are SEPARATE refs on one row (#633). Registering only
     `webhook_secret_ref` would make every Slack webhook secret look unowned — the
-    exact bug this registry exists to prevent, and one this change originally had."""
+    exact bug this registry exists to prevent, and one this change originally had.
+    """
     conn = _connection(db_session, secret_ref=None)
     suite = Suite(id=uuid.uuid4(), name="s", connection_id=conn.id, created_by=conn.created_by)
     db_session.add(suite)
@@ -169,12 +164,12 @@ def test_slack_webhook_ref_is_registered(db_session: Session) -> None:
 
 
 def test_iceberg_catalog_secret_in_jsonb_is_registered(db_session: Session) -> None:
-    """`catalog_secret_name` names a SecretStore entry but lives in `Connection.config`
-    JSONB, so no COLUMN-level audit can see it — `connection_service` writes and
-    rotates it exactly like the primary `secret_ref` (#1181), but that alone doesn't
-    make it visible to `test_every_secret_ref_column_is_registered`'s introspection,
-    since it is a value inside a JSON blob, not a column. Prefix scoping would not
-    save it either: an operator may name it `conn-…`."""
+    """`catalog_secret_name` names a SecretStore entry but lives in `Connection.config` JSONB, so
+    no COLUMN-level audit can see it — `connection_service` writes and rotates it exactly like
+    the primary `secret_ref` (#1181), but that alone doesn't make it visible to
+    `test_every_secret_ref_column_is_registered`'s introspection, since it is a value inside a
+    JSO
+    """
     _connection(
         db_session,
         secret_ref=None,
@@ -189,26 +184,12 @@ def test_iceberg_catalog_secret_in_jsonb_is_registered(db_session: Session) -> N
     assert orphans == []
 
 
-# Column-name fragments that mean "this holds a SecretStore name". Broader than
-# `secret_ref` on purpose: the registry must not be spelling-bound to today's
-# conventions, since a `credential_ref` or `signing_key_name` column would hold one
-# just as much and would be just as purgeable.
+# Column-name fragments that mean "this holds a SecretStore name".
 _SECRET_NAME_COLUMN_HINTS = ("secret_ref", "secret_name", "credential_ref", "key_name")
 
 
 def test_every_secret_name_column_in_the_schema_is_registered() -> None:
-    """Introspection guard over EVERY mapped table (#1059).
-
-    The first version of this test iterated `(Connection, SuiteNotification)` — which
-    is exactly the set already in `_OWNER_COLUMNS`, making it a tautology: a NEW model
-    with a secret-name column would leave it green and its credentials purgeable. It
-    could not express the failure it existed to catch, which is the one test-quality
-    mistake this project keeps relearning.
-
-    So it walks `Base.metadata.tables` like its sibling
-    `test_every_asset_fk_has_a_sweep_guard` (#770) does, and matches on a set of name
-    fragments rather than one spelling.
-    """
+    """Introspection guard over EVERY mapped table (#1059)."""
     registered = {(c.parent.class_.__tablename__, c.key) for c in _OWNER_COLUMNS}
     unregistered = [
         f"{table.name}.{column.key}"
@@ -216,11 +197,8 @@ def test_every_secret_name_column_in_the_schema_is_registered() -> None:
         for column in table.columns
         if any(hint in column.key for hint in _SECRET_NAME_COLUMN_HINTS)
         and (table.name, column.key) not in registered
-        # `connection_versions.config` snapshots a historical `*_secret_name`, but a
-        # version row is an audit record, not an owner: there is no restore endpoint,
-        # and the value it names was provisioned by an operator, never written by
-        # DataQ. Superseded catalog secrets being purgeable is the intended reading —
-        # recorded here rather than left as an unexamined exclusion (CONTRIBUTING 3a).
+        # `connection_versions.config` snapshots a historical `*_secret_name`, but a version row is
+        # an audit record, not an owner: there is no restore endpoint.
         and table.name != "connection_versions"
     ]
     assert not unregistered, (
@@ -232,14 +210,7 @@ def test_every_secret_name_column_in_the_schema_is_registered() -> None:
 def test_any_secret_name_config_key_is_owned_not_just_the_iceberg_one(
     db_session: Session,
 ) -> None:
-    """The JSONB scan follows the CONVENTION, not one key.
-
-    `connection_service._extra_secrets` resolves any `*_secret_name` key generically
-    and says so ("no branching on connection.type … no matter how many credentials a
-    future type needs"). A registry naming `catalog_secret_name` alone would leave the
-    next connection type that adds one silently purgeable — so this uses a key that
-    does not exist today on purpose.
-    """
+    """The JSONB scan follows the CONVENTION, not one key."""
     _connection(
         db_session,
         secret_ref=None,
@@ -257,13 +228,7 @@ def test_any_secret_name_config_key_is_owned_not_just_the_iceberg_one(
 def test_workspace_secret_names_from_settings_are_owned(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Six SecretStore names live in `Settings` and are referenced by NO row.
-
-    Three are operator-named with blank defaults, so naming the workspace Teams
-    webhook `suite-notif-teams-workspace` — natural, since DataQ mints `suite-notif-*`
-    itself — would put a live credential inside the prefix filter with nothing else
-    standing between it and a purge.
-    """
+    """Six SecretStore names live in `Settings` and are referenced by NO row."""
     monkeypatch.setenv("TEAMS_WEBHOOK_SECRET_NAME", "suite-notif-teams-workspace")
     get_settings.cache_clear()
     try:
@@ -283,7 +248,8 @@ def test_naive_created_at_from_a_driver_does_not_break_the_sweep(
 ) -> None:
     """Whether `created_at` is tz-aware is the DRIVER's choice. A naive value would
     raise TypeError on the subtraction, which the task's blanket except swallows into
-    a silent "0 orphans" — the janitor stops without saying so."""
+    a silent "0 orphans" — the janitor stops without saying so.
+    """
     naive_old = OLD.replace(tzinfo=None)
     orphans, _, unknown = find_orphan_secrets(
         db_session,
@@ -300,7 +266,8 @@ def test_unknown_age_is_its_own_bucket_not_folded_into_too_young(
 ) -> None:
     """For OpenBao a None age is what a DENIED metadata read looks like. Folding it
     into `too_young` would report a permissions gap as "everything here is recent" —
-    an outage rendered as a state."""
+    an outage rendered as a state.
+    """
     orphans, too_young, unknown = find_orphan_secrets(
         db_session,
         secrets=[
@@ -346,13 +313,10 @@ def test_sweep_purges_only_when_enabled(db_session: Session) -> None:
 
 
 def test_purge_attempted_records_the_attempt_not_the_outcome(db_session: Session) -> None:
-    """`delete` is fail-soft BY CONTRACT — it swallows and logs — so the store cannot
-    report success and this field must not claim to. Pinned so the name and the
-    behaviour cannot drift apart again (the first version's comment claimed it
-    reflected what was actually deleted). `_EnumerableStore.delete` (inherited
-    from `FakeSecretStore`) already matches this contract exactly — it just
-    records the name and never raises, i.e. logs-and-swallows with no signal
-    out — so no dedicated failing-delete subclass is needed."""
+    """`delete` is fail-soft BY CONTRACT — it swallows and logs — so the store cannot report
+    success and this field must not claim to. Pinned so the name and the behaviour cannot drift
+    apart again (the first version's comment claimed it reflected what was actually deleted).
+    """
 
     store = _EnumerableStore([SecretInfo("conn-dead-dev-abc123", OLD)])
     result = sweep_orphan_secrets(db_session, store=store, grace_days=30, purge=True, now=NOW)
@@ -368,7 +332,8 @@ def test_sweep_disabled_by_non_positive_grace(db_session: Session) -> None:
 
 def test_sweep_skips_a_store_that_cannot_enumerate(db_session: Session) -> None:
     """Absence of `list_secrets` must not be read as an empty vault — an empty
-    listing means "every secret is an orphan"."""
+    listing means "every secret is an orphan".
+    """
     store = _UnlistableStore([SecretInfo("conn-dead-dev-abc123", OLD)])
     result = sweep_orphan_secrets(db_session, store=store, grace_days=30, purge=True, now=NOW)
     assert result.orphans == []
@@ -377,7 +342,8 @@ def test_sweep_skips_a_store_that_cannot_enumerate(db_session: Session) -> None:
 
 def test_sweep_propagates_a_store_outage_instead_of_reporting_zero(db_session: Session) -> None:
     """A vault that cannot be listed must fail the task, never look like a clean
-    vault — the #954 masquerade applied to a destructive path."""
+    vault — the #954 masquerade applied to a destructive path.
+    """
 
     class _BrokenStore(_EnumerableStore):
         def list_secrets(self) -> list[SecretInfo]:

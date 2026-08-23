@@ -1,43 +1,4 @@
-"""Marquez `LineageProvider` reference implementation (ADR 0034, #762).
-
-Marquez (Apache-2.0) has a purpose-built lineage read API — one HTTP GET returns the
-graph around a node — which is why it is the reference consumer of the #758 emitter:
-the compose story is *emitter → Marquez → pull back*. This module is the pull side.
-
-    GET {base}/api/v1/lineage?nodeId=dataset:{namespace}:{name}&depth={N}
-
-The response is ``{"graph": [ {id, type, data, inEdges, outEdges}, … ]}`` (verified
-against Marquez 0.50.0 `service/models/Node.java` + `Edge.java`): each node's ``type``
-is ``DATASET`` / ``JOB`` / ``DATASET_FIELD`` / ``RUN``; each edge object is
-``{"origin": nodeId, "destination": nodeId}`` and is **directed origin→destination**
-(upstream→downstream). Dataset identity comes from the node's ``data.namespace`` /
-``data.name`` (never from splitting the ``id`` string — an OpenLineage namespace can
-contain ``:``).
-
-Matching a pulled dataset to a DataQ asset is **not** the byte-for-byte join ADR 0034
-originally assumed. A real producer emits whatever case its source spelled, so the
-*names* diverge even though the *namespaces* agree (measured — see
-`lineage.identity`, #823). The pull therefore enumerates the catalog's own dataset
-names (:meth:`list_datasets`) and reconciles them through
-`lineage.identity.canonical_identity`; this module never invents a node id.
-
-**Fail-soft, never raises** (the seam contract, mirroring the emitter's 5 s bounded
-transport): a dead/slow Marquez, a non-200, garbage JSON, or a structurally-broken
-graph yields an empty :class:`LineageGraph`, logged once. Adversarial guards: the
-``depth`` is clamped, the node count is capped (a runaway graph is truncated, not
-loaded whole), cyclic graphs are fine (the graph is just an edge set), and any node
-whose kind we don't model still *parses* — it lands as ``UNKNOWN`` rather than
-crashing (the node-kind contract).
-
-Uses the repo's module-level ``httpx.get`` convention (mirrors `orchestration.adf`),
-so no new HTTP dependency and tests monkeypatch ``httpx.get``.
-
-**Stalled-release risk (accepted, ADR 0034).** Marquez's newest tag is 0.50.0
-(2024-10). It is a dev-time reference consumer, not a production dependency, and the
-`/api/v1/lineage` contract has been stable for many releases — so the slow cadence is
-low-risk here. A user brings their own catalog (DataHub / Purview) behind this same
-seam for production lineage.
-"""
+"""Marquez `LineageProvider` reference implementation (ADR 0034, #762)."""
 
 from __future__ import annotations
 
@@ -69,9 +30,7 @@ _MAX_DEPTH = 20
 # memory. Well above any realistic blast-radius neighbourhood for a single dataset.
 _MAX_NODES = 10_000
 
-# Dataset-listing pagination (#823). Marquez's `.../datasets` is limit/offset paged; the
-# cap is the same "bound the blast radius of a hostile/huge catalog" discipline as
-# `_MAX_NODES`, and hitting it is LOGGED rather than silently swallowed.
+# Dataset-listing pagination (#823).
 _DATASET_PAGE = 100
 _MAX_DATASETS = 10_000
 
@@ -87,14 +46,7 @@ class MarquezLineageProvider:
         self._timeout = timeout
 
     def list_datasets(self, *, namespace: str) -> list[str]:
-        """Every dataset name Marquez holds in ``namespace`` (``GET .../datasets``).
-
-        Paginated (`limit`/`offset`, with `totalCount` in the body) and hard-capped at
-        `_MAX_DATASETS`, so a catalog with a runaway namespace can't be materialized
-        into memory. A truncated listing is logged, not silently accepted — silently
-        seeing "fewer datasets" is exactly the class of invisible degradation #823/#828
-        exist to kill.
-        """
+        """Every dataset name Marquez holds in ``namespace`` (``GET .../datasets``)."""
         url = f"{self._base_url}/api/v1/namespaces/{quote(namespace, safe='')}/datasets"
         names: list[str] = []
         offset = 0
@@ -106,13 +58,7 @@ class MarquezLineageProvider:
                     timeout=self._timeout,
                 )
                 if response.status_code == 404:
-                    # The catalog has never heard of this namespace. That is an
-                    # OBSERVATION, not an outage — and the distinction is load-bearing:
-                    # raising `unavailable` here would permanently disable the stale-edge
-                    # prune for every workspace holding an asset the catalog doesn't
-                    # cover (an S3 bucket while only dbt/Snowflake is emitted — i.e. most
-                    # of them), and would fire an outage warning on every 24 h cycle,
-                    # burying the signal a REAL outage needs to send.
+                    # The catalog has never heard of this namespace.
                     return []
                 response.raise_for_status()
                 payload = response.json()
@@ -131,9 +77,6 @@ class MarquezLineageProvider:
                 if isinstance(entry, dict) and isinstance(entry.get("name"), str):
                     names.append(entry["name"])
             # Advance on the PAGE length, never on how many names we managed to keep.
-            # Paging on `len(names)` would spin forever against a server whose rows we
-            # can't parse: the page stays full, our list never grows, and the loop never
-            # terminates — an unbounded run of 5 s HTTP calls that hangs the refresh.
             if len(page) < _DATASET_PAGE:
                 break
             offset += len(page)
@@ -143,12 +86,7 @@ class MarquezLineageProvider:
         return names
 
     def get_lineage(self, *, namespace: str, name: str, depth: int) -> LineageGraph:
-        """Pull + normalize the lineage graph around ``dataset:{namespace}:{name}``.
-
-        Transport/HTTP/decode failure raises :class:`LineageUnavailableError` (the
-        caller must not prune on an outage — provider contract); within a successful
-        response the parse stays tolerant and per-node failures are dropped.
-        """
+        """Pull + normalize the lineage graph around ``dataset:{namespace}:{name}``."""
         node_id = f"dataset:{namespace}:{name}"
         params: dict[str, str | int] = {"nodeId": node_id, "depth": _clamp_depth(depth)}
         try:
@@ -171,13 +109,7 @@ def _clamp_depth(depth: int) -> int:
 
 
 def _parse_graph(payload: Any, *, seed_node_id: str) -> LineageGraph:
-    """Normalize a Marquez lineage response into a :class:`LineageGraph`.
-
-    Tolerant by construction (adversarial battery): a non-dict payload or a missing /
-    non-list ``graph`` → empty; a malformed node entry is skipped; the node count is
-    capped; an edge is kept only when *both* endpoints resolved to nodes (so a
-    truncated or dangling reference can't produce a half-edge).
-    """
+    """Normalize a Marquez lineage response into a :class:`LineageGraph`."""
     if not isinstance(payload, dict):
         return LineageGraph.empty()
     raw_graph = payload.get("graph")
@@ -207,17 +139,7 @@ def _parse_graph(payload: Any, *, seed_node_id: str) -> LineageGraph:
 
 
 def _parse_node(entry: Any) -> LineageNode | None:
-    """One graph entry → a :class:`LineageNode`, or ``None`` when unusable.
-
-    An unknown ``type`` is **not** rejected — it maps to ``UNKNOWN`` and the node is
-    kept (the node-kind contract). Only a missing/blank ``id`` disqualifies a node
-    (there'd be no adjacency key). Dataset identity (``namespace``/``name``) is read
-    from ``data`` **only for ``DATASET`` nodes** — a Marquez job node also carries a
-    ``data.namespace`` (its *job* namespace, e.g. ``dataq``), which is not a dataset
-    identity, so it is deliberately left ``None``. An identity-less dataset node (bad
-    ``data``) also stays ``None``; the cache writer skips such edges rather than
-    crashing here.
-    """
+    """One graph entry → a :class:`LineageNode`, or ``None`` when unusable."""
     if not isinstance(entry, dict):
         return None
     node_id = entry.get("id")
@@ -231,12 +153,7 @@ def _parse_node(entry: Any) -> LineageNode | None:
 
 
 def _dataset_identity(data: Any) -> tuple[str | None, str | None]:
-    """Pull ``(namespace, name)`` from a node's ``data`` (dataset nodes only).
-
-    Prefers the top-level ``data.namespace`` / ``data.name``; falls back to the nested
-    ``data.id.{namespace,name}`` Marquez also serializes. Returns ``(None, None)`` for
-    a job node (no dataset identity) or a malformed ``data`` — never raises.
-    """
+    """Pull ``(namespace, name)`` from a node's ``data`` (dataset nodes only)."""
     if not isinstance(data, dict):
         return None, None
     namespace = data.get("namespace")
@@ -256,11 +173,6 @@ def _dataset_identity(data: Any) -> tuple[str | None, str | None]:
 def _parse_edge(edge: Any, nodes: dict[str, LineageNode]) -> tuple[str, str] | None:
     """A Marquez ``{origin, destination}`` edge → a directed ``(upstream, downstream)``
     pair, or ``None`` when malformed or referencing a node not in ``nodes``.
-
-    Directed origin→downstream: an ``outEdge`` on a dataset points to the job that
-    consumes it, an ``outEdge`` on a job points to the dataset it produces — the
-    upstream→downstream flow. Both endpoints must be present so a truncated graph
-    (node dropped by the cap) can't leave a dangling half-edge.
     """
     if not isinstance(edge, dict):
         return None

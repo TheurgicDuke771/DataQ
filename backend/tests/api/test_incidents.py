@@ -1,13 +1,4 @@
-"""Incident API tests against a real Postgres (db_session) via TestClient.
-
-The **authz matrix mirrors the asset-view rules exactly** (ADR 0034 decision 5 /
-ADR 0027, #760): read visibility is derived from suite grants; ack/resolve require
-``edit`` on the incident's suite; an incident wholly outside the caller's grants is
-404-no-leak (bodies asserted identical, like test_assets.py). Plus the adversarial
-input floor (#570 class): garbage UUIDs / NUL bytes / over-cap notes are 4xx, never
-500.
-
-Skips without TEST_DATABASE_URL."""
+"""Incident API tests against a real Postgres (db_session) via TestClient."""
 
 from __future__ import annotations
 
@@ -31,7 +22,8 @@ _ADMIN_EMAIL = "admin@example.com"
 def _author(row: Any) -> uuid.UUID:
     """`created_by` is `UUID | None` since #1319 (SET NULL on user delete), but a
     row this test just seeded always has one — narrowed here so a real None fails
-    loudly in the test rather than inside the service."""
+    loudly in the test rather than inside the service.
+    """
     author = row.created_by
     assert author is not None
     return cast(uuid.UUID, author)
@@ -196,7 +188,8 @@ def test_no_share_detail_404_no_leak(client: TestClient, world: dict[str, Any]) 
 
 def test_404_no_leak_bodies_identical(client: TestClient, world: dict[str, Any]) -> None:
     """An existing-but-ungranted incident and a truly unknown id return the same
-    status AND body shape (only the echoed id varies)."""
+    status AND body shape (only the echoed id varies).
+    """
     outsider = _user(client_db(client), "outsider3@example.com")
     _as(outsider)
     unknown_id = uuid.uuid4()
@@ -315,7 +308,8 @@ def test_list_pagination_limit_offset_and_truncation(
     client: TestClient, world: dict[str, Any]
 ) -> None:
     """limit caps (truncates) the newest-first list; offset pages the remainder
-    deterministically; past-the-end is an empty page, not an error."""
+    deterministically; past-the-end is an empty page, not an error.
+    """
     db = client_db(client)
     # Two more failing checks on the suite → three incidents total.
     for _ in range(2):
@@ -341,11 +335,11 @@ def test_list_pagination_limit_offset_and_truncation(
 def test_total_count_header_matches_accessible_population(
     client: TestClient, world: dict[str, Any]
 ) -> None:
-    """#1108: `/incidents` had `offset` (#772) but no total — a page shorter than
-    `limit` couldn't be told apart from "that's everything". `X-Total-Count`
-    reports the caller's ACCESSIBLE population (suite-grant-scoped, like the
-    list itself — unlike the workspace-true `/assets` total), unaffected by the
-    page size."""
+    """#1108: `/incidents` had `offset` (#772) but no total — a page shorter than `limit` couldn't
+    be told apart from "that's everything". `X-Total-Count` reports the caller's ACCESSIBLE
+    population (suite-grant-scoped, like the list itself — unlike the workspace-true `/assets`
+    total), unaffected by the page size.
+    """
     db = client_db(client)
     for _ in range(2):
         _incident(db, world["suite"])  # 3 incidents total on the accessible suite
@@ -364,7 +358,8 @@ def test_total_count_header_matches_accessible_population(
 
 def test_total_count_header_respects_filters(client: TestClient, world: dict[str, Any]) -> None:
     """The header counts the SAME filtered population the list applies (#1108) —
-    a `state` filter narrows both, not just the page."""
+    a `state` filter narrows both, not just the page.
+    """
     db = client_db(client)
     _incident(db, world["suite"])  # a second open incident
     _as(world["owner"])

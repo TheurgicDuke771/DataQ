@@ -14,20 +14,8 @@ import { namespaceLabel } from './namespaceLabel';
 import { type CenterAsset, NODE_H, NODE_W, buildLineageLayout } from './lineageLayout';
 
 /**
- * Lineage graph (#805) — one left-to-right DAG replacing the two separate
- * upstream/downstream list boxes: provenance on the left, the asset under view in
- * the middle, blast radius on the right, one column per hop.
- *
- * Nodes are clickable and navigate to that asset. Depth ≥2 comes for free from the
- * existing blast-radius BFS, which now also hands back each node's hop depth and
- * the real edges between them — so a depth-2 node is drawn hanging off the node it
- * actually descends from.
- *
- * Plain inline SVG, no graph library: the layout is a layered DAG we place
- * ourselves (`lineageLayout.ts`), and an SVG in an `overflow-x` container scrolls
- * horizontally inside the card on a phone without ever widening the page — which a
- * pan/zoom canvas makes harder, not easier. It also keeps the dependency count
- * (and the ADR 0031 licence surface) at zero.
+ * Lineage graph (#805) — one left-to-right DAG replacing the two separate upstream/downstream list
+ * boxes: provenance on the left, the asset under view in the middle, blast radius on the right.
  */
 export function LineageGraph({
   center,
@@ -45,11 +33,7 @@ export function LineageGraph({
   /** Lineage-feeding connections whose poll is failing (#828). Non-empty ⇒ what's
    *  below may be stale or missing for reasons unrelated to this asset. */
   failingSources?: LineageSourceHealth[];
-  /** Warehouse-native lineage sources that are degraded (coarser tier) or failing
-   *  (#858). Split at render (#915): a degraded source is working but coarse
-   *  (view-level only) — the graph is real, just not the richest possible, so INFO.
-   *  A source carrying `last_error` actually FAILED its last refresh, which is an
-   *  operational problem and must not read as a mere qualifier — so WARNING. */
+  /** Warehouse-native lineage sources that are degraded (coarser tier) or failing (#858). */
   warehouseStatus?: WarehouseLineageStatus[];
   onOpenAsset: (assetId: string) => void;
 }) {
@@ -58,16 +42,8 @@ export function LineageGraph({
     [center, upstream, downstream, edges],
   );
   const isolated = upstream.length === 0 && downstream.length === 0;
-  // #915: one Alert covering both states let "last refresh FAILED" render at the
-  // same INFO weight as "answers at a coarser tier". Partition on `last_error`,
-  // taking failure as the dominant state — a source that is BOTH coarse and
-  // currently failing is a failing source first.
-  //
-  // The three qualifiers are not mutually exclusive, and the failing branch must
-  // render ALL that apply (#987, and the #1091 review): `degraded_reason` survives
-  // a later failure, and `stale` composes with an error when the refresh loop died
-  // after a failing attempt. The partition decides the alert's WEIGHT, never which
-  // facts get told.
+  // #915: one Alert covering both states let "last refresh FAILED" render at the same INFO weight
+  // as "answers at a coarser tier".
   const warehouseFailing = useMemo(
     () => warehouseStatus.filter((s) => s.last_error),
     [warehouseStatus],
@@ -391,9 +367,7 @@ function GraphNode({
   );
 }
 
-/** The last dotted/slashed segment — the table/file, not the whole path. The full
- *  identity stays in the node's <title> tooltip. Reuses the one segmentation rule
- *  (`assetTree.nameSegments`, #802) so the two views can't drift. */
+/** The last dotted/slashed segment — the table/file, not the whole path. */
 function leafName(name: string): string {
   return nameSegments(name).at(-1) ?? name;
 }

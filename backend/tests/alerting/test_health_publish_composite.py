@@ -1,14 +1,4 @@
-"""The `publish_health` seam method (#837) — composite semantics (#1101).
-
-Mirrors `test_poll_staleness_publish.py`'s `TestCompositeStalenessContract` exactly:
-`worker.tasks.publish_connection_health` records the #843 delivered-first flag
-based on whether the composite's `publish_health` call raised, so "every channel
-failed or every channel quietly skipped as unconfigured" must raise (else a total
-delivery failure — including the shipped default of zero configured channels —
-would be recorded as delivered and the edge would never retry), while one
-surviving channel must swallow the rest (partial delivery counts, exactly like
-the run path's channel isolation).
-"""
+"""The `publish_health` seam method (#837) — composite semantics (#1101)."""
 
 from __future__ import annotations
 
@@ -75,7 +65,8 @@ class TestCompositeHealthContract:
 
     def test_every_channel_failing_raises_so_the_flag_is_never_falsely_recorded(self) -> None:
         """The delivered-first hinge: if this silently returned, the caller would
-        stamp `health_alerted_at` for an alert nobody received — and never retry."""
+        stamp `health_alerted_at` for an alert nobody received — and never retry.
+        """
         with pytest.raises(RuntimeError):
             CompositePublisher([_Channel(fail=True), _Channel(fail=True)]).publish_health(
                 _SESSION, _report()
@@ -85,7 +76,8 @@ class TestCompositeHealthContract:
         """#1226: the loop above already logs a full traceback for EVERY failing
         channel (including the last one, whose exception is what gets re-raised
         here) — so a caller's own `except Exception: log.exception(...)` would log
-        that same traceback again unless it can tell it was already reported."""
+        that same traceback again unless it can tell it was already reported.
+        """
         with pytest.raises(RuntimeError) as exc_info:
             CompositePublisher([_Channel(fail=True), _Channel(fail=True)]).publish_health(
                 _SESSION, _report()
@@ -95,14 +87,16 @@ class TestCompositeHealthContract:
     def test_a_freshly_raised_error_is_not_marked(self) -> None:
         """Sanity check on the marker itself, so the positive test above isn't
         trivially true — an ordinary exception nobody has marked must read as NOT
-        already logged."""
+        already logged.
+        """
         assert not was_already_logged(RuntimeError("never touched the composite"))
 
     def test_all_channels_unconfigured_raises_undeliverable(self) -> None:
         """The fresh-install trap (#1101): every real channel quietly no-ops when
         unconfigured, so counting a returned call as delivered would stamp the flag
         with ZERO notifications sent — and when an operator later wires up Slack,
-        the still-outstanding incident would never fire."""
+        the still-outstanding incident would never fire.
+        """
         with pytest.raises(AlertUndeliverableError):
             CompositePublisher(
                 [_Channel(unconfigured=True), _Channel(unconfigured=True)]
@@ -115,7 +109,8 @@ class TestCompositeHealthContract:
 
     def test_unconfigured_real_channels_report_not_delivered(self) -> None:
         """The real channels (not just the fake) must return False on their quiet
-        skips — Teams/Slack resolve no webhook, email has no transport config."""
+        skips — Teams/Slack resolve no webhook, email has no transport config.
+        """
         from backend.app.alerting.email import EmailPublisher
         from backend.app.alerting.slack import SlackPublisher
         from backend.app.alerting.teams import TeamsPublisher
@@ -147,7 +142,8 @@ class TestCompositeHealthContract:
     def test_a_workspace_with_zero_real_channels_configured_raises_undeliverable(self) -> None:
         """End-to-end at the composite level with the REAL channel implementations
         (not the fake `_Channel`) — the exact shape of the shipped default: a fresh
-        install with no Teams/Slack/email secret configured anywhere."""
+        install with no Teams/Slack/email secret configured anywhere.
+        """
         from backend.app.alerting.email import EmailPublisher
         from backend.app.alerting.slack import SlackPublisher
         from backend.app.alerting.teams import TeamsPublisher
@@ -179,7 +175,8 @@ class TestCompositeHealthContract:
     def test_noop_publisher_counts_as_delivered(self) -> None:
         """`NoopPublisher` is the explicit test double for "a channel that IS
         configured and sends" — mirroring `publish_poll_staleness`'s convention —
-        so a composite built from just it must never raise undeliverable."""
+        so a composite built from just it must never raise undeliverable.
+        """
         from backend.app.alerting.noop import NoopPublisher
 
         # Must not raise.

@@ -1,15 +1,4 @@
-"""End-to-end suite runs across the three datasource runner types.
-
-Real `run_service.execute_run` + real Postgres persistence + (for flat-file and
-Unity Catalog) **real GX execution** on an in-memory DataFrame — the whole path:
-`check.kind` dispatch → runner → GX validation → severity derivation → `Result`
-rows. Only the file download / table read is stubbed with a canned frame; the
-warehouse runners' live connect is the deferred-smoke seam, so Snowflake runs
-through a canned outcome (its GX result-mapping is covered in
-`datasources/test_snowflake.py`).
-
-Skips without `TEST_DATABASE_URL` (the `db_session` fixture).
-"""
+"""End-to-end suite runs across the three datasource runner types."""
 
 import uuid
 from typing import Any
@@ -88,7 +77,8 @@ def _queued_run(db_session: Any, suite: Suite) -> Run:
 
 def _assert_persisted(db_session: Any, run: Run, checks: list[Check]) -> None:
     """The canonical end-to-end assertion: run succeeded, both Results persisted,
-    severity derived (null-check fails, row-count passes)."""
+    severity derived (null-check fails, row-count passes).
+    """
     assert run.status == "succeeded"
     results = db_session.scalars(select(Result).where(Result.run_id == run.id)).all()
     by_check = {r.check_id: r for r in results}
@@ -124,7 +114,8 @@ def test_flatfile_run_persists_error_status_for_unevaluable_check(
 ) -> None:
     """End to end (#122): a check GX can't evaluate (missing column) persists as
     `error` — not `fail` — while its sibling persists normally and the run still
-    succeeds. Also proves the `results.status` CHECK constraint accepts `error`."""
+    succeeds. Also proves the `results.status` CHECK constraint accepts `error`.
+    """
     checks_spec = [
         {
             "name": "missing_col",
@@ -168,11 +159,7 @@ def test_unity_catalog_suite_run_persists_results(
         config=UnityCatalogConfig.model_validate(cfg), token="t", catalog="main"
     )
     monkeypatch.setattr(runner, "_read_table", lambda **k: _SAMPLE)
-    # The #595 scan guardrail counts the table before reading it. Left unstubbed
-    # this does not fail — it opens a REAL Databricks session to the fake
-    # workspace host and retries for 15 minutes, which the suite would report as
-    # a timeout rather than a defect (the same trap `_forbid_dataframe_read`
-    # records in the unit tests).
+    # The #595 scan guardrail counts the table before reading it.
     monkeypatch.setattr(runner, "_count_rows", lambda **k: len(_SAMPLE))
 
     run_service.execute_run(
@@ -226,7 +213,8 @@ def test_snowflake_suite_run_persists_results(db_session: Any) -> None:
 def test_skip_run_persists_skip_results(db_session: Any) -> None:
     """End to end (#122): a run with nothing to evaluate (e.g. the target batch
     hasn't landed) persists a `skip` Result per check and succeeds. Proves the
-    `results.status` CHECK constraint accepts `skip`."""
+    `results.status` CHECK constraint accepts `skip`.
+    """
     suite, checks = _seed(db_session, conn_type="s3", config={"bucket": "b", "region": "r"})
     run = _queued_run(db_session, suite)
 

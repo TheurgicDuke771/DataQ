@@ -25,19 +25,7 @@ import { Page } from '../components/layout/Page';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { useAsyncData } from '../hooks/useAsyncData';
 
-/**
- * Workspace Settings (`/settings`, ADR 0022 SettingsScreen). A tabbed shell —
- * General · Secrets · Webhooks · Notifications · Danger zone.
- *
- * There is **no settings/preferences backend** in v1, so this ships the shell +
- * only the controls a real backend backs (notifications are configured per
- * suite; the rest are clearly-labelled placeholders — feature honesty). No
- * hardcoded Azure resource names: the secret store is described generically
- * (Key Vault is one impl behind the seam — ADR 0010/0013).
- *
- * Admin-only like the Admin page: gated on `/me`'s server-driven
- * `is_workspace_admin`; a non-admin who deep-links here sees Forbidden.
- */
+/** Workspace Settings (`/settings`, ADR 0022 SettingsScreen). */
 export function Settings() {
   const me = useMe();
 
@@ -77,11 +65,10 @@ export function Settings() {
   );
 }
 
-/** Authentication readout + the SMTP pre-flight test (#737, ADR 0032 decision
- *  7): "send me a test mail" so a misconfigured email OTP mailer is caught at
- *  install time, not at a teammate's first sign-in attempt. Always shown (not
- *  gated on the current auth method) — an admin preparing to switch a
- *  deployment onto OTP wants to verify the mailer before flipping the mode. */
+/**
+ * Authentication readout + the SMTP pre-flight test (#737, ADR 0032 decision 7): "send me a test
+ * mail" so a misconfigured email OTP mailer is caught at install time.
+ */
 function GeneralTab() {
   const { message } = App.useApp();
   const { run, loading } = useAsyncAction('SMTP pre-flight test failed');
@@ -155,9 +142,10 @@ function DangerTab() {
   );
 }
 
-/** Inbound orchestration-webhook URLs (#490) — one copy-paste target per
- *  orchestration provider (ADF / Airflow / dbt) to notify DataQ on pipeline
- *  completion. Admin-only (the page is already gated). */
+/**
+ * Inbound orchestration-webhook URLs (#490) — one copy-paste target per orchestration provider
+ * (ADF / Airflow / dbt) to notify DataQ on pipeline completion.
+ */
 function WebhooksTab() {
   const { state } = useAsyncData(listAdminWebhooks);
   return (

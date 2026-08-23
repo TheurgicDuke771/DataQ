@@ -129,13 +129,8 @@ describe('buildLineageLayout (#805)', () => {
   });
 });
 
-// ── mutation-spike gaps (#898) ────────────────────────────────────────────────
-//
-// Worst file in the Stryker run at 66.3% (26 survivors): the layout's OUTPUT —
-// the per-node flags and the fields carried through from the API — was almost
-// entirely unasserted. The existing tests pin geometry (columns, x/y, edges) and
-// the cycle/dangling defences, so a mutant that corrupts what each node SAYS
-// sails through, and every one of those fields drives what the graph renders.
+// ── mutation-spike gaps (#898) ──────────────────────────────────────────────── Worst file in the
+// Stryker run at 66.3% (26 survivors): the layout's OUTPUT.
 
 describe('the laid-out node carries the asset it stands for (#898)', () => {
   it('marks the centre as the centre, and nothing else', () => {
@@ -212,12 +207,8 @@ function pathNumbers(path: string): number[] {
 }
 
 describe('the geometry itself (#898)', () => {
-  // 24 survivors lived here: column centring, row spacing, the canvas box and the
-  // bezier control points were all unasserted, because the existing tests check
-  // RELATIVE facts ("depth-2 sits beyond depth-1") that survive almost any
-  // arithmetic mutation. Asserted below as invariants rather than by hardcoding
-  // the private spacing constants — a layout tweak should not break these, but an
-  // inverted sign or a swapped operator must.
+  // 24 survivors lived here: column centring, row spacing, the canvas box and the bezier control
+  // points were all unasserted.
   const threeUp = [node('u1', 1), node('u2', 1), node('u3', 1)];
 
   it('spaces stacked siblings evenly, downward, clear of each other', () => {
@@ -229,9 +220,7 @@ describe('the geometry itself (#898)', () => {
   });
 
   it('centres a short column against the tallest one', () => {
-    // One node upstream, three downstream: the lone node must sit on the spine,
-    // not at the top. `PAD - (…)` and `Math.min(…)` both survived this being
-    // unasserted, and both visibly break the graph.
+    // One node upstream, three downstream: the lone node must sit on the spine, not at the top.
     const layout = buildLineageLayout(
       CENTER,
       [node('u', 1)],

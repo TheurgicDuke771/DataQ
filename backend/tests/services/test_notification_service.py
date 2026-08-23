@@ -1,8 +1,4 @@
-"""Tests for notification_service — per-suite alert config + webhook resolution.
-
-DB-backed; a dict-backed fake SecretStore stands in for Key Vault. Skips without
-TEST_DATABASE_URL.
-"""
+"""Tests for notification_service — per-suite alert config + webhook resolution."""
 
 from __future__ import annotations
 
@@ -78,10 +74,7 @@ def test_upsert_creates_then_updates(db_session: Any) -> None:
 def test_upsert_recovers_from_concurrent_first_write_race(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # #384: a concurrent first-write wins the unique (uq_suite_notifications_suite_id)
-    # race. Simulate it — a stale read sees no row, the INSERT then hits the
-    # constraint, and upsert must fall back to updating the winner's row, not raise
-    # IntegrityError (→ 500).
+    # #384: a concurrent first-write wins the unique (uq_suite_notifications_suite_id) race.
     suite = _suite(db_session)
     winner = SuiteNotification(suite_id=suite.id, enabled=False, alert_on="warn")
     db_session.add(winner)
@@ -237,11 +230,11 @@ def test_clearing_webhook_removes_the_secret(db_session: Any) -> None:
 
 
 class _SoftDeleteStore(FakeSecretStore):
-    """Simulates Azure Key Vault soft-delete: `set` of a previously-deleted name
-    raises (the 409 'deleted but recoverable' the app can't purge/recover past).
-    `delete` is inherited unchanged from `FakeSecretStore` — it already pops
-    `self.data` and records the name in `self.deleted`, which doubles here as
-    the soft-delete membership check."""
+    """Simulates Azure Key Vault soft-delete: `set` of a previously-deleted name raises (the 409
+    'deleted but recoverable' the app can't purge/recover past). `delete` is inherited unchanged
+    from `FakeSecretStore` — it already pops `self.data` and records the name in `self.deleted`,
+    which doubles here as the soft-delete membership check.
+    """
 
     def set(self, name: str, value: str) -> None:
         if name in self.deleted:

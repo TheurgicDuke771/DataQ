@@ -1,28 +1,4 @@
-"""The retention sweep versus the migration's own `REVOKE` — ADR 0041 §2.7 (#1318).
-
-**This file exists because the ordinary test database cannot see the bug.** The
-suite connects as a Postgres **superuser**, and a superuser bypasses ACL checks
-entirely — so `REVOKE DELETE` has no effect there, and a sweep that forgot to
-re-grant would pass every test while failing every night in production. That is
-the "only live is evidence" class the project has hit repeatedly, arriving as a
-*privilege* rather than a driver type.
-
-So this builds the real shape: a **non-superuser role** that **owns** the table,
-exactly as production does (the deployed stack creates the database `OWNER
-dataq_app` and hands the migrate job the same `DATABASE_URL` as the api and
-worker, so Alembic creates `audit_events` owned by `dataq_app`).
-
-Three properties are asserted, and the middle one is the whole point:
-
-1. With `DELETE` revoked and no re-grant, the delete really is refused — i.e. the
-   guard the migration installs is load-bearing, not decorative.
-2. The sweep nonetheless deletes, because it re-grants around its own statement.
-3. `DELETE` is revoked **again** afterwards, including when the sweep raises. A
-   sweep that left the privilege granted would silently disable the guard for
-   every later request on that connection — a worse outcome than not sweeping.
-
-Needs a Postgres role able to `CREATE ROLE`/`CREATE DATABASE`; skips otherwise.
-"""
+"""The retention sweep versus the migration's own `REVOKE` — ADR 0041 §2.7 (#1318)."""
 
 from __future__ import annotations
 
@@ -50,19 +26,13 @@ _MIGRATION_PATH = (
 )
 _ROLE = "dataq_audit_retention_probe"
 _DB = "dataq_audit_retention_probe"
-# Test-only, never a real credential: this role exists for the length of one test
-# on a throwaway database, and is dropped in teardown. It is generated rather than
-# written down so nothing resembling a password is committed.
+# Test-only, never a real credential: this role exists for the length of one test on a throwaway
+# database, and is dropped in teardown.
 _PASSWORD = uuid.uuid4().hex
 
 
 def _revoke_statement(role: str) -> str:
-    """The migration's OWN statement, loaded from the migration.
-
-    Not a copy. A second hand-written copy of the only thing standing between the
-    audit log and a silent rewrite is the "guard at one door and not its sibling"
-    shape, and that divergence is invisible until it matters.
-    """
+    """The migration's OWN statement, loaded from the migration."""
     spec = importlib.util.spec_from_file_location("_audit_migration_for_privs", _MIGRATION_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -95,9 +65,6 @@ def owner_session() -> Iterator[Session]:
     engine = create_engine(owner_url)
     try:
         # Created BY the probe role, so the role owns them — the production shape.
-        # `__table__` is typed `FromClause` on a declarative class while
-        # `create_all` wants `Table`. It IS a `Table` at runtime; the cast is
-        # purely to narrow it for mypy.
         tables = [cast(Table, User.__table__), cast(Table, AuditEvent.__table__)]
         Base.metadata.create_all(engine, tables=tables)
         session = sessionmaker(bind=engine)()
@@ -139,12 +106,7 @@ def _has_delete(session: Session) -> bool:
 
 
 def test_the_revoke_really_blocks_a_delete_for_this_role(owner_session: Session) -> None:
-    """Property 1 — the precondition every other assertion here depends on.
-
-    Without this, the two tests below would pass against a role that never had
-    the privilege revoked, and would be proving nothing at all. This is the check
-    the ordinary suite cannot make, because its role is a superuser.
-    """
+    """Property 1 — the precondition every other assertion here depends on."""
     _seed(owner_session, age_days=500)
     owner_session.execute(text(_revoke_statement(_ROLE)))
     owner_session.commit()
@@ -158,7 +120,8 @@ def test_the_revoke_really_blocks_a_delete_for_this_role(owner_session: Session)
 def test_the_sweep_deletes_despite_the_revoke(owner_session: Session) -> None:
     """Property 2 — ADR 0041 §2.7 requires the sweep to run as this very role, and
     the migration revokes DELETE from it. The sweep re-grants around its own
-    statement."""
+    statement.
+    """
     _seed(owner_session, age_days=500)
     _seed(owner_session, age_days=1)
     owner_session.execute(text(_revoke_statement(_ROLE)))
@@ -172,11 +135,7 @@ def test_the_sweep_deletes_despite_the_revoke(owner_session: Session) -> None:
 
 
 def test_the_sweep_leaves_the_guard_back_in_place(owner_session: Session) -> None:
-    """Property 3 — and the one most likely to rot silently.
-
-    A sweep that left DELETE granted would disable the guard for every later
-    request on that connection while still passing a "did it delete?" test.
-    """
+    """Property 3 — and the one most likely to rot silently."""
     _seed(owner_session, age_days=500)
     owner_session.execute(text(_revoke_statement(_ROLE)))
     owner_session.commit()
@@ -190,18 +149,6 @@ def test_a_database_level_failure_still_restores_the_guard(
 ) -> None:
     """The failure path, provoked by a REAL database error — which is the whole
     point, and which the first version of this test could not do.
-
-    That version monkeypatched the batch helper to raise *before any statement
-    ran*, so the session was never in a failed transaction and the handler was
-    never asked the hard question. After a genuine database error every further
-    statement on that session raises `PendingRollbackError`, so an attempt to
-    re-REVOKE would mask the original error and leave the privilege granted.
-    Rolling back is what actually restores the guard — `GRANT` is transactional,
-    so undoing the transaction undoes the grant.
-
-    The error is provoked by suppressing only the GRANT half, which makes the
-    DELETE itself fail with `permission denied`: a real Postgres error arriving
-    from the exact statement that would fail in production.
     """
     _seed(owner_session, age_days=500)
     owner_session.execute(text(_revoke_statement(_ROLE)))
@@ -226,19 +173,7 @@ def test_a_database_level_failure_still_restores_the_guard(
 
 
 def test_a_crash_mid_sweep_cannot_leave_delete_granted(owner_session: Session) -> None:
-    """The property the one-transaction-per-batch design exists for.
-
-    `GRANT` is transactional in Postgres — verified directly rather than assumed:
-    a rolled-back GRANT leaves `has_table_privilege` false, and only a commit
-    persists it. So a worker killed mid-sweep loses its open transaction and the
-    privilege with it.
-
-    Committing the GRANT separately from the REVOKE — which is what the shared
-    `chunked_dml` helper would do, since it commits per batch — would leave
-    `DELETE ON audit_events` granted **permanently** after such a crash, with
-    nothing in the system to notice. This asserts the primitive that rules that
-    out, which is why it tests the GRANT rather than the sweep.
-    """
+    """The property the one-transaction-per-batch design exists for."""
     owner_session.execute(text(_revoke_statement(_ROLE)))
     owner_session.commit()
 
@@ -254,16 +189,6 @@ def test_a_failure_before_the_revoke_does_not_leave_the_grant_committed(
 ) -> None:
     """The property the one-transaction-per-batch design exists for, asserted
     against the SWEEP rather than the primitive.
-
-    A sibling test proves `GRANT` is transactional; this proves the sweep actually
-    relies on that, by crashing it in the window between the grant and the revoke.
-    Without it, the sweep could regress to committing the grant separately — which
-    is exactly what the shared `chunked_dml` helper does, and the reason it is not
-    used here — and every other test in this file would still pass while the guard
-    was left permanently off after any crash.
-
-    Caught by mutation-checking: inserting a `session.commit()` after the grant
-    left all fourteen tests green.
     """
     _seed(owner_session, age_days=500)
     owner_session.execute(text(_revoke_statement(_ROLE)))
@@ -293,19 +218,7 @@ def test_a_failure_before_the_revoke_does_not_leave_the_grant_committed(
 def test_an_unknown_rowcount_terminates_instead_of_spinning(
     owner_session: Session, monkeypatch: Any
 ) -> None:
-    """Some DB-API drivers return -1 for "unknown rowcount", which is TRUTHY.
-
-    A bare `rowcount or 0` would therefore pass -1 straight through, corrupting
-    the running total and — far worse — never satisfying the `affected == 0`
-    termination check, so a nightly beat task would spin forever holding a
-    connection. The `max(..., 0)` floor is required, not decorative;
-    `chunked_dml` carries the same floor after one of two hand-rolled sweep
-    loops lost it (#323 review F6).
-
-    The floor is what this asserts, so the driver is faked: no real driver here
-    returns -1 for a DELETE, which is precisely why this would otherwise go
-    untested until it happened in production.
-    """
+    """Some DB-API drivers return -1 for "unknown rowcount", which is TRUTHY."""
 
     class _UnknownRowcount:
         rowcount = -1
@@ -334,9 +247,6 @@ def test_a_non_positive_retention_is_an_off_switch_not_a_wipe(owner_session: Ses
     """The cutoff is `now - retention_days`, so without the guard a value of 0
     collapses it to "now" and EVERY row matches — including the event written a
     moment ago.
-
-    On this table that is the difference between a disabled sweep and erasing the
-    entire audit trail, which is why the guard is asserted rather than trusted.
     """
     _seed(owner_session, age_days=500)
     owner_session.execute(text(_revoke_statement(_ROLE)))

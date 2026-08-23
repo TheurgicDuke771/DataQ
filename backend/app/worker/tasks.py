@@ -1,17 +1,4 @@
-"""Celery tasks for asynchronous suite execution.
-
-``run_suite`` is the worker entry point dispatched by the manual-run / probe /
-pipeline-trigger paths. It loads the run's suite / connection / checks, resolves
-the suite's datasource-shaped **target** (#215) to the runner's
-``(table, schema, catalog)``, builds the datasource adapter, and hands off to
-``run_service.execute_run``. The DB-touching core is factored into ``_run_suite``
-so it can be unit-tested with a fake session + fake runner (no Postgres, no
-Snowflake); real-DB integration coverage is a Week 8 item.
-
-The target lives on the suite (``Suite.target``, resolved by
-``run_target.resolve_target``): a targetless suite drives the run to ``failed``
-with a clear log rather than running against an unknown table.
-"""
+"""Celery tasks for asynchronous suite execution."""
 
 from __future__ import annotations
 
@@ -66,14 +53,10 @@ from backend.app.services.failure_classifier import classify_failure_reason
 from backend.app.worker import beat_watchdog
 from backend.app.worker.celery_app import celery_app
 
-# Polling fallback (#171): look back slightly further than the 10-min beat
-# interval so a run can't slip through the gap between consecutive polls.
+# Poll lookback exceeds the 10-min beat interval so runs can't slip the gap (#171).
 _POLL_LOOKBACK = timedelta(minutes=15)
-# Gap recovery (B2): a wider window swept on startup + every 30 min to re-ingest
-# runs missed while the system was down (worker/beat restart, webhook + poll both
-# offline). Same provider-agnostic pipeline; only the lookback differs. Safe to
-# overlap the regular poll — the upsert is idempotent and `skip_updated_since`
-# drops runs already recorded inside the window.
+# Gap recovery (B2): wider window, startup + every 30 min; idempotent with the
+# regular poll (upsert + `skip_updated_since`).
 _GAP_RECOVERY_LOOKBACK = timedelta(hours=1)
 
 log = get_logger(__name__)
@@ -82,12 +65,8 @@ log = get_logger(__name__)
 def _terminal_failed(
     session: Session, run: Run, *, event: str, run_id: uuid.UUID, reason: str | None = None
 ) -> str:
-    """Drive ``run`` to terminal ``failed`` (never left ``queued``/``running``).
-
-    ``reason`` is the redaction-safe, classified message (#605) — setup/materialize
-    failures (bad config, unreadable secret, unreachable store) are the largest
-    class of real run failures, so they carry a user-facing reason too, not just
-    the runner-time path in ``execute_run``.
+    """Drive ``run`` to terminal ``failed`` — never left ``queued``/``running``.
+    ``reason`` is the redaction-safe classified message (#605).
     """
     run.status = "failed"
     run.started_at = run.started_at or datetime.now(UTC)
@@ -99,30 +78,14 @@ def _terminal_failed(
 
 
 def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
-    """Load the run's graph, resolve its target, build the runner, execute.
-
-    The suite's datasource-shaped ``target`` (#215) resolves to the runner's
-    ``(table, schema, catalog)`` via ``run_target.resolve_target``; dispatch by
-    ``connection.type`` through the runner registry gives a Snowflake / Unity
-    Catalog / flat-file suite its correct `CheckRunner` (#146). A flat-file *batch*
-    target is then materialized to a concrete path by listing the store
-    (`materialize_path`).
-
-    Failures while loading, resolving the target (targetless or malformed suite),
-    or building the runner (missing rows, bad connection config, unresolved
-    secret) drive the run to ``failed`` so it never lingers in ``queued``;
-    execution failures are handled inside ``execute_run``. A genuinely-absent
-    batch (`BatchNotFoundError`) is **not** a failure — the data hasn't landed, so
-    every check is ``skip``ped (#122) and the run succeeds.
-    """
+    """Load the run's graph, resolve its target, build the runner, execute."""
     run = session.get(Run, run_id)
     if run is None:
         log.error("run_suite_run_not_found", run_id=str(run_id))
         return "not_found"
 
-    # Cooperative cancellation: a cancel that landed while the run was queued (or
-    # in the dispatch→pickup window) already set 'cancelled' — don't execute it.
-    # (revoke also drops a still-queued task; this is the belt-and-braces check.)
+    # A cancel during the queue/dispatch window already set 'cancelled' — don't
+    # execute it (revoke is best-effort; this is the belt-and-braces check).
     if run.status == "cancelled":
         log.info("run_suite_already_cancelled", run_id=str(run_id))
         return "cancelled"
@@ -140,9 +103,8 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
             secret_ref=connection.secret_ref,
             secret_store=get_secret_store(),
             catalog=target.catalog,
-            # The suite target's row cap (#595). Only the full-load runners act on
-            # it; `resolve_target` has already refused it on datasources that push
-            # down, so it is never silently dropped here.
+            # Suite row cap (#595); `resolve_target` already refused it on
+            # pushdown datasources, so it is never silently dropped here.
             sampling=target.sampling,
         )
     except Exception as exc:
@@ -154,16 +116,8 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
             reason=classify_failure_reason(exc),
         )
 
-    # Refresh the asset's warehouse column classifications (G3 / #433) before the
-    # checks run. Here rather than on the read path for two reasons: the read path
-    # must not open a warehouse connection (latency, and it would fail when the
-    # warehouse is down), and this is the one moment DataQ is already connected
-    # with the credentials and the resolved target in hand.
-    #
-    # Fail-soft by construction — `refresh_asset_column_tags` swallows everything
-    # and the whole call is guarded besides. A governance lookup must never be the
-    # reason a data-quality run fails, and a stale map degrades to the pre-G3
-    # behaviour rather than to a clearance.
+    # Refresh warehouse column classifications (G3/#433) here — the read path must not open a
+    # warehouse connection, and this is the moment we're connected.
     try:
         column_tags.refresh_asset_column_tags(
             session,
@@ -175,12 +129,10 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
     except Exception:  # pragma: no cover - the callee already swallows
         log.warning("column_tags_refresh_skipped", run_id=str(run_id), exc_info=True)
 
-    # From here the runner exists — everything below runs inside `owned_runner`,
-    # which releases its shared engine pool (#427) on every exit: normal return,
-    # handled failure, or propagating exception.
+    # Everything below runs inside `owned_runner`, which releases the shared
+    # engine pool (#427) on every exit.
     with owned_runner(runner):
-        # Materialize the concrete path (live for a flat-file batch target). Kept
-        # separate from setup so a missing batch is a skip, not a setup failure.
+        # Kept separate from setup so a missing batch is a skip, not a setup failure.
         try:
             table = run_target.materialize_path(
                 connection.type,
@@ -202,16 +154,14 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
                 reason=classify_failure_reason(exc),
             )
 
-        # The suite's identifier column (#415) — requested from GX so failing rows
-        # are captured with a locator. A `None`/absent policy keeps the scalar-only
-        # sample.
+        # The suite's identifier column (#415) — requested from GX so failing
+        # rows carry a locator; absent policy keeps the scalar-only sample.
         policy = suite.column_policy or {}
         identifier = policy.get("identifier_column")
         index_columns = [str(identifier)] if identifier else None
 
-        # Comparison checks (ADR 0015, #794): bind an executor to this run's
-        # resolved target side so the diff validates the exact dataset the GX
-        # runner sees. Built only when the suite actually has comparison checks.
+        # Comparison executor (ADR 0015, #794): bound to this run's resolved target
+        # so the diff validates the exact dataset the GX runner sees.
         comparison_executor = None
         if comparison_run.has_comparison_checks(checks):
             comparison_executor = comparison_run.build_comparison_executor(
@@ -223,11 +173,8 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
                 secret_store=get_secret_store(),
             )
 
-        # Stateful monitor kinds (#592 schema_drift, #593 anomaly): these
-        # executors own the session + baseline store, which runners never see.
-        # One callable dispatches per `check.kind` (`services/stateful_monitors`),
-        # so run_service keeps a single injection point. Built only when the
-        # suite actually has a stateful check.
+        # Stateful monitor executors (#592/#593) own the session + baseline
+        # store, which runners must never see.
         stateful_monitor_executor = None
         if any(c.kind in STATEFUL_MONITOR_KINDS for c in checks):
             stateful_monitor_executor = stateful_monitors.build_stateful_monitor_executor(
@@ -255,30 +202,11 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
 
 @celery_app.task(name="run_suite")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def run_suite(run_id: str) -> str:
-    """Worker entry point. ``run_id`` is a string so it serialises over JSON.
-
-    The target is resolved from the suite (``Suite.target``), so the only
-    argument the dispatcher supplies is the run id.
-
-    After the run reaches a terminal state, its outcome is published through the
-    ``ResultPublisher`` seam (ADR 0011). The publish is best-effort and isolated
-    (``publish_run_outcome`` never raises), so a notification failure can't
-    affect the already-persisted run or the task's return value.
-    """
+    """Worker entry point. ``run_id`` is a string so it serialises over JSON."""
     rid = uuid.UUID(run_id)
     session = get_session()
     try:
-        # OpenLineage START/terminal emission (ADR 0034, #758) brackets the run.
-        # Both calls are fail-open and dark-by-default (no-op with zero queries when
-        # unconfigured), so they never fail or slow the task — the single choke
-        # point covering execute/skip/early-fail. Sits next to the alert-dispatch
-        # hook (same contract). Guarantee: any run that emitted a START gets exactly
-        # one terminal event. `_run_suite` itself drives every failure it handles to
-        # a terminal status, but should it raise before doing so (a DB hiccup, an
-        # unforeseen error), the except-branch still closes the START with a terminal
-        # (the run is non-terminal → mapped to FAIL) before re-raising. (A cancel
-        # while still queued — or a successful revoke that drops the task — produces
-        # zero lineage events by design: no START ever fired.)
+        # OpenLineage START/terminal brackets the run (ADR 0034, #758) — fail-open, dark by default.
         lineage_dispatch.emit_run_lineage_start(session, run_id=rid)
         try:
             outcome = _run_suite(session, run_id=rid)
@@ -286,10 +214,8 @@ def run_suite(run_id: str) -> str:
             lineage_dispatch.emit_run_lineage_terminal(session, run_id=rid)
             raise
         lineage_dispatch.emit_run_lineage_terminal(session, run_id=rid)
-        # Roll the run's per-check results up into incidents (open/attach/auto-
-        # resolve) BEFORE alert dispatch, so the published report can reference the
-        # open incident (ADR 0034 #761). Fail-soft like the two hooks around it —
-        # an incident-engine bug must never fail the already-persisted run.
+        # Incident rollup BEFORE alert dispatch so the report can reference the
+        # open incident (#761); fail-soft like the hooks around it.
         incident_service.sync_incidents_for_run(session, run_id=rid)
         alert_dispatch.publish_run_outcome(session, run_id=rid)
         _alert_datasource_health_for_run(session, run_id=rid)
@@ -299,20 +225,7 @@ def run_suite(run_id: str) -> str:
 
 
 def _alert_datasource_health_for_run(session: Session, *, run_id: uuid.UUID) -> None:
-    """Drive the health edges for the datasource this run used (#996).
-
-    The streak comes from `datasource_health`, the SAME derivation the connections
-    badge renders — so the alert and the badge can never disagree about whether a
-    connection is degraded. #998 made that per-suite rolled up, which is why this
-    can be an alert at all: the previous connection-wide count would have paged on
-    a healthy connection whenever one busy suite was broken.
-
-    Recovery rides the same delivery flag as the poll path, so an operator is only
-    told an alarm ended if they were told it began (#843).
-
-    Never raises: a notification decision must not fail a run that has already
-    persisted its results.
-    """
+    """Drive the health edges for the datasource this run used (#996)."""
     try:
         run = session.get(Run, run_id)
         suite = session.get(Suite, run.suite_id) if run is not None else None
@@ -334,15 +247,7 @@ def _alert_datasource_health_for_run(session: Session, *, run_id: uuid.UUID) -> 
 
 
 def _auto_classify_columns(session: Session, *, suite_id: uuid.UUID) -> str:
-    """Best-effort derive + persist of a suite's failing-sample redaction policy
-    (#634) — extracted for a DB-backed unit test without the Celery envelope.
-
-    No-op (returns a reason, never raises) when the suite is gone, has no concrete
-    profilable target (a targetless / batch-`pattern` suite), already has a policy
-    (never clobber a user or earlier auto choice), or the datasource can't be
-    introspected. The value-signal PII classifier still runs at redaction time
-    regardless, so a skipped derive only costs the auto-picked identifier locator.
-    """
+    """Best-effort derive + persist of a suite's redaction policy (#634)."""
     suite = session.get(Suite, suite_id)
     if suite is None or suite.target is None or suite.column_policy is not None:
         return "skipped"
@@ -367,12 +272,8 @@ def _auto_classify_columns(session: Session, *, suite_id: uuid.UUID) -> str:
         )
         if not policy.get("identifier_column") and not policy.get("pii_columns"):
             return "empty"
-        # Lock the row, then confirm nothing changed under us during the
-        # (seconds-long) introspection before persisting (#642 review): a user may
-        # have set their own policy (never clobber it), or the target may have been
-        # repointed (making this derive stale — it would reference the old table's
-        # columns). The FOR UPDATE lock closes the check→write race — a concurrent
-        # `set_column_policy` blocks until our commit, then wins on its own re-read.
+        # Re-check under FOR UPDATE (#642): a user-set policy or a retargeted suite during the
+        # seconds-long introspection must win — the lock closes the check→write race.
         session.refresh(suite, with_for_update=True)
         if suite.column_policy is not None or suite.target != target:
             session.rollback()  # release the lock; don't persist a raced/stale derive
@@ -382,9 +283,8 @@ def _auto_classify_columns(session: Session, *, suite_id: uuid.UUID) -> str:
             suite_id,
             identifier_column=policy.get("identifier_column"),
             pii_columns=policy.get("pii_columns", []),
-            # No principal issued this — it is the auto-classify derive. ADR 0041
-            # §2.1 keeps machine writes out of the audit log so they cannot bury
-            # the actor-attributable events.
+            # ADR 0041 §2.1 keeps machine writes out of the audit log so they
+            # cannot bury actor-attributable events.
             machine_write=True,
         )
     except Exception:
@@ -397,10 +297,8 @@ def _auto_classify_columns(session: Session, *, suite_id: uuid.UUID) -> str:
 
 @celery_app.task(name="auto_classify_columns")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def auto_classify_columns(suite_id: str) -> str:
-    """Auto-derive + persist a new suite's failing-sample redaction policy (#634).
-
-    Dispatched fire-and-forget when a suite gains a concrete target (create /
-    target-set). Best-effort: never raises, never clobbers an existing policy.
+    """Auto-derive a new suite's redaction policy (#634) — fire-and-forget, never
+    raises, never clobbers an existing policy.
     """
     session = get_session()
     try:
@@ -412,39 +310,7 @@ def auto_classify_columns(suite_id: str) -> str:
 def _alert_connection_health(
     session: Session, *, connection_id: uuid.UUID, streak: int, recovered: bool
 ) -> None:
-    """Decide whether a connection-health edge is due, and hand the send to its own task.
-
-    Drives BOTH health signals (#996): an orchestration connection's poll-failure
-    streak (#828) and a datasource connection's run-failure streak (#954). The two
-    never collide on one row — a datasource is never polled and an orchestration
-    provider carries no suites — so they can share `health_alerted_at` and the same
-    threshold. Sharing is the point: #996 asks for no parallel mechanism, and a
-    second copy of this would need the #843 delivery fix applied twice.
-
-    **Both edges ride DELIVERY, not the counter (#843).** The old design fired the
-    failure edge when the streak *equalled* the threshold and the recovery edge when
-    the cleared streak had reached it. But publishing is best-effort by design — a
-    channel down, a webhook unresolved, a secret missing are all quiet no-ops — so an
-    operator could be told an alarm had *ended* that they were never told had *begun*.
-    `connections.health_alerted_at` records when a failing alert actually landed;
-    NULL means none is outstanding, and that flag is what opens and closes each edge.
-
-    Keying on delivery also removes the `==` the old docstring had to apologise for:
-    a connection already past a newly-lowered threshold never lands on `==` again, so
-    it never alerted at all. The test is now `>=`, and the outstanding-alert flag —
-    not the equality — is what keeps it to one alert per transition. If the publish
-    keeps failing the next sweep tries again, which is a retry of something nobody
-    received, not a storm.
-
-    **The send is dispatched, never awaited (#842).** It used to run synchronously
-    inside the connection loop inside the beat task: Teams (10s) + Slack (10s) + SMTP
-    (15s) per crossing. The failure mode that matters is the correlated one — when the
-    outage is DataQ-side, *every* orchestration connection crosses on the same sweep,
-    so ten connections bolted ~6 minutes of blocking sends onto a task that beats every
-    10 minutes, delaying the ingest it exists to perform and risking overlapping beats.
-
-    Never raises: a notification problem must not break the sweep reporting on it.
-    """
+    """Decide whether a connection-health edge is due; hand the send to its own task."""
     threshold = get_settings().orchestration_poll_failure_alert_threshold
     if threshold <= 0:  # push disabled; #828's in-app health signals still stand
         return
@@ -454,23 +320,14 @@ def _alert_connection_health(
             return
         outstanding = connection.health_alerted_at is not None
     except Exception:
-        # This read runs on the SUCCESS path too, after every healthy poll — and
-        # there it sits outside the caller's try/except. A transient DB error must
-        # not abort the sweep and starve every connection after this one, which is
-        # the isolation #842 exists to strengthen (review finding).
+        # This read also runs on the SUCCESS path, outside the caller's try — a
+        # transient DB error must not abort the sweep (#842).
         session.rollback()
         log.exception("connection_health_alert_decision_failed", connection_id=str(connection_id))
         return
 
     if recovered:
-        # Only if a failing alert was actually delivered — otherwise there is
-        # nothing for the operator to recover FROM.
-        #
-        # If the RECOVERED publish itself fails, the flag stays set and the next
-        # healthy sweep retries it. Should the connection fail again first, no new
-        # FAILING alert is sent — deliberately: the operator's last delivered state
-        # is already "failing", and the connection is failing, so there is nothing
-        # new to say. Re-announcing would be the alert storm this design prevents.
+        # Only if a failing alert was delivered — otherwise nothing to recover FROM.
         if outstanding:
             _dispatch_health_alert(connection_id, HEALTH_RECOVERED)
         return
@@ -479,11 +336,8 @@ def _alert_connection_health(
 
 
 def _dispatch_health_alert(connection_id: uuid.UUID, state: str) -> None:
-    """Queue the health publish, swallowing a broker failure.
-
-    `send_task` can raise if Redis is unreachable — and Redis being unreachable is
-    exactly the kind of incident that makes every connection cross at once, so this
-    must not be the thing that breaks the sweep.
+    """Queue the health publish, swallowing a broker failure — an unreachable Redis
+    is exactly the incident that makes every connection cross at once.
     """
     try:
         celery_app.send_task("publish_connection_health", args=[str(connection_id), state])
@@ -497,33 +351,18 @@ def _dispatch_health_alert(connection_id: uuid.UUID, state: str) -> None:
 
 @celery_app.task(name="publish_connection_health")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def publish_connection_health(connection_id: str, state: str) -> bool:
-    """Publish one poll-health edge, and record the delivery (#842/#843).
-
-    Runs off the beat so a slow channel delays nothing shared. The
-    `health_alerted_at` write happens **here, after a successful publish** — that is
-    the whole point of #843: the flag must mean "an operator was actually told",
-    which only this side of the dispatch knows.
-
-    A failed publish writes nothing, so the next sweep re-evaluates the same edge
-    and tries again. Returns whether it published, for the test surface.
-    """
+    """Publish one poll-health edge and record the delivery (#842/#843)."""
     if state not in (HEALTH_FAILING, HEALTH_RECOVERED):
-        # Args cross the broker as plain JSON, so this is the boundary where the
-        # literal is actually established rather than assumed. A malformed message
-        # is dropped loudly instead of publishing an alert of unknown meaning.
+        # Args cross the broker as plain JSON — establish the literal at the
+        # boundary; drop a malformed message loudly.
         log.error("connection_health_alert_bad_state", connection_id=connection_id, state=state)
         return False
     edge: HealthState = HEALTH_FAILING if state == HEALTH_FAILING else HEALTH_RECOVERED
     session = get_session()
     try:
         cid = uuid.UUID(connection_id)
-        # CLAIM the edge before publishing, with one atomic conditional UPDATE.
-        # Overlapping sweeps are expected (the 10-min poll, the 30-min gap
-        # recovery and the #492 poll-now can all be in flight), and two of them can
-        # both read `health_alerted_at IS NULL` and queue a task — the old `==`
-        # design was safe against this by construction, since only one of two
-        # serialized streak values can equal the threshold, and `>=` gave that up.
-        # Whoever wins the UPDATE publishes; the loser sees zero rows and returns.
+        # CLAIM the edge with one atomic conditional UPDATE: overlapping sweeps (poll, gap recovery,
+        # poll-now) can both read NULL and queue.
         claimed_at = datetime.now(UTC)
         previous: datetime | None = None
         if edge == HEALTH_FAILING:
@@ -547,9 +386,8 @@ def publish_connection_health(connection_id: str, state: str) -> bool:
         if alert_dispatch.publish_connection_health(session, connection_id=cid, state=edge):
             return True
 
-        # Nothing was delivered, so the claim must not stand: the flag's whole
-        # meaning is "an operator was actually told" (#843). Releasing it leaves
-        # the edge open for the next sweep to retry.
+        # Nothing was delivered, so the claim must not stand (#843) — release it
+        # for the next sweep's retry.
         session.execute(
             update(Connection)
             .where(Connection.id == cid)
@@ -574,26 +412,7 @@ def _poll_orchestration_runs(
     provider: str | None = None,
     resource_name: str | None = None,
 ) -> dict[str, int]:
-    """Poll every orchestrator connection for recent succeeded runs (#171, ADR 0004).
-
-    The polling fallback for runs that never produced a webhook: iterate each
-    ADF / Airflow connection, ask the provider's `list_recent_runs` for runs
-    updated within the ``lookback`` window, and hand them to `ingest_polled_runs`
-    (upsert + trigger-on-success). Goes through the `OrchestrationProvider` seam —
-    no per-provider branching. Each connection is isolated: a transport/auth
-    failure logs + continues so one bad connection can't starve the rest.
-
-    ``lookback`` widens for gap recovery (B2): the same sweep over a 1-hour window
-    re-ingests runs missed during downtime. ``skip_updated_since`` rides the same
-    window, so a run we already recorded inside it is skipped while a genuinely
-    missed one (no row) is upserted.
-
-    ``provider`` / ``resource_name`` narrow the sweep for alert-triggered
-    poll-now calls (#492): an `AlertPing` names the provider (and usually the
-    factory), so only the matching connection(s) are polled — an alert storm
-    can't amplify into repeated full sweeps of every orchestrator. The match
-    rides the provider's ``resource_config_key`` seam, no provider branching.
-    """
+    """Poll every orchestrator connection for recent succeeded runs (#171, ADR 0004)."""
     since = (now or datetime.now(UTC)) - lookback
     summary = {"connections": 0, "recorded": 0, "triggered": 0, "skipped": 0, "errors": 0}
     provider_filter = (
@@ -640,11 +459,7 @@ def _poll_orchestration_runs(
                 connection_id=str(connection.id),
                 provider=connection.type,
             )
-            # Make the failure a fact about the CONNECTION, not just a log line (#828).
-            # This is the whole point: prod lineage rotted for six days behind an
-            # expired credential while the product reported nothing wrong. Runs after
-            # the rollback above, on a clean session, and is itself fail-soft — a
-            # bookkeeping error must never take down the sweep it is reporting on.
+            # Record the failure as a fact about the CONNECTION, not just a log line (#828).
             try:
                 streak = orchestration_service.record_poll_failure(
                     session, connection_id=connection.id, exc=exc
@@ -659,11 +474,8 @@ def _poll_orchestration_runs(
                     connection_id=str(connection.id),
                 )
         else:
-            # The recovery alert lives OUT of the try above, deliberately. Inside it, any
-            # raise on the notification path would land in the `except` — which records a
-            # poll FAILURE — so a connection that had just polled *successfully* would be
-            # marked failing, corrupting the very streak the alert keys on. The publish is
-            # already fail-soft; this makes it structurally impossible for it to matter.
+            # Deliberately OUTSIDE the try: a raise on the notification path would land in the
+            # except and mark a SUCCESSFUL poll as failing, corrupting the streak the alert keys on.
             _alert_connection_health(
                 session, connection_id=connection.id, streak=recovered_from, recovered=True
             )
@@ -677,11 +489,8 @@ def _run_orchestration_poll(
     provider: str | None = None,
     resource_name: str | None = None,
 ) -> dict[str, int]:
-    """Open a session, run the poll core over ``lookback``, always close.
-
-    Shared by the beat entry points (regular poll + gap recovery) and the
-    alert-triggered poll-now path (#492) so the session lifecycle lives in one
-    place — what varies is the window and the optional targeting.
+    """Open a session, run the poll core over ``lookback``, always close — shared
+    by the beat entry points and the poll-now path (#492).
     """
     session = get_session()
     try:
@@ -700,19 +509,16 @@ def _run_orchestration_poll(
 def poll_orchestration_runs(
     provider: str | None = None, resource_name: str | None = None
 ) -> dict[str, int]:
-    """The 10-min beat polling fallback; also the alert-triggered poll-now
-    (#492), where ``provider``/``resource_name`` narrow the sweep to the
-    alerting orchestrator."""
+    """The 10-min beat polling fallback; ``provider``/``resource_name`` narrow the
+    alert-triggered poll-now sweep (#492).
+    """
     return _run_orchestration_poll(_POLL_LOOKBACK, provider=provider, resource_name=resource_name)
 
 
 @celery_app.task(name="recover_orchestration_gaps")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def recover_orchestration_gaps() -> dict[str, int]:
-    """Celery-beat entry point — gap recovery (B2), startup + every 30 min.
-
-    The same poll pipeline over the wider ``_GAP_RECOVERY_LOOKBACK`` window, to
-    re-ingest runs missed while the system was down. Idempotent with the regular
-    poll (upsert + `skip_updated_since`).
+    """Gap recovery (B2), startup + every 30 min — the same pipeline over the wider
+    window, idempotent with the regular poll.
     """
     return _run_orchestration_poll(_GAP_RECOVERY_LOOKBACK)
 
@@ -720,17 +526,7 @@ def recover_orchestration_gaps() -> dict[str, int]:
 def _refresh_dbt_lineage(
     session: Session, *, connection_id: uuid.UUID, job: str, secret_store: SecretStore
 ) -> str:
-    """Fetch + parse + refresh the dbt lineage cache for one (connection, job).
-
-    The worker-side body of `refresh_dbt_lineage`, extracted for a DB-backed unit
-    test without the Celery envelope. Runs off the webhook/poll path (dispatched by
-    `orchestration_service._dispatch_lineage_refresh` on a succeeded dbt run) so the
-    receiver never blocks on the artifact download + parse + N+M upserts.
-
-    Fully **fail-open**: every step returns a reason string rather than raising, and
-    one consistent ``dbt_lineage_refresh_*`` log family covers each outcome — a bad
-    manifest, an unreadable store, or a DB hiccup must never surface as a task error.
-    """
+    """Fetch + parse + refresh the dbt lineage cache for one (connection, job)."""
     connection = session.get(Connection, connection_id)
     if connection is None:
         log.warning("dbt_lineage_refresh_no_connection", connection_id=str(connection_id))
@@ -770,12 +566,9 @@ def _refresh_dbt_lineage(
 
 @celery_app.task(name="refresh_dbt_lineage")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def refresh_dbt_lineage(connection_id: str, job: str) -> str:
-    """Async dbt-manifest lineage refresh for one (connection, job) (ADR 0034, #759).
-
-    Dispatched fire-and-forget by the orchestration ingest path when a dbt run
-    succeeds (webhook immediately, poll as the fallback). Own session + own single
-    secret fetch, so the artifact IO never blocks the webhook ACK / poll loop.
-    Best-effort: never raises (`_refresh_dbt_lineage` fails open per step).
+    """Async dbt-manifest lineage refresh (ADR 0034, #759) — fire-and-forget off
+    the ingest path so artifact IO never blocks the webhook ACK / poll loop;
+    never raises.
     """
     session = get_session()
     try:
@@ -793,15 +586,7 @@ def refresh_dbt_lineage(connection_id: str, job: str) -> str:
 
 
 def _advance_schedule(schedule: Schedule, *, now: datetime) -> bool:
-    """Roll ``schedule`` forward to its next future fire and stamp ``last_run_at``.
-
-    **No-backfill semantics**: ``cron.next_fire`` returns the next occurrence
-    strictly after ``now``, so a gap (worker/beat down across several slots) is
-    collapsed to a single fire rather than backfilled. Returns True if advanced;
-    False (and disables the schedule) if the stored cron/tz is somehow invalid —
-    validated on write, so this only guards against direct DB tampering and stops
-    an un-advanceable row from hot-looping the dispatcher every tick.
-    """
+    """Roll ``schedule`` forward to its next future fire; stamp ``last_run_at``."""
     schedule.last_run_at = now
     try:
         schedule.next_run_at = cron.next_fire(schedule.cron, schedule.timezone, after=now)
@@ -818,16 +603,7 @@ def _advance_schedule(schedule: Schedule, *, now: datetime) -> bool:
 
 
 def _fire_schedule(session: Session, schedule: Schedule, *, now: datetime) -> str:
-    """Fire one due schedule: advance it, then queue + dispatch a suite run.
-
-    Advancing ``next_run_at`` happens **before** the run is created and is
-    committed in every branch, so the schedule leaves the due window for this
-    tick whatever the run's fate — a misconfigured suite never hot-loops. The run
-    is created with the canonical ``schedule:<id>`` ``triggered_by`` marker and
-    handed to the worker exactly like the manual / pipeline-trigger paths; a
-    targetless suite is skipped (not queued-then-failed), and a broker outage
-    marks the run ``failed`` rather than leaving it stuck ``queued`` (#227).
-    """
+    """Fire one due schedule: advance it, then queue + dispatch a suite run."""
     if not _advance_schedule(schedule, now=now):
         session.commit()
         return "disabled"
@@ -851,9 +627,7 @@ def _fire_schedule(session: Session, schedule: Schedule, *, now: datetime) -> st
     session.add(run)
     session.commit()
     session.refresh(run)
-    # Shared dispatch+broker-failure block (#227): on failure the run is marked
-    # terminal-`failed` and logged (with schedule_id kept on the event); the
-    # advance is already committed, so the schedule has left the due window.
+    # Shared dispatch+broker-failure handling (#227); the advance is already committed.
     if not run_dispatch.dispatch_or_fail(session, run, schedule_id=str(schedule.id)):
         return "dispatch_failed"
     log.info("schedule_fired", schedule_id=str(schedule.id), run_id=str(run.id))
@@ -861,14 +635,7 @@ def _fire_schedule(session: Session, schedule: Schedule, *, now: datetime) -> st
 
 
 def _dispatch_due_schedules(session: Session, *, now: datetime | None = None) -> dict[str, int]:
-    """Fire every enabled schedule whose ``next_run_at`` has passed (A7).
-
-    Pulls due schedules one at a time with ``FOR UPDATE SKIP LOCKED`` so two
-    overlapping dispatcher ticks can't double-fire the same schedule: the second
-    skips a row the first holds, and once fired the row's ``next_run_at`` is past
-    ``now`` so it drops out of the due set. ``now`` is fixed at entry, so the loop
-    is finite (each iteration advances one row out of the window).
-    """
+    """Fire every enabled schedule whose ``next_run_at`` has passed (A7)."""
     now = now or datetime.now(UTC)
     summary = {"due": 0, "dispatched": 0, "skipped_target": 0, "dispatch_failed": 0, "disabled": 0}
     while True:
@@ -903,14 +670,9 @@ def dispatch_due_schedules() -> dict[str, int]:
 
 @celery_app.task(name="purge_sample_failures")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def purge_sample_failures() -> int:
-    """Celery-beat entry point — daily PII-retention sweep.
-
-    Scrubs `sample_failures` and list-shaped `observed_value` (#1253 — its
-    sibling column, only the raw-cell-bearing set-oriented-expectation shape;
-    scalar aggregates are left untouched) from results older than the
-    configured ``sample_failures_retention_days`` window (keeping the row +
-    `metric_value` so trends survive — ADR 0012). Returns the total number of
-    column values scrubbed across both columns.
+    """Daily PII-retention sweep — scrubs `sample_failures` + list-shaped
+    `observed_value` (#1253) past retention, keeping the row + `metric_value`
+    (ADR 0012). Returns column values scrubbed.
     """
     session = get_session()
     try:
@@ -925,19 +687,8 @@ def purge_sample_failures() -> int:
 
 @celery_app.task(name="purge_audit_events")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def purge_audit_events() -> int:
-    """Celery-beat entry point — daily audit-log retention sweep (ADR 0041 §2.7).
-
-    Runs on its OWN clock and its own setting (`AUDIT_RETENTION_DAYS`, default
-    365), deliberately decoupled from the sample-failures sweep: that one destroys
-    incidentally-captured personal data, this one destroys a record of what people
-    did, and an operator must be able to set a short window for the first and a
-    long one for the second.
-
-    Runs as `dataq_app` like every other beat task — ADR 0041 §2.7 rules out a
-    second, less-trusted database role, because the single-role model is the whole
-    mitigation for the unpatched Postgres RI owner-switched-cast escalation. The
-    service handles the consequence: the migration revoked DELETE on this table
-    from that same role, so the sweep re-grants it around its own statement.
+    """Daily audit-log retention sweep (ADR 0041 §2.7), on its own setting —
+    decoupled from the PII sweep (opposite retention pressures).
     """
     session = get_session()
     try:
@@ -953,25 +704,9 @@ def purge_audit_events() -> int:
 
 @celery_app.task(name="purge_otp_codes")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def purge_otp_codes() -> int:
-    """Celery-beat entry point — daily OTP-code retention sweep (#1136).
-
-    Wires up `otp_service.purge_expired_codes`, which shipped unit-tested in #1134
-    but with no beat entry to ever run it — the #1099 shape one step earlier (a
-    background obligation that isn't even wired, rather than wired-but-starved).
-    `otp_codes.email` is stored in plaintext (the sign-in lookup needs it), so an
-    unswept table is an unbounded PII-bearing log of who tried to sign in and when;
-    this is retention hygiene, not a security control (the caps in `otp_service`
-    are the security). Deletes spent/expired rows older than the configured
-    `otp_codes_retention_hours` window and returns the count deleted — never an
-    address, in the task's own return value or its logs (`otp_service` logs the
-    count only).
-
-    ``otp_codes_retention_hours <= 0`` no-ops rather than deleting every row —
-    enforced inside `otp_service.purge_expired_codes` itself (the same
-    "`<retention> <= 0` → return 0, clean off-switch" contract every sibling
-    sweep's service function carries — `purge_expired_sample_failures` /
-    `sweep_orphan_assets` / `sweep_orphan_secrets`), not re-checked here, so
-    every caller of that function gets the floor, not only this task.
+    """Daily OTP-code retention sweep (#1136) — `otp_codes.email` is plaintext PII,
+    so an unswept table is an unbounded sign-in log. Returns the count deleted,
+    never an address. ``<= 0`` no-ops inside `otp_service` (the shared floor).
     """
     session = get_session()
     try:
@@ -986,16 +721,8 @@ def purge_otp_codes() -> int:
 
 @celery_app.task(name="reap_stuck_runs")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def reap_stuck_runs() -> int:
-    """Celery-beat entry point — fail runs orphaned in a non-terminal state (#309).
-
-    A run committed ``queued`` before its task was published — or left ``running``
-    by a worker that died mid-execution — would otherwise linger forever (gap
-    recovery only covers ``pipeline_runs``). The reaper drives such runs, stuck
-    past ``stuck_run_threshold_minutes``, to terminal ``failed`` so they surface in
-    the runs table / dashboard and the user can re-run. No alert is published — see
-    ``run_service.reap_stuck_runs`` for why (a reaped run is an infra/liveness
-    event, and alerting a slow-but-alive run would be an irreversible false alarm).
-    Returns the count reaped.
+    """Fail runs orphaned non-terminal past ``stuck_run_threshold_minutes`` (#309).
+    No alert — see ``run_service.reap_stuck_runs``. Returns the count reaped.
     """
     session = get_session()
     try:
@@ -1010,17 +737,9 @@ def reap_stuck_runs() -> int:
 
 @celery_app.task(name="sync_asset_inventory")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def sync_asset_inventory() -> int:
-    """Celery-beat entry point — warehouse inventory sync (#919, ADR 0040).
-
-    Materializes every table an opted-in Snowflake/UC connection can see as an
-    asset row, so "no suite, no run, no edge" stops meaning INVISIBLE. Dark by
-    default at the connection grain: only connections whose config sets
-    ``inventory_sync: true`` are enumerated — there is no global gate to leave
-    on by accident, and no WAREHOUSE query runs for a connection that has not
-    opted in (the task's own cheap Postgres scan over connections always runs).
-    Daily wall-clock cadence (a catalog changes on DDL cadence, not per-run);
-    the sync's `last_seen` advancement is also what keeps discovered assets out
-    of `sweep_orphan_assets`' candidate set while their tables still exist.
+    """Daily warehouse inventory sync (#919, ADR 0040) — dark by default at the
+    connection grain (``inventory_sync: true``); no warehouse query without opt-in.
+    Its `last_seen` advancement also keeps discovered assets out of the orphan sweep.
     """
     from backend.app.services import inventory_service
 
@@ -1033,21 +752,7 @@ def sync_asset_inventory() -> int:
 
 @celery_app.task(name="sweep_orphan_assets")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def sweep_orphan_assets() -> int:
-    """Celery-beat entry point — delete unreferenced, stale `assets` rows (#770).
-
-    ADR 0034's accepted cleanup posture ("asset rows accrete; last_seen + a
-    sweep, not deletes"): a suite retargeting away or a dbt model dropping out of
-    the manifest leaves its `assets` row behind with a frozen ``last_seen`` and
-    no reference into it — see ``asset_service.sweep_orphan_assets`` for the full
-    reference-guard checklist. Returns the count swept.
-
-    Unlike its sibling janitors above, this wraps the service call in its own
-    try/except: the guard list is new and hand-maintained (a future referencing
-    table — #761 `incidents` — landing without its guard line is exactly the
-    failure mode to be defensive about), so a DB-level surprise here is logged
-    and swallowed rather than surfaced as a failed Celery task — it must never
-    take down the beat tick for the janitors scheduled after it.
-    """
+    """Delete unreferenced, stale `assets` rows (#770, ADR 0034). Returns the count."""
     session = get_session()
     try:
         retention_days = get_settings().asset_orphan_retention_days
@@ -1065,18 +770,8 @@ def sweep_orphan_assets() -> int:
 
 @celery_app.task(name="sweep_orphan_secrets")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def sweep_orphan_secrets() -> int:
-    """Celery-beat entry point — reconcile the secret store against its owners (#1059).
-
-    Reports by default and purges only when `SECRET_ORPHAN_PURGE` is set; see
-    `secret_sweep_service` for why that asymmetry is deliberate. Returns the number
-    of orphans FOUND (not purged) so the signal is the same whether or not deletion
-    is enabled — a count that silently became 0 when purging was switched on would
-    be indistinguishable from a clean vault.
-
-    Wrapped like its asset sibling: the ownership registry is hand-maintained, and a
-    surprise here must not take down the beat tick for the janitors after it. The
-    store's own unavailability is included in that — a vault that cannot be listed
-    logs and yields, rather than being reported as "no orphans".
+    """Reconcile the secret store against its owners (#1059) — reports by default,
+    purges only under `SECRET_ORPHAN_PURGE` (what it deletes is a live credential).
     """
     session = get_session()
     try:
@@ -1101,24 +796,14 @@ def sweep_orphan_secrets() -> int:
 
 @celery_app.task(name="refresh_lineage_pull")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def refresh_lineage_pull() -> int:
-    """Celery-beat entry point — pull catalog lineage into `lineage_edges` (#762).
-
-    **Dark by default** (ADR 0034's "pulled, never built" posture): when no
-    `LineageProvider` is configured (`LINEAGE_PROVIDER` unset) the task no-ops with
-    zero queries — the same gate shape the OpenLineage emitter uses. A daily cadence
-    (not a liveness interval): a catalog's lineage moves on the artifact/build cadence,
-    not per-run, and the pull is a *cache refresh of external truth*, so freshness is
-    deliberately bounded (ADR 0034 accepted "freshness bounded by poll cadence") — same
-    low-urgency daily tick as the sample-failures and orphan-asset sweeps. Callable
-    on-demand too (`refresh_lineage_pull.delay()`). Returns the live pulled-edge count
-    (0 when unconfigured or nothing pulled); `refresh_pulled_edges` fails open per step.
+    """Daily catalog lineage pull into `lineage_edges` (#762, ADR 0034) — dark by
+    default (no-op without `LINEAGE_PROVIDER`); a cache refresh of external truth,
+    not a liveness interval. Returns the pulled-edge count; fails open per step.
     """
     provider = lineage_pull.get_lineage_provider()
     if provider is None:
-        # #1090: distinguish UNSET (operator removed the catalog — cached pulled
-        # edges are orphans that would render as current forever; sweep them) from
-        # configured-but-broken (typo'd name / missing URL — keep the cache, keep
-        # warning; a purge here would turn a one-character typo into data loss).
+        # #1090: UNSET (catalog removed → sweep orphaned cached edges) is distinct from configured-
+        # but-broken (keep the cache — a purge would turn a typo into data loss).
         if lineage_pull.lineage_provider_unset():
             session = get_session()
             try:
@@ -1135,17 +820,9 @@ def refresh_lineage_pull() -> int:
 
 @celery_app.task(name="refresh_warehouse_lineage")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def refresh_warehouse_lineage() -> int:
-    """Celery-beat entry point — refresh warehouse-native lineage for every eligible
-    connection (#858, ADR 0034).
-
-    **Dark by default**: no-ops with zero queries unless ``WAREHOUSE_LINEAGE_ENABLED``
-    is set — the warehouse views it reads (Snowflake ACCOUNT_USAGE, UC system.access)
-    need a grant the connection's principal may not have, so this stays opt-in like the
-    catalog pull. Iterates the Snowflake / Unity Catalog connections and refreshes each
-    **independently** (`refresh_connection_lineage` is fail-soft per connection: one
-    unreachable warehouse records a classified error and never aborts the sweep). Daily
-    cadence — a cache refresh of external truth, not a liveness path. Returns the number
-    of connections successfully refreshed.
+    """Daily warehouse-native lineage refresh (#858, ADR 0034) — dark by default
+    (``WAREHOUSE_LINEAGE_ENABLED``; the views need grants the principal may lack).
+    Per-connection fail-soft: one unreachable warehouse never aborts the sweep.
     """
     if not get_settings().warehouse_lineage_enabled:
         return 0
@@ -1183,24 +860,7 @@ def _heartbeat_store() -> beat_watchdog._TickStore:
 
 @celery_app.task(name="beat_heartbeat")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def beat_heartbeat() -> bool:
-    """Stamp 'the beat→broker→worker loop is actually executing tasks' (#904).
-
-    The stamp is written HERE, on execution, not by the scheduler — the outage
-    this defends against is "beat keeps queueing, nothing consumes", which a
-    scheduler-side heartbeat would have reported healthy right through. The
-    watchdog thread (`beat_watchdog`) reads it and exits the process when it
-    goes stale, so the platform restarts a worker that is up but idle.
-
-    The client is built ONCE and reused (a fresh pool every 60s forever is pure
-    churn) and carries bounded socket timeouts — without them an unresponsive
-    broker would block this task forever, pinning a pool slot every minute until
-    the worker is starved: the heartbeat would *become* the outage it watches
-    for (#931 review).
-
-    Fail-soft: a broker hiccup must not mark the task failed and spam the error
-    channel — the watchdog's own `unknown` verdict already covers an unreadable
-    store.
-    """
+    """Stamp 'the beat→broker→worker loop is actually executing tasks' (#904)."""
     try:
         beat_watchdog.record_beat_tick(_heartbeat_store())
         return True
@@ -1214,23 +874,10 @@ def beat_heartbeat() -> bool:
 
 @celery_app.task(name="refresh_credential_expiry")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def refresh_credential_expiry() -> int:
-    """Celery-beat entry point — re-read every credential's stated expiry (#838).
-
-    Prod lineage was dark for six days on an expired ADLS SAS. #828 made that
-    visible once it broke something; this sweep is what lets the product warn
-    first, by keeping `connections.credential_expires_at` current for credentials
-    that state their own lifetime.
-
-    Daily, deliberately: an expiry date moves only when someone rotates a
-    credential, so this is a cache refresh of external truth on the same
-    low-urgency tick as the sample-failures and orphan-asset sweeps — not a
-    liveness interval. A day of staleness costs nothing against a warning window
-    measured in weeks.
-
-    Fail-soft like its sibling janitors: a Key Vault outage here must not fail the
-    beat tick for the tasks scheduled after it, and — since the sweep's whole job
-    is a warning signal — must not be mistaken for a credential problem. Returns
-    the number of connections whose stored expiry changed.
+    """Daily re-read of every credential's stated expiry into
+    `connections.credential_expires_at` (#838) — the warn-before-it-dies signal.
+    Fail-soft: a vault outage must not fail the beat tick or read as a credential
+    problem. Returns the count of changed expiries.
     """
     session = get_session()
     try:

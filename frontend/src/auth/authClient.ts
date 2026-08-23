@@ -2,9 +2,8 @@ import { ErrorResponse, UserManager, WebStorageStateStore, type User } from 'oid
 
 import { authConfig, authMode } from './config';
 
-// OAuth error codes from a failed silent renew that genuinely need the user back
-// at the IdP (expired session / dead refresh token / fresh consent or MFA) — as
-// opposed to a transient network error, which must NOT trigger a redirect (#168).
+// OAuth error codes from a failed silent renew that genuinely need the user back at the IdP
+// (expired session / dead refresh token / fresh consent or MFA).
 const INTERACTION_REQUIRED_ERRORS = new Set([
   'login_required',
   'interaction_required',
@@ -13,22 +12,11 @@ const INTERACTION_REQUIRED_ERRORS = new Set([
   'invalid_grant',
 ]);
 
-/**
- * Generic OIDC auth client (ADR 0028 / #504) — replaces the Azure-specific MSAL
- * client. Any standards-compliant IdP works: Azure AD, Cognito, GCP Identity
- * Platform, Keycloak, or a local dev OIDC — the provider is just the injected
- * `authority`. Authorization-code + PKCE (oidc-client-ts default), refresh-token
- * silent renew (offline_access), session-storage cache (matches the old MSAL
- * choice so a tab reload keeps the session but a closed tab drops it).
- */
+/** Generic OIDC auth client (ADR 0028 / #504) — replaces the Azure-specific MSAL client. */
 
 let _mgr: UserManager | null = null;
 
-/**
- * The UserManager singleton in real auth mode; null in dev_bypass / unconfigured.
- * Caller awaits nothing to construct it — oidc-client-ts fetches the IdP metadata
- * lazily on first sign-in/callback.
- */
+/** The UserManager singleton in real auth mode; null in dev_bypass / unconfigured. */
 export function getUserManager(): UserManager | null {
   if (authMode !== 'real') return null;
   if (_mgr) return _mgr;
@@ -41,10 +29,8 @@ export function getUserManager(): UserManager | null {
     );
   }
 
-  // openid/profile/email → id token; offline_access → refresh token for silent
-  // renew; apiScope (when set) makes the access token audience the DataQ API.
-  // DATAQ_AUTH_SCOPE replaces the whole string for providers with a different
-  // scope vocabulary — Cognito rejects offline_access outright (#1347).
+  // openid/profile/email → id token; offline_access → refresh token for silent renew; apiScope
+  // (when set) makes the access token audience the DataQ API.
   const scope =
     scopeOverride ||
     ['openid', 'profile', 'email', 'offline_access', apiScope].filter(Boolean).join(' ');
@@ -74,16 +60,8 @@ export async function logout(): Promise<void> {
   const mgr = getUserManager();
   if (!mgr) return;
   if (authConfig.logoutStyle === 'cognito') {
-    // Cognito's /logout is not RP-Initiated-Logout-conformant (#1364): it needs
-    // client_id + logout_uri (exactly matching a registered logout URL) and
-    // 400s "Client does not exist" on the standard id_token_hint /
-    // post_logout_redirect_uri that signoutRedirect sends — leaving the user on
-    // a raw Cognito error page with the hosted-UI session still alive (a
-    // sign-in right after silently re-authenticates the old user). Build the
-    // logout URL ourselves from the discovered end_session_endpoint.
-    // Clear the local session BEFORE the metadata fetch: discovery needs the
-    // network, removeUser doesn't, and a failed discovery must not leave the
-    // click a silent no-op with the session still alive (PR #1367 review).
+    // Cognito's /logout is not RP-Initiated-Logout-conformant (#1364): it needs client_id +
+    // logout_uri (exactly matching a registered logout URL) and 400s "Client does not exist" on the
     await mgr.removeUser();
     let endSession: string | undefined;
     try {
@@ -102,23 +80,15 @@ export async function logout(): Promise<void> {
   await mgr.signoutRedirect();
 }
 
-/**
- * True when the current URL is the IdP redirect back. `state` is always present;
- * a success carries `code`, a failure (cancelled consent / MFA, denied) carries
- * `error` — both must be processed (the error case was a silent no-op before).
- */
+/** True when the current URL is the IdP redirect back. */
 function isSigninRedirect(): boolean {
   const params = new URLSearchParams(window.location.search);
   return params.has('state') && (params.has('code') || params.has('error'));
 }
 
 /**
- * Bootstrap step: if this load is the sign-in redirect back, complete the code
- * exchange and scrub the redirect params from the URL (so a reload can't replay
- * them). No-op otherwise. Must run before React renders so the first paint is
- * post-login. On an IdP error redirect (or a failed exchange), log and fall
- * through — AuthGate then shows the sign-in page so the user can retry, rather
- * than crashing the app.
+ * Bootstrap step: if this load is the sign-in redirect back, complete the code exchange and scrub
+ * the redirect params from the URL (so a reload can't replay them).
  */
 export async function completeSigninIfCallback(): Promise<void> {
   const mgr = getUserManager();
@@ -134,15 +104,7 @@ export async function completeSigninIfCallback(): Promise<void> {
 
 let _inflightToken: Promise<string | null> | null = null;
 
-/**
- * A currently-valid API access token, or null when not signed in. Refreshes
- * silently when the cached token is expired; if that needs user interaction
- * (expired session / revoked consent / fresh MFA), falls back to an interactive
- * redirect and rejects so the in-flight request doesn't fire tokenless — it
- * re-issues cleanly once the redirect completes (was #168). Concurrent callers
- * share one in-flight acquisition (single-flight), so a dashboard mounting N
- * requests at once triggers at most one silent renew / one redirect.
- */
+/** A currently-valid API access token, or null when not signed in. */
 export function getApiToken(): Promise<string | null> {
   if (_inflightToken) return _inflightToken;
   _inflightToken = acquireApiToken().finally(() => {
@@ -156,8 +118,6 @@ async function acquireApiToken(): Promise<string | null> {
   if (!mgr) return null;
   const user = await mgr.getUser();
   // Not signed in → no token; the request 401s quietly (AuthGate gates the UI).
-  // Do NOT signinSilent here: with no session it hits the iframe path and, with
-  // no silent_redirect_uri configured, throws — or worse, redirects mid-request.
   if (!user) return null;
   if (!user.expired) return user.access_token;
   try {

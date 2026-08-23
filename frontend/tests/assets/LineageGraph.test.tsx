@@ -46,9 +46,7 @@ const FAILING = {
   stale: false,
 };
 
-// #1091: the prod shape verbatim — refreshed 9 days ago, zero errors, zero degraded
-// reasons. Before the staleness axis this source matched nothing and the graph
-// rendered as healthy + current.
+// #1091: the prod shape verbatim — refreshed 9 days ago, zero errors, zero degraded reasons.
 const STALE = {
   connection_id: 'c3',
   name: 'prod-uc-stale',
@@ -62,9 +60,8 @@ const STALE = {
 
 describe('LineageGraph warehouse-lineage status (#858, #915, #916)', () => {
   it('shows nothing when no warehouse source is degraded or failing', () => {
-    // The healthy case is an EMPTY list: the API omits healthy full-tier sources
-    // entirely ("no banner over a clean, current graph" —
-    // `asset_view_service.warehouse_lineage_status`).
+    // The healthy case is an EMPTY list: the API omits healthy full-tier sources entirely ("no
+    // banner over a clean, current graph" — `asset_view_service.warehouse_lineage_status`).
     renderGraph();
     expect(screen.queryByText(/Workspace lineage sources/)).toBeNull();
     expect(screen.queryByText(/refresh is failing/)).toBeNull();
@@ -80,9 +77,8 @@ describe('LineageGraph warehouse-lineage status (#858, #915, #916)', () => {
 
   it('surfaces a failing warehouse refresh as a WARNING, with its classified error', () => {
     renderGraph({ warehouseStatus: [FAILING] });
-    // #915: this used to render at INFO weight alongside tier qualifiers, so a real
-    // operational failure read as a footnote. Severity is carried by the antd alert
-    // class, so assert on that rather than on wording, which drifts.
+    // #915: this used to render at INFO weight alongside tier qualifiers, so a real operational
+    // failure read as a footnote.
     const alert = screen.getByText(/refresh is failing/).closest('.ant-alert');
     expect(alert).toHaveClass('ant-alert-warning');
     expect(screen.getByText(/last refresh failed/)).toBeTruthy();
@@ -106,11 +102,8 @@ describe('LineageGraph warehouse-lineage status (#858, #915, #916)', () => {
   });
 
   it('shows the tier note on a source that is BOTH degraded and failing (#987)', () => {
-    // The two fields are not mutually exclusive: the success path records
-    // `degraded_reason` and `_record_refresh_error` never clears it, so a source
-    // that answered coarsely and has since started failing carries both. The tier
-    // note describes what the source CAN answer (edition/grants), which still
-    // holds while refreshes fail — so it must not be swallowed by the error.
+    // The two fields are not mutually exclusive: the success path records `degraded_reason` and
+    // `_record_refresh_error` never clears it.
     renderGraph({
       warehouseStatus: [
         {
@@ -130,9 +123,8 @@ describe('LineageGraph warehouse-lineage status (#858, #915, #916)', () => {
   });
 
   it('frames the degraded advisory as workspace-level, not asset-scoped (#916)', () => {
-    // Deliberately workspace-wide: a tier is a property of the SOURCE, not of this
-    // asset, so a pure-UC asset page legitimately lists Snowflake connections. The
-    // framing has to say so, or it reads as a bug.
+    // Deliberately workspace-wide: a tier is a property of the SOURCE, not of this asset, so a
+    // pure-UC asset page legitimately lists Snowflake connections.
     renderGraph({ warehouseStatus: [DEGRADED] });
     expect(screen.getByText(/Workspace lineage sources/)).toBeTruthy();
     expect(
@@ -178,11 +170,8 @@ describe('LineageGraph staleness surface (#1091)', () => {
   });
 
   it('a source that is both FAILING and stale keeps the staleness note (#987 shape)', () => {
-    // Error + stale co-occur only when the refresh loop died after a failing
-    // attempt (the error path bumps the stamp per attempt) — prod's dead-PAT
-    // connections during #1091. The row routes to the WARNING alert; the review
-    // caught that branch dropping `stale` entirely, so the error masked the
-    // far worse fact that the source had stopped refreshing at all.
+    // Error + stale co-occur only when the refresh loop died after a failing attempt (the error
+    // path bumps the stamp per attempt) — prod's dead-PAT connections during #1091.
     render(
       <LineageGraph
         center={center}

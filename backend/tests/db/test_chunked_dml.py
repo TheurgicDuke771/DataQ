@@ -1,11 +1,4 @@
-"""Pure-unit tests for the shared bounded-batch DML loop (#323 review F4/F6).
-
-No real DB needed: a fake `Session` stands in so the loop's own control flow —
-termination, guard validation, the `rowcount or 0` defense, and the `on_batch`
-progress callback — can be exercised deterministically, including the one
-shape (a driver returning `rowcount=-1`) a real Postgres session can never
-produce.
-"""
+"""Pure-unit tests for the shared bounded-batch DML loop (#323 review F4/F6)."""
 
 from typing import Any
 
@@ -39,7 +32,8 @@ class _FakeSession:
 def test_chunk_size_zero_raises_before_any_query() -> None:
     """#323 review F4(a): the pre-fix `affected < chunk_size` exit condition
     infinite-looped on `chunk_size=0` (`0 < 0` is False, so it never breaks).
-    The fix validates up front — no query is ever issued."""
+    The fix validates up front — no query is ever issued.
+    """
     session = _FakeSession([])  # would raise IndexError if execute() were ever called
 
     with pytest.raises(ValueError, match="chunk_size must be >= 1"):
@@ -56,11 +50,11 @@ def test_negative_chunk_size_also_raises() -> None:
 
 
 def test_exits_on_zero_not_on_partial_batch() -> None:
-    """#323 review F4(b): a batch that returns exactly `chunk_size` (the
-    candidate count is an exact multiple) or a batch shrunk by a concurrent
-    delete must NOT be mistaken for "done" — only a truly empty batch ends
-    the loop. Scripted as 3, 3, 1, 0: three non-empty batches (the middle one
-    full-sized) followed by the confirming empty round."""
+    """#323 review F4(b): a batch that returns exactly `chunk_size` (the candidate count is an
+    exact multiple) or a batch shrunk by a concurrent delete must NOT be mistaken for "done" —
+    only a truly empty batch ends the loop. Scripted as 3, 3, 1, 0: three non-empty batches (the
+    middle one full-sized) followed by the confirming empty round.
+    """
     session = _FakeSession([3, 3, 1, 0])
 
     total = chunked_dml(session, object, chunk_size=3)  # type: ignore[arg-type]
@@ -71,11 +65,10 @@ def test_exits_on_zero_not_on_partial_batch() -> None:
 
 
 def test_negative_rowcount_is_treated_as_zero() -> None:
-    """#323 review F6: `asset_service.sweep_orphan_assets`'s own loop guards
-    against a driver returning `rowcount=-1` ("unknown"); the extracted
-    helper must carry the same guard, not just the id-tracking `run_service`
-    side happened to not need it for. A -1 must neither corrupt the running
-    total nor be mistaken for a non-empty batch (which would spin forever)."""
+    """#323 review F6: `asset_service.sweep_orphan_assets`'s own loop guards against a driver
+    returning `rowcount=-1` ("unknown"); the extracted helper must carry the same guard, not
+    just the id-tracking `run_service` side happened to not need it for.
+    """
     session = _FakeSession([5, -1])
 
     total = chunked_dml(session, object, chunk_size=5)  # type: ignore[arg-type]
@@ -88,7 +81,8 @@ def test_on_batch_receives_each_batchs_affected_count() -> None:
     """#323 review M1: callers use this to keep a running total that stays
     accurate even if a LATER batch raises — proven here by checking the
     callback fires with the right value on every batch, not just the total
-    at the end."""
+    at the end.
+    """
     session = _FakeSession([2, 2, 1, 0])
     seen: list[int] = []
 
@@ -104,7 +98,8 @@ def test_on_batch_sees_partial_progress_if_a_later_batch_raises() -> None:
     """The concrete M1 scenario: batch 3 raises after batches 1-2 already
     committed. A caller accumulating via `on_batch` still has the correct
     partial total for logging, even though `chunked_dml` itself never
-    returns."""
+    returns.
+    """
     session = _FakeSession([2, 2])  # only 2 scripted; the 3rd execute() raises IndexError
     seen: list[int] = []
 

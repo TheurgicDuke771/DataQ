@@ -18,13 +18,7 @@ import { CONNECTION_KIND, type Connection, connectionOptionLabel } from '../../a
 import { importSuite, type Suite, type SuiteDocument } from '../../api/suites';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 
-/**
- * Import a portable suite document (the JSON produced by "Export") onto a chosen
- * connection. The file is parsed + shape-checked client-side, then handed back to
- * the backend unchanged (`POST /suites/import`) so thresholds/config round-trip
- * exactly — the connection is the only thing the importer supplies. The new suite
- * is owned by the importing user, like create.
- */
+/** Import a portable suite document (the JSON produced by "Export") onto a chosen connection. */
 export function ImportSuiteDrawer({
   open,
   connections,
@@ -46,21 +40,14 @@ export function ImportSuiteDrawer({
   const [fileName, setFileName] = useState<string>();
   const [parseError, setParseError] = useState<string>();
   const { run, loading: submitting } = useAsyncAction('Import failed');
-  // Monotonic token so a slow earlier file read can't overwrite a newer pick's
-  // result (last-wins). Bumped on every pick and on remove; the effect below
-  // bumps it on open/close so an in-flight parse from a prior open can't land in
-  // a freshly-reopened drawer. Ref writes aren't allowed during render, hence the
-  // effect rather than the render-phase reset block.
+  // Monotonic token so a slow earlier file read can't overwrite a newer pick's result (last-wins).
   const latestFile = useRef(0);
   useEffect(() => {
     latestFile.current += 1;
   }, [open]);
 
-  // Reset everything when the drawer (re)opens — a stale document/connection from
-  // a previous (possibly cancelled) import must not leak into the next one. The
-  // Drawer host stays mounted across open/close (it isn't destroyed), so this is
-  // a render-phase "adjust state when a prop changes" reset, matching the editor
-  // panels — not an effect.
+  // Reset everything when the drawer (re)opens — a stale document/connection from a previous
+  // (possibly cancelled) import must not leak into the next one.
   const [prevOpen, setPrevOpen] = useState(open);
   if (open !== prevOpen) {
     setPrevOpen(open);
@@ -193,10 +180,8 @@ export function ImportSuiteDrawer({
 }
 
 /**
- * Parse the uploaded text as a suite export document, validating just enough of
- * the shape to fail fast on the wrong file (a random JSON, a half-document). The
- * object is otherwise passed through untouched so thresholds/config round-trip
- * exactly on import. Throws an `Error` with a user-facing message on any miss.
+ * Parse the uploaded text as a suite export document, validating just enough of the shape to fail
+ * fast on the wrong file (a random JSON, a half-document).
  */
 function parseSuiteDocument(text: string): SuiteDocument {
   let parsed: unknown;

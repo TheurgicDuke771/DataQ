@@ -1,26 +1,4 @@
-"""Browser sign-in sessions for email OTP — ADR 0032 decision 3 (#734).
-
-A session token is a high-entropy random string (`dq_sess_` + 43 url-safe chars,
-~256 bits) minted after a successful OTP verification and delivered as an
-HttpOnly cookie, so the SPA never holds it in JS-readable storage. Only its
-SHA-256 hex digest is stored.
-
-**Why SHA-256 and an indexed lookup, not argon2 and a constant-time compare.**
-ADR 0032 decision 3 says "copy the PAT mechanism", and the PAT rationale (ADR
-0026, restated at the top of `api_key_service`) applies verbatim: this is a
-machine-generated random secret, not a human password, so there is nothing to
-brute-force and a KDF buys nothing — while costing a stretch on *every
-authenticated request*. The lookup is O(1) on `uq_sessions_token_hash`, and
-looking a digest up by index is not a timing oracle over the secret: the digest
-is what is compared, and the attacker cannot walk it back. (The OTP *code* is the
-opposite case — 20 bits, guessable — and does get `hmac.compare_digest`; see
-`otp_service`.)
-
-**No refresh pair** (ADR 0032 decision 3): `expires_at` is a fixed horizon
-(`AUTH_SESSION_TTL_HOURS`, default 24) and re-running the OTP flow is the
-refresh. Expiry AND revocation are re-checked on **every** resolve — the columns
-are not the invalidation, the seam check is.
-"""
+"""Browser sign-in sessions for email OTP — ADR 0032 decision 3 (#734)."""
 
 from __future__ import annotations
 
@@ -39,9 +17,8 @@ from backend.app.db.models import User, UserSession
 
 log = get_logger(__name__)
 
-# A public discriminator, not a credential (S105/B105): every session token starts
-# with it so the auth seam can branch session-vs-PAT-vs-JWT by prefix, and so the
-# log redactor can recognise a leaked one (`core/logging._BEARER_TOKEN_RE`).
+# A public discriminator, not a credential (S105/B105): every session token starts with it so the
+# auth seam can branch session-vs-PAT-vs-JWT by prefix.
 TOKEN_PREFIX = "dq_sess_"  # noqa: S105  # nosec B105
 #: The cookie the token rides in. Lives here, beside the token it carries, so the
 #: auth seam and the endpoints that set/clear it cannot drift on the name.
@@ -52,13 +29,7 @@ _DISPLAY_PREFIX_LEN = len(TOKEN_PREFIX) + 4
 
 
 class SessionAuthError(DataQError):
-    """The presented session is unknown, revoked, expired, or orphaned — always 401.
-
-    ONE exception type and ONE message for every failure mode, exactly like
-    `ApiKeyAuthError`: telling a caller that a session *exists* but has expired
-    confirms the cookie was once real, and telling them it was revoked confirms
-    somebody logged out. Neither is information an unauthenticated caller is owed.
-    """
+    """The presented session is unknown, revoked, expired, or orphaned — always 401."""
 
     def __init__(self) -> None:
         super().__init__(
@@ -79,11 +50,7 @@ def _display_prefix(token: str) -> str:
 def create_session(
     db: Session, user: User, *, settings: Settings | None = None
 ) -> tuple[UserSession, str]:
-    """Mint a session for `user`. Returns (row, plaintext token).
-
-    The plaintext exists server-side exactly once, here, on its way into the
-    `Set-Cookie` header; it is never stored and never logged.
-    """
+    """Mint a session for `user`. Returns (row, plaintext token)."""
     s = settings or get_settings()
     token = TOKEN_PREFIX + secrets.token_urlsafe(32)
     row = UserSession(
@@ -105,12 +72,7 @@ def create_session(
 
 
 def resolve_token(db: Session, token: str) -> User:
-    """Authenticate a presented session token → its owning `User`, or raise.
-
-    Expiry and revocation are checked HERE, on every request — ADR 0032 decision 3
-    makes that the testable obligation, because a stored `revoked_at` that no code
-    path reads is not a logout.
-    """
+    """Authenticate a presented session token → its owning `User`, or raise."""
     row = db.execute(
         select(UserSession).where(UserSession.token_hash == _hash(token))
     ).scalar_one_or_none()
@@ -130,10 +92,6 @@ def resolve_token(db: Session, token: str) -> User:
 def revoke(db: Session, token: str) -> bool:
     """Revoke the session identified by `token`. Idempotent; returns whether this
     call was the one that revoked it.
-
-    Never raises for an unknown/expired token: logout is not an authentication
-    decision, and a caller holding a dead cookie asking to be logged out has
-    already got what they wanted.
     """
     row = db.execute(
         select(UserSession).where(UserSession.token_hash == _hash(token))

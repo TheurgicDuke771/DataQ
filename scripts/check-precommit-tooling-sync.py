@@ -28,9 +28,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 REQS_FILE = REPO_ROOT / "backend" / "requirements-tooling.txt"
 PRECOMMIT_FILE = REPO_ROOT / ".pre-commit-config.yaml"
 
-# Maps a requirements-tooling.txt package name to the pre-commit repo URL whose
-# `rev:` must match it. Only tools that exist in BOTH files are guarded here —
-# bandit/pre-commit itself have no pre-commit-hook counterpart.
+# Maps a requirements-tooling.txt package name to the pre-commit repo URL whose `rev:` must match
+# it.
 _TRACKED_REPOS = {
     "ruff": "astral-sh/ruff-pre-commit",
     "black": "psf/black",

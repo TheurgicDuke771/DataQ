@@ -1,13 +1,5 @@
-# The DataQ backend on Container Apps — api (external ingress), worker (Celery +
-# embedded beat), and the migrate Job. All three run the SAME GHCR image
-# (ghcr.io/theurgicduke771/dataq-backend:<tag>), pulled anonymously (public
-# package, ADR 0023 — no registry block / credential).
-#
-# Boot-critical secrets (DATABASE_URL, App Insights) are inline Container App
-# secrets, NOT KV references (see keyvault.tf for why). REDIS_URL is non-secret
-# (in-environment, no auth). The app's runtime SecretStore reads datasource creds
-# from Key Vault via the attached user-assigned identity (SECRET_STORE +
-# AZURE_KEY_VAULT_URL).
+# The DataQ backend on Container Apps — api (external ingress), worker (Celery + embedded beat), and
+# the migrate Job.
 
 locals {
   backend_image   = "${var.backend_image_repo}:${var.image_tag}"
@@ -27,56 +19,35 @@ locals {
     { name = "DATABASE_URL", secret_name = "database-url" },
     { name = "REDIS_URL", secret_name = "redis-url" },
     { name = "APPLICATIONINSIGHTS_CONNECTION_STRING", secret_name = "appinsights-conn" },
-    # The jurisdiction this deployment DECLARES (G4/#434). Sourced from the same
-    # variable that places the resources, so the declaration and the placement
-    # cannot drift apart by editing one of them.
+    # The jurisdiction this deployment DECLARES (G4/#434).
     { name = "DEPLOYMENT_REGION", value = var.azure_location },
     { name = "SAMPLE_FAILURES_RETENTION_DAYS", value = "30" },
     # Runtime SecretStore -> Key Vault via the user-assigned identity.
     { name = "SECRET_STORE", value = "azure_key_vault" },
     { name = "AZURE_KEY_VAULT_URL", value = azurerm_key_vault.app.vault_uri },
-    # DefaultAzureCredential can't select a USER-assigned identity without being
-    # told which one. Without this, every Key Vault read fails (no MI chosen) —
-    # breaking secret resolution for connection tests, suite runs, and the
-    # orchestration poll (#406). Must be the UAMI's client id, not principal id.
+    # DefaultAzureCredential can't select a USER-assigned identity without being told which one.
     { name = "AZURE_CLIENT_ID", value = azurerm_user_assigned_identity.app.client_id },
-    # Real SSO in prod (AUTH_DEV_BYPASS=false). Client IDs come from the SSO app
-    # registrations created in sso.tf; init_auth() validates v2 tokens against
-    # AZURE_API_CLIENT_ID + AZURE_TENANT_ID.
+    # Real SSO in prod (AUTH_DEV_BYPASS=false).
     { name = "AUTH_DEV_BYPASS", value = "false" },
     { name = "AZURE_TENANT_ID", value = local.azure_tenant_id },
     { name = "AZURE_API_CLIENT_ID", value = azuread_application.api.client_id },
     { name = "AZURE_SPA_CLIENT_ID", value = azuread_application.spa.client_id },
     { name = "AZURE_API_SCOPE", value = var.azure_api_scope },
-    # Guest (B2B / external) sign-in. Off by default (secure); this deployment
-    # opts in via tfvars because the owner signs in with a guest account. When
-    # off, the token validator rejects guests with 403 "Guest users not allowed".
+    # Guest (B2B / external) sign-in.
     { name = "AZURE_ALLOW_GUEST_USERS", value = var.azure_allow_guest_users ? "true" : "false" },
     { name = "WORKSPACE_ADMIN_EMAILS", value = var.workspace_admin_emails },
-    # Rate-limit per-IP keying (ADR 0035). The measured prod ingress chain is
-    # public-envoy + nginx + internal-envoy = 3 XFF appends, so the real client
-    # is the 3rd entry from the right; the default of 1 (rightmost) would collapse
-    # every client into the shared nginx-pod IP. Confirm the exact depth against
-    # one logged live XFF post-deploy.
+    # Rate-limit per-IP keying (ADR 0035).
     { name = "RATE_LIMIT_XFF_TRUSTED_HOPS", value = "3" },
     # Empty: the frontend Container App proxies /api same-origin (nginx), so the
     # FastAPI CORS middleware stays off (README §4 / ADR 0018 / ADR 0028).
     { name = "CORS_ALLOW_ORIGINS", value = "" },
-    # Public origin for the inbound-webhook URLs the admin webhook-config surface
-    # generates (#490). The frontend host proxies /api same-origin, so an
-    # orchestrator POSTing to <frontend>/api/v1/orchestration/events/... reaches
-    # the api. Computed from the env domain (local.frontend_url) — not a reference
-    # to the frontend resource — so api + frontend don't form a dependency cycle.
+    # Public origin for the inbound-webhook URLs the admin webhook-config surface generates (#490).
     { name = "PUBLIC_BASE_URL", value = local.frontend_url },
     # Webhook secret KEY names (values live in Key Vault — keyvault.tf).
     { name = "ADF_WEBHOOK_SECRET_NAME", value = "adf-webhook-secret" },
     { name = "AIRFLOW_WEBHOOK_SECRET_NAME", value = "airflow-webhook-secret" },
     { name = "DBT_WEBHOOK_SECRET_NAME", value = "dbt-webhook-secret" },
     # Alerting channels (Slack + email) behind the ResultPublisher composite.
-    # Secret NAMES point at Key Vault (the webhook URL / app-password live there);
-    # SMTP coordinates are non-secret. Each publisher self-no-ops until its secret
-    # + (for email) recipients are set, so leaving the email_* vars empty = email
-    # off. Email addresses come from the gitignored tfvars (PII, not in git).
     { name = "SLACK_WEBHOOK_SECRET_NAME", value = "channel-slack-webhook" },
     { name = "EMAIL_SMTP_HOST", value = "smtp.gmail.com" },
     { name = "EMAIL_SMTP_PORT", value = "587" },
@@ -87,15 +58,6 @@ locals {
   ]
 
   # Worker-only env, on top of app_env.
-  #
-  # WAREHOUSE_LINEAGE_ENABLED gates the daily `refresh_warehouse_lineage` beat task
-  # (#858, ADR 0034). The backend default is `warehouse_lineage_enabled: bool = False`
-  # ("dark by default" — the ACCOUNT_USAGE / system.access views it reads need a grant
-  # the connection principal may not hold), so the sweep runs ONLY while this is set.
-  #
-  # Adopted into IaC by #1086: it was live on prod but absent from this stack, so any
-  # apply — for any unrelated reason — would have deleted it and silently stopped
-  # warehouse lineage. Worker-only because only the worker runs beat.
   worker_env = concat(local.app_env, [
     { name = "WAREHOUSE_LINEAGE_ENABLED", value = "true" },
   ])
@@ -121,22 +83,13 @@ resource "azurerm_container_app" "api" {
     }
   }
 
-  # INTERNAL ingress (ADR 0028 §5): the frontend Container App is the sole public
-  # surface and reverse-proxies /api + /mcp to this app over the in-environment
-  # endpoint. Not externally reachable — direct internet calls to the api are gone,
-  # and in-env frontend->api traffic no longer hairpins out to a public FQDN.
-  # External orchestrator webhooks (ADF/Airflow) still reach the api: they POST to
-  # the public frontend (PUBLIC_BASE_URL), which proxies the path through.
+  # INTERNAL ingress (ADR 0028 §5): the frontend Container App is the sole public surface and
+  # reverse-proxies /api + /mcp to this app over the in-environment endpoint.
   ingress {
     external_enabled = false
     target_port      = 8000
     transport        = "auto"
-    # Accept plain HTTP on the internal endpoint. ACA's internal service-to-service
-    # pattern is HTTP (local.api_internal_url is http://); with this off, ACA
-    # redirects port-80 requests to 443, which surfaces to the frontend nginx proxy
-    # as HTTP 426 "Upgrade Required" and breaks every /api call. Safe here: the api
-    # is internal-only (external_enabled=false), so this traffic never leaves the
-    # Container Apps environment.
+    # Accept plain HTTP on the internal endpoint.
     allow_insecure_connections = true
     traffic_weight {
       latest_revision = true
@@ -165,10 +118,8 @@ resource "azurerm_container_app" "api" {
     }
   }
 
-  # The Deploy workflow rolls images out-of-band (`az containerapp update
-  # --image <sha>`), so the live image is ahead of var.image_tag. Ignore the image
-  # here or every `terraform apply` would roll prod BACK to var.image_tag. The
-  # workflow is the image source of truth; Terraform owns the rest of the app.
+  # The Deploy workflow rolls images out-of-band (`az containerapp update --image <sha>`), so the
+  # live image is ahead of var.image_tag.
   lifecycle {
     ignore_changes = [template[0].container[0].image]
   }
@@ -229,10 +180,8 @@ resource "azurerm_container_app" "worker" {
   depends_on = [azurerm_role_assignment.kv_app_secrets]
 }
 
-# ── Migrate Job (alembic upgrade head) ───────────────────────────────────────
-# Manual-trigger job the Deploy workflow runs BEFORE rolling the apps (additive,
-# backward-compatible migrations — CLAUDE.md). alembic.ini's script_location is
-# relative to backend/, so cd there first (mirrors docker-compose's migrate svc).
+# ── Migrate Job (alembic upgrade head) ─────────────────────────────────────── Manual-trigger job
+# the Deploy workflow runs BEFORE rolling the apps (additive, backward-compatible migrations.
 resource "azurerm_container_app_job" "migrate" {
   name                         = "dataq-app-migrate"
   container_app_environment_id = data.azurerm_container_app_environment.shared.id

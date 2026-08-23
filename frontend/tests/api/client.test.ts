@@ -144,15 +144,7 @@ describe('retryAfterSeconds', () => {
 
 // ── 401 → "your OTP session is gone" (ADR 0032, #736) ───────────────────────
 
-/**
- * The response interceptor's session-loss signal.
- *
- * The exclusion of `/auth/*` is the whole reason this has a test: `POST
- * /auth/otp/verify` answers 401 for a **wrong code**, and treating that as
- * session loss would throw the user back to the email step on every mistyped
- * digit — destroying the code they were half way through entering. Everything
- * else's 401 genuinely means the cookie expired, was revoked, or was cleared.
- */
+/** The response interceptor's session-loss signal. */
 describe('otp session-loss signal', () => {
   const notifySessionInvalidated = vi.fn();
 

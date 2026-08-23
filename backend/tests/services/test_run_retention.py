@@ -1,13 +1,4 @@
-"""Tests for the result retention sweep (`purge_expired_sample_failures`).
-
-DB-backed (real Postgres): the sweep is a bulk UPDATE keyed on `created_at` +
-the JSONB `sample_failures`/`observed_value` columns, which can't be faithfully
-faked. Verifies it scrubs only old, unpurged rows that still carry samples,
-keeps `metric_value` (trends survive — ADR 0012), is idempotent, and honours
-the disable sentinel — plus (#1253) that `observed_value`'s sweep touches ONLY
-the list-shaped set-oriented-expectation case and never a scalar aggregate.
-Skips without TEST_DATABASE_URL.
-"""
+"""Tests for the result retention sweep (`purge_expired_sample_failures`)."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -123,11 +114,11 @@ def test_idempotent_already_purged(db_session: Any) -> None:
 
 
 def test_disabled_when_retention_non_positive(db_session: Any) -> None:
-    """Covers BOTH sibling columns: the early `retention_days <= 0` return must
-    guard the observed_value half too, not just sample_failures — a row with a
-    list-shaped observed_value seeded here would catch a future refactor that
-    splits the single early-return into two per-column guards and gets the
-    observed_value one wrong."""
+    """Covers BOTH sibling columns: the early `retention_days <= 0` return must guard the
+    observed_value half too, not just sample_failures — a row with a list-shaped observed_value
+    seeded here would catch a future refactor that splits the single early-return into two per-
+    column guards and gets the observed_value one wrong.
+    """
     old = _result(db_session, age_days=400, observed={"observed_value": ["still@here.example"]})
 
     assert run_service.purge_expired_sample_failures(db_session, retention_days=0, now=NOW) == 0
@@ -143,7 +134,8 @@ def test_disabled_when_retention_non_positive(db_session: Any) -> None:
 def test_scrubs_old_list_shaped_observed_value(db_session: Any) -> None:
     """The set-oriented-expectation shape (#1229/#1252) — a raw distinct-value
     list — is the one PII-bearing `observed_value` shape, and it's nulled past
-    the retention window same as `sample_failures`."""
+    the retention window same as `sample_failures`.
+    """
     old = _result(
         db_session,
         age_days=40,
@@ -159,11 +151,11 @@ def test_scrubs_old_list_shaped_observed_value(db_session: Any) -> None:
 
 
 def test_keeps_scalar_observed_value(db_session: Any) -> None:
-    """The critical negative case — a scalar aggregate (row count, mean)
-    sharing the same wrapper shape as the PII-bearing list case must survive
-    the sweep untouched, since it's what `metric_value` trends and anomaly
-    baselines read from (ADR 0012). Getting this backwards would silently
-    destroy legitimate metric data."""
+    """The critical negative case — a scalar aggregate (row count, mean) sharing the same wrapper
+    shape as the PII-bearing list case must survive the sweep untouched, since it's what
+    `metric_value` trends and anomaly baselines read from (ADR 0012). Getting this backwards
+    would silently destroy legitimate metric data.
+    """
     old = _result(
         db_session,
         age_days=40,
@@ -193,7 +185,8 @@ def test_leaves_error_and_reason_shapes_untouched(db_session: Any) -> None:
     """`{"error": ...}` / `{"unparsed_value": ..., "column": ...}` / `{"reason":
     ...}` never nest a top-level `observed_value` key, so the sweep's
     `jsonb_typeof(observed_value -> 'observed_value') = 'array'` condition
-    can't match them — confirmed here rather than assumed."""
+    can't match them — confirmed here rather than assumed.
+    """
     error_row = _result(db_session, age_days=40, sample=None, observed={"error": "boom"})
     unparsed_row = _result(
         db_session,
@@ -215,7 +208,8 @@ def test_leaves_error_and_reason_shapes_untouched(db_session: Any) -> None:
 
 def test_purges_both_sibling_columns_independently_and_sums(db_session: Any) -> None:
     """A row whose `sample_failures` AND `observed_value` are both scrubbable
-    counts as 2 in the return value — independent UPDATEs, not one row-count."""
+    counts as 2 in the return value — independent UPDATEs, not one row-count.
+    """
     old = _result(
         db_session,
         age_days=40,
@@ -236,7 +230,8 @@ def test_purges_both_sibling_columns_independently_and_sums(db_session: Any) -> 
 
 def test_idempotent_second_sweep_observed_value(db_session: Any) -> None:
     """No dedicated `observed_value_purged_at` column: idempotency relies on the
-    column itself going SQL NULL, so a second sweep must not error or re-count."""
+    column itself going SQL NULL, so a second sweep must not error or re-count.
+    """
     old = _result(
         db_session, age_days=40, sample=None, observed={"observed_value": ["x@example.com"]}
     )
@@ -254,19 +249,11 @@ def test_idempotent_second_sweep_observed_value(db_session: Any) -> None:
 
 
 def test_batch_count_matches_the_configured_chunk_size(db_session: Any, monkeypatch: Any) -> None:
-    """Proves the loop actually iterates in bounded chunks AND still sweeps
-    every candidate in full — not just that the end result is complete (a
-    candidate-set-larger-than-one-batch check alone would pass just the same
-    against the old single-UPDATE shape, since chunk_size doesn't change what
-    an unbounded UPDATE touches — #323 review M5 folded that check in here
-    rather than keeping it a separate, weaker test). Counts the UPDATEs
-    `_purge_column` issues against `results` by wrapping `Session.execute`.
-
-    7 eligible rows over chunk_size=3: `chunked_dml` exits on `affected == 0`
-    (#323 review F4), not `affected < chunk_size`, so the sample_failures half
-    takes FOUR UPDATE statements (3 + 3 + 1 + a trailing empty round to
-    confirm none remain) and the observed_value half (nothing eligible there)
-    takes one more — 5 total, not 4."""
+    """Proves the loop actually iterates in bounded chunks AND still sweeps every candidate in full
+    — not just that the end result is complete (a candidate-set-larger-than-one-batch check
+    alone would pass just the same against the old single-UPDATE shape, since chunk_size doesn't
+    change what an unbounded UPDATE touches — #323 review M5 folded that check in
+    """
     rows = [_result(db_session, age_days=40, metric=Decimal(str(i))) for i in range(7)]
 
     executed: list[Any] = []
@@ -298,7 +285,8 @@ def test_batch_count_matches_the_configured_chunk_size(db_session: Any, monkeypa
 def test_chunk_size_does_not_leak_rows_outside_the_retention_window(db_session: Any) -> None:
     """A small chunk_size must not accidentally sweep rows that are still
     inside the retention window — the per-chunk subquery re-applies the full
-    predicate every iteration, not just on the first batch."""
+    predicate every iteration, not just on the first batch.
+    """
     old_rows = [_result(db_session, age_days=40, metric=Decimal(str(i))) for i in range(5)]
     recent = _result(db_session, age_days=5, metric=Decimal("99"))
 

@@ -1,13 +1,4 @@
-"""The fail-open OpenLineage choke point the worker calls (ADR 0034, #758).
-
-``emit_run_lineage_start`` / ``emit_run_lineage_terminal`` load a run's graph, build
-the event, and emit it. Both are **best-effort and never raise** — lineage emission
-is a browse/reason convenience layered over the execution model, so a dead or slow
-OpenLineage receiver must never fail or roll back an already-persisted run. When
-emission is unconfigured the client is ``None`` and each returns ``False``
-immediately, before touching the session (zero queries on the dark path). Precedent:
-``alerting.dispatch.publish_run_outcome``.
-"""
+"""The fail-open OpenLineage choke point the worker calls (ADR 0034, #758)."""
 
 from __future__ import annotations
 
@@ -35,13 +26,7 @@ def _emit(
     event: str,
     build: Callable[[Run, Suite, Asset | None], RunEvent],
 ) -> bool:
-    """Shared gate + load + build + emit + fail-open skeleton for both phases.
-
-    No-op (``False``, zero queries) when emission is unconfigured or the run/suite is
-    missing; ``build`` turns the loaded ``(run, suite, asset)`` into the phase's
-    event. Any failure — loading, building, or the emit itself — is logged and
-    swallowed so a lineage hiccup can't fail an already-persisted run.
-    """
+    """Shared gate + load + build + emit + fail-open skeleton for both phases."""
     client = emitter.get_openlineage_client()
     if client is None:
         return False
@@ -61,12 +46,7 @@ def _emit(
 
 
 def emit_run_lineage_start(session: Session, *, run_id: uuid.UUID) -> bool:
-    """Emit a START event for ``run_id``. Returns whether an event was emitted.
-
-    No-op (``False``, no queries) when emission is unconfigured or the run/suite is
-    missing. Any failure — loading the graph, building, or the emit itself — is
-    logged and swallowed.
-    """
+    """Emit a START event for ``run_id``. Returns whether an event was emitted."""
     return _emit(
         session,
         run_id=run_id,
@@ -76,12 +56,7 @@ def emit_run_lineage_start(session: Session, *, run_id: uuid.UUID) -> bool:
 
 
 def emit_run_lineage_terminal(session: Session, *, run_id: uuid.UUID) -> bool:
-    """Emit a terminal (COMPLETE / FAIL / ABORT) event for ``run_id``.
-
-    Loads the run's checks + results (via the canonical ordered loaders) to populate
-    the data-quality facets. Same fail-open contract as
-    :func:`emit_run_lineage_start` — no queries on the dark path, never raises.
-    """
+    """Emit a terminal (COMPLETE / FAIL / ABORT) event for ``run_id``."""
 
     def _build(run: Run, suite: Suite, asset: Asset | None) -> RunEvent:
         checks = check_service.list_checks(session, suite.id)

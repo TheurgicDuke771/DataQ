@@ -1,11 +1,4 @@
-"""Unit tests for the shared GX translation helpers.
-
-`_check_errored` disambiguates the two `exception_info` shapes GX 1.17 emits per
-expectation (a flat dict vs a dict keyed by `MetricConfigurationID`). The flat
-`raised_exception: True` form isn't produced by the real-GX runner tests (a
-missing column yields the keyed form), so it's covered directly here, alongside
-the malformed / mixed payloads the run path must not crash on.
-"""
+"""Unit tests for the shared GX translation helpers."""
 
 from __future__ import annotations
 
@@ -31,9 +24,8 @@ def test_none_and_empty_are_not_errored() -> None:
 
 
 def test_non_dict_is_not_errored() -> None:
-    # GX types exception_info as Optional[dict]; a non-dict from a future shape /
-    # custom expectation must NOT raise (it would flip the whole run to failed,
-    # discarding sibling results) — it's treated as "no error".
+    # GX types exception_info as Optional[dict]; a non-dict from a future shape / custom expectation
+    # must NOT raise (it would flip the whole run to failed, discarding sibling results).
     assert _check_errored(["unexpected"]) == (False, None)
     assert _check_errored("oops") == (False, None)
 
@@ -84,9 +76,8 @@ def _marked_result(*, index: int | None, type_: str, kwargs: dict[str, Any]) -> 
 
 
 def test_to_suite_outcome_reorders_errored_first_gx_result() -> None:
-    # Simulate GX's error-first ordering: submission was [A(0), B(1), C(2)] but GX
-    # returns the errored B first. The marker must restore submission order so each
-    # outcome lands 1:1 on its submitted spec.
+    # Simulate GX's error-first ordering: submission was [A(0), B(1), C(2)] but GX returns the
+    # errored B first.
     gx_result = SimpleNamespace(
         success=False,
         results=[
@@ -117,14 +108,8 @@ def test_to_suite_outcome_all_pass_preserves_order() -> None:
 
 
 def test_to_suite_outcome_reads_custom_sql_row_count_as_observed_value() -> None:
-    """The shape `UnexpectedRowsExpectation` reports (ADR 0019): `observed_value`
-    carries the unexpected row COUNT. This is the exact `CheckOutcome` shape the
-    SNOWFLAKE path produces — a plain GX SQL table batch through this same
-    `to_suite_outcome`, no runner branch (ADR 0019 §Decision) — which is what
-    makes `severity.extract_metric`'s custom-SQL fallback (#1202) datasource-
-    agnostic: it only ever sees this one shape, from any SQL-queryable
-    datasource. The Unity Catalog SQL-batch path is proven separately in
-    `test_unity_catalog.py::test_custom_sql_row_count_feeds_severity_metric_value`.
+    """The shape `UnexpectedRowsExpectation` reports (ADR 0019): `observed_value` carries the
+    unexpected row COUNT.
     """
     gx_result = SimpleNamespace(
         success=False,
@@ -164,9 +149,8 @@ def test_to_suite_outcome_without_markers_falls_back_to_gx_order() -> None:
 
 
 def test_to_suite_outcome_partial_markers_falls_back_and_warns() -> None:
-    # A *partial* marker loss is anomalous (every production expectation is stamped):
-    # keep GX's order — never guess — but emit a warning so the fallback is visible
-    # instead of silently resurrecting the #767 cross-wiring.
+    # A *partial* marker loss is anomalous (every production expectation is stamped): keep GX's
+    # order — never guess.
     from structlog.testing import capture_logs
 
     gx_result = SimpleNamespace(
@@ -206,9 +190,8 @@ def test_to_gx_expectation_non_dict_meta_surfaces_gx_error() -> None:
 
 
 def test_bounded_observed_value_caps_a_set_oriented_expectations_list() -> None:
-    # `expect_column_distinct_values_to_be_in_set` and siblings report the FULL
-    # observed distinct-value set under result_format="COMPLETE" — no upper bound.
-    # Capture must cap it the same way #1196 capped `unexpected_index_list`.
+    # `expect_column_distinct_values_to_be_in_set` and siblings report the FULL observed distinct-
+    # value set under result_format="COMPLETE" — no upper bound.
     values = [f"user{i}@example.com" for i in range(5_000)]
     observed = _bounded_observed_value({"observed_value": values})
     assert observed is not None
@@ -264,8 +247,7 @@ def test_to_suite_outcome_caps_a_set_oriented_expectations_observed_value() -> N
 
 def test_extract_sample_failures_caps_row_lists() -> None:
     # Under `result_format="COMPLETE"` the pandas engine hands back an untruncated
-    # `unexpected_index_list`; capture must bound it (and any other list-shaped sample
-    # key) so `results.sample_failures` and `GET /runs/{id}` stay bounded.
+    # `unexpected_index_list`.
     rows: list[Any] = [{"customer_id": i, "order_number": None} for i in range(5_000)]
     sample = _extract_sample_failures(
         {
@@ -295,10 +277,8 @@ def test_extract_sample_failures_leaves_short_lists_untouched() -> None:
 
 
 def test_extract_sample_failures_adds_a_value_signal_summary_when_truncating() -> None:
-    # The #1196 cap narrows `unexpected_index_list` to SAMPLE_ROW_CAP rows for good —
-    # once persisted, there is no larger list left to derive ratios from at read time.
-    # When truncation actually happens, capture must ALSO persist a per-column
-    # value-signal summary computed over the FULL, pre-cap population (#1230).
+    # The #1196 cap narrows `unexpected_index_list` to SAMPLE_ROW_CAP rows for good — once
+    # persisted, there is no larger list left to derive ratios from at read time.
     rows: list[Any] = [
         {
             "customer_email": (f"user{i}@example.com" if i < 3_000 else f"REF-{i}"),
@@ -323,10 +303,8 @@ def test_extract_sample_failures_adds_a_value_signal_summary_when_truncating() -
 
 
 def test_extract_sample_failures_omits_the_summary_when_nothing_is_truncated() -> None:
-    # Below the cap, the persisted rows already ARE the full population — a summary
-    # would be redundant, so capture must not add one (also pins the pre-#1230
-    # exact-equality contract `test_extract_sample_failures_leaves_short_lists_untouched`
-    # relies on).
+    # Below the cap, the persisted rows already ARE the full population — a summary would be
+    # redundant.
     rows = [{"customer_email": "a@x.com"}, {"customer_email": "b@x.com"}]
     sample = _extract_sample_failures({"unexpected_index_list": rows, "unexpected_count": 2})
     assert sample is not None
@@ -334,9 +312,7 @@ def test_extract_sample_failures_omits_the_summary_when_nothing_is_truncated() -
 
 
 def test_extract_sample_failures_omits_a_column_with_no_non_null_values() -> None:
-    # A column that's NULL in every failing row (however many) has no value signal
-    # to persist — same "no evidence" contract as `_value_signal_counts`/
-    # `value_signal_summary` returning `None` for an all-null column.
+    # A column that's NULL in every failing row (however many) has no value signal to persist.
     rows: list[Any] = [{"customer_email": None, "qty": -i} for i in range(5_000)]
     sample = _extract_sample_failures({"unexpected_index_list": rows, "unexpected_count": 5_000})
     assert sample is not None
@@ -358,12 +334,11 @@ def test_value_signal_summary_by_column_groups_and_skips_non_dict_rows() -> None
 
 
 def test_value_signal_summary_by_column_bounds_cpu_cost_on_a_huge_failing_population() -> None:
-    """Review finding: an unbounded scan here means a badly-failing pandas-backed
-    check (tens/hundreds of thousands of rows — #1196's own "thousands of failing
-    rows" case, just moved from an O(1) truncation to O(rows) regex/entropy work)
-    pays unbounded CPU synchronously in the Celery run path. The summary must be
-    computed over at most `_VALUE_SIGNAL_SUMMARY_ROW_CAP` rows, not the real
-    (potentially enormous) failing-row count."""
+    """Review finding: an unbounded scan here means a badly-failing pandas-backed check
+    (tens/hundreds of thousands of rows — #1196's own "thousands of failing rows" case, just
+    moved from an O(1) truncation to O(rows) regex/entropy work) pays unbounded CPU
+    synchronously in the Celery run path.
+    """
     huge_row_count = _VALUE_SIGNAL_SUMMARY_ROW_CAP * 4
     rows: list[Any] = [{"col": f"v{i}@x.com"} for i in range(huge_row_count)]
     summary = _value_signal_summary_by_column(rows)

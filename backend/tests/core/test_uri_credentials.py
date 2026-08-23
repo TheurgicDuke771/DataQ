@@ -53,9 +53,8 @@ class TestInject:
         assert inject_uri_password(strip_uri_credentials(_DSN), "s3cr3t") == _DSN
 
     def test_percent_encodes_so_a_password_cannot_break_out_of_the_userinfo(self) -> None:
-        # A password containing @ : / would otherwise re-point the URI at another
-        # host — a URI-injection. Assert the dangerous characters are escaped AND
-        # that the real host survives.
+        # A password containing @ : / would otherwise re-point the URI at another host — a URI-
+        # injection.
         out = inject_uri_password("postgresql://u@real-host:5432/db", "p@ss:w/rd")
         assert "@real-host:5432/db" in out
         assert "p%40ss%3Aw%2Frd" in out

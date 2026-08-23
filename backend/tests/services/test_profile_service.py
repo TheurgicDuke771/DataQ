@@ -1,10 +1,4 @@
-"""Column-profiler unit tests — pure, no DB / no warehouse.
-
-Covers identifier validation, the SQLAlchemy Core query builders (compiled to
-SQL for inspection), SQL result assembly (`assemble_profile`), and the flat-file
-`profile_dataframe` / `infer_file_format` helpers. The live I/O seams
-(`_open_connection`, `_read_dataframe`) are exercised via the endpoint tests.
-"""
+"""Column-profiler unit tests — pure, no DB / no warehouse."""
 
 import math
 from collections.abc import Mapping
@@ -127,33 +121,15 @@ def test_batched_top_values_query_joins_one_derived_table_per_column() -> None:
 
 
 def test_batched_top_values_query_drives_ranks_one_to_top_n() -> None:
-    # The driver is what makes `top_n` a per-column limit rather than a limit on
-    # the joined result: `top_n` rows come back, each carrying every column's
-    # value at that rank.
+    # The driver is what makes `top_n` a per-column limit rather than a limit on the joined result:
+    # `top_n` rows come back, each carrying every column's value at that rank.
     sql = _sql(build_batched_top_values_query("public", "orders", ["amount"], 3))
     assert "(select 1 as rn union all select 2 as rn union all select 3 as rn) as dq_ranks" in sql
 
 
 @pytest.mark.parametrize("col", ["freq", "value", "rn"])
 def test_top_values_labels_cannot_capture_a_column_of_the_same_name(col: str) -> None:
-    """#327 review, P2: no output alias may collide with a plausible column name.
-
-    SQL resolves a bare name in ``ORDER BY`` against the OUTPUT aliases before the
-    input columns, so labelling the count ``freq`` turned
-    ``ORDER BY count(*) DESC, freq`` into ``ORDER BY count(*) DESC, count(*)`` for
-    a table with a ``freq`` column — the tie-break silently gone. In the batched
-    form that is worse than a re-ordering: the ``LIMIT`` then keeps a different
-    tie-set than ``ROW_NUMBER()`` ranked (a window in the SELECT list still sees
-    the INPUT column), so kept rows can carry a rank past ``top_n``, match no rank
-    row, and vanish — fewer top values than exist, no error, no fallback.
-
-    Asserted on the compiled text because it is the deterministic half; the live
-    tie-break consequence is pinned in the pg suite's `alias_probe`.
-
-    Scoped to the *grouped* statement in both cases — the batched query's outer
-    level and its rank driver do label things ``rn``, which is harmless because a
-    derived table's ``ORDER BY`` only ever resolves against its own output list.
-    """
+    """#327 review, P2: no output alias may collide with a plausible column name."""
     single = _sql(build_top_values_query("public", "orders", col, 5))
     batched = _sql(build_batched_top_values_query("public", "orders", [col], 5))
     # The derived table is everything up to its own alias.
@@ -169,7 +145,8 @@ def test_top_values_labels_cannot_capture_a_column_of_the_same_name(col: str) ->
 def test_batched_top_values_query_matches_the_per_column_query_it_replaces() -> None:
     """The batched derived table must be the per-column query plus a rank — same
     filter, grouping, ordering and limit — or the two paths can disagree on which
-    rows a column contributes, and the fallback would silently change results."""
+    rows a column contributes, and the fallback would silently change results.
+    """
     batched = _sql(build_batched_top_values_query("public", "orders", ["status"], 7))
     single = _sql(build_top_values_query("public", "orders", "status", 7))
     for fragment in (
@@ -208,9 +185,8 @@ def test_batched_top_values_query_rejects_unsafe_identifiers() -> None:
 
 
 def test_batched_top_values_query_needs_at_least_one_column() -> None:
-    # Both are caller bugs the profiler short-circuits before it gets here, so a
-    # bare ValueError rather than the profiler's 422 shape — neither an empty
-    # join list nor an empty rank driver is a statement any dialect can render.
+    # Both are caller bugs the profiler short-circuits before it gets here, so a bare ValueError
+    # rather than the profiler's 422 shape.
     with pytest.raises(ValueError, match="at least one column"):
         build_batched_top_values_query("public", "orders", [], 5)
     with pytest.raises(ValueError, match="positive top_n"):
@@ -302,23 +278,14 @@ def test_fetch_top_values_issues_nothing_for_an_empty_column_list() -> None:
 
 
 def test_fetch_top_values_answers_a_non_positive_top_n_without_querying() -> None:
-    # "no top values" needs no warehouse at all (#327 review, m1). Both API
-    # surfaces bound `top_n` at >= 1, so this is a guard rather than a path a user
-    # can reach — and it must cost neither N `LIMIT 0` round-trips that can only
-    # return nothing, nor a dialect-fallback warning for an ordinary input.
+    # "no top values" needs no warehouse at all (#327 review, m1).
     conn = _RecordingConn()
     assert _fetch(conn, ["amount", "status"], 0) == {"amount": [], "status": []}
     assert conn.executed == []
 
 
 def test_fetch_top_values_does_not_swallow_a_reader_bug_into_the_fallback() -> None:
-    """#327 review, P3: only a *driver* rejection may trigger the fallback.
-
-    A defect in `collect_batched_top_values` is ours, not a dialect's. If the
-    catch spanned it, every profile would route through the N+1 path forever
-    behind one warning nobody alerts on — #327 silently un-fixed, with the whole
-    suite still green because the results would stay correct.
-    """
+    """#327 review, P3: only a *driver* rejection may trigger the fallback."""
     conn = _RecordingConn()
 
     def broken_reader(rows: Any, columns: Any) -> Any:
@@ -337,11 +304,6 @@ def test_fetch_top_values_does_not_swallow_a_reader_bug_into_the_fallback() -> N
 def test_fetch_top_values_falls_back_even_when_the_rollback_itself_fails() -> None:
     """`_recover_transaction` is best-effort: it must not upgrade a recoverable
     batch failure into a hard one.
-
-    A connection that cannot roll back (an autocommit-only driver, a test double)
-    is not a reason to abandon the fallback — the profiler only ever reads, so
-    there is nothing at stake in the rollback beyond clearing an aborted
-    transaction that this connection may not even have.
     """
 
     class _RefusesRollback(_RecordingConn):
@@ -360,14 +322,7 @@ def test_fetch_top_values_falls_back_even_when_the_rollback_itself_fails() -> No
 
 
 def test_fetch_top_values_does_not_fall_back_for_a_non_driver_exception() -> None:
-    """The other half of P3: the fallback is for a *dialect*, not for any error.
-
-    Scoping the catch to the `execute` call keeps our reader's bugs out of it
-    (above), but the exception TYPE matters too — `conn.execute` blowing up with
-    something that is not a wrapped driver rejection means the statement we built
-    is malformed, which is our defect and must surface, not silently buy a
-    permanent N+1 downgrade.
-    """
+    """The other half of P3: the fallback is for a *dialect*, not for any error."""
 
     class _Exploding(_RecordingConn):
         def execute(self, clause: Any) -> Any:
@@ -381,12 +336,7 @@ def test_fetch_top_values_does_not_fall_back_for_a_non_driver_exception() -> Non
 
 
 def test_fetch_top_values_does_not_retry_a_rejected_identifier() -> None:
-    """A 422 from the builder must surface, not be re-run per column.
-
-    Both builders validate identically, so falling back could only turn one clean
-    422 into two round-trips and the same 422 — and, worse, would log a batch
-    fallback for what is a user input error rather than a dialect quirk.
-    """
+    """A 422 from the builder must surface, not be re-run per column."""
     conn = _RecordingConn()
     with pytest.raises(ProfileIdentifierInvalidError):
         _fetch(conn, ["amount; DROP TABLE x"], 5)
@@ -401,9 +351,7 @@ def test_builders_reject_unsafe_identifiers() -> None:
 
 
 def test_builders_with_catalog_qualify_three_part_namespace() -> None:
-    # Unity Catalog: catalog.schema.table, allowlist-validated. Both catalog and
-    # schema are already lower-case here, so they stay bare (fold exactly as
-    # before #936) — the mixed-case half is covered separately below.
+    # Unity Catalog: catalog.schema.table, allowlist-validated.
     dialect = DefaultDialect()
     agg = _sql(build_aggregate_query("sales", "orders", ["amt"], "main", dialect))
     assert "from main.sales.orders" in agg
@@ -415,17 +363,16 @@ def test_builders_with_mixed_case_catalog_quote_it_too() -> None:
     """#936: the 3-part form used to leave the catalog/schema unquoted no matter
     their case — only the table got the #476 treatment. A mixed-case catalog or
     schema is now quoted too, via the DIALECT's own `identifier_preparer` (never
-    a hardcoded `"`)."""
+    a hardcoded `"`).
+    """
     dialect = DefaultDialect()
     agg = _sql(build_aggregate_query("Sales", "orders", ["amt"], "Main", dialect))
     assert 'from "main"."sales".orders' in agg
 
 
 def test_builder_with_catalog_requires_a_dialect() -> None:
-    # A live dialect is required to quote the pre-assembled catalog.schema.table
-    # string (#936) — omitting it while a catalog is given is a caller bug, not
-    # user config, so it surfaces as a bare ValueError rather than the profiler's
-    # own 422 error shape.
+    # A live dialect is required to quote the pre-assembled catalog.schema.table string (#936) —
+    # omitting it while a catalog is given is a caller bug, not user config.
     with pytest.raises(ValueError, match="no dialect"):
         build_aggregate_query("sales", "orders", ["amt"], "main")
 
@@ -674,13 +621,7 @@ def _conn(*, conn_type: str, config: dict[str, Any], secret_ref: str | None = "r
 
 
 def _patch_object(monkeypatch: pytest.MonkeyPatch, content: bytes) -> list[tuple[int, int]]:
-    """Serve ``content`` over the BOUNDED read seam (#882) and record the ranges.
-
-    Parquet column listing (#882) and Parquet sampling (#1001) both go through
-    `RangeReader`/`read_range` rather than pulling the object. Stubbing the range
-    seam — and NOT `download_bytes` — is what makes "it only read what it
-    needed" observable instead of assumed.
-    """
+    """Serve ``content`` over the BOUNDED read seam (#882) and record the ranges."""
     from backend.app.datasources import flatfile
 
     ranges: list[tuple[int, int]] = []
@@ -716,7 +657,8 @@ def test_read_dataframe_csv_projects_columns_from_a_semicolon_file(
 ) -> None:
     """#476: projection is by column NAME, so a mis-sniffed delimiter doesn't just
     mangle the frame — it selects nothing and the profile reports every requested
-    column as missing."""
+    column as missing.
+    """
     from backend.app.services import profile_service as svc
 
     monkeypatch.setattr(svc, "download_bytes", lambda **k: b"a;b;c\n1;2;3\n4;5;6\n")
@@ -736,7 +678,8 @@ def test_read_dataframe_parquet_projects_only_requested_columns(
 ) -> None:
     """#1001: Parquet sampling reads via `RangeReader`, not `download_bytes` — the
     projection/dtype correctness this test pins holds over the range-read path
-    the same way it held over the old whole-object one."""
+    the same way it held over the old whole-object one.
+    """
     import io
 
     from backend.app.services import profile_service as svc
@@ -760,17 +703,7 @@ def test_read_dataframe_parquet_projects_only_requested_columns(
 def test_read_dataframe_parquet_samples_do_not_download_the_whole_object(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """#1001: the profiler's Parquet SAMPLER must stop paying for the whole
-    object. A correctness-only assertion (right columns, right row count) would
-    pass whether the read came off a `RangeReader` sample or a full download —
-    it's the same answer either way — so this pins the actual BYTES READ, which
-    is the one thing a regression back to whole-object download would break.
-
-    Four 50,000-row groups, two columns of three requested: `_SAMPLE_ROWS`
-    (100,000) is met by the first batch (which merges the first two row
-    groups), so the unwanted third/fourth row groups AND the unwanted 'b'
-    column are never fetched at all.
-    """
+    """#1001: the profiler's Parquet SAMPLER must stop paying for the whole object."""
     import io
 
     from backend.app.services import profile_service as svc
@@ -795,16 +728,11 @@ def test_read_dataframe_parquet_samples_do_not_download_the_whole_object(
     )
     assert set(df.columns) == {"a", "c"}
     assert len(df) == svc._SAMPLE_ROWS  # capped, not the file's 200,000 rows
-    # The property under test: real range GETs were issued, and there were only
-    # a handful of them (`STREAM_CHUNK`'s few-large-requests shape) — not "some
-    # stats came back correct", and not one request per row group.
+    # The property under test: real range GETs were issued, and there were only a handful of them
+    # (`STREAM_CHUNK`'s few-large-requests shape) — not "some stats came back correct".
     assert ranges
     assert len(ranges) <= 5
-    # Bytes land close to parity with the object's own size, not a multiple of
-    # it. `STREAM_CHUNK` (#1222 code-review fix) trades the tighter
-    # under-the-object bound this test used to pin for request-count safety on
-    # adversarial row-group layouts (see the sibling test below) — a generous
-    # 1.5x cap still catches a regression back to a storm of tiny requests.
+    # Bytes land close to parity with the object's own size, not a multiple of it.
     total_read = sum(length for _, length in ranges)
     assert total_read < len(content) * 1.5
 
@@ -812,17 +740,10 @@ def test_read_dataframe_parquet_samples_do_not_download_the_whole_object(
 def test_read_dataframe_parquet_sample_uses_the_streaming_chunk_on_many_small_row_groups(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Code-review finding on #1222: `RangeReader`'s *default* window (256 KiB,
-    sized for a seeking access pattern like landing on a footer) turns
-    `iter_batches` walking many small row groups into a storm of small range
-    requests — on this 200-row-group fixture it measured **6.8x** the object's
-    own size across **92** requests, i.e. the "sampler" transferred far more
-    than the whole-object download it exists to replace. The fix opens the
-    reader with `chunk=STREAM_CHUNK` (the same window `csv_row_count` already
-    uses for its own sequential walk), which on this fixture drops that to a
-    handful of requests and bytes close to the object's own size — regressing
-    back to the small seeking-sized default would blow through both bounds
-    below by an order of magnitude.
+    """Code-review finding on #1222: `RangeReader`'s *default* window (256 KiB, sized for a seeking
+    access pattern like landing on a footer) turns `iter_batches` walking many small row groups
+    into a storm of small range requests — on this 200-row-group fixture it measured **6.8x**
+    the object's own size across **92** requests, i.e.
     """
     import io
 
@@ -853,27 +774,20 @@ def test_read_dataframe_parquet_sample_uses_the_streaming_chunk_on_many_small_ro
     assert len(df) == svc._SAMPLE_ROWS
 
     total_read = sum(length for _, length in ranges)
-    # The regression this pins: with the seeking-sized default window, this
-    # fixture measured ~6.8x the object's size across 92 requests. With
-    # STREAM_CHUNK, total bytes land close to (generously, up to ~1.5x) the
-    # object's own size — an order of magnitude off the unfixed multiplier.
+    # The regression this pins: with the seeking-sized default window, this fixture measured ~6.8x
+    # the object's size across 92 requests.
     assert total_read < len(content) * 1.5
-    # Request COUNT, not just bytes — a large window that still issued one
-    # request per row group would also fail this even if coincidentally under
-    # the byte bound. STREAM_CHUNK keeps this in the single digits regardless
-    # of row-group count; the unfixed default issued 92 requests here.
+    # Request COUNT, not just bytes — a large window that still issued one request per row group
+    # would also fail this even if coincidentally under the byte bound.
     assert len(ranges) < 10
 
 
 def test_read_dataframe_parquet_sample_of_an_empty_file_returns_typed_empty_frame(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Code-review finding on #1222: the header-only/zero-row fallback in
-    `_read_parquet_sample` (a real, correctly-typed empty `pa.Table` built off
-    the footer's own field types) had no automated test — the PR description
-    said it was checked "by hand" only. Pins that an empty Parquet file yields
-    an empty, correctly-typed frame over the requested columns rather than
-    raising or losing dtype information.
+    """Code-review finding on #1222: the header-only/zero-row fallback in `_read_parquet_sample` (a
+    real, correctly-typed empty `pa.Table` built off the footer's own field types) had no
+    automated test — the PR description said it was checked "by hand" only.
     """
     import io
 
@@ -898,9 +812,7 @@ def test_read_dataframe_parquet_sample_of_an_empty_file_returns_typed_empty_fram
     assert "pyarrow" in str(df.dtypes["a"])
 
 
-# ── list_file_columns (header/footer-only introspection, #474) ──
-# `_patch_object` (defined above, alongside the `_read_dataframe` tests it now
-# shares with the #1001 Parquet-sampling tests) covers this section too.
+# ── list_file_columns (header/footer-only introspection, #474) ── `_patch_object` (defined above.
 
 
 def test_list_file_columns_csv_reads_header_only(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -918,7 +830,8 @@ def test_list_file_columns_csv_sniffs_a_semicolon_delimiter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """#476: the column dropdown used to offer one bogus column ('a;b;c') for a
-    `;`-delimited file, which defeats the picker for that file entirely."""
+    `;`-delimited file, which defeats the picker for that file entirely.
+    """
     _patch_object(monkeypatch, b"a;b;c\n1;2;3\n4;5;6\n")
     cols = list_file_columns(
         _flatfile_conn(),
@@ -1050,9 +963,8 @@ def test_profile_dataframe_unhashable_object_column_nulls_distinct() -> None:
 
 
 def test_profile_dataframe_pyarrow_list_column_degrades_not_500() -> None:
-    # the profiler reads Parquet with dtype_backend="pyarrow"; a list/struct column
-    # raises ArrowNotImplementedError (not TypeError) from nunique/value_counts —
-    # the broadened guards must still degrade rather than propagate.
+    # the profiler reads Parquet with dtype_backend="pyarrow"; a list/struct column raises
+    # ArrowNotImplementedError (not TypeError) from nunique/value_counts.
     import io
 
     buf = io.BytesIO()
@@ -1094,9 +1006,8 @@ def test_profile_dataframe_survives_adversarial_input(name: str, frame: pd.DataF
 
 
 def test_profile_dataframe_empty_frame_null_fraction_is_zero() -> None:
-    # pandas-path parity with assemble_profile (which pins this): a 0-row frame
-    # must report null_fraction 0.0, not 1.0. Surfaced by a mutation spike: the
-    # `else 0.0` branch was covered but unasserted here.
+    # pandas-path parity with assemble_profile (which pins this): a 0-row frame must report
+    # null_fraction 0.0, not 1.0.
     df = pd.DataFrame({"x": pd.Series([], dtype="object")})
     result = profile_dataframe(df, columns=["x"], top_n=5, path="x.csv", file_format="csv")
     assert result.row_count == 0
@@ -1149,16 +1060,7 @@ def test_derive_policy_natural_key_of_emails_is_pii_not_identifier() -> None:
     assert policy["pii_columns"] == ["USER_ID"]
 
 
-# ── Iceberg profiler + list-columns (native read, #721) ──
-#
-# The iceberg load seam (`load_iceberg_table`) is monkeypatched with a fake Table
-# exposing `.schema()` (the pre-scan column-validation fold, #721 code review) and
-# a call-tracking `.scan()` (the projected/limited read) — never live pyiceberg.
-# `iceberg_column_names` (the metadata-only column lister) is faked separately, at
-# its own module-level name. Iceberg is credential-optional and its identifier is
-# `namespace.table`, so these assert the dispatch, the identifier fold (including
-# its whitespace/empty-string fold, matching `run_target.resolve_target`), the
-# pre-scan validation, and the no-422-without-credential acceptance criterion.
+# ── Iceberg profiler + list-columns (native read.
 
 
 class _FakeIcebergSchemaField:
@@ -1189,7 +1091,8 @@ class _FakeIcebergScan:
 class _FakeIcebergTable:
     """A fake ``pyiceberg`` Table: `.schema()` for the pre-scan column-validation
     fold, and a `.scan()` that records every call — so a test can assert a
-    request rejected at validation never reaches a scan (#721 code review)."""
+    request rejected at validation never reaches a scan (#721 code review).
+    """
 
     def __init__(self, df: pd.DataFrame) -> None:
         self._df = df
@@ -1293,10 +1196,8 @@ def test_profile_iceberg_folds_multilevel_namespace(monkeypatch: pytest.MonkeyPa
 def test_profile_iceberg_blank_namespace_folds_to_bare_table(
     monkeypatch: pytest.MonkeyPatch, blank_namespace: str
 ) -> None:
-    # A whitespace-only or empty-string namespace is not a real namespace — it must
-    # fold to the bare table, matching `run_target.resolve_target`'s `_str_or_none`
-    # so the profiler and the run path resolve the same table for the same input
-    # (#721 code review: `namespace=" "` previously yielded `" .orders"`).
+    # A whitespace-only or empty-string namespace is not a real namespace — it must fold to the bare
+    # table.
     from backend.app.services import profile_service as svc
 
     table = _FakeIcebergTable(pd.DataFrame({"a": [1]}))
@@ -1364,9 +1265,8 @@ def test_profile_iceberg_missing_table_returns_422() -> None:
 def test_profile_iceberg_missing_column_returns_422_without_scanning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Pre-scan validation (#721 code review): an all-invalid column list must 422
-    # straight from the table's schema — never falling back to a `("*",)` full
-    # scan first (the old behaviour, scanning every column before the 422).
+    # Pre-scan validation (#721 code review): an all-invalid column list must 422 straight from the
+    # table's schema — never falling back to a `("*",)` full scan first (the old behaviour.
     from backend.app.services import profile_service as svc
 
     table = _FakeIcebergTable(pd.DataFrame({"a": [1]}))
@@ -1438,9 +1338,8 @@ def test_profile_iceberg_valid_columns_load_once_and_scan_the_projection(
 
 
 def test_profile_iceberg_columns_none_reads_every_column() -> None:
-    # `read_iceberg_dataframe`'s `("*",)` full-read fallback still applies to its
-    # own `columns=None` contract (list-every-column) — the profiler always passes
-    # a concrete list, but the low-level seam keeps that path working directly.
+    # `read_iceberg_dataframe`'s `("*",)` full-read fallback still applies to its own `columns=None`
+    # contract (list-every-column) — the profiler always passes a concrete list.
     from backend.app.datasources.iceberg import read_iceberg_dataframe
 
     table = _FakeIcebergTable(pd.DataFrame({"a": [1, 2], "b": [3, 4]}))
@@ -1478,9 +1377,8 @@ def test_profile_iceberg_read_failure_returns_502(monkeypatch: pytest.MonkeyPatc
 def test_profile_iceberg_arrow_backed_frame_matches_numpy_stats(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Arrow-backed dtypes (#721 code review) must profile identically to the
-    # numpy-backed frame in `test_profile_iceberg_computes_stats` — the shared
-    # `_profile_columns`/`_profile_series` core is dtype-backend agnostic.
+    # Arrow-backed dtypes (#721 code review) must profile identically to the numpy-backed frame in
+    # `test_profile_iceberg_computes_stats`.
     from backend.app.services import profile_service as svc
 
     numpy_df = pd.DataFrame({"amount": [10, 20, 20, 20], "city": ["x", "x", "y", None]})

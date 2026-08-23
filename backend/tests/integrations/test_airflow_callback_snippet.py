@@ -1,13 +1,4 @@
-"""Round-trip tests for the user-facing Airflow DAG callback snippet.
-
-The snippet (`integrations/airflow/dataq_airflow_callback.py`) is the
-*producer* half of the Airflow integration; `backend/app/api/v1/orchestration.py`
-is the *consumer*. These tests load the snippet by path and assert producer and
-consumer agree on **both** axes: the HMAC the snippet signs is accepted by the
-receiver's `_authenticate_airflow`, and the JSON it builds parses cleanly through
-`AirflowProvider.parse_event`. If either side drifts (header name, signing input,
-field names, state map), a test here fails before a user's DAG silently does.
-"""
+"""Round-trip tests for the user-facing Airflow DAG callback snippet."""
 
 import importlib.util
 from pathlib import Path

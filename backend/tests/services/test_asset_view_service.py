@@ -1,8 +1,7 @@
 """Service-level tests for `asset_view_service` — the branches the HTTP authz
 matrix (tests/api/test_assets.py) doesn't reach: metadata partial-update
 semantics, an asset with no composing suites, and the empty-input short-circuits.
-
-Skips without TEST_DATABASE_URL (JSONB/UUID need real Postgres)."""
+"""
 
 from __future__ import annotations
 
@@ -44,7 +43,8 @@ def test_list_empty_when_no_assets_exist(db_session: Any) -> None:
 def test_count_assets_matches_population_not_a_page(db_session: Any) -> None:
     """#925: `count_assets` is the same unfiltered population `list_visible_assets`
     slices — it must report the true total even when a caller's `limit` is
-    smaller than it, since that's the exact case the count exists to disambiguate."""
+    smaller than it, since that's the exact case the count exists to disambiguate.
+    """
     assert svc.count_assets(db_session) == 0
     for i in range(3):
         db_session.add(Asset(namespace="snowflake://x", name=f"T{i}"))
@@ -57,7 +57,8 @@ def test_count_assets_matches_population_not_a_page(db_session: Any) -> None:
 
 def test_summarize_asset_with_no_suites(db_session: Any) -> None:
     """An orphan asset (e.g. a dbt-lineage-only node) summarizes to an empty,
-    no-run health — never raises, so the admin PATCH response works on it."""
+    no-run health — never raises, so the admin PATCH response works on it.
+    """
     asset = Asset(namespace="snowflake://x", name="ORPHAN")
     db_session.add(asset)
     db_session.commit()
@@ -111,11 +112,8 @@ def test_get_unknown_asset_raises(db_session: Any) -> None:
         svc.get_visible_asset(db_session, uuid.uuid4(), user_id=user.id)
 
 
-# ── connection health vs suite health (#803) ─────────────────────────────────
-#
-# The two axes must not bleed into each other: operational `error`/`skip` results
-# (#122) feed *connection* health (could DataQ reach the datasource?) and are
-# invisible to *suite* health (is the data good?), which is severity-only.
+# ── connection health vs suite health (#803) ───────────────────────────────── The two axes must
+# not bleed into each other: operational `error`/`skip` results (#122) feed *connection* health
 
 
 def _suite_with_run(db: Any, owner: User, *, run_status: str, result_statuses: list[str]) -> Asset:
@@ -150,7 +148,8 @@ def _suite_with_run(db: Any, owner: User, *, run_status: str, result_statuses: l
 def test_error_result_feeds_connection_health_not_suite_health(db_session: Any) -> None:
     """A run that SUCCEEDED but whose check threw: connection health is degraded
     (operational error) while suite health stays severity-free — the exact case
-    `has_failed_run` alone misses, since the run itself never failed."""
+    `has_failed_run` alone misses, since the run itself never failed.
+    """
     owner = _user(db_session)
     asset = _suite_with_run(db_session, owner, run_status="succeeded", result_statuses=["error"])
     s = svc.summarize_asset(db_session, asset)
@@ -163,7 +162,8 @@ def test_error_result_feeds_connection_health_not_suite_health(db_session: Any) 
 
 def test_skip_result_is_degraded_not_an_error(db_session: Any) -> None:
     """`skip` = a precondition wasn't met (the batch hasn't landed). The run
-    executed, so it is NOT an operational error — only a degraded connection."""
+    executed, so it is NOT an operational error — only a degraded connection.
+    """
     owner = _user(db_session)
     asset = _suite_with_run(db_session, owner, run_status="succeeded", result_statuses=["skip"])
     s = svc.summarize_asset(db_session, asset)
@@ -187,7 +187,8 @@ def test_failed_run_is_an_operational_error(db_session: Any) -> None:
 
 def test_failing_data_does_not_touch_connection_health(db_session: Any) -> None:
     """The mirror case: the datasource was perfectly reachable, the DATA is bad.
-    Suite health goes red; connection health stays clean."""
+    Suite health goes red; connection health stays clean.
+    """
     owner = _user(db_session)
     asset = _suite_with_run(
         db_session, owner, run_status="succeeded", result_statuses=["pass", "critical"]
@@ -204,7 +205,8 @@ def test_cancelled_run_is_flagged_so_it_never_rolls_up_green(db_session: Any) ->
     """A cancelled run proves nothing: killed before a check ran, we may never have
     reached the datasource. It is neither a failure nor an active run, so without
     its own flag it would look identical to a clean success and read green on both
-    axes. (The UI keys `connectionHealth`/`suiteHealth` off this.)"""
+    axes. (The UI keys `connectionHealth`/`suiteHealth` off this.)
+    """
     owner = _user(db_session)
     asset = _suite_with_run(db_session, owner, run_status="cancelled", result_statuses=[])
     s = svc.summarize_asset(db_session, asset)
@@ -287,7 +289,8 @@ def test_scorecard_scores_each_dimension_independently(db_session: Any) -> None:
 
 def test_uncovered_lists_every_dimension_with_no_checks(db_session: Any) -> None:
     """The actionable half. "This asset has no Timeliness checks" is what a lead
-    acts on; a pass-rate never says that."""
+    acts on; a pass-rate never says that.
+    """
     owner = _user(db_session)
     asset = _suite_with_dimensioned_results(db_session, owner, results=[("completeness", "pass")])
     card = _scorecard_for(db_session, asset, owner.id)
@@ -300,7 +303,8 @@ def test_uncovered_lists_every_dimension_with_no_checks(db_session: Any) -> None
 
 def test_an_asset_with_no_checks_is_all_uncovered_not_a_perfect_score(db_session: Any) -> None:
     """No coverage ≠ 100%. Rendering a green tick over an asset nobody checks is
-    the single most dangerous thing this feature could do."""
+    the single most dangerous thing this feature could do.
+    """
     owner = _user(db_session)
     asset = _suite_with_dimensioned_results(db_session, owner, results=[])
     card = _scorecard_for(db_session, asset, owner.id)
@@ -312,7 +316,8 @@ def test_an_asset_with_no_checks_is_all_uncovered_not_a_perfect_score(db_session
 def test_unclassified_checks_are_counted_but_never_bucketed(db_session: Any) -> None:
     """ADR 0038: a NULL dimension is a real state (custom SQL is unclassifiable).
     Filing those under some dimension would corrupt that bucket's score AND make
-    `uncovered` a lie — so they are reported separately."""
+    `uncovered` a lie — so they are reported separately.
+    """
     owner = _user(db_session)
     asset = _suite_with_dimensioned_results(
         db_session,
@@ -329,7 +334,8 @@ def test_unclassified_checks_are_counted_but_never_bucketed(db_session: Any) -> 
 
 def test_skip_and_error_are_excluded_from_the_denominator(db_session: Any) -> None:
     """#122 / ADR 0005: they did not evaluate a severity, so they must not count
-    as passes NOR inflate the total."""
+    as passes NOR inflate the total.
+    """
     owner = _user(db_session)
     asset = _suite_with_dimensioned_results(
         db_session,
@@ -349,7 +355,8 @@ def test_a_dimension_whose_checks_all_skipped_is_covered_with_no_score(
     db_session: Any,
 ) -> None:
     """Distinct from uncovered: checks EXIST, they just didn't evaluate. Merging
-    the two states would tell a user to write checks they already have."""
+    the two states would tell a user to write checks they already have.
+    """
     owner = _user(db_session)
     asset = _suite_with_dimensioned_results(
         db_session, owner, results=[("timeliness", "skip"), ("timeliness", "error")]
@@ -364,14 +371,7 @@ def test_a_dimension_whose_checks_all_skipped_is_covered_with_no_score(
 
 
 def test_a_check_that_has_never_run_still_counts_as_covered(db_session: Any) -> None:
-    """THE bug this feature could most easily have shipped.
-
-    Coverage must come from checks, not results. Derived from results, a
-    `timeliness` check authored today on a nightly suite reads as *missing* until
-    tomorrow's run — and the panel would tell the user to write a check they
-    already wrote. It would also regress every time a run hard-failed and rolled
-    its results back.
-    """
+    """THE bug this feature could most easily have shipped."""
     owner = _user(db_session)
     conn = _conn(db_session, owner)
     suite = suite_service.create_suite(
@@ -407,7 +407,8 @@ def test_an_unclassified_check_that_only_errored_is_still_counted(db_session: An
     """The asymmetry review caught: a DIMENSIONED all-skip dimension stays visible
     with "no signal", but an unclassified one used to vanish entirely — so an asset
     whose only checks were five erroring custom-SQL checks reported "no checks at
-    all". Counting checks rather than severity-bearing results fixes it."""
+    all". Counting checks rather than severity-bearing results fixes it.
+    """
     owner = _user(db_session)
     asset = _suite_with_dimensioned_results(
         db_session, owner, results=[(None, "error"), (None, "skip")]

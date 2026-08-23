@@ -1,13 +1,4 @@
-"""`lineage.pull` — the pull-parse-upsert path against a real Postgres (db_session).
-
-The compose round-trip (emitter → Marquez → pull) is a manual/compose verification
-(see docs/site/orchestration.md); here a **fake `LineageProvider`** returns canned,
-real-shaped Marquez graphs so the DB-side contract is exercised without a live catalog:
-edges upsert with ``source='marquez'`` + NULL connection_id, coexist with dbt edges
-without duplication, dedupe idempotently, prune when they vanish, and fail open.
-
-Skips without TEST_DATABASE_URL.
-"""
+"""`lineage.pull` — the pull-parse-upsert path against a real Postgres (db_session)."""
 
 from __future__ import annotations
 
@@ -33,13 +24,7 @@ _JOB_ID = "job:dataq:suite.abc"
 
 
 class _FakeProvider:
-    """A `LineageProvider` that replays canned graphs keyed on the seed identity.
-
-    `list_datasets` reports exactly the datasets the canned graphs are keyed on — i.e.
-    it behaves like a catalog that holds those names verbatim. The pull now seeds from
-    the catalog's OWN listing rather than from our asset names (#823), so a fake that
-    didn't list would report every asset `absent` and pull nothing.
-    """
+    """A `LineageProvider` that replays canned graphs keyed on the seed identity."""
 
     provider = "marquez"
 
@@ -328,9 +313,8 @@ def test_partial_outage_upserts_but_skips_prune(db_session: Any) -> None:
         calls = 0
 
         def list_datasets(self, *, namespace: str) -> list[str]:
-            # The catalog lists both seeded assets, so both reach `get_lineage`; the
-            # FIRST call then dies. That exercises a PER-SEED outage — distinct from a
-            # whole-namespace one, where the listing itself fails.
+            # The catalog lists both seeded assets, so both reach `get_lineage`; the FIRST call then
+            # dies.
             return ["pre-up", "pre-down"]
 
         def get_lineage(self, *, namespace: str, name: str, depth: int) -> LineageGraph:
@@ -407,7 +391,8 @@ class TestPurgeOrphanedPulledEdges:
     def test_purge_is_fail_open_on_a_db_error(self) -> None:
         """A DB hiccup during the janitor sweep logs and returns 0 — it must never
         escape the beat task (the module's uniform fail-open contract; review
-        finding on this PR). The orphans are still there next tick."""
+        finding on this PR). The orphans are still there next tick.
+        """
         from unittest.mock import MagicMock
 
         from backend.app.lineage.pull import purge_orphaned_pulled_edges
@@ -420,7 +405,8 @@ class TestPurgeOrphanedPulledEdges:
 
 class TestLineageProviderUnsetDistinction:
     """The purge gate must separate 'removed' from 'broken' — deleting the cache over
-    a one-character typo would be data loss, not hygiene (#1090)."""
+    a one-character typo would be data loss, not hygiene (#1090).
+    """
 
     def test_blank_and_whitespace_mean_unset(self, monkeypatch: Any) -> None:
         from backend.app.core.config import get_settings

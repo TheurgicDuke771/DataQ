@@ -1,12 +1,4 @@
-"""Incident lifecycle engine tests against a real Postgres (db_session).
-
-The **state machine + dedup guarantee is the point** (ADR 0034 decision 4, #761):
-open / acknowledge / resolve / auto-resolve / reopen, occurrence attach (no
-duplicate active incident per (asset, check)), per-suite auto-resolve config, and
-the upsert-race no-duplicate proof (deterministic ON CONFLICT fallback + a genuine
-two-connection concurrent race).
-
-Skips without TEST_DATABASE_URL (JSONB/UUID/partial-index need real Postgres)."""
+"""Incident lifecycle engine tests against a real Postgres (db_session)."""
 
 from __future__ import annotations
 
@@ -32,22 +24,8 @@ from backend.app.services import incident_service, suite_service
 
 _SF_CONFIG = {"account": "ab12345.eu-west-1", "database": "ANALYTICS", "schema": "PUBLIC"}
 
-# #1411: the two race tests below synchronize two threads on a `threading.Barrier`
-# then join them — under CPU contention (e.g. `pytest --cov` running alongside
-# another heavy job), thread scheduling can stall past a tight deadline, tripping
-# `BrokenBarrierError`/a stuck join with no exception surfaced on the main thread
-# (worker() doesn't re-raise), which then fails as a baffling assertion mismatch
-# rather than a recognizable timeout. Generous enough that a loaded CI box isn't
-# flaky, tight enough that a genuine deadlock still fails in finite time.
-#
-# Review caught a first-pass version of this fix that gave both the barrier and
-# the join the SAME budget: `join`'s timeout is measured from thread start, not
-# from barrier release, so a thread that used most of its barrier budget just
-# reaching the rendezvous would have had ~0 time left to do its actual work
-# before `join` gave up (which raises nothing — it just returns) — the exact
-# flake this PR exists to remove, reappearing at a higher contention threshold.
-# The join budget must be strictly larger than the barrier budget to leave real
-# room for the post-barrier work.
+# #1411: the two race tests below synchronize two threads on a `threading.Barrier` then join them —
+# under CPU contention (e.g.
 _BARRIER_TIMEOUT = 30.0
 _JOIN_TIMEOUT = 60.0
 
@@ -303,7 +281,8 @@ def test_acknowledged_incident_still_dedups_new_failure(
     db_session: Any, world: dict[str, Any]
 ) -> None:
     """An acknowledged incident is still 'active' — a repeat failure attaches to it
-    rather than opening a second (the partial index covers acknowledged too)."""
+    rather than opening a second (the partial index covers acknowledged too).
+    """
     run = _run_with_result(db_session, world["suite"], world["check"], status="fail")
     incident_service.sync_incidents_for_run(db_session, run_id=run.id)
     inc = _active(db_session, world["suite"].asset_id, world["check"].id)[0]
@@ -375,7 +354,8 @@ def test_active_incidents_for_run_map(db_session: Any, world: dict[str, Any]) ->
 def test_on_conflict_fallback_is_deterministic(db_session: Any, world: dict[str, Any]) -> None:
     """The loser's path proven deterministically: a second open on the SAME pair
     (the winner already committed) hits ON CONFLICT DO NOTHING → attaches. This is
-    exactly what protects concurrent failing results from racing in a duplicate."""
+    exactly what protects concurrent failing results from racing in a duplicate.
+    """
     run1 = _run_with_result(db_session, world["suite"], world["check"], status="fail")
     run2 = _run_with_result(db_session, world["suite"], world["check"], status="fail")
     check = world["check"]
@@ -411,11 +391,11 @@ def test_concurrent_failing_syncs_no_duplicate(_db_engine: Any) -> None:
     """A genuine two-connection race: two failing runs of the SAME (asset, check)
     sync concurrently. The partial unique index + ON CONFLICT guarantees exactly
     one active incident with the occurrences counted — no duplicate, no
-    IntegrityError. Committed rows are cleaned up so other tests aren't polluted."""
+    IntegrityError. Committed rows are cleaned up so other tests aren't polluted.
+    """
     seed = SASession(bind=_db_engine)
-    # Declared before the try so a seeding failure (any call before `ids` is
-    # assigned below) can't turn `finally`'s `_cleanup(**ids)` into a NameError
-    # that masks the real failure (#1498).
+    # Declared before the try so a seeding failure (any call before `ids` is assigned below) can't
+    # turn `finally`'s `_cleanup(**ids)` into a NameError that masks the real failure (#1498).
     ids: dict[str, uuid.UUID] | None = None
     try:
         owner = _user(seed, email=f"race-{uuid.uuid4().hex[:6]}@ex.com")
@@ -424,10 +404,8 @@ def test_concurrent_failing_syncs_no_duplicate(_db_engine: Any) -> None:
         check = _check(seed, suite)
         run1 = _run_with_result(seed, suite, check, status="fail", triggered_by="r1")
         run2 = _run_with_result(seed, suite, check, status="fail", triggered_by="r2")
-        # Capture plain ids BEFORE commit and close the seed session: touching an
-        # expired ORM attribute after commit would open a NEW transaction on this
-        # session that nothing ever closes — an idle-in-transaction backend whose
-        # locks deadlock the engine fixture's drop_all teardown.
+        # Capture plain ids BEFORE commit and close the seed session: touching an expired ORM
+        # attribute after commit would open a NEW transaction on this session that nothing ever
         run_ids = (run1.id, run2.id)
         ids = {
             "suite_id": suite.id,
@@ -479,7 +457,8 @@ def _cleanup(
     engine: Any, *, suite_id: uuid.UUID, asset_id: uuid.UUID, conn_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
     """Delete the race test's committed rows (suite cascades checks/runs/results/
-    incidents), then the now-orphaned asset, connection and user."""
+    incidents), then the now-orphaned asset, connection and user.
+    """
     from backend.app.db.models import Suite
 
     s = SASession(bind=engine)
@@ -508,11 +487,11 @@ def _cleanup(
 def test_ack_with_stale_object_after_resolve_conflicts_and_never_reopens(
     db_session: Any, world: dict[str, Any]
 ) -> None:
-    """The lost-update race, deterministically: a caller holding a STALE incident
-    (read while open) acks after a resolve committed. The FOR-UPDATE re-read must
-    surface the resolved state → 409, and the row must stay resolved (a terminal
-    row is never reopened — which could also double-match the active partial
-    unique index once a successor incident exists)."""
+    """The lost-update race, deterministically: a caller holding a STALE incident (read while open)
+    acks after a resolve committed. The FOR-UPDATE re-read must surface the resolved state →
+    409, and the row must stay resolved (a terminal row is never reopened — which could also
+    double-match the active partial unique index once a successor incident exists).
+    """
     run = _run_with_result(db_session, world["suite"], world["check"], status="fail")
     incident_service.sync_incidents_for_run(db_session, run_id=run.id)
     stale = _active(db_session, world["suite"].asset_id, world["check"].id)[0]
@@ -532,11 +511,11 @@ def test_ack_with_stale_object_after_resolve_conflicts_and_never_reopens(
 def test_concurrent_manual_resolves_exactly_one_wins(_db_engine: Any) -> None:
     """Two sessions resolve the SAME incident concurrently: the FOR-UPDATE lock
     serializes them — exactly one wins, the loser gets a clean 409 (not a silent
-    actor/note overwrite), and the row ends resolved-by-user exactly once."""
+    actor/note overwrite), and the row ends resolved-by-user exactly once.
+    """
     seed = SASession(bind=_db_engine)
-    # Declared before the try so a seeding failure (any call before `ids` is
-    # assigned below) can't turn `finally`'s `_cleanup(**ids)` into a NameError
-    # that masks the real failure (#1498).
+    # Declared before the try so a seeding failure (any call before `ids` is assigned below) can't
+    # turn `finally`'s `_cleanup(**ids)` into a NameError that masks the real failure (#1498).
     ids: dict[str, uuid.UUID] | None = None
     try:
         owner = _user(seed, email=f"race2-{uuid.uuid4().hex[:6]}@ex.com")
@@ -608,7 +587,8 @@ def test_open_retries_when_active_vanishes_mid_attach(
     """The ON-CONFLICT fallback gap: the insert conflicts but the active incident
     resolves before the attach lookup. The bounded retry must converge (here: the
     lookup 'misses' once, the retry re-attempts and attaches) instead of raising
-    and rolling back the whole run's sync."""
+    and rolling back the whole run's sync.
+    """
     run1 = _run_with_result(db_session, world["suite"], world["check"], status="fail")
     incident_service.sync_incidents_for_run(db_session, run_id=run1.id)
 
@@ -636,7 +616,8 @@ def test_sync_engine_failure_swallowed_and_alerts_still_dispatch(
 ) -> None:
     """Fail-soft proof (mirrors alerting's test_publisher_exception_is_swallowed):
     an injected engine crash must not raise, the run stays persisted, and the
-    alert dispatch that follows in the worker still publishes."""
+    alert dispatch that follows in the worker still publishes.
+    """
     from backend.app.alerting import dispatch as alert_dispatch
 
     run = _run_with_result(db_session, world["suite"], world["check"], status="fail")
@@ -655,7 +636,8 @@ def test_sync_engine_failure_swallowed_and_alerts_still_dispatch(
 
 def test_suite_delete_cascades_incidents(db_session: Any, world: dict[str, Any]) -> None:
     """#540 lesson: a suite that produced incidents must delete cleanly — the
-    check/suite CASCADEs take the incident rows with them, no FK 500."""
+    check/suite CASCADEs take the incident rows with them, no FK 500.
+    """
     run = _run_with_result(db_session, world["suite"], world["check"], status="fail")
     incident_service.sync_incidents_for_run(db_session, run_id=run.id)
     assert len(_active(db_session, world["suite"].asset_id, world["check"].id)) == 1
@@ -675,7 +657,8 @@ def test_check_delete_cascades_incident(db_session: Any, world: dict[str, Any]) 
 def test_cancelled_run_opens_nothing(db_session: Any, world: dict[str, Any]) -> None:
     """(11a) A cancelled run is excluded by the terminal-status guard — even if a
     result row somehow survived the cancel rollback, the sync must not anchor an
-    incident to a run the user aborted."""
+    incident to a run the user aborted.
+    """
     run = _run_with_result(
         db_session, world["suite"], world["check"], status="fail", run_status="cancelled"
     )

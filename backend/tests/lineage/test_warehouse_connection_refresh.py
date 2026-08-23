@@ -1,10 +1,4 @@
-"""Per-connection warehouse-lineage refresh + persistence tests (#858, slice 3).
-
-`refresh_connection_lineage` is the beat task's unit: open the datasource, refresh the
-edge cache, and persist the refresh state onto the connection (watermark / tier /
-degraded reason / classified error). Tested against the real DB with the datasource
-`_open_connection` seam faked.
-"""
+"""Per-connection warehouse-lineage refresh + persistence tests (#858, slice 3)."""
 
 from __future__ import annotations
 

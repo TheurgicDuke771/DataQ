@@ -1,10 +1,4 @@
-"""Shared rollup primitives (#889) — the one histogram, score, and latest-run query.
-
-The score math itself is pinned in `test_dashboard_service.py` (its long-standing
-home, including the ADR-0005 worked examples); these tests cover what the shared
-module adds: the histogram query, the latest-run statement's semantics, and the
-invariants a future consumer could quietly break.
-"""
+"""Shared rollup primitives (#889) — the one histogram, score, and latest-run query."""
 
 from __future__ import annotations
 
@@ -39,13 +33,15 @@ from backend.app.services.rollup import (
 def test_severity_statuses_come_from_the_model_vocabulary() -> None:
     """Not re-derived from the penalty map's keys. The two were the same tuple by
     coincidence, so a weight added without a matching tier would have silently
-    widened N — and N is the health score's denominator."""
+    widened N — and N is the health score's denominator.
+    """
     assert SEVERITY_STATUSES == RESULT_SEVERITY_TIERS
 
 
 def test_operational_statuses_are_excluded_from_the_denominator() -> None:
     """#122 / ADR 0005: `skip` and `error` did not evaluate a severity, so they
-    must never be counted as a pass NOR inflate N."""
+    must never be counted as a pass NOR inflate N.
+    """
     counts = {"pass": 2, **dict.fromkeys(RESULT_OPERATIONAL_STATUSES, 5)}
     assert evaluated_total(counts) == 2
     assert pass_rate(counts) == 100.0
@@ -118,11 +114,10 @@ def test_status_histograms_groups_by_run_and_status(db_session: Any) -> None:
 
 
 def test_a_partly_skipped_run_rolls_up_as_evaluated_only(db_session: Any) -> None:
-    """A per-check `skip` (#593 anomaly cold start) among normal siblings must not
-    corrupt the run's outcome: `checks_total` counts only evaluated checks, so the
-    run reads 2/2 rather than a misleading 2/3, and the skip surfaces separately as
-    an operational flag. Pinned because #593 is the first producer of a per-check
-    skip alongside real results — before it, `skip` only ever arrived run-wide."""
+    """A per-check `skip` (#593 anomaly cold start) among normal siblings must not corrupt the
+    run's outcome: `checks_total` counts only evaluated checks, so the run reads 2/2 rather than
+    a misleading 2/3, and the skip surfaces separately as an operational flag.
+    """
     from backend.app.services.run_service import check_outcome_counts, operational_result_flags
 
     suite = _suite(db_session)
@@ -135,7 +130,8 @@ def test_a_partly_skipped_run_rolls_up_as_evaluated_only(db_session: Any) -> Non
 
 def test_a_skipped_check_never_ranks_as_a_severity(db_session: Any) -> None:
     """The worst-severity fold must ignore `skip`, or a cold-start anomaly would
-    look like the run's worst outcome."""
+    look like the run's worst outcome.
+    """
     from backend.app.services.run_service import check_outcome_counts
 
     suite = _suite(db_session)
@@ -151,7 +147,8 @@ def test_status_histograms_empty_input_does_no_query(db_session: Any) -> None:
 
 def test_a_run_with_no_results_is_absent_not_empty(db_session: Any) -> None:
     """Callers treat a missing entry as "nothing evaluated"; returning an empty
-    dict instead would look identical to a run whose results were all filtered."""
+    dict instead would look identical to a run whose results were all filtered.
+    """
     suite = _suite(db_session)
     run = _seed_run(db_session, suite=suite, created_at=datetime.now(UTC), statuses=[])
     assert run.id not in status_histograms(db_session, [run.id])
@@ -159,7 +156,8 @@ def test_a_run_with_no_results_is_absent_not_empty(db_session: Any) -> None:
 
 def test_the_histogram_feeds_the_score_directly(db_session: Any) -> None:
     """The point of sharing: the shape one query produces is the shape the score
-    consumes, with no adapter in between."""
+    consumes, with no adapter in between.
+    """
     suite = _suite(db_session)
     run = _seed_run(
         db_session,
@@ -185,12 +183,7 @@ def test_latest_run_is_the_newest_per_suite(db_session: Any) -> None:
     assert {r.suite_id: r.id for r in runs} == {suite_a.id: newest_a.id, suite_b.id: only_b.id}
 
 
-# Explicit, ordered ids for the tie-break test. Server-generated UUIDs would make
-# it a COIN FLIP: with no tie-break Postgres returns whichever row its sort emits
-# first, which is the max about half the time — so a future removal of `id DESC`
-# would merge green on roughly every other run. Inserting the LOWER id first means
-# heap order (what an untied sort falls back to) yields the wrong answer
-# deterministically.
+# Explicit, ordered ids for the tie-break test.
 _LOW_RUN_ID = uuid.UUID("00000000-0000-4000-8000-000000000001")
 _HIGH_RUN_ID = uuid.UUID("ffffffff-ffff-4fff-bfff-ffffffffffff")
 
@@ -198,7 +191,8 @@ _HIGH_RUN_ID = uuid.UUID("ffffffff-ffff-4fff-bfff-ffffffffffff")
 def test_ties_on_created_at_resolve_deterministically(db_session: Any) -> None:
     """Both previous copies ordered only by `created_at DESC`, so two runs sharing
     a timestamp resolved nondeterministically — the same page could show different
-    numbers on refresh. The `id DESC` tie-break makes it stable."""
+    numbers on refresh. The `id DESC` tie-break makes it stable.
+    """
     suite = _suite(db_session)
     same = datetime.now(UTC)
     _seed_run(db_session, suite=suite, created_at=same, statuses=["pass"], run_id=_LOW_RUN_ID)
@@ -213,7 +207,8 @@ def test_ties_on_created_at_resolve_deterministically(db_session: Any) -> None:
 def test_the_latest_run_counts_whatever_its_status(db_session: Any, status: str) -> None:
     """No status filter here on purpose: the dashboard drops a resultless run with
     an inner join, the asset view keeps it to report an operational error. Encoding
-    either choice in the shared query would silently change the other."""
+    either choice in the shared query would silently change the other.
+    """
     suite = _suite(db_session)
     now = datetime.now(UTC)
     _seed_run(db_session, suite=suite, created_at=now - timedelta(hours=1), statuses=["pass"])

@@ -1,11 +1,4 @@
-"""Workspace-admin endpoint tests against a real Postgres via TestClient.
-
-Auth runs in dev-bypass mode (conftest), so the caller is the fixed dev user.
-`WORKSPACE_ADMIN_EMAILS` is toggled per test to flip that user between admin and
-non-admin. The key property under test: an admin sees suites/users they neither
-own nor are shared on — the /admin endpoints bypass the owned-or-shared scoping
-`list_suites` applies. Skips without TEST_DATABASE_URL.
-"""
+"""Workspace-admin endpoint tests against a real Postgres via TestClient."""
 
 import smtplib
 import ssl
@@ -76,9 +69,8 @@ def _suite(db_session: Any, owner: User, conn: Connection, name: str) -> Suite:
 
 
 def test_non_admin_gets_403(client: TestClient, as_role: Any) -> None:
-    # A genuine MEMBER, not the ambient dev-bypass identity — which is itself a
-    # workspace admin since #741 (dev bypass is a single-operator mode). Using it
-    # here would have turned this test green for the wrong reason.
+    # A genuine MEMBER, not the ambient dev-bypass identity — which is itself a workspace admin
+    # since #741 (dev bypass is a single-operator mode).
     get_settings.cache_clear()
     _, headers = as_role("member")
     for path in (
@@ -188,14 +180,8 @@ def test_admin_access_overview_lists_owner_and_shares(
     assert ("editor@x.io", "edit") in grants
 
 
-# ── inbound webhook config (#490) ───────────────────────────────────────────────
-#
-# These tests are read-only by design (webhook URL construction never writes a
-# secret), so every store below is a fixed-value `FakeSecretStore` with
-# `raise_on_write=True`: `.get()` returns the seeded token for any name asked,
-# and `.set()`/`.delete()` raise if the code under test ever tries to write —
-# `default=None` (the "missing secret" cases) makes `.get()` raise
-# `SecretNotFoundError` instead, per the shared fake's contract.
+# ── inbound webhook config (#490) ─────────────────────────────────────────────── These tests are
+# read-only by design (webhook URL construction never writes a secret).
 
 
 def _orch_connection(db_session: Any, owner: User, *, ctype: str, name: str) -> Connection:
@@ -296,9 +282,8 @@ def test_admin_webhooks_dbt_row_is_not_mislabeled_as_airflow(
 def test_admin_webhooks_every_provider_yields_its_own_row(
     ctype: str, client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Guards the next provider addition: a connection of each registered provider
-    # must surface as a row of the SAME provider with its own events endpoint —
-    # never fall through to another provider's config (#647).
+    # Guards the next provider addition: a connection of each registered provider must surface as a
+    # row of the SAME provider with its own events endpoint.
     owner = _user(db_session, "owner@x.io")
     _orch_connection(db_session, owner, ctype=ctype, name=f"{ctype}-conn")
     db_session.commit()
@@ -359,15 +344,8 @@ def test_admin_webhooks_omits_providers_without_connections(
     assert providers == {"adf"}
 
 
-# ── SMTP pre-flight test (#737, ADR 0032 decision 7) ─────────────────────────
-#
-# Real endpoint → real OtpMailer; only `smtplib.SMTP` is mocked, at the transport
-# boundary — never `OtpMailer.send_preflight` itself (the seam under test must
-# stay real: the endpoint→mailer boundary, not just the mailer alone). These
-# tests prove the ROUTE is wired correctly — settings resolution, the
-# SecretStore dependency, the `require_workspace_admin` gate, and error-envelope
-# rendering; the exhaustive stage-classification matrix lives in
-# `test_otp_mailer.py`.
+# ── SMTP pre-flight test (#737, ADR 0032 decision 7) ───────────────────────── Real endpoint → real
+# OtpMailer; only `smtplib.SMTP` is mocked, at the transport boundary.
 
 
 def _set_auth_email_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -376,9 +354,8 @@ def _set_auth_email_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AUTH_EMAIL_USERNAME", "dataq@example.com")
     monkeypatch.setenv("AUTH_EMAIL_FROM", "DataQ <dataq@example.com>")
     monkeypatch.setenv("AUTH_EMAIL_PASSWORD_SECRET_NAME", "auth-email-password")
-    # `_validate_otp_auth` refuses to boot a "touched" AUTH_EMAIL_* block without
-    # a signup allowlist (ADR 0032 decision 2) — unrelated to this endpoint, but
-    # `Settings()` construction fails before the route ever runs without it.
+    # `_validate_otp_auth` refuses to boot a "touched" AUTH_EMAIL_* block without a signup allowlist
+    # (ADR 0032 decision 2) — unrelated to this endpoint.
     monkeypatch.setenv("AUTH_OTP_ALLOWED_DOMAINS", "dataq.local")
     get_settings.cache_clear()
 
@@ -418,19 +395,7 @@ def _reset_recording_smtp() -> Iterator[None]:
 
 @pytest.fixture(autouse=True)
 def _preflight_counter() -> Iterator[otp_service.InMemoryOtpCounterStore]:
-    """A process-local pre-flight counter for every test in this file (#1147).
-
-    Without it the throttle reaches for a REAL Redis, and the pre-flight tests would
-    then pass or fail on whether the local compose stack happens to be up — the
-    fail-open path makes an absent Redis look indistinguishable from a working cap.
-    Injecting the store is also what lets the fail-open test substitute an outage
-    deliberately.
-
-    Injected into `admin_service`, NOT `otp_service` — the two hold separate store
-    instances on purpose (a shared instance shares a circuit breaker, so an admin
-    brownout would fail open the public sign-in cap). Runs after conftest's
-    `_reset_caches`, which clears both globals around every test.
-    """
+    """A process-local pre-flight counter for every test in this file (#1147)."""
     store = otp_service.InMemoryOtpCounterStore()
     admin_service.set_preflight_counter_store_for_testing(store)
     yield store
@@ -471,7 +436,8 @@ def test_auth_email_preflight_not_configured_returns_503(
 
 class _ConnectFailSMTP(_RecordingSMTP):
     """Bad host / DNS failure / refused connection — smtplib.SMTP.__init__ itself
-    connects and raises before there is a context-managed object."""
+    connects and raises before there is a context-managed object.
+    """
 
     def __init__(self, host: str, port: int, timeout: float | None = None) -> None:
         raise OSError("[Errno -2] Name or service not known")
@@ -521,12 +487,8 @@ def test_auth_email_preflight_reports_the_failing_stage(
     assert "app-password" not in resp.text
 
 
-# ── SMTP pre-flight throttle (#1147) ─────────────────────────────────────────
-#
-# Every call to this endpoint is a real connection to the operator's mail relay.
-# The generic 300/min authenticated class was never a meaningful ceiling on that;
-# these tests pin the dedicated one, its independence from the sign-in quota, and
-# the fail-open bias it inherits from `otp_service`.
+# ── SMTP pre-flight throttle (#1147) ───────────────────────────────────────── Every call to this
+# endpoint is a real connection to the operator's mail relay.
 
 
 class _DownCounterStore:
@@ -547,7 +509,8 @@ def test_auth_email_preflight_429s_past_the_per_admin_cap(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The cap itself. A real 429 with the standard envelope — there is no
-    anti-enumeration reason to soften it, unlike `otp/request`."""
+    anti-enumeration reason to soften it, unlike `otp/request`.
+    """
     _wire_working_preflight(client, monkeypatch)
     monkeypatch.setenv("ADMIN_EMAIL_PREFLIGHT_PER_10MIN", "2")
     get_settings.cache_clear()
@@ -571,7 +534,8 @@ def test_a_failed_send_still_spends_a_preflight_slot(
 ) -> None:
     """Counted before the send, deliberately: what is bounded is connections opened
     at the relay, and a relay already refusing us is exactly when a retry loop does
-    the most damage. Counting only successes would leave the abusive case uncapped."""
+    the most damage. Counting only successes would leave the abusive case uncapped.
+    """
     _set_auth_email_env(monkeypatch)
     _grant_admin(monkeypatch)
     monkeypatch.setattr(smtplib, "SMTP", _ConnectFailSMTP)
@@ -590,19 +554,7 @@ def test_a_failed_send_still_spends_a_preflight_slot(
 def test_a_preflight_and_a_signin_never_touch_each_others_counters(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, _preflight_counter: Any
 ) -> None:
-    """Shared mechanism, separate budgets — asserted by driving BOTH paths.
-
-    An earlier version of this test only called the pre-flight and then asserted
-    `not any(k.startswith("otp:req:"))`. That could not fail for the reason its name
-    claimed: with no sign-in request in the test, no `otp:req:` key could exist no
-    matter how the code behaved. It proved a prefix, not a separation.
-
-    So: one pre-flight and one real `POST /auth/otp/request`, each against its own
-    injected store, and each store must hold exactly its own family of keys. A
-    pre-flight that spent a sign-in slot could lock a real person out of signing in;
-    a sign-in that spent a pre-flight slot would make the diagnostic unavailable for
-    no reason.
-    """
+    """Shared mechanism, separate budgets — asserted by driving BOTH paths."""
     _wire_working_preflight(client, monkeypatch)
     monkeypatch.setenv("ADMIN_EMAIL_PREFLIGHT_PER_10MIN", "5")
     # The #1137 floor sleeps a real second on every uniform request response.
@@ -634,18 +586,7 @@ def test_a_preflight_and_a_signin_never_touch_each_others_counters(
 def test_the_preflight_throttle_uses_its_OWN_store_instance(
     _preflight_counter: Any,
 ) -> None:
-    """Same class, separate instance — and the instance is what carries the circuit
-    breaker.
-
-    `RedisOtpCounterStore`'s breaker state is per-instance *deliberately* (#1135):
-    "folding both stores onto one breaker would mean an OTP brownout switching off
-    API rate limiting, and a rate-limit brownout switching off the mail-bomb cap."
-    Sharing `otp_service`'s singleton here would mean enough Redis errors from ADMIN
-    diagnostic traffic trips the breaker and, for the open window, silently fails
-    open the per-mailbox cap on the PUBLIC `/auth/otp/request`. Separate keys make
-    the budgets independent; only a separate instance makes their AVAILABILITY
-    independent, and nothing else in the suite would notice the difference.
-    """
+    """Same class, separate instance — and the instance is what carries the circuit breaker."""
     signin_store = otp_service.InMemoryOtpCounterStore()
     otp_service.set_counter_store_for_testing(signin_store)
 
@@ -659,7 +600,8 @@ def test_the_preflight_throttle_fails_OPEN_when_the_counter_store_is_down(
 ) -> None:
     """ADR 0035's bias, inherited: availability over enforcement. A Redis outage must
     not take away the operator's only mail-configuration diagnostic at the moment
-    they are most likely to need it."""
+    they are most likely to need it.
+    """
     _wire_working_preflight(client, monkeypatch)
     monkeypatch.setenv("ADMIN_EMAIL_PREFLIGHT_PER_10MIN", "1")
     get_settings.cache_clear()
@@ -673,18 +615,9 @@ def test_the_preflight_throttle_fails_OPEN_when_the_counter_store_is_down(
 def test_the_fail_open_warning_is_logged_ONCE_not_per_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Fail-open means the cap is enforcing nothing — so the very scenario this
-    throttle exists for (a scripted token in a loop) is also the one where an
-    unsuppressed warning becomes a log line PER REQUEST. That is the
-    log-amplification shape that starved Celery on 2026-07-13, and both sibling
-    counters (`otp_service`, `core.rate_limit`) suppress it for exactly this reason.
-
-    `capture_logs` with the module logger rebound INSIDE the capture, not `caplog`:
-    structlog's stdlib bridge is installed by `configure_logging()` at app startup
-    and `cache_logger_on_first_use=True` means `admin_service.log` has already cached
-    a bound logger by the time the full suite reaches here — so `caplog` yields an
-    EMPTY list and the assertion passes vacuously. (Confirmed the hard way: the first
-    version of this test captured 0 records.) Same trap `test_secrets.py` documents.
+    """Fail-open means the cap is enforcing nothing — so the very scenario this throttle exists for
+    (a scripted token in a loop) is also the one where an unsuppressed warning becomes a log
+    line PER REQUEST.
     """
     settings = Settings(admin_email_preflight_per_10min=1)
     admin_service.set_preflight_counter_store_for_testing(_DownCounterStore())
@@ -705,7 +638,8 @@ def test_the_preflight_cap_can_be_switched_off(
 ) -> None:
     """0 disables it — and must not merely raise the ceiling: nothing is counted at
     all, so the documented cost (falling back to the generic 300/min class) is what
-    an operator actually gets."""
+    an operator actually gets.
+    """
     _wire_working_preflight(client, monkeypatch)
     monkeypatch.setenv("ADMIN_EMAIL_PREFLIGHT_PER_10MIN", "0")
     get_settings.cache_clear()
@@ -719,7 +653,8 @@ def test_two_admins_do_not_share_one_preflight_budget(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Keyed per admin, so one admin's diagnostics cannot lock another's out. The
-    key is a digest of the user id, and different ids must land in different keys."""
+    key is a digest of the user id, and different ids must land in different keys.
+    """
     now = 1_000_000.0
     a, b = uuid.uuid4(), uuid.uuid4()
 
@@ -735,12 +670,7 @@ def test_two_admins_do_not_share_one_preflight_budget(
 def test_the_preflight_cap_resets_in_the_NEXT_window(
     monkeypatch: pytest.MonkeyPatch, _preflight_counter: Any
 ) -> None:
-    """A cap that never resets is an outage, not a throttle.
-
-    Driven at the service seam with a frozen clock rather than through HTTP: the
-    reset is a property of *time*, and the only honest way to assert it is to move
-    the clock rather than to sleep ten minutes or to infer it from key shapes.
-    """
+    """A cap that never resets is an outage, not a throttle."""
     settings = Settings(admin_email_preflight_per_10min=1)
     admin = uuid.uuid4()
     clock = {"now": 1_000_000.0}
@@ -758,7 +688,6 @@ def test_the_preflight_cap_resets_in_the_NEXT_window(
 
 
 def test_the_shipped_preflight_cap_default_is_three_per_ten_minutes() -> None:
-    """The value that protects a deployment is the DEFAULT — every test above
-    overrides it."""
+    """The value that protects a deployment is the DEFAULT — every test above overrides it."""
     assert Settings().admin_email_preflight_per_10min == 3
     assert admin_service.PREFLIGHT_WINDOW_SECONDS == 600

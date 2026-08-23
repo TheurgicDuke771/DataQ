@@ -1,16 +1,4 @@
-"""Unit tests for the live-probe disclosure seam (#1419, #1479).
-
-The seam decides two things the four probe routes must not decide for
-themselves: **whether values mask** (by destination, not by column) and **what
-the audit event says**. These tests pin the decision table directly, because the
-route-level tests can only observe the composite and would not distinguish
-"masked for the right reason" from "masked by accident".
-
-`mask_profile_columns` is tested for what it KEEPS as hard as for what it
-removes. The whole premise of the destination rule is that no capability is lost
-to a policy artifact, and a masker that quietly dropped `null_fraction` would
-break that promise while every "is it masked?" assertion stayed green.
-"""
+"""Unit tests for the live-probe disclosure seam (#1419, #1479)."""
 
 from __future__ import annotations
 
@@ -52,11 +40,7 @@ def test_egress_always_masks_even_with_no_policy() -> None:
 
 
 def test_interactive_shows_values_by_default() -> None:
-    """The point of the fix: an author's own preview does not lose its values.
-
-    If this ever flips, the dry-run and profiler have silently gone back to
-    trading a capability for a policy artifact.
-    """
+    """The point of the fix: an author's own preview does not lose its values."""
     assert values_are_masked(None, destination=Destination.INTERACTIVE) is False
     assert (
         values_are_masked({"pii_columns": ["email"]}, destination=Destination.INTERACTIVE) is False
@@ -80,11 +64,7 @@ def test_policy_pii_column_is_sensitive() -> None:
 
 
 def test_governance_tag_floor_is_honoured() -> None:
-    """The G3 warehouse tag is the floor a suite policy cannot lift.
-
-    This is the rung a second, hand-rolled sensitivity check would forget, which
-    is why the seam delegates to `run_service` instead of re-deriving it.
-    """
+    """The G3 warehouse tag is the floor a suite policy cannot lift."""
     sensitive = sensitive_profile_columns(
         [_col("field_7")], policy=None, tags={"field_7": "restricted"}
     )
@@ -92,12 +72,7 @@ def test_governance_tag_floor_is_honoured() -> None:
 
 
 def test_value_signal_is_used_not_just_the_column_name() -> None:
-    """A harmless-looking name holding emails must still classify as sensitive.
-
-    `_profile_sample_values` feeds `top_values`/min/max to the classifier for
-    exactly this case. Passing an empty list would leave only the name heuristic
-    and this column would sail through.
-    """
+    """A harmless-looking name holding emails must still classify as sensitive."""
     sensitive = sensitive_profile_columns(
         [_col("field_7", top=["ada@example.com", "bob@example.com"], lo=None, hi=None)],
         policy=None,
@@ -148,12 +123,7 @@ def test_empty_sensitive_list_is_a_passthrough(sensitive: list[str] | None) -> N
 
 
 def test_applicable_tags_keeps_the_sensitive_floor_on_an_off_asset_probe() -> None:
-    """F2: dropping the whole tag map masks LESS, not more.
-
-    The first version of this code dropped every tag when the probe named another
-    table, with a comment claiming that could "only mask more". Backwards: the map
-    carries the sensitive FLOOR as well as the clearances.
-    """
+    """F2: dropping the whole tag map masks LESS, not more."""
     tags = {"email": "restricted", "order_id": "public"}
     kept = applicable_tags(tags, probed_other_target=True)
     assert kept == {"email": "restricted"}  # floor kept, clearance dropped
@@ -165,12 +135,7 @@ def test_applicable_tags_are_untouched_for_the_suites_own_asset() -> None:
 
 
 def test_scalar_observed_value_is_masked() -> None:
-    """F4: `run_service.redact_observed_value` handles lists, not scalars.
-
-    `expect_column_max_to_be_between` on a text column reports the largest value —
-    a real cell — and it was returned verbatim while the audit event said
-    `masked: true`. An audit field that lies is worse than one that is missing.
-    """
+    """F4: `run_service.redact_observed_value` handles lists, not scalars."""
     policy = {"pii_columns": ["email"]}
     out = redact_probe_observed_value(
         {"observed_value": "ada@example.com"}, tested_column="email", policy=policy
@@ -186,12 +151,7 @@ def test_scalar_observed_value_on_an_unflagged_column_is_untouched() -> None:
 
 
 def test_egress_default_masks_an_unclassifiable_column_and_interactive_does_not() -> None:
-    """F5: the rung differs by destination — the same principle, one level deeper.
-
-    A free-text column no classifier can positively clear ships in full to an
-    author (whose profiler would be useless otherwise) and is masked toward a
-    model, matching what a persisted run's sample would do for the same column.
-    """
+    """F5: the rung differs by destination — the same principle, one level deeper."""
     cols = [_col("notes", top=["lorem ipsum", "dolor sit"], lo=None, hi=None)]
     assert sensitive_profile_columns(cols, policy=None) == []
     assert sensitive_profile_columns(cols, policy=None, destination=Destination.EGRESS) == ["notes"]

@@ -34,9 +34,8 @@ jobs:
         run: ruff check backend/
 
       - name: Typecheck-deps in sync
-        # Guard the pre-commit mypy hook against backend/requirements-typecheck.txt
-        # (Dependabot bumps the requirements file but bypasses the local hook —
-        # this catches the drift in CI, which previously slipped through).
+        # Guard the pre-commit mypy hook against backend/requirements-typecheck.txt (Dependabot
+        # bumps the requirements file but bypasses the local hook — this catches the drift in CI.
         run: python scripts/check-typecheck-deps.py
 
       - name: Pre-commit tooling pins in sync
@@ -99,19 +98,8 @@ jobs:
         run: pip install pip-audit==2.10.0
 
       - name: pip-audit (full runtime + test surface)
-        # Synchronous CVE gate over the entire runtime + test dependency tree
-        # (single source: requirements-dev.txt) + transitive deps, against the
-        # PyPI/OSV advisory DB. Complements the Dependabot alerts (full graph,
-        # async) with a fail-fast merge check. No ignored advisories: the five
-        # snowflake<4-era cryptography/pyOpenSSL ignores were retired in #553
-        # once #129 (ADR 0017) unblocked the upgrades — keep this list empty
-        # unless an advisory is deliberately accepted WITH a removal deadline.
-        #
-        # Bounded retry: pip-audit resolves the requirements file via PyPI's
-        # per-package JSON endpoint, so a single transient PyPI/OSV 5xx (e.g.
-        # "503 Backend is unhealthy") aborts the whole audit and flakes the gate.
-        # Retrying with backoff absorbs that *without* masking real findings — a
-        # genuine CVE fails every attempt and still blocks (90s worst-case backoff).
+        # Synchronous CVE gate over the entire runtime + test dependency tree (single source:
+        # requirements-dev.txt) + transitive deps, against the PyPI/OSV advisory DB.
         run: |
           audit() {
             pip-audit -r backend/requirements-dev.txt
@@ -133,15 +121,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Ephemeral Postgres for DB-backed integration tests (seed/run/endpoint).
-    # Matches the compose image; gen_random_uuid() is built in to PG16.
-    #
-    # Pulled from OUR GHCR mirror, not Docker Hub (#993). Service containers are
-    # pulled by the runner BEFORE any step runs, so an anonymous-pull throttle
-    # killed this required job before pytest started — twice in one day. The
-    # mirror is a digest-for-digest copy refreshed weekly by
-    # `mirror-ci-images.yml`, which also refuses a major-version drift: the
-    # `redis:7` pin is a SECURITY gate (#980 — Redis 8 bundles Vector Sets, an
-    # unpatched RCE surface), and Dependabot does not watch Docker image tags.
     services:
       postgres:
         image: ghcr.io/theurgicduke771/ci-postgres:16-alpine
@@ -182,19 +161,13 @@ jobs:
           pip install -r backend/requirements-dev.txt
 
       - name: mypy (tests)
-        # The slim `Backend — type check` job mypies backend/app against the typed
-        # subset; this gates backend/tests too — run here, where the full dev deps
-        # (pytest et al.) are installed so the test imports resolve. Keeps test type
-        # debt from accumulating unseen (the app-only scope had let 78 errors pile up).
+        # The slim `Backend — type check` job mypies backend/app against the typed subset; this
+        # gates backend/tests too — run here.
         run: mypy backend/tests/
 
       - name: pytest
-        # TEST_DATABASE_URL enables the db_session fixture; DATABASE_URL + REDIS_URL +
-        # DATAQ_E2E together enable the real-broker E2E (test_probe_e2e — DATAQ_E2E is
-        # the explicit-opt-in signal conftest.py's DATABASE_URL auto-redirect (#1130)
-        # can never set on its own, so this test stays a conscious choice even here).
-        # All DB/broker tests skip when unset (e.g. a contributor running pytest
-        # without the services).
+        # TEST_DATABASE_URL enables the db_session fixture; DATABASE_URL + REDIS_URL + DATAQ_E2E
+        # together enable the real-broker E2E (test_probe_e2e.
         env:
           TEST_DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_test
           DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_test
@@ -202,14 +175,8 @@ jobs:
           DATAQ_E2E: "1"
         run: pytest backend/tests/
 
-  # ── Leak prevention: secrets (betterleaks) + identifiers (#1472) ─────────────
-  #
-  # The job keeps its original NAME because that string is the required-status-check
-  # context in the `main` ruleset — renaming it would silently un-gate the branch.
-  # Its scope is now broader than the name: betterleaks finds secrets, the two
-  # scripts find identifiers and undeclared docs. They are different failures — a
-  # leaked secret is revoked and rotated, an identifier names something real that
-  # keeps existing and cannot be.
+  # ── Leak prevention: secrets (betterleaks) + identifiers (#1472) ───────────── The job keeps its
+  # original NAME because that string is the required-status-check context in the `main` ruleset.
   secrets:
     name: Secret scanning (betterleaks)
     runs-on: ubuntu-latest
@@ -220,16 +187,6 @@ jobs:
           fetch-depth: 0
 
       # Scan only the commits THIS event introduces, not the whole history.
-      # A full `git` history walk grows unbounded with the repo (1,000+ commits →
-      # >15 min in CI) and re-scans commits already scanned when they merged.
-      # Every line that reaches main is still scanned exactly once: a PR scans its
-      # own commits (base..head), and the push to main scans the squashed/merged
-      # commit (before..after) — the model gitleaks-action uses. Verified locally:
-      # full history ~88s vs ranged ~0.5s, and a planted non-allowlisted secret in
-      # the range is still detected (exit 1).
-      #
-      # All inputs here are GitHub-generated commit SHAs (no shell metacharacters),
-      # but pass them via env per workflow-injection best practice.
       - name: Compute commit range to scan
         id: range
         env:
@@ -248,13 +205,7 @@ jobs:
             echo "logopts=--no-merges ${PUSH_BEFORE}..${PUSH_AFTER}" >> "$GITHUB_OUTPUT"
           fi
 
-      # Betterleaks has no official GitHub Action; run the official pinned
-      # container image. Drop-in gitleaks replacement: nonzero exit on findings
-      # fails the job. safe.directory env is required because the container runs
-      # as root while checkout writes files as the runner user — without it git
-      # aborts with "detected dubious ownership". --log-opts limits the history
-      # walk to the computed range (passed via env to keep it a single arg);
-      # --git-workers parallelises the walk for larger ranges.
+      # Betterleaks has no official GitHub Action; run the official pinned container image.
       - name: Run betterleaks (incremental — only this event's new commits)
         env:
           LOGOPTS: ${{ steps.range.outputs.logopts }}
@@ -269,12 +220,7 @@ jobs:
             --git-workers=4 \
             --log-opts="$LOGOPTS"
 
-      # Backstop for the pre-commit hooks of the same name. Pre-commit can be
-      # skipped (--no-verify), is absent for edits made through the GitHub web UI,
-      # and Dependabot bypasses it entirely — which is exactly how the
-      # typecheck-deps drift got in before. Whole working tree, not a commit range:
-      # both checks are cheap and a full pass cannot miss a value introduced by a
-      # rebase or a merge.
+      # Backstop for the pre-commit hooks of the same name.
       - name: No personal or live-infrastructure identifiers
         run: python scripts/check-identifiers.py
 
@@ -340,10 +286,8 @@ jobs:
     name: Frontend — browser E2E (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    # Full-stack browser smoke (#128): real API + seeded demo data + dev-bypass,
-    # driven through the React UI. Mirrors the compose stack — Postgres + Redis
-    # services, the backend on :8000, Playwright starts its own Vite dev server.
-    # No Azure / datasource creds: connectivity fails-soft, the UI paths are real.
+    # Full-stack browser smoke (#128): real API + seeded demo data + dev-bypass, driven through the
+    # React UI.
     services:
       postgres:
         image: ghcr.io/theurgicduke771/ci-postgres:16-alpine
@@ -370,11 +314,8 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_e2e
       REDIS_URL: redis://localhost:6379/0
-      # api + seed must share the secret store so secrets the seed writes are
-      # readable by the api (compose parity) — EnvSecretStore is per-process and
-      # they are separate processes here. dev-bypass removes the auth wall.
-      # OPENBAO_TOKEN is generated per-run into $GITHUB_ENV by the step below:
-      # no credential, not even a throwaway CI one, lives in a tracked file.
+      # api + seed must share the secret store so secrets the seed writes are readable by the api
+      # (compose parity).
       SECRET_STORE: openbao
       OPENBAO_ADDR: http://localhost:8200
       AUTH_DEV_BYPASS: "true"
@@ -382,9 +323,8 @@ jobs:
       # dev-bypass identity is workspace admin (compose parity, ADR 0027) so
       # admin.spec.ts can drive /admin + /settings.
       WORKSPACE_ADMIN_EMAILS: dev-bypass@dataq.local
-      # Throttling off (#796, compose parity): dev-bypass requests carry no
-      # bearer → the whole suite shares one per-IP unauthenticated bucket
-      # (120/min) and 429s mid-run. The limiter is covered by its own tests.
+      # Throttling off (#796, compose parity): dev-bypass requests carry no bearer → the whole suite
+      # shares one per-IP unauthenticated bucket (120/min) and 429s mid-run.
       RATE_LIMIT_ENABLED: "false"
     steps:
       - uses: actions/checkout@v7
@@ -400,11 +340,8 @@ jobs:
           pip install -r backend/requirements-dev.txt
 
       - name: Start OpenBao (secret store)
-        # A step rather than a `services:` container because the root token is
-        # generated per run — service containers start before any step, so their
-        # env cannot come from $GITHUB_ENV, and the alternative (a literal token
-        # in this file) is exactly what CLAUDE.md §11 forbids. Dev mode is
-        # in-memory and auto-unsealed, which is all a single CI run needs.
+        # A step rather than a `services:` container because the root token is generated per run —
+        # service containers start before any step, so their env cannot come from $GITHUB_ENV.
         run: |
           token="$(openssl rand -hex 16)"
           echo "::add-mask::$token"
@@ -453,19 +390,13 @@ jobs:
 
       - name: Install Playwright browser
         working-directory: frontend
-        # Split the browser download from its OS deps (#704). The Chromium binary
-        # comes from the Playwright CDN (reliable). The `--with-deps` apt step used
-        # to fail intermittently on the runner's pre-configured
-        # packages.microsoft.com sources (azure-cli / MS-prod) — which DataQ's E2E
-        # doesn't need — so drop those sources before apt runs, then install the OS
-        # libs (from the standard Ubuntu archive) with a short retry as insurance.
+        # Split the browser download from its OS deps (#704).
         run: |
           pnpm exec playwright install chromium
           sudo rm -f /etc/apt/sources.list.d/*microsoft* /etc/apt/sources.list.d/*azure* || true
           for attempt in 1 2 3; do
-            # #1484: a stalled apt mirror hangs rather than exits non-zero, which
-            # the retry loop below can't detect on its own — `timeout` turns a
-            # hang into a fast failure the loop can actually retry.
+            # #1484: a stalled apt mirror hangs rather than exits non-zero, which the retry loop
+            # below can't detect on its own.
             if timeout 300 pnpm exec playwright install-deps chromium; then ok=1; break; fi
             echo "playwright install-deps attempt $attempt failed; retrying in 5s…"; sleep 5
           done
@@ -479,14 +410,8 @@ jobs:
           VITE_API_PROXY_TARGET: http://localhost:8000
         run: pnpm e2e
 
-      # ── Email-OTP lane (ADR 0032, #736) ──────────────────────────────────
-      # A SECOND api, because the auth seam picks its mode at import time and OTP
-      # wins over dev-bypass — one process cannot serve both lanes. The script
-      # also starts the local SMTP sink first and points the api's
-      # AUTH_EMAIL_CA_BUNDLE (#1146) at the throwaway certificate it emits, which
-      # is why the two cannot be independent steps (`Settings` validates that
-      # path exists at boot). No Azure and no cloud mailbox: this lane is
-      # entirely local.
+      # ── Email-OTP lane (ADR 0032, #736) ────────────────────────────────── A SECOND api, because
+      # the auth seam picks its mode at import time and OTP wins over dev-bypass.
       - name: Start the OTP stack (SMTP sink + otp-mode api)
         env:
           # Its own database, so the dev-bypass lane's seeded demo rows and this
@@ -522,10 +447,8 @@ jobs:
           retention-days: 7
 
   frontend-audit:
-    # Job name kept verbatim: it is the pinned required-check context on the main
-    # ruleset (same rule as the `secrets` job) — renaming it un-gates the branch.
-    # The step no longer runs `pnpm audit` (npm 410'd the legacy endpoints,
-    # 2026-07-15); see the step comment below (#877).
+    # Job name kept verbatim: it is the pinned required-check context on the main ruleset (same rule
+    # as the `secrets` job) — renaming it un-gates the branch.
     name: Frontend — dependency audit (pnpm audit)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -540,14 +463,8 @@ jobs:
           node-version: "24"
 
       - name: Audit lockfile via the npm bulk advisory endpoint (high+)
-        # npm retired the legacy audit endpoints on 2026-07-15 (410) and no
-        # RELEASED pnpm speaks the bulk endpoint yet (pnpm#11265; verified vs
-        # 11.13.1) — so the gate queries the bulk endpoint directly over the
-        # same pnpm-lock.yaml graph with the same high+ threshold (#877).
-        # No pnpm install needed: the script reads the lockfile. Fail-closed:
-        # endpoint/parse failures exit 2, never a silent pass. REVERT to
-        # `pnpm audit --audit-level=high` once a pnpm release supports the
-        # bulk endpoint (#877 tracks it).
+        # npm retired the legacy audit endpoints on 2026-07-15 (410) and no RELEASED pnpm speaks the
+        # bulk endpoint yet (pnpm#11265; verified vs 11.13.1).
         run: |
           npm install --prefix scripts --no-save --no-package-lock semver@7.8.5
           node scripts/audit_bulk.cjs --audit-level=high

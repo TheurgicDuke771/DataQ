@@ -45,13 +45,8 @@ function conn(overrides: Partial<Connection>): Connection {
   };
 }
 
-// ConnectionCard uses antd's App.useApp() for messages → wrap in <AntApp>; the
-// page navigates to /connections/new → wrap in a router; the page gates its
-// controls on the caller's workspace role → wrap in a resolved `/me`.
-//
-// Admin is the right default here rather than a convenience: these tests stand
-// in for the dev-bypass identity, which IS a workspace admin (#741). The
-// restricted perspectives get their own file (`roleAwareUi.test.tsx`).
+// ConnectionCard uses antd's App.useApp() for messages → wrap in <AntApp>; the page navigates to
+// /connections/new → wrap in a router.
 function renderPage() {
   return render(
     <MemoryRouter>
@@ -87,9 +82,7 @@ describe('Connections', () => {
   });
 
   it('flags a datasource whose recent runs are all failing, without clicking Test (#954)', async () => {
-    // The whole point: a dead credential must be visible on the LIST. Two prod
-    // Snowflake connections sat dead for weeks because this badge did not exist —
-    // the failure showed on the run, not on the connection that caused it.
+    // The whole point: a dead credential must be visible on the LIST.
     mockList.mockResolvedValue([
       conn({
         id: 'c1',
@@ -109,10 +102,8 @@ describe('Connections', () => {
   });
 
   it('warns before a credential expires, and stays silent when it cannot know (#838)', async () => {
-    // The half #828 left undone: an ADLS SAS states its own expiry, so the
-    // product can say so BEFORE lineage goes dark for six days. Equally
-    // important is the third card — a credential with no readable lifetime gets
-    // no badge at all, because a reassuring badge would be worse than none.
+    // The half #828 left undone: an ADLS SAS states its own expiry, so the product can say so
+    // BEFORE lineage goes dark for six days.
     const inDays = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString();
     mockList.mockResolvedValue([
       conn({ id: 'c1', name: 'adls-soon', credential_expires_at: inDays(5) }),
@@ -131,10 +122,8 @@ describe('Connections', () => {
   });
 
   it('says "expiry unknown" when the credential has never been checked (#1024)', async () => {
-    // Saying nothing for both "no expiry" and "not looked yet" is what made an
-    // unchecked credential look safe: the absence of a warning read as
-    // reassurance. Prod showed every connection NULL after a deploy, including
-    // SAS-bearing ones whose expiry is printed in the token.
+    // Saying nothing for both "no expiry" and "not looked yet" is what made an unchecked credential
+    // look safe: the absence of a warning read as reassurance.
     mockList.mockResolvedValue([conn({ id: 'c1', name: 'never-checked' })]);
 
     renderPage();
@@ -143,9 +132,8 @@ describe('Connections', () => {
   });
 
   it('flags a connection whose inventory sync is failing, only when opted in (#1104)', async () => {
-    // A connection opted into inventory sync whose principal can't read the
-    // enumeration query used to fail every daily tick invisibly: toggle on,
-    // connection test green, zero assets, no surface said why (#828 shape).
+    // A connection opted into inventory sync whose principal can't read the enumeration query used
+    // to fail every daily tick invisibly: toggle on, connection test green, zero assets.
     mockList.mockResolvedValue([
       conn({
         id: 'c1',
@@ -180,9 +168,8 @@ describe('Connections', () => {
   });
 
   it('shows a neutral note for a database that has always enumerated zero tables (#1242)', async () => {
-    // Snowflake's INFORMATION_SCHEMA is privilege-filtered, not access-denied, so
-    // a role with no grants "succeeds" at zero rows — indistinguishable from a
-    // genuinely empty database. This must read as informational, not an error.
+    // Snowflake's INFORMATION_SCHEMA is privilege-filtered, not access-denied, so a role with no
+    // grants "succeeds" at zero rows — indistinguishable from a genuinely empty database.
     mockList.mockResolvedValue([
       conn({
         id: 'c1',
@@ -227,9 +214,8 @@ describe('Connections', () => {
   });
 
   it('never shows a zero-table badge for a connection currently failing to sync (#1242)', async () => {
-    // A stale `inventory_sync_last_table_count` from before the sync started
-    // erroring must not render as if it were the current state — the failing
-    // badge above already covers "something is wrong here".
+    // A stale `inventory_sync_last_table_count` from before the sync started erroring must not
+    // render as if it were the current state.
     mockList.mockResolvedValue([
       conn({
         id: 'c1',

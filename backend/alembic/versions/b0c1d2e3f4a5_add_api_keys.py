@@ -1,18 +1,4 @@
-"""add api_keys (DataQ-issued PATs — ADR 0026 phase 1, #461)
-
-Revision ID: b0c1d2e3f4a5
-Revises: a9b0c1d2e3f4
-Create Date: 2026-07-04 00:00:00.000000+00:00
-
-Adds the ``api_keys`` table: user-scoped personal access tokens hashed at rest
-(SHA-256 of a high-entropy random token; show-once plaintext). The unique
-``key_hash`` index doubles as the O(1) per-request auth lookup. Keys
-cascade-delete with their owning user (lifecycle tied to the account — no
-credential outlives it).
-
-Backward-compatible: a brand-new table, no change to existing tables, no data
-rewrite, no two-step.
-"""
+"""add api_keys (DataQ-issued PATs — ADR 0026 phase 1, #461)"""
 
 from collections.abc import Sequence
 

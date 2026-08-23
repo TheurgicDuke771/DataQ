@@ -126,9 +126,8 @@ describe('IncidentsPanel', () => {
     mockResolve.mockResolvedValue(detail({ status: 'resolved' }));
     renderPanel({ s1: 'owner' });
     await userEvent.click(await screen.findByRole('button', { name: 'Resolve' }));
-    // Popconfirm — WAIT for the confirming "Resolve" to render before clicking:
-    // findAll resolves on the first match (the trigger), and clicking the trigger
-    // again toggles the popover closed — the CI-speed flake this guards against.
+    // Popconfirm — WAIT for the confirming "Resolve" to render before clicking: findAll resolves on
+    // the first match (the trigger), and clicking the trigger again toggles the popover closed.
     await waitFor(() =>
       expect(screen.getAllByRole('button', { name: 'Resolve' }).length).toBeGreaterThan(1),
     );
@@ -148,9 +147,6 @@ describe('IncidentsPanel', () => {
     // …the list is NOT reloaded (initial fetch only)…
     expect(mockList).toHaveBeenCalledTimes(1);
     // …and the action button is usable again (busy state reset in finally).
-    // Name regex + button-level class: jsdom never fires the leave-motion events,
-    // so the spinner SPAN lingers mid-animation — but the button's own
-    // `ant-btn-loading` state class drops the moment `loading` goes false.
     const ackButton = await screen.findByRole('button', { name: /Acknowledge/ });
     expect(ackButton).toBeEnabled();
     expect(ackButton).not.toHaveClass('ant-btn-loading');

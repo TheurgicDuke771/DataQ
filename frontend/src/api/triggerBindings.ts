@@ -1,12 +1,8 @@
 import { api } from './client';
 
 /**
- * Trigger bindings — map a successful orchestrator run to a suite so the suite
- * runs on that pipeline/DAG's success (CLAUDE.md §4). Provider-agnostic: the
- * composite key (`provider`, `pipeline_or_dag_id`, `env`) → `suite_id`. Managing
- * a binding needs `edit` on the suite (backend-gated); listing needs `view`.
- * Orchestration providers are *never* a datasource — this is the only place a
- * pipeline/DAG id is bound to a suite.
+ * Trigger bindings — map a successful orchestrator run to a suite so the suite runs on that
+ * pipeline/DAG's success (CLAUDE.md §4).
  */
 
 /** Mirrors the backend `ORCHESTRATION_PROVIDERS` tuple (db/models.py — ADR 0029). */
@@ -20,11 +16,8 @@ export const PROVIDER_LABELS: Record<OrchestrationProvider, string> = {
 };
 
 /**
- * What each provider's DataQ callback snippet hooks into — used in setup copy
- * ("Configured in the <noun> callback snippet"). Exhaustive over the tuple so a
- * new provider is a compile error here, not silently inherited Airflow wording
- * (the #647 mislabeling class, one layer up). ADF authenticates via URL token
- * (no snippet), so its entry is only for exhaustiveness.
+ * What each provider's DataQ callback snippet hooks into — used in setup copy ("Configured in the
+ * <noun> callback snippet").
  */
 export const PROVIDER_CALLBACK_NOUNS: Record<OrchestrationProvider, string> = {
   adf: 'pipeline',
@@ -33,12 +26,8 @@ export const PROVIDER_CALLBACK_NOUNS: Record<OrchestrationProvider, string> = {
 };
 
 /**
- * Mirrors the backend `TriggerBindingWarningRead` — an advisory, non-blocking
- * signal returned alongside a create/update response (#1186). Today's one code:
- * `ambiguous_orchestration_url` — this binding's (provider, env) connection
- * shares its resource (e.g. an Airflow `base_url`) with a connection in a
- * DIFFERENT env, so a pipeline/DAG run attributed to that other env will not
- * match this binding — it can silently never fire.
+ * Mirrors the backend `TriggerBindingWarningRead` — an advisory, non-blocking signal returned
+ * alongside a create/update response (#1186).
  */
 export interface TriggerBindingWarning {
   code: string;
@@ -93,13 +82,8 @@ export async function deleteTriggerBinding(id: string): Promise<void> {
 }
 
 /**
- * Mirrors the backend `NearMissRead` (#1186/#1199) — a currently-active env
- * mismatch: a succeeded pipeline/DAG run keeps landing in `run_env`, but the
- * only ENABLED binding for this `(provider, pipeline_or_dag_id)` is scoped to
- * `binding_env`, so it has never fired and never will until one of the two
- * envs is corrected. Distinct from `TriggerBindingWarning` above: that one is
- * advisory and fires at create/update time from a shared-URL heuristic; this is
- * the ingest-time signal — the mismatch was actually observed happening.
+ * Mirrors the backend `NearMissRead` (#1186/#1199) — a currently-active env mismatch: a succeeded
+ * pipeline/DAG run keeps landing in `run_env`, but the only ENABLED binding for this `(provider.
  */
 export interface TriggerEnvNearMiss {
   provider: OrchestrationProvider;
@@ -110,10 +94,8 @@ export interface TriggerEnvNearMiss {
 }
 
 /**
- * `GET /orchestration/near-misses` — suite-scoped like `GET /trigger-bindings`
- * (near-misses are derived from suite-owned binding rows, so the backend restricts
- * them to owned-or-shared suites), NOT auth-only like `/orchestration/pipelines`.
- * Pass `suiteId` to narrow to one suite's bindings.
+ * `GET /orchestration/near-misses` — suite-scoped like `GET /trigger-bindings` (near-misses are
+ * derived from suite-owned binding rows, so the backend restricts them to owned-or-shared suites).
  */
 export async function listEnvNearMisses(suiteId?: string): Promise<TriggerEnvNearMiss[]> {
   const { data } = await api.get<TriggerEnvNearMiss[]>('/orchestration/near-misses', {

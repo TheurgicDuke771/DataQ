@@ -1,11 +1,4 @@
-"""Dashboard read API — the Enhanced Monitoring Dashboard summary (Week 6, ADR 0022).
-
-A single suite-scoped aggregate: KPIs (health score, pass rate, run count, active
-connections), a per-day run trend, and per-suite performance. All scoping is done
-in the service via the owned-or-shared accessible-suite filter, so this endpoint
-is gated on authentication only (the data it returns is already scoped to the
-caller). Read-only; no JSONB is reduced in Python (ADR 0005 / 0012).
-"""
+"""Dashboard read API — the Enhanced Monitoring Dashboard summary (Week 6, ADR 0022)."""
 
 from __future__ import annotations
 
@@ -34,9 +27,8 @@ class KpisRead(ApiModel):
     pass_rate: float | None
     total_runs: int
     active_connections: int
-    # #352 enrichments — avg run duration + period-over-period deltas vs the
-    # previous equivalent window. Score/rate deltas are points; runs/duration
-    # deltas are % change. None = no data to compare (never a fabricated 0).
+    # #352 enrichments — avg run duration + period-over-period deltas vs the previous equivalent
+    # window.
     avg_duration_ms: float | None
     health_score_delta: float | None
     pass_rate_delta: float | None

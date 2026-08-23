@@ -95,17 +95,7 @@ function renderAt(runId: string) {
   );
 }
 
-/**
- * Scoped query bound to the interactive on-screen region (`data-testid`
- * `rd-screen`) — since the print-only `RunReport` (#345) renders a parallel
- * copy of the suite name / check names / statuses, plain `screen.getByText`
- * now matches twice for anything the report also shows. Tests asserting on
- * the *interactive page* scope through this helper; tests asserting on the
- * *report* scope through `screen.findByTestId('run-report')` instead. The
- * `rd-screen` wrapper itself renders synchronously (loading/error/ok are all
- * inside it), so this needs no `await` — callers still `await` the first
- * `findBy*` query on the returned bindings for the data to land.
- */
+/** Scoped query bound to the interactive on-screen region (`data-testid` `rd-screen`). */
 function screenRegion() {
   return within(screen.getByTestId('rd-screen'));
 }
@@ -196,11 +186,8 @@ describe('RunDetail page', () => {
   });
 
   it('falls back to just the failing-sample (no CheckTrend) for a result whose check was deleted', async () => {
-    // check_id 'chk-gone' has no matching entry in listChecks (e.g. the check
-    // was deleted after the run). `checks.has(...)` is false, so the expanded
-    // row must skip CheckTrend entirely (it has no thresholds/kind to render
-    // against) and fall back to the failing-sample alone — never render a
-    // trend for an unknown check, and never lose the sample either.
+    // check_id 'chk-gone' has no matching entry in listChecks (e.g. the check was deleted after the
+    // run).
     mockGetRun.mockResolvedValue({
       ...runDetail,
       results: [
@@ -213,9 +200,8 @@ describe('RunDetail page', () => {
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([check]); // 'chk1' only — 'chk-gone' is absent
     renderAt('r1');
-    // Scoped (#345): the print-only RunReport also renders the (fallback,
-    // unresolved-id) check name, which for this fixture happens to render the
-    // same 8-char string as the interactive table's sliced-id fallback.
+    // Scoped (#345): the print-only RunReport also renders the (fallback, unresolved-id) check
+    // name.
     const region = screenRegion();
     const user = userEvent.setup();
 
@@ -289,12 +275,8 @@ describe('RunDetail page', () => {
     expect(region.getByText(/values redacted/)).toBeInTheDocument();
   });
 
-  // -- #424: the sample header must match the actual per-column redaction state --
-  // Scoped to the on-screen region throughout (`screenRegion()`) -- since the
-  // print-only `RunReport` (#345) also renders the check name "order_id not
-  // null", the unscoped `screen.findByText` these started as would now match
-  // twice; the redaction-label assertions after each expand aren't duplicated
-  // (the report omits samples entirely) but stay scoped for consistency.
+  // -- #424: the sample header must match the actual per-column redaction state -- Scoped to the
+  // on-screen region throughout (`screenRegion()`) -- since the print-only `RunReport` (#345) also
 
   it('says "values shown" when the API reports no columns were redacted', async () => {
     mockGetRun.mockResolvedValue({
@@ -351,10 +333,8 @@ describe('RunDetail page', () => {
     expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
     expect(region.getByText(/1 column redacted/)).toBeInTheDocument();
     expect(region.queryByText(/values redacted/)).not.toBeInTheDocument();
-    // #1183: the identifier row must actually render — a masked column and a
-    // shown identifier column can both come out of `unexpected_index_list`.
-    // (antd Table renders each header twice — a visible <th> plus a hidden
-    // width-measurement node — so header assertions use the *AllBy* variant.)
+    // #1183: the identifier row must actually render — a masked column and a shown identifier
+    // column can both come out of `unexpected_index_list`.
     expect(region.getAllByText('order_id').length).toBeGreaterThan(0);
     expect(region.getByText('ORD-1')).toBeInTheDocument();
     expect(region.getAllByText('email').length).toBeGreaterThan(0);
@@ -364,10 +344,8 @@ describe('RunDetail page', () => {
   // ── #1183: unexpected_index_list identifier column ─────────────────────
 
   it('prefers unexpected_index_list over partial_unexpected_list, surfacing the identifier column (#1183)', async () => {
-    // Real prod shape (Iceberg — Purchase Orders, `supplier_id not null`):
-    // unexpected_index_list carries the identifier + failing value as a row
-    // dict; partial_unexpected_list is present too (bare nulls) but must lose
-    // to the richer, already-redacted index list.
+    // Real prod shape (Iceberg — Purchase Orders, `supplier_id not null`): unexpected_index_list
+    // carries the identifier + failing value as a row dict.
     mockGetRun.mockResolvedValue({
       ...runDetail,
       results: [
@@ -397,10 +375,8 @@ describe('RunDetail page', () => {
     await user.click(region.getByRole('button', { name: /expand row/i }));
 
     expect(await region.findByText(/Failing rows/)).toBeInTheDocument();
-    // The identifier column header and a real PO value are visible — this is
-    // exactly what #1183 reported as missing (a single bare "value" column
-    // of nulls instead). (antd Table double-renders header text — see note
-    // in the previous test.)
+    // The identifier column header and a real PO value are visible — this is exactly what #1183
+    // reported as missing (a single bare "value" column of nulls instead).
     expect(region.getAllByText('po_id').length).toBeGreaterThan(0);
     expect(region.getByText('PO-20260727T063156-00010')).toBeInTheDocument();
     expect(region.getByText('PO-20260727T063156-00011')).toBeInTheDocument();
@@ -412,12 +388,8 @@ describe('RunDetail page', () => {
   });
 
   it('caps the rendered rows and shows a "not shown" count for a large unexpected_index_list (#1190 review)', async () => {
-    // Unlike partial_unexpected_list (GX-capped ~20 on every engine), GX's
-    // unexpected_index_list is NOT capped under result_format=COMPLETE on the
-    // pandas engine (flat-file/ADLS/S3/Iceberg) — gx_runner always requests
-    // COMPLETE. A check with many failing rows on those datasources can hand
-    // the frontend a much longer list than the table should ever render with
-    // pagination={false}, so the component must cap what it displays itself.
+    // Unlike partial_unexpected_list (GX-capped ~20 on every engine), GX's unexpected_index_list is
+    // NOT capped under result_format=COMPLETE on the pandas engine (flat-file/ADLS/S3/Iceberg).
     const bigIndexList = Array.from({ length: 45 }, (_, i) => ({
       po_id: `PO-${String(i).padStart(5, '0')}`,
       supplier_id: null,
@@ -507,8 +479,7 @@ describe('RunDetail page', () => {
 
   it('also falls back when unexpected_index_list is present but not dict-shaped (#1183)', async () => {
     // Defence in depth: the backend already strips a non-dict index list
-    // (`gx_runner._is_identifier_index_list`), but the frontend must not
-    // trust an unexpected shape either.
+    // (`gx_runner._is_identifier_index_list`), but the frontend must not trust an unexpected shape
     mockGetRun.mockResolvedValue({
       ...runDetail,
       results: [
@@ -539,10 +510,8 @@ describe('RunDetail page', () => {
   });
 
   it('falls back to "partially redacted" when partial has no nameable column (#1115)', async () => {
-    // Reachable when an anonymous mask (a scalar partial_unexpected_list with no
-    // tested_column) coincides with some other column being shown: the tracker
-    // reports "partial" but has no column name to attribute the mask to, so
-    // redacted_columns is empty. "0 columns redacted" would be false-adjacent.
+    // Reachable when an anonymous mask (a scalar partial_unexpected_list with no tested_column)
+    // coincides with some other column being shown: the tracker reports "partial" but has no column
     mockGetRun.mockResolvedValue({
       ...runDetail,
       results: [
@@ -616,10 +585,8 @@ describe('RunDetail page', () => {
     const body = payload as { run: { suite_name: string }; checks: { sampling: unknown }[] };
     expect(body.run.suite_name).toBe('Orders quality');
     expect(body.checks).toHaveLength(1);
-    // Explicit null, not an absent key: JSON is the machine-readable artifact
-    // most likely to feed downstream reporting, and "we looked and it was a
-    // complete read" must be distinguishable from "this export predates the
-    // field" (#1333 F2).
+    // Explicit null, not an absent key: JSON is the machine-readable artifact most likely to feed
+    // downstream reporting.
     expect(body.checks[0].sampling).toBeNull();
   });
 
@@ -727,9 +694,8 @@ describe('RunDetail page', () => {
       renderAt('r1');
 
       const report = await screen.findByTestId('run-report');
-      // Suite header, run meta, and the per-check row all present — the report
-      // renders unconditionally (hidden by print CSS, not by React) so
-      // `window.print()` has no async data-fetch to race.
+      // Suite header, run meta, and the per-check row all present — the report renders
+      // unconditionally (hidden by print CSS.
       expect(within(report).getByText('Orders quality')).toBeInTheDocument();
       expect(within(report).getByText(/Run r1/)).toBeInTheDocument();
       expect(within(report).getByText('manual:u1')).toBeInTheDocument();
@@ -746,9 +712,8 @@ describe('RunDetail page', () => {
       renderAt('r1');
 
       const report = await screen.findByTestId('run-report');
-      // The interactive table gets a <SnoozedTag> Tag/Tooltip beside the check
-      // name; a Tag doesn't survive print, so the report gets the same signal
-      // as plain text instead of silently dropping it.
+      // The interactive table gets a <SnoozedTag> Tag/Tooltip beside the check name; a Tag doesn't
+      // survive print.
       expect(within(report).getByText('order_id not null (snoozed)')).toBeInTheDocument();
     });
 
@@ -766,10 +731,8 @@ describe('RunDetail page', () => {
     });
 
     it('carries the sampled caveat into the printed report (#1333 F1)', async () => {
-      // The report is the artifact that gets circulated, and it outlives the
-      // page that would have explained it — a fully-sampled all-pass run
-      // printing as an unqualified clean bill is the overclaim the whole
-      // feature exists to prevent. Same parity rule the snooze marker follows.
+      // The report is the artifact that gets circulated, and it outlives the page that would have
+      // explained it.
       mockGetRun.mockResolvedValue({
         ...runDetail,
         results: [
@@ -832,11 +795,8 @@ describe('RunDetail page', () => {
       renderAt('r1');
 
       const report = await screen.findByTestId('run-report');
-      // The fixture's sample_failures carries a partial_unexpected_list (even
-      // though every cell is already API-redacted to "<redacted>"); the report
-      // must not surface it at all — not the masked placeholder, not a count,
-      // not a "Failing rows" section. Omission, not re-redaction, is the
-      // chosen parity strategy (matches the existing CSV/JSON export).
+      // The fixture's sample_failures carries a partial_unexpected_list (even though every cell is
+      // already API-redacted to "<redacted>"); the report must not surface it at all.
       expect(within(report).queryByText(/Failing rows/)).not.toBeInTheDocument();
       expect(within(report).queryByText('<redacted>')).not.toBeInTheDocument();
       expect(within(report).queryByText(/unexpected_count/)).not.toBeInTheDocument();
@@ -856,11 +816,8 @@ describe('RunDetail page', () => {
 });
 
 describe('RunDetail — Observed column bounding (#1207)', () => {
-  // #1184's review dismissed this column as "always a compact scalar/small
-  // dict" — false for schema_drift, whose observed_value carries full
-  // added/removed column-name lists plus a type_changed entry per drifted
-  // column (backend/app/services/schema_drift.py diff_schemas()). This shape
-  // is what actually stretched a real user's table.
+  // #1184's review dismissed this column as "always a compact scalar/small dict" — false for
+  // schema_drift.
   const schemaDriftCheck: Check = {
     id: 'chk3',
     suite_id: 's1',
@@ -899,9 +856,8 @@ describe('RunDetail — Observed column bounding (#1207)', () => {
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([schemaDriftCheck]);
     renderAt('r1');
-    // Scoped (#345): the print-only RunReport also renders `formatScalar`
-    // of the same observed_value as plain text, so an unscoped screen query
-    // would match twice.
+    // Scoped (#345): the print-only RunReport also renders `formatScalar` of the same
+    // observed_value as plain text, so an unscoped screen query would match twice.
     const region = screenRegion();
     const user = userEvent.setup();
 
@@ -909,12 +865,8 @@ describe('RunDetail — Observed column bounding (#1207)', () => {
 
     const expectedText = JSON.stringify(longObservedValue);
     const trigger = region.getByText(expectedText);
-    // The `ant-table-cell-ellipsis` class alone proved nothing — it was present
-    // in production the whole time the column rendered unbounded (#1282), since
-    // `scroll={{ x: 'max-content' }}` makes the column `width` a non-binding
-    // hint. The bound that binds is the inline style on the span; jsdom can
-    // only see that it's applied, so the measurement lives in
-    // `e2e/results.spec.ts`.
+    // The `ant-table-cell-ellipsis` class alone proved nothing — it was present in production the
+    // whole time the column rendered unbounded (#1282).
     expect(trigger.closest('td')).toHaveClass('ant-table-cell-ellipsis');
     expect(trigger.closest('span[style]')).toHaveStyle({
       maxWidth: '220px',
@@ -929,9 +881,8 @@ describe('RunDetail — Observed column bounding (#1207)', () => {
   });
 
   it('leaves a compact scalar observed_value rendering unchanged', async () => {
-    // The base `runDetail` fixture already carries a compact
-    // { unexpected_percent: 2 } observed_value on an ordinary expectation
-    // check — confirms the bounded column doesn't alter the small-payload case.
+    // The base `runDetail` fixture already carries a compact { unexpected_percent: 2 }
+    // observed_value on an ordinary expectation check.
     mockGetRun.mockResolvedValue(runDetail);
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([check]);
@@ -1041,10 +992,7 @@ describe('RunDetail — anomaly cold-start hint (#593)', () => {
           expected_value: null,
           redaction: null,
           redacted_columns: [],
-          // Non-null with zero rows (unlike a raw GX sample, an anomaly result
-          // never carries one — this shape just gives the "No sample rows
-          // captured." branch something concrete to render so the test can
-          // confirm the row actually expanded).
+          // Non-null with zero rows (unlike a raw GX sample, an anomaly result never carries one.
           sample_failures: {
             unexpected_count: 0,
             unexpected_percent: 0,
@@ -1146,9 +1094,8 @@ describe('RunDetail — anomaly cold-start hint (#593)', () => {
   });
 
   it('does not badge a "sample" that covered the whole dataset', async () => {
-    // rows === total_rows and `sampled: false` — the read was complete, so a
-    // caveat here would be a false one. Pinned on the page, not just the
-    // component, because this is where a reader would act on it.
+    // rows === total_rows and `sampled: false` — the read was complete, so a caveat here would be a
+    // false one.
     mockGetRun.mockResolvedValue({
       ...runDetail,
       results: [

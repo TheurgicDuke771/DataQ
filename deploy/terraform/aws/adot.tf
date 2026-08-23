@@ -1,21 +1,4 @@
-# APM/tracing target (#1369) — the AWS counterpart of the Azure stack's App
-# Insights export. The APPLICATION half already exists and is vendor-neutral:
-# core/otel.py (#589) exports spans AND logs to any OTEL_EXPORTER_OTLP_ENDPOINT
-# via opentelemetry-exporter-otlp-proto-http. This file supplies the consumer:
-# an ADOT collector sidecar in the api + worker tasks receiving OTLP on
-# localhost:4318 and shipping traces → X-Ray, logs → CloudWatch.
-#
-# Config is injected via AOT_CONFIG_CONTENT (an ADOT-supported env override)
-# instead of the image's /etc/ecs/ecs-default-config.yaml: the default config
-# also runs statsd + EMF-metrics pipelines this deployment doesn't use, and a
-# pipeline we run is a pipeline we must grant IAM for — a minimal config keeps
-# the task-role grant minimal. The logs pipeline is NOT optional: otel.py
-# builds a log exporter from the same endpoint, and a collector with no logs
-# pipeline 404s /v1/logs — a repeating export failure is exactly the #852
-# exporter-noise-loop shape.
-#
-# X-Ray accepts W3C/random OTel trace ids (AWS added support in 2023), so the
-# app needs no X-Ray-specific id generator.
+# APM/tracing target (#1369) — the AWS counterpart of the Azure stack's App Insights export.
 
 resource "aws_cloudwatch_log_group" "otel" {
   name              = "/dataq-app/otel"
@@ -31,9 +14,7 @@ resource "aws_cloudwatch_log_group" "adot" {
   tags              = { Name = "dataq-app-adot" }
 }
 
-# Task-role grant for what the two pipelines actually do. X-Ray's write
-# actions support no resource-level scoping (SAR: PutTraceSegments etc. are
-# resources=*); the logs half is scoped to the one group the config names.
+# Task-role grant for what the two pipelines actually do.
 data "aws_iam_policy_document" "adot" {
   statement {
     sid = "AdotXrayWrite"
@@ -78,16 +59,12 @@ locals {
   # release notes before bumping: the collector's config schema drifts.
   adot_image = "public.ecr.aws/aws-observability/aws-otel-collector:v0.49.0"
 
-  # One config per service so the CloudWatch log STREAM name distinguishes
-  # api-emitted from worker-emitted OTel logs. Region comes from the task's
-  # own AWS_REGION/metadata — nothing hardcoded.
+  # One config per service so the CloudWatch log STREAM name distinguishes api-emitted from worker-
+  # emitted OTel logs.
   adot_config = {
     for svc in ["api", "worker"] : svc => yamlencode({
-      # Loopback, not 0.0.0.0: awsvpc mode shares one network namespace across
-      # the task's containers, so localhost reaches the sidecar — and these
-      # tasks carry public IPs (no-NAT design), so a wildcard bind would put
-      # an unauthenticated OTLP write endpoint one SG-rule change away from
-      # the internet (PR #1371 review).
+      # Loopback, not 0.0.0.0: awsvpc mode shares one network namespace across the task's
+      # containers, so localhost reaches the sidecar — and these tasks carry public IPs (no-NAT
       receivers  = { otlp = { protocols = { http = { endpoint = "127.0.0.1:4318" } } } }
       processors = { batch = {} }
       exporters = {

@@ -10,9 +10,8 @@ import {
 import { ConfigJson, HistoryDrawer } from '../HistoryDrawer';
 
 /**
- * Connection version history (#654) — the connection twin of the check-history
- * drawer (#280), on the shared `HistoryDrawer` shell. Snapshots are
- * credential-free: only the editable, non-secret fields are versioned.
+ * Connection version history (#654) — the connection twin of the check-history drawer (#280), on
+ * the shared `HistoryDrawer` shell.
  */
 export function ConnectionHistoryDrawer({
   open,

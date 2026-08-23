@@ -51,7 +51,8 @@ def _params(**overrides: Any) -> Any:
 def test_score_matches_a_hand_computed_z() -> None:
     """priors 10/12/14/16/18 → mean 14, SAMPLE stddev sqrt(10) ≈ 3.162278.
     value 20 → |20-14| / 3.162278 = 1.897367. Hand-computed so a silent switch to
-    the population stddev (which would give 2.121) fails here."""
+    the population stddev (which would give 2.121) fails here.
+    """
     z, mean, stddev, degenerate = score(20.0, [10.0, 12.0, 14.0, 16.0, 18.0])
     assert mean == 14.0
     assert stddev == pytest.approx(3.1622776601, rel=1e-9)
@@ -61,7 +62,8 @@ def test_score_matches_a_hand_computed_z() -> None:
 
 def test_score_is_symmetric_a_drop_scores_like_a_spike() -> None:
     """The metric is |deviation| — a collapse in row count must escalate exactly
-    like a spike, or half the incidents the kind exists for go unreported."""
+    like a spike, or half the incidents the kind exists for go unreported.
+    """
     priors = [100.0, 110.0, 90.0, 105.0, 95.0]
     high, _, _, _ = score(140.0, priors)
     low, _, _, _ = score(60.0, priors)
@@ -76,7 +78,8 @@ def test_degenerate_stddev_with_an_identical_value_is_zero() -> None:
 def test_degenerate_stddev_with_a_different_value_is_the_finite_sentinel() -> None:
     """The true z is +inf. `severity.extract_metric` DROPS a non-finite metric as
     "nothing to band", which would resolve maximal deviation to a silent `pass` —
-    so the sentinel is a documented finite number, not arithmetic."""
+    so the sentinel is a documented finite number, not arithmetic.
+    """
     z, _, _, degenerate = score(51.0, [50.0, 50.0, 50.0])
     assert z == ANOMALY_DEGENERATE_Z
     assert degenerate is True
@@ -106,7 +109,8 @@ def test_payload_below_min_points_is_the_cold_start_shape() -> None:
 
 def test_payload_at_exactly_min_points_scores() -> None:
     """The boundary: `< min_points` skips, `== min_points` evaluates. An off-by-one
-    here would leave every check one run behind forever."""
+    here would leave every check one run behind forever.
+    """
     priors = [10.0] * 2 + [12.0]
     payload = build_score_payload(11.0, priors, _params(min_points=3))
     assert "insufficient_history" not in payload
@@ -139,7 +143,8 @@ def test_eligible_values_takes_the_last_window_in_order() -> None:
 
 def test_seasonality_keeps_only_the_same_weekday() -> None:
     """`_NOW` is a Wednesday. With seasonality on, only the observations 7 and 14
-    days back count — the Monday-is-always-triple case the option exists for."""
+    days back count — the Monday-is-always-triple case the option exists for.
+    """
     observations = [_obs(n, float(n)) for n in (14, 10, 7, 3, 1)]
     values = eligible_values(observations, now=_NOW, params=_params(seasonality=True))
     assert values == [14.0, 7.0]
@@ -167,7 +172,8 @@ def test_trim_keeps_the_newest_window() -> None:
 def test_trim_keeps_seven_windows_when_seasonal() -> None:
     """The retained ring has to outlast the weekday filter — trimming to `window`
     would leave a seasonal check with at most one or two same-weekday points and a
-    permanent cold start."""
+    permanent cold start.
+    """
     observations = [_obs(n, float(n)) for n in range(40, 0, -1)]
     assert len(trim(observations, _params(window=4, seasonality=True))) == 28
 
@@ -199,7 +205,8 @@ def test_a_future_payload_version_is_not_misread() -> None:
 def test_a_different_target_metric_restarts_learning() -> None:
     """Row counts and staleness hours are different quantities in different units.
     Scoring one against the other's history would be a confident number about
-    nothing, so editing the target metric restarts the baseline."""
+    nothing, so editing the target metric restarts the baseline.
+    """
     stored = dump_baseline([_obs(1, 32840.0)], _params())
     reread = load_observations(
         _row(stored), _params(target_metric="freshness_age_hours", column="ts")
@@ -209,7 +216,8 @@ def test_a_different_target_metric_restarts_learning() -> None:
 
 def test_malformed_entries_are_dropped_individually() -> None:
     """A single odd JSONB entry must not error the check — the surviving history is
-    still a valid baseline."""
+    still a valid baseline.
+    """
     payload = dump_baseline([_obs(2, 10.0)], _params())
     payload["observations"] += [
         {"ts": "not-a-date", "value": 1.0},
@@ -229,7 +237,8 @@ def test_a_non_list_observations_payload_is_a_cold_start() -> None:
 
 def test_a_naive_stored_timestamp_is_read_as_utc() -> None:
     """Everything we write is UTC-aware, but a hand-edited or legacy row must not
-    explode the weekday comparison with a naive/aware mix."""
+    explode the weekday comparison with a naive/aware mix.
+    """
     payload = dump_baseline([], _params())
     payload["observations"] = [{"ts": "2026-07-29T12:00:00", "value": 5.0}]
     (restored,) = load_observations(_row(payload), _params())
@@ -262,10 +271,8 @@ def _patch_scalar(monkeypatch: pytest.MonkeyPatch, scalar: Any) -> dict[str, Any
     seen: dict[str, Any] = {}
 
     class _Conn:
-        # A real Connection exposes `.dialect` (the engine's) — `measure_metric`
-        # needs it whenever `catalog` is given (#936), so the fake carries a
-        # stand-in too; every existing test here passes `catalog=None`, which
-        # never touches it.
+        # A real Connection exposes `.dialect` (the engine's) — `measure_metric` needs it whenever
+        # `catalog` is given (#936), so the fake carries a stand-in too.
         dialect = DefaultDialect()
 
         def execute(self, statement: Any) -> Any:
@@ -295,7 +302,8 @@ def test_row_count_measurement_accepts_driver_types(
 ) -> None:
     """Snowflake returns a COUNT as Decimal, Databricks as int (#953's shape: the
     type comes from the DRIVER, and every hand-built fixture agrees with our model
-    by construction). The parametrisation is the point."""
+    by construction). The parametrisation is the point.
+    """
     seen = _patch_scalar(monkeypatch, scalar)
     value = measure_metric(
         _sql_connection(),
@@ -355,7 +363,8 @@ def test_freshness_measurement_on_an_empty_table_is_an_error_not_a_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A missing MAX has no age. Scoring it as 0 would poison the baseline with a
-    fabricated point and then report every real reading as an anomaly."""
+    fabricated point and then report every real reading as an anomaly.
+    """
     _patch_scalar(monkeypatch, None)
     with pytest.raises(MonitorConfigError, match="unavailable"):
         measure_metric(
@@ -374,7 +383,8 @@ def test_measurement_quotes_a_mixed_case_column_through_the_dialect(
 ) -> None:
     """#476/#937: the measurement must go through the Core builders so the
     CONNECTION's dialect quotes identifiers. Hand-rolled `"` would be actively
-    wrong on Unity Catalog, which uses backticks."""
+    wrong on Unity Catalog, which uses backticks.
+    """
     from snowflake.sqlalchemy import snowdialect
 
     seen = _patch_scalar(monkeypatch, datetime(2026, 7, 29, 6, 0, tzinfo=UTC))
@@ -394,11 +404,11 @@ def test_measurement_quotes_a_mixed_case_column_through_the_dialect(
 def test_measurement_quotes_a_mixed_case_catalog_through_the_connections_dialect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """#936: a `catalog`-qualified (Unity Catalog, 3-part) measurement now quotes
-    a mixed-case catalog/schema too — not just the table. Proven with Databricks'
-    BACKTICK dialect, not Snowflake's `"`, on the connection's own `.dialect`
-    (`_open_connection`'s real `Connection.dialect`, stood in here) — a
-    hardcoded quote character could not pass this."""
+    """#936: a `catalog`-qualified (Unity Catalog, 3-part) measurement now quotes a mixed-case
+    catalog/schema too — not just the table. Proven with Databricks' BACKTICK dialect, not
+    Snowflake's `"`, on the connection's own `.dialect` (`_open_connection`'s real
+    `Connection.dialect`, stood in here) — a hardcoded quote character could not pass this.
+    """
     from databricks.sqlalchemy.base import DatabricksDialect
 
     seen: dict[str, Any] = {}
@@ -436,7 +446,8 @@ def test_measurement_quotes_a_mixed_case_catalog_through_the_connections_dialect
 
 def test_measurement_on_a_non_sql_datasource_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
     """Defence in depth behind the author-time gate: the message names the real
-    restriction rather than surfacing as a generic classified failure."""
+    restriction rather than surfacing as a generic classified failure.
+    """
     conn = Connection(
         id=uuid.uuid4(),
         name="lake",
@@ -520,12 +531,7 @@ def _stored_values(session: Session, check: Check) -> list[float]:
 
 @contextmanager
 def _captured_sql(session: Session) -> Any:
-    """Record every statement the session actually sends to Postgres.
-
-    Asserting against the EMITTED SQL rather than a mocked call is what makes the
-    locking test mean something: `with_for_update()` is only worth anything if it
-    reaches the wire, and a spy on our own helper would pass even if the clause
-    were silently dropped by a query rewrite."""
+    """Record every statement the session actually sends to Postgres."""
     from sqlalchemy import event
 
     statements: list[str] = []
@@ -640,7 +646,8 @@ def test_a_concurrent_first_run_does_not_break_the_commit(
 ) -> None:
     """Two first runs of one suite both see no baseline under READ COMMITTED and
     both insert. The loser must not raise an IntegrityError that discards every
-    sibling result row (#122) — ON CONFLICT DO NOTHING makes it a no-op."""
+    sibling result row (#122) — ON CONFLICT DO NOTHING makes it a no-op.
+    """
     session, conn, check = graph
     session.add(MonitorBaseline(check_id=check.id, kind="anomaly", baseline={"version": 1}))
     session.flush()
@@ -691,14 +698,7 @@ def test_a_bad_config_errors_the_check_with_an_actionable_message(
 def test_the_executor_locks_the_baseline_row_before_rewriting_it(
     graph: tuple[Session, Connection, Check], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The lost-update guard. The executor reads the observation list and writes
-    that list plus one entry, so two overlapping runs of the SAME check (an
-    overdue schedule firing while a Run-Now is in flight) would both read the same
-    list and the second commit would silently drop the first's measurement — a gap
-    nothing downstream can detect, since a rolling window has no per-observation
-    identity. `FOR UPDATE` serialises them for the rest of the transaction.
-
-    Asserted against the SQL that reaches Postgres, not a call spy."""
+    """The lost-update guard."""
     session, conn, check = graph
     _executor(session, conn, 100, monkeypatch)(check)  # establish the row
     session.flush()
@@ -714,7 +714,8 @@ def test_a_dry_run_takes_no_write_lock(
     graph: tuple[Session, Connection, Check], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A preview writes nothing, so locking would let a check-editor preview block
-    a real scheduled run for the length of its transaction."""
+    a real scheduled run for the length of its transaction.
+    """
     session, conn, check = graph
     _executor(session, conn, 100, monkeypatch)(check)
     session.flush()
@@ -728,11 +729,11 @@ def test_a_dry_run_takes_no_write_lock(
 def test_the_result_reports_when_learning_started_and_when_it_last_updated(
     graph: tuple[Session, Connection, Check], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two different questions, and only one of the timestamps moves. This kind
-    rewrites its baseline on EVERY run, so reporting `captured_at` alone would
-    show day 1 forever — six months in, a payload claiming the baseline was
-    captured in January is indistinguishable from a monitor that stopped
-    learning. `captured_at` has no `onupdate`; `updated_at` does."""
+    """Two different questions, and only one of the timestamps moves. This kind rewrites its
+    baseline on EVERY run, so reporting `captured_at` alone would show day 1 forever — six
+    months in, a payload claiming the baseline was captured in January is indistinguishable from
+    a monitor that stopped learning. `captured_at` has no `onupdate`; `updated_at` does.
+    """
     session, conn, check = graph
     _executor(session, conn, 100, monkeypatch)(check)  # first capture
     session.flush()
@@ -766,13 +767,7 @@ def test_the_result_reports_when_learning_started_and_when_it_last_updated(
 def test_an_unparseable_timestamp_cell_travels_structurally_not_in_the_message(
     graph: tuple[Session, Connection, Check], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#989, applied to this kind. An anomaly over `freshness_age_hours` hits the
-    exact same garbage-cell case a plain freshness monitor does, and
-    `run_monitor_specs` puts the offending cell on `observed_value` — never in the
-    message, which is persisted verbatim and rendered wherever a result is shown,
-    while `observed_value` passes through the read layer's column-policy
-    redaction. Dropping it here would make the same error diagnosable on one kind
-    and undiagnosable on the other."""
+    """#989, applied to this kind."""
     session, conn, check = graph
     check.config = {"target_metric": "freshness_age_hours", "column": "order_ts"}
     outcome = _executor(session, conn, "13/07/2026", monkeypatch)(check)
@@ -788,7 +783,8 @@ def test_an_error_without_a_cell_carries_no_observed_value(
 ) -> None:
     """The type-mismatch branch names only the TYPE, so there is nothing to
     redact and `observed_value` must stay empty — pinned so a later edit doesn't
-    quietly start echoing there instead."""
+    quietly start echoing there instead.
+    """
     session, conn, check = graph
     check.config = {"target_metric": "freshness_age_hours", "column": "order_ts"}
     outcome = _executor(session, conn, 12345, monkeypatch)(check)
@@ -801,7 +797,8 @@ def test_rebaseline_restarts_the_cold_start(
     graph: tuple[Session, Connection, Check], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """After a deliberate step change the old history is misleading; re-baselining
-    drops it and the next run legitimately reports the cold-start skip again."""
+    drops it and the next run legitimately reports the cold-start skip again.
+    """
     from backend.app.services.monitor_baseline import rebaseline
 
     session, conn, check = graph

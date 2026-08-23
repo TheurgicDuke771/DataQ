@@ -1,17 +1,4 @@
-"""Dispatch a persisted `Run` to the Celery worker — the one place that publishes.
-
-Publishes ``run_suite`` **by name** via ``celery_app.send_task`` rather than
-importing the task object. That decoupling is deliberate: ``worker.tasks``
-imports service modules (e.g. ``orchestration_service``), so a service importing
-``worker.tasks`` back would be a cyclic import (CodeQL `py/cyclic-import`). By
-name there is no import edge service → worker, and the broker resolves the task
-on the worker side. The ``before_task_publish`` signal still fires, so the
-``request_id`` correlation header is carried exactly as for ``.delay``.
-
-Raises on a broker/publish failure; the caller owns the policy for a stuck run
-(the probe endpoint surfaces 503; the pipeline-trigger path marks the run
-``failed`` so it isn't left ``queued``).
-"""
+"""Dispatch a persisted `Run` to the Celery worker — the one place that publishes."""
 
 from __future__ import annotations
 
@@ -31,13 +18,7 @@ _AUTO_CLASSIFY_TASK = "auto_classify_columns"
 
 
 def new_queued_run(suite: Suite, *, triggered_by: str) -> Run:
-    """A fresh ``queued`` `Run` for ``suite``, asset stamped at dispatch (ADR 0034).
-
-    The one ORM construction shared by every non-orchestration trigger path (manual /
-    probe / MCP / schedule) so the next field to stamp on a run lands in one place, not
-    four. `orchestration_service` builds its Run via `pg_insert` (atomic dedup) with a
-    matching inline ``asset_id`` subquery — keep the two in sync.
-    """
+    """A fresh ``queued`` `Run` for ``suite``, asset stamped at dispatch (ADR 0034)."""
     return Run(
         suite_id=suite.id,
         asset_id=suite.asset_id,
@@ -47,12 +28,7 @@ def new_queued_run(suite: Suite, *, triggered_by: str) -> Run:
 
 
 def dispatch_auto_classify(suite_id: uuid.UUID) -> None:
-    """Fire-and-forget the auto-classify task for a suite that gained a target (#634).
-
-    **Best-effort**: a broker blip must never fail suite create/update — the policy
-    just stays unset and the user can Auto-detect manually. Published by name (same
-    decoupling rationale as ``dispatch_run``), so no service→worker import edge.
-    """
+    """Fire-and-forget the auto-classify task for a suite that gained a target (#634)."""
     try:
         celery_app.send_task(_AUTO_CLASSIFY_TASK, args=[str(suite_id)])
     except Exception:
@@ -60,24 +36,13 @@ def dispatch_auto_classify(suite_id: uuid.UUID) -> None:
 
 
 def dispatch_run(run_id: uuid.UUID) -> str:
-    """Publish the ``run_suite`` task for ``run_id`` and return its Celery task id.
-
-    The task id is stored on the `Run` (``celery_task_id``) so a later cancel can
-    revoke a still-queued task. Raises if the broker is down — the caller owns the
-    policy for the stuck run (`mark_dispatch_failed` + 503 / log).
-
-    No 2-phase commit spans the broker and the DB: if the publish succeeds but the
-    caller's follow-up commit of ``celery_task_id`` fails (a rare DB blip in that
-    window), the task still runs — the worker just can't be revoked by id and falls
-    back to the cooperative ``cancelled``-status check. Self-correcting and benign.
-    """
+    """Publish the ``run_suite`` task for ``run_id`` and return its Celery task id."""
     result = celery_app.send_task(_RUN_SUITE_TASK, args=[str(run_id)])
     return str(result.id)
 
 
-#: Fixed, secret-free `failure_reason` strings (#605) for the non-runner failure
-#: paths — a broker/dispatch failure vs the stuck-run reaper. Runner-time failures
-#: use the classified `failure_classifier` messages instead.
+#: Fixed, secret-free `failure_reason` strings (#605) for the non-runner failure paths — a
+#: broker/dispatch failure vs the stuck-run reaper.
 DISPATCH_FAILED_REASON = (
     "The run could not be dispatched to the worker — the task broker was unreachable."
 )
@@ -85,11 +50,8 @@ REAPED_REASON = (
     "The run did not complete in time and was marked failed — the worker may have "
     "stopped mid-execution."
 )
-#: The worker process executing this run died outright (SIGKILL) — overwhelmingly
-#: the OOM killer on a large materialisation (#755). Distinct from REAPED_REASON:
-#: the reaper only knows "this sat non-terminal too long", whereas Celery told us
-#: the child was lost, so the run is failed IMMEDIATELY instead of up to
-#: `stuck_run_threshold_minutes` later, and the cause is named rather than guessed.
+#: The worker process executing this run died outright (SIGKILL) — overwhelmingly the OOM killer on
+#: a large materialisation (#755).
 WORKER_LOST_REASON = (
     "The worker process running this suite was terminated before it finished — "
     "most often because the dataset did not fit in worker memory. Try a smaller "
@@ -100,18 +62,7 @@ WORKER_LOST_REASON = (
 def mark_dispatch_failed(
     run: Run, *, at: datetime | None = None, reason: str = DISPATCH_FAILED_REASON
 ) -> None:
-    """The canonical terminal-failed shape for a broker/dispatch failure.
-
-    One definition shared by every trigger path (probe, manual run, pipeline
-    success) — and the stuck-run reaper (#309) — so a run that never completed is
-    recorded identically everywhere: ``failed`` with ``finished_at`` set and
-    ``started_at`` left as-is (NULL for a run that never started — or its real
-    start for one the worker died mid-execution), keeping run-history / duration
-    views consistent (#227). ``at`` lets a batch caller (the reaper) stamp one
-    shared moment across many runs; defaults to now. ``reason`` is the
-    redaction-safe user-facing message (#605) — defaults to the dispatch-failure
-    text; the reaper passes ``REAPED_REASON``.
-    """
+    """The canonical terminal-failed shape for a broker/dispatch failure."""
     run.status = "failed"
     run.finished_at = at or datetime.now(UTC)
     run.failure_reason = reason
@@ -121,17 +72,6 @@ def dispatch_or_fail(session: Session, run: Run, **log_context: str) -> bool:
     """Dispatch a committed queued ``run``; on broker failure record the canonical
     terminal-failed shape. Returns ``True`` if dispatched, ``False`` if the broker
     was unreachable (the run is now ``failed`` with ``finished_at`` set, committed).
-
-    The one copy of the dispatch + broker-failure block every trigger path shares
-    (probe, manual run, pipeline-success batch, scheduled run) so a never-dispatched
-    run is recorded — and its traceback logged — identically everywhere (#227). The
-    caller owns the *policy* for a ``False`` return: the HTTP paths surface 503; the
-    batch / scheduled paths skip the run and carry on. ``log_context`` is merged into
-    the failure log so a caller can keep its correlation keys (``schedule_id``, the
-    triggering ``provider``/``pipeline``) on the one ``run_dispatch_failed`` event.
-    Mirrors ``run_suite``'s own no-2-phase-commit contract (see ``dispatch_run``):
-    the publish and the ``celery_task_id`` commit aren't atomic, which is benign
-    and self-correcting.
     """
     try:
         run.celery_task_id = dispatch_run(run.id)
@@ -145,15 +85,7 @@ def dispatch_or_fail(session: Session, run: Run, **log_context: str) -> bool:
 
 
 def revoke_run(task_id: str | None) -> None:
-    """Best-effort revoke of a dispatched run's Celery task.
-
-    Drops the task if it's still **queued** (not yet picked up). Deliberately no
-    ``terminate`` — we don't SIGKILL a worker mid-GX (it would take out sibling
-    tasks); an already-running task is stopped **cooperatively** (the worker
-    checks for a ``cancelled`` run status). A no-op for an un-dispatched run
-    (``task_id is None``); broker errors are swallowed (the DB status is already
-    ``cancelled`` and the worker's cooperative check still applies).
-    """
+    """Best-effort revoke of a dispatched run's Celery task."""
     if not task_id:
         return
     try:

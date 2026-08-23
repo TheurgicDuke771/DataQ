@@ -1,21 +1,4 @@
-"""Tests for the orphan-asset sweep (`asset_service.sweep_orphan_assets`, #770).
-
-DB-backed (real Postgres): the sweep is a reference-guarded, time-windowed
-delete, so it's exercised against the real engine — including the `EXISTS`
-subqueries over `suites` / `runs` / `lineage_edges`, which SQLite can't host
-(JSONB/UUID). Verifies each reference kind protects its asset, the
-`last_seen` threshold boundary, the empty/no-op case, and chunked deletes.
-
-Every test captures the ids it needs into plain `uuid.UUID` variables right at
-creation (before any `commit()`), never touching an ORM object's attributes
-afterwards: `sweep_orphan_assets` commits internally, which expires every
-loaded instance (`expire_on_commit` default) and, for a row the sweep just
-deleted, a later attribute touch on that same Python object raises
-`ObjectDeletedError` rather than a clean "it's gone" signal — plain ids
-sidestep the identity-map/session-lifecycle noise entirely.
-
-Skips without TEST_DATABASE_URL.
-"""
+"""Tests for the orphan-asset sweep (`asset_service.sweep_orphan_assets`, #770)."""
 
 from __future__ import annotations
 
@@ -164,7 +147,8 @@ def test_referenced_by_lineage_upstream_never_swept(db_session: Any) -> None:
 def test_referenced_by_lineage_downstream_never_swept(db_session: Any) -> None:
     """Isolates the downstream leg: the upstream endpoint is fresh (would never be
     a sweep candidate on its own), so only the downstream `EXISTS` guard can be
-    what's keeping the downstream row alive."""
+    what's keeping the downstream row alive.
+    """
     conn_id, _owner_id = _connection(db_session)
     upstream_id = _asset(db_session, last_seen=NOW)  # fresh — not a candidate anyway
     downstream_id = _asset(db_session, last_seen=_stale())
@@ -186,7 +170,8 @@ def test_referenced_by_lineage_downstream_never_swept(db_session: Any) -> None:
 
 def test_threshold_boundary_just_inside_window_not_swept(db_session: Any) -> None:
     """last_seen at exactly `retention_days` minus a second — still within the
-    window — must survive."""
+    window — must survive.
+    """
     asset_id = _asset(db_session, last_seen=NOW - timedelta(days=30) + timedelta(seconds=1))
     db_session.commit()
 
@@ -229,7 +214,8 @@ def test_chunked_delete_sweeps_all_candidates_across_multiple_chunks(db_session:
     """5 orphaned assets swept with chunk_size=2 forces multiple DELETE
     statements (2 + 2 + 1, plus a trailing empty round to confirm none remain
     — `chunked_dml` exits on `affected == 0`, #323 review F4) — every
-    candidate is still removed and the count is exact."""
+    candidate is still removed and the count is exact.
+    """
     orphan_ids = [_asset(db_session, last_seen=_stale(), tag=f"chunk-{i}") for i in range(5)]
     db_session.commit()
 
@@ -244,7 +230,8 @@ def test_chunked_delete_sweeps_all_candidates_across_multiple_chunks(db_session:
 def test_chunking_does_not_touch_referenced_assets_mixed_in(db_session: Any) -> None:
     """A referenced asset sitting among several orphans in the same sweep survives
     while its stale, unreferenced siblings are removed — proves the reference
-    guard is applied before chunking, not just at the edges of the batch."""
+    guard is applied before chunking, not just at the edges of the batch.
+    """
     conn_id, owner_id = _connection(db_session)
     keep_id = _asset(db_session, last_seen=_stale(), tag="keep")
     _suite(db_session, conn_id, owner_id, asset_id=keep_id)
@@ -260,12 +247,7 @@ def test_chunking_does_not_touch_referenced_assets_mixed_in(db_session: Any) -> 
 
 
 def test_every_asset_fk_has_a_sweep_guard() -> None:
-    """Schema-introspection enforcement of `_SWEEP_REFERENCE_GUARDS` (#770).
-
-    Any FK into ``assets.id`` (e.g. #761's ``incidents.asset_id``) must carry a
-    sweep guard, or the janitor silently over-deletes referenced assets. This
-    test turns that from a code-comment checklist into a build failure.
-    """
+    """Schema-introspection enforcement of `_SWEEP_REFERENCE_GUARDS` (#770)."""
     from backend.app.db.models import Asset
     from backend.app.services.asset_service import _SWEEP_REFERENCE_GUARDS
 
@@ -280,7 +262,8 @@ def test_every_asset_fk_has_a_sweep_guard() -> None:
 
 def test_referenced_by_incident_never_swept(db_session: Any) -> None:
     """#761: incident history (any state) pins its asset — the FK is CASCADE, so
-    sweeping here would silently wipe incidents."""
+    sweeping here would silently wipe incidents.
+    """
     from backend.app.db.models import Check, Incident
 
     kept = _asset(db_session, last_seen=_stale(), tag="incident-ref")

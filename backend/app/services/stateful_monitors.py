@@ -1,17 +1,4 @@
-"""Dispatch for the *stateful* monitor kinds — one executor per `check.kind`.
-
-`run_service` takes a single ``stateful_monitor_executor`` callable, because from
-its point of view "a stateful kind needs the DB" is one fact, not N. But there
-are now two such kinds — `schema_drift` (#592) and `anomaly` (#593) — with
-genuinely different engines, so something has to route between them. That
-something is here rather than inside the worker task, so the mapping lives next
-to the kinds instead of inside a Celery entry point.
-
-The mapping is explicit, and a stateful kind registered in
-``MONITOR_KIND_REGISTRY`` with no builder here yields a per-check operational
-``error`` (#122) rather than being quietly handed to the wrong engine — the
-half-finished-kind failure mode the seam's own module comment warns about.
-"""
+"""Dispatch for the *stateful* monitor kinds — one executor per `check.kind`."""
 
 from __future__ import annotations
 
@@ -41,10 +28,7 @@ class _ExecutorBuilder(Protocol):
     ) -> Callable[[Check], CheckOutcome]: ...
 
 
-# kind -> the builder for its per-run executor. Both builders share one signature
-# on purpose: the run inputs a stateful kind can need (the session, the resolved
-# target, the secret store) are the same for all of them, and keeping the shape
-# uniform is what lets this stay a dict instead of a branch.
+# kind -> the builder for its per-run executor.
 _BUILDERS: dict[str, _ExecutorBuilder] = {
     SCHEMA_DRIFT: schema_drift.build_schema_drift_executor,
     ANOMALY: anomaly.build_anomaly_executor,
@@ -61,13 +45,7 @@ def build_stateful_monitor_executor(
     secret_store: SecretStore,
     persist: bool = True,
 ) -> Callable[[Check], CheckOutcome]:
-    """One callable covering every stateful kind, dispatching on ``check.kind``.
-
-    Per-kind executors are built **lazily and cached** for the life of the run:
-    building one is pure closure construction (no I/O), but a suite with only
-    drift checks still shouldn't construct an anomaly engine, and a suite with
-    twenty anomaly checks should construct one for all of them.
-    """
+    """One callable covering every stateful kind, dispatching on ``check.kind``."""
     built: dict[str, Callable[[Check], CheckOutcome]] = {}
 
     def executor(check: Check) -> CheckOutcome:

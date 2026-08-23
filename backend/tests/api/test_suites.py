@@ -1,10 +1,4 @@
-"""Suite endpoint tests against a real Postgres (db_session) via TestClient.
-
-get_db is overridden to the shared test session; auth runs in dev-bypass mode
-(conftest), which upserts the dev user for the suite's created_by. A connection
-(with its own owner) is inserted directly for the FK. Skips without
-TEST_DATABASE_URL.
-"""
+"""Suite endpoint tests against a real Postgres (db_session) via TestClient."""
 
 import re
 import uuid
@@ -47,13 +41,7 @@ _FULL_SF_CONFIG = {"account": "ab12345.eu-west-1", "database": "ANALYTICS", "sch
 def _connection(
     db_session: Any, *, config: dict[str, Any] | None = None, conn_type: str = "snowflake"
 ) -> Connection:
-    """Insert a connection (with its own owner) for suites to bind to.
-
-    ``config`` defaults to the partial (`account`-only) config, which omits
-    database/schema on purpose so a target fails to resolve an asset (fail-soft NULL
-    path); pass ``_FULL_SF_CONFIG`` for the fully-resolvable case. ``conn_type``
-    picks the datasource — `s3` for the sampling cases (#595), which only the
-    full-load datasources accept."""
+    """Insert a connection (with its own owner) for suites to bind to."""
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"owner-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
     db_session.flush()
@@ -73,7 +61,8 @@ def _connection(
 
 def _orchestration_connection(db_session: Any, provider: str = "adf") -> Connection:
     """Insert an ADF/Airflow connection — an orchestration provider, never a
-    suite datasource (CLAUDE.md §4)."""
+    suite datasource (CLAUDE.md §4).
+    """
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"orch-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
     db_session.flush()
@@ -161,7 +150,8 @@ def test_create_with_target_dispatches_auto_classify(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """#634: creating a suite WITH a target fires the best-effort auto-classify;
-    creating one WITHOUT a target does not."""
+    creating one WITHOUT a target does not.
+    """
     calls: list[uuid.UUID] = []
     monkeypatch.setattr(run_dispatch, "dispatch_auto_classify", calls.append)
 
@@ -180,7 +170,8 @@ def test_update_setting_a_target_dispatches_auto_classify(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """#634: a target-setting PATCH on a policy-less suite dispatches; a PATCH on a
-    suite that already has a policy does not (never re-derive over a choice)."""
+    suite that already has a policy does not (never re-derive over a choice).
+    """
     calls: list[uuid.UUID] = []
     monkeypatch.setattr(run_dispatch, "dispatch_auto_classify", calls.append)
 
@@ -209,7 +200,8 @@ def test_update_repointing_policied_suite_target_logs_possibly_stale(
     """#643: repointing a *policied* suite to a different target doesn't re-derive
     (don't clobber a choice), but must emit an observable `suite_policy_possibly_
     stale` event so the previously-invisible staleness is surfaced — and only when
-    the target actually changes."""
+    the target actually changes.
+    """
     from structlog.testing import capture_logs
 
     calls: list[uuid.UUID] = []
@@ -240,7 +232,8 @@ def test_update_repointing_policied_suite_target_logs_possibly_stale(
 def test_create_with_flatfile_batch_target_persists(client: TestClient, db_session: Any) -> None:
     """A flat-file batch target (pattern/strategy/prefix) round-trips through the
     API — the SuiteTarget model must carry the batch keys, else the batch run path
-    (A4) is unreachable (the keys would be stripped before persistence)."""
+    (A4) is unreachable (the keys would be stripped before persistence).
+    """
     owner = User(aad_object_id=uuid.uuid4().hex, email="ff@example.com")
     db_session.add(owner)
     db_session.flush()
@@ -328,7 +321,8 @@ def test_create_with_unresolvable_config_succeeds_asset_null(
     client: TestClient, db_session: Any
 ) -> None:
     """Fail-soft: a suite whose connection config lacks the keys the resolver needs
-    still saves (201) — the asset link is simply left NULL, never a 500."""
+    still saves (201) — the asset link is simply left NULL, never a 500.
+    """
     conn = _connection(db_session)  # config has `account` only — no database/schema
     resp = client.post(
         "/api/v1/suites", json=_payload(conn.id, target={"table": "orders", "schema": "sales"})
@@ -414,7 +408,8 @@ def test_delete_cascades_to_checks(client: TestClient, db_session: Any) -> None:
 def test_delete_succeeds_after_a_run_with_results(client: TestClient, db_session: Any) -> None:
     """#540: results.check_id was the only FK without an ondelete, so deleting
     a suite whose checks had RESULT rows hit fk_results_check_id_checks and
-    500'd — any suite that had ever run was undeletable. Found live (W7 smoke)."""
+    500'd — any suite that had ever run was undeletable. Found live (W7 smoke).
+    """
     from backend.app.db.models import Result, Run
 
     conn = _connection(db_session)
@@ -673,7 +668,8 @@ def test_export_import_round_trips(client: TestClient, db_session: Any) -> None:
 
 def test_export_carries_the_dq_dimension(client: TestClient, db_session: Any) -> None:
     """ADR 0038 §6 — a document that dropped the dimension would silently
-    reclassify every check on import."""
+    reclassify every check on import.
+    """
     src = _suite_with_checks(client, db_session)
     document = client.get(f"/api/v1/suites/{src}/export").json()
     assert all("dimension" in c for c in document["checks"])
@@ -684,7 +680,8 @@ def test_import_derives_the_dimension_when_a_document_omits_it(
 ) -> None:
     """An OLDER export has no `dimension` key at all. It must derive, exactly as if
     freshly authored — importing a whole suite as unclassified would poison the
-    #889 coverage view with a gap that isn't real."""
+    #889 coverage view with a gap that isn't real.
+    """
     src = _suite_with_checks(client, db_session)
     document = client.get(f"/api/v1/suites/{src}/export").json()
     for c in document["checks"]:
@@ -704,7 +701,8 @@ def test_import_derives_the_dimension_when_a_document_omits_it(
 
 def test_import_preserves_an_overridden_dimension(client: TestClient, db_session: Any) -> None:
     """A user's override must survive the round trip — otherwise export/import
-    silently reverts every deliberate reclassification to the derived guess."""
+    silently reverts every deliberate reclassification to the derived guess.
+    """
     src = _suite_with_checks(client, db_session)
     document = client.get(f"/api/v1/suites/{src}/export").json()
     for c in document["checks"]:
@@ -723,14 +721,7 @@ def test_import_preserves_an_overridden_dimension(client: TestClient, db_session
 def test_import_preserves_an_explicitly_unclassified_check(
     client: TestClient, db_session: Any
 ) -> None:
-    """The null must round-trip, not derive.
-
-    Export always emits the key, so a check that predates ADR 0038 exports as
-    `"dimension": null`. If import treated that the same as an absent key, every
-    pre-migration check would be silently classified on the way through —
-    attributable to nobody and indistinguishable from a human override, which is
-    exactly the backfill §5 forbids. `null` present ≠ key absent.
-    """
+    """The null must round-trip, not derive."""
     src = _suite_with_checks(client, db_session)
     document = client.get(f"/api/v1/suites/{src}/export").json()
     for c in document["checks"]:
@@ -767,13 +758,11 @@ def _suite_with_anomaly_check(client: TestClient, db_session: Any) -> str:
 def test_import_leaves_an_anomaly_check_unclassified_when_the_key_is_absent(
     client: TestClient, db_session: Any
 ) -> None:
-    """ADR 0038: `anomaly` is deliberately NOT in the derivation map — its honest
-    dimension depends on the target metric (completeness for row_count, timeliness
-    for freshness age), which derivation keys (expectation_type, kind) cannot see.
-    So an import that omits the key must still land NULL — a coverage gap, not a
-    confident guess. This is the half the #124 trap hides: for an underivable kind,
-    absent and present-null agree, so the *derivable* present-null case above is
-    what proves import distinguishes them at all. Both are needed."""
+    """ADR 0038: `anomaly` is deliberately NOT in the derivation map — its honest dimension depends
+    on the target metric (completeness for row_count, timeliness for freshness age), which
+    derivation keys (expectation_type, kind) cannot see. So an import that omits the key must
+    still land NULL — a coverage gap, not a confident guess.
+    """
     src = _suite_with_anomaly_check(client, db_session)
     document = client.get(f"/api/v1/suites/{src}/export").json()
     assert document["checks"][0]["dimension"] is None  # nothing was derived on create
@@ -820,7 +809,8 @@ def test_import_round_trips_an_anomaly_checks_config(client: TestClient, db_sess
 def test_import_validates_an_anomaly_checks_config(client: TestClient, db_session: Any) -> None:
     """Import routes every monitor kind through the SAME author-time gate, so a
     document can't smuggle in a config the editor would refuse — validation is
-    atomic, so nothing is written."""
+    atomic, so nothing is written.
+    """
     src = _suite_with_anomaly_check(client, db_session)
     document = client.get(f"/api/v1/suites/{src}/export").json()
     document["checks"][0]["config"] = {"target_metric": "not_a_metric"}
@@ -835,8 +825,7 @@ def test_import_validates_an_anomaly_checks_config(client: TestClient, db_sessio
 def test_import_rejects_an_anomaly_check_without_a_threshold(
     client: TestClient, db_session: Any
 ) -> None:
-    """The silent-green guard applies on import too — otherwise a document is a
-    way around it."""
+    """The silent-green guard applies on import too — otherwise a document is a way around it."""
     src = _suite_with_anomaly_check(client, db_session)
     document = client.get(f"/api/v1/suites/{src}/export").json()
     document["checks"][0]["fail_threshold"] = None
@@ -928,9 +917,8 @@ def test_import_unsupported_kind_is_atomic(client: TestClient, db_session: Any) 
 def test_import_rejects_inverted_thresholds_and_is_atomic(
     client: TestClient, db_session: Any
 ) -> None:
-    # #568: import must not persist what a direct POST would reject — the same
-    # validator (`check_service.validate_threshold_ordering`) is wired into
-    # `suite_io_service.import_suite`.
+    # #568: import must not persist what a direct POST would reject — the same validator
+    # (`check_service.validate_threshold_ordering`) is wired into `suite_io_service.import_suite`.
     target = _connection(db_session)
     before = db_session.scalar(select(func.count()).select_from(Suite))
     resp = client.post(
@@ -987,26 +975,10 @@ _FILTERED_COLUMN_RE = re.compile(r"WHERE (\S+) IS NOT NULL")
 
 
 class _FakeConn:
-    """Routes the aggregate query vs the top-values query by SQL text.
+    """Routes the aggregate query vs the top-values query by SQL text."""
 
-    Answers **both** top-values shapes: the batched rank-join (#327, what
-    `profile_table` actually issues) and the per-column fallback. The batched
-    branch is not optional politeness — `_fetch_top_values` retries per-column on
-    a driver rejection, so a fake that only understood the old shape would leave
-    every endpoint test silently green *through the fallback*, i.e. covering a
-    path production doesn't take.
-
-    Both routes match the column against the rendered ``WHERE <col> IS NOT NULL``
-    rather than by substring (#327 review, m2): a bare ``if col in sql`` makes
-    ``c1`` match a statement about ``c10``, so a 12-column fallback would answer
-    the wrong column's rows and the test would still be green.
-    """
-
-    # A real Connection exposes `.dialect` (the engine's) — `_table`/`core_table`
-    # need it whenever `catalog` is given (#936), so the fake carries a stand-in
-    # too. Any dialect will do for the UC test that uses this: `catalog="main"` /
-    # `schema="sales"` are both already lower-case, so no part actually gets
-    # quoted — it's the attribute's presence, not its identity, that matters here.
+    # A real Connection exposes `.dialect` (the engine's) — `_table`/`core_table` need it whenever
+    # `catalog` is given (#936), so the fake carries a stand-in too.
     dialect = DefaultDialect()
 
     def __init__(self, aggregate: dict[str, Any], tops: dict[str, list[dict[str, Any]]]) -> None:
@@ -1064,7 +1036,8 @@ def _patch_conn(
     tops: dict[str, list[dict[str, Any]]],
 ) -> _FakeConn:
     """Patch the connection seam and hand back the fake, so a caller can assert
-    on `executed` (how many round-trips the profile actually cost — #327)."""
+    on `executed` (how many round-trips the profile actually cost — #327).
+    """
     conn = _FakeConn(aggregate, tops)
 
     @contextmanager
@@ -1145,15 +1118,7 @@ def test_profile_returns_column_stats(
 def test_profile_costs_two_round_trips_regardless_of_column_count(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#327: the profile is 1 aggregate + 1 batched top-values query, not 1 + N.
-
-    Asserted on the *count of statements the connection was asked to execute*,
-    because that is the thing the issue is about — a 12-column profile used to
-    cost 13 sequential warehouse round-trips. It also pins that the batched path
-    is the one actually taken: `_fetch_top_values` retries per-column on any
-    failure, so a batched query the driver refuses would still return correct
-    stats — at 13 round-trips, which only this assertion can see.
-    """
+    """#327: the profile is 1 aggregate + 1 batched top-values query, not 1 + N."""
     columns = [f"c{i}" for i in range(12)]
     aggregate: dict[str, Any] = {"row_count": 10}
     for i in range(len(columns)):
@@ -1181,10 +1146,6 @@ def test_profile_chunks_the_batch_beyond_the_column_cap(
 ) -> None:
     """Past `_TOP_VALUES_BATCH` columns the batch splits — still O(columns/batch)
     round-trips, not O(columns), and every column still comes back.
-
-    The cap is patched down rather than profiling 100+ real columns, so the test
-    asserts the chunking arithmetic itself instead of a number that happens to
-    equal 1 for every list the endpoint's own `max_length=50` admits.
     """
     monkeypatch.setattr(profile_service, "_TOP_VALUES_BATCH", 2)
     columns = [f"c{i}" for i in range(5)]
@@ -1215,10 +1176,6 @@ def test_profile_falls_back_to_per_column_when_the_batched_query_fails(
 ) -> None:
     """The mandated fallback (#327): a dialect that refuses the batched form must
     degrade to the pre-#327 per-column path, not fail the profile.
-
-    The refusal is a `SQLAlchemyError`, not any old exception — the catch is
-    narrow on purpose (#327 review, P3) so a bug in our own reader raises instead
-    of silently routing every profile through the N+1 path forever.
     """
     columns = ["amount", "status"]
     fake = _patch_conn(
@@ -1267,14 +1224,7 @@ def test_profile_falls_back_to_per_column_when_the_batched_query_fails(
 def test_profile_falls_back_only_for_the_chunk_that_failed(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#327 review, P5: one bad chunk must not discard the chunks that worked.
-
-    All-or-nothing recovery made the failure case cost MORE round-trips than the
-    N+1 code it replaced, and recomputed already-answered columns against the
-    warehouse that had just proved slow. Here chunk 2 of 3 fails: chunks 1 and 3
-    keep their single batched query each, and only chunk 2's two columns are
-    re-run individually.
-    """
+    """#327 review, P5: one bad chunk must not discard the chunks that worked."""
     monkeypatch.setattr(profile_service, "_TOP_VALUES_BATCH", 2)
     columns = [f"c{i}" for i in range(6)]
     aggregate: dict[str, Any] = {"row_count": 10}
@@ -1330,8 +1280,6 @@ def test_profile_unsupported_connection_type_returns_422(
     client: TestClient, db_session: Any
 ) -> None:
     # all four datasources are profilable now; an orchestration type (ADF) is not.
-    # A suite can no longer be created on an ADF connection via the API (#242), so
-    # seed one directly to still exercise the profiler's defensive rejection.
     conn = _typed_connection(db_session, "adf", {"subscription_id": "s", "factory_name": "f"})
     owner = db_session.get(User, conn.created_by)
     suite = Suite(name="adf-suite", connection_id=conn.id, created_by=conn.created_by)
@@ -1711,9 +1659,8 @@ def test_profile_iceberg_missing_table_returns_422(client: TestClient, db_sessio
 def test_profile_iceberg_credential_less_connection_profiles(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # ACCEPTANCE (#721): an iceberg connection with NO stored credential profiles
-    # successfully (no 422) — the secret-less guard that 422s every other type is
-    # relaxed for iceberg, mirroring build_iceberg_runner's optional credential.
+    # ACCEPTANCE (#721): an iceberg connection with NO stored credential profiles successfully (no
+    # 422) — the secret-less guard that 422s every other type is relaxed for iceberg.
     sid = _iceberg_suite(client, db_session, secret_ref=None)
     _patch_iceberg_read(monkeypatch, pd.DataFrame({"amount": [1, 2, 3]}))
     resp = client.post(
@@ -1857,25 +1804,8 @@ def test_column_policy_suggest_profiles_and_classifies(
 
 
 def _patch_resolve_batch_file(monkeypatch: pytest.MonkeyPatch, fn: Any) -> None:
-    # `run_target.materialize_path` lazy-imports `flatfile` on every call (to keep
-    # the write-time path GX-free) and reads `resolve_batch_file` off the module at
-    # call time, so patching the module attribute reaches it — the same seam
-    # `test_run_target.py`'s `materialize_path` tests patch. `materialize_path`
-    # also resolves the connection's credential itself (before ever calling the
-    # lister), so the `_s3_suite` connection's `secret_ref="kv-test"` needs to
-    # resolve too, or it 502s before the mock above is even reached (#1248):
-    # `materialize_path` calls `secret_store.get(secret_ref)` before it ever
-    # reaches `resolve_batch_file`, and stubbing the listing alone left the
-    # secret read pointed at whatever `SecretStore` backend the developer's
-    # environment configures (`SECRET_STORE=env` in CI, `openbao` on the local
-    # stack since #1159), so under `openbao` every one of these tests 502'd on
-    # `SecretNotFoundError` before the mock below was ever consulted.
-    # Overriding the `get_secret_store` FastAPI dependency — the same pattern
-    # `test_connections.py`/`test_admin.py` use — with a fixed-value
-    # `FakeSecretStore` (any ref resolves to "test-secret"; `set`/`delete` are
-    # real no-ops, not `raise_on_write` — nothing here exercises a write)
-    # makes the secret read succeed regardless of ambient config, so the
-    # assertions exercise the intended code path instead of an accidental one.
+    # `run_target.materialize_path` lazy-imports `flatfile` on every call (to keep the write-time
+    # path GX-free) and reads `resolve_batch_file` off the module at call time.
     monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", fn)
     override_secret_store(app, FakeSecretStore(default="test-secret"))
 
@@ -1948,12 +1878,8 @@ def test_batch_preview_connectivity_failure_returns_502(
 def test_batch_preview_never_echoes_an_adapter_message(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # End-to-end proof for the whole envelope, not just the exception: the
-    # frontend hint renders `error.message` verbatim for every code except
-    # `batch_preview_no_data`, so an adapter's own text — which can carry a DSN,
-    # an account URL or a token — must not reach the response at all. A bare
-    # `ValueError` is the trap: it is a *superclass* of the two flat-file batch
-    # signals, so catching it alongside them would surface any driver ValueError.
+    # End-to-end proof for the whole envelope, not just the exception: the frontend hint renders
+    # `error.message` verbatim for every code except `batch_preview_no_data`.
     sid = _s3_suite(client, db_session)
     leaky = "invalid credentials for https://acct.blob.core.windows.net/c?sig=SECRETTOKEN"
 
@@ -2039,7 +1965,8 @@ def test_batch_preview_default_strategy_is_latest(
 def test_the_api_declares_the_same_sampling_strategies_the_core_does() -> None:
     """`SuiteSampling.strategy` has to be spelled literally (`Literal[...]` takes
     constants, not names), so this canary keeps the duplication from drifting —
-    a renamed strategy would otherwise 422 every valid request."""
+    a renamed strategy would otherwise 422 every valid request.
+    """
     from backend.app.api.v1.suites import SuiteSampling
     from backend.app.datasources.base import SAMPLING_STRATEGIES
 
@@ -2050,12 +1977,11 @@ def test_the_api_declares_the_same_sampling_strategies_the_core_does() -> None:
 def test_a_sampling_block_survives_the_api_and_reaches_storage(
     client: TestClient, db_session: Any
 ) -> None:
-    """`SuiteTarget` is a CLOSED pydantic model: a key it does not declare is
-    dropped on the way in, silently. Before `sampling` was declared there, the
-    whole feature was unreachable through REST — a suite could only be sampled by
-    writing `suites.target` directly in the database, and every save looked
-    successful. That is exactly the silently-dropped-block failure the registry's
-    422 exists to prevent, one layer above where that gate can see."""
+    """`SuiteTarget` is a CLOSED pydantic model: a key it does not declare is dropped on the way
+    in, silently. Before `sampling` was declared there, the whole feature was unreachable
+    through REST — a suite could only be sampled by writing `suites.target` directly in the
+    database, and every save looked successful.
+    """
     conn = _connection(db_session, conn_type="s3")
     resp = client.post(
         "/api/v1/suites",
@@ -2077,7 +2003,8 @@ def test_a_seedless_sampling_block_stores_without_a_null_seed(
     client: TestClient, db_session: Any
 ) -> None:
     """`exclude_none` drops the unset seed rather than storing `seed: null`, so the
-    document matches what `parse_sample_spec` treats as "no seed"."""
+    document matches what `parse_sample_spec` treats as "no seed".
+    """
     conn = _connection(db_session, conn_type="s3")
     resp = client.post(
         "/api/v1/suites",
@@ -2123,7 +2050,8 @@ def test_sampling_on_a_pushdown_datasource_is_refused_through_the_api(
 ) -> None:
     """The registry gate, reached the way a user reaches it. Snowflake pushes every
     expectation down and never materialises rows, so a sample there would change
-    nothing while stamping "sampled" on every result."""
+    nothing while stamping "sampled" on every result.
+    """
     conn = _connection(db_session, conn_type="snowflake")
     resp = client.post(
         "/api/v1/suites",
@@ -2140,19 +2068,7 @@ def test_sampling_on_a_pushdown_datasource_is_refused_through_the_api(
 def test_a_policy_save_without_the_flag_does_not_disable_fail_closed(
     client: TestClient, db_session: Any
 ) -> None:
-    """The highest-severity finding on #1463: a security control that turns itself
-    off.
-
-    `PUT /column-policy` is a full replacement, and every client that predates the
-    flag — including our own shipped Save button and the MCP `set_column_policy`
-    tool — sends the policy WITHOUT it. With a plain `False` default, editing an
-    unrelated field silently switched fail-closed off, on a suite chosen for
-    fail-closed precisely because its data is regulated.
-
-    Absence therefore preserves. Turning it off stays possible; it just has to be
-    said out loud, which the second half asserts so "preserve" cannot quietly
-    become "immutable".
-    """
+    """The highest-severity finding on #1463: a security control that turns itself off."""
     sid = _new_suite(client, db_session)
 
     enabled = client.put(
@@ -2194,9 +2110,8 @@ def test_a_policy_save_without_the_flag_does_not_disable_fail_closed(
 
 
 def test_rest_import_rejects_a_native_engine_document(client: TestClient, db_session: Any) -> None:
-    # The REST door must apply the same engine gate as authoring: before
-    # CheckDocument carried `engine`, extra='ignore' dropped the key and this
-    # document imported silently as 'gx' — the conversion the service forbids.
+    # The REST door must apply the same engine gate as authoring: before CheckDocument carried
+    # `engine`, extra='ignore' dropped the key and this document imported silently as 'gx'.
     src = _suite_with_checks(client, db_session)
     document = client.get(f"/api/v1/suites/{src}/export").json()
     document["checks"][0]["engine"] = "dmf"

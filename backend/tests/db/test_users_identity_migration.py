@@ -1,14 +1,4 @@
-"""Up/down test for `7d25617cfaf0_users_nullable_aad_unique_lower_email` (#735 step 1).
-
-Binds the migration module's own `upgrade()` / `downgrade()` to a live connection
-(the sibling `test_lineage_nullable_connection_migration` pattern) and asserts:
-`aad_object_id` nullability flips, `uq_users_email_lower` appears/disappears, and
-`downgrade()` **refuses** — rather than deleting — when NULL-aad users exist. All
-DDL runs inside the rolled-back test transaction.
-
-Skips without TEST_DATABASE_URL (needs real Postgres — an expression index and
-`lower()` folding are dialect behaviour, not something SQLite could stand in for).
-"""
+"""Up/down test for `7d25617cfaf0_users_nullable_aad_unique_lower_email` (#735 step 1)."""
 
 from __future__ import annotations
 
@@ -64,12 +54,7 @@ def test_revision_chain() -> None:
 
 
 def test_docstring_carries_the_mandatory_duplicate_email_audit() -> None:
-    """The pre-deploy audit lives in the migration, where whoever deploys it looks.
-
-    Pinned by a test because it is a deploy-safety instruction, not prose: without
-    running it first, a live database holding `Foo@x.com` + `foo@x.com` turns the
-    deploy into a failed migrate job.
-    """
+    """The pre-deploy audit lives in the migration, where whoever deploys it looks."""
     doc = _load_migration().__doc__ or ""
     assert "GROUP BY 1" in doc and "HAVING count(*) > 1" in doc
     assert "lower(email)" in doc
@@ -77,11 +62,7 @@ def test_docstring_carries_the_mandatory_duplicate_email_audit() -> None:
 
 
 def test_up_down_up(db_session: Any) -> None:
-    """down (restore NOT NULL, drop index) → up → asserted at each step.
-
-    `Base.metadata.create_all` already reflects the post-migration model (nullable
-    aad + the expression index), so the pass starts with `downgrade()`.
-    """
+    """down (restore NOT NULL, drop index) → up → asserted at each step."""
     module = _load_migration()
     connection = db_session.connection()
     ctx = MigrationContext.configure(connection)
@@ -97,11 +78,7 @@ def test_up_down_up(db_session: Any) -> None:
 
 
 def test_upgrade_aborts_when_duplicate_case_insensitive_emails_exist(db_session: Any) -> None:
-    """The documented failure mode: skipping the audit fails the migrate job loudly.
-
-    Proves the abort is real (and that it is the INDEX that catches it), not a
-    claim in a docstring.
-    """
+    """The documented failure mode: skipping the audit fails the migrate job loudly."""
     from sqlalchemy.exc import IntegrityError
 
     from backend.app.db.models import User
@@ -125,13 +102,7 @@ def test_upgrade_aborts_when_duplicate_case_insensitive_emails_exist(db_session:
 
 
 def test_downgrade_refuses_instead_of_deleting_otp_users(db_session: Any) -> None:
-    """A NULL-aad user must stop the downgrade, not be silently destroyed.
-
-    Deleting them would CASCADE away their PATs and access shares (and hard-fail
-    on `connections/suites/schedules.created_by`, which are NOT NULL with no
-    ondelete), so the migration raises instead. The error must name the count and
-    stay actionable.
-    """
+    """A NULL-aad user must stop the downgrade, not be silently destroyed."""
     from backend.app.db.models import User
 
     db_session.add(User(aad_object_id=None, email=f"otp-{uuid.uuid4().hex[:8]}@example.com"))
@@ -149,11 +120,7 @@ def test_downgrade_refuses_instead_of_deleting_otp_users(db_session: Any) -> Non
 
 
 def test_downgrade_succeeds_once_no_null_aad_users_remain(db_session: Any) -> None:
-    """The other half of the rollback plan: with the OTP rows resolved, down works.
-
-    This is the state during the step-1 deploy itself (#734's upsert code is not
-    shipped yet), so the rollback is unconditionally clean there.
-    """
+    """The other half of the rollback plan: with the OTP rows resolved, down works."""
     module = _load_migration()
     connection = db_session.connection()
     ctx = MigrationContext.configure(connection)

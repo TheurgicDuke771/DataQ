@@ -1,11 +1,4 @@
-"""Orchestration-poll health becomes a fact about the connection (#828).
-
-The bug this pins is not the expired credential — it's that a failing poll was
-**invisible**. It logged `orchestration_poll_failed` every 10 minutes and moved on: the
-connection still read as configured, the lineage UI showed its ordinary empty state, and
-the beat task returned success with an `errors` count nobody was watching. Prod lineage
-was dark for six days and the product said nothing was wrong.
-"""
+"""Orchestration-poll health becomes a fact about the connection (#828)."""
 
 from __future__ import annotations
 
@@ -84,7 +77,8 @@ class TestFailureBecomesVisible:
 
 class TestTheStoredReasonCannotLeakACredential:
     """The column is served by the API and rendered in the UI — raw exception text is
-    not safe to put there. The real failure carried the SAS query string."""
+    not safe to put there. The real failure carried the SAS query string.
+    """
 
     @pytest.mark.parametrize(
         "secret",
@@ -153,7 +147,8 @@ class TestTheLineageEmptyStateStopsLying:
 
 class TestThePollWritesHealth:
     """The wiring: the beat task must actually call the bookkeeping, and a bookkeeping
-    error must never take down the sweep it is reporting on."""
+    error must never take down the sweep it is reporting on.
+    """
 
     def test_a_raising_provider_marks_the_connection_unhealthy(
         self, db_session: Any, monkeypatch: Any
@@ -205,7 +200,8 @@ def _warehouse_connection(db_session: Any, conn_type: str = "snowflake") -> Conn
 
 class TestWarehouseLineageStatusStopsLying:
     """A degraded (view-level-only) or failing warehouse-lineage source must be
-    surfaced so the graph isn't shown as complete + current (#858 slice 4)."""
+    surfaced so the graph isn't shown as complete + current (#858 slice 4).
+    """
 
     def test_never_refreshed_source_is_not_listed(self, db_session: Any) -> None:
         from backend.app.services.asset_view_service import warehouse_lineage_status
@@ -263,7 +259,8 @@ class TestWarehouseLineageStatusStopsLying:
 class TestWarehouseLineageStalenessSurface:
     """#1091's second defect: a source that simply STOPS refreshing — no error, no
     degraded reason — matched nothing above and rendered as healthy while serving
-    9-day-old lineage. Staleness must surface independently of error/degraded."""
+    9-day-old lineage. Staleness must surface independently of error/degraded.
+    """
 
     def _enable(self, monkeypatch: pytest.MonkeyPatch, hours: str = "48") -> None:
         from backend.app.core.config import get_settings
@@ -308,7 +305,8 @@ class TestWarehouseLineageStalenessSurface:
         self, db_session: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """With WAREHOUSE_LINEAGE_ENABLED off there is no refresh expectation to be
-        stale against — an old-but-cached refresh stamp must not banner."""
+        stale against — an old-but-cached refresh stamp must not banner.
+        """
         from datetime import UTC, datetime, timedelta
 
         from backend.app.core.config import get_settings
@@ -358,11 +356,11 @@ class TestWarehouseLineageStalenessSurface:
     def test_a_failing_and_stale_source_reports_both(
         self, db_session: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Error + stale co-occur when the refresh loop died AFTER a failing attempt
-        (the error path bumps the refresh stamp per attempt, so an old stamp means no
-        attempts at all since) — prod's dead-PAT connections during #1091 were exactly
-        this. Both qualifiers must survive to the DTO; the error must not mask the
-        staleness (the #987 shape)."""
+        """Error + stale co-occur when the refresh loop died AFTER a failing attempt (the error
+        path bumps the refresh stamp per attempt, so an old stamp means no attempts at all
+        since) — prod's dead-PAT connections during #1091 were exactly this. Both qualifiers
+        must survive to the DTO; the error must not mask the staleness (the #987 shape).
+        """
         from datetime import UTC, datetime, timedelta
 
         from backend.app.services.asset_view_service import warehouse_lineage_status
@@ -382,11 +380,6 @@ class TestWarehouseLineageStalenessSurface:
 class TestPollReasonSpeaksOrchestration:
     """#1285 — the reason written to `last_poll_error` must describe an ORCHESTRATION
     failure, not a datasource run.
-
-    This is the wiring test, deliberately separate from the classifier's own unit
-    tests: those pass whatever `record_poll_failure` actually calls, so pointing this
-    line back at `classify_failure_reason` would restore the prod bug with a fully
-    green classifier suite.
     """
 
     def test_a_stopped_host_does_not_send_the_operator_to_a_warehouse(

@@ -1,14 +1,4 @@
-"""`run_service.historical_check_context` — #1489.
-
-Redaction (`tested_column`) and the G1 access-exposure audit (`expectation_type`,
-#1486) both need to know what a check WAS measuring when a given result was
-written, not what it measures NOW — `expectation_type`/`config` are freely
-PATCH-able on a live `Check` with no re-validation against existing results.
-Verifies the resolution picks the `check_versions` snapshot in effect at each
-result's own `created_at`, and falls back sanely when there is no history.
-
-Skips without TEST_DATABASE_URL.
-"""
+"""`run_service.historical_check_context` — #1489."""
 
 from __future__ import annotations
 
@@ -86,11 +76,8 @@ def _result(db_session: Any, check: Check, *, created_at: datetime) -> Result:
 
 
 def test_resolves_the_version_in_effect_when_each_result_was_written(db_session: Any) -> None:
-    # #1486's own motivating case: a check that reported a MEAN when a result
-    # was written, later edited to MAX/MIN — the old result must not retroactively
-    # look like a literal-cell exposure. The live Check row is deliberately a
-    # THIRD value neither version used, so a fallback-to-live bug can't hide
-    # behind an accidental match.
+    # #1486's own motivating case: a check that reported a MEAN when a result was written, later
+    # edited to MAX/MIN — the old result must not retroactively look like a literal-cell exposure.
     _suite, check = _suite_and_check(db_session, expectation_type="expect_table_row_count_to_equal")
     _version(
         db_session,
@@ -120,9 +107,8 @@ def test_resolves_the_version_in_effect_when_each_result_was_written(db_session:
 
 
 def test_falls_back_to_the_live_check_with_no_version_history(db_session: Any) -> None:
-    # A check created before #280 shipped (or seeded directly, bypassing
-    # check_service) has no check_versions rows at all — no worse off than
-    # before this function existed.
+    # A check created before #280 shipped (or seeded directly, bypassing check_service) has no
+    # check_versions rows at all — no worse off than before this function existed.
     _suite, check = _suite_and_check(db_session, expectation_type="expect_column_max_to_be_between")
     result = _result(db_session, check, created_at=_T0)
 
@@ -132,9 +118,8 @@ def test_falls_back_to_the_live_check_with_no_version_history(db_session: Any) -
 
 
 def test_falls_back_to_the_earliest_version_when_the_result_predates_it(db_session: Any) -> None:
-    # Clock skew / same-instant edge case: every version is AFTER the result's
-    # created_at. "Before the first edit" is a closer approximation of history
-    # than jumping to whatever the check is today.
+    # Clock skew / same-instant edge case: every version is AFTER the result's created_at. "Before
+    # the first edit" is a closer approximation of history than jumping to whatever the check is
     _suite, check = _suite_and_check(db_session)
     _version(
         db_session,

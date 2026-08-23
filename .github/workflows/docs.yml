@@ -1,12 +1,6 @@
 name: Docs
 
 # Build the MkDocs Material site and publish it to GitHub Pages (#288).
-# Requires Pages enabled with Source = "GitHub Actions" (Settings → Pages) once.
-#
-# The build ALSO runs on pull requests (#834). `mkdocs build --strict` aborts on a
-# warning — a broken cross-doc link is enough — and this used to run on `main` only,
-# so a bad link merged green and then silently killed every publish. The site sat
-# two days stale before anyone noticed. Build on the PR; publish only from `main`.
 on:
   push:
     branches: [main]

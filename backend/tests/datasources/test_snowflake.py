@@ -1,14 +1,4 @@
-"""Tests for the Snowflake GX adapter — the GX-free, deterministic parts.
-
-`SnowflakeCheckRunner.run_checks` connects to a live warehouse at asset-build
-time, so its full chain is not unit-tested here; the `add_snowflake`
-construction it performs IS pinned via a fake context (#195 — key-pair uses
-the GX kwargs form with a base64-DER private_key, password keeps the DSN).
-Everything else — config parsing, connection-string building, expectation
-translation, and the GX-result → DTO mapping — is covered. `to_suite_outcome` is exercised against a
-*real* GX validation result (pandas batch, no Snowflake) so the test also guards
-the GX 1.17 result shape this adapter depends on (`.type`, injected `batch_id`).
-"""
+"""Tests for the Snowflake GX adapter — the GX-free, deterministic parts."""
 
 import base64
 from types import SimpleNamespace
@@ -166,7 +156,8 @@ def test_build_connect_args_rejects_malformed_key() -> None:
 
 class _FakeDataSources:
     """Captures add_snowflake kwargs; the sentinel exception stops run_checks
-    before any further GX machinery runs."""
+    before any further GX machinery runs.
+    """
 
     def __init__(self) -> None:
         self.kwargs: dict[str, Any] | None = None
@@ -203,9 +194,8 @@ def _captured_add_snowflake(
 
 
 def test_run_checks_key_pair_uses_gx_kwargs_form(monkeypatch: pytest.MonkeyPatch) -> None:
-    # The GX-supported key-pair form (#195): connection details as keyword args
-    # with a base64-DER private_key — NOT the deprecated/broken
-    # connection_string + kwargs['connect_args'] route.
+    # The GX-supported key-pair form (#195): connection details as keyword args with a base64-DER
+    # private_key — NOT the deprecated/broken connection_string + kwargs['connect_args'] route.
     kwargs = _captured_add_snowflake(monkeypatch, {**_CONFIG, "auth_type": "key_pair"}, _rsa_pem())
     assert "connection_string" not in kwargs
     assert "kwargs" not in kwargs
@@ -223,25 +213,14 @@ def test_run_checks_key_pair_uses_gx_kwargs_form(monkeypatch: pytest.MonkeyPatch
 
 @pytest.mark.parametrize("auth_type", ["password", "key_pair"])
 def test_config_requires_role_for_every_auth_type(auth_type: str) -> None:
-    """A role-less config is rejected at validation, whatever the auth type (#1067).
-
-    Previously scoped to key_pair only. The reasoning was right — GX mandates a
-    role — but the scope was wrong: the requirement is GX's, not the auth
-    method's. A role-less PASSWORD connection therefore tested green (the
-    connection test is GX-free) and failed every suite run at `add_snowflake`.
-    """
+    """A role-less config is rejected at validation, whatever the auth type (#1067)."""
     config = {k: v for k, v in _CONFIG.items() if k != "role"} | {"auth_type": auth_type}
     with pytest.raises(ValidationError, match="role"):
         SnowflakeConfig.model_validate(config)
 
 
 def test_gx_still_requires_role_in_the_dsn() -> None:
-    """Pin GX's contract instead of re-deriving it (#1067).
-
-    Our validator exists ONLY because GX rejects a DSN without `role`. If GX ever
-    relaxes `REQUIRED_QUERY_PARAMS`, this fails and the validator should be
-    revisited — rather than the requirement quietly outliving its reason.
-    """
+    """Pin GX's contract instead of re-deriving it (#1067)."""
     from great_expectations.datasource.fluent.snowflake_datasource import (
         REQUIRED_QUERY_PARAMS,
     )
@@ -253,9 +232,6 @@ def test_gx_still_requires_role_in_the_dsn() -> None:
 def test_dsn_omits_role_when_absent_which_is_why_it_must_be_required() -> None:
     """The mechanism behind the defect: the DSN builder only emits `role=` when
     the config carries one, so a role-less config yields a DSN GX rejects.
-
-    Asserted on the builder directly, bypassing the model validator, so the
-    mechanism stays pinned even though the validator now prevents reaching it.
     """
     # Explicit kwargs, not **dict: the tests tree is mypy-gated (#418) and a
     # `**dict[str, str]` cannot satisfy the Literal-typed auth_type parameter.
@@ -269,10 +245,8 @@ def test_dsn_omits_role_when_absent_which_is_why_it_must_be_required() -> None:
     )
     dsn = build_connection_string(role_less, "pw")
     assert "role=" not in dsn
-    # The DSN must be well-formed in every OTHER respect — otherwise this test
-    # could pass because the config was malformed rather than because `role` is
-    # absent. (mypy caught exactly that: `schema=` silently sets a stray attribute
-    # under model_construct, which bypasses the alias, leaving schema_ unset.)
+    # The DSN must be well-formed in every OTHER respect — otherwise this test could pass because
+    # the config was malformed rather than because `role` is absent.
     assert "warehouse=" in dsn
     assert _CONFIG["database"] in dsn
     assert _CONFIG["schema"] in dsn
@@ -285,10 +259,8 @@ def test_run_checks_password_keeps_connection_string(monkeypatch: pytest.MonkeyP
 
 
 def test_gx_accepts_the_key_pair_kwargs_shape(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Feed the EXACT kwargs run_checks passes into the real GX datasource model
-    # (pydantic validation only — no connection). Pins that GX resolves them to
-    # its key-pair form, so a GX-side tightening of the union/validators fails
-    # here in CI instead of only at a live suite run.
+    # Feed the EXACT kwargs run_checks passes into the real GX datasource model (pydantic validation
+    # only — no connection).
     from great_expectations.datasource.fluent.snowflake_datasource import (
         KeyPairConnectionDetails,
         SnowflakeDatasource,
@@ -644,7 +616,8 @@ def _runner_with_counted_engine(
 ) -> tuple[SnowflakeCheckRunner, list[dict[str, Any]]]:
     """A real runner whose lazy `create_engine` is redirected to a seeded sqlite
     DB, with every construction (url + kwargs) recorded — pins that the engine
-    is built ONCE per runner and that connect-args/pre-ping actually reach it."""
+    is built ONCE per runner and that connect-args/pre-ping actually reach it.
+    """
     import sqlalchemy
 
     real_create_engine = sqlalchemy.create_engine
@@ -662,10 +635,8 @@ def _runner_with_counted_engine(
         return real_create_engine(db_url)
 
     monkeypatch.setattr(sqlalchemy, "create_engine", _fake_create_engine)
-    # `model_construct` (validation bypass, test-only): a schema-less config is
-    # unconstructable via model_validate, but sqlite has no schemas — the run
-    # must qualify the bare table. Never mutate a validated instance instead
-    # (assignment would bypass validation and rot if validate_assignment lands).
+    # `model_construct` (validation bypass, test-only): a schema-less config is unconstructable via
+    # model_validate, but sqlite has no schemas — the run must qualify the bare table.
     config = SnowflakeConfig.model_construct(
         account="acct",
         user="u",
@@ -730,9 +701,8 @@ def test_close_check_runner_helper_dispatches_and_noops() -> None:
 
 
 def test_close_check_runner_never_raises() -> None:
-    # close runs inside the run path's finally — a raising dispose() must never
-    # replace the in-flight result (it would skip incident sync/alerts or mask a
-    # dry-run's mapped error). Logged, swallowed.
+    # close runs inside the run path's finally — a raising dispose() must never replace the in-
+    # flight result (it would skip incident sync/alerts or mask a dry-run's mapped error).
     from backend.app.datasources.registry import close_check_runner
 
     class _ExplodingClose:
@@ -743,8 +713,6 @@ def test_close_check_runner_never_raises() -> None:
 
 
 def test_supported_monitor_kinds_is_explicit() -> None:
-    # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise
-    # every future registry kind and self-defeat the per-kind gate. Widening
-    # this set is a conscious act, done when the runner actually implements
-    # the new kind.
+    # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise every future registry
+    # kind and self-defeat the per-kind gate.
     assert SnowflakeCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})

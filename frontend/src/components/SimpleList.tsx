@@ -2,17 +2,8 @@ import { createContext, useContext, type CSSProperties, type Key, type ReactNode
 import { Flex, Typography, theme } from 'antd';
 
 /**
- * A minimal stand-in for antd's `List`, which is deprecated in antd v6 and slated
- * for removal in v7 ("The `List` component is deprecated…"). It covers only the
- * subset the app actually used — `dataSource` + `renderItem`, `Item` (with
- * `actions`), and `Item.Meta` (title/description) — rendered as plain flex rows so
- * no deprecated component is on the tree. Visuals mirror antd's borderless list:
- * a hairline `colorSplit` divider between rows and size-aware vertical padding,
- * pulled from the live theme token so it tracks the app's antd theme.
- *
- * Intentionally NOT reintroducing the full List API (pagination, loadMore, grid,
- * bordered box, avatar-less split dots between actions): add only what a real call
- * site needs, so this stays a thin shim rather than a re-implementation.
+ * A minimal stand-in for antd's `List`, which is deprecated in antd v6 and slated for removal in
+ * v7 ("The `List` component is deprecated…").
  */
 
 type ListSize = 'default' | 'small';
@@ -90,9 +81,8 @@ function SimpleListItem({ children, actions, onClick, className, style }: Simple
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        // Actions never shrink, so without wrap the content region gets
-        // `container − actions` — a char-per-line sliver on phone widths
-        // (#692). Wrapping drops the actions to their own line instead.
+        // Actions never shrink, so without wrap the content region gets `container − actions` — a
+        // char-per-line sliver on phone widths (#692).
         flexWrap: 'wrap',
         gap: token.padding,
         paddingBlock,

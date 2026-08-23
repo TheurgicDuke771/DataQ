@@ -1,17 +1,4 @@
-"""Does reading regulated data actually record it? — G1 / #431.
-
-`test_access_coverage.py` proves a *decision* was taken for every surface that can
-return failing rows. This is the other half: read through the real API and assert
-the row.
-
-The distinguishing assertion in this file is **`exposed`**. The HIPAA question is
-"who accessed PHI", not "who opened a page" — so a read whose sample came back
-fully redacted must be recorded as exposing nothing, and one that surfaced real
-failing rows must be recorded as exposing something. A log that cannot tell those
-apart makes an investigator read every page-view as an access.
-
-Skips without TEST_DATABASE_URL.
-"""
+"""Does reading regulated data actually record it? — G1 / #431."""
 
 from __future__ import annotations
 
@@ -56,16 +43,7 @@ def _seed(
     column: str,
     expectation_type: str = "expect_column_values_to_not_be_null",
 ) -> tuple[User, Run]:
-    """A suite with one failed check and one result carrying `sample`.
-
-    `column` is the tested column, which is what drives the redactor: a non-PII
-    name lets the failing values through, a PII one masks them. That is the lever
-    the `exposed` assertions below turn. `expectation_type` (#1486) is the OTHER
-    lever a **scalar** `observed_value` exposure turns — only a known
-    cell-reporting type (`expect_column_max_to_be_between` and siblings) counts an
-    unmasked scalar as an exposure; the default here is deliberately NOT one, so
-    every existing caller keeps asserting against a genuine aggregate.
-    """
+    """A suite with one failed check and one result carrying `sample`."""
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"o-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
     db_session.flush()
@@ -133,14 +111,7 @@ def test_reading_a_run_records_an_access_event(client: TestClient, db_session: A
 def test_an_exposing_read_is_distinguishable_from_a_redacted_one(
     client: TestClient, db_session: Any
 ) -> None:
-    """`exposed` is what makes the log answer the question it exists for.
-
-    A non-PII tested column surfaces its failing values; a PII one is masked. The
-    two reads are identical in every other respect — same route, same caller, same
-    shape of stored row — so if the event did not distinguish them, an
-    investigator would have to treat every page-view as an access to PHI, and the
-    handful of events that matter would be buried among the many that do not.
-    """
+    """`exposed` is what makes the log answer the question it exists for."""
     _owner, safe_run = _seed(
         db_session,
         sample={"partial_unexpected_list": [1, 2, 3], "unexpected_count": 3},
@@ -191,16 +162,7 @@ def test_the_event_records_which_result_never_what_it_contained(
 def test_a_failed_audit_write_does_not_fail_the_read(
     client: TestClient, db_session: Any, monkeypatch: Any
 ) -> None:
-    """The phase-2 contract, and the opposite of phase 1's.
-
-    A config event is fail-closed: if it cannot be written, the change must not
-    happen. A read event must NOT take that contract — failing a legitimate read
-    because the audit insert failed trades a real outage for a bookkeeping
-    problem, and #431's own AC forbids the regression.
-
-    The failure must still be LOUD, which is asserted too: a compliance control
-    that silently stops recording is the worst of both worlds.
-    """
+    """The phase-2 contract, and the opposite of phase 1's."""
     from structlog.testing import capture_logs
 
     from backend.app.services import audit_service
@@ -294,23 +256,7 @@ def test_observed_value_exposure_is_not_a_null_check(
     expect_exposed: bool,
     why: str,
 ) -> None:
-    """`exposed` must reflect what was SURFACED, not whether a field is non-None.
-
-    The first version asked only `observed_value is not None`, which is wrong in
-    **both** directions: `redact_observed_value` masks IN PLACE, so a fully masked
-    list comes back as `{"observed_value": ["<redacted>"]}` — non-None, exposing
-    nothing — and a plain row count comes back as `{"observed_value": 34680}` —
-    non-None, not personal data at all. Effectively every read was recorded as an
-    exposure, which defeats the one field the access log hangs on.
-
-    It survived review-by-reading and passed every test, because **every fixture
-    had `observed_value=None`**: the tests encoded the shape we happened to build,
-    not the shapes production produces. Parameterised over all real shapes for
-    that reason — the last two are #1486's scalar-from-a-cell-reporting-type case,
-    which needs its own `expectation_type` lever since a tested `column` alone
-    (the `line_total` row-count case above) is not enough to tell a real cell
-    apart from an aggregate statistic.
-    """
+    """`exposed` must reflect what was SURFACED, not whether a field is non-None."""
     _owner, run = _seed(db_session, sample=None, column=column, expectation_type=expectation_type)
     result = db_session.scalars(select(Result).where(Result.run_id == run.id)).one()
     result.observed_value = observed
@@ -329,16 +275,6 @@ def test_the_access_commit_does_not_expire_the_callers_objects(
 ) -> None:
     """`expire_on_commit` is True by default, and a read path commits in the
     MIDDLE of building its response.
-
-    Left unsuppressed, every ORM object the caller still holds is expired, so a
-    50-result run issues ~50 refresh SELECTs on the attribute access that follows
-    — and a row deleted concurrently raises `ObjectDeletedError`, a 500 caused
-    entirely by the audit write, on the path whose own AC forbids a latency
-    regression.
-
-    Asserted through the response rather than by counting queries: if the objects
-    had been expired and the row was gone, the request would not have returned
-    its data at all.
     """
     _owner, run = _seed(
         db_session,
@@ -361,31 +297,6 @@ def test_editing_a_check_does_not_retroactively_relabel_an_old_result(
 ) -> None:
     """A result must be classified by what the check WAS when the row was
     written, not what it is now.
-
-    Real end-to-end repro of the #1489 gap: a check is created reporting a MEAN
-    (never a cell), a result is written under that version, and the check is
-    THEN edited via the real `check_service.update_check` path to a MAX/MIN
-    type on a different, deliberately NON-PII column — the exact edit
-    `update_check` allows with no re-validation against existing results.
-    Re-reading the OLD result must still see it as the harmless mean it always
-    was, not a newly-invented cell exposure.
-
-    The post-edit column is deliberately non-PII (`unit_price`, not e.g.
-    `customer_email`): a PII-named column masks regardless of expectation type,
-    which would make `exposed is False` true for the WRONG reason under the
-    unfixed code too (masked because the name looks sensitive, not because the
-    resolution is historically correct) — a vacuous version of this test caught
-    by mutation-checking it. With a non-PII column, the unfixed code shows the
-    raw scalar as a genuine max/min cell (`exposed=True`, wrong); only the fix
-    correctly attributes the old result to its pre-edit mean version.
-
-    `created_at` is stamped explicitly on the version-2 snapshot and the result,
-    rather than relying on wall-clock separation between the two `commit()`s:
-    this fixture runs the whole test inside one outer transaction (rolled back
-    at teardown), and Postgres' `now()` is fixed for the transaction's lifetime
-    — every `server_default=func.now()` row here would otherwise land on the
-    IDENTICAL instant, which collapses the very ordering this test exists to
-    prove (found by running it and observing all three timestamps tie).
     """
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"o-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
@@ -414,13 +325,8 @@ def test_editing_a_check_does_not_retroactively_relabel_an_old_result(
         fail_threshold=None,
         critical_threshold=None,
     )
-    # Explicit created_at throughout, rather than relying on wall-clock
-    # separation between commits: every server_default=func.now() row inside
-    # this fixture's outer transaction ties to the SAME instant (Postgres'
-    # now() is fixed for a transaction's lifetime, and this fixture never
-    # really commits until teardown), which collapses the ordering this test
-    # exists to prove — confirmed by running it and observing all timestamps
-    # identical. `version_1`'s row was written by `create_check` itself.
+    # Explicit created_at throughout, rather than relying on wall-clock separation between commits:
+    # every server_default=func.now() row inside this fixture's outer transaction ties to the SAME i
     version_1 = db_session.scalars(
         select(CheckVersion).where(CheckVersion.check_id == check.id, CheckVersion.version_no == 1)
     ).one()

@@ -1,30 +1,4 @@
-"""Add monitor_baselines — the reference state stateful monitor kinds diff against (#592).
-
-Revision ID: e2f3a4b5c6d7
-Revises: d1e2f3a4b5c6
-Create Date: 2026-07-14
-
-The ``schema_drift`` monitor kind (ADR 0012's first stateful kind) needs somewhere to
-persist the column-name/type snapshot each run diffs the live schema against. Designed
-for TWO consumers (the #592 AC): the W5 ``anomaly`` kind (#593) stores its metric
-baseline parameters in the same shape, so the payload is a kind-shaped JSONB —
-one persistence shape, no second table later.
-
-Semantics:
-- One CURRENT baseline per check (``UNIQUE (check_id)``) — a re-baseline REPLACES the
-  row; historical drift observations live in ``results``, not here.
-- ``kind`` is denormalized from the check (queryability), CHECK-constrained to the
-  shared kind vocabulary; the check's own kind is the authority.
-- ``captured_by`` is the manual re-baseline actor (SET NULL on user delete);
-  NULL = the run path captured it automatically on the check's first run.
-- Cascade-deleted with the check. Shape metadata only — never row data, so it is
-  outside the PII retention sweep.
-
-**Backward-compatible by construction** (CLAUDE.md §6): a brand-new table nothing
-deployed reads or writes; the code that uses it ships after this migration is applied.
-
-Down-migration drops the table; nothing else is touched.
-"""
+"""Add monitor_baselines — the reference state stateful monitor kinds diff against (#592)."""
 
 from __future__ import annotations
 

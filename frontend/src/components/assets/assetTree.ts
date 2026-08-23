@@ -2,32 +2,12 @@ import type { AssetSummary } from '../../api/assets';
 import { type DatasourceKind, datasourceKind, namespaceLabel } from './namespaceLabel';
 
 /**
- * Hierarchical asset browse (#802) — pure, so it can be unit-tested without
- * rendering antd (kept out of the `.tsx` so the Tree component can fast-refresh).
- *
- * This is a **presentation regrouping**, not a new identity: assets stay keyed by
- * the ADR 0034 OpenLineage `namespace` + `name`, which already encode the
- * datasource root and the dotted/slashed path down to the leaf. We derive the
- * tree straight from those strings:
- *
- * - **root** = the OL `namespace` (the datasource instance — Snowflake account,
- *   UC workspace, ADLS container, S3 bucket, Iceberg catalog). Assets are
- *   connection-*agnostic* by ADR 0034 (the same physical table reached via two
- *   connections is one asset), so the namespace is the honest "connection root".
- * - **middle + leaf** = the `name` split into segments. Warehouse names are
- *   dotted (`DB.SCHEMA.TABLE`); flat-file names are slashed paths
- *   (`raw/orders/2024.csv`). The last segment is the asset (a selectable leaf);
- *   the earlier segments are the database/catalog → schema/namespace folders,
- *   merged across assets that share a prefix.
- *
- * A node can be *both* a folder and a selectable asset — a flat-file `raw/orders`
- * leaf can coexist with `raw/orders/2024.csv` under it — so `asset` and
- * `children` are independent.
+ * Hierarchical asset browse (#802) — pure, so it can be unit-tested without rendering antd (kept
+ * out of the `.tsx` so the Tree component can fast-refresh).
  */
 
-// `DatasourceKind` + `datasourceKind` live in `namespaceLabel` — one scheme table
-// feeds both the icon and the label, so they can't drift apart. Re-exported here
-// because this module's consumers already import them from it.
+// `DatasourceKind` + `datasourceKind` live in `namespaceLabel` — one scheme table feeds both the
+// icon and the label, so they can't drift apart.
 export { type DatasourceKind, datasourceKind } from './namespaceLabel';
 
 export interface AssetTreeNode {
@@ -45,12 +25,7 @@ export interface AssetTreeNode {
   children: AssetTreeNode[];
 }
 
-/**
- * Split an asset `name` into its hierarchy segments. Slashed names (flat-file
- * paths) split on `/`; everything else (dotted warehouse/UC/Iceberg names) on
- * `.`. Empty segments are dropped; a name that reduces to nothing falls back to
- * the whole name so an asset always has at least one (leaf) segment.
- */
+/** Split an asset `name` into its hierarchy segments. */
 export function nameSegments(name: string): string[] {
   const sep = name.includes('/') ? '/' : '.';
   const parts = name.split(sep).filter((s) => s.length > 0);
@@ -100,11 +75,7 @@ function freeze(node: MutableNode): AssetTreeNode {
   };
 }
 
-/**
- * Build the connection-rooted asset tree from a flat asset list. Roots are
- * sorted by their (human) label, children by label, both case-insensitively; the
- * shape is deterministic for a given input (test-friendly, no render churn).
- */
+/** Build the connection-rooted asset tree from a flat asset list. */
 export function buildAssetTree(assets: AssetSummary[]): AssetTreeNode[] {
   const roots = new Map<string, MutableNode>();
   for (const asset of assets) {
@@ -113,9 +84,7 @@ export function buildAssetTree(assets: AssetSummary[]): AssetTreeNode[] {
     if (!node) {
       node = {
         key: rootKey,
-        // Read the datasource, don't parse it: the raw namespace is a DSN for
-        // Iceberg (#830). The key/sort still ride on the namespace, so grouping is
-        // unchanged — only what's printed differs.
+        // Read the datasource, don't parse it: the raw namespace is a DSN for Iceberg (#830).
         label: namespaceLabel(asset.namespace),
         kind: datasourceKind(asset.namespace),
         namespace: asset.namespace,

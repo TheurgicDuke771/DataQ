@@ -1,22 +1,4 @@
-"""Check CRUD — checks are GX expectations nested under a suite.
-
-A check belongs to exactly one suite (FK + cascade). This layer validates the
-suite exists, enforces the v1 monitor-kind limit, and validates the check's
-`config` at author time: expectation-kind checks resolve + construct their GX
-expectation class (#651 — the same translation the runner performs, pulled
-forward so garbage 422s instead of persisting and only failing at run time);
-validation against live data remains the dry-run path, not CRUD.
-
-Kind gating (ADR 0012): every kind in the schema CHECK is now authorable —
-`expectation`, the freshness/volume monitors, the stateful `schema_drift` (#592)
-and `anomaly` (#593) monitors, and `comparison` (ADR 0015). The allowlist is
-DERIVED from the monitor registry (`_V1_SUPPORTED_KINDS`), so registering a kind
-widens it; what stays hand-written per kind is its datasource capability set and
-any config/threshold guardrail that needs the DB.
-
-FastAPI-free like the sibling services: takes a `Session`, returns ORM models,
-raises `DataQError` subclasses.
-"""
+"""Check CRUD — checks are GX expectations nested under a suite."""
 
 from __future__ import annotations
 
@@ -82,47 +64,26 @@ from backend.app.services.suite_service import get_suite
 
 log = get_logger(__name__)
 
-# Authorable kinds: GX expectations, every registered monitor kind (ADR 0012 —
-# freshness/volume, schema_drift #592, anomaly #593), and `comparison` (ADR 0015).
-# Derived from the registry, never hand-maintained: registering a kind there is
-# the one step that widens this.
+# Authorable kinds: GX expectations, every registered monitor kind (ADR 0012 — freshness/volume,
+# schema_drift #592, anomaly #593), and `comparison` (ADR 0015).
 _V1_SUPPORTED_KINDS = {"expectation", *MONITOR_KINDS, COMPARISON_KIND}
 
 # Canonical expectation_types for a comparison check (mirrors `monitor:<kind>`).
-# `comparison:records` = row grain; `comparison:columns` = FDC's per-column
-# value grain (#799).
 COMPARISON_EXPECTATION_TYPE = "comparison:records"
 COMPARISON_EXPECTATION_TYPES = ("comparison:records", "comparison:columns")
 
-# The flat-file datasources. Their runner reads the resolved batch into pandas, so
-# volume is a row count and freshness is either an in-frame MAX or — uniquely —
-# the object's arrival time (#520).
+# The flat-file datasources.
 FILE_TYPES = frozenset({"adls_gen2", "s3"})
 
-# Datasources whose runner implements `run_monitors` (a `MonitorRunner`) — the
-# author-time gate for freshness/volume checks. The SQL datasources compute the
-# aggregate in-warehouse; Iceberg computes it natively (`scan().count()` / a column
-# MAX, ADR 0030); flat files compute it over the resolved batch (#520). This is
-# broader than `SQL_QUERYABLE_TYPES` (which gates *custom SQL* — neither Iceberg nor
-# a flat file is SQL-queryable), so the two stay distinct. Kept in sync with the
-# runners' `supported_monitor_kinds` capability (#429).
+# Datasources whose runner implements `run_monitors` (a `MonitorRunner`) — the author-time gate for
+# freshness/volume checks.
 MONITOR_CAPABLE_TYPES = frozenset({*SQL_QUERYABLE_TYPES, "iceberg", *FILE_TYPES})
 
-# schema_drift (#592) introspects the target's column shape through the
-# baseline-diff executor (`services/schema_drift.py`) — not the runner — so its
-# coverage is derived separately even though it now matches: flat files reached it
-# (Parquet footer / CSV header sample) before they had a `run_monitors` at all.
+# schema_drift (#592) introspects the target's column shape through the baseline-diff executor
+# (`services/schema_drift.py`) — not the runner.
 SCHEMA_DRIFT_CAPABLE_TYPES = frozenset({*MONITOR_CAPABLE_TYPES, *FILE_TYPES})
 
-# anomaly (#593) is stateful like schema_drift, but it does not reach the runner
-# EITHER — its executor takes its own measurement by running the freshness/volume
-# Core statement over a live SQLAlchemy connection. That is a SQL capability, not
-# a `run_monitors` one, so the set is narrower than `MONITOR_CAPABLE_TYPES`
-# despite freshness/volume working on Iceberg and flat files: those two compute
-# their scalars natively INSIDE their runners, which stateful kinds never touch.
-# Widening this is a real change (a per-datasource measurement seam on
-# `anomaly.measure_metric`), not a set edit — refusing at author time keeps that
-# honest instead of saving a check that errors every night.
+# anomaly (#593) is stateful like schema_drift, but it does not reach the runner EITHER.
 ANOMALY_CAPABLE_TYPES = frozenset(SQL_QUERYABLE_TYPES)
 
 # Each stateful kind's capability set; scalar kinds all use MONITOR_CAPABLE_TYPES.
@@ -147,37 +108,27 @@ class CheckVersionNotFoundError(DataQError):
     code = "check_version_not_found"
 
 
-# The unique-constraint name on `check_versions(check_id, version_no)` — the
-# concurrency backstop a racing double-edit trips. Matched against the DB error
-# so only that collision becomes a 409 (see `update_check`).
+# The unique-constraint name on `check_versions(check_id, version_no)` — the concurrency backstop a
+# racing double-edit trips.
 _VERSION_UNIQUE_CONSTRAINT = "uq_check_versions_check_version"
 
 
 class CheckEditConflictError(DataQError):
-    # A concurrent edit of the same check raced on the `(check_id, version_no)`
-    # snapshot backstop (#309-adjacent C3): a benign write-write collision, so 409
-    # (reload + retry) — not an unhandled 500. read-modify-write is only as safe as
-    # its unique constraint (no row-locking on the check-then-write today).
+    # A concurrent edit of the same check raced on the `(check_id, version_no)` snapshot backstop
+    # (#309-adjacent C3): a benign write-write collision, so 409 (reload + retry).
     status_code = 409
     code = "check_edit_conflict"
 
 
 def _connection_type(session: Session, suite: Suite) -> str:
-    """The datasource type of the suite's connection — for custom-SQL gating.
-
-    The suite's `connection_id` FK is NOT NULL, so the connection always exists.
-    """
+    """The datasource type of the suite's connection — for custom-SQL gating."""
     connection = session.get(Connection, suite.connection_id)
     assert connection is not None
     return connection.type
 
 
 def validate_kind(kind: str) -> None:
-    """Reject an unsupported check kind (422). Shared by CRUD and suite import.
-
-    Supported: `expectation`, every registered monitor kind, and `comparison`
-    (ADR 0012 / 0015). A kind outside the set has no run path, so authoring one
-    would persist a check that can never execute."""
+    """Reject an unsupported check kind (422). Shared by CRUD and suite import."""
     if kind not in _V1_SUPPORTED_KINDS:
         raise CheckConfigInvalidError(
             f"check kind {kind!r} is not supported in v1",
@@ -186,13 +137,7 @@ def validate_kind(kind: str) -> None:
 
 
 def validate_engine(engine: str, *, connection_type: str) -> None:
-    """Reject an engine the suite's connection doesn't offer (422, ADR 0036 §5).
-
-    Two distinct refusals, both named for the author: an engine outside the
-    vocabulary entirely, and a real engine this connection TYPE doesn't unlock
-    (`dmf` needs a Snowflake connection). The message carries what IS offered —
-    "missing capability" without the alternative is a dead end. Shared by CRUD,
-    restore, and suite import, so no door accepts what another refuses."""
+    """Reject an engine the suite's connection doesn't offer (422, ADR 0036 §5)."""
     if engine not in CHECK_ENGINES:
         raise CheckConfigInvalidError(
             f"check engine {engine!r} is not recognised",
@@ -225,23 +170,6 @@ def validate_engine_compatibility(
     """The engine's supported matrix (ADR 0036 §4) — 422 for a kind/type/config
     the engine cannot evaluate. Shared by create, update, restore and suite
     import (the one-gate-per-rule discipline).
-
-    GX needs no arm here: the GX/monitor/custom-SQL validators already own its
-    matrix, and a ``dmf:*`` type under engine='gx' is rejected by GX's own
-    unknown-type gate. For DMF:
-
-    * kinds: ``expectation`` (the four ``dmf:*`` column metrics) and
-      ``freshness`` — the monitor validators own freshness config, and their
-      Snowflake capability/threshold rules apply unchanged. ``volume`` is NOT
-      in the matrix: ROW_COUNT has no ad-hoc invocation (see `snowflake_dmf`),
-      and the GX volume monitor's COUNT(*) pushes down identically.
-    * a column metric's config is exactly ``{"column": <identifier>}``.
-    * thresholds: the bandable metrics need a positive fail-or-critical
-      threshold (the silent-green rule — without one the metric is computed but
-      never banded); ``dmf:unique_count`` REFUSES thresholds, because
-      `severity.derive_status` bands higher-as-worse and a unique count
-      degrades downward — a threshold would invert its meaning. It runs as an
-      informational metric.
     """
     if engine != DMF_ENGINE:
         return
@@ -290,12 +218,7 @@ def validate_engine_compatibility(
 
 
 def validate_dimension(dimension: str | None) -> str | None:
-    """Reject a DQ dimension outside the seven canonical ones (422), ADR 0038.
-
-    `None` passes through — it means "not specified, derive it", not "invalid".
-    The vocabulary is closed precisely so the #889 coverage view can say "you have
-    no Timeliness checks"; a typo'd free-text value would make that a lie.
-    """
+    """Reject a DQ dimension outside the seven canonical ones (422), ADR 0038."""
     if dimension is not None and not is_valid_dimension(dimension):
         raise CheckConfigInvalidError(
             f"unknown DQ dimension {str(dimension)[:_ERROR_ECHO_MAX_CHARS]!r}",
@@ -307,12 +230,8 @@ def validate_dimension(dimension: str | None) -> str | None:
     return dimension
 
 
-# Mirrors the `checks.name` / `checks.expectation_type` column widths (db/models.py)
-# and the REST `CheckCreate`/`CheckUpdate` Field bounds (api/v1/checks.py). Enforced
-# here too so every caller with no Pydantic layer of its own — the MCP `create_check`
-# tool today, plus suite import's direct `Check(...)` construction — gets a clean 422
-# instead of a raw `StringDataRightTruncation` from Postgres on an over-length
-# INSERT/UPDATE.
+# Mirrors the `checks.name` / `checks.expectation_type` column widths (db/models.py) and the REST
+# `CheckCreate`/`CheckUpdate` Field bounds (api/v1/checks.py).
 _NAME_MAX_LEN = 256
 _EXPECTATION_TYPE_MAX_LEN = 128
 
@@ -342,24 +261,7 @@ def validate_threshold_ordering(
     fail_threshold: Decimal | None,
     critical_threshold: Decimal | None,
 ) -> None:
-    """Reject negative or out-of-order severity thresholds at author time (422).
-
-    #568: `severity.derive_status` assumes thresholds are ordered ``warn <= fail
-    <= critical`` (higher `metric_value` is worse) and skips any unset threshold
-    as if it were +infinity — it has no ordering guard of its own, so nothing
-    upstream of it ever rejected an inverted (e.g. 90/50/10) or negative set.
-    Runtime tolerance if a bad row still slips through (a pre-existing row is
-    NOT migrated by this fix): `derive_status` checks `critical` first, so an
-    inverted set degrades to a surprising-but-defined band rather than a crash —
-    see the comment there.
-
-    Shared by every kind (`create_check`, `update_check`, suite import) because
-    the tier derivation is kind-agnostic — a monitor's freshness/positive-value
-    gate (`validate_monitor_check`) is a narrower, kind-specific rule and does
-    not overlap with this one. Compares only the pairs that are both set: an
-    unset threshold is "no bound", not "0", so it never participates in the
-    ordering check (only in the non-negative one, and only if actually set).
-    """
+    """Reject negative or out-of-order severity thresholds at author time (422)."""
     for field, value in (
         ("warn_threshold", warn_threshold),
         ("fail_threshold", fail_threshold),
@@ -394,31 +296,7 @@ def validate_monitor_check(
     fail_threshold: Decimal | None,
     critical_threshold: Decimal | None,
 ) -> None:
-    """Validate a monitor check of any kind at author time (create/update).
-
-    Four gates, each a 422:
-    1. **Capable datasource only** — a scalar monitor (freshness/volume) needs a
-       runner with `run_monitors` (`MONITOR_CAPABLE_TYPES`); a stateful kind runs
-       through its own executor instead, so each carries its own set —
-       schema_drift (#592) also introspects flat files
-       (`SCHEMA_DRIFT_CAPABLE_TYPES`), anomaly (#593) measures over a live SQL
-       connection and so is SQL-only (`ANOMALY_CAPABLE_TYPES`). Rejecting an
-       unsupported pairing up front keeps the failure a 422, not a failed run.
-    2. **expectation_type matches the kind** — a monitor's type is the canonical
-       ``monitor:<kind>``. The run path keys off `kind`, so a mismatched/junk type
-       would still execute but mislabel every result row (and could smuggle a
-       custom-SQL type past its guardrails) — keep the stored row self-consistent.
-    3. **Config shape** — a valid `column` (freshness) or `min_rows`/`max_rows` range
-       (volume), via the shared `monitors.validate_monitor_config`.
-    4. **Freshness and anomaly need a positive threshold** — neither has an
-       in-config bound (unlike volume's min/max rows), so without a fail/critical
-       threshold they would always resolve `pass` no matter how stale or how far
-       from the baseline (the silent-green footgun flagged in the #426 review); a
-       *zero* threshold is the inverse footgun (always fail). Require a positive
-       fail-or-critical threshold so the metric bands meaningfully. For anomaly
-       the threshold is a z-score — "how many standard deviations from normal" —
-       so it is the sensitivity knob, not an incidental setting.
-    """
+    """Validate a monitor check of any kind at author time (create/update)."""
     capable = _CAPABLE_TYPES_BY_KIND.get(kind, MONITOR_CAPABLE_TYPES)
     if connection_type not in capable:
         raise CheckConfigInvalidError(
@@ -439,11 +317,8 @@ def validate_monitor_check(
         validate_monitor_config(kind, config)
     except MonitorConfigError as exc:
         raise CheckConfigInvalidError(str(exc), detail={"kind": kind, "config": config}) from exc
-    # A column-less freshness monitor measures ARRIVAL time, which only a
-    # datasource with a native per-object timestamp can answer (#520). Gate it
-    # here: `monitors.freshness_column` accepts the omission structurally so the
-    # flat-file runner can use it, and without this the SQL builder would raise
-    # only at RUN time — a check that saves clean and then errors every night.
+    # A column-less freshness monitor measures ARRIVAL time, which only a datasource with a native
+    # per-object timestamp can answer (#520).
     if kind == FRESHNESS and config.get("column") is None and connection_type not in FILE_TYPES:
         raise CheckConfigInvalidError(
             f"a freshness monitor on {connection_type!r} needs a timestamp column — "
@@ -471,11 +346,7 @@ def _has_positive_threshold(fail: Decimal | None, critical: Decimal | None) -> b
 
 
 def _validate_comparison_keys(keys: Any) -> None:
-    """`config.keys` — the join keys the diff matches rows on (ADR 0015 §1).
-
-    A non-empty list; each entry is either a column name (same on both sides) or
-    a `{"source": ..., "target": ...}` mapping when the names differ.
-    """
+    """`config.keys` — the join keys the diff matches rows on (ADR 0015 §1)."""
     if not isinstance(keys, list) or not keys:
         raise CheckConfigInvalidError(
             "a comparison check needs config.keys — a non-empty list of join key columns",
@@ -501,7 +372,8 @@ def _validate_comparison_keys(keys: Any) -> None:
 
 def _validate_side_query(query: Any, *, connection_type: str, field: str) -> None:
     """A per-side SQL projection must be read-only (ADR 0019 rules) and its side's
-    connection must be SQL-queryable (Iceberg/flat-file reads are native, not SQL)."""
+    connection must be SQL-queryable (Iceberg/flat-file reads are native, not SQL).
+    """
     if connection_type not in SQL_QUERYABLE_TYPES:
         raise CheckConfigInvalidError(
             f"{field}: a comparison SQL query requires a SQL datasource, "
@@ -518,16 +390,11 @@ def _validate_side_query(query: Any, *, connection_type: str, field: str) -> Non
 
 
 def _reject_oversized_config(config: dict[str, Any]) -> None:
-    """422 when any config string (keys included) exceeds the #651 cap.
-
-    Shared by the expectation and comparison validators so no kind can persist
-    a multi-megabyte config that every GET/version snapshot/export re-emits.
-    """
+    """422 when any config string (keys included) exceeds the #651 cap."""
     oversized = _find_oversized_string(config)
     if oversized is not None:
-        # Bound the WHOLE path, not just each segment: deep nesting grows the
-        # accumulated path ~200 chars per level, which would round-trip an
-        # arbitrarily large echo through the 422 envelope and the error log.
+        # Bound the WHOLE path, not just each segment: deep nesting grows the accumulated path ~200
+        # chars per level.
         if len(oversized) > _ERROR_ECHO_MAX_CHARS:
             oversized = oversized[:_ERROR_ECHO_MAX_CHARS] + "…"
         raise CheckConfigInvalidError(
@@ -544,15 +411,7 @@ def validate_comparison_check(
     source_connection_id: uuid.UUID | None,
     suite_connection_type: str,
 ) -> None:
-    """Author-time validation for `kind='comparison'` checks (ADR 0015). All 422s.
-
-    The suite supplies the target under test; the check supplies the source
-    (baseline): a connection ref + a suite-target-shaped dataset spec in
-    `config.source`. Either side may instead/additionally carry a read-only SQL
-    projection (`config.source.query` / `config.target_query`), gated exactly
-    like custom-SQL checks (ADR 0019). Cross-env source↔target is allowed by
-    design (DEV-vs-QA parity is a headline use case), so `env` is not compared.
-    """
+    """Author-time validation for `kind='comparison'` checks (ADR 0015). All 422s."""
     # Same #651 string-size cap as expectation checks — no kind may persist a
     # config every GET / version snapshot / export re-emits unbounded.
     _reject_oversized_config(config)
@@ -596,15 +455,7 @@ def validate_comparison_check(
         )
     else:
         if "sampling" in source_spec:
-            # `resolve_target` below would happily ACCEPT a sampling block on a
-            # capable source type — and `comparison_run._source_spec` then drops
-            # it when it builds the `DatasetSpec` (#595 C7). The author would save
-            # clean, believe the read is bounded, and get a run that materialises
-            # the whole thing: precisely the silently-dropped sampling block the
-            # registry's own 422 exists to prevent, arriving through a door that
-            # gate does not cover. Threading sampling through the DatasetReader is
-            # real work and deliberately follow-up scope; refusing it is what keeps
-            # the gap honest in the meantime.
+            # `resolve_target` below would happily ACCEPT a sampling block on a capable source type.
             raise CheckConfigInvalidError(
                 "a comparison source does not support 'sampling' yet — the reader "
                 "materialises both sides in full for the diff, so the block would be "
@@ -652,10 +503,6 @@ def validate_comparison_check(
 
 
 # Longest string allowed anywhere in an expectation config (keys AND values).
-# Generous for real kwargs — a long regex or value-set member runs fine on the
-# worker, so the cap must not reject anything the runner would execute — while
-# still blocking the 100KB-column-name class of junk GX itself accepts (#651).
-# Custom-SQL queries are validated (and bounded) separately, never by this walk.
 _CONFIG_STRING_MAX_CHARS = 10_000
 
 # The reported path/type in a 422 is bounded too — the error envelope is echoed
@@ -665,7 +512,8 @@ _ERROR_ECHO_MAX_CHARS = 200
 
 def _find_oversized_string(value: Any, path: str = "config") -> str | None:
     """Depth-first search for a string over the cap (dict keys included);
-    returns its (bounded) path, or None."""
+    returns its (bounded) path, or None.
+    """
     if isinstance(value, str):
         return path if len(value) > _CONFIG_STRING_MAX_CHARS else None
     if isinstance(value, dict):
@@ -689,28 +537,15 @@ def _find_oversized_string(value: Any, path: str = "config") -> str | None:
 def _reject_row_count_on_sampled_suite(
     session: Session, suite: Suite, expectation_type: str
 ) -> None:
-    """422 for a row-count expectation on a suite whose target samples (#595 C6).
-
-    Against a sampled frame these expectations deterministically observe the
-    SAMPLE and report it as the dataset's size, so a healthy 5M-row file with
-    ``min_value=4_000_000`` fails critically forever under a 100k sample (and the
-    inverse passes wrongly). It is the same smaller-aggregate hazard that got
-    freshness monitors exempted from sampling — refused at author time rather
-    than mismeasured every night.
-
-    The suite-side half (turning sampling ON under an existing row-count check)
-    lives in `suite_service`; both are needed, or the combination is reachable by
-    doing it in the other order.
-    """
+    """422 for a row-count expectation on a suite whose target samples (#595 C6)."""
     if not is_row_count_expectation(expectation_type) or not suite.target:
         return
     connection_type = _connection_type(session, suite)
     try:
         sampling = resolve_target(connection_type, suite.target).sampling
     except SuiteTargetInvalidError:
-        # A target that no longer resolves is its own (separate) problem, and it
-        # is not this gate's job to report it — refusing here would replace a
-        # clear target error with a confusing one about row counts.
+        # A target that no longer resolves is its own (separate) problem, and it is not this gate's
+        # job to report it.
         return
     if sampling is not None:
         raise CheckConfigInvalidError(
@@ -720,16 +555,7 @@ def _reject_row_count_on_sampled_suite(
 
 
 def validate_expectation_check(expectation_type: str, config: dict[str, Any]) -> None:
-    """Author-time validation for `kind='expectation'` checks (#651).
-
-    Resolves and constructs the GX expectation exactly like the runner
-    (`gx_runner._to_gx_expectation`), so an unknown `expectation_type`, a
-    missing/wrong-typed/extra config key — anything that would fail on the
-    worker — 422s at create/update/import instead of persisting. GX expectation
-    classes are pydantic models, so construction IS the schema validation.
-    Custom-SQL checks (ADR 0019) have their own validator and must not be passed
-    here (their type is not a GX class).
-    """
+    """Author-time validation for `kind='expectation'` checks (#651)."""
     _reject_oversized_config(config)
 
     # Lazy: importing great_expectations is heavy (seconds), and the API process
@@ -746,9 +572,8 @@ def validate_expectation_check(expectation_type: str, config: dict[str, Any]) ->
     if expectation_cls is None or not (
         isinstance(expectation_cls, type) and issubclass(expectation_cls, Expectation)
     ):
-        # Bounded echo: REST caps expectation_type at 128 chars, but the MCP
-        # tools don't — never round-trip an unbounded string through the 422
-        # envelope and the error log.
+        # Bounded echo: REST caps expectation_type at 128 chars, but the MCP tools don't — never
+        # round-trip an unbounded string through the 422 envelope and the error log.
         raise CheckConfigInvalidError(
             f"unknown expectation_type {expectation_type[:_ERROR_ECHO_MAX_CHARS]!r} — "
             "not a Great Expectations expectation",
@@ -768,14 +593,9 @@ def validate_expectation_check(expectation_type: str, config: dict[str, Any]) ->
 def record_check_version(
     session: Session, check: Check, *, actor_id: uuid.UUID | None
 ) -> CheckVersion:
-    """Append an immutable snapshot of `check`'s current state as its next
-    version (a per-check sequence starting at 1). The caller commits — this only
-    adds the row, so the snapshot and the create/update it records commit
-    atomically. The `(check_id, version_no)` unique constraint is the backstop
-    against a concurrent double-write computing the same number (rare under v1's
-    single-tenant, low-concurrency editing).
-
-    `check.id` must be populated (flush or commit the check first).
+    """Append an immutable snapshot of `check`'s current state as its next version (a per-check
+    sequence starting at 1). The caller commits — this only adds the row, so the snapshot and
+    the create/update it records commit atomically.
     """
     # MAX over no rows is NULL → None; `or 0` makes the first version 1.
     current_max = session.scalar(
@@ -817,15 +637,7 @@ def create_check(
     engine: str = GX_ENGINE,
     actor_id: uuid.UUID | None = None,
 ) -> Check:
-    """Create a check in a suite, recording its first version (#280).
-
-    `dimension` (ADR 0038) is the author's optional override; omitted, it is
-    DERIVED from the expectation type/kind. Note that omitting it does not mean
-    "unclassified" — only a check whose type has no derivation lands NULL.
-
-    Raises `SuiteNotFoundError` (404) if the suite does not exist, or
-    `CheckConfigInvalidError` (422) for an unsupported kind.
-    """
+    """Create a check in a suite, recording its first version (#280)."""
     suite = get_suite(session, suite_id)  # 404 if the suite is missing
     validate_kind(kind)
     validate_engine(engine, connection_type=_connection_type(session, suite))
@@ -873,9 +685,8 @@ def create_check(
             connection_type=_connection_type(session, suite),
         )
     elif engine == DMF_ENGINE:
-        # A dmf:* column metric — its whole config was validated by
-        # validate_engine_compatibility above; it is not a GX expectation, so
-        # the GX construct-the-class gate (#651) has nothing to say about it.
+        # A dmf:* column metric — its whole config was validated by validate_engine_compatibility
+        # above; it is not a GX expectation.
         pass
     else:
         validate_expectation_check(expectation_type, config)
@@ -913,12 +724,7 @@ def create_check(
 
 
 def list_checks(session: Session, suite_id: uuid.UUID) -> list[Check]:
-    """List a suite's checks (404 if the suite does not exist).
-
-    Ordered by the shared `CHECK_ORDER` — this is the list a user compares
-    against the run-detail and run-progress lists, so it has to sort by the same
-    key or the three disagree on which check is which (#318 G5).
-    """
+    """List a suite's checks (404 if the suite does not exist)."""
     get_suite(session, suite_id)
     stmt = select(Check).where(Check.suite_id == suite_id).order_by(*CHECK_ORDER)
     return list(session.scalars(stmt))
@@ -948,18 +754,10 @@ def _validate_kind_specific_config(
     validate_expectation_config: bool,
     engine: str = GX_ENGINE,
 ) -> None:
-    """The kind-specific validation branch shared by `update_check` and
-    `restore_check_version` (#283) — factored out to ONE place so a check kind
-    added later, or a validator tightened, updates both callers instead of
-    restore silently falling behind whichever hand-picked subset it called.
-    `kind` is immutable, so the branch is keyed on the LIVE check's `kind`.
-
-    `validate_expectation_config` preserves `update_check`'s pre-#651 escape
-    valve: GX-validate a plain expectation only when the caller is actually
-    changing `expectation_type`/`config` (a rename/threshold-only PATCH must
-    stay possible on a pre-#651 check whose stored config today's pinned GX
-    would reject — there is no config backfill). `restore_check_version`
-    always re-applies both fields, so it always passes `True`.
+    """The kind-specific validation branch shared by `update_check` and `restore_check_version`
+    (#283) — factored out to ONE place so a check kind added later, or a validator tightened,
+    updates both callers instead of restore silently falling behind whichever hand-picked subset
+    it called.
     """
     if check.kind in MONITOR_KINDS:
         suite = get_suite(session, suite_id)
@@ -1010,21 +808,14 @@ def _record_version_and_commit(
     read-modify-write against the same `(check_id, version_no)` backstop, so
     both need the identical race handling, not two copies that can drift.
     """
-    # Only snapshot a real change: a no-op write (identical fields, or restoring
-    # the already-current version) must not mint a duplicate version — that
-    # would fill the history drawer with noise and defeat "see previous config".
-    # SQLAlchemy reports net changes, so setting a field to its existing value
-    # isn't dirty.
+    # Only snapshot a real change: a no-op write (identical fields, or restoring the already-current
+    # version) must not mint a duplicate version.
     modified = session.is_modified(check)
     if modified:
         record_check_version(session, check, actor_id=actor_id)
     try:
-        # Audited on the same condition as the version snapshot, and for the same
-        # reason: a no-op write (identical fields, or restoring the already-current
-        # version) changed nothing, and an audit log that records non-events is one
-        # a reader learns to skim. The two mechanisms stay distinct in what they
-        # SURVIVE, not in when they fire — `check_versions` cascades away with the
-        # check, this does not.
+        # Audited on the same condition as the version snapshot, and for the same reason: a no-op
+        # write (identical fields, or restoring the already-current version) changed nothing.
         if modified:
             audit_service.record_entity_change(
                 session,
@@ -1036,11 +827,8 @@ def _record_version_and_commit(
             )
         session.commit()
     except IntegrityError as exc:
-        # Roll back the poisoned tx, then map ONLY the version-snapshot collision to
-        # a 409 (reload + retry): two concurrent edits computed the same next
-        # `version_no` and raced on the `uq_check_versions_check_version` backstop.
-        # Any other IntegrityError (a different constraint) is not a concurrency
-        # conflict — re-raise it rather than mislabel it "edited concurrently".
+        # Roll back the poisoned tx, then map ONLY the version-snapshot collision to a 409 (reload +
+        # retry): two concurrent edits computed the same next `version_no` and raced on the `uq_che
         session.rollback()
         if _VERSION_UNIQUE_CONSTRAINT not in str(exc.orig):
             raise
@@ -1068,22 +856,7 @@ def update_check(
     engine: str | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Check:
-    """Partial update, snapshotting the post-update state as a new version (#280).
-
-    `engine` (ADR 0036) follows the same PATCH convention — `None` = unchanged;
-    a provided value is validated against the suite connection's capability set,
-    so re-pointing a check at an engine the connection doesn't offer 422s here,
-    not at run time.
-
-    Follows the codebase PATCH convention (connections / suites): a `None`
-    argument means "not provided", so an omitted field is left unchanged. v1 has
-    no clear-to-NULL path for thresholds; recreate the check to drop one. The
-    same applies to `source_connection_id` (a comparison check can be repointed,
-    never cleared — the kind requires it, ADR 0015). `dimension` (ADR 0038) is
-    re-settable at any time — derivation is a guess about intent, not a fact —
-    but the same convention applies: `None` means "not provided", so it cannot be
-    cleared back to unclassified.
-    """
+    """Partial update, snapshotting the post-update state as a new version (#280)."""
     check = get_check(session, suite_id, check_id)
     # Before any field below is mutated.
     audit_before = audit_service.snapshot("check", check)
@@ -1098,11 +871,8 @@ def update_check(
             "only comparison checks carry a source connection (ADR 0015)",
             detail={"kind": check.kind, "field": "source_connection_id"},
         )
-    # Compute the effective post-patch values and validate them BEFORE touching
-    # the ORM object: a rejected update must leave nothing dirty in the session
-    # (mutate-then-raise would let a later commit on the same session persist
-    # the invalid state). `kind` is immutable on update, so it's read off the
-    # existing check.
+    # Compute the effective post-patch values and validate them BEFORE touching the ORM object: a
+    # rejected update must leave nothing dirty in the session (mutate-then-raise would let a later
     new_expectation_type = (
         expectation_type if expectation_type is not None else check.expectation_type
     )
@@ -1112,17 +882,13 @@ def update_check(
     new_critical = (
         critical_threshold if critical_threshold is not None else check.critical_threshold
     )
-    # #568: validate the EFFECTIVE post-patch thresholds, not just the ones this
-    # PATCH touches — same merge-then-validate shape as the monitor guard below.
-    # A pre-existing out-of-order row (not migrated by this fix) therefore needs
-    # its thresholds fixed before any further edit persists, same as an
-    # already-invalid config under the GX gate a few lines down.
+    # #568: validate the EFFECTIVE post-patch thresholds, not just the ones this PATCH touches —
+    # same merge-then-validate shape as the monitor guard below.
     validate_threshold_ordering(
         warn_threshold=new_warn, fail_threshold=new_fail, critical_threshold=new_critical
     )
-    # The engine matrix is validated on the EFFECTIVE post-patch state (ADR
-    # 0036): re-pointing a GX check to dmf without also supplying a dmf config
-    # must 422 here, not at run time.
+    # The engine matrix is validated on the EFFECTIVE post-patch state (ADR 0036): re-pointing a GX
+    # check to dmf without also supplying a dmf config must 422 here, not at run time.
     new_engine = engine if engine is not None else (check.engine or GX_ENGINE)
     validate_engine_compatibility(
         new_engine,
@@ -1145,14 +911,8 @@ def update_check(
         source_connection_id=(
             source_connection_id if source_connection_id is not None else check.source_connection_id
         ),
-        # GX-validate a plain expectation only when the PATCH touches it: a
-        # rename or threshold tweak must stay possible on a pre-#651 check whose
-        # stored config today's pinned GX rejects (there is no config backfill —
-        # such a row would otherwise be un-editable until delete-and-recreate).
-        # An ENGINE change counts as touching it (review catch on this slice):
-        # re-pointing dmf→gx hands the stored dmf:* type to the GX batch, and
-        # without re-validation that PATCH saves cleanly and the next run
-        # raises inside GX — failing the whole suite run.
+        # GX-validate a plain expectation only when the PATCH touches it: a rename or threshold
+        # tweak must stay possible on a pre-#651 check whose stored config today's pinned GX rejects
         validate_expectation_config=(
             expectation_type is not None or config is not None or engine is not None
         ),
@@ -1190,14 +950,7 @@ def delete_check(
     *,
     actor_id: uuid.UUID | None = None,
 ) -> None:
-    """Delete a check.
-
-    The cascade is wide and irreversible: `results.check_id`, `check_versions` and
-    `Incident.check_id` are all `ondelete=CASCADE`, so this erases the check's
-    result history, its config history and any open incident with it. The audit
-    event is therefore the only record that survives the act — which is exactly
-    what `audit_events.entity_id` carrying no foreign key is for.
-    """
+    """Delete a check."""
     check = get_check(session, suite_id, check_id)
     audit_before = audit_service.snapshot("check", check)
     session.delete(check)
@@ -1222,20 +975,11 @@ def snooze_check(
     now: datetime | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Check:
-    """Mute a check's alerts until ``hours`` from now (alert suppression).
-
-    Operational state only — sets ``alert_snoozed_until`` directly and does **not**
-    record a ``check_versions`` snapshot (a snooze isn't a config change; config
-    history shouldn't churn on it). 404 / cross-suite guard via ``get_check``.
-    """
+    """Mute a check's alerts until ``hours`` from now (alert suppression)."""
     check = get_check(session, suite_id, check_id)
     audit_before = audit_service.snapshot("check", check)
     check.alert_snoozed_until = (now or datetime.now(UTC)) + timedelta(hours=hours)
-    # Audited even though it records no `check_versions` snapshot. The two
-    # mechanisms answer different questions: a snooze is not CONFIG history (the
-    # drawer should not churn on it), but it IS a deliberate act that suppresses
-    # alerting on a failing check — and "why was nobody told?" is among the first
-    # questions an incident review asks.
+    # Audited even though it records no `check_versions` snapshot.
     audit_service.record_entity_change(
         session,
         action="check.snooze",
@@ -1301,33 +1045,10 @@ def restore_check_version(
     *,
     actor_id: uuid.UUID | None = None,
 ) -> Check:
-    """Restore a check to a previous version (#283) by re-validating its frozen
-    snapshot through the SAME validators `update_check` uses (`validate_lengths`,
-    `validate_dimension`, `validate_threshold_ordering`,
-    `_validate_kind_specific_config`) and then applying it. That matters
-    because the snapshot may predate a validator that ships later (e.g. #568's
-    threshold-ordering gate, or a tightened ADR-0019 custom-SQL rule):
-    re-validating means a snapshot no longer valid under CURRENT rules is
-    rejected (422) with the live check left untouched, instead of silently
-    reinstating something today's authoring path would refuse to create.
-
-    Deliberately does NOT delegate to `update_check` itself: `update_check`'s
-    `None`-means-"not provided" PATCH convention has no way to clear a
-    threshold/dimension back to NULL, but restoring a version that WAS null
-    there (while the check has since had it set to a real value) must reproduce
-    the snapshot exactly — restore always applies every field unconditionally,
-    including a `None`.
-
-    404s if the check is missing/cross-suite (`get_check`) or `version_no`
-    doesn't exist for it. `kind` is immutable — asserted equal to the live
-    check's rather than applied, since `CheckVersion.kind` is captured for a
-    self-contained history record, never to drive a restore.
-
-    Snapshots the restored state as a brand-new version on success (history is
-    additive — nothing is renumbered or deleted) unless the live check is
-    already identical to the target snapshot, in which case
-    `_record_version_and_commit`'s no-op gating (`session.is_modified`) skips
-    the snapshot — restoring the already-current version is a no-op.
+    """Restore a check to a previous version (#283) by re-validating its frozen snapshot through
+    the SAME validators `update_check` uses (`validate_lengths`, `validate_dimension`,
+    `validate_threshold_ordering`, `_validate_kind_specific_config`) and then applying it. That
+    matters because the snapshot may predate a validator that ships later (e.g.
     """
     check = get_check(session, suite_id, check_id)  # 404 / cross-suite guard
     audit_before = audit_service.snapshot("check", check)
@@ -1348,9 +1069,8 @@ def restore_check_version(
 
     validate_lengths(name=version.name, expectation_type=version.expectation_type)
     validate_dimension(version.dimension)
-    # Re-validated like every other snapshot field (ADR 0036): a snapshot cut
-    # when the connection offered an engine it no longer does must be refused,
-    # not silently reinstated to fail at run time.
+    # Re-validated like every other snapshot field (ADR 0036): a snapshot cut when the connection
+    # offered an engine it no longer does must be refused.
     validate_engine(
         version.engine,
         connection_type=_connection_type(session, get_suite(session, suite_id)),
@@ -1384,9 +1104,8 @@ def restore_check_version(
         validate_expectation_config=True,
     )
 
-    # Apply the FULL snapshot unconditionally (unlike update_check's merge):
-    # restore's entire point is to reproduce the version exactly, including
-    # clearing a threshold/dimension back to NULL if that's what it held.
+    # Apply the FULL snapshot unconditionally (unlike update_check's merge): restore's entire point
+    # is to reproduce the version exactly.
     check.name = version.name
     check.engine = version.engine
     check.expectation_type = version.expectation_type
@@ -1419,12 +1138,6 @@ def list_check_result_history(
 ) -> list[CheckResultPoint]:
     """A check's recent results in chronological order (oldest→newest) for the
     per-check trend (ADR 0022). 404 if the check is missing or cross-suite.
-
-    Takes the latest `limit` results (newest-first in SQL, then reversed) so the
-    chart shows the most recent window left-to-right. `metric_value` is the
-    SQL-aggregatable scalar a run measured (ADR 0012); `None` for checks that
-    record no metric. Suite scoping is the caller's (router `require_permission`);
-    the Run join only guards against a result leaking across suites.
     """
     get_check(session, suite_id, check_id)  # 404 / cross-suite guard
     stmt = (
@@ -1448,15 +1161,7 @@ def list_check_result_history(
 
 
 def count_check_results(session: Session, suite_id: uuid.UUID, check_id: uuid.UUID) -> int:
-    """Total results this check has ever recorded, ignoring any `limit`.
-
-    Exists because `list_check_result_history` is a COUNT-capped page answering
-    TIME-shaped questions ("when did this start failing?"), and inferring
-    truncation from `len(page) == limit` is wrong on the exact-boundary page —
-    the same #925 mistake `/assets` grew `X-Total-Count` to avoid. Without a real
-    total, a complete 30-result history is reported as truncated and the caller
-    is told an onset it can actually see is unknowable.
-    """
+    """Total results this check has ever recorded, ignoring any `limit`."""
     get_check(session, suite_id, check_id)  # 404 / cross-suite guard, as the list does
     stmt = (
         select(func.count())
@@ -1472,7 +1177,8 @@ class CheckBaselinePoint:
     """A stateful monitor's stored baseline row (#594) — the raw payload the
     trend chart overlays. `kind` is denormalized on the row (see
     `MonitorBaseline`) rather than re-read off the check, so this stays a
-    single-row lookup."""
+    single-row lookup.
+    """
 
     kind: str
     baseline: dict[str, Any]
@@ -1482,16 +1188,10 @@ class CheckBaselinePoint:
 def get_check_baseline(
     session: Session, suite_id: uuid.UUID, check_id: uuid.UUID
 ) -> CheckBaselinePoint | None:
-    """A check's current stored baseline (#594), or `None` when absent — a check
-    that has never run, isn't a stateful kind (`schema_drift`/`anomaly`), or was
-    just re-baselined (#592, delete-then-recapture) all read as "no baseline yet"
-    rather than an error; the caller (API) renders that as an empty overlay, not
-    a 404. 404 / cross-suite guard matches `list_check_result_history`.
-
-    Deliberately generic: the payload shape is kind-specific (schema_drift's
-    column snapshot vs. anomaly's observation window) and this module doesn't
-    interpret it — same "don't decode the JSONB" boundary `monitor_baseline.py`
-    itself holds. The UI decides what to draw from `kind` + `baseline`.
+    """A check's current stored baseline (#594), or `None` when absent — a check that has never
+    run, isn't a stateful kind (`schema_drift`/`anomaly`), or was just re-baselined (#592,
+    delete-then-recapture) all read as "no baseline yet" rather than an error; the caller (API)
+    renders that as an empty overlay, not a 404.
     """
     get_check(session, suite_id, check_id)  # 404 / cross-suite guard
     row = _get_monitor_baseline(session, check_id)

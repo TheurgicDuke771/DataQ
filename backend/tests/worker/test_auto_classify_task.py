@@ -1,10 +1,4 @@
-"""Tests for the auto-classify-on-suite-create task (#634).
-
-DB-backed on the `_auto_classify_columns` helper (the derive step is monkeypatched,
-so no live warehouse). Covers: persists a derived policy, never clobbers an existing
-one, skips a targetless / batch-pattern suite, fails soft on introspection error,
-and doesn't persist an empty suggestion.
-"""
+"""Tests for the auto-classify-on-suite-create task (#634)."""
 
 from __future__ import annotations
 

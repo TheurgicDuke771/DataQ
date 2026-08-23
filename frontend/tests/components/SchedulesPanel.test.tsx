@@ -113,11 +113,8 @@ describe('SchedulesPanel', () => {
     // Ant Design renders Modal.confirm into a portal attached to document.body.
     // Search the document body for the modal's Delete button to avoid missing it.
     const deleteBtn = await within(document.body).findByRole('button', { name: 'Delete' });
-    // fireEvent (not userEvent) for the portal OK button: jsdom never fires the
-    // modal's CSS `transitionend`, so its enter animation can leave userEvent's
-    // pointer-events/interactability checks racing on slow CI — a flake (#714,
-    // same family as #640/#573). fireEvent dispatches the click synchronously and
-    // triggers `onOk` regardless of animation state.
+    // fireEvent (not userEvent) for the portal OK button: jsdom never fires the modal's CSS
+    // `transitionend`.
     fireEvent.click(deleteBtn);
 
     await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('sch1'));

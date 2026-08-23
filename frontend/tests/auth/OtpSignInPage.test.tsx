@@ -4,19 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MeResponse } from '../../src/api/me';
 
-/**
- * The two-step email-code sign-in screen (ADR 0032, #736).
- *
- * The properties worth pinning here are mostly about *not lying*:
- *
- * - the send acknowledgement must stay conditional ("if this address can sign
- *   in"), because a confident "we sent you a code" re-opens the enumeration
- *   channel the backend's uniform response closed;
- * - the failure copy must be the SERVER's, because the backend collapses wrong /
- *   expired / used / out-of-attempts into one 401 on purpose and the SPA cannot
- *   tell them apart;
- * - nothing may be written to JS-readable storage, ever.
- */
+/** The two-step email-code sign-in screen (ADR 0032, #736). */
 
 const requestCode = vi.fn();
 const verifyCode = vi.fn();
@@ -167,10 +155,8 @@ describe('step 2 — code', () => {
   });
 
   it('renders an EXPIRED code identically to a wrong one — no invented distinction', async () => {
-    // The backend returns ONE message for wrong / expired / used / out-of-attempts,
-    // deliberately (distinguishing them would be an enumeration oracle). This test
-    // exists to stop a well-meaning "your code expired" branch being added here:
-    // the SPA has no way to know that, and claiming it would be a fabrication.
+    // The backend returns ONE message for wrong / expired / used / out-of-attempts, deliberately
+    // (distinguishing them would be an enumeration oracle).
     const user = userEvent.setup();
     verifyCode.mockRejectedValue(
       httpError(401, 'That sign-in code is not valid. Request a new one.'),
@@ -236,9 +222,8 @@ describe('resend + cooldown', () => {
 
 describe('credential handling', () => {
   it('writes NOTHING to localStorage or sessionStorage across a full sign-in', async () => {
-    // ADR 0032 decision 3: the session is an HttpOnly cookie precisely so an XSS
-    // cannot exfiltrate it. A single stray `setItem` would undo that, so the
-    // invariant is asserted on the real storage objects rather than trusted.
+    // ADR 0032 decision 3: the session is an HttpOnly cookie precisely so an XSS cannot exfiltrate
+    // it.
     const localSet = vi.spyOn(Storage.prototype, 'setItem');
     const user = userEvent.setup();
     verifyCode.mockResolvedValue(ME);

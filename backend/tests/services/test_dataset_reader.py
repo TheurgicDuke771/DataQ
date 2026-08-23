@@ -1,11 +1,4 @@
-"""DatasetReader seam tests (ADR 0015, #792) — no live datasources.
-
-The live I/O seams (`_open_connection`, the flat-file/iceberg read functions)
-are monkeypatched exactly like the profiler's tests; what's under test is the
-dispatch, the fail-fast row-cap discipline (COUNT preflight + post-read race
-guard, never truncation), the read-time read-only re-validation, and the
-credential handling.
-"""
+"""DatasetReader seam tests (ADR 0015, #792) — no live datasources."""
 
 import re
 import uuid
@@ -28,11 +21,8 @@ from backend.app.services.dataset_reader import (
 )
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
-# This file's shape: every ref resolves to the same fixed value regardless of
-# name (`FakeSecretStore(default="s3cret")`), and `.requested` (built into the
-# shared fake) tracks every name asked — `_conn`'s connections all carry
-# `secret_ref="conn-x"`, so a test below asserts `store.requested ==
-# ["conn-x"]` to pin exactly which ref was resolved.
+# This file's shape: every ref resolves to the same fixed value regardless of name
+# (`FakeSecretStore(default="s3cret")`), and `.requested` (built into the shared fake) tracks every
 
 
 def _conn(conn_type: str, *, secret_ref: str | None = "conn-x", **config: Any) -> Connection:
@@ -54,9 +44,8 @@ def _frame(rows: int) -> pd.DataFrame:
 class FakeSqlConnection:
     """Stands in for the SQLAlchemy connection `_open_connection` yields."""
 
-    # A real Connection exposes `.dialect` (the engine's) — `_table`/`core_table`
-    # need it whenever `spec.catalog` is given (#936), so the fake carries a
-    # stand-in too.
+    # A real Connection exposes `.dialect` (the engine's) — `_table`/`core_table` need it whenever
+    # `spec.catalog` is given (#936), so the fake carries a stand-in too.
     dialect = DefaultDialect()
 
     def __init__(self, count: int) -> None:
@@ -184,10 +173,8 @@ def test_sql_query_spec_wraps_and_limits(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_sql_query_with_trailing_comment_and_semicolons_wraps_safely(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Both pass validate_query but broke the old single-line wrapper: a trailing
-    # line comment swallowed `) __dataq_src LIMIT …`, and a `; ;` tail survived
-    # the old two-step rstrip. The newline-wrapped form neutralizes the comment;
-    # the one-pass strip removes the whole tail.
+    # Both pass validate_query but broke the old single-line wrapper: a trailing line comment
+    # swallowed `) __dataq_src LIMIT …`, and a `; ;` tail survived the old two-step rstrip.
     fake = _patch_sql(monkeypatch, count=1, frame=_frame(1))
     read_dataset(
         _conn("snowflake"),
@@ -256,13 +243,7 @@ def test_sql_query_revalidated_read_only_at_read_time(
 
 
 def _small_object(monkeypatch: pytest.MonkeyPatch, size: int = 4096) -> None:
-    """Stub the object-metadata seam the #595 byte preflight probes.
-
-    The comparison reader now refuses an over-cap object *before* downloading it
-    (J2) — without it, #755's OOM survived through any comparison against an
-    oversized file, because the whole object downloaded and expanded ~8-9x in
-    memory before the row cap could look at it.
-    """
+    """Stub the object-metadata seam the #595 byte preflight probes."""
     monkeypatch.setattr(dataset_reader, "file_stat", lambda **kw: flatfile.FileStat(None, size))
 
 

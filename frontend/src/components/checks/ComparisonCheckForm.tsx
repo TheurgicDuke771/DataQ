@@ -11,15 +11,8 @@ import {
 const SqlEditorField = lazy(() => import('./SqlEditorField'));
 
 /**
- * The ADR 0015 §5 side-by-side comparison editor: **left = source** (the
- * baseline — connection picker, table or read-only SQL, per the picked
- * connection's type), **right = target** (locked to the suite's connection —
- * the model's §1 invariant made visible — with an optional SQL projection).
- * Common options (join keys, row cap) sit below; the severity thresholds are
- * rendered by the parent (shared `SeverityThresholdFields`).
- *
- * Field names bind into the parent `<Form>`; `buildComparisonPayload`
- * (checkForm.ts) assembles them into the ADR 0015 config shape.
+ * The ADR 0015 §5 side-by-side comparison editor: **left = source** (the baseline — connection
+ * picker, table or read-only SQL, per the picked connection's type).
  */
 export function ComparisonCheckForm({
   connections,
@@ -43,10 +36,8 @@ export function ComparisonCheckForm({
   );
   const sourceType = datasources.find((c) => c.id === sourceId)?.type as ConnectionType | undefined;
   const sourceSql = sourceType !== undefined && isSqlQueryable(sourceType);
-  // Repointing the source connection resets the dataset fields: antd preserves
-  // unmounted field values, so a stale hidden SQL-mode query (picked on a SQL
-  // source) would otherwise silently win over the visible table/path fields
-  // after switching to a non-SQL source — a 422 the form gives no hint about.
+  // Repointing the source connection resets the dataset fields: antd preserves unmounted field
+  // values.
   const prevSourceId = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (prevSourceId.current !== undefined && prevSourceId.current !== sourceId) {

@@ -112,19 +112,7 @@ describe('SharePanel', () => {
   });
 
   it('never grants edit to a workspace viewer, even after a later search', async () => {
-    // The regression the review caught, reproduced in full. The `edit` level has
-    // to be chosen BEFORE the viewer is picked — that is what leaves a live
-    // `edit` in state for the un-clamp to expose:
-    //   pick a member  → set `edit`
-    //   pick a viewer  → clamped to `view`                       ✓
-    //   search again   → the picked user is no longer in `options`, so a DERIVED
-    //                    lookup goes undefined, the Select re-enables, and Add
-    //                    POSTs the still-live `edit` for the still-selected viewer.
-    // Holding the picked user in state is what makes the clamp survive.
-    //
-    // A first cut of this test skipped the "set edit" step and passed against
-    // the buggy code too — the permission was `view` throughout, so there was
-    // nothing for the un-clamp to leak. Mutation-checked.
+    // The regression the review caught, reproduced in full.
     mockList.mockResolvedValue([]);
     mockSearch
       .mockResolvedValueOnce([

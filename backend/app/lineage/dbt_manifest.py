@@ -1,24 +1,4 @@
-"""Parse a dbt ``manifest.json`` into a table-level dependency graph (ADR 0034).
-
-Slice 2 of the lineage plan (#759): the sibling of ``run_results.json`` the
-ADR-0029 dbt provider already polls, ``manifest.json``, carries the model
-dependency graph. This module turns its **minimal stable subset**
-(``metadata`` + ``nodes`` + ``sources`` + ``parent_map``) into a
-:class:`ManifestGraph` — node identities (``database``/``schema``/name) and
-TABLE-level ``(parent_uid, child_uid)`` edges — for the mapping layer
-(``lineage.edges``) to canonicalize into OpenLineage asset names and cache.
-
-Pure: no DB, no IO, no network — bytes in, a frozen dataclass out. It **never**
-reads ``compiled_code`` / ``raw_code`` / ``description`` / ``docs`` (large,
-churny, and irrelevant to lineage), and refuses an oversized payload rather than
-attempt the ``json.loads`` (an ijson streaming path is the future optimization —
-real manifests reach ~75 MB at thousands of models; the harness's is ~600 KB).
-
-Defensive by contract: any malformed input — truncated bytes, NUL bytes, a
-non-dict payload, a missing ``metadata`` / ``parent_map`` / ``nodes`` /
-``sources`` key, an unparsable or too-old ``dbt_schema_version`` — raises
-:class:`ManifestParseError`, never a bare ``KeyError`` / ``UnicodeDecodeError``.
-"""
+"""Parse a dbt ``manifest.json`` into a table-level dependency graph (ADR 0034)."""
 
 from __future__ import annotations
 
@@ -35,15 +15,12 @@ from backend.app.core.logging import get_logger
 
 log = get_logger(__name__)
 
-# Refuse rather than attempt the load above this — a hostile/corrupt payload must
-# not OOM the worker. Real manifests hit tens of MB at thousands of models; this
-# ceiling is generous headroom (an ijson streaming path is the future upgrade).
-# Shared with `run_results.json` via `core.artifacts` (one cap for both dbt reads).
+# Refuse rather than attempt the load above this — a hostile/corrupt payload must not OOM the
+# worker.
 _MAX_MANIFEST_BYTES = MAX_JSON_ARTIFACT_BYTES
 
-# `dbt_schema_version` looks like ".../dbt/manifest/v12.json" — but variants drop
-# the `.json` or carry a query suffix (`/v12`, `/v12.json?x=1`). Grab the NN after
-# `/v`, tolerating anything after it.
+# `dbt_schema_version` looks like ".../dbt/manifest/v12.json" — but variants drop the `.json` or
+# carry a query suffix (`/v12`, `/v12.json?x=1`).
 _SCHEMA_VERSION_RE = re.compile(r"/v(\d+)")
 # v12 is stable across dbt-core 1.8->1.11 (ADR 0034). v10-v11 parse best-effort with
 # a warning; anything below v10 (or unparsable) is refused.
@@ -61,12 +38,7 @@ class ManifestParseError(Exception):
 
 @dataclass(frozen=True)
 class NodeIdentity:
-    """A physical node's warehouse identity — ``database`` / ``schema`` / name.
-
-    ``name`` is the node's ``alias`` (models/seeds/snapshots) or the source's
-    ``name``; the mapping layer canonicalizes ``(database, schema, name)`` into an
-    OpenLineage asset name per the connection's adapter.
-    """
+    """A physical node's warehouse identity — ``database`` / ``schema`` / name."""
 
     database: str
     schema: str
@@ -75,13 +47,7 @@ class NodeIdentity:
 
 @dataclass(frozen=True)
 class ManifestGraph:
-    """A parsed manifest: adapter, physical node identities, and TABLE-level edges.
-
-    ``nodes`` maps each physical node's ``unique_id`` to its :class:`NodeIdentity`
-    (ephemeral nodes are collapsed out). ``edges`` are ``(parent_uid, child_uid)``
-    pairs over those physical nodes — the dependency graph with tests/operations
-    and ephemeral hops removed.
-    """
+    """A parsed manifest: adapter, physical node identities, and TABLE-level edges."""
 
     adapter_type: str
     nodes: dict[str, NodeIdentity]
@@ -89,11 +55,7 @@ class ManifestGraph:
 
 
 def parse_manifest(raw: bytes) -> ManifestGraph:
-    """Parse ``raw`` manifest bytes into a :class:`ManifestGraph`.
-
-    Raises :class:`ManifestParseError` on any malformed / oversized / too-old
-    input — never a bare ``KeyError`` / ``UnicodeDecodeError``.
-    """
+    """Parse ``raw`` manifest bytes into a :class:`ManifestGraph`."""
     if not isinstance(raw, (bytes, bytearray)):
         raise ManifestParseError("manifest payload must be bytes")
     try:
@@ -126,9 +88,8 @@ def parse_manifest(raw: bytes) -> ManifestGraph:
     identities: dict[str, NodeIdentity] = {}
     physical: set[str] = set()
     ephemeral: set[str] = set()
-    # Every read below is a `.get()` on an `isinstance`-guarded dict (`_identity` /
-    # `_is_ephemeral` never index or attribute-access), so no per-node try/except is
-    # needed — a malformed node is skipped by the `isinstance` guard, not caught.
+    # Every read below is a `.get()` on an `isinstance`-guarded dict (`_identity` / `_is_ephemeral`
+    # never index or attribute-access), so no per-node try/except is needed.
     for uid, node in sources_raw.items():
         if not isinstance(node, dict):
             continue
@@ -179,11 +140,7 @@ def _identity(node: dict[str, Any], *, name_key: str) -> NodeIdentity:
 
 
 def _is_ephemeral(node: dict[str, Any]) -> bool:
-    """An ephemeral model is not a physical table — collapse it out of the graph.
-
-    dbt marks it ``config.materialized == "ephemeral"``; belt-and-braces, a node
-    with no ``relation_name`` also has no physical relation to key an asset on.
-    """
+    """An ephemeral model is not a physical table — collapse it out of the graph."""
     config = node.get("config")
     if isinstance(config, dict) and config.get("materialized") == "ephemeral":
         return True
@@ -193,18 +150,7 @@ def _is_ephemeral(node: dict[str, Any]) -> bool:
 def _build_edges(
     parent_map: dict[str, Any], physical: set[str], ephemeral: set[str]
 ) -> list[tuple[str, str]]:
-    """TABLE-level ``(parent, child)`` edges over physical nodes only.
-
-    Iterates ``parent_map`` in manifest order (deterministic output). For each
-    physical child, each parent is resolved to its nearest **physical** ancestor(s)
-    — recursing through ephemeral hops — so an ephemeral middle node's children
-    connect straight to its physical ancestors. Non-candidate parents (tests /
-    operations) are dropped. Edges are de-duplicated, first occurrence wins.
-
-    The ephemeral→physical-ancestor resolution is **memoized** (``memo``): a shared
-    ephemeral chain (many models selecting from the same ephemeral CTE) is walked
-    once, not once per descendant.
-    """
+    """TABLE-level ``(parent, child)`` edges over physical nodes only."""
     edges: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     memo: dict[str, list[str]] = {}
@@ -243,13 +189,7 @@ def _ephemeral_ancestors(
     ephemeral: set[str],
     memo: dict[str, list[str]],
 ) -> list[str]:
-    """The physical ancestors reachable *through* the ephemeral node ``uid``, memoized.
-
-    Cycle-safe: ``memo[uid]`` is seeded ``[]`` *before* recursing, so a self- or
-    mutually-referential ephemeral chain (a malformed manifest) resolves to nothing
-    at the back-edge instead of recursing forever. The real result overwrites the
-    seed once the walk completes.
-    """
+    """The physical ancestors reachable *through* the ephemeral node ``uid``, memoized."""
     cached = memo.get(uid)
     if cached is not None:
         return cached

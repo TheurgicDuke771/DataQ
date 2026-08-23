@@ -1,13 +1,4 @@
-"""Check CRUD endpoints — GX expectations nested under a suite.
-
-Routes are nested (`/suites/{suite_id}/checks/...`) so every check operation is
-scoped to its suite (and, once suite-sharing lands, authorized once at the suite
-level). Thin layer over `check_service`.
-
-Threshold typing: requests accept `Decimal` so values land exactly in the
-`Numeric` columns (a JSON float → unbounded NUMERIC would pollute precision);
-responses emit `float` for clean JSON numbers, coerced from the stored Decimal.
-"""
+"""Check CRUD endpoints — GX expectations nested under a suite."""
 
 from __future__ import annotations
 
@@ -44,9 +35,7 @@ class CheckCreate(ApiModel):
     # enforces; remaining reserved kinds 422).
     kind: str = "expectation"
     expectation_type: str = Field(min_length=1, max_length=128)
-    # DQ dimension (ADR 0038). Omit to take the derived default; the service
-    # validates against the seven canonical values. Omitting is NOT the same as
-    # "unclassified" — only an underivable type (custom SQL) lands NULL.
+    # DQ dimension (ADR 0038).
     dimension: str | None = None
     # Evaluating engine (ADR 0036). Default 'gx'; a native engine must be offered
     # by the suite's connection or the save 422s naming the missing capability.
@@ -225,14 +214,7 @@ def rebaseline_check(
     recapturing here would run datasource introspection (schema_drift) or a target
     query (anomaly) on the API request thread. 204 whether or not a baseline
     existed (idempotent); 422 for a non-stateful kind (nothing to re-baseline).
-
-    Kind-agnostic by construction: the gate is `STATEFUL_MONITOR_KINDS` (derived
-    from the registry) and the delete targets the row, so an `anomaly` check
-    re-baselines here too — its next run starts learning from scratch, which
-    means the cold-start `skip` applies again. That is the intended, explainable
-    behaviour: after a deliberate step change (a backfill, a new feed) the old
-    history is misleading, and pretending otherwise would fire a critical every
-    night until the window rolled over."""
+    """
     require_permission(db, suite_id, current_user.id, minimum="edit")
     check = svc.get_check(db, suite_id, check_id)
     if check.kind not in STATEFUL_MONITOR_KINDS:
@@ -241,16 +223,8 @@ def rebaseline_check(
             detail={"kind": check.kind},
         )
     dropped = monitor_baseline.rebaseline(db, check)
-    # A deliberate act by a principal that discards the learned baseline a
-    # `schema_drift`/`anomaly` monitor decides against — so the next run compares
-    # against the new normal rather than the old one. Nothing else records it, and
-    # "why did this monitor stop alerting?" has a rebaseline as one of its two
-    # answers (the other, a snooze, is audited too).
-    # Only when a baseline actually existed to drop. `rebaseline` is idempotent,
-    # and an event for a request that discarded nothing is the same non-event the
-    # no-op-update guard exists to keep out — worse here, because "the baseline
-    # was reset" is a real explanation for a monitor going quiet, and a reader
-    # would accept a false one.
+    # A deliberate act by a principal that discards the learned baseline a `schema_drift`/`anomaly`
+    # monitor decides against.
     if dropped:
         audit_service.record_entity_change(
             db,
@@ -365,11 +339,9 @@ def restore_check_version(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> CheckRead:
-    """Edit-gated exactly like `update_check`, because that's what this does
-    under the hood — re-applies the chosen version's snapshot through the same
-    validated PATCH path and records the result as a new version. 404 for an
-    unknown check or version_no; 422 (check left untouched) if the snapshot no
-    longer validates under today's rules (see `check_service.restore_check_version`).
+    """Edit-gated exactly like `update_check`, because that's what this does under the hood — re-
+    applies the chosen version's snapshot through the same validated PATCH path and records the
+    result as a new version.
     """
     require_permission(db, suite_id, current_user.id, minimum="edit")
     check = svc.restore_check_version(db, suite_id, check_id, version_no, actor_id=current_user.id)
@@ -413,11 +385,10 @@ def list_check_result_history(
 
 
 class CheckBaselineRead(ApiModel):
-    """A stateful monitor's stored baseline — `schema_drift`'s column snapshot or
-    `anomaly`'s observation window (`monitor_baselines.baseline`, kind-shaped
-    JSONB; see `backend/app/services/anomaly.py` for the payload's documented
-    shape). Returned generically: this endpoint doesn't interpret `baseline`,
-    the frontend trend chart does, keyed on `kind`.
+    """A stateful monitor's stored baseline — `schema_drift`'s column snapshot or `anomaly`'s
+    observation window (`monitor_baselines.baseline`, kind-shaped JSONB; see
+    `backend/app/services/anomaly.py` for the payload's documented shape). Returned generically:
+    this endpoint doesn't interpret `baseline`, the frontend trend chart does, keyed on `kind`.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -458,17 +429,13 @@ class CheckDryRunRequest(ApiModel):
     warn_threshold: Decimal | None = None
     fail_threshold: Decimal | None = None
     critical_threshold: Decimal | None = None
-    # The target comes from the suite's own run target (#215/#532) — resolved
-    # server-side exactly like a persisted run, so the preview runs against what a
-    # saved run would (and flat-file `path` / UC `catalog` / batch resolution are
-    # handled for free). No client-supplied table.
+    # The target comes from the suite's own run target (#215/#532) — resolved server-side exactly
+    # like a persisted run.
 
 
 class CheckDryRunResult(ApiModel):
-    # pass | warn | fail | critical (ADR 0005), plus the two OPERATIONAL statuses:
-    # `error` (the check could not be evaluated, #122) and `skip` (its precondition
-    # was not met, #593). An `anomaly` preview is always `skip` — a dry-run has no
-    # check row, so it can never have a learned baseline to score against.
+    # pass | warn | fail | critical (ADR 0005), plus the two OPERATIONAL statuses: `error` (the
+    # check could not be evaluated, #122) and `skip` (its precondition was not met, #593).
     status: str
     metric_value: float | None
     observed_value: dict[str, Any] | None
@@ -488,8 +455,6 @@ def dry_run_check(
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> CheckDryRunResult:
     # sync def → threadpool; the datasource connect + GX run are blocking.
-    # Authoring action → 'edit'. The suite's connection FK is RESTRICT, so it
-    # always resolves.
     suite = require_permission(db, suite_id, current_user.id, minimum="edit")
     connection = db.get(Connection, suite.connection_id)
     assert connection is not None
@@ -504,16 +469,8 @@ def dry_run_check(
         target=suite.target,
         secret_store=secret_store,
     )
-    # Live probe: real values, nothing persisted — so both the redaction ladder
-    # and the G1 access audit, which hang off a Result row, missed this route
-    # entirely (#1419 / #1479). Redaction follows the DESTINATION: an author's own
-    # preview panel is `INTERACTIVE`, so the values are shown — seeing what the
-    # rule fired on is the entire purpose of a dry-run, and masking it would trade
-    # the feature for a policy artifact. The disclosure is recorded instead.
-    #
-    # Fail-closed suites (`column_policy.require_classification`) still mask here:
-    # that operator has explicitly chosen assurance over capability, and this seam
-    # honours the choice rather than making it either way.
+    # Live probe: real values, nothing persisted — so both the redaction ladder and the G1 access
+    # audit, which hang off a Result row, missed this route entirely (#1419 / #1479).
     policy = suite.column_policy
     masked = live_probe.values_are_masked(policy, destination=live_probe.Destination.INTERACTIVE)
     tested_column = (payload.config or {}).get("column")

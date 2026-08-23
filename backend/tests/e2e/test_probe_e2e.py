@@ -1,26 +1,4 @@
-"""Real-broker E2E: dispatch -> Redis -> in-process worker -> run_service -> Postgres.
-
-Only the Snowflake adapter is mocked; the broker hop and DB round-trip are real,
-so this covers what the unit tests can't (the request_id header + task message
-actually serialising over Redis, the worker running in its own context).
-
-Opt-in: skips unless DATAQ_E2E=1 is set EXPLICITLY, alongside DATABASE_URL +
-REDIS_URL pointing at real Postgres + Redis (CI's service-container job sets
-all three; scripts/test-backend.sh sets all three for local parity).
-
-DATAQ_E2E is required, not merely DATABASE_URL + REDIS_URL, because conftest.py
-(#1130) now points DATABASE_URL at the resolved TEST_DATABASE_URL whenever
-DATABASE_URL is unset — a deliberate fix for a *different* problem (SessionLocal
-silently reaching the dev DB). A side effect: what used to be a two-factor gate,
-where DATABASE_URL required a conscious action, collapsed to one (REDIS_URL
-alone), and REDIS_URL ships pre-populated in .env.app.example — so a bare
-`pytest` for anyone with a plausible local Redis env var would silently start
-spinning up a real embedded Celery worker + doing real commits/TRUNCATEs.
-DATAQ_E2E is a value conftest never sets on its own, so activating this test is
-always someone's conscious choice again. Uses real commits + a TRUNCATE
-teardown rather than the rolled-back db_session fixture, because the worker
-runs on a separate session and would not see uncommitted savepoint data.
-"""
+"""Real-broker E2E: dispatch -> Redis -> in-process worker -> run_service -> Postgres."""
 
 import os
 import time
@@ -108,10 +86,8 @@ def test_probe_round_trip_over_real_broker(monkeypatch: pytest.MonkeyPatch) -> N
         session.commit()
         run_id = run.id
 
-        # Route this run to a unique queue that only our embedded worker consumes,
-        # so a developer's docker-compose `worker` (on the default queue, same
-        # broker) can't steal the task and fail it with the real Snowflake
-        # adapter. CI has no competing worker; this just makes local runs robust.
+        # Route this run to a unique queue that only our embedded worker consumes, so a developer's
+        # docker-compose `worker` (on the default queue.
         queue = f"e2e-{uuid.uuid4()}"
         with start_worker(celery_app, perform_ping_check=False, loglevel="info", queues=[queue]):
             request_id_var.set("e2e-REQ")

@@ -6,13 +6,8 @@ import type { Suite } from '../api/suites';
 import { errorMessage } from '../utils/errors';
 
 /**
- * Trigger a manual run of a suite — the shared logic behind the suite-detail Run
- * button and the cross-suite Run-now panel. Owns the in-flight `running` state, a
- * ref double-guard (so a synchronous double-click can't dispatch two runs in the
- * tick before the button disables), and the success / error toasts. `onQueued`
- * receives the queued `Run` (e.g. to open the live-progress drawer on it).
- *
- * Must be called inside an antd `App` context (uses `App.useApp` for messages).
+ * Trigger a manual run of a suite — the shared logic behind the suite-detail Run button and the
+ * cross-suite Run-now panel.
  */
 export function useRunTrigger(onQueued: (run: Run, suite: Suite) => void): {
   running: boolean;

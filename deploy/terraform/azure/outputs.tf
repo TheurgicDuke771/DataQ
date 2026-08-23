@@ -1,6 +1,4 @@
-# Post-apply coordinates. The GitHub-config values feed the repo Secrets/Variables
-# the Deploy workflow reads (see deploy/terraform/README.md for the gh commands).
-# Sensitive values are marked so `terraform output -raw <name>` is needed to read.
+# Post-apply coordinates.
 
 output "api_url" {
   description = "Internal API base URL (in-environment only, since ADR 0028 §5 — reachable from the frontend Container App, not the public internet). The public surface is frontend_url, which proxies /api + /mcp here."
@@ -69,11 +67,8 @@ output "azure_subscription_id" {
   value       = data.azurerm_subscription.current.subscription_id
 }
 
-# ── Azure AD SSO (sso.tf) — informational / app-registration coordinates ──────
-# No longer build-time VITE_* vars: since the ADR 0028 §5 cutover the frontend is
-# configured at RUNTIME (the DATAQ_AUTH_* env on the frontend Container App is
-# wired straight from these same resources in frontend.tf), so nothing needs to
-# copy them into repo vars. Kept as outputs for manual app-registration checks.
+# ── Azure AD SSO (sso.tf) — informational / app-registration coordinates ────── No longer build-
+# time VITE_* vars: since the ADR 0028 §5 cutover the frontend is configured at RUNTIME (the
 output "azure_api_client_id" {
   description = "API app-registration client id (also the backend AZURE_API_CLIENT_ID)."
   value       = azuread_application.api.client_id

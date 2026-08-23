@@ -4,20 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MeResponse } from '../../src/api/me';
 
-/**
- * The OTP session lifecycle (ADR 0032, #736).
- *
- * The session is an HttpOnly cookie, so this provider never holds a credential —
- * only the answer to "does one currently work". Everything below is about the
- * cases where getting that answer wrong is dangerous or infuriating:
- *
- * - an API outage must NOT read as "signed out" (you would invite the user to
- *   burn a single-use code at a server that can't check it);
- * - a server-side revocation must land, because the browser still holds the
- *   cookie and the SPA has no other way to notice;
- * - sign-out must drop the UI even if the revoke POST fails, because leaving the
- *   user inside the app after they clicked "Sign out" is the worse lie.
- */
+/** The OTP session lifecycle (ADR 0032, #736). */
 
 const probeSession = vi.fn();
 const endSession = vi.fn();
@@ -26,12 +13,8 @@ beforeEach(() => {
   vi.resetModules();
   probeSession.mockReset();
   endSession.mockReset();
-  // Safe-by-default, same treatment as endSession below: every test that cares
-  // about the resolved value overrides it explicitly. Without this, a
-  // probeSession() call nobody intended to happen (e.g. the passthrough-mode
-  // tests, which assert it's never called) resolves `undefined` instead of a
-  // promise, and a stray invocation crashes on `.then` instead of failing the
-  // assertion cleanly — the failure mode that motivated this default.
+  // Safe-by-default, same treatment as endSession below: every test that cares about the resolved
+  // value overrides it explicitly.
   probeSession.mockResolvedValue(null);
   endSession.mockResolvedValue(undefined);
   vi.doMock('../../src/auth/config', () => ({ authMode: 'otp' }));
@@ -90,9 +73,8 @@ describe('OtpSessionProvider — the initial probe', () => {
     let resolve!: (me: MeResponse) => void;
     probeSession.mockReturnValue(new Promise<MeResponse>((r) => (resolve = r)));
     const { status } = await renderProvider();
-    // `probing` is a real state, not a loading nicety — the SPA genuinely cannot
-    // read the cookie, so flashing the sign-in form here would make every page
-    // reload look like a sign-out.
+    // `probing` is a real state, not a loading nicety — the SPA genuinely cannot read the cookie,
+    // so flashing the sign-in form here would make every page reload look like a sign-out.
     expect(status()).toBe('probing');
     resolve(ME);
     await waitFor(() => expect(status()).toBe('signed_in'));
@@ -175,10 +157,8 @@ describe('OtpSessionProvider — sign out', () => {
   });
 
   it('still signs the UI out when the revoke POST FAILS', async () => {
-    // The alternative — waiting on the POST, or staying signed in when it fails —
-    // leaves the user looking at an authenticated shell after clicking Sign out.
-    // Revocation is enforced at the seam on every request, so the server-side
-    // truth is not ours to hold the UI hostage to.
+    // The alternative — waiting on the POST, or staying signed in when it fails — leaves the user
+    // looking at an authenticated shell after clicking Sign out.
     probeSession.mockResolvedValue(ME);
     endSession.mockRejectedValue(new Error('network down'));
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -193,17 +173,8 @@ describe('OtpSessionProvider — sign out', () => {
 });
 
 describe('OtpSessionProvider — other auth modes', () => {
-  // Drives the REAL config module via window.__DATAQ_CONFIG__ (the runtime-
-  // config contract, ADR 0028 — same pattern as CurrentUserProvider.test.tsx)
-  // instead of a doMock('../../src/auth/config', ...). A doMock here raced
-  // the outer beforeEach's OWN doMock of the same module path (which sets
-  // 'otp', for every other describe block in this file) and, on a
-  // CI-runner-under-contention timing, occasionally lost: two consecutive CI
-  // runs (#1153, runs 30762500904 and 30771559194) saw ActiveOtpSessionProvider
-  // mount and call probeSession() in the `dev_bypass` case, meaning `authMode`
-  // was still 'otp' at render time despite the re-registration. Going through
-  // the real module removes the second competing mock entirely — there is
-  // nothing left to race.
+  // Drives the REAL config module via window.__DATAQ_CONFIG__ (the runtime- config contract, ADR
+  // 0028.
   afterEach(() => {
     delete (window as { __DATAQ_CONFIG__?: unknown }).__DATAQ_CONFIG__;
   });
@@ -214,9 +185,6 @@ describe('OtpSessionProvider — other auth modes', () => {
     ['unconfigured', {}],
   ] as const)('is a passthrough in %s mode and never probes /me', async (_mode, auth) => {
     // A probe here would race the OIDC token acquisition and 401 for no reason.
-    // No vi.resetModules() here: beforeEach already reset the module cache and
-    // nothing has imported config/otpClient yet this test, so unmocking config
-    // below is enough to make the next import pick up the real module.
     vi.doUnmock('../../src/auth/config');
     (window as { __DATAQ_CONFIG__?: unknown }).__DATAQ_CONFIG__ = { auth };
     vi.doMock('../../src/auth/otpClient', () => ({ probeSession, endSession }));

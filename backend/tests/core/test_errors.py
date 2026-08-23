@@ -1,13 +1,4 @@
-"""`_jsonable` — the validation-envelope sanitizer (#371).
-
-Pydantic's `exc.errors()` is not JSON-clean: `ctx` carries the live exception a
-model_validator raised and `input` echoes the raw payload. Before the fix, a
-model-validator `ValueError` made the 422 handler itself crash
-(`TypeError: Object of type ValueError is not JSON serializable` → 500). The
-contract: whatever shape `errors()` takes, the result of `_jsonable` must
-survive `json.dumps` unchanged in structure, with plain scalars passed through
-and everything else stringified.
-"""
+"""`_jsonable` — the validation-envelope sanitizer (#371)."""
 
 import json
 from typing import Any

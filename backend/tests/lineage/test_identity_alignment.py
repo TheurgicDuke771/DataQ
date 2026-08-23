@@ -1,18 +1,4 @@
-"""Cross-producer OpenLineage identity alignment (#823, ADR 0034 §6).
-
-**These tests are driven by a CAPTURED REAL payload, not a hand-written one** — the
-#823 acceptance criterion, and the reason the bug survived a green test suite for so
-long: every existing fixture was written by us, so it agreed with us.
-
-`backend/tests/fixtures/lineage/marquez_*_dbt_real.json` were captured from a real
-Marquez 0.50.0, populated by piping the real `manifest.json` from a real dbt build
-against real Snowflake through real `openlineage-dbt` 1.51.0. Only the Snowflake
-account locator was anonymised; **the casing — the entire point — is untouched.**
-
-The fact these pin: a real producer names the same table
-``DATAQ_DB.ANALYTICS.mart_order_revenue`` while DataQ's asset identity is
-``DATAQ_DB.ANALYTICS.MART_ORDER_REVENUE``. Byte-for-byte, they do not join.
-"""
+"""Cross-producer OpenLineage identity alignment (#823, ADR 0034 §6)."""
 
 from __future__ import annotations
 
@@ -56,15 +42,12 @@ class TestTheBugItself:
         assert ours not in names
 
     def test_not_one_real_dataset_matches_a_dataq_identity(self) -> None:
-        # The catalog was populated by the real producer alone. NOT ONE of its ten
-        # datasets is a name DataQ would ever seed with — so before this fix the pull
-        # resolved zero seeds and was permanently, silently dark.
+        # The catalog was populated by the real producer alone.
         assert [n for n in _catalog_names() if n == n.upper()] == []
 
     def test_the_real_name_is_neither_upper_nor_lower(self) -> None:
-        # This is why "just lowercase it" (or "try both cases") cannot work: the real
-        # name is MIXED — db/schema come from the dbt profile (upper), the table from
-        # the model filename (lower).
+        # This is why "just lowercase it" (or "try both cases") cannot work: the real name is MIXED
+        # — db/schema come from the dbt profile (upper), the table from the model filename (lower).
         name = "DATAQ_DB.ANALYTICS.mart_order_revenue"
         assert name in _catalog_names()
         assert name != name.upper()
@@ -99,10 +82,7 @@ class TestCanonicalIdentityReconciles:
         ],
     )
     def test_case_sensitive_stores_are_never_folded(self, namespace: str) -> None:
-        # Load-bearing. Object stores and Iceberg are case-SENSITIVE: `raw/Orders.csv`
-        # and `raw/orders.csv` are different objects. Folding these wouldn't repair a
-        # mismatch, it would INVENT one — silently merging two distinct files into one
-        # asset. A wrong fold here is worse than no fold.
+        # Load-bearing.
         assert canonical_identity(namespace, "raw/Orders.csv")[1] == "raw/Orders.csv"
         assert canonical_identity(namespace, "raw/Orders.csv") != canonical_identity(
             namespace, "raw/orders.csv"
@@ -124,9 +104,7 @@ class TestTheRealLineageGraphParses:
         assert graph.edges, "the real payload must carry edges"
 
     def test_folding_the_real_graph_lands_on_dataq_asset_identities(self) -> None:
-        # What the pull now does on ingest: every catalog identity is canonicalized, so a
-        # pulled dataset lands on the asset the engine's own case would have produced
-        # instead of forking a second asset for the same table.
+        # What the pull now does on ingest: every catalog identity is canonicalized.
         payload = _load("marquez_lineage_dbt_real.json")
         graph = _parse_graph(payload, seed_node_id="dataset:x:y")
         folded = {
@@ -141,11 +119,7 @@ class TestTheRealLineageGraphParses:
 
 
 class TestThePullResolvesAgainstTheRealCatalog:
-    """End-to-end, against a real Postgres: the #823 AC-1 — a DataQ seed resolves.
-
-    The provider here is a *replay* of the captured real Marquez responses (the same
-    bytes the live server returned), so this is the live round-trip minus the HTTP hop.
-    """
+    """End-to-end, against a real Postgres: the #823 AC-1 — a DataQ seed resolves."""
 
     def test_seeds_resolve_and_edges_land_on_dataq_assets(self, db_session: Any) -> None:
         from backend.app.db.models import Asset, LineageEdge
@@ -182,11 +156,7 @@ class TestThePullResolvesAgainstTheRealCatalog:
     def test_an_asset_the_catalog_never_heard_of_is_absent_not_unavailable(
         self, db_session: Any
     ) -> None:
-        """The #823 AC-3 signal: 'catalog doesn't know it' ≠ 'catalog is down'.
-
-        Conflating them is what let the pull rot invisibly — an outage that looked like
-        an empty catalog would also have PRUNED the cache.
-        """
+        """The #823 AC-3 signal: 'catalog doesn't know it' ≠ 'catalog is down'."""
         from backend.app.db.models import Asset
         from backend.app.lineage.pull import _collect_dataset_edges
 
@@ -201,16 +171,7 @@ class TestThePullResolvesAgainstTheRealCatalog:
         assert outcome.resolved == 0
 
     def test_every_fold_equivalent_name_is_seeded_including_our_own_twin(self) -> None:
-        """The review's #1 finding: picking ONE name is a trap.
-
-        DataQ's own emitter (#758) writes `asset.name` verbatim, so in the reference
-        compose story (emit -> Marquez -> pull back) the catalog holds BOTH our upper
-        twin and the producer's mixed-case name as separate datasets. An
-        "exact match wins" rule seeds OUR twin — whose subgraph is just
-        `dataset -> job:dataq:suite.X` with no output dataset, i.e. ZERO dataset edges —
-        so the pull would report a healthy `resolved` while returning nothing, and then
-        PRUNE the real lineage. They are the same table: pull both, merge.
-        """
+        """The review's #1 finding: picking ONE name is a trap."""
         from backend.app.lineage.provider import LineageGraph
         from backend.app.lineage.pull import _collect_dataset_edges
 
@@ -263,7 +224,8 @@ class TestThePullResolvesAgainstTheRealCatalog:
 
 class TestIngestNeverMisattributesLineage:
     """The review's #4 finding: a blanket ingest fold hangs a QUOTED table's lineage on
-    its unquoted twin — a silently wrong edge, which is worse than a missing one."""
+    its unquoted twin — a silently wrong edge, which is worse than a missing one.
+    """
 
     def test_a_quoted_identifier_keeps_its_own_asset(self) -> None:
         from backend.app.lineage.pull import _identity_resolver
@@ -281,8 +243,6 @@ class TestIngestNeverMisattributesLineage:
             [("snowflake://a", "DB.S.orders"), ("snowflake://a", "DB.S.ORDERS")]
         )
         # We cannot know which the catalog meant, so we must not guess: keep it verbatim.
-        # Forking an asset is recoverable; attaching lineage to the WRONG monitored table
-        # is a lie.
         assert resolve(("snowflake://a", "DB.S.Orders")) == ("snowflake://a", "DB.S.Orders")
 
     def test_a_producers_casing_lands_on_the_asset_we_already_have(self) -> None:
@@ -297,9 +257,7 @@ class TestIngestNeverMisattributesLineage:
     def test_an_unknown_table_is_stored_canonically_so_it_converges_later(self) -> None:
         from backend.app.lineage.pull import _identity_resolver
 
-        # A blast-radius table nobody monitors. Store it in the form `asset_identity`
-        # would produce, so a suite pointed at it later lands on the SAME row instead of
-        # forking a second asset.
+        # A blast-radius table nobody monitors.
         resolve = _identity_resolver([])
         assert resolve((_NS, "DATAQ_DB.ANALYTICS.mart_customer_orders")) == (
             _NS,
@@ -325,15 +283,7 @@ class _ReplayProvider:
 
 
 class TestAMismatchMustNeverDeleteTheCache:
-    """The prune is the only destructive path here, and #823 nearly armed it.
-
-    Reclassifying a 404 seed from `unavailable` to `absent` is the honest reading (the
-    catalog is UP, it just has no such dataset) — but it also removes the very condition
-    that used to suppress the prune. Left unguarded, a systematic identity mismatch (the
-    #823 bug itself) would not merely return no lineage: it would DELETE every cached
-    edge on the next refresh. A prune must be earned by evidence we can both reach the
-    catalog and find our tables in it.
-    """
+    """The prune is the only destructive path here, and #823 nearly armed it."""
 
     def test_a_catalog_that_knows_none_of_our_assets_does_not_prune(self, db_session: Any) -> None:
         from backend.app.db.models import Asset, LineageEdge

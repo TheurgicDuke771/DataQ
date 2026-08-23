@@ -15,14 +15,8 @@ export interface HistoryVersion {
 }
 
 /**
- * Version-history drawer shared by checks (#280, #283) and connections (#654)
- * — "see previous config before overwriting", plus an optional per-row action
- * slot (`renderActions`) for check restore. Each version is an immutable
- * snapshot the backend records on create and on every real edit; newest
- * first. Connections omit `renderActions` and stay view-only, exactly v1's
- * original behavior. Mounted only while open (`destroyOnHidden`) so it
- * refetches each time; bump `refreshKey` to force an extra refetch without
- * closing (e.g. right after a restore mints a new version).
+ * Version-history drawer shared by checks (#280, #283) and connections (#654) — "see previous
+ * config before overwriting".
  */
 export function HistoryDrawer<V extends HistoryVersion>({
   open,
@@ -40,10 +34,7 @@ export function HistoryDrawer<V extends HistoryVersion>({
   fetchVersions: () => Promise<V[]>;
   /** Entity-specific detail block (a `<Descriptions>`) under the shared header. */
   renderDetails: (version: V) => ReactNode;
-  /** Optional per-row action(s) (e.g. "Restore this version", #283), rendered
-   *  under the details. `isCurrent` is true for the newest row (index 0) so
-   *  the caller can hide/disable an action there. Omit entirely for a
-   *  read-only drawer (the connections history stays this way). */
+  /** Optional per-row action(s) (e.g. "Restore this version", #283), rendered under the details. */
   renderActions?: (version: V, isCurrent: boolean) => ReactNode;
   /** Change this value to force the version list to refetch while the drawer
    *  stays open. */

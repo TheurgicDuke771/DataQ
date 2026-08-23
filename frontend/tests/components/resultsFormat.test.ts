@@ -85,11 +85,7 @@ describe('isWithinWindowDays', () => {
 });
 
 describe('status colour maps', () => {
-  // Asserted as WHOLE objects, not key-by-key (#563). The previous version claimed
-  // "every run status and result status" while asserting 4 of 11, so mutating any
-  // of the other 7 colours survived — the test's name was true of its intent and
-  // false of its assertions. Comparing the entire map also makes an added status a
-  // failing test here rather than a silently uncovered key.
+  // Asserted as WHOLE objects, not key-by-key (#563).
   it('maps every run status to a tag colour', () => {
     expect(RUN_STATUS_COLORS).toEqual({
       queued: 'default',
@@ -111,9 +107,7 @@ describe('status colour maps', () => {
   });
 
   it('maps every result status to a tag colour', () => {
-    // Severity tiers (ADR 0005) plus the two operational statuses (#122). `skip`
-    // and `error` are the ones an operator most needs to tell apart from a pass,
-    // so their colours are as load-bearing as the severity ones.
+    // Severity tiers (ADR 0005) plus the two operational statuses (#122).
     expect(RESULT_STATUS_COLORS).toEqual({
       pass: 'success',
       warn: 'warning',

@@ -37,19 +37,12 @@ import { useAsyncData } from '../hooks/useAsyncData';
 import { errorMessage } from '../utils/errors';
 
 /**
- * Asset detail (`/assets/:assetId`, #760) — identity header, health across the
- * composing suites (the acceptance criterion: renders ≥2 suites on a shared
- * asset), and upstream/downstream lineage lists. Links out to each suite and its
- * latest run. Read-only apart from the workspace-Admin-only description edit
- * (ADR 0034 §4); no navigation inversion (phase 4).
+ * Asset detail (`/assets/:assetId`, #760) — identity header, health across the composing suites
+ * (the acceptance criterion: renders ≥2 suites on a shared asset).
  */
 export function AssetDetail() {
   const { assetId } = useParams<{ assetId: string }>();
-  // Remount on id change. `useAsyncData` fetches on mount (and on reload) only, so
-  // an asset→asset navigation — which the lineage graph's clickable nodes made
-  // possible for the first time (#805) — would otherwise re-render this same
-  // instance with a new URL but the PREVIOUS asset's data still on screen. Keying
-  // the page on the id makes the route param the identity of the mount.
+  // Remount on id change.
   return <AssetDetailPage key={assetId} assetId={assetId} />;
 }
 
@@ -102,9 +95,8 @@ function AssetDetailBody({
 }) {
   const { summary } = asset;
   const navigate = useNavigate();
-  // Asset-metadata mutation is workspace-Admin-only (ADR 0034 §4; backend 403s
-  // everyone else) — the edit affordance renders only for admins. This gate is
-  // nav convenience, not the security boundary (that's the PATCH's 403).
+  // Asset-metadata mutation is workspace-Admin-only (ADR 0034 §4; backend 403s everyone else) — the
+  // edit affordance renders only for admins.
   const isAdmin = useIsWorkspaceAdmin();
   return (
     <Flex vertical gap={20}>
@@ -211,9 +203,8 @@ function AssetDetailBody({
 }
 
 /**
- * One labelled health axis (#803) — the label makes explicit *which* health this
- * is, so "Errors" on Connection can never be misread as a data failure (and vice
- * versa). The hint is a tooltip on the label, not a wall of text on the page.
+ * One labelled health axis (#803) — the label makes explicit *which* health this is, so "Errors"
+ * on Connection can never be misread as a data failure (and vice versa).
  */
 function HealthAxis({ label, health, hint }: { label: string; health: Health; hint: string }) {
   return (
@@ -230,10 +221,7 @@ function HealthAxis({ label, health, hint }: { label: string; health: Health; hi
   );
 }
 
-/**
- * The asset description + the workspace-Admin-only inline edit (#760). Owner
- * reassignment lives in its own `OwnerBlock` below (#773).
- */
+/** The asset description + the workspace-Admin-only inline edit (#760). */
 function DescriptionBlock({
   assetId,
   description,
@@ -308,18 +296,7 @@ function DescriptionBlock({
   );
 }
 
-/**
- * Asset owner + the workspace-Admin-only reassignment (#773). Asset owners feed
- * ADR 0034 §3 incident routing, so keeping them assignable matters. The picker is
- * sourced from `GET /admin/users` (itself admin-only — a clean fit, since the
- * whole control is admin-gated); the current owner renders as a display
- * name/email, never a bare UUID, once the user list resolves.
- *
- * **Mounted only for admins** (the parent gates on `isAdmin`) — so the on-mount
- * user-list fetch always runs with adminness known, and a non-admin structurally
- * never calls the admin-only endpoint. This gate is nav convenience — the PATCH's
- * `require_workspace_admin` 403 is the security boundary.
- */
+/** Asset owner + the workspace-Admin-only reassignment (#773). */
 function OwnerBlock({
   assetId,
   ownerUserId,
@@ -486,10 +463,8 @@ function SuitesSection({
       },
     },
   ];
-  // The title counts ALL composing suites (workspace-true, matching the health
-  // rollup above it); the table lists only the viewer's suites (ADR 0027). The
-  // restricted count is DERIVED so title and footnote share one source; clamped
-  // because a pre-0037 API (deploy skew) sends a viewer-scoped suite_count.
+  // The title counts ALL composing suites (workspace-true, matching the health rollup above it);
+  // the table lists only the viewer's suites (ADR 0027).
   const restrictedCount = Math.max(0, totalCount - suites.length);
   const total = suites.length + restrictedCount;
   return (

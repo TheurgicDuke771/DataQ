@@ -1,15 +1,4 @@
-"""Resolve the configured ``ResultPublisher`` (cached after first build).
-
-Mirrors ``core.secrets.get_secret_store``: a process-wide singleton built from
-settings, with a test-only reset.
-
-Returns a ``CompositePublisher`` over every channel — Teams, Slack, email. Each
-child reads the run's per-suite notification config at delivery time and
-self-no-ops when its channel is unconfigured (no secret / recipients), the suite
-has notifications disabled, or the run is below the suite's threshold — so the
-composite is safe to build unconditionally and a channel stays quiet until its
-secret is set. The ``NoopPublisher`` remains the explicit test double.
-"""
+"""Resolve the configured ``ResultPublisher`` (cached after first build)."""
 
 from __future__ import annotations
 
@@ -39,7 +28,8 @@ def _build_publisher() -> AlertPublisher:
     """A composite over every channel (Teams · Slack · email). Each child resolves
     its secret + per-suite policy per run (so rotation is picked up) and stays a
     quiet no-op until configured; the registry only wires the store + names, never
-    reads a secret."""
+    reads a secret.
+    """
     settings = get_settings()
     store = get_secret_store()
     return CompositePublisher(
@@ -68,7 +58,8 @@ def _build_publisher() -> AlertPublisher:
 
 def _get_publisher() -> AlertPublisher:
     """The cached composite (built once). Both seams below are views onto this one
-    object — the channels and their secrets are identical, only the DTO differs."""
+    object — the channels and their secrets are identical, only the DTO differs.
+    """
     global _publisher_singleton
     if _publisher_singleton is not None:
         return _publisher_singleton
@@ -86,7 +77,8 @@ def get_result_publisher() -> ResultPublisher:
 
 def get_health_publisher() -> HealthPublisher:
     """Return the configured connection-health publisher (#837) — the same cached
-    composite, viewed through the health seam."""
+    composite, viewed through the health seam.
+    """
     return _get_publisher()
 
 

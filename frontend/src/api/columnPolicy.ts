@@ -1,10 +1,8 @@
 import { api } from './client';
 
 /**
- * Per-suite failing-sample redaction policy (#415): the shown `identifier_column`
- * (a non-PII row locator) + the always-masked `pii_columns`. `suggest` profiles +
- * classifies the target and returns a proposed policy (not saved). Reading needs
- * `view`, setting/suggesting needs `edit` on the suite (backend-gated).
+ * Per-suite failing-sample redaction policy (#415): the shown `identifier_column` (a non-PII row
+ * locator) + the always-masked `pii_columns`.
  */
 
 export interface ColumnPolicy {

@@ -102,9 +102,8 @@ describe('AssetHealthTag', () => {
   });
 });
 
-// ── the two split axes (#803) ────────────────────────────────────────────────
-// The point of the split: "could we reach it?" and "is the data good?" are
-// different questions, and neither may answer for the other.
+// ── the two split axes (#803) ──────────────────────────────────────────────── The point of the
+// split: "could we reach it?" and "is the data good?" are different questions.
 
 type ConnInput = Pick<
   AssetSummary,
@@ -202,9 +201,7 @@ describe('suiteHealth (#803)', () => {
   });
 
   it('is No data — never a green Passing — when a run evaluated nothing', () => {
-    // The operational case: the run happened but every check errored/skipped, so
-    // checks_total is 0. Keying "Passing" off "a run happened" would paint this
-    // green; keying it off evaluated checks correctly says we know nothing.
+    // The operational case: the run happened but every check errored/skipped, so checks_total is 0.
     expect(suiteHealth({ ...SUITE_OK, checks_total: 0 })).toEqual({
       label: 'No data',
       color: 'default',
@@ -238,16 +235,7 @@ describe('suiteHealth (#803)', () => {
 // ── mutation-spike gaps (#898) ────────────────────────────────────────────────
 
 describe('the connection-axis ladder, rung by rung (#898)', () => {
-  // Table-driven on purpose. The spike killed nothing when `has_active_run` and
-  // `last_run_at` were forced to `false`/`if (false)`, because the existing tests
-  // assert the ladder's ENDS and not each rung — a mutant that removes a middle
-  // guard falls through to a neighbour whose label happens to satisfy the loose
-  // assertion. Each row below pins one rung against the input that reaches it.
-  //
-  // The COLOUR is asserted alongside the label for the same reason #563 flagged:
-  // colour is the part a user actually reads at a glance, and `color: ''`
-  // survivors mean nothing checks it. A label-only assertion lets 'No runs' go
-  // green or 'Errors' go grey.
+  // Table-driven on purpose.
   const rungs: [string, Partial<ConnInput>, string, string][] = [
     ['operational error wins outright', { has_operational_error: true }, 'Errors', 'error'],
     ['a skip degrades', { has_skip: true }, 'Degraded', 'warning'],

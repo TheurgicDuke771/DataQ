@@ -1,10 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-// Monaco itself can't run under jsdom (canvas, workers); the mock stands in for
-// the editor so what's under test is OUR glue: the antd-Form controlled-field
-// contract (value in, onChange out, null coercions) and the worker/loader setup
-// running without a CDN fetch.
+// Monaco itself can't run under jsdom (canvas, workers); the mock stands in for the editor so
+// what's under test is OUR glue: the antd-Form controlled-field contract (value in, onChange out.
 vi.mock('@monaco-editor/react', () => ({
   default: ({ value, onChange }: { value: string; onChange: (v: string | undefined) => void }) => (
     <textarea
@@ -16,10 +14,8 @@ vi.mock('@monaco-editor/react', () => ({
   ),
   loader: { config: vi.fn() },
 }));
-// These specifiers must match the module's imports EXACTLY or the mock is dead and
-// the real Monaco loads underneath — which is what was happening: the worker mock
-// still named the pre-0.56 `esm/vs/` path the component stopped importing. A mock
-// that doesn't match implies an isolation the test doesn't have.
+// These specifiers must match the module's imports EXACTLY or the mock is dead and the real Monaco
+// loads underneath.
 vi.mock('monaco-editor/editor/editor.api.js', () => ({}));
 vi.mock('monaco-editor/languages/definitions/sql/register.js', () => ({}));
 vi.mock('monaco-editor/editor/editor.worker.js?worker', () => ({

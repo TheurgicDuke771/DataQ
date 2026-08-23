@@ -2,9 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DataqAuthConfig } from '../../src/auth/config';
 
-// authMode / authConfig are computed at module load, so each case sets the source
-// then re-imports a fresh module. Precedence: injected window.__DATAQ_CONFIG__
-// wins; build-time VITE_* is only the `pnpm dev` fallback (no injected /config.js).
+// authMode / authConfig are computed at module load, so each case sets the source then re-imports a
+// fresh module.
 beforeEach(() => {
   vi.resetModules();
 });
@@ -57,9 +56,8 @@ describe('authMode (runtime config)', () => {
   });
 
   it("keeps 'otp' even when stale OIDC values are left behind", async () => {
-    // Realistic migration state: an operator flips MODE to otp and forgets to
-    // blank the authority/clientId. Falling through to the OIDC branch would
-    // render an IdP redirect against a tenant nobody signs into any more.
+    // Realistic migration state: an operator flips MODE to otp and forgets to blank the
+    // authority/clientId.
     inject({ mode: 'otp', authority: 'https://issuer.example/v2.0', clientId: 'spa-1' });
     const { authMode } = await loadConfig();
     expect(authMode).toBe('otp');
@@ -152,11 +150,8 @@ describe('build-time fallback (pnpm dev, no injected config)', () => {
   });
 
   it('lets VITE_AUTH_MODE=otp win over a leftover VITE_AUTH_DEV_BYPASS=true', async () => {
-    // The local compose stack carries the bypass flag as a long-standing dev
-    // default and switches to OTP by setting the mode (#1150). If the boolean
-    // won, that stack would render "no sign-in at all" against a backend that
-    // was serving email codes — the split-brain the two-selector contract
-    // exists to prevent. Only ever upgrades: bypass → a real authenticator.
+    // The local compose stack carries the bypass flag as a long-standing dev default and switches
+    // to OTP by setting the mode (#1150).
     vi.stubEnv('VITE_AZURE_TENANT_ID', '');
     vi.stubEnv('VITE_AZURE_SPA_CLIENT_ID', '');
     vi.stubEnv('VITE_AUTH_DEV_BYPASS', 'true');

@@ -1,40 +1,4 @@
-"""Apache Iceberg connection adapter + native read runner (ADR 0030, #716).
-
-A datasource (CLAUDE.md §4): DQ checks run against an Iceberg **table** read
-**natively** — `pyiceberg` resolves the current snapshot → applies v2 deletes →
-reconciles schema by field-id → materialises a DataFrame, which GX validates.
-This is the no-query-engine path; engine-registered Iceberg tables (a Snowflake
-``CREATE ICEBERG TABLE`` or a Databricks UniForm/foreign catalog table) already
-work with **zero code** under the existing ``snowflake`` / ``unity_catalog``
-connections, because those runners speak SQL to the engine and never see the file
-format (ADR 0030 §1).
-
-Format-version 2 is the baseline; v3 (deletion vectors, row lineage) is deferred
-behind a later capability gate (ADR 0030 §2, #717).
-
-**Self-contained (Option A, ADR 0030 §3):** the connection carries its catalog
-config in ``Connection.config`` **and its own** storage/catalog credential in a
-single ``secret_ref`` — no reference to a separate ADLS/S3 connection. The one
-secret is injected into ``load_catalog`` as the property named by
-``secret_property`` (e.g. ``token`` for a REST catalog, ``s3.secret-access-key``
-for S3-backed storage), so one credential slot serves any backend without
-hardcoding a cloud. A credential-less catalog (local warehouse, vended-credentials
-REST) may omit the secret entirely (like the ADLS/S3 adapters).
-
-**Materialisation (ADR 0030 §1 / #716):** the exact-expectation path goes through
-``scan().to_arrow()`` → ``to_pandas(types_mapper=pd.ArrowDtype)`` — Arrow-backed
-pandas dtypes, keeping parity with ``FlatFileCheckRunner``'s
-``dtype_backend="pyarrow"`` — **not** the bare ``scan().to_pandas()`` shortcut
-(which drops to numpy dtypes). Monitors avoid touching data files entirely where
-the metadata is trustworthy (#859): volume answers from the snapshot summary's
-``total-records`` and freshness from per-file column upper bounds — degrading
-honestly to ``scan().count()`` / a one-column ``MAX`` scan (with the reason
-recorded on the result) when summary fields are absent, row-level deletes exist,
-or a file lacks stats.
-
-``pyiceberg`` is imported lazily (like the other adapters' clients) so importing
-this module stays cheap and the dependency only loads on a live Iceberg path.
-"""
+"""Apache Iceberg connection adapter + native read runner (ADR 0030, #716)."""
 
 from __future__ import annotations
 
@@ -58,38 +22,29 @@ from backend.app.datasources.monitors import (
     validate_monitor_config,
 )
 
-# Catalog backends pyiceberg's ``load_catalog`` understands. REST + SQL are the
-# self-hostable baseline; Glue/Hive are cloud/metastore-backed. All read Iceberg
-# v2 the same way once the catalog is loaded — the type only changes the connect
-# properties.
+# Catalog backends pyiceberg's ``load_catalog`` understands.
 IcebergCatalogType = Literal["rest", "sql", "glue", "hive"]
 
 # Catalog types whose connection needs a URI (REST endpoint, SQL/metastore URI).
-# Glue is region-scoped via ``properties`` (e.g. ``{"glue.region": "us-east-1"}``),
-# not a URI.
 _URI_REQUIRED: frozenset[str] = frozenset({"rest", "sql", "hive"})
 
-# The pyiceberg ADLS FileIO property family whose value is a SAS — and therefore
-# the only ``secret_property`` whose credential states its own expiry (#838).
-# Account-scoped in practice (``adls.sas-token.<account>``), so this is a prefix.
+# The pyiceberg ADLS FileIO property family whose value is a SAS — and therefore the only
+# ``secret_property`` whose credential states its own expiry (#838).
 _SAS_PROPERTY_PREFIX = "adls.sas-token"
 
-# `properties` KEYS pyiceberg documents as holding a credential directly (not a
-# reference to one) — a literal value here is exactly the #754/#826 leak, now
-# reachable through the connection editor's properties table (#1181). Matched
-# case-insensitively, mirroring the rest of this validator family.
+# `properties` KEYS pyiceberg documents as holding a credential directly (not a reference to one) —
+# a literal value here is exactly the #754/#826 leak.
 _CREDENTIAL_PROPERTY_KEYS: frozenset[str] = frozenset({"s3.secret-access-key", "adls.account-key"})
-# Generic name-based hints — anything that reads as a password/token by NAME,
-# not just the two known keys above (a future catalog/storage backend's property
-# family is unknowable in advance). Identifier-class keys that happen to contain
-# these substrings (an access key ID is an identifier, not a secret) are exempt.
+# Generic name-based hints — anything that reads as a password/token by NAME, not just the two known
+# keys above (a future catalog/storage backend's property family is unknowable in advance).
 _CREDENTIAL_NAME_HINTS: tuple[str, ...] = ("password", "token")
 _CREDENTIAL_NAME_EXEMPTIONS: frozenset[str] = frozenset({"s3.access-key-id"})
 
 
 def _looks_like_a_credential_property(key: str) -> bool:
     """True when `key` names something pyiceberg treats as (or that reads like)
-    a literal credential, rather than a non-secret identifier or option."""
+    a literal credential, rather than a non-secret identifier or option.
+    """
     lowered = key.lower()
     if lowered in _CREDENTIAL_NAME_EXEMPTIONS:
         return False
@@ -99,28 +54,7 @@ def _looks_like_a_credential_property(key: str) -> bool:
 
 
 class IcebergConfig(BaseModel):
-    """Non-secret Iceberg catalog + storage config (the credential is the secret).
-
-    Maps from ``Connection.config``. ``catalog_name`` is the pyiceberg catalog
-    name; ``catalog_type`` selects the backend; ``catalog_uri`` points at it
-    (required for rest/sql/hive). ``warehouse`` is the table warehouse/storage
-    root. ``properties`` carries any extra non-secret catalog + storage options
-    (e.g. ``{"s3.region": "us-east-1", "adls.account-name": "acct"}``).
-    ``secret_property`` names the single ``load_catalog`` property the connection's
-    secret fills — typically the *storage* credential (e.g. ``adls.account-key``).
-
-    **A SQL catalog needs a SECOND credential** (the catalog DB password), and
-    ``pyiceberg`` only accepts it inside the SQLAlchemy ``uri``. Putting it there in
-    config is what caused #754/#826: `config` is non-secret, so the password was
-    persisted, copied into the asset's OpenLineage namespace, served by the read API,
-    **rendered in the UI**, and sent to third-party catalogs in a query string.
-
-    So ``catalog_uri`` must ship **credential-less** (username is fine — that's an
-    identifier, not a credential) and ``catalog_secret_name`` names a SecretStore
-    entry holding the password. The caller resolves it and hands it in; it is injected
-    into the URI's userinfo at catalog-load time and never persisted. A password left
-    inline in ``catalog_uri`` is rejected outright by the validator below.
-    """
+    """Non-secret Iceberg catalog + storage config (the credential is the secret)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -142,13 +76,7 @@ class IcebergConfig(BaseModel):
 
     @model_validator(mode="after")
     def _uri_carries_no_password(self) -> IcebergConfig:
-        """Reject a password smuggled into `catalog_uri` (#754 AC2).
-
-        `config` is NOT a secret: it is persisted in plaintext JSONB, returned by the
-        read API, and used to derive the asset's OpenLineage identity. A credential in
-        here leaks by construction, so refuse it at the door rather than redacting it
-        forever after — and point the author at the slot that does the right thing.
-        """
+        """Reject a password smuggled into `catalog_uri` (#754 AC2)."""
         if self.catalog_uri and uri_password(self.catalog_uri):
             raise ValueError(
                 "catalog_uri must not embed a password (config is stored and returned "
@@ -162,17 +90,6 @@ class IcebergConfig(BaseModel):
     def _properties_carry_no_credential(self) -> IcebergConfig:
         """Reject a credential smuggled into `properties` (#754/#826, extended to
         the properties dict by #1181's editor exposure).
-
-        `properties` is freeform and NON-secret by contract (the class docstring
-        above) — stored in plaintext JSONB, returned by the read API, and (since
-        #1181) editable directly through a UI key-value table. A credential value
-        here leaks exactly like one in `catalog_uri` would, so — like
-        `_uri_carries_no_password` — this validates at the door rather than
-        redacting on the way out. Two independent checks, since a credential can
-        leak by KEY (a well-known credential-bearing property name holding a
-        literal value, e.g. `s3.secret-access-key`) or by VALUE (a URI-shaped
-        string carrying its own embedded password, the same shape guarded on
-        `catalog_uri` itself).
         """
         for key, value in self.properties.items():
             if _looks_like_a_credential_property(key):
@@ -193,20 +110,12 @@ class IcebergConfig(BaseModel):
     def catalog_properties(
         self, secret: str | None, catalog_secret: str | None = None
     ) -> dict[str, str]:
-        """The keyword properties handed to ``pyiceberg.catalog.load_catalog``.
-
-        The freeform ``properties`` go in **first** so the validated
-        ``type``/``uri``/``warehouse`` overwrite (never get shadowed by) any
-        collision — otherwise a stray ``properties={'type': …}`` would diverge from
-        what the ``_uri_present`` validator reasoned about. The single secret under
-        ``secret_property`` is applied last so it can't be shadowed either.
-        """
+        """The keyword properties handed to ``pyiceberg.catalog.load_catalog``."""
         props: dict[str, str] = dict(self.properties)
         props["type"] = self.catalog_type
         if self.catalog_uri:
-            # The catalog credential is re-attached HERE and nowhere else — the last
-            # possible moment, in memory, for this one load. `catalog_uri` itself
-            # stays credential-less at rest (#754/#826).
+            # The catalog credential is re-attached HERE and nowhere else — the last possible
+            # moment, in memory, for this one load.
             props["uri"] = (
                 inject_uri_password(self.catalog_uri, catalog_secret)
                 if catalog_secret
@@ -225,14 +134,7 @@ def load_iceberg_table(
     identifier: str,
     catalog_secret: str | None = None,
 ) -> Any:
-    """Load an Iceberg table by its ``namespace.table`` identifier (the live seam).
-
-    The single catalog-load + ``load_table`` round-trip shared by the check/monitor
-    runner and the column profiler (#721), so the two can't drift on how a
-    connection's config + optional secret map to a ``pyiceberg`` catalog.
-    ``pyiceberg`` is imported lazily (per this module's idiom) so the dependency
-    only loads on a live Iceberg path.
-    """
+    """Load an Iceberg table by its ``namespace.table`` identifier (the live seam)."""
     from pyiceberg.catalog import load_catalog
 
     catalog: Any = load_catalog(
@@ -242,11 +144,7 @@ def load_iceberg_table(
 
 
 def _to_arrow_backed_pandas(arrow: Any) -> Any:
-    """Materialise an Arrow table as Arrow-backed pandas (``pd.ArrowDtype``).
-
-    The one conversion that keeps Iceberg's DataFrame dtypes consistent with the
-    flat-file/UC paths (``dtype_backend="pyarrow"``) — reused by both the runner's
-    whole-table read and the profiler's sampled read (#721)."""
+    """Materialise an Arrow table as Arrow-backed pandas (``pd.ArrowDtype``)."""
     import pandas as pd
 
     return arrow.to_pandas(types_mapper=pd.ArrowDtype)
@@ -262,21 +160,7 @@ def read_iceberg_dataframe(
     table: Any = None,
     catalog_secret: str | None = None,
 ) -> Any:
-    """Materialise an Iceberg table as an Arrow-backed pandas DataFrame (#721).
-
-    The column profiler's read seam: like the runner it goes through
-    ``scan().to_arrow()`` → Arrow-backed pandas, but adds the two "load less data"
-    levers the flat-file profiler uses — column **projection** (``selected_fields``,
-    restricted to columns that actually exist so a stray name doesn't fail the
-    scan — the caller reports genuinely-missing columns as a clean 422) and a row
-    **limit** (sampling). ``columns=None`` reads every column; ``limit=None`` reads
-    every row (the runner's whole-table contract).
-
-    Pass an already-loaded ``table`` to scan it directly instead of loading it
-    again — the profiler's pre-scan column validation (`profile_service`) loads
-    the table once (for `table.schema()`) and reuses it here, so a request is
-    never charged a second catalog round-trip for the scan (#721 code review).
-    ``table=None`` (every other caller) loads it here, unchanged."""
+    """Materialise an Iceberg table as an Arrow-backed pandas DataFrame (#721)."""
     if table is None:
         table = load_iceberg_table(config, secret, identifier, catalog_secret)
     if columns:
@@ -294,11 +178,7 @@ def list_iceberg_columns(
     identifier: str,
     catalog_secret: str | None = None,
 ) -> list[str]:
-    """Column (field) names of an Iceberg table from its schema — **no data scan**.
-
-    Reads the table's ``schema()`` field names (a metadata-only lookup, like the
-    flat-file lister's Parquet-footer read), so the check editor's column dropdown
-    (#474) never scans table data to populate itself (#721)."""
+    """Column (field) names of an Iceberg table from its schema — **no data scan**."""
     table = load_iceberg_table(config, secret, identifier, catalog_secret)
     return [field.name for field in table.schema().fields]
 
@@ -306,63 +186,22 @@ def list_iceberg_columns(
 class IcebergConnectionAdapter:
     """`ConnectionAdapter` for Iceberg — config validation + a metadata probe."""
 
-    # #1401 — the only type with two credential slots, and they have genuinely
-    # different destinations, which is why this attribute is per-slot rather than
-    # one flat set:
-    #
-    #   catalog  → `catalog_uri`, the URI `inject_uri_password` injects the
-    #              catalog DB password into.
-    #   secret   → `catalog_uri` **as well** (see below), `warehouse` (the storage
-    #              root the credential authenticates against), `secret_property`
-    #              (which property it fills, so repointing it hands the credential
-    #              to a different subsystem), and `properties` — freeform,
-    #              non-secret, and behind a UI key-value editor since #1181, where
-    #              `s3.endpoint` or `adls.account-name` redirect storage just as
-    #              effectively.
-    #
-    # `catalog_uri` appears in BOTH slots because `catalog_properties` puts both
-    # credentials at that one address: the catalog password is injected into
-    # `props["uri"]`, and `props[secret_property] = secret` is sent TO that uri —
-    # for a REST catalog `secret_property` is `token`, which pyiceberg presents as
-    # `Authorization: Bearer …` against it. Listing it only under `catalog` left
-    # the exploit live on the commonest REST shape, which has a `secret_ref` and
-    # NO `catalog_secret_name`: the catalog slot finds nothing stored and waves the
-    # move through while the primary token follows the URI (caught in review).
-    #
-    # `properties` is included whole rather than by an allowlist of address-shaped
-    # keys: such a list covers pyiceberg's storage backends as they exist today
-    # and goes stale silently, and a stale entry here fails OPEN. The cost is that
-    # adding an unrelated property (`s3.region`) also asks for the storage
-    # credential; the alternative is a guard that quietly stops covering new keys.
+    # #1401 — the only type with two credential slots, and they have genuinely different
+    # destinations, which is why this attribute is per-slot rather than one flat set: catalog →
     destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {
         "catalog": ("catalog_uri",),
         "secret": ("catalog_uri", "warehouse", "properties", "secret_property"),
     }
 
-    # A credential-less catalog (local warehouse, vended-credentials REST) is a
-    # legitimate config (ADR 0030 §3, the class docstring above) — mirrored by
-    # the frontend's `optionalSecret: true` for `iceberg` in
-    # `connectionFormSpec.ts`. `test_connection`/`test_draft_connection` (#351)
-    # read this to decide whether a missing secret is an error or just "this
-    # catalog has none"; `secret=None` then flows straight to
-    # `catalog_properties`, which already omits `secret_property` when there's
-    # nothing to inject.
+    # A credential-less catalog (local warehouse, vended-credentials REST) is a legitimate config
+    # (ADR 0030 §3, the class docstring above).
     secret_optional = True
 
     def validate_config(self, raw: dict[str, Any]) -> IcebergConfig:
         return IcebergConfig.model_validate(raw)
 
     def credential_expiry(self, raw: dict[str, Any], secret: str, **_: Any) -> datetime | None:
-        """When the storage credential stops working (#838), or ``None``.
-
-        Iceberg's secret fills whichever ``secret_property`` the operator named, so
-        the shape is knowable only from that name: an ``adls.sas-token…`` property
-        holds a SAS, which prints its own `se=`. An account key, an S3 key, or a
-        catalog password have no readable lifetime and stay silent.
-
-        Only the *storage* credential is read. The SQL-catalog password (a second
-        secret, #754/#826) is not covered — a Postgres password carries no expiry.
-        """
+        """When the storage credential stops working (#838), or ``None``."""
         if not (self.validate_config(raw).secret_property or "").startswith(_SAS_PROPERTY_PREFIX):
             return None
         return azure_sas_expiry(secret)
@@ -375,19 +214,7 @@ class IcebergConnectionAdapter:
         catalog_secret: str | None = None,
         **_: Any,
     ) -> None:
-        """Load the catalog and list namespaces; raise on failure.
-
-        A lightweight metadata round-trip — a green test means the catalog is
-        reachable and the credential authenticates. Deliberately reads no table
-        data (no scan), so it stays cheap.
-
-        ``secret`` may genuinely be ``None`` (`secret_optional`, #351) — a
-        credential-less catalog. `catalog_properties` already treats that as
-        "nothing to inject" rather than a missing-value bug.
-
-        ``catalog_secret`` is the SQL-catalog DB password, already resolved by the
-        caller (adapters never touch the SecretStore — `base.ConnectionAdapter`).
-        """
+        """Load the catalog and list namespaces; raise on failure."""
         from pyiceberg.catalog import load_catalog
 
         config = self.validate_config(raw)
@@ -398,22 +225,10 @@ class IcebergConnectionAdapter:
 
 
 class IcebergCheckRunner:
-    """GX `CheckRunner` + `MonitorRunner` for a natively-read Iceberg table.
+    """GX `CheckRunner` + `MonitorRunner` for a natively-read Iceberg table."""
 
-    Reads the target table into an Arrow-backed pandas DataFrame via ``pyiceberg``
-    and validates that frame with GX — the "GX DataFrame datasource" shape
-    (CLAUDE.md §5), like `UnityCatalogCheckRunner`, so the run path never sees
-    Iceberg internals. ``table`` is the ``namespace.table`` identifier (``schema``
-    is folded into it upstream — Iceberg namespaces aren't a separate SQL schema).
-
-    Loading the table (`_load_table`) is the live seam, monkeypatched in tests; GX
-    then runs in-process on the returned frame, so the validation path is fully
-    covered without a live catalog.
-    """
-
-    # Runner-advertised monitor capability (#429): EXPLICITLY what this runner
-    # implements — never frozenset(MONITOR_KINDS), which would auto-advertise
-    # every future registry entry and self-defeat the per-kind gate.
+    # Runner-advertised monitor capability (#429): EXPLICITLY what this runner implements — never
+    # frozenset(MONITOR_KINDS).
     supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
 
     def __init__(
@@ -428,15 +243,7 @@ class IcebergCheckRunner:
         return load_iceberg_table(self._config, self._secret, identifier, self._catalog_secret)
 
     def _read_dataframe(self, identifier: str) -> Any:
-        """Materialise the whole current snapshot as Arrow-backed pandas.
-
-        ``.to_arrow()`` (not the bare ``.to_pandas()`` shortcut) + Arrow-backed
-        pandas dtypes keep Iceberg's GX behaviour consistent with the flat-file/UC
-        DataFrame paths (via the shared ``_to_arrow_backed_pandas``). GX
-        expectations are exact and need the whole frame, so this materialises the
-        full table (ADR 0030 — G-b scale ceiling). Goes through ``self._load_table``
-        (not the module helper directly) so tests can patch the load seam.
-        """
+        """Materialise the whole current snapshot as Arrow-backed pandas."""
         table = self._load_table(identifier)
         return _to_arrow_backed_pandas(table.scan().to_arrow())
 
@@ -464,14 +271,7 @@ class IcebergCheckRunner:
     def run_monitors(
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
     ) -> list[CheckOutcome]:
-        """Evaluate freshness/volume monitors natively (no SQL engine).
-
-        Reuses the shared `monitors.run_monitor_specs` banding loop — only the
-        scalar source differs: volume is ``scan().count()`` (no materialisation),
-        freshness scans just its timestamp column for its ``MAX``. The table is
-        loaded **once, before the loop**, so a catalog/load failure propagates and
-        fails the whole run (matching the SQL runners' open-connection-first
-        contract); a bad *monitor* then errors only itself (#122)."""
+        """Evaluate freshness/volume monitors natively (no SQL engine)."""
         loaded = self._load_table(table)  # load failure propagates — before the loop
         sources: dict[int, dict[str, Any]] = {}
         index = iter(range(len(monitors)))
@@ -483,9 +283,8 @@ class IcebergCheckRunner:
             return scalar
 
         outcomes = run_monitor_specs(scalar_for, monitors=monitors, now=datetime.now(UTC))
-        # Stamp WHICH path answered (#859 / the #828 lesson: a degraded answer must
-        # say so) — metadata (`snapshot-summary` / `file-bounds`) or the scan
-        # fallback with its reason — onto the successful outcomes' detail.
+        # Stamp WHICH path answered (#859 / the #828 lesson: a degraded answer must say so) —
+        # metadata (`snapshot-summary` / `file-bounds`) or the scan fallback with its reason.
         return [
             (
                 replace(oc, observed_value={**oc.observed_value, **detail})
@@ -496,21 +295,7 @@ class IcebergCheckRunner:
         ]
 
     def _monitor_scalar(self, table: Any, spec: MonitorSpec) -> tuple[Any, dict[str, Any]]:
-        """The scalar a monitor bands plus a source detail dict (#859).
-
-        The answer is read from table METADATA when it is trustworthy — no data
-        scan, no compute burned on the check:
-
-        * ``volume`` — the current snapshot summary's ``total-records``;
-        * ``freshness`` — the max per-file upper bound of the timestamp column
-          across the current snapshot's data files (exact for timestamp/date
-          types), UNLESS row-level deletes exist (a deleted row may hold the
-          max, so the bound would over-report freshness).
-
-        Summary fields are engine-written and OPTIONAL, so every metadata path
-        degrades to the scan (``scan().count()`` / a one-column ``MAX``) with the
-        reason recorded — never a confident answer from an untrustworthy source.
-        """
+        """The scalar a monitor bands plus a source detail dict (#859)."""
         validate_monitor_config(spec.kind, spec.config)  # structural gate (bad column/range)
         if spec.kind == VOLUME:
             try:
@@ -548,7 +333,8 @@ class IcebergCheckRunner:
 def _summary_get(summary: Any, key: str) -> Any:
     """A snapshot summary field, tolerating pyiceberg's Summary object OR a plain
     mapping OR None — summary fields are engine-written and optional, so absence
-    is an expected answer, never an exception."""
+    is an expected answer, never an exception.
+    """
     if summary is None:
         return None
     get = getattr(summary, "get", None)
@@ -574,13 +360,9 @@ _DELETE_TOTAL_KEYS = ("total-delete-files", "total-position-deletes", "total-equ
 
 
 def _row_delete_guard(summary: Any) -> str | None:
-    """``None`` when the summary PROVES the snapshot has zero row-level deletes;
-    otherwise the degrade reason. All three ``total-*`` fields are optional and
-    engine-written, so an ABSENT field is "cannot prove", never "no deletes" —
-    with live delete files, summary ``total-records`` over-counts (it nets only
-    data-file records; verified against pyiceberg's ``_update_totals``) and a
-    column upper bound may belong to a deleted row. Both metadata paths refuse
-    to answer unless proven clean."""
+    """``None`` when the summary PROVES the snapshot has zero row-level deletes; otherwise the
+    degrade reason.
+    """
     for key in _DELETE_TOTAL_KEYS:
         raw = _summary_get(summary, key)
         if raw is None:
@@ -594,17 +376,7 @@ def _row_delete_guard(summary: Any) -> str | None:
 
 
 def _volume_from_snapshot_summary(table: Any) -> tuple[int | None, dict[str, Any]]:
-    """``(total_records, delta_detail)`` from the current snapshot's summary (#859).
-
-    ``total-records`` is the row count the engine recorded at commit time — the
-    volume answer with zero data-file scanning — but it nets only DATA-file
-    records: on a merge-on-read table with live position/equality deletes it
-    over-counts (a false-green vs the delete-aware ``scan().count()``), so the
-    delete guard applies here exactly as it does to freshness. ``None`` → the
-    caller falls back to the scan. The per-commit ``added-records``/
-    ``deleted-records`` delta rides along as observed detail when present — a
-    row-count scan can never provide it.
-    """
+    """``(total_records, delta_detail)`` from the current snapshot's summary (#859)."""
     snapshot = table.current_snapshot()
     if snapshot is None:
         return None, {"fallback_reason": "table has no current snapshot"}
@@ -646,16 +418,6 @@ def _decode_bound(field_type: Any, raw: bytes) -> Any:
 def _freshness_from_file_bounds(table: Any, column: str) -> tuple[Any, str | None]:
     """``(max_bound, None)`` from per-file column upper bounds — or ``(None,
     reason)`` when the metadata can't be trusted and the caller must scan (#859).
-
-    The max upper bound over the current snapshot's data files IS ``MAX(column)``
-    for timestamp/date columns (bounds are exact for temporal types) — unless
-    row-level deletes exist: a deleted row may hold the max, so the bound would
-    over-report freshness (a false-green), and we degrade to the scan instead.
-    A file missing the bound (stats disabled) likewise degrades, as does a table
-    with no current snapshot (conservative — the scan of a truly empty table is
-    free, and a non-standard table object without snapshot metadata keeps
-    working). A snapshot with zero live data files returns ``(None, None)`` —
-    authoritatively no rows, the same operational error the scan path produces.
     """
     snapshot = table.current_snapshot()
     if snapshot is None:
@@ -667,9 +429,8 @@ def _freshness_from_file_bounds(table: Any, column: str) -> tuple[Any, str | Non
     try:
         field = schema.find_field(column)
     except Exception as exc:
-        # A real schema that lacks the column is the CHECK's config error (#122),
-        # not a metadata degrade — relabeling it "metadata unavailable" and letting
-        # the fallback scan re-raise would make the outcome right by coincidence.
+        # A real schema that lacks the column is the CHECK's config error (#122), not a metadata
+        # degrade.
         raise MonitorConfigError(f"unknown freshness column {column!r}") from exc
     max_bound: Any = None
     for task in table.scan(selected_fields=(column,)).plan_files():
@@ -690,17 +451,7 @@ def _freshness_from_file_bounds(table: Any, column: str) -> tuple[Any, str | Non
 def iceberg_credentials(
     config: IcebergConfig, secret_ref: str | None, secret_store: SecretStore
 ) -> tuple[str | None, str | None]:
-    """``(storage_secret, catalog_secret)`` for an Iceberg connection.
-
-    **The one place both credentials are resolved.** An Iceberg SQL catalog needs two
-    (the storage key AND the catalog DB password, #754/#826), and `catalog_uri` no
-    longer carries the second one — so a caller that resolves only the storage secret
-    would connect to the catalog with *no password* and fail obscurely, or worse,
-    succeed against an unauthenticated catalog. Every read path (runner, profiler,
-    comparison reader) goes through here so none of them can forget.
-
-    Both are optional: a local warehouse / vended-credentials REST catalog has neither.
-    """
+    """``(storage_secret, catalog_secret)`` for an Iceberg connection."""
     secret = secret_store.get(secret_ref) if secret_ref else None
     catalog_secret = (
         secret_store.get(config.catalog_secret_name) if config.catalog_secret_name else None
@@ -711,13 +462,7 @@ def iceberg_credentials(
 def build_iceberg_runner(
     *, config: dict[str, Any], secret_ref: str | None, secret_store: SecretStore, **_: Any
 ) -> IcebergCheckRunner:
-    """Build a runner from an ``iceberg`` `Connection`'s primitives.
-
-    Mirrors `build_unity_catalog_runner`: takes the raw config dict (not the ORM
-    model) to stay decoupled from ``db/``. The storage/catalog credential is
-    optional — a credential-less catalog (local warehouse, vended-credentials
-    REST) has no ``secret_ref`` (like the ADLS/S3 adapters).
-    """
+    """Build a runner from an ``iceberg`` `Connection`'s primitives."""
     iceberg_config = IcebergConfig.model_validate(config)
     secret, catalog_secret = iceberg_credentials(iceberg_config, secret_ref, secret_store)
     return IcebergCheckRunner(config=iceberg_config, secret=secret, catalog_secret=catalog_secret)

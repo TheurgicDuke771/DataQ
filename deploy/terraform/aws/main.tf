@@ -1,12 +1,5 @@
-# Networking: one VPC, 2 public subnets across 2 AZs, an Internet Gateway, no
-# NAT Gateway (decision: public-subnets-no-NAT — saves ~$33/mo; ECS tasks get
-# no public IP/inbound exposure since security groups gate everything, only
-# the ALB->frontend path is internet-reachable). RDS and ElastiCache also sit
-# in these public subnets with no public IP/endpoint access, for the same
-# reason the Azure stack doesn't stand up a separate private-subnet tier for
-# a single-environment deployment. Documented MVP tradeoff — see the approved
-# deployment plan; harden to private subnets + NAT/VPC endpoints later if a
-# real compliance/traffic need justifies the cost.
+# Networking: one VPC, 2 public subnets across 2 AZs, an Internet Gateway, no NAT Gateway (decision:
+# public-subnets-no-NAT — saves ~$33/mo.
 
 data "aws_availability_zones" "available" {
   state = "available"

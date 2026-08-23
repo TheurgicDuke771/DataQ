@@ -1,9 +1,4 @@
-"""Readable SecretStore key names.
-
-The charset assertions are the load-bearing ones: Azure Key Vault rejects any
-name outside ``[0-9a-zA-Z-]`` at the API, so a slug that lets one through does
-not fail in a test — it fails when an operator saves a connection in production.
-"""
+"""Readable SecretStore key names."""
 
 from __future__ import annotations
 
@@ -53,7 +48,8 @@ def test_slugify_produces_readable_key_vault_safe_names(raw: str, expected: str)
 )
 def test_slugify_output_is_always_key_vault_writable(raw: str) -> None:
     """Including the cases that slug to nothing — an empty string is valid output
-    here, but anything non-empty must be writable."""
+    here, but anything non-empty must be writable.
+    """
     slug = slugify(raw)
     assert slug == "" or KEY_VAULT_NAME.match(slug), f"{raw!r} -> {slug!r}"
 
@@ -63,11 +59,11 @@ def test_slugify_is_bounded() -> None:
 
 
 def test_regex_work_is_bounded_on_hostile_input() -> None:
-    """`_PARENS` is polynomial — it rescans to the end from every "(", so N
-    unmatched "(" costs O(N^2) (20k chars measured at ~115 ms). The API caps `name`
-    at 128, but that makes the safety the CALLER's property, not this function's.
-    Asserted as a time bound because that is the actual claim; a length assertion
-    would pass even if the bound were removed."""
+    """`_PARENS` is polynomial — it rescans to the end from every "(", so N unmatched "(" costs
+    O(N^2) (20k chars measured at ~115 ms). The API caps `name` at 128, but that makes the
+    safety the CALLER's property, not this function's. Asserted as a time bound because that is
+    the actual claim; a length assertion would pass even if the bound were removed.
+    """
     import time
 
     hostile = "(" * 200_000
@@ -96,12 +92,7 @@ def test_regex_work_is_bounded_on_hostile_input() -> None:
 def test_connection_ref_matches_the_curated_prod_convention(
     name: str, conn_type: str, env: str, expected: str
 ) -> None:
-    """The generator only earns its keep by reproducing hand-curated quality.
-
-    Each case is a real production connection whose secret an operator named by
-    hand; a naive slug of the display name produced markedly WORSE names
-    (`conn-qa-azure-data-factory-qa-…`), which is what this shape fixes.
-    """
+    """The generator only earns its keep by reproducing hand-curated quality."""
     ref = connection_secret_ref(
         connection_id=uuid.UUID("05c77ce3-846e-4e76-a5f7-7e12e9510c99"),
         env=env,
@@ -129,7 +120,8 @@ def test_env_is_never_duplicated() -> None:
 def test_a_parenthetical_only_qualifier_is_kept_not_dropped() -> None:
     """When the parentheses hold the ONLY distinguishing content, dropping them
     would reduce two live warehouse credentials to keys differing by 8 hex chars —
-    reinstating the "find the right entry" problem (#954) this module removes."""
+    reinstating the "find the right entry" problem (#954) this module removes.
+    """
     a = connection_secret_ref(
         connection_id=uuid.uuid4(), env="dev", name="Snowflake (Retail)", conn_type="snowflake"
     )
@@ -143,7 +135,8 @@ def test_a_parenthetical_only_qualifier_is_kept_not_dropped() -> None:
 def test_a_junk_connection_id_still_yields_a_key_vault_valid_name(bad_id: str) -> None:
     """`short_id` is the one input that never passes through `slugify`, and the
     signature advertises `UUID | str`. An id filtering down to nothing must not leave
-    a trailing dash — Key Vault rejects that at the API, i.e. a 500 on save."""
+    a trailing dash — Key Vault rejects that at the API, i.e. a 500 on save.
+    """
     ref = connection_secret_ref(
         connection_id=bad_id, env="dev", name="warehouse", conn_type="snowflake"
     )
@@ -173,7 +166,8 @@ def test_parenthetical_commentary_is_dropped() -> None:
 def test_connection_ref_is_always_writable_to_key_vault(env: str, name: str) -> None:
     """A connection name is free text straight from the user. Every one of these
     must yield a name Key Vault will accept — the failure mode otherwise is a
-    500 on save, in production, for a name nobody thought to test."""
+    500 on save, in production, for a name nobody thought to test.
+    """
     ref = connection_secret_ref(
         connection_id=uuid.uuid4(), env=env, name=name, conn_type="snowflake"
     )
@@ -185,7 +179,8 @@ def test_connection_ref_is_always_writable_to_key_vault(env: str, name: str) -> 
 
 def test_connection_ref_survives_a_name_that_slugs_to_nothing() -> None:
     """`日本語` has no ASCII transliteration, so the slug is empty. The ref must
-    still be valid and unique rather than collapsing to a bare prefix."""
+    still be valid and unique rather than collapsing to a bare prefix.
+    """
     cid = uuid.UUID("05c77ce3-846e-4e76-a5f7-7e12e9510c99")
     ref = connection_secret_ref(connection_id=cid, env="dev", name="日本語", conn_type="snowflake")
     assert ref == "conn-snowflake-dev-05c77ce3"
@@ -194,7 +189,8 @@ def test_connection_ref_survives_a_name_that_slugs_to_nothing() -> None:
 
 def test_two_connections_with_the_same_name_get_distinct_refs() -> None:
     """The whole point of the id suffix: identical names must not collide, or one
-    connection would silently overwrite the other's credential."""
+    connection would silently overwrite the other's credential.
+    """
     a = connection_secret_ref(
         connection_id=uuid.uuid4(), env="dev", name="w", conn_type="snowflake"
     )
@@ -230,7 +226,8 @@ def test_ref_accepts_a_string_id() -> None:
 )
 def test_is_readable_ref_identifies_the_legacy_shape(ref: str, readable: bool) -> None:
     """Drives the migration's idempotency — a second run must skip what it already
-    renamed, or it would churn the vault on every invocation."""
+    renamed, or it would churn the vault on every invocation.
+    """
     assert is_readable_ref(ref) is readable
 
 
@@ -240,7 +237,8 @@ def test_is_readable_ref_identifies_the_legacy_shape(ref: str, readable: bool) -
 def test_kind_produces_a_distinct_ref_from_the_primary() -> None:
     """An Iceberg SQL catalog needs a SECOND credential (the catalog DB password,
     #754/#826/#1181) alongside the storage secret — both belong to the same
-    connection row, so they must not collide on the same vault key."""
+    connection row, so they must not collide on the same vault key.
+    """
     cid = uuid.uuid4()
     primary = connection_secret_ref(
         connection_id=cid, env="dev", name="harness", conn_type="iceberg"
@@ -259,10 +257,8 @@ def test_kind_is_stable_and_readable() -> None:
         connection_id=cid, env="dev", name="harness-iceberg", conn_type="iceberg", kind="catalog"
     )
     assert ref == "conn-iceberg-harness-catalog-dev-05c77ce3"
-    # Recomputing from the same inputs (the "reuse the stored ref" contract) must
-    # yield byte-identical output — a second call is how `_write_extra_secret`
-    # mints the ref the FIRST time; the ref itself is then stored and reused
-    # verbatim thereafter, exactly like the primary credential.
+    # Recomputing from the same inputs (the "reuse the stored ref" contract) must yield byte-
+    # identical output — a second call is how `_write_extra_secret` mints the ref the FIRST time.
     assert (
         connection_secret_ref(
             connection_id=cid,
@@ -277,7 +273,8 @@ def test_kind_is_stable_and_readable() -> None:
 
 def test_kind_blank_reproduces_the_primary_shape_unchanged() -> None:
     """The default (`kind=""`) must be a no-op — every existing caller and every
-    already-minted primary ref must keep resolving to the same key."""
+    already-minted primary ref must keep resolving to the same key.
+    """
     cid = uuid.UUID("05c77ce3-846e-4e76-a5f7-7e12e9510c99")
     with_default = connection_secret_ref(
         connection_id=cid, env="dev", name="harness-iceberg", conn_type="iceberg"
@@ -290,7 +287,8 @@ def test_kind_blank_reproduces_the_primary_shape_unchanged() -> None:
 
 def test_kind_is_slugged_and_writable() -> None:
     """`kind` is a hardcoded literal today, but the signature accepts any `str` —
-    it must not become an unwritable-name footgun if that ever changes."""
+    it must not become an unwritable-name footgun if that ever changes.
+    """
     ref = connection_secret_ref(
         connection_id=uuid.uuid4(),
         env="dev",
@@ -302,13 +300,11 @@ def test_kind_is_slugged_and_writable() -> None:
 
 
 def test_kind_survives_truncation_on_a_long_name_no_collision_with_the_primary() -> None:
-    """A long-but-legal `name` (well under the API's 128-char cap) must not
-    truncate `kind` away — the naive version spent the WHOLE `_MAX_SLUG` budget
-    on one joined string, so a long enough qualifier pushed `kind` (and even
-    `env`) past the cutoff entirely, and the primary/catalog refs for the SAME
-    connection came out byte-identical — `_write_extra_secret` would then
-    silently overwrite the primary credential with the catalog one in the vault
-    (empirically reproduced pre-fix with the exact name below)."""
+    """A long-but-legal `name` (well under the API's 128-char cap) must not truncate `kind` away —
+    the naive version spent the WHOLE `_MAX_SLUG` budget on one joined string, so a long enough
+    qualifier pushed `kind` (and even `env`) past the cutoff entirely, and the primary/catalog
+    refs for the SAME connection came out byte-identical — `_write_extra_secret`
+    """
     cid = uuid.UUID("05c77ce3-846e-4e76-a5f7-7e12e9510c99")
     name = (
         "Connection with a genuinely quite long descriptive display name "
@@ -327,7 +323,8 @@ def test_kind_survives_truncation_on_a_long_name_no_collision_with_the_primary()
 def test_kind_and_env_survive_truncation_even_at_the_max_input_bound() -> None:
     """The absolute worst case: a `name` at the (pre-API-cap) `_MAX_INPUT`
     bound. `kind` and `env` must still land intact and the two refs must still
-    differ, and the whole ref must stay within Key Vault's 127-char limit."""
+    differ, and the whole ref must stay within Key Vault's 127-char limit.
+    """
     cid = uuid.uuid4()
     name = "connection " * 30  # far longer than any single API-reachable name
     primary = connection_secret_ref(connection_id=cid, env="prod", name=name, conn_type="iceberg")

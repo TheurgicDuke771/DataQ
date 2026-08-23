@@ -1,10 +1,4 @@
-"""Per-suite alert notification config — nested under a suite.
-
-`GET`/`PUT`/`DELETE /suites/{suite_id}/notifications`. View to read, edit to
-change (the capability ladder). The webhook URL is write-only (a secret): it's
-accepted on `PUT` and written through the SecretStore, but never returned — the
-read surface exposes only ``has_webhook``.
-"""
+"""Per-suite alert notification config — nested under a suite."""
 
 from __future__ import annotations
 
@@ -29,7 +23,8 @@ class SuiteNotificationRead(ApiModel):
     """A suite's effective notification config. ``configured`` distinguishes a
     saved row from the defaults a suite falls back to. The Teams/Slack webhook URLs
     are secrets and never returned — only whether each is set (``has_*_webhook``).
-    ``email_recipients`` is not a secret (addresses), so it's returned for prefill."""
+    ``email_recipients`` is not a secret (addresses), so it's returned for prefill.
+    """
 
     configured: bool
     enabled: bool
@@ -44,10 +39,8 @@ class SuiteNotificationUpdate(ApiModel):
     # Default 'warn' matches the no-config fallback, so an omitted threshold
     # doesn't silently tighten delivery (a saved config keeps the prior behaviour).
     alert_on: Literal["fail", "warn", "always"] = "warn"
-    # Each override is tri-state: omit/null = leave the stored value unchanged;
-    # "" = clear (fall back to the workspace config); a value = set it. The https /
-    # host / email-format checks live in the service (clean DataQError 422s), not
-    # Pydantic validators (whose ValueError ctx isn't JSON-serializable here).
+    # Each override is tri-state: omit/null = leave the stored value unchanged; "" = clear (fall
+    # back to the workspace config); a value = set it.
     webhook: str | None = None  # per-suite Teams webhook (write-only secret)
     slack_webhook: str | None = None  # per-suite Slack webhook (write-only secret, #633)
     email_recipients: str | None = None  # per-suite email recipients, comma-separated (#633)

@@ -1,23 +1,4 @@
-"""Resolve a suite's target to a first-class `assets` row (ADR 0034, gap G-d).
-
-The write-time companion to `asset_identity.resolve_asset_identity` (the pure
-resolver): it takes the resolved OpenLineage `(namespace, name)` identity and
-upserts the durable `assets` row keyed on that identity, returning the asset id
-the suite / run links to.
-
-**Fail-soft is the contract.** Asset resolution is a browse/reason convenience
-layered over the execution model — it must NEVER fail a suite save or a run
-dispatch. Every entry point here swallows exceptions (bad/legacy config, a
-targetless suite, an orchestration-type connection with no asset identity),
-logs a structlog warning, and returns ``None`` so the caller leaves
-``asset_id`` NULL and carries on. Precedent: `alerting.builder` deliberately
-never raises into the run path.
-
-Also hosts the orphan-asset sweep (#770) — the periodic-janitor counterpart to
-the resolution/upsert path above: assets accrete (ADR 0034's "last_seen + a
-sweep, not deletes" posture), so `sweep_orphan_assets` is what actually retires
-a row once nothing references it any more.
-"""
+"""Resolve a suite's target to a first-class `assets` row (ADR 0034, gap G-d)."""
 
 from __future__ import annotations
 
@@ -39,18 +20,12 @@ from backend.app.services.asset_identity import resolve_asset_identity
 log = get_logger(__name__)
 
 
-# Assets are batched into one multi-row INSERT per this many rows (the lineage
-# refresh materializes every manifest node — thousands at real scale). Kept
-# separate from the shared sweep `CHUNK_SIZE` (#323 review F6) — this is a
-# multi-row INSERT batch size, not a chunked-DML sweep loop, so there's no
-# reason to couple the two even though they happen to share a value today.
+# Assets are batched into one multi-row INSERT per this many rows (the lineage refresh materializes
+# every manifest node — thousands at real scale).
 _ASSET_CHUNK = 500
 
-# Reference guards for the orphan sweep (#770): every FK into ``assets.id`` must
-# have a ``(table, column)`` row here. This registry drives BOTH the sweep's
-# NOT-EXISTS predicate and the schema-introspection test
-# (`test_asset_sweep.py::test_every_asset_fk_has_a_sweep_guard`), so a new FK —
-# e.g. #761 ``incidents.asset_id`` — fails the build until its guard is added.
+# Reference guards for the orphan sweep (#770): every FK into ``assets.id`` must have a ``(table,
+# column)`` row here.
 _SWEEP_REFERENCE_GUARDS: tuple[tuple[str, str], ...] = (
     ("suites", "asset_id"),
     ("runs", "asset_id"),
@@ -76,16 +51,7 @@ def _now() -> datetime:
 
 
 def _conflict_set(stmt: PgInsert, *, preserve_provenance: bool) -> dict[str, Any]:
-    """The ON CONFLICT SET clause, provenance-preserving or overwriting.
-
-    Always references the *would-be-inserted* row via ``stmt.excluded`` (correct for
-    both the single- and multi-row insert). ``preserve_provenance`` (the lineage
-    caller): keep the row's existing ``env``/``connection_id`` when already set —
-    ``COALESCE(existing, new)`` — so a dbt refresh never flips a datasource-resolved
-    asset's provenance to the dbt orchestration connection. Otherwise (the
-    suite-resolution caller): overwrite with the resolving connection's values
-    (last-writer-wins, the historical behaviour).
-    """
+    """The ON CONFLICT SET clause, provenance-preserving or overwriting."""
     if preserve_provenance:
         return {
             "last_seen": func.now(),
@@ -108,23 +74,7 @@ def upsert_asset(
     connection_id: uuid.UUID | None,
     preserve_provenance: bool = False,
 ) -> uuid.UUID:
-    """Insert-or-reuse an `assets` row keyed on ``(namespace, name)``; return its id.
-
-    The single-row low-level upsert `resolve_and_upsert_asset` (suite-target
-    resolution) uses, so the ON CONFLICT shape and the savepoint fail-soft posture
-    live in one place. On an existing identity it refreshes ``last_seen`` and
-    (unless ``preserve_provenance``) ``env`` / ``connection_id`` (provenance hint).
-
-    ``preserve_provenance=True`` keeps an already-set ``env``/``connection_id`` on
-    conflict (``COALESCE`` — for lineage materialization, which must not clobber a
-    datasource-resolved asset's provenance); the default overwrites (suite path).
-
-    Wrapped in a **savepoint** (nested transaction): a genuine DB error here rolls
-    back only this savepoint, leaving the outer transaction healthy so the
-    caller's commit still succeeds — the fail-soft "never blocks the save/refresh"
-    contract. The caller decides whether to catch (a bad identity) or let it
-    propagate.
-    """
+    """Insert-or-reuse an `assets` row keyed on ``(namespace, name)``; return its id."""
     stmt = pg_insert(Asset).values(
         namespace=namespace, name=name, env=env, connection_id=connection_id
     )
@@ -143,23 +93,7 @@ def upsert_assets(
     preserve_provenance: bool = False,
     chunk_size: int = _ASSET_CHUNK,
 ) -> dict[tuple[str, str], uuid.UUID]:
-    """Batch insert-or-reuse `assets`; return ``{(namespace, name): id}`` for every row.
-
-    The many-row companion to :func:`upsert_asset` for `lineage.edges` (which
-    materializes an asset per manifest node — thousands at real scale). Each ``rows``
-    dict is ``{namespace, name, env, connection_id}``. Chunked into multi-row
-    ``INSERT … ON CONFLICT DO UPDATE`` statements (``chunk_size`` rows each), then the
-    id map is built from a **follow-up SELECT** on ``(namespace, name)`` rather than
-    ``RETURNING`` — Postgres does not guarantee multi-row ``RETURNING`` order matches
-    the VALUES order under ``ON CONFLICT``, so a positional zip would silently
-    mis-map ids (correctness over cleverness).
-
-    **All-or-nothing, NOT per-row savepoint-isolated** (unlike :func:`upsert_asset`):
-    a chunk is one statement, so a DB error aborts the whole refresh. That matches the
-    lineage caller's tested contract — `refresh_dbt_edges` wraps this fail-open and
-    rolls the transaction back on any error, writing nothing rather than a partial
-    graph.
-    """
+    """Batch insert-or-reuse `assets`; return ``{(namespace, name): id}`` for every row."""
     if not rows:
         return {}
     for start in range(0, len(rows), chunk_size):
@@ -183,14 +117,7 @@ def upsert_assets(
 def resolve_and_upsert_asset(
     session: Session, connection: Connection, target: dict[str, Any] | None
 ) -> uuid.UUID | None:
-    """Resolve ``target`` to an OpenLineage asset identity and upsert its row.
-
-    Returns the asset id for the suite / run to link, or ``None`` when the
-    target is absent or cannot be resolved (fail-soft — never raises). On a
-    known identity, inserts the asset or, if it already exists, refreshes its
-    ``last_seen`` / ``env`` / ``connection_id`` (provenance hint) — an
-    insert-or-reuse keyed on ``(namespace, name)``.
-    """
+    """Resolve ``target`` to an OpenLineage asset identity and upsert its row."""
     if not target:
         return None
     try:
@@ -235,55 +162,7 @@ def sweep_orphan_assets(
     now: datetime | None = None,
     chunk_size: int = CHUNK_SIZE,
 ) -> int:
-    """Delete `assets` rows past `retention_days` that nothing still references (#770).
-
-    ADR 0034's accepted cleanup posture: asset rows accrete (a suite retargets
-    away, a dbt model is dropped from the manifest, ...) and are never deleted on
-    the write path — `last_seen` simply stops advancing. This sweep is what
-    eventually retires them. A row is a sweep candidate only when BOTH hold:
-
-    - ``last_seen`` is older than ``retention_days`` (the frozen-timestamp signal
-      that nothing resolves/refreshes it any more);
-    - it is **unreferenced** — see the guard list below.
-
-    ``retention_days`` must be generous: it has to comfortably outlive the
-    slowest suite schedule and the lineage-refresh poll cadence, or a
-    legitimately-live asset would be swept and immediately re-created on the next
-    refresh (default 30 via ``ASSET_ORPHAN_RETENTION_DAYS``).
-    ``retention_days <= 0`` disables the sweep (returns 0 without touching the
-    DB) — a clean off-switch, mirroring the other beat janitors
-    (``reap_stuck_runs`` / ``purge_expired_sample_failures``).
-
-    **Reference guard — an enforced registry, not a checklist.** `Suite.
-    asset_id` / `Run.asset_id` are ``ON DELETE SET NULL`` and the lineage-edge
-    FKs are ``ON DELETE CASCADE``, so the schema alone would happily let a
-    referenced asset be deleted (or its edges be cascade-wiped); the
-    ``_SWEEP_REFERENCE_GUARDS`` registry is what actually protects them. Every
-    FK into ``assets.id`` needs a registry row — the schema-introspection test
-    (``test_every_asset_fk_has_a_sweep_guard``) fails the build when a new FK
-    (e.g. #761 ``incidents.asset_id``) lands without one, so a silent
-    over-delete cannot ship unnoticed.
-
-    Deletes run as chunked ``DELETE … WHERE id IN (SELECT … LIMIT n)``
-    statements that ALSO repeat the FULL predicate (staleness + every guard)
-    on the outer DELETE's own WHERE — not just via the id-subquery — each
-    committed before the next (`chunked_dml`, shared with `run_service.
-    purge_expired_sample_failures` since #323 review finding F6). A large
-    sweep (e.g. after a bulk lineage-source removal) never holds one giant
-    DELETE or a sweep-long transaction open, and a candidate that gains a
-    reference mid-sweep is re-checked by its own chunk's subquery rather than
-    deleted from a stale snapshot. Repeating the predicate on the outer
-    DELETE closes the same EPQ gap #323's review found in the sibling sweep
-    (F5): under READ COMMITTED, ``id IN (subquery)`` alone doesn't get
-    re-validated against a row's current state on a concurrent-update
-    recheck, only the fixed id membership does — this docstring claimed the
-    "full predicate" property before the code actually enforced it. The
-    residual race is a single statement wide (a reference committed in the
-    same instant a ≥30-day stale asset's chunk deletes it); its blast radius
-    is bounded — suites/runs go ``SET NULL`` and the next save/refresh
-    re-creates the asset row via the normal upsert path. Returns the number
-    of assets actually swept.
-    """
+    """Delete `assets` rows past `retention_days` that nothing still references (#770)."""
     if retention_days <= 0:
         return 0
     moment = now or _now()

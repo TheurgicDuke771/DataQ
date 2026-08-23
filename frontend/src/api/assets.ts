@@ -1,17 +1,7 @@
 import { api } from './client';
 import { toListPage, type ListPage } from './listPage';
 
-/**
- * Assets API — the read-only browse/reason surface over `assets` (ADR 0034,
- * #760). Assets are what users reason about; suites remain how checks execute.
- *
- * **The ADR 0037 three-layer rule** (backend `asset_view_service`): asset
- * identity + lineage topology (incl. column pairs) are visible to every member;
- * the aggregate rollup is workspace-true (over ALL composing suites — one
- * verdict for every viewer); only the composing-suite list is filtered to the
- * caller's ADR 0027 grants, the rest collapsing to `restricted_suite_count`.
- * The client never has to scope — it just renders what the API returns.
- */
+/** Assets API — the read-only browse/reason surface over `assets` (ADR 0034, #760). */
 
 /** A suite's latest run outcome — mirrors the backend `RunOutcomeRead`. */
 export interface RunOutcome {
@@ -50,22 +40,16 @@ export interface AssetSummary {
   checks_total: number;
   checks_passed: number;
   last_run_at: string | null;
-  /** Latest-run execution states (distinct from check severity): any composing
-   *  suite's latest run `failed` / still `queued`/`running` — an operationally
-   *  failed run must never render as green health. */
+  /**
+   * Latest-run execution states (distinct from check severity): any composing suite's latest run
+   * `failed` / still `queued`/`running`.
+   */
   has_failed_run: boolean;
   has_active_run: boolean;
-  /** Connection-health axis (#803) — could DataQ *execute* against the datasource?
-   *  `has_operational_error`: a latest run `failed`, or any check `error`ed (the
-   *  datasource threw). `has_skip`: a check's precondition wasn't met (e.g. the
-   *  batch hasn't landed) — degraded, not down. Both are operational (#122): they
-   *  never rank as severity, so they never colour *suite* (data-quality) health.
-   *  Derived from the recorded runs — there is no connection-probe polling loop. */
+  /** Connection-health axis (#803) — could DataQ *execute* against the datasource? */
   has_operational_error: boolean;
   has_skip: boolean;
-  /** Any composing suite's latest run was `cancelled`. A cancelled run proves
-   *  nothing — killed before a check ran, we may never have reached the datasource
-   *  — so neither health axis may roll it up green. */
+  /** Any composing suite's latest run was `cancelled`. */
   has_cancelled_run: boolean;
 }
 
@@ -83,12 +67,7 @@ export interface LineageNode {
   depth: number;
 }
 
-/** One edge of the lineage neighbourhood — mirrors `LineageEdgeRead`.
- *  `source` is the upstream asset id, `target` the downstream one.
- *
- *  `columns` is the edge's column-level refinement (#901) where a warehouse source
- *  recorded one — `[upstream_column, downstream_column]` pairs, shown to every
- *  member (ADR 0037). Null ⇒ a table-grain edge. */
+/** One edge of the lineage neighbourhood — mirrors `LineageEdgeRead`. */
 export interface LineageEdge {
   source: string;
   target: string;
@@ -96,9 +75,7 @@ export interface LineageEdge {
 }
 
 /** Asset detail — mirrors `AssetDetailRead`. */
-/** A lineage-feeding connection whose poll is currently failing (#828).
- *  Non-empty ⇒ the lineage below may be stale or empty for reasons that have nothing
- *  to do with this asset, so the UI must NOT render a clean "no lineage" empty state. */
+/** A lineage-feeding connection whose poll is currently failing (#828). */
 export interface LineageSourceHealth {
   connection_id: string;
   name: string;
@@ -109,9 +86,7 @@ export interface LineageSourceHealth {
   last_polled_at: string | null;
 }
 
-/** One scorecard row (#889, ADR 0038). `score` is `null` when nothing evaluated —
- *  which is neither 0 nor 100. Render "no signal": "we ran nothing" and
- *  "everything failed" are opposite facts a 0 would conflate. */
+/** One scorecard row (#889, ADR 0038). */
 export interface DimensionScore {
   dimension: string;
   /** Checks that EXIST in this dimension — coverage. A check authored today
@@ -125,13 +100,10 @@ export interface DimensionScore {
   score: number | null;
 }
 
-/** Per-dimension coverage + score, workspace-true (ADR 0037) — identical for every
- *  viewer who can see the asset.
- *
- *  `uncovered` is the half users act on: dimensions with no checks at all.
- *  `unclassified_checks` counts checks with no dimension (custom SQL, or anything
- *  nobody classified); they are deliberately NOT bucketed, because filing them
- *  under a dimension they may not belong to would make `uncovered` a lie. */
+/**
+ * Per-dimension coverage + score, workspace-true (ADR 0037) — identical for every viewer who can
+ * see the asset.
+ */
 export interface Scorecard {
   covered: DimensionScore[];
   uncovered: string[];
@@ -144,13 +116,10 @@ export interface AssetDetail {
   scorecard?: Scorecard | null;
   /** Only the suites the viewer can see (ADR 0027). */
   suites: ComposingSuite[];
-  /** How many MORE suites compose this asset outside the viewer's grants — they
-   *  still roll into `summary` (workspace-true) but stay unnamed (ADR 0037).
-   *  Optional because the UI does NOT read it (#924 review): the workspace-true
-   *  `summary.suite_count` is the single owner of the total, and the restricted
-   *  count is derived as `suite_count - suites.length` — so the card title and
-   *  the footnote can never disagree, and a deploy-skew response from a pre-0037
-   *  API (field absent) degrades gracefully instead of rendering NaN. */
+  /**
+   * How many MORE suites compose this asset outside the viewer's grants — they still roll into
+   * `summary` (workspace-true) but stay unnamed (ADR 0037).
+   */
   restricted_suite_count?: number;
   upstream: LineageNode[];
   downstream: LineageNode[];
@@ -185,17 +154,16 @@ export interface AssetMetadataUpdate {
   description?: string | null;
 }
 
-/** One page of `GET /assets` — the body (`items`) plus the workspace-wide
- *  `total` read off the `X-Total-Count` header (#925). `total` is the SAME
- *  unfiltered population `items` slices into (ADR 0037), so a caller can always
- *  tell `items.length < total` apart from "that's everything". */
+/**
+ * One page of `GET /assets` — the body (`items`) plus the workspace-wide `total` read off the
+ * `X-Total-Count` header (#925).
+ */
 export type AssetListPage = ListPage<AssetSummary>;
 
 export async function listAssets(
   params?: { limit?: number; offset?: number },
-  // #1107: threaded through by the tree view's multi-page walk so an
-  // abort (unmount/toggle-away) cancels the in-flight request too, not just
-  // the ones the walk loop hasn't issued yet.
+  // #1107: threaded through by the tree view's multi-page walk so an abort (unmount/toggle-away)
+  // cancels the in-flight request too, not just the ones the walk loop hasn't issued yet.
   signal?: AbortSignal,
 ): Promise<AssetListPage> {
   const { data, headers } = await api.get<AssetSummary[]>('/assets', { params, signal });

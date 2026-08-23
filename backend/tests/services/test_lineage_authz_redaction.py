@@ -1,21 +1,4 @@
-"""The ADR 0037 three-layer visibility contract, pinned across every surface.
-
-This file used to pin the *redaction* regime (#845/#920: anonymous lineage nodes,
-redacted browse rows, 404-no-leak asset detail). ADR 0037 deliberately superseded
-that: asset identity and lineage topology are workspace knowledge, aggregate
-verdicts are workspace-true, and the grant boundary lives at the suite grain. The
-tests here pin the NEW rule with the same rigor the old ones pinned the old one:
-
-1. **Identity is public.** Every member sees every asset fully named — in browse,
-   in the detail endpoint (which opens for every existing asset), and in the
-   lineage graph (nodes named, column pairs included).
-2. **Aggregates are workspace-true.** The summary a non-grantee sees is byte-for-
-   byte the summary the admin sees — one verdict per asset, never a per-viewer
-   partial.
-3. **Items are granted.** The composing-suite list on detail carries only suites
-   the caller can view; the rest surface as ``restricted_suite_count`` — a count,
-   never names. (Suite/run/result endpoints keep their own 404-no-leak tests.)
-"""
+"""The ADR 0037 three-layer visibility contract, pinned across every surface."""
 
 from __future__ import annotations
 
@@ -61,7 +44,8 @@ def _suite_on(db: Any, owner: User, *, table: str) -> Suite:
 
 def _ungranted_downstream(db: Any, upstream_asset_id: uuid.UUID) -> Asset:
     """A real asset downstream of ``upstream_asset_id``, targeted by a suite the
-    viewer holds no grant on — the shape the old redaction regime anonymized."""
+    viewer holds no grant on — the shape the old redaction regime anonymized.
+    """
     stranger = _user(db)
     mart_suite = _suite_on(db, stranger, table=_SECRET_NAME)
     mart = cast(Asset, db.get(Asset, mart_suite.asset_id))
@@ -82,7 +66,8 @@ def _ungranted_downstream(db: Any, upstream_asset_id: uuid.UUID) -> Asset:
 @pytest.fixture
 def scenario(db_session: Any) -> tuple[User, Asset, Asset]:
     """Olivia can view ORDER_HEADER (shared with her). A mart she has no grant on
-    sits downstream of it."""
+    sits downstream of it.
+    """
     owner = _user(db_session)
     olivia = _user(db_session)
     header_suite = _suite_on(db_session, owner, table="ORDER_HEADER")
@@ -94,7 +79,8 @@ def scenario(db_session: Any) -> tuple[User, Asset, Asset]:
 
 def test_an_ungranted_neighbour_is_fully_named(db_session: Any, scenario: Any) -> None:
     """Layer 1: lineage topology is identity, and identity is workspace knowledge.
-    The node arrives named, placed, and honestly flagged as monitored."""
+    The node arrives named, placed, and honestly flagged as monitored.
+    """
     olivia, header, mart = scenario
     detail = svc.get_visible_asset(db_session, header.id, user_id=olivia.id)
     assert len(detail.downstream) == 1
@@ -107,7 +93,8 @@ def test_an_ungranted_neighbour_is_fully_named(db_session: Any, scenario: Any) -
 
 def test_an_ungranted_asset_detail_opens(db_session: Any, scenario: Any) -> None:
     """The asset-grain 404-no-leak is retired: every node the graph draws is a node
-    the endpoint opens — for every member. Only a truly unknown id 404s."""
+    the endpoint opens — for every member. Only a truly unknown id 404s.
+    """
     olivia, _, mart = scenario
     detail = svc.get_visible_asset(db_session, mart.id, user_id=olivia.id)
     assert detail.summary.name == _SECRET_NAME
@@ -118,7 +105,8 @@ def test_an_ungranted_asset_detail_opens(db_session: Any, scenario: Any) -> None
 
 def test_column_pairs_are_shown_to_every_member(db_session: Any, scenario: Any) -> None:
     """Column names are schema metadata — identity, not measurement. The pairs on
-    an edge to an ungranted asset arrive in full (the #901 count-only box retired)."""
+    an edge to an ungranted asset arrive in full (the #901 count-only box retired).
+    """
     olivia, header, mart = scenario
     detail = svc.get_visible_asset(db_session, header.id, user_id=olivia.id)
     edge = next(e for e in detail.lineage_edges if (e.source, e.target) == (header.id, mart.id))
@@ -127,7 +115,8 @@ def test_column_pairs_are_shown_to_every_member(db_session: Any, scenario: Any) 
 
 def test_the_suite_boundary_holds_on_detail(db_session: Any, scenario: Any) -> None:
     """Layer 3: itemized evaluation stays granted. Olivia opens the mart, but its
-    composing suite — which she cannot view — is a count, never a name."""
+    composing suite — which she cannot view — is a count, never a name.
+    """
     olivia, _, mart = scenario
     detail = svc.get_visible_asset(db_session, mart.id, user_id=olivia.id)
     assert detail.suites == []
@@ -138,7 +127,8 @@ def test_the_suite_boundary_holds_on_detail(db_session: Any, scenario: Any) -> N
 
 def test_the_summary_is_workspace_true(db_session: Any, scenario: Any) -> None:
     """Layer 2: one verdict per asset. A non-grantee, a grantee, and an admin all
-    compute byte-identical summaries — a per-viewer partial can never disagree."""
+    compute byte-identical summaries — a per-viewer partial can never disagree.
+    """
     olivia, _, mart = scenario
     admin = _user(db_session)
     for_olivia = svc.get_visible_asset(db_session, mart.id, user_id=olivia.id).summary
@@ -154,7 +144,8 @@ def test_an_admin_sees_the_suite_list_in_full(
     """`include_all` (ADR 0027 workspace-admin) lists every composing suite, so
     nothing collapses into the restricted count. The user must be a REAL
     workspace-admin: `effective_permissions` resolves the `admin` label from the
-    allowlist independently of `include_all`."""
+    allowlist independently of `include_all`.
+    """
     _, _, mart = scenario
     admin = _user(db_session)
     make_workspace_admin(admin.email)
@@ -166,7 +157,8 @@ def test_an_admin_sees_the_suite_list_in_full(
 
 def test_a_grantee_sees_their_suite_listed(db_session: Any, scenario: Any) -> None:
     """The visible/restricted split follows the grant, per suite: granting Olivia
-    the mart suite moves it from the count into the named list."""
+    the mart suite moves it from the count into the named list.
+    """
     olivia, _, mart = scenario
     mart_suite = db_session.scalars(select(Suite).where(Suite.asset_id == mart.id)).one()
     _grant(db_session, mart_suite, db_session.get(User, mart_suite.created_by), olivia)
@@ -176,11 +168,9 @@ def test_a_grantee_sees_their_suite_listed(db_session: Any, scenario: Any) -> No
 
 
 def test_the_three_surfaces_agree_identity_is_public(db_session: Any) -> None:
-    """Browse, the detail endpoint, and the lineage nodes must all present the SAME
-    identity to every caller — over every asset kind (granted / ungranted /
-    suite-less). This is the ADR 0037 successor of the old three-surfaces test: the
-    axis is no longer per-viewer accessibility (there is none at the asset grain)
-    but that no surface withholds or invents identity for any caller."""
+    """Browse, the detail endpoint, and the lineage nodes must all present the SAME identity to
+    every caller — over every asset kind (granted / ungranted / suite-less).
+    """
     owner = _user(db_session)
     viewer = _user(db_session)
     stranger = _user(db_session)
@@ -217,7 +207,8 @@ def test_the_three_surfaces_agree_identity_is_public(db_session: Any) -> None:
 
 def test_browse_lists_every_asset_for_a_plain_member(db_session: Any, scenario: Any) -> None:
     """The #920 redacted browse row is gone from the contract: a member with zero
-    grants on the mart still gets its full row, with the workspace-true rollup."""
+    grants on the mart still gets its full row, with the workspace-true rollup.
+    """
     _, _, mart = scenario
     rows = {r.id: r for r in svc.list_visible_assets(db_session)}
     row = rows[mart.id]

@@ -1,10 +1,4 @@
-"""Unit tests for asset_identity.resolve_asset_identity / normalize_snowflake_account.
-
-Pure (no DB, no datasource): each datasource's namespace/name construction,
-the OpenLineage normalization rules (quote-strip, engine-returned case, the
-Snowflake account fixup), the flat-file pattern base-prefix rule, and the
-orchestration-type / missing-required-key error paths (#757, ADR 0034).
-"""
+"""Unit tests for asset_identity.resolve_asset_identity / normalize_snowflake_account."""
 
 import pytest
 
@@ -26,9 +20,8 @@ def test_snowflake_bare_locator_gets_default_region_and_cloud() -> None:
 
 
 def test_snowflake_locator_plus_hyphenated_region_gets_cloud() -> None:
-    # The region legitimately contains hyphens (`us-east-1`); the hyphen check is
-    # scoped to parts[0] (the locator), so this takes the dot-segment path and gets
-    # `.aws` appended — NOT the org-account passthrough (the fixed OL semantics).
+    # The region legitimately contains hyphens (`us-east-1`); the hyphen check is scoped to parts[0]
+    # (the locator), so this takes the dot-segment path and gets `.aws` appended.
     assert normalize_snowflake_account("xy12345.us-east-1") == "xy12345.us-east-1.aws"
 
 
@@ -221,11 +214,8 @@ def test_s3_bucket_namespace() -> None:
 
 
 def test_s3_no_endpoint_url_namespace_is_byte_stable() -> None:
-    # ADR 0040 §6 / #1064: an AWS connection (no endpoint_url) MUST keep resolving to
-    # exactly `s3://{bucket}` — this form is already persisted on prod `assets` rows,
-    # and changing it forks every existing S3 asset's lineage/incidents. Pinned
-    # explicitly (not just covered by test_s3_bucket_namespace above) so a future edit
-    # that starts consulting `endpoint_url` can't silently drift this byte-for-byte.
+    # ADR 0040 §6 / #1064: an AWS connection (no endpoint_url) MUST keep resolving to exactly
+    # `s3://{bucket}` — this form is already persisted on prod `assets` rows.
     identity = resolve_asset_identity(
         "s3", {"bucket": "my-bucket", "endpoint_url": None}, {"path": "orders.csv"}
     )
@@ -253,9 +243,8 @@ def test_s3_same_bucket_different_endpoints_resolve_to_different_namespaces() ->
 
 
 def test_s3_endpoint_default_port_and_case_do_not_fork_namespace() -> None:
-    # https default port 443 elided; host lower-cased — hostnames are case-insensitive,
-    # so a case difference in how an operator typed the endpoint must not fork the
-    # asset (ADR 0040 §6).
+    # https default port 443 elided; host lower-cased — hostnames are case-insensitive, so a case
+    # difference in how an operator typed the endpoint must not fork the asset (ADR 0040 §6).
     with_default_port = resolve_asset_identity(
         "s3",
         {"bucket": "landing", "endpoint_url": "https://Minio.Internal:443"},
@@ -273,7 +262,8 @@ def test_s3_ipv6_endpoints_stay_distinct_and_bracketed() -> None:
     """`urlparse().hostname` strips IPv6 brackets; re-gluing with a bare `:`
     made `[2001:db8::1]:9000` and `[2001:db8::1:9000]` — two different hosts —
     collide into one namespace (review finding, verified live). Brackets are
-    restored so the authority stays injective."""
+    restored so the authority stays injective.
+    """
     a = resolve_asset_identity(
         "s3",
         {"bucket": "landing", "endpoint_url": "https://[2001:db8::1]:9000"},
@@ -292,7 +282,8 @@ def test_s3_ipv6_endpoints_stay_distinct_and_bracketed() -> None:
 def test_s3_endpoint_path_never_leaks_into_the_namespace() -> None:
     """A path-bearing endpoint_url must contribute host[:port] only — pinned so
     a refactor toward `.netloc`/`.geturl()` cannot silently persist a path
-    segment into asset identity (review finding)."""
+    segment into asset identity (review finding).
+    """
     ident = resolve_asset_identity(
         "s3",
         {"bucket": "landing", "endpoint_url": "https://minio.internal:9000/some/path"},
@@ -351,9 +342,8 @@ def test_s3_pattern_leading_metachar_falls_back_to_whole_pattern() -> None:
 
 
 def test_s3_pattern_plain_path_with_dot_still_base_prefixes() -> None:
-    # `.` is a regex metachar, so `retail/orders/fixed.csv` cuts at the `.` in
-    # `fixed.csv` and truncates to the directory — a pattern-shaped target is always
-    # a directory-scoped asset (Spark convention), never the literal per-file match.
+    # `.` is a regex metachar, so `retail/orders/fixed.csv` cuts at the `.` in `fixed.csv` and
+    # truncates to the directory.
     identity = resolve_asset_identity(
         "s3", {"bucket": "my-bucket"}, {"pattern": "retail/orders/fixed.csv"}
     )
@@ -448,9 +438,8 @@ def test_unicode_iceberg_name_verbatim() -> None:
 
 
 def test_nul_byte_in_part_does_not_crash() -> None:
-    # NUL bytes are not glob metachars and not whitespace, so this resolves
-    # cleanly rather than raising — asserting the (odd but harmless) name
-    # rather than a crash is the contract we care about here.
+    # NUL bytes are not glob metachars and not whitespace, so this resolves cleanly rather than
+    # raising.
     identity = resolve_asset_identity(
         "s3", {"bucket": "my-bucket"}, {"path": "retail/orders\x00.csv"}
     )
@@ -496,7 +485,8 @@ def test_unknown_conn_type_raises() -> None:
 
 def test_iceberg_namespace_never_carries_the_catalog_password() -> None:
     """The namespace is persisted, served by the API, RENDERED IN THE UI and shipped to
-    catalogs inside a lineage query string. A credential in it leaks by construction."""
+    catalogs inside a lineage query string. A credential in it leaks by construction.
+    """
     identity = resolve_asset_identity(
         "iceberg",
         {
@@ -515,13 +505,7 @@ def test_iceberg_namespace_never_carries_the_catalog_password() -> None:
 
 
 def test_iceberg_identity_is_stable_across_a_password_rotation() -> None:
-    """Rotating the catalog password must NOT fork the asset into a new identity.
-
-    A namespace derived from a credential-bearing URI changes when the password does —
-    silently creating a second `assets` row and orphaning the original's lineage and
-    incidents. Stripping the credential makes the identity depend only on *where* the
-    catalog is, which is what an identity should mean.
-    """
+    """Rotating the catalog password must NOT fork the asset into a new identity."""
     target = {"namespace": "retail", "table": "purchase_orders"}
     before = resolve_asset_identity(
         "iceberg", {"catalog_uri": "postgresql://u:OLD_PW@h:5432/cat"}, target

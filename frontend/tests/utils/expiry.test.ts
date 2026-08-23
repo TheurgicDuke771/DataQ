@@ -9,9 +9,7 @@ const inDays = (d: number) => new Date(NOW + d * 86_400_000).toISOString();
 
 describe('expiryStatus', () => {
   it('says nothing about a credential with no readable expiry', () => {
-    // The load-bearing case: unknown must never collapse into "fine". A missing
-    // field is the absence of evidence, and #838 exists because the product
-    // treated silence as health for six days.
+    // The load-bearing case: unknown must never collapse into "fine".
     expect(expiryStatus(null, NOW)).toEqual({ kind: 'unknown' });
     expect(expiryStatus(undefined, NOW)).toEqual({ kind: 'unknown' });
     expect(expiryStatus('not-a-date', NOW)).toEqual({ kind: 'unknown' });

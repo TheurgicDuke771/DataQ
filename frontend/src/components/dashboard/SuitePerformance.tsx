@@ -3,13 +3,8 @@ import { Card, Empty, Flex, Progress, Typography } from 'antd';
 import type { PerformanceState, SuitePerformance as SuitePerf } from '../../api/dashboard';
 
 /**
- * Suite Performance (prototype `SuitePerformance`): per-suite health from each
- * suite's latest run, worst-first (the order the summary endpoint returns). The
- * score is the ADR-0005 health score; the state band (optimal/stable/critical)
- * colours both the label and the progress bar so a glance reads the spread.
- *
- * A suite whose latest run wrote no severity results has `score: null` /
- * `state: 'unknown'` — shown with an em dash and a flat grey bar, not 0%.
+ * Suite Performance (prototype `SuitePerformance`): per-suite health from each suite's latest run,
+ * worst-first (the order the summary endpoint returns).
  */
 interface SuitePerformanceProps {
   suites: SuitePerf[];

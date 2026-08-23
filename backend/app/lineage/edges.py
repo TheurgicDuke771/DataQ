@@ -1,22 +1,4 @@
-"""Cache dbt-manifest lineage into `lineage_edges`, and walk it (ADR 0034, #759).
-
-`refresh_dbt_edges` is the write side: it canonicalizes a parsed
-:class:`~backend.app.lineage.dbt_manifest.ManifestGraph`'s nodes into OpenLineage
-asset names, materializes an `assets` row per node, upserts one `lineage_edges`
-row per edge (``source='dbt'``), and prunes edges the latest refresh no longer
-observed (``last_seen`` staleness cutoff) — a **refreshed cache of external
-truth**, not a graph DataQ authors.
-
-`downstream_assets` / `upstream_assets` are the read side: a depth-capped BFS over
-`lineage_edges` — the blast-radius query the incident evidence card and the asset
-page consume.
-
-**Fail-open is the contract.** Lineage is a browse/reason convenience layered over
-the execution model; a bad manifest, a missing namespace anchor, or a DB hiccup
-must never break run ingestion or suite triggering. `refresh_dbt_edges` therefore
-never raises — it logs a structlog warning and returns ``None``. Precedent:
-`lineage.dispatch` / `alerting.builder`.
-"""
+"""Cache dbt-manifest lineage into `lineage_edges`, and walk it (ADR 0034, #759)."""
 
 from __future__ import annotations
 
@@ -38,9 +20,7 @@ from backend.app.services.asset_service import upsert_assets
 
 log = get_logger(__name__)
 
-# dbt adapters whose identifiers fold like Unity Catalog (lower-case unquoted) —
-# reuse asset_identity's UC rules so a databricks-adapter dbt node name matches a
-# suite-resolved UC asset byte-for-byte.
+# dbt adapters whose identifiers fold like Unity Catalog (lower-case unquoted).
 _UC_ADAPTERS = frozenset({"databricks", "spark"})
 
 # Warn when fewer than this fraction of manifest nodes matched an existing asset —
@@ -54,12 +34,7 @@ _EDGE_CHUNK = 500
 def refresh_dbt_edges(
     session: Session, *, connection: Connection, graph: ManifestGraph
 ) -> int | None:
-    """Refresh the dbt `lineage_edges` cache from ``graph``; return the live count.
-
-    Never raises. Returns the number of live ``source='dbt'`` edges among this
-    manifest's assets after the refresh, or ``None`` when the refresh is skipped
-    fail-soft (no namespace anchor, empty graph, or any error).
-    """
+    """Refresh the dbt `lineage_edges` cache from ``graph``; return the live count."""
     try:
         return _refresh_dbt_edges(session, connection=connection, graph=graph)
     except Exception as exc:  # fail-open: lineage must never break the run path
@@ -98,17 +73,12 @@ def _refresh_dbt_edges(
         )
         return None
 
-    # `clock_timestamp()` (wall clock, advances *within* a transaction) — NOT
-    # `now()` (== transaction start, constant for the whole tx). Captured before the
-    # edge upserts (which stamp a strictly-later clock_timestamp on `last_seen`), so
-    # the prune's strict `<` keeps every just-seen edge and drops only edges last
-    # touched in an earlier refresh — correct even when two refreshes share one
-    # transaction (the test harness's savepoint mode) where `now()` would be equal.
+    # `clock_timestamp()` (wall clock, advances *within* a transaction) — NOT `now()` (==
+    # transaction start, constant for the whole tx).
     refresh_started_at = session.execute(select(func.clock_timestamp())).scalar_one()
 
-    # Batch-materialize every node as an asset under the anchor namespace,
-    # preserving any datasource-resolved provenance (env / connection_id) already on
-    # the row — a dbt refresh must not flip a suite-resolved asset to the dbt conn.
+    # Batch-materialize every node as an asset under the anchor namespace, preserving any
+    # datasource-resolved provenance (env / connection_id) already on the row.
     asset_rows = [
         {
             "namespace": namespace,
@@ -141,15 +111,7 @@ def _refresh_dbt_edges(
 
 
 def _canonical_name(adapter_type: str, ident: NodeIdentity) -> str:
-    """Canonicalize a node identity to its OpenLineage ``name`` string.
-
-    Shares the suite-target resolver's exact folding so a dbt-derived asset name
-    matches a suite-derived one byte-for-byte: Snowflake → `format_snowflake_name`
-    (upper unquoted), databricks/spark → `format_unity_catalog_name` (lower unquoted,
-    matching UC assets). Any other adapter joins ``database.schema.name`` verbatim —
-    a v1 posture (the OL case rules for that engine land when a real connection of
-    that adapter does).
-    """
+    """Canonicalize a node identity to its OpenLineage ``name`` string."""
     if adapter_type == "snowflake":
         return format_snowflake_name(ident.database, ident.schema, ident.name)
     if adapter_type in _UC_ADAPTERS:
@@ -158,12 +120,7 @@ def _canonical_name(adapter_type: str, ident: NodeIdentity) -> str:
 
 
 def _resolve_namespace(session: Session, *, connection: Connection, names: list[str]) -> str | None:
-    """The OL namespace to file this manifest's assets under.
-
-    An operator-pinned ``lineage_namespace`` on the dbt connection config bypasses
-    the heuristic entirely (used verbatim). Otherwise it is inferred from existing
-    assets — see :func:`_anchor_namespace`.
-    """
+    """The OL namespace to file this manifest's assets under."""
     pinned = connection.config.get("lineage_namespace")
     if isinstance(pinned, str) and pinned.strip():
         return pinned.strip()
@@ -171,19 +128,7 @@ def _resolve_namespace(session: Session, *, connection: Connection, names: list[
 
 
 def _anchor_namespace(session: Session, *, names: list[str], env: str | None) -> str | None:
-    """The OL namespace to file this manifest's assets under, inferred from assets.
-
-    dbt's manifest has no namespace (no account/host), so we borrow it from assets
-    DataQ already resolved (via suite targets) for the same table names.
-
-    **Env-strict, no cross-env fallback**: the candidate pool is assets whose ``env``
-    matches the connection (or is unknown / NULL). A QA project is never anchored into
-    the PROD namespace just because no QA asset exists yet — no match → ``None``
-    (caller skips fail-soft with an operator hint). The namespace is chosen by
-    **majority**, then deterministically: most-recent ``last_seen``, then the
-    lexicographically-smallest namespace (so equal-timestamp ties never flip-flop
-    between refreshes). A low node→asset match rate is warned (mis-anchor signal).
-    """
+    """The OL namespace to file this manifest's assets under, inferred from assets."""
     rows = session.execute(
         select(Asset.namespace, Asset.env, Asset.name, Asset.last_seen).where(Asset.name.in_(names))
     ).all()
@@ -208,11 +153,7 @@ def _anchor_namespace(session: Session, *, names: list[str], env: str | None) ->
 def _edge_rows(
     graph: ManifestGraph, asset_ids: dict[str, uuid.UUID], *, connection_id: uuid.UUID
 ) -> list[dict[str, Any]]:
-    """De-duplicated `lineage_edges` insert rows for the graph's resolvable edges.
-
-    `clock_timestamp()` on `last_seen` so every observed edge gets a strictly-later
-    stamp than the refresh's captured start — the basis of the staleness prune.
-    """
+    """De-duplicated `lineage_edges` insert rows for the graph's resolvable edges."""
     seen: set[tuple[uuid.UUID, uuid.UUID]] = set()
     rows: list[dict[str, Any]] = []
     for parent_uid, child_uid in graph.edges:
@@ -251,12 +192,7 @@ def _upsert_edges(
 def _prune_stale(
     session: Session, *, connection_id: uuid.UUID, refresh_started_at: datetime
 ) -> None:
-    """Delete this connection's dbt edges not re-seen in the latest refresh.
-
-    Scoped by ``(source='dbt', connection_id)`` so a refresh of one project (or any
-    other lineage source) never prunes another's edges — provenance, not an
-    endpoint-set heuristic (the review's cross-project-corruption fix).
-    """
+    """Delete this connection's dbt edges not re-seen in the latest refresh."""
     session.execute(
         delete(LineageEdge).where(
             LineageEdge.source == "dbt",
@@ -278,17 +214,7 @@ def upstream_assets(session: Session, asset_id: uuid.UUID, *, max_depth: int = 1
 
 @dataclass(frozen=True)
 class LineageNeighbourhood:
-    """The lineage subgraph around one asset — enough to *draw* it (#805).
-
-    The flat `upstream_assets` / `downstream_assets` lists answer "what is reachable",
-    which is all the blast-radius consumers need. A graph view additionally needs to
-    know **how far** each node sits (to lay it out in hop columns) and **which node
-    connects to which** (to draw a truthful edge rather than a guessed one) — so this
-    carries the hop distance per node and the edges actually traversed.
-
-    ``edges`` are normalized ``(upstream_id, downstream_id)`` pairs regardless of the
-    direction they were discovered in, so the two walks compose into one DAG.
-    """
+    """The lineage subgraph around one asset — enough to *draw* it (#805)."""
 
     upstream: list[tuple[Asset, int]]
     downstream: list[tuple[Asset, int]]
@@ -328,17 +254,7 @@ def _walk(
 def _walk_graph(
     session: Session, start: uuid.UUID, direction: str, max_depth: int
 ) -> tuple[list[tuple[uuid.UUID, int]], set[tuple[uuid.UUID, uuid.UUID]]]:
-    """Depth-capped BFS over `lineage_edges` in ``direction`` from ``start``.
-
-    Source-agnostic (blast radius spans every lineage source, not just dbt).
-    De-duplicates and caps at ``max_depth`` hops, returning the distinct reachable
-    asset ids **with their hop distance** in discovery (BFS) order, plus every edge
-    traversed — including cross-edges back into already-visited nodes, so the
-    subgraph is faithful and not just a spanning tree.
-
-    Edges come back normalized as ``(upstream_id, downstream_id)`` whichever way we
-    walked, so an up-walk and a down-walk can be unioned into one DAG.
-    """
+    """Depth-capped BFS over `lineage_edges` in ``direction`` from ``start``."""
     if direction == "down":
         from_col, to_col = LineageEdge.upstream_asset_id, LineageEdge.downstream_asset_id
     else:

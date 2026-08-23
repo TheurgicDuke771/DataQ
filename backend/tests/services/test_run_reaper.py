@@ -1,13 +1,4 @@
-"""Tests for the stuck-run reaper (`run_service.reap_stuck_runs`, #309).
-
-DB-backed (real Postgres): the reaper is a time-windowed scan over the `runs`
-lifecycle keyed on status + COALESCE(started_at, created_at), so it's exercised
-against the real engine. Verifies it fails only non-terminal runs past the
-threshold, measures staleness from the most-recent lifecycle timestamp (so a
-recently-*started* run isn't reaped on an old created_at), leaves terminal runs
-and fresh runs alone, preserves the canonical terminal-failed shape, and honours
-the disable sentinel. Skips without TEST_DATABASE_URL.
-"""
+"""Tests for the stuck-run reaper (`run_service.reap_stuck_runs`, #309)."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -95,7 +86,8 @@ def test_reaps_running_run_stuck_past_threshold(db_session: Any) -> None:
 
 def test_does_not_reap_recently_started_running_run(db_session: Any) -> None:
     """Staleness is COALESCE(started_at, created_at): an actively-running run that
-    *started* recently is safe even if it was created long ago (sat queued)."""
+    *started* recently is safe even if it was created long ago (sat queued).
+    """
     alive = _run(db_session, status="running", created_min_ago=120, started_min_ago=5)
 
     assert _reap(db_session) == []
@@ -136,7 +128,8 @@ def test_reap_emits_terminal_lineage_only_for_started_runs(
 ) -> None:
     """Review finding on #765: a reaped `running` run emitted an OpenLineage START
     (the worker got that far), so the reaper must close it with a terminal event —
-    while a reaped `queued` run never emitted a START and must get none."""
+    while a reaped `queued` run never emitted a START and must get none.
+    """
     from backend.app.lineage import dispatch as lineage_dispatch
 
     emitted: list[uuid.UUID] = []
@@ -159,11 +152,6 @@ def test_reaping_a_running_run_discards_the_phases_it_had_committed(db_session: 
     """A worker that died after an incremental phase committed leaves result rows
     behind (#318 G2): nothing inside the task runs when it is SIGKILLed, so the
     run path's own discard never happens and the reaper is the only thing left.
-
-    The aggregate readers already ignore a non-`succeeded` run's rows, so this is
-    hygiene rather than the invariant — but the reaped run's OWN detail page would
-    otherwise show a half-populated set for a run that never completed, and its
-    terminal lineage event would carry those rows outward.
     """
     stuck = _run(db_session, status="running", created_min_ago=120, started_min_ago=90)
     check = Check(suite_id=stuck.suite_id, name="c", expectation_type="e", config={})
@@ -181,7 +169,8 @@ def test_reaping_a_running_run_discards_the_phases_it_had_committed(db_session: 
 
 def test_reaping_a_queued_run_touches_no_results(db_session: Any) -> None:
     """The control: a `queued` run never executed, so there is nothing of its own
-    to discard — and the discard must not reach for another run's rows."""
+    to discard — and the discard must not reach for another run's rows.
+    """
     other = _run(db_session, status="succeeded", created_min_ago=5)
     check = Check(suite_id=other.suite_id, name="c", expectation_type="e", config={})
     db_session.add(check)

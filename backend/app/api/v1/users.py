@@ -1,11 +1,4 @@
-"""User directory endpoints — search users to grant suite access to.
-
-The sharing UI keys shares on a raw `user_id`, but a human picks a collaborator
-by email/name; this endpoint is the type-ahead behind that picker. Single
-tenant, so any authenticated user may search the directory. Only a minimal
-public summary (id / email / display_name) is exposed — never AAD object ids or
-timestamps.
-"""
+"""User directory endpoints — search users to grant suite access to."""
 
 from __future__ import annotations
 
@@ -34,17 +27,8 @@ class UserSummary(ApiModel):
     id: UUID
     email: str
     display_name: str | None
-    #: The user's EFFECTIVE workspace role (ADR 0033) — the effective one, not
-    #: the stored column, because that is what `share_service` checks when it
-    #: rejects an `edit` grant to a Viewer. A break-glass allowlist admin whose
-    #: row still reads `member` can hold `edit`, and a picker reading the stored
-    #: value would wrongly refuse them.
-    #:
-    #: Exposing it here is a deliberate, bounded widening: this directory already
-    #: returns every authenticated caller an email and a display name, and a
-    #: coarse role is workspace metadata of the same kind — not a credential, not
-    #: a per-suite grant. It exists so the share picker can mirror the backend's
-    #: rule instead of offering a level the server will refuse.
+    #: The user's EFFECTIVE workspace role (ADR 0033) — the effective one, not the stored column,
+    #: because that is what `share_service` checks when it rejects an `edit` grant to a Viewer.
     role: str
 
 

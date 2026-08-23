@@ -1,19 +1,8 @@
 import type { AssetSummary, RunOutcome } from '../../api/assets';
 
 /**
- * Asset health derivation (#760) — pure, so it can be unit-tested without
- * rendering antd (kept out of the `.tsx` so the tag component can fast-refresh).
- *
- * Health considers BOTH axes the Results surface distinguishes (`resultsFormat`'s
- * `RUN_STATUS_COLORS` conventions): the run's *execution* status and the checks'
- * *data-quality* severity. Precedence:
- * - a failing check tier present            → that tier (warn < fail < critical)
- * - latest run failed operationally         → "Run failed" (error — never green:
- *   a failed run wrote no results, so severity alone would read passing)
- * - latest run still queued/running         → "Queued"/"Running" (not green yet)
- * - latest run cancelled, nothing evaluated → "Cancelled"
- * - a finished run, all evaluated passed    → "Passing"
- * - nothing has run yet                     → "No runs"
+ * Asset health derivation (#760) — pure, so it can be unit-tested without rendering antd (kept out
+ * of the `.tsx` so the tag component can fast-refresh).
  */
 export type Health = { label: string; color: string };
 
@@ -31,13 +20,7 @@ const STATUS_HEALTH: Record<string, Health> = {
   cancelled: { label: 'Cancelled', color: 'warning' },
 };
 
-/**
- * Asset-level health from the summary aggregation (severity + run-state flags).
- *
- * The **compact roll-up** of both axes below, for space-constrained rows (the
- * assets tree/table). Where there is room to be precise — the asset detail — render
- * `connectionHealth` and `suiteHealth` side by side instead (#803).
- */
+/** Asset-level health from the summary aggregation (severity + run-state flags). */
 export function assetHealth(
   summary: Pick<
     AssetSummary,
@@ -52,24 +35,8 @@ export function assetHealth(
 }
 
 /**
- * **Connection health (#803)** — *could DataQ reach and execute against the
- * datasource behind this asset?* Says nothing about whether the data is good.
- *
- * Derivation (no polling loop — read straight off the runs already recorded):
- * - a latest run whose execution `failed`, or any check that `error`ed (the
- *   datasource threw) → **Errors**;
- * - any `skip` (a precondition wasn't met — e.g. the batch hasn't landed) →
- *   **Degraded**: it executed, it just found nothing to check;
- * - a run in flight → **Running**;
- * - a check actually got evaluated → **Reachable**. This is *positive evidence*:
- *   to evaluate anything we must have connected. Keying green off "a run happened"
- *   instead would call a run the user cancelled before it ever opened a connection
- *   "Reachable";
- * - a `cancelled` run that evaluated nothing → **Cancelled** (it proves nothing —
- *   never green);
- * - a run concluded cleanly with no checks to evaluate → **Reachable** (it
- *   succeeded, so we did connect);
- * - nothing has ever run → **No runs** (unknown, not healthy).
+ * **Connection health (#803)** — *could DataQ reach and execute against the datasource behind this
+ * asset?* Says nothing about whether the data is good.
  */
 export function connectionHealth(
   summary: Pick<
@@ -93,20 +60,7 @@ export function connectionHealth(
   return { label: 'No runs', color: 'default' };
 }
 
-/**
- * **Suite health (#803)** — the ADR 0005 severity-weighted verdict of the suites
- * on this asset. Purely about the *data*; operational `error`/`skip` results are
- * excluded (they're `connectionHealth`'s business, per #122).
- *
- * Crucially this keys "Passing" off `checks_total > 0` — the count of *evaluated*
- * checks — not off "a run happened". A run that failed operationally, or one whose
- * checks all skipped, evaluated nothing, so it reports **No data** rather than a
- * green "Passing" it hasn't earned (the bug the old single signal had once the
- * operational flags were pulled out of it).
- *
- * A `cancelled` run is only ever **Partial**, never green: it was killed part-way,
- * so the checks it did evaluate passing says nothing about the ones it never ran.
- */
+/** **Suite health (#803)** — the ADR 0005 severity-weighted verdict of the suites on this asset. */
 export function suiteHealth(
   summary: Pick<
     AssetSummary,

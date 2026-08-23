@@ -1,9 +1,4 @@
-"""ADLS Gen2 connection adapter tests — config validation + the container probe.
-
-No live Azure: ``azure.storage.blob.BlobServiceClient`` is monkeypatched so the
-container-properties probe runs against a fake. The adapter is DB-free, so these
-are pure unit tests (no db_session).
-"""
+"""ADLS Gen2 connection adapter tests — config validation + the container probe."""
 
 from typing import Any
 

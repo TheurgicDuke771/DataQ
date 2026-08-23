@@ -1,21 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-// Share drawer on a phone (#829). The drawer itself was always a proper overlay —
-// antd clamps it to the viewport — but its add-collaborator row could not shrink
-// (an antd Select has a min-content width that `flex: 1` alone won't shrink past),
-// so the row demanded more width than the drawer had and pushed the "Add" button
-// clean off the right edge. A suite was therefore **unshareable from mobile**: you
-// could pick a person and a permission but never commit the grant.
-//
-// Two traps this spec has to dodge, or it would pass against the unfixed code:
-//
-//  1. The row is behind `AsyncBody` — while the share list is loading the drawer
-//     body holds nothing but a <Spin>, which of course doesn't overflow. Every
-//     measurement below therefore waits for the row itself to be on screen first.
-//  2. `toBeInViewport()` defaults to `ratio: 0` — "intersects the viewport at all".
-//     Pre-fix the Add button spanned x≈348→407 on a 390px viewport, i.e. ~71% of it
-//     was visible, so the default would have been GREEN on the bug. It must be
-//     `ratio: 1`: the whole button, or it isn't reachable.
+// Share drawer on a phone (#829).
 test.describe('share drawer (390px)', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -54,15 +39,8 @@ test.describe('share drawer (390px)', () => {
       )
       .toBeLessThanOrEqual(0);
 
-    // Both pickers a user needs to actually grant access survive the reflow —
-    // wrapping must not push the permission picker out to make room for the button.
-    //
-    // Located structurally (the two `.ant-select`s that are the Add button's
-    // siblings) rather than by text or placeholder: an antd Select renders NO
-    // `placeholder` attribute — the placeholder is a separate span — so
-    // `getByPlaceholder` matches nothing, and matching the permission label by text
-    // would go ambiguous the moment this suite has a `view` share, since `ShareRow`
-    // renders the same labels.
+    // Both pickers a user needs to actually grant access survive the reflow — wrapping must not
+    // push the permission picker out to make room for the button.
     const addRow = add.locator('xpath=..');
     const pickers = addRow.locator('.ant-select');
     await expect(pickers).toHaveCount(2);

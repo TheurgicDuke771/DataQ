@@ -155,7 +155,8 @@ class TestCap:
 class TestOutcomeState:
     """#1104 — the sweep records its outcome ONTO the connection (mirroring the
     `lineage_last_*` pattern), so a grant failure becomes a fact about the
-    connection rather than a line in App Insights, and a later success clears it."""
+    connection rather than a line in App Insights, and a later success clears it.
+    """
 
     def test_success_stamps_attempted_at_and_clears_error_state(
         self, db_session: Any, wired: Any
@@ -175,10 +176,8 @@ class TestOutcomeState:
     ) -> None:
         wired["unity_catalog"] = _FakeProvider((), fail=True)
         conn = _connection(db_session, opted_in=True, conn_type="unity_catalog")
-        # Commit the setup row first: the sweep's failure branch rolls back any
-        # in-flight partial write from the failed attempt itself, and (unlike prod,
-        # where the connection is always an already-persisted row) an uncommitted
-        # test fixture would be rolled back right along with it.
+        # Commit the setup row first: the sweep's failure branch rolls back any in-flight partial
+        # write from the failed attempt itself, and (unlike prod.
         db_session.commit()
 
         inventory_service.sync_asset_inventory(db_session, secret_store=_store())
@@ -251,7 +250,8 @@ class TestZeroTableEnumeration:
     """#1242 — a SUCCESSFUL sync that enumerates zero tables must be honestly
     distinguishable from "never synced" and from "synced, N>0", and a DROP from
     N>0 to 0 (the privilege-loss/dropped-database signal) must be flagged —
-    without treating an always-empty database as a failure."""
+    without treating an always-empty database as a failure.
+    """
 
     def test_never_synced_has_no_table_count(self, db_session: Any, wired: Any) -> None:
         conn = _connection(db_session, opted_in=True)
@@ -264,7 +264,8 @@ class TestZeroTableEnumeration:
     def test_zero_row_success_is_healthy_but_recorded(self, db_session: Any, wired: Any) -> None:
         """An empty-by-design database enumerating zero tables must NOT read as a
         sync failure (no error, no failing_since) — but the zero must be visible
-        as its own recorded state, distinguishable from never having synced."""
+        as its own recorded state, distinguishable from never having synced.
+        """
         wired["snowflake"] = _FakeProvider(())
         conn = _connection(db_session, opted_in=True)
 
@@ -292,7 +293,8 @@ class TestZeroTableEnumeration:
 
     def test_drop_from_nonzero_to_zero_is_flagged(self, db_session: Any, wired: Any) -> None:
         """This is the privilege-loss/dropped-database signal — worth flagging,
-        unlike a database that has always been empty."""
+        unlike a database that has always been empty.
+        """
         provider = _FakeProvider(_idents("DATAQ_DB.A.T1"))
         wired["snowflake"] = provider
         conn = _connection(db_session, opted_in=True)
@@ -316,7 +318,8 @@ class TestZeroTableEnumeration:
         self, db_session: Any, wired: Any
     ) -> None:
         """Like `inventory_sync_failing_since`, the streak START must not walk
-        forward on every subsequent zero tick."""
+        forward on every subsequent zero tick.
+        """
         provider = _FakeProvider(_idents("DATAQ_DB.A.T1"))
         wired["snowflake"] = provider
         conn = _connection(db_session, opted_in=True)
@@ -355,7 +358,8 @@ class TestZeroTableEnumeration:
         self, db_session: Any, wired: Any
     ) -> None:
         """A failed attempt has no count to report — it must not clobber the last
-        KNOWN count (or the zero-drop flag) with a non-answer."""
+        KNOWN count (or the zero-drop flag) with a non-answer.
+        """
         provider = _FakeProvider(_idents("DATAQ_DB.A.T1"))
         wired["unity_catalog"] = provider
         conn = _connection(db_session, opted_in=True, conn_type="unity_catalog")
@@ -394,15 +398,7 @@ class TestZeroTableEnumeration:
 
 
 class TestOutcomeRobustness:
-    """The bookkeeping must never be able to kill the sweep (#1227 review).
-
-    `sync_asset_inventory` documents "one broken connection never starves the
-    rest" — but the outcome write itself sat OUTSIDE that guarantee: an
-    unguarded `session.commit()` in the failure branch, a read-modify-write with
-    no row lock, and attribute reads on an ORM instance the preceding rollback
-    had already expired. Each of those turns a per-connection problem into a
-    per-SWEEP one, silently skipping every remaining connection.
-    """
+    """The bookkeeping must never be able to kill the sweep (#1227 review)."""
 
     def test_the_sweep_survives_a_failing_bookkeeping_commit(
         self, db_session: Any, wired: Any, monkeypatch: pytest.MonkeyPatch
@@ -418,9 +414,8 @@ class TestOutcomeRobustness:
         blown: list[bool] = []
 
         def flaky_commit() -> None:
-            # Fire ONLY on the bookkeeping write for `target` — identified by the
-            # connection row being the dirty object — so the asset upsert's own
-            # commit still lands and the assertion below is about the right commit.
+            # Fire ONLY on the bookkeeping write for `target` — identified by the connection row
+            # being the dirty object.
             if not blown and any(
                 isinstance(obj, Connection) and obj.id == target.id for obj in db_session.dirty
             ):
@@ -445,15 +440,10 @@ class TestOutcomeRobustness:
         assert other.inventory_sync_last_attempted_at is not None
 
     def test_the_outcome_write_takes_a_row_lock(self, db_session: Any, wired: Any) -> None:
-        """`inventory_sync_failing_since` is a read-modify-write, so it needs the same
-        `FOR UPDATE` guard `orchestration_service.record_poll_failure` takes: two
-        overlapping sweeps would otherwise both read NULL and both write their own
-        "now", walking the START of a failure streak forward and under-reporting how
-        long the connection has been broken.
-
-        Asserted on the SQL Postgres actually receives, not on a kwarg or on the
-        helper being called — a lock test that only checks we called the locking
-        function proves nothing about the statement.
+        """`inventory_sync_failing_since` is a read-modify-write, so it needs the same `FOR UPDATE`
+        guard `orchestration_service.record_poll_failure` takes: two overlapping sweeps would
+        otherwise both read NULL and both write their own "now", walking the START of a failure
+        streak forward and under-reporting how long the connection has been broken.
         """
         from sqlalchemy import event
 
@@ -485,11 +475,11 @@ class TestOutcomeRobustness:
     def test_a_connection_deleted_mid_sweep_does_not_abort_it(
         self, db_session: Any, wired: Any
     ) -> None:
-        """Connection deletion mid-sweep is a real, reachable path — and the failure
-        branch rolls the session back, which EXPIRES every attribute on every
-        instance the loop is holding. Reading `connection.type` (or re-reading the
-        opt-in config) after that raises `ObjectDeletedError` for a row that is gone,
-        taking the whole beat task with it."""
+        """Connection deletion mid-sweep is a real, reachable path — and the failure branch rolls
+        the session back, which EXPIRES every attribute on every instance the loop is holding.
+        Reading `connection.type` (or re-reading the opt-in config) after that raises
+        `ObjectDeletedError` for a row that is gone, taking the whole beat task with it.
+        """
         from sqlalchemy import delete as sa_delete
 
         doomed_a = _connection(db_session, opted_in=True, conn_type="unity_catalog")
@@ -500,17 +490,11 @@ class TestOutcomeRobustness:
         class _SelfDeletingProvider:
             """Deletes BOTH UC connections, then fails — so whichever the sweep
             reaches first exercises the "row vanished before the outcome write"
-            path and the other exercises "vanished before we even fetched it"."""
+            path and the other exercises "vanished before we even fetched it".
+            """
 
             def enumerate_tables(self, conn: object, **kwargs: Any) -> tuple[AssetIdentity, ...]:
-                # `synchronize_session=False` on purpose: it reproduces the PROD
-                # shape, where the delete happens in someone else's session (an
-                # admin removing the connection through the API) and ours is left
-                # holding a persistent-but-expired instance. The default
-                # ("auto") would EXPUNGE the objects here, and a detached
-                # instance keeps its last-loaded values — so `connection.type`
-                # would answer happily from memory and the test would pass
-                # against the very bug it exists to catch.
+                # `synchronize_session=False` on purpose: it reproduces the PROD shape.
                 db_session.execute(
                     sa_delete(Connection)
                     .where(Connection.id.in_([doomed_a.id, doomed_b.id]))
@@ -533,7 +517,8 @@ class TestOutcomeRobustness:
         """State describes the LAST ATTEMPT; with the toggle off there are no more
         attempts, so it must go blank rather than freeze. Otherwise re-enabling the
         sync months later renders "failing since <old date>" for a sync that has not
-        run since."""
+        run since.
+        """
         wired["unity_catalog"] = _FakeProvider((), fail=True)
         conn = _connection(db_session, opted_in=True, conn_type="unity_catalog")
         db_session.commit()
@@ -553,12 +538,9 @@ class TestOutcomeRobustness:
 
 
 class TestFailurePhase:
-    """A permission-shaped failure is only a missing GRANT if it happened while the
-    enumeration query was running (#1227 review). The classifier's markers are broad
-    substrings, so a secret-store 403 or an expired token matches PERMISSION just as
-    well — and telling an admin to grant SELECT on a system schema for one of those
-    sends them to fix something that was never broken while the real fault stays
-    undiagnosed."""
+    """A permission-shaped failure is only a missing GRANT if it happened while the enumeration
+    query was running (#1227 review).
+    """
 
     def _reason(self, db_session: Any, conn: Connection) -> str:
         db_session.refresh(conn)
@@ -585,7 +567,8 @@ class TestFailurePhase:
         self, db_session: Any, wired: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The credential never resolved — the warehouse was never asked anything, so
-        no statement of ours was rejected and no grant can be the cause."""
+        no statement of ours was rejected and no grant can be the cause.
+        """
         from backend.app.services import profile_service
 
         @contextmanager
@@ -608,7 +591,8 @@ class TestFailurePhase:
 
 class TestSweepInterplay:
     """The ADR 0040 lifecycle claim, pinned: a synced table never becomes a sweep
-    candidate while it exists; a dropped table freezes and ages out."""
+    candidate while it exists; a dropped table freezes and ages out.
+    """
 
     def test_sync_keeps_a_live_table_out_of_the_sweep(self, db_session: Any, wired: Any) -> None:
         wired["snowflake"] = _FakeProvider(_idents("DATAQ_DB.REFERENCE.LOOKUP"))

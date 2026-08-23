@@ -49,9 +49,8 @@ def test_invalid_identifiers_and_non_strings_fail(name: object) -> None:
 def test_monitors_ident_routes_through_shared_allowlist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Pin the ROUTING, not just behavioral agreement (#428's whole point): with
-    # the shared predicate forced to False, the consumer must reject a name it
-    # would otherwise accept — proving it has no private regex copy.
+    # Pin the ROUTING, not just behavioral agreement (#428's whole point): with the shared predicate
+    # forced to False, the consumer must reject a name it would otherwise accept.
     from backend.app.datasources.monitors import MonitorConfigError, _ident
 
     assert _ident("fine_col", what="column") == "fine_col"
@@ -79,11 +78,6 @@ def test_uc_custom_sql_target_routes_through_shared_allowlist(
 ) -> None:
     """The third consumer (#1179): the UC custom-SQL path interpolates
     table/schema/catalog into GX's connection URL, so it validates them here.
-
-    Pinned as ROUTING for the same reason as the two above — a parametrized
-    battery of hostile names is only behavioral agreement, and would stay green
-    if this consumer re-grew a private regex copy, which is the exact drift #428
-    exists to prevent.
     """
     from backend.app.datasources import unity_catalog as unity_catalog_module
     from backend.app.datasources.unity_catalog import UnityCatalogCheckRunner, UnityCatalogConfig
@@ -119,7 +113,8 @@ def test_folding_identifier_decides_on_case_alone(name: str, quoted: bool) -> No
     """The quote decision must depend on CASE ONLY — never on the dialect's
     reserved-word set, which is not the set the warehouse reserves (SQLAlchemy
     reserves `copy`, Snowflake doesn't). Delegating to the compiler's default
-    would silently unresolve a column stored COPY."""
+    would silently unresolve a column stored COPY.
+    """
     from backend.app.datasources.sql import folding_identifier
 
     assert folding_identifier(name).quote is quoted
@@ -127,7 +122,8 @@ def test_folding_identifier_decides_on_case_alone(name: str, quoted: bool) -> No
 
 def test_folding_identifier_preserves_the_name_itself() -> None:
     """It changes the quoting flag, never the spelling — a fold applied to the
-    TEXT would resolve a different object."""
+    TEXT would resolve a different object.
+    """
     from backend.app.datasources.sql import folding_identifier
 
     assert str(folding_identifier("Amount")) == "Amount"
@@ -149,9 +145,8 @@ def _seeded_engine(tmp_path: Path) -> Engine:
 
 
 def test_monitors_share_exactly_one_connection(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    # The helper's contract (and #427's cost story): ONE DBAPI connect per call,
-    # however many monitors run. Counted via the pool's connect event — outcomes
-    # alone can't detect a regression to connect-per-monitor.
+    # The helper's contract (and #427's cost story): ONE DBAPI connect per call, however many
+    # monitors run.
     eng = _seeded_engine(tmp_path)
     connects: list[object] = []
     event.listen(eng, "connect", lambda dbapi_conn, rec: connects.append(dbapi_conn))
@@ -264,14 +259,7 @@ def test_lazy_engine_close_before_use_never_builds() -> None:
 
 
 def _statement_error(*, message: str, statement: str, params: dict[str, object]) -> StatementError:
-    """A real SQLAlchemy `StatementError`, so the tests read its ACTUAL rendering.
-
-    Hand-writing the expected string would test our idea of the format rather than
-    SQLAlchemy's — precisely the fixture-encodes-our-model trap that hid #953. Every
-    SQL datasource reaches DataQ through this wrapper: the Snowflake and Databricks
-    dialects both raise driver errors wrapped in it, which is why one strip covers
-    both without a per-datasource branch.
-    """
+    """A real SQLAlchemy `StatementError`, so the tests read its ACTUAL rendering."""
     return StatementError(message, statement, params, Exception("orig"))
 
 
@@ -305,9 +293,8 @@ def test_strip_statement_echo_removes_the_statement_and_its_bound_parameters() -
 
 
 def test_strip_statement_echo_keeps_a_multi_line_driver_message() -> None:
-    # `_message()` is joined into the same string as the echo, so the cut must be at
-    # the marker, not "the first line" — a driver that wraps its message would
-    # otherwise lose half its diagnostic.
+    # `_message()` is joined into the same string as the echo, so the cut must be at the marker, not
+    # "the first line" — a driver that wraps its message would otherwise lose half its diagnostic.
     exc = _statement_error(
         message="(databricks.sql.exc.ServerOperationError) [CAST_INVALID_INPUT]\ncannot cast 'x'",
         statement="SELECT 1",
@@ -337,13 +324,8 @@ def test_strip_statement_echo_is_idempotent_and_passes_other_messages_through() 
     assert strip_statement_echo("") == ""
 
 
-# ── qualified_sql_name (#595) ────────────────────────────────────────────────
-#
-# The one shape `core_table` cannot express: a dialect-specific clause that
-# attaches to the FROM item itself (Databricks' `TABLESAMPLE (x PERCENT)`), which
-# has to be interpolated into a `text()` statement. Everything about the quoting
-# decision is inherited from `core_table`'s rules, so these pin that it stayed
-# inherited rather than being re-derived.
+# ── qualified_sql_name (#595) ──────────────────────────────────────────────── The one shape
+# `core_table` cannot express: a dialect-specific clause that attaches to the FROM item itself
 
 
 def _databricks_dialect() -> Any:
@@ -361,7 +343,8 @@ def _snowflake_dialect() -> Any:
 def test_a_lower_case_namespace_stays_bare_so_the_warehouse_folds_it() -> None:
     """`folding_identifier`'s rule: an all-lower-case name is emitted unquoted so
     it folds exactly as it did before #476. Quoting everything would break every
-    object created unquoted."""
+    object created unquoted.
+    """
     assert (
         sql.qualified_sql_name(
             table="orders",
@@ -376,7 +359,8 @@ def test_a_lower_case_namespace_stays_bare_so_the_warehouse_folds_it() -> None:
 def test_a_mixed_case_part_is_quoted_with_the_DIALECTS_quote_character() -> None:
     """Databricks reads `"..."` as a STRING LITERAL, so a hardcoded double quote
     would silently select a constant instead of a column. The quote character has
-    to come from the dialect — the exact reason #476 rejected hand-rolled quoting."""
+    to come from the dialect — the exact reason #476 rejected hand-rolled quoting.
+    """
     assert (
         sql.qualified_sql_name(
             table="Orders",
@@ -390,7 +374,8 @@ def test_a_mixed_case_part_is_quoted_with_the_DIALECTS_quote_character() -> None
 
 def test_the_same_name_quotes_differently_on_snowflake() -> None:
     """The property that makes this shared rather than per-datasource: one helper,
-    two quote characters, decided by the connection."""
+    two quote characters, decided by the connection.
+    """
     assert (
         sql.qualified_sql_name(
             table="Orders", schema="Sales", catalog=None, dialect=_snowflake_dialect()
@@ -410,7 +395,8 @@ def test_a_bare_table_needs_neither_schema_nor_catalog() -> None:
 
 def test_a_catalog_without_a_schema_is_refused() -> None:
     """A 2-part `catalog.table` is resolved by Unity Catalog as `schema.table` — a
-    WRONG OBJECT, not an error. Same guard `core_table` keeps, for the same reason."""
+    WRONG OBJECT, not an error. Same guard `core_table` keeps, for the same reason.
+    """
     with pytest.raises(ValueError, match="catalog but no schema"):
         sql.qualified_sql_name(
             table="orders", schema=None, catalog="main", dialect=_databricks_dialect()
@@ -432,7 +418,8 @@ def test_every_part_is_allowlist_checked_before_interpolation(
 ) -> None:
     """This string goes straight into SQL, so the injection guarantee has to
     survive a caller that forgot to validate first — the same reasoning
-    `core_table` records for its own check."""
+    `core_table` records for its own check.
+    """
     with pytest.raises(ValueError, match="invalid"):
         sql.qualified_sql_name(
             table=table, schema=schema, catalog=catalog, dialect=_databricks_dialect()

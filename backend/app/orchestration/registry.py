@@ -1,10 +1,4 @@
-"""Orchestration-provider registry — provider value → `OrchestrationProvider`.
-
-The single place mapping a `pipeline_runs.provider` value (`adf` now; `airflow`
-next) to its implementation. Adding Airflow is a one-line entry plus the
-provider class; the webhook endpoint and persistence service dispatch through
-`get_orchestration_provider` and never branch on the provider.
-"""
+"""Orchestration-provider registry — provider value → `OrchestrationProvider`."""
 
 from __future__ import annotations
 

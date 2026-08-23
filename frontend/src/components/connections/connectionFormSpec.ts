@@ -1,23 +1,14 @@
 import type { ConnectionType } from '../../api/connections';
 
-/**
- * Single source of truth for the add-connection form's per-type fields.
- *
- * Each type declares its config text fields and either an auth-type select (the
- * first option is the default) or a single secret. v1 only declares the auth
- * modes the backend accepts — ADLS Gen2's managed-identity and S3's IAM-role
- * modes are deferred, so they're absent here; every declared mode needs a secret.
- */
+/** Single source of truth for the add-connection form's per-type fields. */
 
 export interface TextField {
   name: string;
   label: string;
   optional?: boolean;
   /**
-   * `tags` renders a free-entry multi-value input whose config value is a
-   * `string[]` (e.g. dbt's `jobs`); `toggle` renders a Switch whose config
-   * value is a boolean (e.g. `inventory_sync`, ADR 0040); default `text` is a
-   * single-line string.
+   * `tags` renders a free-entry multi-value input whose config value is a `string[]` (e.g. dbt's
+   * `jobs`); `toggle` renders a Switch whose config value is a boolean (e.g.
    */
   type?: 'text' | 'tags' | 'toggle';
   /** Helper text under the field. */
@@ -34,15 +25,13 @@ export interface AuthOption {
   /** An extra config field this mode needs (e.g. Airflow basic → username). */
   extraField?: TextField;
   /**
-   * Present → the mode takes an optional second secret part (e.g. a key-pair
-   * private key's passphrase) that rides the combined payload — see
-   * `composeSecret`.
+   * Present → the mode takes an optional second secret part (e.g. a key-pair private key's
+   * passphrase) that rides the combined payload — see `composeSecret`.
    */
   passphraseLabel?: string;
   /**
-   * Config text fields (by name) that this mode makes required even though
-   * the type declares them optional (e.g. key-pair → role: the backend
-   * validates it, since GX's key-pair form mandates a role for suite runs).
+   * Config text fields (by name) that this mode makes required even though the type declares them
+   * optional (e.g. key-pair → role: the backend validates it.
    */
   requiredFields?: string[];
 }
@@ -54,55 +43,24 @@ export interface TypeSpec {
   /** Present (and no `auth`) → a single secret field with this label. */
   secretLabel?: string;
   /**
-   * The single secret is **optional** (some configs need no credential — e.g. a
-   * dbt connection whose artifacts live on a local `file://` path). Only meaningful
-   * with `secretLabel`.
+   * The single secret is **optional** (some configs need no credential — e.g. a dbt connection
+   * whose artifacts live on a local `file://` path).
    */
   optionalSecret?: boolean;
-  /**
-   * `config` values this type seeds even before the user touches the form —
-   * e.g. Iceberg's `catalog_name` default (mirrors the backend's own default,
-   * so a user who never opens "advanced" fields still gets it). Merged under
-   * `initialConfigForType`'s auth-mode seed, never overriding a real value.
-   */
+  /** `config` values this type seeds even before the user touches the form — e.g. */
   defaultConfig?: Record<string, unknown>;
-  /**
-   * A free-form, NON-SECRET `config.properties` dict this type accepts (e.g.
-   * Iceberg's catalog/storage properties — `s3.endpoint`,
-   * `s3.path-style-access`, …, ADR 0030 §3). Rendered as an add/remove
-   * key-value editor; `extra` should say plainly that a credential must not go
-   * here (#1181 — the whole reason `properties` and the secret fields are
-   * separate in the first place, #754/#826).
-   */
+  /** A free-form, NON-SECRET `config.properties` dict this type accepts (e.g. */
   propertiesField?: { label: string; extra: string };
   /**
-   * A SECOND credential this type may need (currently only the Iceberg SQL/hive
-   * catalog's DB password, #754/#826/#1181) — a write-only field like the
-   * primary secret, but shown in BOTH create and edit (unlike the primary
-   * secret, there is no dedicated reauth flow for it, so PATCH is its only
-   * rotation path) and only when `showWhen` says the current config needs one.
+   * A SECOND credential this type may need (currently only the Iceberg SQL/hive catalog's DB
+   * password, #754/#826/#1181) — a write-only field like the primary secret.
    */
   secondSecret?: {
     label: string;
     extra?: string;
     showWhen: (config: Record<string, unknown> | undefined) => boolean;
   };
-  /**
-   * `config` fields that decide **where the PRIMARY credential is sent** (#1401).
-   * Editing one requires re-supplying that credential, so the edit form reveals
-   * the otherwise-hidden secret field when the user changes one — without this,
-   * a legitimate host migration hits a 422 the form gives them no way to satisfy
-   * (edit mode normally omits the secret; rotation is the Re-auth flow).
-   *
-   * Mirrors the backend adapters' `destination_fields["secret"]`, which is the
-   * authority — this copy only decides when to show a field, exactly as
-   * `optionalSecret` mirrors `secret_optional`. Drift fails CLOSED: a field
-   * missing here means the user sees the backend's 422 instead of the input,
-   * never that the credential moves unguarded.
-   *
-   * The SECOND credential's own destination needs no entry: `secondSecret` is
-   * already shown in edit mode, since PATCH is its only rotation path.
-   */
+  /** `config` fields that decide **where the PRIMARY credential is sent** (#1401). */
   destinationFields?: string[];
 }
 
@@ -186,13 +144,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     destinationFields: ['workspace_url'],
   },
   iceberg: {
-    // Native pyiceberg read (ADR 0030). `catalog_uri` is required for
-    // rest/sql/hive (backend-validated), optional for glue; the single
-    // primary secret is injected as the `secret_property` catalog property
-    // (e.g. `token`, `s3.secret-access-key`). `catalog_name` matters because
-    // `SqlCatalog` scopes tables by catalog NAME — a mismatch raises
-    // NoSuchTableError (#1181); `properties` and the second (catalog)
-    // credential below close the rest of that gap.
+    // Native pyiceberg read (ADR 0030).
     textFields: [
       { name: 'catalog_type', label: 'Catalog type', extra: 'rest · sql · glue · hive' },
       {
@@ -265,12 +217,8 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     ],
     destinationFields: ['base_url'],
   },
-  // dbt is an OrchestrationProvider (ADR 0029), not a datasource — it binds to
-  // dbt's universal surface (the run_results.json artifact + a post-build
-  // callback), never a host API. The connection is a dbt *project* (resolved by
-  // `project_name`); `jobs` are the trigger units polled under `artifacts_uri`.
-  // The secret is the artifacts-store read credential (SAS / S3 secret key), and
-  // it's optional — a local `file://` artifacts path needs none.
+  // dbt is an OrchestrationProvider (ADR 0029), not a datasource — it binds to dbt's universal
+  // surface (the run_results.json artifact + a post-build callback), never a host API.
   dbt: {
     textFields: [
       { name: 'project_name', label: 'Project name' },
@@ -287,9 +235,8 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
       },
       { name: 'region', label: 'Region (S3 only)', optional: true },
       { name: 'access_key_id', label: 'Access key ID (S3 only)', optional: true },
-      // Same pair as the s3 datasource (#1063) — without these the artifacts poll
-      // would be the one S3 path pinned to AWS, so a project whose artifacts sit in
-      // MinIO/Ceph would look configured and silently report no runs.
+      // Same pair as the s3 datasource (#1063) — without these the artifacts poll would be the one
+      // S3 path pinned to AWS.
       {
         name: 'endpoint_url',
         label: 'Endpoint URL (S3 only)',
@@ -328,37 +275,14 @@ export function activeAuthOption(
   return auth.find((a) => a.value === config?.auth_type) ?? auth[0];
 }
 
-/**
- * Compose the write-only secret payload. A passphrase rides a combined JSON
- * payload — one SecretStore entry per connection, so rotation stays atomic
- * (the backend Snowflake adapter parses it; #194). Without a passphrase —
- * including a whitespace-only one, which is a stray keystroke, not a real
- * passphrase — the secret is sent as-is (bare PEM = unencrypted key, unchanged).
- */
+/** Compose the write-only secret payload. */
 export function composeSecret(secret: string, passphrase?: string): string {
   return passphrase?.trim() ? JSON.stringify({ private_key: secret, passphrase }) : secret;
 }
 
 /**
- * Which of a type's `destinationFields` the edited config has moved away from the
- * stored connection (#1401). Non-empty → the backend will require the credential
- * back, so the edit form reveals it.
- *
- * `edited === undefined` means **not yet known**, not "cleared": the edit form
- * seeds itself in a `useEffect`, so `Form.useWatch` returns undefined for the
- * first render. Treating that as a move made every destination field read as
- * changed, flashing the warning and a required credential input on every edit
- * open — an alert asserting something untrue of the current state (review of
- * #1403). "Unknown" must mean nothing moved, never everything moved.
- *
- * Compared with `JSON.stringify` because one destination field (Iceberg's
- * `properties`) is an object. Key-order sensitivity can only produce a FALSE
- * POSITIVE — asking for a credential the backend would not have demanded —
- * which costs a re-typed password, not a security property.
- *
- * Pure and exported so this is unit-testable: the first-render case is invisible
- * to a React Testing Library assertion, which only ever observes the settled
- * state after effects have flushed.
+ * Which of a type's `destinationFields` the edited config has moved away from the stored
+ * connection (#1401).
  */
 export function movedDestinationFields(
   type: ConnectionType,

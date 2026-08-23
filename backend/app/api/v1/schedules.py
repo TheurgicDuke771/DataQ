@@ -1,9 +1,4 @@
-"""Schedule CRUD endpoints — manage cron-driven suite run schedules (A7).
-
-Thin HTTP layer over `schedule_service`: a schedule fires a suite run on a cron
-cadence (`cron` + `timezone` → `suite_id`). All validation (cron / timezone /
-suite-permission) and `next_run_at` bookkeeping live in the service.
-"""
+"""Schedule CRUD endpoints — manage cron-driven suite run schedules (A7)."""
 
 from __future__ import annotations
 
@@ -35,7 +30,8 @@ class ScheduleCreate(ApiModel):
 class ScheduleUpdate(ApiModel):
     """Partial update — only the supplied fields change. `next_run_at` is
     recomputed by the service when the cadence changes or a paused schedule is
-    re-enabled."""
+    re-enabled.
+    """
 
     cron: str | None = Field(default=None, min_length=1, max_length=128)
     timezone: str | None = Field(default=None, min_length=1, max_length=64)

@@ -1,9 +1,4 @@
-"""Tests for the Slack + email publishers and the registry composite.
-
-Covers the two things that matter without a live send: the **gating** (each
-publisher is a quiet no-op when unconfigured / below the suite's threshold) and
-the **rendering** (a failing report produces a sane Slack payload / email body).
-"""
+"""Tests for the Slack + email publishers and the registry composite."""
 
 from __future__ import annotations
 
@@ -99,7 +94,8 @@ def test_email_html_escapes_and_lists_failures() -> None:
 
 def _rich_report() -> RunReport:
     """A failing report carrying run metadata + a deep link + a check with an
-    expected/observed detail, to exercise the #416 enrichment end-to-end."""
+    expected/observed detail, to exercise the #416 enrichment end-to-end.
+    """
     return dataclasses.replace(
         _report(worst="fail"),
         env="prod",
@@ -244,7 +240,8 @@ def test_composite_isolates_a_failing_child(db_session: Any) -> None:
 
 def test_composite_isolates_a_failing_child_on_the_health_seam(db_session: Any) -> None:
     """Same contract on the connection-health seam (#837): a dead Slack webhook must not
-    swallow the email telling you the poll has been down for half an hour."""
+    swallow the email telling you the poll has been down for half an hour.
+    """
     calls: list[str] = []
     report = ConnectionHealthReport(
         connection_id=uuid.uuid4(),
@@ -309,7 +306,8 @@ def test_email_text_body_clean_run_has_no_failing_section() -> None:
 
 def _disabled_config_suite(db: Any) -> Any:
     """A real suite row with alerting disabled — the gate is exercised DB-backed
-    (the test_teams.py pattern), not against a hand-encoded config stand-in."""
+    (the test_teams.py pattern), not against a hand-encoded config stand-in.
+    """
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:6]}@x.io")
     db.add(owner)
     db.flush()
@@ -427,7 +425,8 @@ def test_email_publish_noop_when_password_secret_missing(
 
 class _CapturePost:
     """httpx.post stand-in returning a REAL httpx.Response, so raise_for_status
-    is the genuine article (a 4xx/5xx really raises to the composite)."""
+    is the genuine article (a 4xx/5xx really raises to the composite).
+    """
 
     def __init__(self, *, status_code: int = 200) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
@@ -483,7 +482,8 @@ def test_slack_publish_blocks_non_https_workspace_webhook(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """#639 review: an http:// workspace webhook (never write-validated) must not be
-    POSTed in cleartext — the send-time re-check enforces https, not just the host."""
+    POSTed in cleartext — the send-time re-check enforces https, not just the host.
+    """
     posted: list[object] = []
     monkeypatch.setattr("backend.app.alerting.slack.httpx.post", lambda *a, **k: posted.append(a))
     store = FakeSecretStore(
@@ -520,7 +520,8 @@ def test_slack_publish_noop_when_suite_disabled_alerting(
 
 def _suite_with_config(db: Any, store: FakeSecretStore, **overrides: Any) -> Any:
     """A real suite whose notification config carries per-suite channel overrides
-    (slack_webhook / email_recipients), written through the real service path."""
+    (slack_webhook / email_recipients), written through the real service path.
+    """
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:6]}@x.io")
     db.add(owner)
     db.flush()

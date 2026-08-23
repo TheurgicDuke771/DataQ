@@ -69,11 +69,8 @@ interface ErrorStateProps {
 }
 
 /**
- * The one in-brand error page (ADR 0022 ErrorState), switchable across the 4xx /
- * 5xx the app surfaces. Used by the router catch-all (404), the ErrorBoundary
- * fallback (500), and access denials (403). Recovery action follows the tone:
- * a retry handler wins; otherwise server errors offer Reload, client errors a
- * link home. Server errors show the request id when one is supplied.
+ * The one in-brand error page (ADR 0022 ErrorState), switchable across the 4xx / 5xx the app
+ * surfaces.
  */
 export function ErrorState({ code, message, requestId, onRetry }: ErrorStateProps) {
   const entry = CATALOG[code];

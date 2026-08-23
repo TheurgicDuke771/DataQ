@@ -12,14 +12,8 @@ import {
 } from '../../src/components/checks/expectationCatalog';
 
 /**
- * `buildCheckPayload` (checkForm.ts) — the conditional-field (`ConfigField.showWhen`)
- * half of #593's generic mechanism. `expectationCatalog.test.ts` covers
- * `fieldVisible` itself and the anomaly catalog entry that declares it; this file
- * covers the payload builder that must honor the SAME condition, because antd's
- * `Form` preserves an unmounted field's last value by default — a naive
- * `formToConfig` would happily resubmit a stale `column` after the author
- * switched `target_metric` back to `row_count`, and the backend actively REJECTS
- * that combination (`anomaly_params`: "known key, inapplicable metric").
+ * `buildCheckPayload` (checkForm.ts) — the conditional-field (`ConfigField.showWhen`) half of
+ * #593's generic mechanism.
  */
 describe('buildCheckPayload — anomaly conditional column field (#593)', () => {
   it('omits column from the submitted config when target_metric is row_count, even with a stale value present', () => {
@@ -80,13 +74,8 @@ describe('buildCheckPayload — anomaly conditional column field (#593)', () => 
 });
 
 /**
- * #1410: the Stryker spike scored checkForm.ts at 67% with survivors clustered
- * on (a) the value-coercion helpers, (b) buildCheckPayload's threshold
- * numOrNull guards, and (c) buildComparisonPayload's query-vs-table source
- * assembly and its own threshold coercion. Each block below targets a named
- * survivor class, asserting the OUTPUT SHAPE the backend depends on — a
- * malformed threshold (string instead of null) or a silently-dropped
- * query-mode source would save cleanly and misbehave only at run time.
+ * #1410: the Stryker spike scored checkForm.ts at 67% with survivors clustered on (a) the value-
+ * coercion helpers, (b) buildCheckPayload's threshold numOrNull guards.
  */
 describe('parseList — comma-list field coercion (#1410)', () => {
   it('splits, trims, and drops empty items', () => {
@@ -268,14 +257,7 @@ describe('buildComparisonPayload — source assembly + coercion (ADR 0015, #1410
   });
 });
 
-/**
- * Survivor-targeted additions after the first #1410 re-run (84.73%). Several
- * mutants survived only because `toEqual` treats `{key: undefined}` as `{}` —
- * these use toStrictEqual / key-presence so a guard that stops filtering
- * undefined values is actually caught. One mutant is equivalent and stays:
- * `(source_mode ?? 'table')` → `(source_mode ?? '')` — both fallbacks fail the
- * `=== 'query'` comparison identically, so table mode results either way.
- */
+/** Survivor-targeted additions after the first #1410 re-run (84.73%). */
 describe('checkForm — survivor-targeted edges (#1410)', () => {
   it('an unknown expectation_type yields kind=expectation and an empty config', () => {
     const payload = buildCheckPayload({

@@ -3,9 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { errorMessage, fetchFailure } from '../../src/utils/errors';
 
-/** An axios error shaped like the ones the API client actually rejects with —
- *  the response interceptor has already swapped the envelope message onto
- *  `error.message` by the time `fetchFailure` sees it. */
+/** An axios error shaped like the ones the API client actually rejects with. */
 function axiosFailure(status: number, message: string, requestId?: string): AxiosError {
   const err = new AxiosError(message);
   err.response = {

@@ -122,10 +122,8 @@ describe('CheckNew', () => {
   });
 });
 
-// Issue #568 — the check editor must reject an inverted threshold set (warn >
-// fail, or fail > critical) client-side, mirroring the backend's
-// `validate_threshold_ordering` 422 (`check_service.py`) so a bad set never
-// round-trips to the server just to be told no.
+// Issue #568 — the check editor must reject an inverted threshold set (warn > fail, or fail >
+// critical) client-side.
 describe('CheckNew — threshold ordering (issue #568)', () => {
   const fillBasicCheck = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
     await user.click(screen.getByText('Column values'));
@@ -187,11 +185,8 @@ describe('CheckNew — threshold ordering (issue #568)', () => {
   });
 });
 
-// Issue #768 — expect_column_values_to_be_of_type's `type_` field needs a
-// datasource-tailored hint (GX compares against different type vocabularies per
-// execution engine): the dialect's fully-qualified type on SQL-backed Snowflake,
-// vs the Python value type name on every pandas-backed runner (UC, flat files,
-// Iceberg).
+// Issue #768 — expect_column_values_to_be_of_type's `type_` field needs a datasource-tailored hint
+// (GX compares against different type vocabularies per execution engine): the dialect's fully-quali
 describe('CheckNew — type_ hint (issue #768)', () => {
   const pickTypeExpectation = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(screen.getByText('Column values'));

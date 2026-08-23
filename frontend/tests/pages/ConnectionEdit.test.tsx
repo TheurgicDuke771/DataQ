@@ -212,11 +212,8 @@ describe('ConnectionEdit', () => {
     expect(screen.getByLabelText('Name')).toHaveValue('sf-qa');
   });
 
-  // ───────────────── Test saved connection button (#351) ─────────────────
-  // Edit mode has no secret field (rotation is the Re-auth flow) and any
-  // config edits here are unsaved, so this deliberately tests the SAVED
-  // connection — the identical call the Connections list page's Test button
-  // makes — rather than the (possibly half-edited) form state.
+  // ───────────────── Test saved connection button (#351) ───────────────── Edit mode has no secret
+  // field (rotation is the Re-auth flow) and any config edits here are unsaved.
 
   it('tests the SAVED connection by id, not the unsaved form edits', async () => {
     const user = userEvent.setup();
@@ -238,10 +235,8 @@ describe('ConnectionEdit', () => {
   });
 
   it('clears a stale Connected badge as soon as a field changes after testing green', async () => {
-    // #351 review: config edits here are unsaved, so a Connected badge from
-    // BEFORE the edit no longer describes what a Save would actually persist
-    // — the same "prior pass/fail no longer holds" rule as Connections.tsx
-    // `clearHealth`, extended to edit mode's own saved-connection test result.
+    // #351 review: config edits here are unsaved, so a Connected badge from BEFORE the edit no
+    // longer describes what a Save would actually persist.
     const user = userEvent.setup();
     mockGet.mockResolvedValue(existing);
     mockTest.mockResolvedValue({ ok: true });

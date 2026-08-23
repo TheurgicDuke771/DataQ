@@ -7,9 +7,8 @@ import { SuiteForm } from '../components/suites/SuiteForm';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
 /**
- * Dedicated full-page new-suite flow (ADR 0022 — replaces the create drawer):
- * name + description, datasource connection, and the run target. On create,
- * continues to the Add Check page so the suite is never left empty.
+ * Dedicated full-page new-suite flow (ADR 0022 — replaces the create drawer): name + description,
+ * datasource connection, and the run target.
  */
 export function SuiteNew() {
   const navigate = useNavigate();

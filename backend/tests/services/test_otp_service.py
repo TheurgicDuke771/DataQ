@@ -1,14 +1,4 @@
-"""The OTP code lifecycle — where a 20-bit secret is made safe by caps (#734).
-
-A 6-digit code has ~20 bits of entropy, so every property asserted here is
-load-bearing rather than hygiene: drop the attempt cap, or let a re-request leave
-the old code live, or make the "single use" check non-atomic, and the credential
-becomes guessable in a way no amount of hashing would fix.
-
-Also covers the two halves that are not about codes at all: the identity linking
-rule (#735 step 2 — one user row per normalized email) and the per-email request
-counters (#1127).
-"""
+"""The OTP code lifecycle — where a 20-bit secret is made safe by caps (#734)."""
 
 from __future__ import annotations
 
@@ -25,12 +15,7 @@ from backend.app.services import otp_service as svc
 
 
 class _RecordingMailer:
-    """Stands in for `OtpMailer` — captures what would have been sent.
-
-    Substitutes the SMTP transport, not the service under test. The real mailer
-    gets its own boundary tests in `test_otp_mailer.py` (mocking `smtplib`, not
-    our own code).
-    """
+    """Stands in for `OtpMailer` — captures what would have been sent."""
 
     def __init__(self) -> None:
         self.sent: list[tuple[str, str, int]] = []
@@ -60,12 +45,7 @@ def _settings(**overrides: Any) -> Settings:
 
 @pytest.fixture(autouse=True)
 def _in_memory_counter() -> Any:
-    """Per-email counters on an in-process store, reset per test.
-
-    Deliberately ACTIVE (not disabled) in every test here — #1127's whole point is
-    that this layer does not depend on `RATE_LIMIT_ENABLED`, and a fixture that
-    turned it off would make the tests pass on a build where it never runs.
-    """
+    """Per-email counters on an in-process store, reset per test."""
     svc.set_counter_store_for_testing(svc.InMemoryOtpCounterStore())
     yield
     svc.reset_counter_state()
@@ -125,7 +105,8 @@ def test_explicit_email_allowlist_admits_an_off_domain_address() -> None:
 
 def test_a_domain_suffix_is_not_a_domain_match() -> None:
     """`evil-acme.io` must not pass an `acme.io` allowlist — a substring/`endswith`
-    implementation would admit an attacker-registered lookalike domain."""
+    implementation would admit an attacker-registered lookalike domain.
+    """
     assert not svc.is_signup_eligible("ada@evil-acme.io", _settings())
     assert not svc.is_signup_eligible("ada@acme.io.evil.net", _settings())
 
@@ -147,7 +128,8 @@ def test_an_eligible_address_gets_a_code_and_a_row(db_session: Any) -> None:
 
 def test_an_INELIGIBLE_address_sends_nothing_and_stores_nothing(db_session: Any) -> None:
     """Not a rejection mail, not a row. Sending anything would also make DataQ a
-    mail-bomb amplifier aimed at arbitrary third-party addresses."""
+    mail-bomb amplifier aimed at arbitrary third-party addresses.
+    """
     email = f"stranger-{uuid.uuid4().hex[:8]}@notallowed.example"
     mailer = _RecordingMailer()
     outcome = svc.request_code(db_session, email, mailer=mailer, settings=_settings())
@@ -166,7 +148,8 @@ def test_the_address_is_normalized_before_anything_touches_it(db_session: Any) -
 
 def test_a_send_failure_propagates_rather_than_being_swallowed(db_session: Any) -> None:
     """#734 AC: no quiet no-op. The row is still committed (so a retry is cheap and
-    a code already in flight would still verify), but the caller learns."""
+    a code already in flight would still verify), but the caller learns.
+    """
     from backend.app.services.otp_mailer import OtpMailSendError
 
     email = _address()
@@ -210,12 +193,7 @@ def test_an_expired_code_is_rejected(db_session: Any) -> None:
 
 
 def test_the_sixth_attempt_is_locked_out_even_with_the_RIGHT_code(db_session: Any) -> None:
-    """The attempt cap is the whole security argument for a 6-digit secret.
-
-    Deliberately spends the budget on WRONG guesses and then presents the RIGHT
-    one: a cap that only counted failures-after-the-fact, or that reset on a
-    correct guess, would still pass a test that only fed it wrong codes.
-    """
+    """The attempt cap is the whole security argument for a 6-digit secret."""
     email = _address()
     _, code = _request(db_session, email)
     wrong = "000000" if code != "000000" else "111111"
@@ -232,12 +210,7 @@ def test_the_sixth_attempt_is_locked_out_even_with_the_RIGHT_code(db_session: An
 
 
 def test_attempts_are_charged_before_the_comparison(db_session: Any) -> None:
-    """Increment-then-compare, not compare-then-increment.
-
-    The ordering is what makes the cap hold under concurrency: a version that
-    incremented only after a failed compare would let two simultaneous guesses
-    both read the pre-increment value and spend one attempt between them.
-    """
+    """Increment-then-compare, not compare-then-increment."""
     email = _address()
     _request(db_session, email)
     with pytest.raises(svc.OtpVerifyError):
@@ -248,18 +221,6 @@ def test_attempts_are_charged_before_the_comparison(db_session: Any) -> None:
 def test_a_re_request_kills_the_previous_code(db_session: Any) -> None:
     """Otherwise an attacker banks N live codes and gets N x MAX_ATTEMPTS guesses
     against the same mailbox, and the cap bounds nothing.
-
-    The obvious version of this test — request twice, then try the first code —
-    **passes even with the superseding UPDATE deleted**, because `verify_code`
-    selects the NEWEST live code, so the older one loses on the hash comparison
-    rather than on being dead. Found by mutation-checking it. The assertions below
-    are written to kill that mutant:
-
-    * the older ROW must actually carry `consumed_at`, and
-    * once the newest code is redeemed, the older one must not become reachable —
-      which is exactly what happens without superseding, since the newest-live
-      selection then falls back to it. That is the banked-codes attack, arriving
-      one redemption later than the naive test looks for.
     """
     email = _address()
     _, first = _request(db_session, email)
@@ -300,7 +261,8 @@ def test_verifying_with_no_outstanding_code_is_the_same_401(db_session: Any) -> 
 def test_a_non_ascii_code_is_a_401_not_a_500(db_session: Any, code: str) -> None:
     """`hmac.compare_digest` raises TypeError on non-ASCII `str`. Comparing the
     hashes (hex, always ASCII) as UTF-8 BYTES is what keeps a hostile payload a
-    401 — the trap `api/v1/orchestration.py` documents on the webhook signatures."""
+    401 — the trap `api/v1/orchestration.py` documents on the webhook signatures.
+    """
     email = _address()
     _request(db_session, email)
     with pytest.raises(svc.OtpVerifyError):
@@ -311,7 +273,8 @@ def test_becoming_ineligible_within_the_ttl_invalidates_an_outstanding_code(
     db_session: Any,
 ) -> None:
     """An operator who removes somebody from the allowlist means it, immediately —
-    not "in up to ten minutes"."""
+    not "in up to ten minutes".
+    """
     email = _address()
     _, code = _request(db_session, email)
     with pytest.raises(svc.OtpVerifyError):
@@ -361,7 +324,8 @@ def test_the_cap_is_PER_ADDRESS_not_global(db_session: Any) -> None:
 
 def test_case_variants_of_one_address_share_the_bucket(db_session: Any) -> None:
     """Otherwise `Ada@acme.io`, `ADA@acme.io`, … each mint a fresh budget and the
-    cap is trivially bypassed by anyone who can hold down shift."""
+    cap is trivially bypassed by anyone who can hold down shift.
+    """
     s = _settings(auth_otp_request_per_email_per_10min=1)
     email = _address()
     assert svc.request_code(db_session, email, mailer=_RecordingMailer(), settings=s).sent
@@ -371,7 +335,8 @@ def test_case_variants_of_one_address_share_the_bucket(db_session: Any) -> None:
 
 def test_the_cap_is_active_while_RATE_LIMIT_ENABLED_is_false(db_session: Any) -> None:
     """#1127's actual point: the middleware layer is off in dev and E2E, and a
-    mail-bomb control a test harness silently disables is not a control."""
+    mail-bomb control a test harness silently disables is not a control.
+    """
     s = _settings(auth_otp_request_per_email_per_10min=1, rate_limit_enabled=False)
     email = _address()
     assert svc.request_code(db_session, email, mailer=_RecordingMailer(), settings=s).sent
@@ -380,7 +345,8 @@ def test_the_cap_is_active_while_RATE_LIMIT_ENABLED_is_false(db_session: Any) ->
 
 def test_the_counter_fails_OPEN_when_the_store_is_down(db_session: Any) -> None:
     """A Redis outage must not lock the whole workspace out of signing in
-    (ADR 0035's deliberate bias: availability over enforcement)."""
+    (ADR 0035's deliberate bias: availability over enforcement).
+    """
 
     class _DownStore:
         def incr_window(self, key: str, ttl_seconds: int) -> int | None:
@@ -395,7 +361,8 @@ def test_the_counter_fails_OPEN_when_the_store_is_down(db_session: Any) -> None:
 
 def test_the_outage_warning_carries_no_address_in_any_form(db_session: Any) -> None:
     """Not the email, and not the bucket key either — the key holds a stable
-    per-person digest, which is a pseudonymous identifier, not an anonymisation."""
+    per-person digest, which is a pseudonymous identifier, not an anonymisation.
+    """
     import io
     import logging
 
@@ -440,7 +407,8 @@ def test_a_zero_limit_disables_the_counter(db_session: Any) -> None:
 
 def test_the_bucket_key_does_not_contain_the_address(db_session: Any) -> None:
     """Redis keys are readable by anyone with SCAN, and the workspace's member list
-    is precisely what the uniform response exists to hide."""
+    is precisely what the uniform response exists to hide.
+    """
     key = svc._email_bucket_key("ada@acme.io", now=1_700_000_000.0)
     assert "ada" not in key and "acme.io" not in key
     assert key.startswith("otp:req:")
@@ -450,11 +418,7 @@ def test_the_bucket_key_does_not_contain_the_address(db_session: Any) -> None:
 
 
 def test_an_otp_signin_resolves_to_an_EXISTING_AAD_row_with_pats_intact(db_session: Any) -> None:
-    """The rule the whole identity migration exists for: one row per human.
-
-    A second row would silently fork the person's suite grants, shares and PATs —
-    they would sign in, see an empty workspace, and nothing would look broken.
-    """
+    """The rule the whole identity migration exists for: one row per human."""
     email = _address()
     aad_user = User(id=uuid.uuid4(), aad_object_id=uuid.uuid4().hex, email=email.upper())
     db_session.add(aad_user)
@@ -520,15 +484,7 @@ def test_purge_leaves_a_live_code_alone(db_session: Any) -> None:
 
 
 def test_purge_disabled_when_retention_non_positive(db_session: Any) -> None:
-    """A 0 or negative `older_than_hours` must no-op, never wipe the table.
-
-    The cutoff is `now - older_than_hours`, so a non-positive value collapses it
-    to "now" — every row, including one minted a moment ago, has
-    `created_at < now` and would match. Review finding on #1136 (scored 95):
-    mirrors the `<retention> <= 0` -> 0, untouched-DB contract every sibling
-    sweep enforces (`purge_expired_sample_failures` / `sweep_orphan_assets` /
-    `sweep_orphan_secrets` and their own `test_disabled_when_retention_non_positive`).
-    """
+    """A 0 or negative `older_than_hours` must no-op, never wipe the table."""
     email = _address()
     _, code = _request(db_session, email)  # a LIVE, unexpired code
 
@@ -539,22 +495,12 @@ def test_purge_disabled_when_retention_non_positive(db_session: Any) -> None:
     assert svc.verify_code(db_session, email, code, settings=_settings()).email == email
 
 
-# ── the concurrency branches ─────────────────────────────────────────────────
-#
-# These are the branches the caps actually rest on, and they are unreachable by
-# calling the service twice in sequence — the losing interleaving has to be
-# constructed. Each test below drives a REAL second write into the real database
-# at the exact point between two statements where the race lives; only the
-# scheduling is simulated, never the logic under test.
+# ── the concurrency branches ───────────────────────────────────────────────── These are the
+# branches the caps actually rest on, and they are unreachable by calling the service twice in
 
 
 class _InterleavingSession:
-    """Wraps the test session and runs `hook` once, after the Nth `execute`.
-
-    That is the whole simulation: a second request lands between two of
-    `verify_code`'s statements. Everything else — the SQL, the row locks, the
-    predicates — is the production path against real Postgres.
-    """
+    """Wraps the test session and runs `hook` once, after the Nth `execute`."""
 
     def __init__(self, real: Any, *, after_execute: int, hook: Any) -> None:
         self._real = real
@@ -583,7 +529,8 @@ def _consume_now(db: Any, email: str) -> None:
 def test_a_code_consumed_between_the_read_and_the_increment_is_rejected(db_session: Any) -> None:
     """The `consumed_at IS NULL` predicate on the incrementing UPDATE is what makes
     single-use race-proof. Without it, two concurrent redemptions of one code both
-    succeed — and "single use" becomes "single use, usually"."""
+    succeed — and "single use" becomes "single use, usually".
+    """
     email = _address()
     _, code = _request(db_session, email)
     session = _InterleavingSession(
@@ -599,7 +546,8 @@ def test_a_code_consumed_between_the_increment_and_the_consume_is_rejected(
 ) -> None:
     """The second half of the same guarantee: the RIGHT code, presented by the
     loser of a race, must still fail. It is the conditional consume — not the hash
-    comparison — that decides which of two correct guesses wins."""
+    comparison — that decides which of two correct guesses wins.
+    """
     email = _address()
     _, code = _request(db_session, email)
     session = _InterleavingSession(
@@ -613,10 +561,6 @@ def test_a_code_consumed_between_the_increment_and_the_consume_is_rejected(
 def test_two_first_ever_signins_for_one_address_resolve_to_ONE_row(db_session: Any) -> None:
     """`uq_users_email_lower` rejects the loser's INSERT; the loser must then adopt
     the winner's row rather than 500.
-
-    The rule is "one row per email", not "my INSERT wins" — and the alternative
-    (an unhandled IntegrityError) would be a 500 on a first sign-in, which is the
-    worst possible moment for one.
     """
     from sqlalchemy.exc import IntegrityError
 
@@ -652,7 +596,8 @@ def test_two_first_ever_signins_for_one_address_resolve_to_ONE_row(db_session: A
 def test_the_redis_counter_store_bounds_its_socket_timeouts(monkeypatch: Any) -> None:
     """`redis.from_url` defaults BOTH timeouts to `None` — block forever. On the
     sign-in path that hangs a request thread instead of failing open, which is the
-    #854 shape reintroduced in a new place."""
+    #854 shape reintroduced in a new place.
+    """
     import sys
     import types
 
@@ -709,25 +654,20 @@ def test_the_redis_counter_store_fails_OPEN_on_any_error(monkeypatch: Any) -> No
 
 def test_the_default_counter_store_is_the_redis_one() -> None:
     """The in-memory store must NEVER become an automatic production fallback: it
-    would fragment the cap per replica while looking like enforcement."""
+    would fragment the cap per replica while looking like enforcement.
+    """
     svc.reset_counter_state()
     assert isinstance(svc.get_counter_store(), svc.RedisOtpCounterStore)
     svc.reset_counter_state()
 
 
-# ── the counter store's circuit breaker (#1135) ──────────────────────────────
-#
-# The case bounded socket timeouts do NOT cover: Redis up but degraded. The
-# timeouts cap one call; without a breaker every sign-in still serially waits out
-# the full 0.5s against a server that is already struggling.
+# ── the counter store's circuit breaker (#1135) ────────────────────────────── The case bounded
+# socket timeouts do NOT cover: Redis up but degraded.
 
 
 class _SickRedis:
     """A Redis client that is UP but not answering — each call sleeps, then raises
     exactly as a socket timeout does.
-
-    Counts its calls, because "returns None" would pass with no breaker at all
-    (fail-open already returns None); what #1135 changes is that the CALLS STOP.
     """
 
     def __init__(self, *, delay: float = 0.02) -> None:
@@ -784,7 +724,8 @@ def test_the_counter_store_breaker_stops_dialling_a_sick_redis() -> None:
 def test_a_tripped_counter_breaker_returns_without_awaiting_the_timeout() -> None:
     """The user-visible symptom: sign-in latency becomes Redis's latency. Timed,
     because "we skipped the call" and "the request got fast again" are different
-    claims and only the second is what the incident is about."""
+    claims and only the second is what the incident is about.
+    """
     import time as _time
 
     sick = _SickRedis(delay=0.05)
@@ -801,7 +742,8 @@ def test_a_tripped_counter_breaker_returns_without_awaiting_the_timeout() -> Non
 
 def test_a_single_counter_failure_does_not_trip_it() -> None:
     """One unlucky sign-in is not a brownout — the same contract as the middleware's
-    store, since a mail-bomb cap that lapses on a dropped packet is not a cap."""
+    store, since a mail-bomb cap that lapses on a dropped packet is not a cap.
+    """
     sick = _SickRedis()
     store = _store_on(sick)
 
@@ -814,7 +756,8 @@ def test_the_counter_breaker_probes_once_the_window_passes_and_closes_on_success
     monkeypatch: Any,
 ) -> None:
     """Open must be a short, self-clearing state: the per-email cap is a real
-    control, and a breaker that stayed open would be that control silently off."""
+    control, and a breaker that stayed open would be that control silently off.
+    """
     sick = _SickRedis()
     store = _store_on(sick)
     _hit(store, svc._BREAKER_TRIP_AFTER)
@@ -855,7 +798,8 @@ def test_a_failed_counter_probe_re_opens_rather_than_hammering(monkeypatch: Any)
 
 def test_two_counter_stores_do_not_share_breaker_state() -> None:
     """Per-INSTANCE state, so a replica's own store is the unit — and so nothing
-    tempts a future refactor into one module-level breaker."""
+    tempts a future refactor into one module-level breaker.
+    """
     sick, healthy = _SickRedis(), _HealthyRedis()
     tripped, other = _store_on(sick), _store_on(healthy)
     _hit(tripped, svc._BREAKER_TRIP_AFTER + 5)
@@ -866,14 +810,7 @@ def test_two_counter_stores_do_not_share_breaker_state() -> None:
 
 
 async def test_an_otp_brownout_does_not_open_the_rate_limiters_breaker() -> None:
-    """The trap the extraction had to avoid (#1135).
-
-    One mechanism, two subsystems, and they hit the same Redis for different jobs.
-    If they shared breaker STATE, a brownout on the sign-in counter would switch off
-    API rate limiting — one subsystem's degradation disabling an unrelated security
-    control. Asserted in both directions, and by "does the other store still dial
-    Redis", not merely by reading a flag.
-    """
+    """The trap the extraction had to avoid (#1135)."""
     from backend.app.core import rate_limit
 
     class _HealthyAsyncRedis:

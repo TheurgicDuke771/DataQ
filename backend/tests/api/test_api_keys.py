@@ -1,10 +1,4 @@
-"""/me/api-keys route tests + the PAT authenticator end-to-end (ADR 0026, #461).
-
-Runs under the conftest dev-bypass auth mode. The PAT branch sits in front of
-the bypass (same seam order as real mode), so presenting `Authorization:
-Bearer dq_live_…` must resolve to the key's OWNER — not the dev user — and a
-bad PAT must 401 rather than fall through to the bypass identity.
-"""
+"""/me/api-keys route tests + the PAT authenticator end-to-end (ADR 0026, #461)."""
 
 import uuid
 from collections.abc import Iterator

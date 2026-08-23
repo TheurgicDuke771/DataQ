@@ -1,25 +1,4 @@
-"""Pull catalog lineage into the `lineage_edges` cache (ADR 0034, #762).
-
-The write side of the `LineageProvider` seam: :func:`get_lineage_provider` builds the
-configured provider (dark by default), and :func:`refresh_pulled_edges` seeds a pull
-from DataQ's known assets, collapses the returned graph to dataset→dataset edges, and
-upserts them into `lineage_edges` with ``source='marquez'``.
-
-**Coexistence with dbt edges (the #762 AC — merge without duplication).** Pulled edges
-are provenance-tagged ``source='marquez'`` and carry a **NULL** ``connection_id`` — a
-catalog pull has no orchestration connection, unlike a dbt refresh. They are keyed by
-the ``(upstream, downstream, source) WHERE connection_id IS NULL`` **partial** unique
-index (migration ``1a2b3c4d5e6f``), so a Marquez refresh dedupes within itself and its
-prune is scoped to ``(source='marquez', connection_id IS NULL)`` — it can *never* touch
-a ``source='dbt'`` row (those key on the full ``(…, connection_id)`` constraint). The
-same physical ``(A→B)`` pair can therefore exist as both a dbt row and a Marquez row:
-distinct sources, distinct rows, no merge — and the source-agnostic blast-radius walk
-(`lineage.edges.downstream_assets`) traverses both.
-
-**Fail-open** (mirrors `lineage.edges.refresh_dbt_edges`): a dead provider, a garbage
-payload, or a DB hiccup logs a warning and returns ``None`` — pull is a browse/reason
-convenience, never a liveness path.
-"""
+"""Pull catalog lineage into the `lineage_edges` cache (ADR 0034, #762)."""
 
 from __future__ import annotations
 
@@ -61,13 +40,7 @@ _EDGE_CHUNK = 500
 
 
 def get_lineage_provider() -> LineageProvider | None:
-    """The configured `LineageProvider`, or ``None`` when unconfigured (dark by default).
-
-    Reads typed ``Settings`` (``lineage_provider`` + ``marquez_url``) — the emitter's
-    gate pattern — so a value in ``.env.app`` (which the process env never sees)
-    activates the pull. ``lineage_provider`` unset → ``None`` (no pull). An unknown
-    provider name, or ``marquez`` without a URL, logs a warning and returns ``None``.
-    """
+    """The configured `LineageProvider`, or ``None`` when unconfigured (dark by default)."""
     settings = get_settings()
     name = (settings.lineage_provider or "").strip().lower()
     if not name:
@@ -82,39 +55,12 @@ def get_lineage_provider() -> LineageProvider | None:
 
 
 def lineage_provider_unset() -> bool:
-    """Whether the pull is UNSET — as opposed to configured-but-unusable (#1090).
-
-    The distinction is load-bearing for the purge below: an operator who *removed*
-    ``LINEAGE_PROVIDER`` has said "there is no catalog", so cached pulled edges are
-    orphans that would otherwise render as current forever. But a provider that is
-    set and merely *broken* (unknown name — likely a typo — or ``marquez`` without a
-    URL) must NOT purge: `get_lineage_provider` returns ``None`` for both cases, and
-    deleting the cache over a misconfiguration would turn a one-character typo into
-    data loss. Those cases keep the cache and keep warning until fixed.
-    """
+    """Whether the pull is UNSET — as opposed to configured-but-unusable (#1090)."""
     return not (get_settings().lineage_provider or "").strip()
 
 
 def purge_orphaned_pulled_edges(session: Session) -> int:
-    """Delete every pulled edge once the provider is de-configured (#1090 disposition).
-
-    The chosen disposition is **sweep, not badge**: with ``LINEAGE_PROVIDER`` unset the
-    pull task short-circuits before `_prune_stale` can ever run, so ``source='marquez'``
-    rows would sit in the asset graph looking exactly like current data, forever, with
-    no health surface able to speak for them (the pull has no ``Connection`` row). The
-    cache is recoverable — re-configuring the provider re-pulls on the next tick — so
-    deleting is honest where a frozen graph is a lie by omission. Scoped exactly like
-    `_prune_stale`: ``(source='marquez', connection_id IS NULL)`` — it can never touch a
-    dbt or warehouse row. The assets the pull materialized are left to the orphan-asset
-    sweep (#770), which already owns unreferenced-asset lifecycle.
-
-    Caller gates on :func:`lineage_provider_unset` — never call this for a provider
-    that is configured but broken.
-
-    Fail-open like everything else in this module (review finding on this PR): a DB
-    hiccup logs and returns 0 rather than escaping the beat task — the orphans are
-    still there next tick, and a purge is a janitor, never a liveness path.
-    """
+    """Delete every pulled edge once the provider is de-configured (#1090 disposition)."""
     try:
         purged = session.execute(
             delete(LineageEdge).where(
@@ -134,11 +80,7 @@ def purge_orphaned_pulled_edges(session: Session) -> int:
 def refresh_pulled_edges(
     session: Session, *, provider: LineageProvider, depth: int = _PULL_DEPTH
 ) -> int | None:
-    """Refresh the pulled `lineage_edges` cache from ``provider``; return the live count.
-
-    Never raises. Returns the number of live ``source='marquez'`` edges after the
-    refresh, or ``None`` when skipped fail-soft (no seed assets, or any error).
-    """
+    """Refresh the pulled `lineage_edges` cache from ``provider``; return the live count."""
     try:
         return _refresh_pulled_edges(session, provider=provider, depth=depth)
     except Exception as exc:  # fail-open: pull must never break anything
@@ -148,10 +90,8 @@ def refresh_pulled_edges(
 
 
 def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth: int) -> int | None:
-    # Seed from every asset DataQ already knows (the datasets it monitors) — Marquez's
-    # lineage API is node-anchored, so a pull needs seeds. Discovered upstream/
-    # downstream datasets are materialized as assets too (blast radius spans tables
-    # DataQ doesn't monitor).
+    # Seed from every asset DataQ already knows (the datasets it monitors) — Marquez's lineage API
+    # is node-anchored, so a pull needs seeds.
     seeds = session.execute(select(Asset.namespace, Asset.name)).all()
     if not seeds:
         log.info("lineage_pull_no_seed_assets")
@@ -161,12 +101,7 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
     unavailable = outcome.unavailable
 
     if outcome.resolved == 0 and not unavailable and outcome.absent:
-        # The catalog answered, and knows NONE of our assets. That is a legitimate
-        # observation — but it is also exactly what a systematic identity mismatch looks
-        # like (#823: every seed 404s because the producer spelled the name in another
-        # case). Say so loudly: "we asked about N tables and the catalog had never heard
-        # of any of them" is a configuration smell, not a normal steady state, and the
-        # silent version of this is what kept the pull dark.
+        # The catalog answered, and knows NONE of our assets.
         log.warning(
             "lineage_pull_no_seed_matched_catalog",
             provider=provider.provider,
@@ -176,10 +111,7 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
         )
 
     if unavailable:
-        # The catalog couldn't be (fully) consulted — we learned nothing about the
-        # missing seeds, so DO NOT prune: wiping the cache on an outage is the failure
-        # mode this branch exists to prevent. Upsert whatever WAS fetched (still
-        # fresher than nothing) and leave the rest untouched until a clean refresh.
+        # The catalog couldn't be (fully) consulted — we learned nothing about the missing seeds.
         log.warning(
             "lineage_pull_partial_unavailable",
             provider=provider.provider,
@@ -193,13 +125,7 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
         if not name_pairs:
             return None
     if not name_pairs and not unavailable and outcome.resolved == 0:
-        # The catalog answered and matched NONE of our assets. That is NOT a licence to
-        # prune. Reclassifying a 404 seed from `unavailable` to `absent` (which is the
-        # honest reading — the catalog is up, it simply has no such dataset) would
-        # otherwise hand a systematic identity mismatch the power to DELETE every cached
-        # edge: exactly the #823 failure, now with data loss on top. A prune is only
-        # ever justified by evidence we can read the catalog *and* find our tables in
-        # it — i.e. by `resolved > 0`.
+        # The catalog answered and matched NONE of our assets.
         return None
 
     if not name_pairs and not unavailable:
@@ -217,16 +143,11 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
         session.commit()
         return 0
 
-    # `clock_timestamp()` (advances within the tx) captured before the edge upserts
-    # (which stamp a strictly-later `last_seen`), so the prune's strict `<` keeps every
-    # just-seen edge and drops only edges last touched in an earlier refresh — the exact
-    # discipline `lineage.edges` uses.
+    # `clock_timestamp()` (advances within the tx) captured before the edge upserts (which stamp a
+    # strictly-later `last_seen`).
     refresh_started_at = _clock(session)
 
-    # Resolve every catalog identity to a DataQ identity BEFORE it becomes an asset
-    # (#823). Materializing the catalog's string verbatim would fork the asset:
-    # `DB.RETAIL.customers` from dbt would land alongside the `DB.RETAIL.CUSTOMERS` a
-    # suite target already created — two assets, one table, inside our own DB.
+    # Resolve every catalog identity to a DataQ identity BEFORE it becomes an asset (#823).
     resolve = _identity_resolver(seeds)
     name_pairs = {(resolve(up), resolve(down)) for (up, down) in name_pairs}
 
@@ -243,8 +164,7 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
     _upsert_edges(session, edge_rows)
     if not unavailable:
         # Prune only on a CLEAN refresh — with any seed unavailable, an absent edge is
-        # indistinguishable from an unconsulted one, so stale rows wait for the next
-        # clean pass instead of being wiped by an outage.
+        # indistinguishable from an unconsulted one.
         _prune_stale(session, refresh_started_at=refresh_started_at)
     live = session.execute(
         select(func.count())
@@ -257,9 +177,7 @@ def _refresh_pulled_edges(session: Session, *, provider: LineageProvider, depth:
         provider=provider.provider,
         seeds=len(seeds),
         edges=int(live),
-        # The three outcomes stay distinct all the way to the log line — an operator
-        # must be able to tell "the catalog is down" from "the catalog doesn't know my
-        # tables" from "my tables have no lineage" without reading the code (#823/#828).
+        # The three outcomes stay distinct all the way to the log line.
         resolved_seeds=outcome.resolved,
         absent_seeds=outcome.absent,
         ambiguous_seeds=outcome.ambiguous,
@@ -274,14 +192,7 @@ def _clock(session: Session) -> datetime:
 
 @dataclass(frozen=True)
 class _SeedOutcome:
-    """What the catalog had to say about our seeds — the three cases kept DISTINCT.
-
-    Collapsing these is the bug #823/#828 are both about: "the catalog is unreachable",
-    "the catalog has never heard of this table", and "the catalog knows the table and it
-    genuinely has no lineage" are three different facts, and only the last one licenses
-    a prune. Reported as three counters so a permanently-dark pull is visible in the
-    logs instead of looking like an empty catalog.
-    """
+    """What the catalog had to say about our seeds — the three cases kept DISTINCT."""
 
     unavailable: int = 0
     """Seeds whose catalog call errored — we learned NOTHING (no prune)."""
@@ -294,12 +205,7 @@ class _SeedOutcome:
 
 
 def _catalog_index(names: Sequence[str], namespace: str) -> dict[tuple[str, str], list[str]]:
-    """Index a namespace's catalog dataset names by canonical identity.
-
-    A list (not a single name) per key on purpose: two catalog datasets CAN fold to the
-    same key (Snowflake's quoted `"orders"` and unquoted `ORDERS` are different tables),
-    and the caller must refuse to guess rather than pick one.
-    """
+    """Index a namespace's catalog dataset names by canonical identity."""
     index: dict[tuple[str, str], list[str]] = defaultdict(list)
     for name in names:
         index[canonical_identity(namespace, name)].append(name)
@@ -309,25 +215,7 @@ def _catalog_index(names: Sequence[str], namespace: str) -> dict[tuple[str, str]
 def _identity_resolver(
     seeds: Sequence[Any],
 ) -> Callable[[tuple[str, str]], tuple[str, str]]:
-    """Map a catalog identity onto the DataQ identity it belongs to.
-
-    Three cases, in order — and the ordering is the whole safety argument:
-
-    1. **It IS one of our assets** (byte-identical) → keep it. Nothing to reconcile.
-    2. **Exactly one of our assets folds to the same key** → use *that asset's* name,
-       verbatim. This is what preserves a **quoted** identifier: Snowflake's
-       `DB.S."orders"` legitimately yields the asset name `DB.S.orders`, and blindly
-       folding a pulled `DB.S.orders` to `DB.S.ORDERS` would hang the quoted table's
-       lineage on the *unquoted* table — a silently wrong edge, the exact harm
-       `lineage.identity` warns about.
-    3. **Two of our assets fold to the same key** (the quoted/unquoted pair actually
-       coexists) → we cannot tell which one the catalog meant, so keep the catalog's
-       string verbatim. It may fork an asset; it will never mis-attribute lineage to a
-       table the user is monitoring. Forking is recoverable; a wrong edge is a lie.
-    4. **We know nothing about it** (a blast-radius table we don't monitor) → store the
-       canonical form, so that if someone later points a suite at it, `asset_identity`
-       produces the same name and the two converge instead of forking.
-    """
+    """Map a catalog identity onto the DataQ identity it belongs to."""
     by_exact: set[tuple[str, str]] = set()
     by_key: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
     for namespace, name in seeds:
@@ -357,29 +245,7 @@ def _identity_resolver(
 def _collect_dataset_edges(
     provider: LineageProvider, seeds: Sequence[Any], *, depth: int
 ) -> tuple[set[tuple[tuple[str, str], tuple[str, str]]], _SeedOutcome]:
-    """Pull each seed's graph, merge, and collapse to dataset→dataset OL-name pairs.
-
-    **Seeds are resolved against the catalog's own dataset names, not ours** (#823). A
-    catalog byte-matches the node id it is handed, and a real producer emits whatever
-    case its source spelled — `openlineage-dbt` emits `DB.SCHEMA.mart_orders` where our
-    asset identity is `DB.SCHEMA.MART_ORDERS`. Seeding with our string 404s against a
-    perfectly-populated catalog, so we enumerate what the catalog HAS
-    (`provider.list_datasets`) and seed with its exact string, matched to our assets
-    through `canonical_identity`.
-
-    **Every fold-equivalent name is seeded, not just one.** Picking a single "best" name
-    is a trap: DataQ's *own* emitter (#758) writes `asset.name` verbatim, so in the
-    reference compose story (emit → Marquez → pull back) the catalog holds BOTH our
-    upper twin and the producer's mixed-case name as separate datasets. An
-    exact-match-wins rule would seed our own twin, whose subgraph is just
-    `dataset → job:dataq:suite.X` with no output dataset — **zero** dataset edges — and
-    the pull would report a healthy `resolved` while returning nothing (and, with a
-    prune, DELETING the real lineage). They are the same table, so we pull the union of
-    their nodes and merge. There is no ambiguity to resolve at seed time: over-pulling a
-    fold-equivalent name is free, because the ingest fold collapses the endpoints anyway.
-
-    Returns ``(pairs, outcome)``.
-    """
+    """Pull each seed's graph, merge, and collapse to dataset→dataset OL-name pairs."""
     nodes: dict[str, Any] = {}
     edges: set[tuple[str, str]] = set()
     outcome = _SeedOutcome()
@@ -394,9 +260,8 @@ def _collect_dataset_edges(
         try:
             catalog_names = provider.list_datasets(namespace=namespace)
         except LineageUnavailableError:
-            # The whole namespace is unconsultable — every asset under it is
-            # `unavailable`, never `absent`. Conflating the two would let an outage
-            # look like "the catalog knows nothing", and prune the cache.
+            # The whole namespace is unconsultable — every asset under it is `unavailable`, never
+            # `absent`.
             outcome = replace(outcome, unavailable=outcome.unavailable + len(asset_names))
             continue
 
@@ -435,14 +300,7 @@ def _collect_dataset_edges(
 def _collapse_to_datasets(
     graph: LineageGraph,
 ) -> set[tuple[tuple[str, str], tuple[str, str]]]:
-    """Contract non-dataset nodes to dataset→dataset edges (single non-dataset hop).
-
-    Marquez lineage is bipartite dataset↔job: ``dataset_A → job_J → dataset_B``. For
-    each non-dataset node we join its upstream datasets to its downstream datasets; a
-    direct ``dataset_A → dataset_B`` edge passes through unchanged. Only nodes with a
-    resolved ``(namespace, name)`` identity participate — an identity-less dataset node
-    is dropped (not crashed).
-    """
+    """Contract non-dataset nodes to dataset→dataset edges (single non-dataset hop)."""
     datasets: dict[str, tuple[str, str]] = {
         node_id: (node.namespace, node.name)
         for node_id, node in graph.nodes.items()
@@ -479,12 +337,7 @@ def _edge_rows(
     name_pairs: set[tuple[tuple[str, str], tuple[str, str]]],
     id_by_name: dict[tuple[str, str], uuid.UUID],
 ) -> list[dict[str, Any]]:
-    """`lineage_edges` insert rows for the collapsed pairs (NULL connection, marquez).
-
-    Self-edges (an asset resolving to itself after collapse) are dropped. `last_seen`
-    uses `clock_timestamp()` so every observed edge stamps strictly later than the
-    captured refresh start — the basis of the staleness prune.
-    """
+    """`lineage_edges` insert rows for the collapsed pairs (NULL connection, marquez)."""
     rows: list[dict[str, Any]] = []
     for up_name, down_name in name_pairs:
         up = id_by_name.get(up_name)
@@ -506,12 +359,7 @@ def _edge_rows(
 def _upsert_edges(
     session: Session, edge_rows: list[dict[str, Any]], *, chunk_size: int = _EDGE_CHUNK
 ) -> None:
-    """Chunked multi-row upsert onto the NULL-connection partial unique index.
-
-    Targets ``(upstream, downstream, source) WHERE connection_id IS NULL`` (the
-    partial index from migration ``1a2b3c4d5e6f``) — the dedup key for connection-less
-    sources; on an already-seen edge it just bumps ``last_seen``.
-    """
+    """Chunked multi-row upsert onto the NULL-connection partial unique index."""
     for start in range(0, len(edge_rows), chunk_size):
         chunk = edge_rows[start : start + chunk_size]
         stmt = pg_insert(LineageEdge).values(chunk)
@@ -525,12 +373,7 @@ def _upsert_edges(
 
 
 def _prune_stale(session: Session, *, refresh_started_at: datetime) -> None:
-    """Delete pulled edges not re-seen in the latest refresh.
-
-    Scoped by ``(source='marquez', connection_id IS NULL)`` so it can never touch a
-    ``source='dbt'`` edge (which always carries a non-NULL connection_id) — provenance,
-    not a heuristic (the same cross-source-safety `lineage.edges._prune_stale` gives dbt).
-    """
+    """Delete pulled edges not re-seen in the latest refresh."""
     session.execute(
         delete(LineageEdge).where(
             LineageEdge.source == _SOURCE,

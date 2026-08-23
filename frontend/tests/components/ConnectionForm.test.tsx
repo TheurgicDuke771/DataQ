@@ -12,16 +12,13 @@ import {
 import { ConnectionForm } from '../../src/components/connections/ConnectionForm';
 import { selectOption } from '../support/antd';
 
-// Every field below is antd's own `requiredMark="optional"` marker appended
-// to a rule-less field's label ("Catalog name" → "Catalog name(optional)"),
-// same idiom `ReauthModal.test.tsx` uses for `/Key passphrase/` — match by
-// regex rather than the field's own exact text.
+// Every field below is antd's own `requiredMark="optional"` marker appended to a rule-less field's
+// label ("Catalog name" → "Catalog name(optional)").
 const CATALOG_NAME = /Catalog name/;
 const CATALOG_URI = /Catalog URI/;
 const CATALOG_PASSWORD = /Catalog DB password/;
-// antd icons carry their own `aria-label` (e.g. "plus"), which the accessible
-// name algorithm prepends to a button's visible text — so "Add property"
-// resolves to "plus Add property". Match by regex rather than exact text.
+// antd icons carry their own `aria-label` (e.g. "plus"), which the accessible name algorithm
+// prepends to a button's visible text — so "Add property" resolves to "plus Add property".
 const ADD_PROPERTY = /Add property/;
 
 vi.mock('../../src/api/connections', async (importOriginal) => {
@@ -300,9 +297,8 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
   });
 
   it('does not resubmit a stale catalog password typed before switching catalog_type away (preserve={false})', async () => {
-    // Mirrors PassphraseField's own stale-value regression (#602): a
-    // conditionally-rendered antd Form.Item defaults `preserve` to true, so an
-    // unmounted field's value survives in the form store unless told not to.
+    // Mirrors PassphraseField's own stale-value regression (#602): a conditionally-rendered antd
+    // Form.Item defaults `preserve` to true.
     const user = userEvent.setup();
     mockCreate.mockResolvedValue(icebergConnection);
 
@@ -351,9 +347,8 @@ describe('ConnectionForm — moving a credential destination (#1401)', () => {
   };
 
   it('hides the credential while editing anything that is not a destination', async () => {
-    // The baseline the guard must not break — and the half a "does it appear?"
-    // test on its own would pass just as happily against a form that always
-    // shows the field. Editing `user` cannot move where the password goes.
+    // The baseline the guard must not break — and the half a "does it appear?" test on its own
+    // would pass just as happily against a form that always shows the field.
     const user = userEvent.setup();
     mockUpdate.mockResolvedValue(snowflakeConnection);
 
@@ -380,9 +375,8 @@ describe('ConnectionForm — moving a credential destination (#1401)', () => {
   });
 
   it('reveals the credential field and submits it once a destination field changes', async () => {
-    // Edit mode normally omits the secret entirely (rotation is the Re-auth
-    // flow), so without this a legitimate host migration hits a backend 422
-    // naming a field the form never renders — a dead end.
+    // Edit mode normally omits the secret entirely (rotation is the Re-auth flow), so without this
+    // a legitimate host migration hits a backend 422 naming a field the form never renders.
     const user = userEvent.setup();
     mockUpdate.mockResolvedValue(snowflakeConnection);
 
@@ -410,9 +404,8 @@ describe('ConnectionForm — moving a credential destination (#1401)', () => {
   });
 
   it('hides the credential again when the destination is typed back to its stored value', async () => {
-    // The prompt is driven by a comparison against the STORED value, not by a
-    // "field was touched" flag — so undoing an edit puts the form back where it
-    // started rather than demanding a credential for a no-op save.
+    // The prompt is driven by a comparison against the STORED value, not by a "field was touched"
+    // flag.
     const user = userEvent.setup();
 
     render(
@@ -437,15 +430,8 @@ describe('ConnectionForm — moving a credential destination (#1401)', () => {
     await waitFor(() => expect(screen.queryByLabelText('Password')).not.toBeInTheDocument());
   });
   it('does not submit a credential typed before the destination was undone', async () => {
-    // Locks the observable contract: undoing the host change must not rotate the
-    // stored credential to something typed for a move that never happened.
-    //
-    // Two things enforce it — hiding the field, and the `movedDestinations` guard
-    // on the submitted `secret` — and removing either one alone leaves this test
-    // green, so it is a behaviour lock rather than a proof of one mechanism. Worth
-    // keeping both: an antd Form.Item defaults `preserve` to true, which is exactly
-    // the trap the catalog-password `preserve={false}` test above pins (#602), and
-    // the failure mode here is silently overwriting a working credential.
+    // Locks the observable contract: undoing the host change must not rotate the stored credential
+    // to something typed for a move that never happened.
     const user = userEvent.setup();
     mockUpdate.mockResolvedValue(snowflakeConnection);
 

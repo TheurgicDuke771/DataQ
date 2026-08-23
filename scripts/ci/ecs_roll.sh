@@ -1,19 +1,6 @@
 # Shared ECS deploy helpers for deploy-aws.yml — source this, don't execute it.
-# Requires: aws + jq on PATH, and scripts/ci/retry.sh sourced first (retry()).
-#
-# One implementation of the describe → image-swap → register → update →
-# wait → verify roll, so the migrate, api/worker, and frontend steps cannot
-# silently diverge (PR #1365 review). Values are returned via shell variables
-# assigned INSIDE the retried functions — retry() logs ::warning:: lines to
-# stdout, so `var=$(retry fn)` would swallow them into the captured value.
 
-# Register a new revision of task-definition family $1 with the APP
-# container's image swapped to $2. Sets ECS_REGISTERED_ARN.
-#
-# "The app container" = the essential one, selected BY PREDICATE rather than
-# by position: the api/worker task defs also carry an essential=false
-# adot-collector sidecar (#1369), and a positional [0] would stamp the app
-# image onto whichever container happens to be listed first (PR #1371 review).
+# Register a new revision of task-definition family $1 with the APP container's image swapped to $2.
 ecs_register_revision() {
   local family=$1 image=$2 td new_td
   td=$(aws ecs describe-task-definition --task-definition "$family" \
@@ -45,11 +32,7 @@ ecs_roll_service() {
   echo "$service -> $ECS_REGISTERED_ARN"
 }
 
-# Wait for the listed services on cluster $1 to stabilise. TWO waiter laps
-# (each 15s x 40 = 10 min): a perfectly normal rollout can exceed one lap
-# because the ALB target group's default 300s deregistration drain sits on
-# the deployment-complete path — a converging deploy must not spuriously
-# fail on the waiter's fixed cap (PR #1365 review).
+# Wait for the listed services on cluster $1 to stabilise.
 ecs_wait_stable() {
   local cluster=$1
   shift
@@ -59,9 +42,8 @@ ecs_wait_stable() {
   fi
 }
 
-# Verify service $2's PRIMARY deployment on cluster $1 actually runs image $3:
-# an ECS deployment-circuit-breaker rollback to the old image reports stable,
-# and "stable on the old code" must fail the deploy, not pass it.
+# Verify service $2's PRIMARY deployment on cluster $1 actually runs image $3: an ECS deployment-
+# circuit-breaker rollback to the old image reports stable.
 ecs_verify_image() {
   local cluster=$1 service=$2 image=$3 live_td live_img
   live_td=$(aws ecs describe-services --cluster "$cluster" --services "$service" \

@@ -1,13 +1,4 @@
-"""Unit tests for the audit seam — ADR 0041 phase 1 (#1318).
-
-The bar here is not "the function returns a dict". This table's whole value is
-that a reader can trust it, so the tests that matter are the ones that prove what
-**cannot** get in: a credential, a warehouse value, or a field nobody declared.
-Each of those is asserted from the *outside* (build a payload from an entity that
-carries the forbidden thing and assert it is absent), not by re-reading the
-allow-list constant — a test that reads the same constant the code reads proves
-only that the constant equals itself.
-"""
+"""Unit tests for the audit seam — ADR 0041 phase 1 (#1318)."""
 
 from __future__ import annotations
 
@@ -45,11 +36,11 @@ class _FakeSession:
 
 
 def _as_session(fake: _FakeSession) -> Session:
-    """`_FakeSession` deliberately implements only `add`/`commit`/`flush` — the
-    three methods whose (non-)use IS the contract under test. Casting rather than
-    subclassing `Session` keeps that surface honest: a subclass would inherit a
-    hundred real methods and quietly let a future `record` reach the database
-    without any test noticing."""
+    """`_FakeSession` deliberately implements only `add`/`commit`/`flush` — the three methods whose
+    (non-)use IS the contract under test. Casting rather than subclassing `Session` keeps that
+    surface honest: a subclass would inherit a hundred real methods and quietly let a future
+    `record` reach the database without any test noticing.
+    """
     return cast(Session, fake)
 
 
@@ -64,28 +55,13 @@ class _Actor:
 
 
 def test_credential_keys_are_a_subset_of_the_logger_pii_keys() -> None:
-    """The audit scrubber reuses the CREDENTIAL subset of the logger's key set.
-
-    Pinning it as a subset is what stops the two drifting apart silently: a key
-    dropped from `_PII_KEYS` (say a credential shape that stopped being logged)
-    would otherwise keep being scrubbed here by coincidence, or — the direction
-    that actually hurts — a rename in `core/logging.py` would leave this module
-    scrubbing a key that no longer exists anywhere while the real one sails
-    through. Same arrangement `core/logging.py` already uses to pin the
-    `dq_live_`/`dq_sess_` prefixes to their services.
-    """
+    """The audit scrubber reuses the CREDENTIAL subset of the logger's key set."""
     assert audit_service._CREDENTIAL_KEYS <= _PII_KEYS
 
 
 def test_credential_keys_deliberately_exclude_the_log_line_pii_keys() -> None:
     """`name`, `display_name`, `user_id` and `email` are in `_PII_KEYS` and must
     NOT be reused here.
-
-    They are tuned for log lines and are actively wrong for an audit payload:
-    `name` is the *content* of a rename event, and an actor label is an email or a
-    display name — the entire point of the actor record. Reusing the whole set
-    would redact the audit log into uselessness while looking maximally careful,
-    so the exclusion is asserted rather than left to a comment.
     """
     for key in ("name", "display_name", "user_id", "email"):
         assert key in _PII_KEYS
@@ -98,20 +74,16 @@ def test_credential_keys_deliberately_exclude_the_log_line_pii_keys() -> None:
 def test_undeclared_entity_type_raises_rather_than_guessing() -> None:
     """A new audited surface with no declared allow-list must FAIL, not fall back
     to `dict(row)` or to an empty payload.
-
-    Falling back is the fail-open this whole mechanism exists to prevent — the
-    #124/#952 shape, where a change silently reclassified every check in prod.
     """
     with pytest.raises(audit_service.UnknownAuditEntityError):
         audit_service.snapshot("no_such_entity", object())
 
 
 def test_connection_payload_carries_the_pointer_and_never_the_config_blob() -> None:
-    """A connection's `config` JSONB holds every `*_secret_name` pointer and every
-    adapter-specific field — it is the one place a future adapter could put
-    something credential-shaped without this module noticing — so it is excluded
-    wholesale, while `secret_ref` (the pointer that makes a `reauth` event
-    meaningful) is kept.
+    """A connection's `config` JSONB holds every `*_secret_name` pointer and every adapter-specific
+    field — it is the one place a future adapter could put something credential-shaped without
+    this module noticing — so it is excluded wholesale, while `secret_ref` (the pointer that
+    makes a `reauth` event meaningful) is kept.
     """
     conn = Connection(
         id=uuid.uuid4(),
@@ -133,11 +105,10 @@ def test_connection_payload_carries_the_pointer_and_never_the_config_blob() -> N
 
 
 def test_a_credential_keyed_field_is_scrubbed_even_if_a_serializer_lets_it_through() -> None:
-    """Belt and braces: the allow-list is the primary control, `_scrub_value` is
-    the second one, and it must work on a nested structure — an audit payload is a
-    JSONB write that NEVER passes through structlog, so CLAUDE.md §10's
-    redact-at-the-logger rule genuinely does not cover it (the #849 shape in the
-    one place the project's own rule does not reach).
+    """Belt and braces: the allow-list is the primary control, `_scrub_value` is the second one,
+    and it must work on a nested structure — an audit payload is a JSONB write that NEVER passes
+    through structlog, so CLAUDE.md §10's redact-at-the-logger rule genuinely does not cover it
+    (the #849 shape in the one place the project's own rule does not reach).
     """
     scrubbed = audit_service._scrub_value(
         {"outer": {"password": "s3cret", "keep": "visible", "list": [{"token": "abc"}]}}
@@ -177,10 +148,6 @@ def test_check_thresholds_survive_as_exact_strings_not_floats() -> None:
     the #1273 class exactly, where a legitimately-failed check crashed the whole
     result insert because `sanitize_json` had no `Decimal` branch and a passing
     check never exercised the path.
-
-    `str`, not `float`: a threshold is a number an operator typed, and an audit
-    record that silently re-renders `0.1` as `0.1000000000000000055` is a worse
-    record than one that fails.
     """
     check = Check(
         id=uuid.uuid4(),
@@ -225,7 +192,8 @@ def test_an_oversized_payload_is_capped_with_a_LOUD_marker() -> None:
 
 def test_a_payload_under_the_cap_carries_no_truncation_marker() -> None:
     """The other half — the marker must mean something. If it were always present
-    a reader would learn to ignore it."""
+    a reader would learn to ignore it.
+    """
     suite = Suite(id=uuid.uuid4(), name="orders")
     payload = audit_service.snapshot("suite", suite)
     assert payload is not None
@@ -257,7 +225,8 @@ def test_record_adds_to_the_caller_transaction_and_never_commits() -> None:
 def test_actor_label_is_denormalized_at_write_time() -> None:
     """`actor_user_id` is `ON DELETE SET NULL`, so the label is the only thing
     keeping the event legible after the actor is erased — and it must be the
-    identity *as at the time of the action*, not a later rename."""
+    identity *as at the time of the action*, not a later rename.
+    """
     session = _FakeSession()
     actor = _Actor(display_name="Olivia Green")
     audit_service.record(
@@ -286,7 +255,8 @@ def test_actor_label_falls_back_to_email_when_there_is_no_display_name() -> None
 
 def test_a_webhook_principal_has_no_user_and_that_is_representable() -> None:
     """An orchestrator webhook is an external principal with no `users` row. It
-    must be recordable *as such* rather than forced into a fake user."""
+    must be recordable *as such* rather than forced into a fake user.
+    """
     session = _FakeSession()
     audit_service.record(
         _as_session(session),
@@ -303,11 +273,10 @@ def test_a_webhook_principal_has_no_user_and_that_is_representable() -> None:
 
 
 def test_there_is_no_system_actor_kind() -> None:
-    """ADR 0041 §2.1: machine writes are out of scope entirely, so a `system`
-    actor would have no legitimate producer and would exist purely as an
-    invitation to smuggle routine machine writes in under it. Asserted at the
-    boundary, so a caller cannot introduce one without also widening the
-    vocabulary deliberately.
+    """ADR 0041 §2.1: machine writes are out of scope entirely, so a `system` actor would have no
+    legitimate producer and would exist purely as an invitation to smuggle routine machine
+    writes in under it. Asserted at the boundary, so a caller cannot introduce one without also
+    widening the vocabulary deliberately.
     """
     assert "system" not in AUDIT_ACTOR_KINDS
     with pytest.raises(ValueError, match="no 'system' kind"):
@@ -324,7 +293,8 @@ def test_there_is_no_system_actor_kind() -> None:
 def test_record_entity_change_recovers_the_id_from_a_delete_before_payload() -> None:
     """A delete event has no entity to read an id from — and the delete is the one
     event a Type-4 snapshot table structurally cannot retain, so losing the id
-    here would defeat the table's headline purpose."""
+    here would defeat the table's headline purpose.
+    """
     session = _FakeSession()
     suite_id = uuid.uuid4()
     before = audit_service.snapshot("suite", Suite(id=suite_id, name="orders"))
@@ -344,27 +314,19 @@ def test_record_entity_change_recovers_the_id_from_a_delete_before_payload() -> 
 
 def test_snapshot_of_none_is_none_not_an_empty_dict() -> None:
     """So a create event's `before` and a delete event's `after` read as "there
-    was nothing", not as "we looked and it was blank"."""
+    was nothing", not as "we looked and it was blank".
+    """
     assert audit_service.snapshot("suite", None) is None
 
 
-# ── Review findings (PR #1451) ────────────────────────────────────────────────
-#
-# Each of these five failed against the code as first written. They are grouped
-# rather than filed beside their subject because what they have in common is the
-# point: every one is a guarantee the module STATES and did not, at that door,
-# actually provide.
+# ── Review findings (PR #1451) ──────────────────────────────────────────────── Each of these five
+# failed against the code as first written.
 
 
 def test_a_create_is_audited_with_the_id_the_database_assigned(db_session: Any) -> None:
     """`id` is `gen_random_uuid()` — a SERVER default with no Python-side
     counterpart — so on a create the attribute is `None` until the row reaches the
     database.
-
-    Without a flush the event stores `entity_id = NULL`, the row looks perfectly
-    fine, and the ONE query the entity index exists for — "everything that
-    happened to this suite" — silently never returns the creation event. Needs
-    real Postgres precisely because it is the database that assigns the value.
     """
     owner = User(email=f"owner-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
@@ -402,23 +364,13 @@ def test_an_undeclared_entity_type_raises_on_the_DELETE_path_too() -> None:
     """The delete path passes `entity=None`, and an earlier version short-circuited
     on that before ever consulting the allow-list — so a typo'd `entity_type` was
     recorded silently there while the same typo raised on every other path.
-
-    A guard applied at one door and not its sibling is invisible until it matters,
-    and the delete is the event this whole table exists to retain.
     """
     with pytest.raises(audit_service.UnknownAuditEntityError):
         audit_service.snapshot("no_such_entity", None)
 
 
 def test_a_hand_built_payload_is_scrubbed_like_a_snapshot_one() -> None:
-    """The module's guarantees must hold on EVERY payload, not only the ones
-    `snapshot` built.
-
-    Slice 2 hand-builds `before`/`after` for events with no single entity row (a
-    role change, a share grant). If `record` wrote those through unexamined, the
-    allow-list would be the only control and a credential could be stored in
-    plaintext by a caller that simply did not think about it.
-    """
+    """The module's guarantees must hold on EVERY payload, not only the ones `snapshot` built."""
     session = _FakeSession()
     audit_service.record(
         _as_session(session),
@@ -453,13 +405,7 @@ def test_a_hand_built_payload_with_a_decimal_does_not_crash_the_mutation() -> No
 
 
 def test_an_invalid_action_class_raises_at_the_call_site() -> None:
-    """`actor_kind` was validated and `action_class` was not, though both carry a
-    DB CHECK.
-
-    The CHECK catches it either way — but only at COMMIT, as an `IntegrityError`
-    that aborts the user's mutation with an opaque database error. Raising here
-    turns a production 500 into a failing test.
-    """
+    """`actor_kind` was validated and `action_class` was not, though both carry a DB CHECK."""
     with pytest.raises(ValueError, match="action_class"):
         audit_service.record(
             _as_session(_FakeSession()),
@@ -473,19 +419,7 @@ def test_an_invalid_action_class_raises_at_the_call_site() -> None:
 
 
 def test_a_truncated_payload_INCLUDING_its_marker_fits_the_budget() -> None:
-    """The marker is part of the payload, so it is part of the budget.
-
-    Measuring without it and appending afterwards puts the stored row over the
-    limit it advertises — every single time it truncates, which is the only time
-    anyone is measuring.
-
-    **This is deliberately a boundary case, built by hand.** The obvious version of
-    this test — a Suite with one enormous field — passes against the unfixed code,
-    because once the giant field goes the survivors sit far below the limit and a
-    ~60-byte marker still fits. It looked like a regression test and proved
-    nothing; mutation-checking is what caught that. So the surviving field is sized
-    to land just UNDER the limit, where the marker is exactly what tips it over.
-    """
+    """The marker is part of the payload, so it is part of the budget."""
     limit = audit_service.MAX_PAYLOAD_BYTES
     survivor = "y" * (limit - len(json.dumps({"keep": ""}).encode()) - 8)
     payload = {"drop_me": "x" * limit * 2, "keep": survivor}
@@ -501,11 +435,6 @@ def test_a_truncated_payload_INCLUDING_its_marker_fits_the_budget() -> None:
 def test_a_payload_whose_single_field_blows_the_budget_reduces_to_its_marker() -> None:
     """The honest outcome when ONE field is oversized: the row says "there was a
     record and this is why you cannot see it".
-
-    Keeping the oversized field to avoid an empty-looking payload would defeat the
-    cap entirely, and an earlier comment claimed the code never dropped the last
-    surviving field — a promise the code did not keep. The behaviour is now
-    asserted rather than described.
     """
     capped = audit_service._cap_payload(
         {"sql": "SELECT 1 -- " + "x" * audit_service.MAX_PAYLOAD_BYTES * 2}
@@ -521,17 +450,7 @@ def test_a_payload_whose_single_field_blows_the_budget_reduces_to_its_marker() -
 def test_an_unresolvable_actor_id_does_not_write_a_dangling_foreign_key(
     db_session: Any,
 ) -> None:
-    """`actor_user_id` is a real FK, so an id with no row fails the INSERT.
-
-    The first version of the fallback put the id in that column "so the event
-    still says WHO" — which inverted the intent: the branch meant to degrade
-    gracefully was the one that broke the request. Worse, several callers wrap
-    their commit in `except IntegrityError` to map a duplicate to a 409, so the
-    failure surfaced as a bogus conflict on an unrelated resource.
-
-    Attribution is preserved in `actor_label` instead, which is exactly the column
-    that exists to survive an actor the FK cannot point at.
-    """
+    """`actor_user_id` is a real FK, so an id with no row fails the INSERT."""
     ghost = uuid.uuid4()
     audit_service.record(
         db_session,
@@ -553,11 +472,6 @@ def test_an_unresolvable_actor_id_does_not_write_a_dangling_foreign_key(
 def test_if_changed_skips_a_no_op_update() -> None:
     """A PATCH that sets a field to its current value — or names no fields at all
     — is a real request that changed nothing.
-
-    Recording those produces a log whose entries mostly did not happen, and a
-    reader learns to skim it. `check_service` already applies this rule via
-    `session.is_modified`; `if_changed` is how the other partial-update paths
-    reach the same answer instead of each inventing one.
     """
     suite = Suite(id=uuid.uuid4(), name="orders")
     unchanged = audit_service.snapshot("suite", suite)
@@ -578,12 +492,7 @@ def test_if_changed_skips_a_no_op_update() -> None:
 
 
 def test_if_changed_still_writes_when_something_actually_changed() -> None:
-    """The other half — the guard must not be a mute button.
-
-    Asserted separately because a broken `if_changed` that skipped everything
-    would pass the test above while silently emptying the audit log, and that is
-    the failure mode a compliance control cannot have.
-    """
+    """The other half — the guard must not be a mute button."""
     suite = Suite(id=uuid.uuid4(), name="orders")
     before = audit_service.snapshot("suite", suite)
     suite.name = "orders-renamed"
@@ -604,14 +513,7 @@ def test_if_changed_still_writes_when_something_actually_changed() -> None:
 
 
 def test_if_changed_ignores_a_change_to_an_UNAUDITED_field() -> None:
-    """The comparison is over the allow-listed payload, not the row.
-
-    A field nobody declared as config moving is a config non-event by the
-    allow-list's own definition — `schedules.next_run_at` advancing, say. If the
-    guard compared whole rows instead, every such tick would mint an event whose
-    `before` and `after` looked identical to a reader, which is the most confusing
-    possible entry.
-    """
+    """The comparison is over the allow-listed payload, not the row."""
     suite = Suite(id=uuid.uuid4(), name="orders")
     before = audit_service.snapshot("suite", suite)
     suite.updated_at = datetime(2026, 8, 17, tzinfo=UTC)  # not in _SUITE_FIELDS

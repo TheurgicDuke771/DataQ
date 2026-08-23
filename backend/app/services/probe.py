@@ -1,12 +1,4 @@
-"""Idempotent seed for the Week 1 exit-gate probe.
-
-The probe endpoint runs a canned suite against a single seeded dev Snowflake
-connection. Connection CRUD and suite/check authoring arrive in Weeks 2-3; until
-then this get-or-creates the fixtures so the endpoint is safe to hit repeatedly.
-
-The canned check is column-agnostic (a row-count bound) so it works against any
-configured table without assuming a schema.
-"""
+"""Idempotent seed for the Week 1 exit-gate probe."""
 
 from __future__ import annotations
 
@@ -64,9 +56,7 @@ def ensure_probe_fixtures(
         session.flush()  # populate connection.id for the suite FK
         provisioned = True
 
-    # The run target (#215) — the probe table the suite's checks run against,
-    # from settings. NULL when no probe table is configured (the run then fails
-    # cleanly with `suite_target_invalid` rather than guessing a table).
+    # The run target (#215) — the probe table the suite's checks run against, from settings.
     target = {"table": settings.probe_snowflake_table} if settings.probe_snowflake_table else None
 
     suite = session.scalars(
@@ -84,9 +74,8 @@ def ensure_probe_fixtures(
         session.flush()  # populate suite.id for the check FK
         provisioned = True
     elif target is not None:
-        # Backfill a suite seeded before the target column existed, but never
-        # auto-clear an already-configured target just because the env setting
-        # is currently unset.
+        # Backfill a suite seeded before the target column existed, but never auto-clear an already-
+        # configured target just because the env setting is currently unset.
         suite.target = target
 
     checks = list(session.scalars(select(Check).where(Check.suite_id == suite.id)))
@@ -103,18 +92,8 @@ def ensure_probe_fixtures(
             checks.append(check)
             provisioned = True
 
-    # ONE event for the whole provisioning act, and it exists because of how this
-    # endpoint was found: the ADR-0033 RBAC review (#1396) caught it as a THIRD
-    # DOOR — it creates a Connection AND a Suite under a name that mentions
-    # neither, so reasoning that put controls on those resources' own routes was
-    # structurally blind to it. Auditing the resources rather than the routes
-    # would have had the identical blind spot, so the act is recorded here by
-    # name. `entity_type` is the suite because that is what the act produces that
-    # a reader would go looking for; the connection id rides in the payload.
-    # Only when something was actually created. This endpoint is a get-or-create
-    # smoke probe, so the common case is a repeat call that provisions nothing —
-    # and an event per smoke run would report provisioning that did not happen,
-    # in the log an auditor reads to find out what did.
+    # ONE event for the whole provisioning act, and it exists because of how this endpoint was
+    # found: the ADR-0033 RBAC review (#1396) caught it as a THIRD DOOR.
     if provisioned:
         audit_service.record(
             session,

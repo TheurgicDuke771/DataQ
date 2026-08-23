@@ -4,13 +4,7 @@ import { type ErrorCode, ErrorState } from './ErrorState';
 /** The statuses `ErrorState` has a dedicated page for. */
 const KNOWN_CODES: ReadonlySet<number> = new Set([400, 401, 403, 404, 429, 500, 502, 503, 504]);
 
-/** Map a failure onto the error-page catalog. Known statuses render their own
- *  page; other 5xx fold into 500 and other 4xx into 400. A `network` failure —
- *  request sent, nothing came back — is 503. A `client` failure never reached
- *  the network, so it renders as 500 ("something went wrong") rather than as a
- *  claim that the service is down: a routine auth redirect rejecting in-flight
- *  used to paint a confident "503 Service unavailable" over a healthy backend
- *  (#930 review). */
+/** Map a failure onto the error-page catalog. */
 function toErrorCode(kind: FailureKind, status?: number): ErrorCode {
   if (kind === 'network') return 503;
   if (kind === 'client' || status === undefined) return 500;
@@ -19,20 +13,8 @@ function toErrorCode(kind: FailureKind, status?: number): ErrorCode {
 }
 
 /**
- * The page-level fetch-failure rendering (#910): the dedicated in-brand error
- * page for the failure, instead of the generic inline Alert (which stays the
- * right rendering for a PANEL inside an otherwise-working page).
- *
- * What the user is told depends on who actually failed:
- * - a **server 5xx** keeps the catalog's calm copy (the server's own message is
- *   noise — `psycopg2.ProgrammingError: …` — and can leak internals) and shows
- *   the request id so support can trace the exact request;
- * - a **4xx** shows the backend envelope's actionable message;
- * - a **network or client** failure keeps its message, because nothing
- *   authoritative answered and that message is the only information there is.
- *
- * `onRetry` re-runs the page's own fetcher — cheaper and less destructive than
- * the full `window.location.reload()` the catalog falls back to.
+ * The page-level fetch-failure rendering (#910): the dedicated in-brand error page for the
+ * failure.
  */
 export function PageError({
   error,

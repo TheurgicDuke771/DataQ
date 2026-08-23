@@ -1,15 +1,4 @@
-"""Parity: the migration's frozen resolver == the app's `asset_identity` resolver.
-
-The `f8b9c0d1e2a3_add_assets_entity` migration carries a **deliberately frozen,
-self-contained copy** of `asset_identity.resolve_asset_identity` (a migration must
-not import app code). Nothing structurally enforces the two stay in lock-step, and
-this review already found both copies had drifted into the same two bugs (Snowflake
-account normalization + regex-vs-glob pattern). This test `importlib`-loads the
-migration module and runs an identity fixture battery — every datasource type plus
-the normalization edge cases — through both `_resolve_identity` (migration) and
-`resolve_asset_identity` (app), asserting identical `(namespace, name)` outputs OR
-identical raise-vs-return behavior, so silent drift becomes impossible.
-"""
+"""Parity: the migration's frozen resolver == the app's `asset_identity` resolver."""
 
 import importlib.util
 from pathlib import Path

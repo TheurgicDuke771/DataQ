@@ -1,17 +1,4 @@
-"""Datasource adapter seam.
-
-Every datasource (Snowflake now; ADLS / S3 / Unity Catalog later) executes DQ
-checks behind one ``CheckRunner`` interface that speaks GX-agnostic DTOs. The
-GX-specific machinery lives entirely inside each adapter, so the run-service and
-its tests depend only on the types here — never on Great Expectations internals.
-This is also the seam that lets v1.1 swap GX for DQX on Unity Catalog (CLAUDE.md
-§5) without rippling into the suite / check / result layer.
-
-`CheckSpec` goes in (a check pulled from the DB); `CheckOutcome` comes out, one
-per check, shaped to map cleanly onto the `results` table columns. Adapters
-translate GX results into these DTOs; tests provide a fake `CheckRunner` and
-never touch a live datasource.
-"""
+"""Datasource adapter seam."""
 
 from __future__ import annotations
 
@@ -21,44 +8,18 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
-# One bound for every failing-row sample that lands in `Result.sample_failures`
-# (#1196), and — since #1229 — for a list-shaped `Result.observed_value` (a
-# set-oriented expectation's full observed distinct-value set). It lives on the
-# datasource seam because multiple producers write these columns — the GX path
-# writes both (`gx_runner._extract_sample_failures` for `sample_failures`,
-# `gx_runner._bounded_observed_value` for `observed_value`), while the comparison
-# path (`comparison.SAMPLE_LIMIT`) bounds only `sample_failures`: a comparison
-# result's `observed_value` dict (`comparison_run._observed`) carries no raw
-# cell/row values — only scalar counts, plus two `list[str]` fields of compared
-# COLUMN NAMES (`columns_only_in_source`/`_target`, identifiers, not subject
-# data), so this cap doesn't apply to it either way —
-# and the read path (`run_service`) re-applies it so already-persisted oversized
-# rows stop shipping unbounded payloads too. Keeping a single constant means
-# raising it can't leave result paths disagreeing. 20 matches GX's own
-# `partial_unexpected_count` default and what the run-detail UI renders
-# (`RunDetail.tsx` `MAX_SAMPLE_ROWS`).
+# One bound for every failing-row sample that lands in `Result.sample_failures` (#1196), and — since
+# #1229.
 SAMPLE_ROW_CAP = 20
 
-# Sub-key inside a persisted `sample_failures` payload holding the capture-time,
-# full-population value-signal summary (#1230) — see
-# `gx_runner._value_signal_summary_by_column` (the writer) and
-# `run_service.redact_sample_failures`'s ``summary_by_column`` (the reader). Shared
-# here, not defined once per side, so a future rename can't silently desynchronise
-# the write/read contract — each side's own unit tests would stay green even though
-# the key stopped matching, exactly the failure mode a shared constant closes off.
-# Not a GX result field and never rendered to a viewer — see the redaction docstring.
+# Sub-key inside a persisted `sample_failures` payload holding the capture-time, full-population
+# value-signal summary (#1230).
 VALUE_SIGNAL_SUMMARY_KEY = "value_signal_summary"
 
 
 @dataclass(frozen=True)
 class CheckSpec:
-    """One expectation to evaluate, sourced from a `checks` row.
-
-    `expectation_type` is the GX snake_case name (e.g.
-    ``expect_column_values_to_not_be_null``); `kwargs` are its parameters
-    (e.g. ``{"column": "id"}``). Adapters own the translation to the concrete
-    GX expectation class.
-    """
+    """One expectation to evaluate, sourced from a `checks` row."""
 
     expectation_type: str
     kwargs: dict[str, Any]
@@ -66,29 +27,7 @@ class CheckSpec:
 
 @dataclass(frozen=True)
 class CheckOutcome:
-    """Result of one check, shaped for the `results` table.
-
-    `observed_value` / `expected_value` / `sample_failures` land in the
-    matching JSONB columns. `sample_failures` may contain real data rows, so it
-    is governed by the retention sweep and must only ever be logged through the
-    PII-redacting structlog chain.
-
-    `errored` marks a check that could not be *evaluated* (the runner caught an
-    exception while computing it — e.g. it references a missing column), as
-    opposed to a check that evaluated and *failed* (`success=False`). The two are
-    distinct result statuses (#122): an errored check maps to ``error`` (no
-    severity, no metric), a failed one to a severity tier. A single errored check
-    never fails its siblings — they still evaluate and persist.
-
-    `skipped` is the third operational outcome (#593): the check ran fine, but its
-    *precondition* wasn't met, so there is no honest verdict to give — an anomaly
-    monitor whose baseline holds fewer points than its `min_points` cold start is
-    the first case. It maps to the ``skip`` result status (already per-row valid;
-    until now only `run_service.skip_run` produced it, run-wide). Deliberately
-    distinct from `errored` (nothing went wrong) and from a fabricated
-    `success=True` (a fake pass would count as a clean check in the health score
-    and hide the fact that the monitor isn't watching anything yet).
-    """
+    """Result of one check, shaped for the `results` table."""
 
     expectation_type: str
     success: bool
@@ -98,20 +37,10 @@ class CheckOutcome:
     errored: bool = False
     error_message: str | None = None
     skipped: bool = False
-    # The badness scalar a *monitor* (freshness/volume, ADR 0012) computed directly
-    # — age-hours, % volume deviation. `severity.extract_metric` prefers this when
-    # set, so monitor kinds band the same way (higher = worse, ADR 0016) without
-    # abusing the GX unexpected-% sample shape. None for GX expectations, whose
-    # metric is parsed from the sample (or, for custom-SQL, from `observed_value`
-    # — see `severity.py`).
+    # The badness scalar a *monitor* (freshness/volume, ADR 0012) computed directly — age-hours, %
+    # volume deviation.
     metric_value: float | None = None
-    # How much of the dataset this check actually saw (#595), or `None` for a
-    # complete read. Set by a runner that bounded its read under the suite
-    # target's `SampleSpec`, persisted to `results.sampling`, and surfaced by the
-    # read API so a pass on a sample says so. Deliberately per-CHECK, not
-    # per-run: within one run a volume monitor's `COUNT(*)` pushes down and is
-    # exact while the expectations beside it ran on 100k of 5M rows, and a
-    # run-level flag would have to lie about one of them.
+    # How much of the dataset this check actually saw (#595), or `None` for a complete read.
     sampling: dict[str, Any] | None = None
 
 
@@ -120,9 +49,6 @@ class MonitorSpec:
     """One monitor to evaluate (freshness/volume, ADR 0012), sourced from a `checks`
     row whose ``kind`` is a monitor kind. ``config`` is the check's JSONB config
     (e.g. ``{"column": "loaded_at"}`` / ``{"min_rows": 1000, "max_rows": 5000}``).
-
-    A monitor isn't a GX expectation — it runs a scalar SQL aggregate — so it has its
-    own spec/runner path distinct from `CheckSpec`/`CheckRunner`.
     """
 
     kind: str
@@ -156,19 +82,6 @@ class MonitorRunner(Protocol):
     """A datasource runner that can also evaluate **monitor** kinds by running
     scalar aggregates against the table — Snowflake / Unity Catalog (SQL) and
     Iceberg (native scan) today.
-
-    The run path gates on ``supported_monitor_kinds`` — the runner-advertised
-    capability set (#429) — NOT on ``isinstance`` against this Protocol: a
-    ``runtime_checkable`` isinstance is a name-only structural match, so an
-    unrelated ``run_monitors`` method would pass the gate and then TypeError at
-    the call instead of raising the clean unsupported-kind error. Keeping the
-    capability data-driven also keeps the monitor-kind seam orthogonal to the
-    datasource seam (ADR 0012): new kinds (#592/#593) extend a runner's set,
-    never the orchestrator's dispatch.
-
-    One ``CheckOutcome`` per ``MonitorSpec``, in order. A monitor that can't be
-    evaluated (bad column, type mismatch) yields an ``errored`` outcome rather
-    than failing its siblings — mirroring `CheckRunner` semantics.
     """
 
     supported_monitor_kinds: frozenset[str]
@@ -184,76 +97,7 @@ class MonitorRunner(Protocol):
 
 @runtime_checkable
 class ConnectionAdapter(Protocol):
-    """Per-datasource-type connection behaviour: config validation + live test.
-
-    The two things that vary across connection types (Snowflake now; ADF, ADLS,
-    S3, Unity Catalog next) behind one interface, so connection-CRUD service code
-    dispatches by ``connection.type`` and never branches on it. Each adapter owns
-    its own pydantic config model; both methods take the raw config dict so the
-    adapter is the single source of truth for that type's shape.
-
-    `validate_config` parses + validates a stored/incoming config (raising
-    pydantic ``ValidationError`` on bad input) and returns the normalised model.
-    `test` resolves connectivity against the live datasource using the config +
-    its secret, raising on failure. Adapters never touch the DB or SecretStore —
-    the caller resolves the secret and hands it in.
-
-    Some types need MORE than one credential (an Iceberg SQL catalog needs the
-    storage key *and* the catalog DB password). Rather than smuggle the second one
-    into non-secret `config` — the #754/#826 bug — the caller resolves every extra
-    secret named in config and passes them as keyword arguments. Adapters that need
-    none simply ignore them (`**_`), so the seam's "caller resolves secrets"
-    invariant holds for one credential or five.
-
-    `test`'s ``secret`` is ``str | None`` because a handful of types have NO
-    credential at all in some configurations (Iceberg: a credential-less
-    catalog; dbt: a local ``file://`` artifacts path) — `create_connection`
-    already accepts ``secret=None`` for them (`optionalSecret` in the frontend's
-    `connectionFormSpec.ts`). An adapter for which a secret is genuinely
-    mandatory (Snowflake, ADLS, S3, Unity Catalog, ADF, Airflow) still declares
-    the wider parameter type (a Protocol's implementations can't narrow it,
-    mypy's contravariance check enforces that structurally — #351 review), but
-    guards with an explicit ``if secret is None: raise`` at the top of its own
-    `test`, narrowing for the rest of the method; it is never actually called
-    with ``None`` because `connection_service.test_connection` /
-    `test_draft_connection` gate on the ``secret_optional`` class attribute
-    below before it can happen.
-
-    ``destination_fields: Mapping[str, tuple[str, ...]]`` (declared on every
-    concrete adapter, with no default — see `registry.destination_fields`) maps a
-    **credential slot** to the config fields that decide where *that* credential
-    is sent. The slot key is ``"secret"`` for the primary credential and
-    ``"<field>"`` for an extra one resolved from ``<field>_secret_name`` (today
-    only ``"catalog"``), matching the kwarg names `update_connection` accepts.
-
-    It exists for one reason (#1401): a stored credential must never be
-    transmitted to a host the caller changed *without re-supplying that
-    credential*. `connection_service.update_connection` reads this and refuses a
-    config PATCH that moves a destination while leaving the credential at its
-    stored value — otherwise "may rotate a credential" silently becomes "may read
-    one", by pointing the connection at a listener and pressing Test.
-
-    Per-slot rather than one flat set, because Iceberg carries two credentials
-    with genuinely different destinations: ``catalog_uri`` steers the catalog
-    password, while ``warehouse`` / ``properties`` steer the storage credential.
-    A flat set would make setting a warehouse path demand the catalog DB
-    password — over-asking often enough that the guard would read as a bug.
-
-    Unlike ``secret_optional``, there is **no safe default**, so this is not read
-    through `getattr(..., default)`: a new adapter that forgot to declare it
-    would silently be unprotected, which is precisely the failure this closes.
-    An adapter with genuinely no caller-controlled destination declares an empty
-    mapping **explicitly**, with the reason in a comment (only
-    `ADFConnectionAdapter` does today — its authority is a fixed Microsoft
-    endpoint).
-
-    ``secret_optional: bool`` (declared on the concrete adapter class, default
-    ``False`` via ``getattr(adapter, "secret_optional", False)`` at the two
-    call sites — deliberately NOT part of this Protocol's required surface, so
-    the five mandatory-secret adapters don't have to restate the default) marks
-    a type whose `test` tolerates ``secret=None``. Only `IcebergConnectionAdapter`
-    and `DbtConnectionAdapter` set it ``True``.
-    """
+    """Per-datasource-type connection behaviour: config validation + live test."""
 
     def validate_config(self, raw: dict[str, Any]) -> BaseModel: ...
 
@@ -262,35 +106,14 @@ class ConnectionAdapter(Protocol):
 
 @runtime_checkable
 class ExpiringCredentialAdapter(Protocol):
-    """A `ConnectionAdapter` whose credential *states its own expiry* (#838).
-
-    Optional, and deliberately narrow. An adapter implements this only when the
-    expiry is **in the credential** — an Azure storage SAS carries `se=`. An
-    adapter whose credential has no readable lifetime (an S3 access key, a
-    Snowflake key-pair, a Databricks PAT) simply does not implement it and is
-    silent: `None` and not-implemented both mean "unknown", never "never expires".
-    Guessing a lifetime would be worse than saying nothing, because a confident
-    wrong date is an outage with an alibi.
-
-    Unlike `MonitorRunner` — where the run path gates on a capability *set* rather
-    than `isinstance`, because a name-only structural match would TypeError at the
-    call — an `isinstance` gate is fine here: the caller (`registry.credential_expiry`)
-    is the only one, and it treats *any* failure as unknown, so a false structural
-    match degrades to silence instead of an exception escaping.
-
-    Implementations must not log, raise with, or otherwise echo the credential.
-    """
+    """A `ConnectionAdapter` whose credential *states its own expiry* (#838)."""
 
     def credential_expiry(
         self, raw: dict[str, Any], secret: str, **extra_secrets: Any
     ) -> datetime | None: ...
 
 
-#: Sampling strategies a run target may declare (#595). ``head`` takes the first
-#: N rows in storage order — cheap, but not representative, since flat files
-#: usually arrive sorted by load time. ``random`` draws N rows uniformly without
-#: replacement, costing one extra cheap pass (a Parquet footer, a streamed CSV
-#: count, a warehouse ``COUNT(*)``) to learn the population size.
+#: Sampling strategies a run target may declare (#595).
 SAMPLE_HEAD = "head"
 SAMPLE_RANDOM = "random"
 SAMPLING_STRATEGIES: tuple[str, ...] = (SAMPLE_HEAD, SAMPLE_RANDOM)
@@ -298,18 +121,7 @@ SAMPLING_STRATEGIES: tuple[str, ...] = (SAMPLE_HEAD, SAMPLE_RANDOM)
 
 @dataclass(frozen=True)
 class SampleSpec:
-    """A validated sampling declaration from a suite's run target (#595).
-
-    ``rows`` is how many rows the check engine is handed. ``seed`` applies only to
-    ``random`` and makes a run reproducible — deliberately optional, because a
-    fixed seed means every run inspects the *same* rows, which is the wrong
-    default for a monitor whose job is to notice new bad data.
-
-    Lives here beside `BatchSpec` for the same reason: both are parsed from the
-    suite's target document, both ride on `ResolvedTarget`, and both must be
-    importable without pulling in the runner machinery that acts on them
-    (`datasources.sampling` holds the behaviour).
-    """
+    """A validated sampling declaration from a suite's run target (#595)."""
 
     strategy: str
     rows: int
@@ -318,12 +130,7 @@ class SampleSpec:
 
 @dataclass(frozen=True)
 class BatchSpec:
-    """An unresolved flat-file batch selector (resolved live by `materialize_path`).
-
-    ``pattern`` is a regex whose first capture group is the batch key; ``strategy``
-    is ``latest`` (greatest key) or ``specific`` (``batch`` key); ``prefix`` scopes
-    the object listing.
-    """
+    """An unresolved flat-file batch selector (resolved live by `materialize_path`)."""
 
     prefix: str
     pattern: str
@@ -337,12 +144,7 @@ class ResolvedTarget:
     flat-file datasources; ``catalog`` is set only for Unity Catalog. ``batch`` is
     set only for a flat-file *batch* target, in which case ``table`` is empty until
     `materialize_path` lists the store and resolves the concrete path.
-
-    ``sampling`` (#595) is the suite-level row-cap declaration, parsed from the
-    target's optional ``sampling`` block. It is datasource-agnostic here but only
-    *accepted* for the full-load datasources (`registry.SAMPLING_CAPABLE_TYPES`) —
-    a spec on a pushdown datasource is refused at save time rather than silently
-    ignored, because "sampled" is a claim that ends up on every result row."""
+    """
 
     table: str
     schema: str | None
@@ -352,10 +154,4 @@ class ResolvedTarget:
 
 
 class TargetShapeError(ValueError):
-    """A suite target is missing or malformed for its datasource type (#727).
-
-    Raised by the per-type resolvers in `registry.py` and translated by
-    `services.run_target` into the API-facing `SuiteTargetInvalidError`. The
-    datasource layer states the shape problem; the service layer owns the HTTP
-    contract, so neither has to know the other's job.
-    """
+    """A suite target is missing or malformed for its datasource type (#727)."""

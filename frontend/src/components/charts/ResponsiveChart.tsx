@@ -3,14 +3,8 @@ import type { ReactElement } from 'react';
 import { ResponsiveContainer } from 'recharts';
 
 /**
- * Thin wrapper every dashboard chart mounts through, so they share one height /
- * width contract and one empty state. recharts is only ever imported from here
- * (and the chart widgets that use it), and the chart widgets live on lazy routes
- * (`/dashboard`, run/check detail) — so recharts stays out of the initial bundle
- * and only ships when a chart route loads (ADR 0022).
- *
- * `ResponsiveContainer` needs exactly one child element — pass a single recharts
- * chart (`<BarChart>`, `<LineChart>`, …).
+ * Thin wrapper every dashboard chart mounts through, so they share one height / width contract and
+ * one empty state. recharts is only ever imported from here (and the chart widgets that use it).
  */
 interface ResponsiveChartProps {
   /** A single recharts chart element. */

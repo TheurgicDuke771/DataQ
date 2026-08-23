@@ -1,10 +1,6 @@
 import { api } from './client';
 
-/**
- * Suites API — a suite is a named bundle of DQ checks bound to one connection.
- * `connection_id` is set at create and immutable thereafter (re-pointing would
- * orphan the child checks), mirroring the backend `suite_service` contract.
- */
+/** Suites API — a suite is a named bundle of DQ checks bound to one connection. */
 
 /** Mirrors the backend `SuiteRead` schema. */
 export interface Suite {
@@ -17,41 +13,32 @@ export interface Suite {
   /** The asset this suite's target resolves to (ADR 0034, #760); null for a
    *  targetless/unresolvable suite. Links the suite back to its asset (#773). */
   asset_id?: string | null;
-  /** `null` once the creating user is erased — the row outlives its author
-   *  (`ondelete=SET NULL`, #1319). Nullable server-side, so nullable here:
-   *  a non-nullable mirror lets the compiler wave through the next consumer
-   *  that assumes an author is always present. */
+  /**
+   * `null` once the creating user is erased — the row outlives its author (`ondelete=SET NULL`,
+   * #1319).
+   */
   created_by: string | null;
   /** The caller's effective level — gates per-suite actions (share, delete).
    *  `owner`/`admin`/`edit`/`view`; absent on older payloads. */
   my_permission?: 'owner' | 'admin' | 'edit' | 'view' | null;
 }
 
-/**
- * Owner/admin — may manage shares + delete the suite. The single source for the
- * "manage" gate so the suite-detail actions and any other surface never drift.
- */
+/** Owner/admin — may manage shares + delete the suite. */
 export function canManageSuite(suite: Suite): boolean {
   return suite.my_permission === 'owner' || suite.my_permission === 'admin';
 }
 
 /**
- * The `edit` capability ladder (owner/admin/edit) — may trigger/cancel runs and
- * manage triggers/schedules, mirroring the backend `POST /suites/{id}/run` gate.
- * Shared by the suite-detail Run button and the cross-suite Run-now panel so the
- * runnable-permission policy lives in one place.
+ * The `edit` capability ladder (owner/admin/edit) — may trigger/cancel runs and manage
+ * triggers/schedules, mirroring the backend `POST /suites/{id}/run` gate.
  */
 export function canRunSuite(suite: Suite): boolean {
   return canManageSuite(suite) || suite.my_permission === 'edit';
 }
 
 /**
- * The datasource-shaped identity carried in `Suite.target` (#215): SQL targets
- * fill `table`/`schema`/`catalog`, Iceberg fills `namespace`/`table`, flat-file
- * targets fill `path`/`file_format`. The wire shape is an untyped JSONB bag
- * (`Record<string, unknown>`); read it through `targetString` so the dry-run
- * preview and column profiler don't each re-hand-roll the `typeof x === 'string'`
- * extraction.
+ * The datasource-shaped identity carried in `Suite.target` (#215): SQL targets fill
+ * `table`/`schema`/`catalog`, Iceberg fills `namespace`/`table`, flat-file targets fill
  */
 export interface RunTarget {
   table?: string;
@@ -61,18 +48,15 @@ export interface RunTarget {
   namespace?: string;
   path?: string;
   file_format?: 'csv' | 'parquet';
-  /** Flat-file *batch* selector (a literal `path` and `pattern` are mutually exclusive):
-   *  `pattern` is a regex whose first capture group is the batch key, `strategy` is
-   *  `latest` (greatest key) or `specific` (`batch` key), `prefix` scopes the object
-   *  listing. Mirrors the backend `BatchSpec` (registry.py `_batch_spec`). */
+  /**
+   * Flat-file *batch* selector (a literal `path` and `pattern` are mutually exclusive): `pattern`
+   * is a regex whose first capture group is the batch key.
+   */
   pattern?: string;
   strategy?: 'latest' | 'specific';
   batch?: string;
   prefix?: string;
-  /** Scale-aware execution (#595) — bound what a run materialises. Mirrors the
-   *  backend `SuiteSampling`; accepted only on the datasources whose runners load
-   *  rows into the worker (`suiteTarget.SAMPLING_CAPABLE_TYPES`), and a **422 at
-   *  save time** anywhere else rather than a silent drop. */
+  /** Scale-aware execution (#595) — bound what a run materialises. */
   sampling?: {
     strategy: SampleStrategy;
     rows: number;
@@ -81,10 +65,7 @@ export interface RunTarget {
   };
 }
 
-/** The sampling strategies the backend accepts (`sampling.SAMPLING_STRATEGIES`).
- *  Declared once, here beside the target it lives on, and imported by the target
- *  editor and by `ResultSampling` — three separate spellings of a two-value union
- *  is three places for a third value to be added to only one of them. */
+/** The sampling strategies the backend accepts (`sampling.SAMPLING_STRATEGIES`). */
 export const SAMPLE_STRATEGIES = ['head', 'random'] as const;
 export type SampleStrategy = (typeof SAMPLE_STRATEGIES)[number];
 
@@ -106,9 +87,7 @@ export interface SuiteCreate {
   target?: RunTarget | null;
 }
 
-/** Mirrors `SuiteUpdate` — name/description/target are mutable (connection isn't).
- *  A `null`/omitted `target` leaves the existing one unchanged (backend semantics:
- *  it never clears a target back to NULL). */
+/** Mirrors `SuiteUpdate` — name/description/target are mutable (connection isn't). */
 export interface SuiteUpdate {
   name?: string;
   description?: string | null;
@@ -238,11 +217,7 @@ export async function rebaselineCheck(suiteId: string, checkId: string): Promise
   await api.post(`/suites/${suiteId}/checks/${checkId}/rebaseline`);
 }
 
-/**
- * Mirrors the backend `CheckVersionRead` — one immutable snapshot in a check's
- * history (#280). `changed_by_name` is the author's display name (or email),
- * resolved server-side; null for a system actor or a removed user.
- */
+/** Mirrors the backend `CheckVersionRead` — one immutable snapshot in a check's history (#280). */
 export interface CheckVersion {
   version_no: number;
   name: string;
@@ -263,12 +238,7 @@ export async function listCheckVersions(suiteId: string, checkId: string): Promi
   return data;
 }
 
-/**
- * Restore a check to a previous version (#283; edit-gated). Re-validates the
- * snapshot against TODAY's rules server-side — a version that predates a
- * validator added since (e.g. threshold ordering) can 422 — and records the
- * restored state as a brand-new version (history is additive, never rewound).
- */
+/** Restore a check to a previous version (#283; edit-gated). */
 export async function restoreCheckVersion(
   suiteId: string,
   checkId: string,
@@ -281,9 +251,8 @@ export async function restoreCheckVersion(
 }
 
 /**
- * Mirrors the backend `CheckResultPointRead` — one past result of a check
- * (status + `metric_value` + run time), the datum behind the per-check trend
- * chart (ADR 0022). `metric_value` is null for checks that record no metric.
+ * Mirrors the backend `CheckResultPointRead` — one past result of a check (status + `metric_value`
+ * + run time), the datum behind the per-check trend chart (ADR 0022).
  */
 export interface CheckResultPoint {
   run_id: string;
@@ -292,10 +261,7 @@ export interface CheckResultPoint {
   created_at: string;
 }
 
-/**
- * A check's recent results in chronological order (oldest→newest) for the trend
- * chart. Requires `view` on the suite; `limit` caps the window (1–180, default 30).
- */
+/** A check's recent results in chronological order (oldest→newest) for the trend chart. */
 export async function listCheckHistory(
   suiteId: string,
   checkId: string,
@@ -309,11 +275,8 @@ export async function listCheckHistory(
 }
 
 /**
- * Mirrors the backend `CheckBaselineRead` — a *stateful* monitor check's
- * current stored baseline (`schema_drift`'s column snapshot, or `anomaly`'s
- * rolling observation window — see `backend/app/services/anomaly.py` for the
- * documented payload shape). `baseline` is intentionally untyped JSONB: this
- * layer doesn't interpret it, the trend chart's overlay does, keyed on `kind`.
+ * Mirrors the backend `CheckBaselineRead` — a *stateful* monitor check's current stored baseline
+ * (`schema_drift`'s column snapshot, or `anomaly`'s rolling observation window.
  */
 export interface CheckBaseline {
   kind: string;
@@ -322,9 +285,8 @@ export interface CheckBaseline {
 }
 
 /**
- * A check's current baseline, or `null` when none exists yet (fresh check, a
- * non-stateful kind, or a just-cleared re-baseline — #594). Requires `view` on
- * the suite; 404 for a missing/cross-suite check.
+ * A check's current baseline, or `null` when none exists yet (fresh check, a non-stateful kind, or
+ * a just-cleared re-baseline — #594).
  */
 export async function getCheckBaseline(
   suiteId: string,
@@ -338,12 +300,7 @@ export async function getCheckBaseline(
 
 // ───────────────────────── export / import (portable documents) ─────
 
-/**
- * Mirrors the backend `CheckDocument` — a check's authoring fields only, no DB
- * identity. Thresholds may arrive as a number or a string (the backend's
- * `Decimal` JSON encoding is not pinned); kept as-is so the document round-trips
- * byte-for-faithful on re-import — never coerce or re-format them.
- */
+/** Mirrors the backend `CheckDocument` — a check's authoring fields only, no DB identity. */
 export interface CheckDocument {
   name: string;
   kind: string;
@@ -380,9 +337,7 @@ export async function importSuite(payload: SuiteImportRequest): Promise<Suite> {
   return data;
 }
 
-/** Mirrors `CheckDryRunRequest` — preview one check against live data, no persist.
- *  The target is resolved server-side from the suite's own run target (#215/#532),
- *  so no target fields are sent; works on Snowflake, Unity Catalog, and flat files. */
+/** Mirrors `CheckDryRunRequest` — preview one check against live data, no persist. */
 export interface CheckDryRunRequest {
   expectation_type: string;
   config: Record<string, unknown>;
@@ -407,10 +362,10 @@ export async function dryRunCheck(
   return data;
 }
 
-/** Mirrors the backend `ColumnProfileRequest` — profile columns of the suite's
- *  table/file (no persistence). The target identity (`table`/`schema`/`catalog`
- *  for SQL, `path`/`file_format` for flat files) comes from the suite's run
- *  target (#215); `columns` is the subset to profile. */
+/**
+ * Mirrors the backend `ColumnProfileRequest` — profile columns of the suite's table/file (no
+ * persistence).
+ */
 export interface ColumnProfileRequest {
   columns: string[];
   top_n?: number;
@@ -440,9 +395,7 @@ export interface ColumnProfile {
   top_values: TopValue[];
 }
 
-/** Mirrors the backend `ProfileRead` — row count + per-column stats. Identity
- *  fields are type-specific (SQL fills `table`/`schema`/`catalog`, flat files
- *  fill `path`/`file_format`). */
+/** Mirrors the backend `ProfileRead` — row count + per-column stats. */
 export interface ProfileResult {
   row_count: number;
   columns: ColumnProfile[];
@@ -467,9 +420,10 @@ export type ColumnTarget = Pick<
   'table' | 'schema' | 'catalog' | 'namespace' | 'path' | 'file_format'
 >;
 
-/** Mirrors the backend `GET /suites/{id}/columns` — the column names of the
- *  suite's table/file target, so the check editor can offer a dropdown instead
- *  of free-text (#474). Target identity is passed as query params. */
+/**
+ * Mirrors the backend `GET /suites/{id}/columns` — the column names of the suite's table/file
+ * target, so the check editor can offer a dropdown instead of free-text (#474).
+ */
 export async function listColumns(suiteId: string, target: ColumnTarget): Promise<string[]> {
   const params: Record<string, string> = {};
   if (target.table) params.table = target.table;
@@ -492,20 +446,8 @@ export interface BatchPreviewRequest {
 }
 
 /**
- * Mirrors the backend `GET /suites/{id}/batch-preview` (#1193): resolves a
- * flat-file batch spec against the connection's LIVE object listing right now,
- * without saving anything, and returns the concrete file path it matches — the
- * same resolution a saved batch-target suite gets at run time
- * (`run_target.materialize_path`).
- *
- * Requires an existing suite (the connection + its credential live there), so
- * this has no create-mode equivalent — callers gate on `suite` being defined.
- * Rejects (422) when nothing currently matches the pattern, when the spec is
- * malformed (bad regex, `specific` with no batch key), or when the suite's
- * connection isn't a flat-file datasource; rejects (502) when the live listing
- * itself fails (unreachable store, expired credential). Callers should catch
- * and render these as an inline hint, not a toast — this fires on every field
- * edit while authoring, not on submit.
+ * Mirrors the backend `GET /suites/{id}/batch-preview` (#1193): resolves a flat-file batch spec
+ * against the connection's LIVE object listing right now, without saving anything.
  */
 export async function previewBatchTarget(
   suiteId: string,

@@ -5,22 +5,8 @@ import { authMode } from '../auth/config';
 import { notifySessionInvalidated } from '../auth/sessionEvents';
 
 /**
- * Shared axios instance for DataQ API calls.
- *
- * baseURL is relative (/api/v1); vite dev proxy forwards to the FastAPI
- * backend on :8000, and production same-origin deploy needs no CORS.
- *
- * Request interceptor attaches the OIDC access token in real auth mode. In
- * dev_bypass / unconfigured modes the interceptor is a no-op (backend dev-bypass
- * resolves the user without a token). Silent renew and the interactive-redirect
- * fallback (when the session needs the user again — expired / revoked consent /
- * fresh MFA) live in getApiToken(); on that redirect the in-flight request is
- * aborted (rejected) and re-issues cleanly after the handshake (was #168).
- *
- * Response interceptor surfaces the DataQ error envelope's human message
- * (`{ error: { code, message, detail } }`) as `error.message`, so callers'
- * `err.message` shows the actionable backend reason instead of axios's generic
- * "Request failed with status code 4xx".
+ * Shared axios instance for DataQ API calls. baseURL is relative (/api/v1); vite dev proxy
+ * forwards to the FastAPI backend on :8000, and production same-origin deploy needs no CORS.
  */
 export const api = axios.create({
   baseURL: '/api/v1',
@@ -49,10 +35,8 @@ api.interceptors.response.use(
   (error: AxiosError<RateLimitEnvelope>) => {
     const apiMessage = error.response?.data?.error?.message;
     if (apiMessage) error.message = apiMessage;
-    // A throttled user was told "Too many requests" and nothing else — no sense of
-    // whether to retry now or in a minute (#788). The backend has always sent the
-    // answer; nothing read it. Folded into the message so every existing call site
-    // shows it without each one having to learn about rate limiting.
+    // A throttled user was told "Too many requests" and nothing else — no sense of whether to retry
+    // now or in a minute (#788).
     const retryAfter = retryAfterSeconds(error);
     if (retryAfter !== undefined) {
       error.message = `${error.message} Try again in ${retryAfter}s.`;
@@ -63,25 +47,8 @@ api.interceptors.response.use(
 );
 
 /**
- * A 401 that means "your session is gone", as opposed to one that is a normal
- * answer on the sign-in path (ADR 0032, #736).
- *
- * `/auth/*` is where a 401 is an EXPECTED answer — `POST /auth/otp/verify` returns
- * one for a wrong code. Everywhere else it means the cookie expired, was revoked,
- * or was cleared, and the app must drop to the sign-in screen.
- *
- * Honesty about the exclusion: it is **defence in depth, not an observable fix
- * today**. The only listener is `OtpSessionProvider`, and a wrong-code 401 can
- * only happen while it is *already* signed-out, so firing the event there is
- * currently a no-op — a Playwright spec written to "prove" the exclusion passed
- * with it removed, which is precisely the kind of test that proves nothing. It is
- * kept because the event is a broadcast: the moment a second listener exists (or
- * the provider resets more than a status field), a wrong digit would start
- * clearing the user's half-entered code. The behaviour is pinned by the unit test
- * in tests/api/client.test.ts, which DOES fail when this exclusion is removed.
- *
- * Scoped to `otp` mode: an OIDC 401 belongs to the token layer (silent renew /
- * interactive redirect in `authClient.ts`), and dev-bypass has no session at all.
+ * A 401 that means "your session is gone", as opposed to one that is a normal answer on the sign-
+ * in path (ADR 0032, #736).
  */
 function isLostOtpSession(error: AxiosError): boolean {
   if (authMode !== 'otp' || error.response?.status !== 401) return false;

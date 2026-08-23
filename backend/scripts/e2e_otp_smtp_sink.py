@@ -1,64 +1,4 @@
-"""A throwaway SMTP sink for the email-OTP E2E lane (ADR 0032, #736).
-
-Run it, point `AUTH_EMAIL_SMTP_HOST/PORT` at it, and the codes DataQ mails become
-readable over a tiny HTTP API that a Playwright spec can poll. Test scaffolding
-only — never imported by the app and not on any runtime code path. It does ride
-along in the runtime image, like its `backend/scripts/` siblings (`e2e_smoke.py`,
-`seed_dev.py`): the Dockerfile does `COPY backend ./backend` and `.dockerignore`
-excludes nothing under `scripts/`. Nothing starts it there, but see the security
-note below before dismissing that as harmless.
-
-## Why this exists rather than a mail-catcher container
-
-`OtpMailer` speaks **SMTP + STARTTLS with `ssl.create_default_context()`**, which
-verifies the certificate and the hostname. So a sink has to (a) actually do
-STARTTLS and (b) present a certificate the API process trusts — a stock MailHog /
-smtp4dev container satisfies neither without extra plumbing. This script emits a
-self-signed certificate for `localhost` at startup and prints its path; the caller
-exports `AUTH_EMAIL_CA_BUNDLE=<that path>` for the API process, and the mailer's
-own `SSLContext` then trusts exactly this one certificate — for the mailer's SMTP
-connection only, never the process-wide trust store.
-
-That last point used to be a real deployment gap, discovered here: before #1146,
-**DataQ's OTP mailer could not talk to an internal relay whose certificate was
-signed by a private CA** except by putting that CA in the process-wide trust store
-(`SSL_CERT_FILE`) — which this lane did, and which is exactly the footgun #1146's
-`AUTH_EMAIL_CA_BUNDLE` exists to avoid: `SSL_CERT_FILE` would also reconfigure
-every OTHER TLS client the api process starts (Key Vault, Snowflake, ADLS,
-webhooks), not just this mailer.
-
-## Why the real mailer path is exercised, not mocked
-
-The alternative — a "test mode" that skips the send and hands the code straight to
-the test — would mean the E2E lane proves a code path production never runs, and
-would add a bypass to a sign-in flow. Everything here is OUTSIDE the app: the app
-does a genuine STARTTLS handshake, a genuine AUTH, and a genuine `send_message`.
-
-## Security posture
-
-Binds loopback only. Accepts **any** SMTP credentials, stores every message in
-memory in the clear, and serves them to anyone who can reach the HTTP port. That
-is the entire point and it is why this must never run anywhere but a test host.
-
-Since it is present in the runtime image (above), state the residual risk plainly
-rather than relying on "it's only a test tool": anyone who can already execute
-code in the container could start it — but they could equally run their own
-listener, so this adds no capability they lack. Loopback-only binding means it is
-not reachable from outside the container even if started. The property that would
-actually matter is that nothing in the image ever *invokes* it: no entrypoint,
-no CMD, no scheduled task references it.
-
-Usage::
-
-    python -m backend.scripts.e2e_otp_smtp_sink --smtp-port 1025 --http-port 1080
-
-HTTP API::
-
-    GET    /code?email=<addr>   → {"code": "123456"} | 404 when nothing captured
-    GET    /messages            → every captured message
-    DELETE /messages            → drop them all (per-spec isolation)
-    GET    /healthz             → {"status": "ok"} once both listeners are up
-"""
+"""A throwaway SMTP sink for the email-OTP E2E lane (ADR 0032, #736)."""
 
 from __future__ import annotations
 
@@ -101,7 +41,8 @@ class Captured:
 @dataclass
 class Mailbox:
     """Every message the sink has accepted, newest last. Guarded by a lock —
-    the SMTP side runs on connection threads and the HTTP side on its own."""
+    the SMTP side runs on connection threads and the HTTP side on its own.
+    """
 
     messages: list[Captured] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -119,12 +60,7 @@ class Mailbox:
             self.messages.clear()
 
     def latest_code_for(self, address: str) -> str | None:
-        """The most recent code sent to `address`, or None.
-
-        Newest-first because a resend invalidates the previous code server-side:
-        returning the older one would make a resend test fail for a reason that
-        has nothing to do with the resend.
-        """
+        """The most recent code sent to `address`, or None."""
         wanted = address.strip().lower()
         with self._lock:
             for message in reversed(self.messages):
@@ -134,11 +70,7 @@ class Mailbox:
 
 
 def make_self_signed_cert(directory: Path, hostname: str = "localhost") -> tuple[Path, Path]:
-    """Emit a throwaway cert+key for `hostname`. Returns (cert_path, key_path).
-
-    Generated per run and never tracked: a committed key would be a credential in
-    a git-tracked file, which the project forbids outright even for test material.
-    """
+    """Emit a throwaway cert+key for `hostname`. Returns (cert_path, key_path)."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, hostname)])
     now = dt.datetime.now(dt.UTC)
@@ -151,12 +83,8 @@ def make_self_signed_cert(directory: Path, hostname: str = "localhost") -> tuple
         .not_valid_before(now - dt.timedelta(minutes=5))
         .not_valid_after(now + dt.timedelta(days=1))
         .add_extension(
-            # smtplib passes server_hostname, so the SAN — not the CN — is what
-            # Python's hostname check actually consults. The loopback address is an
-            # `IPAddress` entry, NOT a DNSName: for an IP-literal `server_hostname`
-            # Python matches only IPAddress SANs, so `DNSName("127.0.0.1")` would
-            # look like it covered `AUTH_EMAIL_SMTP_HOST=127.0.0.1` and silently
-            # would not.
+            # smtplib passes server_hostname, so the SAN — not the CN — is what Python's hostname
+            # check actually consults.
             x509.SubjectAlternativeName(
                 [
                     x509.DNSName(hostname),
@@ -184,13 +112,7 @@ def make_self_signed_cert(directory: Path, hostname: str = "localhost") -> tuple
 
 
 class SmtpHandler(socketserver.StreamRequestHandler):
-    """One SMTP conversation: EHLO → STARTTLS → AUTH → MAIL/RCPT/DATA → QUIT.
-
-    Hand-rolled rather than `aiosmtpd` so the lane adds no dependency to
-    `requirements-dev.txt` (and therefore nothing to CI's install + pip-audit
-    surface). `smtplib` is a well-behaved client, so the state machine only has to
-    cover what it actually sends.
-    """
+    """One SMTP conversation: EHLO → STARTTLS → AUTH → MAIL/RCPT/DATA → QUIT."""
 
     mailbox: Mailbox
     tls_context: ssl.SSLContext
@@ -233,8 +155,6 @@ class SmtpHandler(socketserver.StreamRequestHandler):
                 secure = True
             elif upper.startswith("AUTH"):
                 # Any credentials are accepted; the sink is not an authenticator.
-                # A malformed blob still gets a 235 — nothing here is a security
-                # control, and failing it would only produce confusing test noise.
                 self._send("235 2.7.0 Authentication successful")
             elif upper.startswith("MAIL FROM"):
                 # The envelope sender is accepted and discarded — specs assert on
@@ -335,9 +255,8 @@ def make_http_handler(mailbox: Mailbox) -> type[http.server.BaseHTTPRequestHandl
                 address = urllib.parse.parse_qs(parsed.query).get("email", [""])[0]
                 code = mailbox.latest_code_for(address)
                 if code is None:
-                    # 404, not `{"code": null}` — a spec that polls must be able to
-                    # tell "not delivered yet" from "delivered, but unparseable",
-                    # and a null would silently look like the latter forever.
+                    # 404, not `{"code": null}` — a spec that polls must be able to tell "not
+                    # delivered yet" from "delivered, but unparseable".
                     self._json(404, {"error": "no code captured for that address"})
                 else:
                     self._json(200, {"code": code})
@@ -353,7 +272,8 @@ def make_http_handler(mailbox: Mailbox) -> type[http.server.BaseHTTPRequestHandl
 
         def log_message(self, *_args: object) -> None:
             """Silence the per-request access log — it would bury the one line
-            the caller actually needs (the certificate path)."""
+            the caller actually needs (the certificate path).
+            """
 
     return Handler
 
@@ -386,9 +306,8 @@ def main(argv: list[str] | None = None) -> int:
 
     threading.Thread(target=smtp_server.serve_forever, daemon=True).start()
 
-    # Machine-readable, because the caller has to export AUTH_EMAIL_CA_BUNDLE
-    # from it BEFORE starting the API — `Settings` validates the path exists at
-    # boot (#1146), so the sink must already have written the file by then.
+    # Machine-readable, because the caller has to export AUTH_EMAIL_CA_BUNDLE from it BEFORE
+    # starting the API — `Settings` validates the path exists at boot (#1146).
     print(f"DATAQ_OTP_SINK_CERT={cert_path}", flush=True)
     print(f"DATAQ_OTP_SINK_KEY={key_path}", flush=True)
     print(

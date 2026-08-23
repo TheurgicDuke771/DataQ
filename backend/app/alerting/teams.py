@@ -1,12 +1,4 @@
-"""The v1 ``ResultPublisher`` — posts a run's report as a Teams Adaptive Card.
-
-Delivery is driven by the run's **per-suite** notification config (read from the
-dispatch session): whether the suite has alerting enabled, its threshold
-(``alert_on`` → routing policy), and which webhook to post to (the per-suite one,
-falling back to the workspace webhook). A suite with notifications disabled, a
-run below its threshold, or no resolvable webhook is a quiet no-op — alerts are
-for what the suite asked to be told about.
-"""
+"""The v1 ``ResultPublisher`` — posts a run's report as a Teams Adaptive Card."""
 
 from __future__ import annotations
 
@@ -46,12 +38,7 @@ class TeamsPublisher:
         self._timeout = timeout
 
     def publish(self, session: Session, report: RunReport) -> None:
-        """Deliver the run's card per its suite's notification config.
-
-        Skips silently when the suite disabled alerting, the run is below the
-        suite's threshold, or no webhook resolves. Raises on an HTTP error — the
-        dispatch layer isolates that so a flaky webhook can't fail the run.
-        """
+        """Deliver the run's card per its suite's notification config."""
         config = notification_service.get_config(session, report.suite_id)
         if config is not None and not config.enabled:
             return
@@ -83,15 +70,7 @@ class TeamsPublisher:
         )
 
     def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:
-        """Post a connection poll-health edge to the **workspace** webhook (#837).
-
-        No per-suite config applies (a connection has no suite), so this resolves the
-        workspace webhook only — `resolve_webhook(None, …)` is exactly that fallback.
-        Whether to alert was already decided at the threshold crossing; here we just
-        deliver. Returns **whether a message was actually posted**: an unconfigured/
-        ineligible webhook is ``False``, never a quiet success (#1101 — the delivered-
-        first flag must not be stamped by a channel that sent nothing).
-        """
+        """Post a connection poll-health edge to the **workspace** webhook (#837)."""
         webhook = notification_service.resolve_webhook(
             None,
             secret_store=self._secret_store,
@@ -115,11 +94,11 @@ class TeamsPublisher:
         return True
 
     def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
-        """Post the workspace poll-staleness edge (#1052) to the workspace webhook —
-        same resolution as :meth:`publish_health`, but returning **whether a message
-        was actually posted**: an unconfigured/ineligible webhook is ``False``, never
-        a quiet success (review finding — the delivered-first flag must not be
-        stamped by a channel that sent nothing)."""
+        """Post the workspace poll-staleness edge (#1052) to the workspace webhook — same
+        resolution as :meth:`publish_health`, but returning **whether a message was actually
+        posted**: an unconfigured/ineligible webhook is ``False``, never a quiet success (review
+        finding — the delivered-first flag must not be stamped by a channel that sent nothing).
+        """
         webhook = notification_service.resolve_webhook(
             None,
             secret_store=self._secret_store,
@@ -147,12 +126,7 @@ def _webhook_allowed(webhook: str) -> bool:
     **https** URL on an allowlisted host. upsert validates on write; this re-checks at
     send time (rotated / workspace secrets — defence in depth), and is shared by the run +
     health paths so the two can't drift apart on which hosts are reachable.
-
-    The scheme check matters for the WORKSPACE webhook in particular: it is never
-    write-validated (only per-suite webhooks are), so an `http://` value would otherwise
-    ship the alert — connection name, failure reason, observed-vs-expected data — in
-    cleartext. Same reasoning as the Slack publisher (#639 review); the two guards now
-    agree."""
+    """
     parsed = urlparse(webhook)
     host = (parsed.hostname or "").lower()
     return parsed.scheme == "https" and any(

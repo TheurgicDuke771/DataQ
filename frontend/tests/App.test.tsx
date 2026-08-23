@@ -11,10 +11,8 @@ import { useCurrentUser } from '../src/auth/useCurrentUser';
 // dev_bypass keeps AuthGate a passthrough so the Layout itself is under test.
 vi.mock('../src/auth/config', () => ({ authMode: 'dev_bypass' }));
 vi.mock('../src/auth/authClient', () => ({ login: vi.fn(), logout: vi.fn() }));
-// ProfileCompletionPrompt (#1139) also reads useMe() (via itself) and
-// useUpdateMe() (via useSaveDisplayName) — 'loading' keeps the prompt closed
-// (shouldShow requires status 'ok') and the no-op setter is never called from
-// a closed prompt, so both are inert for these shell tests.
+// ProfileCompletionPrompt (#1139) also reads useMe() (via itself) and useUpdateMe() (via
+// useSaveDisplayName).
 vi.mock('../src/auth/useMe', () => ({
   useIsWorkspaceAdmin: vi.fn(),
   useMe: vi.fn(() => ({ status: 'loading' })),
@@ -136,10 +134,8 @@ describe('App shell', () => {
     expect(screen.queryByText('DU')).not.toBeInTheDocument();
   });
 
-  // Mobile overlay nav (#801): below `lg` the Sider collapses to zero width and
-  // the nav moves into an overlay Drawer so it never squeezes the content. The
-  // Sider fires `onBreakpoint(matchMedia.matches)` on mount, so forcing
-  // matchMedia to match drives the narrow layout in jsdom.
+  // Mobile overlay nav (#801): below `lg` the Sider collapses to zero width and the nav moves into
+  // an overlay Drawer so it never squeezes the content.
   describe('narrow viewport (#801)', () => {
     let realMatchMedia: typeof window.matchMedia;
     beforeEach(() => {

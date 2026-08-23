@@ -1,8 +1,4 @@
-"""AirflowProvider.parse_event tests — the signed-callback body → RunUpdate.
-
-Pure unit tests (no auth here — HMAC verification is the endpoint's job; these
-exercise parsing + state mapping + the deferred REST methods).
-"""
+"""AirflowProvider.parse_event tests — the signed-callback body → RunUpdate."""
 
 import json
 from datetime import UTC, datetime

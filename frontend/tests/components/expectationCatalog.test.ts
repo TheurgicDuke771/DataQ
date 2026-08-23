@@ -25,9 +25,7 @@ function requiredField(specType: string, fieldName: string): ConfigField {
 
 describe('expectationCatalog', () => {
   // EXPECTATIONS_BY_CATEGORY filters the catalog by the categories listed in
-  // EXPECTATION_CATEGORIES — so an expectation whose category string isn't in
-  // that list would silently vanish from the grouped picker. Guard against it:
-  // every catalog entry must appear in exactly one group.
+  // EXPECTATION_CATEGORIES.
   it('groups every catalog expectation (none dropped from the picker)', () => {
     const grouped = EXPECTATIONS_BY_CATEGORY.flatMap((g) => g.specs);
     expect(grouped).toHaveLength(EXPECTATION_CATALOG.length);
@@ -150,10 +148,8 @@ describe('expectationsByCategoryFor (anomaly monitor gating, #593 — SQL-only, 
     const spec = EXPECTATION_BY_TYPE['monitor:anomaly'];
     expect(spec.kind).toBe('anomaly');
     expect(spec.thresholds?.requireFailOrCritical).toBe(true);
-    // Mirrors the backend `check_dimension._BY_KIND`, which has no 'anomaly'
-    // entry (pinned by the backend catalog-contract test) — the metric anomaly
-    // watches (row_count vs freshness_age_hours) isn't derivable from the kind
-    // alone.
+    // Mirrors the backend `check_dimension._BY_KIND`, which has no 'anomaly' entry (pinned by the
+    // backend catalog-contract test).
     expect(spec.dimension).toBeUndefined();
   });
 
@@ -210,9 +206,8 @@ describe('configFieldsFor (flat-file arrival-time freshness, #520)', () => {
   it.each<ConnectionType>(['s3', 'adls_gen2'])(
     'makes the timestamp column optional on flat-file datasource %s',
     (type) => {
-      // Blank doesn't mean "skip the check" — it selects a DIFFERENT measurement
-      // (when the file landed), so the help text must say so rather than reading
-      // as an omission.
+      // Blank doesn't mean "skip the check" — it selects a DIFFERENT measurement (when the file
+      // landed), so the help text must say so rather than reading as an omission.
       const field = columnField(type);
       expect(field?.optional).toBe(true);
       expect(field?.help).toMatch(/landed/i);

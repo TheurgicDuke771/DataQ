@@ -1,8 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-// Seeded suite + checks (backend/scripts/demo_data.py) read through the real API,
-// then a full browser authoring round-trip (create → verify → delete) that
-// mirrors the httpx API smoke but through the React UI a user actually drives.
+// Seeded suite + checks (backend/scripts/demo_data.py) read through the real API.
 test.describe('Suites page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/suites');
@@ -39,9 +37,7 @@ test.describe('Suites page', () => {
     await page.getByText('Column values not null', { exact: true }).click();
     await page.getByLabel('Name').fill(name);
     await page.getByLabel('Column', { exact: true }).fill('order_id');
-    // The dry-run preview is wired + enabled (the seeded suite has a Snowflake
-    // table target). Not clicked here — a live warehouse round-trip is the
-    // deferred smoke; the unit tests cover the success/error rendering.
+    // The dry-run preview is wired + enabled (the seeded suite has a Snowflake table target).
     await expect(page.getByRole('button', { name: 'Dry-run preview' })).toBeEnabled();
     await page.getByRole('button', { name: 'Create check' }).click();
 
@@ -67,12 +63,8 @@ test.describe('Suites page', () => {
     await expect(page).toHaveURL(/\/suites\/new$/);
     await page.getByLabel('Name').fill(name);
 
-    // antd Select (not searchable): focus the combobox, wait for the dropdown,
-    // then Enter accepts the auto-highlighted FIRST option — rc-select
-    // pre-highlights option 0 when nothing is selected, so an ArrowDown first
-    // would land on the SECOND (see e2e/README.md). Keyboard on the focused
-    // combobox is more stable than clicking a virtual-list option
-    // (rc-virtual-list keeps items visibility:hidden during measurement).
+    // antd Select (not searchable): focus the combobox, wait for the dropdown, then Enter accepts
+    // the auto-highlighted FIRST option.
     const combo = page.getByRole('combobox');
     await combo.click();
     await expect(page.locator('.ant-select-dropdown').last()).toBeVisible();
@@ -90,8 +82,6 @@ test.describe('Suites page', () => {
     await expect(page.getByRole('heading', { name, level: 4 })).toBeVisible();
 
     // Delete it via the detail action → confirm modal → the list row disappears.
-    // Anchor the confirm to the Modal by its title (`Delete "<name>"?`) — antd
-    // renders role=dialog for the (now-hidden) Drawer too, so filter by name.
     await page.getByRole('button', { name: 'Delete' }).click();
     const confirm = page.getByRole('dialog', { name: /^Delete/ });
     await confirm.getByRole('button', { name: 'Delete' }).click();

@@ -1,27 +1,4 @@
-"""Read one comparison side (source or target) into a DataFrame (ADR 0015, #792).
-
-The `DatasetReader` seam: given a **datasource** connection and a `DatasetSpec`
-(a resolved table triple, a flat-file path, or a read-only SQL projection),
-return a bounded pandas DataFrame for the comparison engine (#793). Grown from
-plumbing that already exists — the profiler's SQL engine access
-(`profile_service`), `flatfile`'s object read, `pyiceberg`'s scan — behind the
-same dict-dispatch shape as the profiler's `_PROFILERS`, so service code never
-branches on `connection.type`. Orchestration types have no reader (a clean 422,
-mirroring `build_check_runner`).
-
-Row-cap discipline (ADR 0015 §3): `max_rows` is enforced **fail-fast** — a
-cheap COUNT preflight where the backend offers one (SQL engines, Iceberg scan
-metadata) so an oversized table never transfers, plus a post-read length check
-everywhere (the preflight is racy by nature; flat files have no preflight at
-all). Over-cap raises `DatasetTooLargeError`, **never** a silent truncation —
-a truncated diff produces confidently wrong mismatch buckets, which is worse
-than no answer.
-
-FastAPI-free like the sibling services: takes ORM `Connection` + `SecretStore`,
-returns DataFrames, raises `DataQError` subclasses (the #794 run path maps them
-to operational `error` results; the authoring/dry-run paths surface them as
-422s).
-"""
+"""Read one comparison side (source or target) into a DataFrame (ADR 0015, #792)."""
 
 from __future__ import annotations
 
@@ -68,14 +45,7 @@ class DatasetTooLargeError(DataQError):
 
 @dataclass(frozen=True)
 class DatasetSpec:
-    """What to read from one comparison side.
-
-    Exactly one addressing mode is used per datasource: `query` (SQL sources,
-    already author-time validated read-only), the `table`/`schema`/`catalog`
-    triple (SQL sources; `table` also carries the Iceberg `namespace.table`
-    identifier), or `path` (flat-file sources — the caller materializes batch
-    targets to a concrete path first, exactly like a run does).
-    """
+    """What to read from one comparison side."""
 
     table: str | None = None
     schema: str | None = None
@@ -86,7 +56,8 @@ class DatasetSpec:
 
 def default_max_rows() -> int:
     """The settings-level comparison row cap (per-check `config.max_rows`
-    overrides it — resolved by the caller, ADR 0015 §3)."""
+    overrides it — resolved by the caller, ADR 0015 §3).
+    """
     return get_settings().comparison_max_rows
 
 
@@ -112,15 +83,7 @@ def _require_secret(connection: Connection, secret_store: SecretStore) -> str:
 
 
 def _wrapped_query(spec: DatasetSpec) -> str:
-    """The validated read-only projection as a parenthesized FROM source.
-
-    Re-validated here (defence in depth — author-time validation already ran):
-    a single read-only SELECT/WITH statement, so interpolating it into the
-    COUNT/LIMIT wrappers below cannot smuggle a second statement or a write.
-    The whitespace+semicolon tail is stripped in ONE pass (matching
-    `validate_query`'s own trailing-chars rule — `.rstrip().rstrip(";")` would
-    leave `SELECT 1; ` from a `; ;` tail and break the wrapper).
-    """
+    """The validated read-only projection as a parenthesized FROM source."""
     assert spec.query is not None
     validate_query(spec.query)
     return spec.query.strip().rstrip(string.whitespace + ";")
@@ -144,14 +107,8 @@ def _sql_read(
     schema: str | None = None
     if spec.query is not None:
         q = _wrapped_query(spec)
-        # Interpolation is safe: `q` passed the read-only single-statement
-        # validator (ADR 0019) at author time AND immediately above. The
-        # newline before the closing paren keeps a trailing `-- comment` (legal
-        # per the validator) from swallowing the wrapper's tail.
-        # Both suppressions below are load-bearing (Ruff S608 and bandit B608 each
-        # flag the f-string). They are bare by convention (#806): bandit parses
-        # trailing prose as test ids, and Ruff rejects a malformed directive the same
-        # way — so neither marker is ever spelled inside an explanatory comment.
+        # Interpolation is safe: `q` passed the read-only single-statement validator (ADR 0019) at
+        # author time AND immediately above.
         count_sql = f"SELECT COUNT(*) FROM (\n{q}\n) __dataq_src"  # noqa: S608  # nosec B608
         select_sql = (
             f"SELECT * FROM (\n{q}\n) __dataq_src "  # noqa: S608  # nosec B608
@@ -163,9 +120,7 @@ def _sql_read(
                 "SQL comparison side needs a table (or a query)", detail={"spec": "table"}
             )
         if connection.type == "unity_catalog" and not spec.catalog:
-            # The UC engine URL deliberately pins no catalog (profiler parity) —
-            # an unqualified 2-part name would resolve against the session
-            # default catalog and silently read the wrong table.
+            # The UC engine URL deliberately pins no catalog (profiler parity).
             raise DatasetReadUnsupportedError(
                 "a Unity Catalog comparison side needs a catalog",
                 detail={"spec": "catalog"},
@@ -180,10 +135,8 @@ def _sql_read(
             count_stmt = sa.text(count_sql)
             select_stmt = sa.text(select_sql)
         else:
-            # `_table` needs a live dialect only when `spec.catalog` is set
-            # (Unity Catalog's 3-part namespace, #936) — built here rather than
-            # above so the connection's own dialect is on hand; Snowflake's
-            # 2-part target never reaches the code that would use it.
+            # `_table` needs a live dialect only when `spec.catalog` is set (Unity Catalog's 3-part
+            # namespace, #936).
             assert table is not None and schema is not None  # set in the table branch above
             dialect = conn.dialect if spec.catalog else None
             source = _table(schema, table, spec.catalog, dialect)
@@ -192,10 +145,8 @@ def _sql_read(
         count = int(conn.execute(count_stmt).scalar_one())
         if count > max_rows:
             raise _too_large(count, max_rows, side_hint="dataset")
-        # Arrow-backed dtypes for parity with the flat-file/Iceberg readers —
-        # cross-side dtype/null-semantics normalization is the #793 engine's
-        # contract, but the reader must not hand it numpy-vs-arrow skew of its
-        # own making (NULL ints → float64+NaN on one side only).
+        # Arrow-backed dtypes for parity with the flat-file/Iceberg readers — cross-side dtype/null-
+        # semantics normalization is the #793 engine's contract.
         df = pd.read_sql(select_stmt, conn, dtype_backend="pyarrow")
     # Belt over the braces: the COUNT is racy (rows can land between preflight
     # and read) and the LIMIT is max_rows+1 exactly so growth is detectable.
@@ -208,14 +159,7 @@ def _sql_read(
 
 
 def _enforce_object_size(connection: Connection, *, path: str, secret: str) -> None:
-    """Refuse an over-cap object before it is downloaded (#595 J2).
-
-    Deliberately the *same* `RUN_MAX_SCAN_BYTES` the run path uses, not a second
-    knob: it answers one question — how much may this worker materialise — and
-    the comparison reader materialises into the same worker as everything else.
-    A store that reports no length is not refused (see `flatfile._guard_object_size`
-    for why an unknown size must not fail closed).
-    """
+    """Refuse an over-cap object before it is downloaded (#595 J2)."""
     cap = get_settings().run_max_scan_bytes
     if cap <= 0:
         return
@@ -235,12 +179,8 @@ def _flatfile_read(
             "flat-file comparison side needs a resolved path", detail={"spec": "path"}
         )
     secret = _require_secret(connection, secret_store)
-    # A cheap preflight DOES exist now (#595 J2): the store's metadata call reports
-    # the object's byte length, so the same worker-memory guardrail the run path
-    # uses applies here too — and it must, because without it #755's OOM survived
-    # via any comparison against an oversized object: the whole file downloaded
-    # and expanded ~8-9x in memory *before* the row cap below could look at it.
-    # Refusing on size costs one HEAD; the row cap stays as the semantic bound.
+    # A cheap preflight DOES exist now (#595 J2): the store's metadata call reports the object's
+    # byte length, so the same worker-memory guardrail the run path uses applies here too.
     _enforce_object_size(connection, path=path, secret=secret)
     df = read_flatfile_dataframe(
         conn_type=connection.type, config=dict(connection.config), path=path, secret=secret
@@ -262,9 +202,8 @@ def _iceberg_read(
             detail={"spec": "table"},
         )
     cfg = IcebergConfig.model_validate(connection.config)
-    # Both credentials, resolved in one place (a SQL catalog needs the catalog DB
-    # password too — #754/#826). Both optional: a local warehouse /
-    # vended-credentials REST catalog has neither.
+    # Both credentials, resolved in one place (a SQL catalog needs the catalog DB password too —
+    # #754/#826).
     secret, catalog_secret = iceberg_credentials(cfg, connection.secret_ref, secret_store)
     table = load_iceberg_table(cfg, secret, spec.table, catalog_secret)
     count = int(table.scan().count())  # snapshot metadata — no data files read
@@ -298,11 +237,7 @@ def read_dataset(
     max_rows: int,
     secret_store: SecretStore,
 ) -> Any:
-    """Read one comparison side as a pandas DataFrame, capped at `max_rows`.
-
-    Raises `DatasetReadUnsupportedError` (no reader for the connection type or
-    an unusable spec) or `DatasetTooLargeError` (over-cap, fail-fast).
-    """
+    """Read one comparison side as a pandas DataFrame, capped at `max_rows`."""
     reader = _READERS.get(connection.type)
     if reader is None:
         raise DatasetReadUnsupportedError(

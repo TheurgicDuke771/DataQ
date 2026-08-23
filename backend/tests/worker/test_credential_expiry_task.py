@@ -1,12 +1,4 @@
-"""Wiring test for the `refresh_credential_expiry` beat entry point (#838).
-
-Pure-unit (no DB): the sweep's own behaviour is covered DB-backed in
-`tests/services/test_credential_expiry.py`. Here we only assert the task
-delegates, returns the changed count, always closes its session, and is
-fail-soft — the sweep exists to *produce a warning*, so a Key Vault outage
-inside it must not be promoted into a failed Celery task, and must not take
-down the beat tick for the janitors scheduled after it.
-"""
+"""Wiring test for the `refresh_credential_expiry` beat entry point (#838)."""
 
 from typing import Any
 
@@ -62,12 +54,7 @@ def test_task_fails_soft_when_the_secret_store_is_unreachable(monkeypatch: Any) 
 
 
 def test_the_sweep_is_actually_scheduled(monkeypatch: Any) -> None:
-    """A task nobody runs warns nobody.
-
-    The whole feature is a *periodic* re-read; an entry point that exists but is
-    absent from the beat schedule would leave every credential stored before this
-    shipped permanently unknown, while every unit test above still passed.
-    """
+    """A task nobody runs warns nobody."""
     from backend.app.worker.celery_app import celery_app
 
     scheduled = {entry["task"] for entry in celery_app.conf.beat_schedule.values()}

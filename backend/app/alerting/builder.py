@@ -1,10 +1,4 @@
-"""Assemble a redacted ``RunReport`` from a completed run's persisted rows.
-
-This is the one place that reads the ORM and applies the seam's PII policy:
-``sample_failures`` is passed through ``run_service.redact_sample_failures``
-(counts-only; raw cell values masked) before it can reach a publisher. Everything
-downstream of here works on the DTO, never the DB rows.
-"""
+"""Assemble a redacted ``RunReport`` from a completed run's persisted rows."""
 
 from __future__ import annotations
 
@@ -40,7 +34,8 @@ from backend.app.services import incident_service, run_service
 def _run_url(run_id: uuid.UUID) -> str | None:
     """Deep link to the run-detail page (``/results/<id>``, App.tsx), or ``None``
     when no public base URL is configured — the alert then omits the link rather
-    than emitting a broken relative one."""
+    than emitting a broken relative one.
+    """
     base = get_settings().public_base_url.rstrip("/")
     return f"{base}/results/{run_id}" if base else None
 
@@ -48,13 +43,7 @@ def _run_url(run_id: uuid.UUID) -> str | None:
 def build_connection_health_report(
     connection: Connection, *, state: HealthState
 ) -> ConnectionHealthReport:
-    """A :class:`ConnectionHealthReport` from a connection's persisted poll health (#837).
-
-    The reason is read straight off ``Connection.last_poll_error``, which
-    `orchestration_service.record_poll_failure` already stored **classified** — so the
-    alert cannot carry the raw exception text (and the credential inside it). Nothing
-    here re-derives the reason from an exception; that is the whole point of the column.
-    """
+    """A :class:`ConnectionHealthReport` from a connection's persisted poll health (#837)."""
     base = get_settings().public_base_url.rstrip("/")
     return ConnectionHealthReport(
         connection_id=connection.id,
@@ -62,9 +51,8 @@ def build_connection_health_report(
         connection_type=connection.type,
         state=state,
         consecutive_failures=connection.consecutive_poll_failures or 0,
-        # A failing edge must never render a card that says "failing" and silently omits
-        # WHY (health_facts drops empty values) — an unset reason degrades to a visible
-        # "unknown", it does not disappear.
+        # A failing edge must never render a card that says "failing" and silently omits WHY
+        # (health_facts drops empty values) — an unset reason degrades to a visible "unknown".
         reason=(
             (connection.last_poll_error or "unknown — test the connection")
             if state == HEALTH_FAILING
@@ -76,12 +64,7 @@ def build_connection_health_report(
 
 
 def _asset_column_tags(session: Session, run: Run, suite: Suite | None) -> dict[str, str] | None:
-    """The warehouse column classifications that applied to what this run read.
-
-    Anchored on `run.asset_id` first: a retargeted suite's older runs are samples
-    of the previous table. `None` means no opinion — the same degradation the read
-    paths use.
-    """
+    """The warehouse column classifications that applied to what this run read."""
     asset_id = getattr(run, "asset_id", None) or getattr(suite, "asset_id", None)
     if asset_id is None:
         return None
@@ -90,18 +73,7 @@ def _asset_column_tags(session: Session, run: Run, suite: Suite | None) -> dict[
 
 
 def _target_label(suite: Suite | None) -> str:
-    """A human-readable one-line target for the notification.
-
-    Reads the datasource-shaped ``Suite.target`` (#215) directly rather than
-    ``run_target.resolve_target`` (which can raise on a malformed target — a
-    report must never fail to build). Flat-file targets show their ``path``;
-    SQL targets show the dotted ``catalog.schema.table``; Iceberg targets show
-    ``namespace.table`` (namespace sits where catalog/schema do).
-
-    Mirrors the frontend ``summarizeTarget`` (``suiteTarget.ts``) precedence so
-    a card labels a target the way the UI does — a new target field needs a
-    matching edit here, there, and in ``run_target.resolve_target``.
-    """
+    """A human-readable one-line target for the notification."""
     target: dict[str, Any] = dict(suite.target) if suite and suite.target else {}
     path = target.get("path")
     if path:
@@ -116,23 +88,13 @@ def _target_label(suite: Suite | None) -> str:
 
 
 def build_run_report(session: Session, run: Run) -> RunReport:
-    """Build the redacted, GX-agnostic report for a terminal ``run``.
-
-    Joins each ``Result`` back to its ``Check`` (by id) for the check name +
-    expectation; a result whose check was since deleted degrades to a placeholder
-    name rather than failing the build. ``metric_value`` is widened ``Decimal`` →
-    ``float`` for JSON-friendly transport.
-    """
+    """Build the redacted, GX-agnostic report for a terminal ``run``."""
     suite = session.get(Suite, run.suite_id)
     connection = session.get(Connection, suite.connection_id) if suite is not None else None
     owner = session.get(User, suite.created_by) if suite is not None else None
     checks = {c.id: c for c in session.scalars(select(Check).where(Check.suite_id == run.suite_id))}
-    # The warehouse's own column classifications (G3, #433) — the same governance
-    # floor the REST and MCP read paths apply. Applied HERE too, and the omission
-    # was the sharper half of the bug: an alert is the surface that LEAVES the
-    # platform, into a webhook or a mailbox whose location DataQ does not know.
-    # A floor honoured in the UI and not in the outbound message is honoured in
-    # the place that matters least.
+    # The warehouse's own column classifications (G3, #433) — the same governance floor the REST and
+    # MCP read paths apply.
     tags = _asset_column_tags(session, run, suite)
     results: list[Result] = run_service.list_results(session, run.id)
 
@@ -195,18 +157,7 @@ def _incident_cards(
     results: list[Result],
     checks: dict[uuid.UUID, Check],
 ) -> list[IncidentCard]:
-    """The active incidents this run's *breaching* checks reference (ADR 0034 #761).
-
-    The incident engine has already run (worker order), so the active incidents on
-    this run's asset are current. One card per failing check that has an active
-    incident. ``is_new`` derives from the engine's **timestamp contract** (see
-    ``incident_service.open_or_attach_incident``): an open stamps ``last_seen_at``
-    == ``created_at`` (same transaction ``now()``), an attach strictly bumps it
-    (``clock_timestamp()``) — so a freshly-opened incident reads new even when a
-    concurrent attach lands between the sync and this build (which would already
-    have bumped ``occurrence_count`` and mislabeled the count-based derivation).
-    The evidence is passed through opaque — it was redacted at snapshot time.
-    """
+    """The active incidents this run's *breaching* checks reference (ADR 0034 #761)."""
     active = incident_service.active_incidents_for_run(session, run)
     if not active:
         return []

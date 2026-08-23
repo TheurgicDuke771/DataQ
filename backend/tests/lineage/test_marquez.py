@@ -1,11 +1,4 @@
-"""`lineage.marquez` contract + adversarial tests — mocked HTTP, no live Marquez.
-
-Monkeypatches the module-level ``httpx.get`` (the repo's `orchestration.adf` test
-convention). Covers the happy-path parse + job-collapse of a real-shaped Marquez
-`/api/v1/lineage` response, and the adversarial battery the seam promises to survive:
-garbage payloads, non-200s, transport failure, huge graphs (node cap), cyclic graphs,
-unknown node kinds, missing namespaces, and dangling edges.
-"""
+"""`lineage.marquez` contract + adversarial tests — mocked HTTP, no live Marquez."""
 
 from __future__ import annotations
 
@@ -266,10 +259,8 @@ def test_huge_graph_truncated_at_cap(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(graph.nodes) == 3
 
 
-# ── list_datasets (#823) ─────────────────────────────────────────────────────
-#
-# The catalog enumeration the pull now seeds from. It had no tests at all in the first
-# cut of #823, and that is exactly where a non-terminating loop was hiding.
+# ── list_datasets (#823) ───────────────────────────────────────────────────── The catalog
+# enumeration the pull now seeds from.
 
 
 class _Resp:
@@ -306,13 +297,7 @@ def test_list_datasets_paginates(monkeypatch: Any) -> None:
 
 
 def test_list_datasets_terminates_when_no_entry_parses(monkeypatch: Any) -> None:
-    """The non-terminating loop the review caught.
-
-    A server returning full pages whose rows we can't parse (e.g. the name only under a
-    nested `id`) would make our name list never grow. Paging on `len(names)` would then
-    loop forever — an unbounded run of 5 s HTTP calls that hangs the refresh task.
-    Paging on the PAGE length is what bounds it.
-    """
+    """The non-terminating loop the review caught."""
     calls = {"n": 0}
 
     def fake_get(url: str, **kw: Any) -> Any:
@@ -329,12 +314,7 @@ def test_list_datasets_terminates_when_no_entry_parses(monkeypatch: Any) -> None
 
 
 def test_an_unknown_namespace_is_empty_not_an_outage(monkeypatch: Any) -> None:
-    """A 404 means "the catalog has no such namespace" — an observation, not a failure.
-
-    Raising `unavailable` here would permanently suppress the stale-edge prune for any
-    workspace with an asset the catalog doesn't cover (an S3 bucket while only dbt is
-    emitting — i.e. most of them), and would cry outage on every cycle.
-    """
+    """A 404 means "the catalog has no such namespace" — an observation, not a failure."""
     monkeypatch.setattr(httpx, "get", lambda url, **kw: _Resp({}, status=404))
     assert MarquezLineageProvider("http://mz").list_datasets(namespace="s3://nope") == []
 

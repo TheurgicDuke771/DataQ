@@ -54,9 +54,8 @@ function renderPanel(props: Partial<Parameters<typeof TriggersPanel>[0]> = {}) {
 
 afterEach(() => vi.clearAllMocks());
 
-// Every test gets an empty near-miss list by default (#1199) — only the
-// dedicated describe block below overrides it, so the pre-existing tests above
-// don't have to know this fetch exists.
+// Every test gets an empty near-miss list by default (#1199) — only the dedicated describe block
+// below overrides it, so the pre-existing tests above don't have to know this fetch exists.
 beforeEach(() => mockNearMisses.mockResolvedValue([]));
 
 describe('TriggersPanel', () => {
@@ -256,9 +255,8 @@ describe('TriggersPanel — env near-miss badge (#1199)', () => {
   });
 
   it('does not badge a binding whose (provider, pipeline_or_dag_id) matches but env does not', async () => {
-    // A near-miss for a DIFFERENT binding_env than this exact binding must not
-    // false-positive onto it — matching is on the full (provider,
-    // pipeline_or_dag_id, binding_env) tuple, not just provider+pipeline.
+    // A near-miss for a DIFFERENT binding_env than this exact binding must not false-positive onto
+    // it — matching is on the full (provider, pipeline_or_dag_id, binding_env) tuple.
     mockList.mockResolvedValue([BINDING]); // env: 'prod'
     mockNearMisses.mockResolvedValue([
       {
@@ -276,11 +274,8 @@ describe('TriggersPanel — env near-miss badge (#1199)', () => {
   });
 
   it('dates the mismatch instead of asserting it is happening right now', async () => {
-    // The row only proves the mismatch was OBSERVED, and it stays inside the 48h
-    // recency window for up to two days after the last occurrence — so an
-    // unqualified present-tense claim would keep telling a user their
-    // already-fixed binding "has not fired and won't". The last-observed
-    // timestamp is what lets them tell a live incident from a resolved one.
+    // The row only proves the mismatch was OBSERVED, and it stays inside the 48h recency window for
+    // up to two days after the last occurrence.
     const observedAt = '2026-08-08T00:00:00Z';
     mockList.mockResolvedValue([BINDING]);
     mockNearMisses.mockResolvedValue([
@@ -302,9 +297,8 @@ describe('TriggersPanel — env near-miss badge (#1199)', () => {
   });
 
   it('badges EVERY current mismatch on one binding, not just the first', async () => {
-    // The #1186 root case this feature exists to catch: two orchestrator
-    // connections reporting the same DAG id against two different wrong envs.
-    // Rendering only the first would silently hide a second live mismatch.
+    // The #1186 root case this feature exists to catch: two orchestrator connections reporting the
+    // same DAG id against two different wrong envs.
     mockList.mockResolvedValue([BINDING]); // env: 'prod'
     mockNearMisses.mockResolvedValue([
       {
@@ -329,9 +323,8 @@ describe('TriggersPanel — env near-miss badge (#1199)', () => {
   });
 
   it('refetches near-misses after a binding is disabled, not just the bindings list', async () => {
-    // Disabling the binding resolves its near-miss server-side (the candidate set
-    // is re-derived from ENABLED bindings only). Reloading just the bindings would
-    // leave a warning badge sitting on a binding the user has already switched off.
+    // Disabling the binding resolves its near-miss server-side (the candidate set is re-derived
+    // from ENABLED bindings only).
     mockList.mockResolvedValue([BINDING]);
     mockToggle.mockResolvedValue({ ...BINDING, enabled: false });
     mockNearMisses.mockResolvedValue([
@@ -367,12 +360,6 @@ describe('TriggersPanel — env near-miss badge (#1199)', () => {
     expect(mockNearMisses).toHaveBeenCalledWith('s1');
   });
 
-  // The "near-miss fetch fails without blocking the bindings list" case is
-  // covered in its own file (TriggersPanel.nearMissResilience.test.tsx): mixing
-  // a rejected `listEnvNearMisses` mock into this file's other renders of the
-  // same component trips a vitest/RTL cross-test unhandled-rejection timing
-  // false-positive (confirmed via isolated bisection — the exact same test body
-  // passes reliably alone and fails only when another test in the same file
-  // also renders `TriggersPanel`), unrelated to the component's actual
-  // behaviour, which the isolated file proves out.
+  // The "near-miss fetch fails without blocking the bindings list" case is covered in its own file
+  // (TriggersPanel.nearMissResilience.test.tsx): mixing a rejected `listEnvNearMisses` mock into th
 });

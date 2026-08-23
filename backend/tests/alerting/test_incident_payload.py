@@ -1,8 +1,7 @@
 """The publisher payload carries the incident reference + evidence card (ADR 0034
 #761): after the engine reconciles a run's incidents, ``build_run_report`` attaches
 an ``IncidentCard`` per breaching check.
-
-Skips without TEST_DATABASE_URL."""
+"""
 
 from __future__ import annotations
 

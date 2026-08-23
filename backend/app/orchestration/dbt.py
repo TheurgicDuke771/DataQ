@@ -1,21 +1,4 @@
-"""dbt orchestration provider (ADR 0029) — artifact-poll + HMAC callback.
-
-dbt Core has no runs API. DataQ observes dbt builds through their **universal
-surface** — the `run_results.json` artifact plus a post-build callback — so the
-same contract works wherever dbt runs (dbt Cloud, dbt-on-Snowflake, Databricks dbt
-tasks, local compose): neutrality by construction (ADR 0010/0013). This mirrors the
-Airflow callback model (ADR 0007): a signed webhook is the near-real-time channel,
-an artifacts poll is the 10-min fallback.
-
-Orchestration provider, **not a datasource** (CLAUDE.md §4): this module implements
-the `ConnectionAdapter` seam (config validation + connectivity test) and the
-`OrchestrationProvider` seam (event parse + poll), never `CheckRunner`.
-
-Grain (ADR 0029): the connection is a dbt **project** (one artifacts deployment,
-resolved by ``project_name``); a **job** is the fine-grained trigger unit
-(``pipeline_or_dag_id``), the analog of Airflow's instance→DAG. The poll reads
-``<artifacts_uri>/<job>/latest/run_results.json`` per configured job.
-"""
+"""dbt orchestration provider (ADR 0029) — artifact-poll + HMAC callback."""
 
 from __future__ import annotations
 
@@ -49,9 +32,8 @@ _RUN_RESULTS_RELPATH = "latest/run_results.json"
 # The sibling model dependency graph, read for lineage (ADR 0034 slice 2, #759).
 _MANIFEST_RELPATH = "latest/manifest.json"
 
-# dbt node result statuses that mean the build failed (models: 'error';
-# tests: 'fail'/'error'; any: 'runtime error'). Everything else — 'success',
-# 'pass', 'skipped', 'warn' — is a non-failing outcome.
+# dbt node result statuses that mean the build failed (models: 'error'; tests: 'fail'/'error'; any:
+# 'runtime error').
 _DBT_FAILURE_STATUSES = frozenset({"error", "fail", "runtime error"})
 
 # Overall-status words the callback may send (we own the snippet, but accept both
@@ -59,9 +41,7 @@ _DBT_FAILURE_STATUSES = frozenset({"error", "fail", "runtime error"})
 _EVENT_STATUS_MAP = {
     "success": "succeeded",
     "succeeded": "succeeded",
-    # "pass" here is a dbt result status, not a password. Bandit's B105 flags it on
-    # the key name alone, so the marker below is load-bearing; it is bare because
-    # prose on that line is parsed as test ids (#806 — see services/rollup.py).
+    # "pass" here is a dbt result status, not a password.
     "pass": "succeeded",  # nosec B105
     "error": "failed",
     "fail": "failed",
@@ -70,38 +50,20 @@ _EVENT_STATUS_MAP = {
 
 
 class DbtConfig(BaseModel):
-    """Non-secret dbt orchestration-connection config (credential comes from secrets).
-
-    Maps from ``Connection.config``. ``project_name`` resolves a run to this
-    connection (``resource_config_key``). ``artifacts_uri`` is the base location of
-    the dbt artifacts — ``adls://<account>/<container>/<prefix>``,
-    ``s3://<bucket>/<prefix>``, or ``file:///<path>``; the poll reads
-    ``<artifacts_uri>/<job>/latest/run_results.json`` for each name in ``jobs``.
-
-    The per-connection secret is the artifacts-store read credential (ADLS SAS / S3
-    secret key / unused for local). ``access_key_id``/``region`` are the non-secret
-    S3 halves (required only for ``s3://``). The HMAC webhook signing key is a
-    separate app-level secret (``settings.dbt_webhook_secret_name``), not here.
-    """
+    """Non-secret dbt orchestration-connection config (credential comes from secrets)."""
 
     model_config = ConfigDict(extra="forbid")
 
     project_name: str
     artifacts_uri: str
     jobs: list[str]
-    # S3-only (non-secret half of the credential). ``endpoint_url``/
-    # ``addressing_style`` address an S3-compatible store (#1063) and carry the
-    # same meaning as on the S3 *datasource* connection — shared validation and
-    # resolution, so the artifacts poll can reach exactly the stores a check can.
+    # S3-only (non-secret half of the credential).
     region: str | None = None
     access_key_id: str | None = None
     endpoint_url: str | None = None
     addressing_style: S3AddressingStyle = "auto"
-    # Optional operator override for the lineage anchor namespace (ADR 0034, #759):
-    # dbt's manifest has no namespace, so DataQ normally infers it from existing
-    # assets. Set this (the OpenLineage namespace, e.g. `snowflake://<account>`) to
-    # pin it explicitly and bypass the inference heuristic — required for a
-    # greenfield project with no suites yet, or a multi-database project.
+    # Optional operator override for the lineage anchor namespace (ADR 0034, #759): dbt's manifest
+    # has no namespace, so DataQ normally infers it from existing assets.
     lineage_namespace: str | None = None
 
     @field_validator("artifacts_uri")
@@ -146,25 +108,7 @@ class DbtConfig(BaseModel):
 def _read_artifact(
     config: DbtConfig, job: str, secret: str | None, relpath: str = _RUN_RESULTS_RELPATH
 ) -> bytes | None:
-    """Read ``<artifacts_uri>/<job>/<relpath>``; None if absent.
-
-    ``relpath`` selects the per-job artifact — ``latest/run_results.json`` (the
-    poll default) or ``latest/manifest.json`` (lineage, #759). Dispatches on the
-    ``artifacts_uri`` scheme. Cloud SDKs are imported lazily (per
-    ``core/secrets.py``) so the module — and its unit tests, which patch this
-    function — never require azure/boto3. Transport/auth errors propagate (the poll
-    task fails soft per connection).
-
-    ``secret`` is ``str | None`` only for the `DbtConnectionAdapter.test` caller
-    (#351, `secret_optional`) — a ``file://`` artifacts path needs no credential
-    at all, so `test()` may hand in ``None``; the ``scheme == "file"`` branch
-    below never reads ``secret``, and the ``adls``/``s3`` branches (which DO
-    need a real credential) simply fail their auth call honestly if a caller
-    ever hands them ``None`` — the same "connection test failed" outcome as any
-    other bad credential, not a special case. The `OrchestrationProvider` poll
-    path (`list_recent_runs`/`read_manifest`) always resolves a real stored
-    secret and keeps passing a plain ``str``.
-    """
+    """Read ``<artifacts_uri>/<job>/<relpath>``; None if absent."""
     parsed = urlparse(config.artifacts_uri)
     scheme = parsed.scheme
 
@@ -181,10 +125,8 @@ def _read_artifact(
         account = parsed.netloc
         container, _, prefix = parsed.path.lstrip("/").partition("/")
         blob = f"{prefix}/{job}/{relpath}" if prefix else f"{job}/{relpath}"
-        # Bound socket connect/read like the ADLS datasource adapter — `test()` runs
-        # this synchronously in the request thread, so an unreachable account must
-        # fail fast, not hang. (`download_blob(timeout=)` is only the server-side op
-        # timeout, so set the client-level socket timeouts too.)
+        # Bound socket connect/read like the ADLS datasource adapter — `test()` runs this
+        # synchronously in the request thread, so an unreachable account must fail fast, not hang.
         client = BlobServiceClient(
             account_url=f"https://{account}.blob.core.windows.net",
             credential=secret,
@@ -214,9 +156,8 @@ def _read_artifact(
         region_name=config.region,
         aws_access_key_id=config.access_key_id,
         aws_secret_access_key=secret,
-        # S3-compatible store when set, AWS when None (#1063) — same resolution as
-        # the datasource adapter, so a dbt project whose artifacts sit next to the
-        # data in MinIO/Ceph polls as readily as one on AWS.
+        # S3-compatible store when set, AWS when None (#1063) — same resolution as the datasource
+        # adapter.
         endpoint_url=config.endpoint_url,
         # Bound connect/read like the S3 datasource adapter — `test()` runs this in
         # the request thread; boto3's ~60s defaults would hang on a blackholed host.
@@ -261,63 +202,27 @@ class DbtConnectionAdapter:
         "secret": ("artifacts_uri", "endpoint_url")
     }
 
-    # A local `file://` artifacts path needs no credential (the class docstring
-    # above) — mirrored by the frontend's `optionalSecret: true` for `dbt` in
-    # `connectionFormSpec.ts`. `test_connection`/`test_draft_connection` (#351)
-    # read this to decide whether a missing secret is an error or just "this
-    # project needs none"; `secret=None` then flows straight to `test`, whose
-    # `file://` branch never touches it.
+    # A local `file://` artifacts path needs no credential (the class docstring above) — mirrored by
+    # the frontend's `optionalSecret: true` for `dbt` in `connectionFormSpec.ts`.
     secret_optional = True
 
     def validate_config(self, raw: dict[str, Any]) -> DbtConfig:
         return DbtConfig.model_validate(raw)
 
     def credential_expiry(self, raw: dict[str, Any], secret: str, **_: Any) -> datetime | None:
-        """When the artifacts-store credential stops working (#838), or ``None``.
-
-        Readable only for an ``adls://`` store, whose credential is a SAS that
-        prints its own `se=`. An ``s3://`` secret key and a ``file://`` store
-        have no lifetime to read, so they stay silent rather than guessed at.
-
-        **This is the connection that caused #828**: its SAS expired, the poll
-        failed every 10 minutes into the logs alone, and prod lineage was dark
-        for six days.
-        """
+        """When the artifacts-store credential stops working (#838), or ``None``."""
         if urlparse(self.validate_config(raw).artifacts_uri).scheme != "adls":
             return None
         return azure_sas_expiry(secret)
 
     def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
-        """Read the first job's `latest/run_results.json`; raise on any failure.
-
-        A green test means the artifacts store is reachable, the credential
-        authenticates, and the first configured job has published a build. A
-        not-yet-published job (None) is still a green test — the store and
-        credential are proven; the run simply hasn't happened yet.
-
-        ``secret`` may genuinely be ``None`` (`secret_optional`, #351) — a
-        local ``file://`` artifacts path needs no credential; `_read_artifact`
-        never reads it on that path.
-        """
+        """Read the first job's `latest/run_results.json`; raise on any failure."""
         config = self.validate_config(raw)
         _read_artifact(config, config.jobs[0], secret)
 
 
 class DbtProvider:
-    """`OrchestrationProvider` for dbt — signed-callback parse + artifacts poll.
-
-    `parse_event` consumes the JSON our `integrations/dbt/` callback POSTs (we own
-    the shape): ``project_name``, ``job_name``, ``invocation_id``, ``status``
-    (+ optional ``started_at`` / ``finished_at`` / ``error``). The callback is
-    HMAC-authenticated over the raw body (ADR 0007/0029) and authoritative, so
-    there is no REST enrichment — `fetch_run_detail` is intentionally unimplemented.
-    ``invocation_id`` is the `pipeline_runs` idempotency key; it (with
-    ``project_name`` / ``job_name`` / ``status``) is required.
-
-    Both success and failure arrive on this channel; a ``succeeded`` run fires
-    `trigger_bindings`. `list_recent_runs` is the poll fallback for projects that
-    don't POST the callback — it reads each job's `run_results.json`.
-    """
+    """`OrchestrationProvider` for dbt — signed-callback parse + artifacts poll."""
 
     provider = "dbt"
     resource_config_key = "project_name"
@@ -371,30 +276,14 @@ class DbtProvider:
         raise NotImplementedError("dbt artifacts are authoritative; no REST enrichment")
 
     def read_manifest(self, config: dict[str, Any], secret: str, job: str) -> bytes | None:
-        """Read a job's ``latest/manifest.json`` for lineage (ADR 0034, #759).
-
-        The **optional** lineage capability the orchestration_service refresh hook
-        probes for via ``getattr`` — other providers (ADF / Airflow) don't have it,
-        so the hook stays provider-agnostic (CLAUDE.md §11). Reads the sibling of
-        ``run_results.json`` at the same per-job artifacts pointer; ``None`` when
-        the manifest hasn't been published. Transport/auth errors propagate to the
-        fail-open caller.
-        """
+        """Read a job's ``latest/manifest.json`` for lineage (ADR 0034, #759)."""
         cfg = DbtConfig.model_validate(dict(config))
         return _read_artifact(cfg, job, secret, _MANIFEST_RELPATH)
 
     def list_recent_runs(
         self, config: Mapping[str, Any], secret: str, since: datetime
     ) -> list[RunUpdate]:
-        """Poll each configured job's `latest/run_results.json`, newest-only.
-
-        Reads `<artifacts_uri>/<job>/latest/run_results.json` per job; emits a
-        `RunUpdate` when `metadata.generated_at >= since`. Trigger-on-success is
-        enforced downstream (`ingest_polled_runs`); the `(provider, invocation_id)`
-        upsert makes re-reading the stable `latest/` pointer idempotent. A missing
-        artifact (job not yet built) is skipped; a malformed one is skipped;
-        transport/auth errors raise (the polling task fails soft per connection).
-        """
+        """Poll each configured job's `latest/run_results.json`, newest-only."""
         cfg = DbtConfig.model_validate(dict(config))
         updates: list[RunUpdate] = []
         for job in cfg.jobs:
@@ -414,9 +303,8 @@ class DbtProvider:
                 log.warning("dbt_run_results_skipped", job=job, project=cfg.project_name)
                 continue
             finished_at = _parse_dt(metadata.get("generated_at"))
-            # `since` is always aware (UTC); only compare when generated_at parsed to
-            # an aware datetime too — a tz-naive one would TypeError and fail-soft the
-            # WHOLE connection poll (dropping every job), so include it rather than skip.
+            # `since` is always aware (UTC); only compare when generated_at parsed to an aware
+            # datetime too.
             if finished_at is not None and finished_at.tzinfo is not None and finished_at < since:
                 continue
             updates.append(

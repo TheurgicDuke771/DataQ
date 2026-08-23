@@ -34,11 +34,8 @@ import { formatTimestamp } from '../results/resultsFormat';
 import { errorMessage } from '../../utils/errors';
 
 /**
- * Surface any #1186 advisory warnings a create/enable response carried — e.g.
- * "this connection's URL is also configured on another env's connection, so a
- * run there won't match this binding." Non-blocking: the binding was already
- * saved successfully, this is purely informational (antd `message.warning`,
- * longer duration than the success toast so it's actually readable).
+ * Surface any #1186 advisory warnings a create/enable response carried — e.g. "this connection's
+ * URL is also configured on another env's connection.
  */
 function warnAboutBinding(
   message: ReturnType<typeof App.useApp>['message'],
@@ -50,28 +47,19 @@ function warnAboutBinding(
 }
 
 /**
- * Suite-detail panel for the suite's run triggers: bind an orchestrator pipeline/
- * DAG so the suite runs on that pipeline's *success* (CLAUDE.md §4 — orchestration
- * providers are never a datasource; this is the one place a pipeline id meets a
- * suite). Anyone with `view` sees the bindings; `edit`+ (`canManage`) gets the
- * add / enable-toggle / remove controls, matching the backend gate.
+ * Suite-detail panel for the suite's run triggers: bind an orchestrator pipeline/ DAG so the suite
+ * runs on that pipeline's *success* (CLAUDE.md §4.
  */
 export function TriggersPanel({ suiteId, canManage }: { suiteId: string; canManage: boolean }) {
   const { state, reload } = useAsyncData(() => listTriggerBindings(suiteId));
-  // Best-effort (#1199): the currently-active #1186 env near-misses for this
-  // suite's bindings. Fetched separately from the bindings list — a failure here
-  // must never block the bindings themselves from rendering, so only the 'ok'
-  // case yields badges.
+  // Best-effort (#1199): the currently-active #1186 env near-misses for this suite's bindings.
   const { state: nearMissState, reload: reloadNearMisses } = useAsyncData(() =>
     listEnvNearMisses(suiteId),
   );
   const nearMisses = nearMissState.status === 'ok' ? nearMissState.data : [];
 
-  // Every mutation (add / enable-toggle / delete) invalidates BOTH reads: the
-  // near-miss candidate set is re-derived server-side from the ENABLED bindings,
-  // so disabling or deleting the mismatched binding resolves its near-miss. Only
-  // reloading the bindings would leave a warning badge sitting on a binding the
-  // user just switched off until the panel remounted.
+  // Every mutation (add / enable-toggle / delete) invalidates BOTH reads: the near-miss candidate
+  // set is re-derived server-side from the ENABLED bindings.
   const onChanged = () => {
     reload();
     reloadNearMisses();
@@ -144,12 +132,8 @@ function TriggersBody({
                   binding={binding}
                   canManage={canManage}
                   onChanged={onChanged}
-                  // `filter`, not `find` (#1199 review): one binding can have
-                  // several simultaneously-current near-misses — the same DAG id
-                  // reported by two orchestrator connections in two different
-                  // wrong envs is literally the #1186 ambiguity this feature
-                  // exists to catch, and showing only the first would hide a live
-                  // mismatch behind another live one.
+                  // `filter`, not `find` (#1199 review): one binding can have several
+                  // simultaneously-current near-misses.
                   nearMisses={nearMisses.filter(
                     (nm) =>
                       nm.provider === binding.provider &&
@@ -175,10 +159,10 @@ function TriggerRow({
   binding: TriggerBinding;
   canManage: boolean;
   onChanged: () => void;
-  /** Every #1186 env near-miss currently observed for this exact binding (#1199)
-   *  — runs keep landing in each entry's `run_env`, not this binding's `env`. A
-   *  binding can have more than one at a time (one per wrong env observed), and
-   *  each gets its own badge so a second live mismatch is never hidden. */
+  /**
+   * Every #1186 env near-miss currently observed for this exact binding (#1199) — runs keep
+   * landing in each entry's `run_env`, not this binding's `env`.
+   */
   nearMisses: TriggerEnvNearMiss[];
 }) {
   const { message } = App.useApp();
@@ -253,13 +237,8 @@ function TriggerRow({
         {nearMisses.map((nearMiss) => (
           <Tooltip
             key={nearMiss.run_env}
-            // The claim is past-tense and dated, not an unqualified present-tense
-            // assertion: the row only proves the mismatch was OBSERVED, and it
-            // stays inside the recency window for up to 48h after the last
-            // occurrence — so a binding fixed an hour ago would otherwise keep
-            // being told, flatly, that it "has not fired and won't". Showing the
-            // last-observed timestamp is what lets a user tell a live incident
-            // from one they have already resolved.
+            // The claim is past-tense and dated, not an unqualified present-tense assertion: the
+            // row only proves the mismatch was OBSERVED.
             title={`Last observed ${formatTimestamp(nearMiss.updated_at)}: a run landed in "${envLabel(nearMiss.run_env as ConnectionEnv)}", not "${envLabel(nearMiss.binding_env as ConnectionEnv)}" — this binding did not fire, and won't for such runs until the envs match (#1186).`}
           >
             <Tag

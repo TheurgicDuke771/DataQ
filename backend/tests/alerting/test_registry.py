@@ -1,8 +1,4 @@
-"""Tests for the publisher registry — type, caching, reset.
-
-Delivery behaviour (per-suite config, webhook resolution, policy) is exercised
-in the DB-backed `test_teams.py`; here we only assert what the registry returns.
-"""
+"""Tests for the publisher registry — type, caching, reset."""
 
 from __future__ import annotations
 
@@ -15,9 +11,8 @@ from backend.app.alerting.noop import NoopPublisher
 
 
 def test_returns_composite_publisher() -> None:
-    # The registry returns a composite over every channel (Teams · Slack · email);
-    # each child self-no-ops per run when its channel is unconfigured (no secret /
-    # recipients), notifications are disabled, or the run is below the threshold.
+    # The registry returns a composite over every channel (Teams · Slack · email); each child self-
+    # no-ops per run when its channel is unconfigured (no secret / recipients).
     assert isinstance(registry.get_result_publisher(), CompositePublisher)
 
 

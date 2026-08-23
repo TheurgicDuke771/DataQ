@@ -1,10 +1,4 @@
-"""baseline
-
-Revision ID: 923dab15eb8c
-Revises:
-Create Date: 2026-05-24 18:14:56.201953+00:00
-
-"""
+"""baseline"""
 
 from collections.abc import Sequence
 

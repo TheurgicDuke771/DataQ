@@ -59,9 +59,7 @@ import { WINDOW_PRESETS } from '../components/shared/windowPresets';
 
 const LIST_LIMIT = 200;
 
-// Client-side pagination for the runs / pipeline-runs tables. The API already
-// caps the fetch at LIST_LIMIT; this just keeps the on-screen table to one page
-// at a time. hideOnSinglePage keeps it invisible until there's a second page.
+// Client-side pagination for the runs / pipeline-runs tables.
 const ROWS_PER_PAGE = 20;
 const tablePagination = (noun: string) => ({
   pageSize: ROWS_PER_PAGE,
@@ -70,9 +68,10 @@ const tablePagination = (noun: string) => ({
   showTotal: (total: number) => `${total} ${noun}`,
 });
 
-/** Date-window presets for the Results date filter (no true range picker → no
- *  dayjs dependency): Results' own 'all' option prepended to the presets
- *  shared with the Dashboard range selector (`WINDOW_PRESETS`). */
+/**
+ * Date-window presets for the Results date filter (no true range picker → no dayjs dependency):
+ * Results' own 'all' option prepended to the presets shared with the Dashboard range selector
+ */
 const DATE_WINDOWS = [{ value: 'all', label: 'All time' }, ...WINDOW_PRESETS] as const;
 type DateWindow = (typeof DATE_WINDOWS)[number]['value'];
 
@@ -91,31 +90,15 @@ function Filter({ label, children }: { label: string; children: React.ReactNode 
 
 export function Results() {
   const [runNowOpen, setRunNowOpen] = useState(false);
-  // Runs fetch lifted from the tabs (#349): RunsTab and PipelineRunsTab both
-  // need the same `listRuns` page — the latter only to correlate triggered DQ
-  // runs — so fetching once here and passing it down avoids two independent
-  // `listRuns` calls (antd Tabs lazy-mounts panes, so switching tabs used to
-  // mean a second, fresh fetch). This does mean the fetch now starts on page
-  // mount rather than on first visit to a given tab — the intended change.
+  // Runs fetch lifted from the tabs (#349): RunsTab and PipelineRunsTab both need the same
+  // `listRuns` page — the latter only to correlate triggered DQ runs.
   const { state: runsState, reload: reloadRuns } = useAsyncData(() =>
     listRuns({ limit: LIST_LIMIT }),
   );
-  // Last-good runs snapshot (#1114 review). PipelineRunsTab's 30s poll (armed
-  // once that tab has been visited — antd keeps panes mounted, #349) refetches
-  // this SAME shared state; before the fetch was lifted, a transient poll
-  // failure only broke the Pipeline tab's own request and was cosmetic. Now it
-  // flips the shared `runsState` to 'error' too, and `useAsyncData`'s error
-  // branch carries no data (only its 'ok' branch does) — so track the last
-  // successful page here, outside the hook, rather than changing the hook's
-  // error contract for every one of its other consumers. RunsTab uses this to
-  // keep showing the table (with an inline warning) instead of blanking to a
-  // full-page error on a background hiccup.
+  // Last-good runs snapshot (#1114 review).
   const [lastGoodRuns, setLastGoodRuns] = useState<RunListPage | null>(null);
-  // Adjust state during render (React's documented pattern for "remember the
-  // latest X"), not in an effect — an effect would commit the stale render
-  // first and only fix it up a tick later; this lint-clean form updates before
-  // the browser paints. `runsState.data` is a fresh array reference only when
-  // a fetch actually resolves, so the comparison can't loop.
+  // Adjust state during render (React's documented pattern for "remember the latest X"), not in an
+  // effect — an effect would commit the stale render first and only fix it up a tick later.
   if (runsState.status === 'ok' && runsState.data !== lastGoodRuns) {
     setLastGoodRuns(runsState.data);
   }
@@ -167,16 +150,15 @@ function RunsTab({
   reloadRuns,
 }: {
   runsState: AsyncState<RunListPage>;
-  /** The last successfully-loaded runs page, tracked by the parent (#1114) —
-   *  non-null once any fetch has ever succeeded, regardless of `state`'s
-   *  current status. */
+  /**
+   * The last successfully-loaded runs page, tracked by the parent (#1114) — non-null once any
+   * fetch has ever succeeded, regardless of `state`'s current status.
+   */
   lastGoodRuns: RunListPage | null;
   reloadRuns: () => void;
 }) {
-  // Runs come from the parent (shared with PipelineRunsTab, #349); fetch the
-  // accessible suites + connections locally (for id→name and the env /
-  // datasource of each suite), then filter everything client-side — cheap at
-  // this volume and avoids a refetch per filter change.
+  // Runs come from the parent (shared with PipelineRunsTab, #349); fetch the accessible suites +
+  // connections locally (for id→name and the env / datasource of each suite).
   const navigate = useNavigate();
   const { state: suitesState } = useAsyncData(() => listSuites());
   const { state: connectionsState } = useAsyncData(() => listConnections());
@@ -215,19 +197,12 @@ function RunsTab({
     [suiteMeta],
   );
 
-  // The data to render: the live 'ok' page, or — on 'error' — the last page
-  // that DID load, if any (#1114). Only a NEVER-successful load (no snapshot
-  // yet) is a full-page failure; a background poll failure after a prior
-  // success degrades to an inline warning instead, mirroring `metaFailed`
-  // above and `runsJoinFailed` on the Pipeline tab.
+  // The data to render: the live 'ok' page, or — on 'error' — the last page that DID load, if any
+  // (#1114).
   const runsData = state.status === 'ok' ? state.data : lastGoodRuns;
   const backgroundRunsFailed = state.status === 'error' && runsData !== null;
-  // Honest truncation (#1108) — the same disclosure the Pipeline tab makes, and
-  // the reason `/runs` gained `X-Total-Count` at all. The tab fetches ONE
-  // `LIST_LIMIT`-row page, so beyond that the table showed the most recent
-  // LIST_LIMIT runs while the footer counted them as the whole story. `total` is
-  // the caller's accessible population, unfiltered — so this describes the
-  // FETCH, not the filtered rows below it.
+  // Honest truncation (#1108) — the same disclosure the Pipeline tab makes, and the reason `/runs`
+  // gained `X-Total-Count` at all.
   const runsTruncated = runsData !== null && runsData.items.length < runsData.total;
 
   if (state.status === 'loading') return <Spin description="Loading runs…" size="large" />;
@@ -247,10 +222,8 @@ function RunsTab({
   const runs = (runsData?.items ?? []).filter((r: Run) => {
     if (status !== 'all' && r.status !== status) return false;
     if (suiteId !== 'all' && r.suite_id !== suiteId) return false;
-    // Keep runs with unknown env/datasource visible under any filter — a
-    // shared-suite viewer may lack access to the underlying connection (meta is
-    // null), and listRuns is already suite-scoped. Only exclude when the run's
-    // metadata is known and actually differs. (#348)
+    // Keep runs with unknown env/datasource visible under any filter — a shared-suite viewer may
+    // lack access to the underlying connection (meta is null), and listRuns is already suite-
     const meta = suiteMeta.get(r.suite_id);
     if (env !== 'all' && meta?.env != null && meta.env !== env) return false;
     if (category !== 'all' && meta?.category != null && meta.category !== category) return false;
@@ -273,9 +246,8 @@ function RunsTab({
       render: (s: RunStatus) => <Tag color={RUN_STATUS_COLORS[s]}>{s}</Tag>,
     },
     {
-      // Data-quality outcome (passed/total), coloured by worst severity — distinct
-      // from the execution Status, so a `succeeded` run with failing checks reads
-      // amber/red here instead of looking all-green (#423).
+      // Data-quality outcome (passed/total), coloured by worst severity — distinct from the
+      // execution Status.
       title: 'Checks',
       width: 100,
       render: (_: unknown, run: Run) =>
@@ -300,11 +272,8 @@ function RunsTab({
     },
   ];
 
-  // Env / datasource are derived from the suite→connection join (suiteMeta), so
-  // both fetches must succeed before those two filters can compute anything.
-  // Gate the selects on that combined readiness — otherwise a suites/connections
-  // load failure leaves the selects enabled but silently inert (a non-'all'
-  // choice no-ops because every meta is null). (#348)
+  // Env / datasource are derived from the suite→connection join (suiteMeta), so both fetches must
+  // succeed before those two filters can compute anything.
   const metaReady = suitesState.status === 'ok' && connectionsState.status === 'ok';
   const metaFailed = suitesState.status === 'error' || connectionsState.status === 'error';
 
@@ -425,10 +394,8 @@ function PipelineRunsTab({
   pollMs?: number;
 }) {
   const navigate = useNavigate();
-  // Pipeline runs fetched locally; the DQ runs they may have triggered come
-  // from the parent (shared with RunsTab, #349). Both auto-refreshed so a
-  // newly triggered run shows up against its pipeline run without a manual
-  // reload.
+  // Pipeline runs fetched locally; the DQ runs they may have triggered come from the parent (shared
+  // with RunsTab, #349).
   const { state, reload } = useAsyncData(() => listPipelineRuns({ limit: LIST_LIMIT }));
   const [provider, setProvider] = useState<'all' | OrchestrationProvider>('all');
   const [dateWindow, setDateWindow] = useState<DateWindow>('all');
@@ -471,12 +438,7 @@ function PipelineRunsTab({
   }
 
   const { items: pipelineRuns, total } = state.data;
-  // Honest truncation (#1108): the tab fetches a single `LIST_LIMIT`-row page,
-  // so on a monitored population bigger than that the table was silently
-  // showing "everything" when it was really the most recent LIST_LIMIT rows.
-  // `total` is the WHOLE monitored population from `X-Total-Count` — the request
-  // sends no provider/date filter, so it is deliberately not filter-scoped, and
-  // the note below must therefore describe the FETCH, never the filtered table.
+  // Honest truncation (#1108): the tab fetches a single `LIST_LIMIT`-row page.
   const truncated = pipelineRuns.length < total;
 
   const windowDays = dateWindow === 'all' ? null : Number(dateWindow);
@@ -496,24 +458,8 @@ function PipelineRunsTab({
     },
     { title: 'Pipeline / DAG', dataIndex: 'pipeline_or_dag_id' },
     {
-      // The provider's own run id — the handle for cross-referencing this run in
-      // ADF / Airflow when debugging. Copyable for exactly that. Distinct from the
-      // "DQ run" column, which links the DataQ run this pipeline triggered.
-      //
-      // Airflow's own run ids are long (`manual__2026-08-09T23:11:43.975220+00:00`),
-      // so this needs a real bound. `Typography`'s own `ellipsis` prop was inert
-      // here for the #1282 reason — and it can't be the fix either, since it would
-      // clip the copy button along with the text. Bound the id span instead and
-      // leave the button outside it.
-      //
-      // The Tooltip is not decoration: two Airflow runs from the same day differ
-      // only in the tail that the bound clips, so without a hover reveal the
-      // column would identify a run less well bounded than it did unbounded.
-      //
-      // 120px, not 150: the id span and the copy button share this 200px cell,
-      // and above 130 the button wraps to a second line — which grew every row
-      // in the table from 56px to 77px. Measured against live prod; 120 leaves
-      // margin for font-rendering differences across platforms.
+      // The provider's own run id — the handle for cross-referencing this run in ADF / Airflow when
+      // debugging.
       title: 'Provider run',
       dataIndex: 'provider_run_id',
       width: 200,
@@ -581,9 +527,8 @@ function PipelineRunsTab({
           type="info"
           showIcon
           title={`Loaded the ${pipelineRuns.length} most recent of ${total} pipeline runs`}
-          // Deliberately NOT "narrow the filters to see older runs": the provider
-          // and date selects below are client-side over this already-loaded page,
-          // so no filter choice can reach the runs that were never fetched.
+          // Deliberately NOT "narrow the filters to see older runs": the provider and date selects
+          // below are client-side over this already-loaded page.
           description="The filters below only narrow what's already loaded, so older pipeline runs can't be reached from this page."
         />
       )}

@@ -1,27 +1,4 @@
-"""Does a REST access event actually reach the database? — G1 / #431.
-
-**This file exists because every other access-event test is structurally blind to
-the question.** They run inside `db_session`'s shared, rolled-back transaction and
-read the row back through that same session — which proves the row was *added*,
-not that it *persists*. The first version of the access writer only `add`-ed it:
-`get_db` never commits (services do, and a read route has nothing of its own to
-commit), so `db.close()` rolled it straight back. The read returned 200, four
-tests passed, and **nothing was ever recorded**. A compliance control that records
-nothing while the suite says it works.
-
-The only view that can tell those apart is an **independent connection**, which by
-definition cannot see uncommitted work. That needs a database of its own — the
-shared fixture's own seed data is uncommitted too, so a second connection to it
-would see neither the seed nor the event and the test would pass vacuously for the
-wrong reason.
-
-So this builds a real database, seeds it with a real committed session, drives the
-app against it, and verifies on a second connection. Slow by the standards of this
-suite, and worth it exactly once, for the property that cannot be checked any
-other way.
-
-Needs a Postgres role able to CREATE DATABASE; skips otherwise.
-"""
+"""Does a REST access event actually reach the database? — G1 / #431."""
 
 from __future__ import annotations
 
@@ -72,10 +49,8 @@ def probe_engine() -> Iterator[Any]:
     url = TEST_DATABASE_URL.rsplit("/", 1)[0] + f"/{_DB}"
     engine = create_engine(url)
     try:
-        # The whole schema, not a hand-picked subset: the read path joins more
-        # tables than the ones this test writes (assets, incidents, …), and a
-        # missing one surfaces as an opaque UndefinedTable rather than as the
-        # property under test.
+        # The whole schema, not a hand-picked subset: the read path joins more tables than the ones
+        # this test writes (assets, incidents, …).
         Base.metadata.create_all(engine)
         yield engine
     finally:
@@ -87,13 +62,7 @@ def probe_engine() -> Iterator[Any]:
 
 
 def test_a_rest_read_commits_its_access_event(probe_engine: Any) -> None:
-    """Read on one connection; verify on another.
-
-    The verifying session is opened *after* the request completes and shares
-    nothing with it, so a row it can see is a row that was committed. That is the
-    entire point of the file, and the assertion that the earlier tests could not
-    make.
-    """
+    """Read on one connection; verify on another."""
     make_session = sessionmaker(bind=probe_engine)
 
     setup: Session = make_session()
@@ -171,17 +140,6 @@ def test_a_rest_read_commits_its_access_event(probe_engine: Any) -> None:
 def test_a_failed_report_render_leaves_no_committed_download_event(probe_engine: Any) -> None:
     """An event for a download that never happened is worse than a missing one —
     a reader cannot tell it from a real access.
-
-    **This lives here, not beside the other access-event tests, for the same
-    reason the persistence test does.** `record_access` commits, so a version that
-    recorded the download BEFORE rendering would leave a real, committed event
-    behind when the render failed. Inside the shared fixture transaction that is
-    invisible: `get_db` rolls back on the exception and the rollback unwinds the
-    fixture's savepoint, erasing the event — so the test passes either way, which
-    is exactly what happened to the first version of it.
-
-    Only a real database, where the commit is real and the rollback cannot undo
-    it, can tell the two orderings apart.
     """
     from backend.app.api.v1 import runs as runs_api
 

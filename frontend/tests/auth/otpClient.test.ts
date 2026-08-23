@@ -1,14 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-/**
- * Email-OTP transport (ADR 0032, #736).
- *
- * The seam under test is the CONTRACT with the backend, so the axios instance is
- * stubbed but the semantics are not: which HTTP verb, which path, which body, and
- * — the part that actually matters — what each failure is allowed to be turned
- * into. `probeSession` collapsing a 500 into "signed out" would be a silent
- * failure that paints a sign-in page during an outage, so it gets its own case.
- */
+/** Email-OTP transport (ADR 0032, #736). */
 
 const post = vi.fn();
 const get = vi.fn();
@@ -39,9 +31,8 @@ describe('requestCode', () => {
   });
 
   it('RESOLVES for an ineligible address — the backend answers ok either way', async () => {
-    // The anti-enumeration property (ADR 0032 decision 4) only holds if the client
-    // treats the uniform ok as success. A client that inferred "unknown address"
-    // from anything here would re-open the oracle the backend closed.
+    // The anti-enumeration property (ADR 0032 decision 4) only holds if the client treats the
+    // uniform ok as success.
     post.mockResolvedValue({ data: { status: 'ok' } });
     const { requestCode } = await load();
     await expect(requestCode('nobody@nowhere.test')).resolves.toBeUndefined();
@@ -67,9 +58,8 @@ describe('verifyCode', () => {
   });
 
   it('never returns a token — the session is the HttpOnly cookie only', async () => {
-    // If a token ever appears in this body, the ADR 0032 decision-3 property
-    // ("the SPA never holds the token") has been broken server-side, and this
-    // test is where that should be noticed.
+    // If a token ever appears in this body, the ADR 0032 decision-3 property ("the SPA never holds
+    // the token") has been broken server-side, and this test is where that should be noticed.
     post.mockResolvedValue({ data: { id: 'u1', email: 'ada@acme.io' } });
     const { verifyCode } = await load();
     const me = (await verifyCode('ada@acme.io', '123456')) as unknown as Record<string, unknown>;
@@ -110,10 +100,8 @@ describe('probeSession', () => {
   it.each([500, 502, 503, 429])(
     'RE-THROWS a %i instead of reporting "signed out"',
     async (status) => {
-      // The silent-failure case this exists to prevent: an unreachable API is not
-      // a signed-out user. Collapsing it to null paints the sign-in form during an
-      // outage and invites the user to burn a single-use code against a server
-      // that cannot check it.
+      // The silent-failure case this exists to prevent: an unreachable API is not a signed-out
+      // user.
       get.mockRejectedValue(httpError(status));
       const { probeSession } = await load();
       await expect(probeSession()).rejects.toBeTruthy();

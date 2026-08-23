@@ -90,11 +90,8 @@ describe('movedDestinationFields (#1401)', () => {
   const stored = { account: 'ab12345.eu-west-1', warehouse: 'WH' };
 
   it('treats an unwatched config as nothing moved, not everything moved', () => {
-    // The edit form seeds itself in a useEffect, so `Form.useWatch` returns
-    // undefined for the first render. Reading that as "every field changed"
-    // flashed the "Re-enter the credential" alert and a required credential
-    // input on every edit open, asserting something untrue of the current state.
-    // Invisible to an RTL test, which only observes the settled post-effect DOM.
+    // The edit form seeds itself in a useEffect, so `Form.useWatch` returns undefined for the first
+    // render.
     expect(movedDestinationFields('snowflake', undefined, stored)).toEqual([]);
   });
 
@@ -109,9 +106,8 @@ describe('movedDestinationFields (#1401)', () => {
   });
 
   it('treats a cleared optional destination as a move', () => {
-    // Distinct from `undefined`-the-whole-config above: the config IS known here
-    // and the field was emptied, which does move an S3 connection off its
-    // custom endpoint back to AWS.
+    // Distinct from `undefined`-the-whole-config above: the config IS known here and the field was
+    // emptied, which does move an S3 connection off its custom endpoint back to AWS.
     expect(movedDestinationFields('s3', {}, { endpoint_url: 'https://minio.example.com' })).toEqual(
       ['endpoint_url'],
     );

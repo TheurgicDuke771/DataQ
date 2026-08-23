@@ -1,9 +1,4 @@
-"""ADF webhook endpoint tests via TestClient against a real Postgres.
-
-get_db + get_secret_store are overridden to the test session and an in-memory
-store seeded with the webhook secret. Auth is the shared token (ADR 0006), not
-Azure AD, so no user override is needed. Skips without TEST_DATABASE_URL.
-"""
+"""ADF webhook endpoint tests via TestClient against a real Postgres."""
 
 import json
 import uuid
@@ -208,7 +203,8 @@ def test_common_alert_fired_acks_reconciling_and_enqueues_poll(
     client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A fired Common-Alert-Schema event has no runId: nothing is upserted; the
-    receiver enqueues an immediate poll and acks 200 (never a retry-storm 4xx)."""
+    receiver enqueues an immediate poll and acks 200 (never a retry-storm 4xx).
+    """
     api, _ = client
     sent: list[tuple[str, dict[str, Any] | None]] = []
     from backend.app.worker.celery_app import celery_app

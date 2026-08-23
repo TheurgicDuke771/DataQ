@@ -1,9 +1,4 @@
-"""Comparison run-path tests (ADR 0015, #794) — executor + dispatch + redaction.
-
-The #792 reader is monkeypatched (frames in-memory); the #793 engine runs for
-real, so the outcome mapping under test carries genuine bucket semantics. No
-database: a minimal fake session resolves the source connection.
-"""
+"""Comparison run-path tests (ADR 0015, #794) — executor + dispatch + redaction."""
 
 import uuid
 from typing import Any
@@ -301,9 +296,8 @@ def test_executor_source_batch_not_found_is_friendly_error(
 
 
 def test_comparison_redaction_hard_masks_raw_suffixed_policy_names() -> None:
-    # A pii_columns entry written exactly as the DISPLAYED suffixed column
-    # ("status_src") — or a real column genuinely ending in _src — must still
-    # mask; the hard-mask levels match both raw and stripped names.
+    # A pii_columns entry written exactly as the DISPLAYED suffixed column ("status_src") — or a
+    # real column genuinely ending in _src — must still mask.
     sample = {
         "mismatched": [{"order_id": "7", "status_src": "gold", "status_tgt": "gold"}],
     }
@@ -336,7 +330,8 @@ def test_comparison_samples_redact_with_suffix_stripped_policy() -> None:
 
 def test_executor_dispatches_columns_grain(monkeypatch: pytest.MonkeyPatch) -> None:
     """`comparison:columns` routes to compare_columns and maps the value-grain
-    observed shape (+ tolerance passthrough into the engine)."""
+    observed shape (+ tolerance passthrough into the engine).
+    """
     source_conn, suite_conn = _conn(), _conn()
     frames = {
         source_conn.id: pd.DataFrame({"id": [1, 2], "v": [10.0, 20.0]}),

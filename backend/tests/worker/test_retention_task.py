@@ -1,10 +1,4 @@
-"""Wiring test for the `purge_sample_failures` beat entry point.
-
-Pure-unit (no DB): the bulk-UPDATE behaviour is covered DB-backed in
-`tests/services/test_run_retention.py`. Here we only assert the task reads the
-configured retention window, delegates to the service, and always closes its
-session.
-"""
+"""Wiring test for the `purge_sample_failures` beat entry point."""
 
 from typing import Any
 

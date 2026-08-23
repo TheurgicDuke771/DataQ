@@ -1,12 +1,4 @@
-"""Fail-closed OTP configuration — ADR 0032 decision 2 (#734).
-
-The failure being prevented is specific: a deployment that boots, serves
-`/healthz`, renders a sign-in screen, and cannot log anybody in. Because
-`otp/request` answers identically for an ineligible address (anti-enumeration),
-an empty allowlist is *indistinguishable from working* to the person trying to
-sign in — nobody would see an error, they would just never receive a code. So the
-misconfiguration has to be caught at startup, naming the missing variables.
-"""
+"""Fail-closed OTP configuration — ADR 0032 decision 2 (#734)."""
 
 from __future__ import annotations
 
@@ -39,7 +31,8 @@ def _otp_settings(**overrides: Any) -> Settings:
 
 def test_a_deployment_that_configures_none_of_it_boots_normally() -> None:
     """No OTP fields touched → the whole block is inert. An Azure-only or
-    dev-bypass deployment must not have to carry any of these vars."""
+    dev-bypass deployment must not have to carry any of these vars.
+    """
     s = Settings(azure_tenant_id=None, azure_api_client_id=None)
     assert s.otp_auth_configured is False
     assert s.auth_email_configured is False
@@ -69,7 +62,8 @@ def test_a_partial_email_block_refuses_to_boot_and_NAMES_the_missing_var(
 def test_all_the_missing_vars_are_named_at_once() -> None:
     """Collected, not short-circuited — the `_validate_secret_store` precedent. An
     operator missing three should learn three, not fix one and redeploy to find
-    the next."""
+    the next.
+    """
     with pytest.raises(ValueError) as caught:
         Settings(auth_email_smtp_host="smtp.example.com", auth_otp_allowed_domains="acme.io")
     message = str(caught.value)
@@ -97,7 +91,8 @@ def test_an_allowlist_with_no_mailer_refuses_to_boot() -> None:
 def test_a_whitespace_only_value_counts_as_missing(blank: str) -> None:
     """Bare truthiness would accept `"  "` as an SMTP host, and the deployment
     would fail much later as a DNS error — pointing the operator at their network
-    instead of their env file."""
+    instead of their env file.
+    """
     kwargs = dict(_COMPLETE_EMAIL)
     kwargs["auth_email_smtp_host"] = blank
     kwargs["auth_otp_allowed_domains"] = "acme.io"
@@ -134,16 +129,16 @@ def test_the_allowlists_normalize_the_same_way_emails_do() -> None:
         auth_otp_allowed_domains=" @Acme.IO , Other.Org ",
     )
     assert s.auth_otp_allowed_email_set == frozenset({"ada@acme.io", "grace@acme.io"})
-    # A leading `@` is tolerated: `@acme.io` is what an operator naturally writes,
-    # and it would otherwise match NOTHING while looking configured — a failure the
-    # uniform response hides completely.
+    # A leading `@` is tolerated: `@acme.io` is what an operator naturally writes, and it would
+    # otherwise match NOTHING while looking configured.
     assert s.auth_otp_allowed_domain_set == frozenset({"acme.io", "other.org"})
 
 
 def test_the_oidc_allowlists_share_the_otp_normalization_rule() -> None:
     """#1386's allowlist parses through the same two helpers as the OTP one. Two
     subtly different rules on the identity surface is how one human becomes two
-    accounts (ADR 0032 decision 6), so this pins them to identical behaviour."""
+    accounts (ADR 0032 decision 6), so this pins them to identical behaviour.
+    """
     s = Settings(
         oidc_issuer="https://idp.test",
         oidc_audience="client-id",
@@ -157,7 +152,8 @@ def test_the_oidc_allowlists_share_the_otp_normalization_rule() -> None:
 
 def test_the_oidc_allowlist_reads_as_unconfigured_when_blank() -> None:
     """Whitespace-only must not read as "configured" — that would flip the gate on
-    with an empty set and lock every identity out."""
+    with an empty set and lock every identity out.
+    """
     s = Settings(
         oidc_issuer="https://idp.test",
         oidc_audience="client-id",
@@ -183,7 +179,8 @@ def test_a_blank_cookie_secure_means_infer_not_a_boot_failure(blank: str) -> Non
     """`.env.app.example` ships every optional key blank, and blank is the
     RECOMMENDED value here (infer from `X-Forwarded-Proto`). Without this, the
     shipped template would refuse to boot — pydantic parses `""` for `bool | None`
-    as an invalid boolean, not as absent."""
+    as an invalid boolean, not as absent.
+    """
     assert Settings(auth_session_cookie_secure=blank).auth_session_cookie_secure is None
 
 
@@ -194,7 +191,8 @@ def test_an_explicit_cookie_secure_still_parses(raw: str, expected: bool) -> Non
 
 def test_the_smtp_timeout_is_bounded() -> None:
     """It runs inside a sign-in request; an unbounded value would hold a worker
-    thread for the connect default."""
+    thread for the connect default.
+    """
     with pytest.raises(ValueError):
         Settings(auth_email_timeout_seconds=0)
     with pytest.raises(ValueError):
@@ -217,15 +215,7 @@ def test_an_invalid_tls_mode_is_rejected() -> None:
 def test_a_blank_transport_pair_falls_back_to_the_defaults_not_a_boot_failure(
     blank: str,
 ) -> None:
-    """Blank `AUTH_EMAIL_SMTP_PORT=` / `AUTH_EMAIL_TLS_MODE=` mean "default" (#1150).
-
-    Every other key in this block is `str | None`, where blank already reads as
-    "unset" — these two were the odd pair out, raising "unable to parse string as
-    an integer" and a bare `Literal` error at BOOT. The local stack switches its
-    whole OTP block on and off from one variable, which blanks every `AUTH_EMAIL_*`
-    at once, so without this the documented dev-bypass downgrade would fail to
-    start on exactly these two keys.
-    """
+    """Blank `AUTH_EMAIL_SMTP_PORT=` / `AUTH_EMAIL_TLS_MODE=` mean "default" (#1150)."""
     s = Settings(auth_email_smtp_port=blank, auth_email_tls_mode=blank)
     assert s.auth_email_smtp_port == 587
     assert s.auth_email_tls_mode == "starttls"
@@ -234,7 +224,8 @@ def test_a_blank_transport_pair_falls_back_to_the_defaults_not_a_boot_failure(
 def test_a_blank_transport_pair_does_NOT_make_a_partial_block_look_complete() -> None:
     """The fallback must not soften the fail-closed contract: neither field is in
     `_AUTH_EMAIL_REQUIRED`, so defaulting them can never turn a half-configured
-    mailer into a bootable one."""
+    mailer into a bootable one.
+    """
     with pytest.raises(ValueError, match="AUTH_EMAIL_PASSWORD_SECRET_NAME"):
         Settings(
             auth_email_smtp_host="smtp.example.com",
@@ -249,7 +240,8 @@ def test_a_blank_transport_pair_does_NOT_make_a_partial_block_look_complete() ->
 def test_a_blanked_mailer_block_boots_as_dev_bypass() -> None:
     """The #1150 downgrade, end to end at the config layer: the compose switch
     renders EVERY `AUTH_EMAIL_*` and the allowlist as empty strings, and that has
-    to be an inert block (dev-bypass), not a partial one (refuses to boot)."""
+    to be an inert block (dev-bypass), not a partial one (refuses to boot).
+    """
     s = Settings(
         auth_email_smtp_host="",
         auth_email_smtp_port="",
@@ -270,7 +262,8 @@ def test_an_unset_ca_bundle_boots_normally() -> None:
 
 def test_a_ca_bundle_naming_a_missing_file_refuses_to_boot_AT_BOOT(tmp_path: Path) -> None:
     """The #1146 AC: a typo'd path must fail immediately and by name, not as a
-    `FileNotFoundError` two hops away on the next sign-in attempt."""
+    `FileNotFoundError` two hops away on the next sign-in attempt.
+    """
     missing = tmp_path / "does-not-exist.pem"
     with pytest.raises(ValueError) as caught:
         Settings(auth_email_ca_bundle=str(missing))
@@ -281,7 +274,8 @@ def test_a_ca_bundle_naming_a_missing_file_refuses_to_boot_AT_BOOT(tmp_path: Pat
 
 def test_a_directory_does_not_count_as_a_bundle_file(tmp_path: Path) -> None:
     """`.is_file()`, not `.exists()` — a directory passes existence but `cafile=
-    <dir>` would fail at send time with a confusing OpenSSL error instead."""
+    <dir>` would fail at send time with a confusing OpenSSL error instead.
+    """
     with pytest.raises(ValueError) as caught:
         Settings(auth_email_ca_bundle=str(tmp_path))
     assert "AUTH_EMAIL_CA_BUNDLE" in str(caught.value)
@@ -301,7 +295,8 @@ async def test_init_auth_accepts_otp_only_and_does_not_require_azure(
 ) -> None:
     """OTP alone is a complete auth configuration — that is the gap ADR 0032
     exists to close (a non-Azure / fully-local deployment with no way to log a
-    human in)."""
+    human in).
+    """
     monkeypatch.setattr(auth_mod, "azure_scheme", None)
     monkeypatch.setattr(auth_mod, "_otp_enabled", True)
     monkeypatch.setattr(auth_mod, "_settings", _otp_settings())
@@ -354,7 +349,8 @@ def test_the_otp_ready_log_never_carries_an_address(
     monkeypatch: pytest.MonkeyPatch, capsys: Any
 ) -> None:
     """The allowlist IS the workspace member list. `_PII_KEYS` redacts an `email`
-    key, but the honest fix is not to hand it over — so the log reports a count."""
+    key, but the honest fix is not to hand it over — so the log reports a count.
+    """
     from backend.app.core.logging import configure_logging
 
     monkeypatch.setattr(auth_mod, "_settings", _otp_settings(auth_otp_allowed_emails="ada@acme.io"))

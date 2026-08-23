@@ -1,44 +1,4 @@
-"""Email one-time-code sign-in — ADR 0032 decisions 4, 5 and 6 (#734, #735, #1127).
-
-A 6-digit code carries about **20 bits** of entropy. That single fact drives every
-design choice here: the protection is the *caps*, not the hash.
-
-* 10-minute TTL, single use, at most :data:`MAX_ATTEMPTS` guesses per code.
-* A re-request supersedes every outstanding code for the address, so an attacker
-  cannot bank a pile of live codes to guess against in parallel.
-* The comparison is `hmac.compare_digest` over UTF-8 **bytes** — the digits are
-  short enough that a timing side-channel is worth denying, and encoding first is
-  mandatory because `compare_digest` raises `TypeError` on non-ASCII `str`
-  (the `api/v1/orchestration.py` precedent; a hostile code must be a 401, not a
-  500).
-* SHA-256 at rest is defence-in-depth against a database read, not a work factor.
-
-**Anti-enumeration** (decision 4): `request_code` returns the same outcome shape
-whether the address is eligible, ineligible, or throttled — and sends mail only for
-the eligible case, so nothing a caller can observe *in the response body or status*
-distinguishes "you have an account here" from "you do not".
-
-That is content-level only. The eligible path here does Redis + two DB writes + a
-synchronous mail send that the ineligible path skips, so this function's own runtime
-still varies by a factor of thousands with eligibility. The **timing** half of the
-property is not this module's to hold: `api/v1/auth_otp.py` pads every uniform
-branch out to a common floor (`AUTH_OTP_REQUEST_MIN_SECONDS`, #1137), because the
-floor has to be measured across the whole request, and because padding inside the
-service would make every non-HTTP caller (tests, a future CLI) sleep too. Keep the
-branches here as cheap or as expensive as they naturally are; do not "balance" them
-by hand — see the endpoint for the residual limits the floor does not close.
-
-`verify_code` carries the same asymmetry on a narrower scale — an address with a
-live code pays an `UPDATE … RETURNING` plus a commit before it can reach the same
-uniform `OtpVerifyError` an address with none raises off the `SELECT` — and it is
-held the same way, at the endpoint, on its own `AUTH_OTP_VERIFY_MIN_SECONDS`
-(#1141). Same rule: do not hand-balance the branches below.
-
-**Identity linking** (decision 6, #735 step 2): a successful verification resolves
-the user by unique `lower(email)`. If a row already exists — AAD-provisioned or
-not — that row *is* the user. Never two rows for one human, or suite grants,
-shares and PATs fragment across authenticators.
-"""
+"""Email one-time-code sign-in — ADR 0032 decisions 4, 5 and 6 (#734, #735, #1127)."""
 
 from __future__ import annotations
 
@@ -71,48 +31,24 @@ log = get_logger(__name__)
 CODE_DIGITS = 6
 CODE_TTL_MINUTES = 10
 #: Verification attempts allowed per code before it is dead (ADR 0032 decision 4).
-#: With 10^6 codes and a 10-minute TTL this bounds an online guess at 5e-6 per
-#: minted code — the whole security argument for a 6-digit secret.
 MAX_ATTEMPTS = 5
-#: The per-email request counter's window. Fixed at 10 minutes to match the code
-#: TTL: the quantity being bounded is "live codes an attacker can cause to be
-#: mailed to one mailbox", and that is exactly a TTL's worth.
+#: The per-email request counter's window.
 EMAIL_WINDOW_SECONDS = 600
 
 
 class CodeMailer(Protocol):
-    """What this service needs from a mailer — one method, nothing else.
-
-    A Protocol rather than the concrete `OtpMailer` so the dependency is the
-    *capability*, and so a test can substitute the transport without substituting
-    (or subclassing) the thing under test. `otp_mailer.OtpMailer` satisfies it
-    structurally; its own error types are what propagate to the caller.
-    """
+    """What this service needs from a mailer — one method, nothing else."""
 
     def send_code(self, *, to: str, code: str, expires_in_minutes: int) -> None: ...
 
 
 def normalize_email(email: str) -> str:
-    """The ONE email normalization rule: strip + lower.
-
-    Shared verbatim with `Settings.is_admin_email` (`core/config.py`) and with the
-    `uq_users_email_lower` index (`7d25617cfaf0`) — the index can only express the
-    `lower` half, so this function is where `strip` lives. Anything that keys on an
-    address goes through here; a second, subtly different rule anywhere on the
-    identity surface would silently split one human into two accounts.
-    """
+    """The ONE email normalization rule: strip + lower."""
     return email.strip().lower()
 
 
 def is_signup_eligible(email: str, settings: Settings | None = None) -> bool:
-    """Whether `email` (already normalized) may sign up / sign in via OTP.
-
-    Mandatory gating, no open registration (ADR 0032 decision 5): DataQ holds
-    failing-row samples, which are PII, so self-provisioning by anyone who can
-    receive mail is not an acceptable default. An empty allowlist means *nobody*
-    is eligible — and the startup validator refuses to boot in that state rather
-    than let the uniform response hide it.
-    """
+    """Whether `email` (already normalized) may sign up / sign in via OTP."""
     s = settings or get_settings()
     if email in s.auth_otp_allowed_email_set:
         return True
@@ -121,13 +57,7 @@ def is_signup_eligible(email: str, settings: Settings | None = None) -> bool:
 
 
 class OtpVerifyError(DataQError):
-    """The code is wrong, expired, already used, or out of attempts — always 401.
-
-    One type, one message, for every failure mode — the `ApiKeyAuthError` /
-    `SessionAuthError` discipline. Distinguishing "wrong code" from "no code was
-    ever requested for this address" would turn the verify endpoint into the
-    enumeration oracle the request endpoint was carefully built not to be.
-    """
+    """The code is wrong, expired, already used, or out of attempts — always 401."""
 
     def __init__(self) -> None:
         super().__init__(
@@ -148,18 +78,8 @@ class OtpNotConfiguredError(DataQError):
         )
 
 
-# ── Per-email request counters (#1127, service half) ─────────────────────────
-#
-# Why this is NOT `core.rate_limit.RateLimitStore`, though it is the same idea:
-# that Protocol is `async` and its Redis client is bound to the event loop the
-# middleware runs on. These endpoints are deliberately SYNCHRONOUS (`def`, so
-# Starlette runs them in a threadpool) because `otp/request` performs a blocking
-# SMTP submission — putting a five-second network call on the event loop would
-# stall every other request in the process. A sync handler cannot await an async
-# store, and driving one with `asyncio.run` per request would build and discard an
-# event loop that the cached async Redis connections are bound to. So: the same
-# fixed-window algorithm, the same key convention, a sync client with the same
-# bounded timeouts as `worker/beat_watchdog.build_store`.
+# ── Per-email request counters (#1127, service half) ───────────────────────── Why this is NOT
+# `core.rate_limit.RateLimitStore`.
 
 
 class OtpCounterStore(Protocol):
@@ -168,9 +88,8 @@ class OtpCounterStore(Protocol):
     def incr_window(self, key: str, ttl_seconds: int) -> int | None: ...
 
 
-#: This store's breaker tuning — the shared defaults (#1135), named locally so the
-#: contract is stated where the store is, and so a test can read it without
-#: reaching into `core.circuit_breaker`.
+#: This store's breaker tuning — the shared defaults (#1135), named locally so the contract is
+#: stated where the store is, and so a test can read it without reaching into
 _BREAKER_TRIP_AFTER = DEFAULT_TRIP_AFTER
 _BREAKER_OPEN_SECONDS = DEFAULT_OPEN_SECONDS
 
@@ -178,16 +97,13 @@ _BREAKER_OPEN_SECONDS = DEFAULT_OPEN_SECONDS
 def _breaker_now() -> float:
     """Clock indirection for the counter store's breaker, so a test can shift the
     open window without sleeping. Monotonic: an NTP step backwards would otherwise
-    extend an open window arbitrarily."""
+    extend an open window arbitrarily.
+    """
     return time.monotonic()
 
 
 class InMemoryOtpCounterStore:
-    """Process-local counter — for tests, never a production fallback.
-
-    A per-process fallback would silently fragment the cap across replicas, which
-    is worse than the documented fail-open: it would look like enforcement.
-    """
+    """Process-local counter — for tests, never a production fallback."""
 
     def __init__(self) -> None:
         self._counts: dict[str, int] = {}
@@ -198,27 +114,7 @@ class InMemoryOtpCounterStore:
 
 
 class RedisOtpCounterStore:
-    """INCR + EXPIRE in one pipeline, with bounded socket timeouts and a breaker.
-
-    Unbounded timeouts are the `#854` failure mode: `redis.from_url` defaults both
-    to `None`, i.e. block forever — on the sign-in path that would hang a request
-    thread rather than fail open.
-
-    **Bounded timeouts are not enough on their own (#1135).** They cap the penalty
-    when Redis is *down*; they do nothing when it is *up and degraded*, because
-    every sign-in request then serially waits out the full 0.5s before failing open,
-    against a server that is already struggling. So this store carries the same
-    consecutive-failure breaker as the rate-limit middleware: after
-    `_BREAKER_TRIP_AFTER` failures it stops dialling for `_BREAKER_OPEN_SECONDS` and
-    returns the fail-open signal immediately, reopening on a single probe.
-
-    The mechanism is `core.circuit_breaker.CircuitBreaker` — ONE implementation,
-    shared with `core.rate_limit` rather than copied (two independently drifting
-    copies of a reliability control is how one of them ends up subtly wrong). The
-    **state is per instance**, and deliberately so: folding both stores onto one
-    breaker would mean an OTP brownout switching off API rate limiting, and a
-    rate-limit brownout switching off the mail-bomb cap.
-    """
+    """INCR + EXPIRE in one pipeline, with bounded socket timeouts and a breaker."""
 
     def __init__(self, redis_url: str) -> None:
         self._redis_url = redis_url
@@ -253,9 +149,8 @@ class RedisOtpCounterStore:
             count, _ = pipe.execute()
             counted = int(count)
         except Exception:
-            # Fail OPEN, like the middleware (ADR 0035's deliberate bias:
-            # availability over enforcement). A Redis outage must not lock every
-            # user out of signing in.
+            # Fail OPEN, like the middleware (ADR 0035's deliberate bias: availability over
+            # enforcement).
             self._breaker.record_failure()
             return None
         self._breaker.record_success()
@@ -286,25 +181,14 @@ def reset_counter_state() -> None:
 
 
 def _email_bucket_key(email: str, *, now: float) -> str:
-    """`otp:req:<sha256(email)>:<window>`.
-
-    The address is **hashed** into the key, never stored in plaintext: Redis keys
-    are visible to anyone with `SCAN`, and a workspace's member list is exactly
-    what the uniform response exists to hide. The window index rides in the key so
-    there is no read-modify-EXPIRE race (the `core.rate_limit` design).
-    """
+    """`otp:req:<sha256(email)>:<window>`."""
     digest = hashlib.sha256(email.encode()).hexdigest()[:32]
     window = int(now) // EMAIL_WINDOW_SECONDS
     return f"otp:req:{digest}:{window}"
 
 
 def _within_email_quota(email: str, settings: Settings) -> bool:
-    """False when this address has already spent its window's requests.
-
-    ACTIVE regardless of `RATE_LIMIT_ENABLED` — that flag governs the HTTP
-    middleware, which dev and E2E turn off; a mail-bomb control a test harness can
-    switch off is not a control (#1127).
-    """
+    """False when this address has already spent its window's requests."""
     global _counter_unavailable_warned
     limit = settings.auth_otp_request_per_email_per_10min
     if limit <= 0:
@@ -315,10 +199,8 @@ def _within_email_quota(email: str, settings: Settings) -> bool:
     if count is None:
         if not _counter_unavailable_warned:
             _counter_unavailable_warned = True
-            # NO email, and no key (the key contains the address's digest, which is
-            # a stable per-person identifier even though it is not readable). The
-            # logger redacts an `email` KEY (`_PII_KEYS`) but this line must not
-            # rely on that: it carries neither.
+            # NO email, and no key (the key contains the address's digest, which is a stable per-
+            # person identifier even though it is not readable).
             log.warning("otp_email_counter_store_unavailable", window_seconds=EMAIL_WINDOW_SECONDS)
         return True  # fail open
     return count <= limit
@@ -332,24 +214,13 @@ def _hash_code(code: str) -> str:
 
 
 def _generate_code() -> str:
-    """A uniformly random `CODE_DIGITS`-digit string, leading zeros preserved.
-
-    `secrets.randbelow(10**n)` — not `randint`/`choice` loops — so the whole space
-    including `000000` is reachable with equal probability. A generator that never
-    emits a leading zero silently sheds ~10% of an already-small keyspace.
-    """
+    """A uniformly random `CODE_DIGITS`-digit string, leading zeros preserved."""
     return f"{secrets.randbelow(10**CODE_DIGITS):0{CODE_DIGITS}d}"
 
 
 @dataclass(frozen=True)
 class RequestOutcome:
-    """What actually happened inside `request_code`.
-
-    Deliberately NOT part of the HTTP response — the endpoint answers identically
-    in every case (ADR 0032 decision 4). This exists so the endpoint can log the
-    truth, and so tests can assert on the branch taken rather than inferring it
-    from a response that is designed to be uninformative.
-    """
+    """What actually happened inside `request_code`."""
 
     sent: bool
     reason: str  # "sent" | "ineligible" | "throttled"
@@ -362,20 +233,12 @@ def request_code(
     mailer: CodeMailer,
     settings: Settings | None = None,
 ) -> RequestOutcome:
-    """Mint and mail a code for `email`, if it is eligible and under quota.
-
-    Returns what happened; the CALLER must not vary its response on it. Raises only
-    for a genuine operator/transport failure on an eligible address (the mailer's
-    502/503 classes) — see the endpoint for why that residual asymmetry is
-    accepted.
-    """
+    """Mint and mail a code for `email`, if it is eligible and under quota."""
     s = settings or get_settings()
     normalized = normalize_email(email)
 
     if not is_signup_eligible(normalized, s):
-        # Send NOTHING. Not a "rejected" mail, not a log line naming the address —
-        # a mail here would also make DataQ a mail-bomb amplifier for arbitrary
-        # third-party addresses.
+        # Send NOTHING.
         log.info("otp_request_ineligible")
         return RequestOutcome(sent=False, reason="ineligible")
 
@@ -384,10 +247,7 @@ def request_code(
         return RequestOutcome(sent=False, reason="throttled")
 
     now = datetime.now(UTC)
-    # Supersede every outstanding code for this address BEFORE minting the new one,
-    # so at no instant are two codes live: otherwise a re-request would hand an
-    # attacker a second parallel guessing budget, and MAX_ATTEMPTS would bound
-    # nothing (ADR 0032 decision 4).
+    # Supersede every outstanding code for this address BEFORE minting the new one.
     db.execute(
         update(OtpCode)
         .where(OtpCode.email == normalized, OtpCode.consumed_at.is_(None))
@@ -404,21 +264,15 @@ def request_code(
     )
     db.commit()
 
-    # Committed BEFORE the send: if the SMTP call fails the user gets a real error
-    # and retries, and the stored code simply expires unused. The reverse order
-    # would mail a code that no row backs — the one failure the user cannot
-    # recover from, because the code in their inbox would never verify.
+    # Committed BEFORE the send: if the SMTP call fails the user gets a real error and retries, and
+    # the stored code simply expires unused.
     mailer.send_code(to=normalized, code=code, expires_in_minutes=CODE_TTL_MINUTES)
     log.info("otp_request_sent", expires_in_minutes=CODE_TTL_MINUTES)
     return RequestOutcome(sent=True, reason="sent")
 
 
 def verify_code(db: Session, email: str, code: str, *, settings: Settings | None = None) -> User:
-    """Verify `code` for `email` → the signed-in `User`, or raise `OtpVerifyError`.
-
-    On success the code is consumed atomically and the user is resolved by
-    normalized email (creating the row only if none exists).
-    """
+    """Verify `code` for `email` → the signed-in `User`, or raise `OtpVerifyError`."""
     s = settings or get_settings()
     normalized = normalize_email(email)
     now = datetime.now(UTC)
@@ -434,18 +288,6 @@ def verify_code(db: Session, email: str, code: str, *, settings: Settings | None
         raise OtpVerifyError()
 
     # ATOMIC attempt accounting, and it must be atomic in exactly this way.
-    #
-    # The obvious `row.attempts += 1; db.commit()` reads, increments in Python and
-    # writes back — so two guesses arriving together both read `attempts = 4`, both
-    # write 5, and the attacker spends ONE attempt on TWO guesses. Repeated with
-    # enough concurrency the cap stops bounding anything, which is the entire
-    # security argument for a 6-digit secret.
-    #
-    # A single `UPDATE … SET attempts = attempts + 1 … RETURNING` does the read and
-    # the write inside one statement under the row lock, so concurrent guesses are
-    # serialized and each is charged. The `consumed_at IS NULL` predicate in the
-    # same statement is what makes single-use race-proof too: exactly one of two
-    # concurrent redemptions of the same code can match it.
     updated = db.execute(
         update(OtpCode)
         .where(OtpCode.id == row.id, OtpCode.consumed_at.is_(None))
@@ -465,10 +307,8 @@ def verify_code(db: Session, email: str, code: str, *, settings: Settings | None
     if expires_at <= now:
         log.warning("otp_verify_failed", reason="expired")
         raise OtpVerifyError()
-    # Constant-time over BYTES: `hmac.compare_digest` raises TypeError on a
-    # non-ASCII `str`, and the code is caller-supplied, so a unicode payload must
-    # not reach it as text (else a 500 where a 401 belongs — the exact trap
-    # `api/v1/orchestration.py` documents on the webhook signatures).
+    # Constant-time over BYTES: `hmac.compare_digest` raises TypeError on a non-ASCII `str`, and the
+    # code is caller-supplied.
     if not hmac.compare_digest(_hash_code(code).encode("utf-8"), code_hash.encode("utf-8")):
         log.warning("otp_verify_failed", reason="mismatch", attempts=attempts)
         raise OtpVerifyError()
@@ -498,30 +338,14 @@ def verify_code(db: Session, email: str, code: str, *, settings: Settings | None
 
 
 def resolve_or_create_user(db: Session, normalized_email: str) -> User:
-    """The identity linking rule — ADR 0032 decision 6 / #735 step 2.
-
-    **One user row per normalized email.** If a row already holds this address it
-    IS the user, whether it was provisioned by Azure AD or by an earlier OTP
-    sign-in: mailbox proof is the credential, and in a single-tenant AAD the email
-    claim is tenant-controlled, so the join is trustworthy. Anything else would
-    fragment suite grants, shares and PATs across two rows for one human.
-
-    Deliberately NOT `core.auth._upsert_user`: that one conflicts on
-    `aad_object_id`, which an OTP user does not have. Its `IdentityConflictError`
-    path stays exactly as #1131 shipped it, for the AAD direction.
-    """
+    """The identity linking rule — ADR 0032 decision 6 / #735 step 2."""
     now = datetime.now(UTC)
     user = db.execute(
         select(User).where(func.lower(User.email) == normalized_email)
     ).scalar_one_or_none()
     if user is not None:
         user.last_seen_at = now
-        # Promote-only allowlist write-through (ADR 0033 decision 6). An operator
-        # added to WORKSPACE_ADMIN_EMAILS becomes a STORED admin on their next
-        # sign-in, not merely an effective one — which is what lets #742's
-        # last-admin guard, counting stored roles only, ever see them. Never
-        # writes a role down: demotion has one sanctioned route, the PATCH
-        # endpoint where the guard runs.
+        # Promote-only allowlist write-through (ADR 0033 decision 6).
         if should_promote_to_admin(normalized_email):
             user.role = ADMIN_ROLE
         db.commit()
@@ -530,11 +354,8 @@ def resolve_or_create_user(db: Session, normalized_email: str) -> User:
         id=uuid.uuid4(),
         aad_object_id=None,
         email=normalized_email,
-        # ADR 0033 decision 8's precedence lives inside `bootstrap_role`, shared
-        # with the OIDC/AAD sign-in path: the allowlist write-through WINS over
-        # the signup default, so an operator on both lists is stored `admin` at
-        # first sign-in — never `member`-stored-but-admin-effective, which would
-        # let a later env-entry removal silently demote them.
+        # ADR 0033 decision 8's precedence lives inside `bootstrap_role`, shared with the OIDC/AAD
+        # sign-in path: the allowlist write-through WINS over the signup default.
         role=bootstrap_role(normalized_email, default=get_settings().auth_otp_default_role),
         last_seen_at=now,
     )
@@ -542,9 +363,7 @@ def resolve_or_create_user(db: Session, normalized_email: str) -> User:
     try:
         db.commit()
     except IntegrityError:
-        # Two first-ever sign-ins for one address racing. `uq_users_email_lower`
-        # rejects the loser; re-reading gives it the winner's row, which is the
-        # right answer — the rule is one row per email, not "my INSERT wins".
+        # Two first-ever sign-ins for one address racing.
         db.rollback()
         existing = db.execute(
             select(User).where(func.lower(User.email) == normalized_email)
@@ -558,22 +377,7 @@ def resolve_or_create_user(db: Session, normalized_email: str) -> User:
 
 
 def purge_expired_codes(db: Session, *, older_than_hours: int = 24) -> int:
-    """Delete spent/expired code rows older than `older_than_hours`. Returns the count.
-
-    Hygiene, not security (the caps are the security): an `otp_codes` row is a hash
-    plus an address, and keeping a permanent log of who tried to sign in and when
-    is a PII retention liability with no operational value — the same reasoning as
-    the W5 sample-failure sweep.
-
-    ``older_than_hours <= 0`` no-ops (returns 0 without touching the DB) — the same
-    "clean off-switch, never an unconditional wipe" contract every sibling sweep
-    enforces (`purge_expired_sample_failures` / `sweep_orphan_assets` /
-    `sweep_orphan_secrets`, all `<retention> <= 0` → return 0). Load-bearing here,
-    not just defensive: the cutoff below is `now - older_than_hours`, so a
-    non-positive value collapses it to "now" — every row would match
-    `created_at < cutoff`, including codes minted a moment ago, not merely ones
-    instantly expiring.
-    """
+    """Delete spent/expired code rows older than `older_than_hours`. Returns the count."""
     if older_than_hours <= 0:
         return 0
     cutoff = datetime.now(UTC) - timedelta(hours=older_than_hours)

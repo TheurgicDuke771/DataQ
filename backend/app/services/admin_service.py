@@ -1,13 +1,5 @@
 """Workspace-admin read queries — the all-suites / all-users / access overview
 behind the Admin page, plus the SMTP pre-flight throttle (#1147).
-
-Deliberately *unscoped*: unlike `suite_service.list_suites` (owned-or-shared),
-these return the whole workspace, so the API layer must gate them on
-`require_workspace_admin`. Read-only, FastAPI-free (takes a `Session`).
-
-The one exception to "read-only" is `enforce_preflight_quota` at the bottom, which
-writes a counter rather than a row — see its section header for why the pre-flight
-endpoint needs a budget of its own.
 """
 
 from __future__ import annotations
@@ -55,11 +47,7 @@ class AdminSuiteRow:
     connection_name: str
     connection_type: str
     env: str
-    #: `None` once the creating user is erased (`created_by` is `SET NULL`,
-    #: #1319). The suite itself is unaffected — it still runs on its schedules and
-    #: still holds its shares — so it MUST keep appearing here. An inner join on
-    #: the author would drop exactly the suites an admin most needs to see: live,
-    #: firing, and with nobody obviously responsible for them.
+    #: `None` once the creating user is erased (`created_by` is `SET NULL`, #1319).
     owner_id: UUID | None
     owner_email: str | None
     owner_name: str | None
@@ -80,16 +68,9 @@ class AdminUserRow:
     created_at: datetime
     owned_suite_count: int
     shared_suite_count: int
-    #: The STORED `users.role`, not the effective one. The Admin UI edits this
-    #: column, so showing the resolved value would be a lie in the one place a
-    #: lie matters most: a break-glass allowlist admin would render as `admin`,
-    #: and demoting them here would appear to fail. `allowlist_admin` below
-    #: carries the other half so the UI can say why.
+    #: The STORED `users.role`, not the effective one.
     role: str
-    #: True when `WORKSPACE_ADMIN_EMAILS` grants this user admin regardless of
-    #: their stored role. Surfaced so the UI can explain a row whose stored role
-    #: is `member` but who is nonetheless an admin — and so the last-admin guard's
-    #: refusal ("allowlist admins don't count") is legible rather than baffling.
+    #: True when `WORKSPACE_ADMIN_EMAILS` grants this user admin regardless of their stored role.
     allowlist_admin: bool
 
 
@@ -106,10 +87,7 @@ class AdminAccessRow:
 
 
 def list_all_suites(session: Session) -> list[AdminSuiteRow]:
-    """Every suite with owner + datasource + check/share counts, newest first.
-
-    Counts use `distinct` because the check and share outer-joins multiply rows.
-    """
+    """Every suite with owner + datasource + check/share counts, newest first."""
     stmt = (
         select(
             Suite.id,
@@ -125,9 +103,7 @@ def list_all_suites(session: Session) -> list[AdminSuiteRow]:
             Suite.created_at,
             Suite.updated_at,
         )
-        # OUTER join on the author: a suite whose creator was erased must stay
-        # visible. An inner join silently removes it from the admin overview
-        # while it keeps running — invisible and active is the worst combination.
+        # OUTER join on the author: a suite whose creator was erased must stay visible.
         .outerjoin(User, Suite.created_by == User.id)
         .join(Connection, Suite.connection_id == Connection.id)
         .outerjoin(Check, Check.suite_id == Suite.id)
@@ -140,13 +116,7 @@ def list_all_suites(session: Session) -> list[AdminSuiteRow]:
 
 
 def get_admin_user(session: Session, user_id: UUID) -> AdminUserRow:
-    """One user's admin-overview row — the same shape `list_all_users` returns.
-
-    Scoped to one id rather than filtering the full list: that query is a
-    workspace-wide aggregate over two outer joins, so re-running it to return a
-    single row costs the whole workspace's scan on every role change. Shares the
-    builder below so the two can never disagree about what a row contains.
-    """
+    """One user's admin-overview row — the same shape `list_all_users` returns."""
     rows = _admin_user_rows(session, user_id=user_id)
     if not rows:
         raise UserNotFoundError("user not found", detail={"user_id": str(user_id)})
@@ -179,10 +149,8 @@ def _admin_user_rows(session: Session, *, user_id: UUID | None = None) -> list[A
     if user_id is not None:
         stmt = stmt.where(User.id == user_id)
     settings = get_settings()
-    # Named rather than splatted: `allowlist_admin` is NOT a column — the
-    # allowlist lives in env, not in Postgres — so it cannot ride in the SELECT,
-    # and mixing a positional splat with one keyword makes the arity impossible
-    # for a type checker to verify (and easy for the next column to break).
+    # Named rather than splatted: `allowlist_admin` is NOT a column — the allowlist lives in env,
+    # not in Postgres — so it cannot ride in the SELECT.
     return [
         AdminUserRow(
             id=row.id,
@@ -200,14 +168,9 @@ def _admin_user_rows(session: Session, *, user_id: UUID | None = None) -> list[A
 
 
 def list_all_access(session: Session) -> list[AdminAccessRow]:
-    """Full access matrix: every implicit owner + every explicit share row.
-
-    Ordered by suite name, then strongest permission first, then user email.
-    """
-    # Outer join for the same reason as `list_all_suites`: after an erasure the
-    # suite has no owner ROW, and an inner join would report that as "this suite
-    # has no owner grant" — indistinguishable, on an access-review screen, from a
-    # suite nobody was ever given access to.
+    """Full access matrix: every implicit owner + every explicit share row."""
+    # Outer join for the same reason as `list_all_suites`: after an erasure the suite has no owner
+    # ROW, and an inner join would report that as "this suite has no owner grant".
     owner_stmt = select(Suite.id, Suite.name, User.id, User.email, User.display_name).outerjoin(
         User, Suite.created_by == User.id
     )
@@ -220,10 +183,8 @@ def list_all_access(session: Session) -> list[AdminAccessRow]:
     rows = [
         AdminAccessRow(sid, sname, uid, email, name, OWNER)
         for sid, sname, uid, email, name in session.execute(owner_stmt)
-        # An erased author leaves no grant to report: the suite has no owner, and
-        # a row with a null user would render as a grant to nobody. Its ABSENCE
-        # here is correct; its absence from `list_all_suites` above would not be,
-        # which is why the two joins differ in what they do with the null.
+        # An erased author leaves no grant to report: the suite has no owner, and a row with a null
+        # user would render as a grant to nobody.
         if uid is not None
     ]
     rows += [
@@ -238,15 +199,7 @@ def list_all_access(session: Session) -> list[AdminAccessRow]:
 
 @dataclass(frozen=True)
 class WebhookConfigRow:
-    """One orchestration provider's inbound-webhook setup for the admin UI (#490).
-
-    `inbound_url` is ready to paste into the provider's webhook field. For ADF it
-    embeds the shared secret as the `?token=` query param (ADR 0006) — so this row
-    is **secret-bearing**, only returned behind `require_workspace_admin`, and must
-    never be logged. Airflow (ADR 0007) and dbt (ADR 0029) carry no URL secret
-    (HMAC signature header); the signing key lives in the secret store under
-    `signing_secret_name` and is configured in the callback snippet, not the URL.
-    """
+    """One orchestration provider's inbound-webhook setup for the admin UI (#490)."""
 
     provider: str
     auth: str
@@ -259,9 +212,6 @@ class WebhookConfigRow:
 def _safe_secret(secret_store: SecretStore, name: str) -> str | None:
     """Resolve a secret, returning None if it isn't provisioned (so the webhook
     surface degrades to a clear 'not set' marker instead of erroring).
-
-    Narrow to the store's not-found error (as the event receiver does) — an
-    unexpected error still propagates rather than masquerading as 'not set'.
     """
     try:
         return secret_store.get(name)
@@ -272,12 +222,7 @@ def _safe_secret(secret_store: SecretStore, name: str) -> str | None:
 def webhook_configs(
     session: Session, *, base_url: str, secret_store: SecretStore
 ) -> list[WebhookConfigRow]:
-    """Inbound-webhook config per orchestration provider that has a connection.
-
-    Provider-level (one shared secret per provider), so one row per provider with
-    ≥1 connection, listing the connections it covers. `base_url` is the public API
-    base (scheme+host, no trailing slash). Secret-bearing for ADF — admin-only.
-    """
+    """Inbound-webhook config per orchestration provider that has a connection."""
     base = base_url.rstrip("/")
     names_by_provider: dict[str, list[str]] = {}
     for conn in session.scalars(
@@ -288,9 +233,7 @@ def webhook_configs(
         names_by_provider.setdefault(conn.type, []).append(conn.name)
 
     settings = get_settings()
-    # The HMAC-callback providers share a row shape; only the signing key and the
-    # ADR differ. A future provider missing here fails loudly (KeyError) instead
-    # of being silently mislabeled as another provider (#647).
+    # The HMAC-callback providers share a row shape; only the signing key and the ADR differ.
     hmac_providers: dict[str, tuple[str, str]] = {
         "airflow": (settings.airflow_webhook_secret_name, "ADR 0007"),
         "dbt": (settings.dbt_webhook_secret_name, "ADR 0029"),
@@ -302,10 +245,7 @@ def webhook_configs(
             continue
         if provider == "adf":
             token = _safe_secret(secret_store, settings.adf_webhook_secret_name)
-            # URL-encode the secret: the receiver reads `token` URL-decoded, so a
-            # secret containing &/+/=/% must be percent-encoded or the pasted URL
-            # won't match (ADR 0006). bool(token) (not `is not None`) so an empty
-            # secret reads as not-configured, consistent with the placeholder.
+            # URL-encode the secret: the receiver reads `token` URL-decoded.
             token_param = (
                 quote(token, safe="")
                 if token
@@ -339,43 +279,10 @@ def webhook_configs(
     return rows
 
 
-# ── SMTP pre-flight throttle (#1147) ─────────────────────────────────────────
-#
-# `POST /admin/auth-email/test` makes a real outbound SMTP connection on every
-# call. It is admin-gated and can only ever mail the caller's own address, so it is
-# not an open relay — but it sat in the generic authenticated class
-# (`RATE_LIMIT_AUTHENTICATED_PER_MINUTE`, 300/min per token), which was sized for
-# ordinary API traffic, not for an endpoint whose whole job is a third-party
-# network call. A scripted or compromised admin token could burn hundreds of
-# connections a minute at the configured relay, and relays throttle or block a
-# sending account that behaves that way — which would take the REAL sign-in mailer
-# down with it. That is a worse outage than the misconfiguration this endpoint
-# exists to catch early.
-#
-# The mechanism is `otp_service`'s counter-store seam, reused rather than
-# reinvented: the same `OtpCounterStore` Protocol, the same fixed-window
-# INCR+EXPIRE, the same bounded socket timeouts and circuit breaker, the same
-# fail-open bias. The KEYS are separate (`preflight:` vs `otp:req:`) and are keyed
-# on the ADMIN rather than on a mailbox, so a pre-flight can never spend somebody's
-# sign-in quota and a sign-in can never spend an admin's diagnostics.
-#
-# **The same CLASS, a separate INSTANCE — and that distinction is the whole point.**
-# `RedisOtpCounterStore` carries a `CircuitBreaker` whose state #1135 made
-# per-instance *deliberately*, "so folding both stores onto one breaker would mean
-# an OTP brownout switching off API rate limiting, and a rate-limit brownout
-# switching off the mail-bomb cap". Calling `otp_service.get_counter_store()` here
-# would have re-created exactly that coupling one day after it was designed out:
-# enough Redis errors from *admin diagnostic* traffic would trip the shared breaker
-# and, for the open window, silently fail open the per-mailbox cap on the PUBLIC,
-# unauthenticated `/auth/otp/request` — a security control disabled by a brownout in
-# an unrelated subsystem. Separate keys make the budgets independent; only a
-# separate instance makes their AVAILABILITY independent. `core/rate_limit.py`
-# holds its own private `_BREAKER` for the same reason.
+# ── SMTP pre-flight throttle (#1147) ───────────────────────────────────────── `POST /admin/auth-
+# email/test` makes a real outbound SMTP connection on every call.
 
-#: The pre-flight window. Ten minutes — its own constant, deliberately not a
-#: reference to `otp_service.EMAIL_WINDOW_SECONDS`, because the two bound different
-#: quantities (diagnostic calls by one admin vs live codes into one mailbox) and a
-#: future change to either must not silently move the other.
+#: The pre-flight window.
 PREFLIGHT_WINDOW_SECONDS = 600
 
 #: This throttle's OWN store instance — never `otp_service`'s module singleton (see
@@ -402,26 +309,13 @@ def reset_preflight_counter_state() -> None:
     """Test hook mirroring `otp_service.reset_counter_state`. Called by conftest
     around every test: left set, an injected in-memory store carries counts into
     unrelated tests; left unset after one was injected, a later test reaches for a
-    real Redis client on an admin path."""
+    real Redis client on an admin path.
+    """
     set_preflight_counter_store_for_testing(None)
 
 
 class PreflightThrottledError(DataQError):
-    """Too many SMTP pre-flight tests from one admin in the window — a real 429.
-
-    A REAL 429, unlike `otp/request`'s deliberate uniform `ok`: the anti-enumeration
-    argument that makes a throttle-shaped response an oracle *there* does not apply
-    *here* at all. The caller is an already-authenticated, already-allow-listed
-    workspace admin asking about their own configuration — there is no membership
-    fact left to hide, and telling them plainly that they are hammering the relay is
-    the useful answer.
-
-    `retry_after_seconds` rides in the envelope's `detail`, mirroring the rate-limit
-    middleware's 429 body. There is no `Retry-After` **header**: the shared
-    `DataQError` handler renders body-only. Worth knowing if you are writing a
-    client against this, and not worth a bespoke exception handler for one admin
-    endpoint.
-    """
+    """Too many SMTP pre-flight tests from one admin in the window — a real 429."""
 
     def __init__(self, retry_after_seconds: int) -> None:
         super().__init__(
@@ -434,46 +328,14 @@ class PreflightThrottledError(DataQError):
 
 
 def _preflight_key(user_id: UUID, *, now: float) -> str:
-    """`preflight:<sha256(admin id)>:<window>`.
-
-    Hashed for the same reason `otp_service._email_bucket_key` hashes: Redis keys
-    are readable to anyone with `SCAN`, and a user id is a stable per-person
-    identifier even though it is not a mailbox. The window index rides IN the key,
-    so there is no read-modify-EXPIRE race.
-
-    Keyed on the user **id**, not the email: it is what `require_workspace_admin`
-    already resolved, it survives an address change, and it keeps a mailbox out of
-    the key entirely.
-
-    The `preflight:` prefix is what keeps this budget separate from the sign-in
-    counter's `otp:req:` — the shared store is a mechanism, not a shared quota.
-    """
+    """`preflight:<sha256(admin id)>:<window>`."""
     digest = hashlib.sha256(str(user_id).encode()).hexdigest()[:32]
     window = int(now) // PREFLIGHT_WINDOW_SECONDS
     return f"preflight:{digest}:{window}"
 
 
 def enforce_preflight_quota(user_id: UUID, settings: Settings | None = None) -> None:
-    """Charge this admin one pre-flight; raise `PreflightThrottledError` past the cap.
-
-    Counted BEFORE the send, so a failed submission still spends a slot — what is
-    being bounded is *connections opened at the relay*, and a relay that is already
-    refusing us is exactly when a retry loop does the most damage.
-
-    **Fails open** when the counter store is unavailable, matching
-    `otp_service._within_email_quota` and the rate-limit middleware (ADR 0035's
-    deliberate bias: availability over enforcement). A Redis outage must not take
-    the operator's only mail-configuration diagnostic away from them at the moment
-    they are most likely to need it.
-
-    The fail-open warning is emitted ONCE per process, like
-    `otp_service._counter_unavailable_warned` and `rate_limit._warn_store_unavailable_once`.
-    "An admin only calls this a few times an hour" is the assumption this whole PR
-    exists because it does not hold: the case being defended against is a scripted
-    token in a loop, and in exactly that case the store is failing open (so the cap
-    is enforcing nothing) while emitting a warning per request — the log-amplification
-    shape that starved Celery on 2026-07-13.
-    """
+    """Charge this admin one pre-flight; raise `PreflightThrottledError` past the cap."""
     s = settings or get_settings()
     limit = s.admin_email_preflight_per_10min
     if limit <= 0:
@@ -501,11 +363,8 @@ def enforce_preflight_quota(user_id: UUID, settings: Settings | None = None) -> 
         raise PreflightThrottledError(max(1, int(window_end - now)))
 
 
-# ── In-app role management (ADR 0033 decision 7, #742) ───────────────────────
-#
-# The one sanctioned way to CHANGE a workspace role. Sign-in write-through only
-# ever promotes (`core.roles.should_promote_to_admin`), deliberately, so that an
-# env edit plus a login cannot route around the guard below.
+# ── In-app role management (ADR 0033 decision 7, #742) ─────────────────────── The one sanctioned
+# way to CHANGE a workspace role.
 
 
 class RoleChangeRejectedError(DataQError):
@@ -527,35 +386,7 @@ def set_user_role(
     new_role: str,
     actor: User,
 ) -> User:
-    """Set a user's stored workspace role. Caller must already be admin-gated.
-
-    Enforces two invariants, both of which exist so that the API never returns a
-    200 for a change that will not hold:
-
-    **1. The last-admin guard.** A change must leave at least one *stored-role*
-    admin. Allowlist-resolved admins deliberately do **not** count toward it: the
-    env allowlist is the recovery mechanism, not the invariant, and an env entry
-    can disappear on the next deploy. A guard that let itself be satisfied by one
-    could be talked into emptying the workspace of real admins by an operator who
-    then removes the env var — leaving nobody who can grant admin back except
-    whoever can edit the environment.
-
-    The count is taken under `FOR UPDATE` on the admin rows, so two admins
-    demoting each other concurrently cannot both observe "there is another admin"
-    and both commit. Without the lock this is a textbook read-modify-write race
-    on an invariant, and the two transactions are individually valid.
-
-    **2. The dev-bypass identity is not manageable.** It is force-written to
-    `admin` on every request (`core.auth._get_current_user_dev_bypass`), because
-    dev bypass is a single-operator mode whose one identity IS the workspace.
-    Accepting a demotion here would return 200 and silently revert on the very
-    next request — and *succeeding* would be worse still, locking the only
-    operator out of a stack that has no other door. So it is refused, with a
-    reason.
-
-    Self-demotion is allowed when another stored admin exists — an admin stepping
-    down is legitimate; the guard already covers the case that makes it unsafe.
-    """
+    """Set a user's stored workspace role. Caller must already be admin-gated."""
     if new_role not in WORKSPACE_ROLES:
         raise RoleChangeRejectedError(
             f"unknown workspace role: {new_role!r}",
@@ -566,22 +397,8 @@ def set_user_role(
     if session.get(User, user_id) is None:
         raise UserNotFoundError("user not found", detail={"user_id": str(user_id)})
 
-    # ── Everything below decides from LOCKED state, and that is load-bearing ──
-    #
-    # An earlier cut read `target.role` before taking the lock and gated the
-    # last-admin guard on that value. Review found the bypass: with stored admins
-    # {X}, actor A starts `T → viewer` while T is still `member` (capturing
-    # previous='member'), stalls; B commits `T → admin`; C commits `X → member`
-    # (its locked read sees {X, T}, so the guard passes); A resumes — its locked
-    # read is now correctly {T}, but the guard never runs because A's *stale*
-    # `previous` says T was never an admin. Result: zero stored admins. It is the
-    # same read-modify-write race the lock exists to prevent, merely relocated
-    # onto `target.role`, and it also made the audit line's `previous_role` a lie.
-    #
-    # Two locks, always in this order (target, then the admin set), so these
-    # callers cannot deadlock against each other. Re-locking a row already held
-    # is a no-op, which is what makes the overlap when the target IS an admin
-    # harmless.
+    # ── Everything below decides from LOCKED state, and that is load-bearing ── An earlier cut read
+    # `target.role` before taking the lock and gated the last-admin guard on that value.
     target = session.execute(
         select(User).where(User.id == user_id).with_for_update()
     ).scalar_one_or_none()
@@ -593,12 +410,8 @@ def set_user_role(
     previous = target.role
 
     if previous == new_role:
-        # Idempotent, and deliberately NOT an error: a UI that re-submits the
-        # current value should not surface a failure. Checked BEFORE the
-        # dev-bypass refusal below, so that setting that identity to the role it
-        # already has stays a no-op rather than contradicting this rule. No audit
-        # line either — nothing changed, and a log of non-events dilutes the ones
-        # that matter.
+        # Idempotent, and deliberately NOT an error: a UI that re-submits the current value should
+        # not surface a failure.
         return target
 
     if target.aad_object_id == DEV_BYPASS_AAD_OID or target.email == DEV_BYPASS_EMAIL:
@@ -608,9 +421,8 @@ def set_user_role(
             detail={"user_id": str(user_id)},
         )
 
-    # `target.id in admin_ids`, not `previous == ADMIN_ROLE`: both now come from
-    # the same locked snapshot, but reading membership from the set that the
-    # guard actually counts keeps the two from ever drifting apart again.
+    # `target.id in admin_ids`, not `previous == ADMIN_ROLE`: both now come from the same locked
+    # snapshot.
     if target.id in admin_ids and admin_ids <= {target.id}:
         raise RoleChangeRejectedError(
             "cannot remove the last workspace admin — promote another user to "
@@ -620,23 +432,7 @@ def set_user_role(
         )
 
     target.role = new_role
-    # The durable record (ADR 0041 phase 1, #1318). `before` is built from the
-    # LOCKED read's `previous`, not by snapshotting `target` a second time — the
-    # row's `role` has just been reassigned in memory, so a fresh snapshot would
-    # record the new value as the old one. This is the same reason the log line
-    # below uses `previous` rather than re-reading.
-    #
-    # ADR 0041 §2.5 lists this event as "prospective — ADR 0033 unbuilt", which
-    # was true when the ADR was written and is not now: `users.role` shipped with
-    # #740-#742. ADR 0033 §7 names a durable record of role changes as a
-    # requirement, and the ADR's own precondition was that the substrate precede
-    # the slice — it did not, so the event is wired here instead.
-    #
-    # Same-transaction and BEFORE the commit, unlike the log line: the two have
-    # deliberately opposite failure modes. A failed audit write must roll the role
-    # change back (fail-closed — a privilege change that is not recorded must not
-    # happen), whereas the log line must never claim a change that rolled back,
-    # which is why it stays after.
+    # The durable record (ADR 0041 phase 1, #1318).
     audit_service.record(
         session,
         action="user.role_change",
@@ -649,15 +445,8 @@ def set_user_role(
     session.commit()
     session.refresh(target)
 
-    # This line is no longer the whole guarantee that a role change is never
-    # silent — `audit_events` is — but it stays: it is what a live operator
-    # watching logs sees, and it is `request_id`-correlated with the audit row.
-    # It carries actor, target and both ends of the change, and is emitted AFTER
-    # the commit so it can never claim a change that rolled back. `previous` comes
-    # from the locked read, so it cannot report a value that was already stale
-    # when the change was decided. Emails are omitted: ids correlate, and
-    # `_PII_KEYS` redacting an `email` key is a backstop, not a reason to hand one
-    # over.
+    # This line is no longer the whole guarantee that a role change is never silent — `audit_events`
+    # is — but it stays: it is what a live operator watching logs sees.
     log.info(
         "workspace_role_changed",
         actor_id=str(actor.id),

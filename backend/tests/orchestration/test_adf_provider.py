@@ -1,8 +1,4 @@
-"""AdfProvider tests — parse_event (payload → RunUpdate) + fetch_run_detail (ARM REST).
-
-Pure unit tests (no DB): parse_event transforms bytes → DTO; fetch_run_detail's
-HTTP calls are monkeypatched.
-"""
+"""AdfProvider tests — parse_event (payload → RunUpdate) + fetch_run_detail (ARM REST)."""
 
 import json
 from typing import Any

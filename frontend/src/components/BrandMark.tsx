@@ -1,11 +1,6 @@
 import { BRAND } from '../theme';
 
-/**
- * The DataQ app glyph: a two-tone indigo yin-yang. The balance motif nods at
- * DataQ's pass/fail, expected/observed duality. Self-contained colours (dark +
- * light indigo) keep it legible on any light surface. Shared by the app header,
- * the page watermark, and the login page so the mark is defined once.
- */
+/** The DataQ app glyph: a two-tone indigo yin-yang. */
 export function BrandMark({ size = 30 }: { size?: number }) {
   const dark = BRAND.primary;
   const light = BRAND.primarySoft; // indigo-200

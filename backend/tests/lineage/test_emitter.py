@@ -1,10 +1,4 @@
-"""Tests for the OpenLineage emitter — the env gate + the pure event builders.
-
-No network, no DB: the gate is exercised via monkeypatched env vars, and the
-builders run over transient (session-less) model instances. The PII property is
-asserted by serializing a whole terminal event and checking a sample-row sentinel
-never appears.
-"""
+"""Tests for the OpenLineage emitter — the env gate + the pure event builders."""
 
 from __future__ import annotations
 
@@ -284,9 +278,8 @@ def test_assertions_facet_maps_check_result_pairs() -> None:
     event = emitter.build_terminal_event(run, _suite(), asset, checks, results)
     facet = event.inputs[0].inputFacets["dataQualityAssertions"]
 
-    # skip AND operational error are omitted (neither is a DQ verdict — an errored
-    # check as success=False would read downstream as "the data failed this check");
-    # the three evaluated outcomes map through.
+    # skip AND operational error are omitted (neither is a DQ verdict — an errored check as
+    # success=False would read downstream as "the data failed this check").
     assert len(facet.assertions) == 3
     by_assertion = {a.assertion: a for a in facet.assertions}
     assert "expect_range" not in by_assertion
@@ -332,8 +325,7 @@ def test_volume_metric_populates_row_count() -> None:
     results = [
         _result(other, status="pass"),
         # metric_value is the DEVIATION %, not the count — the count is the
-        # observed_value["row_count"] aggregate (monitors.py). 12.5 here proves
-        # the facet reads the count, never the banded metric.
+        # observed_value["row_count"] aggregate (monitors.py). 12.5 here proves the facet reads the
         _result(
             volume,
             status="pass",

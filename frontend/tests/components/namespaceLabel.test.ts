@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { datasourceKind, namespaceLabel } from '../../src/components/assets/namespaceLabel';
 
-// The human label for an OL namespace (#830). The namespace stays the identity;
-// this is only what we print. Two load-bearing properties:
-//   1. it NEVER renders blank for any namespace — an unknown one degrades to
-//      "ugly but true", never to nothing;
-//   2. it never prints a credential-adjacent identifier (the backend's
-//      `strip_uri_credentials` deliberately KEEPS `username@` when it strips the
-//      password, so namespaces genuinely arrive carrying a DB username).
+// The human label for an OL namespace (#830).
 describe('namespaceLabel', () => {
   describe('recognised datasources', () => {
     it('names a Snowflake account, preserving its case', () => {
@@ -45,9 +39,8 @@ describe('namespaceLabel', () => {
     });
 
     it('never prints the userinfo, even when there is no database path to fall back to', () => {
-      // The bug the review caught: with no path, the label fell back to the raw
-      // authority — which still carried `someuser@`. The backend keeps the username
-      // when it strips the password, so this shape is real, not hypothetical.
+      // The bug the review caught: with no path, the label fell back to the raw authority — which
+      // still carried `someuser@`.
       const label = namespaceLabel('postgresql+psycopg2://someuser@some-host:5432');
       expect(label).toBe('some-host:5432');
       expect(label).not.toContain('someuser');
@@ -61,9 +54,7 @@ describe('namespaceLabel', () => {
     });
 
     it('names a REST catalog by its host, not by its API route', () => {
-      // `https://host/v1` — the path is a route, not a name. Labelling by the last
-      // path segment would print a meaningless `v1`, and two different REST catalogs
-      // would read IDENTICALLY. For http/https/thrift/grpc the host IS the catalog.
+      // `https://host/v1` — the path is a route, not a name.
       expect(namespaceLabel('https://rest-catalog.example.com/v1')).toBe(
         'rest-catalog.example.com',
       );
@@ -87,10 +78,7 @@ describe('namespaceLabel', () => {
     });
 
     it('claims no source for a URI namespace whose type it cannot prove', () => {
-      // An Iceberg namespace is a bare catalog URI of ANY scheme, so a URI alone
-      // proves nothing. Guessing "Iceberg" would mislabel the first datasource that
-      // ships a URI namespace — and would contradict `datasourceKind`, which answers
-      // `other` here for the same reason. Shorten it; don't name it.
+      // An Iceberg namespace is a bare catalog URI of ANY scheme, so a URI alone proves nothing.
       expect(namespaceLabel('kafka://broker:9092')).toBe('broker:9092');
       expect(datasourceKind('kafka://broker:9092')).toBe('other');
     });
@@ -134,9 +122,8 @@ describe('namespaceLabel', () => {
   });
 });
 
-// `datasourceKind` and `namespaceLabel` are driven by ONE scheme table precisely so
-// they cannot drift (they used to be two hand-synced prefix lists — add `gs://` to
-// one and you get an `S3 ·` label under an `other` icon).
+// `datasourceKind` and `namespaceLabel` are driven by ONE scheme table precisely so they cannot
+// drift (they used to be two hand-synced prefix lists.
 describe('datasourceKind', () => {
   it.each([
     ['snowflake://acct', 'snowflake'],
@@ -169,9 +156,8 @@ describe('datasourceKind', () => {
 
 describe('namespaceLabel edges the spike found unasserted (#898)', () => {
   it('trims surrounding whitespace before parsing', () => {
-    // Dropping the `.trim()` survived: a stored namespace with a stray leading
-    // space stops matching any scheme and falls through to the raw string, so the
-    // label silently degrades from "Snowflake · ACCT" to the whole URI.
+    // Dropping the `.trim()` survived: a stored namespace with a stray leading space stops matching
+    // any scheme and falls through to the raw string.
     expect(namespaceLabel('  snowflake://acct  ')).toBe(namespaceLabel('snowflake://acct'));
   });
 
@@ -182,9 +168,8 @@ describe('namespaceLabel edges the spike found unasserted (#898)', () => {
   });
 
   it('reads the host as the catalog for a REST/thrift scheme', () => {
-    // The HOST_IS_THE_CATALOG entries mutate to '' unkilled — with an empty set,
-    // a REST catalog would be parsed as a driver DSN and labelled by a path
-    // segment instead of its host.
+    // The HOST_IS_THE_CATALOG entries mutate to '' unkilled — with an empty set, a REST catalog
+    // would be parsed as a driver DSN and labelled by a path segment instead of its host.
     expect(namespaceLabel('https://rest-catalog.example.com/v1/namespaces')).toBe(
       'rest-catalog.example.com',
     );

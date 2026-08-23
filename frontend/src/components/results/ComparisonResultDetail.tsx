@@ -35,9 +35,8 @@ const PER_COLUMN_BUCKETS: [string, string][] = [
 ];
 
 /**
- * Expanded-row detail for a comparison result (ADR 0015 §4): the bucket counts,
- * the redacted per-bucket samples, and the on-demand report download (derived
- * server-side from the same redacted buckets — never stored).
+ * Expanded-row detail for a comparison result (ADR 0015 §4): the bucket counts, the redacted per-
+ * bucket samples.
  */
 export function ComparisonResultDetail({ runId, result }: { runId: string; result: Result }) {
   const observed = (result.observed_value ?? {}) as Record<string, unknown>;

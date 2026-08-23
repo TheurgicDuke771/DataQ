@@ -5,18 +5,8 @@ import type { ReactNode } from 'react';
 import { BRAND } from '../../theme';
 
 /**
- * A single KPI tile on the dashboard (prototype `MetricCard`): a label, a large
- * value, an optional unit suffix, an optional progress bar, an optional
- * period-over-period delta, and an optional footnote — fronted by a tinted
- * icon chip.
- *
- * The delta (#352) is backed by a real prior-window aggregate from the summary
- * endpoint — `null`/omitted renders nothing rather than a fabricated 0 (KPI
- * honesty, ADR 0022 / 0018). `deltaGoodWhen` colours it by whether the
- * movement is an improvement ('down' for durations).
- *
- * `value === null` renders an em dash (no data for the window) rather than 0,
- * so an empty workspace reads as "nothing yet", not "scored zero".
+ * A single KPI tile on the dashboard (prototype `MetricCard`): a label, a large value, an optional
+ * unit suffix, an optional progress bar, an optional period-over-period delta.
  */
 interface MetricCardProps {
   label: string;

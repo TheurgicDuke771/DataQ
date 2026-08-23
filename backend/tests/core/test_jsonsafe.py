@@ -86,9 +86,8 @@ def test_numpy_nan_becomes_none() -> None:
 def test_pandas_na_and_nat_become_none() -> None:
     import pandas as pd
 
-    # Arrow-backed frames (the iceberg native read, #716) surface null cells to GX
-    # payloads as pd.NA / pd.NaT — neither is JSON-serializable and either would
-    # break the results JSONB insert (#751, hit live on the first Flow-D run).
+    # Arrow-backed frames (the iceberg native read, #716) surface null cells to GX payloads as pd.NA
+    # / pd.NaT.
     cleaned = sanitize_json({"partial_unexpected_list": [pd.NA, "SUP-0001"], "last_seen": pd.NaT})
     assert cleaned == {"partial_unexpected_list": [None, "SUP-0001"], "last_seen": None}
     json.dumps(cleaned, allow_nan=False)  # round-trips cleanly
@@ -97,10 +96,8 @@ def test_pandas_na_and_nat_become_none() -> None:
 def test_decimal_becomes_float() -> None:
     import decimal
 
-    # Warehouse (SQLAlchemy/Snowflake) NUMERIC columns surface as decimal.Decimal in
-    # a failing check's observed-value/failing-sample payload (#1273, reproduced live
-    # on a Snowflake range check that genuinely failed — a passing check never
-    # surfaces one, which is why this went unnoticed).
+    # Warehouse (SQLAlchemy/Snowflake) NUMERIC columns surface as decimal.Decimal in a failing
+    # check's observed-value/failing-sample payload (#1273.
     cleaned = sanitize_json({"observed_value": decimal.Decimal("1234.56")})
     assert cleaned == {"observed_value": 1234.56}
     assert type(cleaned["observed_value"]) is float
@@ -130,10 +127,8 @@ def test_timestamps_and_dates_become_isoformat() -> None:
 
     import pandas as pd
 
-    # Arrow-backed frames yield pd.Timestamp sample values, and GX coerces
-    # between-style kwargs into datetime.date in expected_value — JSON has no
-    # native form for either (#751 review, both reproduced live). NaT keeps
-    # mapping to None (sentinel branch wins over its .isoformat()).
+    # Arrow-backed frames yield pd.Timestamp sample values, and GX coerces between-style kwargs into
+    # datetime.date in expected_value — JSON has no native form for either (#751 review.
     cleaned = sanitize_json(
         {
             "partial_unexpected_list": [pd.Timestamp("2099-01-01 00:00:00")],

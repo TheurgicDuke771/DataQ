@@ -1,11 +1,4 @@
-"""poll_orchestration_runs task-core tests against a real Postgres (db_session).
-
-`_poll_orchestration_runs` is the testable core: it loops orchestrator
-connections, asks each provider's `list_recent_runs` for recent runs, and hands
-them to `ingest_polled_runs`. The provider REST call is faked (the live ARM /
-Airflow REST is the deferred smoke); the DB round-trip is real. Skips without
-TEST_DATABASE_URL.
-"""
+"""poll_orchestration_runs task-core tests against a real Postgres (db_session)."""
 
 import uuid
 from datetime import UTC, datetime
@@ -151,7 +144,8 @@ def test_default_poll_uses_15min_lookback(db_session: Any, monkeypatch: Any) -> 
 def test_gap_recovery_widens_lookback_to_one_hour(db_session: Any, monkeypatch: Any) -> None:
     """B2: the gap-recovery sweep asks the provider for a full hour back, not the
     15-min poll window — so a run that completed during a ~40-min outage (older
-    than the poll window, never recorded) is still in range to be re-ingested."""
+    than the poll window, never recorded) is still in range to be re-ingested.
+    """
     conn = _adf_connection(db_session)
     provider = _FakeProvider(recent=[_succeeded(conn.config["factory_name"])])
     monkeypatch.setattr(tasks, "get_orchestration_provider", lambda _t: provider)
@@ -170,7 +164,8 @@ def test_gap_recovery_widens_lookback_to_one_hour(db_session: Any, monkeypatch: 
 
 def test_recover_orchestration_gaps_task_uses_gap_lookback(monkeypatch: Any) -> None:
     """The beat entry point delegates to the shared poll core with the wider
-    lookback and closes its session."""
+    lookback and closes its session.
+    """
     captured: dict[str, Any] = {}
 
     class _Session:
@@ -201,13 +196,7 @@ def test_recover_orchestration_gaps_task_uses_gap_lookback(monkeypatch: Any) -> 
 
 
 def test_beat_start_signal_dispatches_startup_tasks(monkeypatch: Any) -> None:
-    """beat_init → the one-off startup tasks, enqueued by name (once per beat).
-
-    Credential-expiry refresh is here because its own schedule is DAILY: without a
-    startup kick, a freshly deployed instance shows `credential_expires_at` NULL
-    for up to 24h, which renders as "nothing expires soon" rather than "we have
-    not looked yet" (#1024 — observed on prod after the 2026-07-26 deploy).
-    """
+    """beat_init → the one-off startup tasks, enqueued by name (once per beat)."""
     from backend.app.worker import celery_app as celery_mod
 
     sent: list[str] = []
@@ -219,12 +208,7 @@ def test_beat_start_signal_dispatches_startup_tasks(monkeypatch: Any) -> None:
 
 
 def test_one_failing_startup_dispatch_does_not_skip_the_others(monkeypatch: Any) -> None:
-    """Each task is guarded independently.
-
-    A single `try` around the loop would mean the first broker hiccup silently
-    dropped every later task — and the failure would look identical to success,
-    since dispatch is fire-and-forget.
-    """
+    """Each task is guarded independently."""
     from backend.app.worker import celery_app as celery_mod
 
     sent: list[str] = []

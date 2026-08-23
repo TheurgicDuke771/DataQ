@@ -8,9 +8,10 @@ import { errorMessage } from '../../utils/errors';
 
 const SKIP_STORAGE_KEY = 'dataq:profileCompletionPrompt:skipped';
 
-/** Read/write through `sessionStorage`, failing open (never throwing) so a
- *  private-browsing tab or a storage-disabled browser degrades to "the prompt
- *  may reappear more than once" rather than a broken app. */
+/**
+ * Read/write through `sessionStorage`, failing open (never throwing) so a private-browsing tab or
+ * a storage-disabled browser degrades to "the prompt may reappear more than once" rather than a br
+ */
 function readSkipped(): boolean {
   try {
     return sessionStorage.getItem(SKIP_STORAGE_KEY) === '1';
@@ -27,29 +28,7 @@ function markSkipped(): void {
   }
 }
 
-/**
- * First-login profile completion (#1139) — `otp` mode only.
- *
- * Email-OTP sign-in is deliberately credential-only (no sign-up form, ADR
- * 0032 — collecting profile fields before the mailbox is proven would invite
- * junk rows for addresses that never complete verification), so the very
- * first user row has `display_name: NULL`. Left alone, shares and the admin
- * user list render a bare email for that person forever, since nothing else
- * points them at the Profile page's edit affordance.
- *
- * Skippable, and skipping never re-nags for the rest of the browser session:
- * the name is cosmetic — it is never read as an authz input anywhere in the
- * app — so blocking on it would be actively hostile. "Session" here is
- * `sessionStorage`: it survives a reload of the same tab (the modal doesn't
- * reappear on every navigation within one visit) but clears when the tab
- * closes, which is what a user means by "this session". Closing the modal
- * any other way (Esc, the X) counts as skip too — there is no dedicated
- * "close without deciding" state worth modelling here.
- *
- * Mounted once, high in the tree (inside `AuthGate`, so it only exists for a
- * signed-in user) — `shouldShow` is the only gate; there's no separate
- * "mount when needed" wiring.
- */
+/** First-login profile completion (#1139) — `otp` mode only. */
 export function ProfileCompletionPrompt() {
   const me = useMe();
   const save = useSaveDisplayName();

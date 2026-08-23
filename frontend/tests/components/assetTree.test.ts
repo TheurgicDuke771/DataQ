@@ -125,10 +125,8 @@ describe('expandableKeys', () => {
 // ── mutation-spike gaps (#898) ────────────────────────────────────────────────
 
 describe('sibling ordering is deterministic (#898)', () => {
-  // The comparators mutated to `true`, `false` and `() => undefined` with the
-  // suite still green: nothing asserted ORDER, only membership. A browse tree
-  // that reshuffles between renders is a real defect — the user loses their place
-  // — and it is invisible to every "does the node exist" assertion.
+  // The comparators mutated to `true`, `false` and `() => undefined` with the suite still green:
+  // nothing asserted ORDER, only membership.
   it('sorts children by label', () => {
     const tree = buildAssetTree([
       asset({ id: '3', namespace: 'snowflake://a', name: 'DB.S.ZEBRA' }),

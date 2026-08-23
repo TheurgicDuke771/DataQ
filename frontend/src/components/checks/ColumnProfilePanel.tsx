@@ -24,29 +24,8 @@ import { formatScalar } from '../results/resultsFormat';
 import { errorMessage } from '../../utils/errors';
 
 /**
- * Inline column-profiler panel for the check editor: profiles one column of the
- * suite's run target (#215) — nulls, distinct count, min/max, top values — so
- * the author can ground a check's config (a value range, an allowed set, a null
- * threshold) in the real data before saving. Reads-only, persists nothing
- * (`POST /suites/{id}/profile`). Shared by the create page (`CheckNew`) and the
- * edit page (`CheckEdit`).
- *
- * The profiled column pre-fills from the check's `column` config field (so
- * picking a column for the expectation primes the profiler), but stays editable
- * so the author can explore neighbouring columns. Collapsed by default to keep
- * the editor uncluttered — it's an opt-in aid, not always-on.
- *
- * The column input is a **combobox** (autocomplete) whose suggestions are the
- * target's actual columns (#474), introspected lazily when the panel first opens
- * (the lookup hits the warehouse, so not on mount). It stays free-text: the
- * author can always type a column the introspection didn't return (a new column,
- * a case-folded name, one a view hides), and if introspection fails or returns
- * nothing (no credential, unreachable warehouse) it's simply a plain text box —
- * the profiler is never *blocked* on introspection.
- *
- * Backend limits surface as the API's error message (e.g. no credential,
- * unreachable warehouse); the button is disabled with a reason until the suite
- * has a table/file target and a column is entered.
+ * Inline column-profiler panel for the check editor: profiles one column of the suite's run target
+ * (#215) — nulls, distinct count, min/max, top values.
  */
 export function ColumnProfilePanel({
   suiteId,
@@ -61,9 +40,7 @@ export function ColumnProfilePanel({
 }) {
   const profileTarget = extractProfileTarget(target);
 
-  // Pre-fill from the check's column, but let the author override. Render-phase
-  // sync (React's "adjust state when a prop changes" pattern) so picking the
-  // expectation's column primes the input without an effect round-trip.
+  // Pre-fill from the check's column, but let the author override.
   const [value, setValue] = useState(column ?? '');
   const [prevColumn, setPrevColumn] = useState(column);
   if (column !== prevColumn) {
@@ -78,10 +55,7 @@ export function ColumnProfilePanel({
     | { status: 'error'; error: string }
   >({ status: 'idle' });
 
-  // Column introspection for the dropdown (#474). Fetched once, lazily, the first
-  // time the panel is expanded (event-driven — the lookup is a live warehouse
-  // round-trip and the panel is collapsed by default). A suite's target is fixed
-  // while authoring its checks, so a fetch-on-open is sufficient.
+  // Column introspection for the dropdown (#474).
   const [cols, setCols] = useState<
     | { status: 'idle' }
     | { status: 'loading' }
@@ -96,11 +70,7 @@ export function ColumnProfilePanel({
       .catch(() => setCols({ status: 'error' }));
   };
 
-  // Introspected columns as autocomplete suggestions. A combobox (not a hard
-  // Select) so the author can always free-type a column the introspection didn't
-  // return — a newly-added column, a case-folded name, a column a view hides —
-  // exactly as the old free-text input allowed. Empty until columns load (or if
-  // introspection fails), in which case it's just a plain text box with no list.
+  // Introspected columns as autocomplete suggestions.
   const options = cols.status === 'loaded' ? cols.columns.map((c) => ({ value: c })) : [];
 
   const disabledReason = !profileTarget

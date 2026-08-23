@@ -1,24 +1,4 @@
-"""Nothing in the app may mutate or delete an existing audit row — ADR 0041 §2.7
-(#1318).
-
-The database half of this guard ships in the migration (`REVOKE UPDATE, DELETE ON
-audit_events`), and `tests/db/test_audit_retention_privileges.py` proves it bites
-against a role that is not a superuser. This file is the **application** half, and
-it exists because the database half is deliberately weak: the table's owner can
-grant the privileges straight back — the retention sweep does exactly that, by
-necessity — so "the database will stop us" is not a guarantee the code can lean
-on.
-
-**It scans the real source rather than a registry.** ADR 0039's orphan-secret
-sweep shipped an introspection guard that iterated *the objects already registered
-with it*, so a new one was invisible to the very check meant to catch it. Source
-text has no such blind spot: a mutation written anywhere under `backend/app`
-appears here whether or not its author knew this test existed.
-
-The one sanctioned exception is the retention sweep, named explicitly rather than
-pattern-matched, so adding a second exception is a deliberate edit to a list a
-reviewer can read.
-"""
+"""Nothing in the app may mutate or delete an existing audit row — ADR 0041 §2.7 (#1318)."""
 
 from __future__ import annotations
 
@@ -27,17 +7,11 @@ from pathlib import Path
 
 _APP = Path(__file__).resolve().parents[2] / "app"
 
-#: The single module allowed to delete audit rows: the retention sweep, which ADR
-#: 0041 §2.7 requires and which re-grants the privilege around its own statement.
-#: A path, not a regex — an exception you have to spell out is one a reviewer
-#: notices.
+#: The single module allowed to delete audit rows: the retention sweep, which ADR 0041 §2.7 requires
+#: and which re-grants the privilege around its own statement.
 _DELETE_ALLOWED = {"services/audit_read_service.py"}
 
-#: No module at all may UPDATE an audit row. There is no legitimate reason: an
-#: event records something that already happened, so a correction is a new event,
-#: never an edit. G2 erasure (#432) will need to pseudonymize `actor_label` in
-#: place — when it does, it belongs on this list with its own justification, which
-#: is precisely the conversation this empty set is here to force.
+#: No module at all may UPDATE an audit row.
 _UPDATE_ALLOWED: set[str] = set()
 
 
@@ -48,7 +22,8 @@ def _python_sources() -> list[Path]:
 def _calls_on_audit_event(tree: ast.AST, func_names: set[str]) -> bool:
     """Whether the module calls one of `func_names` with `AuditEvent` as an
     argument — `delete(AuditEvent)`, `update(AuditEvent)`, the SQLAlchemy Core
-    forms a bulk mutation actually uses."""
+    forms a bulk mutation actually uses.
+    """
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -67,7 +42,8 @@ def _calls_on_audit_event(tree: ast.AST, func_names: set[str]) -> bool:
 
 def test_only_the_retention_sweep_deletes_audit_rows() -> None:
     """A `delete(AuditEvent)` anywhere else is the failure this table exists to
-    prevent: the record of an act disappearing more quietly than the act did."""
+    prevent: the record of an act disappearing more quietly than the act did.
+    """
     offenders = []
     for path in _python_sources():
         rel = str(path.relative_to(_APP))
@@ -86,7 +62,8 @@ def test_only_the_retention_sweep_deletes_audit_rows() -> None:
 def test_nothing_updates_an_audit_row() -> None:
     """An event records something that already happened, so a correction is a NEW
     event, never an edit — otherwise the log can be quietly rewritten to say
-    something else happened, which is worse than having no log at all."""
+    something else happened, which is worse than having no log at all.
+    """
     offenders = []
     for path in _python_sources():
         rel = str(path.relative_to(_APP))
@@ -103,17 +80,7 @@ def test_nothing_updates_an_audit_row() -> None:
 
 
 def test_no_module_assigns_to_a_loaded_audit_event() -> None:
-    """The ORM route to the same damage: loading a row and assigning to a field.
-
-    `delete(AuditEvent)` / `update(AuditEvent)` are the Core forms; this is the
-    one a service would reach for by habit. Both doors, because a guard on one and
-    not its sibling is the shape this project keeps rediscovering.
-
-    Scoped to names that are plainly audit events (`event`, `audit_event`, and the
-    `AuditEvent(...)` constructor result) — a broad scan would flag every
-    assignment in the codebase and be turned off within a week, which is worse
-    than a narrow guard that stays on.
-    """
+    """The ORM route to the same damage: loading a row and assigning to a field."""
     offenders: list[str] = []
     for path in _python_sources():
         rel = str(path.relative_to(_APP))
@@ -137,13 +104,7 @@ def test_no_module_assigns_to_a_loaded_audit_event() -> None:
 
 
 def test_the_guard_can_actually_see_a_violation() -> None:
-    """The guard's own guard.
-
-    Every assertion above is vacuously true if the scan finds nothing to look at —
-    an empty file list, a parse that silently skips, a matcher that never matches.
-    ADR 0039's orphan-secret sweep shipped exactly that kind of tautology. So the
-    matcher is run against a synthetic violation and must flag it.
-    """
+    """The guard's own guard."""
     violation = ast.parse("from x import AuditEvent\nsession.execute(delete(AuditEvent))\n")
     assert _calls_on_audit_event(violation, {"delete"}) is True
 

@@ -2,17 +2,8 @@ import type { ResultStatus, RunStatus } from '../../api/runs';
 import { BRAND } from '../../theme';
 
 /**
- * Chart colour tokens + shared axis/grid styling for the recharts-based
- * dashboard widgets (ADR 0022). Kept framework-free and separate from
- * `resultsFormat.ts` for one reason: that module maps statuses to **antd Tag
- * names** (`'success'`, `'magenta'`, …) which only antd understands, whereas
- * SVG charts need concrete hex. These maps are the chart-domain mirror of the
- * same severity/run-status semantics (readme status model · ADR 0005/0016) —
- * the hexes track antd v6's default palette so a chart series reads the same
- * colour as the matching Tag.
- *
- * `Record<…>` (not a lookup with a fallback) so adding a `ResultStatus` /
- * `RunStatus` value is a compile error here rather than a silently grey series.
+ * Chart colour tokens + shared axis/grid styling for the recharts-based dashboard widgets (ADR
+ * 0022).
  */
 
 /** Severity → series hex (pass green · warn gold · fail red · critical magenta). */
@@ -35,9 +26,8 @@ export const RUN_STATUS_CHART_COLORS: Record<RunStatus, string> = {
 };
 
 /**
- * Non-status chart tokens — the indigo primary for neutral/aggregate series
- * (e.g. total runs), plus the hairline grid + muted axis tints so every chart
- * frames the same way the cards/tables do.
+ * Non-status chart tokens — the indigo primary for neutral/aggregate series (e.g. total runs),
+ * plus the hairline grid + muted axis tints so every chart frames the same way the cards/tables
  */
 export const CHART_COLORS = {
   primary: BRAND.primary,

@@ -9,22 +9,11 @@ import { useCurrentUser } from '../src/auth/useCurrentUser';
 import { useOtpSession } from '../src/auth/otpSessionContext';
 import { logout } from '../src/auth/authClient';
 
-/**
- * Sign-out in `otp` mode (ADR 0032, #736).
- *
- * Its own file because App.test.tsx pins `authMode` to dev_bypass at module scope
- * (a hoisted `vi.mock`), and the mode is what is under test here.
- *
- * The behaviour that matters: OTP sign-out is a **POST that revokes the session
- * server-side**, not the OIDC redirect. The SPA cannot clear an HttpOnly cookie
- * itself, so a "sign out" that only forgot local state would leave a live,
- * usable session behind on the server.
- */
+/** Sign-out in `otp` mode (ADR 0032, #736). */
 vi.mock('../src/auth/config', () => ({ authMode: 'otp' }));
 vi.mock('../src/auth/authClient', () => ({ login: vi.fn(), logout: vi.fn() }));
-// ProfileCompletionPrompt (#1139) also reads useMe() (via itself) and
-// useUpdateMe() (via useSaveDisplayName) — 'loading' keeps the prompt closed
-// (shouldShow requires status 'ok') so both are inert for this sign-out test.
+// ProfileCompletionPrompt (#1139) also reads useMe() (via itself) and useUpdateMe() (via
+// useSaveDisplayName).
 vi.mock('../src/auth/useMe', () => ({
   useIsWorkspaceAdmin: vi.fn(),
   useMe: vi.fn(() => ({ status: 'loading' })),

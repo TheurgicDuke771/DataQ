@@ -32,14 +32,7 @@ import { formatTimestamp } from '../results/resultsFormat';
 import { errorMessage } from '../../utils/errors';
 import { expiryStatus } from '../../utils/expiry';
 
-/**
- * Profile panel for the user's Personal Access Tokens (PATs, ADR 0026 phase 1,
- * #461). A PAT authenticates as you (`Authorization: Bearer dq_live_…`) on the REST
- * API and `/mcp`, inheriting your per-suite access. User-scoped: only your own keys.
- *
- * The plaintext token is shown **exactly once** — on creation, in a copy-once modal;
- * the list only ever shows the `dq_live_…` prefix. Revocation is immediate.
- */
+/** Profile panel for the user's Personal Access Tokens (PATs, ADR 0026 phase 1, #461). */
 export function ApiKeysPanel() {
   const { state, reload } = useAsyncData(listApiKeys);
 
@@ -99,13 +92,8 @@ function ApiKeysBody({
 }
 
 /**
- * Revoked / Expired / Expiring / Active, derived from the metadata (no separate
- * status field).
- *
- * "Expiring" exists because the two states either side of it are useless on their
- * own: a token reads Active until the instant it reads Expired, which is a warning
- * that arrives strictly after the breakage (#838). A PAT is a credential like a
- * connection's SAS, so it shares the one window in `utils/expiry`.
+ * Revoked / Expired / Expiring / Active, derived from the metadata (no separate status field).
+ * "Expiring" exists because the two states either side of it are useless on their own: a token
  */
 function keyStatus(key: ApiKey): { label: string; color: string } {
   if (key.revoked_at) return { label: 'Revoked', color: 'default' };
@@ -120,9 +108,8 @@ function ApiKeyTable({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => voi
   const { message, modal } = App.useApp();
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // Not on the shared useConfirmDelete hook: this site drives a per-row `busyId`
-  // spinner and deliberately does NOT re-throw (see the onOk catch below), both
-  // of which the hook's re-throwing API doesn't express.
+  // Not on the shared useConfirmDelete hook: this site drives a per-row `busyId` spinner and
+  // deliberately does NOT re-throw (see the onOk catch below).
   const onRevoke = (key: ApiKey) => {
     modal.confirm({
       title: `Revoke token “${key.name}”?`,
@@ -136,10 +123,8 @@ function ApiKeyTable({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => voi
           message.success(`“${key.name}” revoked`);
           onChanged();
         } catch (err) {
-          // Surface the failure (never silent) and let the confirm close; the key
-          // stays listed (no refetch on failure) so the user can retry. We don't
-          // re-throw to keep the modal open — antd 6 leaves an onOk rejection
-          // unhandled, and a toast + intact list is clearer anyway.
+          // Surface the failure (never silent) and let the confirm close; the key stays listed (no
+          // refetch on failure) so the user can retry.
           message.error(`Revoke failed: ${errorMessage(err)}`);
         } finally {
           setBusyId(null);

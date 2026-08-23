@@ -1,24 +1,4 @@
-"""add check_versions (per-check config history) (#280)
-
-Revision ID: c4d5e6f7a8b9
-Revises: b1f2c3d4e5a6
-Create Date: 2026-06-15 00:00:00.000000+00:00
-
-Checks carried no history — ``check_service.update_check`` overwrote the row in
-place, so a prior config was unrecoverable. This adds a ``check_versions`` table
-holding an immutable snapshot of a check's editable state, written on create and
-after every successful update; it backs the "version history" drawer ("see
-previous config before overwriting"). This is per-check config history, not the
-cross-entity audit log (deferred to v1.1).
-
-``version_no`` is a per-check sequence (unique with ``check_id``). A version is
-cascade-deleted with its check, but survives its author (``changed_by`` is
-``SET NULL`` so a removed user doesn't drop the snapshot).
-
-Backward-compatible: a brand-new table, no change to existing tables, no data
-rewrite, no two-step. Existing checks simply have no recorded history until
-their next create/update writes one.
-"""
+"""add check_versions (per-check config history) (#280)"""
 
 from collections.abc import Sequence
 

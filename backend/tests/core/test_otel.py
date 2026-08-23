@@ -1,9 +1,5 @@
 """Tests for the shared OTel exporter seam (otel.py) — the resolution of which
 backend(s) each signal pipeline exports to (#524 logs + #589 generic OTLP).
-
-The lazy exporter classes are swapped for sentinels so nothing touches the
-network; the tests assert only the *resolution* logic (which backends, in which
-order) across the four config combinations.
 """
 
 from __future__ import annotations

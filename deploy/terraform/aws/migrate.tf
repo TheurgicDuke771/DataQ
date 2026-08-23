@@ -1,9 +1,4 @@
-# Migrate task (alembic upgrade head) — a discrete one-shot task definition,
-# no ECS service. CI invokes it via `aws ecs run-task` BEFORE rolling
-# api/worker, polled to a terminal status — mirrors the Azure
-# `azurerm_container_app_job` migrate job exactly, just as a plain Fargate
-# task instead of a native ACA Job resource (ECS has no separate "job"
-# primitive; RunTask against a task definition is the equivalent).
+# Migrate task (alembic upgrade head) — a discrete one-shot task definition, no ECS service.
 
 resource "aws_ecs_task_definition" "migrate" {
   family                   = "dataq-app-migrate"

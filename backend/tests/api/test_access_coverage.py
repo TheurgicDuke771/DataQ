@@ -1,13 +1,4 @@
-"""The read-side coverage guard — G1 / #431.
-
-Finds every caller of `run_service`'s redactors (the seam every path surfacing a
-failing-row sample or `observed_value` must go through) and asserts each is
-declared in `tests/support/access_coverage` as audited or explicitly exempt.
-
-Scans the real source rather than a registry, for the reason ADR 0039's
-orphan-secret sweep made concrete: a guard that iterates its own registrations
-cannot see the thing it was built to catch.
-"""
+"""The read-side coverage guard — G1 / #431."""
 
 from __future__ import annotations
 
@@ -19,25 +10,17 @@ from backend.tests.support.access_coverage import AUDITED, EXEMPT
 
 _APP: Final[Path] = Path(__file__).resolve().parents[2] / "app"
 
-#: The redaction seam. A path surfacing sample rows or an observed value must go
-#: through one of these — that is the #226/#415/#1115 rule, and it is what makes
-#: this scan meaningful rather than a keyword search.
+#: The redaction seam.
 _REDACTORS: Final[frozenset[str]] = frozenset(
     {
         "redact_sample_failures",
         "redact_sample_failures_with_state",
         "redact_observed_value",
-        # The live-probe seam (#1419/#1479) is a SECOND door onto regulated data
-        # — the profiler returns real cell values and never touches the three
-        # redactors above, so without this name the profiler routes would be
-        # invisible to this guard. That is precisely the blind spot the module
-        # docstring warns about ("a future path that hand-rolls its own masking"),
-        # so the fix is to widen the seam definition rather than to accept it.
+        # The live-probe seam (#1419/#1479) is a SECOND door onto regulated data — the profiler
+        # returns real cell values and never touches the three redactors above.
         "mask_profile_columns",
-        # The dry-run doors call this wrapper rather than `redact_observed_value`
-        # directly (it adds the scalar case, #1482). Without the name here the
-        # scan stops seeing them and the reverse guard — "a declaration naming a
-        # site that no longer exists" — fires, which is how this was caught.
+        # The dry-run doors call this wrapper rather than `redact_observed_value` directly (it adds
+        # the scalar case, #1482).
         "redact_probe_observed_value",
     }
 )
@@ -78,14 +61,7 @@ def _redactor_callers() -> set[str]:
 
 
 def test_the_scan_actually_finds_redactor_callers() -> None:
-    """The guard's own guard.
-
-    Every assertion below is vacuously true against a scan that finds nothing —
-    a changed import shape, a matcher that never matches, an empty file list. The
-    floor is deliberately loose so that ADDING a caller does not fail this test;
-    the coverage test below is the one that should fail, with a message saying
-    what to do.
-    """
+    """The guard's own guard."""
     assert len(_redactor_callers()) >= 3
 
 
@@ -104,7 +80,8 @@ def test_every_regulated_data_read_has_a_declared_disposition() -> None:
 
 def test_the_declaration_carries_no_call_sites_that_no_longer_exist() -> None:
     """A stale row is worse than a missing one: it makes the table look complete
-    while describing a surface that has moved."""
+    while describing a surface that has moved.
+    """
     stale = (set(AUDITED) | set(EXEMPT)) - _redactor_callers()
     assert not stale, (
         f"these declared call sites no longer call a redactor: {sorted(stale)} — "
@@ -119,6 +96,7 @@ def test_no_call_site_is_both_audited_and_exempt() -> None:
 
 def test_every_exemption_states_a_reason() -> None:
     """An unexplained exemption is indistinguishable from an oversight — which is
-    the whole thing this guard exists to make impossible."""
+    the whole thing this guard exists to make impossible.
+    """
     thin = {site: reason for site, reason in EXEMPT.items() if len(reason.strip()) < 25}
     assert not thin, f"exemptions with no substantive reason: {sorted(thin)}"

@@ -1,9 +1,4 @@
-"""api_key_service tests — the PAT credential surface (ADR 0026 phase 1, #461).
-
-Covers the security bar explicitly: hash-at-rest (plaintext never stored),
-show-once, uniform 401 for unknown/revoked/expired, cross-user isolation,
-last-used throttling, and the owner-lifecycle cascade.
-"""
+"""api_key_service tests — the PAT credential surface (ADR 0026 phase 1, #461)."""
 
 import uuid
 from datetime import UTC, datetime, timedelta

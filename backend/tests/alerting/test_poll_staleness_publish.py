@@ -1,11 +1,4 @@
-"""The `publish_poll_staleness` seam method (#1052) — composite semantics + renders.
-
-The composite's contract here is deliberately STRONGER than its other two methods:
-`workspace_health_service` records the #843 delivered-first flag based on whether this
-call raised, so "every channel failed" must raise (else a total delivery failure would
-be recorded as delivered and never retried), while one surviving channel must swallow
-the rest (partial delivery counts, exactly like the per-connection edge).
-"""
+"""The `publish_poll_staleness` seam method (#1052) — composite semantics + renders."""
 
 from __future__ import annotations
 
@@ -67,7 +60,8 @@ class TestCompositeStalenessContract:
 
     def test_every_channel_failing_raises_so_the_flag_is_never_falsely_recorded(self) -> None:
         """The delivered-first hinge: if this silently returned, the caller would
-        stamp `alerted_at` for an alert nobody received — and never retry."""
+        stamp `alerted_at` for an alert nobody received — and never retry.
+        """
         with pytest.raises(RuntimeError):
             CompositePublisher([_Channel(fail=True), _Channel(fail=True)]).publish_poll_staleness(
                 _SESSION, _report()
@@ -77,7 +71,8 @@ class TestCompositeStalenessContract:
         """The fresh-install trap (review finding): every real channel quietly
         no-ops when unconfigured, so counting a returned call as delivered would
         stamp the flag with ZERO notifications sent — and when an operator later
-        wires up Slack, the still-outstanding incident would never fire."""
+        wires up Slack, the still-outstanding incident would never fire.
+        """
         with pytest.raises(AlertUndeliverableError):
             CompositePublisher(
                 [_Channel(unconfigured=True), _Channel(unconfigured=True)]
@@ -90,7 +85,8 @@ class TestCompositeStalenessContract:
 
     def test_unconfigured_real_channels_report_not_delivered(self) -> None:
         """The real channels (not just the fake) must return False on their quiet
-        skips — Teams/Slack resolve no webhook, email has no transport config."""
+        skips — Teams/Slack resolve no webhook, email has no transport config.
+        """
         from backend.app.alerting.email import EmailPublisher
         from backend.app.alerting.slack import SlackPublisher
         from backend.app.alerting.teams import TeamsPublisher

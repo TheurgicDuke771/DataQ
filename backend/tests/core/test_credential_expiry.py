@@ -1,11 +1,4 @@
-"""Reading an Azure SAS's stated expiry (#838).
-
-The failure this guards against is not "we computed the wrong date" — it is
-"we confidently reported a date for something that was never a SAS", or the
-mirror image, "we stayed silent on a credential that told us when it dies".
-Prod lineage was dark for six days because nobody was told; a wrong date would
-have been worse still, because it comes with an alibi.
-"""
+"""Reading an Azure SAS's stated expiry (#838)."""
 
 from __future__ import annotations
 
@@ -33,8 +26,6 @@ def test_tolerates_the_leading_question_mark_azure_hands_out() -> None:
 
 def test_user_delegation_sas_expires_at_the_earlier_of_se_and_ske() -> None:
     # A user-delegation SAS dies when EITHER the token or its signing key does.
-    # Reading only `se` would over-promise on precisely the SAS kind Azure
-    # recommends — the badge would go quiet days before the credential stops.
     delegation = (
         "sv=2022-11-02&sr=c&sp=rl"
         "&se=2026-08-30T00:00:00Z"
@@ -57,13 +48,8 @@ def test_date_only_expiry_is_accepted() -> None:
 
 
 def test_a_credential_that_is_not_a_sas_is_silent() -> None:
-    # An S3 secret key, a Databricks PAT, a Snowflake private key: none of them
-    # state a lifetime, and inventing one for them is the whole failure mode.
-    #
-    # The stand-ins are assembled from parts rather than written out: a literal
-    # of the real shape is a *credential-shaped string in a tracked file*, which
-    # push protection blocks and CLAUDE.md §11 forbids even for a fake one. The
-    # parser only ever sees the assembled value, so the coverage is identical.
+    # An S3 secret key, a Databricks PAT, a Snowflake private key: none of them state a lifetime,
+    # and inventing one for them is the whole failure mode.
     for secret in (
         "",
         "dapi" + "0" * 32,
@@ -74,9 +60,7 @@ def test_a_credential_that_is_not_a_sas_is_silent() -> None:
 
 
 def test_a_query_string_without_a_signature_is_not_treated_as_a_sas() -> None:
-    # `se=` alone is not evidence of a SAS. Requiring `sig` is what makes this a
-    # parse rather than a guess — otherwise any `key=value&…` secret that happens
-    # to carry an `se` would get a confident, meaningless expiry.
+    # `se=` alone is not evidence of a SAS.
     assert azure_sas_expiry("se=2026-07-29T05:59:59Z&other=1") is None
 
 
@@ -87,8 +71,6 @@ def test_a_sas_with_an_unreadable_expiry_is_silent_rather_than_raising() -> None
 
 
 def test_an_unreadable_ske_does_not_discard_the_readable_se() -> None:
-    # Partial garbage must degrade to the expiry we CAN read, not to silence —
-    # dropping a good `se` because a sibling field was malformed would turn a
-    # readable deadline into "unknown" and remove the warning entirely.
+    # Partial garbage must degrade to the expiry we CAN read, not to silence.
     sas = "sv=2022-11-02&se=2026-07-29T00:00:00Z&ske=garbage&sig=notarealsignature%3D"
     assert azure_sas_expiry(sas) == datetime(2026, 7, 29, tzinfo=UTC)

@@ -1,9 +1,6 @@
 """/me endpoint tests — focus on the `is_workspace_admin` flag the Admin nav
 gates on. Auth is dev-bypass (conftest); WORKSPACE_ADMIN_EMAILS toggles whether
 the caller is an admin. Skips without TEST_DATABASE_URL.
-
-The `PATCH /me` tests (#1139) live in this file rather than a new one — same
-fixture, same auth-mode caveats as the GET tests above.
 """
 
 import uuid
@@ -33,7 +30,8 @@ def client(db_session: Any) -> Iterator[TestClient]:
 def test_me_flags_non_admin_for_an_ordinary_member(client: TestClient, as_role: Any) -> None:
     """A MEMBER, not the ambient dev-bypass identity — which since #741 IS the
     workspace admin (dev bypass is a single-operator mode), so it can no longer
-    demonstrate the non-admin case."""
+    demonstrate the non-admin case.
+    """
     get_settings.cache_clear()
     user, headers = as_role("member")
     body = client.get("/api/v1/me", headers=headers).json()
@@ -45,7 +43,8 @@ def test_me_flags_non_admin_for_an_ordinary_member(client: TestClient, as_role: 
 def test_me_flags_the_dev_bypass_identity_as_admin(client: TestClient) -> None:
     """Dev bypass resolves to a workspace admin (#741) — pinned, because the
     local and published-eval stacks depend on it: a `member` here could not
-    create a connection, i.e. could not do the first thing DataQ is for."""
+    create a connection, i.e. could not do the first thing DataQ is for.
+    """
     get_settings.cache_clear()
     body = client.get("/api/v1/me").json()
     assert body["email"] == DEV_BYPASS_EMAIL
@@ -63,14 +62,7 @@ def test_me_flags_admin_when_allowlisted(
 
 
 def test_me_serialises_a_null_aad_object_id(client: TestClient, db_session: Any) -> None:
-    """`/me` must return 200 with `aad_object_id: null` for a non-AAD identity.
-
-    `MeResponse.aad_object_id` was non-optional and the handler uses
-    `model_validate` under a `response_model`, so the moment #734 provisions an
-    email-OTP user (NULL aad — ADR 0032 decision 6) every `/me` call by that user
-    would have been a response-validation 500. The PAT branch of the seam is what
-    lets a test reach `/me` as a user other than the dev-bypass identity.
-    """
+    """`/me` must return 200 with `aad_object_id: null` for a non-AAD identity."""
     owner = User(
         id=uuid.uuid4(), aad_object_id=None, email=f"otp-{uuid.uuid4().hex[:8]}@example.com"
     )
@@ -90,7 +82,8 @@ def test_me_serialises_a_null_aad_object_id(client: TestClient, db_session: Any)
 
 def _cookie_header(db_session: Any, user: User) -> dict[str, str]:
     """A session cookie header for `user`, minted the same way the OTP verify
-    endpoint does (`session_service.create_session`)."""
+    endpoint does (`session_service.create_session`).
+    """
     _, token = session_service.create_session(db_session, user)
     return {"Cookie": f"{session_service.COOKIE_NAME}={token}"}
 
@@ -101,9 +94,7 @@ def test_patch_me_updates_display_name_and_returns_the_refreshed_profile(
     resp = client.patch("/api/v1/me", json={"display_name": "  Olivia Rivera  "})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    # Stored/returned trimmed — the issue asks for "non-empty after strip", and
-    # leaving surrounding whitespace in a name that renders in shares/admin
-    # lists would be a silent cosmetic bug of its own.
+    # Stored/returned trimmed — the issue asks for "non-empty after strip".
     assert body["display_name"] == "Olivia Rivera"
     assert body["email"] == DEV_BYPASS_EMAIL
 
@@ -179,13 +170,8 @@ def test_patch_me_works_via_session_cookie(client: TestClient, db_session: Any) 
 def test_patch_me_401s_with_bad_pat_instead_of_falling_through_to_bypass(
     client: TestClient,
 ) -> None:
-    """Mirrors `test_bad_pat_401s_instead_of_falling_through_to_bypass` (GET) —
-    the dev-bypass fallback only ever applies to a request with NO credential.
-    A *presented* bad credential is a hostile/expired caller, and this is the
-    only "no principal" case the dev-bypass test harness can exercise honestly:
-    an unauthenticated PATCH under a real (non-bypass) deployment 401s the same
-    way, through the same `get_current_user` seam this endpoint depends on with
-    no mode-specific branching.
+    """Mirrors `test_bad_pat_401s_instead_of_falling_through_to_bypass` (GET) — the dev-bypass
+    fallback only ever applies to a request with NO credential.
     """
     resp = client.patch(
         "/api/v1/me",
@@ -216,7 +202,8 @@ def test_patch_me_with_bad_session_cookie_falls_through_to_bypass_not_401(
 
 def test_patch_me_cannot_touch_another_users_row(client: TestClient, db_session: Any) -> None:
     """No `user_id` in the body — there is nothing to point at someone else's
-    row, so a caller can only ever rename themselves."""
+    row, so a caller can only ever rename themselves.
+    """
     victim = User(id=uuid.uuid4(), aad_object_id=f"oid-{uuid.uuid4().hex[:8]}", email="v@x.io")
     db_session.add(victim)
     db_session.commit()

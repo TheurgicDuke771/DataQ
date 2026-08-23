@@ -1,26 +1,4 @@
-"""Shared OpenTelemetry exporter resolution — the vendor-neutral observability seam (ADR 0010).
-
-Both signal pipelines resolve their backends here from settings so they can't
-drift:
-
-- **tracing.py** — request/task spans (a ``BatchSpanProcessor`` per exporter).
-- **logging.py** — the structlog → stdlib → OTel log bridge (#524, which replaced
-  the EOL opencensus ``AzureLogHandler``).
-
-Two exporters sit behind the seam and **may both be active at once**:
-
-- **Azure Monitor** — when ``APPLICATIONINSIGHTS_CONNECTION_STRING`` is set.
-- **Generic OTLP/HTTP** — when ``OTEL_EXPORTER_OTLP_ENDPOINT`` is set (#589): spans
-  and logs also export to any OTLP consumer (Grafana/Tempo, Jaeger, Datadog, …).
-  Base-endpoint semantics per the OTel spec — ``/v1/traces`` and ``/v1/logs`` are
-  appended to the configured base. Running both at once is exactly the parity
-  check (the same trace/log lands in App Insights AND a local collector).
-
-Neither set ⇒ telemetry is a complete no-op (the pre-#524 ``AzureLogHandler`` gate).
-
-All exporter imports are **lazy** (repo convention, see ``secrets.py``) so a
-deployment that uses neither backend never pays the import cost.
-"""
+"""Shared OpenTelemetry exporter resolution — the vendor-neutral observability seam (ADR 0010)."""
 
 from __future__ import annotations
 

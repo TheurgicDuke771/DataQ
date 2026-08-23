@@ -48,9 +48,8 @@ describe('ScorecardPanel (#889)', () => {
   });
 
   it('still lists the uncovered dimensions when NOTHING is covered', () => {
-    // This is the maximally actionable state and the DEFAULT for every asset
-    // predating ADR 0038 — hiding the list exactly here defeated the panel's
-    // whole purpose ("coverage is the point, not the score").
+    // This is the maximally actionable state and the DEFAULT for every asset predating ADR 0038 —
+    // hiding the list exactly here defeated the panel's whole purpose ("coverage is the point.
     render(<ScorecardPanel scorecard={card({ uncovered: ['completeness', 'timeliness'] })} />);
     expect(screen.getByText('Not covered')).toBeInTheDocument();
     expect(screen.getByText('Timeliness')).toBeInTheDocument();

@@ -26,10 +26,8 @@ function result(
 
 describe('SampledTag', () => {
   it('renders only when the read genuinely was a sample', () => {
-    // `sampled: false` is the case that matters most: a "sample" of 100 rows from
-    // a 40-row file covered everything, so its verdict is complete. Badging it
-    // would put a caveat on every small target and teach the reader to skip past
-    // the caveat that does mean something (#424's overclaim lesson).
+    // `sampled: false` is the case that matters most: a "sample" of 100 rows from a 40-row file
+    // covered everything, so its verdict is complete.
     const { rerender } = render(<SampledTag sampling={record({ sampled: false })} />);
     expect(screen.queryByTestId('sampled-tag')).not.toBeInTheDocument();
 
@@ -44,18 +42,14 @@ describe('SampledTag', () => {
   });
 
   it('does NOT derive sampled-ness from rows vs total_rows', () => {
-    // A partial read that the backend nonetheless reports as complete must be
-    // trusted — `sampled` is the field, and re-deriving it here would put the
-    // frontend's guess above the runner's own record of what it read.
+    // A partial read that the backend nonetheless reports as complete must be trusted — `sampled`
+    // is the field.
     render(<SampledTag sampling={record({ rows: 10, total_rows: 5000, sampled: false })} />);
     expect(screen.queryByTestId('sampled-tag')).not.toBeInTheDocument();
   });
 
   it('actually hands the summary to the tooltip a reader hovers', async () => {
-    // The wiring test. `samplingSummary`'s wording is pinned below as a value;
-    // this proves the badge really shows it rather than an empty overlay — the
-    // failure mode a `getAttribute('title')` assertion hides by reading
-    // `undefined` and passing.
+    // The wiring test.
     const user = userEvent.setup();
     const sampling = record({ strategy: 'random', rows: 100_000, total_rows: 5_000_000, seed: 7 });
     render(<SampledTag sampling={sampling} />);
@@ -77,9 +71,8 @@ describe('samplingSummary', () => {
   });
 
   it('says what it knows when the population was never counted', () => {
-    // A head sample stops reading at the cap rather than pay for a count, so
-    // `total_rows` is legitimately null — the summary must not invent a
-    // denominator or print "of null".
+    // A head sample stops reading at the cap rather than pay for a count, so `total_rows` is
+    // legitimately null — the summary must not invent a denominator or print "of null".
     const tip = samplingSummary(record({ rows: 100, total_rows: null }));
     expect(tip).toContain('100 rows');
     expect(tip).not.toContain('null');
@@ -115,9 +108,8 @@ describe('SampledRunNotice', () => {
   });
 
   it('counts rather than generalises when only some checks were sampled', () => {
-    // Within one run a volume monitor pushes its COUNT(*) down and is exact
-    // while the expectations beside it saw a sample — "this run was sampled"
-    // would be wrong about half the table.
+    // Within one run a volume monitor pushes its COUNT(*) down and is exact while the expectations
+    // beside it saw a sample — "this run was sampled" would be wrong about half the table.
     render(<SampledRunNotice results={[result(record()), result(null), result(record())]} />);
     expect(screen.getByTestId('sampled-run-notice')).toHaveTextContent(
       '2 of 3 checks ran on a sample',
@@ -132,9 +124,8 @@ describe('SampledRunNotice', () => {
   });
 
   it('counts EVALUATED results only, like the "Checks passed" stat beside it', () => {
-    // A skip/error never evaluated anything and its `sampling` is always null, so
-    // counting it would put a second denominator for one run in one header — and
-    // would let one skipped check permanently downgrade the wording below.
+    // A skip/error never evaluated anything and its `sampling` is always null, so counting it would
+    // put a second denominator for one run in one header.
     render(
       <SampledRunNotice
         results={[result(record()), result(null, 'skip'), result(null, 'error')]}
@@ -146,9 +137,8 @@ describe('SampledRunNotice', () => {
   });
 
   it('a single skip does not suppress the "Every check" wording', () => {
-    // The regression the denominator bug caused: two sampled checks and one skip
-    // read as "2 of 3", quietly weakening the caveat because of something
-    // unrelated to sampling.
+    // The regression the denominator bug caused: two sampled checks and one skip read as "2 of 3",
+    // quietly weakening the caveat because of something unrelated to sampling.
     render(
       <SampledRunNotice results={[result(record()), result(record()), result(null, 'skip')]} />,
     );

@@ -30,28 +30,8 @@ import { formatTimestamp } from '../results/resultsFormat';
 import { ResponsiveChart } from '../charts/ResponsiveChart';
 
 /**
- * Per-check historical trend (#594, upgrading the Phase 2.6/ADR 0022 minimal
- * chart): a check's `metric_value` over its recent runs, banded by its own
- * warn/fail/critical thresholds, plus — for an `anomaly` check with a captured
- * baseline (#593) — a second panel that overlays the learned mean±kσ band on
- * the raw measurements behind the score. This is deliberately TWO panels, not
- * one dual-axis chart: `metric_value` for an anomaly check is the z-SCORE
- * (banded against the same thresholds every other kind uses — ADR 0016), while
- * the baseline's `observations` are the raw measurement (row count / freshness
- * hours) it was scored against. Those are different units on different scales;
- * forcing them onto one axis would misrepresent both. Showing them as
- * synchronized panels in one component still satisfies "one component serves
- * both stories" and "doubles as the model's visual debugger" (issue #594).
- *
- * A11y (#594, carrying forward the Theme 3 lesson): severity is never color-only
- * — each threshold line also carries a distinct dash pattern and a text label —
- * and a "Table" view renders the identical data as a plain `<Table>` for anyone
- * who can't read the chart at all.
- *
- * Lazily fetched per check (only when a run-detail row expands, or the check
- * editor's Trend drawer is opened), so it doesn't fan out a request per check on
- * page load. recharts stays out of the initial bundle because every caller of
- * this component lives behind a lazy route (`RunDetail`, `CheckEdit` — ADR 0022).
+ * Per-check historical trend (#594, upgrading the Phase 2.6/ADR 0022 minimal chart): a check's
+ * `metric_value` over its recent runs, banded by its own warn/fail/critical thresholds, plus.
  */
 interface CheckTrendCheck {
   id: string;
@@ -108,11 +88,10 @@ interface Observation {
   value: number;
 }
 
-/** Pulls `{ts, value}` observations out of an `anomaly` baseline's payload
- *  (`backend/app/services/anomaly.py`'s documented shape). Defensive against a
- *  malformed/foreign-kind payload — this layer doesn't validate it server-side
- *  either (`check_service.get_check_baseline` returns it generically), so an
- *  odd entry is dropped rather than crashing the debugger panel. */
+/**
+ * Pulls `{ts, value}` observations out of an `anomaly` baseline's payload
+ * (`backend/app/services/anomaly.py`'s documented shape).
+ */
 function parseObservations(baseline: CheckBaseline | null): Observation[] {
   if (!baseline || baseline.kind !== 'anomaly') return [];
   const raw = baseline.baseline.observations;
@@ -128,10 +107,10 @@ function parseObservations(baseline: CheckBaseline | null): Observation[] {
   return out;
 }
 
-/** Sample mean/stddev (n-1) — mirrors `anomaly.py`'s `score()`, which needs at
- *  least 2 points for a defined stddev. Callers must pass it the ELIGIBLE
- *  subset (see `eligibleValues` below), not every retained observation, or the
- *  "mirrors score()" claim is only half true. */
+/**
+ * Sample mean/stddev (n-1) — mirrors `anomaly.py`'s `score()`, which needs at least 2 points for a
+ * defined stddev.
+ */
 function meanStddev(values: number[]): { mean: number; stddev: number } | null {
   if (values.length < 2) return null;
   const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
@@ -139,10 +118,10 @@ function meanStddev(values: number[]): { mean: number; stddev: number } | null {
   return { mean, stddev: Math.sqrt(variance) };
 }
 
-/** The `window`/`seasonality` a baseline was captured with — `dump_baseline`
- *  (anomaly.py) always writes both, so this is a straight read; the fallback
- *  (`_ANOMALY_DEFAULT_WINDOW` = 14, seasonality off) only covers a malformed
- *  or pre-#593 payload. */
+/**
+ * The `window`/`seasonality` a baseline was captured with — `dump_baseline` (anomaly.py) always
+ * writes both, so this is a straight read; the fallback (`_ANOMALY_DEFAULT_WINDOW` = 14.
+ */
 interface AnomalyBaselineMeta {
   window: number;
   seasonality: boolean;
@@ -160,15 +139,10 @@ function parseAnomalyMeta(baseline: CheckBaseline | null): AnomalyBaselineMeta {
   };
 }
 
-/** The prior values a run happening right now (`now`) would actually be scored
- *  against — mirrors `anomaly.py`'s `eligible_values(observations, now,
- *  params)` exactly: with seasonality on, only observations sharing `now`'s
- *  UTC weekday count (a seasonal baseline retains `window * 7` observations
- *  precisely so this filter has enough to work with), then the last `window`
- *  of those; without it, simply the last `window` observations. Without this
- *  filter a seasonal check's debugger band is computed from a mix of
- *  every weekday, which is not what the check itself compares against.
- *  `now` is a parameter (not read inline) so a test can pin it. */
+/**
+ * The prior values a run happening right now (`now`) would actually be scored against — mirrors
+ * `anomaly.py`'s `eligible_values(observations, now, params)` exactly: with seasonality on.
+ */
 function eligibleValues(
   observations: Observation[],
   meta: AnomalyBaselineMeta,
@@ -187,9 +161,8 @@ export function CheckTrend({ suiteId, check, limit = 90 }: CheckTrendProps) {
   const { state } = useAsyncData(async () => {
     const [history, baseline] = await Promise.all([
       listCheckHistory(suiteId, check.id, limit),
-      // Baseline is a debugging overlay, not the main story: a fetch failure
-      // (or simply no baseline yet) degrades to "no overlay", never an error
-      // for the whole trend.
+      // Baseline is a debugging overlay, not the main story: a fetch failure (or simply no baseline
+      // yet) degrades to "no overlay", never an error for the whole trend.
       isAnomaly ? getCheckBaseline(suiteId, check.id).catch(() => null) : Promise.resolve(null),
     ]);
     return { history, baseline };
@@ -309,12 +282,10 @@ function MetricChart({ points, bands }: { points: CheckResultPoint[]; bands: Thr
 
 // ───────────────────────── anomaly baseline overlay (#593 debugger) ─
 
-/** Fallback z-multiplier when the check carries no `fail_threshold` — mean±2σ
- *  covers ~95% of a normal distribution, a reasonable "this would look
- *  anomalous" default. When a threshold IS set, using it as `k` makes the
- *  shaded band literally the boundary at which a future measurement would
- *  score `fail` — the debugger view then matches the check's real behaviour
- *  instead of an arbitrary reference width. */
+/**
+ * Fallback z-multiplier when the check carries no `fail_threshold` — mean±2σ covers ~95% of a
+ * normal distribution, a reasonable "this would look anomalous" default.
+ */
 const DEFAULT_BAND_K = 2;
 
 function AnomalyBaselinePanel({
@@ -326,11 +297,8 @@ function AnomalyBaselinePanel({
   meta: AnomalyBaselineMeta;
   check: CheckTrendCheck;
 }) {
-  // "Right now" — the same instant a run happening this moment would be
-  // measured against (`eligible_values(now)` in anomaly.py). Plain consts, not
-  // memoized: both are cheap array scans over at most a few hundred points,
-  // and there's no correctness reason to pin `now` across renders here (unlike
-  // the backend, which pins it once per run).
+  // "Right now" — the same instant a run happening this moment would be measured against
+  // (`eligible_values(now)` in anomaly.py).
   const now = new Date();
   const eligible = eligibleValues(observations, meta, now);
   const stats = meanStddev(eligible);
@@ -358,9 +326,8 @@ function AnomalyBaselinePanel({
           // all is never "learned band", it's simply nothing yet.
           'Anomaly baseline — no observations captured yet.'
         ) : (
-          // At least one observation exists, but not the 2 the eligible
-          // (weekday-filtered, for a seasonal check) subset needs for a
-          // defined stddev — still not a band, just not-enough-yet.
+          // At least one observation exists, but not the 2 the eligible (weekday-filtered, for a
+          // seasonal check) subset needs for a defined stddev — still not a band.
           `Anomaly baseline — collecting observations${weekdaySuffix} (${eligible.length} so far; need at least 2 for a learned band).`
         )}
       </Typography.Text>

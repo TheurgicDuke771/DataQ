@@ -5,20 +5,8 @@ import { isSampled, sampledCoverage } from './samplingFormat';
 import { formatDuration, formatScalar, formatTimestamp } from './resultsFormat';
 
 /**
- * PDF report export (#345) — a print-only, chrome-free rendering of a run,
- * parallel to the interactive `RunDetail` page. It is never shown on screen
- * (`.print-only` in `styles.css` keeps it `display: none` outside a print
- * context); the "Print / Save as PDF" download-menu item just calls
- * `window.print()`, and the browser's own print-to-PDF produces the artifact —
- * zero new dependency, per the issue's own cost note.
- *
- * Redaction parity (#226): the run/results payload this renders is the SAME
- * one the page already fetched via the authz-scoped `GET /runs/{id}` — no
- * second, unredacted fetch. Sample failing rows are omitted entirely, matching
- * the CSV/JSON export precedent (see `DownloadMenu.exportJson` in
- * `RunDetail.tsx`): the counts/shape are an in-app triage affordance on the
- * expanded row, not an export artifact, so there is nothing here that could
- * regress the redaction the API already applied.
+ * PDF report export (#345) — a print-only, chrome-free rendering of a run, parallel to the
+ * interactive `RunDetail` page.
  */
 export function RunReport({
   run,
@@ -35,20 +23,13 @@ export function RunReport({
     const check = checksById.get(id);
     return check?.expectation_type || check?.kind || '—';
   };
-  // Print-friendly parity with the interactive table's <SnoozedTag> (#653): a
-  // muted check must say so here too, or a printed artifact shows a bare fail
-  // with no suppression indicator and the reader wastes time asking why no
-  // alert fired. Same `isSnoozed` predicate, plain text since a Tag/Tooltip
-  // doesn't survive print.
+  // Print-friendly parity with the interactive table's <SnoozedTag> (#653): a muted check must say
+  // so here too.
   const snoozedSuffix = (id: string) => {
     const check = checksById.get(id);
     return check && isSnoozed(check) ? ' (snoozed)' : '';
   };
-  // The same parity rule, applied to sampled-ness (#595/#1325). This is the
-  // artifact people circulate, so a fully-sampled all-pass run printing as an
-  // unqualified clean bill is the exact overclaim the feature exists to prevent —
-  // and it is worse here than on screen, because a PDF outlives the context that
-  // would have explained it. Plain text, for the same reason as above.
+  // The same parity rule, applied to sampled-ness (#595/#1325).
   const { sampled, evaluated } = sampledCoverage(run.results);
 
   return (

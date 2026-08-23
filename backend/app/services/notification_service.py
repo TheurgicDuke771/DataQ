@@ -1,13 +1,4 @@
-"""Per-suite alert notification config (``suite_notifications``).
-
-Stores whether / where / at-what-threshold a suite's run outcomes are delivered.
-The Teams webhook URL is token-bearing, so it's written through the SecretStore
-and referenced by ``webhook_secret_ref`` (mirrors connection credentials) — never
-plaintext in the DB. The Teams publisher reads this config when delivering.
-
-FastAPI-free like the sibling services: takes a ``Session`` (+ a ``SecretStore``
-where credentials are involved), returns ORM models, raises ``DataQError``.
-"""
+"""Per-suite alert notification config (``suite_notifications``)."""
 
 from __future__ import annotations
 
@@ -28,9 +19,8 @@ from backend.app.services import audit_service
 
 log = get_logger(__name__)
 
-# Threshold used for a suite with no config row — preserves the pre-config
-# behaviour (alert on warn+). A suite opts into a stricter/looser policy by
-# saving a config.
+# Threshold used for a suite with no config row — preserves the pre-config behaviour (alert on
+# warn+).
 DEFAULT_ALERT_ON = "warn"
 
 
@@ -60,24 +50,19 @@ def _hosts_from(raw: str) -> tuple[str, ...]:
 
 
 def allowed_webhook_hosts() -> tuple[str, ...]:
-    """Host suffixes a per-suite **Teams** webhook URL may target (SSRF allowlist).
-
-    Sourced from the ``teams_webhook_allowed_hosts`` setting (comma-separated).
-    """
+    """Host suffixes a per-suite **Teams** webhook URL may target (SSRF allowlist)."""
     return _hosts_from(get_settings().teams_webhook_allowed_hosts)
 
 
 def allowed_slack_hosts() -> tuple[str, ...]:
-    """Host suffixes a per-suite **Slack** webhook URL may target (#633).
-
-    Sourced from the ``slack_webhook_allowed_hosts`` setting (default hooks.slack.com).
-    """
+    """Host suffixes a per-suite **Slack** webhook URL may target (#633)."""
     return _hosts_from(get_settings().slack_webhook_allowed_hosts)
 
 
 def _host_allowed(url: str, hosts: tuple[str, ...]) -> bool:
     """True iff ``url`` is an https URL whose host is within ``hosts`` (exact or
-    subdomain). SSRF guard: the webhook is user-supplied and POSTed server-side."""
+    subdomain). SSRF guard: the webhook is user-supplied and POSTed server-side.
+    """
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname:
         return False
@@ -114,21 +99,13 @@ def parse_recipients(raw: str) -> list[str]:
 
 
 _RECIPIENTS_MAX_LEN = 1024  # matches the suite_notifications.email_recipients column
-# Whitespace/control chars that must never reach an address: CR/LF would let a
-# stored value inject an email header (and raise at EmailMessage['To'] set time →
-# a silent, permanent per-suite email outage swallowed by the composite, #639
-# review); TAB and internal spaces are likewise never valid inside an address.
+# Whitespace/control chars that must never reach an address: CR/LF would let a stored value inject
+# an email header (and raise at EmailMessage['To'] set time → a silent.
 _UNSAFE_IN_RECIPIENT = re.compile(r"[\r\n\t ]")
 
 
 def assert_valid_recipients(raw: str) -> None:
-    """Raise ``InvalidRecipientsError`` unless every comma-part is a plausible email.
-
-    A deliberately light check — the SMTP server is the real validator — but it MUST
-    reject the two classes that pass a naive ``@``-check yet break delivery: control
-    chars / internal whitespace (CR/LF header-injection → send-time ValueError, a
-    silent outage) and an over-length list (would 500 at the column boundary). The
-    offending address rides the message so the 422 is actionable."""
+    """Raise ``InvalidRecipientsError`` unless every comma-part is a plausible email."""
     if len(raw) > _RECIPIENTS_MAX_LEN:
         raise InvalidRecipientsError(f"recipient list too long (max {_RECIPIENTS_MAX_LEN} chars)")
     parts = parse_recipients(raw)
@@ -155,15 +132,7 @@ def _apply_secret_webhook(
     config_id: uuid.UUID,
     secret_store: SecretStore,
 ) -> tuple[str | None, str | None]:
-    """Apply a tri-state webhook change to a secret-backed ref column.
-
-    Returns ``(new_ref, cleared_ref)``. ``value`` is tri-state: ``None`` leaves the
-    ref unchanged; ``""`` clears it (``new_ref=None``, ``cleared_ref`` = the old ref
-    to soft-delete AFTER commit, #372); a non-empty value is written through the
-    SecretStore under a UNIQUE fresh ref (avoids Key Vault soft-deleted-name reuse)
-    or, on rotation, the live ref (a new version). The ``set`` happens here, before
-    the caller's commit — matching the connection-credential write-through.
-    """
+    """Apply a tri-state webhook change to a secret-backed ref column."""
     if value is None:
         return current_ref, None
     if value == "":
@@ -185,14 +154,7 @@ def upsert_config(
     secret_store: SecretStore,
     actor_id: uuid.UUID | None = None,
 ) -> SuiteNotification:
-    """Create or update a suite's notification config.
-
-    Each channel override is **tri-state**: ``None`` leaves it unchanged, ``""``
-    clears it (fall back to the workspace-level config), and a non-empty value sets
-    it. ``webhook`` (Teams) and ``slack_webhook`` are token-bearing → written through
-    the SecretStore under a per-row ref (#633); ``email_recipients`` is a plain
-    comma-separated string stored inline (addresses aren't secrets).
-    """
+    """Create or update a suite's notification config."""
     if alert_on not in ALERT_ON_POLICIES:
         raise InvalidAlertPolicyError(
             "invalid alert policy",
@@ -213,9 +175,7 @@ def upsert_config(
     if config is None:
         try:
             # SAVEPOINT so a concurrent first-write losing the unique race
-            # (uq_suite_notifications_suite_id) rolls back just this insert, not the
-            # whole transaction. flush() assigns the id for the secret refs below and
-            # surfaces the conflict here.
+            # (uq_suite_notifications_suite_id) rolls back just this insert.
             with session.begin_nested():
                 config = SuiteNotification(suite_id=suite_id, enabled=enabled, alert_on=alert_on)
                 session.add(config)
@@ -226,11 +186,8 @@ def upsert_config(
             config = get_config(session, suite_id)
             if config is None:  # pragma: no cover — the winner's row must exist post-rollback
                 raise
-            # Re-snapshot: the outer `audit_before` is None because OUR read found
-            # no row, but the concurrent winner's row exists and we are about to
-            # overwrite it. Leaving `audit_before` at None would record an update
-            # as a create and lose the config being replaced — the one state this
-            # branch is entered to handle.
+            # Re-snapshot: the outer `audit_before` is None because OUR read found no row, but the
+            # concurrent winner's row exists and we are about to overwrite it.
             audit_before = audit_service.snapshot("suite_notification", config)
             config.enabled = enabled
             config.alert_on = alert_on
@@ -258,9 +215,8 @@ def upsert_config(
     if email_recipients is not None:
         config.email_recipients = email_recipients or None
 
-    # Records the POINTERS (`*_secret_ref`) and never the webhook URLs, which are
-    # token-bearing credentials living in the SecretStore — the same rule as
-    # `connection.reauth`.
+    # Records the POINTERS (`*_secret_ref`) and never the webhook URLs, which are token-bearing
+    # credentials living in the SecretStore — the same rule as `connection.reauth`.
     audit_service.record_entity_change(
         session,
         action="suite_notification.update",
@@ -318,11 +274,7 @@ def _resolve_secret_webhook(
     secret_store: SecretStore,
     channel: str,
 ) -> str | None:
-    """The webhook URL to deliver to: the per-suite ref, else the workspace secret.
-
-    Returns ``None`` when neither resolves (delivery is then skipped). A missing
-    secret is logged (by ref/name, never the value) and falls through.
-    """
+    """The webhook URL to deliver to: the per-suite ref, else the workspace secret."""
     if ref:
         try:
             return secret_store.get(ref)
@@ -370,7 +322,8 @@ def resolve_email_recipients(
     workspace_recipients: tuple[str, ...],
 ) -> tuple[str, ...]:
     """The **email** recipients to deliver to: the per-suite list, else the workspace
-    ``EMAIL_TO`` (#633). Empty tuple when neither is set (delivery is then skipped)."""
+    ``EMAIL_TO`` (#633). Empty tuple when neither is set (delivery is then skipped).
+    """
     if config is not None and config.email_recipients:
         return tuple(parse_recipients(config.email_recipients))
     return workspace_recipients

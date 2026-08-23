@@ -1,29 +1,4 @@
-"""A run that does not succeed must strand nothing in `monitor_baselines` (#318 G1).
-
-`monitor_baseline.insert_baseline_if_absent` states the contract outright — "rides
-the caller's transaction, so a rolled-back run strands nothing" — and per-phase
-commits are exactly the kind of change that breaks a contract like that without
-touching the module that declares it. The stateful executors (`schema_drift`,
-`anomaly`) write baselines through the RUN's session, so committing their result
-rows early would make those writes durable too.
-
-What that costs, concretely, is why this is a correctness test and not tidiness:
-
-* an `anomaly` observation from a failed run sits in the rolling z-score window
-  forever, and every retry of that run appends **another** one — a handful of
-  retries can flatten a real anomaly by inflating the window's spread;
-* a first `schema_drift` capture from a run that never completed becomes the
-  reference baseline every later run is diffed against, so the drift that run was
-  about is silently adopted as normal.
-
-The fix is structural rather than compensating: those phases are yielded last and
-`publishable=False`, so their rows ride the terminal commit alongside the baseline
-writes they belong to. These tests assert the observable end state — is there a
-baseline row after a run that failed / was cancelled — on a real database, because
-the whole question is what a *commit* did.
-
-Skips without `TEST_DATABASE_URL` (via `_db_engine`).
-"""
+"""A run that does not succeed must strand nothing in `monitor_baselines` (#318 G1)."""
 
 from __future__ import annotations
 
@@ -69,15 +44,7 @@ class _Runner:
 
 
 class _Fixture:
-    """A suite with an `anomaly`, a `comparison` and an expectation, committed for real.
-
-    The `comparison` check is not decoration: it is a **publishable** phase, so it
-    issues a commit. That is what makes this fixture able to catch the subtle half
-    of the fix — with the stateful phase ordered first, its staged baseline write
-    would be flushed by the comparison phase's commit even though the stateful
-    phase itself was marked unpublishable, because a commit is transaction-wide.
-    Ordering and publishability are two guards and this needs both.
-    """
+    """A suite with an `anomaly`, a `comparison` and an expectation, committed for real."""
 
     def __init__(self, engine: Any) -> None:
         self.engine = engine
@@ -127,7 +94,8 @@ class _Fixture:
 
     def baseline_rows(self) -> list[MonitorBaseline]:
         """Read on a SEPARATE connection — an uncommitted write is invisible there,
-        which is precisely the distinction this whole file is about."""
+        which is precisely the distinction this whole file is about.
+        """
         with SASession(bind=self.engine) as other:
             return list(
                 other.scalars(
@@ -170,7 +138,8 @@ def _ok(check: Check) -> CheckOutcome:
 def _baseline_writing_executor(fx: _Fixture) -> Callable[[Check], CheckOutcome]:
     """Stands in for the real `schema_drift`/`anomaly` executors in the one respect
     that matters here: it writes a baseline through the RUN's session, exactly as
-    `build_anomaly_executor` does via `insert_baseline_if_absent`."""
+    `build_anomaly_executor` does via `insert_baseline_if_absent`.
+    """
 
     def _executor(check: Check) -> CheckOutcome:
         monitor_baseline.insert_baseline_if_absent(
@@ -184,7 +153,8 @@ def _baseline_writing_executor(fx: _Fixture) -> Callable[[Check], CheckOutcome]:
 def test_a_failed_run_leaves_no_baseline(suite_fixture: _Fixture) -> None:
     """The headline: the stateful check ran and wrote its baseline, then the
     expectation batch raised. Nothing may survive — not the result row, and not the
-    baseline that would poison every later run of that check."""
+    baseline that would poison every later run of that check.
+    """
     fx = suite_fixture
 
     run_service.execute_run(
@@ -228,7 +198,8 @@ def test_a_cancelled_run_leaves_no_baseline(suite_fixture: _Fixture) -> None:
 def test_a_succeeded_run_DOES_persist_its_baseline(suite_fixture: _Fixture) -> None:
     """The other half, and the reason this can't be fixed by simply never writing:
     a run that completes must leave its baseline behind, or the next run has no
-    history to score against and `anomaly` never leaves its cold start."""
+    history to score against and `anomaly` never leaves its cold start.
+    """
     fx = suite_fixture
 
     run_service.execute_run(

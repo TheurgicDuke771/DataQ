@@ -1,38 +1,4 @@
-"""Incident lifecycle engine + read model (ADR 0034 decision 4, #761).
-
-An **alert** is a per-result notification (fire-and-forget; severity routing,
-dedup, snooze — already shipped). An **incident** is the stateful object those
-signals roll up into, anchored to ``(asset_id, check_id)``:
-
-* a **breaching** result (warn/fail/critical) *opens* an incident if none is
-  active for the pair, else *attaches an occurrence* (``occurrence_count`` +
-  ``last_seen_at`` + refreshed evidence) — never a duplicate;
-* the first **passing** result *auto-resolves* the active incident (per-suite
-  configurable, default on); a manual ack/resolve via the API always wins;
-* a resolved pair's next breach opens a **new** incident linked to the prior one
-  (``prior_incident_id``) — a resolved row is never mutated back to open.
-
-**Dedup is upsert-race-safe (the #420 discipline, one level up from alert dedup):**
-opening is an ``INSERT … ON CONFLICT DO NOTHING`` against the partial unique index
-``uq_incidents_active_asset_check`` — a concurrent second breaching result loses
-the insert and falls through to the occurrence-attach path instead of racing in a
-duplicate or raising an IntegrityError.
-
-**The run hook is fail-soft** (``sync_incidents_for_run``): an incident-engine bug
-must never fail an already-persisted run — the same contract as the sibling
-``alerting.dispatch`` / ``lineage.dispatch`` hooks the worker calls next to it.
-
-Visibility derives from suite grants (ADR 0027): an incident is visible iff the
-caller can ``view`` its suite; a workspace-admin sees all; anything outside the
-caller's grants is 404-no-leak. Deliberately UNCHANGED by ADR 0037 (which opened
-asset *identity* to every member): an incident carries failure evidence —
-itemized measurement, not identity — so it stays behind the suite grants.
-
-The orphan-asset sweep (#770) never retires an asset with incident history:
-``incidents.asset_id`` is registered in ``asset_service._SWEEP_REFERENCE_GUARDS``
-(schema-introspection-enforced), because the FK is ``ON DELETE CASCADE`` and an
-un-guarded sweep would silently drop incidents.
-"""
+"""Incident lifecycle engine + read model (ADR 0034 decision 4, #761)."""
 
 from __future__ import annotations
 
@@ -64,9 +30,8 @@ from backend.app.services.suite_authz import SuiteForbiddenError, effective_perm
 
 log = get_logger(__name__)
 
-# Mirrors the partial unique index predicate `uq_incidents_active_asset_check`
-# (keep in sync with the model / migration). The ON CONFLICT target below points
-# at that index via (index_elements, index_where).
+# Mirrors the partial unique index predicate `uq_incidents_active_asset_check` (keep in sync with
+# the model / migration).
 _ACTIVE_INCIDENT_PREDICATE = text(
     "status IN (" + ", ".join(f"'{s}'" for s in INCIDENT_ACTIVE_STATUSES) + ")"
 )
@@ -83,7 +48,8 @@ def _now() -> datetime:
 
 class IncidentNotFoundError(DataQError):
     """The incident does not exist *or* is wholly outside the caller's grants — the
-    two are indistinguishable by design (404-no-leak, same as the asset view)."""
+    two are indistinguishable by design (404-no-leak, same as the asset view).
+    """
 
     status_code = 404
     code = "incident_not_found"
@@ -91,7 +57,8 @@ class IncidentNotFoundError(DataQError):
 
 class IncidentNotActiveError(DataQError):
     """A manual transition was requested on a resolved incident (already closed) —
-    a 409, not a silent no-op (the caller is acting on stale state)."""
+    a 409, not a silent no-op (the caller is acting on stale state).
+    """
 
     status_code = 409
     code = "incident_not_active"
@@ -101,13 +68,7 @@ class IncidentNotActiveError(DataQError):
 
 
 def sync_incidents_for_run(session: Session, *, run_id: uuid.UUID) -> None:
-    """Reconcile incidents from a terminal run's results — **never raises**.
-
-    Called from the worker right after the run reaches a terminal state and
-    before the alert dispatch (so the published report can reference the open
-    incidents). Any failure is logged and swallowed: the run is already persisted,
-    so an incident-engine hiccup must not fail the task or roll anything back.
-    """
+    """Reconcile incidents from a terminal run's results — **never raises**."""
     try:
         _sync_incidents_for_run(session, run_id=run_id)
     except Exception:
@@ -117,11 +78,7 @@ def sync_incidents_for_run(session: Session, *, run_id: uuid.UUID) -> None:
 
 def _sync_incidents_for_run(session: Session, *, run_id: uuid.UUID) -> None:
     run = session.get(Run, run_id)
-    # Only executed runs carry per-check results. A run with no resolved asset
-    # can't anchor an incident (fail-soft, mirrors Suite/Run.asset_id) → skip. An
-    # *operationally-failed* run (status='failed', no result rows) has no
-    # check-level signal to anchor to either — it still alerts (the always-alert
-    # path) but opens no incident (the (asset, check) anchor needs a check).
+    # Only executed runs carry per-check results.
     if run is None or run.status not in ("succeeded", "failed") or run.asset_id is None:
         return
 
@@ -171,24 +128,6 @@ def open_or_attach_incident(
 ) -> tuple[Incident, str]:
     """Open a new incident for ``(run.asset_id, result.check_id)`` or attach an
     occurrence to the active one. Returns ``(incident, "opened"|"attached")``.
-
-    Upsert-race-safe: the ``INSERT … ON CONFLICT DO NOTHING`` against the partial
-    unique index means a concurrent second breaching result loses the insert and
-    falls through to the attach path — exactly one active incident, occurrences
-    counted. When the conflicting incident resolves in the insert→attach gap the
-    pair is free again, so the open is **retried** (bounded loop) rather than
-    erroring out and rolling back the whole run's sync.
-
-    **Timestamp contract (the `is_new` signal):** an open stamps ``last_seen_at``
-    with the same transaction-start ``now()`` the ``created_at`` server default
-    uses, so a freshly-opened incident has ``created_at == last_seen_at``; an
-    attach bumps ``last_seen_at`` with ``clock_timestamp()`` (wall clock, strictly
-    later even inside one transaction), breaking the equality. The alert builder
-    derives ``is_new`` from that equality — stable under a concurrent attach,
-    unlike re-deriving from ``occurrence_count`` at build time.
-
-    Does **not** commit (the caller batches the run's results into one
-    transaction); the evidence card is (re)snapshotted here either way.
     """
     assert run.asset_id is not None  # guarded by the caller (_sync / anchor rule)
     evidence = build_evidence(session, run=run, result=result, check=check, asset=asset)
@@ -223,16 +162,14 @@ def open_or_attach_incident(
             assert incident is not None  # just inserted in this transaction
             return incident, "opened"
 
-        # Conflict → an active incident already exists (the winner's row, now
-        # visible under READ COMMITTED since our insert blocked on its commit).
-        # Attach an occurrence (row-locked — serialize with ack/resolve).
+        # Conflict → an active incident already exists (the winner's row, now visible under READ
+        # COMMITTED since our insert blocked on its commit).
         active = _active_incident(
             session, asset_id=run.asset_id, check_id=result.check_id, for_update=True
         )
         if active is None:
-            # Resolved in the insert→attach gap — the pair is free again; retry
-            # the open instead of raising (a raise would roll back the WHOLE
-            # run's sync, not just this pair).
+            # Resolved in the insert→attach gap — the pair is free again; retry the open instead of
+            # raising (a raise would roll back the WHOLE run's sync, not just this pair).
             continue
         active.occurrence_count += 1
         active.last_seen_at = func.clock_timestamp()  # breaks created_at equality
@@ -251,7 +188,8 @@ def _auto_resolve_active(session: Session, *, asset_id: uuid.UUID, check_id: uui
     """Auto-resolve the active incident for the pair on a passing result. Returns
     whether one was resolved (``False`` when none is active — the common clean
     case). ``resolved_by='auto'``; no actor user. Row-locked (``FOR UPDATE``) so it
-    serializes with a concurrent manual ack/resolve instead of clobbering it."""
+    serializes with a concurrent manual ack/resolve instead of clobbering it.
+    """
     active = _active_incident(session, asset_id=asset_id, check_id=check_id, for_update=True)
     if active is None:
         return False
@@ -265,18 +203,7 @@ def _auto_resolve_active(session: Session, *, asset_id: uuid.UUID, check_id: uui
 def acknowledge_incident(
     session: Session, incident: Incident, *, user_id: uuid.UUID, note: str | None = None
 ) -> Incident:
-    """Acknowledge an incident (``open → acknowledged``), stamping actor + time.
-
-    Idempotent on an already-acknowledged incident (records the newer actor/note);
-    a **resolved** incident is a 409 (`IncidentNotActiveError`) — it is closed, and
-    reopening is only ever a new incident (never a mutation back to active).
-
-    **Lock-then-recheck**: the row is re-read ``FOR UPDATE`` before the status
-    check, so a resolve (manual or auto) that commits between the caller's stale
-    read and this transition can never be silently reopened — the lost-update
-    race that would otherwise also double-match the active partial unique index
-    (an unhandled 500) once a successor incident exists for the pair.
-    """
+    """Acknowledge an incident (``open → acknowledged``), stamping actor + time."""
     session.refresh(incident, with_for_update=True)
     if incident.status == "resolved":
         session.rollback()  # release the lock; nothing to write
@@ -308,11 +235,6 @@ def resolve_incident(
 ) -> Incident:
     """Manually resolve an incident (``open|acknowledged → resolved``, ``resolved_by
     ='user'``). Manual wins over auto. A double-resolve is a 409.
-
-    Same lock-then-recheck as :func:`acknowledge_incident`: the ``FOR UPDATE``
-    re-read serializes concurrent resolves (manual/manual or auto/manual) so
-    exactly one wins and the loser gets a clean 409 instead of silently
-    overwriting the winner's actor/notes.
     """
     session.refresh(incident, with_for_update=True)
     if incident.status == "resolved":
@@ -327,9 +249,7 @@ def resolve_incident(
     incident.resolved_at = _now()
     if note is not None:
         incident.resolution_note = note
-    # Only the MANUAL resolve is audited. The auto-resolve path (a passing run
-    # closing an incident) is a machine write and is excluded by ADR 0041 §2.1 —
-    # which is also why `resolved_by` distinguishes the two.
+    # Only the MANUAL resolve is audited.
     audit_service.record_entity_change(
         session,
         action="incident.resolve",
@@ -350,7 +270,8 @@ def resolve_incident(
 def auto_resolve_enabled(session: Session, suite_id: uuid.UUID) -> bool:
     """Whether the suite auto-resolves incidents on a passing result. Default
     **on** for a suite with no notification config row (matches the no-config
-    alerting default)."""
+    alerting default).
+    """
     config = session.scalars(
         select(SuiteNotification).where(SuiteNotification.suite_id == suite_id)
     ).first()
@@ -366,7 +287,8 @@ def _active_incident(
     """The single active (open|acknowledged) incident for the pair, if any — the
     partial unique index guarantees at most one. ``for_update`` row-locks it for
     the mutating callers (attach, auto-resolve) so they serialize with the
-    manual ack/resolve lock instead of losing updates."""
+    manual ack/resolve lock instead of losing updates.
+    """
     stmt = select(Incident).where(
         Incident.asset_id == asset_id,
         Incident.check_id == check_id,
@@ -381,7 +303,8 @@ def _most_recent_resolved_id(
     session: Session, *, asset_id: uuid.UUID, check_id: uuid.UUID
 ) -> uuid.UUID | None:
     """The most-recently-resolved incident id for the pair (the reopen link), or
-    ``None`` for a first-ever incident."""
+    ``None`` for a first-ever incident.
+    """
     return session.scalars(
         select(Incident.id)
         .where(
@@ -398,14 +321,7 @@ def active_incidents_for_run(session: Session, run: Run) -> dict[uuid.UUID, Inci
     """The active incidents on this run's asset keyed by ``check_id`` — the map the
     alert builder joins its failing checks against so a published report references
     the open incident. Empty when the run has no resolved asset.
-
-    The ``suite_id`` filter is consistent with the ``(asset_id, check_id)`` dedup
-    key, not a second key: a check belongs to exactly one suite and an incident's
-    ``suite_id`` is denormalized from the opening run's suite (= the check's
-    suite), so for any check in THIS run's results the pair's incident always
-    carries this run's ``suite_id`` — on a shared asset the filter merely
-    pre-drops sibling suites' incidents, whose checks can never appear in this
-    run's results anyway (they'd be dropped at the builder's check_id join)."""
+    """
     if run.asset_id is None:
         return {}
     rows = session.scalars(
@@ -429,18 +345,6 @@ def load_visible_incident(
     """Load an incident the caller may see, or raise 404-no-leak. When
     ``for_action`` the caller must additionally hold ``edit`` on the incident's
     suite (else `SuiteForbiddenError`).
-
-    An unknown id and an id whose suite the caller cannot view raise the SAME
-    error (existence hidden) — the suite-grain no-leak rule, deliberately KEPT by
-    ADR 0037 (which retired the asset-grain one): incidents are itemized
-    evidence, not identity.
-
-    Lives here rather than in the HTTP layer because it is the **only** thing
-    standing between an incident's evidence and a caller with no grant on its
-    suite, and there are now two surfaces that need it (REST and MCP). A second
-    hand-written copy of a 404-no-leak rule is the "guard applied at one door and
-    not its sibling" shape this codebase has hit repeatedly; the divergence would
-    be invisible until it leaked.
     """
     incident = get_incident(session, incident_id)
     suite = session.get(Suite, incident.suite_id) if incident is not None else None
@@ -473,7 +377,8 @@ def _incident_filters(
     """The ONE `WHERE` chain shared by :func:`list_incidents` and
     :func:`count_incidents`. Derived once rather than hand-rolled twice, so a
     future filter cannot land on the list without the total — which would make
-    `X-Total-Count` quietly disagree with the page it describes (#1108)."""
+    `X-Total-Count` quietly disagree with the page it describes (#1108).
+    """
     conditions: list[Any] = [
         Incident.suite_id.in_(suite_service.accessible_suite_ids(user_id, include_all=include_all))
     ]
@@ -499,11 +404,6 @@ def list_incidents(
 ) -> list[Incident]:
     """Incidents on suites the caller can view, newest first (``created_at`` desc),
     paginated with ``limit``/``offset`` (the #772 /assets pagination shape).
-
-    Visibility derives from suite grants (ADR 0027 / #760): the accessible-suite
-    subquery is always applied, so an ``asset_id``/``suite_id`` filter the caller
-    can't see yields an empty list. ``include_all`` spans every suite (workspace
-    admin). ``state`` narrows by lifecycle status.
     """
     stmt = (
         select(Incident)
@@ -532,12 +432,11 @@ def count_incidents(
     suite_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> int:
-    """Total incidents matching the SAME visibility + filters as
-    :func:`list_incidents`, unaffected by its `limit`/`offset` (#1108 — the
-    `/assets` `X-Total-Count` shape). Grant-scoped like the list — this is a
-    per-caller total, not a workspace-wide one (unlike `/assets`, incidents
-    stay behind suite grants per ADR 0037). Shares :func:`_incident_filters`
-    with the list so the two cannot drift."""
+    """Total incidents matching the SAME visibility + filters as :func:`list_incidents`, unaffected
+    by its `limit`/`offset` (#1108 — the `/assets` `X-Total-Count` shape). Grant-scoped like the
+    list — this is a per-caller total, not a workspace-wide one (unlike `/assets`, incidents
+    stay behind suite grants per ADR 0037).
+    """
     stmt = (
         select(func.count())
         .select_from(Incident)

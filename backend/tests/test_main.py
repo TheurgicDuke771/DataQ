@@ -1,7 +1,4 @@
-"""Tests for the request_id middleware: validation + structured-log emission.
-
-Per 2026-05-28 security audit + observability work (#50, #51).
-"""
+"""Tests for the request_id middleware: validation + structured-log emission."""
 
 import asyncio
 import logging
@@ -72,11 +69,7 @@ def test_request_id_replaced_on_empty(client: TestClient) -> None:
 
 
 def _request_events_from_caplog(records: list[logging.LogRecord]) -> list[dict[str, object]]:
-    """Pick request-event records that structlog routed through stdlib logging.
-
-    structlog's stdlib bridge emits records whose `msg` is the rendered dict
-    (post-processors) — args slot carries the original event_dict.
-    """
+    """Pick request-event records that structlog routed through stdlib logging."""
     out: list[dict[str, object]] = []
     for rec in records:
         # The structlog ProcessorFormatter wraps the original event_dict on rec.msg
@@ -150,7 +143,8 @@ def test_openapi_schema_served_in_test_env(client: TestClient) -> None:
 def test_every_api_endpoint_has_summary_and_tags() -> None:
     """Swagger-completeness guardrail (W7 hardening): every /api/* operation
     carries a `summary` and at least one `tag`, so Swagger/ReDoc stay navigable
-    and self-describing. Fails loudly if a new endpoint omits them."""
+    and self-describing. Fails loudly if a new endpoint omits them.
+    """
     schema = app.openapi()
     http_methods = {"get", "post", "put", "patch", "delete"}
     missing: list[str] = []
@@ -176,11 +170,7 @@ def test_every_api_endpoint_has_summary_and_tags() -> None:
 
 
 def test_healthz_stays_up_when_the_database_is_down(client: TestClient) -> None:
-    """Liveness must NOT depend on the database.
-
-    A liveness probe that fails on a DB blip gets the container killed and
-    restarted, which cannot fix a database and turns a degradation into an outage.
-    """
+    """Liveness must NOT depend on the database."""
     from backend.app.db.session import get_db
 
     def _broken_db() -> object:
@@ -198,11 +188,6 @@ def test_healthz_stays_up_when_the_database_is_down(client: TestClient) -> None:
 def test_readyz_goes_red_when_the_database_cannot_be_read(client: TestClient) -> None:
     """The signal the incident lacked. 503, not 500: this is "not ready to serve",
     which is what a load balancer and an alert need to distinguish.
-
-    The fake fails only on the actual READ, not on the timeout setup — an earlier
-    version raised on the first `execute` and so passed even with the `SELECT 1`
-    deleted, proving 503-on-error without proving the probe touches the database
-    at all. Caught by mutation.
     """
     from backend.app.db.session import get_db
 
@@ -229,7 +214,8 @@ def test_readyz_goes_red_when_the_database_cannot_be_read(client: TestClient) ->
 
 def test_readyz_never_echoes_the_database_error(client: TestClient) -> None:
     """This route is UNAUTHENTICATED, and a DSN in a driver error carries a
-    password (#536). The reason belongs in the logs, not the response body."""
+    password (#536). The reason belongs in the logs, not the response body.
+    """
     from backend.app.db.session import get_db
 
     secret_ish = "could not connect to postgresql://dataq:hunter2@db:5432/dataq"
@@ -276,9 +262,6 @@ def test_readyz_never_echoes_the_database_error(client: TestClient) -> None:
 async def _run_one_tick(monkeypatch: pytest.MonkeyPatch, tick_error: Exception) -> list[EventDict]:
     """Drive exactly one iteration of `_poll_staleness_loop` whose tick raises
     ``tick_error``, and return the structlog events captured during it.
-
-    The tick itself sets `stop` before raising, so the loop's own `while not
-    stop.is_set()` guard exits after logging — no timing-dependent second tick.
     """
     stop = asyncio.Event()
 
@@ -305,10 +288,7 @@ async def test_poll_staleness_loop_downgrades_an_error_the_composite_already_log
     assert len(ticks) == 1
     assert ticks[0]["level"] == "warning"
     assert "exc_info" not in ticks[0]
-    # No exc_info and no per-tick correlation id in this background loop, so
-    # error_type is the only thing left to match this line back to the composite's
-    # own per-channel log (review finding on #1260; now restored by the processor
-    # itself, #1261, for any caller it downgrades — not hand-added here).
+    # No exc_info and no per-tick correlation id in this background loop.
     assert ticks[0]["error_type"] == "RuntimeError"
 
 
@@ -318,7 +298,8 @@ async def test_poll_staleness_loop_still_logs_a_full_traceback_for_anything_else
     """The downgrade must be narrow: an ordinary, unmarked exception (a DB error,
     a bug elsewhere in the tick) is NOT the composite's already-logged error, so it
     must still surface with a full traceback — the fix must not go blind to new
-    failures in this watchdog, which exists precisely to catch a dead worker."""
+    failures in this watchdog, which exists precisely to catch a dead worker.
+    """
     events = await _run_one_tick(monkeypatch, RuntimeError("db connection reset"))
 
     ticks = [e for e in events if e["event"] == "poll_staleness_tick_failed"]

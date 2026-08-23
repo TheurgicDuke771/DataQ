@@ -100,11 +100,8 @@ describe('LiveRunProgress', () => {
       .mockResolvedValue(progress('succeeded'));
     renderDrawer({ pollMs: 5 });
 
-    // Wait on the terminal signal itself — the `succeeded` status tag — not the
-    // "View full results →" link, which renders unconditionally from the first
-    // (running) poll onward, so it can't tell us the run has reached terminal.
-    // (This bare getByText after the link was the CI flake — the second poll
-    // hadn't landed `succeeded` yet on slow runners. #640.)
+    // Wait on the terminal signal itself — the `succeeded` status tag — not the "View full results
+    // →" link, which renders unconditionally from the first (running) poll onward.
     expect(await screen.findByText('succeeded')).toBeInTheDocument();
     expect(screen.getByText('View full results →')).toBeInTheDocument();
     const callsAtTerminal = mockProgress.mock.calls.length;
@@ -204,16 +201,12 @@ describe('LiveRunProgress', () => {
     expect(await screen.findByText('Failed to load run progress')).toBeInTheDocument();
   });
 
-  // ── the honest-affordance half of #318 ────────────────────────────
-  //
-  // Behaviour, not markup: these assert what a viewer can *read* off the drawer
-  // (a percentage claim, an elapsed time, a spinner), because a class-name
-  // assertion in jsdom proves nothing about what is rendered (#1282).
+  // ── the honest-affordance half of #318 ──────────────────────────── Behaviour, not markup: these
+  // assert what a viewer can *read* off the drawer (a percentage claim, an elapsed time.
 
   it('shows a QUEUED run as queued, not as a running heartbeat (#318)', async () => {
-    // A never-dispatched run is a different state with a different cause, and the
-    // one the stuck-run reaper exists to catch. Calling it "Running" would hide
-    // exactly the failure a user needs to see.
+    // A never-dispatched run is a different state with a different cause, and the one the stuck-run
+    // reaper exists to catch.
     mockProgress.mockResolvedValue(
       progress('queued', { completed_checks: 0, elapsed_ms: null, counts: {} }),
     );
@@ -227,9 +220,7 @@ describe('LiveRunProgress', () => {
   });
 
   it('explains the batch only when the server says the composition supports it', async () => {
-    // `batched_pending` comes from the run's real kinds. Inferring the mechanism
-    // from `completed_checks === 0` asserted something false for a
-    // comparison-only suite that is simply slow.
+    // `batched_pending` comes from the run's real kinds.
     const running = {
       completed_checks: 0,
       elapsed_ms: 5_000,
@@ -284,9 +275,8 @@ describe('LiveRunProgress', () => {
   });
 
   it('keeps the bar on a terminal run that resolved nothing, and reads "took"', async () => {
-    // A failed run writes no results (the backend discards partial phases), so
-    // completed_checks is 0 — but it is finished, not waiting, and a heartbeat
-    // there would claim work is still happening.
+    // A failed run writes no results (the backend discards partial phases), so completed_checks is
+    // 0 — but it is finished, not waiting.
     mockProgress.mockResolvedValue(
       progress('failed', {
         completed_checks: 0,

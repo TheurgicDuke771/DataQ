@@ -1,9 +1,4 @@
-"""DbtProvider / DbtConfig / DbtConnectionAdapter unit tests.
-
-Pure unit tests (no auth here — HMAC verification is the endpoint's job): callback
-parse + status mapping, config validation per artifacts scheme, and the artifacts
-poll (`list_recent_runs`) with `_read_artifact` patched (no cloud SDK needed).
-"""
+"""DbtProvider / DbtConfig / DbtConnectionAdapter unit tests."""
 
 import json
 from datetime import UTC, datetime, timedelta
@@ -335,7 +330,8 @@ def test_read_artifact_s3_builds_key_and_reads(monkeypatch: pytest.MonkeyPatch) 
 
 def test_dbt_config_normalizes_the_endpoint_url() -> None:
     """`DbtConfig` is a separate model from `S3Config` — its validators need their
-    own cover, or deleting them leaves the suite green."""
+    own cover, or deleting them leaves the suite green.
+    """
     cfg = DbtConfig.model_validate(
         _cfg(
             artifacts_uri="s3://bucket/dbt",
@@ -348,11 +344,7 @@ def test_dbt_config_normalizes_the_endpoint_url() -> None:
 
 
 def test_dbt_config_treats_a_cleared_endpoint_as_aws() -> None:
-    """Blank must become None: `boto3.client(endpoint_url="")` is a broken endpoint.
-
-    dbt has no form field for this until #1065, so every dbt config arrives from the
-    API — exactly where a blank optional value shows up.
-    """
+    """Blank must become None: `boto3.client(endpoint_url="")` is a broken endpoint."""
     cfg = DbtConfig.model_validate(
         _cfg(artifacts_uri="s3://b/dbt", access_key_id="AK", region="us-east-1", endpoint_url="")
     )
@@ -393,12 +385,7 @@ def test_dbt_config_treats_a_cleared_addressing_style_as_auto() -> None:
 
 
 def test_read_artifact_s3_reaches_a_compatible_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The artifacts poll must reach the same stores a datasource check can (#1063).
-
-    Without this the poller is the one S3 path pinned to AWS, so a dbt project
-    whose artifacts sit beside its data in MinIO/Ceph would silently never poll —
-    the connection would look configured and simply report no runs.
-    """
+    """The artifacts poll must reach the same stores a datasource check can (#1063)."""
     seen: dict[str, Any] = {}
 
     class _Body:

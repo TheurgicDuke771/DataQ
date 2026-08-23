@@ -1,14 +1,4 @@
-"""Wiring test for the `sweep_orphan_assets` beat entry point (#770).
-
-Pure-unit (no DB): the reference-guarded delete behaviour is covered DB-backed
-in `tests/services/test_asset_sweep.py`. Here we only assert the task reads the
-configured retention window, delegates to the service, returns the swept
-count, always closes its session, and — unlike its sibling janitors — is
-fail-soft on a DB error: the hand-maintained reference-guard checklist
-(ADR 0034; see the service docstring) is new and a future referencing table
-landing without its guard line must not crash the beat tick for the janitors
-scheduled after it.
-"""
+"""Wiring test for the `sweep_orphan_assets` beat entry point (#770)."""
 
 from typing import Any
 
@@ -48,7 +38,8 @@ def test_sweep_task_passes_configured_retention_and_closes_session(monkeypatch: 
 
 def test_sweep_task_fails_soft_on_db_error(monkeypatch: Any) -> None:
     """A DB hiccup inside the service call must not propagate — the task returns
-    0, rolls back, and still closes the session (never crashes the beat tick)."""
+    0, rolls back, and still closes the session (never crashes the beat tick).
+    """
 
     class _Session:
         def __init__(self) -> None:
@@ -80,7 +71,8 @@ def test_sweep_task_fails_soft_on_db_error(monkeypatch: Any) -> None:
 
 def test_sweep_task_fails_soft_when_settings_lookup_raises(monkeypatch: Any) -> None:
     """Even a failure before the service call (e.g. Settings misconfigured) is
-    swallowed — the session still closes."""
+    swallowed — the session still closes.
+    """
 
     class _Session:
         def __init__(self) -> None:

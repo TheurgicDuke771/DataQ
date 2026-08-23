@@ -17,14 +17,8 @@ const ALERT_ON_OPTIONS: { value: AlertOn; label: string }[] = [
 ];
 
 /**
- * Suite-detail panel for per-suite alerting (W6, fronts `notification_service`;
- * Slack + email per-suite added in #633). Controls whether outcomes are delivered,
- * the threshold (`alert_on`), and the per-suite destinations. The Teams + Slack
- * webhooks are **write-only** secrets — the API never returns them, so each field
- * shows whether one is set and only writes when you type a new one (blank =
- * unchanged; "Clear" removes it → workspace fallback). Email recipients aren't a
- * secret, so they're prefilled and edited in place. `view` reads; `edit`+
- * (`canManage`) mutates, matching the backend gate.
+ * Suite-detail panel for per-suite alerting (W6, fronts `notification_service`; Slack + email per-
+ * suite added in #633).
  */
 export function NotificationsPanel({
   suiteId,
@@ -58,9 +52,8 @@ export function NotificationsPanel({
         />
       ) : (
         <NotificationsForm
-          // Remount on a config change so the form re-seeds from the loaded values
-          // (render-phase reset, no setState-in-effect); an unchanged reload keeps
-          // the same key, preserving any in-progress edits.
+          // Remount on a config change so the form re-seeds from the loaded values (render-phase
+          // reset, no setState-in-effect); an unchanged reload keeps the same key.
           key={
             `${state.data.enabled}:${state.data.alert_on}:${state.data.has_webhook}` +
             `:${state.data.has_slack_webhook}:${state.data.email_recipients ?? ''}`
@@ -143,9 +136,7 @@ function NotificationsForm({
   const [email, setEmail] = useState(initialEmail);
   const [saving, setSaving] = useState(false);
 
-  // Shared PUT with one error path (a failure toasts, never silently drops). The
-  // caller supplies the base enabled/alert_on so a "clear" can persist the
-  // server-known values rather than piggybacking unsaved switch/threshold edits.
+  // Shared PUT with one error path (a failure toasts, never silently drops).
   const putWith = async (
     base: { enabled: boolean; alert_on: AlertOn },
     extra: Partial<SuiteNotificationUpdate>,
@@ -185,9 +176,8 @@ function NotificationsForm({
     }
   };
 
-  // Clearing a webhook is a focused action — it must NOT persist an unsaved
-  // enabled/threshold edit, so it sends the loaded (server-known) enabled/alert_on
-  // (#639 review). The remount-on-reload then re-seeds the form from the server.
+  // Clearing a webhook is a focused action — it must NOT persist an unsaved enabled/threshold edit,
+  // so it sends the loaded (server-known) enabled/alert_on (#639 review).
   const clearWebhook = (extra: Partial<SuiteNotificationUpdate>, successMsg: string) => () =>
     void putWith({ enabled: initialEnabled, alert_on: initialAlertOn }, extra, successMsg);
 

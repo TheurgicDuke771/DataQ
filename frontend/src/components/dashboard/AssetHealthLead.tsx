@@ -9,29 +9,19 @@ import { useAsyncData } from '../../hooks/useAsyncData';
 import { BRAND } from '../../theme';
 
 /**
- * Asset-health lead (`/dashboard`, ADR 0034 navigation inversion, #773) — the
- * dashboard now *leads* with asset-level health: how many assets DataQ monitors,
- * how many need attention, how many have a run in flight. Everything is derived
- * from the existing `/assets` list read (no new endpoint), which is
- * workspace-true (ADR 0037) — every member sees the same verdicts.
- *
- * Click-through is preserved end to end: the tiles and "View all assets" go to
- * `/assets`; each attention row opens `/assets/:id` (→ its suites/runs).
+ * Asset-health lead (`/dashboard`, ADR 0034 navigation inversion, #773) — the dashboard now
+ * *leads* with asset-level health: how many assets DataQ monitors, how many need attention.
  */
 
-/** An asset "needs attention" when a check tier is failing (bad data) or DataQ
- *  couldn't execute against the datasource at all (#803 connection axis — a failed
- *  run, or a check the datasource threw on). An active-but-unconcluded run is *in
- *  progress*, not failing. `has_operational_error` subsumes `has_failed_run`, and
- *  additionally catches a run that *succeeded* while its checks errored — which the
- *  old run-status-only rule silently let read as healthy. */
+/**
+ * An asset "needs attention" when a check tier is failing (bad data) or DataQ couldn't execute
+ * against the datasource at all (#803 connection axis — a failed run.
+ */
 function needsAttention(a: AssetSummary): boolean {
   return a.worst_severity !== null || a.has_operational_error;
 }
 
-/** Attention ordering: critical > fail > warn > operational run failure. The
- *  backend list arrives (namespace, name)-alphabetical, so without this a page
- *  of warns could hide a critical asset behind the "+N more" fold. */
+/** Attention ordering: critical > fail > warn > operational run failure. */
 const SEVERITY_RANK: Record<'warn' | 'fail' | 'critical', number> = {
   warn: 1,
   fail: 2,
@@ -87,10 +77,10 @@ function AssetHealthBody({
   onOpenAsset,
 }: {
   assets: AssetSummary[];
-  /** Workspace-wide total from `X-Total-Count` (#925) — may exceed
-   *  `assets.length` when the workspace has more assets than this one fetch
-   *  covers, which is exactly what makes the tiles below a lower bound rather
-   *  than a true workspace verdict (out of scope for this fix; see #925). */
+  /**
+   * Workspace-wide total from `X-Total-Count` (#925) — may exceed `assets.length` when the
+   * workspace has more assets than this one fetch covers.
+   */
   total: number;
   onOpenList: () => void;
   onOpenAsset: (id: string) => void;

@@ -1,12 +1,4 @@
-"""DB-backed tests for the MCP tools (real Postgres).
-
-Each tool is a thin wrapper that opens a session, resolves the caller, and calls
-the service layer with per-suite authz. We isolate the tool *logic* by patching
-`server.get_session` → the test session and `server.resolve_current_user` → a
-known user, then assert the returned LLM-shaped dict and that authz is enforced.
-The auth/user-resolution itself is covered in test_mcp_auth.py. Skips without
-TEST_DATABASE_URL.
-"""
+"""DB-backed tests for the MCP tools (real Postgres)."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -100,16 +92,7 @@ def test_list_suites_shapes_each_accessible_suite(db_session: Any, monkeypatch: 
 def test_list_suites_query_count_does_not_grow_with_suite_count(
     db_session: Any, monkeypatch: Any
 ) -> None:
-    """`list_suites` must issue a FIXED number of queries, not O(suites) (#947).
-
-    Asserted by counting SQL statements, because the obvious test — "the output
-    is still correct" — passes just as happily with the N+1 in place. Only the
-    query count distinguishes the two, and an LLM calling this tool cannot see
-    the cost, so nothing else would ever surface a regression.
-
-    Three per-suite queries used to run in the loop (connection, check count,
-    latest run), so a 30-suite workspace issued ~90 round trips.
-    """
+    """`list_suites` must issue a FIXED number of queries, not O(suites) (#947)."""
     from sqlalchemy import event
 
     user = _user(db_session)
@@ -132,9 +115,7 @@ def test_list_suites_query_count_does_not_grow_with_suite_count(
 
     assert len(out) == 4
     assert {o["check_count"] for o in out} == {1}, "batching must not lose per-suite counts"
-    # 4 suites, and the whole tool stays in single digits. The pre-fix code issued
-    # 3 per suite on top of the listing, so this trips immediately if the loop
-    # regains a query — while leaving room for the shared prelude to change.
+    # 4 suites, and the whole tool stays in single digits.
     assert len(statements) <= 8, f"expected a fixed query count, issued {len(statements)}"
 
 
@@ -256,7 +237,8 @@ def test_get_adf_pipeline_status_correlates_dq_run(db_session: Any, monkeypatch:
 def _adf_run_on_unowned_suite(db_session: Any) -> User:
     """Seed a pipeline run correlated to a DQ run on a suite owned by someone
     else, and return a fresh outsider to view it. Shared by the admin +
-    non-admin correlation-visibility tests below."""
+    non-admin correlation-visibility tests below.
+    """
     owner = _user(db_session, "owner@acme.io")
     suite = _suite(db_session, owner)
     db_session.add(
@@ -352,7 +334,8 @@ def test_create_check_persists(db_session: Any, monkeypatch: Any) -> None:
 def test_create_check_rejects_nul_bytes(db_session: Any, monkeypatch: Any) -> None:
     """NUL can't reach Postgres (#567) — the MCP boundary rejects it as a clean
     ToolError (mirroring the REST ApiModel guard), wherever it hides: the name
-    or a nested config value."""
+    or a nested config value.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -377,7 +360,8 @@ def test_create_check_rejects_oversized_name_or_type(db_session: Any, monkeypatc
     """The MCP tool has no Pydantic layer of its own, so `name`/`expectation_type`
     length is enforced by `check_service` — matching the REST `CheckCreate` bounds
     (256/128) and the `checks` column widths — as a clean ToolError, not a raw
-    Postgres `StringDataRightTruncation` on the INSERT."""
+    Postgres `StringDataRightTruncation` on the INSERT.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -440,15 +424,7 @@ def test_profile_column_shapes_result(db_session: Any, monkeypatch: Any) -> None
 
 
 def test_profile_column_top_n_is_bounded_like_the_rest_endpoint() -> None:
-    """#327 review, P4: `top_n` is no longer only a result-size knob.
-
-    The batched profiler materialises one rank row per `top_n` inside the
-    statement, so an unbounded value — and LLM-generated arguments are exactly
-    the ones that arrive unbounded — would compile a multi-megabyte query in the
-    request thread. Asserted on the tool's advertised schema, because that is
-    where FastMCP enforces it (and where the client reads it); calling the
-    decorated function directly from Python bypasses validation entirely.
-    """
+    """#327 review, P4: `top_n` is no longer only a result-size knob."""
     import asyncio
 
     tool = asyncio.run(server.mcp.get_tool("profile_column"))
@@ -555,7 +531,8 @@ def test_profile_column_iceberg_default_profiles_the_folded_namespace_identifier
     """No explicit table/path on an Iceberg suite → the run target's already-folded
     `namespace.table` identifier is used, and `namespace` is NOT passed a second
     time — `run_target.resolve_target` folded it into `table` already, so passing
-    it again would double-fold (#721 code review)."""
+    it again would double-fold (#721 code review).
+    """
     from backend.app.services.profile_service import ProfileResult
 
     user = _user(db_session)
@@ -580,7 +557,8 @@ def test_profile_column_iceberg_explicit_table_and_namespace_override(
 ) -> None:
     """An explicit `table` + `namespace` (profiling something other than the
     suite's own target) is passed straight through to the profiler, which does
-    its own fold (#721 code review)."""
+    its own fold (#721 code review).
+    """
     from backend.app.services.profile_service import ProfileResult
 
     user = _user(db_session)
@@ -603,7 +581,8 @@ def test_profile_column_no_target_anywhere_is_actionable_error(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """422 path: no explicit table/path AND a targetless suite — the error says
-    what to set instead of a bare validation failure."""
+    what to set instead of a bare validation failure.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user, with_target=False)
     _as(monkeypatch, db_session, user)
@@ -680,7 +659,8 @@ def test_profile_column_batch_target_materializes_the_concrete_file(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """A flat-file *batch* target lists the store (like a run) and profiles the
-    resolved concrete file."""
+    resolved concrete file.
+    """
     from backend.app.datasources import flatfile
     from backend.app.services.profile_service import ProfileResult
 
@@ -815,7 +795,8 @@ def test_build_mcp_app_allowlists_proxied_hosts(monkeypatch: Any) -> None:
     """FastMCP's transport guard defaults to loopback-only hosts and 421s anything
     else — but DataQ always fronts the api with the nginx proxy, which forwards the
     upstream Host (the ACA FQDN in prod, `api` in compose). Assert build_mcp_app
-    passes those hosts so the guard can't shadow the real auth gate."""
+    passes those hosts so the guard can't shadow the real auth gate.
+    """
     captured: dict[str, Any] = {}
     monkeypatch.setattr(server, "mcp_enabled", lambda: True)
     monkeypatch.setattr(server.mcp, "http_app", lambda **kw: captured.update(kw) or "APP")
@@ -833,30 +814,23 @@ def test_allowed_hosts_match_prod_and_compose_upstreams() -> None:
     """Prove the allowlist patterns actually match the real proxied Host values —
     so the mount doesn't 421 in prod (regression guard for the 3.4.3 DNS-rebind
     guard). Uses stdlib `fnmatchcase`, exactly what FastMCP's `_host_matches` uses,
-    without coupling the test to that private helper."""
+    without coupling the test to that private helper.
+    """
     from fnmatch import fnmatchcase
 
     def matches(host: str, patterns: list[str]) -> bool:
         return any(p == "*" or fnmatchcase(host, p) for p in patterns)
 
     hosts = ["*.azurecontainerapps.io", "api", "localhost", "127.0.0.1"]
-    # The SHAPE of the upstream Host nginx forwards (DATAQ_API_UPSTREAM, internal
-    # ingress): `<app>.internal.<env-hash>.<region>.azurecontainerapps.io`. Synthetic
-    # on purpose — what's under test is that fnmatch `*` spans dots and so matches a
-    # multi-label FQDN, not any one deployment's name (#730).
+    # The SHAPE of the upstream Host nginx forwards (DATAQ_API_UPSTREAM, internal ingress):
+    # `<app>.internal.<env-hash>.<region>.azurecontainerapps.io`.
     assert matches("dataq-app-api.internal.example-0a1b2c3d.westus2.azurecontainerapps.io", hosts)
     assert matches("api", hosts)  # docker-compose
     assert not matches("evil.example.com", hosts)  # still rejects the rest
 
 
 def test_allowed_hosts_come_from_settings_not_hardcoded(monkeypatch: Any) -> None:
-    """A non-ACA deployment can configure the allowlist (#728).
-
-    The list used to be a literal in `build_mcp_app`, which is the one deploy-target
-    coupling ADR 0010/0013 forbids in app code: any proxy forwarding a different
-    upstream Host (EKS/GKE, on-prem, a renamed compose service) got a 421 with no
-    way to fix it short of a code change.
-    """
+    """A non-ACA deployment can configure the allowlist (#728)."""
     from backend.app.core import config
 
     captured: dict[str, Any] = {}
@@ -877,11 +851,7 @@ def test_allowed_hosts_come_from_settings_not_hardcoded(monkeypatch: Any) -> Non
 
 
 def test_allowed_hosts_default_to_the_aca_shape_when_unset(monkeypatch: Any) -> None:
-    """Empty config keeps the deployed behaviour untouched (#728).
-
-    The setting is opt-in: an existing deployment that sets nothing must get the
-    same list the literal used to hardcode, or this refactor silently 421s prod.
-    """
+    """Empty config keeps the deployed behaviour untouched (#728)."""
     from backend.app.core import config
 
     settings = config.get_settings()
@@ -899,7 +869,8 @@ def test_get_suite_results_reports_whether_a_check_saw_a_sample(
 ) -> None:
     """#595 C8. Without this field an AI client reads a green board drawn from a
     2% sample and confidently reports full-dataset quality — the #424/#1115
-    overclaim class, reintroduced for every MCP consumer at once."""
+    overclaim class, reintroduced for every MCP consumer at once.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     check = Check(suite_id=suite.id, name="not null id", expectation_type="expect_x", config={})
@@ -926,7 +897,8 @@ def test_get_suite_results_reports_null_sampling_for_a_complete_read(
 ) -> None:
     """`null`, not an object claiming `sampled: false` — the same shape a client
     sees for every result written before scale-aware execution existed, so it can
-    branch on presence without a backfill."""
+    branch on presence without a backfill.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
@@ -980,7 +952,8 @@ def test_list_checks_shapes_every_check_on_the_suite(db_session: Any, monkeypatc
 
 def test_list_checks_surfaces_a_live_alert_snooze(db_session: Any, monkeypatch: Any) -> None:
     """A snoozed check still runs and still fails — it just alerts nobody (#370).
-    An LLM asked "why was there no alert?" can only answer if it can see this."""
+    An LLM asked "why was there no alert?" can only answer if it can see this.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     until = datetime.now(UTC) + timedelta(hours=4)
@@ -1016,7 +989,8 @@ def test_get_check_returns_the_full_definition(db_session: Any, monkeypatch: Any
 def test_get_check_from_another_suite_is_not_found(db_session: Any, monkeypatch: Any) -> None:
     """The cross-suite guard is the whole reason `get_check` takes BOTH ids: a
     check id from a suite the caller cannot see must not resolve by passing a
-    suite they can (the 404-no-leak discipline, ADR 0027)."""
+    suite they can (the 404-no-leak discipline, ADR 0027).
+    """
     user = _user(db_session)
     mine = _suite(db_session, user)
     theirs = _suite(db_session, _user(db_session, "owner@acme.io"))
@@ -1070,7 +1044,8 @@ def test_get_check_history_limit_keeps_the_most_recent_window(
 ) -> None:
     """`limit` must trim the OLD end, not the new one: a caller asking for 2
     points wants the last two runs, not the first two (`list_check_result_history`
-    takes newest-first in SQL and reverses)."""
+    takes newest-first in SQL and reverses).
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     check = _check(db_session, suite)
@@ -1093,7 +1068,8 @@ def test_get_check_history_limit_is_bounded_in_the_tool_schema() -> None:
     """The bound must be visible to the CLIENT, not just enforced server-side —
     an LLM picks its argument from the schema (the `profile_column` top_n rule).
     Asserted on the advertised schema, since calling the decorated function
-    directly from Python bypasses FastMCP's validation entirely."""
+    directly from Python bypasses FastMCP's validation entirely.
+    """
     import asyncio
 
     tool = asyncio.run(server.mcp.get_tool("get_check_history"))
@@ -1121,7 +1097,8 @@ def test_list_checks_reports_an_expired_snooze_as_not_snoozed(
     """`snooze_check` never clears the column, so a raw pass-through would show a
     month-old timestamp on the one question ("why was there no alert?") where a
     wrong answer is most confidently wrong. `suppression` compares against now;
-    so does this."""
+    so does this.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _check(db_session, suite, alert_snoozed_until=datetime.now(UTC) - timedelta(days=30))
@@ -1135,7 +1112,8 @@ def test_list_checks_reports_a_comparison_checks_baseline_connection(
 ) -> None:
     """Non-NULL exactly for `kind='comparison'` (a table CHECK enforces it): an
     LLM that cannot see it can describe the rule but not what it compares
-    against."""
+    against.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     baseline = _suite(db_session, user).connection_id
@@ -1156,7 +1134,8 @@ def test_list_checks_reports_a_comparison_checks_baseline_connection(
 
 def test_list_checks_truncation_is_visible_not_silent(db_session: Any, monkeypatch: Any) -> None:
     """A bare truncated list would let an LLM report "the suite has 2 checks"
-    with total confidence. `total` + `truncated` make the cut observable."""
+    with total confidence. `total` + `truncated` make the cut observable.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     for n in range(3):
@@ -1214,7 +1193,8 @@ def test_list_runs_reports_execution_status_and_dq_outcome_separately(
 ) -> None:
     """The distinction the tool docstring makes must be real in the payload: a run
     is `succeeded` when DataQ executed it, even when every check inside failed.
-    Merging the two is the misreport this shape exists to prevent."""
+    Merging the two is the misreport this shape exists to prevent.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _run_with_results(db_session, suite, status="succeeded", outcomes=("pass", "fail", "critical"))
@@ -1235,7 +1215,8 @@ def test_list_runs_excludes_operational_results_from_the_denominator(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """`skip`/`error` are not evaluated checks (#122), so an all-skip run must
-    report 0 total — not a misleading `0/N` that reads as total failure."""
+    report 0 total — not a misleading `0/N` that reads as total failure.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _run_with_results(db_session, suite, outcomes=("skip", "error"))
@@ -1248,7 +1229,8 @@ def test_list_runs_excludes_operational_results_from_the_denominator(
 
 def test_list_runs_total_is_independent_of_the_page(db_session: Any, monkeypatch: Any) -> None:
     """A short page must not be mistaken for the end of the list (#1108): `total`
-    counts the whole matching population, not the slice."""
+    counts the whole matching population, not the slice.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     for _ in range(3):
@@ -1274,7 +1256,8 @@ def test_list_runs_named_inaccessible_suite_errors_rather_than_returning_empty(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """An empty answer must never stand in for "you may not ask" (#828) — and the
-    denial must not confirm the suite exists either."""
+    denial must not confirm the suite exists either.
+    """
     owner = _user(db_session, "owner@acme.io")
     suite = _suite(db_session, owner)
     _run_with_results(db_session, suite)
@@ -1288,7 +1271,8 @@ def test_list_runs_rejects_a_status_outside_the_vocabulary(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """A typo'd status must raise, not return a confident empty list that reads as
-    "no runs in that state" (#828)."""
+    "no runs in that state" (#828).
+    """
     user = _user(db_session)
     _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -1312,7 +1296,8 @@ def test_list_runs_workspace_admin_sees_unowned_runs(
 
 def test_get_run_results_returns_that_runs_checks(db_session: Any, monkeypatch: Any) -> None:
     """A *named* run, not the latest one — the whole point of the tool is reading
-    history that `get_suite_results` has already moved past."""
+    history that `get_suite_results` has already moved past.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     older = _run_with_results(
@@ -1338,7 +1323,8 @@ def test_get_run_results_withholds_an_incomplete_runs_partial_results(
 ) -> None:
     """The #318 rule, inherited from the shared payload builder rather than
     re-implemented: results are committed per phase, so a `running` run holds a
-    genuine fraction of the suite — which an LLM would summarise as the answer."""
+    genuine fraction of the suite — which an LLM would summarise as the answer.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     run = _run_with_results(db_session, suite, status="running", outcomes=("fail",))
@@ -1381,14 +1367,7 @@ def test_list_runs_bounds_are_advertised_in_the_tool_schema() -> None:
 def test_list_runs_withholds_a_mid_run_suites_partial_outcome(
     db_session: Any, monkeypatch: Any
 ) -> None:
-    """The aggregate overclaims exactly the way the row list does (#318).
-
-    A suite 2 checks into 30 has a real, all-passing partial set, which
-    `check_outcome_counts` faithfully reports as `2 / 2, worst_severity: null` —
-    the tool's own definition of "nothing failed", asserted about a run that has
-    barely started. The REST table survives this because a "running" badge sits
-    beside the numbers; an LLM has no badge, only fields.
-    """
+    """The aggregate overclaims exactly the way the row list does (#318)."""
     user = _user(db_session)
     suite = _suite(db_session, user)
     _run_with_results(db_session, suite, status="running", outcomes=("pass", "pass"))
@@ -1408,13 +1387,7 @@ def test_list_runs_withholds_a_mid_run_suites_partial_outcome(
 def test_list_connections_returns_metadata_and_health_but_never_config(
     db_session: Any, monkeypatch: Any
 ) -> None:
-    """The #529 constraint, asserted as an absence rather than assumed.
-
-    `config` carries account identifiers, hosts, paths and `*_secret_name`
-    references (#1118). Names, types and health answer every question about
-    connections; this is the one surface where the rest would be handed to a
-    model verbatim, so it must not appear at all — nor may `secret_ref`.
-    """
+    """The #529 constraint, asserted as an absence rather than assumed."""
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -1425,9 +1398,8 @@ def test_list_connections_returns_metadata_and_health_but_never_config(
     assert conn["has_secret"] is True
     assert "config" not in conn
     assert "secret_ref" not in conn
-    # And nothing FROM the config leaked under another key — asserted against the
-    # stored config's own values, so a future field that grafts one in trips here
-    # rather than being caught by a name check that only knows today's names.
+    # And nothing FROM the config leaked under another key — asserted against the stored config's
+    # own values.
     stored = db_session.get(Connection, suite.connection_id)
     leaked = set(stored.config.values()) & {v for v in conn.values() if isinstance(v, str)}
     assert not leaked, leaked
@@ -1437,7 +1409,8 @@ def test_list_connections_reports_unknown_health_as_null_not_healthy(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """A connection with no runs is *unknown*, and the docstring says so. Reading
-    a null as reassurance is the #828 blindness in a new place."""
+    a null as reassurance is the #828 blindness in a new place.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -1456,7 +1429,8 @@ def test_list_connections_reports_unknown_health_as_null_not_healthy(
 
 def test_list_connections_surfaces_a_failing_datasource(db_session: Any, monkeypatch: Any) -> None:
     """The #954 signal: a dead credential is invisible until a run fails, and then
-    it shows on the run, not the connection."""
+    it shows on the run, not the connection.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     db_session.add(Run(suite_id=suite.id, status="failed", failure_reason="authentication failed"))
@@ -1515,7 +1489,8 @@ def test_list_schedules_includes_disabled_ones_and_says_so(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """A disabled schedule still reads back — the `enabled` flag is the answer, not
-    the row's presence. Filtering must be explicit."""
+    the row's presence. Filtering must be explicit.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _schedule(db_session, suite, user, enabled=False)
@@ -1577,7 +1552,8 @@ def test_list_trigger_bindings_rejects_an_unknown_provider(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """All three providers are valid (ADR 0029 added dbt) — and a typo must raise
-    rather than return an empty list that reads as "nothing is wired up"."""
+    rather than return an empty list that reads as "nothing is wired up".
+    """
     user = _user(db_session)
     _as(monkeypatch, db_session, user)
     with pytest.raises(ToolError):
@@ -1599,7 +1575,8 @@ def test_get_notification_config_defaults_when_unconfigured(
 ) -> None:
     """A suite with no config still alerts on the defaults. Reporting "not
     configured" as "alerts are off" would be the wrong answer to the question the
-    tool is actually asked."""
+    tool is actually asked.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -1617,7 +1594,8 @@ def test_get_notification_config_reports_webhook_presence_never_the_url(
 ) -> None:
     """A webhook URL is a bearer credential — anyone holding it can post into the
     channel. It is stored as a secret reference, and this tool must report its
-    presence only; neither the URL nor the reference may appear."""
+    presence only; neither the URL nor the reference may appear.
+    """
     from backend.app.db.models import SuiteNotification
 
     user = _user(db_session)
@@ -1640,10 +1618,8 @@ def test_get_notification_config_reports_webhook_presence_never_the_url(
     assert out["has_slack_webhook"] is False
     assert out["alert_on"] == "fail"
     assert out["email_recipients"] == "ops@acme.io"
-    # Asserted on the VALUES against the stored reference, not on field names — a
-    # name-shaped check would have to be revised every time a legitimate field
-    # like `webhook_source` is added, and would still miss a leak under a
-    # differently-named key.
+    # Asserted on the VALUES against the stored reference, not on field names — a name-shaped check
+    # would have to be revised every time a legitimate field like `webhook_source` is added.
     stored = db_session.query(SuiteNotification).filter_by(suite_id=suite.id).one()
     assert stored.webhook_secret_ref not in str(out)
 
@@ -1661,7 +1637,8 @@ def test_get_notification_config_denied_for_inaccessible_suite(
 def test_list_connections_rejects_an_unknown_type_or_env(db_session: Any, monkeypatch: Any) -> None:
     """An unknown filter value must raise, not return `[]` — which reads as
     "nothing is connected" (#828), the exact shape `list_trigger_bindings` already
-    guards for `provider`."""
+    guards for `provider`.
+    """
     _as(monkeypatch, db_session, _user(db_session))
     with pytest.raises(ToolError):
         server.list_connections(type="databricks")
@@ -1674,7 +1651,8 @@ def test_list_schedules_reports_the_precomputed_next_fire(
 ) -> None:
     """`next_run_at` is computed by the scheduler in the schedule's own timezone
     and is therefore already DST-correct — which re-deriving it from a cron string
-    against an IANA zone downstream is not."""
+    against an IANA zone downstream is not.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     when = datetime.now(UTC) + timedelta(hours=6)
@@ -1691,7 +1669,8 @@ def test_list_trigger_bindings_workspace_admin_sees_unowned_bindings(
 ) -> None:
     """Parity with `list_schedules`, which got the workspace-admin view in the same
     commit — an admin seeing every schedule but zero bindings is not a defensible
-    place to land (ADR 0027)."""
+    place to land (ADR 0027).
+    """
     owner = _user(db_session, "owner@acme.io")
     suite = _suite(db_session, owner)
     binding = _binding(db_session, suite, owner)
@@ -1706,7 +1685,8 @@ def test_list_trigger_bindings_accepts_every_orchestration_provider(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """Driven off the shared vocabulary, so adding a provider can't leave a
-    hardcoded literal behind — the way `dbt` (ADR 0029) was left behind."""
+    hardcoded literal behind — the way `dbt` (ADR 0029) was left behind.
+    """
     from backend.app.db.models import ORCHESTRATION_PROVIDERS
 
     _as(monkeypatch, db_session, _user(db_session))
@@ -1717,7 +1697,8 @@ def test_list_trigger_bindings_accepts_every_orchestration_provider(
 def test_get_adf_pipeline_status_accepts_dbt(db_session: Any, monkeypatch: Any) -> None:
     """The obvious next call after `list_trigger_bindings(provider="dbt")` returns
     a dbt binding. It used to raise on a provider DataQ has supported since
-    ADR 0029."""
+    ADR 0029.
+    """
     _as(monkeypatch, db_session, _user(db_session))
     assert server.get_adf_pipeline_status(provider="dbt")["pipeline_runs"] == []
 
@@ -1806,7 +1787,8 @@ def test_get_suite_performance_omits_a_suite_with_no_countable_run(
     """Absence means "no health to report", never "healthy" — a suite that has
     never run, or whose latest run is still going, has no verdict to give. The
     docstring says so because an LLM would otherwise read a short list as a clean
-    bill of health for everything missing from it."""
+    bill of health for everything missing from it.
+    """
     user = _user(db_session)
     never_run = _suite(db_session, user)
     running = _suite(db_session, user)
@@ -1830,7 +1812,8 @@ def test_get_suite_performance_advertises_no_window_argument() -> None:
     """`_suite_performance` scores each suite's LATEST run and takes no window, so
     a `window_days` argument was inert — identical rankings for 1 day and 90. A
     knob that does nothing is worse than no knob on an LLM-facing tool: it will be
-    used, and then a difference that is not there will be explained."""
+    used, and then a difference that is not there will be explained.
+    """
     import asyncio
 
     tool = asyncio.run(server.mcp.get_tool("get_suite_performance"))
@@ -1856,11 +1839,11 @@ def test_export_suite_emits_definitions_in_stable_order(db_session: Any, monkeyp
 def test_export_suite_coerces_decimal_thresholds_to_json_safe_numbers(
     db_session: Any, monkeypatch: Any
 ) -> None:
-    """The #1273 class: thresholds are NUMERIC, so the service hands back
-    `Decimal`. REST has Pydantic; MCP hands this dict to a JSON encoder, which
-    raises on Decimal and takes the whole response down. Asserted by actually
-    serializing, not by an isinstance check — the encoder is the thing that
-    breaks, so it is the thing that must be exercised."""
+    """The #1273 class: thresholds are NUMERIC, so the service hands back `Decimal`. REST has
+    Pydantic; MCP hands this dict to a JSON encoder, which raises on Decimal and takes the whole
+    response down. Asserted by actually serializing, not by an isinstance check — the encoder is
+    the thing that breaks, so it is the thing that must be exercised.
+    """
     import json
 
     user = _user(db_session)
@@ -1888,7 +1871,8 @@ def test_get_notification_config_does_not_claim_email_without_an_smtp_transport(
     """Recipients alone deliver nothing: `EmailPublisher.publish` no-ops unless the
     workspace SMTP username, password secret AND sender are all configured. A
     deployment that named recipients but never wired a mailer would otherwise be
-    told email alerting is on."""
+    told email alerting is on.
+    """
     from backend.app.core.config import get_settings
 
     user = _user(db_session)
@@ -1909,7 +1893,8 @@ def test_get_notification_config_does_not_claim_email_without_an_smtp_transport(
 
 def test_list_trigger_bindings_rejects_an_unknown_env(db_session: Any, monkeypatch: Any) -> None:
     """`env` gets the same guard as `provider`: a typo'd value returning `[]` reads
-    as "nothing is wired up" (#828)."""
+    as "nothing is wired up" (#828).
+    """
     _as(monkeypatch, db_session, _user(db_session))
     with pytest.raises(ToolError):
         server.list_trigger_bindings(env="staging")
@@ -1922,7 +1907,8 @@ def test_require_role_ranks_the_same_way_the_rest_gate_does(db_session: Any) -> 
     """`_require_role` is the MCP twin of `core.auth.require_role`, which is a
     FastAPI dependency MCP cannot use. The thing that must hold is that both
     resolve and rank through the SAME `core.roles` policy, so the two surfaces
-    cannot disagree about who is an admin."""
+    cannot disagree about who is an admin.
+    """
     from backend.app.db.models import ADMIN_ROLE, DEFAULT_WORKSPACE_ROLE, VIEWER_ROLE
 
     viewer = User(aad_object_id=uuid.uuid4().hex, email="v@acme.io", role=VIEWER_ROLE)
@@ -1950,7 +1936,8 @@ def test_require_role_honours_the_admin_email_allowlist(
 ) -> None:
     """The allowlist is ADR 0033's bootstrap seed + break-glass, and `resolve_role`
     is where the two admin sources compose. Going through `resolve_role` rather
-    than reading `user.role` is what keeps that true here too."""
+    than reading `user.role` is what keeps that true here too.
+    """
     from backend.app.db.models import ADMIN_ROLE, DEFAULT_WORKSPACE_ROLE
 
     user = User(aad_object_id=uuid.uuid4().hex, email="boot@acme.io", role=DEFAULT_WORKSPACE_ROLE)
@@ -1967,7 +1954,8 @@ def test_require_role_honours_the_admin_email_allowlist(
 def test_update_check_leaves_omitted_fields_alone(db_session: Any, monkeypatch: Any) -> None:
     """PATCH semantics: omission means "unchanged", not "clear". The tool docstring
     tells an LLM this outright, because the natural repair for a field it wants
-    gone — passing 0 or "" — would SET that value, not remove it."""
+    gone — passing 0 or "" — would SET that value, not remove it.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     check = _check(db_session, suite, dimension="completeness", warn_threshold=Decimal("0.01"))
@@ -1984,7 +1972,8 @@ def test_update_check_converts_thresholds_without_binary_float_drift(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """`Decimal(0.05)` binds the binary float's full expansion, so the stored
-    threshold would not be the number asked for. `_dec` goes via `str`."""
+    threshold would not be the number asked for. `_dec` goes via `str`.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     check = _check(db_session, suite)
@@ -1997,7 +1986,8 @@ def test_update_check_converts_thresholds_without_binary_float_drift(
 
 def test_update_check_records_a_new_version(db_session: Any, monkeypatch: Any) -> None:
     """Every update snapshots the post-update state (#280), so a change made by an
-    LLM is as reviewable and reversible as one made in the app."""
+    LLM is as reviewable and reversible as one made in the app.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     check = _check(db_session, suite)
@@ -2022,7 +2012,8 @@ def test_update_check_cross_suite_is_refused(db_session: Any, monkeypatch: Any) 
 def test_delete_check_removes_it_and_names_what_went(db_session: Any, monkeypatch: Any) -> None:
     """The name is read BEFORE the delete: an LLM confirming "removed the row-count
     check" cannot look it up afterwards, and an id alone is not a confirmation a
-    user can check."""
+    user can check.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     check = _check(db_session, suite, name="row count")
@@ -2034,15 +2025,7 @@ def test_delete_check_removes_it_and_names_what_went(db_session: Any, monkeypatc
 
 
 def test_delete_check_also_destroys_its_result_history(db_session: Any, monkeypatch: Any) -> None:
-    """`results.check_id` is `ondelete="CASCADE"`, so a delete takes the history
-    with it.
-
-    This test was written to prove the opposite — the docstring first claimed past
-    results survive — and failing it is what sent me to the FK. Pinned here
-    because the tool's docstring is the only warning an LLM gets before doing
-    something irreversible, and a docstring that under-describes the blast radius
-    is worse than no docstring at all.
-    """
+    """`results.check_id` is `ondelete="CASCADE"`, so a delete takes the history with it."""
     user = _user(db_session)
     suite = _suite(db_session, user)
     check = _check(db_session, suite)
@@ -2059,7 +2042,8 @@ def test_delete_check_also_destroys_its_result_history(db_session: Any, monkeypa
 
 def test_snooze_check_sets_and_clears_one_piece_of_state(db_session: Any, monkeypatch: Any) -> None:
     """One tool, not a snooze/unsnooze pair: it is a single field with two values,
-    and two names for it would be a selection problem for no gain."""
+    and two names for it would be a selection problem for no gain.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     check = _check(db_session, suite)
@@ -2077,7 +2061,8 @@ def test_snooze_check_sets_and_clears_one_piece_of_state(db_session: Any, monkey
 def test_snooze_check_bounds_hours_in_the_tool_schema() -> None:
     """An LLM-supplied duration arrives unbounded — a negative would set a snooze
     in the PAST (silently no-op, reported as success), and an absurd one would
-    mute a check for centuries."""
+    mute a check for centuries.
+    """
     import asyncio
 
     tool = asyncio.run(server.mcp.get_tool("snooze_check"))
@@ -2090,7 +2075,8 @@ def test_snooze_check_bounds_hours_in_the_tool_schema() -> None:
 
 def test_dryrun_check_persists_nothing(db_session: Any, monkeypatch: Any) -> None:
     """The whole point of the authoring loop: preview, adjust, preview — with no
-    check row, no run and no result left behind."""
+    check row, no run and no result left behind.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2119,11 +2105,10 @@ def test_dryrun_check_persists_nothing(db_session: Any, monkeypatch: Any) -> Non
 def test_dryrun_check_redacts_observed_values_like_the_results_tools(
     db_session: Any, monkeypatch: Any
 ) -> None:
-    """The REST dry-run route does NOT redact (#1419) — defensible there, where the
-    consumer is the author's own editor panel. Here the consumer is a model that
-    will quote the value onward, and `get_suite_results` would mask this very
-    column on this very suite: an LLM seeing a value in one and a mask in the
-    other has no way to tell which is the truth.
+    """The REST dry-run route does NOT redact (#1419) — defensible there, where the consumer is the
+    author's own editor panel. Here the consumer is a model that will quote the value onward,
+    and `get_suite_results` would mask this very column on this very suite: an LLM seeing a
+    value in one and a mask in the other has no way to tell which is the truth.
     """
     user = _user(db_session)
     suite = _suite(db_session, user)
@@ -2150,9 +2135,8 @@ def test_dryrun_check_redacts_observed_values_like_the_results_tools(
     )
     assert "ada@acme.io" not in str(masked["observed_value"])
 
-    # And a non-sensitive column still shows its values — a redactor that masks
-    # everything is not a redactor, it is a blindfold, and the preview would be
-    # useless for the authoring loop it exists to serve.
+    # And a non-sensitive column still shows its values — a redactor that masks everything is not a
+    # redactor, it is a blindfold.
     shown = server.dryrun_check(
         str(suite.id),
         expectation_type="expect_column_values_to_be_in_set",
@@ -2166,11 +2150,6 @@ def test_update_check_config_replaces_wholesale_which_the_docstring_warns_about(
 ) -> None:
     """`config` is assigned, not merged — the one argument where "omitted means
     unchanged" does NOT extend to the keys inside it.
-
-    Pinned because the failure is silent and plausible: sending only the key you
-    meant to change drops the rest, the result is still a valid check, so it saves
-    and reports success. This is REST's own PATCH semantics, so the fix is the
-    docstring telling an LLM to read-modify-write rather than a divergence here.
     """
     user = _user(db_session)
     suite = _suite(db_session, user)
@@ -2203,7 +2182,8 @@ def test_cancel_run_marks_it_cancelled_and_revokes_the_task(
 ) -> None:
     """Both halves. The DB flip alone leaves a queued Celery task to run anyway —
     the row would say cancelled while the work happened, which is the worst of
-    both answers."""
+    both answers.
+    """
     revoked: list[str | None] = []
     user = _user(db_session)
     suite = _suite(db_session, user)
@@ -2220,7 +2200,8 @@ def test_cancel_run_marks_it_cancelled_and_revokes_the_task(
 
 def test_cancel_run_refuses_an_already_finished_run(db_session: Any, monkeypatch: Any) -> None:
     """It reports the real state rather than pretending it cancelled something —
-    an LLM told "cancelled" about a run that already succeeded will say so."""
+    an LLM told "cancelled" about a run that already succeeded will say so.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     run = Run(suite_id=suite.id, status="succeeded")
@@ -2250,7 +2231,8 @@ def test_cancel_run_denied_for_a_run_on_an_inaccessible_suite(
 def test_create_schedule_returns_the_resolved_next_fire(db_session: Any, monkeypatch: Any) -> None:
     """Returning `next_run_at` is the point: it lets the assistant confirm the
     INTERPRETATION back to the user, instead of restating the cron string they
-    just supplied — which confirms nothing."""
+    just supplied — which confirms nothing.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2265,7 +2247,8 @@ def test_create_schedule_returns_the_resolved_next_fire(db_session: Any, monkeyp
 def test_create_schedule_rejects_a_bad_cron_or_timezone(db_session: Any, monkeypatch: Any) -> None:
     """An invalid expression must be an error, not a schedule that quietly never
     fires — the failure mode a user would not discover until the run they were
-    counting on did not happen."""
+    counting on did not happen.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2279,7 +2262,8 @@ def test_create_schedule_rejects_a_bad_cron_or_timezone(db_session: Any, monkeyp
 
 def test_delete_schedule_removes_only_the_schedule(db_session: Any, monkeypatch: Any) -> None:
     """The suite and its checks survive — the docstring says only the automatic
-    trigger goes, so that is what is checked."""
+    trigger goes, so that is what is checked.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _check(db_session, suite)
@@ -2399,7 +2383,8 @@ def test_trigger_binding_and_schedule_free_text_is_bounded_in_the_schema() -> No
     """These land in `varchar` NOT NULL columns. An unbounded LLM-generated value
     reaches Postgres and raises a psycopg error — NOT a `DataQError`, so it
     escapes `_service_errors` and surfaces as an opaque internal failure rather
-    than an actionable one (#567's class, in new columns)."""
+    than an actionable one (#567's class, in new columns).
+    """
     import asyncio
 
     binding = asyncio.run(server.mcp.get_tool("create_trigger_binding"))
@@ -2416,7 +2401,8 @@ def test_trigger_binding_and_schedule_free_text_is_bounded_in_the_schema() -> No
 def test_create_trigger_binding_rejects_nul_bytes(db_session: Any, monkeypatch: Any) -> None:
     """Postgres cannot store NUL in text, and the driver's ValueError is not a
     `DataQError` — so without this the tool dies on an opaque internal error
-    instead of an actionable one."""
+    instead of an actionable one.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2437,7 +2423,8 @@ def test_create_trigger_binding_rejects_nul_bytes(db_session: Any, monkeypatch: 
 def test_test_connection_requires_the_member_role(db_session: Any, monkeypatch: Any) -> None:
     """A connection has no suite, so `require_permission` has nothing to gate on —
     this is the first tool where the coarse ADR-0033 axis is load-bearing rather
-    than implied by the suite ladder."""
+    than implied by the suite ladder.
+    """
     from backend.app.db.models import DEFAULT_WORKSPACE_ROLE, VIEWER_ROLE
 
     viewer = _user(db_session, "viewer@acme.io")
@@ -2460,7 +2447,8 @@ def test_test_connection_requires_the_member_role(db_session: Any, monkeypatch: 
 
 def test_test_connection_never_returns_a_credential(db_session: Any, monkeypatch: Any) -> None:
     """It reports whether the probe worked and nothing else — no secret, and not
-    even the secret's reference."""
+    even the secret's reference.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2476,7 +2464,8 @@ def test_test_connection_surfaces_a_failure_as_an_actionable_error(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """A dead credential is the reason to call this at all — the failure has to
-    arrive as a clean message, not an opaque tool crash."""
+    arrive as a clean message, not an opaque tool crash.
+    """
     from backend.app.services.connection_service import ConnectionTestFailedError
 
     user = _user(db_session)
@@ -2496,7 +2485,8 @@ def test_import_suite_requires_the_member_role(db_session: Any, monkeypatch: Any
     """Creating a suite is Member+ (ADR 0033), and this is the SECOND door into
     suite creation — the class of gap #741's review found on `_probe`, where a
     sibling endpoint created the same resource under another name and was
-    invisible to gating that lived on the obvious route."""
+    invisible to gating that lived on the obvious route.
+    """
     from backend.app.db.models import DEFAULT_WORKSPACE_ROLE, VIEWER_ROLE
 
     viewer = _user(db_session, "viewer@acme.io")
@@ -2521,7 +2511,8 @@ def test_import_suite_requires_the_member_role(db_session: Any, monkeypatch: Any
 def test_import_suite_round_trips_an_exported_document(db_session: Any, monkeypatch: Any) -> None:
     """The pairing that makes both tools useful: export one suite, import it onto
     another connection. Checked end-to-end rather than by asserting each half's
-    shape, because the shapes agreeing is the whole claim."""
+    shape, because the shapes agreeing is the whole claim.
+    """
     user = _user(db_session)
     source = _suite(db_session, user)
     _check(db_session, source, name="not null email", warn_threshold=Decimal("0.01"))
@@ -2545,7 +2536,8 @@ def test_import_suite_round_trips_an_exported_document(db_session: Any, monkeypa
 
 def test_import_suite_is_atomic_on_a_bad_check(db_session: Any, monkeypatch: Any) -> None:
     """A rejected document must leave nothing behind — a half-built suite would be
-    worse than a clean failure, and an LLM would report partial success."""
+    worse than a clean failure, and an LLM would report partial success.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2563,7 +2555,8 @@ def test_import_suite_is_atomic_on_a_bad_check(db_session: Any, monkeypatch: Any
 def test_suggest_column_policy_only_suggests(db_session: Any, monkeypatch: Any) -> None:
     """It reports `saved: false` and leaves the suite's policy untouched. An LLM
     that reads a suggestion as an applied setting would tell the user their PII is
-    masked when it is not."""
+    masked when it is not.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2584,11 +2577,10 @@ def test_suggest_column_policy_only_suggests(db_session: Any, monkeypatch: Any) 
 def test_import_suite_names_the_missing_field_instead_of_crashing(
     db_session: Any, monkeypatch: Any
 ) -> None:
-    """`suite_io_service.import_suite` indexes required keys directly, so a
-    hand-composed check omitting one raises `KeyError` — not a `DataQError`, so it
-    escapes `_service_errors` as an opaque internal failure. The REST route is
-    immune only because its Pydantic model always emits every key; MCP has no such
-    model in front of it.
+    """`suite_io_service.import_suite` indexes required keys directly, so a hand-composed check
+    omitting one raises `KeyError` — not a `DataQError`, so it escapes `_service_errors` as an
+    opaque internal failure. The REST route is immune only because its Pydantic model always
+    emits every key; MCP has no such model in front of it.
     """
     user = _user(db_session)
     suite = _suite(db_session, user)
@@ -2650,7 +2642,8 @@ def test_import_suite_bounds_the_suite_columns_in_the_schema() -> None:
     """`suites.name` is String(128) and `description` String(1024) — a different
     table from the per-check bounds the service validates, so the service's checks
     do not cover these. Over-length reaches Postgres and raises
-    StringDataRightTruncation, escaping `_service_errors`."""
+    StringDataRightTruncation, escaping `_service_errors`.
+    """
     import asyncio
 
     tool = asyncio.run(server.mcp.get_tool("import_suite"))
@@ -2665,14 +2658,7 @@ def test_import_suite_bounds_the_suite_columns_in_the_schema() -> None:
 
 
 def test_tool_descriptions_cross_reference_the_confusable_neighbours() -> None:
-    """The three hesitations the 30-tool NL routing check surfaced (#584).
-
-    None caused a misroute — the model reached the right tool every time — but in
-    each case it reported that the description gave it no pointer to the adjacent
-    tool it also needed. Asserted on the ADVERTISED description, because that
-    string is the entire input a client's selection is made from; a comment in the
-    source would not reach it.
-    """
+    """The three hesitations the 30-tool NL routing check surfaced (#584)."""
     import asyncio
 
     def described(name: str) -> str:
@@ -2687,10 +2673,7 @@ def test_tool_descriptions_cross_reference_the_confusable_neighbours() -> None:
     # A suite runs on a schedule OR a trigger binding; this tool sees only one.
     assert "list_trigger_bindings" in schedules
 
-    # "Why did nobody get alerted?" is FOUR-way: config, snooze, no verdict, or
-    # deduplicated. The fourth was missed on the first pass — the block claimed
-    # exhaustivity while `dispatch.publish_run_outcome` had a suppression path it
-    # did not name, which is the same defect class this test exists to prevent.
+    # "Why did nobody get alerted?" is FOUR-way: config, snooze, no verdict, or deduplicated.
     assert "list_checks" in notifications and "list_runs" in notifications
     assert "dedup" in notifications.lower()
     assert "get_check_history" in notifications
@@ -2709,9 +2692,6 @@ def test_update_suite_sets_a_target_and_reports_runnability(
     """The coherence gap this tool closes: `import_suite` creates a suite with NO
     target, and `trigger_suite_run` fails fast without one — so before this,
     an assistant could import a suite and had no way to make it runnable.
-
-    `runnable` is returned rather than left to be inferred from the absence of an
-    error, because that is the question the tool is usually called to fix.
     """
     user = _user(db_session)
     conn_id = _suite(db_session, user).connection_id
@@ -2751,7 +2731,8 @@ def test_update_suite_rejects_a_target_the_connection_cannot_use(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """A flat-file target on a Snowflake connection is a clean error, not a suite
-    that silently fails at run time."""
+    that silently fails at run time.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2764,7 +2745,8 @@ def test_update_suite_rejects_a_target_the_connection_cannot_use(
 
 def test_column_policy_round_trips_through_get_and_set(db_session: Any, monkeypatch: Any) -> None:
     """The other coherence gap: `suggest_column_policy` could propose a policy that
-    nothing could read back or apply."""
+    nothing could read back or apply.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2785,7 +2767,8 @@ def test_set_column_policy_actually_changes_what_samples_show(
 ) -> None:
     """Applying the policy has to move the redaction, not just store a row — this
     is the whole point of the suggest → apply loop, and asserting on the stored
-    JSONB alone would pass even if nothing consumed it."""
+    JSONB alone would pass even if nothing consumed it.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     check = _check(db_session, suite, config={"column": "NOTE"})
@@ -2818,7 +2801,8 @@ def test_set_column_policy_refuses_an_identifier_that_is_also_pii(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """Masking the very column meant to locate the row is self-defeating, and the
-    service rejects it — surfaced here as a clean error rather than a crash."""
+    service rejects it — surfaced here as a clean error rather than a crash.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2832,7 +2816,8 @@ def test_update_suite_nul_guard_cannot_be_shadowed_by_a_target_key(
 ) -> None:
     """The guard merged `target` over `name` in one dict, so a target key called
     "name" replaced the value being checked and the NUL reached Postgres as an
-    uncaught driver error. Namespacing the buckets is the fix; this pins it."""
+    uncaught driver error. Namespacing the buckets is the fix; this pins it.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2848,7 +2833,8 @@ def test_set_column_policy_nul_guard_cannot_be_shadowed_by_a_column_name(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """Same shadowing shape: `dict.fromkeys(pii_columns, "")` let a PII column
-    literally named "identifier_column" overwrite the checked identifier."""
+    literally named "identifier_column" overwrite the checked identifier.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2866,7 +2852,8 @@ def test_update_suite_validates_the_target_shape_not_just_its_fields(
     """`suite_service` validates the target's field COMBINATION per connection
     type; `SuiteTarget` is what validates `file_format` and rejects unknown keys.
     Without routing through it, `{"file_format": "xlsx"}` saved cleanly and then
-    failed every run — a config error deferred to execution."""
+    failed every run — a config error deferred to execution.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2884,7 +2871,8 @@ def test_update_suite_triggers_auto_classify_like_the_rest_route(
     """REST parity (#634). Without it a suite imported and made runnable over MCP
     never derives a redaction policy, and captures failing samples with no row
     locator — invisible until someone reads a sample and finds nothing to
-    identify the row by."""
+    identify the row by.
+    """
     dispatched: list[Any] = []
     user = _user(db_session)
     conn_id = _suite(db_session, user).connection_id
@@ -2904,7 +2892,8 @@ def test_update_suite_triggers_auto_classify_like_the_rest_route(
 
 def test_column_policy_bounds_are_advertised_in_the_tool_schema() -> None:
     """The policy is walked on every read-time redaction, so an unbounded list is
-    paid on every sample render rather than once at write."""
+    paid on every sample render rather than once at write.
+    """
     import asyncio
 
     tool = asyncio.run(server.mcp.get_tool("set_column_policy"))
@@ -2921,7 +2910,8 @@ def test_update_schedule_changes_only_what_was_passed(db_session: Any, monkeypat
     """The docstring promises an omitted argument is left "exactly as it was" —
     the claim `update_check` gets WRONG for `config` (assigned wholesale). Here
     the three arguments really are independent scalars, and this is what says so
-    rather than leaving the reader to trust two tools that behave differently."""
+    rather than leaving the reader to trust two tools that behave differently.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2934,11 +2924,11 @@ def test_update_schedule_changes_only_what_was_passed(db_session: Any, monkeypat
 
 
 def test_update_schedule_pausing_reports_no_next_fire(db_session: Any, monkeypatch: Any) -> None:
-    """The stored `next_run_at` column is still populated on a paused schedule,
-    but the dispatcher filters on `enabled` and never reaches it. Reporting the
-    raw value would name a fire time that will not happen — and this tool, its
-    `create_schedule` sibling and `list_schedules` must not disagree about that,
-    since an assistant may see any one of the three."""
+    """The stored `next_run_at` column is still populated on a paused schedule, but the dispatcher
+    filters on `enabled` and never reaches it. Reporting the raw value would name a fire time
+    that will not happen — and this tool, its `create_schedule` sibling and `list_schedules`
+    must not disagree about that, since an assistant may see any one of the three.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2961,7 +2951,8 @@ def test_update_schedule_rejects_a_bad_cron_and_leaves_the_schedule_alone(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """A rejected edit must not half-apply: the failure mode is a schedule the
-    user believes they retimed that is still firing on the old cadence."""
+    user believes they retimed that is still firing on the old cadence.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2974,11 +2965,10 @@ def test_update_schedule_rejects_a_bad_cron_and_leaves_the_schedule_alone(
 
 
 def test_schedule_tools_reject_nul_bytes_on_both_doors(db_session: Any, monkeypatch: Any) -> None:
-    """Both doors to the same two columns screen NUL — the "guard on one door but
-    not its sibling" class, which was inverted here: `update_schedule` shipped
-    with the guard and `create_schedule` had none. Cron/timezone validation would
-    reject a NUL-bearing value either way, but as "invalid timezone", which sends
-    an assistant hunting a zone-name typo that is not there."""
+    """Both doors to the same two columns screen NUL — the "guard on one door but not its sibling"
+    class, which was inverted here: `update_schedule` shipped with the guard and
+    `create_schedule` had none.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -2996,7 +2986,8 @@ def test_schedule_tools_reject_nul_bytes_on_both_doors(db_session: Any, monkeypa
 def test_update_schedule_free_text_is_bounded_in_the_schema() -> None:
     """Same bound as `create_schedule`, for the same reason (#567's class): an
     unbounded value reaches Postgres as a psycopg error that escapes
-    `_service_errors`."""
+    `_service_errors`.
+    """
     import asyncio
 
     tool = asyncio.run(server.mcp.get_tool("update_schedule"))
@@ -3009,7 +3000,8 @@ def test_update_trigger_binding_toggles_without_losing_the_wiring(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """Disabling keeps the row — which is the whole distinction the docstring
-    draws against `delete_trigger_binding`, and what makes it re-enableable."""
+    draws against `delete_trigger_binding`, and what makes it re-enableable.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -3035,7 +3027,8 @@ def test_update_trigger_binding_recomputes_the_ambiguous_env_warning(
     """Advisory warnings are recomputed on ENABLE, not carried over from create:
     re-enabling is exactly when a provider/environment ambiguity regains the
     ability to lose triggers (#1186). Dropping them here would recreate the
-    silent-trigger-loss incident they exist to surface."""
+    silent-trigger-loss incident they exist to surface.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -3058,7 +3051,8 @@ def test_update_trigger_binding_recomputes_the_ambiguous_env_warning(
 
 def test_delete_trigger_binding_removes_only_the_binding(db_session: Any, monkeypatch: Any) -> None:
     """The suite, its checks and its schedules survive — the docstring says only
-    the link goes, so that is what is checked."""
+    the link goes, so that is what is checked.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _check(db_session, suite)
@@ -3104,7 +3098,8 @@ def test_list_check_versions_reports_the_snapshot_not_todays_check(
     """Edit history, not result history. Each row must describe the check AS IT
     WAS — reporting today's threshold beside an old config is precisely the
     misstatement that makes "was this edited when it started failing?"
-    unanswerable."""
+    unanswerable.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -3129,11 +3124,11 @@ def test_list_check_versions_reports_the_snapshot_not_todays_check(
 def test_list_check_versions_thresholds_are_json_encodable(
     db_session: Any, monkeypatch: Any
 ) -> None:
-    """The columns are NUMERIC and arrive as `Decimal`, which the JSON encoder
-    refuses. REST never sees it because Pydantic coerces on the way out; MCP has
-    no Pydantic in the path, which is exactly how #1273 happened. Asserting the
-    Python type is not enough — `Decimal` passes `isinstance(x, float)` nowhere
-    but reads fine in a repr, so this serializes."""
+    """The columns are NUMERIC and arrive as `Decimal`, which the JSON encoder refuses. REST never
+    sees it because Pydantic coerces on the way out; MCP has no Pydantic in the path, which is
+    exactly how #1273 happened. Asserting the Python type is not enough — `Decimal` passes
+    `isinstance(x, float)` nowhere but reads fine in a repr, so this serializes.
+    """
     import json
 
     user = _user(db_session)
@@ -3156,10 +3151,8 @@ def test_list_check_versions_thresholds_are_json_encodable(
 
 def test_list_check_versions_truncates_honestly(db_session: Any, monkeypatch: Any) -> None:
     """A heavily-edited check returns every snapshot with its full `config`, and
-    `restore_check_version` adds more. Capping it is only half the fix: `total`
-    has to say how many exist, because the versions dropped are the OLDEST — which
-    are exactly the ones "what did this check look like originally?" is asking
-    for, so a silent truncation answers that question with the wrong row."""
+    `restore_check_version` adds more.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -3185,7 +3178,8 @@ def test_create_trigger_binding_names_the_disabled_collision(
     """`uq_trigger_bindings_lookup` excludes `enabled`, so a DISABLED binding
     collides here exactly like a live one. Without the docstring naming that, an
     assistant re-wiring after a pause reads "already exists" as "the trigger is in
-    place" and reports success for something that never fires."""
+    place" and reports success for something that never fires.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -3209,11 +3203,11 @@ def test_create_trigger_binding_names_the_disabled_collision(
 def test_restore_check_version_applies_the_whole_snapshot_including_nulls(
     db_session: Any, monkeypatch: Any
 ) -> None:
-    """This is the one path that CLEARS a field. `update_check`'s PATCH
-    convention cannot — omission means "leave alone" there — so restoring a
-    version that had no warn threshold must actually remove today's, not skip it.
-    The docstring says so; without this the claim is untested and the tool would
-    look correct while silently leaving the old value in place."""
+    """This is the one path that CLEARS a field. `update_check`'s PATCH convention cannot —
+    omission means "leave alone" there — so restoring a version that had no warn threshold must
+    actually remove today's, not skip it. The docstring says so; without this the claim is
+    untested and the tool would look correct while silently leaving the old value in place.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -3236,7 +3230,8 @@ def test_restore_check_version_applies_the_whole_snapshot_including_nulls(
 def test_restore_check_version_is_additive(db_session: Any, monkeypatch: Any) -> None:
     """History is never renumbered or deleted — the state being replaced stays
     restorable. The docstring promises that, and it is what makes a restore safe
-    to offer without a confirmation step."""
+    to offer without a confirmation step.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -3260,7 +3255,8 @@ def test_restore_check_version_rejects_an_unknown_version(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """An LLM that guesses a version number instead of reading
-    `list_check_versions` must get an error, not a silent no-op."""
+    `list_check_versions` must get an error, not a silent no-op.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -3304,7 +3300,8 @@ def test_list_assets_reports_an_unmonitored_asset_as_unmonitored(
     """The failure this field exists to prevent: an asset with no suite has
     `worst_severity: null` and `checks_total: 0`, which is literally "nothing is
     failing" and reads as a clean bill of health. `monitored` names the actual
-    state so the two cannot be confused."""
+    state so the two cannot be confused.
+    """
     user = _user(db_session)
     _asset(db_session, name="unwatched")
     _as(monkeypatch, db_session, user)
@@ -3322,7 +3319,8 @@ def test_list_assets_reports_truncation_against_the_real_total(
 ) -> None:
     """`truncated` is computed from the workspace total, not inferred from
     `len(page) == limit` — which is wrong on the exact-boundary page, the one
-    case where a client would confidently report a partial list as complete."""
+    case where a client would confidently report a partial list as complete.
+    """
     user = _user(db_session)
     for i in range(3):
         _asset(db_session, name=f"tbl_{i}")
@@ -3343,7 +3341,8 @@ def test_get_asset_counts_the_suites_it_cannot_name(db_session: Any, monkeypatch
     """ADR 0037's split, asserted: the summary aggregates over EVERY composing
     suite, while `suites` lists only what the caller may view. Without
     `restricted_suite_count` an LLM would present the visible suites as the whole
-    explanation for a workspace-true number."""
+    explanation for a workspace-true number.
+    """
     owner = _user(db_session)
     outsider = _user(db_session, email="outsider@acme.io")
     asset = _asset(db_session)
@@ -3363,7 +3362,8 @@ def test_get_asset_qualifies_lineage_when_a_source_is_failing(
 ) -> None:
     """An empty lineage graph behind a broken poller must never read as "nothing
     feeds this table" (#828). The qualifier is the only thing that distinguishes
-    the two, so it is asserted rather than trusted."""
+    the two, so it is asserted rather than trusted.
+    """
     user = _user(db_session)
     asset = _asset(db_session)
     _as(monkeypatch, db_session, user)
@@ -3385,7 +3385,8 @@ def test_get_asset_qualifies_lineage_when_a_source_is_failing(
 
 def test_list_incidents_rejects_an_unknown_status(db_session: Any, monkeypatch: Any) -> None:
     """A typo'd status returning `[]` would answer "what's broken?" with
-    "nothing" — the #828 shape on the question where it is worst."""
+    "nothing" — the #828 shape on the question where it is worst.
+    """
     user = _user(db_session)
     _as(monkeypatch, db_session, user)
 
@@ -3435,7 +3436,8 @@ def test_get_incident_hides_an_incident_on_an_invisible_suite(
 
 def test_get_incident_returns_the_evidence_card(db_session: Any, monkeypatch: Any) -> None:
     """The evidence card is what makes this tool worth more than `list_incidents`,
-    and its `check`/`asset` layers are what the summary fields are lifted from."""
+    and its `check`/`asset` layers are what the summary fields are lifted from.
+    """
     owner = _user(db_session)
     asset = _asset(db_session)
     suite = _suite(db_session, owner)
@@ -3467,7 +3469,8 @@ def test_list_incidents_rejects_an_unknown_asset_id(db_session: Any, monkeypatch
     """The sibling of the `status` guard. A well-formed but unknown asset id would
     otherwise return an empty page, which reads as "nothing is broken on that
     asset" (#828). Asset identity is workspace-visible (ADR 0037), so naming an id
-    as unknown leaks nothing."""
+    as unknown leaks nothing.
+    """
     user = _user(db_session)
     _as(monkeypatch, db_session, user)
 
@@ -3479,7 +3482,8 @@ def test_ack_incident_records_the_actor_and_leaves_it_unresolved(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """Acknowledging is explicitly NOT resolving — the docstring says the check
-    still runs and still alerts, and the status is what an LLM will report."""
+    still runs and still alerts, and the status is what an LLM will report.
+    """
     owner = _user(db_session)
     asset = _asset(db_session)
     suite = _suite(db_session, owner)
@@ -3498,7 +3502,8 @@ def test_ack_incident_records_the_actor_and_leaves_it_unresolved(
 def test_resolve_incident_refuses_a_second_resolve(db_session: Any, monkeypatch: Any) -> None:
     """A resolved incident is closed for good — the next breach opens a NEW one.
     A silent second resolve would let an assistant report a fresh action that
-    never happened."""
+    never happened.
+    """
     owner = _user(db_session)
     asset = _asset(db_session)
     suite = _suite(db_session, owner)
@@ -3529,7 +3534,8 @@ def test_ack_incident_refuses_a_resolved_incident(db_session: Any, monkeypatch: 
 
 def test_get_near_misses_reports_both_envs(db_session: Any, monkeypatch: Any) -> None:
     """The mismatch IS the finding — a row carrying only one env would be
-    unactionable, since the fix is to change one of the two."""
+    unactionable, since the fix is to change one of the two.
+    """
     owner = _user(db_session)
     suite = _suite(db_session, owner)
     _as(monkeypatch, db_session, owner)
@@ -3551,7 +3557,8 @@ def test_get_near_misses_reports_both_envs(db_session: Any, monkeypatch: Any) ->
 
 def test_list_columns_defaults_to_the_suite_target(db_session: Any, monkeypatch: Any) -> None:
     """The whole point of the defaulting: 'what columns are on this suite?'
-    should not require the caller to already know the table name."""
+    should not require the caller to already know the table name.
+    """
     owner = _user(db_session)
     suite = _suite(db_session, owner)
     _as(monkeypatch, db_session, owner)
@@ -3571,7 +3578,8 @@ def test_list_columns_defaults_to_the_suite_target(db_session: Any, monkeypatch:
 
 def test_list_columns_reports_a_suite_with_no_target(db_session: Any, monkeypatch: Any) -> None:
     """An actionable error, not an empty column list — an empty list would read as
-    'this table has no columns' and send an assistant off to guess names."""
+    'this table has no columns' and send an assistant off to guess names.
+    """
     owner = _user(db_session)
     suite = _suite(db_session, owner, with_target=False)
     _as(monkeypatch, db_session, owner)
@@ -3589,7 +3597,8 @@ def test_run_results_report_how_much_of_the_sample_was_masked(
     """The REST route has returned `redaction`/`redacted_columns` since #1115 and
     MCP dropped them, so a masked sample was indistinguishable from an unmasked
     one. Both readings are confident and wrong: mask tokens reported as data, or
-    a fully-masked sample reported as 'no failing rows were captured'."""
+    a fully-masked sample reported as 'no failing rows were captured'.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     suite.column_policy = {"identifier_column": "ORDER_ID", "pii_columns": ["EMAIL"]}
@@ -3628,7 +3637,8 @@ def test_get_run_status_marks_a_running_run_as_not_final(db_session: Any, monkey
     """`counts` on a mid-run suite is progress, not a verdict. The sibling tools
     have carried `results_final` since #318; this one emitted the counts bare, so
     a 30-check suite three checks in reported `{"pass": 3}` — the tool's own
-    definition of 'nothing failed', about a run that has barely started."""
+    definition of 'nothing failed', about a run that has barely started.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     db_session.add(Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={}))
@@ -3648,7 +3658,8 @@ def test_get_check_history_flags_a_truncated_page_and_its_window(
 ) -> None:
     """A count-capped page answering a time-shaped question ('when did this start
     failing?'). Without `truncated`, the oldest point is a page boundary reported
-    as an onset — wrong whenever the failure predates the page."""
+    as an onset — wrong whenever the failure predates the page.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
@@ -3669,10 +3680,7 @@ def test_get_check_history_flags_a_truncated_page_and_its_window(
     whole = server.get_check_history(str(suite.id), str(check.id), limit=50)
     assert whole["truncated"] is False
 
-    # The exact-boundary page: full, and yet nothing follows it. Inferring
-    # truncation from `len(points) == limit` gets this wrong (the #925 mistake),
-    # and here that is not cosmetic — a COMPLETE history reported as truncated
-    # makes a model refuse to name an onset it can actually see.
+    # The exact-boundary page: full, and yet nothing follows it.
     boundary = server.get_check_history(str(suite.id), str(check.id), limit=3)
     assert boundary["total"] == 3
     assert len(boundary["points"]) == 3
@@ -3684,7 +3692,8 @@ def test_list_runs_reports_the_time_window_it_actually_covered(
 ) -> None:
     """#1442: there is no time filter, and the questions are time-shaped. The
     covered interval is returned so a model can check whether the period it was
-    asked about is inside the page instead of calling the page 'today'."""
+    asked about is inside the page instead of calling the page 'today'.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     for _ in range(2):
@@ -3701,7 +3710,8 @@ def test_list_runs_reports_the_time_window_it_actually_covered(
 
 def test_get_adf_pipeline_status_reports_truncation(db_session: Any, monkeypatch: Any) -> None:
     """It took `limit` and returned a bare list, so a full page was
-    indistinguishable from the whole set on 'did any pipeline fail overnight?'."""
+    indistinguishable from the whole set on 'did any pipeline fail overnight?'.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user)
     _as(monkeypatch, db_session, user)
@@ -3730,7 +3740,8 @@ def test_get_adf_pipeline_status_reports_truncation(db_session: Any, monkeypatch
 def test_import_suite_reports_that_it_is_not_runnable(db_session: Any, monkeypatch: Any) -> None:
     """An export document carries no run target, so an imported suite cannot run
     until `update_suite` gives it one. The tool that creates that state now says
-    so, instead of leaving it to be discovered when `trigger_suite_run` fails."""
+    so, instead of leaving it to be discovered when `trigger_suite_run` fails.
+    """
     user = _user(db_session)
     conn = _suite(db_session, user).connection_id
     _as(monkeypatch, db_session, user)
@@ -3743,7 +3754,8 @@ def test_import_suite_reports_that_it_is_not_runnable(db_session: Any, monkeypat
 def test_incident_payload_exposes_the_reopen_link(db_session: Any, monkeypatch: Any) -> None:
     """`resolve_incident` promises the next breach opens a new incident 'linked
     back to this one', and nothing returned the link — so a recurrence of a
-    weekly problem read as brand new."""
+    weekly problem read as brand new.
+    """
     owner = _user(db_session)
     asset = _asset(db_session)
     suite = _suite(db_session, owner)
@@ -3764,7 +3776,8 @@ def test_incident_payload_exposes_the_reopen_link(db_session: Any, monkeypatch: 
 
 def test_update_suite_surfaces_its_own_side_effects(db_session: Any, monkeypatch: Any) -> None:
     """Both signals previously went to the server log only — and the caller who
-    just re-pointed the suite is the one person who can act on them."""
+    just re-pointed the suite is the one person who can act on them.
+    """
     user = _user(db_session)
     suite = _suite(db_session, user, with_target=False)
     _as(monkeypatch, db_session, user)
@@ -3786,9 +3799,6 @@ def test_every_paged_tool_reports_truncation_the_same_way(
     """A client is told to branch on `truncated`. Where a paged tool omits it, the
     absence reads as `false` and a capped page is reported as the whole set —
     the exact failure the field exists to prevent (#1449 review).
-
-    Pinned as an invariant rather than left to per-tool review: the defect is
-    invisible in any single tool's own tests, since each one passes in isolation.
     """
     user = _user(db_session)
     suite = _suite(db_session, user)
@@ -3881,21 +3891,7 @@ def test_profile_column_applies_the_governance_tag_floor_on_the_default_target(
 def test_profile_column_honours_a_clearance_on_the_suites_own_target(
     db_session: Any, monkeypatch: Any
 ) -> None:
-    """Target defaulting must not silently discard the tag CLEARANCES (F1).
-
-    `_profile_target_defaults` overwrites the `table`/`path` locals with the
-    suite's own target, so a "did the caller name another table?" test made
-    *after* it is always true — and the asset's tag map was filtered as if every
-    request were probing a foreign table.
-
-    Written against the CLEARANCE direction deliberately. The first version of
-    this test used a sensitive tag and **passed with the bug reintroduced**,
-    because `applicable_tags` keeps the sensitive floor either way; the mutation
-    check caught that it was proving nothing. What the ordering bug actually
-    destroys is the other half: in fail-closed mode a column cleared by a
-    `public` tag stays masked, which is a capability lost to a policy artifact —
-    the exact failure this whole seam exists to avoid.
-    """
+    """Target defaulting must not silently discard the tag CLEARANCES (F1)."""
     from backend.app.db.models import Asset
     from backend.app.services.profile_service import ColumnProfile, ProfileResult
 

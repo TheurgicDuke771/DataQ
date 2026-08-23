@@ -1,21 +1,4 @@
-"""A contended row must never hang the poll — it took prod down (#854).
-
-#837 added a row lock to the poll's health bookkeeping (so two overlapping sweeps can't
-both fire the same alert). A Postgres lock waits **forever** by default, and that was
-enough to take production down: one contended `connections` row hung the poll task, the
-hung task wedged the worker's prefork pool, and the pool being wedged silently stopped
-**every** periodic task — orchestration polling, scheduled-suite dispatch, gap recovery,
-the sample purge.
-
-Nothing looked wrong. The container reported Healthy, Celery logged "ready", the beat
-logged "Starting…", and zero exceptions were raised. Only the database told the truth:
-`last_polled_at` stayed NULL while the app insisted it was fine.
-
-The lesson is the size of the blast radius, not the lock: the poll's *bookkeeping* is
-best-effort, but it was allowed to block a **shared** beat worker indefinitely. These
-tests hold a real lock from a second connection and assert the poll path returns quickly
-instead of blocking — they FAIL (hang) against the pre-#854 code.
-"""
+"""A contended row must never hang the poll — it took prod down (#854)."""
 
 from __future__ import annotations
 
@@ -38,19 +21,6 @@ _MUST_RETURN_WITHIN = 25.0
 def _committed_connection(engine: Any, conn_type: str) -> tuple[uuid.UUID, uuid.UUID]:
     """A connection (+ its owning user) row COMMITTED for real, so a *second* session
     can see and lock it. Returns (connection_id, user_id).
-
-    Deliberately not the `db_session` fixture: that wraps the test in a transaction it
-    rolls back, so its rows are invisible to other sessions — and `SELECT … FOR UPDATE`
-    on a row nobody else can see locks NOTHING. The first draft of this test did exactly
-    that and passed against the bug. A lock test whose lock isn't real proves nothing.
-
-    Bound to `engine` (the conftest `_db_engine` fixture, built straight from
-    `TEST_DATABASE_URL`) — deliberately NOT the app's `SessionLocal` (#1133). Even
-    though conftest now points `DATABASE_URL` at the test DB by default (#1130),
-    `SessionLocal` still resolves whatever `DATABASE_URL` the environment happens to
-    carry — including a deliberately different one under the opt-in E2E case — and
-    this setup/holder row must always land in the TEST database, never wherever that
-    happens to be.
     """
     from sqlalchemy.orm import Session as SASession
 
@@ -75,11 +45,7 @@ def _committed_connection(engine: Any, conn_type: str) -> tuple[uuid.UUID, uuid.
 
 
 def _delete_connection_and_user(engine: Any, connection_id: uuid.UUID, user_id: uuid.UUID) -> None:
-    """Teardown for `_committed_connection` — removes BOTH rows it created (#1133).
-
-    The prior version only deleted the `Connection`, leaving the `User` behind on
-    every run (the stray `u-<hex>@ex.io` accumulation #1130 reported in the dev DB).
-    """
+    """Teardown for `_committed_connection` — removes BOTH rows it created (#1133)."""
     from sqlalchemy.orm import Session as SASession
 
     session = SASession(bind=engine)
@@ -111,12 +77,7 @@ def _unused(db: Any, conn_type: str = "airflow") -> Connection:
 
 
 def _run_with_deadline(fn: Any) -> bool:
-    """Run ``fn`` on a thread; True if it finished, False if it is still blocked.
-
-    A hang cannot be caught with `pytest.raises` — the point of the bug is that it never
-    returns at all — so the assertion has to be a deadline. Any exception the thread raises
-    is re-raised here, so a silently-erroring call can't masquerade as "it returned".
-    """
+    """Run ``fn`` on a thread; True if it finished, False if it is still blocked."""
     done = threading.Event()
     error: list[BaseException] = []
 
@@ -126,11 +87,8 @@ def _run_with_deadline(fn: Any) -> bool:
         except Exception as exc:  # re-raised on the main thread below
             error.append(exc)
         except BaseException as exc:
-            # SystemExit / pytest's Failed deliberately subclass BaseException to
-            # escape except-Exception blocks — letting one vanish with the thread
-            # would make a blown-up fn read as "it returned" (the masquerade this
-            # helper exists to prevent). Record for the main thread, then
-            # RE-RAISE in place (CodeQL py/catch-base-exception: never swallow).
+            # SystemExit / pytest's Failed deliberately subclass BaseException to escape except-
+            # Exception blocks.
             error.append(exc)
             raise
         finally:
@@ -147,10 +105,6 @@ def _run_with_deadline(fn: Any) -> bool:
 def held_lock(request: Any, db_session: Any, _db_engine: Any) -> Any:
     """A REAL `FOR UPDATE` lock, held by a second session on a committed row — the prod
     condition, and the thing whose absence made the first draft of this test worthless.
-
-    Both the committed row and the holder session are bound to `_db_engine` (the
-    conftest fixture built from `TEST_DATABASE_URL`), not `SessionLocal` — see
-    `_committed_connection` (#1133).
     """
     from sqlalchemy.orm import Session as SASession
 
@@ -177,14 +131,8 @@ def test_record_poll_failure_does_not_hang_on_a_contended_row(
     def call() -> None:
         session = SessionLocal()
         try:
-            # Visibility check (review finding, #855 vacuous-lock shape): if
-            # SessionLocal's DATABASE_URL ever diverges from the held_lock row's
-            # TEST_DATABASE_URL (the opt-in E2E case), this query returns None,
-            # `orchestration_service._lock_connection`'s "row not found" branch takes
-            # over, and the assert below would pass with NO real lock ever contended
-            # — the exact "first draft passed against the bug" trap `_committed_
-            # connection`'s docstring warns about, one layer up. Mirrors the sibling
-            # `test_record_poll_success_...` below, which already had this guard.
+            # Visibility check (review finding, #855 vacuous-lock shape): if SessionLocal's
+            # DATABASE_URL ever diverges from the held_lock row's TEST_DATABASE_URL (the opt-in E2E
             conn = session.get(Connection, held_lock)
             assert conn is not None, "the committed connection row is missing"
             orchestration_service.record_poll_failure(
@@ -223,7 +171,8 @@ def test_the_sweep_survives_a_contended_row(
 ) -> None:
     """The property that actually matters: a contended row degrades the *bookkeeping*, not
     the sweep. The poll must still finish, so the beat keeps running and the next task
-    gets its turn."""
+    gets its turn.
+    """
     from datetime import UTC, datetime, timedelta
 
     from backend.app.db.session import SessionLocal
@@ -242,11 +191,7 @@ def test_the_sweep_survives_a_contended_row(
     def call() -> None:
         session = SessionLocal()
         try:
-            # Visibility check (review finding, #855 vacuous-lock shape) — same
-            # reasoning as test_record_poll_failure_... above: `_poll_orchestration_
-            # runs` queries `connections` internally by its own criteria, so nothing
-            # else here would fail loudly if SessionLocal's database ever diverged
-            # from held_lock's and the row were simply invisible to it.
+            # Visibility check (review finding, #855 vacuous-lock shape).
             conn = session.get(Connection, held_lock)
             assert conn is not None, "the committed connection row is missing"
             summary.update(
@@ -272,7 +217,8 @@ def test_a_real_db_fault_is_not_mislabelled_as_lock_contention(
 ) -> None:
     """`OperationalError` also covers a dropped connection / server restart. Swallowing
     those as "the row was busy" would report a genuine DB outage as routine contention —
-    and the whole lesson of #854 is what an invisible failure costs (#855 review)."""
+    and the whole lesson of #854 is what an invisible failure costs (#855 review).
+    """
     from sqlalchemy.exc import OperationalError
 
     class _Dead:
@@ -281,9 +227,8 @@ def test_a_real_db_fault_is_not_mislabelled_as_lock_contention(
     def _boom(*args: Any, **kwargs: Any) -> None:
         raise OperationalError("SELECT 1", {}, _Dead())  # type: ignore[arg-type]  # orig is duck-typed
 
-    # (The lock helper itself now lives in `services/connection_lock.py`, shared with
-    # the #1104 inventory sync — `record_poll_failure` still reaches it through
-    # `orchestration_service._lock_connection`, which is what this test drives.)
+    # (The lock helper itself now lives in `services/connection_lock.py`, shared with the #1104
+    # inventory sync.
     session = db_session
     monkeypatch.setattr(type(session), "get", lambda *a, **k: _boom())
 
@@ -296,12 +241,6 @@ def test_a_real_db_fault_is_not_mislabelled_as_lock_contention(
 def test_the_engine_bounds_every_lock_wait(db_session: Any) -> None:
     """The class-level guard (#855 review): the timeout lives on the ENGINE, so NO
     statement anywhere — not merely these two functions — can block on a lock forever.
-
-    The original defect was never "these two functions lock a row"; it was that anything
-    sharing the beat could block indefinitely and take every periodic task with it. A
-    per-callsite guard would leave that property intact for the next `with_for_update`
-    someone adds. Asserted against a REAL connection (`SHOW lock_timeout`), not by
-    introspecting SQLAlchemy's kwargs — what matters is what Postgres actually enforces.
     """
     from backend.app.db.session import _LOCK_TIMEOUT_MS, SessionLocal
 
@@ -316,15 +255,9 @@ def test_the_engine_bounds_every_lock_wait(db_session: Any) -> None:
 
 
 def _captured_build_engine_connect_args(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """Shared scaffold for the two `_build_engine` connect_args tests below: swaps in a
-    fake `create_engine` that captures its kwargs instead of dialing a real (or
-    unreachable/black-holed) host, then calls `_build_engine()` and hands back
-    whatever `connect_args` it built. Neither test dials a real host deliberately —
-    that would make the test itself exactly as slow/flaky as the hang each one is
-    bounding, and CI has no deterministic way to guarantee a host is unreachable or
-    silently black-holed. What matters is that the configuration reaches the engine;
-    that psycopg2/libpq honors these keys is the driver's own documented contract, not
-    ours to re-verify.
+    """Shared scaffold for the two `_build_engine` connect_args tests below: swaps in a fake
+    `create_engine` that captures its kwargs instead of dialing a real (or unreachable/black-
+    holed) host, then calls `_build_engine()` and hands back whatever `connect_args` it built.
     """
     from backend.app.db import session as session_module
 
@@ -343,11 +276,8 @@ def _captured_build_engine_connect_args(monkeypatch: pytest.MonkeyPatch) -> dict
 
 
 def test_the_engine_bounds_the_initial_connect_too(monkeypatch: pytest.MonkeyPatch) -> None:
-    """#1102: `lock_timeout` only bounds a statement waiting on a contended row AFTER a
-    connection is established — it says nothing about the initial TCP connect. An
-    unreachable DB (network partition, not a locked row) would otherwise block every
-    `get_session()` caller — including the #1052 staleness loop's graceful-shutdown await
-    — for however long the OS/driver default connect timeout allows (can be minutes).
+    """#1102: `lock_timeout` only bounds a statement waiting on a contended row AFTER a connection
+    is established — it says nothing about the initial TCP connect.
     """
     from backend.app.db import session as session_module
 
@@ -361,19 +291,9 @@ def test_the_engine_bounds_the_initial_connect_too(monkeypatch: pytest.MonkeyPat
 def test_the_engine_bounds_a_warm_pooled_connection_too(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """#1221: `connect_timeout` (#1102, above) only bounds establishing a BRAND-NEW
-    connection. It does nothing for a connection that was already open and pooled when a
-    network partition happens LATER — route drops silently, no TCP RST. A caller's
-    `get_session()` then checks out that already-connected pooled socket,
-    `pool_pre_ping=True` issues `SELECT 1` on it, and that read can hang indefinitely with
-    no timeout — including inside the same #1052 graceful-shutdown await #1102 was
-    protecting.
-
-    TCP keepalives make the OS-level stack detect and reap a dead/black-holed socket
-    instead of hanging a read with no data ever arriving — the suggested direction in
-    #1221, deliberately NOT `statement_timeout` (rejected in `session.py`'s own comments:
-    a long-running GX query is legitimate). A LIVE black-holed-connection verification
-    remains an explicitly open gap — see #1221.
+    """#1221: `connect_timeout` (#1102, above) only bounds establishing a BRAND-NEW connection. It
+    does nothing for a connection that was already open and pooled when a network partition
+    happens LATER — route drops silently, no TCP RST.
     """
     from backend.app.db import session as session_module
 
@@ -382,8 +302,7 @@ def test_the_engine_bounds_a_warm_pooled_connection_too(
     assert connect_args.get("keepalives_idle") == session_module._KEEPALIVES_IDLE_SECONDS
     assert connect_args.get("keepalives_interval") == session_module._KEEPALIVES_INTERVAL_SECONDS
     assert connect_args.get("keepalives_count") == session_module._KEEPALIVES_COUNT
-    # The connect_timeout (#1102) and lock_timeout (#855) postures must survive
-    # alongside the new keepalive options — this is an addition at a third layer
-    # (warm-pooled-connection read), not a replacement of either.
+    # The connect_timeout (#1102) and lock_timeout (#855) postures must survive alongside the new
+    # keepalive options — this is an addition at a third layer (warm-pooled-connection read).
     assert connect_args.get("connect_timeout") == session_module._CONNECT_TIMEOUT_SECONDS
     assert f"lock_timeout={session_module._LOCK_TIMEOUT_MS}" in connect_args.get("options", "")

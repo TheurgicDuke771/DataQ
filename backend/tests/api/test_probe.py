@@ -1,9 +1,4 @@
-"""Probe endpoint tests against a real Postgres (db_session) via TestClient.
-
-get_db is overridden to the test session so requests share the rolled-back
-transaction; run_dispatch.dispatch_run is spied so no broker is needed. Auth runs
-in dev-bypass mode (conftest), which upserts the dev user into the same session.
-"""
+"""Probe endpoint tests against a real Postgres (db_session) via TestClient."""
 
 import uuid
 from collections.abc import Iterator
@@ -128,10 +123,6 @@ def test_post_requires_auth(db_session: Any) -> None:
 def test_probe_run_redacts_a_sensitive_monitor_cell() -> None:
     """This route reads the same `results` rows as `/runs/{id}/results`, so a cell
     masked there must be masked here too (#989).
-
-    Found by the PR #1038 review: the redaction was wired at three sinks and this
-    fourth one was missed — which is the failure mode of per-sink redaction, and
-    the reason it needs a test per sink rather than one test for "the redactor".
     """
     from backend.app.services import run_service
 
@@ -149,13 +140,6 @@ def test_the_unauthorized_probe_run_reader_is_gone(
 ) -> None:
     """`GET /_probe/runs/{id}` returned ANY run's results to ANY authenticated
     user — no suite-ownership check, only `get_current_user` (#1039).
-
-    Deleted rather than gated: it was a second, weaker path to rows the real API
-    already serves, and being a forgotten sibling is exactly how it escaped #989's
-    redaction sweep. Two bugs on one route in one PR.
-
-    Pinned as a 404 so it cannot be quietly reinstated — the next person to want a
-    run reader has to add it where authz lives.
     """
     client, _ = probe_client
     resp = client.get(f"/api/v1/_probe/runs/{uuid.uuid4()}")

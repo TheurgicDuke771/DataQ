@@ -1,9 +1,4 @@
-"""Unit tests for the redaction-safe failure classifier (#605).
-
-The contract that matters most: the returned reason is ALWAYS one of the fixed
-category messages — never the raw exception text — so a credential/DSN/PII
-fragment in the exception can't ride out onto a persisted/surfaced reason.
-"""
+"""Unit tests for the redaction-safe failure classifier (#605)."""
 
 import pytest
 
@@ -43,16 +38,16 @@ def test_classifies_into_the_expected_category(exc: Exception, expected: Failure
 
 
 def test_permission_wins_over_config_for_invalid_credentials() -> None:
-    # "invalid credentials" contains no config marker, but the ordering also
-    # guarantees an auth error never falls through to config even if it mentions
-    # a missing object.
+    # "invalid credentials" contains no config marker, but the ordering also guarantees an auth
+    # error never falls through to config even if it mentions a missing object.
     exc = RuntimeError("authentication failed: role DATAQ not found")
     assert classify_failure_category(exc) == FailureCategory.PERMISSION
 
 
 def test_reason_never_echoes_the_raw_exception_text() -> None:
     """The whole point (#605): a secret/DSN/PII fragment in the exception must not
-    appear in the returned reason."""
+    appear in the returned reason.
+    """
     secret = "snowflake://user:SUPERSECRET@acct.region/db"
     reason = classify_failure_reason(RuntimeError(f"could not connect to {secret}"))
     assert secret not in reason
@@ -64,12 +59,7 @@ class TestInventorySyncClassification:
     """#1104 — a grant failure on the inventory-sync enumeration query must get a
     SPECIFIC, connection-type-aware reason (naming the known system schema), not
     the generic PERMISSION message every other failure gets.
-
-    The specific claim is gated on the PHASE (`during_enumeration`), because the
-    category markers are broad substrings: a secret-store 403 or an IdP handshake
-    rejection matches PERMISSION exactly as well as a missing grant does, and
-    naming a warehouse grant for one of those sends an admin to fix something
-    that was never broken (the #1227 review finding)."""
+    """
 
     def test_uc_grant_error_names_the_schema(self) -> None:
         exc = RuntimeError(
@@ -126,7 +116,8 @@ class TestInventorySyncClassification:
     ) -> None:
         """The misdiagnosis this gate exists to prevent: an admin granting SELECT on
         a system schema that was never the problem, while the real fault (a sealed
-        vault, an expired token) stays undiagnosed."""
+        vault, an expired token) stays undiagnosed.
+        """
         reason = classify_inventory_sync_error(exc, "unity_catalog", during_enumeration=False)
         assert reason == _MESSAGES[FailureCategory.PERMISSION]
         assert "information_schema" not in reason.lower()
@@ -135,7 +126,8 @@ class TestInventorySyncClassification:
     def test_the_enumeration_message_hedges_rather_than_asserting_the_cause(self) -> None:
         """Even in the right phase the driver's own text is only a substring match, so
         the reason must read as the most likely cause plus a next step — never as a
-        certainty that leaves the reader with nowhere to go if the grant is present."""
+        certainty that leaves the reader with nowhere to go if the grant is present.
+        """
         exc = PermissionError("access denied")
         reason = classify_inventory_sync_error(exc, "snowflake", during_enumeration=True)
         assert "most likely" in reason.lower()
@@ -149,11 +141,11 @@ class TestInventorySyncClassification:
         ],
     )
     def test_the_reason_never_describes_the_failure_as_a_run(self, exc: Exception) -> None:
-        """The generic messages are written for a RUN — `CONFIG` sends the reader to
-        "the suite's run target" (an inventory sync has none) and `UNKNOWN` says "the
-        run failed to execute. See the server logs", which is the answer #1104 was
-        filed to replace. Rendering either in the connection's tooltip would describe
-        a run that does not exist."""
+        """The generic messages are written for a RUN — `CONFIG` sends the reader to "the suite's
+        run target" (an inventory sync has none) and `UNKNOWN` says "the run failed to execute.
+        See the server logs", which is the answer #1104 was filed to replace. Rendering either
+        in the connection's tooltip would describe a run that does not exist.
+        """
         reason = classify_inventory_sync_error(exc, "snowflake", during_enumeration=True)
         assert "run target" not in reason
         assert "The run failed to execute" not in reason
@@ -161,7 +153,8 @@ class TestInventorySyncClassification:
 
     def test_connectivity_keeps_the_shared_datasource_wording(self) -> None:
         """Not every category needs its own copy — `CONNECTIVITY` already describes the
-        datasource rather than the run, so it stays shared (one message to keep true)."""
+        datasource rather than the run, so it stays shared (one message to keep true).
+        """
         exc = TimeoutError("connection timed out after 30s")
         assert (
             classify_inventory_sync_error(exc, "snowflake", during_enumeration=True)
@@ -172,7 +165,8 @@ class TestInventorySyncClassification:
         """Phase narrows the claim to "the warehouse rejected OUR query" — no further.
         A Snowflake role that lost USAGE on its warehouse is rejected at exactly the
         same point and reads identically, so the message must not assert the SELECT
-        grant as the cause and leave that reader with nowhere to go."""
+        grant as the cause and leave that reader with nowhere to go.
+        """
         reason = classify_inventory_sync_error(
             PermissionError("access denied"), "snowflake", during_enumeration=True
         )
@@ -191,11 +185,6 @@ class TestInventorySyncClassification:
 class TestOrchestrationPollReason:
     """#1285 — an orchestration connection is NOT a datasource (CLAUDE.md §4), so its
     poll failures must not be described in warehouse/role/table/run-target nouns.
-
-    This shipped to prod: both Airflow connections reported "missing warehouse or role
-    … check the suite's run target" while the real cause was the Airflow host being
-    stopped. That is the #828 confident-wrong-answer shape — worse than a silent gap,
-    because it sends an operator to fix something that doesn't exist on the object.
     """
 
     # The exact exception an Airflow poll raises against a stopped Container App:
@@ -213,25 +202,27 @@ class TestOrchestrationPollReason:
     )
     def test_no_reason_uses_datasource_or_run_vocabulary(self, exc: Exception) -> None:
         """The property that actually failed in prod, asserted over every category —
-        not just the one that happened to break."""
+        not just the one that happened to break.
+        """
         reason = classify_orchestration_poll_reason(exc).lower()
-        # "the run failed to execute" is the generic UNKNOWN text — it describes a
-        # RUN, which a poll is not, so it belongs on this list too. Without it the
-        # UNKNOWN case passes against the unfixed code and proves nothing.
+        # "the run failed to execute" is the generic UNKNOWN text — it describes a RUN, which a poll
+        # is not, so it belongs on this list too.
         for noun in ("warehouse", "role", "table/path", "run target", "datasource", "the run"):
             assert noun not in reason, f"{noun!r} leaked into an orchestration reason: {reason}"
 
     def test_every_category_has_an_orchestration_message(self) -> None:
         """A category added later without a message here would KeyError in the poll
         path — the one place that must never raise (it runs inside the failure
-        handler itself)."""
+        handler itself).
+        """
         for category in FailureCategory:
             assert category in _ORCHESTRATION_MESSAGES
 
     def test_a_stopped_host_names_both_plausible_causes(self) -> None:
         """A 404 cannot distinguish "DAG deleted" from "host stopped" — Container Apps
         answers for a stopped app with the same shape. So the message must name both
-        rather than assert one, per the #1104 hedging precedent."""
+        rather than assert one, per the #1104 hedging precedent.
+        """
         reason = classify_orchestration_poll_reason(self.STOPPED_HOST).lower()
         assert "pipeline/dag" in reason
         assert "no longer" in reason  # the "it's gone" cause
@@ -241,7 +232,8 @@ class TestOrchestrationPollReason:
         """The three providers are shaped differently: Airflow polls a REST host,
         ADF polls Azure by subscription/resource-group/factory, and dbt contacts no
         host at all — it reads a run_results.json artifact from ADLS/S3/file. Telling
-        a dbt operator to check a "base URL" is this very bug, one provider over."""
+        a dbt operator to check a "base URL" is this very bug, one provider over.
+        """
         for category, reason in _ORCHESTRATION_MESSAGES.items():
             low = reason.lower()
             for airflow_only in ("base url", "the host answered", "rest api"):
@@ -250,7 +242,8 @@ class TestOrchestrationPollReason:
     def test_no_message_claims_the_provider_answered(self) -> None:
         """The exception can be raised before any request leaves DataQ — a sealed
         secret store while resolving the credential, an unknown provider, a config
-        validation error. Asserting "it answered" would be unsupportable."""
+        validation error. Asserting "it answered" would be unsupportable.
+        """
         for reason in _ORCHESTRATION_MESSAGES.values():
             assert "answered" not in reason.lower()
 
@@ -266,15 +259,14 @@ class TestOrchestrationPollReason:
     def test_upstream_down_statuses_classify_as_connectivity_not_config(self, message: str) -> None:
         """Unlike a 404, a gateway saying its backend is missing or overloaded is an
         unambiguous connectivity fact. Before #1285 these fell through to CONFIG and
-        told the reader their configuration was wrong."""
+        told the reader their configuration was wrong.
+        """
         assert classify_failure_category(RuntimeError(message)) is FailureCategory.CONNECTIVITY
 
     @pytest.mark.parametrize(
         ("message", "expected"),
         [
-            # A sealed vault is not a datasource outage — this must not become
-            # "the datasource could not be reached" (ADR 0039's whole point is that
-            # an outage must never be reportable as a benign state).
+            # A sealed vault is not a datasource outage.
             (
                 "SecretStoreUnavailableError: could not serve 'conn-sf-dev' "
                 "(HTTP 503 — vault sealed or standby)",
@@ -295,7 +287,8 @@ class TestOrchestrationPollReason:
         """`_MARKERS` is shared by EVERY caller — runs, dry-runs, monitors, comparison,
         UC, lineage refresh, inventory sync — and CONNECTIVITY is matched before
         CONFIG. Matching a bare "502"/"503"/"504" would have quietly reclassified all
-        of these as a network problem, which is why the markers are reason PHRASES."""
+        of these as a network problem, which is why the markers are reason PHRASES.
+        """
         assert classify_failure_category(RuntimeError(message)) is expected
 
     def test_never_echoes_the_raw_exception_text(self) -> None:

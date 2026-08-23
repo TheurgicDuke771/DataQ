@@ -1,9 +1,4 @@
-"""orchestration_service.record_pipeline_event tests against a real Postgres.
-
-Covers connection resolution by factory name, the idempotent upsert (replay
-lands on the same row and refreshes mutable fields), and the unattributable
-event (no matching connection → None). Skips without TEST_DATABASE_URL.
-"""
+"""orchestration_service.record_pipeline_event tests against a real Postgres."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -129,7 +124,8 @@ def test_ambiguous_factory_picks_first_match(db_session: Any) -> None:
 
 class _FakeProvider:
     """Stand-in OrchestrationProvider: parse_event isn't used here; fetch_run_detail
-    is driven by the test (returns a canned RunUpdate or raises)."""
+    is driven by the test (returns a canned RunUpdate or raises).
+    """
 
     provider = "adf"
     resource_config_key = "factory_name"
@@ -289,13 +285,7 @@ def test_trigger_is_idempotent_on_replay(db_session: Any) -> None:
 
 
 def test_duplicate_orchestration_marker_rejected_by_index(db_session: Any) -> None:
-    """The partial unique index is the atomic guard behind ON CONFLICT (#308).
-
-    The in-app check stops the *sequential* replay; the index stops the
-    *concurrent* race (two ingestions both passing the check before either
-    commits). Simulate the race outcome directly: a second insert of the same
-    (suite_id, orchestration marker) must fail at the DB, not double-trigger.
-    """
+    """The partial unique index is the atomic guard behind ON CONFLICT (#308)."""
     conn = _adf_connection(db_session)
     suite = _suite(db_session, conn)
     marker = "adf:load_finance:run-9"
@@ -309,11 +299,7 @@ def test_duplicate_orchestration_marker_rejected_by_index(db_session: Any) -> No
 
 
 def test_repeatable_markers_are_exempt_from_dedup_index(db_session: Any) -> None:
-    """manual/probe/schedule markers legitimately repeat for the same suite.
-
-    The index is partial (orchestration markers only), so re-running a suite
-    manually or on a schedule tick must not collide.
-    """
+    """manual/probe/schedule markers legitimately repeat for the same suite."""
     conn = _adf_connection(db_session)
     suite = _suite(db_session, conn)
     for marker in ("manual:user-1", "manual:user-1", "schedule:sch-1", "schedule:sch-1"):
@@ -362,15 +348,8 @@ def test_binding_for_other_pipeline_does_not_trigger(db_session: Any) -> None:
     assert result.triggered_runs == []
 
 
-# ── #1186: env-mismatch near-miss signal ───────────────────────────────────
-#
-# Confirmed live: two orchestrator connections sharing one resource across envs
-# made a succeeded run attribute to the "wrong" env, and an enabled binding
-# scoped to the other env never fired — silently. These tests cover the ingest
-# path (`_trigger_suites`, reached by both `ingest_event` and `ingest_polled_runs`)
-# emitting a `trigger_binding_env_near_miss` log line + a deduped `workspace_health`
-# row exactly when a pipeline/DAG run matches an enabled binding on everything but
-# the env — and not otherwise.
+# ── #1186: env-mismatch near-miss signal ─────────────────────────────────── Confirmed live: two
+# orchestrator connections sharing one resource across envs made a succeeded run attribute to the
 
 
 def test_env_mismatch_logs_near_miss_and_writes_health_row(
@@ -387,9 +366,7 @@ def test_env_mismatch_logs_near_miss_and_writes_health_row(
     _binding(db_session, suite=suite, pipeline="load_finance", env="dev")  # scoped to dev
 
     with capture_logs() as logs:
-        # structlog caches a bound logger on first use; rebind the module logger
-        # INSIDE the capture or `caplog`/`capture_logs` silently sees nothing
-        # (the same trap documented in test_admin.py / test_secrets.py).
+        # structlog caches a bound logger on first use.
         monkeypatch.setattr(
             svc_mod, "log", structlog.get_logger("backend.app.services.orchestration_service")
         )
@@ -449,9 +426,8 @@ def test_disabled_mismatched_binding_does_not_record_a_near_miss(db_session: Any
 
     conn = _adf_connection(db_session, env="qa")
     suite = _suite(db_session, conn)
-    # Same shape as the main near-miss test, but the OTHER env's binding is
-    # disabled — it wouldn't fire even with the right env, so it's not a
-    # near-miss victim worth signalling.
+    # Same shape as the main near-miss test, but the OTHER env's binding is disabled — it wouldn't
+    # fire even with the right env, so it's not a near-miss victim worth signalling.
     _binding(db_session, suite=suite, pipeline="load_finance", env="dev", enabled=False)
 
     result = ingest_event(
@@ -500,7 +476,8 @@ def test_near_miss_log_line_fires_only_on_first_occurrence(
     """The DB row dedupes via upsert regardless, but the log line must NOT fire
     on every occurrence — a persistently misconfigured pipeline succeeds (and
     re-triggers this check) every poll cycle, and warning every cycle forever is
-    the #852 log-amplification shape this codebase already burned itself on."""
+    the #852 log-amplification shape this codebase already burned itself on.
+    """
     import structlog
     from structlog.testing import capture_logs
 
@@ -560,12 +537,10 @@ def test_near_miss_signalled_via_the_poll_path_too(db_session: Any) -> None:
 def test_near_miss_record_failure_is_fail_open_and_does_not_break_ingestion(
     db_session: Any, monkeypatch: Any
 ) -> None:
-    """A DB error writing the diagnostic `workspace_health` row must never break
-    the ingest path itself (mirrors `_dispatch_lineage_refresh`'s fail-open
-    discipline) — otherwise a webhook whose pipeline_run was already correctly
-    upserted would 500 back to the caller (ADR 0006: ack well-formed events), or
-    a poll batch would abort mid-loop and silently drop every OTHER update it
-    still had to process.
+    """A DB error writing the diagnostic `workspace_health` row must never break the ingest path
+    itself (mirrors `_dispatch_lineage_refresh`'s fail-open discipline) — otherwise a webhook
+    whose pipeline_run was already correctly upserted would 500 back to the caller (ADR 0006:
+    ack well-formed events), or a poll batch would abort mid-loop and silently drop ev
     """
     from backend.app.services import workspace_health_service
 
@@ -591,9 +566,8 @@ def test_near_miss_record_failure_is_fail_open_and_does_not_break_ingestion(
     assert result.pipeline_run.status == "succeeded"
     assert result.triggered_runs == []
 
-    # Poll path, multi-update batch: the first update's near-miss (write fails)
-    # must not stop the SECOND, unrelated update in the same batch from being
-    # recorded — a batch-wide crash would silently drop it too.
+    # Poll path, multi-update batch: the first update's near-miss (write fails) must not stop the
+    # SECOND, unrelated update in the same batch from being recorded.
     poll_result = ingest_polled_runs(
         db_session,
         provider_impl=_FakeProvider(),
@@ -615,9 +589,8 @@ def test_near_miss_record_failure_is_fail_open_and_does_not_break_ingestion(
 
 
 def test_ingest_airflow_resolves_by_base_url_and_skips_enrichment(db_session: Any) -> None:
-    # AirflowProvider.fetch_run_detail raises NotImplementedError (its callback is
-    # authoritative), so _maybe_enrich must skip silently even though the
-    # connection has a stored credential — and resolution matches on base_url.
+    # AirflowProvider.fetch_run_detail raises NotImplementedError (its callback is authoritative),
+    # so _maybe_enrich must skip silently even though the connection has a stored credential.
     from backend.app.orchestration.airflow import AirflowProvider
 
     user = _user(db_session)
@@ -682,7 +655,8 @@ def test_dispatch_broker_failure_marks_run_failed_with_finished_at(
 ) -> None:
     """If dispatch raises (broker down), the triggered run must not be left stuck
     'queued' — it's marked failed with a finished_at, mirroring the worker's
-    terminal-failed shape so run-history views stay consistent (#215)."""
+    terminal-failed shape so run-history views stay consistent (#215).
+    """
     from backend.app.services import run_dispatch
 
     def _boom(_run_id: Any) -> None:
@@ -764,10 +738,8 @@ def test_polled_run_skipped_when_recently_updated(db_session: Any) -> None:
 def test_polled_running_then_succeeded_is_not_skipped(
     db_session: Any, stub_run_dispatch: list[str]
 ) -> None:
-    # #490 regression: a run first recorded as `running` has its last_updated_at
-    # inside the next poll window, so the time-based skip WOULD drop it — but a
-    # non-terminal existing row must always be re-processed, or the `running →
-    # succeeded` transition (and its trigger) is lost. Only terminal rows skip.
+    # #490 regression: a run first recorded as `running` has its last_updated_at inside the next
+    # poll window, so the time-based skip WOULD drop it.
     conn = _adf_connection_with_secret(db_session)
     suite = _suite(db_session, conn)
     _binding(db_session, suite=suite, pipeline="load_finance", env=conn.env)
@@ -796,12 +768,8 @@ def test_polled_running_then_succeeded_is_not_skipped(
     assert stub_run_dispatch == [str(succeeded.triggered_runs[0].id)]  # handed to the broker
 
 
-# ── lineage refresh hook (#759): dbt success dispatches an async refresh ───────
-#
-# The refresh moved OFF the webhook/poll path into the `refresh_dbt_lineage` Celery
-# task (fetch+parse+refresh in the worker, own session) — so these hook tests assert
-# the *dispatch* (send_task with the right args), not the parse/refresh itself. The
-# end-to-end task body is covered in tests/worker/test_lineage_refresh_task.py.
+# ── lineage refresh hook (#759): dbt success dispatches an async refresh ─────── The refresh moved
+# OFF the webhook/poll path into the `refresh_dbt_lineage` Celery task (fetch+parse+refresh in the w
 
 
 class _SendTaskSpy:

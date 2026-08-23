@@ -1,29 +1,12 @@
-# SES — the email alert channel (#1368), the AWS-native counterpart of the
-# SMTP creds the Azure stack keeps in Key Vault. Everything here is gated on
-# var.alert_email: empty (the default) creates nothing and the app's email
-# channel stays off (config.py enables it only when EMAIL_TO + EMAIL_USERNAME
-# + EMAIL_PASSWORD_SECRET_NAME are all set).
-#
-# Sandbox posture, stated honestly: a fresh SES account can only send FROM and
-# TO verified identities. alert_email is the sender (and the default
-# recipient); alert_email_to sets distinct recipient(s), each getting its own
-# verified identity below. Production fan-out to arbitrary addresses needs an
-# SES production-access request (an AWS support form, not Terraform).
-#
-# The identity requires a ONE-TIME human step: SES emails a verification link
-# to alert_email at create time, and sends fail with "Email address is not
-# verified" until it is clicked. Check with:
-#   aws ses get-identity-verification-attributes --identities <alert_email>
+# SES — the email alert channel (#1368), the AWS-native counterpart of the SMTP creds the Azure
+# stack keeps in Key Vault.
 
 locals {
   # One gate for every resource in this file (PR #1370 review — the condition
   # was copy-pasted per resource, so a future edit could invert one silently).
   ses_enabled = var.alert_email == "" ? 0 : 1
-  # Recipients default to the sender; every distinct recipient needs its OWN
-  # verified identity while the account is in the SES sandbox. EMAIL_TO is
-  # comma-separated on the backend (config.py), so the identity set is built
-  # per address — a comma list handed to one VerifyEmailIdentity would fail
-  # the apply (PR #1372 review).
+  # Recipients default to the sender; every distinct recipient needs its OWN verified identity while
+  # the account is in the SES sandbox.
   alert_email_to = var.alert_email_to != "" ? var.alert_email_to : var.alert_email
   alert_to_identities = local.ses_enabled == 1 ? toset([
     for a in split(",", local.alert_email_to) : trimspace(a)
@@ -31,9 +14,8 @@ locals {
   ]) : toset([])
 }
 
-# The channel only turns on when the SENDER exists (config.py gates on
-# EMAIL_USERNAME, which derives from alert_email) — setting only the recipient
-# is a silent no-op, so say so at plan time (PR #1372 review).
+# The channel only turns on when the SENDER exists (config.py gates on EMAIL_USERNAME, which derives
+# from alert_email) — setting only the recipient is a silent no-op.
 check "alert_email_to_requires_sender" {
   assert {
     condition     = var.alert_email_to == "" || var.alert_email != ""
@@ -46,18 +28,15 @@ resource "aws_ses_email_identity" "alert" {
   email = var.alert_email
 }
 
-# Sandbox rule: every RECIPIENT must be verified too, so each distinct TO
-# address gets its own identity (its own one-time verification click).
-# Collapses to nothing when alert_email_to is unset/equal to the sender.
+# Sandbox rule: every RECIPIENT must be verified too, so each distinct TO address gets its own
+# identity (its own one-time verification click).
 resource "aws_ses_email_identity" "alert_to" {
   for_each = local.alert_to_identities
   email    = each.value
 }
 
-# Dedicated IAM user for SMTP: SES SMTP credentials ARE an IAM access key —
-# the username is the key id and the password is Terraform's derived
-# ses_smtp_password_v4 (the documented SigV4 derivation, region-specific).
-# Scoped to SendRawEmail only (what SMTP submission uses), from this identity.
+# Dedicated IAM user for SMTP: SES SMTP credentials ARE an IAM access key — the username is the key
+# id and the password is Terraform's derived ses_smtp_password_v4 (the documented SigV4 derivation.
 resource "aws_iam_user" "ses_smtp" {
   count = local.ses_enabled
   name  = "dataq-app-ses-smtp"
@@ -68,11 +47,8 @@ data "aws_iam_policy_document" "ses_smtp" {
   count = local.ses_enabled
   statement {
     actions = ["ses:SendRawEmail"]
-    # Sender AND every recipient identity (#1373): SES authorizes the send
-    # against the RECIPIENT identity ARNs too while the account is in the
-    # sandbox, so a sender-only grant 554s the moment alert_email_to differs
-    # from alert_email — proven by a live send, after a review had assessed
-    # the sender-only scoping as correct. Only-live-is-evidence, again.
+    # Sender AND every recipient identity (#1373): SES authorizes the send against the RECIPIENT
+    # identity ARNs too while the account is in the sandbox.
     resources = concat(
       [aws_ses_email_identity.alert[0].arn],
       [for identity in aws_ses_email_identity.alert_to : identity.arn],
@@ -92,18 +68,13 @@ resource "aws_iam_access_key" "ses_smtp" {
   user  = aws_iam_user.ses_smtp[0].name
 }
 
-# The SMTP password goes into Secrets Manager UNDER THE APP PREFIX
-# (dataq/channel-email-password): the task env's EMAIL_PASSWORD_SECRET_NAME
-# already names `channel-email-password`, which the app resolves through its
-# own SecretStore (SECRET_STORE=aws_secrets_manager + AWS_SECRETS_MANAGER_PREFIX
-# = dataq/) at send time — same read path as every connection credential, no
-# extra task-definition secret injection.
+# The SMTP password goes into Secrets Manager UNDER THE APP PREFIX (dataq/channel-email-password):
+# the task env's EMAIL_PASSWORD_SECRET_NAME already names `channel-email-password`.
 resource "aws_secretsmanager_secret" "channel_email_password" {
   count = local.ses_enabled
   name  = "${var.aws_secrets_manager_prefix}/channel-email-password"
-  # The app's sweep/rotation owns secrets under dataq/, but this one is
-  # infra-owned: recovery_window 0 so a destroy/recreate cycle doesn't collide
-  # with a soft-deleted name.
+  # The app's sweep/rotation owns secrets under dataq/, but this one is infra-owned: recovery_window
+  # 0 so a destroy/recreate cycle doesn't collide with a soft-deleted name.
   recovery_window_in_days = 0
 }
 

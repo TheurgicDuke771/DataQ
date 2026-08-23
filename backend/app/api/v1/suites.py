@@ -1,10 +1,4 @@
-"""Suite CRUD endpoints.
-
-Thin HTTP layer over `suite_service`: validates request shapes, wires the
-current user + db session, and maps models onto responses. All business logic
-(connection validation, persistence) lives in the service. `connection_id` is
-set at create and immutable thereafter (re-pointing would orphan child checks).
-"""
+"""Suite CRUD endpoints."""
 
 from __future__ import annotations
 
@@ -42,27 +36,13 @@ log = get_logger(__name__)
 
 
 class SuiteSampling(ApiModel):
-    """Row-cap declaration on a run target (#595) — see `datasources.sampling`.
+    """Row-cap declaration on a run target (#595) — see `datasources.sampling`."""
 
-    Declared here as a real field because `SuiteTarget` is a **closed** model:
-    anything not listed is dropped on the way in, so without this the sampling
-    block never reached the service layer and the whole feature was configurable
-    only by writing `suites.target` in the database. Silently discarding it is
-    precisely the failure the registry's own 422 exists to prevent, one layer up.
-
-    The bounds mirror `sampling.parse_sample_spec` so a malformed spec is a 422
-    from the schema where the shape is obvious; the service-layer parse stays the
-    authority (it also guards the import path and direct service callers).
-    """
-
-    # Spelled literally because `Literal[...]` needs constants, not names — a
-    # canary test asserts these two stay equal to `SAMPLE_HEAD`/`SAMPLE_RANDOM`,
-    # so the duplication cannot drift silently.
+    # Spelled literally because `Literal[...]` needs constants, not names — a canary test asserts
+    # these two stay equal to `SAMPLE_HEAD`/`SAMPLE_RANDOM`, so the duplication cannot drift
     strategy: Literal["head", "random"]
     rows: int = Field(ge=1, le=MAX_SAMPLE_ROWS)
-    #: `random` only — a seed makes the draw reproducible. Rejected on `head` by
-    #: the service parse, which would otherwise let an author believe their head
-    #: sample was seeded-random.
+    #: `random` only — a seed makes the draw reproducible.
     seed: int | None = None
 
 
@@ -71,12 +51,7 @@ class SuiteTarget(ApiModel):
     Catalog name the suite's checks run against. Same shape as the column-profiler
     request; `run_target.resolve_target` validates the right fields per connection
     type (`table` for SQL, `path` for flat files, `catalog` for Unity Catalog).
-
-    A flat-file target can instead select a **batch** of files: `pattern` (a regex
-    whose first capture group is the batch key) + `strategy` (`latest`/`specific`,
-    with `batch` for `specific`) + optional `prefix` (A4). The exact field
-    combination is validated by `run_target.resolve_target` per connection type, so
-    those rules live in one place — this model only declares the storable keys."""
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -92,9 +67,7 @@ class SuiteTarget(ApiModel):
     strategy: Literal["latest", "specific"] | None = None
     batch: str | None = Field(default=None, max_length=255)
     prefix: str | None = Field(default=None, max_length=1024)
-    # Scale-aware execution (#595): bound what a run materialises. Accepted only
-    # on the full-load datasources — `run_target.resolve_target` refuses it
-    # elsewhere with a 422 rather than ignoring it.
+    # Scale-aware execution (#595): bound what a run materialises.
     sampling: SuiteSampling | None = None
 
     def to_storage(self) -> dict[str, Any]:
@@ -123,22 +96,16 @@ class SuiteRead(ApiModel):
     description: str | None
     connection_id: uuid.UUID
     target: dict[str, Any] | None
-    # The asset this suite's target resolves to (ADR 0034, #760) — the browse/reason
-    # link the Assets view groups suites by. NULL for a targetless/unresolvable
-    # suite (resolution is fail-soft). Deferred to #760 by the #764 review.
+    # The asset this suite's target resolves to (ADR 0034, #760) — the browse/reason link the Assets
+    # view groups suites by.
     asset_id: uuid.UUID | None = None
-    # Failing-sample redaction policy (#415): {identifier_column?, pii_columns}. NULL
-    # until set — the classifier still auto-classifies incidental columns at redaction
-    # time; this stored policy pins the shown identifier + the always-masked columns.
+    # Failing-sample redaction policy (#415): {identifier_column?, pii_columns}.
     column_policy: dict[str, Any] | None = None
-    #: `None` once the creating user is erased — the row outlives its author
-    #: (`ondelete=SET NULL`, #1319). Nullable in the schema, so nullable here:
-    #: a non-optional field would 500 on serialization instead.
+    #: `None` once the creating user is erased — the row outlives its author (`ondelete=SET NULL`,
+    #: #1319).
     created_by: uuid.UUID | None
-    # The caller's effective level on this suite (`owner`/`admin`/`edit`/`view`)
-    # so the UI can gate per-suite actions — manage shares, delete — without a
-    # second round-trip or guessing from `created_by`. Always set on an
-    # accessible read (the read is already permission-gated).
+    # The caller's effective level on this suite (`owner`/`admin`/`edit`/`view`) so the UI can gate
+    # per-suite actions — manage shares, delete.
     my_permission: str | None = None
 
     @classmethod
@@ -167,9 +134,8 @@ def create_suite(
         created_by=current_user.id,
         target=payload.target.to_storage() if payload.target is not None else None,
     )
-    # Best-effort: auto-derive the failing-sample redaction policy for the new
-    # suite's target so samples have a locator without manual setup (#634). A fresh
-    # suite never has a policy; fire only when it has a concrete target.
+    # Best-effort: auto-derive the failing-sample redaction policy for the new suite's target so
+    # samples have a locator without manual setup (#634).
     if suite.target is not None:
         run_dispatch.dispatch_auto_classify(suite.id)
     # The creator is, by definition, the owner.
@@ -225,17 +191,12 @@ def update_suite(
         target=new_target,
         actor_id=current_user.id,
     )
-    # A target-setting update on a policy-less suite gets the same best-effort
-    # auto-classify as create (#634) — e.g. a suite created target-less, now given
-    # one. Never re-derives once a policy exists (the task also re-checks).
+    # A target-setting update on a policy-less suite gets the same best-effort auto-classify as
+    # create (#634) — e.g. a suite created target-less, now given one.
     if payload.target is not None and suite.target is not None and suite.column_policy is None:
         run_dispatch.dispatch_auto_classify(suite.id)
-    # Repointing a *policied* suite to a different target can strand the stored
-    # redaction policy — its `identifier_column`/`pii_columns` may not exist in the
-    # new target. We deliberately don't auto-re-derive (don't clobber a
-    # user/derived policy, #642), but the staleness was previously invisible. Emit
-    # an observable event so an operator (or a future UI hint) can prompt a
-    # re-run of Auto-detect (#643).
+    # Repointing a *policied* suite to a different target can strand the stored redaction policy —
+    # its `identifier_column`/`pii_columns` may not exist in the new target.
     elif had_policy and new_target is not None and new_target != old_target:
         log.warning(
             "suite_policy_possibly_stale",
@@ -273,14 +234,7 @@ def trigger_suite_run(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> RunRead:
-    """Queue a run of the suite and dispatch it to the worker.
-
-    `edit` gates this (the capability ladder grants 'trigger runs' at edit). The
-    suite's target (#215) is resolved up front so a targetless/misconfigured
-    suite fails fast with a 422 instead of a queued→failed run the caller has to
-    poll to discover. A broker outage marks the run `failed` (never left stuck
-    `queued`) and surfaces 503 — the same contract as the probe endpoint.
-    """
+    """Queue a run of the suite and dispatch it to the worker."""
     suite = require_permission(db, suite_id, current_user.id, minimum="edit")
     connection = db.get(Connection, suite.connection_id)
     assert connection is not None  # FK is RESTRICT; a suite always has its connection
@@ -292,9 +246,8 @@ def trigger_suite_run(
     db.commit()
     db.refresh(run)
 
-    # Shared create-adjacent dispatch+broker-failure block (#227): on a broker
-    # outage the run is marked terminal-`failed` (never left stuck `queued`) and we
-    # surface 503 — the same contract as the probe endpoint.
+    # Shared create-adjacent dispatch+broker-failure block (#227): on a broker outage the run is
+    # marked terminal-`failed` (never left stuck `queued`) and we surface 503.
     if not run_dispatch.dispatch_or_fail(db, run):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -309,7 +262,8 @@ def trigger_suite_run(
 class SourceConnectionRef(ApiModel):
     """A comparison check's portable source ref (ADR 0015) — `(name, env)` is the
     workspace-unique connection key, so it survives an export/import while a raw
-    UUID would not."""
+    UUID would not.
+    """
 
     name: str = Field(min_length=1, max_length=128)
     env: str = Field(min_length=1, max_length=16)
@@ -321,16 +275,9 @@ class CheckDocument(ApiModel):
     name: str = Field(min_length=1, max_length=256)
     kind: str = "expectation"
     expectation_type: str = Field(min_length=1, max_length=128)
-    # DQ dimension (ADR 0038). Absent on an older export → derived on import,
-    # exactly as if freshly authored. Optional in BOTH directions, so
-    # EXPORT_VERSION does not bump (it bumps only on an incompatible shape).
+    # DQ dimension (ADR 0038).
     dimension: str | None = None
-    # Evaluating engine (ADR 0036). Absent on a pre-engine export → 'gx', which
-    # is what those checks ran as; a native value must be offered by the TARGET
-    # connection or import 422s naming the capability (same gate as authoring).
-    # Optional-with-default so EXPORT_VERSION does not bump. Without this field,
-    # ApiModel's extra='ignore' would silently convert a native-engine document
-    # to 'gx' on import — the exact conversion the service layer forbids.
+    # Evaluating engine (ADR 0036).
     engine: str = Field(default="gx", min_length=1, max_length=32)
     config: dict[str, Any] = Field(default_factory=dict)
     # Present only on comparison checks (ADR 0015); resolved on import.
@@ -342,7 +289,8 @@ class CheckDocument(ApiModel):
 
 class SuiteDocument(ApiModel):
     """Portable suite — connection-agnostic, no DB identity. Both the export
-    response and the import payload (a round-trippable document)."""
+    response and the import payload (a round-trippable document).
+    """
 
     version: int = suite_io.EXPORT_VERSION
     name: str = Field(min_length=1, max_length=128)
@@ -380,22 +328,15 @@ def import_suite(
     current_user: MemberUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> SuiteRead:
-    # Like create_suite: Member+ (ADR 0033 — a Viewer is read-only and cannot
-    # become an owner), and the new suite is owned by the importer. Gated here as
-    # well as on `POST /suites` deliberately: import is a second way to create a
-    # suite, and a role gate applied to only one of two doors is not a gate.
-    # Thresholds/config round-trip exactly (Decimal in/out).
+    # Like create_suite: Member+ (ADR 0033 — a Viewer is read-only and cannot become an owner), and
+    # the new suite is owned by the importer.
     doc = payload.document
     suite = suite_io.import_suite(
         db,
         version=doc.version,
         name=doc.name,
         description=doc.description,
-        # `dimension` is dropped when the payload did not SET it, so the service
-        # can tell "an older document omits the field" (→ derive) from "this
-        # document says the check is unclassified" (→ keep NULL). model_dump()
-        # alone emits the key either way, which would classify every pre-ADR-0038
-        # check on import — exactly the backfill ADR 0038 §5 forbids.
+        # `dimension` is dropped when the payload did not SET it.
         checks=[
             {
                 k: v
@@ -447,7 +388,8 @@ class ColumnProfileRead(ApiModel):
 class ProfileRead(ApiModel):
     """Profile result. Identity fields are type-specific: SQL datasources fill
     `table` / `schema` (+ `catalog` for Unity Catalog), flat-file datasources fill
-    `path` / `file_format`."""
+    `path` / `file_format`.
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -489,17 +431,8 @@ def profile_columns(
         file_format=payload.file_format,
         secret_store=secret_store,
     )
-    # Live probe: `top_values` / `min_value` / `max_value` are real cell contents,
-    # and this route consulted no policy and wrote no audit event (#1419/#1479).
-    # Destination rule: an author's own profiler panel is `INTERACTIVE`, so values
-    # are shown — profiling exists to tell you what is IN a column — and the
-    # disclosure is recorded instead of prevented.
-    #
-    # Governance tags need filtering when the probe may not be reading the suite's
-    # own asset — see `live_probe.applicable_tags`. Dropping the map WHOLESALE was
-    # the first attempt and is wrong in the other direction: it drops the
-    # sensitive floor too, which masks LESS, on the common path where the check
-    # editor sends the suite's own table explicitly.
+    # Live probe: `top_values` / `min_value` / `max_value` are real cell contents, and this route
+    # consulted no policy and wrote no audit event (#1419/#1479).
     policy = suite.column_policy
     probed_other_target = any(
         v is not None for v in (payload.table, payload.path, payload.schema_, payload.catalog)
@@ -551,7 +484,8 @@ def profile_columns(
 
 class ColumnsRead(ApiModel):
     """The column names of a suite target — feeds the check editor's column
-    dropdown (#474) so authors pick instead of recalling exact names."""
+    dropdown (#474) so authors pick instead of recalling exact names.
+    """
 
     columns: list[str]
 
@@ -598,7 +532,8 @@ class BatchPreviewRead(ApiModel):
     """The concrete file path a batch-target spec resolves to right now — the same
     live resolution `run_target.materialize_path` performs at run time, run early
     and without persisting anything (#1193). Callers re-request on every field
-    change to keep the "resolves to" hint live while authoring."""
+    change to keep the "resolves to" hint live while authoring.
+    """
 
     path: str
 
@@ -623,9 +558,8 @@ def preview_batch_target(
     suite = require_permission(db, suite_id, current_user.id, minimum="edit")
     connection = db.get(Connection, suite.connection_id)
     assert connection is not None
-    # Every failure mode is already a typed `DataQError` from `run_target`
-    # (batch_preview_no_data / _invalid / _failed, or suite_target_invalid), so the
-    # router stays a pass-through — same shape as the dry-run endpoint.
+    # Every failure mode is already a typed `DataQError` from `run_target` (batch_preview_no_data /
+    # _invalid / _failed, or suite_target_invalid), so the router stays a pass-through.
     path = run_target.preview_batch(
         connection.type,
         connection.config,
@@ -645,19 +579,12 @@ def preview_batch_target(
 class ColumnPolicyRead(ApiModel):
     """A suite's failing-sample redaction policy: the shown ``identifier_column``
     (a non-PII row locator) + the always-masked ``pii_columns``, plus whether the
-    suite is in fail-closed mode."""
+    suite is in fail-closed mode.
+    """
 
     identifier_column: str | None = None
     pii_columns: list[str] = Field(default_factory=list)
-    #: Fail-closed mode (G3 / #433). When true, nothing row-level is surfaced
-    #: unless a column is EXPLICITLY cleared — the operator's `identifier_column`
-    #: or a datasource governance tag. The name/value classifier is not consulted,
-    #: because consulting it is the risk this removes: a column called `field_7`
-    #: full of SSNs looks harmless to a name heuristic.
-    #:
-    #: Off by default, deliberately. A fully-masked failing row is unactionable —
-    #: you cannot see what was wrong or which row — so this is a trade an operator
-    #: makes for a regulated dataset, not one made for them.
+    #: Fail-closed mode (G3 / #433).
     require_classification: bool = False
 
     @classmethod
@@ -673,15 +600,7 @@ class ColumnPolicyRead(ApiModel):
 class ColumnPolicyUpdate(ApiModel):
     identifier_column: str | None = Field(default=None, max_length=255)
     pii_columns: list[str] = Field(default_factory=list, max_length=200)
-    #: Fail-closed mode (G3 / #433). When true, nothing row-level is surfaced
-    #: unless a column is EXPLICITLY cleared — the operator's `identifier_column`
-    #: or a datasource governance tag. The name/value classifier is not consulted,
-    #: because consulting it is the risk this removes: a column called `field_7`
-    #: full of SSNs looks harmless to a name heuristic.
-    #:
-    #: Off by default, deliberately. A fully-masked failing row is unactionable —
-    #: you cannot see what was wrong or which row — so this is a trade an operator
-    #: makes for a regulated dataset, not one made for them.
+    #: Fail-closed mode (G3 / #433).
     require_classification: bool | None = None
     """Tri-state: omit to LEAVE UNCHANGED, or send true/false to set it.
 
@@ -696,7 +615,8 @@ class ColumnPolicyUpdate(ApiModel):
 
 class ColumnPolicySuggestRequest(ApiModel):
     """The suite's target to profile + classify — same shape as the profiler request,
-    minus ``columns`` (all of the target's columns are classified)."""
+    minus ``columns`` (all of the target's columns are classified).
+    """
 
     top_n: int = Field(default=20, ge=1, le=100)
     table: str | None = Field(default=None, max_length=255)
@@ -757,9 +677,6 @@ def suggest_column_policy(
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> ColumnPolicyRead:
     # sync def → threadpool; the datasource connect + column list/profile are blocking.
-    # Authoring aid → 'edit'. Lists the target's columns, profiles them for sample
-    # values, then classifies name+values into an {identifier, pii} suggestion the
-    # author reviews and PUTs. Not persisted here.
     suite = require_permission(db, suite_id, current_user.id, minimum="edit")
     connection = db.get(Connection, suite.connection_id)
     assert connection is not None
