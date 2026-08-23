@@ -8,6 +8,7 @@ import { useIsWorkspaceAdmin } from '../src/auth/useMe';
 import { useCurrentUser } from '../src/auth/useCurrentUser';
 import { useOtpSession } from '../src/auth/otpSessionContext';
 import { logout } from '../src/auth/authClient';
+import { ThemeModeProvider } from '../src/themeMode/ThemeModeProvider';
 
 /** Sign-out in `otp` mode (ADR 0032, #736). */
 vi.mock('../src/auth/config', () => ({ authMode: 'otp' }));
@@ -65,9 +66,11 @@ beforeEach(() => {
 describe('UserMenu — otp sign-out', () => {
   it('revokes the cookie session instead of running the OIDC redirect', async () => {
     render(
-      <MemoryRouter initialEntries={['/no-such-page']}>
-        <App />
-      </MemoryRouter>,
+      <ThemeModeProvider>
+        <MemoryRouter initialEntries={['/no-such-page']}>
+          <App />
+        </MemoryRouter>
+      </ThemeModeProvider>,
     );
 
     await userEvent.click(screen.getByText('Ada L'));

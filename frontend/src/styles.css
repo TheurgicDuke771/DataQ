@@ -49,8 +49,8 @@
   --dq-monitored: #69b1ff;
   --dq-delta-good: #73d13d;
   --dq-delta-bad: #ff7875;
-  --dq-critical: #eb2f96;
-  --dq-error: #fa541c;
+  /* --dq-critical/--dq-error/--dq-muted/--dq-severity-* aren't redeclared here —
+     they're unchanged across themes, so the :root value already inherits. */
 
   --dq-shadow-rest: 0 1px 3px rgba(0, 0, 0, 0.5);
   --dq-shadow-hover: 0 8px 20px rgba(0, 0, 0, 0.6);
