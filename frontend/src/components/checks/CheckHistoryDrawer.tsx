@@ -6,6 +6,11 @@ import { errorMessage } from '../../utils/errors';
 import { ConfigJson, HistoryDrawer } from '../HistoryDrawer';
 import { EXPECTATION_BY_TYPE } from './expectationCatalog';
 
+const ENGINE_LABEL: Record<string, string> = {
+  gx: 'Great Expectations (gx)',
+  dmf: 'Snowflake DMF (native)',
+};
+
 /**
  * Check version history (#280) — "see previous config before overwriting" — plus restore (#283),
  * on the shared `HistoryDrawer` shell (also used read-only by connections, #654).
@@ -69,6 +74,9 @@ export function CheckHistoryDrawer({
         <Descriptions size="small" column={1} bordered styles={{ label: { width: 120 } }}>
           <Descriptions.Item label="Expectation">
             {EXPECTATION_BY_TYPE[version.expectation_type]?.label ?? version.expectation_type}
+          </Descriptions.Item>
+          <Descriptions.Item label="Engine">
+            {ENGINE_LABEL[version.engine ?? 'gx'] ?? version.engine}
           </Descriptions.Item>
           <Descriptions.Item label="Config">
             <ConfigJson config={version.config} />

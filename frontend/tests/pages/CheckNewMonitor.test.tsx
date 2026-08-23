@@ -89,6 +89,7 @@ describe('CheckNew — monitor authoring (ADR 0012)', () => {
     expect(mockCreate).toHaveBeenCalledWith('s1', {
       name: 'orders fresh',
       kind: 'freshness',
+      engine: 'gx',
       expectation_type: 'monitor:freshness',
       config: { column: 'loaded_at' },
       dimension: 'timeliness',
@@ -132,6 +133,7 @@ describe('CheckNew — monitor authoring (ADR 0012)', () => {
     expect(mockCreate).toHaveBeenCalledWith('s1', {
       name: 'orders volume',
       kind: 'volume',
+      engine: 'gx',
       expectation_type: 'monitor:volume',
       config: { min_rows: 1000, max_rows: 5000 },
       dimension: 'completeness',
@@ -173,6 +175,7 @@ describe('CheckNew — anomaly authoring (#593, stricter SQL-only gating than fr
     expect(mockCreate).toHaveBeenCalledWith('s1', {
       name: 'orders row anomaly',
       kind: 'anomaly',
+      engine: 'gx',
       expectation_type: 'monitor:anomaly',
       // window/min_points/seasonality submit their catalog defaults (14/7/false)
       // even though the author never touched them.
@@ -302,5 +305,105 @@ describe('CheckNew — anomaly authoring (#593, stricter SQL-only gating than fr
 
     expect(await screen.findByText('Set a fail or critical threshold')).toBeInTheDocument();
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('CheckNew — Snowflake DMF engine (ADR 0036)', () => {
+  it('offers a Snowflake DMF category with all four metrics', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByText('Snowflake DMF'));
+    expect(screen.getByText('Null count (DMF)')).toBeInTheDocument();
+    expect(screen.getByText('Null percent (DMF)')).toBeInTheDocument();
+    expect(screen.getByText('Duplicate count (DMF)')).toBeInTheDocument();
+    expect(screen.getByText('Unique count (DMF)')).toBeInTheDocument();
+  });
+
+  it('authors a dmf:null_count check with engine dmf and a threshold', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({} as Check);
+    renderPage();
+
+    await user.click(await screen.findByText('Snowflake DMF'));
+    await user.click(await screen.findByText('Null count (DMF)'));
+    await user.type(await screen.findByLabelText('Name'), 'orders id null count');
+    await user.type(screen.getByLabelText('Column'), 'order_id');
+    await user.type(screen.getByLabelText('Fail ≥'), '5');
+
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        engine: 'dmf',
+        expectation_type: 'dmf:null_count',
+        config: { column: 'order_id' },
+        fail_threshold: 5,
+      }),
+    );
+  });
+
+  it('offers no threshold fields for dmf:unique_count (unbandable) and submits none', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({} as Check);
+    renderPage();
+
+    await user.click(await screen.findByText('Snowflake DMF'));
+    await user.click(await screen.findByText('Unique count (DMF)'));
+    expect(screen.queryByLabelText('Fail ≥')).toBeNull();
+    expect(screen.queryByText('Severity thresholds', { exact: false })).toBeNull();
+
+    await user.type(await screen.findByLabelText('Name'), 'orders id unique count');
+    await user.type(screen.getByLabelText('Column'), 'order_id');
+
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        engine: 'dmf',
+        expectation_type: 'dmf:unique_count',
+        warn_threshold: null,
+        fail_threshold: null,
+        critical_threshold: null,
+      }),
+    );
+  });
+
+  it('shows an Engine picker on Freshness for a Snowflake connection, defaulting to gx', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByText('Freshness'));
+    await user.click(await screen.findByText('How stale is the target?', { exact: false }));
+    expect(await screen.findByLabelText('Engine')).toBeInTheDocument();
+  });
+
+  it('authors a freshness check on the dmf engine when switched via the Engine picker', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({} as Check);
+    renderPage();
+
+    await user.click(await screen.findByText('Freshness'));
+    await user.click(await screen.findByText('How stale is the target?', { exact: false }));
+    await user.click(await screen.findByLabelText('Engine'));
+    await user.click(await screen.findByTitle('Snowflake DMF (native)'));
+    await user.type(await screen.findByLabelText('Name'), 'orders fresh (dmf)');
+    await user.type(screen.getByLabelText('Timestamp column'), 'loaded_at');
+    await user.type(screen.getByLabelText('Fail ≥'), '48');
+
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        engine: 'dmf',
+        kind: 'freshness',
+        expectation_type: 'monitor:freshness',
+      }),
+    );
   });
 });

@@ -9,15 +9,18 @@ import { ComparisonCheckForm } from '../components/checks/ComparisonCheckForm';
 import {
   ConfigFieldItem,
   DimensionField,
+  EngineField,
   SeverityThresholdFields,
 } from '../components/checks/checkFormFields';
 import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
 import {
   configFieldsFor,
+  effectiveEngineFor,
   EXPECTATION_BY_TYPE,
   expectationsByCategoryFor,
   fieldVisible,
+  showEngineChoiceFor,
   type ExpectationCategory,
 } from '../components/checks/expectationCatalog';
 import { Page } from '../components/layout/Page';
@@ -40,6 +43,7 @@ export function CheckNew() {
   // Drives which conditional fields render (anomaly's `column`, #593 — ConfigField.showWhen) — the
   // whole `config` object, not just one key.
   const configValues = Form.useWatch('config', form) as Record<string, unknown> | undefined;
+  const engineChoice = Form.useWatch('engine', form) as string | undefined;
   const { run, loading: submitting } = useAsyncAction('Create failed');
   // Load the suite + its connection together: the run target (#215) drives the dry-run preview's
   // table/schema, and the connection type gates the Custom-SQL category (ADR 0019 — SQL
@@ -59,6 +63,8 @@ export function CheckNew() {
 
   const backToSuite = () => navigate(suiteId ? `/suites/${suiteId}` : '/suites');
   const spec = expectationType ? EXPECTATION_BY_TYPE[expectationType] : undefined;
+  const showEngineChoice = showEngineChoiceFor(spec, connectionType);
+  const effectiveEngine = effectiveEngineFor(spec, connectionType, engineChoice);
 
   // Start the config form clean each time an expectation is (re)picked — after the <Form> mounts
   // (it only renders in the config step).
@@ -123,6 +129,7 @@ export function CheckNew() {
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
             <Input placeholder="e.g. order_id not null" />
           </Form.Item>
+          {showEngineChoice && <EngineField />}
           {spec.kind === 'comparison' ? (
             <ComparisonCheckForm
               connections={state.status === 'ok' ? state.data.connections : []}
@@ -143,15 +150,13 @@ export function CheckNew() {
               ))
           )}
           <DimensionField spec={spec} initialValue={spec.dimension} />
-          <SeverityThresholdFields monitor={spec.thresholds} />
+          {!spec.noThresholds && <SeverityThresholdFields monitor={spec.thresholds} />}
           {suiteId && spec.kind !== 'comparison' && (
             <>
               <Form.Item>
                 <ColumnProfilePanel suiteId={suiteId} target={target} column={column} />
               </Form.Item>
-              {/* Dry-run previews a GX expectation; monitor kinds run a scalar SQL
-                  aggregate, not GX, so the GX dry-run path doesn't apply. */}
-              {!spec.kind && (
+              {!spec.kind && effectiveEngine === 'gx' && (
                 <Form.Item>
                   <DryRunPreview
                     suiteId={suiteId}

@@ -10,6 +10,7 @@ import pytest
 
 from backend.app.datasources import monitors
 from backend.app.datasources.gx_runner import _expectation_class_name
+from backend.app.datasources.snowflake_dmf import DMF_EXPECTATION_TYPES
 from backend.app.services.custom_sql import CUSTOM_SQL_EXPECTATION_TYPE, QUERY_KEY
 
 _FIXTURE = Path(__file__).parent.parent / "fixtures" / "expectation_catalog.json"
@@ -26,7 +27,16 @@ def _catalog() -> list[dict[str, Any]]:
 
 
 def _expectations() -> list[dict[str, Any]]:
-    return [e for e in _catalog() if e["kind"] == "expectation"]
+    """GX expectations only — dmf:* types share `kind == 'expectation'` but aren't GX."""
+    return [
+        e
+        for e in _catalog()
+        if e["kind"] == "expectation" and e["type"] not in DMF_EXPECTATION_TYPES
+    ]
+
+
+def _dmf_entries() -> list[dict[str, Any]]:
+    return [e for e in _catalog() if e["type"] in DMF_EXPECTATION_TYPES]
 
 
 def _monitors() -> list[dict[str, Any]]:
@@ -54,6 +64,23 @@ def test_fixture_is_present_and_nonempty() -> None:
     assert len(_expectations()) >= 8
     assert len(_monitors()) == 4  # freshness, volume, schema_drift (#592), anomaly (#593)
     assert len(_comparisons()) == 2  # records + columns grains (#799)
+    assert len(_dmf_entries()) == len(DMF_EXPECTATION_TYPES)  # ADR 0036 §6
+
+
+def test_dmf_entries_match_backend_capability() -> None:
+    """Each dmf:* entry takes exactly `column` — the whole config DMF accepts."""
+    entries = _dmf_entries()
+    assert {e["type"] for e in entries} == set(DMF_EXPECTATION_TYPES)
+    assert all(e["kind"] == "expectation" for e in entries)
+    assert all(e["fields"] == ["column"] for e in entries)
+
+
+def test_catalog_no_thresholds_flag_matches_dmf_unbandable_types() -> None:
+    """The editor's `noThresholds` flag must cover exactly `DMF_UNBANDABLE_TYPES`."""
+    from backend.app.datasources.snowflake_dmf import DMF_UNBANDABLE_TYPES
+
+    flagged = {e["type"] for e in _catalog() if e.get("noThresholds")}
+    assert flagged == set(DMF_UNBANDABLE_TYPES)
 
 
 def test_comparison_entries_match_backend_canonical_types() -> None:
@@ -205,17 +232,12 @@ def test_custom_sql_is_deliberately_unclassified_in_both_maps() -> None:
 
 def test_no_backend_mapping_is_missing_from_the_catalog() -> None:
     """The reverse direction of the drift guard, and the dangerous one."""
-    from backend.app.datasources.snowflake_dmf import DMF_EXPECTATION_TYPES
     from backend.app.services import check_dimension
 
     catalog_types = {e["type"] for e in _catalog()}
     catalog_kinds = {e["kind"] for e in _catalog()}
 
-    # The dmf:* types (ADR 0036 slice 2) are API-authorable only until slice 3 lands the engine-
-    # aware catalog + editor selector (#895).
-    orphan_types = (
-        set(check_dimension._BY_EXPECTATION_TYPE) - catalog_types - set(DMF_EXPECTATION_TYPES)
-    )
+    orphan_types = set(check_dimension._BY_EXPECTATION_TYPE) - catalog_types
     orphan_kinds = set(check_dimension._BY_KIND) - catalog_kinds
     assert not orphan_types, f"backend maps types absent from the catalog: {sorted(orphan_types)}"
     assert not orphan_kinds, f"backend maps kinds absent from the catalog: {sorted(orphan_kinds)}"

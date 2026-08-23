@@ -5,7 +5,8 @@
     "dimension": "completeness",
     "fields": [
       "column"
-    ]
+    ],
+    "noThresholds": false
   },
   {
     "type": "expect_column_values_to_be_unique",
@@ -13,7 +14,8 @@
     "dimension": "uniqueness",
     "fields": [
       "column"
-    ]
+    ],
+    "noThresholds": false
   },
   {
     "type": "expect_column_values_to_be_between",
@@ -23,7 +25,8 @@
       "column",
       "min_value",
       "max_value"
-    ]
+    ],
+    "noThresholds": false
   },
   {
     "type": "expect_column_values_to_be_in_set",
@@ -32,7 +35,8 @@
     "fields": [
       "column",
       "value_set"
-    ]
+    ],
+    "noThresholds": false
   },
   {
     "type": "expect_column_value_lengths_to_be_between",
@@ -42,7 +46,8 @@
       "column",
       "min_value",
       "max_value"
-    ]
+    ],
+    "noThresholds": false
   },
   {
     "type": "expect_column_values_to_match_regex",
@@ -51,7 +56,8 @@
     "fields": [
       "column",
       "regex"
-    ]
+    ],
+    "noThresholds": false
   },
   {
     "type": "expect_column_values_to_be_of_type",
@@ -60,7 +66,8 @@
     "fields": [
       "column",
       "type_"
-    ]
+    ],
+    "noThresholds": false
   },
   {
     "type": "expect_table_row_count_to_be_between",
@@ -69,7 +76,8 @@
     "fields": [
       "min_value",
       "max_value"
-    ]
+    ],
+    "noThresholds": false
   },
   {
     "type": "monitor:freshness",
@@ -77,7 +85,8 @@
     "dimension": "timeliness",
     "fields": [
       "column"
-    ]
+    ],
+    "noThresholds": false
   },
   {
     "type": "monitor:volume",
@@ -86,7 +95,8 @@
     "fields": [
       "min_rows",
       "max_rows"
-    ]
+    ],
+    "noThresholds": false
   },
   {
     "type": "monitor:schema_drift",
@@ -94,7 +104,8 @@
     "dimension": "consistency",
     "fields": [
       "ignore_columns"
-    ]
+    ],
+    "noThresholds": false
   },
   {
     "type": "monitor:anomaly",
@@ -106,7 +117,8 @@
       "window",
       "min_points",
       "seasonality"
-    ]
+    ],
+    "noThresholds": false
   },
   {
     "type": "unexpected_rows_expectation",
@@ -114,18 +126,57 @@
     "dimension": null,
     "fields": [
       "unexpected_rows_query"
-    ]
+    ],
+    "noThresholds": false
   },
   {
     "type": "comparison:records",
     "kind": "comparison",
     "dimension": "consistency",
-    "fields": []
+    "fields": [],
+    "noThresholds": false
   },
   {
     "type": "comparison:columns",
     "kind": "comparison",
     "dimension": "consistency",
-    "fields": []
+    "fields": [],
+    "noThresholds": false
+  },
+  {
+    "type": "dmf:null_count",
+    "kind": "expectation",
+    "dimension": "completeness",
+    "fields": [
+      "column"
+    ],
+    "noThresholds": false
+  },
+  {
+    "type": "dmf:null_percent",
+    "kind": "expectation",
+    "dimension": "completeness",
+    "fields": [
+      "column"
+    ],
+    "noThresholds": false
+  },
+  {
+    "type": "dmf:duplicate_count",
+    "kind": "expectation",
+    "dimension": "uniqueness",
+    "fields": [
+      "column"
+    ],
+    "noThresholds": false
+  },
+  {
+    "type": "dmf:unique_count",
+    "kind": "expectation",
+    "dimension": "uniqueness",
+    "fields": [
+      "column"
+    ],
+    "noThresholds": true
   }
 ]

@@ -143,6 +143,25 @@ export function ConfigFieldItem({
   );
 }
 
+/** The GX/DMF engine choice (ADR 0036) — shown only for Freshness on Snowflake. */
+export function EngineField({ initialValue }: { initialValue?: string }) {
+  return (
+    <Form.Item
+      name="engine"
+      label="Engine"
+      initialValue={initialValue ?? 'gx'}
+      extra="Great Expectations reads the data into a batch to evaluate it; Snowflake DMF runs SNOWFLAKE.CORE.FRESHNESS natively in the warehouse — no data leaves Snowflake, but it's Snowflake-only and evaluates fewer check types."
+    >
+      <Select
+        options={[
+          { value: 'gx', label: 'Great Expectations (gx)' },
+          { value: 'dmf', label: 'Snowflake DMF (native)' },
+        ]}
+      />
+    </Form.Item>
+  );
+}
+
 /** The DQ-dimension select (ADR 0038) — *what quality aspect* this check measures. */
 export function DimensionField({
   spec,

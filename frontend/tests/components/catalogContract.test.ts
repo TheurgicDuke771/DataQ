@@ -17,6 +17,8 @@ function contractShape() {
     // map.
     dimension: spec.dimension ?? null,
     fields: spec.fields.map((f) => f.name),
+    // ADR 0036: mirrors DMF_UNBANDABLE_TYPES — a type the backend rejects any threshold on.
+    noThresholds: spec.noThresholds ?? false,
   }));
 }
 

@@ -9,6 +9,7 @@ import { buildCheckPayload, configToForm } from '../components/checks/checkForm'
 import {
   ConfigFieldItem,
   DimensionField,
+  EngineField,
   SeverityThresholdFields,
 } from '../components/checks/checkFormFields';
 import { CheckHistoryDrawer } from '../components/checks/CheckHistoryDrawer';
@@ -17,9 +18,11 @@ import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
 import {
   configFieldsFor,
+  effectiveEngineFor,
   EXPECTATION_BY_TYPE,
   expectationsByCategoryFor,
   fieldVisible,
+  showEngineChoiceFor,
 } from '../components/checks/expectationCatalog';
 import { PageError } from '../components/feedback/PageError';
 import { Page } from '../components/layout/Page';
@@ -123,6 +126,7 @@ function CheckEditForm({
   // Drives which conditional fields render (anomaly's `column`, #593 —
   // ConfigField.showWhen); see CheckNew's matching watch for the rationale.
   const configValues = Form.useWatch('config', form) as Record<string, unknown> | undefined;
+  const engineChoice = Form.useWatch('engine', form) as string | undefined;
   const spec = selectedType ? EXPECTATION_BY_TYPE[selectedType] : undefined;
   // `kind` is immutable on update (a freshness check can't become an expectation),
   // so a monitor check locks its type — only its config + thresholds are editable.
@@ -131,12 +135,15 @@ function CheckEditForm({
   // authored on the dedicated side-by-side page (recreate to re-shape; repointing stays an API
   // affair for now).
   const isComparison = check.kind === 'comparison';
+  const showEngineChoice = showEngineChoiceFor(spec, connectionType);
+  const effectiveEngine = effectiveEngineFor(spec, connectionType, engineChoice);
 
   // Seed from the loaded check once.
   useEffect(() => {
     form.setFieldsValue({
       name: check.name,
       expectation_type: check.expectation_type,
+      engine: check.engine ?? 'gx',
       config: configToForm(EXPECTATION_BY_TYPE[check.expectation_type], check.config),
       // The STORED value, not the derived default (ADR 0038): an override must survive a re-open.
       dimension: check.dimension ?? undefined,
@@ -146,12 +153,12 @@ function CheckEditForm({
     });
   }, [check, form]);
 
-  // Changing the expectation type re-derives the dimension, mirroring the create page (which resets
-  // the whole form on type change).
+  // Re-derives dimension + engine on a type switch, mirroring CheckNew's reset.
   const initialType = check.expectation_type;
   useEffect(() => {
     if (selectedType && selectedType !== initialType) {
-      form.setFieldsValue({ dimension: EXPECTATION_BY_TYPE[selectedType]?.dimension });
+      const nextSpec = EXPECTATION_BY_TYPE[selectedType];
+      form.setFieldsValue({ dimension: nextSpec?.dimension, engine: nextSpec?.engine ?? 'gx' });
     }
   }, [selectedType, initialType, form]);
 
@@ -217,6 +224,7 @@ function CheckEditForm({
             placeholder="Select an expectation"
             // A monitor's kind is immutable, so lock the type for monitor checks.
             disabled={isMonitor}
+            virtual={false}
             // Grouped by category (antd optgroups).
             options={expectationsByCategoryFor(connectionType, check.expectation_type).map((g) => ({
               label: g.category,
@@ -230,6 +238,7 @@ function CheckEditForm({
             <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
               {spec.description}
             </Typography.Paragraph>
+            {showEngineChoice && <EngineField />}
             {configFieldsFor(spec, connectionType)
               .filter((field) => fieldVisible(field, configValues))
               .map((field) => (
@@ -244,15 +253,14 @@ function CheckEditForm({
           </>
         )}
 
-        <SeverityThresholdFields monitor={spec?.thresholds} />
+        {!spec?.noThresholds && <SeverityThresholdFields monitor={spec?.thresholds} />}
 
         {!isComparison && (
           <Form.Item>
             <ColumnProfilePanel suiteId={suiteId} target={target} column={column} />
           </Form.Item>
         )}
-        {/* Dry-run previews a GX expectation; monitor kinds aren't GX, so skip it. */}
-        {!spec?.kind && (
+        {!spec?.kind && effectiveEngine === 'gx' && (
           <Form.Item>
             <DryRunPreview
               suiteId={suiteId}
