@@ -1,5 +1,14 @@
 # App database — a DISTINCT `dataq` database on the SHARED Postgres Flexible Server (this
-# subscription caps Flexible Servers at 1, so the app shares the harness's server.
+# subscription caps Flexible Servers at 1, so the app shares the harness's server — renamed
+# neutrally to dataq-pg-* / purpose=dataq-shared). The app connects as the least-privilege
+# `dataq_app` role (owns only `dataq`; provisioned out-of-band — see deploy/terraform/README.md).
+#
+# SECURITY CONSTRAINT — the single-role model is load-bearing, not just tidy. Postgres's
+# RI check runs implicit casts as the REFERENCED table's OWNER (ri_triggers.c), so a role
+# with CREATE TYPE/CAST + REFERENCES on another owner's table can run SQL as that owner.
+# Unpatched upstream as of 2026-07-24. We are not exposed ONLY because `dataq_app` is the
+# single app role — adding a second, less-trusted role to the `dataq` database is what
+# would create the exposure; do not, without revisiting this (docs/progress.md guardrail).
 
 data "azurerm_postgresql_flexible_server" "shared" {
   name                = var.shared_pg_server_name

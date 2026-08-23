@@ -161,7 +161,8 @@ function ShareRow({
           : isSelf
             ? [
                 // A manager's own row is locked: self-revoke/-downgrade would 403 every later
-                // mutation and brick the panel (backend rejects it too.
+                // mutation and brick the panel (backend rejects it too,
+                // share_service._reject_self_target). #240.
                 <Tooltip key="perm" title="You can’t change your own access">
                   <Tag>{share.permission} · You</Tag>
                 </Tooltip>,

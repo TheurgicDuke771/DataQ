@@ -447,7 +447,8 @@ describe('Results page', () => {
     await waitFor(() => expect(screen.getByText('nightly_orders_retry')).toBeInTheDocument());
 
     // The null-reason row (pipelineRun) shows the usual em-dash placeholder in its Failure-reason
-    // cell — scoped via antd's own ellipsis-column class (`ant-table-cell-ellipsis`.
+    // cell — scoped via antd's own ellipsis-column class (`ant-table-cell-ellipsis`, unique to
+    // this column) since the row's "DQ run" cell also renders a '—' placeholder.
     const nullRow = screen.getByText('daily_orders_load').closest('tr') as HTMLElement;
     const nullReasonCell = nullRow.querySelector('td.ant-table-cell-ellipsis');
     expect(nullReasonCell).toHaveTextContent('—');
@@ -519,8 +520,9 @@ describe('Results page', () => {
     await waitFor(() => expect(screen.getAllByText('Orders quality').length).toBe(2));
     expect(mockListRuns).toHaveBeenCalledTimes(1);
 
-    // Switching to the Pipeline runs tab must reuse the same runs data rather than issuing a second
-    // `listRuns` call (that's the whole point of #349.
+    // Switching to the Pipeline runs tab must reuse the same runs data rather than issuing a
+    // second `listRuns` call (that's the whole point of #349 — antd's lazy pane mount used to make
+    // this a fresh fetch).
     await user.click(screen.getByRole('tab', { name: 'Pipeline runs' }));
     await waitFor(() => expect(screen.getByText('daily_orders_load')).toBeInTheDocument());
     // The correlated DQ run tag proves the shared data actually reached this tab, not just that no

@@ -108,7 +108,9 @@ def _asset_layer(asset: Asset | None) -> dict[str, Any] | None:
 
 
 def _failing_result_layer(result: Result) -> dict[str, Any]:
-    """The breaching result — status + metric + GX aggregates. **No sample rows.**"""
+    """The breaching result — status + metric + GX aggregates. **No sample rows.**
+    ``sample_failures`` is never read.
+    """
     return {
         "status": result.status,
         "metric_value": _num(result.metric_value),

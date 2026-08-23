@@ -326,7 +326,10 @@ def test_editing_a_check_does_not_retroactively_relabel_an_old_result(
         critical_threshold=None,
     )
     # Explicit created_at throughout, rather than relying on wall-clock separation between commits:
-    # every server_default=func.now() row inside this fixture's outer transaction ties to the SAME i
+    # every server_default=func.now() row inside this fixture's outer transaction ties to the SAME
+    # instant (Postgres' now() is fixed for a transaction's lifetime, and this fixture never really
+    # commits until teardown), which collapses the ordering this test exists to prove — confirmed
+    # by running it and observing all timestamps identical.
     version_1 = db_session.scalars(
         select(CheckVersion).where(CheckVersion.check_id == check.id, CheckVersion.version_no == 1)
     ).one()

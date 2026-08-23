@@ -326,6 +326,7 @@ def test_strip_statement_echo_is_idempotent_and_passes_other_messages_through() 
 
 # ── qualified_sql_name (#595) ──────────────────────────────────────────────── The one shape
 # `core_table` cannot express: a dialect-specific clause that attaches to the FROM item itself
+# (Databricks' `TABLESAMPLE (x PERCENT)`), which has to be interpolated into a `text()` statement.
 
 
 def _databricks_dialect() -> Any:

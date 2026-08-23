@@ -512,7 +512,8 @@ async def test_it_probes_once_the_window_passes_and_closes_on_success(
     await _hit(store, rate_limit._BREAKER_TRIP_AFTER)
     assert await store.incr_windows(["k"]) is None  # open
     # …and asserted as GATED, not merely as another failure: without this the test passes with the
-    # breaker removed entirely, since fail-open returns None either way (review finding.
+    # breaker removed entirely, since fail-open returns None either way (review finding — the same
+    # trap the timed test above exists to avoid).
     assert sick.calls == rate_limit._BREAKER_TRIP_AFTER
 
     # Redis recovers, and the window passes.

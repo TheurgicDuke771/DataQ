@@ -1,5 +1,12 @@
-# DataQ — run from prebuilt GHCR images, NO source checkout required (#472). export
-# OPENBAO_TOKEN=$(openssl rand -hex 16) # one-off.
+# DataQ — run from prebuilt GHCR images, NO source checkout required (#472).
+#
+#   export OPENBAO_TOKEN=$(openssl rand -hex 16)     # one-off (secret store)
+#   export DATAQ_SIGNIN_EMAIL=you@example.com        # who may sign in (#1150)
+#   docker compose -f docker-compose.ghcr.yml up
+#
+# Signs you in with an emailed one-time code (ADR 0032); read the code at the
+# bundled inbox http://localhost:8025. DATAQ_SIGNIN_EMAIL= (explicitly empty)
+# + DATAQ_AUTH_MODE=bypass is the deliberate downgrade to dev-bypass.
 
 x-backend-image: &backend-image "ghcr.io/theurgicduke771/dataq-backend:${DATAQ_BACKEND_TAG:-latest}"
 
@@ -82,7 +89,9 @@ services:
       timeout: 3s
       retries: 10
 
-  # ── Bundled mail catcher — the local mailbox for OTP sign-in (#1150) ───────── Mailpit (MIT.
+  # ── Bundled mail catcher — the local mailbox for OTP sign-in (#1150) ─────────
+  # Mailpit (MIT — rule 40 / ADR 0031 clear) catches every message DataQ sends and
+  # serves it in a web inbox at http://localhost:8025.
   mailpit:
     image: axllent/mailpit:v1.30.6
     restart: unless-stopped
@@ -110,7 +119,8 @@ services:
         condition: service_healthy
 
   # One-shot: migrate to head THEN seed the dev user + probe fixtures + demo data (seed_dev is
-  # idempotent.
+  # idempotent, safe to re-run on every `up`). api/worker gate on its successful completion so the
+  # stack never serves an un-migrated/empty schema.
   migrate:
     image: *backend-image
     restart: "no"

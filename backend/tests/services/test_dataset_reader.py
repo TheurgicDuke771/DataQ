@@ -23,6 +23,8 @@ from backend.tests.support.fake_secret_store import FakeSecretStore
 
 # This file's shape: every ref resolves to the same fixed value regardless of name
 # (`FakeSecretStore(default="s3cret")`), and `.requested` (built into the shared fake) tracks every
+# name asked — `_conn`'s connections all carry `secret_ref="conn-x"`, so a test below asserts
+# `store.requested == ["conn-x"]` to pin exactly which ref was resolved.
 
 
 def _conn(conn_type: str, *, secret_ref: str | None = "conn-x", **config: Any) -> Connection:

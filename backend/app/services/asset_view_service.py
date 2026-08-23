@@ -210,7 +210,8 @@ class AssetDetail:
     # that has nothing to do with this asset.
     failing_lineage_sources: list[LineageSourceHealth] = field(default_factory=list)
     # Warehouse-native lineage sources that are degraded (coarser tier) or failing — so the graph
-    # can be qualified ("view-level only".
+    # can be qualified ("view-level only", "last refreshed 2h ago") rather than presented as
+    # complete + current (#828, #858).
     warehouse_lineage_status: list[WarehouseLineageStatus] = field(default_factory=list)
 
 
@@ -308,6 +309,7 @@ def _scorecard(session: Session, suite_ids: list[uuid.UUID], run_ids: list[uuid.
 
     # ── how the latest run went (score) ── A plain dict, NOT a defaultdict: reading
     # `histograms[dim]` below would CREATE the key, silently mutating the mapping while iterating
+    # over coverage.
     histograms: dict[str, dict[str, int]] = {}
     if run_ids:
         result_rows = session.execute(
@@ -449,6 +451,8 @@ def get_visible_asset(
     )
     # ONE visibility derivation (#924 review): `effective_permissions` encodes the same
     # owned/shared/workspace-admin rule `accessible_suite_ids` does (both resolve the admin off the
+    # same allowlist), and it must be called anyway to label the rows — so a suite is listed iff it
+    # has a label.
     levels = effective_permissions(session, all_suites, user_id)
     visible = [s for s in all_suites if include_all or levels.get(s.id)]
 

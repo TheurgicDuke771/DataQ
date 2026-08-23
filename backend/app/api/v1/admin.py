@@ -162,6 +162,12 @@ def test_auth_email(
     """Send a real test message to the CALLER's own address over the configured
     `AUTH_EMAIL_*` transport, so a misconfigured mailer is caught at install time
     rather than at a teammate's first sign-in attempt (issue #737).
+
+    No recipient input, so it cannot relay mail. Failures: 503 (mailer not
+    configured / secret store unreachable) or 502 with machine-readable
+    `detail.stage` in connect/tls/auth/send. Throttled per admin (#1147,
+    `ADMIN_EMAIL_PREFLIGHT_PER_10MIN`): over the cap is a real 429, and the
+    charge lands BEFORE the send — a failed attempt still spends a slot.
     """
     # Before the mailer is even constructed — the point is not to reach the relay.
     svc.enforce_preflight_quota(current_user.id)
@@ -316,8 +322,8 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
                 "the operator can attest to."
             ),
         ),
-        # TWO distinct LLM vectors, and conflating them was a real omission: the unbuilt outbound
-        # one was listed while the LIVE inbound one — third-party AI clients reading through /mcp.
+        # TWO distinct LLM vectors: the unbuilt outbound one was listed while the LIVE
+        # inbound one — third-party AI clients reading through /mcp — was NOT.
         ExternalTransfer(
             name="mcp_ai_clients",
             enabled=mcp_enabled(settings),

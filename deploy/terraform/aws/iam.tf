@@ -1,5 +1,6 @@
 # ECS task execution role (pulls images, writes to CloudWatch Logs — the infra-level identity) and
-# per-service task roles (what the APP code itself assumes at runtime.
+# per-service task roles (what the APP code itself assumes at runtime — the Secrets Manager grants
+# in secretsmanager.tf attach here).
 
 data "aws_iam_policy_document" "ecs_tasks_assume" {
   statement {

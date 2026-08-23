@@ -128,7 +128,8 @@ function CheckEditForm({
   // so a monitor check locks its type — only its config + thresholds are editable.
   const isMonitor = check.kind !== 'expectation';
   // Comparison checks (ADR 0015) edit only name + thresholds here — the source/dataset config is
-  // authored on the dedicated side-by-side page (recreate to re-shape.
+  // authored on the dedicated side-by-side page (recreate to re-shape; repointing stays an API
+  // affair for now).
   const isComparison = check.kind === 'comparison';
 
   // Seed from the loaded check once.

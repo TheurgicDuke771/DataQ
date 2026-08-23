@@ -293,7 +293,7 @@ def record(
     after: dict[str, Any] | None = None,
     request_id: str | None = None,
 ) -> AuditEvent:
-    """Add one audit row to the caller's transaction. **The caller commits.**"""
+    """Add one audit row to the caller's transaction."""
     # Both discriminators are validated here, not just one.
     if action_class not in AUDIT_ACTION_CLASSES:
         raise ValueError(
@@ -382,7 +382,7 @@ def record_access(
     detail: dict[str, Any] | None = None,
     actor_kind: str = "user",
 ) -> AuditEvent | None:
-    """Record a read of regulated data. **Never raises, never blocks the read.**"""
+    """Record a read of regulated data."""
     payload: dict[str, Any] = {"exposed": exposed}
     if detail:
         payload.update(detail)

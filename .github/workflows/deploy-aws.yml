@@ -13,7 +13,10 @@ concurrency:
   group: deploy-aws-production
   cancel-in-progress: false
 
-# OIDC federated login to AWS (no stored access keys.
+# OIDC federated login to AWS (no stored access keys — deploy/terraform/aws/ github_oidc.tf trusts
+# exactly repo:<this repo>:environment:production). packages:write lets the GITHUB_TOKEN push both
+# images to GHCR (ADR 0023); ECS pulls them anonymously (public packages), so no registry
+# credential exists on the AWS side.
 permissions:
   id-token: write
   contents: read
@@ -21,7 +24,9 @@ permissions:
 
 env:
   # `aws-<sha>` — NOT the bare `<sha>` (owned by the Azure deploy.yml) and NOT `main-<sha>` (owned
-  # by publish-images.yml.
+  # by publish-images.yml, which skips docs-only merges): this workflow always builds its own
+  # immutable tag so the migrate task, api, worker, and frontend all roll the exact build this run
+  # produced (#382).
   IMAGE: ghcr.io/theurgicduke771/dataq-backend:${{ inputs.image_tag || format('aws-{0}', github.sha) }}
   # Statically named by deploy/terraform/aws/ (the IAM policy's RegisterTaskDefinition grant is
   # scoped to the dataq-app-* families, so these are contract, not convention).
@@ -101,6 +106,7 @@ jobs:
 
           # run-task reports placement failures as exit-0 + failures[] with an empty tasks[] (so a
           # bare `--query tasks[0].taskArn` yields the literal 'None' and the failure surfaces 10
+          # minutes later as a baffling waiter timeout).
           run_task() {
             local out
             out=$(aws ecs run-task --cluster "${{ vars.ECS_CLUSTER }}" \

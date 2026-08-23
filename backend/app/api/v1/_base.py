@@ -7,7 +7,8 @@ from typing import Any, Final
 from pydantic import BaseModel, model_validator
 
 # The one paging-total header name for every list endpoint that carries one (#925 introduced it on
-# `/assets`; #1108 spread it to `/pipeline_runs`, `/incidents`.
+# `/assets`; #1108 spread it to `/pipeline_runs`, `/incidents`, and `/runs` rather than each
+# endpoint inventing its own convention).
 TOTAL_COUNT_HEADER: Final = "X-Total-Count"
 
 

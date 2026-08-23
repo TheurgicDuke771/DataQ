@@ -88,8 +88,9 @@ class OtpCounterStore(Protocol):
     def incr_window(self, key: str, ttl_seconds: int) -> int | None: ...
 
 
-#: This store's breaker tuning — the shared defaults (#1135), named locally so the contract is
-#: stated where the store is, and so a test can read it without reaching into
+# This store's breaker tuning — the shared defaults (#1135), named locally so the contract is
+# stated where the store is, and so a test can read it without reaching into
+# `core.circuit_breaker`.
 _BREAKER_TRIP_AFTER = DEFAULT_TRIP_AFTER
 _BREAKER_OPEN_SECONDS = DEFAULT_OPEN_SECONDS
 

@@ -32,7 +32,7 @@ def _fan_out_delivered_first(
     (:meth:`CompositePublisher.publish_health` / ``publish_poll_staleness``): dispatch ``send``
     to every publisher, isolating a raising channel from the rest, and raise when **nothing**
     went out — every channel FAILED (re-raise the last error) or every channel quietly SKIPPED
-    as unconf
+    as unconfigured (raise :class:`AlertUndeliverableError`).
     """
     delivered = 0
     last_error: Exception | None = None
@@ -46,7 +46,9 @@ def _fan_out_delivered_first(
     if delivered == 0:
         if last_error is not None:
             # Already logged above with a full traceback — mark it so the logging processor chain
-            # (`_downgrade_already_logged_exceptions`.
+            # (`_downgrade_already_logged_exceptions`, #1261) downgrades a later
+            # `log.exception(...)` on it to a warning instead of logging the same traceback a
+            # second time (#1226).
             mark_already_logged(last_error)
             raise last_error
         raise AlertUndeliverableError(undeliverable_message)
@@ -76,7 +78,9 @@ class CompositePublisher:
         contract as :meth:`publish` (#837), with the same delivered-first hinge as
         :meth:`publish_poll_staleness` below (#1101): the caller claims `health_alerted_at`
         BEFORE dispatching the send (#842/#843), so a quiet "every channel is unconfigured" must
-        not read as delive
+        not read as delivered — that would permanently suppress the edge on a fresh install with
+        zero channels configured, since the flag would already be set by the time an operator
+        wires one up.
         """
         return _fan_out_delivered_first(
             self._publishers,

@@ -253,8 +253,8 @@ class Settings(BaseSettings):
     email_to: str = ""  # comma-separated recipients; empty → no email alerting
     email_password_secret_name: str | None = None
 
-    # ── Email OTP sign-in (ADR 0032, #734) ─────────────────────────────────── DELIBERATELY
-    # separate from the EMAIL_* alert mailer above: opposite contracts (alerts are best-effort no-
+    # ── Email OTP sign-in (ADR 0032, #734) ─────────────────────────────────── A DELIBERATELY
+    # SEPARATE block from the `EMAIL_*` alert mailer above.
     auth_email_smtp_host: str | None = None
     auth_email_smtp_port: int = _DEFAULT_AUTH_EMAIL_SMTP_PORT
     auth_email_username: str | None = None

@@ -57,6 +57,8 @@ class SnowflakeConfig(BaseModel):
     inventory_sync: bool = False
     # Auth method. 'password' (default — back-compat for existing configs that carry no auth_type)
     # puts the password in the DSN. 'key_pair' authenticates with an RSA private key passed as
+    # `private_key` connect-arg, and the DSN carries no password; the secret is either a bare PEM
+    # key or the JSON payload for passphrase-protected keys (see `_parse_key_pair_secret`).
     auth_type: Literal["password", "key_pair"] = "password"
 
     @model_validator(mode="after")

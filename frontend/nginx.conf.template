@@ -1,20 +1,40 @@
 # Serve the built SPA AND reverse-proxy the API + MCP to the backend.
 
-# The client-facing scheme, forwarded upstream (#1138).
+# The client-facing scheme, forwarded upstream (#1138). Prefer the edge's
+# X-Forwarded-Proto (this hop never terminates TLS, so $scheme is always `http`
+# and would strip cookie-`Secure` on live HTTPS — ADR 0032); fall back to
+# $scheme only on a direct connection (compose / docker run).
+
+# The origin-secret guard's static "<secret>:<secret>" map key is 81 bytes with the
+# 40-char terraform secret — over the 64-byte default bucket size, which ABORTS nginx
+# at startup (#1380). MUST precede the first `map`: a later placement is rejected as
+# "duplicate" (parsing a map freezes the hash sizes).
 map_hash_bucket_size 128;
 map $http_x_forwarded_proto $dataq_forwarded_proto {
     default $http_x_forwarded_proto;
     ""      $scheme;
 }
 
-# ── Content-Security-Policy (#1387) ─────────────────────────────────────────── Assembled here
-# rather than in nginx-security-headers.conf because the one part that cannot be static is `connect-
+# ── Content-Security-Policy (#1387) ───────────────────────────────────────────
+# Assembled here (not in nginx-security-headers.conf) because `connect-src` is a
+# per-deployment runtime fact: the SPA's OIDC client hits discovery/JWKS/token
+# endpoints directly. DATAQ_CSP_CONNECT_SRC is deliberately NOT derivable from
+# DATAQ_AUTH_AUTHORITY (an authority carries a path, CSP matches by path prefix,
+# and Azure AD's token endpoint — and Cognito's separate auth host — sit outside
+# it). Its Dockerfile default is `https:`, not empty, so a BYO image upgrade
+# can't silently break sign-in. An empty $dataq_csp turns the header off (nginx
+# omits empty add_header values) — a supported no-rebuild off switch.
 map $host $dataq_csp {
     default "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; connect-src 'self' ${DATAQ_CSP_CONNECT_SRC}";
 }
 
-# ── Origin-secret guard (#1355) ─────────────────────────────────────────────── When
-# DATAQ_ORIGIN_SECRET is set, every request must carry the matching X-DataQ-Origin-Secret header or
+# ── Origin-secret guard (#1355) ───────────────────────────────────────────────
+# When DATAQ_ORIGIN_SECRET is set, every request must carry the matching
+# X-DataQ-Origin-Secret header or be 403'd. Two-level map encoding: with the
+# secret EMPTY the key starts with ":" so `~^:` opens the guard (guard off);
+# nginx's exact match beats the regex when the secret matches. The ":" delimiter
+# is safe only because the terraform secret is `special = false` alphanumeric —
+# a hand-provisioned secret containing ":" breaks the map.
 map "${DATAQ_ORIGIN_SECRET}:$http_x_dataq_origin_secret" $dataq_origin_bad {
     default 1;
     "~^:"   0;
@@ -80,8 +100,9 @@ server {
         proxy_set_header X-DataQ-Origin-Secret "";
     }
 
-    # Liveness probe — the api's top-level /healthz (NOT under /api), proxied here so it stays
-    # externally reachable through the product host now that the api has no public ingress (ADR 0028
+    # Liveness probe — the api's top-level /healthz (NOT under /api), proxied so it stays
+    # reachable now that the api has no public ingress (ADR 0028 §5). Exact match so it
+    # can't shadow an SPA route; HTTP/1.1 is mandatory — ACA ingress 426s HTTP/1.0 (#511).
     location = /healthz {
         set $dataq_upstream "${DATAQ_API_UPSTREAM}";
         proxy_pass $dataq_upstream$request_uri;

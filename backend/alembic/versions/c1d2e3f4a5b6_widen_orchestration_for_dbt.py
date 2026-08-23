@@ -1,4 +1,7 @@
-"""widen orchestration value-sets + trigger-dedup predicate for the dbt provider"""
+"""widen orchestration value-sets + trigger-dedup predicate for the dbt provider Adds ``dbt`` as a
+third `OrchestrationProvider` (ADR 0029, #611). dbt is an orchestration provider, not a
+datasource (CLAUDE.md §4), so it joins the same value-sets ADF/Airflow live in.
+"""
 
 from collections.abc import Sequence
 
@@ -67,6 +70,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Narrowing back is only safe in the brief window before any dbt row exists — this PR ships
     # DbtProvider unflagged, so that window closes as soon as the first dbt connection/webhook
+    # lands.
     _set_trigger_dedup_index(_DEDUP_NO_DBT)
     _set_provider_check("trigger_bindings", _ORCH_TYPES_NO_DBT)
     _set_provider_check("pipeline_runs", _ORCH_TYPES_NO_DBT)

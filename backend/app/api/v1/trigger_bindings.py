@@ -49,7 +49,8 @@ class TriggerBindingRead(ApiModel):
     suite_id: uuid.UUID
     enabled: bool
     # Advisory, non-blocking warnings (#1186) — populated on create/update, always `[]` on a plain
-    # read (GET/list return the raw ORM row.
+    # read (GET/list return the raw ORM row; `from_attributes` falls back to this default since
+    # `TriggerBinding` carries no such column).
     warnings: list[TriggerBindingWarningRead] = Field(default_factory=list)
 
     @classmethod

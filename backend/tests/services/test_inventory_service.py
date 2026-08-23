@@ -177,7 +177,9 @@ class TestOutcomeState:
         wired["unity_catalog"] = _FakeProvider((), fail=True)
         conn = _connection(db_session, opted_in=True, conn_type="unity_catalog")
         # Commit the setup row first: the sweep's failure branch rolls back any in-flight partial
-        # write from the failed attempt itself, and (unlike prod.
+        # write from the failed attempt itself, and (unlike prod, where the connection is always an
+        # already-persisted row) an uncommitted test fixture would be rolled back right along with
+        # it.
         db_session.commit()
 
         inventory_service.sync_asset_inventory(db_session, secret_store=_store())

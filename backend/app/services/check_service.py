@@ -827,8 +827,9 @@ def _record_version_and_commit(
             )
         session.commit()
     except IntegrityError as exc:
-        # Roll back the poisoned tx, then map ONLY the version-snapshot collision to a 409 (reload +
-        # retry): two concurrent edits computed the same next `version_no` and raced on the `uq_che
+        # Roll back the poisoned tx, then map ONLY the version-snapshot collision to a 409 (reload
+        # + retry): two concurrent edits computed the same next `version_no` and raced on the
+        # `uq_check_versions_check_version` backstop.
         session.rollback()
         if _VERSION_UNIQUE_CONSTRAINT not in str(exc.orig):
             raise
@@ -873,6 +874,7 @@ def update_check(
         )
     # Compute the effective post-patch values and validate them BEFORE touching the ORM object: a
     # rejected update must leave nothing dirty in the session (mutate-then-raise would let a later
+    # commit on the same session persist the invalid state).
     new_expectation_type = (
         expectation_type if expectation_type is not None else check.expectation_type
     )
@@ -912,7 +914,9 @@ def update_check(
             source_connection_id if source_connection_id is not None else check.source_connection_id
         ),
         # GX-validate a plain expectation only when the PATCH touches it: a rename or threshold
-        # tweak must stay possible on a pre-#651 check whose stored config today's pinned GX rejects
+        # tweak must stay possible on a pre-#651 check whose stored config today's pinned GX
+        # rejects (there is no config backfill — such a row would otherwise be un-editable until
+        # delete-and-recreate).
         validate_expectation_config=(
             expectation_type is not None or config is not None or engine is not None
         ),
@@ -1047,8 +1051,7 @@ def restore_check_version(
 ) -> Check:
     """Restore a check to a previous version (#283) by re-validating its frozen snapshot through
     the SAME validators `update_check` uses (`validate_lengths`, `validate_dimension`,
-    `validate_threshold_ordering`, `_validate_kind_specific_config`) and then applying it. That
-    matters because the snapshot may predate a validator that ships later (e.g.
+    `validate_threshold_ordering`, `_validate_kind_specific_config`) and then applying it.
     """
     check = get_check(session, suite_id, check_id)  # 404 / cross-suite guard
     audit_before = audit_service.snapshot("check", check)

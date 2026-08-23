@@ -33,7 +33,8 @@ def publish_run_outcome(session: Session, *, run_id: uuid.UUID) -> bool:
             log.info("alert_suppressed_snoozed", run_id=str(run_id), suite_id=str(run.suite_id))
             return False
         # Dedup before building/publishing: an ongoing, unchanged failure on a scheduled suite
-        # shouldn't re-alert every run (a clean run is never a "duplicate".
+        # shouldn't re-alert every run (a clean run is never a "duplicate", so this is a no-op for
+        # the passing path).
         config = notification_service.get_config(session, run.suite_id)
         policy = config.alert_on if (config is not None and config.enabled) else None
         if policy != ALWAYS and dedup.is_duplicate_alert(session, run):
@@ -59,7 +60,10 @@ def publish_connection_health(
             return False
         report = build_connection_health_report(connection, state=state)
         # Propagate the publisher's own delivered/not-delivered answer rather than assuming True on
-        # a normal return (review finding.
+        # a normal return (review finding, #1101): today the top-level publisher is always a
+        # CompositePublisher, which only returns normally with True or raises — but that invariant
+        # lives in registry.py, not here, and a bare `return True` would silently phantom-stamp
+        # again if a future publisher (or test double) ever returned False without raising.
         return registry.get_health_publisher().publish_health(session, report)
     except AlertUndeliverableError:
         # Not a channel malfunction — every channel is simply unconfigured (or every configured one

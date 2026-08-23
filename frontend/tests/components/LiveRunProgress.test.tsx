@@ -201,8 +201,10 @@ describe('LiveRunProgress', () => {
     expect(await screen.findByText('Failed to load run progress')).toBeInTheDocument();
   });
 
-  // ── the honest-affordance half of #318 ──────────────────────────── Behaviour, not markup: these
-  // assert what a viewer can *read* off the drawer (a percentage claim, an elapsed time.
+  // ── the honest-affordance half of #318 ──────────────────────────── Behaviour, not markup:
+  // these assert what a viewer can *read* off the drawer (a percentage claim, an elapsed time, a
+  // spinner), because a class-name assertion in jsdom proves nothing about what is rendered
+  // (#1282).
 
   it('shows a QUEUED run as queued, not as a running heartbeat (#318)', async () => {
     // A never-dispatched run is a different state with a different cause, and the one the stuck-run

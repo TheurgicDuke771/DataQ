@@ -41,8 +41,14 @@ COPY --from=builder /opt/venv /opt/venv
 COPY pyproject.toml ./
 COPY backend ./backend
 
-# Run as a dedicated non-root user (#1408): a future RCE through the parser/ interpreter surface
-# (custom SQL.
+# Run as a dedicated non-root user (#1408): a future RCE through the parser/interpreter surface
+# (custom SQL, flat-file content) lands in a privilege-constrained process instead of uid 0.
+# /workspace and /opt/venv deliberately STAY root-owned and read-only to this user — the app writes
+# nothing there (celery-beat's schedule shelve is pointed at the temp dir in celery_app.py for
+# exactly this reason). --create-home because libraries treat $HOME as writable cache space (the
+# Snowflake connector's OCSP cache, for one); the uid is >10000 so it can't collide with a host
+# uid. Local dev: docker-compose bind-mounts ./backend over /workspace/backend, so a
+# restrictive-umask checkout (no world-read) fails imports under uid 10001 — chmod the tree.
 RUN useradd --create-home --uid 10001 dataq
 USER 10001
 

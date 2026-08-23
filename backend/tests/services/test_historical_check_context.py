@@ -120,6 +120,7 @@ def test_falls_back_to_the_live_check_with_no_version_history(db_session: Any) -
 def test_falls_back_to_the_earliest_version_when_the_result_predates_it(db_session: Any) -> None:
     # Clock skew / same-instant edge case: every version is AFTER the result's created_at. "Before
     # the first edit" is a closer approximation of history than jumping to whatever the check is
+    # today.
     _suite, check = _suite_and_check(db_session)
     _version(
         db_session,

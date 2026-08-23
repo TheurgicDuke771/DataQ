@@ -84,7 +84,9 @@ services:
       timeout: 3s
       retries: 10
 
-  # ── Bundled mail catcher — the local mailbox for OTP sign-in (#1150) ───────── Mailpit (MIT.
+  # ── Bundled mail catcher — the local mailbox for OTP sign-in (#1150) ─────────
+  # Mailpit (MIT — rule 40 / ADR 0031 clear) catches every message DataQ sends and
+  # serves it in a web inbox at http://localhost:8025.
   mailpit:
     image: axllent/mailpit:v1.30.6
     restart: unless-stopped
@@ -196,8 +198,9 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
-    # -B runs celery-beat embedded in the worker (the #171 orchestration polling schedule) — dev AND
-    # prod alike (containerapps.tf runs the same `worker -B`.
+    # -B runs celery-beat embedded in the worker (the #171 orchestration polling schedule) — dev
+    # AND prod alike (containerapps.tf runs the same `worker -B`; there is no separate beat process
+    # anywhere, #1091).
     command: celery -A backend.app.worker.celery_app worker -B --loglevel=INFO
     env_file:
       - path: .env.app
@@ -225,8 +228,11 @@ services:
       otp-mail-secret:
         condition: service_completed_successfully
 
-  # React/Vite dev server. corepack pins pnpm from package.json's packageManager. node_modules is an
-  # anonymous volume so the host's (possibly macOS-built) copy doesn't clobber the container's. pnp
+  # React/Vite dev server. corepack pins pnpm from package.json's packageManager. node_modules is
+  # an anonymous volume so the host's (possibly macOS-built) copy doesn't clobber the container's.
+  # pnpm's ~300MB content-addressable store is relocated to /pnpm-store (OUTSIDE the ./frontend
+  # bind) and held in its own volume — so nothing leaks into, or creates an empty mountpoint under,
+  # the host working tree.
   frontend:
     image: node:24-alpine
     restart: unless-stopped
@@ -250,8 +256,10 @@ services:
     depends_on:
       - api
 
-  # ─────────────────────────── lineage (opt-in) ──────────────────────────── Marquez (Apache-2.0) —
-  # the reference `LineageProvider` catalog (ADR 0034.
+  # ─────────────────────────── lineage (opt-in) ──────────────────────────── Marquez (Apache-2.0)
+  # — the reference `LineageProvider` catalog (ADR 0034, #762): DataQ's OpenLineage emitter (#758)
+  # feeds it, and the daily `refresh_lineage_pull` beat task pulls the graph back into the
+  # `lineage_edges` cache.
   marquez-db:
     image: postgres:16-alpine
     profiles: ["lineage"]

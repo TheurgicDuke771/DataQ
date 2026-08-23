@@ -384,7 +384,9 @@ def create_connection(
         session.rollback()
         raise _conflict_from_integrity_error(exc, conn_type=conn_type, env=env) from exc
     except SecretWriteError as exc:
-        # Credential store (e.g.
+        # Credential store (e.g. Key Vault) unreachable — an upstream-dependency failure, not a
+        # client error. Roll the half-inserted row back and map to 502 (like
+        # ConnectionTestFailedError), not a generic 500.
         session.rollback()
         log.warning("connection_secret_write_failed", type=conn_type, env=env)
         raise ConnectionSecretWriteError(
@@ -932,6 +934,7 @@ def test_draft_connection(
 
     # No `_extra_secrets(config, ...)` here — the guard above rejected every `*_secret_name`, so
     # there is nothing to resolve and nothing this path can be made to read out of the store
+    # (#1118).
     extra_secrets: dict[str, str] = {}
     if catalog_secret:
         extra_secrets["catalog_secret"] = catalog_secret

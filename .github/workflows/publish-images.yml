@@ -15,7 +15,9 @@ on:
     branches:
       - main
     # NOTE: `paths` is IGNORED for tag pushes — GitHub applies path filters to branch pushes only
-    # (github/community discussion #165354 is an open request to make them apply to tags.
+    # (github/community discussion #165354 is an open request to make them apply to tags, which is
+    # the proof they currently do not). So a vX.Y.Z release ALWAYS publishes regardless of what it
+    # touched — verified before this filter was added. Do NOT "fix" this by splitting the workflow.
     paths:
       # Anything that changes what the images CONTAIN…
       - "backend/**"

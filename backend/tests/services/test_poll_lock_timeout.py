@@ -133,6 +133,10 @@ def test_record_poll_failure_does_not_hang_on_a_contended_row(
         try:
             # Visibility check (review finding, #855 vacuous-lock shape): if SessionLocal's
             # DATABASE_URL ever diverges from the held_lock row's TEST_DATABASE_URL (the opt-in E2E
+            # case), this query returns None, `orchestration_service._lock_connection`'s "row not
+            # found" branch takes over, and the assert below would pass with NO real lock ever
+            # contended — the exact "first draft passed against the bug" trap `_committed_
+            # connection`'s docstring warns about, one layer up.
             conn = session.get(Connection, held_lock)
             assert conn is not None, "the committed connection row is missing"
             orchestration_service.record_poll_failure(
@@ -228,7 +232,8 @@ def test_a_real_db_fault_is_not_mislabelled_as_lock_contention(
         raise OperationalError("SELECT 1", {}, _Dead())  # type: ignore[arg-type]  # orig is duck-typed
 
     # (The lock helper itself now lives in `services/connection_lock.py`, shared with the #1104
-    # inventory sync.
+    # inventory sync — `record_poll_failure` still reaches it through
+    # `orchestration_service._lock_connection`, which is what this test drives.)
     session = db_session
     monkeypatch.setattr(type(session), "get", lambda *a, **k: _boom())
 

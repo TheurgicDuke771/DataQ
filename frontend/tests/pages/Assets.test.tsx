@@ -245,7 +245,8 @@ describe('Assets page — tree view (default)', () => {
     await userEvent.click(await screen.findByText('All assets'));
 
     // Let page 2's response land late — after the toggle-away, like a real network response racing
-    // an unmount — and let the table's own (separate.
+    // an unmount — and let the table's own (separate, immediate) fetch settle so we know
+    // everything has had a chance to react.
     resolvePage2?.({ items: [], total: 600 });
     await screen.findByText(/No assets yet/);
 

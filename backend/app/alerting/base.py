@@ -45,6 +45,7 @@ class AlertUndeliverableError(RuntimeError):
 
 # #1226: when EVERY channel fails, the composite's fan-out logs each failing channel with a full
 # traceback (`log.exception`) before re-raising the LAST one so the caller can tell "genuinely
+# undelivered" from "delivered".
 _ALREADY_LOGGED_ATTR = "_dataq_alerting_already_logged"
 
 

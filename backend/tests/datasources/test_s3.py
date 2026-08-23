@@ -45,8 +45,9 @@ def test_validate_config_rejects_access_key_without_key_id() -> None:
 
 
 def test_validate_config_rejects_unknown_field() -> None:
-    # `endpoint` is deliberately the near-miss of the real `endpoint_url` field: extra="forbid" must
-    # still reject it rather than silently ignoring a typo that would leave the connection quietly
+    # `endpoint` is deliberately the near-miss of the real `endpoint_url` field: extra="forbid"
+    # must still reject it rather than silently ignoring a typo that would leave the connection
+    # quietly pointing at AWS.
     with pytest.raises(ValidationError):
         S3ConnectionAdapter().validate_config({**_ACCESS_KEY_CONFIG, "endpoint": "x"})
 

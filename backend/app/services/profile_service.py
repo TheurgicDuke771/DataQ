@@ -773,7 +773,9 @@ def _read_iceberg_dataframe(
     """Resolve an Iceberg connection's config + optional secret (exactly as `build_iceberg_runner`
     does — the credential is optional), load the table ONCE, validate the requested `columns`
     against its schema *before any scan* (raising the same `ProfileColumnNotFoundError` the
-    post-scan defence-in-depth check in `_profile_columns` raises — same message/detai
+    post-scan defence-in-depth check in `_profile_columns` raises — same message/detail shape —
+    so an all-or-partially-invalid column list 422s without ever reading data), then materialise
+    the already-loaded table as a projected, sampled DataFrame.
     """
     config = IcebergConfig.model_validate(connection.config)
     secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, secret_store)

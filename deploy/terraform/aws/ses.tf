@@ -36,7 +36,8 @@ resource "aws_ses_email_identity" "alert_to" {
 }
 
 # Dedicated IAM user for SMTP: SES SMTP credentials ARE an IAM access key — the username is the key
-# id and the password is Terraform's derived ses_smtp_password_v4 (the documented SigV4 derivation.
+# id and the password is Terraform's derived ses_smtp_password_v4 (the documented SigV4 derivation,
+# region-specific).
 resource "aws_iam_user" "ses_smtp" {
   count = local.ses_enabled
   name  = "dataq-app-ses-smtp"

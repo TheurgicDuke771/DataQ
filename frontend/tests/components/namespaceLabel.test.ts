@@ -123,7 +123,8 @@ describe('namespaceLabel', () => {
 });
 
 // `datasourceKind` and `namespaceLabel` are driven by ONE scheme table precisely so they cannot
-// drift (they used to be two hand-synced prefix lists.
+// drift (they used to be two hand-synced prefix lists — add `gs://` to one and you get an `S3 ·`
+// label under an `other` icon).
 describe('datasourceKind', () => {
   it.each([
     ['snowflake://acct', 'snowflake'],

@@ -1,5 +1,6 @@
-# Networking: one VPC, 2 public subnets across 2 AZs, an Internet Gateway, no NAT Gateway (decision:
-# public-subnets-no-NAT — saves ~$33/mo.
+# Networking: one VPC, 2 public subnets across 2 AZs, an Internet Gateway, no NAT Gateway
+# (decision: public-subnets-no-NAT — saves ~$33/mo; ECS tasks get no public IP/inbound exposure
+# since security groups gate everything, only the ALB->frontend path is internet-reachable).
 
 data "aws_availability_zones" "available" {
   state = "available"

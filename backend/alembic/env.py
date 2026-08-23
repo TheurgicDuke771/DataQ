@@ -37,8 +37,11 @@ _MIGRATION_LOCK_TIMEOUT_MS = 15_000
 # Same gap #1102 closed on the app engine (`backend/app/db/session.py`).
 _MIGRATION_CONNECT_TIMEOUT_SECONDS = 10
 
-# Same gap #1221 closed on the app engine, mirrored here for the same reason
-# _MIGRATION_CONNECT_TIMEOUT_SECONDS mirrors #1102: `connect_timeout` only bounds the initial
+# Same gap #1221 closed on the app engine: `connect_timeout` only bounds the initial
+# connect — keepalives bound a connection already open when a network partition drops
+# silently (no TCP RST) mid-migration, which would otherwise hang the deploy.
+# connect, not a connection that's already open and running a migration statement when a network
+# partition happens silently (route drops, no TCP RST).
 _MIGRATION_KEEPALIVES_IDLE_SECONDS = 30
 _MIGRATION_KEEPALIVES_INTERVAL_SECONDS = 10
 _MIGRATION_KEEPALIVES_COUNT = 3

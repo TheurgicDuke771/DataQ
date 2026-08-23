@@ -406,6 +406,8 @@ def test_concurrent_failing_syncs_no_duplicate(_db_engine: Any) -> None:
         run2 = _run_with_result(seed, suite, check, status="fail", triggered_by="r2")
         # Capture plain ids BEFORE commit and close the seed session: touching an expired ORM
         # attribute after commit would open a NEW transaction on this session that nothing ever
+        # closes — an idle-in-transaction backend whose locks deadlock the engine fixture's
+        # drop_all teardown.
         run_ids = (run1.id, run2.id)
         ids = {
             "suite_id": suite.id,

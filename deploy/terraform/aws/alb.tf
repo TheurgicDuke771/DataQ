@@ -48,7 +48,8 @@ resource "aws_lb_target_group" "frontend" {
 
   health_check {
     # /_alb-health — nginx's own local endpoint, exempt from the #1355 origin-secret guard (the ALB
-    # probes the container directly, so it can never carry CloudFront's header.
+    # probes the container directly, so it can never carry CloudFront's header; probing `/` would
+    # 403 and recycle healthy tasks once the guard is on).
     path                = "/_alb-health"
     healthy_threshold   = 2
     unhealthy_threshold = 3

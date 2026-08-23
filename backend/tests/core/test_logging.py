@@ -308,7 +308,8 @@ def test_otel_setup_failure_degrades_to_stdout_never_raises(
 
 
 # ── OTel raw-LogRecord downgrade for already-logged exceptions (#1261 follow-up) ── The structlog-
-# side downgrade (`_downgrade_already_logged_exceptions`.
+# side downgrade (`_downgrade_already_logged_exceptions`, tested below under "already-logged-
+# traceback downgrade") only rewrites the `event_dict` — the rendered stdout JSON body.
 
 
 def test_otel_bridge_downgrades_a_marked_exception_to_warning(

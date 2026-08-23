@@ -174,7 +174,8 @@ describe('OtpSessionProvider — sign out', () => {
 
 describe('OtpSessionProvider — other auth modes', () => {
   // Drives the REAL config module via window.__DATAQ_CONFIG__ (the runtime- config contract, ADR
-  // 0028.
+  // 0028 — same pattern as CurrentUserProvider.test.tsx) instead of a
+  // doMock('../../src/auth/config', ...).
   afterEach(() => {
     delete (window as { __DATAQ_CONFIG__?: unknown }).__DATAQ_CONFIG__;
   });

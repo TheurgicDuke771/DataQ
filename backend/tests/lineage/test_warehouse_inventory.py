@@ -85,6 +85,7 @@ class TestSnowflakeEnumeration:
         assert "table_schema != 'INFORMATION_SCHEMA'" in conn.sql
         # Positive allowlist present; TEMPORARY TABLE (Snowflake's actual temp vocabulary — review
         # fix, the earlier 'LOCAL TEMPORARY' string tested nothing real) must not be an allowed
+        # type.
         assert "'BASE TABLE'" in conn.sql and "'TEMPORARY TABLE'" not in conn.sql
         assert "ORDER BY table_schema, table_name" in conn.sql
         # Budget-correctness (review finding): every exclusion must precede the LIMIT, or excluded

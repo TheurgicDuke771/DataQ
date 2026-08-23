@@ -40,6 +40,7 @@ class SuiteSampling(ApiModel):
 
     # Spelled literally because `Literal[...]` needs constants, not names — a canary test asserts
     # these two stay equal to `SAMPLE_HEAD`/`SAMPLE_RANDOM`, so the duplication cannot drift
+    # silently.
     strategy: Literal["head", "random"]
     rows: int = Field(ge=1, le=MAX_SAMPLE_ROWS)
     #: `random` only — a seed makes the draw reproducible.

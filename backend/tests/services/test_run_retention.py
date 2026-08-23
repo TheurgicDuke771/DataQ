@@ -252,7 +252,8 @@ def test_batch_count_matches_the_configured_chunk_size(db_session: Any, monkeypa
     """Proves the loop actually iterates in bounded chunks AND still sweeps every candidate in full
     — not just that the end result is complete (a candidate-set-larger-than-one-batch check
     alone would pass just the same against the old single-UPDATE shape, since chunk_size doesn't
-    change what an unbounded UPDATE touches — #323 review M5 folded that check in
+    change what an unbounded UPDATE touches — #323 review M5 folded that check in here rather
+    than keeping it a separate, weaker test).
     """
     rows = [_result(db_session, age_days=40, metric=Decimal(str(i))) for i in range(7)]
 

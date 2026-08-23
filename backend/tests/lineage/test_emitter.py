@@ -326,6 +326,7 @@ def test_volume_metric_populates_row_count() -> None:
         _result(other, status="pass"),
         # metric_value is the DEVIATION %, not the count — the count is the
         # observed_value["row_count"] aggregate (monitors.py). 12.5 here proves the facet reads the
+        # count, never the banded metric.
         _result(
             volume,
             status="pass",

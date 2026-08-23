@@ -602,6 +602,9 @@ describe('SuiteForm — sampling', () => {
 
     // Prefilled from the stored block — the block's presence IS the toggle. #1344: the prefill's
     // one `form.setFieldsValue` call fans out to two independent `Form.useWatch` subscriptions
+    // (`sampling_enabled` gates the rows field, `sampling_enabled && sampling_strategy ===
+    // 'random'` gates this one) — they can settle a render apart, so both fields need to be
+    // awaited rather than just the first.
     expect(await screen.findByTestId('sampling-rows')).toHaveValue('5000');
     expect(await screen.findByTestId('sampling-seed')).toHaveValue('7');
 

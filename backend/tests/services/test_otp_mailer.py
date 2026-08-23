@@ -263,9 +263,7 @@ def test_a_ca_bundle_reaches_the_real_ssl_context(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The right layer to monkeypatch here is `smtplib.SMTP` (the transport) — NOT
-    `ssl.create_default_context`, which is the seam under test. A real self-signed PEM is loaded
-    through the real stdlib call, and its presence is asserted via `SSLContext.get_ca_certs()`,
-    which reports ONLY certs loaded through `load_verify_locations` (i.e.
+    `ssl.create_default_context`, which is the seam under test.
     """
     bundle = tmp_path / "private-ca.pem"
     _write_self_signed_ca(bundle, common_name="dataq-test-ca")
@@ -430,7 +428,9 @@ def test_nothing_is_sent_when_the_transport_block_is_incomplete(
 
 
 # ── SMTP pre-flight test (#737, ADR 0032 decision 7) ──────────────────────────── `send_preflight`
-# shares `_deliver` with `send_code` (the SAME connect/TLS/login/ send ladder.
+# shares `_deliver` with `send_code` (the SAME connect/TLS/login/ send ladder — the whole point is
+# that a green pre-flight is evidence the sign-in path works too), but reports WHICH stage failed
+# instead of collapsing every failure into one generic 502.
 
 
 def test_preflight_sends_a_real_message_over_starttls_before_authenticating(
@@ -535,6 +535,7 @@ def test_preflight_classifies_a_rejected_message_as_the_send_stage(
 
 # ── A QUIT-time failure must never replace an in-flight stage error ───────── Real
 # `smtplib.SMTP.__exit__` sends QUIT and raises `SMTPResponseException` on any non-221 reply (only
+# `SMTPServerDisconnected` is swallowed).
 
 
 def test_a_quit_failure_never_replaces_an_in_flight_stage_error(
@@ -638,7 +639,7 @@ def test_a_preflight_failure_logs_the_stage_and_error_type_but_never_the_passwor
     """The pipeline under test is the REAL logging stack (`configure_logging` + the redacting
     stdout handler), not the `_redact_pii` helper in isolation — the failure this guards against
     is a dependency or a future call site logging the password directly, which a helper-level
-    unit test could never catch (CLAUDE.md §10: redact at the logger, not the call sit
+    unit test could never catch (CLAUDE.md §10: redact at the logger, not the call site).
     """
     import io
     import logging

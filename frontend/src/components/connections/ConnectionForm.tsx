@@ -87,7 +87,8 @@ export function ConnectionForm({
       : undefined;
 
   // A field changed after a test ran — the green/red badge no longer describes what would actually
-  // be saved (repo precedent: Connections.tsx `clearHealth`.
+  // be saved (repo precedent: Connections.tsx `clearHealth`, "the prior pass/fail no longer
+  // holds").
   const onValuesChange = () => {
     if (testState !== 'idle') {
       setTestState('idle');

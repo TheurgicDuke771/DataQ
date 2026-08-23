@@ -16,6 +16,7 @@ from backend.app.db.models import RESULT_SEVERITY_TIERS, Result, Run
 
 # ── health score (ADR 0005) ────────────────────────────────────────────────── Fixed penalty
 # weights; W_MAX (the critical weight) normalises into [0, 100] so all-fail scores 50, not the
+# floor — critical stays meaningfully worse than fail.
 _PENALTY: Mapping[str, float] = {
     "pass": 0.0,
     "warn": 0.5,

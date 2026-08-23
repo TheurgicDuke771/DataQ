@@ -468,8 +468,10 @@ function ResultsTable({
       render: (v: number | null) => (v === null ? '—' : v),
     },
     {
-      // Bounded width + ellipsis (#1207 — #1184's "verified-benign" scope-out didn't hold for every
-      // monitor kind: schema_drift's added/removed column lists and comparison's per-column bucket
+      // Bounded width + ellipsis (#1207 — #1184's "verified-benign" scope-out didn't hold for
+      // every monitor kind: schema_drift's added/removed column lists and comparison's per-column
+      // buckets both scale with column count, and ScalarValue's formatScalar JSON.stringifies
+      // whatever shape observed_value is, unbounded.
       title: 'Observed',
       dataIndex: 'observed_value',
       width: OBSERVED_COLUMN_WIDTH,

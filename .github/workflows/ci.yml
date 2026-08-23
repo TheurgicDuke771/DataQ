@@ -35,7 +35,8 @@ jobs:
 
       - name: Typecheck-deps in sync
         # Guard the pre-commit mypy hook against backend/requirements-typecheck.txt (Dependabot
-        # bumps the requirements file but bypasses the local hook — this catches the drift in CI.
+        # bumps the requirements file but bypasses the local hook — this catches the drift in CI,
+        # which previously slipped through).
         run: python scripts/check-typecheck-deps.py
 
       - name: Pre-commit tooling pins in sync
@@ -137,6 +138,9 @@ jobs:
           --health-retries 10
       # Redis broker for the real-broker E2E (dispatch -> worker round-trip).
       redis:
+        # GHCR mirror of redis:7-alpine (#993 rate limits). The :7 tag is a SECURITY
+        # gate, not staleness — Redis 8 bundles Vector Sets (unpatched RCE); Dependabot
+        # does not watch service images. Read #980 before any bump.
         image: ghcr.io/theurgicduke771/ci-redis:7-alpine
         ports:
           - 6379:6379
@@ -167,7 +171,9 @@ jobs:
 
       - name: pytest
         # TEST_DATABASE_URL enables the db_session fixture; DATABASE_URL + REDIS_URL + DATAQ_E2E
-        # together enable the real-broker E2E (test_probe_e2e.
+        # together enable the real-broker E2E (test_probe_e2e — DATAQ_E2E is the explicit-opt-in
+        # signal conftest.py's DATABASE_URL auto-redirect (#1130) can never set on its own, so this
+        # test stays a conscious choice even here).
         env:
           TEST_DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_test
           DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_test
@@ -303,6 +309,9 @@ jobs:
           --health-timeout 3s
           --health-retries 10
       redis:
+        # GHCR mirror of redis:7-alpine (#993 rate limits). The :7 tag is a SECURITY
+        # gate, not staleness — Redis 8 bundles Vector Sets (unpatched RCE); Dependabot
+        # does not watch service images. Read #980 before any bump.
         image: ghcr.io/theurgicduke771/ci-redis:7-alpine
         ports:
           - 6379:6379

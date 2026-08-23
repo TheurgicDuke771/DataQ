@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 // The check-editor variants beyond the plain expectation form (already covered in suites.spec.ts):
-// the freshness + volume + anomaly monitor kinds (ADR 0012.
+// the freshness + volume + anomaly monitor kinds (ADR 0012, #593) and the Monaco-backed custom-SQL
+// editor (ADR 0019).
 test.describe('Check editor variants', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/suites');

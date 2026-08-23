@@ -80,6 +80,7 @@ def _freshness_outcome(scalar: Any, config: dict[str, Any]) -> CheckOutcome:
         )
     # Clamped at 0 like the monitor path (`_freshness_age_hours`): a max timestamp ahead of the
     # warehouse clock must trend 0.0 on BOTH engines, or the same data trends differently per
+    # evaluator.
     age_hours = max(float(scalar) / 3600.0, 0.0)
     return CheckOutcome(
         expectation_type=expectation_type,

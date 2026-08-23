@@ -206,8 +206,9 @@ def test_run_outcomes_monitor_on_non_sql_runner_raises() -> None:
 
 
 def test_run_outcomes_rejects_runner_with_unrelated_run_monitors() -> None:
-    # The #429 AC: a runner that merely HAS a method named run_monitors (which an isinstance against
-    # the runtime_checkable Protocol would have accepted) but advertises no capability is rejected
+    # The #429 AC: a runner that merely HAS a method named run_monitors (which an isinstance
+    # against the runtime_checkable Protocol would have accepted) but advertises no capability is
+    # rejected CLEANLY at the gate — never a TypeError from calling an unrelated method.
     class _Impostor(FakeRunner):
         def run_monitors(self) -> None:  # unrelated signature — calling it would TypeError
             raise AssertionError("the gate must reject before calling this")
@@ -1057,7 +1058,8 @@ def test_redact_prefers_the_persisted_summary_for_the_scalar_partial_unexpected_
     """Review finding on #1230: the persisted `value_signal_summary` describes the COLUMN, not
     `unexpected_index_list`'s own contents — so it's equally valid evidence for the sibling
     scalar `partial_unexpected_list` (GX caps that list to ~20 on every engine; that fact only
-    means the LIST'S OWN population can't grow the summary, not that the summary shouldn'
+    means the LIST'S OWN population can't grow the summary, not that the summary shouldn't be
+    consulted when redacting it).
     """
     scalar_values = [(f"user{i}@x.com" if i < 6 else f"REF-{i}") for i in range(SAMPLE_ROW_CAP)]
     window_ratio = sum("@" in v for v in scalar_values) / SAMPLE_ROW_CAP

@@ -2,7 +2,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 // Monaco itself can't run under jsdom (canvas, workers); the mock stands in for the editor so
-// what's under test is OUR glue: the antd-Form controlled-field contract (value in, onChange out.
+// what's under test is OUR glue: the antd-Form controlled-field contract (value in, onChange out,
+// null coercions) and the worker/loader setup running without a CDN fetch.
 vi.mock('@monaco-editor/react', () => ({
   default: ({ value, onChange }: { value: string; onChange: (v: string | undefined) => void }) => (
     <textarea

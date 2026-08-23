@@ -1,5 +1,6 @@
 # Application Insights (workspace-based) — the observability sink the backend's structlog/App-
 # Insights wiring posts to via APPLICATIONINSIGHTS_CONNECTION_STRING (injected as a Container App
+# secret in containerapps.tf).
 
 resource "azurerm_application_insights" "app" {
   name                = "dataq-app-ai"

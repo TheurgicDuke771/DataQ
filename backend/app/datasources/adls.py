@@ -61,6 +61,7 @@ class AdlsConnectionAdapter:
         config = self.validate_config(raw)
         # The azure-storage-blob surface is only partially typed (e.g. close() is unannotated);
         # treat the client as dynamic so strict mypy doesn't flag no-untyped-call on the SDK
+        # methods.
         client: Any = BlobServiceClient(
             account_url=config.account_url,
             credential=secret,

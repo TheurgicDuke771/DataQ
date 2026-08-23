@@ -1,4 +1,6 @@
-"""widen connection type-set for the native iceberg datasource"""
+"""widen connection type-set for the native iceberg datasource Adds ``iceberg`` as a datasource
+connection type (ADR 0030, #716) — the native `pyiceberg` read path.
+"""
 
 from collections.abc import Sequence
 

@@ -69,6 +69,8 @@ output "azure_subscription_id" {
 
 # ── Azure AD SSO (sso.tf) — informational / app-registration coordinates ────── No longer build-
 # time VITE_* vars: since the ADR 0028 §5 cutover the frontend is configured at RUNTIME (the
+# DATAQ_AUTH_* env on the frontend Container App is wired straight from these same resources in
+# frontend.tf), so nothing needs to copy them into repo vars.
 output "azure_api_client_id" {
   description = "API app-registration client id (also the backend AZURE_API_CLIENT_ID)."
   value       = azuread_application.api.client_id

@@ -15,6 +15,7 @@ RUN pnpm build
 FROM nginx:1.27-alpine AS serve
 # Link the GHCR package to this repo (shows under the repo's Packages, lets the repo's Actions
 # GITHUB_TOKEN push it, and inherits anonymous-pull visibility — ADR 0023, mirrors
+# backend/Dockerfile).
 LABEL org.opencontainers.image.source="https://github.com/TheurgicDuke771/DataQ"
 LABEL org.opencontainers.image.description="DataQ frontend (React SPA served by nginx)"
 LABEL org.opencontainers.image.licenses="MIT"
@@ -25,7 +26,8 @@ COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 # Security headers (#1387), `include`d from the template above.
 COPY nginx-security-headers.conf /etc/nginx/nginx-security-headers.conf
 # Opt into the nginx image's built-in resolver detection: its 15-local-resolvers.envsh only exports
-# ${NGINX_LOCAL_RESOLVERS} (the /etc/resolv.conf nameservers.
+# ${NGINX_LOCAL_RESOLVERS} (the /etc/resolv.conf nameservers, used by the proxy `resolver`
+# directive) when this flag is set.
 ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 # Runtime config env (ADR 0028) — MUST be defined (even if empty) so envsubst always substitutes
 # them in /config.js; empty → SPA is unconfigured (fail-closed).

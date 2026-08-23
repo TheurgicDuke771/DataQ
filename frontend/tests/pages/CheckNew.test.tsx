@@ -186,7 +186,9 @@ describe('CheckNew — threshold ordering (issue #568)', () => {
 });
 
 // Issue #768 — expect_column_values_to_be_of_type's `type_` field needs a datasource-tailored hint
-// (GX compares against different type vocabularies per execution engine): the dialect's fully-quali
+// (GX compares against different type vocabularies per execution engine): the dialect's fully-
+// qualified type on SQL-backed Snowflake, vs the Python value type name on every pandas-backed
+// runner (UC, flat files, Iceberg).
 describe('CheckNew — type_ hint (issue #768)', () => {
   const pickTypeExpectation = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(screen.getByText('Column values'));

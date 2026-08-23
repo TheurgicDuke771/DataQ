@@ -178,6 +178,8 @@ class OtpMailer:
         except Exception as exc:
             # The constructor itself connects (both SMTP.__init__ and SMTP_SSL.__init__ call
             # self.connect() when a host is given) — DNS failure, connection refused, connect
+            # timeout, AND (implicit mode only) a TLS handshake/certificate failure all land here,
+            # before there is anything to close.
             raise _SmtpStageError("connect", exc) from exc
         try:
             try:

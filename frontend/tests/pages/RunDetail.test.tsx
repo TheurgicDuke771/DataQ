@@ -277,6 +277,9 @@ describe('RunDetail page', () => {
 
   // -- #424: the sample header must match the actual per-column redaction state -- Scoped to the
   // on-screen region throughout (`screenRegion()`) -- since the print-only `RunReport` (#345) also
+  // renders the check name "order_id not null", the unscoped `screen.findByText` these started as
+  // would now match twice; the redaction-label assertions after each expand aren't duplicated (the
+  // report omits samples entirely) but stay scoped for consistency.
 
   it('says "values shown" when the API reports no columns were redacted', async () => {
     mockGetRun.mockResolvedValue({
@@ -480,6 +483,7 @@ describe('RunDetail page', () => {
   it('also falls back when unexpected_index_list is present but not dict-shaped (#1183)', async () => {
     // Defence in depth: the backend already strips a non-dict index list
     // (`gx_runner._is_identifier_index_list`), but the frontend must not trust an unexpected shape
+    // either.
     mockGetRun.mockResolvedValue({
       ...runDetail,
       results: [
@@ -511,7 +515,9 @@ describe('RunDetail page', () => {
 
   it('falls back to "partially redacted" when partial has no nameable column (#1115)', async () => {
     // Reachable when an anonymous mask (a scalar partial_unexpected_list with no tested_column)
-    // coincides with some other column being shown: the tracker reports "partial" but has no column
+    // coincides with some other column being shown: the tracker reports "partial" but has no
+    // column name to attribute the mask to, so redacted_columns is empty. "0 columns redacted"
+    // would be false-adjacent.
     mockGetRun.mockResolvedValue({
       ...runDetail,
       results: [
@@ -695,7 +701,8 @@ describe('RunDetail page', () => {
 
       const report = await screen.findByTestId('run-report');
       // Suite header, run meta, and the per-check row all present — the report renders
-      // unconditionally (hidden by print CSS.
+      // unconditionally (hidden by print CSS, not by React) so `window.print()` has no async data-
+      // fetch to race.
       expect(within(report).getByText('Orders quality')).toBeInTheDocument();
       expect(within(report).getByText(/Run r1/)).toBeInTheDocument();
       expect(within(report).getByText('manual:u1')).toBeInTheDocument();
@@ -992,7 +999,9 @@ describe('RunDetail — anomaly cold-start hint (#593)', () => {
           expected_value: null,
           redaction: null,
           redacted_columns: [],
-          // Non-null with zero rows (unlike a raw GX sample, an anomaly result never carries one.
+          // Non-null with zero rows (unlike a raw GX sample, an anomaly result never carries one —
+          // this shape just gives the "No sample rows captured." branch something concrete to
+          // render so the test can confirm the row actually expanded).
           sample_failures: {
             unexpected_count: 0,
             unexpected_percent: 0,

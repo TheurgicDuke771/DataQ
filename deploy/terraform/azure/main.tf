@@ -4,8 +4,9 @@ data "azurerm_client_config" "current" {}
 
 data "azurerm_subscription" "current" {}
 
-# ── Idempotent RG step ─────────────────────────────────────────────────────── `az group create` is
-# idempotent: it creates dataq-rg if absent and is a no-op (with the same tags) if it already exist
+# ── Idempotent RG step ─────────────────────────────────────────────────────── `az group create`
+# is idempotent: it creates dataq-rg if absent and is a no-op (with the same tags) if it already
+# exists.
 resource "null_resource" "ensure_rg" {
   triggers = {
     rg       = var.azure_resource_group
@@ -32,6 +33,7 @@ resource "random_string" "suffix" {
 locals {
   # All DataQ-APP resources carry purpose=dataq-app so they're trivially distinguishable from any
   # other resources sharing the group in the shared RG (see the verification query in
+  # deploy/terraform/README.md).
   common_tags = {
     project = var.project_tag
     managed = "terraform"

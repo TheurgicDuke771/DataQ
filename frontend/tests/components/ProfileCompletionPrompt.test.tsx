@@ -100,7 +100,8 @@ describe('ProfileCompletionPrompt', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
     // The mechanism itself: sessionStorage, not React state, is what has to survive — a component
-    // remount (a route change.
+    // remount (a route change, the next section below) starts with fresh state and would re-show
+    // the prompt if this weren't here.
     expect(sessionStorage.getItem('dataq:profileCompletionPrompt:skipped')).toBe('1');
 
     // A fresh mount (e.g. a route re-render) must stay dismissed from the very first render — no

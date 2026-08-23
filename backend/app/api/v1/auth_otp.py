@@ -82,7 +82,13 @@ def request_otp(
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> OtpRequestAck:
-    """Email a one-time sign-in code, if the address is eligible."""
+    """Email a one-time sign-in code, if the address is eligible.
+
+    The response is IDENTICAL whether or not it is — ineligible, not allow-listed,
+    or over quota all answer `{"status": "ok"}` after the same minimum elapsed time
+    (anti-enumeration, ADR 0032 decision 4). Only a real mail-transport failure
+    differs.
+    """
     # Started FIRST, before any branch-dependent work, so the floor covers the
     # whole handler rather than whatever is left after the expensive part.
     started = time.monotonic()

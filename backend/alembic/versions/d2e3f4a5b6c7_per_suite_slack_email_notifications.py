@@ -1,4 +1,7 @@
-"""per-suite Slack webhook + email recipients on suite_notifications"""
+"""per-suite Slack webhook + email recipients on suite_notifications Adds per-suite overrides for
+the Slack and email channels (#633), mirroring the existing per-suite Teams
+``webhook_secret_ref``.
+"""
 
 from collections.abc import Sequence
 

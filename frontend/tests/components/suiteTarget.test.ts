@@ -300,7 +300,9 @@ describe('asBatchStrategy (#1180)', () => {
 
   it('narrows anything unsupported or absent to undefined, mirroring asFileFormat', () => {
     // Same reasoning as asFileFormat: strategy is read out of an untyped JSONB bag, so a
-    // stray/malformed stored value (hand-edited row.
+    // stray/malformed stored value (hand-edited row, an old schema) must not prefill the Strategy
+    // Select with a non-existent option — SuiteForm falls back to 'latest' when this returns
+    // undefined.
     expect(asBatchStrategy('weekly')).toBeUndefined();
     expect(asBatchStrategy('LATEST')).toBeUndefined();
     expect(asBatchStrategy('')).toBeUndefined();

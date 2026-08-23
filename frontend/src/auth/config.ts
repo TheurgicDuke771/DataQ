@@ -31,7 +31,9 @@ function fromBuildEnv(): DataqAuthConfig {
   const apiClientId = import.meta.env.VITE_AZURE_API_CLIENT_ID;
   const scope = import.meta.env.VITE_AZURE_API_SCOPE || 'user_impersonation';
   // Belt-and-suspenders: bypass in the build-env fallback stays gated on a DEV build, so a
-  // production static bundle (e.g. the SWA deploy, which serves this fallback path.
+  // production static bundle (e.g. the SWA deploy, which serves this fallback path — the
+  // /config.js stub sets no global) can never enable auth bypass even if VITE_AUTH_DEV_BYPASS=true
+  // were baked in.
   const bypass = import.meta.env.DEV && import.meta.env.VITE_AUTH_DEV_BYPASS === 'true';
   // `pnpm dev` against a locally-running OTP backend.
   const otp = import.meta.env.VITE_AUTH_MODE === 'otp';

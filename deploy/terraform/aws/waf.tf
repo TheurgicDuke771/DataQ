@@ -3,6 +3,8 @@
 locals {
   # Deliberately far above the app limiter's per-IP unauthenticated class
   # (RATE_LIMIT_UNAUTHENTICATED_PER_MINUTE = 120/min): WAF's window is 5 minutes and its job is to
+  # stop a flood, not to duplicate policy. 120/min of legitimate traffic = 600 per 5 min, so the
+  # default leaves >3x headroom before WAF ever sees a request the app would have allowed.
   waf_rate_limit_5min = var.waf_rate_limit_per_5min
 }
 
@@ -42,8 +44,10 @@ resource "aws_wafv2_web_acl" "app" {
     }
   }
 
-  # ── Rule 2: oversized request bodies ─────────────────────────────────────── DataQ's write
-  # surface is JSON — suites, checks, connection configs, custom SQL.
+  # ── Rule 2: oversized request bodies ───────────────────────────────────────
+  # DataQ's write surface is JSON — none of it is megabytes; reject at the edge.
+  # WAF inspects at most 16KB of a CloudFront body: a threshold >= 16KB can never
+  # match (rule looks enabled, enforces nothing) — variables.tf range-validates it.
   rule {
     name     = "oversized-body"
     priority = 2
@@ -74,7 +78,10 @@ resource "aws_wafv2_web_acl" "app" {
           }
         }
 
-        # ... and NOT the suite-import path (see note 2 above).
+        # ... and NOT the suite-import path: an import carries a whole suite and can
+        # legitimately clear 8KB, and a WAF block happens AT THE EDGE — no origin log,
+        # no request id, an invisible false positive (#1388 review). It stays scoped
+        # out and bounded by nginx's 1MB cap instead.
         statement {
           not_statement {
             statement {

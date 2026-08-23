@@ -65,6 +65,8 @@ locals {
     for svc in ["api", "worker"] : svc => yamlencode({
       # Loopback, not 0.0.0.0: awsvpc mode shares one network namespace across the task's
       # containers, so localhost reaches the sidecar — and these tasks carry public IPs (no-NAT
+      # design), so a wildcard bind would put an unauthenticated OTLP write endpoint one SG-rule
+      # change away from the internet (PR #1371 review).
       receivers  = { otlp = { protocols = { http = { endpoint = "127.0.0.1:4318" } } } }
       processors = { batch = {} }
       exporters = {

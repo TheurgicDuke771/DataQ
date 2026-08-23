@@ -152,7 +152,9 @@ step "Installing frontend dependencies (pnpm)"
 ok "Frontend dependencies installed"
 
 # ── Docker services ─────────────────────────────────────────────────────────── OpenBao is NOT
-# optional here: the seed step below writes connection credentials through the SecretStore (seed_dev
+# optional here: the seed step below writes connection credentials through the SecretStore
+# (seed_dev → demo_data → connection_service.set), so with SECRET_STORE=openbao a missing vault
+# fails the whole bootstrap on a fresh clone.
 step "Starting Docker services (Postgres, Redis, OpenBao)"
 docker compose up -d postgres redis openbao
 ok "Docker services started"

@@ -97,7 +97,9 @@ def test_decimal_becomes_float() -> None:
     import decimal
 
     # Warehouse (SQLAlchemy/Snowflake) NUMERIC columns surface as decimal.Decimal in a failing
-    # check's observed-value/failing-sample payload (#1273.
+    # check's observed-value/failing-sample payload (#1273, reproduced live on a Snowflake range
+    # check that genuinely failed — a passing check never surfaces one, which is why this went
+    # unnoticed).
     cleaned = sanitize_json({"observed_value": decimal.Decimal("1234.56")})
     assert cleaned == {"observed_value": 1234.56}
     assert type(cleaned["observed_value"]) is float
@@ -127,8 +129,9 @@ def test_timestamps_and_dates_become_isoformat() -> None:
 
     import pandas as pd
 
-    # Arrow-backed frames yield pd.Timestamp sample values, and GX coerces between-style kwargs into
-    # datetime.date in expected_value — JSON has no native form for either (#751 review.
+    # Arrow-backed frames yield pd.Timestamp sample values, and GX coerces between-style kwargs
+    # into datetime.date in expected_value — JSON has no native form for either (#751 review, both
+    # reproduced live).
     cleaned = sanitize_json(
         {
             "partial_unexpected_list": [pd.Timestamp("2099-01-01 00:00:00")],

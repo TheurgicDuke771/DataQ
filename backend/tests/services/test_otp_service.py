@@ -497,6 +497,7 @@ def test_purge_disabled_when_retention_non_positive(db_session: Any) -> None:
 
 # ── the concurrency branches ───────────────────────────────────────────────── These are the
 # branches the caps actually rest on, and they are unreachable by calling the service twice in
+# sequence — the losing interleaving has to be constructed.
 
 
 class _InterleavingSession:

@@ -108,6 +108,7 @@ def _resolve_s3(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity
     endpoint_url = _str_or_none(config.get("endpoint_url"))
     # No endpoint_url means AWS: keep the namespace byte-stable at `s3://{bucket}` — this form is
     # the OpenLineage naming-spec convention and is already persisted on `assets` rows in
+    # production; changing it forks every existing S3 asset and orphans its lineage/incidents.
     namespace = (
         f"s3://{_s3_endpoint_authority(endpoint_url)}/{bucket}"
         if endpoint_url

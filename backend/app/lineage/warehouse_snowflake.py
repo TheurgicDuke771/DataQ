@@ -53,6 +53,7 @@ _ACCESS_HISTORY_TABLE_DOMAINS = frozenset(
 
 # `SNOWFLAKE.CORE.GET_LINEAGE` object domains that are table-like — a THIRD spelling of the same
 # vocabulary (UPPER with UNDERSCORES, live-captured 2026-07-28: TABLE / VIEW / DYNAMIC_TABLE /
+# STAGE).
 _GET_LINEAGE_TABLE_DOMAINS = frozenset(
     {"TABLE", "VIEW", "DYNAMIC_TABLE", "MATERIALIZED_VIEW", "EXTERNAL_TABLE"}
 )
@@ -305,6 +306,9 @@ class SnowflakeLineageProvider:
                     skipped_tiers=tuple(skipped),
                     # `partial` (#1109) folds in a confirmed-vs-unclassified GET_LINEAGE blip from
                     # EARLIER in this same call (review finding on #1263: the first version of this
+                    # branch dropped it, so a traversal already known-incomplete from its own per-
+                    # seed failures could still be marked prunable just because the floor's
+                    # SEPARATE failure happened to classify as confirmed).
                     prunable=reason is not None and not partial,
                 )
             merged_top: dict[tuple[str, str], LineageEdgePair] = {
@@ -319,7 +323,11 @@ class SnowflakeLineageProvider:
                 prunable=not partial,
             )
 
-        # The two remaining sources are COMPLEMENTARY truths, not alternatives (#911 review.
+        # The two remaining sources are COMPLEMENTARY truths, not alternatives (#911 review — the
+        # exclusive ladder was the deep defect): OBJECT_DEPENDENCIES is the current-state VIEW-
+        # dependency graph (a view is never a DML write, so it can never appear in ACCESS_HISTORY's
+        # objects_modified), and ACCESS_HISTORY is the DML event log (a table→table INSERT leaves
+        # no dependency-view row).
         try:
             floor = self._from_object_dependencies(conn, namespace, database)
         except Exception as exc:  # the floor failing means we learned nothing
@@ -403,6 +411,8 @@ class SnowflakeLineageProvider:
             " AND table_schema != 'INFORMATION_SCHEMA'"
             # The ephemera pattern is a BOUND PARAM, never a literal: the snowflake connector's
             # pyformat paramstyle reads a raw % in a text() statement as a format placeholder and
+            # raises ProgrammingError (#1111 — found live; the fake-conn tests cannot execute real
+            # SQL, the #823 driver-boundary class again).
             " AND table_name NOT LIKE :ephemeral ESCAPE '!'"
             " AND table_type IN ('BASE TABLE', 'VIEW', 'MATERIALIZED VIEW', 'EXTERNAL TABLE')"
             " ORDER BY table_schema, table_name"
@@ -676,6 +686,9 @@ class SnowflakeLineageProvider:
         if not edges:
             # Nothing observed, checked on the POST-stitch physical edge set (#1110 review): `raw`
             # can be non-empty purely from ephemeral (SNOWPARK_TEMP_*) rows the stitch then
+            # collapses to nothing, and checking `raw` would have returned this confident-but-wrong
+            # `()` as a top-tier success instead of descending — which prunes the floor's real
+            # graph outright under this snapshot-regime provider.
             raise _FeatureUnsupportedError(
                 f"no lineage rows for {len(seeds)} seed table(s)"
                 + (f" ({seed_failures} failed call(s))" if seed_failures else ""),

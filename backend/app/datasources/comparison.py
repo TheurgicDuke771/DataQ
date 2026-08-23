@@ -273,7 +273,8 @@ def _normalize_pair(s: Any, t: Any) -> _NormalizedPair:
                 s_f.astype("string"), t_f.astype("string"), source_num=s_f, target_num=t_f
             )
     # Booleans compare as their string forms ("True"/"False") — deliberately NOT via the numeric
-    # branch (is_numeric_dtype(bool) is True in pandas.
+    # branch (is_numeric_dtype(bool) is True in pandas, but canonicalizing True → "1.0" would
+    # mismatch a "True" string side).
     return _NormalizedPair(s.astype("string"), t.astype("string"))
 
 

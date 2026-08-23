@@ -89,8 +89,10 @@ class ConnectionRead(ApiModel):
     inventory_sync_last_error: str | None = None
     inventory_sync_failing_since: datetime | None = None
 
-    # Zero-table enumeration state (#1242) — a SUCCESSFUL sync that enumerates zero tables is not an
-    # error (Snowflake's INFORMATION_SCHEMA is privilege-filtered, not access-denied.
+    # Zero-table enumeration state (#1242) — a SUCCESSFUL sync that enumerates zero tables is not
+    # an error (Snowflake's INFORMATION_SCHEMA is privilege-filtered, not access-denied, so a role
+    # with no grants gets an empty result set rather than an exception; a genuinely empty database
+    # also legitimately enumerates zero).
     inventory_sync_last_table_count: int | None = None
     inventory_sync_zero_since: datetime | None = None
 

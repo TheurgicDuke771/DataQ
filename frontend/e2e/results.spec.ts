@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 // Seeded runs / results / pipeline-runs (backend/scripts/demo_data.py) read through the real API
-// and rendered on the in-app Results page (ADR 0018 — the suite-scoped, redaction-aware surface.
+// and rendered on the in-app Results page (ADR 0018 — the suite-scoped, redaction-aware surface,
+// not Grafana).
 test.describe('Results page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/results');

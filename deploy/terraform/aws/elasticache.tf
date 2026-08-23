@@ -48,6 +48,7 @@ resource "aws_elasticache_replication_group" "app" {
 
   # TLS + password required together — same defense-in-depth posture as the Azure stack's self-
   # hosted Redis (--requirepass over an internal-only ingress). transit_encryption_enabled is what
+  # makes auth_token usable at all on this resource.
   transit_encryption_enabled = true
   auth_token                 = random_password.redis_auth.result
 

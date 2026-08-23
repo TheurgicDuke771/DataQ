@@ -168,7 +168,7 @@ def test_iceberg_catalog_secret_in_jsonb_is_registered(db_session: Session) -> N
     no COLUMN-level audit can see it — `connection_service` writes and rotates it exactly like
     the primary `secret_ref` (#1181), but that alone doesn't make it visible to
     `test_every_secret_ref_column_is_registered`'s introspection, since it is a value inside a
-    JSO
+    JSON blob, not a column.
     """
     _connection(
         db_session,

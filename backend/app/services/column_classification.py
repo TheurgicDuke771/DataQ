@@ -18,7 +18,8 @@ class ColumnClass(StrEnum):
 
 
 # ── Name-token vocabularies (matched against the column's word tokens) ────────── A person token →
-# PII, unconditionally (no entity qualifier can un-flag these.
+# PII, unconditionally (no entity qualifier can un-flag these — an email/phone/ssn is direct PII no
+# matter what noun it's attached to).
 _PERSON_TOKENS: frozenset[str] = frozenset(
     {
         "email",
@@ -52,6 +53,9 @@ _PERSON_TOKENS: frozenset[str] = frozenset(
 )
 # Address-class tokens (#1182): quasi-identifying, but context-dependent — a person's
 # ``city``/``address`` is PII, but the SAME token on a facility/geographic entity
+# (``location_city``, ``warehouse_zip``, ``carrier_address``) describes a place, not a person, and
+# over-flagging these dilutes the redaction signal (the original report: ``location_city`` on a
+# logistics CSV).
 _ADDRESS_TOKENS: frozenset[str] = frozenset(
     {"address", "street", "city", "zip", "zipcode", "postal", "postcode"}
 )
@@ -219,8 +223,10 @@ def _name_signal(name: str) -> ColumnClass | None:
     if tokens & _PERSON_TOKENS or tokens & _PERSON_NAME_TOKENS:
         return ColumnClass.PII
 
-    # A person-context qualifier (customer/delivery/shipping/…) always wins over a non-person entity
-    # qualifier below (#1182 review finding): `delivery_location_zip` and `customer_location_addres
+    # A person-context qualifier (customer/delivery/shipping/…) always wins over a non-person
+    # entity qualifier below (#1182 review finding): `delivery_location_zip` and
+    # `customer_location_address` both carry the ambiguous `location` token, but only the former is
+    # a facility/route — the latter is a specific person's address.
     person_qualified = bool(tokens & _PERSON_CONTEXT_TOKENS)
 
     # 1b.
@@ -306,8 +312,9 @@ def _clean_values(values: Iterable[object]) -> list[str]:
     return out
 
 
-# ── Full-population value-signal summary (#1230) ──────────────────────────────── `_value_signal`'s
-# ratios (email ≥50%, id-shaped ≥80% + distinct-ratio ≥80%.
+# ── Full-population value-signal summary (#1230) ────────────────────────────────
+# `_value_signal`'s ratios (email ≥50%, id-shaped ≥80% + distinct-ratio ≥80%, encoded ≥50%) are
+# only as good as the population they're computed over.
 _SUMMARY_COUNT_KEYS = ("n", "email_count", "id_shaped_count", "encoded_count", "distinct_count")
 
 

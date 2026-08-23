@@ -100,7 +100,9 @@ def parse_recipients(raw: str) -> list[str]:
 
 _RECIPIENTS_MAX_LEN = 1024  # matches the suite_notifications.email_recipients column
 # Whitespace/control chars that must never reach an address: CR/LF would let a stored value inject
-# an email header (and raise at EmailMessage['To'] set time → a silent.
+# an email header (and raise at EmailMessage['To'] set time → a silent, permanent per-suite email
+# outage swallowed by the composite, #639 review); TAB and internal spaces are likewise never valid
+# inside an address.
 _UNSAFE_IN_RECIPIENT = re.compile(r"[\r\n\t ]")
 
 

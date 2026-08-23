@@ -82,7 +82,8 @@ def _reset_caches() -> Iterator[None]:
     # The OTP per-email counter store is a module global like the rate limiter's (#734/#1127).
     otp_service.reset_counter_state()
     # The admin SMTP pre-flight throttle (#1147) holds its OWN store instance, for the reason
-    # `admin_service`'s section header gives (a shared instance shares a circuit breaker.
+    # `admin_service`'s section header gives (a shared instance shares a circuit breaker, so one
+    # subsystem's brownout disables the other's control).
     admin_service.reset_preflight_counter_state()
 
 
@@ -155,7 +156,8 @@ def clean_kv_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # ── DB-backed test support ──────────────────────────────────────────────────── DB integration
-# tests require a real Postgres (the models use JSONB / UUID / gen_random_uuid().
+# tests require a real Postgres (the models use JSONB / UUID / gen_random_uuid(), which SQLite
+# can't host).
 
 
 def _ensure_local_test_database() -> None:

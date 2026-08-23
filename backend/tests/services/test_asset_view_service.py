@@ -114,6 +114,8 @@ def test_get_unknown_asset_raises(db_session: Any) -> None:
 
 # ── connection health vs suite health (#803) ───────────────────────────────── The two axes must
 # not bleed into each other: operational `error`/`skip` results (#122) feed *connection* health
+# (could DataQ reach the datasource?) and are invisible to *suite* health (is the data good?),
+# which is severity-only.
 
 
 def _suite_with_run(db: Any, owner: User, *, run_status: str, result_statuses: list[str]) -> Asset:

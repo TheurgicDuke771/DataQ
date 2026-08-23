@@ -31,7 +31,8 @@ jobs:
         include:
           - source: postgres:16-alpine
             target: ci-postgres
-          # ⚠ redis:7 IS A SECURITY GATE, NOT A STALENESS ARTEFACT (#980).
+          # ⚠ redis:7 IS A SECURITY GATE, NOT A STALENESS ARTEFACT (#980) — changing
+          # this tag is a conscious security decision, never a routine bump.
           - source: redis:7-alpine
             target: ci-redis
 

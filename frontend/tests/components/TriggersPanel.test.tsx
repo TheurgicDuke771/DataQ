@@ -361,5 +361,10 @@ describe('TriggersPanel — env near-miss badge (#1199)', () => {
   });
 
   // The "near-miss fetch fails without blocking the bindings list" case is covered in its own file
-  // (TriggersPanel.nearMissResilience.test.tsx): mixing a rejected `listEnvNearMisses` mock into th
+  // (TriggersPanel.nearMissResilience.test.tsx): mixing a rejected `listEnvNearMisses` mock into
+  // this file's other renders of the same component trips a vitest/RTL cross-test unhandled-
+  // rejection timing false-positive (confirmed via isolated bisection — the exact same test body
+  // passes reliably alone and fails only when another test in the same file also renders
+  // `TriggersPanel`), unrelated to the component's actual behaviour, which the isolated file
+  // proves out.
 });

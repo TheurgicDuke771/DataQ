@@ -61,8 +61,11 @@ class RunRead(ApiModel):
 
 class ResultRead(ApiModel):
     """One check's result within a run. `metric_value` is the SQL-aggregatable
-    badness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary
-    values (same fields the dry-run / probe already surface).
+    badness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary values.
+
+    `redaction` is tri-state (#424): full / partial / none — null means "no sample".
+    A "sampled" caveat must key on `sampling.sampled`, NOT rows < total_rows
+    (`total_rows` is legitimately null for head samples).
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -95,7 +98,8 @@ class CheckProgressRead(ApiModel):
 class RunProgressRead(ApiModel):
     """Compact live-progress view for polling: run lifecycle + per-check
     resolution + a status histogram + elapsed time. Lighter than the full
-    run+results detail.
+    run+results detail. `completed_checks == 0` on a running run is NORMAL
+    (checks resolve in batches, #318 — see `batched_pending`), not stuck.
     """
 
     run_id: uuid.UUID
@@ -177,7 +181,8 @@ def list_runs(
     if suite_id is not None:
         require_permission(db, suite_id, current_user.id, minimum="view")
     # A `status` outside the closed vocabulary is a 422, not a confident `200 []` + `X-Total-Count:
-    # 0` that reads as "no runs in that status" (#828.
+    # 0` that reads as "no runs in that status" (#828; the same gate `/pipeline_runs` and
+    # `/incidents` apply).
     svc.validate_read_filters(status=run_status)
     include_all = is_workspace_admin(current_user)
     # The header carries the total (#1108, matching #925's /assets shape) — the response BODY stays
@@ -302,8 +307,9 @@ def get_run(
     # Per-RESULT (tested_column, expectation_type) as of when each result was written (#1489) — not
     # the check's current state.
     context = svc.historical_check_context(db, results, checks)
-    # `Run` has no `results` relationship to validate a RunDetailRead from directly, so validate the
-    # run fields (as RunRead), graft the data-quality outcome (#571.
+    # `Run` has no `results` relationship to validate a RunDetailRead from directly, so validate
+    # the run fields (as RunRead), graft the data-quality outcome (#571 — else checks_total/passed
+    # stay at the 0/0 default here), and attach the separately-fetched, redaction-gated results.
     outcome = svc.check_outcome_counts(db, [run.id]).get(run.id)
     reads = [
         _result_read(
@@ -368,7 +374,12 @@ def cancel_run(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> RunRead:
-    """Cancel a non-terminal run. `edit`-gated (same capability as triggering)."""
+    """Cancel a non-terminal run. `edit`-gated (same capability as triggering).
+
+    Marks the run `cancelled` and best-effort revokes its Celery task; an
+    already-finished run (succeeded/failed/cancelled) -> 409. Cancel may RACE a
+    fast run to completion — a 200 is not a guarantee the run stopped.
+    """
     run = svc.get_run(db, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")

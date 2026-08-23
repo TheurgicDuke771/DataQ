@@ -188,6 +188,12 @@ class IcebergConnectionAdapter:
 
     # #1401 — the only type with two credential slots, and they have genuinely different
     # destinations, which is why this attribute is per-slot rather than one flat set: catalog →
+    # `catalog_uri`, the URI `inject_uri_password` injects the catalog DB password into. secret →
+    # `catalog_uri` **as well** (see below), `warehouse` (the storage root the credential
+    # authenticates against), `secret_property` (which property it fills, so repointing it hands
+    # the credential to a different subsystem), and `properties` — freeform, non-secret, and behind
+    # a UI key-value editor since #1181, where `s3.endpoint` or `adls.account-name` redirect
+    # storage just as effectively.
     destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {
         "catalog": ("catalog_uri",),
         "secret": ("catalog_uri", "warehouse", "properties", "secret_property"),

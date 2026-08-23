@@ -133,7 +133,8 @@ def test_upsert_db_error_returns_none_and_keeps_session_usable(
     """A GENUINE DB failure in the upsert is fail-soft AND rolls back only the savepoint: the call
     returns None and a *subsequent* write+commit on the same session still succeeds — proving
     the outer transaction wasn't left aborted (the bug the old `db_session.execute` monkeypatch
-    couldn't catch, since mocking the seam never put the real DBAPI connection int
+    couldn't catch, since mocking the seam never put the real DBAPI connection into a failed-
+    transaction state).
     """
     conn = _connection(db_session)  # resolvable identity
 

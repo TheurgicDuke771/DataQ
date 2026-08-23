@@ -1,5 +1,6 @@
 # ECS Fargate — api (internal, Cloud Map DNS), worker (Celery + embedded beat, min=max=1 desired
-# count.
+# count — mirrors the Azure Container App's min_replicas=1 rationale: it can't scale to zero
+# because it runs beat), and frontend (public via the ALB).
 
 resource "aws_ecs_cluster" "app" {
   name = "dataq-app"
@@ -155,13 +156,16 @@ resource "aws_ecs_task_definition" "api" {
         }
       }
     },
-    # ADOT collector sidecar (#1369, adot.tf) — OTLP in on localhost:4318, traces → X-Ray, OTel logs
-    # → CloudWatch.
+    # ADOT collector sidecar (#1369, adot.tf) — OTLP in on localhost:4318, traces → X-Ray,
+    # OTel logs → CloudWatch. NOTE ignore_changes below: changing this on a LIVE stack needs
+    # `tofu apply -replace` on the task definition + `update-service` — a plain apply never
+    # registers it (README, "Rolling task-definition changes").
     local.adot_container["api"],
   ])
 
   # CI rolls the live image out-of-band (new task-def revision via `aws ecs register-task-
   # definition` + `update-service`) — mirrors the Azure stack's `ignore_changes` on the container
+  # image, same reasoning.
   lifecycle {
     ignore_changes = [container_definitions]
   }
@@ -286,7 +290,9 @@ resource "aws_ecs_task_definition" "frontend" {
         },
       ]
       # Origin-secret guard (#1355): nginx 403s any request not carrying the header CloudFront
-      # stamps on origin fetches (cloudfront.tf).
+      # stamps on origin fetches (cloudfront.tf); injected as a secret. NOTE ignore_changes
+      # below: on a LIVE stack a plain apply never registers this — roll with `tofu apply
+      # -replace` + `update-service`, or the guard silently stays fail-open (#1380 class).
       secrets = [
         { name = "DATAQ_ORIGIN_SECRET", valueFrom = aws_secretsmanager_secret.origin_secret.arn },
       ]

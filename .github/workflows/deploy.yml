@@ -80,7 +80,10 @@ jobs:
       - name: Run DB migrations (alembic upgrade head) and wait for success
         run: |
           set -euo pipefail
-          # Roll the job's image on the template FIRST, then start it with no --image override.
+          # Roll the job's image on the template FIRST, then start with NO --image override:
+          # passing --image to `az containerapp job start` replaces the container template
+          # WITHOUT the IaC-configured command, so the execution runs the image's default
+          # CMD (uvicorn) instead of alembic and never migrates. Do not collapse these.
           source scripts/ci/retry.sh
           retry az containerapp job update \
             --name "${{ vars.MIGRATE_JOB_NAME }}" \
@@ -203,7 +206,8 @@ jobs:
           retry build_push
 
       # Retried + verified like the API/worker rolls; on the third failure one last attempt runs
-      # with --debug so the ARM response the extension masks (KeyError: 'properties', #539.
+      # with --debug so the ARM response the extension masks (KeyError: 'properties', #539 —
+      # Deploys #1/#2) finally lands in the log.
       - name: Deploy frontend
         run: |
           set -euo pipefail

@@ -224,6 +224,7 @@ function RunsTab({
     if (suiteId !== 'all' && r.suite_id !== suiteId) return false;
     // Keep runs with unknown env/datasource visible under any filter — a shared-suite viewer may
     // lack access to the underlying connection (meta is null), and listRuns is already suite-
+    // scoped.
     const meta = suiteMeta.get(r.suite_id);
     if (env !== 'all' && meta?.env != null && meta.env !== env) return false;
     if (category !== 'all' && meta?.category != null && meta.category !== category) return false;

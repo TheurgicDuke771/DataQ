@@ -1279,6 +1279,7 @@ def test_a_range_reader_coalesces_small_sequential_reads(monkeypatch: pytest.Mon
 
 # ── the range seam AT the driver boundary (#882) ── Every other IO primitive in this module has a
 # test that stubs one level BELOW it (`_s3_client` / `_blob_service`) and asserts the real call
+# shape.
 
 
 class _RangeS3Stub:

@@ -1,4 +1,6 @@
-"""week3 schema seam: check.kind + severity thresholds + metric_value/duration_ms + status tiers"""
+"""week3 schema seam: check.kind + severity thresholds + metric_value/duration_ms + status tiers
+The one-shot Week-3 schema seam (CLAUDE.md §5/§10).
+"""
 
 from collections.abc import Sequence
 

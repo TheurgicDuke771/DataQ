@@ -452,7 +452,7 @@ def test_custom_sql_row_count_feeds_severity_metric_value(
     `severity.extract_metric` the same way the Snowflake-shaped path does
     (`test_gx_runner.py::test_to_suite_outcome_reads_custom_sql_row_count_as_observed_value`) —
     proving the metric is populated identically regardless of which datasource ran the check,
-    per the issue's
+    per the issue's "no per-datasource divergence" requirement.
     """
     runner = _uc_runner()
     _sqlite_batch_seam(runner, tmp_path, rows=[1, 4, 5], monkeypatch=monkeypatch)

@@ -18,7 +18,8 @@ test.describe('Suite triggers panel', () => {
     const pipelineId = `e2e_pl_${Date.now()}`;
 
     // Provider + Env are antd Selects: focus the combobox, wait for the dropdown, then Enter
-    // accepts the auto-highlighted FIRST option (an ArrowDown first would move to the second.
+    // accepts the auto-highlighted FIRST option (an ArrowDown first would move to the second — rc-
+    // select pre-highlights option 0 when nothing is selected).
     const provider = panel.getByLabel('Provider');
     await provider.click();
     await expect(page.locator('.ant-select-dropdown').last()).toBeVisible();

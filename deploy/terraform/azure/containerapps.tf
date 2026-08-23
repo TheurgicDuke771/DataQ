@@ -181,7 +181,9 @@ resource "azurerm_container_app" "worker" {
 }
 
 # ── Migrate Job (alembic upgrade head) ─────────────────────────────────────── Manual-trigger job
-# the Deploy workflow runs BEFORE rolling the apps (additive, backward-compatible migrations.
+# the Deploy workflow runs BEFORE rolling the apps (additive, backward-compatible migrations —
+# CLAUDE.md). alembic.ini's script_location is relative to backend/, so cd there first (mirrors
+# docker-compose's migrate svc).
 resource "azurerm_container_app_job" "migrate" {
   name                         = "dataq-app-migrate"
   container_app_environment_id = data.azurerm_container_app_environment.shared.id

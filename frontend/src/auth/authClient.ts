@@ -61,7 +61,10 @@ export async function logout(): Promise<void> {
   if (!mgr) return;
   if (authConfig.logoutStyle === 'cognito') {
     // Cognito's /logout is not RP-Initiated-Logout-conformant (#1364): it needs client_id +
-    // logout_uri (exactly matching a registered logout URL) and 400s "Client does not exist" on the
+    // logout_uri (exactly matching a registered logout URL) and 400s "Client does not exist" on
+    // the standard id_token_hint / post_logout_redirect_uri that signoutRedirect sends — leaving
+    // the user on a raw Cognito error page with the hosted-UI session still alive (a sign-in right
+    // after silently re-authenticates the old user).
     await mgr.removeUser();
     let endSession: string | undefined;
     try {

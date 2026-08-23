@@ -46,7 +46,8 @@ class OrchestrationProvider(Protocol):
 
     provider: str
     # The `connections.config` JSONB key whose value a `RunUpdate.resource_name` is matched against
-    # to attribute a run to an orchestrator connection (`factory_name` for ADF.
+    # to attribute a run to an orchestrator connection (`factory_name` for ADF, `base_url` for
+    # Airflow).
     resource_config_key: str
 
     def parse_event(self, payload: bytes, headers: Mapping[str, str]) -> RunUpdate | AlertPing:

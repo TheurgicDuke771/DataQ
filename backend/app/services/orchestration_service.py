@@ -262,6 +262,8 @@ def _trigger_suites(
     for binding in bindings:
         # Atomic dedup: the partial unique index `uq_runs_suite_triggered_by` (#308) + ON CONFLICT
         # DO NOTHING makes a concurrent second ingestion of the same pipeline-run event (webhook +
+        # poll, or poll + gap-recovery) a graceful no-op instead of a double-trigger or an
+        # IntegrityError.
         run = session.scalars(
             pg_insert(Run)
             .values(

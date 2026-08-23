@@ -812,7 +812,9 @@ def test_read_dataframe_parquet_sample_of_an_empty_file_returns_typed_empty_fram
     assert "pyarrow" in str(df.dtypes["a"])
 
 
-# ── list_file_columns (header/footer-only introspection, #474) ── `_patch_object` (defined above.
+# ── list_file_columns (header/footer-only introspection, #474) ── `_patch_object` (defined above,
+# alongside the `_read_dataframe` tests it now shares with the #1001 Parquet-sampling tests) covers
+# this section too.
 
 
 def test_list_file_columns_csv_reads_header_only(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1060,7 +1062,10 @@ def test_derive_policy_natural_key_of_emails_is_pii_not_identifier() -> None:
     assert policy["pii_columns"] == ["USER_ID"]
 
 
-# ── Iceberg profiler + list-columns (native read.
+# ── Iceberg profiler + list-columns (native read, #721) ── The iceberg load seam
+# (`load_iceberg_table`) is monkeypatched with a fake Table exposing `.schema()` (the pre-scan
+# column-validation fold, #721 code review) and a call-tracking `.scan()` (the projected/limited
+# read) — never live pyiceberg.
 
 
 class _FakeIcebergSchemaField:
@@ -1266,7 +1271,8 @@ def test_profile_iceberg_missing_column_returns_422_without_scanning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Pre-scan validation (#721 code review): an all-invalid column list must 422 straight from the
-    # table's schema — never falling back to a `("*",)` full scan first (the old behaviour.
+    # table's schema — never falling back to a `("*",)` full scan first (the old behaviour,
+    # scanning every column before the 422).
     from backend.app.services import profile_service as svc
 
     table = _FakeIcebergTable(pd.DataFrame({"a": [1]}))

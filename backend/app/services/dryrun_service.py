@@ -50,7 +50,8 @@ class DryRunFailedError(DataQError):
 @dataclass(frozen=True)
 class DryRunOutcome:
     # pass | warn | fail | critical, plus the operational statuses (#122/#593): `error`
-    # (unevaluable) and `skip` (precondition unmet — an anomaly preview.
+    # (unevaluable) and `skip` (precondition unmet — an anomaly preview, which has no check row and
+    # so can never have learned a baseline).
     status: str
     metric_value: Decimal | None
     observed_value: dict[str, Any] | None

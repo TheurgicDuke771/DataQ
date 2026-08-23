@@ -350,6 +350,7 @@ def test_binding_for_other_pipeline_does_not_trigger(db_session: Any) -> None:
 
 # ── #1186: env-mismatch near-miss signal ─────────────────────────────────── Confirmed live: two
 # orchestrator connections sharing one resource across envs made a succeeded run attribute to the
+# "wrong" env, and an enabled binding scoped to the other env never fired — silently.
 
 
 def test_env_mismatch_logs_near_miss_and_writes_health_row(
@@ -540,7 +541,8 @@ def test_near_miss_record_failure_is_fail_open_and_does_not_break_ingestion(
     """A DB error writing the diagnostic `workspace_health` row must never break the ingest path
     itself (mirrors `_dispatch_lineage_refresh`'s fail-open discipline) — otherwise a webhook
     whose pipeline_run was already correctly upserted would 500 back to the caller (ADR 0006:
-    ack well-formed events), or a poll batch would abort mid-loop and silently drop ev
+    ack well-formed events), or a poll batch would abort mid-loop and silently drop every OTHER
+    update it still had to process.
     """
     from backend.app.services import workspace_health_service
 
@@ -769,7 +771,9 @@ def test_polled_running_then_succeeded_is_not_skipped(
 
 
 # ── lineage refresh hook (#759): dbt success dispatches an async refresh ─────── The refresh moved
-# OFF the webhook/poll path into the `refresh_dbt_lineage` Celery task (fetch+parse+refresh in the w
+# OFF the webhook/poll path into the `refresh_dbt_lineage` Celery task (fetch+parse+refresh in the
+# worker, own session) — so these hook tests assert the *dispatch* (send_task with the right args),
+# not the parse/refresh itself.
 
 
 class _SendTaskSpy:

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# Bring up the backend half of the email-OTP browser lane (ADR 0032, #736). scripts/e2e-otp-stack.sh
-# Starts.
+# Bring up the backend half of the email-OTP browser lane (ADR 0032, #736).
+# Starts, in order (the order is load-bearing): 1. the SMTP sink on :1025/:1080
+# (NOTE: the compose stack's mailpit also binds 127.0.0.1:1025 — set OTP_SMTP_PORT
+# or stop mailpit first; CI has no compose stack), 2. a second api (uvicorn, OTP
+# mode) on :8100 — auth mode is picked at IMPORT time, so one process cannot serve
+# both lanes. The api must trust the sink's self-signed cert BEFORE boot (#1146),
+# hence one script. Optional env (DATABASE_URL, OTP_SMTP_PORT, ...) documented in
+# frontend/e2e-otp/README.md.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

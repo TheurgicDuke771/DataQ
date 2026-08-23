@@ -1,5 +1,7 @@
 # Secrets Manager has two distinct owners, matching the Key Vault split on the Azure stack (boot-
-# critical secrets are inline Container App secrets there, NOT Key Vault references.
+# critical secrets are inline Container App secrets there, NOT Key Vault references — same
+# reasoning applies here): - Infra-owned bootstrap secrets (DATABASE_URL, REDIS_URL) — created by
+# THIS Terraform stack, referenced directly by ARN in each ECS task definition's `secrets` block.
 
 resource "aws_secretsmanager_secret" "database_url" {
   name = "dataq-app-infra/database-url"
@@ -20,7 +22,9 @@ resource "aws_secretsmanager_secret_version" "redis_url" {
 }
 
 # The app's own runtime grant: get/put/create/delete/list on everything under its prefix, plus
-# ListSecrets (unavoidably unscoped.
+# ListSecrets (unavoidably unscoped — the List action family has no resource-level restriction in
+# Secrets Manager; AwsSecretsManagerStore narrows this itself with a strict client-side prefix
+# check — see backend/app/core/secrets.py's list_secrets docstring).
 data "aws_iam_policy_document" "app_secrets_rw" {
   statement {
     sid = "AppSecretsReadWrite"

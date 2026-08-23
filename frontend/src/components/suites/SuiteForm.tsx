@@ -127,6 +127,7 @@ export function SuiteForm({
     }
     // The backend update treats a null target as "leave unchanged" (it never clears a target back
     // to NULL), so clearing the fields on a suite that has a target would silently keep the old
+    // one. Say so rather than no-op.
     const hadTarget = isEdit && !!suite.target && Object.keys(suite.target).length > 0;
     if (hadTarget && target === null) {
       message.error('A run target can’t be removed once set — edit it to point elsewhere instead.');
@@ -462,6 +463,7 @@ function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Monotonic token so a slow earlier request can't overwrite a newer one's result (mirrors
   // SharePanel's directory-search debounce); only ever read inside a callback (never during
+  // render), so it's exempt from the refs-during-render rule.
   const token = useRef(0);
   useEffect(
     () => () => {

@@ -257,7 +257,9 @@ def build_anomaly_executor(
         payload = build_score_payload(value, priors, params)
         if row is not None:
             # BOTH timestamps, because they answer different questions and only one of them moves:
-            # `captured_at` is when learning STARTED (the row's first capture — no `onupdate`.
+            # `captured_at` is when learning STARTED (the row's first capture — no `onupdate`,
+            # never bumped), `updated_at` is when the history THIS run was scored against was last
+            # written.
             payload["baseline_captured_at"] = row.captured_at.isoformat()
             payload["baseline_updated_at"] = row.updated_at.isoformat()
         if persist:

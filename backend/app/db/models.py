@@ -951,8 +951,8 @@ class WorkspaceHealth(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
-# ── Audit events (ADR 0041 phase 1, #1318) ───────────────────────────────────── `config` = a
-# principal changed configuration (phase 1); `access` = a principal READ regulated data (phase 2.
+# ── Audit events (ADR 0041 phase 1, #1318) ───────────────────────────────────── Discriminator on
+# `audit_events.action_class`. `config` = a principal changed configuration (phase 1).
 AUDIT_ACTION_CLASSES = ("config", "access")
 
 #: Deliberately NO `system` value (ADR 0041 §2.1): machine writes are out of scope, and a `system`

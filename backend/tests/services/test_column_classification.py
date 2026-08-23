@@ -184,7 +184,10 @@ class TestIssue1182FalsePositives:
     )
     def test_person_context_beats_non_person_entity_qualifier(self, name: str) -> None:
         # Review-caught regression: the entity-qualifier flip (SAFE when an address token or bare
-        # `name` is paired with a `_NON_PERSON_ENTITIES` token like `location`) must NOT fire when a
+        # `name` is paired with a `_NON_PERSON_ENTITIES` token like `location`) must NOT fire when
+        # a person-context token (customer/delivery/ shipping/recipient/pickup/…) is also present —
+        # `location` alone is ambiguous, and a co-occurring person-context token resolves that
+        # ambiguity toward the conservative PII default, not away from it.
         assert classify_column(name) is ColumnClass.PII
 
 
@@ -263,7 +266,8 @@ class TestValueSignalSummary:
 
     def test_classify_column_prefers_summary_email_ratio_over_the_capped_window(self) -> None:
         # `user_id` is an id-NAMED column — the value signal is the ONLY thing that can override an
-        # id-shaped name back to PII (the natural-key-holding-emails guard.
+        # id-shaped name back to PII (the natural-key-holding-emails guard, see
+        # `TestValueSignal.test_natural_key_holding_emails_is_pii`).
         window = [f"user{i}@x.com" for i in range(8)] + [f"ref-{i}" for i in range(12)]
         assert len(window) == 20
         window_ratio = sum("@" in v for v in window) / len(window)
@@ -331,7 +335,11 @@ class TestValueSignalSummary:
 
     def test_classify_column_rejects_a_summary_with_a_sub_count_over_n(self) -> None:
         # Review finding: `_classify_counts` divides each sub-count by `n` unguarded, so an
-        # internally-inconsistent summary (corrupted JSONB, a future writer bug.
+        # internally-inconsistent summary (corrupted JSONB, a future writer bug, a hand-edited row)
+        # with a sub-count INFLATED past `n` must be rejected rather than trusted — otherwise a
+        # bogus id_shaped_count/distinct_count both > n forces a >=0.8 ratio no matter what the
+        # real population looked like, which could flip a genuinely-PII column to IDENTIFIER and
+        # show it.
         window = ["ref-1", "ref-2", "ref-3"]
         baseline = classify_column("ext_val", window)
         bogus = {

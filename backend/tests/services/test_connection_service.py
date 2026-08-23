@@ -976,7 +976,7 @@ def test_update_writes_catalog_secret_before_the_primary_secret(db_session: Any)
     """On a two-secret PATCH, the catalog write must happen BEFORE the primary rotation: neither
     store write is part of the DB transaction, so if the CATALOG write fails after the primary
     already succeeded, the connection would be silently running on an unverified new primary
-    credential the caller was told 502'd (no rollback can undo an already-live vault w
+    credential the caller was told 502'd (no rollback can undo an already-live vault write).
     """
     conn = svc.create_connection(
         db_session,
@@ -1018,7 +1018,8 @@ def test_config_only_update_preserves_catalog_secret_name(db_session: Any) -> No
     """`update_connection`'s `config` param wholesale-REPLACES `conn.config` — the catalog secret's
     ref lives INSIDE config (no column of its own), so a config-only PATCH that doesn't re-send
     `catalog_secret_name` must not drop it: that key is server-owned bookkeeping, never
-    something a caller is expected to round-trip, exactly like `secret_ref` (its own co
+    something a caller is expected to round-trip, exactly like `secret_ref` (its own column) is
+    never touched by a config-only PATCH.
     """
     store = FakeSecretStore()
     conn = svc.create_connection(
@@ -1035,7 +1036,8 @@ def test_config_only_update_preserves_catalog_secret_name(db_session: Any) -> No
     ref = conn.config["catalog_secret_name"]
 
     # A config-only update that changes something unrelated and does NOT resend catalog_secret_name
-    # — the realistic caller shape (the frontend seeds the whole `connection.config`.
+    # — the realistic caller shape (the frontend seeds the whole `connection.config`, but a direct
+    # API caller need not).
     svc.update_connection(
         db_session,
         conn.id,

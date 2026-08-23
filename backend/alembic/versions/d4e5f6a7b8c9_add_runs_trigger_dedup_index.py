@@ -1,4 +1,7 @@
-"""add partial unique index on runs(suite_id, triggered_by) for orchestration markers"""
+"""add partial unique index on runs(suite_id, triggered_by) for orchestration markers Revision ID:
+d4e5f6a7b8c9 Revises: c3d4e5f6a7b8 Create Date: 2026-06-29 12:00:00.000000+00:00 Closes the
+trigger-dedup race (#308).
+"""
 
 from collections.abc import Sequence
 
@@ -12,6 +15,7 @@ depends_on: str | Sequence[str] | None = None
 
 # Literal SQL (no interpolation) — the orchestration-marker predicate below is kept in sync with
 # ``orchestration_service._ORCH_TRIGGER_PREDICATE`` and the model's ``postgresql_where`` on the
+# `uq_runs_suite_triggered_by` index.
 
 
 def upgrade() -> None:

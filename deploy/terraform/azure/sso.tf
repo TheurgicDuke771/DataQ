@@ -50,6 +50,7 @@ resource "azuread_application" "spa" {
   single_page_application {
     # Azure AD requires a trailing slash when there's no path segment; the OIDC client's
     # redirect_uri is `${window.location.origin}/` to match exactly
+    # (frontend/src/auth/authClient.ts, generic OIDC per ADR 0028).
     redirect_uris = ["${local.frontend_url}/"]
   }
 

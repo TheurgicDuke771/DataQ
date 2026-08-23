@@ -42,7 +42,8 @@ export function CheckNew() {
   const configValues = Form.useWatch('config', form) as Record<string, unknown> | undefined;
   const { run, loading: submitting } = useAsyncAction('Create failed');
   // Load the suite + its connection together: the run target (#215) drives the dry-run preview's
-  // table/schema, and the connection type gates the Custom-SQL category (ADR 0019.
+  // table/schema, and the connection type gates the Custom-SQL category (ADR 0019 — SQL
+  // datasources only).
   const { state } = useAsyncData(async () => {
     if (!suiteId) throw new Error('no suite');
     const suite = await getSuite(suiteId);

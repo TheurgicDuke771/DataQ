@@ -1,4 +1,22 @@
-"""A throwaway SMTP sink for the email-OTP E2E lane (ADR 0032, #736)."""
+"""A throwaway SMTP sink for the email-OTP E2E lane (ADR 0032, #736).
+
+Does real STARTTLS with a self-signed cert (export AUTH_EMAIL_CA_BUNDLE=<printed
+path> for the api) so the genuine mailer path is exercised, never mocked. Binds
+loopback only, accepts any credentials, serves captured mail in the clear — the
+point of the tool, and why it must never run anywhere but a test host (present in
+the runtime image but never invoked by anything).
+
+Usage::
+
+    python -m backend.scripts.e2e_otp_smtp_sink --smtp-port 1025 --http-port 1080
+
+HTTP API::
+
+    GET    /code?email=<addr>   -> {"code": "123456"} | 404 when nothing captured
+    GET    /messages            -> every captured message
+    DELETE /messages            -> drop them all (per-spec isolation)
+    GET    /healthz             -> {"status": "ok"} once both listeners are up
+"""
 
 from __future__ import annotations
 

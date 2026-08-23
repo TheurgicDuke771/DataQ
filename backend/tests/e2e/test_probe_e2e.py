@@ -87,7 +87,8 @@ def test_probe_round_trip_over_real_broker(monkeypatch: pytest.MonkeyPatch) -> N
         run_id = run.id
 
         # Route this run to a unique queue that only our embedded worker consumes, so a developer's
-        # docker-compose `worker` (on the default queue.
+        # docker-compose `worker` (on the default queue, same broker) can't steal the task and fail
+        # it with the real Snowflake adapter.
         queue = f"e2e-{uuid.uuid4()}"
         with start_worker(celery_app, perform_ping_check=False, loglevel="info", queues=[queue]):
             request_id_var.set("e2e-REQ")

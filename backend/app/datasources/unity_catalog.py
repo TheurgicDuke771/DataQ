@@ -425,6 +425,7 @@ class UnityCatalogCheckRunner:
             )
             # A check on a column that is ALSO an index column runs without the index request: the
             # locator query would select the column twice and Databricks' arrow layer refuses
+            # ("Can't unify schema with duplicate field names" — live-found, #1532).
             index_lower = {c.lower() for c in index_columns or ()}
             clash_set = {
                 i

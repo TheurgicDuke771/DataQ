@@ -199,8 +199,8 @@ export function SeverityThresholdFields({ monitor }: { monitor?: MonitorThreshol
         : Promise.reject(new Error('Set a fail or critical threshold'));
     },
   });
-  // #568: mirror the backend's ordering guard (`check_service. validate_threshold_ordering`) so an
-  // inverted set (e.g. warn=90/fail=50/ critical=10) 422s here instead of round-tripping to the ser
+  // #568: mirror the backend's ordering guard (`check_service.validate_threshold_ordering`)
+  // so an inverted set (e.g. warn=90/fail=50/critical=10) 422s here instead of round-tripping.
   const failOrderRule: Rule = ({ getFieldValue }) => ({
     validator: () => {
       const warn = getFieldValue('warn_threshold');

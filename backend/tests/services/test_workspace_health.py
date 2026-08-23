@@ -275,7 +275,9 @@ class TestDeliveredFirst:
 
 
 # ── #1186: trigger-binding env-mismatch near-miss marker ───────────────────── Unit-level coverage
-# of `record_trigger_binding_env_near_miss` itself (the integration path.
+# of `record_trigger_binding_env_near_miss` itself (the integration path — reached from
+# `orchestration_service._trigger_suites` on a genuine env mismatch — is covered in
+# test_orchestration_service.py).
 
 
 class TestTriggerBindingEnvNearMiss:

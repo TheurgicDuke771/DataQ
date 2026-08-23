@@ -18,7 +18,9 @@ function ConfigTextField({
 }) {
   const optional = field.optional && !forceRequired;
   if (field.type === 'toggle') {
-    // A boolean config flag (e.g.
+    // A boolean config flag (e.g. `inventory_sync`, ADR 0040). `valuePropName` wires the Switch's
+    // `checked` into the form value; an untouched toggle simply omits the key, which the backend
+    // defaults to false.
     return (
       <Form.Item
         name={['config', field.name]}
@@ -205,6 +207,8 @@ export function ConnectionTypeFields({
   const activeAuth = activeAuthOption(type, { auth_type: authType });
   // Watches the WHOLE config (not just one field, unlike `authType` above) —
   // `secondSecret.showWhen` is a predicate over arbitrary config, and Iceberg's is keyed on
+  // `catalog_type`, but the spec is deliberately not narrowed to that one field so a future type's
+  // `showWhen` isn't boxed into the same shape.
   const config = Form.useWatch('config', form) as Record<string, unknown> | undefined;
 
   return (
