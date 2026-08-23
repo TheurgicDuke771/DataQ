@@ -24,6 +24,19 @@
   --dq-motion-base: 160ms;
 }
 
+:root[data-theme='dark'] {
+  --dq-primary: #818cf8;
+  --dq-primary-soft: #3730a3;
+  --dq-selected-bg: rgba(129, 140, 248, 0.16);
+  --dq-row-hover: rgba(129, 140, 248, 0.08);
+  --dq-canvas: #0d1117;
+  --dq-border: #30363d;
+  --dq-ink: #e6edf3;
+
+  --dq-shadow-rest: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --dq-shadow-hover: 0 8px 20px rgba(0, 0, 0, 0.6);
+}
+
 html,
 body,
 #root {
@@ -43,6 +56,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: var(--dq-canvas);
+  color: var(--dq-ink);
 }
 
 /* ── Focus ring ────────────────────────────────────────────────────────────

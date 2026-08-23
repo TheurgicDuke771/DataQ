@@ -1,16 +1,16 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App as AntApp, ConfigProvider } from 'antd';
 import { BrowserRouter } from 'react-router-dom';
 
 import { App } from './App';
+import { ThemedShell } from './ThemedShell';
 import { AuthProvider } from './auth/AuthProvider';
 import { CurrentUserProvider } from './auth/CurrentUserProvider';
 import { MeProvider } from './auth/MeProvider';
 import { OtpSessionProvider } from './auth/OtpSessionProvider';
 import { completeSigninIfCallback } from './auth/authClient';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { appTheme } from './theme';
+import { ThemeModeProvider } from './themeMode/ThemeModeProvider';
 // Self-hosted fonts (visual-fidelity pass, ADR 0022) — Inter for UI text, JetBrains Mono for
 // code/SQL/identifiers.
 import '@fontsource/inter/latin-400.css';
@@ -33,8 +33,8 @@ async function bootstrap() {
   await completeSigninIfCallback();
   createRoot(rootEl).render(
     <StrictMode>
-      <ConfigProvider theme={appTheme}>
-        <AntApp>
+      <ThemeModeProvider>
+        <ThemedShell>
           <ErrorBoundary>
             <AuthProvider>
               {/* OTP session (ADR 0032) — above CurrentUserProvider, which derives
@@ -51,8 +51,8 @@ async function bootstrap() {
               </OtpSessionProvider>
             </AuthProvider>
           </ErrorBoundary>
-        </AntApp>
-      </ConfigProvider>
+        </ThemedShell>
+      </ThemeModeProvider>
     </StrictMode>,
   );
 }
