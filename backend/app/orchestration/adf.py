@@ -10,7 +10,12 @@ from typing import Any, ClassVar
 import httpx
 from pydantic import BaseModel, ConfigDict
 
-from backend.app.orchestration.base import AlertPing, MalformedEventError, RunUpdate
+from backend.app.orchestration.base import (
+    AlertPing,
+    MalformedEventError,
+    RunUpdate,
+    WebhookAuthDescriptor,
+)
 
 # Azure AD OAuth2 endpoint + ARM management host. The client-credentials grant
 # against this scope yields a bearer token usable for the factory GET below.
@@ -122,6 +127,11 @@ class AdfProvider:
 
     provider = "adf"
     resource_config_key = "factory_name"
+    # Shared-secret-in-URL auth scheme — ADR 0006.
+    webhook_auth = WebhookAuthDescriptor(
+        mode="url_token",
+        secret_setting="adf_webhook_secret_name",  # noqa: S106  # nosec B106 -- Settings attr name, not a secret
+    )
 
     def parse_event(self, payload: bytes, headers: Mapping[str, str]) -> RunUpdate | AlertPing:
         try:

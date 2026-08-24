@@ -19,7 +19,7 @@ from backend.app.core.s3_endpoint import (
     normalize_addressing_style,
     normalize_endpoint_url,
 )
-from backend.app.orchestration.base import MalformedEventError, RunUpdate
+from backend.app.orchestration.base import MalformedEventError, RunUpdate, WebhookAuthDescriptor
 
 log = get_logger(__name__)
 
@@ -226,6 +226,11 @@ class DbtProvider:
 
     provider = "dbt"
     resource_config_key = "project_name"
+    # Signed-callback (HMAC) auth scheme — ADR 0029.
+    webhook_auth = WebhookAuthDescriptor(
+        mode="hmac",
+        secret_setting="dbt_webhook_secret_name",  # noqa: S106  # nosec B106 -- Settings attr name, not a secret
+    )
 
     def parse_event(self, payload: bytes, headers: Mapping[str, str]) -> RunUpdate:
         try:

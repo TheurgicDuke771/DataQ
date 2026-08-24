@@ -10,7 +10,7 @@ from typing import Any, ClassVar, Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from backend.app.orchestration.base import MalformedEventError, RunUpdate
+from backend.app.orchestration.base import MalformedEventError, RunUpdate, WebhookAuthDescriptor
 
 # Lightest authenticated stable-REST call — proves reachability + auth + that the
 # REST API is enabled, without listing or mutating anything.
@@ -104,6 +104,11 @@ class AirflowProvider:
 
     provider = "airflow"
     resource_config_key = "base_url"
+    # Signed-callback (HMAC) auth scheme — ADR 0007.
+    webhook_auth = WebhookAuthDescriptor(
+        mode="hmac",
+        secret_setting="airflow_webhook_secret_name",  # noqa: S106  # nosec B106 -- Settings attr name, not a secret
+    )
 
     def parse_event(self, payload: bytes, headers: Mapping[str, str]) -> RunUpdate:
         try:

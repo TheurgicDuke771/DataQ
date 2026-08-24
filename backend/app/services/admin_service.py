@@ -29,6 +29,7 @@ from backend.app.db.models import (
     Suite,
     User,
 )
+from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import audit_service, otp_service
 from backend.app.services.suite_authz import OWNER
 
@@ -233,46 +234,38 @@ def webhook_configs(
         names_by_provider.setdefault(conn.type, []).append(conn.name)
 
     settings = get_settings()
-    # The HMAC-callback providers share a row shape; only the signing key and the ADR differ.
-    hmac_providers: dict[str, tuple[str, str]] = {
-        "airflow": (settings.airflow_webhook_secret_name, "ADR 0007"),
-        "dbt": (settings.dbt_webhook_secret_name, "ADR 0029"),
-    }
     rows: list[WebhookConfigRow] = []
     for provider in ORCHESTRATION_PROVIDERS:
         names = names_by_provider.get(provider, [])
         if not names:
             continue
-        if provider == "adf":
-            token = _safe_secret(secret_store, settings.adf_webhook_secret_name)
+        desc = get_orchestration_provider(provider).webhook_auth
+        secret_name = desc.secret_name(settings)
+        if desc.mode == "url_token":
+            token = _safe_secret(secret_store, secret_name)
             # URL-encode the secret: the receiver reads `token` URL-decoded.
-            token_param = (
-                quote(token, safe="")
-                if token
-                else f"<set {settings.adf_webhook_secret_name} in Key Vault>"
-            )
+            token_param = quote(token, safe="") if token else f"<set {secret_name} in Key Vault>"
             rows.append(
                 WebhookConfigRow(
-                    provider="adf",
-                    auth="Shared secret in the URL (?token=…), constant-time checked — ADR 0006",
-                    inbound_url=f"{base}/api/v1/orchestration/events/adf?token={token_param}",
+                    provider=provider,
+                    auth=desc.description,
+                    inbound_url=f"{base}/api/v1/orchestration/events/{provider}?token={token_param}",
                     token_configured=bool(token),
                     signing_secret_name=None,
                     connection_names=names,
                 )
             )
-        else:  # HMAC-signed callback providers (airflow, dbt)
-            signing_secret_name, adr = hmac_providers[provider]
+        else:  # HMAC-signed callback providers (airflow, dbt, …)
             # Honest configured-state: a hardcoded True here hid an unprovisioned
             # signing key until callbacks started failing auth at the receiver.
-            signing_key = _safe_secret(secret_store, signing_secret_name)
+            signing_key = _safe_secret(secret_store, secret_name)
             rows.append(
                 WebhookConfigRow(
                     provider=provider,
-                    auth=f"HMAC-SHA256 signature header (X-DataQ-Signature) — {adr}",
+                    auth=desc.description,
                     inbound_url=f"{base}/api/v1/orchestration/events/{provider}",
                     token_configured=bool(signing_key),
-                    signing_secret_name=signing_secret_name,
+                    signing_secret_name=secret_name,
                     connection_names=names,
                 )
             )
