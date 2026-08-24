@@ -274,7 +274,7 @@ def test_admin_webhooks_dbt_row_is_not_mislabeled_as_airflow(
     assert dbt["inbound_url"].endswith("/api/v1/orchestration/events/dbt")
     assert "token=" not in dbt["inbound_url"]
     assert dbt["signing_secret_name"] == "dbt-webhook-secret"
-    assert "ADR 0029" in dbt["auth"]
+    assert "HMAC-SHA256" in dbt["auth"]
     assert "analytics-dbt" in dbt["connection_names"]
 
 

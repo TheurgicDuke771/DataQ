@@ -5,9 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 from backend.app.core.errors import DataQError
+
+if TYPE_CHECKING:
+    from backend.app.core.config import Settings
 
 
 class MalformedEventError(DataQError):
@@ -40,6 +43,27 @@ class AlertPing:
     fired_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class WebhookAuthDescriptor:
+    """A provider's inbound-webhook auth scheme.
+
+    ``secret_setting`` names the `Settings` attribute holding the KV secret NAME
+    (never the secret value itself) for this provider's webhook.
+    """
+
+    mode: Literal["url_token", "hmac"]
+    secret_setting: str
+
+    def secret_name(self, settings: Settings) -> str:
+        return getattr(settings, self.secret_setting)  # type: ignore[no-any-return]
+
+    @property
+    def description(self) -> str:
+        if self.mode == "url_token":
+            return "Shared secret in the URL (?token=…), constant-time checked"
+        return "HMAC-SHA256 signature header (X-DataQ-Signature)"
+
+
 @runtime_checkable
 class OrchestrationProvider(Protocol):
     """Provider-agnostic monitoring interface — ADF reference impl, Airflow next."""
@@ -49,6 +73,7 @@ class OrchestrationProvider(Protocol):
     # to attribute a run to an orchestrator connection (`factory_name` for ADF, `base_url` for
     # Airflow).
     resource_config_key: str
+    webhook_auth: WebhookAuthDescriptor
 
     def parse_event(self, payload: bytes, headers: Mapping[str, str]) -> RunUpdate | AlertPing:
         """Authenticated webhook body → normalised `RunUpdate`, or an
