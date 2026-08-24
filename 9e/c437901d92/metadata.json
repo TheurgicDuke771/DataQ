@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "9ec437901d92",
+  "strategy": "manual-commit",
+  "branch": "refactor/682-webhook-auth-provider-seam",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/services/test_orchestration_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9e/c437901d92/0/metadata.json",
+      "transcript": "/9e/c437901d92/0/full.jsonl",
+      "compact_transcript": "/9e/c437901d92/0/transcript.jsonl",
+      "content_hash": "/9e/c437901d92/0/content_hash.txt",
+      "prompt": "/9e/c437901d92/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 22236,
+    "cache_read_tokens": 3480738,
+    "output_tokens": 3479,
+    "api_call_count": 15
+  }
+}

@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bqp3k4o3c</task-id>
+<tool-use-id>toolu_01PJo9G6sqN8beeT695PXFou</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/6b8e0cc3-f602-481d-a3ab-55d2edfb2027/tasks/bqp3k4o3c.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch CI checks on the PR until complete" completed (exit code 0)</summary>
+</task-notification>
