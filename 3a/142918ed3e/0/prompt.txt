@@ -1,0 +1,13 @@
+Hey, let's pickup #682
+
+---
+
+I don't think we should keep an ADR number in code, what is a better way to handle this?
+
+---
+
+trim down the comments [internal decisions nott needed to be in comment]
+
+---
+
+there is just 1 test file modified, are you sure test for all new changes are covered?
