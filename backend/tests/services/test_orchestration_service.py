@@ -9,7 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from backend.app.db.models import Connection, PipelineRun, Run, Suite, TriggerBinding, User
+from backend.app.orchestration.adf import AdfProvider
 from backend.app.orchestration.base import RunUpdate
+from backend.app.orchestration.dbt import DbtProvider
 from backend.app.services.orchestration_service import (
     ingest_event,
     ingest_polled_runs,
@@ -129,6 +131,7 @@ class _FakeProvider:
 
     provider = "adf"
     resource_config_key = "factory_name"
+    webhook_auth = AdfProvider.webhook_auth
 
     def __init__(
         self,
@@ -802,6 +805,7 @@ class _FakeDbtProvider:
 
     provider = "dbt"
     resource_config_key = "project_name"
+    webhook_auth = DbtProvider.webhook_auth
 
     def __init__(self, manifest: bytes | None = b"{}") -> None:
         self._manifest = manifest
