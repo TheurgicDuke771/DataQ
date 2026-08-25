@@ -1,0 +1,6 @@
+Hey, 
+Let pick up the G2 complience realted issues. 
+check the current state of repo. 
+do research and check the filled issues. 
+create a TODO list based on priority and dependencies. 
+start execution
