@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "6479b669ced3",
+  "strategy": "manual-commit",
+  "branch": "fix/1447-mcp-docstring-trim",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/mcp/server.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/64/79b669ced3/0/metadata.json",
+      "transcript": "/64/79b669ced3/0/full.jsonl",
+      "compact_transcript": "/64/79b669ced3/0/transcript.jsonl",
+      "content_hash": "/64/79b669ced3/0/content_hash.txt",
+      "prompt": "/64/79b669ced3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 638,
+    "cache_creation_tokens": 639794,
+    "cache_read_tokens": 59815854,
+    "output_tokens": 94572,
+    "api_call_count": 319,
+    "subagent_tokens": {
+      "input_tokens": 6,
+      "cache_creation_tokens": 74576,
+      "cache_read_tokens": 142464,
+      "output_tokens": 272,
+      "api_call_count": 3
+    }
+  }
+}
