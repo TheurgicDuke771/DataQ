@@ -213,3 +213,44 @@ ALL_DONE</event>
 ---
 
 clear out 1309 & 1447 too
+
+---
+
+<task-notification>
+<task-id>af5426967d27c6e5e</task-id>
+<tool-use-id>toolu_01JpVn5cNpXaYK2zpN821tJT</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/6b8e0cc3-f602-481d-a3ab-55d2edfb2027/tasks/af5426967d27c6e5e.output</output-file>
+<status>completed</status>
+<summary>Agent "MCP honesty review of docstring trim diff" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I reviewed the diff (`git diff HEAD -- backend/app/mcp/server.py`) covering all six edits described.
+
+Verification of the five citation/verbosity trims:
+
+- **get_run_status** (`#318`), **update_trigger_binding** (`#1186`), **list_assets** (`ADR 0037`), **get_asset** (`ADR 0037`): all four are pure citation drops. The rule sentence each citation was attached to is retained verbatim or near-verbatim (e.g. `get_asset` still reads "Two scoping rules that must not be conflated:" followed by the same two bullets). No caveat content lost. Clean.
+
+- **get_notification_config**: the 4-item numbered runbook was collapsed into one paragraph but still names all three sibling tools (`list_checks`, `list_runs`, `get_check_history`) and all three concepts (snooze, `alert_on` threshold, dedup against the previous terminal run). The only things dropped were the numbering and the parenthetical elaboration on how `alert_on` threshold levels compare (`fail`/`warn`/`always`) — that detail is gone, but it's elaboration on a concept already named, not a distinct fact a model needs to redirect the question. Acceptable trim.
+
+## Finding
+
+🔴 **Part A — silent honesty gap — `get_incident`, `evidence.profile_diff`, null/zero semantics criterion**
+
+The removed bullet was not verbosity — it was the only place `profile_diff` was mentioned anywhere in the docstring, and it carried information distinct from the two bullets that remain. Confirmed the field is still returned unconditionally as `None` in `backend/app/services/incident_evidence.py:80` (`"profile_diff": None`), never computed.
+
+The surrounding prose (`backend/app/mcp/server.py` ~3052-3060) sets up an explicit per-field null taxonomy: *"A `null` layer inside `evidence` does not by itself mean something went wrong, and the distinction matters because each layer means a different thing by it"* — then enumerates two categories:
+- `upstream_pipeline_run`: null = normal, no orchestration involved
+- `metric_trend`/`sibling_checks`: `[]` when there's nothing to show, so a *null* there means the layer genuinely "could not be built"
+
+`profile_diff` is silently absent from this taxonomy now. Since the intro promises an exhaustive-reading enumeration ("each layer means a different thing"), a model that sees `evidence.profile_diff: null` has no field-specific rule to fall back on and will most plausibly default to the nearest documented bucket — "could not be built," i.e. the tool *attempted* a profile diff and failed, or a real profiling step ran with no observed change. Both are wrong: the field is a permanent, never-computed placeholder that the code never attempts to populate under any circumstance. That's a different, stronger claim than "could not be built this time," and it's exactly the kind of confident-wrong-answer the honesty pass was meant to eliminate — the prior text existed specifically to preempt it.
+
+There is no repo precedent for leaving an always-null/placeholder field undocumented elsewhere in `server.py` (grepped for `always null|placeholder|never populated|not implemented|reserved for` — zero other hits), so this isn't an established pattern being correctly followed; it was the only instance of this disclosure, and it's now gone with nothing replacing it.
+
+**Fix:** restore a one-line version of the dropped bullet (doesn't need the "documented placeholder" phrasing, just needs to state `profile_diff` is always null / not implemented, not conditionally absent) — this is content, not the citation-style verbosity the rest of the PR correctly trimmed.
+
+## Verdict
+
+`Conditional — 1 disclosed-then-removed honesty gap (Part A). The get_incident profile_diff bullet must be restored (as a short factual line, not the removed prose) before merge; the other four trims are clean.`
+
+Relevant file: `/Users/arijit/Coding/Python/DataQ/backend/app/mcp/server.py` (get_incident docstring, ~line 3052-3060) and `/Users/arijit/Coding/Python/DataQ/backend/app/services/incident_evidence.py:80`.</result>
+<usage><subagent_tokens>77341</subagent_tokens><tool_uses>5</tool_uses><duration_ms>44195</duration_ms></usage>
+</task-notification>
