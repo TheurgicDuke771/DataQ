@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "37a7e10d7424",
+  "strategy": "manual-commit",
+  "branch": "fix/1309-access-history-mislabeled-denial",
+  "checkpoints_count": 11,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/37/a7e10d7424/0/metadata.json",
+      "transcript": "/37/a7e10d7424/0/full.jsonl",
+      "compact_transcript": "/37/a7e10d7424/0/transcript.jsonl",
+      "content_hash": "/37/a7e10d7424/0/content_hash.txt",
+      "prompt": "/37/a7e10d7424/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 568,
+    "cache_creation_tokens": 599337,
+    "cache_read_tokens": 50805695,
+    "output_tokens": 82650,
+    "api_call_count": 284
+  }
+}
