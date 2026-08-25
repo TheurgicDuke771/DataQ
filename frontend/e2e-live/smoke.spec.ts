@@ -1,7 +1,7 @@
 import { expect, test } from './live-test';
 
 // Read-only live smoke against the DEPLOYED app + the ADR 0021 harness data.
-const LIVE_SUITE = process.env.E2E_LIVE_SUITE || 'Retail Orders';
+const LIVE_SUITE = process.env.E2E_LIVE_SUITE || 'Snowflake — Orders (all paths)';
 
 test('dashboard renders live KPIs', async ({ page }) => {
   await page.goto('/dashboard');

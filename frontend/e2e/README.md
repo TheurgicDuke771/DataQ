@@ -71,7 +71,7 @@ OIDC**, activated only when `E2E_LIVE_BASE_URL` is set (CI never sets it):
 
 ```bash
 E2E_LIVE_BASE_URL=https://<your-dataq-frontend-host> pnpm e2e
-# optional: E2E_LIVE_SUITE="Retail Orders" (the suite the specs open)
+# optional: E2E_LIVE_SUITE="Snowflake — Orders (all paths)" (the suite the specs open)
 ```
 
 First run opens a **headed** browser — complete the sign-in (MFA included);
