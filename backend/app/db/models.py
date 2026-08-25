@@ -635,6 +635,12 @@ class Result(Base):
             "created_at",
             postgresql_where=text("jsonb_typeof(observed_value -> 'observed_value') = 'array'"),
         ),
+        # #1267: the third observed_value shape — a monitor's raw `unparsed_value` cell.
+        Index(
+            "ix_results_unpurged_unparsed",
+            "created_at",
+            postgresql_where=text("observed_value ? 'unparsed_value'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
