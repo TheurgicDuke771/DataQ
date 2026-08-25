@@ -1374,20 +1374,12 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
     is stored as a secret reference and this tool reports its presence, not its
     value.
 
-    **"Why did nobody get alerted?" has four answers and this tool holds only one
-    of them.** Work through all four before blaming the delivery channel:
-
-    1. Alerting is off, or no channel is configured — **here**.
-    2. The check is **snoozed** — ``list_checks`` reports a live snooze per check.
-    3. The run never produced a verdict at or above the threshold — ``list_runs``
-       (an incomplete run has no outcome at all, and ``alert_on`` is a *threshold*:
-       ``fail`` alerts on fail and worse, ``warn`` on warn and worse, ``always``
-       on every run).
-    4. The alert was **deduplicated**. An ongoing, unchanged failure on a
-       scheduled suite does not re-alert every run — only the first one does,
-       under any policy except ``always``. Compare the run with the previous
-       terminal run (``list_runs``, ``get_check_history``): same checks failing
-       the same way means this is the expected silence, not a fault.
+    "Why did nobody get alerted?" is not fully answered here: this tool only
+    covers whether a channel is configured and enabled. A check can also be
+    **snoozed** (``list_checks``), the run's outcome can fall below the
+    ``alert_on`` threshold (``list_runs``), or an unchanged repeat failure can be
+    **deduplicated** rather than re-alerted (compare with the previous terminal
+    run via ``list_runs`` / ``get_check_history``).
 
     Requires view access to the suite.
     """
@@ -1606,7 +1598,7 @@ def get_run_status(run_id: str) -> dict[str, Any]:
 
     ``completed_checks`` can legitimately sit at 0 on a healthy, busy run: a suite
     of ordinary expectations is validated as one atomic batch, so its checks all
-    resolve at once at the end (#318). Read a rising ``elapsed_ms`` with
+    resolve at once at the end. Read a rising ``elapsed_ms`` with
     ``status: running`` as "still working", not as "stuck".
     """
     rid = _parse_uuid(run_id, field="run_id")
@@ -2280,7 +2272,7 @@ def update_trigger_binding(binding_id: str, enabled: bool) -> dict[str, Any]:
     Any returned ``warnings`` are advisory, not errors — read them out. They are
     recomputed on enable rather than carried over from creation, because
     re-enabling a binding is exactly when a provider/environment ambiguity
-    becomes able to lose triggers again (#1186); ``get_near_misses`` reports the
+    becomes able to lose triggers again; ``get_near_misses`` reports the
     mismatches that have actually cost a trigger. Requires edit access to the
     binding's suite.
     """
@@ -2752,8 +2744,8 @@ def list_assets(
     suites target it, and its latest health, plus ``total`` / ``truncated`` so
     you can tell a page from the whole set.
 
-    **The health numbers are workspace-true, not scoped to this user
-    (ADR 0037).** They aggregate over EVERY suite targeting the asset, including
+    **The health numbers are workspace-true, not scoped to this user.** They
+    aggregate over EVERY suite targeting the asset, including
     suites the caller has no grant on. That is deliberate — one verdict per
     asset, identical for everyone — but it means you must not describe these
     figures as "your" checks or imply the caller could see them all. Only
@@ -2795,7 +2787,7 @@ def get_asset(asset_id: str) -> dict[str, Any]:
     caller can see (each with its latest run), and the upstream/downstream lineage
     neighbourhood with the edges connecting them.
 
-    Two scoping rules that must not be conflated (ADR 0037):
+    Two scoping rules that must not be conflated:
 
     - `summary` and `scorecard` are **workspace-true** — computed over every
       suite targeting the asset, including ones the caller cannot see.
@@ -3066,8 +3058,7 @@ def get_incident(incident_id: str) -> dict[str, Any]:
       is normal, not a missing pipeline or a DataQ failure.
     - `metric_trend` and `sibling_checks` are `[]` when there is nothing to show,
       so a null there really is a layer that could not be built.
-    - `profile_diff` is *always* null — a documented placeholder, never a
-      computed absence.
+    - `profile_diff` is always null — not implemented, not a failed attempt.
 
     Requires view access to the incident's suite; an incident on a suite the
     caller cannot see is indistinguishable from one that does not exist.
