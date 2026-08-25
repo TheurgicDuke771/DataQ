@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "9887b025571d",
+  "strategy": "manual-commit",
+  "branch": "fix/1549-live-smoke-suite-name",
+  "checkpoints_count": 10,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/98/87b025571d/0/metadata.json",
+      "transcript": "/98/87b025571d/0/full.jsonl",
+      "compact_transcript": "/98/87b025571d/0/transcript.jsonl",
+      "content_hash": "/98/87b025571d/0/content_hash.txt",
+      "prompt": "/98/87b025571d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 418,
+    "cache_creation_tokens": 525785,
+    "cache_read_tokens": 35566764,
+    "output_tokens": 62854,
+    "api_call_count": 209
+  }
+}
