@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "1025f9d2b0e4",
+  "session_id": "09afaff1-d777-4181-a69d-02d8f41287bc",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-25T02:55:35.944393Z",
+  "branch": "fix/issue-1267-unparsed-value-retention-sweep",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/98f8a7a1e1bf_add_results_unpurged_unparsed_index.py",
+    "backend/app/db/models.py",
+    "backend/app/services/run_service.py",
+    "backend/tests/services/test_run_retention.py",
+    "docs/compliance-posture.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "79b2a3f7b0b3",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 116,
+    "cache_creation_tokens": 137851,
+    "cache_read_tokens": 8739692,
+    "output_tokens": 17010,
+    "api_call_count": 58
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-25T02:55:35.925641Z",
+    "agent_lines": 124,
+    "agent_removed": 22,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 124,
+    "total_lines_changed": 146,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}

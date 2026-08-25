@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "1025f9d2b0e4",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1267-unparsed-value-retention-sweep",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/98f8a7a1e1bf_add_results_unpurged_unparsed_index.py",
+    "backend/app/db/models.py",
+    "backend/app/services/run_service.py",
+    "backend/tests/services/test_run_retention.py",
+    "docs/compliance-posture.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/10/25f9d2b0e4/0/metadata.json",
+      "transcript": "/10/25f9d2b0e4/0/full.jsonl",
+      "compact_transcript": "/10/25f9d2b0e4/0/transcript.jsonl",
+      "content_hash": "/10/25f9d2b0e4/0/content_hash.txt",
+      "prompt": "/10/25f9d2b0e4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 116,
+    "cache_creation_tokens": 137851,
+    "cache_read_tokens": 8739692,
+    "output_tokens": 17010,
+    "api_call_count": 58
+  }
+}
