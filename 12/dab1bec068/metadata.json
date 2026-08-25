@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "12dab1bec068",
+  "strategy": "manual-commit",
+  "branch": "docs/point-at-public-compliance-docs",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/12/dab1bec068/0/metadata.json",
+      "transcript": "/12/dab1bec068/0/full.jsonl",
+      "compact_transcript": "/12/dab1bec068/0/transcript.jsonl",
+      "content_hash": "/12/dab1bec068/0/content_hash.txt",
+      "prompt": "/12/dab1bec068/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 548,
+    "cache_creation_tokens": 374800,
+    "cache_read_tokens": 71400828,
+    "output_tokens": 99519,
+    "api_call_count": 274
+  }
+}
