@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "5a0b28066e81",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-w4-tracker-update",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5a/0b28066e81/0/metadata.json",
+      "transcript": "/5a/0b28066e81/0/full.jsonl",
+      "compact_transcript": "/5a/0b28066e81/0/transcript.jsonl",
+      "content_hash": "/5a/0b28066e81/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 24001,
+    "cache_read_tokens": 6761093,
+    "output_tokens": 5202,
+    "api_call_count": 21
+  }
+}
