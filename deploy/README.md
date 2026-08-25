@@ -530,7 +530,7 @@ Terraform, listed here so the table's Azure values aren't mistaken for the only 
   anyone in `WORKSPACE_ADMIN_EMAILS` can read **all** suites' results — including
   failing-row samples (`results.sample_failures`), the one place PII/PHI lands —
   and manage/delete any suite. **Keep the allowlist minimal.** For a **PHI / regulated
-  deployment**, treat the data-access audit trail (G1 / #431 in
-  [compliance-posture.md](../docs/compliance-posture.md)) as a **prerequisite before
-  granting broad workspace-admin** — PHI is already G1-blocked, and this access breadth
+  deployment**, treat the data-access audit trail (`GET /api/v1/admin/audit-events`,
+  documented in [Security & data handling](../docs/site/security.md#authentication--access))
+  as a **prerequisite before granting broad workspace-admin** — this access breadth
   raises the bar.
