@@ -21,7 +21,7 @@ from backend.app.db.models import SuiteNotification, User
 from backend.app.db.session import get_db
 from backend.app.mcp.auth import mcp_enabled
 from backend.app.services import admin_service as svc
-from backend.app.services import audit_read_service
+from backend.app.services import audit_read_service, audit_service, data_subject_requests
 from backend.app.services.otp_mailer import OtpMailer
 
 router = APIRouter(
@@ -388,4 +388,136 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
     return DeploymentPostureRead(
         region=settings.deployment_region or None,
         external_transfers=transfers,
+    )
+
+
+# ───────── data-subject-rights machinery (G2 / #432, GDPR Art 15/17/20, CCPA) ─────────
+
+
+class DataSubjectRequest(ApiModel):
+    """The (column, value) pair identifying a subject's warehouse row — DataQ has
+    no people-table, so this IS the subject identifier.
+    """
+
+    column: str
+    value: str
+
+
+class DataSubjectMatch(ApiModel):
+    result_id: UUID
+    run_id: UUID
+    suite_id: UUID
+    suite_name: str
+    check_id: UUID
+    check_name: str
+    created_at: datetime
+    matched_in: list[str]
+    #: Deliberately UNREDACTED — this endpoint IS the subject's own access/export
+    #: right (GDPR Art 15/20); the read-path redaction ladder exists to protect
+    #: OTHER people's data from an unrelated viewer, not this one.
+    sample_failures: dict[str, Any] | None
+    observed_value: dict[str, Any] | None
+
+
+class DataSubjectExportResponse(ApiModel):
+    column: str
+    value: str
+    match_count: int
+    matches: list[DataSubjectMatch]
+
+
+@router.post(
+    "/data-subject-requests/export",
+    response_model=DataSubjectExportResponse,
+    summary="Export a data subject's captured sample data (admin only, GDPR Art 15/20)",
+)
+def export_data_subject(
+    payload: DataSubjectRequest,
+    current_user: Annotated[User, Depends(require_workspace_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> DataSubjectExportResponse:
+    """Workspace-wide export of every captured sample cell naming
+    `column` = `value` — the access/portability half of the subject-rights
+    machinery. Returns unredacted data by design (see `DataSubjectMatch`), so this
+    is deliberately Admin-only, same tier as a connection credential.
+    """
+    matches = data_subject_requests.find_matching_results(
+        db, column=payload.column, value=payload.value
+    )
+    audit_service.record_access(
+        db,
+        action="data_subject_request.export",
+        entity_type="data_subject_request",
+        entity_id=None,
+        actor=current_user,
+        exposed=bool(matches),
+        detail={"column": payload.column, "match_count": len(matches)},
+    )
+    return DataSubjectExportResponse(
+        column=payload.column,
+        value=payload.value,
+        match_count=len(matches),
+        matches=[
+            DataSubjectMatch(
+                result_id=m.result_id,
+                run_id=m.run_id,
+                suite_id=m.suite_id,
+                suite_name=m.suite_name,
+                check_id=m.check_id,
+                check_name=m.check_name,
+                created_at=m.created_at,
+                matched_in=list(m.matched_in),
+                sample_failures=m.sample_failures,
+                observed_value=m.observed_value,
+            )
+            for m in matches
+        ],
+    )
+
+
+class DataSubjectErasureResponse(ApiModel):
+    column: str
+    value: str
+    matched_count: int
+    erased_count: int
+
+
+@router.post(
+    "/data-subject-requests/erase",
+    response_model=DataSubjectErasureResponse,
+    summary="Erase a data subject's captured sample data (admin only, GDPR Art 17 / CCPA delete)",
+)
+def erase_data_subject(
+    payload: DataSubjectRequest,
+    current_user: Annotated[User, Depends(require_workspace_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> DataSubjectErasureResponse:
+    """Workspace-wide, on-demand erasure of every captured sample cell naming
+    `column` = `value` — surgical (only the matching row/cell), not a blanket purge;
+    see `data_subject_requests.erase_matching_results`. Runs synchronously and
+    records one `audit_events` row inside the same transaction as the scrub, so a
+    failed write leaves nothing behind and an applied one cannot go unrecorded
+    (mirrors the ADR 0041 phase-1 mutation pattern).
+    """
+    summary = data_subject_requests.erase_matching_results(
+        db, column=payload.column, value=payload.value
+    )
+    audit_service.record(
+        db,
+        action="data_subject_request.erase",
+        entity_type="data_subject_request",
+        entity_id=None,
+        actor=current_user,
+        after={
+            "column": payload.column,
+            "matched_count": len(summary.matched_result_ids),
+            "erased_count": summary.erased_count,
+        },
+    )
+    db.commit()
+    return DataSubjectErasureResponse(
+        column=payload.column,
+        value=payload.value,
+        matched_count=len(summary.matched_result_ids),
+        erased_count=summary.erased_count,
     )

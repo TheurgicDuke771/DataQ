@@ -283,15 +283,22 @@ reads** (not just owner/shared reads) — the read surface this gap must cover g
 PHI deployment should therefore treat G1 as a prerequisite **before** granting broad
 workspace-admin.
 
-### G2 — 🟠 Data-subject-rights machinery (erasure / access / portability) — #432
+### G2 — 🟢 Data-subject-rights machinery (erasure / access / portability) — #432 — **shipped**
 **Requirement:** GDPR Art 15 (access), 17 (erasure), 20 (portability); CCPA/CPRA right to
 know / delete.
-**Current state:** cascade-delete of entities + the retention purge exist, but there's no
-**targeted "erase/export all personal data relating to subject X"** capability. Between
-runs, `sample_failures` is a real (time-bounded) residual store of subject rows.
-**v2.x target:** a subject-rights workflow — (a) erase: purge matching sample rows on
-demand (not just on the retention clock), (b) export: structured dump of stored personal
-data for a subject. Document that the controller's warehouse remains their responsibility.
+**Shipped (2026-08-24):** an Admin-only `(column, value)` subject-rights workflow — DataQ
+has no people-table, so a subject is identified the same way the controller's own
+warehouse identifies them. `POST /api/v1/admin/data-subject-requests/export` returns every
+matching `sample_failures`/`observed_value` cell **unredacted** (this endpoint IS the
+access/portability right) across every suite in the workspace, and records a G1 access
+event. `POST .../erase` **surgically** removes only the matching row/cell — the rest of a
+result's captured sample (other rows, other subjects, whatever else made the check fail)
+survives, deliberately coarser-grained than the retention sweep's whole-column null
+(#1253/#1267) would be. Runs synchronously and records one audit_events **config** event
+inside the same transaction as the scrub. Full mechanism, limits and a verification
+walkthrough are in the [data-subject-rights runbook](site/compliance/data-subject-rights-runbook.md).
+The controller's warehouse remains their own responsibility — this covers only what DataQ
+itself has captured.
 
 ### G3 — 🟢 Authoritative PII/PHI classification (not just a heuristic) — #433 — **warehouse tags consumed, live-verified on both platforms**
 **Requirement:** GDPR special-category data (Art 9) / HIPAA PHI must not leak via the
@@ -530,8 +537,8 @@ the docs site:
   (same-PR rule for new outbound calls + the rule-39 quarterly audit as backstop).
 - **[DPIA input sheet](site/compliance/dpia-input-sheet.md)** — the personal-data
   inventory only we can supply: both data classes, per-location retention and
-  controls, and the honest open items (#432 erasure, #1460 tamper-evidence)
-  stated rather than implied closed.
+  controls, and the honest open item (#1460 tamper-evidence) stated rather
+  than implied closed.
 - **[Breach-notification runbook](site/compliance/breach-notification-runbook.md)** —
   reference-deployment procedure + a template for customer deployments.
 - **[DPA / BAA templates](site/compliance/dpa-baa-templates.md)** — drafted with accurate
