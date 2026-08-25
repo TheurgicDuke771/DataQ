@@ -537,8 +537,8 @@ the docs site:
   (same-PR rule for new outbound calls + the rule-39 quarterly audit as backstop).
 - **[DPIA input sheet](site/compliance/dpia-input-sheet.md)** — the personal-data
   inventory only we can supply: both data classes, per-location retention and
-  controls, and the honest open items (#432 erasure, #1267 scalar-cell sweep,
-  #1460 tamper-evidence) stated rather than implied closed.
+  controls, and the honest open items (#1267 scalar-cell sweep, #1460
+  tamper-evidence) stated rather than implied closed.
 - **[Breach-notification runbook](site/compliance/breach-notification-runbook.md)** —
   reference-deployment procedure + a template for customer deployments.
 - **[DPA / BAA templates](site/compliance/dpa-baa-templates.md)** — drafted with accurate
