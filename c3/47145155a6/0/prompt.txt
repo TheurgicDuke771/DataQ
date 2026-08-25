@@ -1,0 +1,9 @@
+Check `gh pr view 1586 --json state,mergedAt` and `gh pr view 1587 --json state,mergedAt`. If both merged, confirm #432 issue is closed and report done. If either failed CI or is still pending, investigate and fix.
+
+---
+
+Check `gh pr view 1586 --json state,mergedAt`. If merged, confirm issue #432 is closed via `gh issue view 432 --json state`, then do the final docs/progress.md update (mark #432 row ✅, refresh open-PR count to 0) on a small branch+PR like before, and report done. If CI failed, investigate and fix.
+
+---
+
+Check `gh pr view 1586 --json state,mergedAt`. If merged, confirm issue #432 is closed via `gh issue view 432 --json state`, then do the final docs/progress.md update (mark #432 row ✅, refresh open-PR count to 0) on a small branch+PR like before, and report done. If CI failed, investigate and fix.

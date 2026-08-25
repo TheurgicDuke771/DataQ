@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "c347145155a6",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-432-merged",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c3/47145155a6/0/metadata.json",
+      "transcript": "/c3/47145155a6/0/full.jsonl",
+      "compact_transcript": "/c3/47145155a6/0/transcript.jsonl",
+      "content_hash": "/c3/47145155a6/0/content_hash.txt",
+      "prompt": "/c3/47145155a6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 60,
+    "cache_creation_tokens": 16337,
+    "cache_read_tokens": 10418009,
+    "output_tokens": 5466,
+    "api_call_count": 30
+  }
+}
