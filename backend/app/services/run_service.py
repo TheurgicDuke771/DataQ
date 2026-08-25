@@ -1194,8 +1194,9 @@ def purge_expired_sample_failures(
     now: datetime | None = None,
     chunk_size: int = CHUNK_SIZE,
 ) -> int:
-    """Scrub `sample_failures` and list-shaped `observed_value` from results
-    older than ``retention_days``.
+    """Scrub `sample_failures` and the two PII-bearing `observed_value` shapes
+    (list-shaped set-oriented expectations, and a monitor's raw `unparsed_value`
+    cell) from results older than ``retention_days``.
     """
     if retention_days <= 0:
         return 0
@@ -1204,6 +1205,7 @@ def purge_expired_sample_failures(
 
     sample_progress = 0
     observed_progress = 0
+    unparsed_progress = 0
 
     def _on_sample_batch(n: int) -> None:
         nonlocal sample_progress
@@ -1213,13 +1215,18 @@ def purge_expired_sample_failures(
         nonlocal observed_progress
         observed_progress += n
 
+    def _on_unparsed_batch(n: int) -> None:
+        nonlocal unparsed_progress
+        unparsed_progress += n
+
     def _log_progress() -> None:
         log.info(
             "sample_failures_purged",
             purged=sample_progress,
             sample_failures_purged=sample_progress,
             observed_value_purged=observed_progress,
-            total_purged=sample_progress + observed_progress,
+            unparsed_value_purged=unparsed_progress,
+            total_purged=sample_progress + observed_progress + unparsed_progress,
             retention_days=retention_days,
             cutoff=cutoff.isoformat(),
         )
@@ -1249,10 +1256,22 @@ def purge_expired_sample_failures(
             chunk_size=chunk_size,
             on_batch=_on_observed_batch,
         )
+
+        # #1267: the third observed_value shape — a monitor's raw, potentially-PII
+        # target cell (`{"unparsed_value": ..., "column": ...}`), a different
+        # mechanism (#989) than the set-oriented-expectation list above.
+        _purge_column(
+            session,
+            cutoff=cutoff,
+            extra_where=[Result.observed_value.has_key("unparsed_value")],
+            values={"observed_value": null()},
+            chunk_size=chunk_size,
+            on_batch=_on_unparsed_batch,
+        )
     finally:
         _log_progress()
 
-    return sample_progress + observed_progress
+    return sample_progress + observed_progress + unparsed_progress
 
 
 def reap_stuck_runs(
