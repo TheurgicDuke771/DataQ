@@ -23,7 +23,7 @@
 - [post-v1-dq-intelligence-notes.md](../docs/post-v1-dq-intelligence-notes.md) — expectation expansion, LLM-assisted authoring, marketplace
 - ~~post-v1-admin-ui-notes.md~~ — **deleted at the v1.1 close (2026-08-21)**: superseded by ADR [0033](../docs/site/adr/0033-workspace-roles-rbac.md) (which records the decision AND the reversal of this doc's defer-RBAC stance); live remnants filed as [#1514](https://github.com/TheurgicDuke771/DataQ/issues/1514) / [#1516](https://github.com/TheurgicDuke771/DataQ/issues/1516)
 - ~~post-v1-assets-lineage-incidents-notes.md~~ — **deleted at the v1.1 close (2026-08-21)**: fully shipped; durable decision records are ADRs [0034](../docs/site/adr/0034-asset-entity-openlineage-identity-lineage-pull.md)/[0037](../docs/site/adr/0037-workspace-visible-asset-identity.md)/[0040](../docs/site/adr/0040-warehouse-inventory-sync-table-enumeration-seam.md); the one unbuilt design item is [#1515](https://github.com/TheurgicDuke771/DataQ/issues/1515)
-- [compliance-posture.md](../docs/compliance-posture.md) — GDPR / CCPA-CPRA / HIPAA technical controls + gap list
+- [Security & data handling](../docs/site/security.md) + [docs/site/compliance/](../docs/site/compliance/) — GDPR / CCPA-CPRA / HIPAA technical controls (published, long-term reference); [compliance-posture.md](../docs/compliance-posture.md) is the internal gap-tracking doc these were built from — G1–G6 are now shipped bar two residuals (#1460, #1385), and it's a removal candidate once those close
 
 **The big picture:** v1 ships the DQ loop (checks → results → trends → freshness/volume monitors
 → alerts → MCP) end-to-end. Post-v1 layers *intelligence* (more expectations, LLM authoring,
@@ -262,9 +262,13 @@ the asset page.
 
 ## Theme 4 — Compliance (GDPR / CCPA-CPRA / HIPAA)
 
-Full design: **[compliance-posture.md](../docs/compliance-posture.md)**. v1 is privacy-by-design (logger PII
+**All six gaps below have shipped** (bar two residuals, #1460 and #1385) — see
+[Security & data handling](../docs/site/security.md) and
+[docs/site/compliance/](../docs/site/compliance/) for the published, long-term posture.
+The internal decision record (verification narratives, deferred-and-why) is
+[compliance-posture.md](../docs/compliance-posture.md). v1 is privacy-by-design (logger PII
 redaction, default-redact samples, retention purge, SecretStore, suite-scoped authz, BYOL
-controller/processor split). These close the gaps for a credible v2.x "processor-grade controls" claim.
+controller/processor split). These closed the gaps for a credible v2.x "processor-grade controls" claim.
 
 | # | Gap | Regime hook |
 |---|---|---|
