@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import Table, create_engine, text
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session, sessionmaker
+from structlog.testing import capture_logs
 
 from backend.app.db.models import AuditEvent, Base, User
 from backend.app.services import audit_read_service
@@ -255,3 +256,21 @@ def test_a_non_positive_retention_is_an_off_switch_not_a_wipe(owner_session: Ses
     for retention in (0, -1):
         assert audit_read_service.purge_expired_events(owner_session, retention_days=retention) == 0
     assert len(owner_session.scalars(AuditEvent.__table__.select()).all()) == 3
+
+
+def test_a_zero_row_sweep_still_logs(owner_session: Session) -> None:
+    """A compliance sweep with nothing to delete must still say it ran (#1477) —
+    the only way "it ran and found nothing" stays distinguishable from "it never
+    ran at all".
+    """
+    owner_session.execute(text(_revoke_statement(_ROLE)))
+    owner_session.commit()
+
+    with capture_logs() as logs:
+        deleted = audit_read_service.purge_expired_events(owner_session, retention_days=365)
+
+    assert deleted == 0
+    events = [entry for entry in logs if entry.get("event") == "audit_events_purged"]
+    assert len(events) == 1
+    assert events[0]["deleted"] == 0
+    assert events[0]["retention_days"] == 365

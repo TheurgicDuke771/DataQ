@@ -165,8 +165,7 @@ def purge_expired_events(session: Session, *, retention_days: int) -> int:
         if affected == 0:
             break
 
-    if total:
-        log.info("audit_events_purged", deleted=total, retention_days=retention_days)
+    log.info("audit_events_purged", deleted=total, retention_days=retention_days)
     return total
 
 
