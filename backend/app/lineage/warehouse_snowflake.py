@@ -338,8 +338,17 @@ class SnowflakeLineageProvider:
             dml = self._from_access_history(conn, namespace, database)
         except _FeatureUnsupportedError as exc:
             # Carry the REAL reason (edition gate vs missing grant, #902) — the same
-            # honesty rule the tier-1 skip already follows.
-            skipped.append(f"access_history: {_skip_reason(exc)}")
+            # honesty rule the tier-1 skip already follows. #1309: substitute the
+            # access_history-specific wording when the shared classifier returned the
+            # generic GET_LINEAGE-grant message (same shape as #1264/#1305 for
+            # object_dependencies) — GET_LINEAGE may have already failed for an
+            # unrelated reason by the time this tier is even reached.
+            reason = (
+                _NOT_AUTHORIZED_ACCESS_HISTORY_MSG if str(exc) == _NOT_AUTHORIZED_MSG else str(exc)
+            )
+            skipped.append(
+                f"access_history: {reason}{_TRANSIENT_SKIP_SUFFIX if exc.transient else ''}"
+            )
             partial = partial or exc.transient
         if not dml and not any(s.startswith("access_history") for s in skipped):
             # Scoped-empty is a normal state (an all-COPY database, or one idle in the window), NOT
@@ -783,6 +792,12 @@ _NOT_AUTHORIZED_MSG = "not authorized (role lacks the ACCOUNT_USAGE / GET_LINEAG
 # `_feature_unsupported_reason` only when GET_LINEAGE just succeeded.
 _NOT_AUTHORIZED_OBJECT_DEPENDENCIES_MSG = (
     "not authorized (role lacks the ACCOUNT_USAGE / OBJECT_DEPENDENCIES grant)"
+)
+
+# #1309: same substitution, for the ACCESS_HISTORY tier — it is reached only after
+# GET_LINEAGE has already failed/skipped for its own, possibly unrelated, reason.
+_NOT_AUTHORIZED_ACCESS_HISTORY_MSG = (
+    "not authorized (role lacks the ACCOUNT_USAGE / ACCESS_HISTORY grant)"
 )
 
 
