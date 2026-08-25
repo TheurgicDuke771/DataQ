@@ -182,28 +182,78 @@ def test_keeps_recent_list_shaped_observed_value(db_session: Any) -> None:
 
 
 def test_leaves_error_and_reason_shapes_untouched(db_session: Any) -> None:
-    """`{"error": ...}` / `{"unparsed_value": ..., "column": ...}` / `{"reason":
-    ...}` never nest a top-level `observed_value` key, so the sweep's
-    `jsonb_typeof(observed_value -> 'observed_value') = 'array'` condition
-    can't match them — confirmed here rather than assumed.
+    """`{"error": ...}` / `{"reason": ...}` never nest a top-level `observed_value`
+    key and never carry `unparsed_value`, so neither sweep condition can match
+    them — confirmed here rather than assumed.
     """
     error_row = _result(db_session, age_days=40, sample=None, observed={"error": "boom"})
-    unparsed_row = _result(
-        db_session,
-        age_days=40,
-        sample=None,
-        observed={"unparsed_value": "not-a-date", "column": "created_at"},
-    )
     skip_row = _result(db_session, age_days=40, sample=None, observed={"reason": "no baseline yet"})
 
     purged = run_service.purge_expired_sample_failures(db_session, retention_days=30, now=NOW)
 
     assert purged == 0
-    for row in (error_row, unparsed_row, skip_row):
+    for row in (error_row, skip_row):
         db_session.refresh(row)
     assert error_row.observed_value == {"error": "boom"}
-    assert unparsed_row.observed_value == {"unparsed_value": "not-a-date", "column": "created_at"}
     assert skip_row.observed_value == {"reason": "no baseline yet"}
+
+
+# ── #1267: unparsed_value's own sweep ────────────────────────────────────────
+
+
+def test_scrubs_old_unparsed_value(db_session: Any) -> None:
+    """A monitor's raw, potentially-PII target cell (#989) is a third
+    `observed_value` shape, distinct from the list-shaped case above, and gets
+    its own sweep condition.
+    """
+    old = _result(
+        db_session,
+        age_days=40,
+        sample=None,
+        observed={"unparsed_value": "alice@example.com", "column": "email"},
+    )
+
+    purged = run_service.purge_expired_sample_failures(db_session, retention_days=30, now=NOW)
+
+    assert purged == 1
+    db_session.refresh(old)
+    assert old.observed_value is None
+
+
+def test_keeps_recent_unparsed_value(db_session: Any) -> None:
+    """Inside the retention window: the unparsed_value shape is untouched."""
+    recent = _result(
+        db_session,
+        age_days=5,
+        sample=None,
+        observed={"unparsed_value": "a@x.com", "column": "email"},
+    )
+
+    purged = run_service.purge_expired_sample_failures(db_session, retention_days=30, now=NOW)
+
+    assert purged == 0
+    db_session.refresh(recent)
+    assert recent.observed_value == {"unparsed_value": "a@x.com", "column": "email"}
+
+
+def test_idempotent_second_sweep_unparsed_value(db_session: Any) -> None:
+    """No dedicated purged-at column for this shape either: idempotency relies on
+    the column itself going SQL NULL.
+    """
+    old = _result(
+        db_session,
+        age_days=40,
+        sample=None,
+        observed={"unparsed_value": "x@example.com", "column": "email"},
+    )
+
+    first = run_service.purge_expired_sample_failures(db_session, retention_days=30, now=NOW)
+    second = run_service.purge_expired_sample_failures(db_session, retention_days=30, now=NOW)
+
+    assert first == 1
+    assert second == 0
+    db_session.refresh(old)
+    assert old.observed_value is None
 
 
 def test_purges_both_sibling_columns_independently_and_sums(db_session: Any) -> None:
@@ -272,9 +322,10 @@ def test_batch_count_matches_the_configured_chunk_size(db_session: Any, monkeypa
     )
 
     assert purged == 7
-    # sample_failures batches (3, 3, 1, 0) + observed_value batches (0, nothing
-    # eligible there) — see the docstring above for why it's 5, not 4.
-    assert len(executed) == 5
+    # sample_failures batches (3, 3, 1, 0) + observed_value batch (0, nothing
+    # eligible there) + unparsed_value batch (0, nothing eligible there) — see
+    # the docstring above for why it's 6, not 4.
+    assert len(executed) == 6
     for row in rows:
         db_session.refresh(row)
         assert row.sample_failures is None

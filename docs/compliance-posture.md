@@ -41,7 +41,7 @@ only to EU personal data.
 |---|---|---|
 | **Logger-level PII redaction** (key-based: credentials, contact PII, **AAD object IDs tagged GDPR Art 4(1)**) | [`core/logging.py`](../backend/app/core/logging.py) `_PII_KEYS` / `_redact_pii` | GDPR Art 32, 25 |
 | **Default-redact failing-row samples**, column-aware (suite `policy.pii_columns` + name heuristic; non-PII tested column may surface, everything else masked) | [`services/run_service.py`](../backend/app/services/run_service.py) `redact_sample_failures` | GDPR Art 25, 5(1)(c) |
-| **Retention purge** of `sample_failures` AND list-shaped `observed_value` (#1253 — only the set-oriented-expectation shape; scalar aggregates are never purged) after `sample_failures_retention_days` (default 30), keeping only the non-PII `metric_value`; stamps an auditable `sample_failures_purged_at` | `purge_sample_failures` daily beat ([`worker/tasks.py`](../backend/app/worker/tasks.py)) | GDPR Art 5(1)(e) storage limitation |
+| **Retention purge** of `sample_failures`, list-shaped `observed_value` (#1253 — the set-oriented-expectation shape) AND the monitor `unparsed_value` cell (#1267 — a distinct, PII-bearing shape a freshness/volume/anomaly monitor writes on a target cell it can't parse; scalar aggregates are never purged) after `sample_failures_retention_days` (default 30), keeping only the non-PII `metric_value`; stamps an auditable `sample_failures_purged_at` | `purge_sample_failures` daily beat ([`worker/tasks.py`](../backend/app/worker/tasks.py)) | GDPR Art 5(1)(e) storage limitation |
 | **Secret isolation** — `SecretStore` seam (Azure Key Vault impl via managed identity); secrets never in git-tracked files, never logged | [`core/secrets.py`](../backend/app/core/secrets.py); CLAUDE.md secret rules | GDPR Art 32 / HIPAA §164.312(a) |
 | **Encryption in transit** — Postgres `sslmode=require`; HTTPS ingress | [`deploy/terraform/azure/postgres.tf`](../deploy/terraform/azure/postgres.tf) | GDPR Art 32 / HIPAA §164.312(e) |
 | **Encryption at rest** — Azure platform-managed keys on Postgres / Key Vault / Storage (default) | Azure platform default (not asserted in IaC — see gap G5) | GDPR Art 32 / HIPAA §164.312(a)(2)(iv) |
@@ -537,8 +537,8 @@ the docs site:
   (same-PR rule for new outbound calls + the rule-39 quarterly audit as backstop).
 - **[DPIA input sheet](site/compliance/dpia-input-sheet.md)** — the personal-data
   inventory only we can supply: both data classes, per-location retention and
-  controls, and the honest open items (#1267 scalar-cell sweep, #1460
-  tamper-evidence) stated rather than implied closed.
+  controls, and the honest open item (#1460 tamper-evidence) stated rather
+  than implied closed.
 - **[Breach-notification runbook](site/compliance/breach-notification-runbook.md)** —
   reference-deployment procedure + a template for customer deployments.
 - **[DPA / BAA templates](site/compliance/dpa-baa-templates.md)** — drafted with accurate
