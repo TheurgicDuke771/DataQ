@@ -190,6 +190,8 @@ frontend/reports/mutation/
 # Playwright MCP screenshot/snapshot artifacts
 .playwright-mcp/
 
-# MkDocs build output (docs site, #288)
-site/
+# MkDocs build output (docs site, #288). Root-anchored: since #1522, mkdocs's
+# real docs_dir source lives at docs/site/ — an unanchored `site/` here matches
+# that too and silently swallows any new file added under it.
+/site/
 frontend/e2e/.role-tokens.json

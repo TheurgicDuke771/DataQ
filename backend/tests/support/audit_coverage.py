@@ -61,6 +61,9 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     ("POST", "/api/v1/incidents/{incident_id}/resolve"): "incident.resolve",
     # ── The third door.
     ("POST", "/api/v1/_probe/snowflake-suite"): "probe.provision",
+    # ── Data-subject-rights erasure (G2 / #432) — a real mutation over regulated
+    # data, so it belongs in AUDITED like any other admin write.
+    ("POST", "/api/v1/admin/data-subject-requests/erase"): "data_subject_request.erase",
 }
 
 #: Routes that must NOT record a config event, each with the reason.
@@ -111,5 +114,11 @@ EXEMPT: Final[dict[tuple[str, str], str]] = {
     ),
     ("POST", "/api/v1/orchestration/events/dbt"): (
         "an orchestrator reporting a pipeline outcome — a machine write (ADR 0041 §2.1)"
+    ),
+    # 5. A read, not a config mutation — POST only because it takes a body. Records
+    #    an `action_class='access'` event (audit_service.record_access) instead,
+    #    same as run_results.read.
+    ("POST", "/api/v1/admin/data-subject-requests/export"): (
+        "reads regulated data across suites; records an access event, not a config one"
     ),
 }

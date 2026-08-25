@@ -29,16 +29,18 @@ it but is not its system of record.
 |---|---|---|---|
 | `results.sample_failures` | Up to a bounded number of failing rows per check result, as column→value maps | `SAMPLE_FAILURES_RETENTION_DAYS` (default **30**); daily purge sets the column NULL and stamps `sample_failures_purged_at` — the row and its `metric_value` trend survive, the personal data does not | Column-aware **redaction ladder** on every read surface (REST, MCP, alert delivery), driven by the per-suite column policy, the governance floor from warehouse-native PII tags (G3, `services/column_tags.py`), and fail-closed mode (`require_classification`) |
 | `results.observed_value` (list-shaped) | A set-oriented expectation's full observed distinct-value list can reproduce column values | Same purge as `sample_failures` (#1253) | Same redaction ladder |
-| `results.observed_value` (scalar `unparsed_value` cell) | A single unparseable cell value captured for diagnosis | ⚠️ **No retention sweep yet** — open as [#1267](https://github.com/TheurgicDuke771/DataQ/issues/1267); scalar redaction shipped (#1482/#1489 chain) but the purge does not cover this cell | Redaction ladder applies on read |
+| `results.observed_value` (scalar `unparsed_value` cell) | A single unparseable cell value captured for diagnosis | `SAMPLE_FAILURES_RETENTION_DAYS`, same purge as the two rows above (shipped [#1267](https://github.com/TheurgicDuke771/DataQ/issues/1267)) | Redaction ladder applies on read |
 | Dry-run / live-probe responses | Real values shown to the check author; **nothing persisted** | Not stored (structurally cannot persist) | Fail-closed suites mask even here; REST dry-run disclosure recorded as [#1419](https://github.com/TheurgicDuke771/DataQ/issues/1419) |
 
 **Erasure status — state it honestly in your DPIA:** deletion happens on the
 retention clock and via entity cascade (deleting a suite/check destroys its
-results). **On-demand "erase everything about subject X" does not exist yet** —
-that is [#432](https://github.com/TheurgicDuke771/DataQ/issues/432) (GDPR Art 17 /
-CCPA delete), open by design until its design pass. Until it ships, the honest
-Art 17 answer for sample data is "erased within the retention window, or
-immediately by deleting the covering check results."
+results) **and, on demand, via the [data-subject-rights runbook](data-subject-rights-runbook.md)**
+(shipped [#432](https://github.com/TheurgicDuke771/DataQ/issues/432)) — an
+Admin-only capability that identifies a subject by a `(column, value)` pair (the
+same key the controller's own warehouse row uses; DataQ has no people-table) and
+surgically removes only the matching row/cell from `sample_failures` /
+`observed_value`, leaving the rest of a result's captured sample — other rows,
+other subjects — intact.
 
 ## Class 2 — workspace account data
 
@@ -60,8 +62,8 @@ immediately by deleting the covering check results."
 | Special categories | Only if the controller points checks at such columns. Mitigations: column policy + warehouse-native tag floor (G3) + fail-closed mode for suites that must never show values. |
 | Cross-border transfers | Enumerated, not derived — see the [sub-processor disclosure](sub-processors.md) and the residency posture. The outbound-LLM vector is **not built**; MCP clients are the token-holder's choice. |
 | Access ("who saw it") | G1 read events: data reads on REST **and** MCP are recorded and admin-queryable. |
-| Erasure ("how is it removed") | Retention purge (30-day default) + entity cascade today; targeted subject erasure is #432, open. |
+| Erasure ("how is it removed") | Retention purge (30-day default) + entity cascade, **and** on-demand targeted erasure by `(column, value)` — the [data-subject-rights runbook](data-subject-rights-runbook.md) (#432). |
 | Security of processing | See [Security & data handling](../security.md): secrets in a dedicated store, TLS, rate limiting, security headers, single public surface, non-root containers, least-privilege DB role. |
 
-Last reviewed: 2026-08-21 (G6, [#1452](https://github.com/TheurgicDuke771/DataQ/issues/1452)).
-This sheet shares its inventory with #432's future user-data inventory — update both together (one artifact, not two).
+Last reviewed: 2026-08-24 (G2, [#432](https://github.com/TheurgicDuke771/DataQ/issues/432); originally 2026-08-21, G6, [#1452](https://github.com/TheurgicDuke771/DataQ/issues/1452)).
+This sheet shares its inventory with the [data-subject-rights runbook](data-subject-rights-runbook.md) — update both together (one artifact, not two).

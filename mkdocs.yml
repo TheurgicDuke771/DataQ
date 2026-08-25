@@ -83,6 +83,7 @@ nav:
       - Compliance:
           - Sub-processor disclosure: compliance/sub-processors.md
           - DPIA input sheet: compliance/dpia-input-sheet.md
+          - Data-subject-rights runbook: compliance/data-subject-rights-runbook.md
           - Breach-notification runbook: compliance/breach-notification-runbook.md
           - DPA / BAA templates (counsel-gated): compliance/dpa-baa-templates.md
       - Deployment: deployment.md
