@@ -584,6 +584,26 @@ def test_fully_denied_account_is_unavailable_not_empty() -> None:
         SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
 
 
+def test_access_history_not_authorized_names_its_own_tier() -> None:
+    """#1309: GET_LINEAGE denied for an UNRELATED reason (edition gate, not a grant)
+    must not make ACCESS_HISTORY's own — separate — not-authorized denial read as
+    "the GET_LINEAGE grant is missing". Each tier's message must name itself.
+    """
+    conn = _FakeConn(
+        results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
+        raises={
+            "GET_LINEAGE": _feature_unsupported_error(),  # edition-gated, NOT a grant issue
+            "ACCESS_HISTORY": _not_authorized_error(),
+        },
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.degraded_reason is not None
+    assert "access_history" in result.degraded_reason
+    assert "ACCESS_HISTORY grant" in result.degraded_reason
+    assert "GET_LINEAGE grant" not in result.degraded_reason
+
+
 # ── #908: scope + hygiene + column grain (Enterprise, live-tuned) ─────────────
 
 
