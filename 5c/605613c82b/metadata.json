@@ -5,8 +5,8 @@
   "branch": "feature/issue-432-data-subject-rights",
   "checkpoints_count": 1,
   "files_touched": [
-    "backend/app/services/data_subject_requests.py",
-    "backend/tests/services/test_data_subject_requests.py"
+    "docs/compliance-posture.md",
+    "docs/site/compliance/dpia-input-sheet.md"
   ],
   "sessions": [
     {
@@ -18,10 +18,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 48,
-    "cache_creation_tokens": 22116,
-    "cache_read_tokens": 7029486,
-    "output_tokens": 7483,
-    "api_call_count": 24
+    "input_tokens": 22,
+    "cache_creation_tokens": 7940,
+    "cache_read_tokens": 3371996,
+    "output_tokens": 4057,
+    "api_call_count": 11
   }
 }
