@@ -1982,10 +1982,18 @@ def dryrun_check(
     precondition was not met), the metric it measured, and the observed vs
     expected values.
 
+    **Only ``expectation``, ``schema_drift`` and ``anomaly`` kinds can be
+    previewed.** A ``freshness`` or ``volume`` monitor check has no dry-run
+    support at all — refused with an error. The only way to check one is to
+    create it and run the suite.
+
     **A preview reads what a real run would read, so it inherits the target's
-    sampling.** On ADLS / S3 / Iceberg the evaluation may be over a capped sample
-    rather than the whole dataset — so a ``pass`` describes the sample, and a
-    ``volume`` preview's row count is not the file's row count. Say so rather
+    sampling.** On ADLS / S3 / Iceberg the evaluation may be over a capped
+    sample rather than the whole dataset — so a ``pass`` describes the
+    sample, and an ``expect_table_row_count_to_be_between`` preview's row
+    count is the SAMPLE's count, not the file's. (This is unrelated to the
+    ``volume`` monitor kind, which counts the true dataset size on every
+    datasource and cannot reach this tool at all — see above.) Say so rather
     than reporting either as a fact about the full table.
 
     This is the authoring loop: dry-run, adjust the threshold, dry-run again, and
