@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "bc78cd5219ac",
+  "strategy": "manual-commit",
+  "branch": "feat/mcp-1443-rename-pipeline-status-tool",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/mcp/server.py",
+    "backend/tests/mcp/test_mcp_tools.py",
+    "backend/tests/support/mcp_gates.py",
+    "docs/progress.md",
+    "docs/site/changelog.md",
+    "docs/site/mcp-setup.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bc/78cd5219ac/0/metadata.json",
+      "transcript": "/bc/78cd5219ac/0/full.jsonl",
+      "compact_transcript": "/bc/78cd5219ac/0/transcript.jsonl",
+      "content_hash": "/bc/78cd5219ac/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 166,
+    "cache_creation_tokens": 84235,
+    "cache_read_tokens": 31759840,
+    "output_tokens": 24524,
+    "api_call_count": 83
+  }
+}
