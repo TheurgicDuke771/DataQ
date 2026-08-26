@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "f244915a4ea1",
+  "strategy": "manual-commit",
+  "branch": "docs/w1-mcp-honesty-burndown-progress-update",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f2/44915a4ea1/0/metadata.json",
+      "transcript": "/f2/44915a4ea1/0/full.jsonl",
+      "compact_transcript": "/f2/44915a4ea1/0/transcript.jsonl",
+      "content_hash": "/f2/44915a4ea1/0/content_hash.txt",
+      "prompt": "/f2/44915a4ea1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 5511,
+    "cache_read_tokens": 3067924,
+    "output_tokens": 1904,
+    "api_call_count": 7
+  }
+}

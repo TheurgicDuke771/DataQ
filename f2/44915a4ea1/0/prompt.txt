@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bwuuy2ic7</task-id>
+<tool-use-id>toolu_01Kb8JVmxmQgVgmSx3j7CNDM</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c2690b83-076b-479b-8043-313620b203ca/tasks/bwuuy2ic7.output</output-file>
+<status>completed</status>
+<summary>Background command "gh pr checks 1594 --watch --interval 20 2&gt;&amp;1 | tail -30; echo "EXIT:$?"" completed (exit code 0)</summary>
+</task-notification>
