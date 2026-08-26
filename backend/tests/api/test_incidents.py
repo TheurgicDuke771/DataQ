@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pytest
@@ -330,6 +331,57 @@ def test_list_pagination_limit_offset_and_truncation(
     # Bounds still validate (#570 class).
     resp = client.get("/api/v1/incidents", params={"offset": -1})
     assert resp.status_code == 422
+
+
+def test_list_orders_by_most_recent_breach_not_when_first_opened(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """#1442: `list_incidents` (shared by REST and MCP) sorts by `last_seen_at`,
+    not `created_at` — an incident opened earlier that breached again most
+    recently must lead the list, since "is this still happening" is about
+    recent activity, not when the pair first paired up.
+    """
+    db = client_db(client)
+    older = world["incident"]  # opened first, in the `world` fixture
+    # NOT `_incident()`'s return value: with `include_all=True` and no suite
+    # scoping, `[0]` is whichever of the two ties the `last_seen_at`/id
+    # tie-break — resolve the second incident deterministically instead, by
+    # the one check id that isn't `older`'s.
+    _incident(db, world["suite"])
+    newer = next(
+        i
+        for i in incident_service.list_incidents(
+            db, user_id=_author(world["suite"]), suite_id=world["suite"].id, include_all=True
+        )
+        if i.check_id != older.check_id
+    )
+    # Force the ordering explicitly rather than relying on wall-clock drift
+    # between the two `_incident()` calls, which can tie at microsecond
+    # precision.
+    now = datetime.now(UTC)
+    older.created_at = now - timedelta(hours=2)
+    older.last_seen_at = now - timedelta(hours=2)
+    newer.created_at = now - timedelta(hours=1)
+    newer.last_seen_at = now - timedelta(hours=1)
+    db.commit()
+
+    # Re-breach the OLDER incident's check — attaches an occurrence and bumps
+    # its last_seen_at ahead of the newer incident's.
+    run = Run(
+        suite_id=world["suite"].id,
+        status="succeeded",
+        triggered_by="t",
+        asset_id=world["suite"].asset_id,
+    )
+    db.add(run)
+    db.flush()
+    db.add(Result(run_id=run.id, check_id=older.check_id, status="fail", metric_value=0.5))
+    db.commit()
+    incident_service.sync_incidents_for_run(db, run_id=run.id)
+
+    _as(world["owner"])
+    ids = [i["id"] for i in client.get("/api/v1/incidents").json()]
+    assert ids.index(str(older.id)) < ids.index(str(newer.id))
 
 
 def test_total_count_header_matches_accessible_population(

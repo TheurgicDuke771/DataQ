@@ -1010,6 +1010,8 @@ def list_check_versions(
 def list_runs(
     suite_id: str | None = None,
     status: str | None = None,
+    since_hours: Annotated[float | None, Field(gt=0)] = None,
+    until_hours: Annotated[float | None, Field(ge=0)] = None,
     limit: Annotated[int, Field(ge=1, le=200)] = 20,
     offset: Annotated[int, Field(ge=0)] = 0,
 ) -> dict[str, Any]:
@@ -1031,12 +1033,15 @@ def list_runs(
     failed without producing a complete account. Describe such a run by its
     status; it has no data-quality verdict yet.
 
-    **This tool has no time filter.** It returns the newest ``limit`` runs and
-    ``total`` counts matching runs for all time, so it cannot answer "what ran
-    today" directly: read ``newest_in_page`` / ``oldest_in_page``, state the
-    window you actually saw, and page with ``offset`` until ``oldest_in_page``
-    precedes the period you were asked about. Never describe a page as "today's
-    runs".
+    ``since_hours``/``until_hours`` scope by ``created_at`` and are relative
+    offsets from now ("N hours ago"), not clock times — you don't need to know
+    the server's current time to use them. For "what ran today", pass
+    ``since_hours=24``. For a bounded window ("yesterday only"), pass both:
+    ``since_hours=48, until_hours=24`` covers the 24-48-hours-ago slice. Without
+    ``since_hours`` the page is capped by COUNT, not time — read
+    ``newest_in_page`` / ``oldest_in_page``, state the window you actually saw,
+    and page with ``offset`` until ``oldest_in_page`` precedes the period you
+    were asked about. Never describe an unfiltered page as "today's runs".
 
     Optionally narrow to one ``suite_id`` (an error if you can't see it) and/or a
     run ``status``. ``total`` reports how many runs match regardless of ``limit``
@@ -1053,7 +1058,9 @@ def list_runs(
             require_permission(session, sid, user.id, minimum="view")
         # A status outside the closed vocabulary raises rather than returning an
         # empty page that reads as "no runs in that status" (#828).
-        run_service.validate_read_filters(status=status)
+        run_service.validate_read_filters(
+            status=status, since_hours=since_hours, until_hours=until_hours
+        )
         include_all = is_workspace_admin(user)
         runs = run_service.list_runs(
             session,
@@ -1063,12 +1070,20 @@ def list_runs(
             limit=limit,
             offset=offset,
             include_all=include_all,
+            since_hours=since_hours,
+            until_hours=until_hours,
         )
         # One grouped query for the whole page's outcomes, not one per run — the
         # N+1 an LLM caller cannot see the cost of (#947).
         outcomes = run_service.check_outcome_counts(session, [r.id for r in runs])
         total = run_service.count_runs(
-            session, user_id=user.id, suite_id=sid, status=status, include_all=include_all
+            session,
+            user_id=user.id,
+            suite_id=sid,
+            status=status,
+            include_all=include_all,
+            since_hours=since_hours,
+            until_hours=until_hours,
         )
         return {
             "total": total,
@@ -1077,11 +1092,9 @@ def list_runs(
             # `truncated` reads its ABSENCE as false, and reports a capped page as
             # the whole set — the exact failure the field exists to prevent.
             "truncated": offset + len(runs) < total,
-            # This tool has NO time filter (#1442), and the questions it is asked
-            # are time-shaped ("what failed today?"). The covered interval is
-            # returned as data so a model can check whether the period it was
-            # asked about is inside the page, rather than describing whatever it
-            # received as "today".
+            # Still useful even WITH since_hours/until_hours set (#1442): a page
+            # can be truncated by `limit` inside a wide window, so the covered
+            # interval may be narrower than the window asked for.
             **_page_window([r.created_at for r in runs]),
             "runs": [
                 {
@@ -2962,10 +2975,12 @@ def list_incidents(
     status: str | None = None,
     suite_id: str | None = None,
     asset_id: str | None = None,
+    since_hours: Annotated[float | None, Field(gt=0)] = None,
+    until_hours: Annotated[float | None, Field(ge=0)] = None,
     limit: Annotated[int, Field(ge=1, le=200)] = 50,
     offset: Annotated[int, Field(ge=0)] = 0,
 ) -> dict[str, Any]:
-    """List data-quality incidents — what is broken right now, and since when.
+    """List data-quality incidents — what is unresolved *right now*, and since when.
 
     Use this for "what's broken?", "what's still open?", "has anyone
     acknowledged the orders failure?". An incident is the deduplicated,
@@ -2973,9 +2988,23 @@ def list_incidents(
     breach opens it, later breaches raise `occurrence_count` rather than piling
     up new rows, and a passing result (or a person) resolves it.
 
+    **This tool answers "what is unresolved now", not "what failed during
+    period X".** Incidents auto-resolve on the first passing result (per-suite
+    configurable, default on) — a check that failed at 03:00 and passed at 09:00
+    has already auto-resolved, so it will not appear under `status="open"` even
+    though it genuinely failed today. For "what failed today/this week", use
+    `list_runs` or `get_check_history` instead; a confidently empty page here
+    does not mean nothing failed in the window, only that nothing is currently
+    unresolved.
+
     Filter by `status` (`open`, `acknowledged`, `resolved`), `suite_id`, or
     `asset_id`. Default is every status — pass `status="open"` for "what is
     broken right now", since a resolved incident is history, not a live problem.
+
+    `since_hours`/`until_hours` filter on `last_seen_at` (the most recent
+    breach, not when the incident first opened) and are relative offsets from
+    now ("N hours ago") rather than clock times. An incident opened last week
+    that breached again an hour ago still matches `since_hours=1`.
 
     `occurrence_count` is how many times the check has breached, not how many
     incidents exist; a count of 40 on one incident is one ongoing problem, not
@@ -2992,6 +3021,7 @@ def list_incidents(
         # "nothing is broken", on the one question where that is worst (#828).
         raise ToolError(f"status must be one of {list(INCIDENT_STATUSES)}")
     with _ctx() as (session, user), _service_errors():
+        incident_service.validate_read_filters(since_hours=since_hours, until_hours=until_hours)
         sid = _parse_uuid(suite_id, field="suite_id") if suite_id is not None else None
         aid = _parse_uuid(asset_id, field="asset_id") if asset_id is not None else None
         if aid is not None and session.get(Asset, aid) is None:
@@ -3014,6 +3044,8 @@ def list_incidents(
             asset_id=aid,
             suite_id=sid,
             state=status,
+            since_hours=since_hours,
+            until_hours=until_hours,
         )
         incidents = incident_service.list_incidents(
             session,
@@ -3024,11 +3056,14 @@ def list_incidents(
             state=status,
             limit=limit,
             offset=offset,
+            since_hours=since_hours,
+            until_hours=until_hours,
         )
         return {
             "total": total,
             "returned": len(incidents),
             "truncated": offset + len(incidents) < total,
+            **_page_window([i.last_seen_at for i in incidents]),
             "incidents": [_incident_payload(i) for i in incidents],
         }
 
