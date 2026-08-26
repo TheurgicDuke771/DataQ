@@ -1,0 +1,6 @@
+Hey, 
+Let pick up the MCP realted issues [the remaining pieces]. 
+check the current state of repo. 
+do research and check the filled issues. 
+create a TODO list based on priority and dependencies. 
+start execution
