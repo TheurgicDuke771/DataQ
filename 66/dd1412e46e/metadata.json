@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "66dd1412e46e",
+  "strategy": "manual-commit",
+  "branch": "fix/mcp-1446-classification-mismatch",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/mcp/server.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/66/dd1412e46e/0/metadata.json",
+      "transcript": "/66/dd1412e46e/0/full.jsonl",
+      "compact_transcript": "/66/dd1412e46e/0/transcript.jsonl",
+      "content_hash": "/66/dd1412e46e/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 20204,
+    "cache_read_tokens": 3579757,
+    "output_tokens": 4317,
+    "api_call_count": 13
+  }
+}
