@@ -1661,32 +1661,66 @@ def create_check(
     source_connection_id: str | None = None,
     dimension: str | None = None,
 ) -> dict[str, Any]:
-    """Add a new check (a Great Expectations expectation) to a suite.
+    """Add a new check (a Great Expectations expectation) to a suite. Requires
+    edit access to the suite. Returns the created check's id.
 
     Use this for 'add a null check on email to the customer suite'. ``name`` is a
     human label; ``expectation_type`` is a GX expectation (e.g.
     ``expect_column_values_to_not_be_null``); ``config`` carries its arguments
     (e.g. ``{"column": "email"}``). Optional warn/fail/critical thresholds band
-    the result severity. For a cross-dataset reconciliation check use
-    ``kind="comparison"`` with ``expectation_type="comparison:records"``,
-    ``source_connection_id`` (the baseline connection to compare against) and a
-    config carrying ``source`` (the baseline dataset spec) + ``keys`` (join key
-    columns). For a monitor rather than a rule, set ``kind`` and pair it with
+    the result severity.
+
+    **`config` is validated against GX's own schema only — never against the
+    datasource.** A column name that doesn't exist (a typo, wrong case) is
+    accepted here and only surfaces as an `error` result the next time the
+    suite runs. Confirm a column name with `list_columns` first. For an
+    ``expectation``-kind check, `dryrun_check` can also preview it against
+    live data before creating it — but `dryrun_check` only supports
+    `expectation`, `schema_drift` and `anomaly`; a `freshness` or `volume`
+    monitor has no preview and can only be checked by creating it and running
+    the suite.
+
+    For a monitor rather than a rule, set ``kind`` and pair it with
     ``expectation_type="monitor:<kind>"``: ``freshness`` (hours since
-    ``MAX(column)``), ``volume`` (row count vs ``min_rows``/``max_rows``),
-    ``schema_drift`` (columns added/removed/retyped vs a learned baseline), or
-    ``anomaly`` — "tell me when this looks unusual compared to normal", which
+    ``MAX(column)``), ``volume`` (row count vs ``min_rows``/``max_rows`` — this
+    counts the true dataset size on every datasource, including ADLS / S3 /
+    Iceberg, unlike an ordinary row-count *expectation* check on a sampled
+    suite, which measures the sample), ``schema_drift`` (columns
+    added/removed/retyped vs a learned baseline), or ``anomaly`` (see below).
+
+    For a cross-dataset reconciliation check use ``kind="comparison"`` with
+    ``expectation_type="comparison:records"``, ``source_connection_id`` (the
+    baseline connection to compare against) and a config carrying ``source``
+    (the baseline dataset spec) + ``keys`` (join key columns).
+
+    **`anomaly`** — "tell me when this looks unusual compared to normal" —
     learns a rolling mean/stddev of the table's own ``row_count`` or
-    ``freshness_age_hours`` and scores each run's z-score; its config takes
-    ``target_metric`` (required), plus optional ``column`` (for
-    ``freshness_age_hours``), ``window``, ``min_points`` and ``seasonality``
-    (day-of-week), and it needs a positive fail/critical threshold, which is the
-    z-score sensitivity (3 is a common starting point). ``dimension``
-    optionally overrides the DQ dimension (one of
-    accuracy, completeness, consistency, integrity, timeliness, uniqueness,
-    validity); leave it unset and DataQ derives it from the check type — only set
-    it when the user names a dimension explicitly. Requires edit access. Returns
-    the created check's id.
+    ``freshness_age_hours`` and scores each run's z-score against it. Its
+    config takes:
+    - ``target_metric`` (required): ``row_count`` or ``freshness_age_hours``.
+    - ``column`` (required only for ``freshness_age_hours``): which timestamp
+      column to measure.
+    - ``window`` (optional): how many past runs the rolling baseline covers.
+    - ``min_points`` (optional): runs needed before scoring starts — earlier
+      runs report ``skip``, not a false anomaly.
+    - ``seasonality`` (optional): set to compare against the same day-of-week
+      rather than a flat rolling window.
+
+    It needs a positive fail/critical threshold, which is the z-score
+    sensitivity (3 is a common starting point) — this is not a value the
+    metric itself will ever reach, so do not treat it like a domain threshold.
+
+    ``dimension`` optionally overrides the DQ dimension (one of accuracy,
+    completeness, consistency, integrity, timeliness, uniqueness, validity);
+    leave it unset and DataQ derives it from the check type where derivable.
+    **A returned `dimension: null` means "unclassified", not "failed to
+    save"** — accuracy/integrity and custom SQL are never derivable, and an
+    unclassified check renders as a coverage gap on the asset scorecard, not
+    an error. Only pass ``dimension`` explicitly when the user names one.
+
+    **Creating a check does not run it.** It takes effect on the suite's next
+    run (manual, scheduled, or trigger-fired) and changes nothing about past
+    runs or results.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     _reject_nul(
