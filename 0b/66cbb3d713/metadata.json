@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "0b66cbb3d713",
+  "strategy": "manual-commit",
+  "branch": "feat/mcp-1443-rename-pipeline-status-tool",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".claude/agents/qa-verifier.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0b/66cbb3d713/0/metadata.json",
+      "transcript": "/0b/66cbb3d713/0/full.jsonl",
+      "compact_transcript": "/0b/66cbb3d713/0/transcript.jsonl",
+      "content_hash": "/0b/66cbb3d713/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 6628,
+    "cache_read_tokens": 3877699,
+    "output_tokens": 2738,
+    "api_call_count": 9
+  }
+}
