@@ -123,7 +123,7 @@ than summarising the payload as-is.
 | Field | Appears on | What it prevents |
 |---|---|---|
 | `total` · `returned` · `truncated` | `list_runs`, `list_checks`, `list_check_versions`, `list_incidents`, `list_assets`, `get_check_history`, `get_adf_pipeline_status` | reporting one page as the whole set. `truncated` is computed against a real total, never inferred from page length. The unpaged tools — `list_suites`, `list_connections`, `list_schedules`, `list_trigger_bindings`, `get_near_misses` — return every row and carry no page fields at all |
-| `oldest_in_page` · `newest_in_page` | `list_runs`, `get_check_history`, `get_adf_pipeline_status` | answering a time-bounded question ("what failed today?") from a **count**-capped page. None of these tools has a time filter ([#1442](https://github.com/TheurgicDuke771/DataQ/issues/1442)) — these fields say what window you actually saw |
+| `oldest_in_page` · `newest_in_page` | `list_runs`, `list_incidents`, `get_check_history`, `get_adf_pipeline_status` | answering a time-bounded question ("what failed today?") from a **count**-capped page. `list_runs`/`list_incidents` now take `since_hours`/`until_hours`; `get_check_history`/`get_adf_pipeline_status` still have no time filter — these fields say what window you actually saw regardless |
 | `results_final` | `list_runs`, `get_run_results`, `get_run_status`, `get_suite_results` | reading a mid-run partial as a verdict. A 30-check suite three checks in genuinely has "3/3 passed" — and no result yet |
 | `redaction` · `redacted_columns` | per-check results | describing masked rows as "no failing rows", or mask tokens as data |
 | `sampling` · `sampled` · `sample_row_limit` | results, `profile_column` | stating a sample statistic as a fact about the full dataset |
@@ -167,7 +167,7 @@ snapshot or a live read, and what it structurally cannot see.
 
 | Tool | What it answers |
 |---|---|
-| `list_runs` | "Show me the recent runs" / "find the run that failed". **No time filter** — it returns the newest `limit` runs and reports `oldest_in_page` / `newest_in_page` so you can tell what window you actually saw ([#1442](https://github.com/TheurgicDuke771/DataQ/issues/1442)) |
+| `list_runs` | "Show me the recent runs" / "find the run that failed". Takes `since_hours`/`until_hours` (relative "N hours ago" offsets) for time-bounded questions ("what ran today" = `since_hours=24`); without them the page is capped by **count**, and `oldest_in_page` / `newest_in_page` say what window you actually saw |
 | `get_run_results` | "Why did last night's orders run fail?" — a specific historical run's per-check results |
 | `get_run_status` | "Is it done?" — live status + per-check progress |
 | `trigger_suite_run` | "Run the orders suite" — dispatches a run, returns the run id. **The environment and dataset cannot be chosen**: a run always uses the suite's own connection and target |
@@ -210,7 +210,7 @@ authored in. Incidents are the deduplicated, stateful roll-up of repeated failur
 |---|---|
 | `list_assets` | "What tables do we monitor?" / "which assets are unhealthy?" — every asset with its health. The numbers are **workspace-true** (ADR [0037](adr/0037-workspace-visible-asset-identity.md)): aggregated over every composing suite, including ones the caller cannot see, so they are not "your" checks |
 | `get_asset` | "Is the orders table healthy, and what feeds it?" — the workspace-true summary + per-dimension scorecard + the composing suites the caller may view (`restricted_suite_count` counts the rest) + the lineage neighbourhood, qualified when a lineage source is failing or stale |
-| `list_incidents` | "What's broken right now?" — open/acknowledged/resolved incidents, scoped to suites the caller can see, so an empty result means "nothing visible to you", not "nothing is wrong" |
+| `list_incidents` | "What's broken right now?" — open/acknowledged/resolved incidents, scoped to suites the caller can see, so an empty result means "nothing visible to you", not "nothing is wrong". Also takes `since_hours`/`until_hours`, filtered on `last_seen_at` (most recent breach, not when first opened). Incidents auto-resolve on the first passing result, so this answers "what's unresolved now", not "what failed during period X" — a resolved failure earlier in the window won't appear even under a time filter; use `list_runs` for that question |
 | `get_incident` | "Why did this open, and what else broke at the time?" — the evidence card snapshotted at the last occurrence; carries no failing sample rows by design |
 | `ack_incident` | "I'm on it" — records that someone owns the incident. Changes nothing about the data and does **not** stop alerts; use `snooze_check` for that |
 | `resolve_incident` | "The backfill fixed it" — declares the problem over. Does not re-run anything, and the next failing run opens a **new** incident |
