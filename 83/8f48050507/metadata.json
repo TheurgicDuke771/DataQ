@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "838f48050507",
+  "strategy": "manual-commit",
+  "branch": "docs/mcp-1448-create-check-caveats",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/mcp/server.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/83/8f48050507/0/metadata.json",
+      "transcript": "/83/8f48050507/0/full.jsonl",
+      "compact_transcript": "/83/8f48050507/0/transcript.jsonl",
+      "content_hash": "/83/8f48050507/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 32066,
+    "cache_read_tokens": 3989717,
+    "output_tokens": 4084,
+    "api_call_count": 12
+  }
+}
