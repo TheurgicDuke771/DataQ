@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "803cb9273053",
+  "strategy": "manual-commit",
+  "branch": "docs/mcp-1592-dryrun-volume-wording",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/mcp/server.py",
+    "backend/tests/mcp/test_mcp_tools.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/80/3cb9273053/0/metadata.json",
+      "transcript": "/80/3cb9273053/0/full.jsonl",
+      "compact_transcript": "/80/3cb9273053/0/transcript.jsonl",
+      "content_hash": "/80/3cb9273053/0/content_hash.txt",
+      "prompt": "/80/3cb9273053/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 18491,
+    "cache_read_tokens": 8574093,
+    "output_tokens": 7326,
+    "api_call_count": 19
+  }
+}
