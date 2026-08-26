@@ -1168,6 +1168,15 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
     that its expiry has never been read — ``credential_expiry_checked_at`` tells
     the two apart, and null there means we have never looked. Report all of these
     as silence rather than reassurance.
+
+    ``last_run_error``/``last_poll_error`` are a **stored, classified** reason
+    from the connection's last real run or poll (safe to quote verbatim — never
+    raw driver text). This is a different thing from ``test_connection``, which
+    performs a **live** probe right now and reports pass/fail only, with no
+    reason at all (its failure is unclassified by design, since the live driver
+    message can carry credential fragments). Prefer this tool's stored reason
+    for diagnosing why something failed; use ``test_connection`` only to check
+    whether the connection currently works.
     """
     if type is not None and type not in CONNECTION_TYPES:
         raise ToolError(f"type must be one of {list(CONNECTION_TYPES)}")
@@ -2392,7 +2401,10 @@ def test_connection(connection_id: str) -> dict[str, Any]:
     A failure is deliberately **unclassified**: the driver's own message can
     carry DSN and credential fragments, so it is withheld. Do not speculate
     about the cause — report that the probe failed and that the server logs
-    carry the detail.
+    carry the detail. This is different from ``list_connections``, whose
+    ``last_run_error``/``last_poll_error`` ARE classified (from the connection's
+    last real run/poll, not a live probe) — prefer that tool when you want a
+    reason rather than a pass/fail.
 
     Nothing is changed and no credential is ever returned — this reports only
     whether the probe worked. Requires the **member** workspace role: it spends a
