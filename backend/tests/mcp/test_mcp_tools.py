@@ -2148,6 +2148,26 @@ def test_dryrun_check_persists_nothing(db_session: Any, monkeypatch: Any) -> Non
     assert db_session.scalars(select(Run).where(Run.suite_id == suite.id)).all() == []
 
 
+def test_dryrun_check_refuses_a_monitor_kind_it_cannot_preview(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """#1592: the docstring says `freshness`/`volume` have no dry-run at all —
+    prove it against the REAL `dry_run_service.dry_run_check`, not a mock that
+    would happily preview anything it's told to.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError):
+        server.dryrun_check(
+            str(suite.id),
+            expectation_type="monitor:volume",
+            kind="volume",
+            config={"min_rows": 1},
+        )
+
+
 def test_dryrun_check_redacts_observed_values_like_the_results_tools(
     db_session: Any, monkeypatch: Any
 ) -> None:
