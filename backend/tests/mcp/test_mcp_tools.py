@@ -1381,6 +1381,52 @@ def test_list_runs_withholds_a_mid_run_suites_partial_outcome(
     assert run["worst_severity"] is None
 
 
+def test_list_runs_since_hours_excludes_older_runs(db_session: Any, monkeypatch: Any) -> None:
+    """#1442: 'what ran today' needs an actual time bound, not just the newest N."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    now = datetime.now(UTC)
+    old = Run(suite_id=suite.id, status="succeeded", created_at=now - timedelta(hours=48))
+    recent = Run(suite_id=suite.id, status="succeeded", created_at=now - timedelta(hours=2))
+    db_session.add_all([old, recent])
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    out = server.list_runs(since_hours=24)
+    assert out["total"] == 1
+    assert {r["id"] for r in out["runs"]} == {str(recent.id)}
+
+
+def test_list_runs_since_and_until_hours_bound_a_window(db_session: Any, monkeypatch: Any) -> None:
+    """A bounded window (`since_hours=48, until_hours=24` = 'yesterday') must
+    exclude runs both newer than `until_hours` and older than `since_hours`.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    now = datetime.now(UTC)
+    too_old = Run(suite_id=suite.id, status="succeeded", created_at=now - timedelta(hours=60))
+    yesterday = Run(suite_id=suite.id, status="succeeded", created_at=now - timedelta(hours=36))
+    too_recent = Run(suite_id=suite.id, status="succeeded", created_at=now - timedelta(hours=2))
+    db_session.add_all([too_old, yesterday, too_recent])
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    out = server.list_runs(since_hours=48, until_hours=24)
+    assert out["total"] == 1
+    assert {r["id"] for r in out["runs"]} == {str(yesterday.id)}
+
+
+def test_list_runs_rejects_until_hours_not_less_than_since_hours(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError):
+        server.list_runs(since_hours=24, until_hours=24)
+
+
 # ─────────────── Tier-1 ops/config reads (#529) ───────────────────────────
 
 
@@ -3476,6 +3522,55 @@ def test_list_incidents_rejects_an_unknown_asset_id(db_session: Any, monkeypatch
 
     with pytest.raises(ToolError):
         server.list_incidents(asset_id=str(uuid.uuid4()))
+
+
+def test_list_incidents_since_hours_filters_on_last_seen_at(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """#1442: filters on `last_seen_at` (the most recent breach), not
+    `created_at` — an incident opened long ago that breached again recently
+    must still surface within a short window, and one that hasn't breached
+    recently must not, regardless of how old it is.
+    """
+    owner = _user(db_session)
+    asset = _asset(db_session)
+    suite = _suite(db_session, owner)
+    check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.commit()
+    now = datetime.now(UTC)
+    recently_breached = _incident(
+        db_session,
+        asset=asset,
+        check=check,
+        suite=suite,
+        created_at=now - timedelta(hours=100),
+        last_seen_at=now - timedelta(hours=1),
+    )
+    _incident(
+        db_session,
+        asset=asset,
+        check=check,
+        suite=suite,
+        status="resolved",
+        created_at=now - timedelta(hours=100),
+        last_seen_at=now - timedelta(hours=100),
+    )
+    _as(monkeypatch, db_session, owner)
+
+    out = server.list_incidents(since_hours=24)
+    assert out["total"] == 1
+    assert out["incidents"][0]["id"] == str(recently_breached.id)
+
+
+def test_list_incidents_rejects_until_hours_not_less_than_since_hours(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError):
+        server.list_incidents(since_hours=24, until_hours=48)
 
 
 def test_ack_incident_records_the_actor_and_leaves_it_unresolved(

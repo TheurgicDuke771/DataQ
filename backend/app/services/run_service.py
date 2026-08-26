@@ -426,11 +426,27 @@ class RunFilterInvalidError(DataQError):
     code = "run_filter_invalid"
 
 
-def validate_read_filters(status: str | None = None) -> None:
-    """422 on a `/runs` filter value outside its closed vocabulary."""
+def validate_read_filters(
+    status: str | None = None,
+    *,
+    since_hours: float | None = None,
+    until_hours: float | None = None,
+) -> None:
+    """422 on a `/runs` filter value outside its closed vocabulary or shape."""
     if status is not None and status not in RUN_STATUSES:
         raise RunFilterInvalidError(
             f"invalid run status {status!r}", detail={"allowed": list(RUN_STATUSES)}
+        )
+    if since_hours is not None and since_hours <= 0:
+        raise RunFilterInvalidError(f"since_hours must be positive, got {since_hours!r}")
+    if until_hours is not None and until_hours < 0:
+        raise RunFilterInvalidError(f"until_hours must not be negative, got {until_hours!r}")
+    if since_hours is not None and until_hours is not None and until_hours >= since_hours:
+        # since_hours/until_hours are both "N hours ago" offsets from now, so the
+        # window is (now - since_hours, now - until_hours] — until must be the
+        # MORE RECENT bound, i.e. the smaller offset.
+        raise RunFilterInvalidError(
+            f"until_hours ({until_hours!r}) must be less than since_hours ({since_hours!r})"
         )
 
 
@@ -440,6 +456,8 @@ def _run_filters(
     suite_id: uuid.UUID | None,
     status: str | None,
     include_all: bool,
+    since_hours: float | None = None,
+    until_hours: float | None = None,
 ) -> list[Any]:
     """The ONE `WHERE` chain shared by :func:`list_runs` and :func:`count_runs`."""
     conditions: list[Any] = [
@@ -449,6 +467,10 @@ def _run_filters(
         conditions.append(Run.suite_id == suite_id)
     if status is not None:
         conditions.append(Run.status == status)
+    if since_hours is not None:
+        conditions.append(Run.created_at >= _now() - timedelta(hours=since_hours))
+    if until_hours is not None:
+        conditions.append(Run.created_at <= _now() - timedelta(hours=until_hours))
     return conditions
 
 
@@ -461,16 +483,28 @@ def list_runs(
     limit: int = 50,
     offset: int = 0,
     include_all: bool = False,
+    since_hours: float | None = None,
+    until_hours: float | None = None,
 ) -> list[Run]:
     """Runs for suites the user can access, newest first (`created_at` desc,
     `id` desc tie-break — the same total-order paging shape `/pipeline_runs`
     and `/incidents` use, since `created_at` alone ties within one transaction).
+
+    ``since_hours``/``until_hours`` are relative offsets from now ("N hours
+    ago"), not absolute timestamps — a caller (LLM or otherwise) states a
+    window in terms it already has ("today" -> ``since_hours=24``) without
+    needing to know the server's current time.
     """
     stmt = (
         select(Run)
         .where(
             *_run_filters(
-                user_id=user_id, suite_id=suite_id, status=status, include_all=include_all
+                user_id=user_id,
+                suite_id=suite_id,
+                status=status,
+                include_all=include_all,
+                since_hours=since_hours,
+                until_hours=until_hours,
             )
         )
         .order_by(Run.created_at.desc(), Run.id.desc())
@@ -487,6 +521,8 @@ def count_runs(
     suite_id: uuid.UUID | None = None,
     status: str | None = None,
     include_all: bool = False,
+    since_hours: float | None = None,
+    until_hours: float | None = None,
 ) -> int:
     """Total runs matching the SAME visibility + filters as :func:`list_runs`,
     unaffected by its `limit`/`offset` (#1108 — the `/assets` `X-Total-Count`
@@ -498,7 +534,12 @@ def count_runs(
         .select_from(Run)
         .where(
             *_run_filters(
-                user_id=user_id, suite_id=suite_id, status=status, include_all=include_all
+                user_id=user_id,
+                suite_id=suite_id,
+                status=status,
+                include_all=include_all,
+                since_hours=since_hours,
+                until_hours=until_hours,
             )
         )
     )

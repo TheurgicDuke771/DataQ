@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select, text
@@ -44,6 +44,11 @@ _OPEN_ATTACH_ATTEMPTS = 3
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+class IncidentFilterInvalidError(DataQError):
+    status_code = 422
+    code = "incident_filter_invalid"
 
 
 class IncidentNotFoundError(DataQError):
@@ -373,6 +378,8 @@ def _incident_filters(
     asset_id: uuid.UUID | None,
     suite_id: uuid.UUID | None,
     state: str | None,
+    since_hours: float | None = None,
+    until_hours: float | None = None,
 ) -> list[Any]:
     """The ONE `WHERE` chain shared by :func:`list_incidents` and
     :func:`count_incidents`. Derived once rather than hand-rolled twice, so a
@@ -388,7 +395,27 @@ def _incident_filters(
         conditions.append(Incident.suite_id == suite_id)
     if state is not None:
         conditions.append(Incident.status == state)
+    if since_hours is not None:
+        conditions.append(Incident.last_seen_at >= _now() - timedelta(hours=since_hours))
+    if until_hours is not None:
+        conditions.append(Incident.last_seen_at <= _now() - timedelta(hours=until_hours))
     return conditions
+
+
+def validate_read_filters(
+    *,
+    since_hours: float | None = None,
+    until_hours: float | None = None,
+) -> None:
+    """422 on an incident time-window filter outside its valid shape."""
+    if since_hours is not None and since_hours <= 0:
+        raise IncidentFilterInvalidError(f"since_hours must be positive, got {since_hours!r}")
+    if until_hours is not None and until_hours < 0:
+        raise IncidentFilterInvalidError(f"until_hours must not be negative, got {until_hours!r}")
+    if since_hours is not None and until_hours is not None and until_hours >= since_hours:
+        raise IncidentFilterInvalidError(
+            f"until_hours ({until_hours!r}) must be less than since_hours ({since_hours!r})"
+        )
 
 
 def list_incidents(
@@ -401,9 +428,22 @@ def list_incidents(
     state: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    since_hours: float | None = None,
+    until_hours: float | None = None,
 ) -> list[Incident]:
-    """Incidents on suites the caller can view, newest first (``created_at`` desc),
-    paginated with ``limit``/``offset`` (the #772 /assets pagination shape).
+    """Incidents on suites the caller can view, most-recently-active first
+    (``last_seen_at`` desc), paginated with ``limit``/``offset`` (the #772
+    /assets pagination shape).
+
+    Ordered, filtered (``since_hours``/``until_hours``) and windowed
+    (``_page_window`` in the MCP tool) all on the SAME field —
+    ``last_seen_at``, the most recent breach, not ``created_at`` — on purpose:
+    an incident opened last week that breached again an hour ago should
+    surface ahead of one that opened yesterday and has been quiet since, and a
+    truncated page must be a contiguous slice of whatever field the caller is
+    told to page by. Ordering by a different field than the filter/window
+    would make "page with offset until oldest_in_page precedes the window you
+    asked about" silently wrong.
     """
     stmt = (
         select(Incident)
@@ -414,9 +454,11 @@ def list_incidents(
                 asset_id=asset_id,
                 suite_id=suite_id,
                 state=state,
+                since_hours=since_hours,
+                until_hours=until_hours,
             )
         )
-        .order_by(Incident.created_at.desc(), Incident.id.desc())
+        .order_by(Incident.last_seen_at.desc(), Incident.id.desc())
         .limit(limit)
         .offset(offset)
     )
@@ -431,6 +473,8 @@ def count_incidents(
     asset_id: uuid.UUID | None = None,
     suite_id: uuid.UUID | None = None,
     state: str | None = None,
+    since_hours: float | None = None,
+    until_hours: float | None = None,
 ) -> int:
     """Total incidents matching the SAME visibility + filters as :func:`list_incidents`, unaffected
     by its `limit`/`offset` (#1108 — the `/assets` `X-Total-Count` shape). Grant-scoped like the
@@ -447,6 +491,8 @@ def count_incidents(
                 asset_id=asset_id,
                 suite_id=suite_id,
                 state=state,
+                since_hours=since_hours,
+                until_hours=until_hours,
             )
         )
     )

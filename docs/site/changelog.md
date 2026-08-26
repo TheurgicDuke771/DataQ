@@ -7,6 +7,19 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Changed
 
+- **MCP `list_runs`/`list_incidents` gained `since_hours`/`until_hours` time
+  filters** (#1442): both were count-capped only, so "what failed today" was
+  answered with "the 20 most recent runs" — correct on a quiet workspace,
+  wrong on a busy one. The offsets are relative to now ("N hours ago"), not
+  clock times, so a caller doesn't need to know the server's current time.
+  `list_incidents` also now states its auto-resolve blind spot (#1445): an
+  incident auto-resolves on the first passing result, so a failure that has
+  since recovered won't appear under `status="open"` even inside a matching
+  time window — `list_runs`/`get_check_history` answer "what failed during
+  period X", `list_incidents` answers "what's unresolved now". Its pagination
+  now sorts by `last_seen_at` (the filter field) instead of `created_at`, so a
+  truncated page is a contiguous slice of the window being asked about.
+
 - **Unity Catalog checks now execute on the Databricks SQL Warehouse by default**
   (#1532): the built-in catalog expectations join custom SQL on one GX
   Databricks-SQL batch, so the warehouse evaluates them and worker memory stays
