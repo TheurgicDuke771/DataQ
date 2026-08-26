@@ -1651,9 +1651,12 @@ def create_check(
     **`config` is validated against GX's own schema only — never against the
     datasource.** A column name that doesn't exist (a typo, wrong case) is
     accepted here and only surfaces as an `error` result the next time the
-    suite runs. Confirm a column name with `list_columns` first, or preview the
-    check with `dryrun_check` before creating it if you want to know now rather
-    than at the next run.
+    suite runs. Confirm a column name with `list_columns` first. For an
+    ``expectation``-kind check, `dryrun_check` can also preview it against
+    live data before creating it — but `dryrun_check` only supports
+    `expectation`, `schema_drift` and `anomaly`; a `freshness` or `volume`
+    monitor has no preview and can only be checked by creating it and running
+    the suite.
 
     For a monitor rather than a rule, set ``kind`` and pair it with
     ``expectation_type="monitor:<kind>"``: ``freshness`` (hours since
