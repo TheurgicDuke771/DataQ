@@ -22,7 +22,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/00
     [0032](adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 46 tools and per-suite permissions. Two rejections are deliberate in that
+    all 47 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -80,18 +80,20 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 46 tools
+## The 47 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
-identically. The 46 split three ways, not two:
+identically. The 47 split three ways, not two (one of the 24 reads, `get_adf_pipeline_status`,
+is a deprecated alias kept only for backward compatibility — see below):
 
-- **23 read-only** — `export_suite`, `get_adf_pipeline_status`, `get_asset`, `get_check`,
+- **24 read-only** — `export_suite`, `get_adf_pipeline_status` (deprecated, use
+  `get_pipeline_status`), `get_asset`, `get_check`,
   `get_check_history`, `get_column_policy`, `get_health_score`, `get_incident`,
-  `get_near_misses`, `get_notification_config`, `get_run_results`, `get_run_status`,
-  `get_suite_performance`, `get_suite_results`, `list_assets`, `list_check_versions`,
-  `list_checks`, `list_connections`, `list_incidents`, `list_runs`, `list_schedules`,
-  `list_suites`, `list_trigger_bindings`.
+  `get_near_misses`, `get_notification_config`, `get_pipeline_status`, `get_run_results`,
+  `get_run_status`, `get_suite_performance`, `get_suite_results`, `list_assets`,
+  `list_check_versions`, `list_checks`, `list_connections`, `list_incidents`, `list_runs`,
+  `list_schedules`, `list_suites`, `list_trigger_bindings`.
 - **18 that change state** — `create_check`, `update_check`, `delete_check`, `snooze_check`,
   `restore_check_version`, `trigger_suite_run`, `cancel_run`, `update_suite`, `set_column_policy`,
   `create_schedule`, `update_schedule`, `delete_schedule`, `create_trigger_binding`,
@@ -105,6 +107,12 @@ identically. The 46 split three ways, not two:
   remote system even though nothing is saved: the first four require `edit` on the suite whose
   connection they probe, and `test_connection` (which has no suite at all) requires the **member**
   workspace role.
+
+`get_adf_pipeline_status` predates dbt (ADR 0029) and Airflow support and was never ADF-only
+despite the name; `get_pipeline_status` is the current name and states its actual scope. The old
+name stays registered — a client with it pinned in a saved prompt or static config keeps
+working — and delegates to `get_pipeline_status` with identical behavior. New integrations
+should use `get_pipeline_status` ([#1443](https://github.com/TheurgicDuke771/DataQ/issues/1443)).
 
 No MCP tool is Admin-only. Every Admin-only capability in ADR 0033's authorization matrix is a
 connection *mutation* (create/edit/delete/re-auth), and none of those are exposed here at all —
@@ -122,8 +130,8 @@ than summarising the payload as-is.
 
 | Field | Appears on | What it prevents |
 |---|---|---|
-| `total` · `returned` · `truncated` | `list_runs`, `list_checks`, `list_check_versions`, `list_incidents`, `list_assets`, `get_check_history`, `get_adf_pipeline_status` | reporting one page as the whole set. `truncated` is computed against a real total, never inferred from page length. The unpaged tools — `list_suites`, `list_connections`, `list_schedules`, `list_trigger_bindings`, `get_near_misses` — return every row and carry no page fields at all |
-| `oldest_in_page` · `newest_in_page` | `list_runs`, `list_incidents`, `get_check_history`, `get_adf_pipeline_status` | answering a time-bounded question ("what failed today?") from a **count**-capped page. `list_runs`/`list_incidents` now take `since_hours`/`until_hours`; `get_check_history`/`get_adf_pipeline_status` still have no time filter — these fields say what window you actually saw regardless |
+| `total` · `returned` · `truncated` | `list_runs`, `list_checks`, `list_check_versions`, `list_incidents`, `list_assets`, `get_check_history`, `get_pipeline_status` | reporting one page as the whole set. `truncated` is computed against a real total, never inferred from page length. The unpaged tools — `list_suites`, `list_connections`, `list_schedules`, `list_trigger_bindings`, `get_near_misses` — return every row and carry no page fields at all |
+| `oldest_in_page` · `newest_in_page` | `list_runs`, `list_incidents`, `get_check_history`, `get_pipeline_status` | answering a time-bounded question ("what failed today?") from a **count**-capped page. `list_runs`/`list_incidents` now take `since_hours`/`until_hours`; `get_check_history`/`get_pipeline_status` still have no time filter — these fields say what window you actually saw regardless |
 | `results_final` | `list_runs`, `get_run_results`, `get_run_status`, `get_suite_results` | reading a mid-run partial as a verdict. A 30-check suite three checks in genuinely has "3/3 passed" — and no result yet |
 | `redaction` · `redacted_columns` | per-check results | describing masked rows as "no failing rows", or mask tokens as data |
 | `sampling` · `sampled` · `sample_row_limit` | results, `profile_column` | stating a sample statistic as a fact about the full dataset |
@@ -184,7 +192,7 @@ snapshot or a live read, and what it structurally cannot see.
 |---|---|
 | `list_connections` | "What are we connected to?" / "which connections are broken?" — names, types and health **only**, never config or secrets. `consecutive_run_failures` is non-zero only when *every* suite on the connection is failing, so a per-suite problem is invisible here |
 | `test_connection` | "Is the Snowflake connection working?" — opens a live connection with the stored credential. A pass proves only that the credential authenticates and the datasource answers, **not** that a suite will run; a failure is deliberately unclassified (driver text can carry credential fragments) |
-| `get_adf_pipeline_status` | "Why did pipeline Y fail?" — recent orchestrator (ADF/Airflow/dbt) runs + correlated DQ run |
+| `get_pipeline_status` | "Why did pipeline Y fail?" — recent orchestrator (ADF/Airflow/dbt) runs + correlated DQ run |
 | `list_trigger_bindings` | "What runs after the nightly load?" — which pipeline/DAG successes trigger which suite |
 | `create_trigger_binding` | "Run the orders checks after the nightly load finishes" — binds a pipeline/DAG success in a given `env` to a suite; only success triggers a run |
 | `update_trigger_binding` | "Stop that trigger firing, but keep the wiring" — enables or disables a binding; what it points at is immutable, so re-targeting means delete + create |

@@ -23,6 +23,26 @@ the per-PR history lives in the repo's commit log and pull requests.
   Incidents panel, which renders in received order) now list most-recently-
   *active* first rather than most-recently-*opened*.
 
+- **MCP `get_adf_pipeline_status` renamed to `get_pipeline_status`** (#1443):
+  the old name predates dbt/Airflow support and was never ADF-only. The old
+  name stays registered as a deprecated alias with identical behavior, so a
+  client with it pinned keeps working; new integrations should use
+  `get_pipeline_status`.
+
+- **MCP `list_connections`/`test_connection` error-classification docstrings
+  now cross-reference each other** (#1446): the two could read as
+  contradictory — one claims a "classified" reason, the other says failures
+  are "deliberately unclassified" — without stating that they're different
+  things (a stored reason from the last real run/poll vs. a live probe with
+  no reason at all).
+
+- **MCP `create_check` gained the honesty fields the rest of the surface
+  already has** (#1448): `config` is schema-validated only, never against the
+  datasource; the `volume` monitor kind counts the true dataset size on every
+  datasource (including ADLS/S3/Iceberg), unlike a sampled expectation check;
+  `dimension: null` means unclassified, not a save failure; creating a check
+  doesn't run it.
+
 - **Unity Catalog checks now execute on the Databricks SQL Warehouse by default**
   (#1532): the built-in catalog expectations join custom SQL on one GX
   Databricks-SQL batch, so the warehouse evaluates them and worker memory stays

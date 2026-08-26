@@ -666,7 +666,7 @@ def get_health_score(window_days: int = 7) -> dict[str, Any]:
 
 
 @mcp.tool
-def get_adf_pipeline_status(
+def get_pipeline_status(
     provider: str | None = None,
     status: str | None = None,
     limit: Annotated[int, Field(ge=1, le=200)] = 20,
@@ -744,6 +744,24 @@ def get_adf_pipeline_status(
             **_page_window([pr.started_at or pr.created_at for pr in runs]),
             "pipeline_runs": out,
         }
+
+
+@mcp.tool
+def get_adf_pipeline_status(
+    provider: str | None = None,
+    status: str | None = None,
+    limit: Annotated[int, Field(ge=1, le=200)] = 20,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> dict[str, Any]:
+    """Deprecated alias for ``get_pipeline_status`` — use that tool instead.
+
+    Kept only so a client with this name pinned (in a saved prompt or a static
+    config) does not break. The name predates dbt (ADR 0029) and Airflow
+    support: despite the name, this always covered ADF **and** Airflow **and**
+    dbt, which ``get_pipeline_status``'s name states honestly. Identical
+    behavior in every other respect — same arguments, same return shape.
+    """
+    return get_pipeline_status(provider=provider, status=status, limit=limit, offset=offset)
 
 
 def _check_summary(check: Check) -> dict[str, Any]:
