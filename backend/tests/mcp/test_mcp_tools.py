@@ -212,7 +212,7 @@ def test_get_health_score_workspace_admin_aggregates_unowned_runs(
     assert server.get_health_score()["total_runs"] >= 1
 
 
-def test_get_adf_pipeline_status_correlates_dq_run(db_session: Any, monkeypatch: Any) -> None:
+def test_get_pipeline_status_correlates_dq_run(db_session: Any, monkeypatch: Any) -> None:
     user = _user(db_session)
     suite = _suite(db_session, user)
     pr = PipelineRun(
@@ -229,7 +229,7 @@ def test_get_adf_pipeline_status_correlates_dq_run(db_session: Any, monkeypatch:
     db_session.commit()
     _as(monkeypatch, db_session, user)
 
-    out = server.get_adf_pipeline_status()["pipeline_runs"]
+    out = server.get_pipeline_status()["pipeline_runs"]
     assert out[0]["pipeline"] == "load_orders"
     assert out[0]["dq_run"]["status"] == "succeeded"
 
@@ -256,19 +256,19 @@ def _adf_run_on_unowned_suite(db_session: Any) -> User:
     return _user(db_session, "outsider@acme.io")
 
 
-def test_get_adf_pipeline_status_hides_unowned_correlation_from_non_admin(
+def test_get_pipeline_status_hides_unowned_correlation_from_non_admin(
     db_session: Any, monkeypatch: Any
 ) -> None:
     # The pipeline run itself is workspace-wide, but the correlated DQ run is
     # scoped: a non-admin outsider sees the pipeline row with dq_run == None.
     outsider = _adf_run_on_unowned_suite(db_session)
     _as(monkeypatch, db_session, outsider)
-    out = server.get_adf_pipeline_status()["pipeline_runs"]
+    out = server.get_pipeline_status()["pipeline_runs"]
     assert out[0]["pipeline"] == "load_orders"
     assert out[0]["dq_run"] is None
 
 
-def test_get_adf_pipeline_status_workspace_admin_correlates_unowned_run(
+def test_get_pipeline_status_workspace_admin_correlates_unowned_run(
     db_session: Any, monkeypatch: Any, make_workspace_admin: Any
 ) -> None:
     # A workspace-admin sees the correlated DQ run even on a suite they don't own
@@ -276,7 +276,7 @@ def test_get_adf_pipeline_status_workspace_admin_correlates_unowned_run(
     admin = _adf_run_on_unowned_suite(db_session)
     make_workspace_admin(admin.email)
     _as(monkeypatch, db_session, admin)
-    out = server.get_adf_pipeline_status()["pipeline_runs"]
+    out = server.get_pipeline_status()["pipeline_runs"]
     assert out[0]["dq_run"]["status"] == "succeeded"
 
 
@@ -1740,13 +1740,13 @@ def test_list_trigger_bindings_accepts_every_orchestration_provider(
         assert server.list_trigger_bindings(provider=provider) == []
 
 
-def test_get_adf_pipeline_status_accepts_dbt(db_session: Any, monkeypatch: Any) -> None:
+def test_get_pipeline_status_accepts_dbt(db_session: Any, monkeypatch: Any) -> None:
     """The obvious next call after `list_trigger_bindings(provider="dbt")` returns
     a dbt binding. It used to raise on a provider DataQ has supported since
     ADR 0029.
     """
     _as(monkeypatch, db_session, _user(db_session))
-    assert server.get_adf_pipeline_status(provider="dbt")["pipeline_runs"] == []
+    assert server.get_pipeline_status(provider="dbt")["pipeline_runs"] == []
 
 
 def test_get_notification_config_credits_the_workspace_channels(
@@ -3803,7 +3803,7 @@ def test_list_runs_reports_the_time_window_it_actually_covered(
     assert out["oldest_in_page"] == out["newest_in_page"]
 
 
-def test_get_adf_pipeline_status_reports_truncation(db_session: Any, monkeypatch: Any) -> None:
+def test_get_pipeline_status_reports_truncation(db_session: Any, monkeypatch: Any) -> None:
     """It took `limit` and returned a bare list, so a full page was
     indistinguishable from the whole set on 'did any pipeline fail overnight?'.
     """
@@ -3823,13 +3823,37 @@ def test_get_adf_pipeline_status_reports_truncation(db_session: Any, monkeypatch
         )
     db_session.commit()
 
-    page = server.get_adf_pipeline_status(limit=2)
+    page = server.get_pipeline_status(limit=2)
     assert page["total"] == 3
     assert page["truncated"] is True
     assert len(page["pipeline_runs"]) == 2
 
     with pytest.raises(ToolError):
-        server.get_adf_pipeline_status(status="explode")
+        server.get_pipeline_status(status="explode")
+
+
+def test_get_adf_pipeline_status_is_a_working_alias_for_get_pipeline_status(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """#1443: the old name is kept registered (a client with it pinned must not
+    break) but must delegate to the real tool rather than diverge from it.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    db_session.add(
+        PipelineRun(
+            provider="airflow",
+            connection_id=suite.connection_id,
+            pipeline_or_dag_id="flow_a",
+            provider_run_id=str(uuid.uuid4()),
+            env="dev",
+            status="succeeded",
+        )
+    )
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    assert server.get_adf_pipeline_status() == server.get_pipeline_status()
 
 
 def test_import_suite_reports_that_it_is_not_runnable(db_session: Any, monkeypatch: Any) -> None:
@@ -3919,7 +3943,7 @@ def test_every_paged_tool_reports_truncation_the_same_way(
         "list_incidents": server.list_incidents(),
         "list_assets": server.list_assets(),
         "get_check_history": server.get_check_history(str(suite.id), str(check.id)),
-        "get_adf_pipeline_status": server.get_adf_pipeline_status(),
+        "get_pipeline_status": server.get_pipeline_status(),
     }
     for name, payload in paged.items():
         assert "total" in payload, f"{name} pages but reports no total"

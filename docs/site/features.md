@@ -204,7 +204,7 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 
 ## AI assistants (MCP)
 
-A curated **46-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
+A curated **47-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
 results, checks, runs, connections, schedules, trigger bindings and notification config,
 trigger and cancel runs, poll status, add/update/delete/snooze checks, dry-run a check preview,
 manage schedules and trigger bindings end-to-end (create / update / delete), import a suite
@@ -213,8 +213,8 @@ column policy, browse **assets** (the tables DataQ monitors, with health and lin
 **incidents** (what is broken right now, with the evidence — acknowledge and resolve them,
 and surface near-miss triggers that silently never fire), list a target's columns, profile
 columns, suggest a PII policy, test a connection, and read the health score and pipeline
-status — in natural language, with the same per-suite authz as the UI. The 46 split three
-ways: **23 read-only, 18 that change state**, and **5 that persist nothing but open a live
+status — in natural language, with the same per-suite authz as the UI. The 47 split three
+ways: **24 read-only, 18 that change state**, and **5 that persist nothing but open a live
 datasource connection with stored credentials** and so are gated like writes ([AI
 assistants](mcp-setup.md), ADR 0008 + its Tier 1–3B amendments).
 

@@ -267,3 +267,12 @@ gateless tool pass by failing for the wrong reason. Every gate in this batch was
 verified.
 
 The exclusions are unchanged.
+
+## Amendment — `get_adf_pipeline_status` renamed to `get_pipeline_status`, 46 → 47 (issue [#1443](https://github.com/TheurgicDuke771/DataQ/issues/1443))
+
+The name predated dbt (ADR 0029) and Airflow support and was never ADF-only — it always covered
+ADF, Airflow and dbt. Renamed to `get_pipeline_status`, which states its actual scope. The old
+name stays registered as a deprecated, behaviorally-identical alias (a plain delegate — same
+arguments, same validation, same return shape) so a client with it pinned in a saved prompt or
+static config does not break. The split becomes **47 tools: 24 read-only, 18 that change state, 5
+live-probe** — the extra tool is the alias, not new capability.
