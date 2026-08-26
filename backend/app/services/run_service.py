@@ -443,7 +443,7 @@ def validate_read_filters(
         raise RunFilterInvalidError(f"until_hours must not be negative, got {until_hours!r}")
     if since_hours is not None and until_hours is not None and until_hours >= since_hours:
         # since_hours/until_hours are both "N hours ago" offsets from now, so the
-        # window is (now - since_hours, now - until_hours] — until must be the
+        # window is [now - since_hours, now - until_hours] — until must be the
         # MORE RECENT bound, i.e. the smaller offset.
         raise RunFilterInvalidError(
             f"until_hours ({until_hours!r}) must be less than since_hours ({since_hours!r})"
