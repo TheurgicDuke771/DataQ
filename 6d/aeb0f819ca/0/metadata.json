@@ -1,0 +1,67 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "6daeb0f819ca",
+  "session_id": "b6d87485-c48a-464d-9eeb-49c7fcd7f01a",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-27T09:26:24.036854Z",
+  "branch": "feature/1460-audit-tamper-evidence",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".env.app.example",
+    "backend/alembic/versions/e9f679612fdc_add_audit_chain.py",
+    "backend/app/api/v1/admin.py",
+    "backend/app/core/config.py",
+    "backend/app/core/tamper_anchor.py",
+    "backend/app/db/models.py",
+    "backend/app/services/audit_chain.py",
+    "backend/app/services/audit_read_service.py",
+    "backend/app/services/audit_service.py",
+    "backend/app/worker/celery_app.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/api/test_audit_read.py",
+    "backend/tests/core/test_tamper_anchor.py",
+    "backend/tests/db/test_audit_retention_privileges.py",
+    "backend/tests/services/test_audit_chain.py",
+    "docs/compliance-posture.md",
+    "docs/site/adr/0041-history-audit-strategy.md",
+    "docs/site/architecture.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "41e928139a85",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 754,
+    "cache_creation_tokens": 542131,
+    "cache_read_tokens": 134977908,
+    "output_tokens": 245558,
+    "api_call_count": 377
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-27T09:26:23.934769Z",
+    "agent_lines": 1442,
+    "agent_removed": 15,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1442,
+    "total_lines_changed": 1457,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}

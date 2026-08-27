@@ -1,0 +1,15 @@
+Hey, 
+Regarding Complaince - did we considered SOX? And do we need SOX Complaience?
+
+---
+
+Okay since DataQ is not a company we don't need it, right?
+
+---
+
+Okay, speaking of compliance, how many issues from this track is still pending?
+
+---
+
+Okay, let's pick them up. 
+first #1460 then  #1554 and #1555.

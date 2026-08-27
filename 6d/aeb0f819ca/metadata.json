@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "6daeb0f819ca",
+  "strategy": "manual-commit",
+  "branch": "feature/1460-audit-tamper-evidence",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".env.app.example",
+    "backend/alembic/versions/e9f679612fdc_add_audit_chain.py",
+    "backend/app/api/v1/admin.py",
+    "backend/app/core/config.py",
+    "backend/app/core/tamper_anchor.py",
+    "backend/app/db/models.py",
+    "backend/app/services/audit_chain.py",
+    "backend/app/services/audit_read_service.py",
+    "backend/app/services/audit_service.py",
+    "backend/app/worker/celery_app.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/api/test_audit_read.py",
+    "backend/tests/core/test_tamper_anchor.py",
+    "backend/tests/db/test_audit_retention_privileges.py",
+    "backend/tests/services/test_audit_chain.py",
+    "docs/compliance-posture.md",
+    "docs/site/adr/0041-history-audit-strategy.md",
+    "docs/site/architecture.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6d/aeb0f819ca/0/metadata.json",
+      "transcript": "/6d/aeb0f819ca/0/full.jsonl",
+      "compact_transcript": "/6d/aeb0f819ca/0/transcript.jsonl",
+      "content_hash": "/6d/aeb0f819ca/0/content_hash.txt",
+      "prompt": "/6d/aeb0f819ca/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 754,
+    "cache_creation_tokens": 542131,
+    "cache_read_tokens": 134977908,
+    "output_tokens": 245558,
+    "api_call_count": 377
+  }
+}
