@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from sqlalchemy import Table, create_engine, text
+from sqlalchemy import Table, create_engine, select, text
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session, sessionmaker
 from structlog.testing import capture_logs
 
-from backend.app.db.models import AuditEvent, Base, User
+from backend.app.db.models import AuditChainCheckpoint, AuditChainState, AuditEvent, Base, User
 from backend.app.services import audit_read_service
 from backend.tests.conftest import TEST_DATABASE_URL
 
@@ -65,8 +65,15 @@ def owner_session() -> Iterator[Session]:
     owner_url = f"{url}://{_ROLE}:{_PASSWORD}@{host}/{_DB}"
     engine = create_engine(owner_url)
     try:
-        # Created BY the probe role, so the role owns them — the production shape.
-        tables = [cast(Table, User.__table__), cast(Table, AuditEvent.__table__)]
+        # Created BY the probe role, so the role owns them — the production shape. Includes the
+        # hash-chain tables (#1460): the `before_commit` chaining hook fires on ANY session
+        # commit, this probe role's included, so it must find them.
+        tables = [
+            cast(Table, User.__table__),
+            cast(Table, AuditEvent.__table__),
+            cast(Table, AuditChainState.__table__),
+            cast(Table, AuditChainCheckpoint.__table__),
+        ]
         Base.metadata.create_all(engine, tables=tables)
         session = sessionmaker(bind=engine)()
         try:
@@ -274,3 +281,42 @@ def test_a_zero_row_sweep_still_logs(owner_session: Session) -> None:
     assert len(events) == 1
     assert events[0]["deleted"] == 0
     assert events[0]["retention_days"] == 365
+
+
+def test_the_sweep_writes_a_checkpoint_before_deleting(owner_session: Session) -> None:
+    """#1460: the checkpoint is what lets `verify_chain` cross the boundary a purge
+    creates — it must exist and be correct BEFORE the row it describes is gone.
+    """
+    _seed(owner_session, age_days=500)
+    _seed(owner_session, age_days=1)
+    owner_session.execute(text(_revoke_statement(_ROLE)))
+    owner_session.commit()
+    oldest_batch = owner_session.scalars(
+        select(AuditEvent)
+        .where(AuditEvent.occurred_at < datetime.now(UTC) - timedelta(days=365))
+        .order_by(AuditEvent.occurred_at.desc(), AuditEvent.id.desc())
+        .limit(1)
+    ).first()
+    assert oldest_batch is not None
+    # Captured now: the row itself is about to be deleted, and subsequent commits
+    # inside the sweep expire ORM attributes that would then need a refresh.
+    oldest_id, oldest_hash = oldest_batch.id, oldest_batch.row_hash
+
+    audit_read_service.purge_expired_events(owner_session, retention_days=365)
+
+    checkpoints = owner_session.scalars(select(AuditChainCheckpoint)).all()
+    assert len(checkpoints) == 1
+    checkpoint = checkpoints[0]
+    assert checkpoint.deleted_count == 3
+    assert checkpoint.last_deleted_event_id == oldest_id
+    assert checkpoint.last_deleted_row_hash == oldest_hash
+
+
+def test_a_no_op_sweep_writes_no_checkpoint(owner_session: Session) -> None:
+    _seed(owner_session, age_days=1)
+    owner_session.execute(text(_revoke_statement(_ROLE)))
+    owner_session.commit()
+
+    audit_read_service.purge_expired_events(owner_session, retention_days=365)
+
+    assert owner_session.scalars(select(AuditChainCheckpoint)).all() == []

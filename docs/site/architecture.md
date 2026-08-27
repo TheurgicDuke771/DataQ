@@ -222,6 +222,24 @@ erDiagram
         jsonb before
         jsonb after
         string request_id
+        string prev_hash "hash chain (ADR 0041 §9 / #1460)"
+        string row_hash "NULL = written before the chain shipped, not backfilled"
+    }
+    audit_chain_state {
+        int id PK "singleton — always 1"
+        string head_hash "locked via FOR UPDATE at commit time"
+        uuid head_event_id "NO FK — see audit_events.entity_id"
+        timestamptz updated_at
+    }
+    audit_chain_checkpoints {
+        uuid id PK
+        timestamptz created_at
+        timestamptz cutoff "the retention cutoff this purge ran against"
+        int deleted_count
+        uuid last_deleted_event_id "NO FK — about to be deleted"
+        string last_deleted_row_hash
+        uuid first_surviving_event_id "NO FK — nullable if the purge deleted everything"
+        boolean anchored "whether the external anchor publish succeeded"
     }
     runs {
         uuid id PK

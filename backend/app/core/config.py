@@ -104,6 +104,13 @@ class Settings(BaseSettings):
     # Audit-log retention (ADR 0041 §2.7).
     audit_retention_days: int = 365
 
+    # Audit hash-chain external anchor (ADR 0041 §9 / #1460) — dark by default, same
+    # posture as LINEAGE_PROVIDER: the chain is computed either way, only the anchor
+    # publish is gated.
+    tamper_anchor: Literal["none", "webhook"] = "none"
+    tamper_anchor_webhook_url: str = ""
+    tamper_anchor_webhook_secret: str = ""
+
     # OTP-code retention sweep (#1136) — hygiene.
     otp_codes_retention_hours: int = 24
 
@@ -500,6 +507,26 @@ class Settings(BaseSettings):
             raise ValueError("AWS_SECRETS_MANAGER_PREFIX must not be empty")
         elif mode == "redis":
             raise ValueError(_REDIS_STORE_REMOVED)
+        return self
+
+    @model_validator(mode="after")
+    def _validate_tamper_anchor(self) -> "Settings":
+        """Same startup-not-mid-run reasoning as `_validate_secret_store`: an
+        unusable anchor config should fail the boot, not the first purge.
+        """
+        if self.tamper_anchor == "webhook":
+            missing = []
+            if not self.tamper_anchor_webhook_url.strip():
+                missing.append("TAMPER_ANCHOR_WEBHOOK_URL")
+            if not self.tamper_anchor_webhook_secret.strip():
+                missing.append("TAMPER_ANCHOR_WEBHOOK_SECRET")
+            if missing:
+                raise ValueError(f"TAMPER_ANCHOR='webhook' requires {' and '.join(missing)}")
+            url = self.tamper_anchor_webhook_url.strip()
+            if not url.startswith(("http://", "https://")):
+                raise ValueError(
+                    f"TAMPER_ANCHOR_WEBHOOK_URL must start with http:// or https:// (got {url!r})"
+                )
         return self
 
     @model_validator(mode="after")

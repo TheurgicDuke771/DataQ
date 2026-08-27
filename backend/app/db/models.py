@@ -1017,6 +1017,11 @@ class AuditEvent(Base):
     after: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     #: Correlates with the log line and OTel span carrying the same request id (#525).
     request_id: Mapped[str | None] = mapped_column(String(64))
+    #: Hash chain (ADR 0041 §9 / #1460). Nullable and NOT backfilled — a row written
+    #: before the chain shipped has no `row_hash` and is reported as unverifiable
+    #: legacy, never silently treated as a break. See `audit_chain.py`.
+    prev_hash: Mapped[str | None] = mapped_column(String(64))
+    row_hash: Mapped[str | None] = mapped_column(String(64))
 
     actor: Mapped["User | None"] = relationship()
 
@@ -1028,8 +1033,55 @@ class AuditEvent(Base):
         return self.actor_label
 
 
+class AuditChainState(Base):
+    """Singleton row tracking the audit hash chain's current head (#1460).
+
+    Locked via `with_for_update=True` (see `connection_lock.py`'s idiom) so
+    concurrent writers serialize on one well-known row rather than racing to read
+    "the latest `audit_events` row" — which also gives O(1) head lookup regardless
+    of table size or a purge having just run.
+    """
+
+    __tablename__ = "audit_chain_state"
+
+    #: Always 1 — there is exactly one row, checked at query time, not by a DB constraint
+    #: (a CHECK on a literal singleton value adds nothing a `get(AuditChainState, 1)` doesn't).
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    head_hash: Mapped[str | None] = mapped_column(String(64))
+    #: NO foreign key — same reasoning as `AuditEvent.entity_id`.
+    head_event_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class AuditChainCheckpoint(Base):
+    """One row per retention-sweep purge (#1460) — the documented explanation for
+    the chain discontinuity a purge necessarily creates at its tail. Verification
+    treats a surviving row's `prev_hash` as legitimate if it matches either a live
+    prior row OR a checkpoint's `last_deleted_row_hash`; anything else is a break.
+    """
+
+    __tablename__ = "audit_chain_checkpoints"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    created_at: Mapped[datetime] = _created_at()
+    #: The retention cutoff this purge ran against.
+    cutoff: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    deleted_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: NO foreign key — the row this points to is, by definition, about to be deleted.
+    last_deleted_event_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    last_deleted_row_hash: Mapped[str | None] = mapped_column(String(64))
+    #: NULL if the purge deleted every row up to the cutoff and nothing survived it.
+    first_surviving_event_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    #: Whether the external anchor publish succeeded for this checkpoint — a failed
+    #: publish never blocks the purge (ADR 0041 §2.6.3's precedent for phase-2 reads),
+    #: but must not be reported as if it happened.
+    anchored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
 __all__ = [
     "Asset",
+    "AuditChainCheckpoint",
+    "AuditChainState",
     "AuditEvent",
     "Base",
     "Check",

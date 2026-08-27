@@ -19,6 +19,12 @@ from backend.app.db.models import (
     User,
 )
 
+# Importing this registers the `before_commit` hash-chain hook on `Session`
+# (ADR 0041 §9 / #1460) — every audit-writing module goes through THIS module,
+# so importing it here guarantees the hook is registered wherever `record()` is
+# reachable, without a separate app-startup wiring step to remember.
+from backend.app.services import audit_chain  # noqa: F401
+
 log = get_logger(__name__)
 
 # ── Redaction ───────────────────────────────────────────────────────────────── The **credential

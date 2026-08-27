@@ -110,7 +110,7 @@ only to EU personal data.
 Ranked by severity. Tracked in the Backlog milestone: **G1 #431 · G2 #432 · G3 #433 ·
 G4 #434 · G5 #435**.
 
-### G1 — 🟢 Data-*access* audit trail (the HIPAA gate) — #431 — **all five recorded actions, config events and the retention sweep production-verified on BOTH clouds; tamper-evidence open**
+### G1 — 🟢 Data-*access* audit trail (the HIPAA gate) — #431 — **all five recorded actions, config events and the retention sweep production-verified on BOTH clouds; tamper-evidence shipped (#1460), unanchored by default**
 **Requirement:** HIPAA §164.312(b) **audit controls** require a durable record of *who
 accessed which PHI*. GDPR accountability (Art 5(2) / 30) wants processing records too.
 **Current state (updated 2026-08-17):** the *"revisit ADR 0020"* instruction has been
@@ -193,14 +193,30 @@ request path. Moving it off the request path was considered and rejected: a defe
 can be lost when a process dies, and "we usually record accesses" is the property an audit
 control exists to rule out.
 
-**What remains open for #431 is tamper-evidence**, which ADR 0041 §2.7 is explicit needs
-cryptographic chaining anchored *outside* the database. The `REVOKE UPDATE, DELETE` is a
-guard against **accidental** in-app mutation and is **not** tamper-resistance: the table's
-owner (`dataq_app`) can grant the privileges straight back — the retention sweep does
-exactly that, by necessity — and splitting the database role to prevent it is rejected on
-a stronger security constraint. An operator whose regime requires a provably unaltered log
-needs that anchor; one that requires a durable, queryable, admin-gated record of who read
-which PHI now has it.
+**Tamper-evidence — shipped, unanchored by default (2026-08-27, #1460).** The
+`REVOKE UPDATE, DELETE` is a guard against **accidental** in-app mutation and
+was never tamper-resistance on its own: the table's owner (`dataq_app`) can
+grant the privileges straight back — the retention sweep does exactly that, by
+necessity — and splitting the database role to prevent it is rejected on a
+stronger security constraint (ADR 0041 §2.7). `audit_events` now carries a
+hash chain (`prev_hash`/`row_hash`, ADR 0041 §9): every new event links to the
+one before it, `GET /admin/audit-events/verify` (workspace-admin gated)
+recomputes the chain and reports the first break with its location, and a
+daily beat task runs the same check unattended. Retention purges checkpoint
+the boundary they create before deleting, so `verify` correctly reads a
+documented purge as clean rather than as tampering.
+
+**The chain alone is not the tamper-evidence claim — the external anchor is.**
+`TAMPER_ANCHOR` defaults to `none`: the chain is still computed and still
+catches an accidental or narrowly-scoped edit, but an actor with write access
+to the *whole* table could recompute it forward from wherever they edited,
+proving nothing to that specific adversary. `TAMPER_ANCHOR=webhook` publishes
+the chain head, HMAC-signed, to an operator-controlled endpoint outside the
+database — a separate log sink, an append-only object store's ingest — DataQ
+never reads it back; its entire value is that DataQ does not control it. An
+operator whose regime requires a provably unaltered log must configure the
+anchor; one that requires a durable, queryable, admin-gated record of who read
+which PHI already has it via the read API above, independent of the anchor.
 
 **Verified in production (Azure, 2026-08-19).** The write/read half is no longer
 local-only. A run's results were read on the deployed stack as an ordinary **member**, and

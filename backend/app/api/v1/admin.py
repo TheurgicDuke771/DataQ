@@ -21,7 +21,12 @@ from backend.app.db.models import SuiteNotification, User
 from backend.app.db.session import get_db
 from backend.app.mcp.auth import mcp_enabled
 from backend.app.services import admin_service as svc
-from backend.app.services import audit_read_service, audit_service, data_subject_requests
+from backend.app.services import (
+    audit_chain,
+    audit_read_service,
+    audit_service,
+    data_subject_requests,
+)
 from backend.app.services.otp_mailer import OtpMailer
 
 router = APIRouter(
@@ -257,6 +262,65 @@ def list_audit_events(
         truncated=page.truncated,
         retention_days=page.retention_days,
         retained_since=page.retained_since,
+    )
+
+
+class AuditChainStatus(ApiModel):
+    """The verification tooling ADR 0041 §9 / #1460 requires — not just a
+    boolean, so an admin can see WHAT is or isn't covered.
+    """
+
+    #: "ok" (every hashed row verified) | "broken" (a mismatch was found) |
+    #: "empty" (no hashed rows exist yet — nothing to verify, not the same as "ok").
+    status: Literal["ok", "broken", "empty"]
+    verified_count: int
+    #: Rows written before the chain shipped — real audit history, just not covered
+    #: by it. Reported, never silently folded into `verified_count`.
+    unverifiable_legacy_count: int
+    chain_head_hash: str | None
+    #: Whether TAMPER_ANCHOR is configured. "ok" with anchor_mode="none" means the
+    #: chain is internally consistent but NOT independently verifiable by anyone
+    #: who could also rewrite the whole table — see ADR 0041 §9.
+    anchor_mode: Literal["none", "webhook"]
+    first_break: dict[str, Any] | None
+
+
+@router.get(
+    "/audit-events/verify",
+    response_model=AuditChainStatus,
+    summary="Verify the audit hash chain for tampering (workspace-admin only)",
+)
+def verify_audit_chain(db: Annotated[Session, Depends(get_db)]) -> AuditChainStatus:
+    """The verification tooling for the tamper-evidence hash chain (#1460)."""
+    result = audit_chain.verify_chain(db)
+    if result.first_break is not None:
+        status: Literal["ok", "broken", "empty"] = "broken"
+    elif result.verified_count == 0:
+        status = "empty"
+    else:
+        status = "ok"
+    break_info = (
+        None
+        if result.first_break is None
+        else {
+            "event_id": str(result.first_break.event_id),
+            "occurred_at": (
+                result.first_break.occurred_at.isoformat()
+                if result.first_break.occurred_at is not None
+                else None
+            ),
+            "expected_prev_hash": result.first_break.expected_prev_hash,
+            "actual_prev_hash": result.first_break.actual_prev_hash,
+        }
+    )
+    settings = get_settings()
+    return AuditChainStatus(
+        status=status,
+        verified_count=result.verified_count,
+        unverifiable_legacy_count=result.unverifiable_legacy_count,
+        chain_head_hash=result.chain_head_hash,
+        anchor_mode=settings.tamper_anchor,
+        first_break=break_info,
     )
 
 
