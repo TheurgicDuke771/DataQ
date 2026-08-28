@@ -10,8 +10,10 @@ import {
   expectationsByCategoryFor,
   fieldVisible,
   MOSTLY_FIELD_NAME,
+  TYPE_FIELD_NAMES,
   typeFieldHint,
 } from '../../src/components/checks/expectationCatalog';
+import { buildCheckPayload } from '../../src/components/checks/checkForm';
 
 const categoryNames = (groups: { category: string; specs: unknown[] }[]): string[] =>
   groups.map((g) => g.category);
@@ -316,5 +318,111 @@ describe('`mostly` tolerance field (#1509)', () => {
   it('warns on the type checks that the tolerance only reaches the row-wise compare', () => {
     const help = requiredField('expect_column_values_to_be_of_type', MOSTLY_FIELD_NAME).help ?? '';
     expect(help).toMatch(/row-wise compare/);
+  });
+});
+
+describe('cross-column, type-list and set-relation entries (#1509)', () => {
+  /** type → the exact config-field names, in render order. */
+  const NEW_ENTRIES: [string, string[]][] = [
+    ['expect_column_values_to_be_in_type_list', ['column', 'type_list', 'mostly']],
+    ['expect_compound_columns_to_be_unique', ['column_list', 'mostly']],
+    [
+      'expect_column_pair_values_a_to_be_greater_than_b',
+      ['column_A', 'column_B', 'or_equal', 'mostly'],
+    ],
+    ['expect_multicolumn_sum_to_equal', ['column_list', 'sum_total', 'mostly']],
+    ['expect_column_distinct_values_to_be_in_set', ['column', 'value_set']],
+    ['expect_column_distinct_values_to_contain_set', ['column', 'value_set']],
+  ];
+
+  it.each(NEW_ENTRIES)('%s renders exactly its GX kwargs as Column values', (type, fields) => {
+    const spec = EXPECTATION_BY_TYPE[type];
+    expect(spec, `${type} missing from the catalog`).toBeDefined();
+    expect(spec.category).toBe('Column values');
+    expect(spec.fields.map((f) => f.name)).toEqual(fields);
+    // No `kind`/`engine` overrides: these are ordinary GX expectations.
+    expect(spec.kind).toBeUndefined();
+    expect(spec.engine).toBeUndefined();
+  });
+
+  it.each(NEW_ENTRIES)('%s is offered on every datasource', (type) => {
+    for (const connectionType of ['snowflake', 'unity_catalog', 's3', 'iceberg'] as const) {
+      const offered = expectationsByCategoryFor(connectionType).flatMap((g) => g.specs);
+      expect(offered.map((s) => s.type)).toContain(type);
+    }
+  });
+
+  it('serializes the multi-column list fields as arrays', () => {
+    const payload = buildCheckPayload({
+      name: 'pk',
+      expectation_type: 'expect_compound_columns_to_be_unique',
+      config: { column_list: ' order_id , line_no ' },
+    });
+    expect(payload.config).toEqual({ column_list: ['order_id', 'line_no'] });
+  });
+
+  it('gives type_list the same datasource-tailored hint as the single-type field', () => {
+    expect(TYPE_FIELD_NAMES).toEqual(['type_', 'type_list']);
+  });
+
+  it('tells the author the severity bands are inert on the distinct-value set relations', () => {
+    for (const type of [
+      'expect_column_distinct_values_to_be_in_set',
+      'expect_column_distinct_values_to_contain_set',
+    ]) {
+      const help = EXPECTATION_BY_TYPE[type].thresholds?.help ?? '';
+      expect(help, `${type} has no threshold caveat`).toMatch(/no unexpected-%/);
+      expect(help).toMatch(/ignored/);
+    }
+  });
+
+  it('offers the strftime-format entry with its date-format field', () => {
+    const spec = EXPECTATION_BY_TYPE.expect_column_values_to_match_strftime_format;
+    expect(spec.category).toBe('Column values');
+    expect(spec.fields.map((f) => f.name)).toEqual(['column', 'strftime_format', 'mostly']);
+    expect(spec.dataframeOnly).toBe(true);
+  });
+
+  it('leaves the row-wise cross-column entries on the default (bandable) threshold help', () => {
+    for (const type of [
+      'expect_compound_columns_to_be_unique',
+      'expect_column_pair_values_a_to_be_greater_than_b',
+      'expect_multicolumn_sum_to_equal',
+    ]) {
+      expect(EXPECTATION_BY_TYPE[type].thresholds).toBeUndefined();
+    }
+  });
+});
+
+describe('expectationsByCategoryFor (dataframeOnly per-spec gating, #1509)', () => {
+  const STRFTIME = 'expect_column_values_to_match_strftime_format';
+  const offeredTypes = (connectionType: ConnectionType | undefined, alwaysInclude?: string) =>
+    expectationsByCategoryFor(connectionType, alwaysInclude).flatMap((g) =>
+      g.specs.map((s) => s.type),
+    );
+
+  it('hides it on a SQL-batch datasource where GX has no provider for it', () => {
+    expect(offeredTypes('snowflake')).not.toContain(STRFTIME);
+  });
+
+  it.each<ConnectionType>(['s3', 'adls_gen2', 'iceberg', 'unity_catalog'])(
+    'offers it on %s, whose runner builds a dataframe batch',
+    (connectionType) => {
+      expect(offeredTypes(connectionType)).toContain(STRFTIME);
+    },
+  );
+
+  it('keeps it visible while the connection type is still unknown', () => {
+    expect(offeredTypes(undefined)).toContain(STRFTIME);
+  });
+
+  it('keeps it visible when editing one, or the editor would silently retype the check', () => {
+    expect(offeredTypes('snowflake', STRFTIME)).toContain(STRFTIME);
+  });
+
+  it('drops only the gated spec, not its whole category', () => {
+    const onSnowflake = offeredTypes('snowflake');
+    expect(onSnowflake).toContain('expect_column_values_to_not_be_null');
+    expect(onSnowflake).toContain('expect_compound_columns_to_be_unique');
   });
 });

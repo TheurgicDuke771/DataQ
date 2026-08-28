@@ -554,6 +554,31 @@ def _reject_row_count_on_sampled_suite(
         )
 
 
+def _reject_dataframe_only_expectation(
+    session: Session, suite: Suite, expectation_type: str
+) -> None:
+    """422 for an expectation GX cannot evaluate on this connection's SQL batch (#1509).
+
+    Hiding it in the editor is not enough — the API, MCP and suite import all reach this same
+    path, and the alternative is a check that saves cleanly and errors on every run.
+    """
+    from backend.app.datasources.gx_runner import (
+        DATAFRAME_ONLY_EXPECTATION_TYPES,
+        SQL_BATCH_CONNECTION_TYPES,
+    )
+
+    if expectation_type not in DATAFRAME_ONLY_EXPECTATION_TYPES:
+        return
+    connection_type = _connection_type(session, suite)
+    if connection_type not in SQL_BATCH_CONNECTION_TYPES:
+        return
+    raise CheckConfigInvalidError(
+        f"{expectation_type} has no SQL implementation in Great Expectations, so it can never "
+        f"run against a {connection_type} connection. Use a custom-SQL check instead.",
+        detail={"expectation_type": expectation_type, "field": "expectation_type"},
+    )
+
+
 def validate_expectation_check(expectation_type: str, config: dict[str, Any]) -> None:
     """Author-time validation for `kind='expectation'` checks (#651)."""
     _reject_oversized_config(config)
@@ -691,6 +716,7 @@ def create_check(
     else:
         validate_expectation_check(expectation_type, config)
         _reject_row_count_on_sampled_suite(session, suite, expectation_type)
+        _reject_dataframe_only_expectation(session, suite, expectation_type)
 
     check = Check(
         suite_id=suite_id,
@@ -791,7 +817,9 @@ def _validate_kind_specific_config(
         pass
     elif validate_expectation_config:
         validate_expectation_check(expectation_type, config)
-        _reject_row_count_on_sampled_suite(session, get_suite(session, suite_id), expectation_type)
+        suite = get_suite(session, suite_id)
+        _reject_row_count_on_sampled_suite(session, suite, expectation_type)
+        _reject_dataframe_only_expectation(session, suite, expectation_type)
 
 
 def _record_version_and_commit(

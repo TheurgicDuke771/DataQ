@@ -7,7 +7,8 @@
       "column",
       "mostly"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "expect_column_values_to_be_unique",
@@ -17,7 +18,8 @@
       "column",
       "mostly"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "expect_column_values_to_be_between",
@@ -29,7 +31,8 @@
       "max_value",
       "mostly"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "expect_column_values_to_be_in_set",
@@ -40,7 +43,8 @@
       "value_set",
       "mostly"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "expect_column_value_lengths_to_be_between",
@@ -52,7 +56,8 @@
       "max_value",
       "mostly"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "expect_column_values_to_match_regex",
@@ -63,7 +68,8 @@
       "regex",
       "mostly"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "expect_column_values_to_be_of_type",
@@ -74,7 +80,90 @@
       "type_",
       "mostly"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "expect_column_values_to_be_in_type_list",
+    "kind": "expectation",
+    "dimension": "validity",
+    "fields": [
+      "column",
+      "type_list",
+      "mostly"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "expect_compound_columns_to_be_unique",
+    "kind": "expectation",
+    "dimension": "uniqueness",
+    "fields": [
+      "column_list",
+      "mostly"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "expect_column_pair_values_a_to_be_greater_than_b",
+    "kind": "expectation",
+    "dimension": "validity",
+    "fields": [
+      "column_A",
+      "column_B",
+      "or_equal",
+      "mostly"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "expect_multicolumn_sum_to_equal",
+    "kind": "expectation",
+    "dimension": "validity",
+    "fields": [
+      "column_list",
+      "sum_total",
+      "mostly"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "expect_column_distinct_values_to_be_in_set",
+    "kind": "expectation",
+    "dimension": "validity",
+    "fields": [
+      "column",
+      "value_set"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "expect_column_distinct_values_to_contain_set",
+    "kind": "expectation",
+    "dimension": "completeness",
+    "fields": [
+      "column",
+      "value_set"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "expect_column_values_to_match_strftime_format",
+    "kind": "expectation",
+    "dimension": "validity",
+    "fields": [
+      "column",
+      "strftime_format",
+      "mostly"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": true
   },
   {
     "type": "expect_table_row_count_to_be_between",
@@ -84,7 +173,8 @@
       "min_value",
       "max_value"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "monitor:freshness",
@@ -93,7 +183,8 @@
     "fields": [
       "column"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "monitor:volume",
@@ -103,7 +194,8 @@
       "min_rows",
       "max_rows"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "monitor:schema_drift",
@@ -112,7 +204,8 @@
     "fields": [
       "ignore_columns"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "monitor:anomaly",
@@ -125,7 +218,8 @@
       "min_points",
       "seasonality"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "unexpected_rows_expectation",
@@ -134,21 +228,24 @@
     "fields": [
       "unexpected_rows_query"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "comparison:records",
     "kind": "comparison",
     "dimension": "consistency",
     "fields": [],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "comparison:columns",
     "kind": "comparison",
     "dimension": "consistency",
     "fields": [],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "dmf:null_count",
@@ -157,7 +254,8 @@
     "fields": [
       "column"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "dmf:null_percent",
@@ -166,7 +264,8 @@
     "fields": [
       "column"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "dmf:duplicate_count",
@@ -175,7 +274,8 @@
     "fields": [
       "column"
     ],
-    "noThresholds": false
+    "noThresholds": false,
+    "dataframeOnly": false
   },
   {
     "type": "dmf:unique_count",
@@ -184,6 +284,7 @@
     "fields": [
       "column"
     ],
-    "noThresholds": true
+    "noThresholds": true,
+    "dataframeOnly": false
   }
 ]

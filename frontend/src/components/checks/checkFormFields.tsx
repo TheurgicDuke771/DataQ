@@ -18,7 +18,7 @@ import { validateCustomSqlQuery } from './customSql';
 import {
   DQ_DIMENSION_HELP,
   DQ_DIMENSIONS,
-  TYPE_FIELD_NAME,
+  TYPE_FIELD_NAMES,
   typeFieldHint,
   type ConfigField,
   type DqDimension,
@@ -62,9 +62,9 @@ export function ConfigFieldItem({
 }) {
   const label = field.optional ? `${field.label} (optional)` : field.label;
   const rules: Rule[] = field.optional ? [] : [{ required: true }];
-  // `expect_column_values_to_be_of_type`'s `type_` field: GX compares against a different type
-  // vocabulary per execution engine (SQL dialect type vs pandas dtype).
-  const help = field.name === TYPE_FIELD_NAME ? typeFieldHint(connectionType) : field.help;
+  // The `type_` / `type_list` fields: GX compares against a different type vocabulary per
+  // execution engine (SQL dialect type vs pandas dtype).
+  const help = TYPE_FIELD_NAMES.includes(field.name) ? typeFieldHint(connectionType) : field.help;
   // A required list of only delimiters ("," / " , ") is non-empty (so it passes `required`) but
   // parses to zero items.
   if (field.type === 'list' && !field.optional) {
