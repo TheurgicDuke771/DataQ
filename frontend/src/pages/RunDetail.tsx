@@ -457,12 +457,11 @@ function ResultsTable({
       ),
     },
     {
-      // A DMF failure skews warehouse/permission issues, a GX failure skews batch-resolution ones
-      // (#1551) — this is the CURRENT check's engine, the same "as-of-now, not historical" caveat
-      // the Expectation column above already carries.
+      // The CURRENT check's engine (#1551, see EngineTag's docstring for why it matters) — the
+      // same "as-of-now, not historical" caveat the Expectation column above already carries.
       title: 'Engine',
       dataIndex: 'check_id',
-      width: 70,
+      width: 80,
       render: (id: string) => {
         const check = checks.get(id);
         return check ? <EngineTag engine={check.engine} /> : '—';

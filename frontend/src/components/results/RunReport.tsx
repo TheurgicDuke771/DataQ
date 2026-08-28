@@ -24,8 +24,7 @@ export function RunReport({
     const check = checksById.get(id);
     return check?.expectation_type || check?.kind || '—';
   };
-  // The evaluator (#1551) — a DMF failure skews warehouse/permission issues, a GX one
-  // skews batch-resolution issues, a materially different debugging context.
+  // The evaluator (#1551, see checkBadges.tsx's EngineTag docstring for why it matters).
   const engineLabel = (id: string) => {
     const check = checksById.get(id);
     return check ? engineShortLabel(check.engine) : '—';

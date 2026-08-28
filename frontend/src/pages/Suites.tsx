@@ -650,94 +650,90 @@ function ChecksList({
       ) : (
         <SimpleList
           dataSource={checks}
-          renderItem={(check) => {
-            const thresholds = formatThresholdsCompact(check);
-            return (
-              <SimpleList.Item
-                actions={[
-                  // Snooze/unsnooze are edit-gated (backend 403s a viewer), so the
-                  // control renders only with the capability — like TriggersPanel.
-                  ...(!canEditChecks
-                    ? []
-                    : isSnoozed(check, now)
-                      ? [
-                          <Button
-                            key="snooze"
-                            type="link"
-                            size="small"
-                            onClick={() => onUnsnooze(check)}
-                          >
-                            Unsnooze
-                          </Button>,
-                        ]
-                      : [
-                          <Dropdown
-                            key="snooze"
-                            menu={{
-                              items: SNOOZE_PRESETS.map((p) => ({ key: p.key, label: p.label })),
-                              onClick: ({ key }) => {
-                                const preset = SNOOZE_PRESETS.find((p) => p.key === key);
-                                if (preset) void onSnooze(check, preset.hours, preset.label);
-                              },
-                            }}
-                            trigger={['click']}
-                          >
-                            <Button type="link" size="small">
-                              Snooze
-                            </Button>
-                          </Dropdown>,
-                        ]),
-                  // Re-baseline is schema_drift-only (the backend 422s other
-                  // kinds) and edit-gated like snooze.
-                  ...(canEditChecks && check.kind === 'schema_drift'
+          renderItem={(check) => (
+            <SimpleList.Item
+              actions={[
+                // Snooze/unsnooze are edit-gated (backend 403s a viewer), so the
+                // control renders only with the capability — like TriggersPanel.
+                ...(!canEditChecks
+                  ? []
+                  : isSnoozed(check, now)
                     ? [
                         <Button
-                          key="rebaseline"
+                          key="snooze"
                           type="link"
                           size="small"
-                          onClick={() => onRebaseline(check)}
+                          onClick={() => onUnsnooze(check)}
                         >
-                          Re-baseline
+                          Unsnooze
                         </Button>,
                       ]
-                    : []),
-                  <Button key="edit" type="link" size="small" onClick={() => onEdit(check)}>
-                    Edit
-                  </Button>,
-                  <Button
-                    key="delete"
-                    type="link"
-                    size="small"
-                    danger
-                    onClick={() => onDelete(check)}
-                  >
-                    Delete
-                  </Button>,
-                ]}
-              >
-                <Flex vertical gap={4}>
-                  <Flex gap={8} align="center" wrap>
-                    <Typography.Text strong>{check.name}</Typography.Text>
-                    {/* Engine + dimension (#1551) — two `monitor:freshness` checks on the
-                      same suite, one gx one dmf, rendered identically without these. */}
-                    <EngineTag engine={check.engine} />
-                    <DimensionTag dimension={check.dimension} />
-                    <SnoozedTag check={check} now={now} />
-                  </Flex>
-                  <Flex gap={6} align="center" wrap>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      {check.expectation_type}
-                    </Typography.Text>
-                    {thresholds && (
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        · {thresholds}
-                      </Typography.Text>
-                    )}
-                  </Flex>
+                    : [
+                        <Dropdown
+                          key="snooze"
+                          menu={{
+                            items: SNOOZE_PRESETS.map((p) => ({ key: p.key, label: p.label })),
+                            onClick: ({ key }) => {
+                              const preset = SNOOZE_PRESETS.find((p) => p.key === key);
+                              if (preset) void onSnooze(check, preset.hours, preset.label);
+                            },
+                          }}
+                          trigger={['click']}
+                        >
+                          <Button type="link" size="small">
+                            Snooze
+                          </Button>
+                        </Dropdown>,
+                      ]),
+                // Re-baseline is schema_drift-only (the backend 422s other
+                // kinds) and edit-gated like snooze.
+                ...(canEditChecks && check.kind === 'schema_drift'
+                  ? [
+                      <Button
+                        key="rebaseline"
+                        type="link"
+                        size="small"
+                        onClick={() => onRebaseline(check)}
+                      >
+                        Re-baseline
+                      </Button>,
+                    ]
+                  : []),
+                <Button key="edit" type="link" size="small" onClick={() => onEdit(check)}>
+                  Edit
+                </Button>,
+                <Button
+                  key="delete"
+                  type="link"
+                  size="small"
+                  danger
+                  onClick={() => onDelete(check)}
+                >
+                  Delete
+                </Button>,
+              ]}
+            >
+              <Flex vertical gap={4}>
+                <Flex gap={8} align="center" wrap>
+                  <Typography.Text strong>{check.name}</Typography.Text>
+                  {/* Engine + dimension badges (#1551, checkBadges.tsx). */}
+                  <EngineTag engine={check.engine} />
+                  <DimensionTag dimension={check.dimension} />
+                  <SnoozedTag check={check} now={now} />
                 </Flex>
-              </SimpleList.Item>
-            );
-          }}
+                <Flex gap={6} align="center" wrap>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {check.expectation_type}
+                  </Typography.Text>
+                  {formatThresholdsCompact(check) && (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      · {formatThresholdsCompact(check)}
+                    </Typography.Text>
+                  )}
+                </Flex>
+              </Flex>
+            </SimpleList.Item>
+          )}
         />
       )}
     </Card>

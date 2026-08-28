@@ -13,6 +13,7 @@ import type { Rule } from 'antd/es/form';
 import { lazy, Suspense } from 'react';
 
 import type { ConnectionType } from '../../api/connections';
+import { ENGINE_LABEL } from './checkBadges';
 import { parseList } from './checkForm';
 import { validateCustomSqlQuery } from './customSql';
 import {
@@ -154,10 +155,9 @@ export function EngineField({ initialValue }: { initialValue?: string }) {
       extra="Great Expectations reads the data into a batch to evaluate it; Snowflake DMF runs SNOWFLAKE.CORE.FRESHNESS natively in the warehouse — no data leaves Snowflake, but it's Snowflake-only and evaluates fewer check types."
     >
       <Select
-        options={[
-          { value: 'gx', label: 'Great Expectations (gx)' },
-          { value: 'dmf', label: 'Snowflake DMF (native)' },
-        ]}
+        // Built from ENGINE_LABEL (checkBadges.tsx) so a newly-offered engine or a label change
+        // has exactly one place to update.
+        options={Object.entries(ENGINE_LABEL).map(([value, label]) => ({ value, label }))}
       />
     </Form.Item>
   );

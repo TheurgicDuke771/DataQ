@@ -1,6 +1,6 @@
 import { Tag, Tooltip } from 'antd';
 
-import { DQ_DIMENSION_HELP, type DqDimension } from './expectationCatalog';
+import { DIMENSION_LABEL, DQ_DIMENSION_HELP, type DqDimension } from './expectationCatalog';
 
 /**
  * At-a-glance check badges (#1551) — the suite check-list card and the run-results table both
@@ -9,18 +9,34 @@ import { DQ_DIMENSION_HELP, type DqDimension } from './expectationCatalog';
  * invisible without opening its edit form.
  */
 
-/** Full engine label (ADR 0036) — the single source `CheckHistoryDrawer`'s Descriptions panel and
- *  the compact badges below both read, so the two surfaces can't drift apart. */
-// eslint-disable-next-line react-refresh/only-export-components -- helper + its badge belong together (SimpleList precedent)
-export const ENGINE_LABEL: Record<string, string> = {
-  gx: 'Great Expectations (gx)',
-  dmf: 'Snowflake DMF (native)',
+interface EngineVisual {
+  label: string;
+  color: string;
+}
+
+/**
+ * Engine visual (ADR 0036) — label + Tag color for each engine DataQ currently offers. The
+ * backend's `CHECK_ENGINES` also reserves `dqx`/`dataplex` (trigger-gated, not yet offered by any
+ * connection); an engine outside this map falls back to a neutral color and its raw name below,
+ * rather than silently matching gx or dmf's color.
+ */
+const ENGINE_VISUAL: Record<string, EngineVisual> = {
+  gx: { label: 'Great Expectations (gx)', color: 'blue' },
+  dmf: { label: 'Snowflake DMF (native)', color: 'purple' },
 };
 
-/** Short engine text for a Tag or a plain-text table cell; the full name lives in the tooltip. */
+/** Full engine label (ADR 0036) — `CheckHistoryDrawer`'s Descriptions panel and the check editor's
+ *  engine Select both read this, so a label change or a newly-offered engine has one place to update. */
+// eslint-disable-next-line react-refresh/only-export-components -- helper + its badge belong together (SimpleList precedent)
+export const ENGINE_LABEL: Record<string, string> = Object.fromEntries(
+  Object.entries(ENGINE_VISUAL).map(([key, v]) => [key, v.label]),
+);
+
+/** Short engine text for a Tag or a plain-text table cell; the full name lives in the tooltip.
+ *  A falsy engine (omitted, or an empty string) defaults to gx. */
 // eslint-disable-next-line react-refresh/only-export-components -- helper + its badge belong together (SimpleList precedent)
 export function engineShortLabel(engine?: string): string {
-  return (engine ?? 'gx').toUpperCase();
+  return (engine || 'gx').toUpperCase();
 }
 
 /**
@@ -28,22 +44,21 @@ export function engineShortLabel(engine?: string): string {
  * batch-resolution issues — naming the evaluator at a glance is the point (#1551).
  */
 export function EngineTag({ engine }: { engine?: string }) {
-  const full = ENGINE_LABEL[engine ?? 'gx'] ?? engine ?? 'gx';
+  const key = engine || 'gx';
+  const visual = ENGINE_VISUAL[key] ?? { label: key, color: 'default' };
   return (
-    <Tooltip title={full}>
-      <Tag color={engine === 'dmf' ? 'purple' : 'blue'}>{engineShortLabel(engine)}</Tag>
+    <Tooltip title={visual.label}>
+      <Tag color={visual.color}>{engineShortLabel(engine)}</Tag>
     </Tooltip>
   );
-}
-
-function titleCase(s: string): string {
-  return `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
 }
 
 /**
  * DQ-dimension badge (ADR 0038). `dimension` is `null`/`undefined` for an unclassified check —
  * that is a coverage gap by design and must render as an explicit state, never be hidden or
- * silently bucketed into another dimension.
+ * silently bucketed into another dimension. A value outside the closed 7-dimension vocabulary
+ * (a legacy row) renders its raw text, uncolored — not a colored tag with a silently-empty
+ * tooltip that looks identical to a real classification.
  */
 export function DimensionTag({ dimension }: { dimension?: string | null }) {
   if (!dimension) {
@@ -53,9 +68,13 @@ export function DimensionTag({ dimension }: { dimension?: string | null }) {
       </Tooltip>
     );
   }
+  const label = DIMENSION_LABEL[dimension as DqDimension];
+  if (!label) {
+    return <Tag>{dimension}</Tag>;
+  }
   return (
     <Tooltip title={DQ_DIMENSION_HELP[dimension as DqDimension]}>
-      <Tag color="geekblue">{titleCase(dimension)}</Tag>
+      <Tag color="geekblue">{label}</Tag>
     </Tooltip>
   );
 }
