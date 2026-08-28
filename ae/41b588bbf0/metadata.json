@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "ae41b588bbf0",
+  "strategy": "manual-commit",
+  "branch": "feature/1460-audit-tamper-evidence",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/services/test_audit_chain.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ae/41b588bbf0/0/metadata.json",
+      "transcript": "/ae/41b588bbf0/0/full.jsonl",
+      "compact_transcript": "/ae/41b588bbf0/0/transcript.jsonl",
+      "content_hash": "/ae/41b588bbf0/0/content_hash.txt",
+      "prompt": "/ae/41b588bbf0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 84,
+    "cache_creation_tokens": 72317,
+    "cache_read_tokens": 39062023,
+    "output_tokens": 30088,
+    "api_call_count": 42
+  }
+}
