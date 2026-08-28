@@ -1,0 +1,176 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "d50d3b7d3dec",
+  "session_id": "3113235e-8cf1-4119-876b-c4ce58ca36f6",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-28T21:46:50.751094Z",
+  "branch": "feature/1607-unbanded-set-relations",
+  "checkpoints_count": 2,
+  "save_step_count": 3,
+  "files_touched": [
+    "backend/alembic/versions/5656bbfc1495_null_inert_thresholds_on_set_relations.py",
+    "docs/site/changelog.md",
+    "frontend/src/components/checks/checkForm.ts",
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/tests/components/checkForm.test.ts",
+    "frontend/tests/pages/CheckEdit.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5",
+  "turn_id": "ceec80f183c2",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 628,
+    "cache_creation_tokens": 741500,
+    "cache_read_tokens": 109632492,
+    "output_tokens": 173765,
+    "api_call_count": 317,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01FUVxfKpVZ5J2x8Rdb9L7Y1",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "5e79aa3d8d86",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 859,
+        "end": 860,
+        "entry_ids": [
+          "af5db721-41bd-4e8f-8890-5ed69cfb6f82"
+        ],
+        "tool_use_id": "toolu_01FUVxfKpVZ5J2x8Rdb9L7Y1"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01FUVxfKpVZ5J2x8Rdb9L7Y1"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_011LLNdKJA55nnRJ1oyEGzJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "eb5fb53f50a8",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1488,
+        "end": 1489,
+        "entry_ids": [
+          "f05720b2-8828-4247-8fff-4642a74b806e"
+        ],
+        "tool_use_id": "toolu_011LLNdKJA55nnRJ1oyEGzJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_011LLNdKJA55nnRJ1oyEGzJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_017TdqnaLhp21SAfXVFugzK2",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a38028fee741",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2034,
+        "end": 2035,
+        "entry_ids": [
+          "da40b41f-581e-4675-b03b-c630ec8ece88"
+        ],
+        "tool_use_id": "toolu_017TdqnaLhp21SAfXVFugzK2"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_017TdqnaLhp21SAfXVFugzK2"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 31
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-28T21:46:50.63482Z",
+    "agent_lines": 103,
+    "agent_removed": 4,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 103,
+    "total_lines_changed": 107,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 103,
+      "agent_lines_removed": 4,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 103,
+      "agent_lines_removed": 4,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}
