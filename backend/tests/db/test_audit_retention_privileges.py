@@ -330,12 +330,16 @@ _GRANT_MIGRATION_PATH = (
 )
 
 
-def _grant_statement(role: str) -> str:
-    spec = importlib.util.spec_from_file_location("_audit_grant_migration", _GRANT_MIGRATION_PATH)
+def _migration_statement(path: Path, attr: str, role: str) -> str:
+    spec = importlib.util.spec_from_file_location(f"_audit_migration_{attr}", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return str(module.grant_statement(role))
+    return str(getattr(module, attr)(role))
+
+
+def _grant_statement(role: str) -> str:
+    return _migration_statement(_GRANT_MIGRATION_PATH, "grant_statement", role)
 
 
 def test_the_chain_can_seal_rows_under_the_revoke_plus_grant(owner_session: Session) -> None:
@@ -346,12 +350,17 @@ def test_the_chain_can_seal_rows_under_the_revoke_plus_grant(owner_session: Sess
     owner_session.execute(text(_grant_statement(_ROLE)))
     owner_session.commit()
 
-    # The prod failure shape: without the grant this raises InsufficientPrivilege.
-    _seed(owner_session, age_days=0, count=1)
+    # Without the grant this raises InsufficientPrivilege (the prod failure shape).
+    # Two rows: the genesis row's prev_hash is NULL by design, the second row's is not —
+    # asserting on it proves the seal UPDATE actually ran, not merely that inserts work.
+    _seed(owner_session, age_days=0, count=2)
     sealed = owner_session.execute(
-        text("SELECT row_hash IS NOT NULL AND prev_hash IS NOT NULL FROM audit_events LIMIT 1")
+        text(
+            "SELECT count(*) FROM audit_events "
+            "WHERE row_hash IS NOT NULL AND prev_hash IS NOT NULL"
+        )
     ).scalar()
-    assert sealed in (True, False)  # the seal UPDATE executed without privilege error
+    assert sealed is not None and sealed >= 1
 
     # Payload stays append-only: a non-hash column UPDATE is still refused.
     with pytest.raises(ProgrammingError):
