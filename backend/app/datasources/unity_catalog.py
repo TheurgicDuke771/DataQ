@@ -125,6 +125,8 @@ def build_databricks_url(
 SQL_BATCH_EXPECTATION_TYPES: frozenset[str] = frozenset({CUSTOM_SQL_EXPECTATION_TYPE})
 
 # Types that push down to the Databricks-SQL batch under `uc_sql_pushdown` (#1532).
+# Pushdown is the DEFAULT for a new type (live-Databricks vetting first); staying on the
+# frame batch needs a recorded reason (#1624 — no SQL provider, dtype semantics, sampling).
 SQL_PUSHDOWN_EXPECTATION_TYPES: frozenset[str] = frozenset(
     {
         "expect_column_values_to_not_be_null",
