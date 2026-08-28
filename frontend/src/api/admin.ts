@@ -94,3 +94,70 @@ export async function testAuthEmail(): Promise<AuthEmailTestResult> {
   const { data } = await api.post<AuthEmailTestResult>('/admin/auth-email/test');
   return data;
 }
+
+/** One append-only audit log row (ADR 0041 / G1, #1318). */
+export interface AuditEvent {
+  id: string;
+  occurred_at: string;
+  action_class: 'config' | 'access';
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  actor_user_id: string | null;
+  actor_kind: string;
+  actor_label: string | null;
+  actor_display: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  request_id: string | null;
+}
+
+export interface AuditEventPage {
+  events: AuditEvent[];
+  total: number;
+  /** `true` when this page is not the whole result — more rows exist past `limit`. */
+  truncated: boolean;
+  /** The configured retention window in days. */
+  retention_days: number;
+  /** The point before which events have been swept — `null` when the sweep is disabled
+   *  (0 or negative `retention_days`), which is a different statement from "nothing swept". */
+  retained_since: string | null;
+}
+
+export interface AuditEventFilters {
+  action_class?: 'config' | 'access';
+  entity_type?: string;
+  entity_id?: string;
+  actor_user_id?: string;
+  action?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function listAuditEvents(filters: AuditEventFilters = {}): Promise<AuditEventPage> {
+  const params = Object.fromEntries(
+    Object.entries(filters).filter(([, v]) => v !== undefined && v !== ''),
+  );
+  const { data } = await api.get<AuditEventPage>('/admin/audit-events', { params });
+  return data;
+}
+
+/** One way data can leave the declared jurisdiction (G4/#434). */
+export interface ExternalTransfer {
+  name: string;
+  enabled: boolean;
+  detail: string;
+}
+
+export interface DeploymentPosture {
+  /** The jurisdiction this deployment declares (`DEPLOYMENT_REGION`) — `null` = not declared. */
+  region: string | null;
+  external_transfers: ExternalTransfer[];
+}
+
+export async function getDeploymentPosture(): Promise<DeploymentPosture> {
+  const { data } = await api.get<DeploymentPosture>('/admin/deployment');
+  return data;
+}

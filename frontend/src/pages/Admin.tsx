@@ -1,5 +1,18 @@
 import { AppstoreOutlined, KeyOutlined, TeamOutlined } from '@ant-design/icons';
-import { Alert, Card, Col, Flex, Row, Spin, Table, Tag, Typography } from 'antd';
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  Flex,
+  Input,
+  Row,
+  Select,
+  Spin,
+  Table,
+  Tag,
+  Typography,
+} from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
 
@@ -7,18 +20,25 @@ import {
   type AdminAccess,
   type AdminSuite,
   type AdminUser,
+  type AuditEvent,
+  type AuditEventFilters,
+  type AuditEventPage,
+  type ExternalTransfer,
+  getDeploymentPosture,
   listAdminAccess,
   listAdminSuites,
   listAdminUsers,
+  listAuditEvents,
 } from '../api/admin';
 import { useMe } from '../auth/useMe';
 import { RoleEditor } from '../components/admin/RoleEditor';
 import { MetricCard } from '../components/dashboard/MetricCard';
+import { PageError } from '../components/feedback/PageError';
 import { Forbidden } from '../components/Forbidden';
 import { Page } from '../components/layout/Page';
 import { formatTimestamp } from '../components/results/resultsFormat';
+import { WINDOW_PRESETS } from '../components/shared/windowPresets';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
-import { PageError } from '../components/feedback/PageError';
 
 /** Workspace-admin control centre (#173): all suites / members / access overview. */
 export function Admin() {
@@ -112,7 +132,249 @@ function AdminOverview() {
           errorMessage="Failed to load access overview"
         />
       </Section>
+
+      <AuditLogSection />
+
+      <DeploymentPostureSection />
     </Page>
+  );
+}
+
+const AUDIT_PAGE_SIZE = 25;
+const AUDIT_DATE_WINDOWS = [{ value: 'all', label: 'All time' }, ...WINDOW_PRESETS] as const;
+type AuditDateWindow = (typeof AUDIT_DATE_WINDOWS)[number]['value'];
+
+const ACTION_CLASSES = [
+  { value: 'config', label: 'Config change' },
+  { value: 'access', label: 'Data access' },
+] as const;
+
+function windowSince(window: AuditDateWindow): string | undefined {
+  if (window === 'all') return undefined;
+  const days = Number(window);
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/** ADR 0041 / G1 (#1554): the append-only audit log had a backend since #1318 with
+ *  no in-app surface — the only way to answer "who changed this, and when" was
+ *  `psql` or curl. Server-side filtered (the log can outgrow client-side filtering
+ *  fast), so a filter change is a deliberate "Search", not fetch-on-keystroke.
+ */
+function AuditLogSection() {
+  const [pending, setPending] = useState<{
+    actionClass?: 'config' | 'access';
+    entityType: string;
+    actorUserId: string;
+    dateWindow: AuditDateWindow;
+  }>({ entityType: '', actorUserId: '', dateWindow: 'all' });
+  const [applied, setApplied] = useState(pending);
+  const [page, setPage] = useState(0);
+
+  const filters: AuditEventFilters = {
+    action_class: applied.actionClass,
+    entity_type: applied.entityType || undefined,
+    actor_user_id: applied.actorUserId || undefined,
+    since: windowSince(applied.dateWindow),
+    limit: AUDIT_PAGE_SIZE,
+    offset: page * AUDIT_PAGE_SIZE,
+  };
+  const { state, reload } = useAsyncData(() => listAuditEvents(filters));
+
+  const search = () => {
+    setApplied(pending);
+    setPage(0);
+    reload();
+  };
+
+  return (
+    <Section title="Audit log">
+      <Flex gap={12} wrap align="flex-end">
+        <Filter label="Type">
+          <Select<'config' | 'access' | 'all'>
+            style={{ width: 160 }}
+            value={pending.actionClass ?? 'all'}
+            onChange={(v) =>
+              setPending((p) => ({ ...p, actionClass: v === 'all' ? undefined : v }))
+            }
+            options={[{ value: 'all', label: 'All actions' }, ...ACTION_CLASSES]}
+          />
+        </Filter>
+        <Filter label="Entity type">
+          <Input
+            style={{ width: 140 }}
+            placeholder="e.g. suite"
+            value={pending.entityType}
+            onChange={(e) => setPending((p) => ({ ...p, entityType: e.target.value }))}
+          />
+        </Filter>
+        <Filter label="Actor user ID">
+          <Input
+            style={{ width: 220 }}
+            placeholder="UUID"
+            value={pending.actorUserId}
+            onChange={(e) => setPending((p) => ({ ...p, actorUserId: e.target.value }))}
+          />
+        </Filter>
+        <Filter label="When">
+          <Select<AuditDateWindow>
+            style={{ width: 160 }}
+            value={pending.dateWindow}
+            onChange={(v) => setPending((p) => ({ ...p, dateWindow: v }))}
+            options={AUDIT_DATE_WINDOWS.map((w) => ({ value: w.value, label: w.label }))}
+          />
+        </Filter>
+        <Button type="primary" onClick={search}>
+          Search
+        </Button>
+      </Flex>
+
+      {state.status === 'ok' && <AuditRetentionNotice page={state.data} />}
+
+      <DataTable
+        state={mapAsync(state, (p) => p.events)}
+        columns={AUDIT_EVENT_COLUMNS}
+        rowKey={(e) => e.id}
+        errorMessage="Failed to load the audit log"
+        pagination={false}
+      />
+
+      {state.status === 'ok' && (
+        <Flex justify="space-between" align="center">
+          <Typography.Text type="secondary">
+            {state.data.total} event{state.data.total === 1 ? '' : 's'}
+            {state.data.truncated ? ' — more than shown here' : ''}
+          </Typography.Text>
+          <Flex gap={8}>
+            <Button
+              disabled={page === 0}
+              onClick={() => {
+                setPage((p) => Math.max(0, p - 1));
+                reload();
+              }}
+            >
+              Previous
+            </Button>
+            <Button
+              disabled={!state.data.truncated}
+              onClick={() => {
+                setPage((p) => p + 1);
+                reload();
+              }}
+            >
+              Next
+            </Button>
+          </Flex>
+        </Flex>
+      )}
+    </Section>
+  );
+}
+
+/** The honesty fields the read API returns alongside the page — without these, an
+ *  empty or short page is ambiguous between "nothing happened" and "swept away". */
+function AuditRetentionNotice({ page }: { page: AuditEventPage }) {
+  if (page.retention_days <= 0) {
+    return (
+      <Alert
+        type="warning"
+        showIcon
+        title="Retention sweep is disabled (AUDIT_RETENTION_DAYS ≤ 0) — the log is unbounded."
+      />
+    );
+  }
+  return (
+    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      Retained {page.retention_days} days
+      {page.retained_since ? ` (since ${formatTimestamp(page.retained_since)})` : ''} — events older
+      than that have been swept.
+    </Typography.Text>
+  );
+}
+
+const ACTION_CLASS_COLORS: Record<string, string> = { config: 'blue', access: 'purple' };
+
+const AUDIT_EVENT_COLUMNS: ColumnsType<AuditEvent> = [
+  {
+    title: 'When',
+    dataIndex: 'occurred_at',
+    render: (v: string) => formatTimestamp(v),
+  },
+  {
+    title: 'Type',
+    dataIndex: 'action_class',
+    render: (v: string) => <Tag color={ACTION_CLASS_COLORS[v] ?? 'default'}>{v}</Tag>,
+  },
+  { title: 'Action', dataIndex: 'action' },
+  {
+    title: 'Entity',
+    key: 'entity',
+    render: (_, e) => (
+      <Flex vertical>
+        <Typography.Text>{e.entity_type}</Typography.Text>
+        {e.entity_id && (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {e.entity_id}
+          </Typography.Text>
+        )}
+      </Flex>
+    ),
+  },
+  {
+    title: 'Actor',
+    key: 'actor',
+    render: (_, e) => e.actor_display ?? <Typography.Text type="secondary">—</Typography.Text>,
+  },
+];
+
+/** #1555: `GET /admin/deployment` answers "where does our data live, and what can
+ *  take it elsewhere" (G4/GDPR Ch. V) and had no in-app surface — read-only, no
+ *  filters, straight render of an already-designed payload. */
+function DeploymentPostureSection() {
+  const { state } = useAsyncData(getDeploymentPosture);
+  return (
+    <Section title="Deployment & data residency">
+      {state.status === 'loading' && <Spin size="large" />}
+      {state.status === 'error' && (
+        <Alert
+          type="error"
+          showIcon
+          title="Failed to load deployment posture"
+          description={state.error}
+        />
+      )}
+      {state.status === 'ok' && (
+        <Flex vertical gap={16}>
+          <Flex vertical gap={4}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              Declared region
+            </Typography.Text>
+            <Typography.Text>
+              {state.data.region ?? (
+                <Typography.Text type="secondary">Not declared</Typography.Text>
+              )}
+            </Typography.Text>
+          </Flex>
+          <Table<ExternalTransfer>
+            scroll={{ x: 'max-content' }}
+            dataSource={state.data.external_transfers}
+            rowKey={(t) => t.name}
+            size="small"
+            pagination={false}
+            columns={[
+              { title: 'Vector', dataIndex: 'name' },
+              {
+                title: 'Status',
+                dataIndex: 'enabled',
+                render: (enabled: boolean) => (
+                  <Tag color={enabled ? 'volcano' : 'default'}>{enabled ? 'live' : 'off'}</Tag>
+                ),
+              },
+              { title: 'Detail', dataIndex: 'detail' },
+            ]}
+          />
+        </Flex>
+      )}
+    </Section>
   );
 }
 
@@ -136,11 +398,15 @@ function DataTable<T extends object>({
   columns,
   rowKey,
   errorMessage,
+  pagination,
 }: {
   state: AsyncState<T[]>;
   columns: ColumnsType<T>;
   rowKey: (row: T) => string;
   errorMessage: string;
+  /** Defaults to a 20-row client page; pass `false` for a caller-driven
+   *  (server-paginated) list like the audit log. */
+  pagination?: false;
 }) {
   if (state.status === 'loading') return <Spin size="large" />;
   if (state.status === 'error') {
@@ -155,9 +421,28 @@ function DataTable<T extends object>({
       columns={columns}
       rowKey={rowKey}
       size="small"
-      pagination={{ pageSize: 20, hideOnSinglePage: true }}
+      pagination={pagination === false ? false : { pageSize: 20, hideOnSinglePage: true }}
     />
   );
+}
+
+/** A labelled filter control — one `secondary` caption above each input, matching
+ *  the Results page's date-filter bar. */
+function Filter({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <Flex vertical gap={4}>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        {label}
+      </Typography.Text>
+      {children}
+    </Flex>
+  );
+}
+
+/** Project an `ok` AsyncState's data, passing `loading`/`error` through unchanged —
+ *  lets `AuditLogSection` feed `DataTable` just the `events` array from a page. */
+function mapAsync<T, U>(state: AsyncState<T>, fn: (data: T) => U): AsyncState<U> {
+  return state.status === 'ok' ? { ...state, data: fn(state.data) } : state;
 }
 
 /** Name over email, falling back to the email alone when no display name. */
