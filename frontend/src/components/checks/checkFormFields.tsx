@@ -131,6 +131,7 @@ export function ConfigFieldItem({
           style={{ width: '100%' }}
           min={field.min}
           max={dynamicMax !== undefined ? Math.min(field.max ?? dynamicMax, dynamicMax) : field.max}
+          step={field.step}
         />
       ) : field.type === 'select' ? (
         <Select options={field.options} placeholder={label} />

@@ -93,6 +93,8 @@ export interface ConfigField {
    */
   min?: number;
   max?: number;
+  /** Increment for a `number` field's stepper; the antd default of 1 is unusable on a 0–1 range. */
+  step?: number;
   /** Value/label options for a `select` field. */
   options?: { value: string; label: string }[];
   /**
@@ -185,6 +187,33 @@ export function effectiveEngineFor(
 
 const COLUMN: ConfigField = { name: 'column', label: 'Column', type: 'string' };
 
+/** GX's row-wise tolerance kwarg — a fraction, not a percentage. */
+export const MOSTLY_FIELD_NAME = 'mostly';
+
+const MOSTLY_HELP =
+  'Optional tolerance: the fraction of rows that must conform for the check to succeed — e.g. 0.95 = pass if ≥95% of rows conform. Leave blank to require every row. Severity thresholds still band the FULL unexpected-%, so a threshold below this tolerance can still warn/fail a run GX itself passed.';
+
+/** The `mostly` tolerance, offered on every row-wise expectation GX accepts it on. */
+const MOSTLY: ConfigField = {
+  name: MOSTLY_FIELD_NAME,
+  label: 'Tolerance',
+  type: 'number',
+  optional: true,
+  min: 0,
+  max: 1,
+  step: 0.01,
+  help: MOSTLY_HELP,
+};
+
+/**
+ * The type checks reach `mostly` only down GX's row-wise fallback; the whole-column dtype compare
+ * it prefers is all-or-nothing, so the tolerance is inert there.
+ */
+const MOSTLY_TYPE_CHECK: ConfigField = {
+  ...MOSTLY,
+  help: `${MOSTLY_HELP} On a type check it applies only when GX falls back to its row-wise compare (see the Type hint above), not to the whole-column dtype compare.`,
+};
+
 /**
  * `type_` config-field name for `expect_column_values_to_be_of_type` — GX's own kwarg (trailing
  * underscore to dodge shadowing the Python builtin).
@@ -215,7 +244,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     label: 'Column values not null',
     description: 'Every value in the column is non-null.',
     category: 'Column values',
-    fields: [COLUMN],
+    fields: [COLUMN, MOSTLY],
   },
   {
     type: 'expect_column_values_to_be_unique',
@@ -223,7 +252,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     label: 'Column values unique',
     description: 'Values in the column are distinct (no duplicates).',
     category: 'Column values',
-    fields: [COLUMN],
+    fields: [COLUMN, MOSTLY],
   },
   {
     type: 'expect_column_values_to_be_between',
@@ -235,6 +264,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
       COLUMN,
       { name: 'min_value', label: 'Minimum', type: 'number', optional: true },
       { name: 'max_value', label: 'Maximum', type: 'number', optional: true },
+      MOSTLY,
     ],
   },
   {
@@ -251,6 +281,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         type: 'list',
         help: 'Comma-separated list of permitted values.',
       },
+      MOSTLY,
     ],
   },
   {
@@ -263,6 +294,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
       COLUMN,
       { name: 'min_value', label: 'Min length', type: 'number', optional: true },
       { name: 'max_value', label: 'Max length', type: 'number', optional: true },
+      MOSTLY,
     ],
   },
   {
@@ -271,7 +303,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     label: 'Column values match regex',
     description: 'Every value matches the given regular expression.',
     category: 'Column values',
-    fields: [COLUMN, { name: 'regex', label: 'Regex', type: 'string' }],
+    fields: [COLUMN, { name: 'regex', label: 'Regex', type: 'string' }, MOSTLY],
   },
   {
     type: 'expect_column_values_to_be_of_type',
@@ -287,6 +319,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         type: 'string',
         help: TYPE_FIELD_DEFAULT_HELP,
       },
+      MOSTLY_TYPE_CHECK,
     ],
   },
   {

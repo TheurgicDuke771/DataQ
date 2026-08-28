@@ -4,7 +4,8 @@
     "kind": "expectation",
     "dimension": "completeness",
     "fields": [
-      "column"
+      "column",
+      "mostly"
     ],
     "noThresholds": false
   },
@@ -13,7 +14,8 @@
     "kind": "expectation",
     "dimension": "uniqueness",
     "fields": [
-      "column"
+      "column",
+      "mostly"
     ],
     "noThresholds": false
   },
@@ -24,7 +26,8 @@
     "fields": [
       "column",
       "min_value",
-      "max_value"
+      "max_value",
+      "mostly"
     ],
     "noThresholds": false
   },
@@ -34,7 +37,8 @@
     "dimension": "validity",
     "fields": [
       "column",
-      "value_set"
+      "value_set",
+      "mostly"
     ],
     "noThresholds": false
   },
@@ -45,7 +49,8 @@
     "fields": [
       "column",
       "min_value",
-      "max_value"
+      "max_value",
+      "mostly"
     ],
     "noThresholds": false
   },
@@ -55,7 +60,8 @@
     "dimension": "validity",
     "fields": [
       "column",
-      "regex"
+      "regex",
+      "mostly"
     ],
     "noThresholds": false
   },
@@ -65,7 +71,8 @@
     "dimension": "validity",
     "fields": [
       "column",
-      "type_"
+      "type_",
+      "mostly"
     ],
     "noThresholds": false
   },

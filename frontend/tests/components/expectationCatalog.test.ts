@@ -9,6 +9,7 @@ import {
   EXPECTATIONS_BY_CATEGORY,
   expectationsByCategoryFor,
   fieldVisible,
+  MOSTLY_FIELD_NAME,
   typeFieldHint,
 } from '../../src/components/checks/expectationCatalog';
 
@@ -238,7 +239,7 @@ describe('expect_column_values_to_be_of_type catalog entry (issue #768)', () => 
     const spec = EXPECTATION_BY_TYPE['expect_column_values_to_be_of_type'];
     expect(spec).toBeDefined();
     expect(spec.category).toBe('Column values');
-    expect(spec.fields.map((f) => f.name)).toEqual(['column', 'type_']);
+    expect(spec.fields.map((f) => f.name)).toEqual(['column', 'type_', 'mostly']);
   });
 });
 
@@ -274,5 +275,46 @@ describe('typeFieldHint (issue #768 — Snowflake NUMBER ≠ "NUMBER")', () => {
     for (const type of ['adf', 'airflow', 'dbt'] as ConnectionType[]) {
       expect(typeFieldHint(type)).toMatch(/execution engine/i);
     }
+  });
+});
+
+describe('`mostly` tolerance field (#1509)', () => {
+  const WITH_MOSTLY = [
+    'expect_column_values_to_not_be_null',
+    'expect_column_values_to_be_unique',
+    'expect_column_values_to_be_between',
+    'expect_column_values_to_be_in_set',
+    'expect_column_value_lengths_to_be_between',
+    'expect_column_values_to_match_regex',
+    'expect_column_values_to_be_of_type',
+  ];
+
+  it.each(WITH_MOSTLY)('offers an optional, 0-1 bounded tolerance on %s', (type) => {
+    const field = requiredField(type, MOSTLY_FIELD_NAME);
+    expect(field.type).toBe('number');
+    expect(field.optional).toBe(true);
+    expect(field.min).toBe(0);
+    expect(field.max).toBe(1);
+    // The antd default step of 1 makes a 0-1 range unusable.
+    expect(field.step).toBeLessThan(1);
+  });
+
+  // GX rejects `mostly` on a table-shape expectation; the backend contract test proves that
+  // against the pinned GX, this one keeps the catalog from offering it.
+  it('does not offer a tolerance on expect_table_row_count_to_be_between', () => {
+    const spec = EXPECTATION_BY_TYPE.expect_table_row_count_to_be_between;
+    expect(spec.fields.map((f) => f.name)).not.toContain(MOSTLY_FIELD_NAME);
+  });
+
+  it('states the fraction unit and that severity bands still read the full unexpected-%', () => {
+    const help = requiredField('expect_column_values_to_not_be_null', MOSTLY_FIELD_NAME).help ?? '';
+    expect(help).toMatch(/0\.95/);
+    expect(help).toMatch(/fraction/i);
+    expect(help).toMatch(/threshold/i);
+  });
+
+  it('warns on the type checks that the tolerance only reaches the row-wise compare', () => {
+    const help = requiredField('expect_column_values_to_be_of_type', MOSTLY_FIELD_NAME).help ?? '';
+    expect(help).toMatch(/row-wise compare/);
   });
 });
