@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "feb537aab474",
+  "strategy": "manual-commit",
+  "branch": "feature/1607-unbanded-set-relations",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/datasources/expectation_allowlist.py",
+    "backend/app/services/check_service.py",
+    "backend/app/services/dryrun_service.py",
+    "backend/app/services/suite_io_service.py",
+    "backend/tests/api/test_checks.py",
+    "backend/tests/api/test_suites.py",
+    "backend/tests/datasources/test_catalog_gx_contract.py",
+    "backend/tests/datasources/test_expectation_allowlist.py",
+    "backend/tests/fixtures/expectation_catalog.json",
+    "frontend/src/components/checks/expectationCatalog.ts",
+    "frontend/tests/components/expectationCatalog.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fe/b537aab474/0/metadata.json",
+      "transcript": "/fe/b537aab474/0/full.jsonl",
+      "compact_transcript": "/fe/b537aab474/0/transcript.jsonl",
+      "content_hash": "/fe/b537aab474/0/content_hash.txt",
+      "prompt": "/fe/b537aab474/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 548,
+    "cache_creation_tokens": 709926,
+    "cache_read_tokens": 88536169,
+    "output_tokens": 155501,
+    "api_call_count": 277,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
