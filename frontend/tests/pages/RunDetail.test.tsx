@@ -123,6 +123,44 @@ describe('RunDetail page', () => {
     expect(mockGetRun).toHaveBeenCalledWith('r1');
   });
 
+  it('shows the check engine in the results table, defaulting to GX (#1551)', async () => {
+    mockGetRun.mockResolvedValue(runDetail);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]); // engine omitted — pre-ADR-0036 fixture
+    renderAt('r1');
+    const region = screenRegion();
+
+    expect(await region.findByText('order_id not null')).toBeInTheDocument();
+    expect(region.getByText('GX')).toBeInTheDocument();
+  });
+
+  it('shows DMF distinctly from GX in the results table — a materially different debugging context (#1551)', async () => {
+    mockGetRun.mockResolvedValue(runDetail);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([{ ...check, engine: 'dmf' }]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    expect(await region.findByText('order_id not null')).toBeInTheDocument();
+    expect(region.getByText('DMF')).toBeInTheDocument();
+    expect(region.queryByText('GX')).not.toBeInTheDocument();
+  });
+
+  it('em-dashes the Engine cell for a result whose check was deleted (#1551)', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [{ ...runDetail.results[0], check_id: 'chk-gone' }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]); // 'chk1' only — 'chk-gone' is absent
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('Orders quality');
+    expect(region.queryByText('GX')).not.toBeInTheDocument();
+    expect(region.queryByText('DMF')).not.toBeInTheDocument();
+  });
+
   it('surfaces an Asset link that navigates to the asset (#773)', async () => {
     mockGetRun.mockResolvedValue({ ...runDetail, asset_id: 'asset-9' });
     mockGetSuite.mockResolvedValue(suite);
@@ -710,6 +748,19 @@ describe('RunDetail page', () => {
       expect(within(report).getByText('expect_column_values_to_not_be_null')).toBeInTheDocument();
       expect(within(report).getByText('warn')).toBeInTheDocument();
       expect(within(report).getByText('2')).toBeInTheDocument();
+      // Engine (#1551) — defaults to GX, printed as plain text (no Tag survives print).
+      expect(within(report).getByText('GX')).toBeInTheDocument();
+    });
+
+    it('prints DMF distinctly from GX (#1551)', async () => {
+      mockGetRun.mockResolvedValue(runDetail);
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([{ ...check, engine: 'dmf' }]);
+      renderAt('r1');
+
+      const report = await screen.findByTestId('run-report');
+      expect(within(report).getByText('DMF')).toBeInTheDocument();
+      expect(within(report).queryByText('GX')).not.toBeInTheDocument();
     });
 
     it('marks a snoozed check with a print-friendly "(snoozed)" suffix (#653 parity)', async () => {

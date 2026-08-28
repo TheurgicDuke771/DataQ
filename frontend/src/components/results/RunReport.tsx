@@ -1,5 +1,6 @@
 import type { RunDetail as RunDetailType } from '../../api/runs';
 import type { Check } from '../../api/suites';
+import { engineShortLabel } from '../checks/checkBadges';
 import { isSnoozed } from '../checks/snooze';
 import { isSampled, sampledCoverage } from './samplingFormat';
 import { formatDuration, formatScalar, formatTimestamp } from './resultsFormat';
@@ -22,6 +23,12 @@ export function RunReport({
   const expectationOrKind = (id: string) => {
     const check = checksById.get(id);
     return check?.expectation_type || check?.kind || '—';
+  };
+  // The evaluator (#1551) — a DMF failure skews warehouse/permission issues, a GX one
+  // skews batch-resolution issues, a materially different debugging context.
+  const engineLabel = (id: string) => {
+    const check = checksById.get(id);
+    return check ? engineShortLabel(check.engine) : '—';
   };
   // Print-friendly parity with the interactive table's <SnoozedTag> (#653): a muted check must say
   // so here too.
@@ -85,6 +92,7 @@ export function RunReport({
             <tr>
               <th>Check</th>
               <th>Expectation / kind</th>
+              <th>Engine</th>
               <th>Status</th>
               <th>Metric</th>
               <th>Observed</th>
@@ -99,6 +107,7 @@ export function RunReport({
                   {isSampled(r) ? ' (sampled)' : ''}
                 </td>
                 <td>{expectationOrKind(r.check_id)}</td>
+                <td>{engineLabel(r.check_id)}</td>
                 <td>{r.status}</td>
                 <td>{r.metric_value ?? '—'}</td>
                 <td>{formatScalar(r.observed_value)}</td>

@@ -19,6 +19,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { getRun, type Result, type ResultStatus } from '../api/runs';
 import { type Check, getSuite, listChecks } from '../api/suites';
 import { AssetLink } from '../components/assets/AssetLink';
+import { EngineTag } from '../components/checks/checkBadges';
 import { CheckTrend } from '../components/checks/CheckTrend';
 import { ComparisonResultDetail } from '../components/results/ComparisonResultDetail';
 import { SnoozedTag } from '../components/checks/snooze';
@@ -454,6 +455,18 @@ function ResultsTable({
           {checks.get(id)?.expectation_type ?? '—'}
         </Typography.Text>
       ),
+    },
+    {
+      // A DMF failure skews warehouse/permission issues, a GX failure skews batch-resolution ones
+      // (#1551) — this is the CURRENT check's engine, the same "as-of-now, not historical" caveat
+      // the Expectation column above already carries.
+      title: 'Engine',
+      dataIndex: 'check_id',
+      width: 70,
+      render: (id: string) => {
+        const check = checks.get(id);
+        return check ? <EngineTag engine={check.engine} /> : '—';
+      },
     },
     {
       title: 'Status',

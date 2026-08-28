@@ -4,12 +4,8 @@ import { useState } from 'react';
 import { type CheckVersion, listCheckVersions, restoreCheckVersion } from '../../api/suites';
 import { errorMessage } from '../../utils/errors';
 import { ConfigJson, HistoryDrawer } from '../HistoryDrawer';
+import { ENGINE_LABEL } from './checkBadges';
 import { EXPECTATION_BY_TYPE } from './expectationCatalog';
-
-const ENGINE_LABEL: Record<string, string> = {
-  gx: 'Great Expectations (gx)',
-  dmf: 'Snowflake DMF (native)',
-};
 
 /**
  * Check version history (#280) — "see previous config before overwriting" — plus restore (#283),
