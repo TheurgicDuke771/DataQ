@@ -199,8 +199,33 @@ def test_verify_chain_accepts_a_documented_checkpoint_boundary(db_session: Any) 
 
     assert result.ok, result.first_break
 
+
+def test_purge_checkpoint_resets_the_head_when_nothing_survives(db_session: Any) -> None:
+    """A cutoff past every existing row's `occurred_at` deletes the current
+    chain head too — a real scenario (an idle workspace, or an admin lowering
+    `AUDIT_RETENTION_DAYS`). Left unhandled, `AuditChainState` would keep
+    pointing at a row about to be deleted, and every later `verify_chain` call
+    would report a dangling-pointer break for an ordinary, documented purge
+    (the review finding this test locks in). A cutoff in the FUTURE guarantees
+    "nothing survives" regardless of ambient data from other tests.
+    """
+    _record(db_session, suffix=".about-to-be-the-head")
+    db_session.commit()
+
+    future_cutoff = datetime.now(UTC) + timedelta(days=1)
+    checkpoint = audit_chain.write_purge_checkpoint(db_session, cutoff=future_cutoff)
+    assert checkpoint is not None
+    assert checkpoint.first_surviving_event_id is None
+    db_session.commit()
+
+    state = db_session.get(AuditChainState, 1)
+    assert state is not None
+    assert state.head_hash is None
+    assert state.head_event_id is None
+
     result = audit_chain.verify_chain(db_session)
     assert result.ok, result.first_break
+    assert result.chain_head_hash is None
 
 
 def test_purge_checkpoint_is_none_when_nothing_is_older_than_cutoff(db_session: Any) -> None:

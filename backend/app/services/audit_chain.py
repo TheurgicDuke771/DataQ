@@ -199,6 +199,11 @@ def verify_chain(session: Session) -> ChainVerification:
     allowed to have a `prev_hash` that no longer names a live row (its
     `last_deleted_row_hash`) — matched by exact event id, so a tampered row
     cannot forge continuity by copying an unrelated checkpoint's hash.
+
+    Loads every hashed row into memory rather than walking the chain via
+    targeted per-hop queries — simpler to get correct, and not obviously worse
+    at typical volumes (a hop-by-hop walk trades one query for O(chain length)
+    of them). Tracked as a scaling concern, not a correctness one: #1597.
     """
     legacy_count = (
         session.scalar(
@@ -271,6 +276,13 @@ def write_purge_checkpoint(session: Session, *, cutoff: datetime) -> AuditChainC
     row pair. The failure mode is a false-positive `verify_chain` break at that
     one boundary — never a missed real tamper elsewhere in the chain — and the
     window is negligible next to a retention period measured in days.
+
+    When NOTHING survives the cutoff (an idle workspace, or a lowered
+    `AUDIT_RETENTION_DAYS`), the purge is about to delete the current chain
+    head too — resets `AuditChainState` so the chain cleanly restarts at
+    genesis on the next write, instead of leaving the head pointing at a row
+    that no longer exists (a review-caught defect: `verify_chain` reported
+    every such ordinary purge as tampering).
     """
     last_deleted = session.scalars(
         select(AuditEvent)
@@ -292,6 +304,17 @@ def write_purge_checkpoint(session: Session, *, cutoff: datetime) -> AuditChainC
         .order_by(AuditEvent.occurred_at, AuditEvent.id)
         .limit(1)
     ).first()
+    if first_surviving is None:
+        # Nothing survives the cutoff — the purge is about to delete the current
+        # chain head too. Left alone, `AuditChainState` would keep pointing at a
+        # row that no longer exists, and every `verify_chain` call afterward
+        # would report a dangling-pointer break for an ordinary, documented
+        # purge. Reset the head so the chain cleanly restarts at genesis on the
+        # next write — the honest state, since nothing hashed survives to link
+        # onto.
+        state = _lock_chain_state(session)
+        state.head_hash = None
+        state.head_event_id = None
     checkpoint = AuditChainCheckpoint(
         cutoff=cutoff,
         deleted_count=deleted_count,
