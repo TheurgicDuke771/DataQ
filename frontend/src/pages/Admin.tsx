@@ -168,23 +168,40 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  *  `psql` or curl. Server-side filtered (the log can outgrow client-side filtering
  *  fast), so a filter change is a deliberate "Search", not fetch-on-keystroke.
  */
+type AuditFilterDraft = {
+  actionClass?: 'config' | 'access';
+  entityType: string;
+  actorUserId: string;
+  dateWindow: AuditDateWindow;
+};
+
+const EMPTY_AUDIT_FILTERS: AuditFilterDraft = {
+  entityType: '',
+  actorUserId: '',
+  dateWindow: 'all',
+};
+
 function AuditLogSection() {
-  const [filters, setFilters] = useState<{
-    actionClass?: 'config' | 'access';
-    entityType: string;
-    actorUserId: string;
-    dateWindow: AuditDateWindow;
-  }>({ entityType: '', actorUserId: '', dateWindow: 'all' });
+  // TWO states, deliberately: `draft` is bound to the inputs as the admin types;
+  // `query` is what the fetch actually uses. Collapsing them into one was tried
+  // and reverted — pagination's `onPageChange` calls `reload()` without going
+  // through Search, so if paging read from the same state the inputs are bound
+  // to, clicking Next while mid-edit (e.g. typing an entity type before hitting
+  // Search) would silently apply the unsubmitted edit to the page fetch. `query`
+  // is exactly "what Search last submitted," which `onPageChange` can safely
+  // reuse.
+  const [draft, setDraft] = useState<AuditFilterDraft>(EMPTY_AUDIT_FILTERS);
+  const [query, setQuery] = useState<AuditFilterDraft>(EMPTY_AUDIT_FILTERS);
   const [page, setPage] = useState(1);
-  const trimmedActor = filters.actorUserId.trim();
-  const actorError = trimmedActor !== '' && !UUID_PATTERN.test(trimmedActor);
+  const trimmedDraftActor = draft.actorUserId.trim();
+  const actorError = trimmedDraftActor !== '' && !UUID_PATTERN.test(trimmedDraftActor);
 
   const { state, reload } = useAsyncData(() =>
     listAuditEvents({
-      action_class: filters.actionClass,
-      entity_type: filters.entityType || undefined,
-      actor_user_id: actorError ? undefined : trimmedActor || undefined,
-      since: windowSince(filters.dateWindow),
+      action_class: query.actionClass,
+      entity_type: query.entityType.trim() || undefined,
+      actor_user_id: query.actorUserId.trim() || undefined,
+      since: windowSince(query.dateWindow),
       limit: AUDIT_PAGE_SIZE,
       offset: (page - 1) * AUDIT_PAGE_SIZE,
     }),
@@ -194,6 +211,10 @@ function AuditLogSection() {
   // fetcher identity — see its doc, and `AssetsTableView`'s identical comment), so a
   // filter or page change must bump it explicitly.
   const search = () => {
+    // An invalid, still-typed actor ID is silently dropped rather than sent —
+    // matches the "omit from filters" behavior a submitted-then-cleared value
+    // already gets; the inline error next to the input is what warns the admin.
+    setQuery({ ...draft, actorUserId: actorError ? '' : draft.actorUserId });
     setPage(1);
     reload();
   };
@@ -208,10 +229,8 @@ function AuditLogSection() {
         <Filter label="Type">
           <Select<'config' | 'access' | 'all'>
             style={{ width: 160 }}
-            value={filters.actionClass ?? 'all'}
-            onChange={(v) =>
-              setFilters((f) => ({ ...f, actionClass: v === 'all' ? undefined : v }))
-            }
+            value={draft.actionClass ?? 'all'}
+            onChange={(v) => setDraft((f) => ({ ...f, actionClass: v === 'all' ? undefined : v }))}
             options={[{ value: 'all', label: 'All actions' }, ...ACTION_CLASSES]}
           />
         </Filter>
@@ -219,8 +238,8 @@ function AuditLogSection() {
           <Input
             style={{ width: 140 }}
             placeholder="e.g. suite"
-            value={filters.entityType}
-            onChange={(e) => setFilters((f) => ({ ...f, entityType: e.target.value }))}
+            value={draft.entityType}
+            onChange={(e) => setDraft((f) => ({ ...f, entityType: e.target.value }))}
           />
         </Filter>
         <Filter label="Actor user ID">
@@ -228,8 +247,8 @@ function AuditLogSection() {
             style={{ width: 220 }}
             placeholder="UUID"
             status={actorError ? 'error' : undefined}
-            value={filters.actorUserId}
-            onChange={(e) => setFilters((f) => ({ ...f, actorUserId: e.target.value }))}
+            value={draft.actorUserId}
+            onChange={(e) => setDraft((f) => ({ ...f, actorUserId: e.target.value }))}
           />
           {actorError && (
             <Typography.Text type="danger" style={{ fontSize: 12 }}>
@@ -240,8 +259,8 @@ function AuditLogSection() {
         <Filter label="When">
           <Select<AuditDateWindow>
             style={{ width: 160 }}
-            value={filters.dateWindow}
-            onChange={(v) => setFilters((f) => ({ ...f, dateWindow: v }))}
+            value={draft.dateWindow}
+            onChange={(v) => setDraft((f) => ({ ...f, dateWindow: v }))}
             options={AUDIT_DATE_WINDOWS.map((w) => ({ value: w.value, label: w.label }))}
           />
         </Filter>

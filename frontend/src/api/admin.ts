@@ -115,7 +115,10 @@ export interface AuditEvent {
 export interface AuditEventPage {
   events: AuditEvent[];
   total: number;
-  /** `true` when this page is not the whole result — more rows exist past `limit`. */
+  /** `true` when this page is not the whole result — more rows exist past `limit`.
+   *  Not currently rendered in the Admin UI: `total` (paired with a real antd
+   *  pager) already conveys this more precisely — kept here for API-contract
+   *  fidelity and because a non-paginated consumer of this type would need it. */
   truncated: boolean;
   /** The configured retention window in days. */
   retention_days: number;

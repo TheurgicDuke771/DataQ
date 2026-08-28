@@ -253,6 +253,44 @@ describe('Admin', () => {
     });
   });
 
+  it('Next does not apply an unsubmitted filter edit to the page fetch', async () => {
+    // Regression: collapsing the filter state into one object (a prior review's
+    // simplification suggestion) made `onPageChange` read the SAME state the
+    // inputs are bound to — so typing into a filter, then clicking Next before
+    // hitting Search, silently applied the half-typed edit to the page fetch.
+    mockAuditEvents.mockResolvedValueOnce(AUDIT_PAGE_1).mockResolvedValueOnce(AUDIT_PAGE_2);
+    const user = userEvent.setup();
+    const { container } = renderAdmin(adminMe);
+    await screen.findByText('check.update');
+
+    // Typed but never submitted via Search.
+    await user.type(screen.getByPlaceholderText('e.g. suite'), 'suite');
+    const next = container.querySelector('.ant-pagination-next button');
+    await user.click(next as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(mockAuditEvents).toHaveBeenCalledTimes(2);
+    });
+    expect(mockAuditEvents.mock.calls[1][0]).toMatchObject({
+      entity_type: undefined,
+      offset: 25,
+    });
+  });
+
+  it('trims whitespace from the entity type filter before sending it', async () => {
+    const user = userEvent.setup();
+    renderAdmin(adminMe);
+    await screen.findByText('check.update');
+
+    await user.type(screen.getByPlaceholderText('e.g. suite'), '  suite  ');
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() => {
+      expect(mockAuditEvents).toHaveBeenCalledTimes(2);
+    });
+    expect(mockAuditEvents.mock.calls[1][0]).toMatchObject({ entity_type: 'suite' });
+  });
+
   it('names the disabled sweep instead of implying a normal retention window', async () => {
     mockAuditEvents.mockResolvedValue({ ...AUDIT_PAGE_1, retention_days: 0, retained_since: null });
     renderAdmin(adminMe);
