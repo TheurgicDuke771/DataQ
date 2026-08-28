@@ -295,7 +295,8 @@ describe('`mostly` tolerance field (#1509)', () => {
     const field = requiredField(type, MOSTLY_FIELD_NAME);
     expect(field.type).toBe('number');
     expect(field.optional).toBe(true);
-    expect(field.min).toBe(0);
+    // NOT 0, which GX accepts and which succeeds unconditionally forever (#426 silent green).
+    expect(field.min).toBeGreaterThan(0);
     expect(field.max).toBe(1);
     // The antd default step of 1 makes a 0-1 range unusable.
     expect(field.step).toBeLessThan(1);
@@ -412,12 +413,15 @@ describe('expectationsByCategoryFor (dataframeOnly per-spec gating, #1509)', () 
     },
   );
 
-  it('keeps it visible while the connection type is still unknown', () => {
-    expect(offeredTypes(undefined)).toContain(STRFTIME);
+  it('hides it while the connection type is still unknown, like every sibling gate', () => {
+    // The connection load is best-effort (`CheckNew` catches), so an author with a suite share
+    // and no connection read access must not fill a whole form for a type the backend 422s.
+    expect(offeredTypes(undefined)).not.toContain(STRFTIME);
   });
 
   it('keeps it visible when editing one, or the editor would silently retype the check', () => {
     expect(offeredTypes('snowflake', STRFTIME)).toContain(STRFTIME);
+    expect(offeredTypes(undefined, STRFTIME)).toContain(STRFTIME);
   });
 
   it('drops only the gated spec, not its whole category', () => {

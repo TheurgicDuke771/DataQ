@@ -200,13 +200,17 @@ export const MOSTLY_FIELD_NAME = 'mostly';
 const MOSTLY_HELP =
   'Optional tolerance: the fraction of rows that must conform for the check to succeed — e.g. 0.95 = pass if ≥95% of rows conform. Leave blank to require every row. Severity thresholds still band the FULL unexpected-%, so a threshold below this tolerance can still warn/fail a run GX itself passed.';
 
-/** The `mostly` tolerance, offered on every row-wise expectation GX accepts it on. */
+/**
+ * The `mostly` tolerance, offered on every row-wise expectation GX accepts it on. GX's own floor
+ * is 0, which succeeds unconditionally forever — a check that can never fail is the #426
+ * silent-green class, so the editor stops one step above it.
+ */
 const MOSTLY: ConfigField = {
   name: MOSTLY_FIELD_NAME,
   label: 'Tolerance',
   type: 'number',
   optional: true,
-  min: 0,
+  min: 0.01,
   max: 1,
   step: 0.01,
   help: MOSTLY_HELP,
@@ -768,8 +772,10 @@ export function expectationsByCategoryFor(
   };
   // A `dataframeOnly` spec errors on a SQL batch, so drop it per-SPEC rather than per-category —
   // it shares 'Column values' with a dozen types that run everywhere. The type being edited stays
-  // visible, or the editor would silently switch the check to something else.
-  const sqlBatch = connectionType !== undefined && runsSqlBatch(connectionType);
+  // visible, or the editor would silently switch the check to something else. Fails CLOSED on an
+  // unknown connection type, like every gate above it: the connection load is best-effort, and
+  // offering a type the backend then 422s wastes a whole filled-in form.
+  const sqlBatch = connectionType === undefined || runsSqlBatch(connectionType);
   const specAllowed = (spec: ExpectationSpec): boolean =>
     spec.type === alwaysIncludeType || !spec.dataframeOnly || !sqlBatch;
   return EXPECTATIONS_BY_CATEGORY.filter((g) => allowed(g.category)).map((g) => ({

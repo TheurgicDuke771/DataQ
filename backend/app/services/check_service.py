@@ -554,13 +554,13 @@ def _reject_row_count_on_sampled_suite(
         )
 
 
-def _reject_dataframe_only_expectation(
-    session: Session, suite: Suite, expectation_type: str
-) -> None:
+def reject_dataframe_only_expectation(expectation_type: str, *, connection_type: str) -> None:
     """422 for an expectation GX cannot evaluate on this connection's SQL batch (#1509).
 
-    Hiding it in the editor is not enough — the API, MCP and suite import all reach this same
-    path, and the alternative is a check that saves cleanly and errors on every run.
+    Hiding it in the editor is not enough — the API, MCP and suite import all reach the same
+    rows, and the alternative is a check that saves cleanly and errors on every run. Takes the
+    connection type rather than a Suite so import (which has no Suite yet) shares this gate
+    instead of hand-rolling a second copy.
     """
     from backend.app.datasources.gx_runner import (
         DATAFRAME_ONLY_EXPECTATION_TYPES,
@@ -569,7 +569,6 @@ def _reject_dataframe_only_expectation(
 
     if expectation_type not in DATAFRAME_ONLY_EXPECTATION_TYPES:
         return
-    connection_type = _connection_type(session, suite)
     if connection_type not in SQL_BATCH_CONNECTION_TYPES:
         return
     raise CheckConfigInvalidError(
@@ -716,7 +715,9 @@ def create_check(
     else:
         validate_expectation_check(expectation_type, config)
         _reject_row_count_on_sampled_suite(session, suite, expectation_type)
-        _reject_dataframe_only_expectation(session, suite, expectation_type)
+        reject_dataframe_only_expectation(
+            expectation_type, connection_type=_connection_type(session, suite)
+        )
 
     check = Check(
         suite_id=suite_id,
@@ -819,7 +820,9 @@ def _validate_kind_specific_config(
         validate_expectation_check(expectation_type, config)
         suite = get_suite(session, suite_id)
         _reject_row_count_on_sampled_suite(session, suite, expectation_type)
-        _reject_dataframe_only_expectation(session, suite, expectation_type)
+        reject_dataframe_only_expectation(
+            expectation_type, connection_type=_connection_type(session, suite)
+        )
 
 
 def _record_version_and_commit(

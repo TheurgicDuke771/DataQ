@@ -1669,6 +1669,12 @@ def test_pushdown_allowlist_partitions_the_catalog() -> None:
     }
     routed = SQL_PUSHDOWN_EXPECTATION_TYPES | frame_only | SQL_BATCH_EXPECTATION_TYPES
     assert catalog_types == routed
+    # A union hides an overlap: a type in BOTH sets satisfies the equality above while every UC
+    # run of it raises "No provider found" on the pushed-down batch.
+    from backend.app.datasources.gx_runner import DATAFRAME_ONLY_EXPECTATION_TYPES
+
+    assert not (SQL_PUSHDOWN_EXPECTATION_TYPES & DATAFRAME_ONLY_EXPECTATION_TYPES)
+    assert not (SQL_PUSHDOWN_EXPECTATION_TYPES & frame_only)
 
 
 def test_index_column_clash_runs_without_the_index_request(
