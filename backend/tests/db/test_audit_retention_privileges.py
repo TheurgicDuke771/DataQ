@@ -320,3 +320,64 @@ def test_a_no_op_sweep_writes_no_checkpoint(owner_session: Session) -> None:
     audit_read_service.purge_expired_events(owner_session, retention_days=365)
 
     assert owner_session.scalars(select(AuditChainCheckpoint)).all() == []
+
+
+_GRANT_MIGRATION_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "alembic"
+    / "versions"
+    / "0ef2edb2ea38_grant_hash_column_update_on_audit_events.py"
+)
+
+
+def _migration_statement(path: Path, attr: str, role: str) -> str:
+    spec = importlib.util.spec_from_file_location(f"_audit_migration_{attr}", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return str(getattr(module, attr)(role))
+
+
+def _grant_statement(role: str) -> str:
+    return _migration_statement(_GRANT_MIGRATION_PATH, "grant_statement", role)
+
+
+def test_the_chain_can_seal_rows_under_the_revoke_plus_grant(owner_session: Session) -> None:
+    """#1621: the chain seals a row via UPDATE on the hash columns, which the
+    append-only REVOKE alone blocks — the exact 500 prod hit on first deploy.
+    """
+    owner_session.execute(text(_revoke_statement(_ROLE)))
+    owner_session.execute(text(_grant_statement(_ROLE)))
+    owner_session.commit()
+
+    # Without the grant this raises InsufficientPrivilege (the prod failure shape).
+    # Two rows: the genesis row's prev_hash is NULL by design, the second row's is not —
+    # asserting on it proves the seal UPDATE actually ran, not merely that inserts work.
+    _seed(owner_session, age_days=0, count=2)
+    sealed = owner_session.execute(
+        text(
+            "SELECT count(*) FROM audit_events "
+            "WHERE row_hash IS NOT NULL AND prev_hash IS NOT NULL"
+        )
+    ).scalar()
+    assert sealed is not None and sealed >= 1
+
+    # Payload stays append-only: a non-hash column UPDATE is still refused.
+    with pytest.raises(ProgrammingError):
+        owner_session.execute(text("UPDATE audit_events SET action = 'tampered'"))
+    owner_session.rollback()
+    with pytest.raises(ProgrammingError):
+        owner_session.execute(text("DELETE FROM audit_events"))
+    owner_session.rollback()
+
+
+def test_without_the_grant_the_seal_update_is_refused(owner_session: Session) -> None:
+    """The mutation half: the sibling test passes BECAUSE of the grant — under the
+    revoke alone, the chain hook's seal UPDATE raises, which is prod's #1621 500.
+    """
+    owner_session.execute(text(_revoke_statement(_ROLE)))
+    owner_session.commit()
+
+    with pytest.raises(ProgrammingError):
+        _seed(owner_session, age_days=0, count=1)
+    owner_session.rollback()
