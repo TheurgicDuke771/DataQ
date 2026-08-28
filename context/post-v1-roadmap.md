@@ -23,7 +23,7 @@
 - [post-v1-dq-intelligence-notes.md](../docs/post-v1-dq-intelligence-notes.md) — expectation expansion, LLM-assisted authoring, marketplace
 - ~~post-v1-admin-ui-notes.md~~ — **deleted at the v1.1 close (2026-08-21)**: superseded by ADR [0033](../docs/site/adr/0033-workspace-roles-rbac.md) (which records the decision AND the reversal of this doc's defer-RBAC stance); live remnants filed as [#1514](https://github.com/TheurgicDuke771/DataQ/issues/1514) / [#1516](https://github.com/TheurgicDuke771/DataQ/issues/1516)
 - ~~post-v1-assets-lineage-incidents-notes.md~~ — **deleted at the v1.1 close (2026-08-21)**: fully shipped; durable decision records are ADRs [0034](../docs/site/adr/0034-asset-entity-openlineage-identity-lineage-pull.md)/[0037](../docs/site/adr/0037-workspace-visible-asset-identity.md)/[0040](../docs/site/adr/0040-warehouse-inventory-sync-table-enumeration-seam.md); the one unbuilt design item is [#1515](https://github.com/TheurgicDuke771/DataQ/issues/1515)
-- [Security & data handling](../docs/site/security.md) + [docs/site/compliance/](../docs/site/compliance/) — GDPR / CCPA-CPRA / HIPAA technical controls (published, long-term reference); [compliance-posture.md](../docs/compliance-posture.md) is the internal gap-tracking doc these were built from — G1–G6 are now shipped bar two residuals (#1460, #1385), and it's a removal candidate once those close
+- [Security & data handling](../docs/site/security.md) (now carries its own Compliance section) + [docs/site/compliance/](../docs/site/compliance/) — GDPR / CCPA-CPRA / HIPAA technical controls (published, long-term reference); ~~compliance-posture.md~~ — **deleted 2026-08-28**: it was the internal gap-tracking doc these were built from, G1–G6 all shipped (the #1460 tamper-evidence residual closed 2026-08-27) bar the accepted-exception #1385, and its content was folded into `docs/site/security.md`
 
 **The big picture:** v1 ships the DQ loop (checks → results → trends → freshness/volume monitors
 → alerts → MCP) end-to-end. Post-v1 layers *intelligence* (more expectations, LLM authoring,
@@ -262,21 +262,21 @@ the asset page.
 
 ## Theme 4 — Compliance (GDPR / CCPA-CPRA / HIPAA)
 
-**All six gaps below have shipped** (bar two residuals, #1460 and #1385) — see
-[Security & data handling](../docs/site/security.md) and
-[docs/site/compliance/](../docs/site/compliance/) for the published, long-term posture.
-The internal decision record (verification narratives, deferred-and-why) is
-[compliance-posture.md](../docs/compliance-posture.md). v1 is privacy-by-design (logger PII
-redaction, default-redact samples, retention purge, SecretStore, suite-scoped authz, BYOL
+**All six gaps have shipped** (bar the accepted-exception #1385, ElastiCache
+at-rest encryption) — see [Security & data handling](../docs/site/security.md)
+(now carries its own Compliance section) and
+[docs/site/compliance/](../docs/site/compliance/) for the published, long-term
+posture. v1 is privacy-by-design (logger PII redaction, default-redact
+samples, retention purge, SecretStore, suite-scoped authz, BYOL
 controller/processor split). These closed the gaps for a credible v2.x "processor-grade controls" claim.
 
 | # | Gap | Regime hook |
 |---|---|---|
-| [#431](https://github.com/TheurgicDuke771/DataQ/issues/431) | 🔴 **G1** data-access audit trail (who read which result/sample) | HIPAA §164.312(b) — the HIPAA gate |
-| [#432](https://github.com/TheurgicDuke771/DataQ/issues/432) | 🟠 **G2** data-subject-rights machinery (erasure / access / portability) | GDPR Art 15/17/20, CCPA |
-| [#433](https://github.com/TheurgicDuke771/DataQ/issues/433) | 🟠 **G3** authoritative PII/PHI classification (warehouse tags over name heuristic) | — |
-| [#434](https://github.com/TheurgicDuke771/DataQ/issues/434) | 🟠 **G4** region/residency assertion + enforcement | GDPR Ch. V; LLM transfer vector |
-| [#435](https://github.com/TheurgicDuke771/DataQ/issues/435) | 🟡 **G5** assert encryption-at-rest in IaC + offer CMK | — |
+| [#431](https://github.com/TheurgicDuke771/DataQ/issues/431) | 🟢 **G1** data-access audit trail (who read which result/sample) + tamper-evidence (#1460) | HIPAA §164.312(b) — the HIPAA gate |
+| [#432](https://github.com/TheurgicDuke771/DataQ/issues/432) | 🟢 **G2** data-subject-rights machinery (erasure / access / portability) | GDPR Art 15/17/20, CCPA |
+| [#433](https://github.com/TheurgicDuke771/DataQ/issues/433) | 🟢 **G3** authoritative PII/PHI classification (warehouse tags over name heuristic) | — |
+| [#434](https://github.com/TheurgicDuke771/DataQ/issues/434) | 🟢 **G4** region/residency assertion + enforcement | GDPR Ch. V; LLM transfer vector |
+| [#435](https://github.com/TheurgicDuke771/DataQ/issues/435) | 🟢 **G5** assert encryption-at-rest in IaC + offer CMK | — |
 
 ### Privacy pack (design-captured 2026-07-04)
 
