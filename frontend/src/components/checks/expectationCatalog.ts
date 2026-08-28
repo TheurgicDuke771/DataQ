@@ -4,6 +4,7 @@ import {
   DATASOURCE_CATEGORY,
   isFileDatasource,
   isSqlQueryable,
+  runsSqlBatch,
   supportsMonitors,
   type ConnectionType,
 } from '../../api/connections';
@@ -93,6 +94,8 @@ export interface ConfigField {
    */
   min?: number;
   max?: number;
+  /** Increment for a `number` field's stepper; the antd default of 1 is unusable on a 0–1 range. */
+  step?: number;
   /** Value/label options for a `select` field. */
   options?: { value: string; label: string }[];
   /**
@@ -154,6 +157,12 @@ export interface ExpectationSpec {
   engine?: CheckEngine;
   /** `dmf:unique_count` degrades downward — the backend rejects any threshold on it. */
   noThresholds?: boolean;
+  /**
+   * GX has no SqlAlchemy metric provider for this type, so it errors on a SQL batch. Mirrors the
+   * backend's `gx_runner.DATAFRAME_ONLY_EXPECTATION_TYPES`, which 422s it at author time — this
+   * flag only keeps it out of the picker.
+   */
+  dataframeOnly?: boolean;
 }
 
 /** Freshness's type — same string for both engines, so it's a choice rather than a second entry. */
@@ -185,6 +194,37 @@ export function effectiveEngineFor(
 
 const COLUMN: ConfigField = { name: 'column', label: 'Column', type: 'string' };
 
+/** GX's row-wise tolerance kwarg — a fraction, not a percentage. */
+export const MOSTLY_FIELD_NAME = 'mostly';
+
+const MOSTLY_HELP =
+  'Optional tolerance: the fraction of rows that must conform for the check to succeed — e.g. 0.95 = pass if ≥95% of rows conform. Leave blank to require every row. Severity thresholds still band the FULL unexpected-%, so a threshold below this tolerance can still warn/fail a run GX itself passed.';
+
+/**
+ * The `mostly` tolerance, offered on every row-wise expectation GX accepts it on. GX's own floor
+ * is 0, which succeeds unconditionally forever — a check that can never fail is the #426
+ * silent-green class, so the editor stops one step above it.
+ */
+const MOSTLY: ConfigField = {
+  name: MOSTLY_FIELD_NAME,
+  label: 'Tolerance',
+  type: 'number',
+  optional: true,
+  min: 0.01,
+  max: 1,
+  step: 0.01,
+  help: MOSTLY_HELP,
+};
+
+/**
+ * The type checks reach `mostly` only down GX's row-wise fallback; the whole-column dtype compare
+ * it prefers is all-or-nothing, so the tolerance is inert there.
+ */
+const MOSTLY_TYPE_CHECK: ConfigField = {
+  ...MOSTLY,
+  help: `${MOSTLY_HELP} On a type check it applies only when GX falls back to its row-wise compare (see the Type hint above), not to the whole-column dtype compare.`,
+};
+
 /**
  * `type_` config-field name for `expect_column_values_to_be_of_type` — GX's own kwarg (trailing
  * underscore to dodge shadowing the Python builtin).
@@ -202,11 +242,26 @@ const SQL_ENGINE_TYPE_HINT =
 const DATAFRAME_ENGINE_TYPE_HINT =
   'Compares pandas dtypes or Python value type names — numerics report `int64`/`float64` (integer columns containing NULLs report `float64`); string columns on Unity Catalog and CSV reads are `object` dtype, so `object` or `str` both pass, while Parquet/Iceberg reads are Arrow-backed and can report different names. Dry-run to calibrate: a failing result’s observed_value shows the expected dtype — but if Observed shows “—”, your guess fell to GX’s row-wise compare; use `object` or a Python value type name (full cheat-sheet in the check-authoring docs).';
 
+/** `type_list` config-field name — `to_be_of_type`'s sibling, same type vocabulary (#1509). */
+export const TYPE_LIST_FIELD_NAME = 'type_list';
+
+/** The type-vocabulary fields, all of which take the datasource-tailored `typeFieldHint`. */
+export const TYPE_FIELD_NAMES: string[] = [TYPE_FIELD_NAME, TYPE_LIST_FIELD_NAME];
+
 /** Datasource-tailored help for the `type_` field (issue #768. */
 export function typeFieldHint(connectionType: ConnectionType | undefined): string {
   if (!connectionType || !DATASOURCE_CATEGORY[connectionType]) return TYPE_FIELD_DEFAULT_HELP;
   return connectionType === 'snowflake' ? SQL_ENGINE_TYPE_HINT : DATAFRAME_ENGINE_TYPE_HINT;
 }
+
+/**
+ * The distinct-value set relations compare a SET, so GX reports no `unexpected_percent` — the
+ * scalar ADR 0016 bands (`services/severity.extract_metric`). Say so where the bands are entered
+ * rather than leaving an input that silently does nothing.
+ */
+const SET_RELATION_THRESHOLDS: MonitorThresholdSpec = {
+  help: 'This check compares the column’s distinct-value SET, so GX reports no unexpected-% for the bands to read — thresholds set here are ignored and the result stays a binary pass/fail.',
+};
 
 export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   {
@@ -215,7 +270,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     label: 'Column values not null',
     description: 'Every value in the column is non-null.',
     category: 'Column values',
-    fields: [COLUMN],
+    fields: [COLUMN, MOSTLY],
   },
   {
     type: 'expect_column_values_to_be_unique',
@@ -223,7 +278,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     label: 'Column values unique',
     description: 'Values in the column are distinct (no duplicates).',
     category: 'Column values',
-    fields: [COLUMN],
+    fields: [COLUMN, MOSTLY],
   },
   {
     type: 'expect_column_values_to_be_between',
@@ -235,6 +290,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
       COLUMN,
       { name: 'min_value', label: 'Minimum', type: 'number', optional: true },
       { name: 'max_value', label: 'Maximum', type: 'number', optional: true },
+      MOSTLY,
     ],
   },
   {
@@ -251,6 +307,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         type: 'list',
         help: 'Comma-separated list of permitted values.',
       },
+      MOSTLY,
     ],
   },
   {
@@ -263,6 +320,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
       COLUMN,
       { name: 'min_value', label: 'Min length', type: 'number', optional: true },
       { name: 'max_value', label: 'Max length', type: 'number', optional: true },
+      MOSTLY,
     ],
   },
   {
@@ -271,7 +329,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     label: 'Column values match regex',
     description: 'Every value matches the given regular expression.',
     category: 'Column values',
-    fields: [COLUMN, { name: 'regex', label: 'Regex', type: 'string' }],
+    fields: [COLUMN, { name: 'regex', label: 'Regex', type: 'string' }, MOSTLY],
   },
   {
     type: 'expect_column_values_to_be_of_type',
@@ -287,6 +345,135 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         type: 'string',
         help: TYPE_FIELD_DEFAULT_HELP,
       },
+      MOSTLY_TYPE_CHECK,
+    ],
+  },
+  {
+    type: 'expect_column_values_to_be_in_type_list',
+    dimension: 'validity',
+    label: 'Column values are of one of several types',
+    description:
+      'Every value in the column matches at least one of the given data types — the tolerant sibling of “Column values are of type”, for a column whose type legitimately varies by datasource or load.',
+    category: 'Column values',
+    fields: [
+      COLUMN,
+      {
+        name: TYPE_LIST_FIELD_NAME,
+        label: 'Types',
+        type: 'list',
+        help: TYPE_FIELD_DEFAULT_HELP,
+      },
+      MOSTLY_TYPE_CHECK,
+    ],
+  },
+  {
+    type: 'expect_compound_columns_to_be_unique',
+    dimension: 'uniqueness',
+    label: 'Compound columns unique',
+    description:
+      'The COMBINATION of values across the listed columns is distinct on every row — a multi-column primary or business key. Each column on its own may repeat freely.',
+    category: 'Column values',
+    fields: [
+      {
+        name: 'column_list',
+        label: 'Columns',
+        type: 'list',
+        help: 'Comma-separated columns forming the compound key.',
+      },
+      MOSTLY,
+    ],
+  },
+  {
+    type: 'expect_column_pair_values_a_to_be_greater_than_b',
+    dimension: 'validity',
+    label: 'Column A greater than column B',
+    description:
+      'Row by row, column A is greater than column B — e.g. ended_at > started_at, or total >= discount.',
+    category: 'Column values',
+    fields: [
+      { name: 'column_A', label: 'Column A', type: 'string' },
+      { name: 'column_B', label: 'Column B', type: 'string' },
+      {
+        name: 'or_equal',
+        label: 'Allow equal',
+        type: 'boolean',
+        optional: true,
+        help: 'Accept rows where A equals B (>= instead of >).',
+      },
+      MOSTLY,
+    ],
+  },
+  {
+    type: 'expect_multicolumn_sum_to_equal',
+    dimension: 'validity',
+    label: 'Columns sum to a total',
+    description:
+      'Row by row, the listed columns add up to the given total — e.g. subtotal + tax + shipping = total.',
+    category: 'Column values',
+    fields: [
+      {
+        name: 'column_list',
+        label: 'Columns',
+        type: 'list',
+        help: 'Comma-separated columns whose per-row values are summed.',
+      },
+      { name: 'sum_total', label: 'Expected sum', type: 'number' },
+      MOSTLY,
+    ],
+  },
+  {
+    type: 'expect_column_distinct_values_to_be_in_set',
+    dimension: 'validity',
+    label: 'Column distinct values in set',
+    description:
+      'Every DISTINCT value present in the column is one of an allowed set — reports WHICH unexpected values exist rather than how many rows carry them. Use “Column values in set” when you care about the row count.',
+    category: 'Column values',
+    fields: [
+      COLUMN,
+      {
+        name: 'value_set',
+        label: 'Allowed values',
+        type: 'list',
+        help: 'Comma-separated list of permitted values.',
+      },
+    ],
+    thresholds: SET_RELATION_THRESHOLDS,
+  },
+  {
+    type: 'expect_column_distinct_values_to_contain_set',
+    dimension: 'completeness',
+    label: 'Column distinct values contain set',
+    description:
+      'Every value in the given set appears at least once in the column — catches a category that stopped arriving. The column may also contain other values.',
+    category: 'Column values',
+    fields: [
+      COLUMN,
+      {
+        name: 'value_set',
+        label: 'Required values',
+        type: 'list',
+        help: 'Comma-separated list of values that must each appear at least once.',
+      },
+    ],
+    thresholds: SET_RELATION_THRESHOLDS,
+  },
+  {
+    type: 'expect_column_values_to_match_strftime_format',
+    dimension: 'validity',
+    dataframeOnly: true,
+    label: 'Column values match a date format',
+    description:
+      'Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake: Great Expectations implements this one only for dataframe batches, so a SQL warehouse would error on every run. Use a custom-SQL check there.',
+    category: 'Column values',
+    fields: [
+      COLUMN,
+      {
+        name: 'strftime_format',
+        label: 'Date format',
+        type: 'string',
+        help: 'Python strftime format, e.g. %Y-%m-%d or %Y-%m-%dT%H:%M:%S.',
+      },
+      MOSTLY,
     ],
   },
   {
@@ -583,7 +770,18 @@ export function expectationsByCategoryFor(
     if (MONITOR_CATEGORY_SET.has(category)) return monitorAllowed;
     return true; // datasource-agnostic category
   };
-  return EXPECTATIONS_BY_CATEGORY.filter((g) => allowed(g.category));
+  // A `dataframeOnly` spec errors on a SQL batch, so drop it per-SPEC rather than per-category —
+  // it shares 'Column values' with a dozen types that run everywhere. The type being edited stays
+  // visible, or the editor would silently switch the check to something else. Fails CLOSED on an
+  // unknown connection type, like every gate above it: the connection load is best-effort, and
+  // offering a type the backend then 422s wastes a whole filled-in form.
+  const sqlBatch = connectionType === undefined || runsSqlBatch(connectionType);
+  const specAllowed = (spec: ExpectationSpec): boolean =>
+    spec.type === alwaysIncludeType || !spec.dataframeOnly || !sqlBatch;
+  return EXPECTATIONS_BY_CATEGORY.filter((g) => allowed(g.category)).map((g) => ({
+    category: g.category,
+    specs: g.specs.filter(specAllowed),
+  }));
 }
 
 /** A spec's config fields, adjusted for the suite's datasource (#520). */

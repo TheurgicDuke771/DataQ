@@ -5,6 +5,30 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
+### Added
+
+- **Seven more GX expectations in the check editor, and an optional tolerance on the
+  ones already there** (#1509). The tolerance (`mostly`) is a fraction — `0.95` passes a
+  check when at least 95% of rows conform. It moves GX's own success line only: severity
+  thresholds still band the full unexpected-%, so a threshold below the tolerance can warn
+  on a run the check passed.
+
+  New types: *Compound columns unique* (a multi-column key), *Column A greater than column
+  B*, *Columns sum to a total*, *Column values are of one of several types*, *Column
+  distinct values in set* / *contain set*, and *Column values match a date format*.
+
+  Two things are worth knowing before you use them. The two distinct-value set relations
+  compare a **set**, so GX reports no unexpected-% and any severity thresholds on them are
+  ignored — the editor now says so where you'd enter them. And the date-format check is
+  implemented by GX for dataframe batches only: it is offered on flat files, Iceberg and
+  Unity Catalog, and both the editor and the API refuse it on **Snowflake**, where it
+  would save cleanly and then error on every run. Use a custom-SQL check there.
+
+  Aggregate statistics (`expect_column_mean_to_be_between` and its siblings) are
+  deliberately **not** part of this: they report a scalar rather than an unexpected-%, and
+  are two-sided, which is the monitor-kind `metric_value` shape rather than the GX-banded
+  one. Tracked separately as #1602.
+
 ### Changed
 
 - **BREAKING — the REST API now rejects an unknown field in any request body**

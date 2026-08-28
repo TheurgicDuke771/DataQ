@@ -24,6 +24,7 @@ from backend.app.services import audit_service
 from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import (
     record_check_version,
+    reject_dataframe_only_expectation,
     validate_comparison_check,
     validate_dimension,
     validate_engine,
@@ -197,6 +198,9 @@ def import_suite(
             # Same author-time GX validation as check CRUD (#651) — an imported
             # document must not smuggle in checks a direct POST would 422.
             validate_expectation_check(c["expectation_type"], c["config"])
+            reject_dataframe_only_expectation(
+                c["expectation_type"], connection_type=connection.type
+            )
 
     suite = Suite(
         name=name,

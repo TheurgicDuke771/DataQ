@@ -118,6 +118,20 @@ export async function deleteSuite(id: string): Promise<void> {
   await api.delete(`/suites/${id}`);
 }
 
+/** Mirrors `SuiteDeletionImpactRead` — exact, never-estimated counts (#1320). */
+export interface SuiteDeletionImpact {
+  checks: number;
+  runs: number;
+  results: number;
+  trigger_bindings: number;
+  schedules: number;
+}
+
+export async function getSuiteDeletionImpact(id: string): Promise<SuiteDeletionImpact> {
+  const { data } = await api.get<SuiteDeletionImpact>(`/suites/${id}/deletion_impact`);
+  return data;
+}
+
 /** Mirrors the backend `CheckRead` schema (read-only here — editor is a later slice). */
 export interface Check {
   id: string;

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
@@ -14,7 +14,17 @@ from backend.app.datasources.sampling import (
     SAMPLING_ROW_COUNT_CONFLICT,
     is_row_count_expectation,
 )
-from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Share, Suite
+from backend.app.db.models import (
+    ORCHESTRATION_PROVIDERS,
+    Check,
+    Connection,
+    Result,
+    Run,
+    Schedule,
+    Share,
+    Suite,
+    TriggerBinding,
+)
 from backend.app.services import audit_service, run_target
 from backend.app.services.asset_service import resolve_and_upsert_asset
 from backend.app.services.column_classification import is_sensitive
@@ -249,6 +259,30 @@ def set_column_policy(
     session.refresh(suite)
     log.info("suite_column_policy_set", suite_id=str(suite.id))
     return suite
+
+
+def _count(session: Session, stmt: Select[Any]) -> int:
+    return session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+
+
+def deletion_impact(session: Session, suite_id: uuid.UUID) -> dict[str, int]:
+    """Exact dependent counts a delete of `suite_id` would destroy (#1320) — never
+    estimated: plain `COUNT(*)` on each cascading table. `results` is joined through
+    `runs` since `Result` has no direct `suite_id`.
+    """
+    get_suite(session, suite_id)  # 404 for an unknown suite
+    return {
+        "checks": _count(session, select(Check).where(Check.suite_id == suite_id)),
+        "runs": _count(session, select(Run).where(Run.suite_id == suite_id)),
+        "results": _count(
+            session,
+            select(Result).join(Run, Result.run_id == Run.id).where(Run.suite_id == suite_id),
+        ),
+        "trigger_bindings": _count(
+            session, select(TriggerBinding).where(TriggerBinding.suite_id == suite_id)
+        ),
+        "schedules": _count(session, select(Schedule).where(Schedule.suite_id == suite_id)),
+    }
 
 
 def delete_suite(

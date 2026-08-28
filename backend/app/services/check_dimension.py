@@ -18,14 +18,24 @@ _BY_EXPECTATION_TYPE: dict[str, str] = {
     # Completeness — "is all the data here"
     "expect_column_values_to_not_be_null": COMPLETENESS,
     "expect_table_row_count_to_be_between": COMPLETENESS,
+    # A value the column should carry has stopped arriving — a missing category, not a bad one.
+    "expect_column_distinct_values_to_contain_set": COMPLETENESS,
     # Uniqueness
     "expect_column_values_to_be_unique": UNIQUENESS,
+    "expect_compound_columns_to_be_unique": UNIQUENESS,
     # Validity — "does it conform to the rule"
     "expect_column_values_to_be_between": VALIDITY,
     "expect_column_values_to_be_in_set": VALIDITY,
     "expect_column_values_to_match_regex": VALIDITY,
     "expect_column_value_lengths_to_be_between": VALIDITY,
     "expect_column_values_to_be_of_type": VALIDITY,
+    "expect_column_values_to_be_in_type_list": VALIDITY,
+    "expect_column_distinct_values_to_be_in_set": VALIDITY,
+    "expect_column_values_to_match_strftime_format": VALIDITY,
+    # Cross-COLUMN row rules. Validity, not consistency: ADR 0038 scopes consistency to agreement
+    # between related DATASETS (comparison / schema drift), and these are rules a single row obeys.
+    "expect_column_pair_values_a_to_be_greater_than_b": VALIDITY,
+    "expect_multicolumn_sum_to_equal": VALIDITY,
     # Snowflake DMF column metrics (ADR 0036 slice 2).
     "dmf:null_count": COMPLETENESS,
     "dmf:null_percent": COMPLETENESS,

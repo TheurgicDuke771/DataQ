@@ -221,6 +221,34 @@ def delete_suite(
     svc.delete_suite(db, suite_id, actor_id=current_user.id)
 
 
+class SuiteDeletionImpactRead(ApiModel):
+    """Exact dependent counts a suite delete would destroy (#1320) — computed via
+    `COUNT(*)`, never estimated or capped. States the blast radius of `DELETE
+    /suites/{id}` before the fact, since checks/runs/results cascade with no undo.
+    """
+
+    checks: int
+    runs: int
+    results: int
+    trigger_bindings: int
+    schedules: int
+
+
+@router.get(
+    "/suites/{suite_id}/deletion_impact",
+    response_model=SuiteDeletionImpactRead,
+    summary="Exact dependent counts a suite delete would destroy",
+)
+def get_deletion_impact(
+    suite_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> SuiteDeletionImpactRead:
+    # Same grant as the delete itself — a view/edit-only caller must not see the counts.
+    require_permission(db, suite_id, current_user.id, minimum="admin")
+    return SuiteDeletionImpactRead(**svc.deletion_impact(db, suite_id))
+
+
 # ───────────────────────── manual run trigger ──────────────────────
 
 

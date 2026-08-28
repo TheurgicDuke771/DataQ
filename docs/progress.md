@@ -27,8 +27,8 @@
 | **v1 baseline** | `v1.0.0` tagged 2026-07-04 — 187/189 roadmap tasks; deployed to Azure Container Apps; ledger at [progress-v1.md](progress-v1.md) |
 | **v1.1 baseline** | `v1.1.0` — cycle ran 2026-07-04 → 2026-08-21 (6 weeks + the W7 stretch; first tagged 2026-08-15 at `b8d8278b`, then **re-tagged 2026-08-21 at the true close** — the stretch added 121 commits / 126 merged PRs / 55 closed issues, incl. RBAC ADR 0033, the MCP 8→46 expansion + honesty pass, the security-surface audit, and the compliance G1–G6 track). Ledger at [progress-v1.1.md](progress-v1.1.md); retro at [retro-v1.1.md](retro-v1.1.md) |
 | **Current cycle** | **v1.2 — 8 weeks, 2026-08-22 → 2026-10-16** (planned 2026-08-21 at the v1.1 close; epic [#1518](https://github.com/TheurgicDuke771/DataQ/issues/1518)). The arc: **W1** clears the user's infra decision gates (#590/#588) + the MCP honesty follow-ups; **W2–W4** build the DQ-intelligence track from [docs/post-v1-dq-intelligence-notes.md](post-v1-dq-intelligence-notes.md) (catalog expansion → server-side allowlist → `LLMProvider` seam → SQL-gen → suggestions) alongside compliance G2; **W5** platform-native engines (Snowflake DMF, ADR 0036) + notification channels; **W6** perf/scale hardening; **W7** feature burn-down; **W8** spikes/decisions + **cycle close** (the closing week is deliberately last). See [Cycle plan](#cycle-plan--v12-8-weeks-2026-08-22--2026-10-16) below. |
-| **Open issues** | **53** open repo-wide (2026-08-28) — the compliance G1 residual closed: #1460 (tamper-evidence hash chain + `TamperAnchor` seam) via #1598, and the two parity-audit findings #1554/#1555 (audit-log + deployment-posture UI) via #1599. Only #590/#588/#1392/#1257 remain of the W1 list — the two are the user's decision gates. `v1.2 Backlog` otherwise **empty** as the default for new filings. |
-| **Open PRs** | **0** (2026-08-28): #1598/#1599 merged same day. |
+| **Open issues** | **53** open repo-wide (2026-08-28) — W2 opened: #1320 (delete blast radius, #1604) and #1326 (parity null-polarity, #1603) closed; two backlog filings from the W2 planning/review pass: #1602 (aggregate-stats monitor kind — the #1509 decision) and #1605 (parity check beyond IS [NOT] NULL). Only #590/#588/#1392/#1257 remain of the W1 list — the two are the user's decision gates. |
+| **Open PRs** | **0** (2026-08-28): #1603/#1604 merged same day. |
 | **Coverage gates (CI-enforced, ≥80%)** | backend `--cov-fail-under=80` (~4,800 backend tests) · frontend all-src `lines: 80` (~1,000 tests) — every PR rides the same gates |
 
 ---
@@ -99,11 +99,12 @@ The DQ-intelligence track opens ([post-v1-dq-intelligence-notes.md](post-v1-dq-i
 
 | Status | Task | Theme |
 |---|---|---|
-| ⬜ | [#1509](https://github.com/TheurgicDuke771/DataQ/issues/1509) The 5 high-ROI GX built-ins (`mostly`, compound/cross-column, type, set/date) + the aggregate-stats kind decision | intelligence |
+| 🟡 | [#1509](https://github.com/TheurgicDuke771/DataQ/issues/1509) The 5 high-ROI GX built-ins (`mostly`, compound/cross-column, type, set/date) + the aggregate-stats kind decision — [#1608](https://github.com/TheurgicDuke771/DataQ/pull/1608) (aggregate stats decided → #1602) | intelligence |
 | ⬜ | [#1510](https://github.com/TheurgicDuke771/DataQ/issues/1510) Curated expectation superset (4a) + **server-side `expectation_type` allowlist** on REST + MCP | intelligence / security |
 | ⬜ | [#1505](https://github.com/TheurgicDuke771/DataQ/issues/1505) API honesty: `extra='ignore'` lets an invented knob validate cleanly and do nothing | quality |
-| ⬜ | [#1320](https://github.com/TheurgicDuke771/DataQ/issues/1320) Suite-delete confirmation states its blast radius (N checks/runs/results) | ux safety |
-| ⬜ | [#1326](https://github.com/TheurgicDuke771/DataQ/issues/1326) Migration-parity literal-set check: IS NULL vs IS NOT NULL | test |
+| ✅ | [#1320](https://github.com/TheurgicDuke771/DataQ/issues/1320) Suite-delete confirmation states its blast radius (N checks/runs/results) — PR [#1604](https://github.com/TheurgicDuke771/DataQ/pull/1604): `GET /suites/{id}/deletion_impact` (exact counts, delete-grade authz) + the confirm dialog states counts and irreversibility, fetch-failure fallback never blocks the delete | ux safety |
+| ✅ | [#1326](https://github.com/TheurgicDuke771/DataQ/issues/1326) Migration-parity literal-set check: IS NULL vs IS NOT NULL — PR [#1603](https://github.com/TheurgicDuke771/DataQ/pull/1603): `_null_polarities()` extractor diffed beside `_literals()`; review caught multi-word-cast + outer-`NOT` regex bugs pre-merge; generalized operator class filed as [#1605](https://github.com/TheurgicDuke771/DataQ/issues/1605) | test |
+| ⬜ | [#1551](https://github.com/TheurgicDuke771/DataQ/issues/1551) Suites check-list card: engine/dimension/threshold badges + engine on RunDetail/RunReport | ux |
 
 **Exit gate:** the built-in groups author end-to-end in the check editor; the allowlist
 refuses an unknown `expectation_type` on every write surface; #1505 decided/landed.

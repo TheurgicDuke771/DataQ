@@ -13,6 +13,7 @@ import {
   clearCheckSnooze,
   deleteCheck,
   deleteSuite,
+  getSuiteDeletionImpact,
   listChecks,
   listSuites,
   rebaselineCheck,
@@ -34,6 +35,7 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
     listChecks: vi.fn(),
     deleteSuite: vi.fn(),
     deleteCheck: vi.fn(),
+    getSuiteDeletionImpact: vi.fn(),
     snoozeCheck: vi.fn(),
     clearCheckSnooze: vi.fn(),
     rebaselineCheck: vi.fn(),
@@ -52,6 +54,7 @@ const mockListConnections = vi.mocked(listConnections);
 const mockListChecks = vi.mocked(listChecks);
 const mockDeleteSuite = vi.mocked(deleteSuite);
 const mockDeleteCheck = vi.mocked(deleteCheck);
+const mockGetSuiteDeletionImpact = vi.mocked(getSuiteDeletionImpact);
 const mockSnoozeCheck = vi.mocked(snoozeCheck);
 const mockRebaseline = vi.mocked(rebaselineCheck);
 const mockClearSnooze = vi.mocked(clearCheckSnooze);
@@ -378,6 +381,13 @@ describe('Suites', () => {
     mockListSuites.mockResolvedValue([suite()]);
     mockListChecks.mockResolvedValue([]);
     mockDeleteSuite.mockResolvedValue();
+    mockGetSuiteDeletionImpact.mockResolvedValue({
+      checks: 0,
+      runs: 0,
+      results: 0,
+      trigger_bindings: 0,
+      schedules: 0,
+    });
 
     renderPage();
     await user.click(await screen.findByText('orders-suite'));
@@ -387,6 +397,52 @@ describe('Suites', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => expect(mockDeleteSuite).toHaveBeenCalledWith('s1'));
+  });
+
+  it('states the exact blast radius in the delete confirmation (#1320)', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite()]);
+    mockListChecks.mockResolvedValue([]);
+    mockGetSuiteDeletionImpact.mockResolvedValue({
+      checks: 12,
+      runs: 431,
+      results: 5180,
+      trigger_bindings: 1,
+      schedules: 2,
+    });
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(mockGetSuiteDeletionImpact).toHaveBeenCalledWith('s1');
+    expect(
+      within(dialog).getByText(
+        'Deletes 12 checks, 431 runs and 5,180 results. 1 trigger binding and 2 schedules point at this suite and will be removed. This cannot be undone.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('falls back to a plain irreversible warning when the impact fetch fails (#1320)', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite()]);
+    mockListChecks.mockResolvedValue([]);
+    mockGetSuiteDeletionImpact.mockRejectedValue(new Error('boom'));
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+
+    // Never blocks the delete itself — the confirm dialog still opens, degraded.
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByText(
+        'Counts unavailable — this removes the suite and everything in it. This cannot be undone.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('triggers a run from the detail panel when runnable', async () => {

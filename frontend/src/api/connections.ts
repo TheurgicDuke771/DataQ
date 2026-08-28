@@ -97,6 +97,15 @@ export const MONITOR_CAPABLE_TYPES: ConnectionType[] = [
 export const supportsMonitors = (type: ConnectionType): boolean =>
   MONITOR_CAPABLE_TYPES.includes(type);
 
+/**
+ * Datasources whose CheckRunner evaluates ordinary expectations on a SQL batch — mirrors the
+ * backend `gx_runner.SQL_BATCH_CONNECTION_TYPES`. Unity Catalog is deliberately absent: its
+ * pushdown set is an allowlist, so anything outside it runs on that runner's pandas batch.
+ */
+export const SQL_BATCH_TYPES: ConnectionType[] = ['snowflake'];
+
+export const runsSqlBatch = (type: ConnectionType): boolean => SQL_BATCH_TYPES.includes(type);
+
 export const CONNECTION_ENVS = ['dev', 'qa', 'uat', 'prod'] as const;
 export type ConnectionEnv = (typeof CONNECTION_ENVS)[number];
 

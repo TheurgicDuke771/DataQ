@@ -2554,3 +2554,55 @@ def test_dmf_check_derives_its_dimension_in_the_response(
     )
     assert resp.status_code == 201
     assert resp.json()["dimension"] == "uniqueness"
+
+
+# ─────────────── DataFrame-only expectations on a SQL datasource (#1509) ───────────────
+
+_STRFTIME_PAYLOAD: dict[str, Any] = {
+    "name": "order date format",
+    "expectation_type": "expect_column_values_to_match_strftime_format",
+    "config": {"column": "order_ts", "strftime_format": "%Y-%m-%d"},
+}
+
+
+def test_a_dataframe_only_expectation_is_refused_on_a_sql_datasource(
+    client: TestClient, db_session: Any
+) -> None:
+    """GX has no SqlAlchemy provider for it, so on Snowflake it would save cleanly and error on
+    every run. The editor hides it; this is the gate that closes the API, MCP and import doors.
+    """
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_STRFTIME_PAYLOAD)
+    assert resp.status_code == 422
+    message = resp.json()["error"]["message"]
+    assert "no SQL implementation" in message
+    assert "snowflake" in message
+
+
+def test_the_same_expectation_saves_on_a_dataframe_datasource(
+    client: TestClient, db_session: Any
+) -> None:
+    """The gate is scoped to the SQL-batch runners — flat files read into pandas."""
+    sid = _suite_id(client, db_session, conn_type="s3")
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_STRFTIME_PAYLOAD)
+    assert resp.status_code == 201
+    assert resp.json()["dimension"] == "validity"
+
+
+def test_patching_a_check_into_a_dataframe_only_type_is_refused_too(
+    client: TestClient, db_session: Any
+) -> None:
+    """The second door: create is not the only way to reach the unrunnable state."""
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()
+    resp = client.patch(
+        f'/api/v1/suites/{sid}/checks/{created["id"]}',
+        json={
+            "expectation_type": _STRFTIME_PAYLOAD["expectation_type"],
+            "config": _STRFTIME_PAYLOAD["config"],
+        },
+    )
+    assert resp.status_code == 422
+    db_session.expire_all()
+    stored = db_session.get(Check, uuid.UUID(created["id"]))
+    assert stored.expectation_type == "expect_column_values_to_not_be_null"
