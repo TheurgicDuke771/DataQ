@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from pydantic import ConfigDict, field_validator
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.core.auth import get_current_user
 from backend.app.core.roles import is_workspace_admin, resolve_role
 from backend.app.db.models import DEFAULT_WORKSPACE_ROLE, User
@@ -48,7 +48,7 @@ def me(current_user: Annotated[User, Depends(get_current_user)]) -> MeResponse:
     return resp
 
 
-class MeUpdate(ApiModel):
+class MeUpdate(ApiRequestModel):
     """`PATCH /me` body — today, just the display name (#1139)."""
 
     display_name: str

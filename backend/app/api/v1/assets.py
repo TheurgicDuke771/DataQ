@@ -10,7 +10,12 @@ from fastapi import APIRouter, Depends, Query, Response
 from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import TOTAL_COUNT_HEADER, ApiModel, total_count_responses
+from backend.app.api.v1._base import (
+    TOTAL_COUNT_HEADER,
+    ApiModel,
+    ApiRequestModel,
+    total_count_responses,
+)
 from backend.app.core.auth import get_current_user, require_workspace_admin
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import User
@@ -191,14 +196,12 @@ class AssetDetailRead(ApiModel):
     warehouse_lineage_status: list[WarehouseLineageStatusRead] = Field(default_factory=list)
 
 
-class AssetMetadataUpdate(ApiModel):
+class AssetMetadataUpdate(ApiRequestModel):
     """Partial metadata update (workspace-Admin-only). Each field is optional; an
     explicit `null` clears it, an omitted field leaves it unchanged — the two are
     distinguished via `model_fields_set` at the route so `owner_user_id: null`
     means "unassign" rather than "leave as is".
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     owner_user_id: uuid.UUID | None = None
     # Same cap as suite descriptions (SuiteCreate).

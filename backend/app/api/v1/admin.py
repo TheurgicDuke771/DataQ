@@ -13,7 +13,7 @@ from pydantic import ConfigDict
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.core.auth import require_workspace_admin
 from backend.app.core.config import get_settings
 from backend.app.core.secrets import SecretStore, get_secret_store
@@ -97,7 +97,7 @@ def all_access(db: Annotated[Session, Depends(get_db)]) -> list[svc.AdminAccessR
     return svc.list_all_access(db)
 
 
-class UserRoleUpdate(ApiModel):
+class UserRoleUpdate(ApiRequestModel):
     """`PATCH /admin/users/{id}/role` body (ADR 0033, #742)."""
 
     #: A Literal, not a bare `str`: an unknown tier is a 422 from the framework rather than
@@ -458,7 +458,7 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
 # ───────── data-subject-rights machinery (G2 / #432, GDPR Art 15/17/20, CCPA) ─────────
 
 
-class DataSubjectRequest(ApiModel):
+class DataSubjectRequest(ApiRequestModel):
     """The (column, value) pair identifying a subject's warehouse row — DataQ has
     no people-table, so this IS the subject identifier.
     """

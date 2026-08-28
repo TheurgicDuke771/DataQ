@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.core.auth import get_current_user
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.db.models import SuiteNotification, User
@@ -34,7 +34,7 @@ class SuiteNotificationRead(ApiModel):
     email_recipients: str | None
 
 
-class SuiteNotificationUpdate(ApiModel):
+class SuiteNotificationUpdate(ApiRequestModel):
     enabled: bool = True
     # Default 'warn' matches the no-config fallback, so an omitted threshold
     # doesn't silently tighten delivery (a saved config keeps the prior behaviour).

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.core.auth import get_current_user
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
@@ -29,7 +29,7 @@ log = get_logger(__name__)
 router = APIRouter(tags=["checks"])
 
 
-class CheckCreate(ApiModel):
+class CheckCreate(ApiRequestModel):
     name: str = Field(min_length=1, max_length=256)
     # Authorable kinds: expectation, freshness/volume, comparison (service
     # enforces; remaining reserved kinds 422).
@@ -49,7 +49,7 @@ class CheckCreate(ApiModel):
     critical_threshold: Decimal | None = None
 
 
-class CheckUpdate(ApiModel):
+class CheckUpdate(ApiRequestModel):
     name: str | None = Field(default=None, min_length=1, max_length=256)
     expectation_type: str | None = Field(default=None, min_length=1, max_length=128)
     # Re-classifiable at any time (ADR 0038 §2) — derivation is a guess about
@@ -240,7 +240,7 @@ def rebaseline_check(
 # ───────────────────────── alert snooze (suppression) ──────────────
 
 
-class CheckSnoozeRequest(ApiModel):
+class CheckSnoozeRequest(ApiRequestModel):
     # Cap at 30 days so a typo can't mute a check effectively forever.
     hours: float = Field(gt=0, le=720, description="Mute the check's alerts for this many hours")
 
@@ -422,7 +422,7 @@ def get_check_baseline(
 # ───────────────────────── dry-run (preview, no persistence) ────────
 
 
-class CheckDryRunRequest(ApiModel):
+class CheckDryRunRequest(ApiRequestModel):
     kind: str = "expectation"
     expectation_type: str = Field(min_length=1, max_length=128)
     config: dict[str, Any] = Field(default_factory=dict)

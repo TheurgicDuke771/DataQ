@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, status
 from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import User
 from backend.app.db.session import get_db
@@ -17,7 +17,7 @@ from backend.app.services import api_key_service as svc
 router = APIRouter(tags=["auth"])
 
 
-class ApiKeyCreate(ApiModel):
+class ApiKeyCreate(ApiRequestModel):
     name: str = Field(min_length=1, max_length=128, description="Label, e.g. 'ci-smoke'")
     expires_in_days: int = Field(
         default=svc.DEFAULT_EXPIRY_DAYS,

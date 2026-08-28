@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, status
 from pydantic import ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.core.auth import AdminUser, MemberUser, get_current_user
 from backend.app.core.roles import is_workspace_admin
 from backend.app.core.secrets import SecretStore, get_secret_store
@@ -24,7 +24,7 @@ router = APIRouter(tags=["connections"])
 
 # `None` is the "not supplied" signal on every credential field below, so an EMPTY STRING is never a
 # meaningful value.
-class ConnectionCreate(ApiModel):
+class ConnectionCreate(ApiRequestModel):
     name: str = Field(min_length=1, max_length=128)
     type: str
     env: str
@@ -42,7 +42,7 @@ class ConnectionCreate(ApiModel):
     )
 
 
-class ConnectionUpdate(ApiModel):
+class ConnectionUpdate(ApiRequestModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     config: dict[str, Any] | None = None
     secret: str | None = Field(
@@ -127,7 +127,7 @@ class ConnectionRead(ApiModel):
         )
 
 
-class ConnectionReauth(ApiModel):
+class ConnectionReauth(ApiRequestModel):
     secret: str = Field(min_length=1, description="New credential; write-only, never returned")
 
 
@@ -135,7 +135,7 @@ class ConnectionTestResult(ApiModel):
     ok: bool
 
 
-class ConnectionDraftTest(ApiModel):
+class ConnectionDraftTest(ApiRequestModel):
     """The payload for `/connections/test` — everything `ConnectionCreate` needs to probe
     connectivity, minus `name` (a draft has no row and needs none).
     """

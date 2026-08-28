@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import Field
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.api.v1.me import MeResponse
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.logging import get_logger
@@ -27,12 +27,12 @@ log = get_logger(__name__)
 _UNIFORM_REQUEST_RESPONSE = {"status": "ok"}
 
 
-class OtpRequest(ApiModel):
+class OtpRequest(ApiRequestModel):
     # 320 = the RFC-bounded maximum (64 local + @ + 255 domain).
     email: str = Field(min_length=3, max_length=320, description="Your email address")
 
 
-class OtpVerify(ApiModel):
+class OtpVerify(ApiRequestModel):
     email: str = Field(min_length=3, max_length=320)
     # Not `pattern=r"^\d{6}$"`.
     code: str = Field(min_length=1, max_length=32, description="The 6-digit code from your email")

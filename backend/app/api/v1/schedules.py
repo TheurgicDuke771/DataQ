@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, status
 from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.core.auth import get_current_user
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import Schedule, User
@@ -20,14 +20,14 @@ from backend.app.services import schedule_service as svc
 router = APIRouter(tags=["schedules"])
 
 
-class ScheduleCreate(ApiModel):
+class ScheduleCreate(ApiRequestModel):
     suite_id: uuid.UUID
     cron: str = Field(min_length=1, max_length=128)
     timezone: str = Field(default="UTC", min_length=1, max_length=64)
     enabled: bool = True
 
 
-class ScheduleUpdate(ApiModel):
+class ScheduleUpdate(ApiRequestModel):
     """Partial update — only the supplied fields change. `next_run_at` is
     recomputed by the service when the cadence changes or a paused schedule is
     re-enabled.
