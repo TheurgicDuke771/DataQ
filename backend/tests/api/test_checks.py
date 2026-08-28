@@ -1586,6 +1586,24 @@ def test_dryrun_rejects_inverted_thresholds(
     assert resp.json()["error"]["code"] == "check_config_invalid"
 
 
+def test_dryrun_rejects_an_expectation_outside_the_allowlist(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1510, the fourth door — and the only author-time one that EXECUTES the expectation against
+    live data. Previewing something that can never be saved is a dead end either way.
+    """
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(
+            expectation_type="expect_column_max_to_be_between",
+            config={"column": "amount", "min_value": 1, "max_value": 100},
+        ),
+    )
+    assert resp.status_code == 422
+    assert "not in DataQ's vetted set" in resp.json()["error"]["message"]
+
+
 def test_dryrun_rejects_inverted_thresholds_for_schema_drift(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2606,3 +2624,112 @@ def test_patching_a_check_into_a_dataframe_only_type_is_refused_too(
     db_session.expire_all()
     stored = db_session.get(Check, uuid.UUID(created["id"]))
     assert stored.expectation_type == "expect_column_values_to_not_be_null"
+
+
+# ─────────────── server-side expectation_type allowlist (#1510) ───────────────
+
+#: A real GX built-in DataQ deliberately does not enable (#1602 — a scalar aggregate).
+_UNVETTED_GX_TYPE = "expect_column_max_to_be_between"
+
+_UNVETTED_PAYLOAD: dict[str, Any] = {
+    "name": "amount ceiling",
+    "expectation_type": _UNVETTED_GX_TYPE,
+    "config": {"column": "amount", "min_value": 1, "max_value": 100},
+}
+
+
+def test_create_refuses_a_gx_expectation_outside_the_allowlist(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_UNVETTED_PAYLOAD)
+    assert resp.status_code == 422
+    error = resp.json()["error"]
+    # The honest distinction: this one is REAL, DataQ just does not run it. Reporting it the way a
+    # typo is reported would send the author hunting for a misspelling that isn't there.
+    assert (
+        "is a Great Expectations expectation but is not in DataQ's vetted set" in error["message"]
+    )
+    assert error["detail"]["recognised_by_great_expectations"] is True
+    assert "expect_column_values_to_not_be_null" in error["detail"]["supported"]
+    assert _UNVETTED_GX_TYPE not in error["detail"]["supported"]
+
+
+def test_an_unknown_type_still_reports_the_typo_message(
+    client: TestClient, db_session: Any
+) -> None:
+    """The other branch: not a GX expectation at all."""
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(expectation_type="expect_column_values_to_be_purple", config={"column": "a"}),
+    )
+    assert resp.status_code == 422
+    error = resp.json()["error"]
+    assert "not a Great Expectations expectation" in error["message"]
+    assert error["detail"]["recognised_by_great_expectations"] is False
+
+
+def test_patching_a_check_onto_an_unallowlisted_type_is_refused(
+    client: TestClient, db_session: Any
+) -> None:
+    """The second door."""
+    sid = _suite_id(client, db_session)
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()
+    resp = client.patch(
+        f'/api/v1/suites/{sid}/checks/{created["id"]}',
+        json={"expectation_type": _UNVETTED_GX_TYPE, "config": _UNVETTED_PAYLOAD["config"]},
+    )
+    assert resp.status_code == 422
+    db_session.expire_all()
+    stored = db_session.get(Check, uuid.UUID(created["id"]))
+    assert stored.expectation_type == "expect_column_values_to_not_be_null"
+
+
+def test_an_allowlist_only_type_is_authorable_over_the_api(
+    client: TestClient, db_session: Any
+) -> None:
+    """`ALLOWLIST_ONLY_TYPES` is a real capability, not a comment: the editor has no widget for a
+    list of value PAIRS, but a JSON caller (REST here, MCP and import equally) can author it.
+    """
+    sid = _suite_id(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(
+            expectation_type="expect_column_pair_values_to_be_in_set",
+            config={
+                "column_A": "region",
+                "column_B": "currency",
+                "value_pairs_set": [["eu", "EUR"], ["us", "USD"]],
+            },
+        ),
+    )
+    assert resp.status_code == 201
+    assert resp.json()["dimension"] == "validity"
+
+
+def test_a_stored_check_outside_the_allowlist_still_runs_and_deletes(
+    client: TestClient, db_session: Any
+) -> None:
+    """No retroactive breakage. The allowlist is an AUTHOR-time gate: a check stored before its
+    type left the vetted set keeps running (the runner never consults the allowlist) and stays
+    deletable — a check that can neither run nor be removed is worse than an unvetted one.
+    """
+    from backend.app.datasources.base import CheckSpec
+    from backend.app.datasources.gx_runner import _to_gx_expectation
+
+    sid = _suite_id(client, db_session)
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()
+    stored = db_session.get(Check, uuid.UUID(created["id"]))
+    # Written directly, exactly as a pre-allowlist row would have been.
+    stored.expectation_type = _UNVETTED_GX_TYPE
+    stored.config = {"column": "amount", "min_value": 1, "max_value": 100}
+    db_session.commit()
+
+    built = _to_gx_expectation(CheckSpec(stored.expectation_type, dict(stored.config)))
+    assert type(built).__name__ == "ExpectColumnMaxToBeBetween"
+
+    listed = client.get(f"/api/v1/suites/{sid}/checks")
+    assert listed.status_code == 200
+    deleted = client.delete(f'/api/v1/suites/{sid}/checks/{created["id"]}')
+    assert deleted.status_code == 204

@@ -1663,15 +1663,29 @@ def test_pushdown_allowlist_partitions_the_catalog() -> None:
         "expect_multicolumn_sum_to_equal",
         "expect_column_distinct_values_to_be_in_set",
         "expect_column_distinct_values_to_contain_set",
-        # No SqlAlchemy provider at all (gx_runner.DATAFRAME_ONLY_EXPECTATION_TYPES) — the frame
-        # is the only batch it can run on, which is why UC still offers it and Snowflake cannot.
+        # No SqlAlchemy provider at all (expectation_allowlist.DATAFRAME_ONLY_EXPECTATION_TYPES) —
+        # the frame is the only batch it can run on, which is why UC still offers it and Snowflake
+        # cannot.
         "expect_column_values_to_match_strftime_format",
+        "expect_column_values_to_be_json_parseable",
+        # The #1510 entries, held back on the same terms as the #1509 ones above: they run on a
+        # SQLAlchemy batch (proven on sqlite in `test_catalog_expectation_runs.py`), but the
+        # pushdown list is an audited set and none of these has been exercised against a live
+        # Databricks SQL warehouse yet.
+        "expect_column_values_to_be_null",
+        "expect_column_values_to_not_be_in_set",
+        "expect_column_value_lengths_to_equal",
+        "expect_column_values_to_not_match_regex",
+        "expect_column_values_to_match_regex_list",
+        "expect_column_values_to_not_match_regex_list",
+        "expect_column_pair_values_to_be_equal",
+        "expect_select_column_values_to_be_unique_within_record",
     }
     routed = SQL_PUSHDOWN_EXPECTATION_TYPES | frame_only | SQL_BATCH_EXPECTATION_TYPES
     assert catalog_types == routed
     # A union hides an overlap: a type in BOTH sets satisfies the equality above while every UC
     # run of it raises "No provider found" on the pushed-down batch.
-    from backend.app.datasources.gx_runner import DATAFRAME_ONLY_EXPECTATION_TYPES
+    from backend.app.datasources.expectation_allowlist import DATAFRAME_ONLY_EXPECTATION_TYPES
 
     assert not (SQL_PUSHDOWN_EXPECTATION_TYPES & DATAFRAME_ONLY_EXPECTATION_TYPES)
     assert not (SQL_PUSHDOWN_EXPECTATION_TYPES & frame_only)

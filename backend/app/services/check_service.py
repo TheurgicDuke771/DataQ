@@ -15,6 +15,11 @@ from sqlalchemy.orm import Session, selectinload
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.engines import engines_for
+from backend.app.datasources.expectation_allowlist import (
+    ALLOWED_EXPECTATION_TYPES,
+    DATAFRAME_ONLY_EXPECTATION_TYPES,
+    is_allowed,
+)
 from backend.app.datasources.monitors import (
     ANOMALY,
     FRESHNESS,
@@ -562,10 +567,7 @@ def reject_dataframe_only_expectation(expectation_type: str, *, connection_type:
     connection type rather than a Suite so import (which has no Suite yet) shares this gate
     instead of hand-rolling a second copy.
     """
-    from backend.app.datasources.gx_runner import (
-        DATAFRAME_ONLY_EXPECTATION_TYPES,
-        SQL_BATCH_CONNECTION_TYPES,
-    )
+    from backend.app.datasources.gx_runner import SQL_BATCH_CONNECTION_TYPES
 
     if expectation_type not in DATAFRAME_ONLY_EXPECTATION_TYPES:
         return
@@ -579,7 +581,7 @@ def reject_dataframe_only_expectation(expectation_type: str, *, connection_type:
 
 
 def validate_expectation_check(expectation_type: str, config: dict[str, Any]) -> None:
-    """Author-time validation for `kind='expectation'` checks (#651)."""
+    """Author-time validation for `kind='expectation'` checks (#651, allowlisted in #1510)."""
     _reject_oversized_config(config)
 
     # Lazy: importing great_expectations is heavy (seconds), and the API process
@@ -593,14 +595,37 @@ def validate_expectation_check(expectation_type: str, config: dict[str, Any]) ->
     expectation_cls = getattr(gxe, class_name, None)
     # The issubclass guard keeps a crafted type from resolving to a non-expectation
     # module attribute via the title-casing getattr.
-    if expectation_cls is None or not (
+    resolves_to_gx = expectation_cls is not None and (
         isinstance(expectation_cls, type) and issubclass(expectation_cls, Expectation)
-    ):
+    )
+    if not is_allowed(expectation_type):
         # Bounded echo: REST caps expectation_type at 128 chars, but the MCP tools don't — never
         # round-trip an unbounded string through the 422 envelope and the error log.
+        echoed = expectation_type[:_ERROR_ECHO_MAX_CHARS]
+        # The two refusals are NOT the same problem, and saying so is the difference between
+        # "fix your typo" and "this one is real, DataQ just doesn't run it".
+        message = (
+            f"expectation_type {echoed!r} is a Great Expectations expectation but is not in "
+            "DataQ's vetted set, so it cannot be authored here — see `supported`, or express "
+            "the rule as a custom-SQL check"
+            if resolves_to_gx
+            else f"unknown expectation_type {echoed!r} — not a Great Expectations expectation"
+        )
         raise CheckConfigInvalidError(
-            f"unknown expectation_type {expectation_type[:_ERROR_ECHO_MAX_CHARS]!r} — "
-            "not a Great Expectations expectation",
+            message,
+            detail={
+                "expectation_type": echoed,
+                "recognised_by_great_expectations": resolves_to_gx,
+                "supported": sorted(ALLOWED_EXPECTATION_TYPES),
+            },
+        )
+    if expectation_cls is None or not resolves_to_gx:
+        # Allowlisted and yet unresolvable: a GX upgrade renamed or dropped it. The parity test
+        # catches that at build time; this keeps the run-time answer a 422 rather than a
+        # "NoneType is not callable" 500.
+        raise CheckConfigInvalidError(
+            f"expectation_type {expectation_type[:_ERROR_ECHO_MAX_CHARS]!r} is enabled in DataQ "
+            "but the installed Great Expectations no longer provides it",
             detail={"expectation_type": expectation_type[:_ERROR_ECHO_MAX_CHARS]},
         )
     try:

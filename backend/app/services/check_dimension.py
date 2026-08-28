@@ -23,11 +23,22 @@ _BY_EXPECTATION_TYPE: dict[str, str] = {
     # Uniqueness
     "expect_column_values_to_be_unique": UNIQUENESS,
     "expect_compound_columns_to_be_unique": UNIQUENESS,
+    # Duplicates ACROSS a row's columns are still duplicates.
+    "expect_select_column_values_to_be_unique_within_record": UNIQUENESS,
     # Validity — "does it conform to the rule"
     "expect_column_values_to_be_between": VALIDITY,
     "expect_column_values_to_be_in_set": VALIDITY,
+    "expect_column_values_to_not_be_in_set": VALIDITY,
     "expect_column_values_to_match_regex": VALIDITY,
+    "expect_column_values_to_not_match_regex": VALIDITY,
+    "expect_column_values_to_match_regex_list": VALIDITY,
+    "expect_column_values_to_not_match_regex_list": VALIDITY,
+    "expect_column_values_to_be_json_parseable": VALIDITY,
     "expect_column_value_lengths_to_be_between": VALIDITY,
+    "expect_column_value_lengths_to_equal": VALIDITY,
+    # A column REQUIRED to be empty (deprecated/never-populated). Conformance to a rule, not
+    # completeness — completeness is about data that should be there and isn't.
+    "expect_column_values_to_be_null": VALIDITY,
     "expect_column_values_to_be_of_type": VALIDITY,
     "expect_column_values_to_be_in_type_list": VALIDITY,
     "expect_column_distinct_values_to_be_in_set": VALIDITY,
@@ -35,6 +46,8 @@ _BY_EXPECTATION_TYPE: dict[str, str] = {
     # Cross-COLUMN row rules. Validity, not consistency: ADR 0038 scopes consistency to agreement
     # between related DATASETS (comparison / schema drift), and these are rules a single row obeys.
     "expect_column_pair_values_a_to_be_greater_than_b": VALIDITY,
+    "expect_column_pair_values_to_be_equal": VALIDITY,
+    "expect_column_pair_values_to_be_in_set": VALIDITY,
     "expect_multicolumn_sum_to_equal": VALIDITY,
     # Snowflake DMF column metrics (ADR 0036 slice 2).
     "dmf:null_count": COMPLETENESS,

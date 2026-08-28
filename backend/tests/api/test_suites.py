@@ -2283,3 +2283,42 @@ def test_import_accepts_it_onto_a_dataframe_connection(client: TestClient, db_se
         json={"connection_id": str(target.id), "document": _strftime_document()},
     )
     assert resp.status_code == 201
+
+
+# ─────── import is the third door onto an unallowlisted expectation (#1510) ───────
+
+
+def _unvetted_document() -> dict[str, Any]:
+    return {
+        "version": 1,
+        "name": "imported",
+        "description": None,
+        "checks": [
+            {
+                "name": "amount ceiling",
+                "kind": "expectation",
+                # A genuine GX built-in that DataQ does not enable (#1602).
+                "expectation_type": "expect_column_max_to_be_between",
+                "config": {"column": "amount", "min_value": 1, "max_value": 100},
+                "warn_threshold": None,
+                "fail_threshold": None,
+                "critical_threshold": None,
+            }
+        ],
+    }
+
+
+def test_import_refuses_an_expectation_outside_the_allowlist(
+    client: TestClient, db_session: Any
+) -> None:
+    """A document is the door that bypasses `create_check` entirely, so it is also the door an
+    exported-elsewhere or LLM-written suite arrives through.
+    """
+    target = _connection(db_session, conn_type="snowflake")
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": _unvetted_document()},
+    )
+    assert resp.status_code == 422
+    assert "not in DataQ's vetted set" in resp.json()["error"]["message"]
+    assert not db_session.scalars(select(Suite).where(Suite.name == "imported")).all()

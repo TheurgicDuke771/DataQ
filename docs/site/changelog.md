@@ -7,6 +7,32 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Nine more GX expectations, and a server-side allowlist of the types DataQ will
+  author** (#1510). New in the editor: *Column values null*, *Column values not in set*,
+  *Column value lengths equal*, *Column values do not match regex*, *Column values match a
+  list of regexes* / *match none of a list of regexes*, *Column A equals column B*, *Values
+  unique within each row*, and *Column values are valid JSON*. Each one was executed
+  against both a dataframe and a SQL batch before being enabled, and each reports the
+  unexpected-% the severity bands read.
+
+  The larger change is underneath: `expectation_type` used to be turned into a Great
+  Expectations class by string manipulation, so **any** of GX's ~56 built-ins was
+  authorable through the API, the MCP tools or a suite import — including ones with no SQL
+  implementation (they save cleanly and error on every run) and ones whose result carries
+  nothing to band. All four author-time doors (create, update, dry-run preview, import) now
+  validate against one vetted list, and the refusal distinguishes "not a Great Expectations
+  expectation" from "recognised, but not enabled in DataQ" and names what is accepted.
+
+  **Nothing already stored changes.** The gate is author-time only: a check written before
+  this still runs and can still be edited or deleted. One of the new types, *Column values
+  are valid JSON*, is implemented by GX for dataframe batches only, so it is offered on flat
+  files, Iceberg and Unity Catalog and refused on Snowflake — as *Column values match a date
+  format* already was.
+
+  A tenth type, *Column pair values in allowed combinations*, is accepted by the API, the
+  MCP tools and suite import but is **not** in the editor: its config is a list of value
+  *pairs*, which the editor's comma-separated list field cannot express.
+
 - **Seven more GX expectations in the check editor, and an optional tolerance on the
   ones already there** (#1509). The tolerance (`mostly`) is a fraction — `0.95` passes a
   check when at least 95% of rows conform. It moves GX's own success line only: severity

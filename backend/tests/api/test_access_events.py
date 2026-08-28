@@ -319,7 +319,7 @@ def test_editing_a_check_does_not_retroactively_relabel_an_old_result(
         suite_id=suite.id,
         name="avg",
         kind="expectation",
-        expectation_type="expect_column_mean_to_be_between",
+        expectation_type="expect_column_values_to_not_be_null",
         config={"column": "line_total"},
         warn_threshold=None,
         fail_threshold=None,
@@ -334,6 +334,11 @@ def test_editing_a_check_does_not_retroactively_relabel_an_old_result(
         select(CheckVersion).where(CheckVersion.check_id == check.id, CheckVersion.version_no == 1)
     ).one()
     version_1.created_at = datetime(2026, 1, 1, tzinfo=UTC)  # T0
+    # The scalar-aggregate types this test is ABOUT stopped being authorable in #1510, and the rows
+    # carrying them are precisely the legacy ones the read path must still classify correctly — so
+    # both versions are written directly, exactly as a pre-allowlist check is already stored.
+    check.expectation_type = "expect_column_mean_to_be_between"
+    version_1.expectation_type = "expect_column_mean_to_be_between"
     run = Run(suite_id=suite.id, status="succeeded", triggered_by="manual")
     db_session.add(run)
     db_session.flush()
@@ -349,13 +354,10 @@ def test_editing_a_check_does_not_retroactively_relabel_an_old_result(
 
     # The edit #1489 is about: expectation_type AND the tested column both
     # change. Non-PII column (see the docstring above for why that matters).
-    check_service.update_check(
-        db_session,
-        suite.id,
-        check.id,
-        expectation_type="expect_column_max_to_be_between",
-        config={"column": "unit_price"},
-    )
+    check.expectation_type = "expect_column_max_to_be_between"
+    check.config = {"column": "unit_price"}
+    check_service.record_check_version(db_session, check, actor_id=owner.id)
+    db_session.flush()
     version_2 = db_session.scalars(
         select(CheckVersion).where(CheckVersion.check_id == check.id, CheckVersion.version_no == 2)
     ).one()
