@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "e77ba90e2d9a",
+  "strategy": "manual-commit",
+  "branch": "feature/1554-1555-admin-compliance-ui",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/src/api/admin.ts",
+    "frontend/src/pages/Admin.tsx",
+    "frontend/tests/pages/Admin.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e7/7ba90e2d9a/0/metadata.json",
+      "transcript": "/e7/7ba90e2d9a/0/full.jsonl",
+      "compact_transcript": "/e7/7ba90e2d9a/0/transcript.jsonl",
+      "content_hash": "/e7/7ba90e2d9a/0/content_hash.txt",
+      "prompt": "/e7/7ba90e2d9a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 21839,
+    "cache_read_tokens": 21266792,
+    "output_tokens": 11730,
+    "api_call_count": 25
+  }
+}
