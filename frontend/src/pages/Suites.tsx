@@ -33,6 +33,7 @@ import {
   deleteCheck,
   deleteSuite,
   exportSuite,
+  getSuiteDeletionImpact,
   listChecks,
   listSuites,
   rebaselineCheck,
@@ -45,6 +46,10 @@ import { ConnectionTypeAvatar } from '../components/connections/connectionVisual
 import { useCanAuthor, useWorkspaceRole } from '../auth/useMe';
 import { Page } from '../components/layout/Page';
 import { LiveRunProgress } from '../components/runs/LiveRunProgress';
+import {
+  DELETION_IMPACT_UNAVAILABLE,
+  describeDeletionImpact,
+} from '../components/suites/deletionImpact';
 import { ImportSuiteDrawer } from '../components/suites/ImportSuiteDrawer';
 import { NotificationsPanel } from '../components/suites/NotificationsPanel';
 import { SamplePolicyPanel } from '../components/suites/SamplePolicyPanel';
@@ -420,13 +425,20 @@ function SuiteDetail({
     }
   };
 
-  const onDelete = () =>
+  const onDelete = async () => {
+    // Blast-radius counts (#1320) are fetched before the confirm dialog opens so it
+    // can state them plainly; a failed fetch degrades to the plain warning below
+    // rather than blocking the delete itself.
+    const content = await getSuiteDeletionImpact(suite.id)
+      .then(describeDeletionImpact)
+      .catch(() => DELETION_IMPACT_UNAVAILABLE);
     confirmDelete({
       label: suite.name,
-      content: 'This removes the suite and all of its checks.',
+      content,
       onDelete: () => deleteSuite(suite.id),
       onDone: onDeleted,
     });
+  };
 
   return (
     <Flex vertical gap={16}>
