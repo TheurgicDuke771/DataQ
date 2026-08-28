@@ -18,6 +18,7 @@ from backend.app.datasources.engines import engines_for
 from backend.app.datasources.expectation_allowlist import (
     ALLOWED_EXPECTATION_TYPES,
     DATAFRAME_ONLY_EXPECTATION_TYPES,
+    UNBANDED_EXPECTATION_TYPES,
     is_allowed,
 )
 from backend.app.datasources.monitors import (
@@ -559,6 +560,28 @@ def _reject_row_count_on_sampled_suite(
         )
 
 
+def reject_thresholds_on_unbanded(
+    expectation_type: str,
+    *,
+    warn_threshold: Decimal | None,
+    fail_threshold: Decimal | None,
+    critical_threshold: Decimal | None,
+) -> None:
+    """422 for severity thresholds on a type whose result has no `unexpected_percent` —
+    they could never fire, so refuse rather than store an inert knob (#1607).
+    """
+    if expectation_type not in UNBANDED_EXPECTATION_TYPES:
+        return
+    if warn_threshold is None and fail_threshold is None and critical_threshold is None:
+        return
+    raise CheckConfigInvalidError(
+        f"{expectation_type} compares the column's distinct-value SET — its result has no "
+        "unexpected-% for severity bands to read, so thresholds can never fire and are "
+        "refused rather than stored inert. Remove them; the result is binary pass/fail.",
+        detail={"expectation_type": expectation_type, "field": "thresholds"},
+    )
+
+
 def reject_dataframe_only_expectation(expectation_type: str, *, connection_type: str) -> None:
     """422 for an expectation GX cannot evaluate on this connection's SQL batch (#1509).
 
@@ -752,6 +775,12 @@ def create_check(
         reject_dataframe_only_expectation(
             expectation_type, connection_type=_connection_type(session, suite)
         )
+    reject_thresholds_on_unbanded(
+        expectation_type,
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+        critical_threshold=critical_threshold,
+    )
 
     check = Check(
         suite_id=suite_id,
@@ -809,6 +838,7 @@ def _validate_kind_specific_config(
     *,
     expectation_type: str,
     config: dict[str, Any],
+    warn_threshold: Decimal | None,
     fail_threshold: Decimal | None,
     critical_threshold: Decimal | None,
     source_connection_id: uuid.UUID | None,
@@ -821,6 +851,13 @@ def _validate_kind_specific_config(
     updates both callers instead of restore silently falling behind whichever hand-picked subset
     it called.
     """
+    # Outside the validate_expectation_config flag: covers a threshold-only PATCH.
+    reject_thresholds_on_unbanded(
+        expectation_type,
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+        critical_threshold=critical_threshold,
+    )
     if check.kind in MONITOR_KINDS:
         suite = get_suite(session, suite_id)
         validate_monitor_check(
@@ -975,6 +1012,7 @@ def update_check(
         check,
         expectation_type=new_expectation_type,
         config=new_config,
+        warn_threshold=new_warn,
         fail_threshold=new_fail,
         critical_threshold=new_critical,
         engine=new_engine,
@@ -1169,6 +1207,7 @@ def restore_check_version(
         check,
         expectation_type=version.expectation_type,
         config=version.config,
+        warn_threshold=version.warn_threshold,
         fail_threshold=version.fail_threshold,
         critical_threshold=version.critical_threshold,
         engine=version.engine,

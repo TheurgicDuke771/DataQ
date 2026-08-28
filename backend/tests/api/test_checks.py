@@ -76,6 +76,36 @@ def _payload(**overrides: Any) -> dict[str, Any]:
 # ───────────────────────── create ──────────────────────────────────
 
 
+_UNBANDED = {
+    "expectation_type": "expect_column_distinct_values_to_be_in_set",
+    "config": {"column": "status", "value_set": ["a", "b"]},
+}
+
+
+def test_create_rejects_thresholds_on_an_unbanded_set_relation(
+    client: TestClient, db_session: Any
+) -> None:
+    # No unexpected-% in the result (live-verified on Snowflake): thresholds are refused.
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(**_UNBANDED, warn_threshold=5))
+    assert resp.status_code == 422
+    assert "can never fire" in resp.json()["error"]["message"]
+
+    ok = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(**_UNBANDED))
+    assert ok.status_code == 201
+
+
+def test_threshold_only_patch_rejected_on_an_unbanded_set_relation(
+    client: TestClient, db_session: Any
+) -> None:
+    # A threshold-only PATCH must not slip an inert band onto the type.
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(**_UNBANDED)).json()["id"]
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"fail_threshold": 10})
+    assert resp.status_code == 422
+    assert "can never fire" in resp.json()["error"]["message"]
+
+
 def test_create_returns_201_with_defaults(client: TestClient, db_session: Any) -> None:
     sid = _suite_id(client, db_session)
     resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload())
@@ -1621,6 +1651,19 @@ def test_dryrun_rejects_inverted_thresholds(
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+def test_dryrun_rejects_thresholds_on_an_unbanded_set_relation(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A preview must not accept what a save refuses.
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(**_UNBANDED, warn_threshold=5),
+    )
+    assert resp.status_code == 422
+    assert "can never fire" in resp.json()["error"]["message"]
 
 
 def test_dryrun_rejects_an_expectation_outside_the_allowlist(

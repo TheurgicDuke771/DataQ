@@ -196,7 +196,12 @@ function CheckEditForm({
         const api = apiFieldError(err);
         const field = api?.detail.field;
         if (api && typeof field === 'string') {
-          form.setFields([{ name: field, errors: [api.message] }]);
+          if (form.getFieldInstance(field)) {
+            form.setFields([{ name: field, errors: [api.message] }]);
+          } else {
+            // No matching input to attach to — surface it rather than silently no-op.
+            message.error(api.message);
+          }
           return;
         }
         throw err;

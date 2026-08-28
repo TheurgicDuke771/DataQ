@@ -167,7 +167,7 @@ export interface ExpectationSpec {
   thresholds?: MonitorThresholdSpec;
   /** Engine (ADR 0036); omitted = `gx`. Fixed `dmf` for the `dmf:*` types below. */
   engine?: CheckEngine;
-  /** `dmf:unique_count` degrades downward — the backend rejects any threshold on it. */
+  /** The backend rejects any threshold on this type; the editor hides the block. */
   noThresholds?: boolean;
   /**
    * GX has no SqlAlchemy metric provider for this type, so it errors on a SQL batch. Mirrors the
@@ -279,15 +279,6 @@ export function typeFieldHint(connectionType: ConnectionType | undefined): strin
   if (!connectionType || !DATASOURCE_CATEGORY[connectionType]) return TYPE_FIELD_DEFAULT_HELP;
   return connectionType === 'snowflake' ? SQL_ENGINE_TYPE_HINT : DATAFRAME_ENGINE_TYPE_HINT;
 }
-
-/**
- * The distinct-value set relations compare a SET, so GX reports no `unexpected_percent` — the
- * scalar ADR 0016 bands (`services/severity.extract_metric`). Say so where the bands are entered
- * rather than leaving an input that silently does nothing.
- */
-const SET_RELATION_THRESHOLDS: MonitorThresholdSpec = {
-  help: 'This check compares the column’s distinct-value SET, so GX reports no unexpected-% for the bands to read — thresholds set here are ignored and the result stays a binary pass/fail.',
-};
 
 export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   {
@@ -584,7 +575,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         help: 'Comma-separated list of permitted values.',
       },
     ],
-    thresholds: SET_RELATION_THRESHOLDS,
+    noThresholds: true,
   },
   {
     type: 'expect_column_distinct_values_to_contain_set',
@@ -602,7 +593,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         help: 'Comma-separated list of values that must each appear at least once.',
       },
     ],
-    thresholds: SET_RELATION_THRESHOLDS,
+    noThresholds: true,
   },
   {
     type: 'expect_column_values_to_match_strftime_format',

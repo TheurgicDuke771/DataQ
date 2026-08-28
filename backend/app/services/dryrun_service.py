@@ -23,6 +23,7 @@ from backend.app.datasources.sql import strip_statement_echo
 from backend.app.db.models import Connection
 from backend.app.services import run_target
 from backend.app.services.check_service import (
+    reject_thresholds_on_unbanded,
     validate_expectation_check,
     validate_threshold_ordering,
 )
@@ -107,6 +108,12 @@ def dry_run_check(
         # save would reject. This is also the one author-time door that EXECUTES the expectation
         # against live data with the stored credential, so the vetted set has to hold here too.
         validate_expectation_check(expectation_type, config)
+        reject_thresholds_on_unbanded(
+            expectation_type,
+            warn_threshold=warn_threshold,
+            fail_threshold=fail_threshold,
+            critical_threshold=critical_threshold,
+        )
 
     try:
         runner = build_check_runner(

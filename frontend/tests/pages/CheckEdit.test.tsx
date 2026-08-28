@@ -129,6 +129,35 @@ describe('CheckEdit', () => {
     expect(await screen.findByText('Suite detail')).toBeInTheDocument();
   });
 
+  it('surfaces a 422 whose field matches no form input instead of silently no-opping', async () => {
+    const { AxiosError, AxiosHeaders } = await import('axios');
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(existing);
+    mockGetConnection.mockResolvedValue(connection);
+    const err = new AxiosError('refused');
+    err.response = {
+      status: 422,
+      statusText: '',
+      data: {
+        error: {
+          code: 'check_config_invalid',
+          message: 'thresholds can never fire on this type',
+          detail: { field: 'thresholds' },
+        },
+      },
+      headers: new AxiosHeaders(),
+      config: { headers: new AxiosHeaders() },
+    };
+    mockUpdate.mockRejectedValue(err);
+    renderPage();
+
+    await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('thresholds can never fire on this type')).toBeInTheDocument();
+  });
+
   it('opens the version-history drawer from the History button (#280)', async () => {
     const user = userEvent.setup();
     mockGetSuite.mockResolvedValue(suite);

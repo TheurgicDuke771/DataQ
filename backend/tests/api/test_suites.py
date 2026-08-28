@@ -1045,6 +1045,36 @@ def test_import_rejects_inverted_thresholds_and_is_atomic(
     assert "smuggled-thresholds" not in names
 
 
+def test_import_rejects_thresholds_on_an_unbanded_set_relation(
+    client: TestClient, db_session: Any
+) -> None:
+    # A document must not smuggle in a threshold a direct POST refuses.
+    target = _connection(db_session)
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={
+            "connection_id": str(target.id),
+            "document": {
+                "name": "smuggled-unbanded-threshold",
+                "checks": [
+                    {
+                        "name": "distinct set",
+                        "expectation_type": "expect_column_distinct_values_to_be_in_set",
+                        "config": {"column": "status", "value_set": ["a"]},
+                        "warn_threshold": 5,
+                        "fail_threshold": None,
+                        "critical_threshold": None,
+                    }
+                ],
+            },
+        },
+    )
+    assert resp.status_code == 422
+    assert "can never fire" in resp.json()["error"]["message"]
+    names = [s["name"] for s in client.get("/api/v1/suites").json()]
+    assert "smuggled-unbanded-threshold" not in names
+
+
 # ───────────────────────── column profiler ─────────────────────────
 
 

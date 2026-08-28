@@ -72,9 +72,11 @@ export function buildCheckPayload(values: Record<string, unknown>): CheckCreate 
     config: formToConfig(spec, (values.config ?? {}) as Record<string, unknown>),
     // ADR 0038.
     dimension: (values.dimension as DqDimension | undefined) ?? undefined,
-    warn_threshold: numOrNull(values.warn_threshold),
-    fail_threshold: numOrNull(values.fail_threshold),
-    critical_threshold: numOrNull(values.critical_threshold),
+    // A noThresholds type never submits thresholds — stale form values from a
+    // type switch would otherwise ride along and be refused server-side.
+    warn_threshold: spec?.noThresholds ? null : numOrNull(values.warn_threshold),
+    fail_threshold: spec?.noThresholds ? null : numOrNull(values.fail_threshold),
+    critical_threshold: spec?.noThresholds ? null : numOrNull(values.critical_threshold),
   };
 }
 

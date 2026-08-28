@@ -245,7 +245,7 @@
       "column",
       "value_set"
     ],
-    "noThresholds": false,
+    "noThresholds": true,
     "dataframeOnly": false
   },
   {
@@ -256,7 +256,7 @@
       "column",
       "value_set"
     ],
-    "noThresholds": false,
+    "noThresholds": true,
     "dataframeOnly": false
   },
   {

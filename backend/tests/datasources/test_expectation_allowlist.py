@@ -85,3 +85,14 @@ def test_is_allowed_rejects_a_real_gx_expectation_outside_the_set() -> None:
     assert hasattr(gxe, "ExpectColumnMaxToBeBetween")
     assert not is_allowed("expect_column_max_to_be_between")
     assert is_allowed("expect_column_values_to_not_be_null")
+
+
+def test_unbanded_set_is_exactly_the_two_distinct_value_relations() -> None:
+    """Live-verified on Snowflake: pass and fail runs emit no unexpected_percent."""
+    from backend.app.datasources.expectation_allowlist import UNBANDED_EXPECTATION_TYPES
+
+    assert UNBANDED_EXPECTATION_TYPES == {
+        "expect_column_distinct_values_to_be_in_set",
+        "expect_column_distinct_values_to_contain_set",
+    }
+    assert UNBANDED_EXPECTATION_TYPES <= ALLOWED_EXPECTATION_TYPES
