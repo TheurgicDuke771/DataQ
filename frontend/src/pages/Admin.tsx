@@ -155,19 +155,10 @@ function windowSince(window: AuditDateWindow): string | undefined {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
-//: RFC 4122, any version — matches what `AuditEventFilters.actor_user_id` sends
-// straight through as a FastAPI `UUID` query param. Checked client-side so a
-// stray value (a pasted email, trailing whitespace) surfaces as "not a valid
-// ID" here rather than the backend's generic "Request validation failed",
-// which the axios client's error handling can't unpack into a per-field
-// message (`api/client.ts` only reads `error.error.message`).
+// Checked client-side so a stray value (a pasted email) gets "not a valid ID"
+// here rather than the backend's generic, un-field-specific 422 message.
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** ADR 0041 / G1 (#1554): the append-only audit log had a backend since #1318 with
- *  no in-app surface — the only way to answer "who changed this, and when" was
- *  `psql` or curl. Server-side filtered (the log can outgrow client-side filtering
- *  fast), so a filter change is a deliberate "Search", not fetch-on-keystroke.
- */
 type AuditFilterDraft = {
   actionClass?: 'config' | 'access';
   entityType: string;
@@ -182,14 +173,9 @@ const EMPTY_AUDIT_FILTERS: AuditFilterDraft = {
 };
 
 function AuditLogSection() {
-  // TWO states, deliberately: `draft` is bound to the inputs as the admin types;
-  // `query` is what the fetch actually uses. Collapsing them into one was tried
-  // and reverted — pagination's `onPageChange` calls `reload()` without going
-  // through Search, so if paging read from the same state the inputs are bound
-  // to, clicking Next while mid-edit (e.g. typing an entity type before hitting
-  // Search) would silently apply the unsubmitted edit to the page fetch. `query`
-  // is exactly "what Search last submitted," which `onPageChange` can safely
-  // reuse.
+  // Two states deliberately: `draft` is bound to the inputs; `query` is what the
+  // fetch uses. Collapsing them let Next (which reloads without going through
+  // Search) apply a still-unsubmitted edit to the page fetch.
   const [draft, setDraft] = useState<AuditFilterDraft>(EMPTY_AUDIT_FILTERS);
   const [query, setQuery] = useState<AuditFilterDraft>(EMPTY_AUDIT_FILTERS);
   const [page, setPage] = useState(1);
@@ -207,13 +193,9 @@ function AuditLogSection() {
     }),
   );
 
-  // useAsyncData only re-fetches on `reload()` (its effect keys off a nonce, not the
-  // fetcher identity — see its doc, and `AssetsTableView`'s identical comment), so a
-  // filter or page change must bump it explicitly.
+  // useAsyncData only re-fetches on reload(), so a filter or page change must bump it.
   const search = () => {
-    // An invalid, still-typed actor ID is silently dropped rather than sent —
-    // matches the "omit from filters" behavior a submitted-then-cleared value
-    // already gets; the inline error next to the input is what warns the admin.
+    // Drop an invalid actor ID rather than send it; the inline error already warns.
     setQuery({ ...draft, actorUserId: actorError ? '' : draft.actorUserId });
     setPage(1);
     reload();
@@ -348,9 +330,7 @@ const AUDIT_EVENT_COLUMNS: ColumnsType<AuditEvent> = [
   },
 ];
 
-/** #1555: `GET /admin/deployment` answers "where does our data live, and what can
- *  take it elsewhere" (G4/GDPR Ch. V) and had no in-app surface — read-only, no
- *  filters, straight render of an already-designed payload. */
+/** #1555: read-only render of the deployment posture payload. */
 function DeploymentPostureSection() {
   const { state } = useAsyncData(getDeploymentPosture);
   return (
@@ -426,9 +406,8 @@ function DataTable<T extends object>({
   columns: ColumnsType<T>;
   rowKey: (row: T) => string;
   errorMessage: string;
-  /** Defaults to a 20-row client page. Pass a real config (current/pageSize/
-   *  total/onChange, matching `AssetsTable`'s server-paginated shape) for a
-   *  caller-driven list like the audit log, or `false` to turn pagination off. */
+  /** Defaults to a 20-row client page. Pass a real config for server-side
+   *  pagination, or `false` to turn it off. */
   pagination?: TablePaginationConfig | false;
 }) {
   if (state.status === 'loading') return <Spin size="large" />;
@@ -449,8 +428,7 @@ function DataTable<T extends object>({
   );
 }
 
-/** Project an `ok` AsyncState's data, passing `loading`/`error` through unchanged —
- *  lets `AuditLogSection` feed `DataTable` just the `events` array from a page. */
+/** Project an `ok` AsyncState's data, passing `loading`/`error` through unchanged. */
 function mapAsync<T, U>(state: AsyncState<T>, fn: (data: T) => U): AsyncState<U> {
   return state.status === 'ok' ? { ...state, data: fn(state.data) } : state;
 }

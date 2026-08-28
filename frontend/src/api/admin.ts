@@ -115,15 +115,11 @@ export interface AuditEvent {
 export interface AuditEventPage {
   events: AuditEvent[];
   total: number;
-  /** `true` when this page is not the whole result — more rows exist past `limit`.
-   *  Not currently rendered in the Admin UI: `total` (paired with a real antd
-   *  pager) already conveys this more precisely — kept here for API-contract
-   *  fidelity and because a non-paginated consumer of this type would need it. */
+  /** `true` when more rows exist past `limit`. Not rendered directly — `total` in
+   *  the antd pager already conveys it — kept for API-contract fidelity. */
   truncated: boolean;
-  /** The configured retention window in days. */
   retention_days: number;
-  /** The point before which events have been swept — `null` when the sweep is disabled
-   *  (0 or negative `retention_days`), which is a different statement from "nothing swept". */
+  /** `null` when the sweep is disabled — distinct from "nothing swept yet". */
   retained_since: string | null;
 }
 

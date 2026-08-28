@@ -202,25 +202,18 @@ describe('Admin', () => {
   it('renders the audit log with its honesty fields and the deployment posture table', async () => {
     renderAdmin(adminMe);
     expect(await screen.findByText('check.update')).toBeInTheDocument();
-    // Retention honesty field — an empty/short page is otherwise ambiguous between
-    // "nothing happened" and "swept away" (#1554).
     expect(
       screen.getByText(/Retained 365 days .* events older than that have been swept/),
     ).toBeInTheDocument();
-    // The real page total (30, from the backend), via antd's own numbered pager —
-    // not a hand-rolled "N events" caption.
-    expect(screen.getByTitle('2')).toBeInTheDocument();
+    expect(screen.getByTitle('2')).toBeInTheDocument(); // real total via antd's pager
 
-    // Deployment posture — a direct render of the backend's own payload, no client logic.
     expect(screen.getByText('us-east-1')).toBeInTheDocument();
     expect(screen.getByText('alert_delivery')).toBeInTheDocument();
     expect(screen.getByText('live')).toBeInTheDocument();
   });
 
   it('Next actually refetches the next page — not just a local page-number bump', async () => {
-    // Regression: an earlier cut bumped `page` state without calling `reload()`, so
-    // `useAsyncData`'s fetch effect (which only reruns on `reload()`) never fired
-    // again — the button changed its own disabled state but the table never moved.
+    // Regression: page state bumped without calling reload(), so the fetch never fired.
     mockAuditEvents.mockResolvedValueOnce(AUDIT_PAGE_1).mockResolvedValueOnce(AUDIT_PAGE_2);
     const user = userEvent.setup();
     const { container } = renderAdmin(adminMe);
@@ -254,17 +247,13 @@ describe('Admin', () => {
   });
 
   it('Next does not apply an unsubmitted filter edit to the page fetch', async () => {
-    // Regression: collapsing the filter state into one object (a prior review's
-    // simplification suggestion) made `onPageChange` read the SAME state the
-    // inputs are bound to — so typing into a filter, then clicking Next before
-    // hitting Search, silently applied the half-typed edit to the page fetch.
+    // Regression: a collapsed filter state let Next read a typed-but-unsubmitted edit.
     mockAuditEvents.mockResolvedValueOnce(AUDIT_PAGE_1).mockResolvedValueOnce(AUDIT_PAGE_2);
     const user = userEvent.setup();
     const { container } = renderAdmin(adminMe);
     await screen.findByText('check.update');
 
-    // Typed but never submitted via Search.
-    await user.type(screen.getByPlaceholderText('e.g. suite'), 'suite');
+    await user.type(screen.getByPlaceholderText('e.g. suite'), 'suite'); // not submitted
     const next = container.querySelector('.ant-pagination-next button');
     await user.click(next as HTMLButtonElement);
 
