@@ -122,12 +122,19 @@ def build_connect_args(config: SnowflakeConfig, secret: str) -> dict[str, Any]:
     return {}
 
 
-# GX's compound_columns_unique metric indexes the reflected table's columns by the
-# user's spelling, and snowflake-sqlalchemy folds reflected keys to lowercase — so an
-# all-caps column_list (the casing every other check uses) KeyErrors on live Snowflake
-# only (#1616). Folding all-caps entries preserves identity under that convention
-# (#937); mixed-case names are case-sensitive identifiers and stay untouched.
+# GX's compound_columns_unique metric — and the unexpected_index_column_names lookup every
+# map expectation's row locator rides — index the REFLECTED table's columns, whose keys
+# snowflake-sqlalchemy rewrites via `normalize_name` (all-caps → lowercase, but only when the
+# lowered form needs no quoting: reserved words and quote-requiring names keep their case).
+# A user's all-caps spelling therefore KeyErrors on live Snowflake only (#1616). Folding with
+# the dialect's own `normalize_name` mirrors the reflection rewrite by construction.
 _REFLECTION_KEYED_TYPES = frozenset({"expect_compound_columns_to_be_unique"})
+
+
+def _reflection_key(name: str) -> str:
+    from snowflake.sqlalchemy.snowdialect import SnowflakeDialect
+
+    return SnowflakeDialect().normalize_name(name) or name
 
 
 def _fold_reflection_keyed_columns(checks: list[CheckSpec]) -> list[CheckSpec]:
@@ -140,7 +147,7 @@ def _fold_reflection_keyed_columns(checks: list[CheckSpec]) -> list[CheckSpec]:
                 kwargs={
                     **spec.kwargs,
                     "column_list": [
-                        c.lower() if isinstance(c, str) and c.isupper() else c for c in column_list
+                        _reflection_key(c) if isinstance(c, str) else c for c in column_list
                     ],
                 },
             )
@@ -223,6 +230,9 @@ class SnowflakeCheckRunner:
             batch_definition=batch_definition,
             checks=_fold_reflection_keyed_columns(checks),
             name=f"suite-{table}",
+            # index_columns deliberately NOT folded: live-verified 2026-08-28 that GX's
+            # unexpected_index_column_names path accepts the authored (upper) casing and keys
+            # the locators by it — folding would lowercase the locator keys users see.
             index_columns=index_columns,
         )
 
