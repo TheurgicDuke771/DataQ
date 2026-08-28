@@ -4,6 +4,7 @@ import re
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, get_args
 
@@ -15,7 +16,17 @@ from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.exc import OperationalError
 
 from backend.app.core.auth import get_current_user
-from backend.app.db.models import Asset, Check, Connection, Suite, User
+from backend.app.db.models import (
+    Asset,
+    Check,
+    Connection,
+    Result,
+    Run,
+    Schedule,
+    Suite,
+    TriggerBinding,
+    User,
+)
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import profile_service, run_dispatch
@@ -410,8 +421,6 @@ def test_delete_succeeds_after_a_run_with_results(client: TestClient, db_session
     a suite whose checks had RESULT rows hit fk_results_check_id_checks and
     500'd — any suite that had ever run was undeletable. Found live (W7 smoke).
     """
-    from backend.app.db.models import Result, Run
-
     conn = _connection(db_session)
     sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
     check = Check(
@@ -432,6 +441,82 @@ def test_delete_succeeds_after_a_run_with_results(client: TestClient, db_session
     assert resp.status_code == 204
     db_session.expire_all()
     assert db_session.scalars(select(Result).where(Result.run_id == run_id)).all() == []
+
+
+# ───────────────────────── delete blast radius (#1320) ──────────────
+
+
+def test_deletion_impact_is_zero_for_a_bare_suite(client: TestClient, db_session: Any) -> None:
+    """A never-run suite shows zeros, not a scary-but-empty warning."""
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+    resp = client.get(f"/api/v1/suites/{sid}/deletion_impact")
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "checks": 0,
+        "runs": 0,
+        "results": 0,
+        "trigger_bindings": 0,
+        "schedules": 0,
+    }
+
+
+def test_deletion_impact_counts_every_dependent_kind(client: TestClient, db_session: Any) -> None:
+    """Exact counts — checks, runs, results (joined through runs), trigger
+    bindings and schedules — never estimated.
+    """
+    conn = _connection(db_session)
+    sid = client.post("/api/v1/suites", json=_payload(conn.id)).json()["id"]
+    suite_id = uuid.UUID(sid)
+
+    check_a = Check(suite_id=suite_id, name="a", expectation_type="expect_table_row_count")
+    check_b = Check(suite_id=suite_id, name="b", expectation_type="expect_table_row_count")
+    db_session.add_all([check_a, check_b])
+    db_session.flush()
+
+    run = Run(suite_id=suite_id, status="succeeded", triggered_by="test:1320")
+    db_session.add(run)
+    db_session.flush()
+    db_session.add_all(
+        [
+            Result(run_id=run.id, check_id=check_a.id, status="pass"),
+            Result(run_id=run.id, check_id=check_b.id, status="fail"),
+            Result(run_id=run.id, check_id=check_b.id, status="pass"),
+        ]
+    )
+    db_session.add(
+        TriggerBinding(provider="adf", pipeline_or_dag_id="pl_1320", env="dev", suite_id=suite_id)
+    )
+    db_session.add_all(
+        [
+            Schedule(
+                suite_id=suite_id,
+                cron="0 * * * *",
+                next_run_at=datetime.now(UTC) + timedelta(hours=1),
+            ),
+            Schedule(
+                suite_id=suite_id,
+                cron="0 0 * * *",
+                next_run_at=datetime.now(UTC) + timedelta(days=1),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    resp = client.get(f"/api/v1/suites/{sid}/deletion_impact")
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "checks": 2,
+        "runs": 1,
+        "results": 3,
+        "trigger_bindings": 1,
+        "schedules": 2,
+    }
+
+
+def test_deletion_impact_unknown_suite_returns_404(client: TestClient) -> None:
+    resp = client.get(f"/api/v1/suites/{uuid.uuid4()}/deletion_impact")
+    assert resp.status_code == 404
 
 
 # ───────────────────────── access enforcement (PR-E2) ──────────────
@@ -482,6 +567,10 @@ def test_viewer_reads_but_cannot_write(client: TestClient, db_session: Any) -> N
     assert patched.status_code == 403
     deleted = client.delete(f"/api/v1/suites/{sid}")
     assert deleted.status_code == 403
+    # Deletion-impact counts follow the same grant as delete itself (#1320) — a
+    # view-only user must not get them either.
+    impact = client.get(f"/api/v1/suites/{sid}/deletion_impact")
+    assert impact.status_code == 403
 
 
 def test_editor_updates_but_cannot_delete(client: TestClient, db_session: Any) -> None:
@@ -492,6 +581,9 @@ def test_editor_updates_but_cannot_delete(client: TestClient, db_session: Any) -
     assert edited.status_code == 200
     deleted = client.delete(f"/api/v1/suites/{sid}")
     assert deleted.status_code == 403
+    # An editor is below the delete's 'admin' minimum, so the counts are denied too.
+    impact = client.get(f"/api/v1/suites/{sid}/deletion_impact")
+    assert impact.status_code == 403
 
 
 def test_workspace_admin_can_delete(
@@ -504,6 +596,8 @@ def test_workspace_admin_can_delete(
     _as(b)  # b owns nothing, has no share — only the allowlist makes them admin
     resp = client.get(f"/api/v1/suites/{sid}")
     assert resp.json()["my_permission"] == "admin"
+    impact = client.get(f"/api/v1/suites/{sid}/deletion_impact")
+    assert impact.status_code == 200
     deleted = client.delete(f"/api/v1/suites/{sid}")
     assert deleted.status_code == 204
 
@@ -539,6 +633,9 @@ def test_outsider_sees_404_everywhere(client: TestClient, db_session: Any) -> No
     assert patched.status_code == 404
     deleted = client.delete(f"/api/v1/suites/{sid}")
     assert deleted.status_code == 404
+    # No-access is indistinguishable from not-existing (404-no-leak), same as delete.
+    impact = client.get(f"/api/v1/suites/{sid}/deletion_impact")
+    assert impact.status_code == 404
 
 
 def test_list_is_scoped_to_accessible_suites(client: TestClient, db_session: Any) -> None:
