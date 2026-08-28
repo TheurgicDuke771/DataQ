@@ -25,6 +25,7 @@ from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import (
     record_check_version,
     reject_dataframe_only_expectation,
+    reject_thresholds_on_unbanded,
     validate_comparison_check,
     validate_dimension,
     validate_engine,
@@ -201,6 +202,12 @@ def import_suite(
             reject_dataframe_only_expectation(
                 c["expectation_type"], connection_type=connection.type
             )
+        reject_thresholds_on_unbanded(
+            c["expectation_type"],
+            warn_threshold=c["warn_threshold"],
+            fail_threshold=c["fail_threshold"],
+            critical_threshold=c["critical_threshold"],
+        )
 
     suite = Suite(
         name=name,

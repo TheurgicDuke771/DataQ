@@ -75,12 +75,17 @@ def test_dmf_entries_match_backend_capability() -> None:
     assert all(e["fields"] == ["column"] for e in entries)
 
 
-def test_catalog_no_thresholds_flag_matches_dmf_unbandable_types() -> None:
-    """The editor's `noThresholds` flag must cover exactly `DMF_UNBANDABLE_TYPES`."""
+def test_catalog_no_thresholds_flag_matches_the_backend_unbandable_sets() -> None:
+    """The editor's `noThresholds` flag must cover exactly the types the backend rejects any
+    threshold on: `DMF_UNBANDABLE_TYPES` (ADR 0036) plus the GX types whose result carries no
+    unexpected-% (`UNBANDED_EXPECTATION_TYPES`, #1607) — hiding more or fewer than the backend
+    422s is a drift bug either way.
+    """
+    from backend.app.datasources.expectation_allowlist import UNBANDED_EXPECTATION_TYPES
     from backend.app.datasources.snowflake_dmf import DMF_UNBANDABLE_TYPES
 
     flagged = {e["type"] for e in _catalog() if e.get("noThresholds")}
-    assert flagged == set(DMF_UNBANDABLE_TYPES)
+    assert flagged == set(DMF_UNBANDABLE_TYPES) | set(UNBANDED_EXPECTATION_TYPES)
 
 
 def test_catalog_dataframe_only_flag_matches_the_runner_set() -> None:

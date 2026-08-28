@@ -28,10 +28,14 @@ class ExpectationCapability:
 
     #: GX registers no SqlAlchemy metric provider, so this type errors on a SQL batch.
     dataframe_only: bool = False
+    #: False = the result carries no `unexpected_percent` for the ADR-0016 bands, so
+    #: authoring refuses thresholds (live-verified on Snowflake, pass and fail runs).
+    bandable: bool = True
 
 
 _ROW_WISE = ExpectationCapability()
 _DATAFRAME_ONLY = ExpectationCapability(dataframe_only=True)
+_UNBANDED = ExpectationCapability(bandable=False)
 
 #: type → capability. Grouped as the check editor groups them.
 ALLOWED_EXPECTATIONS: dict[str, ExpectationCapability] = {
@@ -43,8 +47,8 @@ ALLOWED_EXPECTATIONS: dict[str, ExpectationCapability] = {
     # ── Column values: membership ──
     "expect_column_values_to_be_in_set": _ROW_WISE,
     "expect_column_values_to_not_be_in_set": _ROW_WISE,
-    "expect_column_distinct_values_to_be_in_set": _ROW_WISE,
-    "expect_column_distinct_values_to_contain_set": _ROW_WISE,
+    "expect_column_distinct_values_to_be_in_set": _UNBANDED,
+    "expect_column_distinct_values_to_contain_set": _UNBANDED,
     # ── Column values: text shape ──
     "expect_column_values_to_match_regex": _ROW_WISE,
     "expect_column_values_to_not_match_regex": _ROW_WISE,
@@ -80,6 +84,10 @@ ALLOWLIST_ONLY_TYPES: frozenset[str] = frozenset({"expect_column_pair_values_to_
 
 DATAFRAME_ONLY_EXPECTATION_TYPES: frozenset[str] = frozenset(
     name for name, capability in ALLOWED_EXPECTATIONS.items() if capability.dataframe_only
+)
+
+UNBANDED_EXPECTATION_TYPES: frozenset[str] = frozenset(
+    name for name, capability in ALLOWED_EXPECTATIONS.items() if not capability.bandable
 )
 
 

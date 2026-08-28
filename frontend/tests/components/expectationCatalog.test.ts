@@ -366,14 +366,14 @@ describe('cross-column, type-list and set-relation entries (#1509)', () => {
     expect(TYPE_FIELD_NAMES).toEqual(['type_', 'type_list']);
   });
 
-  it('tells the author the severity bands are inert on the distinct-value set relations', () => {
+  it('hides the threshold block on the distinct-value set relations', () => {
+    // Supersedes the help-text caveat: the backend now refuses thresholds outright.
     for (const type of [
       'expect_column_distinct_values_to_be_in_set',
       'expect_column_distinct_values_to_contain_set',
     ]) {
-      const help = EXPECTATION_BY_TYPE[type].thresholds?.help ?? '';
-      expect(help, `${type} has no threshold caveat`).toMatch(/no unexpected-%/);
-      expect(help).toMatch(/ignored/);
+      expect(EXPECTATION_BY_TYPE[type].noThresholds, type).toBe(true);
+      expect(EXPECTATION_BY_TYPE[type].thresholds).toBeUndefined();
     }
   });
 
