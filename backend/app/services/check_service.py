@@ -580,8 +580,18 @@ def reject_dataframe_only_expectation(expectation_type: str, *, connection_type:
     )
 
 
-def validate_expectation_check(expectation_type: str, config: dict[str, Any]) -> None:
-    """Author-time validation for `kind='expectation'` checks (#651, allowlisted in #1510)."""
+def validate_expectation_check(
+    expectation_type: str,
+    config: dict[str, Any],
+    *,
+    permitted_stored_type: str | None = None,
+) -> None:
+    """Author-time validation for `kind='expectation'` checks (#651, allowlisted in #1510).
+
+    `permitted_stored_type`: a type already stored on the row being edited/restored —
+    retaining it bypasses the allowlist (a legacy row must stay editable and restorable);
+    GX resolvability and config validation still apply.
+    """
     _reject_oversized_config(config)
 
     # Lazy: importing great_expectations is heavy (seconds), and the API process
@@ -595,10 +605,8 @@ def validate_expectation_check(expectation_type: str, config: dict[str, Any]) ->
     expectation_cls = getattr(gxe, class_name, None)
     # The issubclass guard keeps a crafted type from resolving to a non-expectation
     # module attribute via the title-casing getattr.
-    resolves_to_gx = expectation_cls is not None and (
-        isinstance(expectation_cls, type) and issubclass(expectation_cls, Expectation)
-    )
-    if not is_allowed(expectation_type):
+    resolves_to_gx = isinstance(expectation_cls, type) and issubclass(expectation_cls, Expectation)
+    if not is_allowed(expectation_type) and expectation_type != permitted_stored_type:
         # Bounded echo: REST caps expectation_type at 128 chars, but the MCP tools don't — never
         # round-trip an unbounded string through the 422 envelope and the error log.
         echoed = expectation_type[:_ERROR_ECHO_MAX_CHARS]
@@ -619,10 +627,11 @@ def validate_expectation_check(expectation_type: str, config: dict[str, Any]) ->
                 "supported": sorted(ALLOWED_EXPECTATION_TYPES),
             },
         )
-    if expectation_cls is None or not resolves_to_gx:
+    if not (isinstance(expectation_cls, type) and issubclass(expectation_cls, Expectation)):
         # Allowlisted and yet unresolvable: a GX upgrade renamed or dropped it. The parity test
         # catches that at build time; this keeps the run-time answer a 422 rather than a
-        # "NoneType is not callable" 500.
+        # "NoneType is not callable" 500. (Repeats resolves_to_gx's condition inline so the
+        # type-checker narrows expectation_cls for the construction below.)
         raise CheckConfigInvalidError(
             f"expectation_type {expectation_type[:_ERROR_ECHO_MAX_CHARS]!r} is enabled in DataQ "
             "but the installed Great Expectations no longer provides it",
@@ -805,6 +814,7 @@ def _validate_kind_specific_config(
     source_connection_id: uuid.UUID | None,
     validate_expectation_config: bool,
     engine: str = GX_ENGINE,
+    permitted_stored_type: str | None = None,
 ) -> None:
     """The kind-specific validation branch shared by `update_check` and `restore_check_version`
     (#283) — factored out to ONE place so a check kind added later, or a validator tightened,
@@ -842,7 +852,9 @@ def _validate_kind_specific_config(
         # the caller; never a GX expectation, so the GX gate does not apply.
         pass
     elif validate_expectation_config:
-        validate_expectation_check(expectation_type, config)
+        validate_expectation_check(
+            expectation_type, config, permitted_stored_type=permitted_stored_type
+        )
         suite = get_suite(session, suite_id)
         _reject_row_count_on_sampled_suite(session, suite, expectation_type)
         reject_dataframe_only_expectation(
@@ -976,6 +988,9 @@ def update_check(
         validate_expectation_config=(
             expectation_type is not None or config is not None or engine is not None
         ),
+        # A pre-#1510 row's stored type stays editable; only CHANGING to an
+        # unvetted type is refused.
+        permitted_stored_type=check.expectation_type,
     )
 
     if name is not None:
@@ -1161,6 +1176,9 @@ def restore_check_version(
         # Restore always re-applies both fields (never a partial touch), so
         # always GX-validate — no PATCH-style "only if touched" escape valve.
         validate_expectation_config=True,
+        # Restore re-applies this check's own history, not new authoring — the
+        # allowlist gated the version when it was written (#1510).
+        permitted_stored_type=version.expectation_type,
     )
 
     # Apply the FULL snapshot unconditionally (unlike update_check's merge): restore's entire point

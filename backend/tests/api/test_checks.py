@@ -1223,6 +1223,43 @@ def test_editor_can_restore(client: TestClient, db_session: Any) -> None:
     assert resp.json()["config"] == {"column": "order_id"}
 
 
+def test_legacy_unvetted_type_stays_editable_and_restorable(
+    client: TestClient, db_session: Any
+) -> None:
+    """#1510 review: the allowlist gates authoring a type, not retaining one. A pre-#1510
+    row holding a real-but-unvetted GX type must accept a config-only PATCH and a version
+    restore; only CHANGING to an unvetted type is refused.
+    """
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    legacy = "expect_column_max_to_be_between"
+    legacy_config = {"column": "amount", "min_value": 1, "max_value": 100}
+    check = db_session.get(Check, uuid.UUID(cid))
+    check.expectation_type = legacy
+    check.config = legacy_config
+    version = db_session.query(CheckVersion).filter_by(check_id=uuid.UUID(cid), version_no=1).one()
+    version.expectation_type = legacy
+    version.config = legacy_config
+    db_session.commit()
+
+    resp = client.patch(
+        f"/api/v1/suites/{sid}/checks/{cid}",
+        json={"config": {"column": "amount", "min_value": 5, "max_value": 100}},
+    )
+    assert resp.status_code == 200
+
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/1/restore")
+    assert resp.status_code == 200
+    assert resp.json()["expectation_type"] == legacy
+
+    resp = client.patch(
+        f"/api/v1/suites/{sid}/checks/{cid}",
+        json={"expectation_type": "expect_column_mean_to_be_between"},
+    )
+    assert resp.status_code == 422
+    assert "not in DataQ's vetted set" in resp.json()["error"]["message"]
+
+
 def test_restore_rejects_a_snapshot_invalid_under_current_threshold_ordering(
     client: TestClient, db_session: Any
 ) -> None:

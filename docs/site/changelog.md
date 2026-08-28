@@ -24,7 +24,12 @@ the per-PR history lives in the repo's commit log and pull requests.
   expectation" from "recognised, but not enabled in DataQ" and names what is accepted.
 
   **Nothing already stored changes.** The gate is author-time only: a check written before
-  this still runs and can still be edited or deleted. One of the new types, *Column values
+  this still runs and can still be edited, restored from its version history, or deleted —
+  refusal applies only to *changing* a check to an unvetted type, or authoring a new one.
+  The one exception is a suite **export → import** round-trip: import creates new checks, so
+  a document carrying an unvetted legacy type is refused as a whole, naming the offending
+  type — re-author that check as custom SQL (or drop it from the document) before importing.
+  One of the new types, *Column values
   are valid JSON*, is implemented by GX for dataframe batches only, so it is offered on flat
   files, Iceberg and Unity Catalog and refused on Snowflake — as *Column values match a date
   format* already was.
