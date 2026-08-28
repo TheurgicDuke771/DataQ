@@ -18,6 +18,8 @@ from backend.app.datasources.snowflake import (
     SnowflakeConnectionAdapter,
     UnknownExpectationError,
     _expectation_class_name,
+    _fold_reflection_keyed_columns,
+    _reflection_key,
     _to_gx_expectation,
     build_connect_args,
     build_connection_string,
@@ -716,3 +718,79 @@ def test_supported_monitor_kinds_is_explicit() -> None:
     # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise every future registry
     # kind and self-defeat the per-kind gate.
     assert SnowflakeCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})
+
+
+def test_fold_reflection_keyed_columns_lowercases_all_caps_compound_unique() -> None:
+    # #1616: live-SF KeyError with uppercase column_list; lowercase is the same identifier
+    # under snowflake-sqlalchemy's folding convention.
+    spec = CheckSpec(
+        "expect_compound_columns_to_be_unique",
+        {"column_list": ["ORDER_NUMBER", "CUSTOMER_ID"], "mostly": 0.9},
+    )
+    (folded,) = _fold_reflection_keyed_columns([spec])
+    assert folded.kwargs["column_list"] == ["order_number", "customer_id"]
+    assert folded.kwargs["mostly"] == 0.9
+    # frozen input untouched
+    assert spec.kwargs["column_list"] == ["ORDER_NUMBER", "CUSTOMER_ID"]
+
+
+def test_fold_reflection_keyed_columns_leaves_mixed_case_and_other_types_alone() -> None:
+    mixed = CheckSpec(
+        "expect_compound_columns_to_be_unique", {"column_list": ["OrderNum", "customer_id"]}
+    )
+    other = CheckSpec(
+        "expect_multicolumn_sum_to_equal", {"column_list": ["SUBTOTAL", "TAX"], "sum_total": 1}
+    )
+    folded_mixed, folded_other = _fold_reflection_keyed_columns([mixed, other])
+    assert folded_mixed.kwargs["column_list"] == ["OrderNum", "customer_id"]
+    assert folded_other is other
+
+
+def test_reflection_key_mirrors_the_dialect_not_a_bare_lower() -> None:
+    # Review on #1617: reserved words and quote-requiring names reflect with their case
+    # KEPT — a bare isupper() fold would break them. normalize_name is the authority.
+    assert _reflection_key("ORDER_NUMBER") == "order_number"
+    assert _reflection_key("ORDER") == "ORDER"
+    assert _reflection_key("ORDER DATE") == "ORDER DATE"
+    assert _reflection_key("OrderNum") == "OrderNum"
+
+
+def test_run_checks_passes_index_columns_unfolded(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Live-verified 2026-08-28 (#1617 review disposition): GX's index path accepts the
+    # authored casing and keys locators by it — folding would rewrite user-visible keys.
+    captured: dict[str, Any] = {}
+
+    def fake_run_expectations(context: Any, **kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SimpleNamespace(checks=[])
+
+    monkeypatch.setattr("backend.app.datasources.snowflake.run_expectations", fake_run_expectations)
+    monkeypatch.setattr(
+        "backend.app.datasources.snowflake.gx",
+        SimpleNamespace(
+            get_context=lambda mode: SimpleNamespace(
+                data_sources=SimpleNamespace(
+                    add_snowflake=lambda **kw: SimpleNamespace(
+                        add_table_asset=lambda **kw: SimpleNamespace(
+                            add_batch_definition_whole_table=lambda name: "bd"
+                        )
+                    )
+                )
+            )
+        ),
+    )
+    config = SnowflakeConfig.model_validate(
+        {
+            "account": "acct",
+            "user": "u",
+            "database": "DB",
+            "schema": "RETAIL",
+            "warehouse": "WH",
+            "role": "R",
+        }
+    )
+    runner = SnowflakeCheckRunner(config, "pw")
+    runner.run_checks(
+        table="ORDERS_HEADER", schema="RETAIL", checks=[], index_columns=["ORDER_NUMBER"]
+    )
+    assert captured["index_columns"] == ["ORDER_NUMBER"]
