@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "89a2b8c3a08e",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1621-audit-chain-grant",
+  "checkpoints_count": 4,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/89/a2b8c3a08e/0/metadata.json",
+      "transcript": "/89/a2b8c3a08e/0/full.jsonl",
+      "compact_transcript": "/89/a2b8c3a08e/0/transcript.jsonl",
+      "content_hash": "/89/a2b8c3a08e/0/content_hash.txt",
+      "prompt": "/89/a2b8c3a08e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 776,
+    "cache_creation_tokens": 816460,
+    "cache_read_tokens": 152170870,
+    "output_tokens": 214702,
+    "api_call_count": 391
+  }
+}
