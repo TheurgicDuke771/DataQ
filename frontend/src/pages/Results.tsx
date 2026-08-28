@@ -44,6 +44,7 @@ import {
 import { Page } from '../components/layout/Page';
 import { RunNowPanel } from '../components/runs/RunNowPanel';
 import { boundedTextStyle, ellipsisColumn } from '../components/shared/ellipsisColumn';
+import { Filter } from '../components/shared/Filter';
 import { useAsyncData, type AsyncState } from '../hooks/useAsyncData';
 import {
   formatDuration,
@@ -74,19 +75,6 @@ const tablePagination = (noun: string) => ({
  */
 const DATE_WINDOWS = [{ value: 'all', label: 'All time' }, ...WINDOW_PRESETS] as const;
 type DateWindow = (typeof DATE_WINDOWS)[number]['value'];
-
-/** A labelled filter control — one `secondary` caption above each Select so the
- *  growing filter bar stays scannable and wraps cleanly on narrow viewports. */
-function Filter({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <Flex vertical gap={4}>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {label}
-      </Typography.Text>
-      {children}
-    </Flex>
-  );
-}
 
 export function Results() {
   const [runNowOpen, setRunNowOpen] = useState(false);

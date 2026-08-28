@@ -207,7 +207,9 @@ describe('Admin', () => {
     expect(
       screen.getByText(/Retained 365 days .* events older than that have been swept/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/30 events — more than shown here/)).toBeInTheDocument();
+    // The real page total (30, from the backend), via antd's own numbered pager —
+    // not a hand-rolled "N events" caption.
+    expect(screen.getByTitle('2')).toBeInTheDocument();
 
     // Deployment posture — a direct render of the backend's own payload, no client logic.
     expect(screen.getByText('us-east-1')).toBeInTheDocument();
@@ -221,10 +223,12 @@ describe('Admin', () => {
     // again — the button changed its own disabled state but the table never moved.
     mockAuditEvents.mockResolvedValueOnce(AUDIT_PAGE_1).mockResolvedValueOnce(AUDIT_PAGE_2);
     const user = userEvent.setup();
-    renderAdmin(adminMe);
+    const { container } = renderAdmin(adminMe);
     expect(await screen.findByText('check.update')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Next' }));
+    const next = container.querySelector('.ant-pagination-next button');
+    expect(next).not.toBeNull();
+    await user.click(next as HTMLButtonElement);
 
     expect(await screen.findByText('run_results.read')).toBeInTheDocument();
     expect(screen.queryByText('check.update')).not.toBeInTheDocument();

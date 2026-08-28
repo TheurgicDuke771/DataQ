@@ -13,7 +13,7 @@ import {
   Tag,
   Typography,
 } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import { useState } from 'react';
 
 import {
@@ -21,7 +21,6 @@ import {
   type AdminSuite,
   type AdminUser,
   type AuditEvent,
-  type AuditEventFilters,
   type AuditEventPage,
   type ExternalTransfer,
   getDeploymentPosture,
@@ -37,6 +36,7 @@ import { PageError } from '../components/feedback/PageError';
 import { Forbidden } from '../components/Forbidden';
 import { Page } from '../components/layout/Page';
 import { formatTimestamp } from '../components/results/resultsFormat';
+import { Filter } from '../components/shared/Filter';
 import { WINDOW_PRESETS } from '../components/shared/windowPresets';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 
@@ -155,34 +155,50 @@ function windowSince(window: AuditDateWindow): string | undefined {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
+//: RFC 4122, any version — matches what `AuditEventFilters.actor_user_id` sends
+// straight through as a FastAPI `UUID` query param. Checked client-side so a
+// stray value (a pasted email, trailing whitespace) surfaces as "not a valid
+// ID" here rather than the backend's generic "Request validation failed",
+// which the axios client's error handling can't unpack into a per-field
+// message (`api/client.ts` only reads `error.error.message`).
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** ADR 0041 / G1 (#1554): the append-only audit log had a backend since #1318 with
  *  no in-app surface — the only way to answer "who changed this, and when" was
  *  `psql` or curl. Server-side filtered (the log can outgrow client-side filtering
  *  fast), so a filter change is a deliberate "Search", not fetch-on-keystroke.
  */
 function AuditLogSection() {
-  const [pending, setPending] = useState<{
+  const [filters, setFilters] = useState<{
     actionClass?: 'config' | 'access';
     entityType: string;
     actorUserId: string;
     dateWindow: AuditDateWindow;
   }>({ entityType: '', actorUserId: '', dateWindow: 'all' });
-  const [applied, setApplied] = useState(pending);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(1);
+  const trimmedActor = filters.actorUserId.trim();
+  const actorError = trimmedActor !== '' && !UUID_PATTERN.test(trimmedActor);
 
-  const filters: AuditEventFilters = {
-    action_class: applied.actionClass,
-    entity_type: applied.entityType || undefined,
-    actor_user_id: applied.actorUserId || undefined,
-    since: windowSince(applied.dateWindow),
-    limit: AUDIT_PAGE_SIZE,
-    offset: page * AUDIT_PAGE_SIZE,
-  };
-  const { state, reload } = useAsyncData(() => listAuditEvents(filters));
+  const { state, reload } = useAsyncData(() =>
+    listAuditEvents({
+      action_class: filters.actionClass,
+      entity_type: filters.entityType || undefined,
+      actor_user_id: actorError ? undefined : trimmedActor || undefined,
+      since: windowSince(filters.dateWindow),
+      limit: AUDIT_PAGE_SIZE,
+      offset: (page - 1) * AUDIT_PAGE_SIZE,
+    }),
+  );
 
+  // useAsyncData only re-fetches on `reload()` (its effect keys off a nonce, not the
+  // fetcher identity — see its doc, and `AssetsTableView`'s identical comment), so a
+  // filter or page change must bump it explicitly.
   const search = () => {
-    setApplied(pending);
-    setPage(0);
+    setPage(1);
+    reload();
+  };
+  const onPageChange = (nextPage: number) => {
+    setPage(nextPage);
     reload();
   };
 
@@ -192,9 +208,9 @@ function AuditLogSection() {
         <Filter label="Type">
           <Select<'config' | 'access' | 'all'>
             style={{ width: 160 }}
-            value={pending.actionClass ?? 'all'}
+            value={filters.actionClass ?? 'all'}
             onChange={(v) =>
-              setPending((p) => ({ ...p, actionClass: v === 'all' ? undefined : v }))
+              setFilters((f) => ({ ...f, actionClass: v === 'all' ? undefined : v }))
             }
             options={[{ value: 'all', label: 'All actions' }, ...ACTION_CLASSES]}
           />
@@ -203,23 +219,29 @@ function AuditLogSection() {
           <Input
             style={{ width: 140 }}
             placeholder="e.g. suite"
-            value={pending.entityType}
-            onChange={(e) => setPending((p) => ({ ...p, entityType: e.target.value }))}
+            value={filters.entityType}
+            onChange={(e) => setFilters((f) => ({ ...f, entityType: e.target.value }))}
           />
         </Filter>
         <Filter label="Actor user ID">
           <Input
             style={{ width: 220 }}
             placeholder="UUID"
-            value={pending.actorUserId}
-            onChange={(e) => setPending((p) => ({ ...p, actorUserId: e.target.value }))}
+            status={actorError ? 'error' : undefined}
+            value={filters.actorUserId}
+            onChange={(e) => setFilters((f) => ({ ...f, actorUserId: e.target.value }))}
           />
+          {actorError && (
+            <Typography.Text type="danger" style={{ fontSize: 12 }}>
+              Not a valid ID — paste the UUID from the Members table, not an email.
+            </Typography.Text>
+          )}
         </Filter>
         <Filter label="When">
           <Select<AuditDateWindow>
             style={{ width: 160 }}
-            value={pending.dateWindow}
-            onChange={(v) => setPending((p) => ({ ...p, dateWindow: v }))}
+            value={filters.dateWindow}
+            onChange={(v) => setFilters((f) => ({ ...f, dateWindow: v }))}
             options={AUDIT_DATE_WINDOWS.map((w) => ({ value: w.value, label: w.label }))}
           />
         </Filter>
@@ -235,37 +257,18 @@ function AuditLogSection() {
         columns={AUDIT_EVENT_COLUMNS}
         rowKey={(e) => e.id}
         errorMessage="Failed to load the audit log"
-        pagination={false}
+        pagination={
+          state.status === 'ok'
+            ? {
+                current: page,
+                pageSize: AUDIT_PAGE_SIZE,
+                total: state.data.total,
+                onChange: onPageChange,
+                showSizeChanger: false,
+              }
+            : false
+        }
       />
-
-      {state.status === 'ok' && (
-        <Flex justify="space-between" align="center">
-          <Typography.Text type="secondary">
-            {state.data.total} event{state.data.total === 1 ? '' : 's'}
-            {state.data.truncated ? ' — more than shown here' : ''}
-          </Typography.Text>
-          <Flex gap={8}>
-            <Button
-              disabled={page === 0}
-              onClick={() => {
-                setPage((p) => Math.max(0, p - 1));
-                reload();
-              }}
-            >
-              Previous
-            </Button>
-            <Button
-              disabled={!state.data.truncated}
-              onClick={() => {
-                setPage((p) => p + 1);
-                reload();
-              }}
-            >
-              Next
-            </Button>
-          </Flex>
-        </Flex>
-      )}
     </Section>
   );
 }
@@ -404,9 +407,10 @@ function DataTable<T extends object>({
   columns: ColumnsType<T>;
   rowKey: (row: T) => string;
   errorMessage: string;
-  /** Defaults to a 20-row client page; pass `false` for a caller-driven
-   *  (server-paginated) list like the audit log. */
-  pagination?: false;
+  /** Defaults to a 20-row client page. Pass a real config (current/pageSize/
+   *  total/onChange, matching `AssetsTable`'s server-paginated shape) for a
+   *  caller-driven list like the audit log, or `false` to turn pagination off. */
+  pagination?: TablePaginationConfig | false;
 }) {
   if (state.status === 'loading') return <Spin size="large" />;
   if (state.status === 'error') {
@@ -421,21 +425,8 @@ function DataTable<T extends object>({
       columns={columns}
       rowKey={rowKey}
       size="small"
-      pagination={pagination === false ? false : { pageSize: 20, hideOnSinglePage: true }}
+      pagination={pagination ?? { pageSize: 20, hideOnSinglePage: true }}
     />
-  );
-}
-
-/** A labelled filter control — one `secondary` caption above each input, matching
- *  the Results page's date-filter bar. */
-function Filter({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <Flex vertical gap={4}>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {label}
-      </Typography.Text>
-      {children}
-    </Flex>
   );
 }
 
