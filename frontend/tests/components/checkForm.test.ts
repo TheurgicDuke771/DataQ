@@ -387,3 +387,19 @@ describe('checkForm — survivor-targeted edges (#1410)', () => {
     expect(std.critical_threshold).toBe(9);
   });
 });
+
+describe('buildCheckPayload — noThresholds types never submit thresholds', () => {
+  it('nulls stale threshold form values on a set relation', () => {
+    const payload = buildCheckPayload({
+      name: 'c',
+      expectation_type: 'expect_column_distinct_values_to_be_in_set',
+      config: { column: 'status', value_set: 'a,b' },
+      warn_threshold: 5,
+      fail_threshold: 10,
+      critical_threshold: 20,
+    });
+    expect(payload.warn_threshold).toBeNull();
+    expect(payload.fail_threshold).toBeNull();
+    expect(payload.critical_threshold).toBeNull();
+  });
+});

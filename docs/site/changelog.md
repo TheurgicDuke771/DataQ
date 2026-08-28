@@ -5,6 +5,17 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
+### Changed
+
+- **The two distinct-value set relations no longer accept severity thresholds** (#1607).
+  *Column distinct values in set* / *…contain set* compare a value SET — their results carry
+  no unexpected-% for the warn/fail/critical bands to read (verified on a live Snowflake run),
+  so a stored threshold could never fire. The editor now hides the threshold inputs for them
+  and the API, MCP and suite import refuse threshold values with a 422 explaining why. A
+  migration nulls any previously-stored (always-inert) thresholds on these types; the result
+  stays a binary pass/fail. An export file predating this release that carries such thresholds
+  is refused at import naming the check — remove the threshold keys from the document.
+
 ### Added
 
 - **Nine more GX expectations, and a server-side allowlist of the types DataQ will
