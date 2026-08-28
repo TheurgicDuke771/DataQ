@@ -3,7 +3,7 @@
   "checkpoint_id": "44a282e3dafc",
   "strategy": "manual-commit",
   "branch": "fix/issue-1621-audit-chain-grant",
-  "checkpoints_count": 4,
+  "checkpoints_count": 6,
   "files_touched": [
     "backend/alembic/versions/0ef2edb2ea38_grant_hash_column_update_on_audit_events.py",
     "backend/tests/db/test_audit_retention_privileges.py",
@@ -16,14 +16,21 @@
       "compact_transcript": "/44/a282e3dafc/0/transcript.jsonl",
       "content_hash": "/44/a282e3dafc/0/content_hash.txt",
       "prompt": "/44/a282e3dafc/0/prompt.txt"
+    },
+    {
+      "metadata": "/44/a282e3dafc/1/metadata.json",
+      "transcript": "/44/a282e3dafc/1/full.jsonl",
+      "compact_transcript": "/44/a282e3dafc/1/transcript.jsonl",
+      "content_hash": "/44/a282e3dafc/1/content_hash.txt",
+      "prompt": "/44/a282e3dafc/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 770,
-    "cache_creation_tokens": 808325,
-    "cache_read_tokens": 150346792,
-    "output_tokens": 212676,
-    "api_call_count": 388,
+    "input_tokens": 2514,
+    "cache_creation_tokens": 2546972,
+    "cache_read_tokens": 598021185,
+    "output_tokens": 637825,
+    "api_call_count": 1260,
     "subagent_tokens": {
       "input_tokens": 0,
       "cache_creation_tokens": 0,
