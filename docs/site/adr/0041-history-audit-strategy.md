@@ -161,3 +161,88 @@ The guard is a test that enumerates FastAPI's **route table** (`app.routes`, fil
 - [#1319](https://github.com/TheurgicDuke771/DataQ/issues/1319) — the three `created_by` FKs with no `ondelete` (residue of #541; live once G2 erasure lands).
 - [#1320](https://github.com/TheurgicDuke771/DataQ/issues/1320) — suite-delete confirmation must state its blast radius (the mitigation that makes rejecting (b) honest).
 - [#431](https://github.com/TheurgicDuke771/DataQ/issues/431) — **phase 2**, unchanged in scope, now landing on this table rather than inventing one.
+
+## 9. Addendum — tamper-evidence (#1460)
+
+Decision 7 named the residual honestly: `REVOKE UPDATE, DELETE` guards against
+accidental in-app mutation, not an operator with direct database access. This
+addendum closes that residual with a hash chain plus an external anchor,
+answering the four open questions [#1460](https://github.com/TheurgicDuke771/DataQ/issues/1460)
+raised before building.
+
+**Threat model, stated explicitly rather than implied.** The chain plus anchor
+defends against an actor with direct database read/write access who edits or
+deletes `audit_events` rows outside the app — a compromised credential, a rogue
+query, a doctored restore — **provided the anchor is configured and lives under
+different control than the database.** It does **not** defend against an actor
+with deploy/application-code access, who can disable hash computation or
+redirect the anchor target. And the chain alone, unanchored, proves nothing to
+an attacker who can also write the whole table: they can recompute it forward
+from wherever they edit. `TAMPER_ANCHOR` defaults to `none` — the chain is
+still computed and still catches an accidental or narrowly-scoped edit, but an
+operator whose regime requires provable tamper-evidence must configure the
+anchor.
+
+**Mechanism.** `audit_events` gains nullable `prev_hash`/`row_hash` columns —
+nullable and NOT backfilled, matching decision 6's redaction-allow-list
+discipline: retroactively hashing pre-existing rows would only look like
+evidence, since an attacker who tampered before this shipped could recompute a
+"valid" retroactive chain too. The chain starts at the first event written
+after this ships. A singleton `audit_chain_state` row tracks the current head,
+locked via `SELECT ... FOR UPDATE` in a `Session`-level `before_commit` hook
+(not inside `audit_service.record()` itself — that function's own
+never-flush-never-commit contract, tested by
+`test_record_adds_to_the_caller_transaction_and_never_commits`, stays intact;
+hooking commit gets the identical fail-closed guarantee without `record()`
+knowing anything about hashing).
+
+**Two review-caught defects are worth recording, because both would have
+shipped a false-positive tamper detector — the worst failure mode for a
+control an operator is meant to trust.**
+
+1. **Hashing `actor_user_id`/`actor_label` is wrong**, and this was caught by
+   a real cross-session test, not reasoned out in advance: decision 6.5 above
+   already documents both fields as mutable by design — `actor_user_id` is
+   `ON DELETE SET NULL`, and `actor_label` is the field G2 erasure
+   pseudonymizes in place. A first cut of the hash chain included both. A
+   routine user deletion (via a real FK cascade, never through `record()`)
+   then flipped `actor_user_id` to NULL on an already-hashed row, and
+   `verify_chain` reported every downstream event as tampered. `_HASH_FIELDS`
+   excludes both; only genuinely immutable columns are hashed.
+2. **Verification must walk the chain's actual links, not sort rows by
+   `occurred_at`.** Postgres `now()` (the column's `server_default`) reflects
+   a transaction's START time, not its commit time — two overlapping
+   transactions can begin in one order and get chained, by the FOR-UPDATE-
+   serialized `before_commit` hook, in the other. An `ORDER BY occurred_at`
+   verification pass reported false breaks under exactly that overlap.
+   `verify_chain` instead starts at the recorded head and walks backward via
+   `prev_hash` lookups — the links themselves are always correct, because the
+   lock serializes their assignment to true commit order; only a
+   timestamp-sorted READ of them was ever wrong.
+
+**Retention interaction.** The sweep deletes the tail (oldest rows), never the
+head, so the chain's most recent link is never at risk. Before each purge:
+`write_purge_checkpoint` records the last-deleted row's hash and the first
+surviving row's id (by `occurred_at`, which retention is actually about —
+accepted residual risk noted in that function's own docstring: overlapping
+transactions right at the cutoff moment could name the wrong pair, whose only
+failure mode is a false-positive break at that one boundary, never a missed
+real tamper elsewhere), publishes that hash to the anchor, **then** deletes.
+`verify_chain` treats a surviving row's `prev_hash` as legitimate if it
+matches either a live prior row or a checkpoint's recorded hash — anything
+else is a break. An anchor-publish failure logs loudly but never blocks the
+purge, the same trade decision 6's phase-2 reads already make for their own
+non-fail-closed contract.
+
+**Verification tooling.** `GET /admin/audit-events/verify` (workspace-admin
+gated) reports chain status, plus two daily beat tasks: `anchor_audit_chain_head`
+(publishes the current head — dark by default, same posture as
+`LINEAGE_PROVIDER`) and `verify_audit_chain` (logs `audit_chain_broken` at
+ERROR on a detected break; does not, and cannot, auto-remediate).
+
+**Explicitly out of scope**, recorded rather than silently narrowed: no
+backfill of pre-existing rows into the chain (reasoned above); no alerting
+integration for a detected break beyond the structured ERROR log; no second
+anchor implementation beyond the one HMAC-signed webhook (S3 Object Lock /
+immutable blob would be a new class behind the same `TamperAnchor` seam, not a
+redesign).

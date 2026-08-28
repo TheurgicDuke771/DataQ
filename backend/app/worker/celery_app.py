@@ -138,6 +138,19 @@ def create_celery_app() -> Celery:
                 "task": "purge_audit_events",
                 "schedule": crontab(hour="4", minute="17"),  # daily, 04:17 UTC
             },
+            # Audit hash-chain external anchor (ADR 0041 §9 / #1460): dark by
+            # default — no-ops unless TAMPER_ANCHOR is set. AFTER the purge above
+            # so the same day's checkpoint (if any) is already committed.
+            "anchor-audit-chain-head": {
+                "task": "anchor_audit_chain_head",
+                "schedule": crontab(hour="4", minute="27"),  # daily, 04:27 UTC
+            },
+            # Audit hash-chain integrity check (#1460): logs loudly on a break;
+            # never auto-remediates.
+            "verify-audit-chain": {
+                "task": "verify_audit_chain",
+                "schedule": crontab(hour="4", minute="37"),  # daily, 04:37 UTC
+            },
             # OTP-code retention (#1136): the table is PII (plaintext address +
             # sign-in timestamp); hygiene, not a security control.
             "purge-otp-codes": {

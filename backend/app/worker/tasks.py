@@ -14,6 +14,7 @@ from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
+from backend.app.core.tamper_anchor import get_tamper_anchor
 from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.datasources.monitors import STATEFUL_MONITOR_KINDS
 from backend.app.datasources.registry import build_check_runner, owned_runner
@@ -33,6 +34,7 @@ from backend.app.lineage import pull as lineage_pull
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import (
     asset_service,
+    audit_chain,
     audit_read_service,
     column_tags,
     comparison_run,
@@ -695,6 +697,55 @@ def purge_audit_events() -> int:
         return audit_read_service.purge_expired_events(
             session, retention_days=get_settings().audit_retention_days
         )
+    finally:
+        session.close()
+
+
+# ───────────────── Audit hash-chain anchor + verify (ADR 0041 §9 / #1460) ────
+
+
+@celery_app.task(name="anchor_audit_chain_head")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def anchor_audit_chain_head() -> bool:
+    """Daily periodic anchor of the chain's current head — dark by default
+    (TAMPER_ANCHOR unset), same posture as `refresh_lineage_pull`. Runs even on
+    a day with no retention purge, so the anchor is not solely purge-triggered.
+    """
+    session = get_session()
+    try:
+        result = audit_chain.verify_chain(session)
+        if result.chain_head_hash is None:
+            return False  # nothing written yet — nothing to anchor
+        return get_tamper_anchor().publish(
+            label="audit_chain_daily",
+            head_hash=result.chain_head_hash,
+            event_count=result.verified_count,
+            as_of=datetime.now(UTC),
+        )
+    finally:
+        session.close()
+
+
+@celery_app.task(name="verify_audit_chain")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def verify_audit_chain() -> bool:
+    """Daily chain-integrity check. Logs loudly on a break; does not (and
+    cannot) auto-remediate. Returns whether the chain verified clean.
+    """
+    session = get_session()
+    try:
+        result = audit_chain.verify_chain(session)
+        if result.first_break is not None:
+            log.error(
+                "audit_chain_broken",
+                event_id=str(result.first_break.event_id),
+                occurred_at=(
+                    result.first_break.occurred_at.isoformat()
+                    if result.first_break.occurred_at is not None
+                    else None
+                ),
+                expected_prev_hash=result.first_break.expected_prev_hash,
+                actual_prev_hash=result.first_break.actual_prev_hash,
+            )
+        return result.ok
     finally:
         session.close()
 

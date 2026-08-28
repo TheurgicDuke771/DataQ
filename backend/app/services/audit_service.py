@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import uuid
 from collections.abc import Mapping, Sequence
@@ -18,6 +19,15 @@ from backend.app.db.models import (
     AuditEvent,
     User,
 )
+
+# Registers the `before_commit` hash-chain hook on `Session` (ADR 0041 §9 / #1460) —
+# every audit-writing module goes through THIS module, so importing it here guarantees
+# the hook is registered wherever `record()` is reachable, without a separate
+# app-startup wiring step to remember. `importlib.import_module`, not a bound
+# `from ... import audit_chain`, so there is no name for a linter to call unused —
+# Ruff's `noqa: F401` satisfies Ruff but not CodeQL's own unused-import check, which
+# flagged the bound-name form and blocked the PR's merge gate.
+importlib.import_module("backend.app.services.audit_chain")
 
 log = get_logger(__name__)
 

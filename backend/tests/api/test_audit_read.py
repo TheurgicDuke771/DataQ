@@ -254,3 +254,105 @@ def test_a_disabled_sweep_reports_no_retention_horizon(
     page = audit_read_service.list_events(db_session, limit=1, retention_days=0)
     assert page.retention_days == 0
     assert page.retained_since is None
+
+
+# ───────────────────── hash-chain verify (#1460) ─────────────────────
+
+
+@pytest.mark.parametrize("role", ["member", "viewer"])
+def test_verify_endpoint_is_also_admin_gated(
+    client: TestClient, db_session: Any, role: str
+) -> None:
+    app.dependency_overrides[get_current_user] = lambda: _user(db_session, role)
+    resp = client.get("/api/v1/admin/audit-events/verify")
+    assert resp.status_code == 403, resp.text
+
+
+def _chain_verification(**overrides: Any) -> Any:
+    """A `ChainVerification` with sane defaults — the exact chaining logic has its
+    own DB-backed coverage in `test_audit_chain.py`; these tests are about the
+    endpoint's status-mapping and response shape, so they stub the result rather
+    than reading it off the live `audit_events` table.
+
+    Table-wide (whole-process, not per-test-isolated by design), because two OTHER
+    tests (`test_admin_role_management.py`'s concurrency races) deliberately
+    commit real, permanent rows outside the rolled-back `db_session` fixture — so
+    asserting global emptiness or an exact `verified_count` here would be reading
+    whatever state the rest of the test session happened to leave behind.
+    """
+    from backend.app.services.audit_chain import ChainVerification
+
+    defaults: dict[str, Any] = {
+        "verified_count": 0,
+        "unverifiable_legacy_count": 0,
+        "chain_head_hash": None,
+        "first_break": None,
+    }
+    defaults.update(overrides)
+    return ChainVerification(**defaults)
+
+
+def test_verify_reports_empty_with_no_hashed_rows(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.services import audit_chain
+
+    monkeypatch.setattr(audit_chain, "verify_chain", lambda _session: _chain_verification())
+
+    resp = client.get("/api/v1/admin/audit-events/verify")
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "empty"
+    assert body["verified_count"] == 0
+    assert body["first_break"] is None
+    assert body["anchor_mode"] == "none"
+
+
+def test_verify_reports_ok_when_the_chain_verifies(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.services import audit_chain
+
+    monkeypatch.setattr(
+        audit_chain,
+        "verify_chain",
+        lambda _session: _chain_verification(verified_count=3, chain_head_hash="abc123"),
+    )
+
+    resp = client.get("/api/v1/admin/audit-events/verify")
+
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["verified_count"] == 3
+    assert body["chain_head_hash"] == "abc123"
+
+
+def test_verify_reports_a_break_with_its_location(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.services import audit_chain
+    from backend.app.services.audit_chain import ChainBreak
+
+    broken_id = uuid.uuid4()
+    when = datetime.now(UTC)
+    monkeypatch.setattr(
+        audit_chain,
+        "verify_chain",
+        lambda _session: _chain_verification(
+            first_break=ChainBreak(
+                event_id=broken_id,
+                occurred_at=when,
+                expected_prev_hash="expected",
+                actual_prev_hash="actual",
+            )
+        ),
+    )
+
+    resp = client.get("/api/v1/admin/audit-events/verify")
+
+    body = resp.json()
+    assert body["status"] == "broken"
+    assert body["first_break"]["event_id"] == str(broken_id)
+    assert body["first_break"]["expected_prev_hash"] == "expected"
+    assert body["first_break"]["actual_prev_hash"] == "actual"

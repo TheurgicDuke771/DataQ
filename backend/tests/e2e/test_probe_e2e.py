@@ -110,6 +110,17 @@ def test_probe_round_trip_over_real_broker(monkeypatch: pytest.MonkeyPatch) -> N
         assert results[0].status == "pass"
         assert results[0].observed_value == {"observed_value": 42}
     finally:
-        session.execute(text("TRUNCATE results, runs, checks, suites, connections, users CASCADE"))
+        # `audit_events.actor_user_id` FKs to `users`, so `TRUNCATE users CASCADE` already wipes
+        # audit_events implicitly — but `audit_chain_state`/`audit_chain_checkpoints` (#1460) have
+        # no FK to `users` and are NOT cascaded, which left the singleton head pointing at a row
+        # this truncate had just erased, breaking `verify_chain` for every test that ran after this
+        # one in the same CI database. Listed explicitly so a future FK change can't silently
+        # reopen the gap.
+        session.execute(
+            text(
+                "TRUNCATE results, runs, checks, suites, connections, audit_events, "
+                "audit_chain_checkpoints, audit_chain_state, users CASCADE"
+            )
+        )
         session.commit()
         session.close()

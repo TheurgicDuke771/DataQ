@@ -16,9 +16,10 @@ from sqlalchemy.orm import Session, selectinload
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
+from backend.app.core.tamper_anchor import get_tamper_anchor
 from backend.app.db.chunked_dml import CHUNK_SIZE
 from backend.app.db.models import AuditEvent
-from backend.app.services import audit_service
+from backend.app.services import audit_chain, audit_service
 
 log = get_logger(__name__)
 
@@ -133,6 +134,27 @@ def purge_expired_events(session: Session, *, retention_days: int) -> int:
     if retention_days <= 0:
         return 0
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+
+    # One checkpoint per purge run, BEFORE any row is deleted (#1460, ADR 0041 §9): it is
+    # the documented explanation `audit_chain.verify_chain` needs to tell "retention did
+    # this, as configured" apart from an out-of-band delete. A no-op sweep (nothing older
+    # than cutoff) writes none.
+    checkpoint = audit_chain.write_purge_checkpoint(session, cutoff=cutoff)
+    if checkpoint is not None:
+        session.commit()
+        if checkpoint.last_deleted_row_hash is not None:
+            anchor = get_tamper_anchor()
+            published = anchor.publish(
+                label="audit_events_purge",
+                head_hash=checkpoint.last_deleted_row_hash,
+                event_count=checkpoint.deleted_count,
+                as_of=cutoff,
+            )
+            checkpoint.anchored = published
+            session.commit()
+        # An anchor-publish failure is logged by the anchor itself and never blocks the
+        # purge: retention is a legal/PII obligation (ADR 0041 §2.6.3's precedent for
+        # phase-2 reads not being fail-closed applies here too).
 
     total = 0
     while True:
