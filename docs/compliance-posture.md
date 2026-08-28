@@ -84,12 +84,16 @@ only to EU personal data.
 > behind and an applied one cannot go unrecorded. The structured log line is kept alongside it,
 > `request_id`-correlated. Queryable at `GET /api/v1/admin/audit-events`.
 >
-> **Tamper-evidence remains open**, and the distinction matters for an auditor: the table is
-> append-only in the app and carries a `REVOKE UPDATE, DELETE` from the application role, which
-> stops accidental in-app mutation and **nothing stronger** — that role owns the table and can
-> grant the privileges back. Real tamper-evidence needs an external cryptographic anchor and is
-> tracked with **#431**. This entry is distinct from the G1 *read*-access audit below, which is
-> still open.
+> **Tamper-evidence shipped, unanchored by default (#1460, 2026-08-27).** The
+> table is append-only in the app and carries a `REVOKE UPDATE, DELETE` from
+> the application role, which alone stops only accidental in-app mutation —
+> that role owns the table and can grant the privileges back. Every row is
+> now also hash-chained to the one before it, so a direct database edit or
+> deletion outside the app is detectable via `GET /admin/audit-events/verify`;
+> the chain alone still proves nothing to an attacker with write access to the
+> whole table (they can recompute it forward), which is why an external
+> cryptographic anchor (`TamperAnchor`, default `NoopTamperAnchor`) is the
+> load-bearing half and is off by default — see G1 below and ADR 0041 §9.
 
 > **Decided change to the Access-control row — ADR [0027](site/adr/0027-suite-permission-model-workspace-admin.md) / [#482](https://github.com/TheurgicDuke771/DataQ/issues/482) (build pending).**
 > The suite-permission model is being revised so the **workspace-admin is an implicit
@@ -570,7 +574,7 @@ the docs site:
 |---|---|---|---|
 | **GDPR** | EU personal data in scope | Privacy-by-design handling; minimization + storage limitation strong; **missing** access audit (G1), subject rights (G2), residency enforcement (G4) | Processor-grade Art 25/32 controls + Art 15/17/20 levers + Ch. V residency |
 | **CCPA / CPRA** | CA residents' data, "business" threshold | No sale of data; deletion via cascade + purge; **missing** targeted know/delete (G2) | Right-to-know / delete workflow (G2) |
-| **HIPAA** | Customer processes **PHI** | Encryption + access control + minimization present; **audit controls now present** — config changes *and* data reads are recorded and admin-queryable (G1) — with **tamper-evidence still open**; needs a BAA (G6) | §164.312 technical safeguards met once tamper-evidence lands; BAA still org-side |
+| **HIPAA** | Customer processes **PHI** | Encryption + access control + minimization present; **audit controls now present** — config changes *and* data reads are recorded, admin-queryable, and hash-chained for tamper-evidence (G1, unanchored by default); needs a BAA (G6) | §164.312 technical safeguards met; BAA still org-side |
 
 ## 4. The honest marketing line
 

@@ -27,8 +27,8 @@
 | **v1 baseline** | `v1.0.0` tagged 2026-07-04 — 187/189 roadmap tasks; deployed to Azure Container Apps; ledger at [progress-v1.md](progress-v1.md) |
 | **v1.1 baseline** | `v1.1.0` — cycle ran 2026-07-04 → 2026-08-21 (6 weeks + the W7 stretch; first tagged 2026-08-15 at `b8d8278b`, then **re-tagged 2026-08-21 at the true close** — the stretch added 121 commits / 126 merged PRs / 55 closed issues, incl. RBAC ADR 0033, the MCP 8→46 expansion + honesty pass, the security-surface audit, and the compliance G1–G6 track). Ledger at [progress-v1.1.md](progress-v1.1.md); retro at [retro-v1.1.md](retro-v1.1.md) |
 | **Current cycle** | **v1.2 — 8 weeks, 2026-08-22 → 2026-10-16** (planned 2026-08-21 at the v1.1 close; epic [#1518](https://github.com/TheurgicDuke771/DataQ/issues/1518)). The arc: **W1** clears the user's infra decision gates (#590/#588) + the MCP honesty follow-ups; **W2–W4** build the DQ-intelligence track from [docs/post-v1-dq-intelligence-notes.md](post-v1-dq-intelligence-notes.md) (catalog expansion → server-side allowlist → `LLMProvider` seam → SQL-gen → suggestions) alongside compliance G2; **W5** platform-native engines (Snowflake DMF, ADR 0036) + notification channels; **W6** perf/scale hardening; **W7** feature burn-down; **W8** spikes/decisions + **cycle close** (the closing week is deliberately last). See [Cycle plan](#cycle-plan--v12-8-weeks-2026-08-22--2026-10-16) below. |
-| **Open issues** | **56** open repo-wide (2026-08-25) — the W1 MCP honesty burn-down closed: #1442/#1445 via #1590, #1446 via #1591, #1448 via #1593, #1443 via #1594 (#1447 was already closed pre-session); #1592 filed as a scoped follow-up. Only #590/#588/#1392/#1257 remain of the W1 list — the two are the user's decision gates. At planning (2026-08-21): **55**. `v1.2 Backlog` otherwise **empty** as the default for new filings. |
-| **Open PRs** | **0** (2026-08-25): #1590/#1591/#1593/#1594 all merged same day. |
+| **Open issues** | **53** open repo-wide (2026-08-28) — the compliance G1 residual closed: #1460 (tamper-evidence hash chain + `TamperAnchor` seam) via #1598, and the two parity-audit findings #1554/#1555 (audit-log + deployment-posture UI) via #1599. Only #590/#588/#1392/#1257 remain of the W1 list — the two are the user's decision gates. `v1.2 Backlog` otherwise **empty** as the default for new filings. |
+| **Open PRs** | **0** (2026-08-28): #1598/#1599 merged same day. |
 | **Coverage gates (CI-enforced, ≥80%)** | backend `--cov-fail-under=80` (~4,800 backend tests) · frontend all-src `lines: 80` (~1,000 tests) — every PR rides the same gates |
 
 ---
@@ -141,11 +141,13 @@ levers exist with the design recorded; both audit residuals closed.
 | ⬜ | [#895](https://github.com/TheurgicDuke771/DataQ/issues/895) `check.engine` seam + Snowflake DMF as the first platform-native engine (ADR 0036) — **gated on the W1 Snowflake decision keeping a live warehouse** | engines |
 | ⬜ | [#1514](https://github.com/TheurgicDuke771/DataQ/issues/1514) Reusable notification channels — define once, reference from many suites | alerting |
 | ⬜ | [#1515](https://github.com/TheurgicDuke771/DataQ/issues/1515) Incident routing prefers the asset owner when set (falls back to suite owner) | incidents |
-| ⬜ | [#1460](https://github.com/TheurgicDuke771/DataQ/issues/1460) G1 residual: tamper-evidence anchor for `audit_events` — decide + build or record | compliance |
+| ✅ | [#1460](https://github.com/TheurgicDuke771/DataQ/issues/1460) G1 residual: tamper-evidence anchor for `audit_events` — hash chain + `TamperAnchor` seam (webhook, unanchored by default), [PR #1598](https://github.com/TheurgicDuke771/DataQ/pull/1598) merged | compliance |
+| ✅ | [#1554](https://github.com/TheurgicDuke771/DataQ/issues/1554) Audit log has no UI — `GET /admin/audit-events` reachable from Admin, [PR #1599](https://github.com/TheurgicDuke771/DataQ/pull/1599) merged | compliance |
+| ✅ | [#1555](https://github.com/TheurgicDuke771/DataQ/issues/1555) Deployment/data-residency posture has no UI — `GET /admin/deployment` reachable from Admin, [PR #1599](https://github.com/TheurgicDuke771/DataQ/pull/1599) merged | compliance |
 
 **Exit gate:** a DMF check runs and persists through the normal result path (or the ADR's
 trigger conditions are re-recorded if the W1 decision removed Snowflake); a channel
-defined once delivers for two suites; #1460 has a decision, not a shrug.
+defined once delivers for two suites; #1460 shipped a decision, not a shrug.
 
 ### v1.2 W6 — Perf/scale hardening (due 2026-10-02)
 

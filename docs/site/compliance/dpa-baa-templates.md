@@ -99,9 +99,10 @@ operator). Applies **only** when the Covered Entity points DataQ at PHI.
    warehouse tags over PHI columns (G3).
 3. **Safeguards (§164.312 technical).** Access control (unique user identity,
    role + suite grants, per-request revocation), audit controls (append-only
-   config **and** read events — with the tamper-evidence limitation of
-   [#1460](https://github.com/TheurgicDuke771/DataQ/issues/1460) disclosed rather
-   than overclaimed), integrity and transmission security per
+   config **and** read events, hash-chained for tamper-evidence —
+   [#1460](https://github.com/TheurgicDuke771/DataQ/issues/1460) — unanchored to
+   an external log sink by default, disclosed rather than overclaimed),
+   integrity and transmission security per
    [Security & data handling](../security.md).
 4. **Reporting.** Security incidents and breaches of unsecured PHI reported per
    the [breach-notification runbook](breach-notification-runbook.md); the Covered
