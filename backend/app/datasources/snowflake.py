@@ -122,6 +122,32 @@ def build_connect_args(config: SnowflakeConfig, secret: str) -> dict[str, Any]:
     return {}
 
 
+# GX's compound_columns_unique metric indexes the reflected table's columns by the
+# user's spelling, and snowflake-sqlalchemy folds reflected keys to lowercase — so an
+# all-caps column_list (the casing every other check uses) KeyErrors on live Snowflake
+# only (#1616). Folding all-caps entries preserves identity under that convention
+# (#937); mixed-case names are case-sensitive identifiers and stay untouched.
+_REFLECTION_KEYED_TYPES = frozenset({"expect_compound_columns_to_be_unique"})
+
+
+def _fold_reflection_keyed_columns(checks: list[CheckSpec]) -> list[CheckSpec]:
+    folded = []
+    for spec in checks:
+        column_list = spec.kwargs.get("column_list")
+        if spec.expectation_type in _REFLECTION_KEYED_TYPES and isinstance(column_list, list):
+            spec = CheckSpec(
+                expectation_type=spec.expectation_type,
+                kwargs={
+                    **spec.kwargs,
+                    "column_list": [
+                        c.lower() if isinstance(c, str) and c.isupper() else c for c in column_list
+                    ],
+                },
+            )
+        folded.append(spec)
+    return folded
+
+
 class SnowflakeCheckRunner:
     """`CheckRunner` for Snowflake. Building the asset connects to the warehouse."""
 
@@ -195,7 +221,7 @@ class SnowflakeCheckRunner:
         return run_expectations(
             context,
             batch_definition=batch_definition,
-            checks=checks,
+            checks=_fold_reflection_keyed_columns(checks),
             name=f"suite-{table}",
             index_columns=index_columns,
         )

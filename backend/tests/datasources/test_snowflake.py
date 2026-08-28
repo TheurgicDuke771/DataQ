@@ -18,6 +18,7 @@ from backend.app.datasources.snowflake import (
     SnowflakeConnectionAdapter,
     UnknownExpectationError,
     _expectation_class_name,
+    _fold_reflection_keyed_columns,
     _to_gx_expectation,
     build_connect_args,
     build_connection_string,
@@ -716,3 +717,29 @@ def test_supported_monitor_kinds_is_explicit() -> None:
     # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise every future registry
     # kind and self-defeat the per-kind gate.
     assert SnowflakeCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})
+
+
+def test_fold_reflection_keyed_columns_lowercases_all_caps_compound_unique() -> None:
+    # #1616: live-SF KeyError with uppercase column_list; lowercase is the same identifier
+    # under snowflake-sqlalchemy's folding convention.
+    spec = CheckSpec(
+        "expect_compound_columns_to_be_unique",
+        {"column_list": ["ORDER_NUMBER", "CUSTOMER_ID"], "mostly": 0.9},
+    )
+    (folded,) = _fold_reflection_keyed_columns([spec])
+    assert folded.kwargs["column_list"] == ["order_number", "customer_id"]
+    assert folded.kwargs["mostly"] == 0.9
+    # frozen input untouched
+    assert spec.kwargs["column_list"] == ["ORDER_NUMBER", "CUSTOMER_ID"]
+
+
+def test_fold_reflection_keyed_columns_leaves_mixed_case_and_other_types_alone() -> None:
+    mixed = CheckSpec(
+        "expect_compound_columns_to_be_unique", {"column_list": ["OrderNum", "customer_id"]}
+    )
+    other = CheckSpec(
+        "expect_multicolumn_sum_to_equal", {"column_list": ["SUBTOTAL", "TAX"], "sum_total": 1}
+    )
+    folded_mixed, folded_other = _fold_reflection_keyed_columns([mixed, other])
+    assert folded_mixed.kwargs["column_list"] == ["OrderNum", "customer_id"]
+    assert folded_other is other
