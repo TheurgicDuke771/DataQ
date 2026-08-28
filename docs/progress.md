@@ -99,7 +99,7 @@ The DQ-intelligence track opens ([post-v1-dq-intelligence-notes.md](post-v1-dq-i
 
 | Status | Task | Theme |
 |---|---|---|
-| 🟡 | [#1509](https://github.com/TheurgicDuke771/DataQ/issues/1509) The 5 high-ROI GX built-ins (`mostly`, compound/cross-column, type, set/date) + the aggregate-stats kind decision — [#1603](https://github.com/TheurgicDuke771/DataQ/pull/1603) (aggregate stats decided → #1602) | intelligence |
+| 🟡 | [#1509](https://github.com/TheurgicDuke771/DataQ/issues/1509) The 5 high-ROI GX built-ins (`mostly`, compound/cross-column, type, set/date) + the aggregate-stats kind decision — [#1608](https://github.com/TheurgicDuke771/DataQ/pull/1608) (aggregate stats decided → #1602) | intelligence |
 | ⬜ | [#1510](https://github.com/TheurgicDuke771/DataQ/issues/1510) Curated expectation superset (4a) + **server-side `expectation_type` allowlist** on REST + MCP | intelligence / security |
 | ⬜ | [#1505](https://github.com/TheurgicDuke771/DataQ/issues/1505) API honesty: `extra='ignore'` lets an invented knob validate cleanly and do nothing | quality |
 | ⬜ | [#1320](https://github.com/TheurgicDuke771/DataQ/issues/1320) Suite-delete confirmation states its blast radius (N checks/runs/results) | ux safety |
