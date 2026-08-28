@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "1ea79149ed0a",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "backend/app/api/v1/orchestration.py",
+    "backend/app/orchestration/adf.py",
+    "backend/app/orchestration/airflow.py",
+    "backend/app/orchestration/base.py",
+    "backend/app/orchestration/dbt.py",
+    "backend/app/services/admin_service.py",
+    "backend/tests/api/test_admin.py",
+    "backend/tests/services/test_orchestration_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1e/a79149ed0a/0/metadata.json",
+      "transcript": "/1e/a79149ed0a/0/full.jsonl",
+      "compact_transcript": "/1e/a79149ed0a/0/transcript.jsonl",
+      "content_hash": "/1e/a79149ed0a/0/content_hash.txt",
+      "prompt": "/1e/a79149ed0a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 666,
+    "cache_creation_tokens": 648730,
+    "cache_read_tokens": 63790928,
+    "output_tokens": 97226,
+    "api_call_count": 333
+  }
+}
