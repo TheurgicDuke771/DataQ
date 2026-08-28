@@ -23,11 +23,11 @@ _SCRATCH_DB = "dataq_audit_chain_scratch"
 def scratch_session() -> Iterator[Session]:
     """A dedicated, single-use database — for the two tests below that write
     directly to `AuditChainState`'s singleton row. `db_session`'s
-    savepoint-rollback isolation is normally sufficient, but the CI Linux
-    runner's collection order (which differs from local platforms enough that
-    this was never reproduced there) let one of these leak into a later test's
-    baseline via the shared table `db_session` still ultimately points at.
-    A throwaway database removes the shared table entirely.
+    savepoint-rollback isolation is otherwise sufficient; these two are moved
+    off the shared table anyway so a corrupted head (e.g. `test_probe_e2e`'s
+    real-broker E2E, which commits for real against the same CI database) is
+    isolated from what these tests assert about a dangling pointer, rather
+    than compounding it.
     """
     if not TEST_DATABASE_URL:
         pytest.skip("needs TEST_DATABASE_URL")
