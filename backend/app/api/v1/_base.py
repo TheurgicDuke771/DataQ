@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Final
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 # The one paging-total header name for every list endpoint that carries one (#925 introduced it on
 # `/assets`; #1108 spread it to `/pipeline_runs`, `/incidents`, and `/runs` rather than each
@@ -48,3 +48,18 @@ class ApiModel(BaseModel):
         if contains_nul(data):
             raise ValueError("NUL (\\x00) characters are not allowed")
         return data
+
+
+class ApiRequestModel(ApiModel):
+    """`ApiModel` for request bodies: an unknown field is a 422 naming it, not a
+    silently-dropped no-op (#1505 — the sibling of `Settings`' own `extra='forbid'`,
+    #209). Response models stay on `ApiModel` — `from_attributes` construction never
+    applies `extra`, but a handful build a response via `model_validate(dict)`, where
+    a surplus key would 500 instead of validating.
+
+    A model used to shape BOTH directions (e.g. a suite's export document, also
+    accepted back on import) is not a request model here — split into a
+    request-only variant instead of subclassing this for a response.
+    """
+
+    model_config = ConfigDict(extra="forbid")

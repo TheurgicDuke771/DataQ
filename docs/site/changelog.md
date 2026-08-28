@@ -7,6 +7,17 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Changed
 
+- **BREAKING — the REST API now rejects an unknown field in any request body**
+  (#1505). Every request model previously inherited `ApiModel`'s default
+  `extra='ignore'` — the same gap `Settings` closed for env config back in
+  #209 — so a misspelled field (`warn_treshold`) or an invented one
+  (`target_override`, the shape a #1412 QA probe found) validated cleanly and
+  silently did nothing. It now 422s naming the field. If an API or PAT/MCP
+  client sends extra keys in a request body — a stale client built against an
+  older/different schema, a copy-pasted payload with leftover fields — those
+  calls will start failing instead of quietly no-opping. Response bodies are
+  unaffected; only what you *send* is stricter.
+
 - **MCP `list_runs`/`list_incidents` gained `since_hours`/`until_hours` time
   filters** (#1442): both were count-capped only, so "what failed today" was
   answered with "the 20 most recent runs" — correct on a quiet workspace,

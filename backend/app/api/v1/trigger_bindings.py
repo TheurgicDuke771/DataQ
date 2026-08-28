@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, status
 from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.core.auth import get_current_user
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import TriggerBinding, User
@@ -19,7 +19,7 @@ from backend.app.services import trigger_binding_service as svc
 router = APIRouter(tags=["trigger-bindings"])
 
 
-class TriggerBindingCreate(ApiModel):
+class TriggerBindingCreate(ApiRequestModel):
     provider: str
     pipeline_or_dag_id: str = Field(min_length=1, max_length=256)
     env: str
@@ -27,7 +27,7 @@ class TriggerBindingCreate(ApiModel):
     enabled: bool = True
 
 
-class TriggerBindingUpdate(ApiModel):
+class TriggerBindingUpdate(ApiRequestModel):
     enabled: bool
 
 

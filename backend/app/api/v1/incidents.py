@@ -7,10 +7,15 @@ from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Response
-from pydantic import ConfigDict, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import TOTAL_COUNT_HEADER, ApiModel, total_count_responses
+from backend.app.api.v1._base import (
+    TOTAL_COUNT_HEADER,
+    ApiModel,
+    ApiRequestModel,
+    total_count_responses,
+)
 from backend.app.core.auth import get_current_user
 from backend.app.core.errors import DataQError
 from backend.app.core.roles import is_workspace_admin
@@ -63,12 +68,10 @@ class IncidentDetailRead(IncidentRead):
     evidence: dict[str, Any] | None
 
 
-class IncidentActionRequest(ApiModel):
+class IncidentActionRequest(ApiRequestModel):
     """Optional note on an ack / resolve. NUL bytes are rejected by ``ApiModel``;
     the length cap keeps a hostile note off the unbounded Text column.
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     note: str | None = Field(default=None, max_length=_NOTE_MAX_LEN)
 

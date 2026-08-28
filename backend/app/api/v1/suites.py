@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.api.v1.runs import RunRead
 from backend.app.core.auth import MemberUser, get_current_user
 from backend.app.core.logging import get_logger
@@ -35,7 +35,7 @@ router = APIRouter(tags=["suites"])
 log = get_logger(__name__)
 
 
-class SuiteSampling(ApiModel):
+class SuiteSampling(ApiRequestModel):
     """Row-cap declaration on a run target (#595) — see `datasources.sampling`."""
 
     # Spelled literally because `Literal[...]` needs constants, not names — a canary test asserts
@@ -47,7 +47,7 @@ class SuiteSampling(ApiModel):
     seed: int | None = None
 
 
-class SuiteTarget(ApiModel):
+class SuiteTarget(ApiRequestModel):
     """Datasource-shaped run target (#215) — which table / flat-file path / Unity
     Catalog name the suite's checks run against. Same shape as the column-profiler
     request; `run_target.resolve_target` validates the right fields per connection
@@ -76,14 +76,14 @@ class SuiteTarget(ApiModel):
         return self.model_dump(by_alias=True, exclude_none=True)
 
 
-class SuiteCreate(ApiModel):
+class SuiteCreate(ApiRequestModel):
     name: str = Field(min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=1024)
     connection_id: uuid.UUID
     target: SuiteTarget | None = None
 
 
-class SuiteUpdate(ApiModel):
+class SuiteUpdate(ApiRequestModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=1024)
     target: SuiteTarget | None = None
@@ -289,8 +289,10 @@ class CheckDocument(ApiModel):
 
 
 class SuiteDocument(ApiModel):
-    """Portable suite — connection-agnostic, no DB identity. Both the export
-    response and the import payload (a round-trippable document).
+    """Portable suite — connection-agnostic, no DB identity. The `GET /export`
+    response shape; `SuiteDocumentIn` below is the identically-shaped import
+    payload (#1505 — a response model stays lenient on `extra`, a request one
+    doesn't).
     """
 
     version: int = suite_io.EXPORT_VERSION
@@ -299,9 +301,48 @@ class SuiteDocument(ApiModel):
     checks: list[CheckDocument] = Field(default_factory=list)
 
 
-class SuiteImportRequest(ApiModel):
+class SourceConnectionRefIn(ApiRequestModel):
+    """Request-side twin of `SourceConnectionRef` (see there) — the export
+    response and the import payload are the same *shape*, but only the import
+    side should 422 on an unknown key.
+    """
+
+    name: str = Field(min_length=1, max_length=128)
+    env: str = Field(min_length=1, max_length=16)
+
+
+class CheckDocumentIn(ApiRequestModel):
+    """Request-side twin of `CheckDocument` — see there for field meaning."""
+
+    name: str = Field(min_length=1, max_length=256)
+    kind: str = "expectation"
+    expectation_type: str = Field(min_length=1, max_length=128)
+    dimension: str | None = None
+    engine: str = Field(default="gx", min_length=1, max_length=32)
+    config: dict[str, Any] = Field(default_factory=dict)
+    source_connection: SourceConnectionRefIn | None = None
+    warn_threshold: Decimal | None = None
+    fail_threshold: Decimal | None = None
+    critical_threshold: Decimal | None = None
+
+
+class SuiteDocumentIn(ApiRequestModel):
+    """Request-side twin of `SuiteDocument`, accepted as the `import_suite`
+    payload's nested document. `SuiteDocument` itself stays on `ApiModel`
+    (`GET /export`'s response model) — `export_suite` always builds it from a
+    closed field set, so nothing there needs `forbid`, and response models stay
+    off it per `ApiRequestModel`'s own contract.
+    """
+
+    version: int = suite_io.EXPORT_VERSION
+    name: str = Field(min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=1024)
+    checks: list[CheckDocumentIn] = Field(default_factory=list)
+
+
+class SuiteImportRequest(ApiRequestModel):
     connection_id: uuid.UUID
-    document: SuiteDocument
+    document: SuiteDocumentIn
 
 
 @router.get(
@@ -355,7 +396,7 @@ def import_suite(
 # ───────────────────────── column profiler (no persistence) ─────────
 
 
-class ColumnProfileRequest(ApiModel):
+class ColumnProfileRequest(ApiRequestModel):
     columns: list[str] = Field(min_length=1, max_length=50)
     top_n: int = Field(default=10, ge=1, le=100, description="Most-frequent values per column")
     # SQL datasources: the target is a table (+ schema; Unity Catalog also catalog).
@@ -598,7 +639,7 @@ class ColumnPolicyRead(ApiModel):
         )
 
 
-class ColumnPolicyUpdate(ApiModel):
+class ColumnPolicyUpdate(ApiRequestModel):
     identifier_column: str | None = Field(default=None, max_length=255)
     pii_columns: list[str] = Field(default_factory=list, max_length=200)
     #: Fail-closed mode (G3 / #433).
@@ -614,7 +655,7 @@ class ColumnPolicyUpdate(ApiModel):
     """
 
 
-class ColumnPolicySuggestRequest(ApiModel):
+class ColumnPolicySuggestRequest(ApiRequestModel):
     """The suite's target to profile + classify — same shape as the profiler request,
     minus ``columns`` (all of the target's columns are classified).
     """
