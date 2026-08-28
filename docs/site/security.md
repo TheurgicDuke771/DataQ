@@ -153,8 +153,9 @@ are the reason this mode is opt-in rather than the default:
   writes an append-only `audit_events` row (`user.role_change`, old and new role, actor,
   `request_id`) **inside the same transaction as the change**, queryable by a workspace
   admin at `GET /api/v1/admin/audit-events` (ADR 0041) — alongside the structured log line.
-  Tamper-evidence (an external cryptographic anchor) is the one remaining gap, tracked in
-  the maintainers' compliance-posture register.
+  Every row is hash-chained to the one before it, so a direct database edit or deletion
+  outside the app is detectable (see [Compliance](#compliance-gdpr-ccpa-cpra-hipaa)
+  below).
 
 ## Network exposure
 
@@ -560,12 +561,90 @@ images and the same IaC take a different region. What DataQ does **not** do is
 verify the result — that remains the deploying organization's attestation, which
 is the correct split for a customer-deployed product.
 
+## Compliance — GDPR / CCPA-CPRA / HIPAA
+
+**What this is:** a summary of how the technical controls above map onto the major
+data-protection regimes. **What this is not:** a legal compliance certification. Much of
+GDPR/HIPAA is *organizational* (DPAs, BAAs, DPIAs, consent, lawful basis, breach process)
+and is the deploying organization's responsibility, not the codebase's.
+
+### Roles & deployment model
+
+DataQ ships as **customer-deployed, bring-your-own-license** software, not multi-tenant
+hosted SaaS. That fixes the data-protection role split:
+
+- **The deploying organization is the data *controller*** (GDPR) / *covered entity* or
+  *business* (HIPAA / CCPA). It chooses the region, owns the warehouse data, holds any LLM
+  credential, and carries consent / lawful-basis / DPA / BAA obligations.
+- **DataQ (the software) is a *processor* / *business associate*.** Its job is to provide
+  the technical controls — security of processing, minimization, deletion levers,
+  auditability — the controller needs to *be* compliant.
+
+We do not market "DataQ is GDPR/HIPAA compliant" — no software can be. The honest claim is
+**processor-grade technical controls for GDPR / CCPA / HIPAA workloads**: an access audit
+trail, data-subject-rights tooling, authoritative PII/PHI classification, a declared and
+enforced deployment region, and encryption at rest — each covered in its own section above.
+
+Personal data / PHI appears only *incidentally* in DataQ — in failing-row samples and, for
+a set-oriented expectation's full observed-value list, in a result's `observed_value`. There
+is no core people-database; HIPAA applies only when a customer points DataQ at PHI, GDPR
+only to EU personal data.
+
+### Per-regulation summary
+
+| Regulation | Applies when | Controls in place |
+|---|---|---|
+| **GDPR** | EU personal data in scope | Privacy-by-design handling (logger-level redaction, retention limits); access audit trail ([Authentication & access](#authentication-access)); data-subject-rights export/erasure (below); declared + enforced residency ([Data residency](#data-residency)) |
+| **CCPA / CPRA** | CA residents' data, "business" threshold | No sale of data; deletion via retention purge + the data-subject-rights erasure lever below; right-to-know via the export lever |
+| **HIPAA** | Customer processes **PHI** | Encryption in transit/at rest ([Encryption](#encryption)); access control (roles + suite grants); audit controls — config changes *and* data reads recorded, admin-queryable, and hash-chained for tamper-evidence (unanchored to an external log sink by default); a BAA remains the deploying organization's obligation |
+
+### Data-subject rights (export / erasure)
+
+DataQ has no people-table of its own, so a subject is identified the same way the
+controller's own warehouse identifies them: an Admin-only `(column, value)` workflow.
+`POST /api/v1/admin/data-subject-requests/export` returns every matching failing-row-sample
+cell **unredacted** (the access/portability right) across every suite in the workspace, and
+records an access-audit event. The erasure counterpart removes only the matching row/cell —
+the rest of a result's captured sample survives. Both run synchronously and are recorded in
+the audit trail. Full mechanism and a verification walkthrough are in the
+[data-subject-rights runbook](compliance/data-subject-rights-runbook.md). The controller's
+own warehouse remains their own responsibility — this covers only what DataQ itself has
+captured.
+
+### Audit-log tamper-evidence
+
+The `REVOKE UPDATE, DELETE` on `audit_events` ([Authentication & access](#authentication-access))
+guards against **accidental** in-app mutation only — the table's owner can grant the
+privileges back, and the retention sweep does exactly that, by necessity. Every event is
+additionally **hash-chained** to the one before it: `GET /admin/audit-events/verify`
+(workspace-admin gated) recomputes the chain and reports the first break, and a daily
+scheduled task runs the same check unattended. Retention purges checkpoint the boundary
+they create before deleting, so a documented purge reads as clean rather than as tampering.
+
+**The chain alone is not the tamper-evidence claim — an external anchor is.** An actor with
+write access to the *whole* table could recompute the chain forward from wherever they
+edited, proving nothing to that specific adversary. An optional `TamperAnchor` publishes the
+chain head, HMAC-signed, to an operator-controlled endpoint outside the database (a webhook
+to a separate log sink or append-only object store) — DataQ never reads it back, which is
+the whole point. It is **off by default**; an operator whose regime requires a provably
+unaltered log must configure it.
+
+### Organizational artifacts
+
+Templates and reference documents for the parts of compliance that are genuinely
+organizational, published alongside this page:
+
+- [Sub-processor / third-party disclosure](compliance/sub-processors.md) — every external
+  service the software can send data to.
+- [DPIA input sheet](compliance/dpia-input-sheet.md) — the personal-data inventory only the
+  software can supply: data classes, per-location retention, and controls.
+- [Breach-notification runbook](compliance/breach-notification-runbook.md) — a
+  reference-deployment procedure plus a template for customer deployments.
+- [DPA / BAA templates](compliance/dpa-baa-templates.md) — drafted with accurate technical
+  annexes and marked **counsel-review-required**; not an engineering sign-off.
+  Consent/lawful-basis guidance stays with the deploying organization.
+
 ## Reporting a vulnerability
 
 Please report suspected security issues privately to the maintainers rather than opening a
 public issue.
-
----
-
-*For the detailed technical-controls-vs-regulation gap analysis (an internal engineering
-document, not a certification), maintainers keep a separate compliance-posture register.*

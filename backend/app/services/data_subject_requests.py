@@ -2,7 +2,7 @@
 
 DataQ has no people-table: personal data appears only as an INCIDENTAL residual in
 `results.sample_failures` / `results.observed_value`, captured from the customer's
-own warehouse rows (docs/compliance-posture.md §0). A "subject" is therefore
+own warehouse rows (docs/site/security.md "Roles & deployment model"). A "subject" is therefore
 identified by a **(column, value)** pair — the same key the customer's own warehouse
 uses to identify that row — not a DataQ user id.
 
