@@ -1,0 +1,71 @@
+{
+  "cli_version": "0.10.2",
+  "checkpoint_id": "665cd9fd1f12",
+  "session_id": "b6d87485-c48a-464d-9eeb-49c7fcd7f01a",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-28T01:32:02.455877Z",
+  "branch": "feature/1460-audit-tamper-evidence",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "6b89fdae2129",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 794,
+    "cache_creation_tokens": 1103178,
+    "cache_read_tokens": 146181304,
+    "output_tokens": 254847,
+    "api_call_count": 397
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_017kphMz8d4V51rYgzrnENNA",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "6b89fdae2129",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2202,
+        "end": 2203,
+        "entry_ids": [
+          "c7497742-c722-4930-bd79-5d54c11d8a7b"
+        ],
+        "tool_use_id": "toolu_017kphMz8d4V51rYgzrnENNA"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_017kphMz8d4V51rYgzrnENNA"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}
