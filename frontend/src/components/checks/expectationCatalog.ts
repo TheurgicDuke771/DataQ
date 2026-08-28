@@ -81,6 +81,18 @@ export const DQ_DIMENSION_HELP: Record<DqDimension, string> = {
   validity: 'Does the data conform to its rules and formats?',
 };
 
+/** Static display labels for the seven dimensions — a closed vocabulary needs no runtime
+ *  capitalize helper (that duplicated across `checkBadges.tsx`/`ScorecardPanel.tsx` before). */
+export const DIMENSION_LABEL: Record<DqDimension, string> = {
+  accuracy: 'Accuracy',
+  completeness: 'Completeness',
+  consistency: 'Consistency',
+  integrity: 'Integrity',
+  timeliness: 'Timeliness',
+  uniqueness: 'Uniqueness',
+  validity: 'Validity',
+};
+
 export interface ConfigField {
   /** Key in the GX `config` kwargs object. */
   name: string;

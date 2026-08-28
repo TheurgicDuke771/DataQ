@@ -2,20 +2,10 @@ import { Alert, Card, Empty, Flex, Progress, Space, Tag, Tooltip, Typography } f
 
 import type { Scorecard } from '../../api/assets';
 import { SEVERITY_SCALE } from '../../theme';
+import { DimensionTag } from '../checks/checkBadges';
+import { DIMENSION_LABEL, DQ_DIMENSION_HELP, type DqDimension } from '../checks/expectationCatalog';
 
 /** The asset DQ scorecard (#889) — per-dimension coverage and score. */
-
-const DIMENSION_HELP: Record<string, string> = {
-  accuracy: 'Does the data match reality / a trusted source?',
-  completeness: 'Is all the expected data present?',
-  consistency: 'Do related datasets agree with each other?',
-  integrity: 'Do relationships between datasets hold?',
-  timeliness: 'Is the data recent enough?',
-  uniqueness: 'Are there unexpected duplicates?',
-  validity: 'Does the data conform to its rules and formats?',
-};
-
-const titleCase = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
 
 function scoreColour(score: number): string {
   if (score >= 90) return SEVERITY_SCALE.good;
@@ -53,8 +43,10 @@ export function ScorecardPanel({ scorecard }: { scorecard?: Scorecard | null }) 
         <Space orientation="vertical" size={10} style={{ width: '100%' }}>
           {covered.map((row) => (
             <Flex key={row.dimension} align="center" gap={12}>
-              <Tooltip title={DIMENSION_HELP[row.dimension]}>
-                <Typography.Text style={{ width: 110 }}>{titleCase(row.dimension)}</Typography.Text>
+              <Tooltip title={DQ_DIMENSION_HELP[row.dimension as DqDimension]}>
+                <Typography.Text style={{ width: 110 }}>
+                  {DIMENSION_LABEL[row.dimension as DqDimension] ?? row.dimension}
+                </Typography.Text>
               </Tooltip>
               {row.score === null ? (
                 // Checks EXIST but none evaluated (all skip/error). Showing 0
@@ -97,9 +89,7 @@ export function ScorecardPanel({ scorecard }: { scorecard?: Scorecard | null }) 
           description={
             <Space size={[6, 6]} wrap>
               {uncovered.map((d) => (
-                <Tooltip key={d} title={DIMENSION_HELP[d]}>
-                  <Tag>{titleCase(d)}</Tag>
-                </Tooltip>
+                <DimensionTag key={d} dimension={d} />
               ))}
             </Space>
           }

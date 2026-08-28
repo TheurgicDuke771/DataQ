@@ -140,6 +140,45 @@ describe('Suites', () => {
     expect(mockListChecks).toHaveBeenCalledWith('s1');
   });
 
+  it('shows engine, dimension and threshold badges on a check card (#1551)', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite()]);
+    mockListChecks.mockResolvedValue([
+      check({
+        id: 'chk-gx',
+        name: 'gx check',
+        engine: 'gx',
+        dimension: 'completeness',
+        warn_threshold: 5,
+        fail_threshold: 10,
+      }),
+      check({
+        id: 'chk-dmf',
+        name: 'dmf check',
+        engine: 'dmf',
+        dimension: null,
+        warn_threshold: null,
+        fail_threshold: null,
+        critical_threshold: null,
+      }),
+    ]);
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+    await screen.findByText('gx check');
+
+    // Engine: two checks on the same suite, one gx one dmf, must not render identically.
+    expect(screen.getByText('GX')).toBeInTheDocument();
+    expect(screen.getByText('DMF')).toBeInTheDocument();
+    // Dimension: classified renders title-cased; unclassified is an explicit state, not hidden.
+    expect(screen.getByText('Completeness')).toBeInTheDocument();
+    expect(screen.getByText('Unclassified')).toBeInTheDocument();
+    // Thresholds: rendered compactly, omitting the unset critical tier on the gx check, and
+    // omitted entirely for the plain pass/fail dmf check (no tiers set).
+    expect(screen.getByText('· warn 5 · fail 10')).toBeInTheDocument();
+  });
+
   it('surfaces an Asset link on the detail panel and navigates to the asset (#773)', async () => {
     const user = userEvent.setup();
     mockListConnections.mockResolvedValue([connection]);

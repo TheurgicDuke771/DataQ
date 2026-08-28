@@ -41,6 +41,7 @@ import {
   type Suite,
 } from '../api/suites';
 import { AssetLink } from '../components/assets/AssetLink';
+import { DimensionTag, EngineTag, formatThresholdsCompact } from '../components/checks/checkBadges';
 import { isSnoozed, SnoozedTag } from '../components/checks/snooze';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { useCanAuthor, useWorkspaceRole } from '../auth/useMe';
@@ -712,14 +713,24 @@ function ChecksList({
                 </Button>,
               ]}
             >
-              <Flex vertical gap={2}>
+              <Flex vertical gap={4}>
                 <Flex gap={8} align="center" wrap>
                   <Typography.Text strong>{check.name}</Typography.Text>
+                  {/* Engine + dimension badges (#1551, checkBadges.tsx). */}
+                  <EngineTag engine={check.engine} />
+                  <DimensionTag dimension={check.dimension} />
                   <SnoozedTag check={check} now={now} />
                 </Flex>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {check.expectation_type}
-                </Typography.Text>
+                <Flex gap={6} align="center" wrap>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {check.expectation_type}
+                  </Typography.Text>
+                  {formatThresholdsCompact(check) && (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      · {formatThresholdsCompact(check)}
+                    </Typography.Text>
+                  )}
+                </Flex>
               </Flex>
             </SimpleList.Item>
           )}
