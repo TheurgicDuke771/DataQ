@@ -251,6 +251,33 @@ def _validate_import_document(
         )
 
 
+#: `detail` keys the service layer uses for "here are the values that WOULD be accepted"
+#: (`validate_kind`, `validate_engine`, `validate_dimension`, `validate_expectation_check`).
+_RECOVERY_DETAIL_KEYS = ("supported", "known")
+
+#: Cap on the appended list — the expectation allowlist is the long one, and a ToolError is text
+#: an LLM re-reads on every retry.
+_RECOVERY_VALUES_MAX = 60
+
+
+def _tool_error_text(exc: DataQError) -> str:
+    """The message, plus the accepted values when the error carries them.
+
+    REST hands `detail` to the caller in the error envelope; this context manager kept only
+    `message`, so an LLM refused by any of the four validators above was told what was wrong and
+    never what would work — and then guessed again. The values are the recovery path, so they
+    belong in the one channel MCP actually delivers.
+    """
+    detail = exc.detail if isinstance(exc.detail, dict) else {}
+    for key in _RECOVERY_DETAIL_KEYS:
+        values = detail.get(key)
+        if isinstance(values, list) and values:
+            shown = [str(v) for v in values[:_RECOVERY_VALUES_MAX]]
+            more = "" if len(values) <= _RECOVERY_VALUES_MAX else f" (+{len(values) - len(shown)})"
+            return f"{exc.message}. Accepted values: {', '.join(shown)}{more}"
+    return exc.message
+
+
 @contextmanager
 def _service_errors() -> Generator[None]:
     """Turn a service-layer DataQError (404/403/422) into a clean ToolError so the
@@ -258,7 +285,7 @@ def _service_errors() -> Generator[None]:
     try:
         yield
     except DataQError as exc:
-        raise ToolError(exc.message) from exc
+        raise ToolError(_tool_error_text(exc)) from exc
 
 
 def _page_window(timestamps: list[datetime | None]) -> dict[str, Any]:
@@ -1688,6 +1715,13 @@ def create_check(
     (e.g. ``{"column": "email"}``). Optional warn/fail/critical thresholds band
     the result severity.
 
+    **DataQ enables a vetted SUBSET of GX's built-ins, not all of them.** A type
+    outside it is refused even when Great Expectations itself has it — the error
+    says which of the two happened and lists every accepted type, so read it
+    rather than re-guessing. Scalar aggregates (``expect_column_mean_to_be_between``
+    and siblings) are deliberately absent: use a ``volume`` or ``anomaly`` monitor
+    for those, and a custom-SQL check for any rule with no vetted type.
+
     **`config` is validated against GX's own schema only — never against the
     datasource.** A column name that doesn't exist (a typo, wrong case) is
     accepted here and only surfaces as an `error` result the next time the
@@ -1809,6 +1843,10 @@ def update_check(
     one path that applies emptiness rather than skipping it; otherwise the check
     must be recreated. ``kind`` cannot be changed at all; recreate the check as
     the other kind.
+
+    Changing ``expectation_type`` is held to the same vetted set ``create_check``
+    describes, so a type outside it is refused here too and the check keeps its
+    current definition.
 
     Every update snapshots the new state as a check version, so the change is
     reviewable with ``list_check_versions`` and reversible with
@@ -1995,6 +2033,10 @@ def dryrun_check(
     ``volume`` monitor kind, which counts the true dataset size on every
     datasource and cannot reach this tool at all — see above.) Say so rather
     than reporting either as a fact about the full table.
+
+    A preview is held to the same rules a save is, so an ``expectation_type``
+    outside DataQ's vetted set (see ``create_check``) is refused here rather than
+    previewed and then rejected at creation.
 
     This is the authoring loop: dry-run, adjust the threshold, dry-run again, and
     only then create. Requires edit access to the suite.
@@ -2538,7 +2580,10 @@ def import_suite(
     never merges into or overwrites an existing one, so importing twice gives you
     two suites. The whole document is
     validated before anything is written, so a bad check means nothing is created
-    rather than a half-built suite.
+    rather than a half-built suite. That validation includes DataQ's vetted set of
+    GX expectation types: a document written by hand, or exported from a build that
+    enabled more types, is refused as a whole — the error names the offending type
+    and lists the accepted ones, so remove or replace that check and re-import.
 
     Requires the **member** workspace role (creating a suite is not a read-only
     action) and a datasource connection — orchestration providers cannot be suite

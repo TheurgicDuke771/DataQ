@@ -21,10 +21,11 @@ import sqlalchemy as sa
 
 from backend.app.datasources import flatfile
 from backend.app.datasources.base import CheckOutcome, CheckSpec
-from backend.app.datasources.gx_runner import (
+from backend.app.datasources.expectation_allowlist import (
+    ALLOWED_EXPECTATION_TYPES,
     DATAFRAME_ONLY_EXPECTATION_TYPES,
-    run_expectations,
 )
+from backend.app.datasources.gx_runner import run_expectations
 
 _FRAME = pd.DataFrame(
     {
@@ -38,6 +39,9 @@ _FRAME = pd.DataFrame(
         "part_b": [9, 8, 7, 6, 4],
         # One null in five rows → unexpected_percent 20.0 on a not-null check.
         "note": ["a", None, "c", "d", "e"],
+        # A column that must stay empty (`to_be_null`).
+        "blank": [None, None, None, None, None],
+        "payload": ['{"a": 1}', '{"a": 2}', '{"a": 3}', '{"a": 4}', '{"a": 5}'],
     }
 )
 
@@ -136,6 +140,28 @@ _RUN_SAMPLES: dict[str, dict[str, Any]] = {
         "strftime_format": "%Y-%m-%d",
     },
     "expect_table_row_count_to_be_between": {"min_value": 1, "max_value": 100},
+    # ── #1510 additions ──
+    "expect_column_values_to_be_null": {"column": "blank"},
+    "expect_column_values_to_not_be_in_set": {"column": "status", "value_set": ["refunded"]},
+    "expect_column_value_lengths_to_equal": {"column": "region", "value": 2},
+    "expect_column_values_to_not_match_regex": {"column": "status", "regex": "^[0-9]+$"},
+    "expect_column_values_to_match_regex_list": {
+        "column": "status",
+        "regex_list": ["^[a-z]+$"],
+        "match_on": "any",
+    },
+    "expect_column_values_to_not_match_regex_list": {
+        "column": "status",
+        "regex_list": ["^[0-9]+$"],
+    },
+    "expect_column_values_to_be_json_parseable": {"column": "payload"},
+    "expect_column_pair_values_to_be_equal": {"column_A": "id", "column_B": "part_a"},
+    "expect_column_pair_values_to_be_in_set": {
+        "column_A": "region",
+        "column_B": "status",
+        "value_pairs_set": [["eu", "new"], ["us", "shipped"], ["us", "cancelled"]],
+    },
+    "expect_select_column_values_to_be_unique_within_record": {"column_list": ["id", "amount"]},
 }
 
 
@@ -155,24 +181,40 @@ def _gx_catalog_types() -> list[str]:
     ]
 
 
-def test_every_catalog_gx_type_has_a_run_sample() -> None:
-    """Without this, adding a catalog entry silently skips the two sweeps below."""
+def _allowlisted_types() -> list[str]:
+    """The sweeps run the ALLOWLIST, not the catalog (#1510): the allowlist is what the API, MCP
+    and import doors accept, and it is a superset — an allowlist-only type is authorable and must
+    therefore be proven runnable too.
+    """
+    return sorted(ALLOWED_EXPECTATION_TYPES)
+
+
+def test_every_allowlisted_type_has_a_run_sample() -> None:
+    """Without this, allowlisting a type silently skips the two sweeps below."""
     # An empty list would make both sweeps pass vacuously.
-    assert len(_gx_catalog_types()) >= len(_RUN_SAMPLES)
-    missing = [t for t in _gx_catalog_types() if t not in _RUN_SAMPLES]
+    assert len(_allowlisted_types()) >= len(_RUN_SAMPLES)
+    missing = [t for t in _allowlisted_types() if t not in _RUN_SAMPLES]
     assert not missing, f"add a `_RUN_SAMPLES` entry for {missing} so it is actually run"
 
 
-def test_every_catalog_type_runs_on_a_pandas_batch(monkeypatch: pytest.MonkeyPatch) -> None:
-    types = _gx_catalog_types()
+def test_the_catalog_is_covered_by_the_allowlist_sweeps() -> None:
+    """The catalog half of the old guard: a catalog entry outside the allowlist would be offered
+    in the editor and 422 on save, and would also escape the sweeps above.
+    """
+    uncovered = [t for t in _gx_catalog_types() if t not in ALLOWED_EXPECTATION_TYPES]
+    assert not uncovered, f"catalog types missing from the allowlist: {uncovered}"
+
+
+def test_every_allowlisted_type_runs_on_a_pandas_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    types = _allowlisted_types()
     outcomes = _pandas_outcomes([CheckSpec(t, dict(_RUN_SAMPLES[t])) for t in types], monkeypatch)
     errored = {t: o.error_message for t, o in zip(types, outcomes, strict=True) if o.errored}
     assert not errored
 
 
-def test_every_sql_capable_catalog_type_runs_on_a_sql_batch(tmp_path: Path) -> None:
-    """The Snowflake shape, minus the types the runner declares DataFrame-only."""
-    types = [t for t in _gx_catalog_types() if t not in DATAFRAME_ONLY_EXPECTATION_TYPES]
+def test_every_sql_capable_allowlisted_type_runs_on_a_sql_batch(tmp_path: Path) -> None:
+    """The Snowflake shape, minus the types the allowlist declares DataFrame-only."""
+    types = [t for t in _allowlisted_types() if t not in DATAFRAME_ONLY_EXPECTATION_TYPES]
     assert types  # an over-broad DataFrame-only set would empty this sweep
     outcomes = _sql_outcomes([CheckSpec(t, dict(_RUN_SAMPLES[t])) for t in types], tmp_path)
     errored = {t: o.error_message for t, o in zip(types, outcomes, strict=True) if o.errored}
@@ -240,6 +282,83 @@ def test_or_equal_widens_the_pair_comparison(monkeypatch: pytest.MonkeyPatch) ->
     )
     assert strict.success is False
     assert allowing_equal.success is True
+
+
+# Failing configs for the #1510 additions, chosen so each one has real unexpected rows in
+# `_FRAME`. `unexpected_percent` is the vetting bar: a type that reports none cannot be banded
+# (the #1607 class), so it was excluded from the allowlist rather than shipped with inert inputs.
+_BANDED_FAILING_SAMPLES: dict[str, dict[str, Any]] = {
+    "expect_column_values_to_be_null": {"column": "note"},
+    "expect_column_values_to_not_be_in_set": {"column": "status", "value_set": ["cancelled"]},
+    "expect_column_value_lengths_to_equal": {"column": "status", "value": 3},
+    "expect_column_values_to_not_match_regex": {"column": "status", "regex": "^can"},
+    "expect_column_values_to_match_regex_list": {"column": "status", "regex_list": ["^new$"]},
+    "expect_column_values_to_not_match_regex_list": {"column": "status", "regex_list": ["^new$"]},
+    "expect_column_pair_values_to_be_equal": {"column_A": "id", "column_B": "part_b"},
+    "expect_column_pair_values_to_be_in_set": {
+        "column_A": "region",
+        "column_B": "status",
+        "value_pairs_set": [["eu", "new"], ["us", "shipped"]],
+    },
+    "expect_select_column_values_to_be_unique_within_record": {"column_list": ["part_a", "id"]},
+}
+
+_EXPECTED_UNEXPECTED_PERCENT: dict[str, float] = {
+    "expect_column_values_to_be_null": 80.0,
+    "expect_column_values_to_not_be_in_set": 20.0,
+    "expect_column_value_lengths_to_equal": 60.0,
+    "expect_column_values_to_not_match_regex": 20.0,
+    "expect_column_values_to_match_regex_list": 60.0,
+    "expect_column_values_to_not_match_regex_list": 40.0,
+    "expect_column_pair_values_to_be_equal": 100.0,
+    "expect_column_pair_values_to_be_in_set": 20.0,
+    "expect_select_column_values_to_be_unique_within_record": 100.0,
+}
+
+
+def test_the_added_types_report_a_bandable_unexpected_percent_on_pandas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    types = sorted(_BANDED_FAILING_SAMPLES)
+    outcomes = _pandas_outcomes(
+        [CheckSpec(t, dict(_BANDED_FAILING_SAMPLES[t])) for t in types], monkeypatch
+    )
+    measured = {t: _unexpected_percent(o) for t, o in zip(types, outcomes, strict=True)}
+    assert measured == {t: _EXPECTED_UNEXPECTED_PERCENT[t] for t in types}
+    assert all(o.success is False for o in outcomes)
+
+
+def test_the_added_types_report_the_same_unexpected_percent_on_a_sql_batch(
+    tmp_path: Path,
+) -> None:
+    """Engine parity is the point: #1607 exists because a result payload can differ by engine, so
+    the band metric is proven on the SQL batch too rather than inferred from the pandas run.
+    """
+    types = [
+        t for t in sorted(_BANDED_FAILING_SAMPLES) if t not in DATAFRAME_ONLY_EXPECTATION_TYPES
+    ]
+    outcomes = _sql_outcomes(
+        [CheckSpec(t, dict(_BANDED_FAILING_SAMPLES[t])) for t in types], tmp_path
+    )
+    measured = {t: _unexpected_percent(o) for t, o in zip(types, outcomes, strict=True)}
+    assert measured == {t: _EXPECTED_UNEXPECTED_PERCENT[t] for t in types}
+
+
+def test_json_parseable_bands_on_a_pandas_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The added DataFrame-only type bands where it runs. (That it does NOT run on SQL is proven
+    by `test_a_dataframe_only_type_really_does_error_on_a_sql_batch`, which sweeps the flag.)
+    """
+    frame = _FRAME.assign(payload=['{"a": 1}', "nope", '{"a": 3}', '{"a": 4}', '{"a": 5}'])
+    monkeypatch.setattr(flatfile, "read_dataframe", lambda **k: frame)
+    monkeypatch.setattr(flatfile, "file_stat", lambda **k: flatfile.FileStat(None, 4096))
+    runner = flatfile.FlatFileCheckRunner(conn_type="s3", config={}, secret="x")
+    (outcome,) = runner.run_checks(
+        table="data/orders.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_be_json_parseable", {"column": "payload"})],
+    ).checks
+    assert outcome.success is False
+    assert _unexpected_percent(outcome) == 20.0
 
 
 def test_distinct_value_set_relations_report_no_unexpected_percent(

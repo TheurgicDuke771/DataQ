@@ -382,6 +382,47 @@ def test_create_check_rejects_oversized_name_or_type(db_session: Any, monkeypatc
         )
 
 
+def test_create_check_refuses_an_unallowlisted_type_and_names_the_alternatives(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """#1510 over MCP. `_service_errors` keeps only the message, so the accepted types have to
+    travel IN it — otherwise the model is told "no" with no way to find the yes, and guesses again.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError) as exc_info:
+        server.create_check(
+            str(suite.id),
+            name="amount ceiling",
+            expectation_type="expect_column_max_to_be_between",
+            config={"column": "amount", "min_value": 1, "max_value": 100},
+        )
+    message = str(exc_info.value)
+    assert "not in DataQ's vetted set" in message
+    assert "Accepted values:" in message
+    assert "expect_column_values_to_not_be_null" in message
+    assert db_session.query(Check).filter_by(suite_id=suite.id).count() == 0
+
+
+def test_service_error_text_appends_accepted_values_only_when_present() -> None:
+    """The other half: an error with nothing to recover from must not grow a stray suffix."""
+    from backend.app.core.errors import DataQError
+
+    plain = DataQError("check not found", detail={"check_id": "abc"})
+    assert server._tool_error_text(plain) == "check not found"
+
+    listed = DataQError("check kind 'x' is not supported in v1", detail={"supported": ["a", "b"]})
+    assert server._tool_error_text(listed).endswith("Accepted values: a, b")
+
+    long = DataQError("nope", detail={"supported": [f"t{i}" for i in range(70)]})
+    assert long.detail is not None
+    text = server._tool_error_text(long)
+    assert text.endswith("(+10)")
+    assert "t59" in text and "t60" not in text
+
+
 def test_create_check_requires_edit(db_session: Any, monkeypatch: Any) -> None:
     owner = _user(db_session, "owner@acme.io")
     suite = _suite(db_session, owner)

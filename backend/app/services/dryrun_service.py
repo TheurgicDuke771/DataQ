@@ -22,8 +22,11 @@ from backend.app.datasources.registry import (
 from backend.app.datasources.sql import strip_statement_echo
 from backend.app.db.models import Connection
 from backend.app.services import run_target
-from backend.app.services.check_service import validate_threshold_ordering
-from backend.app.services.custom_sql import validate_custom_sql_check
+from backend.app.services.check_service import (
+    validate_expectation_check,
+    validate_threshold_ordering,
+)
+from backend.app.services.custom_sql import is_custom_sql, validate_custom_sql_check
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.severity import resolve_status
 
@@ -99,6 +102,11 @@ def dry_run_check(
         config=config,
         connection_type=connection.type,
     )
+    if not is_custom_sql(expectation_type):
+        # #1510, by the same rule as the threshold check above: a preview must not accept what a
+        # save would reject. This is also the one author-time door that EXECUTES the expectation
+        # against live data with the stored credential, so the vetted set has to hold here too.
+        validate_expectation_check(expectation_type, config)
 
     try:
         runner = build_check_runner(

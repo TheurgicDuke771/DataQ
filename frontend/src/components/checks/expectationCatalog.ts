@@ -228,6 +228,20 @@ const MOSTLY: ConfigField = {
   help: MOSTLY_HELP,
 };
 
+/** GX's own default is `any`; stated here so an untouched field submits what GX would do. */
+const MATCH_ON: ConfigField = {
+  name: 'match_on',
+  label: 'Match on',
+  type: 'select',
+  optional: true,
+  defaultValue: 'any',
+  help: 'Whether a value must match ANY regex in the list (the default) or ALL of them.',
+  options: [
+    { value: 'any', label: 'Any regex in the list' },
+    { value: 'all', label: 'Every regex in the list' },
+  ],
+};
+
 /**
  * The type checks reach `mostly` only down GX's row-wise fallback; the whole-column dtype compare
  * it prefers is all-or-nothing, so the tolerance is inert there.
@@ -323,6 +337,33 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     ],
   },
   {
+    type: 'expect_column_values_to_be_null',
+    dimension: 'validity',
+    label: 'Column values null',
+    description:
+      'Every value in the column is null — for a deprecated or not-yet-populated column that should stay empty. The inverse of “Column values not null”.',
+    category: 'Column values',
+    fields: [COLUMN, MOSTLY],
+  },
+  {
+    type: 'expect_column_values_to_not_be_in_set',
+    dimension: 'validity',
+    label: 'Column values not in set',
+    description:
+      'No value is one of a forbidden set — e.g. a status that should never reach this table, or placeholder values like “N/A” and “UNKNOWN”.',
+    category: 'Column values',
+    fields: [
+      COLUMN,
+      {
+        name: 'value_set',
+        label: 'Forbidden values',
+        type: 'list',
+        help: 'Comma-separated list of values that must not appear.',
+      },
+      MOSTLY,
+    ],
+  },
+  {
     type: 'expect_column_value_lengths_to_be_between',
     dimension: 'validity',
     label: 'Column value lengths in range',
@@ -336,12 +377,76 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     ],
   },
   {
+    type: 'expect_column_value_lengths_to_equal',
+    dimension: 'validity',
+    label: 'Column value lengths equal',
+    description:
+      'Every value is exactly the given number of characters — for a fixed-width code (ISO country, SKU, account number).',
+    category: 'Column values',
+    fields: [COLUMN, { name: 'value', label: 'Exact length', type: 'number' }, MOSTLY],
+  },
+  {
     type: 'expect_column_values_to_match_regex',
     dimension: 'validity',
     label: 'Column values match regex',
     description: 'Every value matches the given regular expression.',
     category: 'Column values',
     fields: [COLUMN, { name: 'regex', label: 'Regex', type: 'string' }, MOSTLY],
+  },
+  {
+    type: 'expect_column_values_to_not_match_regex',
+    dimension: 'validity',
+    label: 'Column values do not match regex',
+    description:
+      'No value matches the given regular expression — for catching a pattern that should never appear (a stray delimiter, an unredacted identifier).',
+    category: 'Column values',
+    fields: [COLUMN, { name: 'regex', label: 'Regex', type: 'string' }, MOSTLY],
+  },
+  {
+    type: 'expect_column_values_to_match_regex_list',
+    dimension: 'validity',
+    label: 'Column values match a list of regexes',
+    description:
+      'Every value matches the regexes in the list — by default ANY one of them is enough, for a column carrying several legitimate formats (e.g. two phone-number conventions).',
+    category: 'Column values',
+    fields: [
+      COLUMN,
+      {
+        name: 'regex_list',
+        label: 'Regexes',
+        type: 'list',
+        help: 'Comma-separated regular expressions.',
+      },
+      MATCH_ON,
+      MOSTLY,
+    ],
+  },
+  {
+    type: 'expect_column_values_to_not_match_regex_list',
+    dimension: 'validity',
+    label: 'Column values match none of a list of regexes',
+    description: 'No value matches ANY regex in the list — a deny-list of forbidden formats.',
+    category: 'Column values',
+    fields: [
+      COLUMN,
+      {
+        name: 'regex_list',
+        label: 'Regexes',
+        type: 'list',
+        help: 'Comma-separated regular expressions, none of which may match.',
+      },
+      MOSTLY,
+    ],
+  },
+  {
+    type: 'expect_column_values_to_be_json_parseable',
+    dimension: 'validity',
+    dataframeOnly: true,
+    label: 'Column values are valid JSON',
+    description:
+      'Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake: Great Expectations implements this one only for dataframe batches, so a SQL warehouse would error on every run. Use a custom-SQL check (or a VARIANT column) there.',
+    category: 'Column values',
+    fields: [COLUMN, MOSTLY],
   },
   {
     type: 'expect_column_values_to_be_of_type',
@@ -411,6 +516,36 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         type: 'boolean',
         optional: true,
         help: 'Accept rows where A equals B (>= instead of >).',
+      },
+      MOSTLY,
+    ],
+  },
+  {
+    type: 'expect_column_pair_values_to_be_equal',
+    dimension: 'validity',
+    label: 'Column A equals column B',
+    description:
+      'Row by row, the two columns hold the same value — e.g. a denormalised copy that must agree with its source, or a total that must match a recomputed one.',
+    category: 'Column values',
+    fields: [
+      { name: 'column_A', label: 'Column A', type: 'string' },
+      { name: 'column_B', label: 'Column B', type: 'string' },
+      MOSTLY,
+    ],
+  },
+  {
+    type: 'expect_select_column_values_to_be_unique_within_record',
+    dimension: 'uniqueness',
+    label: 'Values unique within each row',
+    description:
+      'Within a single row, the listed columns all hold different values — e.g. a transfer whose source and destination account must not be the same. This is per-row; use “Compound columns unique” for uniqueness ACROSS rows.',
+    category: 'Column values',
+    fields: [
+      {
+        name: 'column_list',
+        label: 'Columns',
+        type: 'list',
+        help: 'Comma-separated columns that must differ from each other within a row.',
       },
       MOSTLY,
     ],

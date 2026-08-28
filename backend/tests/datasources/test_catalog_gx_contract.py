@@ -87,10 +87,13 @@ def test_catalog_dataframe_only_flag_matches_the_runner_set() -> None:
     """The editor's per-spec datasource gate must cover exactly the types GX cannot evaluate on a
     SQL batch — the picker hiding more (or fewer) than the backend 422s is a drift bug either way.
     """
-    from backend.app.datasources.gx_runner import DATAFRAME_ONLY_EXPECTATION_TYPES
+    from backend.app.datasources.expectation_allowlist import (
+        ALLOWLIST_ONLY_TYPES,
+        DATAFRAME_ONLY_EXPECTATION_TYPES,
+    )
 
     flagged = {e["type"] for e in _catalog() if e.get("dataframeOnly")}
-    assert flagged == set(DATAFRAME_ONLY_EXPECTATION_TYPES)
+    assert flagged == set(DATAFRAME_ONLY_EXPECTATION_TYPES) - ALLOWLIST_ONLY_TYPES
 
 
 def test_comparison_entries_match_backend_canonical_types() -> None:
@@ -141,6 +144,9 @@ def test_catalog_entry_constructs_with_representative_kwargs(entry: dict[str, An
         "max_value": 10,
         "value_set": ["a", "b"],
         "regex": r"^\d+$",
+        "regex_list": [r"^\d+$", r"^[A-Z]+$"],
+        "match_on": "any",
+        "value": 2,
         "type_": "int64",
         "type_list": ["int64", "float64"],
         "mostly": 0.95,
@@ -249,10 +255,16 @@ def test_custom_sql_is_deliberately_unclassified_in_both_maps() -> None:
 
 
 def test_no_backend_mapping_is_missing_from_the_catalog() -> None:
-    """The reverse direction of the drift guard, and the dangerous one."""
+    """The reverse direction of the drift guard, and the dangerous one.
+
+    Scoped to catalog-or-allowlist since #1510: an allowlist-only type has no catalog entry and is
+    still authorable over REST/MCP/import, so it SHOULD carry a dimension — the orphan this guards
+    against is a mapping for a type no door accepts at all.
+    """
+    from backend.app.datasources.expectation_allowlist import ALLOWED_EXPECTATION_TYPES
     from backend.app.services import check_dimension
 
-    catalog_types = {e["type"] for e in _catalog()}
+    catalog_types = {e["type"] for e in _catalog()} | set(ALLOWED_EXPECTATION_TYPES)
     catalog_kinds = {e["kind"] for e in _catalog()}
 
     orphan_types = set(check_dimension._BY_EXPECTATION_TYPE) - catalog_types

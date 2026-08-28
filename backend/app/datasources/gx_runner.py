@@ -41,16 +41,9 @@ _GX_INTERNAL_KWARGS = frozenset({"batch_id"})
 _INDEX_META_KEY = "dataq_index"
 
 
-# Expectation types whose GX metric has NO SqlAlchemy provider under the pinned GX: they construct
-# fine and then raise "No provider found" on a SQL batch. Verified by running them on both engines
-# (`tests/datasources/test_catalog_expectation_runs.py`), not read off the docs.
-DATAFRAME_ONLY_EXPECTATION_TYPES: frozenset[str] = frozenset(
-    {"expect_column_values_to_match_strftime_format"}
-)
-
 # Connection types whose CheckRunner evaluates ordinary expectations on a SQL batch. Unity Catalog
 # is deliberately absent: its pushdown set is an allowlist, so anything outside it — including
-# every type above — routes to that runner's pandas batch.
+# every `DATAFRAME_ONLY_EXPECTATION_TYPES` entry — routes to that runner's pandas batch.
 SQL_BATCH_CONNECTION_TYPES: frozenset[str] = frozenset({"snowflake"})
 
 
@@ -66,6 +59,9 @@ def _expectation_class_name(expectation_type: str) -> str:
 def _to_gx_expectation(spec: CheckSpec, index: int | None = None) -> Any:
     """Build the concrete GX expectation for `spec`, stamping ``dataq_index``
     into ``meta`` when ``index`` is given (#767).
+
+    Deliberately NOT gated on `expectation_allowlist` (#1510): that is an author-time gate, so a
+    stored check whose type leaves the allowlist keeps running instead of erroring on every run.
     """
     class_name = _expectation_class_name(spec.expectation_type)
     expectation_cls = getattr(gxe, class_name, None)

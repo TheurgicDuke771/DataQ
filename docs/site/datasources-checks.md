@@ -227,19 +227,49 @@ require every row. It moves the line at which the check itself succeeds; it does
 change the unexpected-% the severity bands read, so a warn threshold below your tolerance
 can still raise a warning on a run the check passed.
 
+**Negative rules.** Several types assert what must *not* be there: *Column values not in
+set* (forbidden values, placeholders like `N/A`), *Column values do not match regex*, and
+*Column values match none of a list of regexes*. *Column values null* is the inverse of
+*not null* — for a deprecated column that must stay empty.
+
 **Beyond one column.** *Compound columns unique* takes a list of columns and checks the
 combination (a multi-column key); *Column A greater than column B* compares two columns
-row by row, optionally allowing equality; *Columns sum to a total* checks that several
-columns add up per row. *Column distinct values in set* / *contain set* compare the set of
-values the column holds rather than counting rows — so they report **which** values are
-unexpected or missing, and they have no unexpected-% for the severity bands to read
-(thresholds on those two are ignored; the result is a plain pass/fail).
+row by row, optionally allowing equality; *Column A equals column B* asserts they agree;
+*Columns sum to a total* checks that several columns add up per row; *Values unique within
+each row* asserts the listed columns differ **within** a row (a transfer whose source and
+destination must not match) — as opposed to across rows. *Column distinct values in set* /
+*contain set* compare the set of values the column holds rather than counting rows — so
+they report **which** values are unexpected or missing, and they have no unexpected-% for
+the severity bands to read (thresholds on those two are ignored; the result is a plain
+pass/fail).
 
-**Date formats.** *Column values match a date format* validates a date or timestamp stored
-as text against a Python `strftime` format. Great Expectations implements it for dataframe
-batches only, so it is offered on flat files, Iceberg and Unity Catalog but **not on
-Snowflake**, where the editor hides it and the API rejects it — use a custom-SQL check
-there rather than saving a check that would error on every run.
+**Text shape.** *Column value lengths equal* pins a fixed-width code; *Column values match
+a list of regexes* accepts several legitimate formats at once (any one of them by default,
+or all of them).
+
+**Date formats and JSON.** *Column values match a date format* validates a date or
+timestamp stored as text against a Python `strftime` format, and *Column values are valid
+JSON* parses a text payload column. Great Expectations implements both for dataframe
+batches only, so they are offered on flat files, Iceberg and Unity Catalog but **not on
+Snowflake**, where the editor hides them and the API rejects them — use a custom-SQL check
+(or a VARIANT column) there rather than saving a check that would error on every run.
+
+### Which expectation types are available
+
+DataQ serves a **vetted subset** of Great Expectations' built-ins, not all of them
+(`backend/app/datasources/expectation_allowlist.py`). Every type in it is executed on both
+a dataframe and a SQL batch in CI, so it is known to run rather than merely to exist. The
+API, the MCP tools and suite import all validate against that same list, so a check written
+outside the editor cannot smuggle in a type the editor would not offer; the refusal says
+whether the type is unknown to Great Expectations altogether or simply not enabled here,
+and lists what is.
+
+Two groups are deliberately absent. **Scalar aggregates** (`expect_column_mean_to_be_between`
+and its siblings) report a single number and no unexpected-%, so severity bands have
+nothing to band — a *Volume* or *Anomaly* monitor measures that shape properly, with trends
+and a learned baseline. **Whole-table set comparisons** (columns match an expected set or
+ordered list) are what the *Schema-drift* monitor does, against a captured baseline. For
+anything with no vetted type, write a custom-SQL check.
 
 ### Custom SQL (Snowflake / Unity Catalog — ADR 0019)
 
