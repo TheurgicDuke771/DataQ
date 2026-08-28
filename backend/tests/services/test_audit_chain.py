@@ -3,11 +3,66 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
-from backend.app.db.models import AuditChainCheckpoint, AuditChainState, AuditEvent
+import pytest
+from sqlalchemy import Table, create_engine, text
+from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.orm import Session, sessionmaker
+
+from backend.app.db.models import AuditChainCheckpoint, AuditChainState, AuditEvent, Base, User
 from backend.app.services import audit_chain, audit_service
+from backend.tests.conftest import TEST_DATABASE_URL
+
+_SCRATCH_DB = "dataq_audit_chain_scratch"
+
+
+@pytest.fixture
+def scratch_session() -> Iterator[Session]:
+    """A dedicated, single-use database — for the two tests below that write
+    directly to `AuditChainState`'s singleton row. `db_session`'s
+    savepoint-rollback isolation is normally sufficient, but the CI Linux
+    runner's collection order (which differs from local platforms enough that
+    this was never reproduced there) let one of these leak into a later test's
+    baseline via the shared table `db_session` still ultimately points at.
+    A throwaway database removes the shared table entirely.
+    """
+    if not TEST_DATABASE_URL:
+        pytest.skip("needs TEST_DATABASE_URL")
+    admin = create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT")
+    try:
+        with admin.connect() as conn:
+            try:
+                conn.execute(text(f'DROP DATABASE IF EXISTS "{_SCRATCH_DB}"'))
+                conn.execute(text(f'CREATE DATABASE "{_SCRATCH_DB}"'))
+            except ProgrammingError as exc:  # pragma: no cover - permission-dependent
+                pytest.skip(f"cannot create a scratch database: {exc}")
+    finally:
+        admin.dispose()
+
+    url = TEST_DATABASE_URL.rsplit("/", 1)[0]
+    engine = create_engine(f"{url}/{_SCRATCH_DB}")
+    try:
+        tables = [
+            cast(Table, User.__table__),
+            cast(Table, AuditEvent.__table__),
+            cast(Table, AuditChainState.__table__),
+            cast(Table, AuditChainCheckpoint.__table__),
+        ]
+        Base.metadata.create_all(engine, tables=tables)
+        session = sessionmaker(bind=engine)()
+        try:
+            yield session
+        finally:
+            session.close()
+    finally:
+        engine.dispose()
+        admin = create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT")
+        with admin.connect() as conn:
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{_SCRATCH_DB}"'))
+        admin.dispose()
 
 
 def _record(session: Any, *, suffix: str = "") -> AuditEvent:
@@ -90,21 +145,21 @@ def test_verify_chain_catches_a_direct_row_mutation(db_session: Any) -> None:
     assert result.first_break.event_id == event.id
 
 
-def test_a_dangling_head_pointer_blames_the_row_it_named(db_session: Any) -> None:
+def test_a_dangling_head_pointer_blames_the_row_it_named(scratch_session: Session) -> None:
     """The chain head points at a hash no live row carries — a row was deleted
     outside the documented retention path (no checkpoint), or the state row
     itself was edited directly. The blamed row (`head_event_id`) still exists,
     just under a different `row_hash` than the head claims.
     """
-    event = _record(db_session)
-    db_session.commit()
+    event = _record(scratch_session)
+    scratch_session.commit()
 
-    state = db_session.get(AuditChainState, 1)
+    state = scratch_session.get(AuditChainState, 1)
     assert state is not None
     state.head_hash = "0" * 64  # a hash no row carries
-    db_session.commit()
+    scratch_session.commit()
 
-    result = audit_chain.verify_chain(db_session)
+    result = audit_chain.verify_chain(scratch_session)
 
     assert not result.ok
     assert result.first_break is not None
@@ -112,19 +167,15 @@ def test_a_dangling_head_pointer_blames_the_row_it_named(db_session: Any) -> Non
     assert result.first_break.actual_prev_hash is None
 
 
-def test_a_dangling_head_pointer_with_no_row_left_to_blame(db_session: Any) -> None:
+def test_a_dangling_head_pointer_with_no_row_left_to_blame(scratch_session: Session) -> None:
     """Both the head hash AND the row it names are gone — still a break, just
     one with no row left to read `occurred_at` from.
     """
-    state = db_session.get(AuditChainState, 1)
-    if state is None:
-        state = AuditChainState(id=1)
-        db_session.add(state)
-    state.head_hash = "0" * 64
-    state.head_event_id = uuid.uuid4()  # names no real row
-    db_session.commit()
+    state = AuditChainState(id=1, head_hash="0" * 64, head_event_id=uuid.uuid4())
+    scratch_session.add(state)
+    scratch_session.commit()
 
-    result = audit_chain.verify_chain(db_session)
+    result = audit_chain.verify_chain(scratch_session)
 
     assert not result.ok
     assert result.first_break is not None
@@ -200,30 +251,33 @@ def test_verify_chain_accepts_a_documented_checkpoint_boundary(db_session: Any) 
     assert result.ok, result.first_break
 
 
-def test_purge_checkpoint_resets_the_head_when_nothing_survives(db_session: Any) -> None:
+def test_purge_checkpoint_resets_the_head_when_nothing_survives(
+    scratch_session: Session,
+) -> None:
     """A cutoff past every existing row's `occurred_at` deletes the current
     chain head too — a real scenario (an idle workspace, or an admin lowering
     `AUDIT_RETENTION_DAYS`). Left unhandled, `AuditChainState` would keep
     pointing at a row about to be deleted, and every later `verify_chain` call
     would report a dangling-pointer break for an ordinary, documented purge
-    (the review finding this test locks in). A cutoff in the FUTURE guarantees
-    "nothing survives" regardless of ambient data from other tests.
+    (the review finding this test locks in). A future cutoff resets the WHOLE
+    table's head — an isolated database, not the shared one, is the only safe
+    place to do that.
     """
-    _record(db_session, suffix=".about-to-be-the-head")
-    db_session.commit()
+    _record(scratch_session, suffix=".about-to-be-the-head")
+    scratch_session.commit()
 
     future_cutoff = datetime.now(UTC) + timedelta(days=1)
-    checkpoint = audit_chain.write_purge_checkpoint(db_session, cutoff=future_cutoff)
+    checkpoint = audit_chain.write_purge_checkpoint(scratch_session, cutoff=future_cutoff)
     assert checkpoint is not None
     assert checkpoint.first_surviving_event_id is None
-    db_session.commit()
+    scratch_session.commit()
 
-    state = db_session.get(AuditChainState, 1)
+    state = scratch_session.get(AuditChainState, 1)
     assert state is not None
     assert state.head_hash is None
     assert state.head_event_id is None
 
-    result = audit_chain.verify_chain(db_session)
+    result = audit_chain.verify_chain(scratch_session)
     assert result.ok, result.first_break
     assert result.chain_head_hash is None
 
