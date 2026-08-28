@@ -107,6 +107,20 @@ def _literals(sql: str) -> set[str]:
     return set(_LITERAL.findall(sql))
 
 
+# `<column> IS [NOT] NULL` carries no string literal, so `_literals()` can't see a polarity flip
+# (#1326). Postgres reformats predicates on read-back — `col IS NULL` -> `(col IS NULL)`, and a cast
+# may sit beside an unrelated comparison in the same clause — so tolerate surrounding parens/casts
+# around the column but still require the literal `IS [NOT] NULL` keywords.
+_NULL_CLAUSE = re.compile(
+    r"\(*\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)*(?:::\w+)?\s*\)*\s+IS\s+(NOT\s+)?NULL", re.IGNORECASE
+)
+
+
+def _null_polarities(sql: str) -> set[tuple[str, bool]]:
+    """`{(column, is_not_null)}` for every `IS [NOT] NULL` clause in `sql`."""
+    return {(col.lower(), bool(is_not)) for col, is_not in _NULL_CLAUSE.findall(sql)}
+
+
 def _model_predicates() -> dict[str, str]:
     """`{object name: SQL text}` for every named CHECK and partial index in the model."""
     # `models` is imported for its side effect — defining the classes is what puts their tables on
@@ -148,7 +162,9 @@ def _live_predicates(conn: Any) -> dict[str, str]:
 
 
 def test_vocabularies_in_predicates_match_between_model_and_database(migrated_url: str) -> None:
-    """Every value a CHECK or partial-index predicate lists must match on both sides."""
+    """Every literal and every IS [NOT] NULL clause a CHECK or partial-index predicate carries must
+    match on both sides — literal-set alone is blind to a bare polarity flip (#1326).
+    """
     engine = create_engine(migrated_url)
     try:
         with engine.connect() as conn:
@@ -168,5 +184,38 @@ def test_vocabularies_in_predicates_match_between_model_and_database(migrated_ur
                 f" (missing from the database: {sorted(expected - actual)};"
                 f" extra: {sorted(actual - expected)})"
             )
+        expected_nulls, actual_nulls = _null_polarities(model_sql), _null_polarities(live[name])
+        if expected_nulls != actual_nulls:
+            drift.append(
+                f"{name}: model has IS [NOT] NULL clauses {sorted(expected_nulls)}, database has "
+                f"{sorted(actual_nulls)}"
+            )
 
     assert not drift, "predicate drift between the model and the migrations:\n" + "\n".join(drift)
+
+
+def test_null_polarities_normalizes_model_and_database_predicate_forms() -> None:
+    """Postgres reformats `col IS NULL` as `(col IS NULL)` — verified against a live
+    `ix_results_unpurged_created` (#1326); the extractor must treat both forms as identical.
+    """
+    model_sql = (
+        "sample_failures_purged_at IS NULL AND sample_failures IS NOT NULL "
+        "AND jsonb_typeof(sample_failures) <> 'null'"
+    )
+    live_sql = (
+        "(sample_failures_purged_at IS NULL) AND (sample_failures IS NOT NULL) "
+        "AND (jsonb_typeof(sample_failures) <> 'null'::text)"
+    )
+    expected = {("sample_failures_purged_at", False), ("sample_failures", True)}
+    assert _null_polarities(model_sql) == _null_polarities(live_sql) == expected
+
+
+def test_null_polarities_catches_a_polarity_flip() -> None:
+    """A bare `IS NULL` -> `IS NOT NULL` inversion on one side must break equality (#1326) — the
+    exact regression `_literals()` cannot see, since neither side gains a string literal.
+    """
+    model_sql = "sample_failures_purged_at IS NULL"
+    flipped_live_sql = "(sample_failures_purged_at IS NOT NULL)"
+    assert _null_polarities(model_sql) == {("sample_failures_purged_at", False)}
+    assert _null_polarities(flipped_live_sql) == {("sample_failures_purged_at", True)}
+    assert _null_polarities(model_sql) != _null_polarities(flipped_live_sql)
