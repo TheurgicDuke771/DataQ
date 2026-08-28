@@ -19,6 +19,8 @@ function contractShape() {
     fields: spec.fields.map((f) => f.name),
     // ADR 0036: mirrors DMF_UNBANDABLE_TYPES — a type the backend rejects any threshold on.
     noThresholds: spec.noThresholds ?? false,
+    // #1509: mirrors gx_runner.DATAFRAME_ONLY_EXPECTATION_TYPES — no SqlAlchemy provider in GX.
+    dataframeOnly: spec.dataframeOnly ?? false,
   }));
 }
 

@@ -1651,12 +1651,30 @@ def test_pushdown_allowlist_partitions_the_catalog() -> None:
         for e in json.loads(fixture.read_text())
         if e["kind"] == "expectation" and e["type"] not in DMF_EXPECTATION_TYPES
     }
-    routed = (
-        SQL_PUSHDOWN_EXPECTATION_TYPES
-        | {"expect_column_values_to_be_of_type"}
-        | SQL_BATCH_EXPECTATION_TYPES
-    )
+    # Deliberately NOT pushed down. `to_be_of_type`/`in_type_list` compare a dtype, which the two
+    # batches spell differently. The #1509 entries are held back because the pushdown list is an
+    # audited set and nothing has yet exercised these against a live Databricks SQL warehouse —
+    # the frame is the known-correct route, and moving one here is a conscious later step.
+    frame_only = {
+        "expect_column_values_to_be_of_type",
+        "expect_column_values_to_be_in_type_list",
+        "expect_compound_columns_to_be_unique",
+        "expect_column_pair_values_a_to_be_greater_than_b",
+        "expect_multicolumn_sum_to_equal",
+        "expect_column_distinct_values_to_be_in_set",
+        "expect_column_distinct_values_to_contain_set",
+        # No SqlAlchemy provider at all (gx_runner.DATAFRAME_ONLY_EXPECTATION_TYPES) — the frame
+        # is the only batch it can run on, which is why UC still offers it and Snowflake cannot.
+        "expect_column_values_to_match_strftime_format",
+    }
+    routed = SQL_PUSHDOWN_EXPECTATION_TYPES | frame_only | SQL_BATCH_EXPECTATION_TYPES
     assert catalog_types == routed
+    # A union hides an overlap: a type in BOTH sets satisfies the equality above while every UC
+    # run of it raises "No provider found" on the pushed-down batch.
+    from backend.app.datasources.gx_runner import DATAFRAME_ONLY_EXPECTATION_TYPES
+
+    assert not (SQL_PUSHDOWN_EXPECTATION_TYPES & DATAFRAME_ONLY_EXPECTATION_TYPES)
+    assert not (SQL_PUSHDOWN_EXPECTATION_TYPES & frame_only)
 
 
 def test_index_column_clash_runs_without_the_index_request(

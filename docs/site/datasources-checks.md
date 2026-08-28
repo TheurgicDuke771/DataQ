@@ -221,6 +221,26 @@ Pick a *Column values* / *Table shape* expectation (e.g. `Column values not null
 it, set the column, and optionally band severity with **Warn ≥ / Fail ≥ / Critical ≥**
 thresholds over the unexpected-%. Leave thresholds blank for binary pass/fail.
 
+**Tolerance (`mostly`).** Most row-wise expectations take an optional tolerance — a
+*fraction*, so `0.95` means "pass if at least 95% of rows conform". Leave it blank to
+require every row. It moves the line at which the check itself succeeds; it does **not**
+change the unexpected-% the severity bands read, so a warn threshold below your tolerance
+can still raise a warning on a run the check passed.
+
+**Beyond one column.** *Compound columns unique* takes a list of columns and checks the
+combination (a multi-column key); *Column A greater than column B* compares two columns
+row by row, optionally allowing equality; *Columns sum to a total* checks that several
+columns add up per row. *Column distinct values in set* / *contain set* compare the set of
+values the column holds rather than counting rows — so they report **which** values are
+unexpected or missing, and they have no unexpected-% for the severity bands to read
+(thresholds on those two are ignored; the result is a plain pass/fail).
+
+**Date formats.** *Column values match a date format* validates a date or timestamp stored
+as text against a Python `strftime` format. Great Expectations implements it for dataframe
+batches only, so it is offered on flat files, Iceberg and Unity Catalog but **not on
+Snowflake**, where the editor hides it and the API rejects it — use a custom-SQL check
+there rather than saving a check that would error on every run.
+
 ### Custom SQL (Snowflake / Unity Catalog — ADR 0019)
 
 A read-only SQL rule in the Monaco editor: **any rows returned are failures**. Use
@@ -344,6 +364,10 @@ them; they were deliberately not bulk-classified, so a derived guess is never
 mistaken for someone's decision.
 
 ### Type names for `expect_column_values_to_be_of_type`
+
+Everything here applies equally to its sibling **Column values are of one of several
+types** (`expect_column_values_to_be_in_type_list`), whose `type_list` takes the same
+vocabulary — one entry per acceptable type.
 
 The **Column values are of type** expectation's `type_` field is the one place the
 check editor's "obvious" answer is usually wrong. GX validates it against a

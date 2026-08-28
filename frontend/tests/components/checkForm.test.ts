@@ -145,6 +145,35 @@ describe('buildCheckPayload — threshold coercion + list assembly (#1410)', () 
   });
 });
 
+describe('buildCheckPayload — `mostly` tolerance (#1509)', () => {
+  it('submits a numeric tolerance and omits the key when the field is left blank', () => {
+    const withTolerance = buildCheckPayload({
+      name: 'c',
+      expectation_type: 'expect_column_values_to_not_be_null',
+      config: { column: 'id', mostly: 0.95 },
+    });
+    expect(withTolerance.config).toEqual({ column: 'id', mostly: 0.95 });
+    for (const blank of [undefined, null, '']) {
+      const payload = buildCheckPayload({
+        name: 'c',
+        expectation_type: 'expect_column_values_to_not_be_null',
+        config: { column: 'id', mostly: blank },
+      });
+      // Not `mostly: undefined` — GX must receive no kwarg at all.
+      expect(Object.keys(payload.config)).toEqual(['column']);
+    }
+  });
+
+  it('submits 0 rather than dropping it — a falsy but meaningful tolerance', () => {
+    const payload = buildCheckPayload({
+      name: 'c',
+      expectation_type: 'expect_column_values_to_not_be_null',
+      config: { column: 'id', mostly: 0 },
+    });
+    expect(payload.config).toEqual({ column: 'id', mostly: 0 });
+  });
+});
+
 describe('buildComparisonPayload — source assembly + coercion (ADR 0015, #1410)', () => {
   const base = {
     name: 'orders vs orders_stg',

@@ -2235,3 +2235,51 @@ def test_rest_export_carries_the_engine_and_reimports(client: TestClient, db_ses
         json={"connection_id": str(target.id), "document": document},
     )
     assert resp.status_code == 201
+
+
+# ─────── import is the third door onto a DataFrame-only expectation (#1509) ───────
+
+
+def _strftime_document() -> dict[str, Any]:
+    return {
+        "version": 1,
+        "name": "imported",
+        "description": None,
+        "checks": [
+            {
+                "name": "order date format",
+                "kind": "expectation",
+                "expectation_type": "expect_column_values_to_match_strftime_format",
+                "config": {"column": "order_ts", "strftime_format": "%Y-%m-%d"},
+                "warn_threshold": None,
+                "fail_threshold": None,
+                "critical_threshold": None,
+            }
+        ],
+    }
+
+
+def test_import_refuses_a_dataframe_only_expectation_onto_a_sql_connection(
+    client: TestClient, db_session: Any
+) -> None:
+    """Import builds its Checks directly rather than through `create_check`, so the create-path
+    gate does not cover it — and a suite imported this way runs, errors on every check, and
+    then cannot even be PATCHed back into shape.
+    """
+    target = _connection(db_session, conn_type="snowflake")
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": _strftime_document()},
+    )
+    assert resp.status_code == 422
+    assert "no SQL implementation" in resp.json()["error"]["message"]
+    assert not db_session.scalars(select(Suite).where(Suite.name == "imported")).all()
+
+
+def test_import_accepts_it_onto_a_dataframe_connection(client: TestClient, db_session: Any) -> None:
+    target = _connection(db_session, conn_type="s3")
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": _strftime_document()},
+    )
+    assert resp.status_code == 201

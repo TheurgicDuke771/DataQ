@@ -83,6 +83,16 @@ def test_catalog_no_thresholds_flag_matches_dmf_unbandable_types() -> None:
     assert flagged == set(DMF_UNBANDABLE_TYPES)
 
 
+def test_catalog_dataframe_only_flag_matches_the_runner_set() -> None:
+    """The editor's per-spec datasource gate must cover exactly the types GX cannot evaluate on a
+    SQL batch — the picker hiding more (or fewer) than the backend 422s is a drift bug either way.
+    """
+    from backend.app.datasources.gx_runner import DATAFRAME_ONLY_EXPECTATION_TYPES
+
+    flagged = {e["type"] for e in _catalog() if e.get("dataframeOnly")}
+    assert flagged == set(DATAFRAME_ONLY_EXPECTATION_TYPES)
+
+
 def test_comparison_entries_match_backend_canonical_types() -> None:
     """The comparison catalog entries (ADR 0015 + #799) must carry exactly the
     backend's canonical expectation_types; they bypass GX (no fields — the
@@ -132,6 +142,14 @@ def test_catalog_entry_constructs_with_representative_kwargs(entry: dict[str, An
         "value_set": ["a", "b"],
         "regex": r"^\d+$",
         "type_": "int64",
+        "type_list": ["int64", "float64"],
+        "mostly": 0.95,
+        "column_list": ["ORDER_ID", "LINE_NO"],
+        "column_A": "ENDED_AT",
+        "column_B": "STARTED_AT",
+        "or_equal": True,
+        "sum_total": 100,
+        "strftime_format": "%Y-%m-%d",
         QUERY_KEY: "SELECT * FROM {batch} WHERE amount < 0",
     }
     missing = [name for name in entry["fields"] if name not in samples]
