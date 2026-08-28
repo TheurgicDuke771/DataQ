@@ -487,7 +487,7 @@ def test_import_rejects_invalid_expectation_check(client: TestClient, db_session
 
 
 def test_import_suite_service_rejects_oversized_name(db_session: Any) -> None:
-    # The REST import route's `CheckDocument` Pydantic model already caps name/expectation_type at
+    # The REST import route's `CheckDocumentIn` Pydantic model already caps name/expectation_type at
     # 256/128.
     from backend.app.services import suite_io_service
     from backend.app.services.check_service import CheckConfigInvalidError

@@ -154,7 +154,7 @@ def import_suite(
             critical_threshold=c["critical_threshold"],
         )
         # Direct `Check(...)` construction below has no Pydantic layer of its own — today the REST
-        # import route's `CheckDocument` model already enforces the same 256/128 bounds.
+        # import route's `CheckDocumentIn` model already enforces the same 256/128 bounds.
         validate_lengths(name=c["name"], expectation_type=c["expectation_type"])
         # #568: an imported document must not smuggle in what a direct POST
         # would 422 — same shared validator create_check/update_check use.

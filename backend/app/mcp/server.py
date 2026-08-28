@@ -198,7 +198,7 @@ def _require_role(user: User, minimum: str) -> None:
 
 #: Keys `suite_io_service.import_suite` indexes DIRECTLY (`c["kind"]`,
 #: `c["warn_threshold"]`, …) rather than `.get()`-ing. The REST import route is
-#: immune to a missing one only because its `CheckDocument` Pydantic model always
+#: immune to a missing one only because its `CheckDocumentIn` Pydantic model always
 #: emits every key, defaulted — MCP has no such model in front of it, so a
 #: hand-composed check that simply omits `warn_threshold` would raise `KeyError`,
 #: which is not a `DataQError` and escapes `_service_errors` as an opaque
