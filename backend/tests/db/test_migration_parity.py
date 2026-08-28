@@ -108,17 +108,29 @@ def _literals(sql: str) -> set[str]:
 
 
 # `<column> IS [NOT] NULL` carries no string literal, so `_literals()` can't see a polarity flip
-# (#1326). Postgres reformats predicates on read-back — `col IS NULL` -> `(col IS NULL)`, and a cast
-# may sit beside an unrelated comparison in the same clause — so tolerate surrounding parens/casts
-# around the column but still require the literal `IS [NOT] NULL` keywords.
+# (#1326). Postgres reformats predicates on read-back — `col IS NULL` -> `(col IS NULL)` — so
+# tolerate surrounding parens; a `::type` cast is defensive (no live predicate hits it today), and
+# a multi-word type name (e.g. `character varying`) must not swallow the column's own name. `NOT
+# (col IS NULL)` is a human-authored inversion the reformatted side never produces, so an outer NOT
+# is also unwrapped rather than silently flipping the polarity read off it.
 _NULL_CLAUSE = re.compile(
-    r"\(*\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)*(?:::\w+)?\s*\)*\s+IS\s+(NOT\s+)?NULL", re.IGNORECASE
+    r"(?:\bNOT\b\s+)?\(*\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)*"
+    r"(?:::\"?[a-zA-Z_][a-zA-Z_ ]*?\"?)?\s*\)*\s+IS\s+(NOT\s+)?NULL",
+    re.IGNORECASE,
 )
 
 
 def _null_polarities(sql: str) -> set[tuple[str, bool]]:
-    """`{(column, is_not_null)}` for every `IS [NOT] NULL` clause in `sql`."""
-    return {(col.lower(), bool(is_not)) for col, is_not in _NULL_CLAUSE.findall(sql)}
+    """`{(column, is_not_null)}` for every `IS [NOT] NULL` clause in `sql`.
+
+    No quote-awareness: a string literal containing the text "x IS NULL" would false-positive,
+    same accepted limitation as `_literals()` itself — no current predicate has one.
+    """
+    out: set[tuple[str, bool]] = set()
+    for match in _NULL_CLAUSE.finditer(sql):
+        not_wrapped = bool(re.match(r"\s*NOT\b", match.group(0), re.IGNORECASE))
+        out.add((match.group(1).lower(), bool(match.group(2)) != not_wrapped))
+    return out
 
 
 def _model_predicates() -> dict[str, str]:
@@ -219,3 +231,21 @@ def test_null_polarities_catches_a_polarity_flip() -> None:
     assert _null_polarities(model_sql) == {("sample_failures_purged_at", False)}
     assert _null_polarities(flipped_live_sql) == {("sample_failures_purged_at", True)}
     assert _null_polarities(model_sql) != _null_polarities(flipped_live_sql)
+
+
+def test_null_polarities_tolerates_a_multi_word_cast() -> None:
+    """A single-word-only cast pattern re-anchors on the cast's trailing word, losing the real
+    column and inventing a fake one from part of the type name — verified failing on the
+    pre-fix regex: `(col)::character varying IS NULL` extracted `{('varying', False)}`.
+    """
+    assert _null_polarities("(col)::character varying IS NULL") == {("col", False)}
+
+
+def test_null_polarities_unwraps_an_outer_not() -> None:
+    """A human-authored `NOT (col IS NULL)` means `col IS NOT NULL` — read literally off the
+    inner clause alone it is the opposite polarity, silently. Postgres itself never emits this
+    form (it canonicalizes to `IS NOT NULL` directly), so only a hand-written model predicate can
+    hit it, but the extractor must not misread one that does.
+    """
+    assert _null_polarities("NOT (col IS NULL)") == {("col", True)}
+    assert _null_polarities("NOT (col IS NOT NULL)") == {("col", False)}
