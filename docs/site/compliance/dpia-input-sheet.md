@@ -50,7 +50,7 @@ other subjects — intact.
 | `sessions` | OTP-mode sign-in sessions — **token hash only** (never the token) | Server-side revocation; logout deletes | HttpOnly cookie; SHA-256 at rest |
 | `otp_codes` | One-time codes — **hashed**, attempt-capped | Expired codes purged daily (`purge_otp_codes` beat) | Rate limits + enumeration-resistant responses |
 | `api_keys` | PATs — **SHA-256 hash only**, name, last-used | Until revoked | `dq_live_` prefix supports secret scanning |
-| `audit_events` | Actor email/id, action, target — the G1 trail (ADR 0041) | `AUDIT_RETENTION_DAYS` (default **365**), independent of the sample purge — one clock keeps a record, the other destroys one | Append-only (`REVOKE UPDATE/DELETE`); **no warehouse values ever copied in** (ADR 0041 §2.6) — read events name *which* result was read, never what it contained. Tamper-evidence beyond REVOKE is open by choice: [#1460](https://github.com/TheurgicDuke771/DataQ/issues/1460) |
+| `audit_events` | Actor email/id, action, target — the G1 trail (ADR 0041) | `AUDIT_RETENTION_DAYS` (default **365**), independent of the sample purge — one clock keeps a record, the other destroys one | Append-only (`REVOKE UPDATE/DELETE`); **no warehouse values ever copied in** (ADR 0041 §2.6) — read events name *which* result was read, never what it contained. Hash-chained for tamper-evidence, unanchored to an external log sink by default: [#1460](https://github.com/TheurgicDuke771/DataQ/issues/1460) |
 | Logs / telemetry | Request ids, structured events | Sink-controlled | **PII redacted at the logger level** — the redactor sits in `core/logging.py`, so a dependency's log line is scrubbed too |
 
 ## The rows a DPIA form usually asks for
