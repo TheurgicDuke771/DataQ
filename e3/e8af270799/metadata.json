@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "e3e8af270799",
+  "strategy": "manual-commit",
+  "branch": "feature/1512-llm-sql-generator",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/llm.py",
+    "backend/app/services/llm_service.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/services/test_llm_service.py",
+    "backend/tests/support/audit_coverage.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e3/e8af270799/0/metadata.json",
+      "transcript": "/e3/e8af270799/0/full.jsonl",
+      "compact_transcript": "/e3/e8af270799/0/transcript.jsonl",
+      "content_hash": "/e3/e8af270799/0/content_hash.txt",
+      "prompt": "/e3/e8af270799/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 504,
+    "cache_creation_tokens": 477149,
+    "cache_read_tokens": 84195209,
+    "output_tokens": 167565,
+    "api_call_count": 253
+  }
+}

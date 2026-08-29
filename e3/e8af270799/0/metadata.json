@@ -1,0 +1,226 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "e3e8af270799",
+  "session_id": "d65eb216-a6a3-43ba-8d97-bfd6f4d2e773",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-29T16:58:00.945576Z",
+  "branch": "feature/1512-llm-sql-generator",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/llm.py",
+    "backend/app/services/llm_service.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/services/test_llm_service.py",
+    "backend/tests/support/audit_coverage.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5",
+  "turn_id": "c2328d5341c5",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 504,
+    "cache_creation_tokens": 477149,
+    "cache_read_tokens": 84195209,
+    "output_tokens": 167565,
+    "api_call_count": 253
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01QnYtxuiAtJPJVBUC6odyPL",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "claude-api"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "661a3f966128",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 66,
+        "end": 67,
+        "entry_ids": [
+          "72087b47-8528-4871-be64-ec0232765c56"
+        ],
+        "tool_use_id": "toolu_01QnYtxuiAtJPJVBUC6odyPL"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01QnYtxuiAtJPJVBUC6odyPL"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: claude-api",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01CwNxTznoBEugY6N28aAJiJ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "661a3f966128",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 273,
+        "end": 274,
+        "entry_ids": [
+          "c5dc286d-2996-4e8a-8b54-71ef49476fcc"
+        ],
+        "tool_use_id": "toolu_01CwNxTznoBEugY6N28aAJiJ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01CwNxTznoBEugY6N28aAJiJ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_018hVsW5pmdhSr4zg7Yu36TV",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "661a3f966128",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1085,
+        "end": 1086,
+        "entry_ids": [
+          "348ab834-c354-46df-a54c-310e9baf6f5f"
+        ],
+        "tool_use_id": "toolu_018hVsW5pmdhSr4zg7Yu36TV"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_018hVsW5pmdhSr4zg7Yu36TV"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01TLCKAc53BYELpm46Rvxiru",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "661a3f966128",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1125,
+        "end": 1126,
+        "entry_ids": [
+          "5be01e5c-3bc8-4c2d-8ff8-384e2cdc665f"
+        ],
+        "tool_use_id": "toolu_01TLCKAc53BYELpm46Rvxiru"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01TLCKAc53BYELpm46Rvxiru"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01A2ZkjnT32sRPmJEp18ZmL3",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "661a3f966128",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1164,
+        "end": 1165,
+        "entry_ids": [
+          "ecf54209-1e0f-4786-8820-b8503bc9a7a8"
+        ],
+        "tool_use_id": "toolu_01A2ZkjnT32sRPmJEp18ZmL3"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01A2ZkjnT32sRPmJEp18ZmL3"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-29T16:58:00.850139Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 801,
+    "human_modified": 14,
+    "human_removed": 0,
+    "total_committed": 801,
+    "total_lines_changed": 815,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 707,
+      "user_lines_removed": 7,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7,
+        "backend/app/api/v1/llm.py": 74,
+        "backend/app/services/llm_service.py": 10,
+        "backend/app/services/llm_sqlgen.py": 161,
+        "backend/app/worker/tasks.py": 1,
+        "backend/tests/api/test_llm_generation.py": 185,
+        "backend/tests/services/test_llm_service.py": 2,
+        "backend/tests/services/test_llm_sqlgen.py": 263,
+        "backend/tests/support/audit_coverage.py": 4
+      },
+      "user_removed_per_file": {
+        "backend/app/api/v1/llm.py": 3,
+        "backend/app/services/llm_service.py": 2,
+        "backend/tests/services/test_llm_service.py": 2
+      }
+    }
+  ]
+}

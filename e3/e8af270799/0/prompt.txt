@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>bhg9zy1hr</task-id>
+<tool-use-id>toolu_014eFP4PPnL4yKbrG1KvM9pf</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d65eb216-a6a3-43ba-8d97-bfd6f4d2e773/tasks/bhg9zy1hr.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI runs" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b0x57m9x5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d65eb216-a6a3-43ba-8d97-bfd6f4d2e773/tasks/b0x57m9x5.output</output-file>
+<status>completed</status>
+<summary>Background command "Continue waiting for CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Do some research how other tools (like montecarlo, alation, gx cloud, etc.) handles these scenarios [llm agentic usecase, rca, rule suggestion, etc.] and see which of these we can adopt and improvised on.
