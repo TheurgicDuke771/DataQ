@@ -24,7 +24,7 @@ feed within seconds. Succeeded runs are picked up by the same poll on its 10-min
 it shows the ready-to-paste inbound URL per provider (the ADF one embeds the shared
 secret behind a reveal toggle; treat it as a credential). No hand-assembly from Key
 Vault needed. Provisioning details: **One-time provisioning → step 5** in the
-[deployment guide](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/README.md).
+repository's deployment guide (`deploy/README.md`).
 
 ## Airflow
 
@@ -88,8 +88,7 @@ bypass the inference entirely.
 
 An empty lineage graph and a broken lineage pipeline once **looked identical in the UI** — the
 asset said "No lineage recorded" whether that was the truth or whether DataQ had been unable to
-read your artifacts for a week. That is fixed ([#828](https://github.com/TheurgicDuke771/DataQ/issues/828),
-[#837](https://github.com/TheurgicDuke771/DataQ/issues/837)), but the underlying failure mode is
+read your artifacts for a week. That is fixed now, but the underlying failure mode is
 worth understanding, because it is quiet by nature.
 
 **1. The artifacts-store credential is a single point of failure — now a *visible* one.** The dbt
@@ -114,7 +113,7 @@ store, and DataQ will not read them.
 > the graph repopulates. Re-running the producer is currently the only way to recover a lineage
 > gap.
 
-### Lineage from a catalog — the `LineageProvider` seam (ADR 0034, #762)
+### Lineage from a catalog — the `LineageProvider` seam (ADR 0034)
 
 The dbt slice above sees only what the dbt manifest models. A **governance catalog** sees
 more — including consumers that emit no OpenLineage themselves (a Power BI report now sitting
@@ -126,7 +125,7 @@ provider-specific branching in service code), caching the pulled edges into the 
 nodes are not assumed to be tables**, and a BI/dashboard node round-trips the moment a
 capable catalog (Purview/DataHub) lands behind the seam, with no schema or query change.
 
-- **Cross-producer identity — names do NOT join byte-for-byte** (#823, ADR 0034 amendment).
+- **Cross-producer identity — names do NOT join byte-for-byte** (ADR 0034 amendment).
   OpenLineage has no case-folding rule, so two producers naming the same physical table need not
   agree: real `openlineage-dbt` emits `DATAQ_DB.ANALYTICS.mart_order_revenue` where DataQ's asset
   identity is `DATAQ_DB.ANALYTICS.MART_ORDER_REVENUE` (its `database`/`schema` come from the dbt
@@ -160,7 +159,7 @@ capable catalog (Purview/DataHub) lands behind the seam, with no schema or query
 Marquez (+ its own Postgres) behind an opt-in profile so a plain `docker compose up` is unaffected.
 
 > **DataQ's own emission is not enough to produce lineage — and that is by design.** A DataQ run
-> *reads* the asset it validates, so the emitter (#758) sends it as a job **input** and emits no
+> *reads* the asset it validates, so the emitter sends it as a job **input** and emits no
 > outputs. That makes the DQ job a consumer in the catalog; it creates **no dataset→dataset edge**.
 > Edges come from whatever actually *transforms* data — dbt's OpenLineage integration, a Spark or
 > Airflow OL emitter, or any producer posting a RunEvent with both `inputs` and `outputs`. Point
@@ -193,12 +192,12 @@ docker compose exec worker python -c \
   "from backend.app.worker.tasks import refresh_lineage_pull; print(refresh_lineage_pull())"
 
 # 4. the pulled edges land in lineage_edges with source='marquez' (dbt edges untouched),
-#    and render in the asset's lineage graph (#805).
+#    and render in the asset's lineage graph.
 docker compose exec postgres psql -U dataq -d dataq \
   -c "select source, count(*) from lineage_edges group by source;"
 ```
 
-**Verified locally 2026-07-12 (#804).** Off-by-default confirmed (`get_lineage_provider()` → `None`
+**Verified locally 2026-07-12.** Off-by-default confirmed (`get_lineage_provider()` → `None`
 with no env); env-configured, the pull walked each known asset as a seed, **cached 3
 `source='marquez'` edges** alongside the existing 8 `source='dbt'` ones (neither pruned the other),
 and the asset's lineage graph rendered the full chain — including a **BI dashboard node that only
@@ -213,10 +212,10 @@ Marquez's newest release is 0.50.0 (2024-10); its slow cadence is an **accepted 
 dev-time reference consumer (ADR 0034) — the `/api/v1/lineage` contract has been stable across
 releases, and production lineage is a bring-your-own catalog behind the same seam.
 
-### Lineage from the warehouse — the `WarehouseLineageProvider` seam (#858)
+### Lineage from the warehouse — the `WarehouseLineageProvider` seam
 
 The catalog pull above reconciles a byte-mismatched identity we **can't construct** (a producer
-spells a name in some other case, so we enumerate the catalog and fold — #823). Reading the
+spells a name in some other case, so we enumerate the catalog and fold). Reading the
 **warehouse's own** lineage views sidesteps that entirely: the engine returns identifiers in its
 own case — Snowflake `ACCOUNT_USAGE` upper, Unity Catalog `system.access` lower — which is
 **byte-identical to DataQ's asset identity**, so no fold, no enumerate step. That is why warehouse
@@ -227,7 +226,7 @@ not a second `LineageProvider`.
 (Snowflake `IMPORTED PRIVILEGES` on `SNOWFLAKE` — or the finer `SNOWFLAKE.GOVERNANCE_VIEWER`
 database role, which covers the ACCESS_HISTORY/OBJECT_DEPENDENCIES tiers without blanket
 ACCOUNT_USAGE; UC `SELECT` on `system.access`) the connection's principal may not have. A tier
-the role can't read **skips with a "not authorized" reason and the ladder descends** (#902) —
+the role can't read **skips with a "not authorized" reason and the ladder descends** —
 tested live: a denied tier never aborts the tiers the role *can* read, and a fully-denied
 account reports classified-unavailable, never a confident empty. When enabled, a **daily beat** (`refresh_warehouse_lineage`) refreshes every
 Snowflake / Unity Catalog connection independently — one unreachable warehouse records a classified
@@ -235,14 +234,14 @@ error and never aborts the sweep — writing edges tagged `source='snowflake'` /
 with the connection's id (the full-constraint regime, so a warehouse refresh never touches a dbt or
 Marquez row).
 
-**Column grain (#901, live-verified on UC):** where the warehouse offers it —
+**Column grain (live-verified on UC):** where the warehouse offers it —
 `system.access.column_lineage`, read from the same watermark window — each table edge is refined
 with `[upstream_column, downstream_column]` pairs, stored on the edge row (`lineage_edges.columns`)
 and **merged union-wise** on incremental refreshes (a log window only re-observes pairs whose
 queries ran inside it; forgetting the rest would be a prune the never-prune regime forbids). A
 separately-gated `column_lineage` degrades honestly: table edges still land, with a note. The asset
 page shows the mappings per direct edge; an edge whose far endpoint is outside the viewer's grants
-arrives **count-only** from the server (the #845 one-rule — a hidden asset's column names are
+arrives **count-only** from the server (a hidden asset's column names are
 schema disclosure) and renders as a locked box. Snowflake's column grain lives in `ACCESS_HISTORY`
 (Enterprise) and is honestly absent on Standard.
 
@@ -250,13 +249,13 @@ schema disclosure) and renders as a locked box. Snowflake's column grain lives i
 
 | Tier | Grain | Edition | Notes |
 |---|---|---|---|
-| `GET_LINEAGE` | object-level traversal (+ column grain) | Enterprise+ | Tried first: its absence is a clean, catchable `0A000`, the best preflight signal. Since #892 it is a real **per-seed traversal** — seeds come from the ADR 0040 enumeration seam (`WAREHOUSE_LINEAGE_MAX_SEEDS`, default 500, loud truncation), each walked upstream **and** downstream at distance 2. Every returned row is a DIRECT source→target edge (`distance` is hops-from-seed, not a claim about the seed); MASKED (`***`) endpoints and non-table domains (STAGE) are dropped. A tier that enumerates no seeds, or observes no rows, **descends** rather than returning a confident empty — this tier prunes. |
+| `GET_LINEAGE` | object-level traversal (+ column grain) | Enterprise+ | Tried first: its absence is a clean, catchable `0A000`, the best preflight signal. It is a real **per-seed traversal** — seeds come from the ADR 0040 enumeration seam (`WAREHOUSE_LINEAGE_MAX_SEEDS`, default 500, loud truncation), each walked upstream **and** downstream at distance 2. Every returned row is a DIRECT source→target edge (`distance` is hops-from-seed, not a claim about the seed); MASKED (`***`) endpoints and non-table domains (STAGE) are dropped. A tier that enumerates no seeds, or observes no rows, **descends** rather than returning a confident empty — this tier prunes. |
 | `ACCESS_HISTORY` | column/statement | Enterprise+ | **Present-but-empty on Standard** — so emptiness is corroborated against `QUERY_HISTORY` (edition-gated vs genuinely idle), never read as "no lineage". ~2–3h lag. |
 | `OBJECT_DEPENDENCIES` | view-level | all editions | The floor — live-verified on the demo account (RETAIL→STG→ANALYTICS chain). Views/matviews/dynamic-tables; no column detail. |
 
 A degraded descent (e.g. down to view-level because the account isn't Enterprise) is **surfaced on
 the asset's lineage graph**, not hidden — the graph says "view-level only" rather than presenting a
-coarse graph as complete (#828). `OBJECT_DEPENDENCIES` is a current-state view, so its refresh is a
+coarse graph as complete. `OBJECT_DEPENDENCIES` is a current-state view, so its refresh is a
 **snapshot diff** (re-read whole, prune stale edges).
 
 **Unity Catalog — `system.access.table_lineage`**, an append-only **log** with an `event_time`. So
@@ -266,14 +265,14 @@ fact, not a removed dependency. A 6h safety window before the watermark absorbs 
 ingestion lag so a late-arriving row is never lost to a strict `>`. Only rows with **both** a source
 and a target table are edges (most rows are pure read-access with a null target).
 
-**Snowpark scratch is stitched, not dropped (#912).** A pipeline that materializes through
+**Snowpark scratch is stitched, not dropped.** A pipeline that materializes through
 `SNOWPARK_TEMP_*` session scratch (`A → TEMP → B`) used to lose the dependency entirely — both rows
 were dropped edge-wise, so `B` rendered with zero upstreams, indistinguishable from genuinely
 unlineaged. Both Snowflake tiers that can observe scratch now collapse such chains transitively into
 the real `A → B` (bounded depth, column pairs composed over the bridging column only when *both*
 hops evidence them), and never emit a scratch identity. Over-depth and dead-end chains are dropped
 **and counted** (`ephemeral_rows_seen` / `stitched_edges` / `ephemeral_chains_dropped` in the refresh
-log) — the pre-#912 drop was silent, which is why establishing whether it was biting took manual
+log) — the previous drop was silent, which is why establishing whether it was biting took manual
 archaeology against prod.
 
 **Verified against real captured payloads, not against a deployed app.** The providers' parse +

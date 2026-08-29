@@ -41,7 +41,7 @@ lawful basis) and is the deploying organization's responsibility.
   `X-Forwarded-Proto` the proxy forwards, and marks the cookie `Secure` only when that says
   `https`. That is only as trustworthy as the proxy. The reference frontend nginx forwards the
   **edge's** header and falls back to its own `$scheme` only on a direct connection
-  ([#1138](https://github.com/TheurgicDuke771/DataQ/issues/1138) — it used to overwrite the
+  (it used to overwrite the
   header with its own plaintext upstream scheme, which dropped `Secure` on live HTTPS), so
   inference is correct on that stack. If you front DataQ with **your own** proxy, confirm it
   forwards the real client-facing scheme — or simply set `AUTH_SESSION_COOKIE_SECURE=true`,
@@ -56,7 +56,7 @@ lawful basis) and is the deploying organization's responsibility.
   back in the response **by design** (it's the point of the check). The SMTP password never
   appears in the response or in any log line; the recipient address never appears in a log
   line either, only in the response, to the same admin who supplied it by calling the endpoint.
-  **Transport options** ([#1146](https://github.com/TheurgicDuke771/DataQ/issues/1146)):
+  **Transport options:**
   `AUTH_EMAIL_TLS_MODE` picks `starttls` (default) / `implicit` (SMTPS on :465) / `none`
   (plaintext — test-only, loudly warned on every send, and there is no way to disable that
   warning), and `AUTH_EMAIL_CA_BUNDLE` names a PEM the mailer trusts for a relay on a private
@@ -65,8 +65,8 @@ lawful basis) and is the deploying organization's responsibility.
   webhooks). There is deliberately **no** option to skip certificate verification: a private
   CA bundle is judged to cover the legitimate case, and disabling verification was rejected as
   a shortcut around it rather than shipped as a convenience.
-  It is **capped per admin** (`ADMIN_EMAIL_PREFLIGHT_PER_10MIN`, default 3 per 10 minutes —
-  [#1147](https://github.com/TheurgicDuke771/DataQ/issues/1147)), because every call is a real
+  It is **capped per admin** (`ADMIN_EMAIL_PREFLIGHT_PER_10MIN`, default 3 per 10 minutes),
+  because every call is a real
   connection to your mail relay: admin-gating bounds *who* can open one, not *how many*, and a
   scripted or compromised admin token could get your sending account throttled or blocked by
   the relay — a worse outage than the misconfiguration the pre-flight exists to catch. Over the
@@ -94,7 +94,7 @@ are the reason this mode is opt-in rather than the default:
   5 verification attempts, and a new request invalidates the previous code; requests are capped
   **per mailbox** as well as per IP; the sign-in endpoints return an identical response *body and
   status* whether or not an address is known, so the response content cannot be used to enumerate
-  who has an account. Since [#1137](https://github.com/TheurgicDuke771/DataQ/issues/1137) the
+  who has an account. The
   code-request endpoint also holds **every** such response to a common minimum latency
   (`AUTH_OTP_REQUEST_MIN_SECONDS`, default 1s), so the code-mint and mail-send round trip an
   eligible address incurs no longer stands out against an ineligible one's in-memory lookup.
@@ -103,8 +103,8 @@ are the reason this mode is opt-in rather than the default:
   narrower version of the channel; a genuine SMTP failure still answers 502/503 where a working
   send answers `ok`, which is deliberate (a mail outage must not be a silent no-op — ADR 0032 §7);
   and setting the floor to `0` removes it. **Code *verification* carries the same floor on its own
-  setting** (`AUTH_OTP_VERIFY_MIN_SECONDS`, default 0.5s —
-  [#1141](https://github.com/TheurgicDuke771/DataQ/issues/1141)): every rejected code answers an
+  setting** (`AUTH_OTP_VERIFY_MIN_SECONDS`, default 0.5s):
+  every rejected code answers an
   identical 401, but an address that has a live code outstanding does more database work than one
   that has none, so the rejection's *timing* used to reveal which — and cheaply, because a code is
   minted only for an *allow-listed* address, so a single request-a-code call against the address
@@ -193,7 +193,7 @@ are the reason this mode is opt-in rather than the default:
 - **Two coordinated auth-mode selectors.** The frontend's runtime `DATAQ_AUTH_MODE` and the
   backend's inferred mode (SSO variables, or the OTP mailer + allowlist block) are separate
   contracts — neither can derive the other. Set them together; the full table is in
-  [`deploy/README.md`](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/README.md) and
+  the repository's `deploy/README.md` and
   [`.env.app.example`](https://github.com/TheurgicDuke771/DataQ/blob/main/.env.app.example). The
   backend refuses to start on a half-configured OTP block rather than come up unable to log
   anybody in.
@@ -246,12 +246,11 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   both stated rather than glossed: the Azure frontend→api hop, which never leaves the
   Container Apps environment; and — on AWS only — the **CloudFront→ALB origin hop**, because
   that stack has no custom domain and therefore no certificate the load balancer could serve.
-  The second one does cross the AWS network, so it is a real (tracked) gap rather than a
-  contained one: [#1384](https://github.com/TheurgicDuke771/DataQ/issues/1384).
+  The second one does cross the AWS network, so it is a real, tracked gap rather than a
+  contained one.
 - **At rest:** PostgreSQL, the object stores, and the secret store (Key Vault / AWS Secrets
   Manager) encrypt at rest in both reference deployments. The AWS cache (ElastiCache — the
-  Celery broker and rate-limit counters, not a data store) currently does **not**:
-  [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385).
+  Celery broker and rate-limit counters, not a data store) currently does **not**.
 
 ### At-rest encryption per resource — the security-review evidence
 
@@ -275,7 +274,7 @@ below is checkable against a first-party citation rather than our assertion.
 | RDS PostgreSQL | Yes — `storage_encrypted = true`, asserted in our own IaC | AWS-managed KMS | The one row our Terraform/OpenTofu actually asserts, because that stack **owns** its database |
 | Secrets Manager (`dataq/conn-*`) | Yes | AWS-managed KMS | |
 | S3 (landing bucket) | Yes | SSE-S3 default | |
-| ElastiCache (Celery broker + rate-limit counters) | **No** | — | [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385). Not a data store, but the asymmetry beside an encrypted RDS is exactly what a review flags |
+| ElastiCache (Celery broker + rate-limit counters) | **No** | — | Not a data store, but the asymmetry beside an encrypted RDS is exactly what a review flags |
 
 ### Customer-managed keys (CMK)
 
@@ -311,7 +310,7 @@ maintainers' reference deployment does neither, so it is out of scope there.
 ## Column classification from your warehouse
 
 DataQ masks failing-row samples by default and surfaces only what it can justify
-showing (#415). The strongest justification available is **your own governance**:
+showing. The strongest justification available is **your own governance**:
 if a column is classified in the warehouse, DataQ reads that classification and
 treats it as the floor — a suite-level setting cannot lift it.
 

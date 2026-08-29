@@ -1,16 +1,15 @@
 # ADR 0026 — DataQ-issued API keys / service tokens behind the auth seam (REST + MCP)
 
-- **Status:** **Accepted — phase 1 (user-scoped PATs) built 2026-07-04** ([#461](https://github.com/TheurgicDuke771/DataQ/issues/461), v1.1 W1); phase 2 (service-account principals) remains deferred (see phase-1 record below)
+- **Status:** **Accepted — phase 1 (user-scoped PATs) built 2026-07-04** (v1.1 W1); phase 2 (service-account principals) remains deferred (see phase-1 record below)
 - **Date:** 2026-06-29 (timing decided 2026-07-03; phase 1 built 2026-07-04)
 - **Deciders:** @TheurgicDuke771
-- **Related:** ADR [0010](0010-provider-agnostic-infrastructure-seams.md) (the `get_current_user` identity seam — Azure is one impl, not the architecture), [0013](0013-marketplace-distribution-and-anti-lock-in.md) (BYOL / anti-lock-in), [0008](0008-mcp-server.md) (MCP auth via `JWTVerifier` — bring-your-own-token today), [0020](0020-history-and-audit-strategy.md) (audit), compliance posture (#436)
-- **Issue:** [#461](https://github.com/TheurgicDuke771/DataQ/issues/461)
+- **Related:** ADR [0010](0010-provider-agnostic-infrastructure-seams.md) (the `get_current_user` identity seam — Azure is one impl, not the architecture), [0013](0013-marketplace-distribution-and-anti-lock-in.md) (BYOL / anti-lock-in), [0008](0008-mcp-server.md) (MCP auth via `JWTVerifier` — bring-your-own-token today), [0020](0020-history-and-audit-strategy.md) (audit), the maintainers' compliance posture register
 
 > **Amendment (2026-07-09, [ADR 0032](0032-email-otp-signin.md)):** the phase-2 open
 > question "migration path for `users.aad_object_id` → generic principal without
 > breaking existing ownership/shares" is **answered for the email slice**:
 > `aad_object_id` becomes nullable with a unique `lower(email)` key — one user row
-> per normalized email across authenticators (ADR 0032 Decision 6, #735).
+> per normalized email across authenticators (ADR 0032 Decision 6).
 > Service-account principals remain deferred phase-2 scope.
 
 > **Amendment (2026-08-15, provider-neutral OIDC):** the same open question is now
@@ -46,9 +45,9 @@
 > `client_id`, not the standard `aud` — `OidcBearerScheme` accepts a match on
 > either claim. Everything else in the validator is provider-agnostic; this line
 > is the one exception, and it needs confirming against a real Cognito token once
-> the AWS deployment's Cognito user pool exists (this codebase's "#953 rule" —
+> the AWS deployment's Cognito user pool exists — the project's standing rule that
 > anything crossing a third-party token-shape boundary needs a live check, not
-> just a spec read).
+> just a spec read.
 >
 > Service-account principals remain deferred phase-2 scope, unaffected by this.
 
@@ -75,13 +74,13 @@ Introduce a **DataQ-issued credential as a second authenticator behind the exist
 - Hash-at-rest (argon2/bcrypt), **show-once** on creation, identifying prefix (`dq_live_…`), expiry defaults, revocation, last-used + audit.
 - Hashes live in a **new `api_keys` table** — *not* the credential SecretStore (that store is for *retrievable* connection secrets; a key hash is a verifier secret, never retrievable).
 - **Lifecycle tied to the owner**: deactivating a user kills their keys, so a PAT can't become an SSO-policy backdoor that outlives the account.
-- Never logged (prefix only) — same discipline as the compliance posture (#436).
+- Never logged (prefix only) — same discipline as the maintainers' compliance posture.
 
 ## Decision record (2026-07-03 — the go-live "now vs post-v1" call)
 
 **Deferred to post-v1 (Theme 3).** Rationale: this is a credential surface with an explicit
 do-not-half-build bar, and v1's actual programmatic needs are covered by interim mechanisms —
-the Azure CLI is pre-authorized on the API scope (#565: non-interactive
+the Azure CLI is pre-authorized on the API scope (non-interactive
 `az account get-access-token` bearers for the live-smoke lane and local MCP clients), and
 `/mcp` accepts the same Azure token as REST (ADR 0008). Rushing a PAT store into go-live week
 buys little and risks the exact half-build this ADR warns against.
@@ -101,7 +100,7 @@ buys little and risks the exact half-build this ADR warns against.
   leaked via logs/proxies. A PAT has the same `Authorization`-header ergonomics without any
   of that.
 
-## Phase-1 decision record (2026-07-04 — the build, PR for #461)
+## Phase-1 decision record (2026-07-04 — the build)
 
 Pulled forward to v1.1 W1 at cycle planning (2026-07-04): the second authenticator must land
 while Azure AD is still live as the reference validator (the Azure window closes ~2026-07-25),

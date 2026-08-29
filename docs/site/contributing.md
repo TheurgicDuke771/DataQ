@@ -1,8 +1,7 @@
 # Contributing
 
-The full working agreements (40 rules), commit/PR conventions, and module boundaries live
-in **[CONTRIBUTING.md](https://github.com/TheurgicDuke771/DataQ/blob/main/CONTRIBUTING.md)**.
-The short version:
+The full working agreements, commit/PR conventions, and module boundaries live in the
+repository's `CONTRIBUTING.md`. The short version:
 
 - **Trunk-based**: branch off `main`, PR back, **squash-merge**, **conventional commits**
   (`feat:` / `fix:` / `chore:` / `docs:` / `test:` / `refactor:` / `ci:`).

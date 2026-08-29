@@ -3,9 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-06-30
 - **Deciders:** @TheurgicDuke771
-- **Note:** the suite permission tiers were never formalised in an ADR — they were established directly in `suite_authz.py`; this ADR records and revises that model (so there is no prior ADR to mark `Superseded`). Folds in the workspace-admin scope decisions tracked as #411 / #412.
-- **Related:** ADR [0010](0010-provider-agnostic-infrastructure-seams.md) (the generic `get_current_user` identity seam — Azure is one impl), [0020](0020-history-and-audit-strategy.md) (audit), [0026](0026-auth-api-keys-and-principal-seam.md) (principal/identity seam), compliance posture (#431 data-access audit)
-- **Issue:** [#482](https://github.com/TheurgicDuke771/DataQ/issues/482) (supersedes [#411](https://github.com/TheurgicDuke771/DataQ/issues/411), [#412](https://github.com/TheurgicDuke771/DataQ/issues/412))
+- **Note:** the suite permission tiers were never formalised in an ADR — they were established directly in `suite_authz.py`; this ADR records and revises that model (so there is no prior ADR to mark `Superseded`). Folds in the earlier workspace-admin scope decisions it supersedes.
+- **Related:** ADR [0010](0010-provider-agnostic-infrastructure-seams.md) (the generic `get_current_user` identity seam — Azure is one impl), [0020](0020-history-and-audit-strategy.md) (audit), [0026](0026-auth-api-keys-and-principal-seam.md) (principal/identity seam), the maintainers' compliance posture (data-access audit)
 
 > **Amendment (2026-07-09, [ADR 0033](0033-workspace-roles-rbac.md)):** the
 > workspace-admin **source** moves from the `WORKSPACE_ADMIN_EMAILS` allowlist to a
@@ -47,7 +46,7 @@ Two problems with this shape:
    `admin` is grantable to any peer, so the most privileged capabilities
    (manage who-can-see-this, delete-the-suite) can be handed around, including an
    admin-revokes-another-admin escalation edge. Meanwhile the **workspace-admin**
-   role (`WORKSPACE_ADMIN_EMAILS` → `is_workspace_admin`, ADR-era #289) is *read
+   role (`WORKSPACE_ADMIN_EMAILS` → `is_workspace_admin`) is *read
    only*: it can see every suite/user/grant on `/admin` but cannot act — it can
    spot an orphaned or junk suite and do nothing about it. The product has a
    governance role that can't govern, and a per-suite admin tier that
@@ -74,8 +73,8 @@ workspace-admin the governance actor instead of a grantable per-suite tier.
 **Visibility (option a, decided):** workspace-admins get a **workspace-wide view
 in the normal product surface** — Dashboard, Suites, Results — not just the
 `/admin` page. This is consistent with being implicit admin everywhere, and it
-**supersedes #411** (workspace-wide Dashboard/Results) and **#412**
-(workspace-admin write actions), which this decision absorbs.
+**supersedes the earlier, narrower decisions** for workspace-wide Dashboard/Results
+visibility and for workspace-admin write actions, which this decision absorbs.
 
 Net per suite: **one owner + workspace-admin-as-admin + edit/view collaborators.**
 
@@ -95,7 +94,7 @@ Net per suite: **one owner + workspace-admin-as-admin + edit/view collaborators.
   delete, edit, and **read every suite's results including failing-sample data**
   (which can be sensitive; PII redaction still applies at the logger/sample
   layer). This is a deliberate expansion from today's read-only oversight and
-  wants a security note; the data-access audit trail (#431) should record
+  wants a security note; the planned data-access audit trail should record
   workspace-admin reads. Hold the workspace-admin allowlist tightly.
 - **No peer-to-peer delegation of suite management.** Management/deletion by a
   non-owner now funnels to workspace-admins. Mitigation: the allowlist already
@@ -106,7 +105,7 @@ Net per suite: **one owner + workspace-admin-as-admin + edit/view collaborators.
   succession path for an orphaned suite; explicit owner-reassignment stays a
   separate future item.
 
-**Implementation shape** (full plan in #482)
+**Implementation shape**
 - `effective_permission` / `effective_permissions` return `admin` when the user
   is a workspace-admin (computed, not a `shares` lookup).
 - ~~`require_permission` takes an `is_workspace_admin` signal — today it is a pure
@@ -120,7 +119,7 @@ Net per suite: **one owner + workspace-admin-as-admin + edit/view collaborators.
   flag would not have been.
 - The share validator accepts only `view`/`edit` (rejects `admin`).
 - Suite list/read scoping, Dashboard, and Results include all suites for
-  workspace-admins (the #411/#412 surface).
+  workspace-admins.
 - **Backward-compatible migration:** downgrade existing `shares.permission =
   'admin'` rows → `edit` (two-step deploy per the migration rule; comms to anyone
   currently holding an admin share).
@@ -142,10 +141,10 @@ Net per suite: **one owner + workspace-admin-as-admin + edit/view collaborators.
 
 ## Related
 
-- Supersedes #411 (workspace-wide Dashboard/Results view) and #412
-  (workspace-admin write actions from `/admin`).
-- #431 — data-access audit trail (workspace-admin reads of results/samples should
-  be auditable under this expanded access).
+- Supersedes the earlier decisions for workspace-wide Dashboard/Results view and
+  for workspace-admin write actions from `/admin`.
+- A data-access audit trail is planned — workspace-admin reads of results/samples
+  should be auditable under this expanded access.
 - ADR 0010 — workspace-admin is derived from the generic identity seam
   (`is_workspace_admin` ~~off a config allowlist~~ **off the stored `users.role`
   since ADR 0033; the config allowlist survives as a bootstrap seed and lockout

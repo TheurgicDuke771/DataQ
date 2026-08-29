@@ -1,11 +1,11 @@
 # DPA & BAA templates
 
 > ⚠️ **COUNSEL REVIEW REQUIRED — these are engineering drafts, not legal
-> instruments.** They exist so the legal half of compliance gap G6 is *drafted
+> instruments.** They exist so the legal half of the compliance gap is *drafted
 > with accurate technical annexes* instead of assumed; nothing here has legal
 > sign-off, and executing either document without counsel review is explicitly
-> out of contract for the DataQ project (an engineering team cannot sign off a
-> DPA/BAA — [#1452](https://github.com/TheurgicDuke771/DataQ/issues/1452)).
+> out of contract for the DataQ project — an engineering team cannot sign off a
+> DPA/BAA.
 
 **When you even need these.** DataQ ships customer-deployed BYOL (ADR 0013): the
 deploying organization runs the software on its own infrastructure, and DataQ (the
@@ -61,11 +61,9 @@ the review date and cross-referenced to the living docs so they don't rot.
    general authorization with prior notice of changes, per its documented update
    process. *(Counsel: choose general vs specific authorization.)*
 8. **Data-subject rights assistance (Art 15/17/20).** The Processor assists via
-   the platform's levers: retention purge, entity cascade deletion, and — once
-   [#432](https://github.com/TheurgicDuke771/DataQ/issues/432) ships — targeted
-   subject erasure/export. **Until #432 ships, the DPA must not promise on-demand
-   subject-level erasure**; it may promise erasure within the configured
-   retention window (default 30 days) or by deletion of covering results.
+   the platform's levers: retention purge, entity cascade deletion, and
+   targeted subject erasure/export (see the
+   [data-subject-rights runbook](data-subject-rights-runbook.md)).
 9. **Breach notification (Art 33).** The Processor notifies the Controller
    without undue delay after becoming aware, with the content of the
    [breach-notification runbook](breach-notification-runbook.md) §2–§3; the
@@ -96,11 +94,11 @@ operator). Applies **only** when the Covered Entity points DataQ at PHI.
    classified columns on every read surface; fail-closed mode
    (`require_classification`) makes unclassified columns unreadable for suites
    the Covered Entity so designates. The BA will configure column policies /
-   warehouse tags over PHI columns (G3).
+   warehouse tags over PHI columns.
 3. **Safeguards (§164.312 technical).** Access control (unique user identity,
    role + suite grants, per-request revocation), audit controls (append-only
    config **and** read events, hash-chained for tamper-evidence —
-   [#1460](https://github.com/TheurgicDuke771/DataQ/issues/1460) — unanchored to
+   unanchored to
    an external log sink by default, disclosed rather than overclaimed),
    integrity and transmission security per
    [Security & data handling](../security.md).

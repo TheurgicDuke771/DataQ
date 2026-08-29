@@ -63,7 +63,7 @@ poll starts failing — an expired credential, a revoked token, an orchestrator 
 — DataQ stops ingesting pipeline runs, stops firing the suites bound to them, and stops
 refreshing any lineage the connection feeds. Nothing is *failing*; things are simply not
 *happening*, which is far easier to miss. Prod lineage was dark for six days on exactly
-this ([#828](https://github.com/TheurgicDuke771/DataQ/issues/828)).
+this before the alert existed.
 
 So after **3 consecutive failed polls** (~30 minutes — enough to ride out a restarting
 orchestrator or a transient 502), DataQ pushes an alert through the same channels as run
@@ -74,8 +74,8 @@ alerts, carrying the connection, the classified reason, and how long it has been
   working.
 - **Recovery is signalled too**, so the loop closes without you going to look.
 - **The reason is classified, never the raw error** (`auth_failed`, `not_found`, …). The
-  real #828 exception carried the SAS token inside its message, and an alert is the one
-  place that string would leave DataQ.
+  real prod incident above carried the SAS token inside its exception message, and an
+  alert is the one place that string would leave DataQ.
 - No per-suite config applies — a connection has no suite, so these go to the
   **workspace** channel (`TEAMS_WEBHOOK_SECRET_NAME` / `SLACK_WEBHOOK_SECRET_NAME` /
   `EMAIL_TO`).

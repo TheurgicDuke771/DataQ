@@ -48,7 +48,7 @@ export.
 
 Records one `audit_events` **access** event (`data_subject_request.export`,
 `exposed: <bool>`) — the same accountability trail as any other regulated-data
-read in DataQ (G1, #431).
+read in DataQ.
 
 ## 3. Erasure (GDPR Art 17 / CCPA delete)
 
@@ -68,11 +68,11 @@ row/cell:
   `column` name it was captured against survives, since that is metadata about the
   check, not the subject;
 - from `observed_value`'s list-shaped case (a set-oriented expectation's full
-  distinct-value list, #1229/#1252), only the matching entry is removed from the
+  distinct-value list), only the matching entry is removed from the
   list.
 
-This is deliberately **not** the retention sweep's granularity (#1253/#1267,
-which null a whole `sample_failures`/`observed_value` column once its age crosses
+This is deliberately **not** the retention sweep's granularity (which nulls a whole
+`sample_failures`/`observed_value` column once its age crosses
 a clock). A GDPR erasure right does not license destroying data belonging to
 unrelated rows or unrelated subjects, and an operator debugging *why a check
 failed* still needs whatever of the sample isn't the erased subject's. If a
@@ -117,4 +117,4 @@ To exercise erasure on a demo user before relying on it for a real request:
   subject if a match seems to be missing.
 - **This does not touch the controller's warehouse** — see §0.
 
-Last reviewed: 2026-08-24 (G2, [#432](https://github.com/TheurgicDuke771/DataQ/issues/432)).
+Last reviewed: 2026-08-24.

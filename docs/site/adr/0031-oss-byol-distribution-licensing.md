@@ -7,7 +7,7 @@
 
 ## Context
 
-[ADR 0013](0013-marketplace-distribution-and-anti-lock-in.md) chose **customer-deployed BYOL** as the marketplace distribution model and deferred the commercial/legal scope to the post-v1 initiative, listing "licensing model + entitlement/license-key (we are not metering under BYOL)" among the open items (§5). The 2026-07-09 marketplace-readiness review (issue #732) surfaced the tension that line carries: the repository is already published under the **MIT license**, which grants everyone the right to use, copy, modify, distribute, and *sell* the software — a paid-entitlement model layered on top would be incoherent (you cannot sell a key to rights the license already gives away), and retrofitting a restrictive license onto an already-public MIT repo only gets harder with time and adoption.
+[ADR 0013](0013-marketplace-distribution-and-anti-lock-in.md) chose **customer-deployed BYOL** as the marketplace distribution model and deferred the commercial/legal scope to the post-v1 initiative, listing "licensing model + entitlement/license-key (we are not metering under BYOL)" among the open items (§5). The 2026-07-09 marketplace-readiness review surfaced the tension that line carries: the repository is already published under the **MIT license**, which grants everyone the right to use, copy, modify, distribute, and *sell* the software — a paid-entitlement model layered on top would be incoherent (you cannot sell a key to rights the license already gives away), and retrofitting a restrictive license onto an already-public MIT repo only gets harder with time and adoption.
 
 The same review ran a full dependency license audit against the actual installed trees (not declared metadata alone):
 
@@ -20,7 +20,7 @@ So the only distribution-compliance obligation is notice preservation (MIT/BSD c
 
 1. **DataQ is and remains free open-source software under the MIT license.** There is no paid license, no entitlement check, and no license-key machinery — this ADR supersedes the "licensing model + entitlement/license-key" line of ADR 0013 §5 **and ADR 0013's licensed-revenue framing of BYOL** (the comparison table's "billed outside the meter", the Consequences' "revenue is licensed outside the meter", the Alternatives' "approximate with BYOL licensing"): there is no license revenue at all. ADR 0013's distribution model (customer-deployed BYOL), the Azure→AWS/GCP phasing, and the anti-lock-in guardrails stand; under this decision "BYOL" reads as *bring your own (free, MIT) license* — the customer deploys the OSS into their own account, and no marketplace metering or entitlement integration is needed.
 2. **Marketplace listings are free/BYOL offers of the OSS artifacts** (the public GHCR images — ADR 0023 for the backend, ADR 0028 for the frontend — plus the portable install artifact when it lands). Listings still require seller registration, per-marketplace certification, and the listing's legal terms (e.g. Partner Center requires attached license terms even for free offers), but not commerce integration.
-3. **Distribution compliance = notices, wired into the release path.** Container images and GitHub releases ship a `THIRD-PARTY-NOTICES` file (or an SPDX SBOM carrying license data) covering the bundled dependency licenses; generation is automated in CI/publish rather than hand-maintained (tracked in #732).
+3. **Distribution compliance = notices, wired into the release path.** Container images and GitHub releases ship a `THIRD-PARTY-NOTICES` file (or an SPDX SBOM carrying license data) covering the bundled dependency licenses; generation is automated in CI/publish rather than hand-maintained.
 4. **Dependency license guardrail (standing, binding on future PRs):** the dependency tree stays free of strong-copyleft and source-available licenses (GPL, AGPL, SSPL, BUSL/Elastic, Commons-Clause). Weak copyleft (LGPL/MPL/EPL) is acceptable with notice. Adding a dependency that violates this needs an explicit ADR-level exception. Distilled into **CONTRIBUTING rule 40** (this PR), which schedules the license sweep alongside the rule-39 quarterly supply-chain audit and before any release/image publish.
 5. **Monetization, if it ever happens, is built beside the OSS, not into it** — support/services, a hosted offering, or commercially-licensed *additions*; never retroactive enforcement against the MIT core.
 
@@ -28,14 +28,14 @@ So the only distribution-compliance obligation is notice preservation (MIT/BSD c
 
 **Positive**
 
-- No entitlement/license-server build — the commercial *build* items ADR 0013 carried disappear; the marketplace path reduces to packaging + certification + the listing's legal terms. The rest of ADR 0013 §5's commercial/legal surface survives with per-item keep/defer/drop dispositions recorded in #732 (listing terms/EULA kept; DPA and tax/banking not needed while there is no hosted/paid tier — recorded, not dropped; SOC 2 / pen test remain an enterprise-buyer ask independent of price).
+- No entitlement/license-server build — the commercial *build* items ADR 0013 carried disappear; the marketplace path reduces to packaging + certification + the listing's legal terms. The rest of ADR 0013 §5's commercial/legal surface survives with per-item keep/defer/drop dispositions recorded separately (listing terms/EULA kept; DPA and tax/banking not needed while there is no hosted/paid tier — recorded, not dropped; SOC 2 / pen test remain an enterprise-buyer ask independent of price).
 - Free offers are the lowest-friction marketplace listing type (no metering/transaction integration), and the OSS grant maximizes eval→adoption conversion — consistent with the anti-lock-in posture of ADR 0010/0013.
 - One coherent license story: repo, images, and marketplace artifact all carry the same MIT grant; the audit above confirms nothing in the tree contradicts it.
 
 **Negative / accepted trade-offs**
 
 - **No direct license revenue, and anyone may fork, rebrand, or resell DataQ** — inherent to MIT and accepted knowingly; the countermove is execution and trust, not license enforcement.
-- Free users still generate support expectations — set them explicitly (SUPPORT.md, community channels; a #732 checklist item).
+- Free users still generate support expectations — set them explicitly (SUPPORT.md, community channels).
 - A future pivot to a restrictive license would be practically irreversible for already-published versions; this decision treats that door as closed.
 
 ## Alternatives considered
@@ -49,4 +49,4 @@ So the only distribution-compliance obligation is notice preservation (MIT/BSD c
 
 - [ADR 0013](0013-marketplace-distribution-and-anti-lock-in.md) — the BYOL distribution decision this ADR completes; its §5 licensing-model line and its licensed-revenue framing are superseded here (see the amendment note at its top), the distribution model/phasing/guardrails stand.
 - [ADR 0023](0023-container-image-registry-ghcr.md) / [ADR 0028](0028-cloud-neutral-image-runtime-config-generic-oidc.md) — the public GHCR backend and frontend images, the free distribution channel.
-- Issue #732 — marketplace-readiness checklist (license-audit record, THIRD-PARTY-NOTICES/SBOM automation, SUPPORT.md, G-h/G-i prerequisites).
+- Marketplace-readiness checklist (license-audit record, THIRD-PARTY-NOTICES/SBOM automation, SUPPORT.md, G-h/G-i prerequisites).

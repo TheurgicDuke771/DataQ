@@ -12,12 +12,12 @@
 > "most real incidents are freshness/volume") are worth shipping now. The seam is
 > unchanged — they ride it exactly as designed (non-GX scalar SQL aggregate →
 > `metric_value`, banded by severity thresholds per ADR 0016). `schema_drift`,
-> `anomaly`, and `comparison` stay reserved. The backend engine lands in PR #426;
+> `anomaly`, and `comparison` stay reserved. The backend engine lands first;
 > the check-authoring path (lifting `_V1_SUPPORTED_KINDS` + create-time config
 > validation, incl. **a required freshness threshold**) and editor UI follow.
 
 > **Amendment (2026-07-31, v1.1 W5) — the reserved set is now empty.** `anomaly`
-> ships (#593), joining `schema_drift` (#592) as the second **stateful** kind:
+> ships, joining `schema_drift` as the second **stateful** kind:
 > `build_statement=None` in `MONITOR_KIND_REGISTRY`, so the registry alone routes
 > it to the baseline-backed executor path rather than to a runner's
 > `run_monitors`. Its model is deliberately simple and explainable — a rolling
@@ -37,7 +37,7 @@
 > start — fewer than `min_points` usable observations — has no honest verdict,
 > and the alternative (a synthetic `pass`) would count as a clean check in the
 > health score and hide that the monitor is not yet watching anything. `skip` was
-> already a valid per-row status (#122); until now only `run_service.skip_run`
+> already a valid per-row status; until now only `run_service.skip_run`
 > produced it, run-wide.
 >
 > `anomaly` is **SQL-datasource only** at ship (Snowflake / Unity Catalog): the

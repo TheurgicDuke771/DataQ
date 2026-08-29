@@ -233,6 +233,9 @@ jobs:
       - name: Every doc declares published or not
         run: python scripts/check-docs-publication.py
 
+      - name: Published docs don't cite tickets or link internal docs
+        run: python scripts/check-docs-references.py
+
   # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend-lint:
     name: Frontend — lint & format

@@ -112,13 +112,12 @@ is a deprecated alias kept only for backward compatibility — see below):
 despite the name; `get_pipeline_status` is the current name and states its actual scope. The old
 name stays registered — a client with it pinned in a saved prompt or static config keeps
 working — and delegates to `get_pipeline_status` with identical behavior. New integrations
-should use `get_pipeline_status` ([#1443](https://github.com/TheurgicDuke771/DataQ/issues/1443)).
+should use `get_pipeline_status`.
 
 No MCP tool is Admin-only. Every Admin-only capability in ADR 0033's authorization matrix is a
 connection *mutation* (create/edit/delete/re-auth), and none of those are exposed here at all —
 a credential must never transit an LLM. `test_connection` reports only whether a live probe
-succeeded; it never returns a credential or a secret reference (Tier 1 + Tier 2 expansion, issue
-[#529](https://github.com/TheurgicDuke771/DataQ/issues/529)).
+succeeded; it never returns a credential or a secret reference.
 
 ### Reading the results honestly
 

@@ -55,4 +55,4 @@ maintained as code review discipline, not a calendar:
 3. The **LLM row flips from "not built"** in the PR that ships the intelligence
    feature — that PR is the Ch. V trigger the DPIA sheet also names.
 
-Last reviewed: 2026-08-21 (G6, [#1452](https://github.com/TheurgicDuke771/DataQ/issues/1452)).
+Last reviewed: 2026-08-21.

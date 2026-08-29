@@ -31,7 +31,7 @@ anomaly executor takes its own measurement over a live SQL connection, while
 Iceberg and flat files compute their monitor scalars natively inside their
 runners, which stateful kinds never reach.
 
-ᵇ **Schema drift** (ADR 0012, [#592](https://github.com/TheurgicDuke771/DataQ/issues/592))
+ᵇ **Schema drift** (ADR 0012)
 diffs a live column-name/type snapshot against a stored baseline and flags
 add/drop/type-change. Unlike custom SQL it never goes through a `CheckRunner`/GX at
 all, so it isn't gated to SQL datasources: introspection is per-datasource —
@@ -41,7 +41,7 @@ Iceberg (no data scan on any of them except the CSV sample). Re-baseline explici
 once a drift is expected and reviewed.
 
 ᶜ **Unity Catalog custom SQL is supported since v1.1.** It runs against a GX
-Databricks-SQL batch over the target table. Since v1.2 (#1532) ordinary catalog
+Databricks-SQL batch over the target table. Since v1.2, ordinary catalog
 expectations run on that same SQL batch by default — the warehouse evaluates and the
 worker never materialises the table; the DataFrame batch remains for
 `expect_column_values_to_be_of_type`, suites with a declared sample, and the
@@ -53,13 +53,13 @@ omission.
 
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
-endpoint URL (#1063); every row in this column applies identically either way. See
+endpoint URL; every row in this column applies identically either way. See
 [Datasources & checks](datasources-checks.md#s3-compatible-object-stores).
 
 Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog;
 there is no flat-file support, and no issue currently tracks adding it — flat files get freshness/volume monitors instead (see the rows above);
 Iceberg is not SQL-queryable — reads go through `pyiceberg` scans, not a query engine).
-**Comparison checks** (ADR [0015](adr/0015-two-connection-comparison-check-model.md), #791–#795)
+**Comparison checks** (ADR [0015](adr/0015-two-connection-comparison-check-model.md))
 diff the suite's dataset (the **target under test**) against a baseline on any other
 datasource connection — cross-type and cross-env both supported — joined on key columns,
 producing matched / mismatched / additional-per-side buckets with a mismatch-% metric,
@@ -69,12 +69,12 @@ query projection.
 
 The freshness/volume monitors run on **every datasource** — the SQL datasources, Apache
 Iceberg (computed natively via `pyiceberg` scans, not SQL; ADR 0012/0030), and ADLS Gen2 /
-S3 flat files (over the resolved batch; #520). On a flat file, a freshness monitor with **no
+S3 flat files (over the resolved batch). On a flat file, a freshness monitor with **no
 timestamp column** measures the object's arrival time instead — catching a producer that
 stopped sending files, which a timestamp inside the data cannot see. Flat-file suites target a file or a batch pattern (e.g.
 `orders_*.csv`) in CSV or Parquet; Iceberg suites target a `namespace.table`. Dry-run
 preview works on every datasource with a runner — Snowflake, Unity Catalog, flat files,
-and Iceberg ([#532](https://github.com/TheurgicDuke771/DataQ/issues/532)).
+and Iceberg.
 
 ## Assets & lineage × datasources
 
@@ -92,21 +92,21 @@ five mechanisms:
    any OL-compatible receiver (`OPENLINEAGE_URL`, dark by default).
 4. **Catalog pull** — the `LineageProvider` seam pulls a governance catalog's graph back in
    as `source='marquez'` edges (daily beat, dark by default;
-   [details](orchestration.md#lineage-from-a-catalog-the-lineageprovider-seam-adr-0034-762)).
-5. **Warehouse-native pull** (#858) — the `WarehouseLineageProvider` seam reads the
+   [details](orchestration.md#lineage-from-a-catalog-the-lineageprovider-seam-adr-0034)).
+5. **Warehouse-native pull** — the `WarehouseLineageProvider` seam reads the
    warehouse's OWN lineage views straight into `lineage_edges` with `source='snowflake'` /
    `'unity_catalog'`: Snowflake `OBJECT_DEPENDENCIES` (all editions) → `ACCESS_HISTORY` /
    `GET_LINEAGE` (Enterprise); Unity Catalog `system.access.table_lineage`. First-hand, no
    dbt hop. Daily beat, **dark by default** (`WAREHOUSE_LINEAGE_ENABLED` — the views need a
    grant); the tier that answered and any degraded/failing state surface on the asset's
    lineage graph so a view-level-only or stale graph never reads as a confident complete
-   one ([details](orchestration.md#lineage-from-the-warehouse-the-warehouselineageprovider-seam-858)).
-   **Column grain (#901):** where the warehouse offers it (UC
+   one ([details](orchestration.md#lineage-from-the-warehouse-the-warehouselineageprovider-seam)).
+   **Column grain:** where the warehouse offers it (UC
    `system.access.column_lineage` — live-verified), the pull refines each table edge with
    `upstream column → downstream column` pairs, shown on the asset page to every
    workspace member (ADR 0037 — column names are schema metadata, i.e. identity).
    Snowflake's column grain lives in `ACCESS_HISTORY` and `GET_LINEAGE` (Enterprise) and reports
-   honestly unavailable on Standard. **Snowpark scratch is stitched, not dropped** (#912): a
+   honestly unavailable on Standard. **Snowpark scratch is stitched, not dropped:** a
    pipeline that materializes through `SNOWPARK_TEMP_*` yields the real `A → B` edge, with the
    scratch object never materialized as an asset.
 
@@ -181,7 +181,7 @@ credential (`auth_type: token`, the default — sent as `Authorization: Bearer �
 | Distribution | Expected to work | Status |
 |---|---|---|
 | Self-hosted / OSS Airflow | ✅ | **Verified** against a self-hosted Airflow |
-| Astronomer (Astro) | ✅ via an Astro **Deployment API token** as the Bearer credential, with `base_url` set to the deployment's Airflow URL (`https://<org>.astronomer.run/<deployment-id>`) | **Untested** — no Astro deployment has been exercised; compatible by construction, not by observation (#800) |
+| Astronomer (Astro) | ✅ via an Astro **Deployment API token** as the Bearer credential, with `base_url` set to the deployment's Airflow URL (`https://<org>.astronomer.run/<deployment-id>`) | **Untested** — no Astro deployment has been exercised; compatible by construction, not by observation |
 | MWAA / Cloud Composer | Likely, same Bearer shape | **Untested** |
 
 The DAG-callback snippet in [`integrations/airflow/`](../../integrations/airflow/) is
@@ -224,4 +224,4 @@ risk that carries.
 |---|---|
 | Web UI | Dashboard · Assets · Connections · Suites · Results · Profile · Admin · Settings (Assets lead as the primary lens — ADR 0034 nav inversion; the Dashboard opens with an asset-health strip, and suites/runs link back to their asset) |
 | REST API | Versioned `/api/v1` (Swagger in non-prod) |
-| MCP | 47 curated tools at `/mcp` for AI assistants (ADR 0008; Tier 1 + Tier 2 expansion #529, Tier 3A + Tier 3B #1424). Served in every auth mode — SSO, email OTP, dev-bypass; under OTP the credential is a **PAT only** ([MCP setup](mcp-setup.md)) |
+| MCP | 47 curated tools at `/mcp` for AI assistants (ADR 0008). Served in every auth mode — SSO, email OTP, dev-bypass; under OTP the credential is a **PAT only** ([MCP setup](mcp-setup.md)) |

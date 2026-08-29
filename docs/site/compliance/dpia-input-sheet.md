@@ -28,14 +28,13 @@ it but is not its system of record.
 | Where | What | Retention | Controls |
 |---|---|---|---|
 | `results.sample_failures` | Up to a bounded number of failing rows per check result, as column→value maps | `SAMPLE_FAILURES_RETENTION_DAYS` (default **30**); daily purge sets the column NULL and stamps `sample_failures_purged_at` — the row and its `metric_value` trend survive, the personal data does not | Column-aware **redaction ladder** on every read surface (REST, MCP, alert delivery), driven by the per-suite column policy, the governance floor from warehouse-native PII tags (G3, `services/column_tags.py`), and fail-closed mode (`require_classification`) |
-| `results.observed_value` (list-shaped) | A set-oriented expectation's full observed distinct-value list can reproduce column values | Same purge as `sample_failures` (#1253) | Same redaction ladder |
-| `results.observed_value` (scalar `unparsed_value` cell) | A single unparseable cell value captured for diagnosis | `SAMPLE_FAILURES_RETENTION_DAYS`, same purge as the two rows above (shipped [#1267](https://github.com/TheurgicDuke771/DataQ/issues/1267)) | Redaction ladder applies on read |
-| Dry-run / live-probe responses | Real values shown to the check author; **nothing persisted** | Not stored (structurally cannot persist) | Fail-closed suites mask even here; REST dry-run disclosure recorded as [#1419](https://github.com/TheurgicDuke771/DataQ/issues/1419) |
+| `results.observed_value` (list-shaped) | A set-oriented expectation's full observed distinct-value list can reproduce column values | Same purge as `sample_failures` | Same redaction ladder |
+| `results.observed_value` (scalar `unparsed_value` cell) | A single unparseable cell value captured for diagnosis | `SAMPLE_FAILURES_RETENTION_DAYS`, same purge as the two rows above | Redaction ladder applies on read |
+| Dry-run / live-probe responses | Real values shown to the check author; **nothing persisted** | Not stored (structurally cannot persist) | Fail-closed suites mask even here; REST dry-run values are shown unredacted by design, a recorded decision |
 
 **Erasure status — state it honestly in your DPIA:** deletion happens on the
 retention clock and via entity cascade (deleting a suite/check destroys its
-results) **and, on demand, via the [data-subject-rights runbook](data-subject-rights-runbook.md)**
-(shipped [#432](https://github.com/TheurgicDuke771/DataQ/issues/432)) — an
+results) **and, on demand, via the [data-subject-rights runbook](data-subject-rights-runbook.md)** — an
 Admin-only capability that identifies a subject by a `(column, value)` pair (the
 same key the controller's own warehouse row uses; DataQ has no people-table) and
 surgically removes only the matching row/cell from `sample_failures` /
@@ -50,7 +49,7 @@ other subjects — intact.
 | `sessions` | OTP-mode sign-in sessions — **token hash only** (never the token) | Server-side revocation; logout deletes | HttpOnly cookie; SHA-256 at rest |
 | `otp_codes` | One-time codes — **hashed**, attempt-capped | Expired codes purged daily (`purge_otp_codes` beat) | Rate limits + enumeration-resistant responses |
 | `api_keys` | PATs — **SHA-256 hash only**, name, last-used | Until revoked | `dq_live_` prefix supports secret scanning |
-| `audit_events` | Actor email/id, action, target — the G1 trail (ADR 0041) | `AUDIT_RETENTION_DAYS` (default **365**), independent of the sample purge — one clock keeps a record, the other destroys one | Append-only (`REVOKE UPDATE/DELETE`); **no warehouse values ever copied in** (ADR 0041 §2.6) — read events name *which* result was read, never what it contained. Hash-chained for tamper-evidence, unanchored to an external log sink by default: [#1460](https://github.com/TheurgicDuke771/DataQ/issues/1460) |
+| `audit_events` | Actor email/id, action, target — the append-only audit trail (ADR 0041) | `AUDIT_RETENTION_DAYS` (default **365**), independent of the sample purge — one clock keeps a record, the other destroys one | Append-only (`REVOKE UPDATE/DELETE`); **no warehouse values ever copied in** (ADR 0041 §2.6) — read events name *which* result was read, never what it contained. Hash-chained for tamper-evidence, unanchored to an external log sink by default |
 | Logs / telemetry | Request ids, structured events | Sink-controlled | **PII redacted at the logger level** — the redactor sits in `core/logging.py`, so a dependency's log line is scrubbed too |
 
 ## The rows a DPIA form usually asks for
@@ -62,8 +61,8 @@ other subjects — intact.
 | Special categories | Only if the controller points checks at such columns. Mitigations: column policy + warehouse-native tag floor (G3) + fail-closed mode for suites that must never show values. |
 | Cross-border transfers | Enumerated, not derived — see the [sub-processor disclosure](sub-processors.md) and the residency posture. The outbound-LLM vector is **not built**; MCP clients are the token-holder's choice. |
 | Access ("who saw it") | G1 read events: data reads on REST **and** MCP are recorded and admin-queryable. |
-| Erasure ("how is it removed") | Retention purge (30-day default) + entity cascade, **and** on-demand targeted erasure by `(column, value)` — the [data-subject-rights runbook](data-subject-rights-runbook.md) (#432). |
+| Erasure ("how is it removed") | Retention purge (30-day default) + entity cascade, **and** on-demand targeted erasure by `(column, value)` — the [data-subject-rights runbook](data-subject-rights-runbook.md). |
 | Security of processing | See [Security & data handling](../security.md): secrets in a dedicated store, TLS, rate limiting, security headers, single public surface, non-root containers, least-privilege DB role. |
 
-Last reviewed: 2026-08-24 (G2, [#432](https://github.com/TheurgicDuke771/DataQ/issues/432); originally 2026-08-21, G6, [#1452](https://github.com/TheurgicDuke771/DataQ/issues/1452)).
+Last reviewed: 2026-08-24 (originally 2026-08-21).
 This sheet shares its inventory with the [data-subject-rights runbook](data-subject-rights-runbook.md) — update both together (one artifact, not two).

@@ -57,7 +57,7 @@ Data is split across **ADLS · Snowflake · Unity Catalog**; orchestration acros
 - The repo stays clean of infra/seed/harness code and Azure-specific resource names (ADR 0010/0013 anti-lock-in holds).
 - The three flows give real end-to-end coverage of all three run paths **and** the ADF + Airflow orchestration trigger-on-success path (ADR 0004), against believable retail data.
 - Profiler, severity tiers, and Week-6 trends/anomaly baselines get realistic data to render against.
-- The harness's parameterizable volume also backs a **performance / scale-testing** pass (post-v1): run scaling per datasource, the profiler N+1 ([#327](https://github.com/TheurgicDuke771/DataQ/issues/327)), and DB-growth API latency ([#323](https://github.com/TheurgicDuke771/DataQ/issues/323)) — baseline-first, tracked in the harness plan, invokable by the QA/QE agent.
+- The harness's parameterizable volume also backs a **performance / scale-testing** pass (post-v1): run scaling per datasource, the profiler N+1 problem, and DB-growth API latency — baseline-first, tracked in the harness plan, invokable by the QA/QE agent.
 
 **Negative / watch**
 - The harness is unversioned alongside the product; its setup steps must be documented well enough to reproduce (README in the external harness location).

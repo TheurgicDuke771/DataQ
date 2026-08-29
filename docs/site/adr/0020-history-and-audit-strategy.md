@@ -3,22 +3,22 @@
 - **Status:** Accepted
 - **Date:** 2026-06-20
 - **Deciders:** @TheurgicDuke771
-- **Related:** ADR [0009](0009-flat-monorepo-layout.md), [0010](0010-provider-agnostic-infrastructure-seams.md) (least-privilege / secrets in the SecretStore), [0013](0013-marketplace-distribution-and-anti-lock-in.md) (BYOL portability); issues [#310](https://github.com/TheurgicDuke771/DataQ/issues/310) (this decision), [#308](https://github.com/TheurgicDuke771/DataQ/issues/308)/[#309](https://github.com/TheurgicDuke771/DataQ/issues/309) (the consistency-hardening follow-ups surfaced alongside it)
+- **Related:** ADR [0009](0009-flat-monorepo-layout.md), [0010](0010-provider-agnostic-infrastructure-seams.md) (least-privilege / secrets in the SecretStore), [0013](0013-marketplace-distribution-and-anti-lock-in.md) (BYOL portability); this decision's own history plus the consistency-hardening follow-ups surfaced alongside it
 
-> **Amendment (2026-08-13, [ADR 0041](0041-history-audit-strategy.md), #310):** decision **6 is
+> **Amendment (2026-08-13, [ADR 0041](0041-history-audit-strategy.md)):** decision **6 is
 > discharged** — the cross-entity audit log is **accepted**, as one append-only `audit_events`
 > table whose `entity_id` deliberately carries **no FK** so the row outlives the entity it
-> describes; #431/G1's data-*read* audit is phase 2 on that same table, not a second one.
+> describes; the data-*read* audit (gap G1) is phase 2 on that same table, not a second one.
 > Decisions **1 (no SCD-2)**, **4 (cascade-delete)** and **5 (no soft-delete)** are
 > **re-affirmed**, with two corrections to the reasoning here:
 > - Decision 4 said retention-past-delete would be revisited "only if an audit/compliance
->   requirement appears." It appeared (#431/G1). It was revisited, and the answer is still
+>   requirement appears." It appeared (gap G1). It was revisited, and the answer is still
 >   *not* to retain `check_versions` past its check — the audit log's delete event carries
 >   the final state, so cascade now stands for a **positive** reason rather than as an
 >   accepted cost. Type-4 tables remain the **product** surface (version drawer, restore);
 >   the audit log is the **durable record**.
 > - Decision 5's stated limitation — "a deleted connection orphaning the *meaning* of past
->   runs" — **is no longer true**: #753/#541 made `delete_connection` refuse with a 409 while
+>   runs" — **is no longer true**: a later fix made `delete_connection` refuse with a 409 while
 >   any suite or comparison-source check depends on it. Soft-delete stays deferred, but on a
 >   narrower and better argument (ADR 0041 §2.3), not on this one.
 >
@@ -46,7 +46,7 @@ The question: what history/audit posture should v1.x take, and specifically — 
 3. **Credentials are never snapshotted.** Secrets live only in the SecretStore (referenced by the constant `conn-<id>` pointer); history tables hold only editable, **non-secret** fields. A credential rotation (`reauth`, or a secret-only update) records **no** version — that is an audit-log concern, not config history (ADR 0010).
 4. **Cascade-delete is accepted: history is not retained past entity deletion.** Both `check_versions` and `connection_versions` use `ondelete=CASCADE` on the entity FK; deleting the entity drops its history. (`changed_by` is `SET NULL` so a snapshot outlives its *author*, just not its entity.) Retention-past-delete would need a tombstone/soft-delete; explicitly **out of scope** for v1 — revisit only if an audit/compliance requirement appears.
 5. **No soft-delete in v1.** Hard deletes stay. (A deleted connection orphaning the *meaning* of past runs is a known, accepted limitation.)
-6. **A cross-entity audit log (`actor, entity, action, before/after, ts`) is deferred, not rejected.** It is the right tool if/when "who changed this credential/share, and to what" becomes a requirement — cheaper and more uniform than per-entity versioning for *audit* (vs *config history*). Tracked in #310.
+6. **A cross-entity audit log (`actor, entity, action, before/after, ts`) is deferred, not rejected.** It is the right tool if/when "who changed this credential/share, and to what" becomes a requirement — cheaper and more uniform than per-entity versioning for *audit* (vs *config history*).
 
 ## Consequences
 
@@ -58,7 +58,7 @@ The question: what history/audit posture should v1.x take, and specifically — 
 **Negative / watch**
 - History is **lost on delete** by design — if compliance later needs retention-past-delete, revisit (4).
 - Per-entity history means **N decisions/migrations**, one per entity that needs it (checks ✅, connections ✅; suites/triggers not yet) — deliberate, to avoid a premature framework.
-- No unified audit trail yet; credential-rotation events in particular are unrecorded until the audit log lands (#310).
+- No unified audit trail yet; credential-rotation events in particular are unrecorded until the audit log lands.
 
 ## Alternatives considered
 

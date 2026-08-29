@@ -74,7 +74,7 @@ namespace becomes `s3://{host[:port]}/{bucket}` — the endpoint's authority (sc
 stripped, default port elided, host lower-cased) joins the bucket, so two stores that
 happen to share a bucket name (an AWS bucket and a MinIO bucket both named `landing`,
 say) resolve to *different* assets instead of merging their scorecards, lineage and
-incidents ([#1064](https://github.com/TheurgicDuke771/DataQ/issues/1064), decided in
+incidents (decided in
 [ADR 0040](adr/0040-warehouse-inventory-sync-table-enumeration-seam.md) §6).
 
 The same two fields exist on a **dbt** orchestration connection whose `artifacts_uri` is
@@ -103,8 +103,7 @@ the aggregate/top-values queries, and freshness/volume monitors alike.
 In both cases, alias the column in a view and point the check at that.
 
 One more caveat: in a **three-part** `catalog.schema.table` target, only the table
-gets quoted — a mixed-case *catalog or schema* still folds
-([#936](https://github.com/TheurgicDuke771/DataQ/issues/936)). This affects nobody
+gets quoted — a mixed-case *catalog or schema* still folds. This affects nobody
 today (Unity Catalog is the only three-part datasource and it resolves identifiers
 case-insensitively), but don't rely on it if that changes.
 
@@ -149,7 +148,7 @@ If a file uses some other separator, DataQ will parse the whole header as one
 column — the symptom is a **column dropdown offering a single long name** like
 `id;email;amount`. Convert the file to one of the four separators, or to Parquet.
 
-### Very large targets: sampling and the scan cap (#595)
+### Very large targets: sampling and the scan cap
 
 Snowflake and Iceberg monitors answer from the warehouse or from file metadata, so
 size is not a worker concern there. **Flat files and Unity Catalog are different**:
@@ -318,7 +317,7 @@ leave them blank for binary in-range pass/fail. On a flat file the count is over
 **resolved batch** — the single file the target's batch pattern selects, not the
 whole prefix.
 
-### Schema-drift monitor (all datasources — ADR 0012, #592)
+### Schema-drift monitor (all datasources — ADR 0012)
 
 *Did the shape change under you?* Capture a **baseline** column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
@@ -328,7 +327,7 @@ a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
 
-### Anomaly monitor (Snowflake / Unity Catalog — ADR 0012, #593)
+### Anomaly monitor (Snowflake / Unity Catalog — ADR 0012)
 
 *Is this value abnormal for this dataset?* Where a volume monitor asks "is the row
 count inside a range I chose?", the anomaly monitor learns the range: it keeps a

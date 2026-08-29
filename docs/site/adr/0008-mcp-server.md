@@ -23,7 +23,7 @@ Week 7 calls for a FastMCP server exposing 8 curated tools at `/mcp`, reachable 
 
 **All 8 are MCP `tools`, not `resources`** — despite the roadmap labelling 4 as "resource". An LLM client invokes *tools* from natural language; fastmcp resource-templates with required arguments aren't reliably auto-called. The acceptance bar is "Claude answers the canonical NL queries" (`what failed today?` / `run the orders suite on DEV` / `why did the customer pipeline fail?` / `add a null check on email`), which is best served by tools. Read tools (`list_suites`, `get_suite_results`, `get_health_score`, `get_adf_pipeline_status`) + action tools (`trigger_suite_run`, `get_run_status`, `create_check`, `profile_column`).
 
-**No logic duplication** — each tool is a thin wrapper: open a session → resolve the caller → call the same service function with the same `require_permission` / `accessible_suite_ids` authz the REST routers use → return an LLM-shaped dict. `get_suite_results` reuses `run_service.redact_sample_failures` so failing-row PII is masked exactly as in the REST results path (#226/#415).
+**No logic duplication** — each tool is a thin wrapper: open a session → resolve the caller → call the same service function with the same `require_permission` / `accessible_suite_ids` authz the REST routers use → return an LLM-shaped dict. `get_suite_results` reuses `run_service.redact_sample_failures` so failing-row PII is masked exactly as in the REST results path.
 
 ## Consequences
 
@@ -38,7 +38,7 @@ Week 7 calls for a FastMCP server exposing 8 curated tools at `/mcp`, reachable 
 - **Bridge to `fastapi-azure-auth`** by faking a Starlette `Request` — rejected as brittle coupling to that library's request-bound internals; `JWTVerifier` is the clean, documented path and validates the same token.
 - **Resources for the reads** — rejected for LLM invocability (above); revisit if a client surfaces resources usefully.
 
-## Amendment — Tier 1 expansion to 19 tools (2026-08-17, issue [#529](https://github.com/TheurgicDuke771/DataQ/issues/529))
+## Amendment — Tier 1 expansion to 19 tools (2026-08-17)
 
 The original 8 tools were deliberately the smallest set that answered the roadmap's canonical
 NL queries. [`context/post-v1-roadmap.md`](https://github.com/TheurgicDuke771/DataQ/blob/main/context/post-v1-roadmap.md) Theme 13 catalogued
@@ -81,7 +81,7 @@ Three standing exclusions carried forward, made explicit because Tier 1 sits rig
 `snooze_check`, `cancel_run`, schedule/trigger-binding CRUD, `import_suite`, `test_connection`,
 etc. — see the roadmap's Theme 13 table) stays deferred; nothing in this amendment ships it.
 
-## Amendment — Tier 2 expansion to 30 tools (issue [#529](https://github.com/TheurgicDuke771/DataQ/issues/529))
+## Amendment — Tier 2 expansion to 30 tools
 
 This amendment ships the **Tier 2** set deferred above, in full: `update_check`, `delete_check`,
 `snooze_check`, `dryrun_check`, `cancel_run`, `create_schedule`, `delete_schedule`,
@@ -95,7 +95,7 @@ whichever gate its REST counterpart already applies.
 **The 30 tools split three ways, and the split is deliberately not "read vs mutate":**
 
 - **16 read-only** — **one fewer than the 17 the Tier 1 amendment above states.**
-  `profile_column` was reclassified out of read-only when the gate table was built (#1418): it
+  `profile_column` was reclassified out of read-only when the gate table was built: it
   persists nothing, but it opens a live datasource with stored credentials and had always gated
   on `edit`. The behaviour did not change; the label was wrong, and a comment could not catch it.
 - **10 that change state** — `create_check`, `update_check`, `delete_check`, `snooze_check`,
@@ -126,7 +126,7 @@ reference, matching the standing exclusions the Tier 1 amendment already recorde
 
 The three standing exclusions from the Tier 1 amendment are unaffected and still hold in full.
 
-## Amendment — Tier 3A coherence tools, 30 → 33 (2026-08-17, issue [#1424](https://github.com/TheurgicDuke771/DataQ/issues/1424))
+## Amendment — Tier 3A coherence tools, 30 → 33 (2026-08-17)
 
 Three tools that close **dead-ends in the existing surface** rather than adding reach:
 `update_suite`, `get_column_policy`, `set_column_policy`. The split becomes
@@ -138,7 +138,7 @@ They exist because two shipped tools could not finish their own job:
   without one — so an assistant could create a suite it had no way to make runnable.
   `update_suite` sets the target (validated through the same `SuiteTarget` model the REST route
   uses) and reports `runnable` explicitly. It also fires the same `dispatch_auto_classify` the
-  REST route does (#634), so a suite made runnable here still derives a redaction policy.
+  REST route does, so a suite made runnable here still derives a redaction policy.
 - `suggest_column_policy` could propose a policy that nothing could read back or apply.
 
 All three gate on `suite_authz.require_permission` against an existing suite, so no new authz
@@ -148,7 +148,7 @@ The exclusions are unchanged. `DELETE /suites/{id}` is now **explicitly** exclud
 cascades every run and result the suite ever produced, and unlike `delete_check` there is no
 lesser action to steer an assistant toward.
 
-## Amendment — Tier 3A batch 2, 33 → 38 (2026-08-17, issue [#1424](https://github.com/TheurgicDuke771/DataQ/issues/1424))
+## Amendment — Tier 3A batch 2, 33 → 38 (2026-08-17)
 
 Five more coherence tools, closing the last three **asymmetric-verb pairs** in the surface:
 `update_schedule`, `update_trigger_binding`, `delete_trigger_binding`, `list_check_versions`,
@@ -186,14 +186,14 @@ confirming the sweep goes red.
 
 The exclusions are unchanged.
 
-## Amendment — Tier 3B batch 1, 38 → 42 (2026-08-17, issue [#1424](https://github.com/TheurgicDuke771/DataQ/issues/1424))
+## Amendment — Tier 3B batch 1, 38 → 42 (2026-08-17)
 
 Four read-only tools over the **asset and incident** surfaces — `list_assets`, `get_asset`,
 `list_incidents`, `get_incident`. The split becomes **42 tools: 22 read-only, 16 that change
 state, 4 live-probe**.
 
-Unlike Tier 3A, this is not coherence — it is the capability gap #529's candidate list never
-evaluated, because that list was written on 2026-07-04 and assets, lineage and incidents shipped
+Unlike Tier 3A, this is not coherence — it is a capability gap the earlier tiering pass never
+evaluated, because that pass was written on 2026-07-04 and assets, lineage and incidents shipped
 on 2026-07-10/11. It is also the grain users actually reason in: "is `orders` healthy?" is an
 *asset* question, and answering it from suites alone requires knowing which suites target the
 table, which is exactly what the asset view exists to remove.
@@ -227,12 +227,12 @@ Three honesty fields exist because the underlying value is true and misleading o
 `monitored` (an asset with no suite has `worst_severity: null`, which reads as a clean bill of
 health for something nothing checks), `truncated` (computed against the real total, since
 `len(page) == limit` is wrong on the exact-boundary page), and `lineage.qualified_by` (an empty
-graph behind a failing poller must never read as "nothing feeds this table" — the #828 class).
+graph behind a failing poller must never read as "nothing feeds this table" — a known confident-wrong-answer failure mode).
 
 The exclusions are unchanged. `PATCH /assets/{id}` is **not** exposed: it is workspace-Admin-only
 (ADR 0034 §4), and MCP exposing no admin-only tool at all remains an asserted invariant.
 
-## Amendment — Tier 3B batch 2, 42 → 46 (2026-08-17, issue [#1424](https://github.com/TheurgicDuke771/DataQ/issues/1424))
+## Amendment — Tier 3B batch 2, 42 → 46 (2026-08-17)
 
 `ack_incident`, `resolve_incident`, `list_columns`, `get_near_misses`. The split becomes
 **46 tools: 23 read-only, 18 that change state, 5 live-probe**. Tier 3B is complete.
@@ -245,7 +245,7 @@ names?", and a guessed column produces a check that runs and errors.
 
 `get_near_misses` closes a loop `create_trigger_binding` opened: that tool *warns* about an
 environment mismatch it has no way to investigate, and before this route existed the only way to
-see one was `psql` (#1199). Its docstring states the asymmetry explicitly — an empty result does
+see one was a direct database query. Its docstring states the asymmetry explicitly — an empty result does
 **not** prove a binding is firing, only that no mismatch was observed.
 
 **The two lifecycle verbs required the most docstring care in the batch, because both are
@@ -268,7 +268,7 @@ verified.
 
 The exclusions are unchanged.
 
-## Amendment — `get_adf_pipeline_status` renamed to `get_pipeline_status`, 46 → 47 (issue [#1443](https://github.com/TheurgicDuke771/DataQ/issues/1443))
+## Amendment — `get_adf_pipeline_status` renamed to `get_pipeline_status`, 46 → 47
 
 The name predated dbt (ADR 0029) and Airflow support and was never ADF-only — it always covered
 ADF, Airflow and dbt. Renamed to `get_pipeline_status`, which states its actual scope. The old

@@ -73,8 +73,8 @@ error is never echoed (it can carry credential fragments) — check the server l
 
 **Worker crash-loops at boot with `ValueError: A rediss:// URL must have parameter
 ssl_cert_reqs`.** Your `REDIS_URL` points at a TLS redis (`rediss://` — ElastiCache, Azure
-Cache, most managed offerings) and you're on a DataQ build older than the #1363 fix. Upgrade,
-or append `?ssl_cert_reqs=required` to the URL yourself. Current builds default the parameter
+Cache, most managed offerings) and you're on a DataQ build that predates the fix for this.
+Upgrade, or append `?ssl_cert_reqs=required` to the URL yourself. Current builds default the parameter
 to `required` (full certificate verification) whenever it's absent; an explicit value is
 respected as-is.
 

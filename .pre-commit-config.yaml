@@ -73,6 +73,12 @@ repos:
         language: system
         pass_filenames: false
         files: ^(docs/.*\.md|mkdocs\.yml|scripts/check-docs-publication\.py)$
+      - id: check-docs-references
+        name: Published docs don't cite tickets or link internal docs
+        entry: python scripts/check-docs-references.py
+        language: system
+        pass_filenames: false
+        files: ^(docs/site/.*\.md|scripts/check-docs-references\.py)$
 
   # ── Secret scanning ─────────────────────────────────────────────────────────
   - repo: https://github.com/betterleaks/betterleaks

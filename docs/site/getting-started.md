@@ -58,7 +58,7 @@ fits, but note where the default sits:
 used to start in `bypass`, which meant anyone who could reach the port administered a
 tool that stores warehouse credentials — and an eval stack's defaults are the security
 posture people actually run (the same reasoning that moved the default secret store off
-the plaintext one, ADR [0039](adr/0039-openbao-self-hosted-secret-backend.md)). What made
+the plaintext one). What made
 `otp` unusable as a default was the SMTP relay it used to require; the bundled catcher
 removes that, so the only thing left to supply is *who* is allowed in — one variable,
 `DATAQ_SIGNIN_EMAIL`, which `scripts/setup.sh` asks for. Setting it empty is the
@@ -113,7 +113,7 @@ then sign in to your own mailbox. There is no seeded password to rotate.
 
 The sign-in form is deliberately credential-only — no sign-up step, no name field, per ADR
 0032 — so a first-time OTP user's row has no name yet. The app offers a one-time, skippable
-prompt for one right after that first sign-in (#1139). Skipping it is fine — the name is
+prompt for one right after that first sign-in. Skipping it is fine — the name is
 cosmetic, never an authz input — and it (or any later change) is always available from
 **Profile**, for every auth mode, not just `otp`.
 
@@ -133,8 +133,7 @@ HttpOnly cookie with a fixed 24 h life and no refresh token; signing in again is
 refresh. Codes expire in 10 minutes, are single-use, and allow 5 attempts.
 
 The mailer defaults to **SMTP + STARTTLS on 587**, verified against the system trust
-store. Two more transports are available via `AUTH_EMAIL_TLS_MODE`
-([#1146](https://github.com/TheurgicDuke771/DataQ/issues/1146)): `implicit` for a
+store. Two more transports are available via `AUTH_EMAIL_TLS_MODE`: `implicit` for a
 submission relay on **:465** (SMTPS), and `none` — a deliberate plaintext downgrade,
 logged loudly on every send, for a loopback relay or a throwaway test rig only. An
 internal relay signed by a **private CA** doesn't need the container's whole-process
@@ -155,7 +154,7 @@ to real SSO with **no rebuild** (ADR 0028):
   (e.g. `https://login.microsoftonline.com/<tenant>/v2.0`) + `DATAQ_AUTH_CLIENT_ID` (your
   SPA app registration) + `DATAQ_AUTH_API_SCOPE` (`api://<api-client-id>/<scope>`), and run
   the **backend** with `AUTH_DEV_BYPASS` off + the matching `AZURE_*` settings. For a
-  non-Azure IdP whose scope vocabulary differs, the optional `DATAQ_AUTH_SCOPE` (#1347)
+  non-Azure IdP whose scope vocabulary differs, the optional `DATAQ_AUTH_SCOPE`
   replaces the requested scope string entirely — AWS Cognito rejects the default list's
   `offline_access`, so a Cognito deployment sets `DATAQ_AUTH_SCOPE="openid email profile"`
   (with the backend's `OIDC_ISSUER` + `OIDC_AUDIENCE` instead of `AZURE_*`).

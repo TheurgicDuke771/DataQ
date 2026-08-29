@@ -7,11 +7,11 @@
   each seam — the registry is infra, not business logic), [0013](0013-marketplace-distribution-and-anti-lock-in.md)
   (BYOL/marketplace distribution — a neutral registry doubles as the future distribution channel),
   [0021](0021-demo-test-data-environment-strategy.md) (deploy/harness context). Supersedes the ACR
-  choice scaffolded in the Week-7 deploy work (#379); rides the `deploy.yml` SHA-pin (#382).
+  choice scaffolded in the Week-7 deploy work; rides the `deploy.yml` SHA-pin.
 
 ## Context
 
-The Week-7 deploy scaffolding (#379) wired `.github/workflows/deploy.yml` to **Azure Container
+The Week-7 deploy scaffolding wired `.github/workflows/deploy.yml` to **Azure Container
 Registry (ACR)**: backend image built in CI, pushed to ACR, pulled by Azure Container Apps (api +
 worker share one image; a migrate Job runs `alembic upgrade head`). Before the apply, we reconsidered
 the registry. The DataQ repo is **public**, and a standing project principle (ADR 0010/0013) is that
@@ -25,7 +25,7 @@ Options weighed: **ACR**, **Docker Hub**, **GHCR**.
 
 **Use GitHub Container Registry (`ghcr.io`) as the container registry for the backend image.**
 
-- CI pushes `ghcr.io/theurgicduke771/dataq-backend:${{ github.sha }}` (immutable SHA tag, #382),
+- CI pushes `ghcr.io/theurgicduke771/dataq-backend:${{ github.sha }}` (immutable SHA tag),
   authenticating with the built-in `GITHUB_TOKEN` (`permissions: packages: write`) — **no separate
   registry account or stored PAT** in CI.
 - The package is published **public** (the repo is already public and the image bakes in no secrets —
