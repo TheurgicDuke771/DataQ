@@ -1,8 +1,9 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getIncident, type Incident, listIncidents } from '../../src/api/incidents';
 import { getRun, type RunDetail as RunDetailType } from '../../src/api/runs';
 import { type Check, type Suite, getSuite, listChecks } from '../../src/api/suites';
 import { RunDetail } from '../../src/pages/RunDetail';
@@ -18,6 +19,11 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
   return { ...actual, getSuite: vi.fn(), listChecks: vi.fn() };
 });
 
+vi.mock('../../src/api/incidents', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/incidents')>();
+  return { ...actual, listIncidents: vi.fn(), getIncident: vi.fn() };
+});
+
 vi.mock('../../src/utils/download', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/utils/download')>();
   return { ...actual, downloadCsv: vi.fn(), downloadJson: vi.fn() };
@@ -26,6 +32,8 @@ vi.mock('../../src/utils/download', async (importOriginal) => {
 const mockGetRun = vi.mocked(getRun);
 const mockGetSuite = vi.mocked(getSuite);
 const mockListChecks = vi.mocked(listChecks);
+const mockListIncidents = vi.mocked(listIncidents);
+const mockGetIncident = vi.mocked(getIncident);
 
 const suite: Suite = {
   id: 's1',
@@ -99,6 +107,11 @@ function renderAt(runId: string) {
 function screenRegion() {
   return within(screen.getByTestId('rd-screen'));
 }
+
+// Default: no incidents (#1634) — the tests that care about the linkage override this.
+beforeEach(() => {
+  mockListIncidents.mockResolvedValue([]);
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -1180,5 +1193,129 @@ describe('RunDetail — anomaly cold-start hint (#593)', () => {
     await region.findByText('order_id not null');
     expect(region.queryByTestId('sampled-tag')).not.toBeInTheDocument();
     expect(region.queryByTestId('sampled-run-notice')).not.toBeInTheDocument();
+  });
+});
+
+describe('RunDetail — incident linkage (#1634)', () => {
+  function activeIncident(over: Partial<Incident> = {}): Incident {
+    return {
+      id: 'inc-1',
+      asset_id: 'asset-9',
+      check_id: 'chk1',
+      suite_id: 's1',
+      status: 'open',
+      resolved_by: null,
+      occurrence_count: 4,
+      created_at: '2026-06-11T00:00:00Z',
+      last_seen_at: '2026-06-11T00:00:00Z',
+      acknowledged_at: null,
+      resolved_at: null,
+      check_name: 'order_id not null',
+      asset_namespace: 'snowflake://acct',
+      asset_name: 'ORDERS',
+      latest_status: 'fail',
+      ...over,
+    };
+  }
+
+  const failingRun: RunDetailType = {
+    ...runDetail,
+    asset_id: 'asset-9',
+    results: [{ ...runDetail.results[0], status: 'fail' }],
+  };
+
+  it('tags a breaching row with an open incident and opens its evidence on click', async () => {
+    mockGetRun.mockResolvedValue(failingRun);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    mockListIncidents.mockResolvedValue([activeIncident()]);
+    mockGetIncident.mockResolvedValue({
+      ...activeIncident(),
+      acknowledged_by: null,
+      resolved_by_user_id: null,
+      prior_incident_id: null,
+      acknowledge_note: null,
+      resolution_note: null,
+      evidence: null,
+    });
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    const tag = await region.findByText('Incident');
+    expect(mockListIncidents).toHaveBeenCalledWith({ asset_id: 'asset-9', suite_id: 's1' });
+
+    await user.click(tag);
+    expect(await screen.findByText('Incident evidence')).toBeInTheDocument();
+    expect(mockGetIncident).toHaveBeenCalledWith('inc-1');
+  });
+
+  it('does not tag a breaching row when no incident is open for that check', async () => {
+    mockGetRun.mockResolvedValue(failingRun);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    mockListIncidents.mockResolvedValue([]); // beforeEach default, explicit for clarity
+
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    expect(region.queryByText('Incident')).not.toBeInTheDocument();
+  });
+
+  it('tags a warn row too — warn is a breaching tier that opens/attaches an incident (db.models.FAILING_TIERS)', async () => {
+    mockGetRun.mockResolvedValue({ ...runDetail, asset_id: 'asset-9' }); // base fixture: status 'warn'
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    mockListIncidents.mockResolvedValue([activeIncident()]);
+
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    expect(region.getByText('Incident')).toBeInTheDocument();
+  });
+
+  it('does not tag a passing row even when the check has an open incident from a prior run', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      asset_id: 'asset-9',
+      results: [{ ...runDetail.results[0], status: 'pass' }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    mockListIncidents.mockResolvedValue([activeIncident()]);
+
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    expect(region.queryByText('Incident')).not.toBeInTheDocument();
+  });
+
+  it('ignores a resolved incident for the linkage (only open/acknowledged link)', async () => {
+    mockGetRun.mockResolvedValue(failingRun);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    mockListIncidents.mockResolvedValue([activeIncident({ status: 'resolved' })]);
+
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    expect(region.queryByText('Incident')).not.toBeInTheDocument();
+  });
+
+  it('skips the incidents fetch entirely when the run has no resolved asset', async () => {
+    mockGetRun.mockResolvedValue({ ...failingRun, asset_id: null });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    expect(mockListIncidents).not.toHaveBeenCalled();
+    expect(region.queryByText('Incident')).not.toBeInTheDocument();
   });
 });

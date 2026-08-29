@@ -29,6 +29,73 @@ export interface Incident {
   latest_status: string | null;
 }
 
+/**
+ * Layer-1 evidence card (`services/incident_evidence.py`, ADR 0034 decision 4). Every layer is
+ * best-effort on the backend — an exception degrades it to `null` rather than poisoning the whole
+ * card — so a `null` layer must render as "not available", never as an absent/omitted field.
+ * `profile_diff` is `null` unconditionally today (not yet implemented).
+ */
+export interface EvidenceCheckLayer {
+  id: string;
+  name: string | null;
+  expectation_type: string | null;
+  kind: string;
+}
+
+/** An asset reference as the evidence card carries it — the `asset` layer and each entry in
+ *  `downstream_blast_radius` share this exact shape. */
+export interface EvidenceAssetLayer {
+  id: string;
+  namespace: string;
+  name: string;
+  env: string;
+}
+
+export interface EvidenceFailingResultLayer {
+  status: string;
+  metric_value: number | null;
+  observed_value: Record<string, unknown> | null;
+  expected_value: Record<string, unknown> | null;
+}
+
+export interface EvidenceTrendPoint {
+  status: string;
+  metric_value: number | null;
+  created_at: string | null;
+  run_id: string;
+}
+
+export interface EvidenceSiblingCheck {
+  check_name: string | null;
+  status: string;
+}
+
+export interface EvidenceUpstreamPipelineRun {
+  provider: string;
+  pipeline_or_dag_id: string;
+  provider_run_id: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_seconds: number | null;
+  /** Positive = slower than this pipeline's own recent-history average. */
+  delay_seconds_vs_history: number | null;
+}
+
+export interface IncidentEvidence {
+  generated_at: string;
+  check: EvidenceCheckLayer | null;
+  asset: EvidenceAssetLayer | null;
+  failing_result: EvidenceFailingResultLayer | null;
+  metric_trend: EvidenceTrendPoint[] | null;
+  sibling_checks: EvidenceSiblingCheck[] | null;
+  upstream_pipeline_run: EvidenceUpstreamPipelineRun | null;
+  downstream_blast_radius: EvidenceAssetLayer[] | null;
+  /** Always `null` today — a live datasource profile diff of both batches is
+   *  not yet implemented (see the backend module docstring). */
+  profile_diff: unknown | null;
+}
+
 /** Incident detail — mirrors `IncidentDetailRead` (summary + evidence + actors). */
 export interface IncidentDetail extends Incident {
   acknowledged_by: string | null;
@@ -36,7 +103,7 @@ export interface IncidentDetail extends Incident {
   prior_incident_id: string | null;
   acknowledge_note: string | null;
   resolution_note: string | null;
-  evidence: Record<string, unknown> | null;
+  evidence: IncidentEvidence | null;
 }
 
 export async function listIncidents(params?: {
