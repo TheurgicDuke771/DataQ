@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "b09207f0849f",
+  "strategy": "manual-commit",
+  "branch": "feature/1511-llm-provider-seam",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/b0/9207f0849f/0/metadata.json",
+      "transcript": "/b0/9207f0849f/0/full.jsonl",
+      "compact_transcript": "/b0/9207f0849f/0/transcript.jsonl",
+      "content_hash": "/b0/9207f0849f/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 314,
+    "cache_creation_tokens": 358116,
+    "cache_read_tokens": 42700028,
+    "output_tokens": 103379,
+    "api_call_count": 157
+  }
+}
