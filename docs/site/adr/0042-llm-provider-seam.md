@@ -4,7 +4,7 @@
 - **Date:** 2026-08-29
 - **Deciders:** @TheurgicDuke771
 
-Adds a new infrastructure seam in the ADR [0010](0010-provider-agnostic-infrastructure-seams.md) family (`ConnectionAdapter`, `SecretStore`, `OrchestrationProvider`, `LineageProvider`). Design intent originated in [docs/post-v1-dq-intelligence-notes.md](https://github.com/TheurgicDuke771/DataQ/blob/main/docs/post-v1-dq-intelligence-notes.md) §LLM integration model.
+Adds a new infrastructure seam in the ADR [0010](0010-provider-agnostic-infrastructure-seams.md) family (`ConnectionAdapter`, `SecretStore`, `OrchestrationProvider`, `LineageProvider`). Design intent originated in the internal post-v1 DQ-intelligence planning notes (§LLM integration model); the durable decisions are restated in full here.
 
 ## Context
 
