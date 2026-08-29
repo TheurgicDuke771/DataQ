@@ -25,6 +25,11 @@ AUDITED: Final[dict[str, str]] = {
     "api/v1/checks.py::dry_run_check": "check.dryrun",
     "api/v1/suites.py::profile_columns": "column.profile",
     "mcp/server.py::profile_column": "column.profile",
+    # Worker-side prompt enrichment for LLM SQL-gen (ADR 0042): EGRESS rung,
+    # always masked, warehouse-tag floor applied. Its sibling `_schema_context`
+    # calls no redactor (name-only egress) so it cannot appear here — its
+    # column.list event is pinned by test_llm_sqlgen instead.
+    "services/llm_sqlgen.py::_profile_context": "column.profile",
     "mcp/server.py::dryrun_check": "check.dryrun",
 }
 
