@@ -21,11 +21,8 @@ from backend.app.core.logging import get_logger
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import Connection, LlmInvocation, User
 from backend.app.db.session import get_db
-from backend.app.services import (
-    llm_kinds,  # noqa: F401 — registers every kind in this process
-    llm_service,
-    llm_sqlgen,
-)
+from backend.app.services import llm_service, llm_sqlgen
+from backend.app.services.llm_kinds import REGISTERED_KINDS
 from backend.app.services.run_dispatch import dispatch_llm_invocation
 from backend.app.services.suite_authz import require_permission
 
@@ -96,6 +93,8 @@ def generate_sql(
     ever stored; add the result to a check like any custom SQL (dry-run in the
     editor before save applies there unchanged).
     """
+    if llm_sqlgen.SQLGEN_KIND not in REGISTERED_KINDS:  # pragma: no cover - wiring guard
+        raise LlmDispatchFailedError("sql_generation is not registered in this process")
     suite = require_permission(db, payload.suite_id, current_user.id, minimum="edit")
     connection = db.get(Connection, suite.connection_id)
     llm_sqlgen.check_generation_preconditions(suite, connection)
