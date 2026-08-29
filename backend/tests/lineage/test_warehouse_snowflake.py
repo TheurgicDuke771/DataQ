@@ -177,6 +177,30 @@ def _feature_unsupported_error() -> Exception:
     return _ProgrammingError("002139 (0A000): Unsupported feature 'Data Lineage'.")
 
 
+# Captured before any test below monkeypatches `_feature_unsupported_reason` (#1307), so
+# `_enriched_not_authorized_reason` can delegate to the REAL implementation.
+_real_feature_unsupported_reason = warehouse_snowflake._feature_unsupported_reason
+
+
+def _enriched_not_authorized_reason(
+    exc: BaseException, *, not_authorized_label: str | None = None
+) -> str | None:
+    """#1307: `_feature_unsupported_reason` with its GENERIC (unlabelled) not-authorized
+    wording enriched — simulating the exact future change the issue anticipates (e.g.
+    appending the denied object's name), so a test built on this proves the
+    tier-specific substitution survives without relying on `==`-matching the bare
+    literal. Every other branch — edition-gate detection and a LABELLED denial's own
+    wording — is delegated to the real classifier, so a fixture that also raises an
+    edition-gated error on a different tier still exercises that real branch (review
+    finding: a fake that only special-cased "not authorized" silently reclassified an
+    edition-gated error as transient instead).
+    """
+    reason = _real_feature_unsupported_reason(exc, not_authorized_label=not_authorized_label)
+    if not_authorized_label is None and reason == warehouse_snowflake._NOT_AUTHORIZED_MSG:
+        return f"{reason} (object unspecified)"
+    return reason
+
+
 # ───────────────────── tier 3: OBJECT_DEPENDENCIES (real payload) ─────────────
 
 
@@ -353,6 +377,26 @@ def test_seed_enumeration_failure_skips_the_tier_not_the_pull() -> None:
     assert "connection reset" not in result.degraded_reason
 
 
+def test_seed_enumeration_denial_names_the_real_privilege_not_get_lineage() -> None:
+    """#1307 review: INFORMATION_SCHEMA.TABLES access is a database/schema privilege,
+    not the ACCOUNT_USAGE / GET_LINEAGE grant the unlabelled classifier default would
+    have named — that would misdirect an operator toward granting the wrong thing.
+    """
+    conn = _FakeConn(
+        results={"OBJECT_DEPENDENCIES": _object_dependencies_rows(), "ACCESS_HISTORY ah": []},
+        raises={"INFORMATION_SCHEMA.TABLES": _not_authorized_error()},
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.degraded_reason is not None
+    get_lineage_skips = [s for s in result.skipped_tiers if s.startswith("get_lineage")]
+    assert len(get_lineage_skips) == 1
+    assert "database or schema access" in get_lineage_skips[0]
+    assert "INFORMATION_SCHEMA.TABLES" in get_lineage_skips[0]
+    assert "GET_LINEAGE grant" not in get_lineage_skips[0]
+    assert "transient" not in get_lineage_skips[0]  # a CONFIRMED denial, not a transient one
+
+
 def test_get_lineage_message_only_gate_also_descends() -> None:
     # Belt-and-braces: even if a connector surfaced the gate without the SQLSTATE, the
     # documented message text still routes it to the descent (not a hard failure).
@@ -384,6 +428,27 @@ def test_floor_failure_is_unavailable_not_empty() -> None:
     )
     with pytest.raises(WarehouseLineageUnavailableError, match="OBJECT_DEPENDENCIES"):
         SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+
+def test_unavailable_floor_denial_is_classified_not_just_named_by_type() -> None:
+    """#1307 review: before this, `_unavailable_reason` never classified the floor's
+    own exception — a CONFIRMED not-authorized OBJECT_DEPENDENCIES denial here read as
+    an opaque "could not read OBJECT_DEPENDENCIES (<type>)" instead of the same
+    grant-shaped wording the floor-after-a-successful-traversal branch already
+    produces for the identical error.
+    """
+    conn = _FakeConn(
+        raises={
+            "GET_LINEAGE": _not_authorized_error(),
+            "OBJECT_DEPENDENCIES": _not_authorized_error(),
+        }
+    )
+    with pytest.raises(WarehouseLineageUnavailableError) as caught:
+        SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    message = str(caught.value)
+    assert "OBJECT_DEPENDENCIES grant" in message
+    assert "could not read OBJECT_DEPENDENCIES" not in message  # classified, not the fallback
 
 
 # ── #1228: two remaining abort-instead-of-descend sites ────────────────────────
@@ -479,6 +544,35 @@ def test_a_confirmed_floor_denial_after_a_successful_traversal_stays_prunable() 
     assert "transient" not in result.degraded_reason
     # #1264: this floor denial fires AFTER a successful GET_LINEAGE traversal, so the message must
     # name the tier that actually failed, not the one that just worked.
+    assert "OBJECT_DEPENDENCIES" in result.degraded_reason
+    assert "GET_LINEAGE grant" not in result.degraded_reason
+
+
+def test_object_dependencies_denial_names_its_tier_even_if_the_classifier_is_enriched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1307: before this, the substitution above detected "this is the generic
+    not-authorized denial" by `==`-comparing `_feature_unsupported_reason`'s return
+    value to the `_NOT_AUTHORIZED_MSG` literal. Simulate that classifier being enriched
+    (e.g. to append the denied object's name, exactly the change the issue names) —
+    the OBJECT_DEPENDENCIES branch must still produce its OWN tier's wording rather
+    than silently falling back to the (now non-`==`-matching) generic GET_LINEAGE text.
+    """
+    monkeypatch.setattr(
+        warehouse_snowflake, "_feature_unsupported_reason", _enriched_not_authorized_reason
+    )
+
+    conn = _GetLineageConn(
+        {
+            ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
+                "gl_down_orders_header"
+            )
+        },
+        raises={"OBJECT_DEPENDENCIES": _not_authorized_error()},
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.degraded_reason is not None
     assert "OBJECT_DEPENDENCIES" in result.degraded_reason
     assert "GET_LINEAGE grant" not in result.degraded_reason
 
@@ -589,6 +683,35 @@ def test_access_history_not_authorized_names_its_own_tier() -> None:
     must not make ACCESS_HISTORY's own — separate — not-authorized denial read as
     "the GET_LINEAGE grant is missing". Each tier's message must name itself.
     """
+    conn = _FakeConn(
+        results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
+        raises={
+            "GET_LINEAGE": _feature_unsupported_error(),  # edition-gated, NOT a grant issue
+            "ACCESS_HISTORY": _not_authorized_error(),
+        },
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.degraded_reason is not None
+    assert "access_history" in result.degraded_reason
+    assert "ACCESS_HISTORY grant" in result.degraded_reason
+    assert "GET_LINEAGE grant" not in result.degraded_reason
+
+
+def test_access_history_denial_names_its_own_tier_even_if_the_classifier_is_enriched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1307/#1309: the same `==`-against-a-literal anti-pattern the OBJECT_DEPENDENCIES
+    regression test above proves resilient to was, before this fix, also present here.
+    Simulate the shared classifier being enriched — the ACCESS_HISTORY label must still
+    land because it is threaded into `_from_access_history`'s own raise at
+    classification time, not recovered afterwards by string-matching the already-raised
+    error.
+    """
+    monkeypatch.setattr(
+        warehouse_snowflake, "_feature_unsupported_reason", _enriched_not_authorized_reason
+    )
+
     conn = _FakeConn(
         results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
         raises={
