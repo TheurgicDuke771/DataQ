@@ -1,0 +1,53 @@
+<task-notification>
+<task-id>biisak9ns</task-id>
+<summary>Monitor event: "CI checks on PR #1629"</summary>
+<event>GitGuardian Security Checks: pass
+ALL_CHECKS_DONE</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>binm7njll</task-id>
+<summary>Monitor event: "CI checks on PR #1629 (full run)"</summary>
+<event>Frontend — dependency audit (pnpm audit): pass
+GitGuardian Security Checks: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>binm7njll</task-id>
+<summary>Monitor event: "CI checks on PR #1629 (full run)"</summary>
+<event>Backend — SAST (Bandit): pass
+Backend — dependency audit (pip-audit): pass
+Backend — lint &amp; format: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>binm7njll</task-id>
+<summary>Monitor event: "CI checks on PR #1629 (full run)"</summary>
+<event>Backend — type check: pass
+Frontend — lint &amp; format: pass
+Secret scanning (betterleaks): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>binm7njll</task-id>
+<summary>Monitor event: "CI checks on PR #1629 (full run)"</summary>
+<event>CodeQL analysis (javascript-typescript): pass
+CodeQL analysis (python): pass
+CodeQL: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>binm7njll</task-id>
+<summary>Monitor event: "CI checks on PR #1629 (full run)"</summary>
+<event>Backend — tests: fail</event>
+</task-notification>
