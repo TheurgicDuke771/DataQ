@@ -1,0 +1,64 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "8d7fdbc9ea15",
+  "session_id": "f7b4214f-811c-4f5f-98db-888712ba4c18",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-29T04:27:29.831236Z",
+  "branch": "feature/1624-uc-pushdown-batch",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/app/datasources/snowflake.py",
+    "backend/app/datasources/sql.py",
+    "backend/app/datasources/unity_catalog.py",
+    "backend/tests/datasources/test_unity_catalog.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "75044ca52d6d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 294,
+    "cache_creation_tokens": 282997,
+    "cache_read_tokens": 31622712,
+    "output_tokens": 75251,
+    "api_call_count": 147
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-29T04:27:29.784929Z",
+    "agent_lines": 100,
+    "agent_removed": 43,
+    "human_added": 0,
+    "human_modified": 19,
+    "human_removed": 9,
+    "total_committed": 119,
+    "total_lines_changed": 171,
+    "agent_percentage": 83.62573099415205,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 128,
+      "agent_lines_removed": 43,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}
