@@ -1,0 +1,115 @@
+Hey, 
+Check the LLM-assisted authoring from week 3 and 4 
+research and plan the details [web and internal docs]. 
+Check filled issues, create additional if required. 
+rank them based on priority and dependencies. 
+Create a TODO list, start the execution. 
+you can assign task to other models [haiku/sonnet/opus] as required.
+
+note: You can use Ollama [docker image] for testing.
+note: keep the comments at minimum [~ 0.2 prose to code ratio]
+
+---
+
+<task-notification>
+<task-id>b1fs191vw</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d65eb216-a6a3-43ba-8d97-bfd6f4d2e773/tasks/b1fs191vw.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for recon agent" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ab0cc29b1695c5907</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d65eb216-a6a3-43ba-8d97-bfd6f4d2e773/tasks/ab0cc29b1695c5907.output</output-file>
+<status>completed</status>
+<summary>Agent "Recon internal seams for LLM track" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have all the information needed. Here's the recon report.
+
+## Recon: DataQ repo — LLMProvider seam (v1.2)
+
+### 1. Custom-SQL validation (ADR 0019)
+- **Validator module:** `backend/app/services/custom_sql.py`
+  - `validate_query(raw_query: Any) -&gt; None` (line 118) — core lexer: strips comments/string literals (`_strip_noncode`, line 75), rejects multi-statement (`;`), non-`SELECT`/`WITH` starts, and a `_FORBIDDEN_KEYWORDS` set (insert/update/delete/merge/truncate/drop/alter/create/grant/revoke/call/exec/set/use/attach/vacuum/…, lines 24-59). Fails closed on unterminated strings/comments.
+  - `validate_custom_sql_check(*, expectation_type, config, connection_type)` (line 164) — adds datasource gating: `SQL_QUERYABLE_TYPES = frozenset({"snowflake", "unity_catalog"})` (line 21).
+  - Custom-SQL rides `kind='expectation'`, `expectation_type='unexpected_rows_expectation'` (GX `UnexpectedRowsExpectation`), `config={"unexpected_rows_query": ...}` — **no new kind, no migration**.
+- **ADR:** `docs/site/adr/0019-custom-sql-check-kind.md` (+ two 2026-08-08 amendments: a Unity Catalog runner branch was needed after all, and count-based severity landed).
+- **Dry-run invocation:** `backend/app/services/dryrun_service.py`, `dry_run_check(...)` (line 65) calls `validate_custom_sql_check(...)` at line 101 **before** building the runner — "outside the try, so a bad query is a clean 422." This is the one path that *executes* SQL before save (also enforced on check create/update in `check_service.py` and suite import).
+- Router: `backend/app/api/v1/checks.py` around line 450 (`dry_run_check` handler) → calls `dryrun.dry_run_check(...)` at line 461.
+
+### 2. Column profiler
+- **Service:** `backend/app/services/profile_service.py`. Dispatcher `profile_connection(...)` (line 879) → `_SqlProfiler` / `_FileProfiler` / `_IcebergProfiler` strategies keyed by connection type (`_PROFILERS`, line 339: snowflake, unity_catalog, s3, adls_gen2, iceberg).
+- **Stats per column** (`ColumnProfile`, line 90): `null_count`, `null_fraction`, `distinct_count` (nullable), `min_value`, `max_value`, `top_values: [{value, count}]` (top-N frequent values, batched round-trip via `build_batched_top_values_query`, line 197). No histograms/distributions beyond top-N.
+- **Route:** `POST /suites/{suite_id}/profile` in `backend/app/api/v1/suites.py`, `profile_columns` (line 480). Synchronous, `edit`-gated via `require_permission`.
+- **PII/redaction:** Yes — the route (not the service) is redaction-aware: `live_probe.sensitive_profile_columns(...)` + `live_probe.mask_profile_columns(...)` (lines 513-519) mask `top_values`/`min`/`max` per the suite's `column_policy` before response, and `live_probe.record_probe_access(...)` audits the access. The raw `profile_service` output itself is **not** redacted — redaction happens at the API boundary.
+- Also: `profile_service.derive_column_policy(...)` (line 861) auto-suggests a PII/identifier redaction policy from profiled top-values via `column_classification.classify_column`.
+
+### 3. `backend/app/datasources/expectation_allowlist.py` (PR #1614)
+- **Public API:** `ExpectationCapability` dataclass (`dataframe_only: bool`, `bandable: bool`, line 24-31); `ALLOWED_EXPECTATIONS: dict[str, ExpectationCapability]` (~26 entries, line 41); derived sets `ALLOWED_EXPECTATION_TYPES`, `ALLOWLIST_ONLY_TYPES` (authorable but no editor widget), `DATAFRAME_ONLY_EXPECTATION_TYPES`, `UNBANDED_EXPECTATION_TYPES`; function `is_allowed(expectation_type: str) -&gt; bool` (line 94).
+- Deliberately GX-free (no `great_expectations` import) so the author-time gate is cheap to import.
+- Called by `check_service.validate_expectation_check` (used in both `dryrun_service.py` line 110 and normal check create/update) — not yet read directly in this pass, but referenced from `dryrun_service.py`.
+- Relevant for v1.2: any LLM-suggested check (Theme 3) must be validated against this same allowlist before persisting/dry-running.
+
+### 4. SecretStore seam
+- **Interface:** `backend/app/core/secrets.py`, `@runtime_checkable class SecretStore(Protocol)` (line 107): `get(name) -&gt; str`, `set(name, value) -&gt; None`, `delete(name) -&gt; None` (best-effort/fail-soft). Impls: `EnvSecretStore`, `AzureKeyVaultStore`, `AwsSecretsManagerStore`, `OpenBaoSecretStore` (ADR 0039). Factory `_build_store(settings)` (line 727) / singleton `get_secret_store()` (line 762).
+- **Connection naming:** `backend/app/core/secret_names.py`, `connection_secret_ref(*, connection_id, env, name, conn_type="", kind="") -&gt; str` (line 80) — builds `conn-&lt;type&gt;-&lt;qualifier&gt;-[&lt;kind&gt;-]&lt;env&gt;-&lt;shortid&gt;`, charset-constrained to Key Vault's `[0-9a-zA-Z-]`, ≤127 chars via `_MAX_SLUG=60` + 8-hex-char id. `kind` param exists precisely for "a second credential on the same row" (e.g. Iceberg REST catalog secret).
+- **How a NEW kind of secret would be namespaced** — two existing precedents:
+  1. **Fixed, workspace-wide capability secret** (like a signing key/PAT): a static **Settings field naming the KV key**, e.g. `backend/app/core/config.py` lines 237-250: `adf_webhook_secret_name: str = "adf-webhook-secret"`, `teams_webhook_secret_name`, `slack_webhook_secret_name` — one secret per install, admin sets the value via the vault directly; the app only stores/reads the **name**, never the value, in `Settings`. Read via `admin_service._safe_secret(secret_store, secret_name)` (`admin_service.py` line 261).
+  2. **Per-entity, DB-referenced secret** (like a per-suite webhook URL): `notification_service._apply_secret_webhook(...)` (line 129-144) mints `ref = current_ref or f"{ref_prefix}-{config_id}-{uuid.uuid4().hex[:12]}"`, stores the value via `secret_store.set(ref, value)`, and persists only the **ref** in a DB column (`SuiteNotification.webhook_secret_ref`). This is the simpler sibling of `connection_secret_ref` for non-connection secrets.
+  - For an LLM provider credential (workspace-admin, single credential per install, per the design doc below), pattern (1) or a `llm_provider_secret_ref` DB column + pattern (2)-style mint-on-set is the natural fit — precedent exists both ways.
+
+### 5. Workspace admin config surface
+- **No dedicated "workspace config" DB table exists today.** Admin-mutable state is split across:
+  - `User.role` (per-user, ADR 0033 RBAC) — mutated via `PATCH /admin/users/{id}/role` in `admin.py` (line 108-123), service `admin_service.set_user_role`.
+  - `Suite.column_policy` (JSONB, `db/models.py` line 417) — **per-suite**, not workspace-level.
+  - `SuiteNotification` — **per-suite** alert config (webhook/slack refs, email recipients), `notification_service.py`.
+  - `WorkspaceHealth` (`db/models.py` line 948) — one row per delivered-alert signal key; not admin-editable config, just dedup state.
+  - Everything else (webhook secret **names**, SMTP transport, OTP allowlists, secret-store backend, tamper-anchor mode, MCP toggle, etc.) is **env-var-backed `Settings`** (`backend/app/core/config.py`), read-only at runtime, surfaced to the admin UI read-only (e.g. `GET /admin/orchestration/webhooks`, `GET /admin/deployment`).
+- **Admin gate:** `backend/app/core/auth.py` — `require_workspace_admin` (line 809, used as a router-level dependency in `admin.py` line 35) and the more general `require_role(minimum: str)` (line 824) with aliases `AdminUser = Annotated[User, Depends(require_role(ADMIN_ROLE))]` (line 847). ADR 0033 (`docs/site/adr/0033-workspace-roles-rbac.md`) governs this.
+- **Implication for v1.2:** LLM provider config (provider, endpoint, model, credential ref) has **no existing DB-stored workspace-config table to land in** — this is new schema territory; nearest precedent to imitate is `SuiteNotification`-style secret-ref column(s) on a new small table, gated by `require_workspace_admin`, mirroring `admin.py`'s `orchestration_webhooks`/`webhook_configs` read pattern for the "is it configured" surfacing.
+
+### 6. Celery worker task patterns
+- **Tasks:** `backend/app/worker/tasks.py`, `@celery_app.task(name="...")` — e.g. `run_suite` (line 205), `auto_classify_columns` (line 300), `publish_connection_health`, `poll_orchestration_runs`, `refresh_dbt_lineage`, `dispatch_due_schedules`, `sweep_orphan_secrets`, `refresh_lineage_pull`, etc. `celery_app.py` defines the app; `beat_watchdog.py` heartbeats scheduled tasks.
+- **Dispatch:** the ONE publish point is `backend/app/services/run_dispatch.py`: `dispatch_run(run_id) -&gt; str` (line 38, `celery_app.send_task("run_suite", args=[...])`), `dispatch_or_fail(session, run, ...)` (line 71, commits `run.celery_task_id`, marks `failed` on broker error), `dispatch_auto_classify(suite_id)` (fire-and-forget, line 30).
+- **Frontend polling:** `GET /runs/{run_id}/progress` → `backend/app/api/v1/runs.py` `get_run_progress` (line 338) returns `RunProgressRead` (counts/checks/status); this is what the frontend polls after dispatch (see `RunDetail.tsx` / suite run UI, not opened in depth but this is the endpoint).
+- **Column profiler is synchronous on the request path, NOT a worker task** — confirmed: `POST /suites/{suite_id}/profile` is a plain `def` (not `async def`) FastAPI handler (runs on the threadpool since it blocks on I/O), directly calling `profile_service.profile_connection(...)` inline, no Celery dispatch, no polling. Comment in `suites.py` line 487: `"sync def → threadpool; the datasource connect + scans/downloads are blocking."` Dry-run (`checks.py` `dry_run_check`) is the same synchronous-on-request-path shape. **For LLM calls (SQL-gen/check-suggest), the design doc (see §7 below) explicitly recommends the Celery worker**, diverging from the profiler/dry-run precedent — worth flagging in the ADR as a deliberate choice (LLM latency/cost vs. profiler/dry-run's sub-second DB round trips).
+
+### 7. Frontend check editor
+- **Catalog-driven editor:** `frontend/src/components/checks/expectationCatalog.ts` (exports `EXPECTATION_BY_TYPE`, `expectationsByCategoryFor`, `configFieldsFor`, `showEngineChoiceFor`, `effectiveEngineFor`, `ExpectationCategory` type) drives `frontend/src/components/checks/checkFormFields.tsx` (`ConfigFieldItem`, `EngineField`, `DimensionField`, `SeverityThresholdFields`).
+- **Full-page authoring flow:** `frontend/src/pages/CheckNew.tsx` (category → expectation → config+thresholds, GX-Cloud style) and `frontend/src/pages/CheckEdit.tsx` — both import `DryRunPreview` (`frontend/src/components/checks/DryRunPreview.tsx`, calls `dryRunCheck` from `frontend/src/api/suites.ts`, hitting `POST /suites/{id}/checks/dryrun`) and `ColumnProfilePanel` (`frontend/src/components/checks/ColumnProfilePanel.tsx`).
+- **Monaco custom-SQL panel:** `frontend/src/components/checks/SqlEditorField.tsx` — `@monaco-editor/react` wrapped as an antd-Form field, lazy-loaded (`checkFormFields.tsx` line 36: `const LazySqlEditor = lazy(() =&gt; import('./SqlEditorField'))`), client-side mirror validation via `frontend/src/components/checks/customSql.ts` (`validateCustomSqlQuery`, imported at `checkFormFields.tsx` line 18) — mirrors ADR 0019's server-side lexer.
+- **"Generate with AI" natural home:** in `CheckNew.tsx`, next to the category/expectation picker (around lines 39-67, where `category`/`expectationType` state lives) for Theme 3 (curated suggestions), and inside `SqlEditorField.tsx`'s toolbar / `checkFormFields.tsx`'s custom-SQL config-field renderer for Theme 2 (SQL generation from NL) — both would need a companion "Generate" action that populates the Monaco value or pre-fills `expectationType`+`config`, then routes through the existing `DryRunPreview` before save (per the design doc's "same validator + dry-run" principle).
+- **Suite detail page:** there is **no separate `SuiteDetail.tsx`** — `frontend/src/pages/Suites.tsx` (741 lines) is reused for both the list (`/suites`) and detail (`/suites/:suiteId`) routes (see `App.tsx` lines 256-259: `&lt;Route path="/suites/:suiteId" element={&lt;Suites /&gt;} /&gt;`). Check-authoring routes hang off it: `/suites/:suiteId/checks/new` → `CheckNew`, `/suites/:suiteId/checks/:checkId/edit` → `CheckEdit`.
+
+### 8. Settings (Pydantic) config
+- `backend/app/core/config.py`: `class Settings(BaseSettings)` (line 48), `model_config = SettingsConfigDict(env_file=".env.app", extra="forbid", case_sensitive=False)` — reads `.env.app` only (not root `.env`, which is compose/infra-only). Feature flags/env vars are plain typed fields with defaults (e.g. `secret_store`, `tamper_anchor`, `teams_webhook_secret_name`).
+- **Boot-time validator example:** `_validate_tamper_anchor` (line 512, `@model_validator(mode="after")`) — "fail the boot, not the first purge": if `tamper_anchor == "webhook"`, requires both `TAMPER_ANCHOR_WEBHOOK_URL` and `_SECRET` set and URL scheme-prefixed, else raises `ValueError` collecting all problems. Similar pattern at `_validate_secret_store` (~line 434-510) and `_validate_otp_auth` (line 532, explicitly refuses half-configured blocks). An `LLMProvider` config would follow this exact shape: validate "if provider != none, require {base_url|api_key_secret_name, model}" at boot, not first LLM call.
+
+### 9. Outbound HTTP client pattern
+- **Library:** `httpx` throughout (both sync `httpx.Client` and `httpx.AsyncClient`), no `requests` usage found for outbound calls.
+- **Convention:** module-level `_TIMEOUT_SECONDS` / `_POST_TIMEOUT_SECONDS` constant (e.g. `alerting/slack.py` line 24: `_POST_TIMEOUT_SECONDS = 10.0`; `core/secrets.py` line 35: `_HTTP_TIMEOUT_SECONDS = 5.0`; `core/tamper_anchor.py` line 82: `httpx.Client(timeout=_PUBLISH_TIMEOUT_SECONDS)`), passed to every call site. **No built-in retry loop** in the alert/webhook paths — single POST + `response.raise_for_status()`, exceptions bubble to a fail-soft caller (log + swallow) rather than retrying inline. `OpenBaoSecretStore._send` (`core/secrets.py` line 585) is the one exception with retry logic — a single re-login-and-retry on 403 for AppRole token expiry, not a generic backoff retry.
+- Clients are lazily constructed and pooled (`_client_lazy()` pattern with a `threading.Lock`), injectable via constructor `client: httpx.Client | None = None` param for testability (seen in `OpenBaoSecretStore.__init__`, `tamper_anchor.py`).
+
+### 10. Tests
+- **Service-level tests:** `backend/tests/services/` (flat, one file per service module, e.g. `test_custom_sql.py`, `test_check_service.py`, `test_connection_service.py`). Pattern: plain pytest functions + `pytest.mark.parametrize`, e.g. `test_custom_sql.py` has `TestDatasourceGating` class plus a battery of parametrized SQL-injection-style adversarial cases.
+- **Mocking outbound HTTP:** `httpx.Client(transport=httpx.MockTransport(_handler))` — seen in `backend/tests/core/test_tamper_anchor.py` (lines 67, 87, 106) and `backend/tests/core/test_secrets.py`. `_handler` is a plain function taking a `httpx.Request` and returning `httpx.Response(...)`, injected via the constructor's `client=` param — this is the seam to reuse for an `LLMProvider` HTTP-backed impl's tests.
+- **Live/integration lane gated on env vars:** `backend/tests/e2e/test_probe_e2e.py` line 13: `requires_real_infra = pytest.mark.skipif(not (os.environ.get("DATAQ_E2E") and os.environ.get("DATABASE_URL") and os.environ.get("REDIS_URL")), reason=...)` — explicit opt-in gate pattern (`DATAQ_E2E=1` + real broker/DB env vars). This is the template an `LLM_LIVE_TEST=1`-gated lane (real provider credential) would follow. Also `.claude/skills/live-verify` exists as a project skill for this kind of live verification workflow.
+
+## Key finding: the design is already drafted
+
+`docs/post-v1-dq-intelligence-notes.md` (Status: filed as GitHub issues #1509-#1513, **#1511 is literally "the LLMProvider seam"**) already specifies almost exactly what you're designing:
+- Workspace-admin-configured (ADR 0033 `role='admin'`), **default-OFF**, **BYOL** (customer's own credential/endpoint, never proxied through a DataQ-owned key).
+- Pluggable impls: Anthropic API (default), Azure AI Foundry/Azure OpenAI, AWS Bedrock, any OpenAI-compatible endpoint (the "local LLM" answer via Ollama/vLLM/TGI — explicitly **not** bundling a model server, citing ADR 0025 slim-image).
+- Credential stored in `SecretStore`; seam shape `{base_url, api_key, model, auth_adapter}` + a capability flag for structured-output support.
+- Runs in the **Celery worker**, not the request path (already holds secret access; async).
+- Data-residency discipline: send **schema + aggregate profiler stats only, never raw sample rows / PII-column values** — reuse the redaction seam (`live_probe`, `column_classification`, `derive_column_policy`).
+- #2 (SQL generator) and #3 (check suggestions) both **must** route generated output through the *existing* ADR-0019 custom-SQL validator + dry-run and the (new, #1510) `expectation_allowlist.py`, respectively — "trust LLM output no more than user input."
+- `admin.py`'s `DeploymentPostureRead.external_transfers` already carries a placeholder `llm_intelligence` entry (line 404-417) marked `enabled=False`, explicitly flagged "listed while disabled on purpose: an auditor should see it was considered" — this will need to flip to `enabled=True`-when-configured once the seam lands, and should read the new admin config to compute that.
+
+This existing note should be your ADR's primary input/citation — it already resolves most of the "how should this integrate" questions your 10 points are probing.</result>
+<usage><subagent_tokens>138780</subagent_tokens><tool_uses>61</tool_uses><duration_ms>180582</duration_ms></usage>
+</task-notification>
