@@ -13,12 +13,14 @@ import {
   Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import { type Incident, listIncidents } from '../api/incidents';
 import { getRun, type Result, type ResultStatus } from '../api/runs';
 import { type Check, getSuite, listChecks } from '../api/suites';
 import { AssetLink } from '../components/assets/AssetLink';
+import { IncidentEvidenceDrawer } from '../components/assets/IncidentEvidenceDrawer';
 import { EngineTag } from '../components/checks/checkBadges';
 import { CheckTrend } from '../components/checks/CheckTrend';
 import { ComparisonResultDetail } from '../components/results/ComparisonResultDetail';
@@ -43,6 +45,10 @@ import { PageError } from '../components/feedback/PageError';
 
 /** The four severity tiers that count as "evaluated" (ADR 0005) — skip/error don't. */
 const SEVERITY_STATUSES = new Set<ResultStatus>(['pass', 'warn', 'fail', 'critical']);
+/** Tiers a result must breach for an incident to exist at all (`incident_service.FAILING_TIERS`). */
+const FAILING_TIERS = new Set<ResultStatus>(['fail', 'critical']);
+/** An incident is "open" for linkage purposes while active (mirrors `INCIDENT_ACTIVE_STATUSES`). */
+const ACTIVE_INCIDENT_STATUSES = new Set(['open', 'acknowledged']);
 
 /**
  * Bound for the "Observed" cell — a structured `observed_value` payload (schema_drift baselines,
@@ -63,11 +69,18 @@ export function RunDetail() {
     const run = await getRun(runId);
     // The suite may be readable while details race; tolerate a missing name/checks
     // rather than failing the whole page.
-    const [suite, checks] = await Promise.all([
+    const [suite, checks, incidents] = await Promise.all([
       getSuite(run.suite_id).catch(() => null),
       listChecks(run.suite_id).catch(() => [] as Check[]),
+      // Incident linkage (#1634): reuses the existing `/incidents` list read — no new endpoint.
+      // Null asset (targetless suite, or an older/operationally-failed run) has nothing to link.
+      run.asset_id
+        ? listIncidents({ asset_id: run.asset_id, suite_id: run.suite_id }).catch(
+            () => [] as Incident[],
+          )
+        : Promise.resolve([] as Incident[]),
     ]);
-    return { run, suiteName: suite?.name ?? null, checks };
+    return { run, suiteName: suite?.name ?? null, checks, incidents };
   });
 
   const back = () => navigate('/results');
@@ -116,6 +129,7 @@ export function RunDetail() {
               run={state.data.run}
               suiteName={state.data.suiteName}
               checks={state.data.checks}
+              incidents={state.data.incidents}
             />
           )}
         </Page>
@@ -135,16 +149,29 @@ function RunDetailBody({
   run,
   suiteName,
   checks,
+  incidents,
 }: {
   run: Awaited<ReturnType<typeof getRun>>;
   suiteName: string | null;
   checks: Check[];
+  incidents: Incident[];
 }) {
   const checksById = useMemo(() => {
     const map = new Map<string, Check>();
     for (const c of checks) map.set(c.id, c);
     return map;
   }, [checks]);
+
+  // The active (open|acknowledged) incident per check_id, for the fail/critical row linkage
+  // (#1634) — resolved incidents aren't "open" and don't get a link.
+  const activeIncidentByCheckId = useMemo(() => {
+    const map = new Map<string, Incident>();
+    for (const incident of incidents) {
+      if (ACTIVE_INCIDENT_STATUSES.has(incident.status)) map.set(incident.check_id, incident);
+    }
+    return map;
+  }, [incidents]);
+  const [evidenceIncidentId, setEvidenceIncidentId] = useState<string | null>(null);
 
   // "Checks passed" counts only evaluated (severity-tier) results — skip/error didn't evaluate a
   // severity, so they're excluded from the denominator.
@@ -203,6 +230,13 @@ function RunDetailBody({
         checks={checksById}
         suiteId={run.suite_id}
         runId={run.id}
+        incidentByCheckId={activeIncidentByCheckId}
+        onViewIncident={setEvidenceIncidentId}
+      />
+
+      <IncidentEvidenceDrawer
+        incidentId={evidenceIncidentId}
+        onClose={() => setEvidenceIncidentId(null)}
       />
     </Flex>
   );
@@ -419,11 +453,16 @@ function ResultsTable({
   checks,
   suiteId,
   runId,
+  incidentByCheckId,
+  onViewIncident,
 }: {
   results: Result[];
   checks: Map<string, Check>;
   suiteId: string;
   runId: string;
+  /** Active incident per check_id (#1634) — empty when the run has no resolved asset. */
+  incidentByCheckId: Map<string, Incident>;
+  onViewIncident: (incidentId: string) => void;
 }) {
   if (results.length === 0) {
     return <Empty description="No check results — the run did not complete." />;
@@ -434,6 +473,7 @@ function ResultsTable({
       dataIndex: 'check_id',
       render: (id: string, record: Result) => {
         const check = checks.get(id);
+        const incident = incidentByCheckId.get(id);
         // One wrapper, whether or not the check still exists: the label differs, the annotations do
         // not.
         return (
@@ -443,6 +483,18 @@ function ResultsTable({
                 operator wastes time asking why no alert arrived (#653). */}
             {check && <SnoozedTag check={check} />}
             <SampledTag sampling={record.sampling} />
+            {/* An open incident on this (asset, check) pair (#1634) — only for a breaching row;
+                a `pass` result whose check has an incident from a PRIOR run gets no tag here (the
+                incident isn't about this row). */}
+            {incident && FAILING_TIERS.has(record.status) && (
+              <Tag
+                color="volcano"
+                style={{ cursor: 'pointer' }}
+                onClick={() => onViewIncident(incident.id)}
+              >
+                Incident
+              </Tag>
+            )}
           </Flex>
         );
       },

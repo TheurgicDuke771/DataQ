@@ -13,10 +13,12 @@ import { errorMessage } from '../../utils/errors';
 import { AsyncBody } from '../AsyncBody';
 import type { ResultStatus } from '../../api/runs';
 import { RESULT_STATUS_COLORS, formatTimestamp } from '../results/resultsFormat';
+import { IncidentEvidenceDrawer } from './IncidentEvidenceDrawer';
 
 /**
  * Incidents section on the asset page (ADR 0034 #761) — the *active* incidents (open /
- * acknowledged) on this asset, with occurrence count and edit-gated ack/resolve.
+ * acknowledged) on this asset, with occurrence count, edit-gated ack/resolve, and (#1634) an
+ * evidence drawer any viewer can open — reading WHY an incident opened only needs suite `view`.
  */
 export function IncidentsPanel({
   assetId,
@@ -28,6 +30,7 @@ export function IncidentsPanel({
   restrictedSuiteCount?: number;
 }) {
   const { state, reload } = useAsyncData(() => listIncidents({ asset_id: assetId }));
+  const [evidenceIncidentId, setEvidenceIncidentId] = useState<string | null>(null);
   return (
     <Card size="small" title="Incidents">
       <AsyncBody
@@ -41,6 +44,7 @@ export function IncidentsPanel({
               incidents={incidents.filter((i) => i.status !== 'resolved')}
               permissionBySuite={permissionBySuite}
               onChanged={reload}
+              onViewEvidence={setEvidenceIncidentId}
             />
             {restrictedSuiteCount > 0 && (
               <Typography.Text
@@ -55,6 +59,10 @@ export function IncidentsPanel({
           </>
         )}
       </AsyncBody>
+      <IncidentEvidenceDrawer
+        incidentId={evidenceIncidentId}
+        onClose={() => setEvidenceIncidentId(null)}
+      />
     </Card>
   );
 }
@@ -70,10 +78,12 @@ function IncidentsTable({
   incidents,
   permissionBySuite,
   onChanged,
+  onViewEvidence,
 }: {
   incidents: Incident[];
   permissionBySuite: Record<string, string>;
   onChanged: () => void;
+  onViewEvidence: (incidentId: string) => void;
 }) {
   const { message } = App.useApp();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -132,6 +142,16 @@ function IncidentsTable({
       dataIndex: 'last_seen_at',
       width: 190,
       render: (ts: string) => formatTimestamp(ts),
+    },
+    {
+      title: 'Evidence',
+      key: 'evidence',
+      width: 100,
+      render: (_: unknown, incident) => (
+        <Button size="small" onClick={() => onViewEvidence(incident.id)}>
+          View
+        </Button>
+      ),
     },
     {
       title: 'Actions',
