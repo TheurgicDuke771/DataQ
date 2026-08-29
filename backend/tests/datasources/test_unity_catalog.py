@@ -141,6 +141,8 @@ from backend.app.datasources.unity_catalog import (  # noqa: E402
     SQL_BATCH_EXPECTATION_TYPES,
     SQL_PUSHDOWN_EXPECTATION_TYPES,
     UnityCatalogCheckRunner,
+    _fold_reflection_keyed_columns,
+    _reflection_key,
     build_databricks_url,
     build_unity_catalog_runner,
 )
@@ -1651,44 +1653,63 @@ def test_pushdown_allowlist_partitions_the_catalog() -> None:
         for e in json.loads(fixture.read_text())
         if e["kind"] == "expectation" and e["type"] not in DMF_EXPECTATION_TYPES
     }
-    # Deliberately NOT pushed down. `to_be_of_type`/`in_type_list` compare a dtype, which the two
-    # batches spell differently. The #1509 entries are held back because the pushdown list is an
-    # audited set and nothing has yet exercised these against a live Databricks SQL warehouse —
-    # the frame is the known-correct route, and moving one here is a conscious later step.
+    # Deliberately NOT pushed down, permanently: `to_be_of_type`/`in_type_list` compare a
+    # dtype (pushdown would flip pandas-dtype spellings to dialect type strings — breaking).
+    # The other two have no SqlAlchemy provider at all (DATAFRAME_ONLY_EXPECTATION_TYPES).
     frame_only = {
         "expect_column_values_to_be_of_type",
         "expect_column_values_to_be_in_type_list",
-        "expect_compound_columns_to_be_unique",
-        "expect_column_pair_values_a_to_be_greater_than_b",
-        "expect_multicolumn_sum_to_equal",
-        "expect_column_distinct_values_to_be_in_set",
-        "expect_column_distinct_values_to_contain_set",
-        # No SqlAlchemy provider at all (expectation_allowlist.DATAFRAME_ONLY_EXPECTATION_TYPES) —
-        # the frame is the only batch it can run on, which is why UC still offers it and Snowflake
-        # cannot.
         "expect_column_values_to_match_strftime_format",
         "expect_column_values_to_be_json_parseable",
-        # The #1510 entries, held back on the same terms as the #1509 ones above: they run on a
-        # SQLAlchemy batch (proven on sqlite in `test_catalog_expectation_runs.py`), but the
-        # pushdown list is an audited set and none of these has been exercised against a live
-        # Databricks SQL warehouse yet.
-        "expect_column_values_to_be_null",
-        "expect_column_values_to_not_be_in_set",
-        "expect_column_value_lengths_to_equal",
-        "expect_column_values_to_not_match_regex",
-        "expect_column_values_to_match_regex_list",
-        "expect_column_values_to_not_match_regex_list",
-        "expect_column_pair_values_to_be_equal",
-        "expect_select_column_values_to_be_unique_within_record",
     }
+    from backend.app.datasources.expectation_allowlist import (
+        ALLOWLIST_ONLY_TYPES,
+        DATAFRAME_ONLY_EXPECTATION_TYPES,
+    )
+
     routed = SQL_PUSHDOWN_EXPECTATION_TYPES | frame_only | SQL_BATCH_EXPECTATION_TYPES
-    assert catalog_types == routed
+    # Allowlist-only types (e.g. a list-of-pairs shape the editor has no widget for) never
+    # appear in the catalog fixture but still need a route, so exclude them on one side.
+    assert catalog_types == routed - ALLOWLIST_ONLY_TYPES
+    assert ALLOWLIST_ONLY_TYPES <= SQL_PUSHDOWN_EXPECTATION_TYPES
     # A union hides an overlap: a type in BOTH sets satisfies the equality above while every UC
     # run of it raises "No provider found" on the pushed-down batch.
-    from backend.app.datasources.expectation_allowlist import DATAFRAME_ONLY_EXPECTATION_TYPES
-
     assert not (SQL_PUSHDOWN_EXPECTATION_TYPES & DATAFRAME_ONLY_EXPECTATION_TYPES)
     assert not (SQL_PUSHDOWN_EXPECTATION_TYPES & frame_only)
+
+
+def test_fold_reflection_keyed_columns_lowercases_all_caps_compound_unique() -> None:
+    # An all-caps column_list must fold to match the reflected (lower-cased) key.
+    spec = CheckSpec(
+        "expect_compound_columns_to_be_unique",
+        {"column_list": ["ORDER_NUMBER", "CUSTOMER_ID"], "mostly": 0.9},
+    )
+    (folded,) = _fold_reflection_keyed_columns([spec])
+    assert folded.kwargs["column_list"] == ["order_number", "customer_id"]
+    assert folded.kwargs["mostly"] == 0.9
+    # frozen input untouched
+    assert spec.kwargs["column_list"] == ["ORDER_NUMBER", "CUSTOMER_ID"]
+
+
+def test_fold_reflection_keyed_columns_leaves_mixed_case_and_other_types_alone() -> None:
+    mixed = CheckSpec(
+        "expect_compound_columns_to_be_unique", {"column_list": ["OrderNum", "customer_id"]}
+    )
+    other = CheckSpec(
+        "expect_multicolumn_sum_to_equal", {"column_list": ["SUBTOTAL", "TAX"], "sum_total": 1}
+    )
+    folded_mixed, folded_other = _fold_reflection_keyed_columns([mixed, other])
+    assert folded_mixed.kwargs["column_list"] == ["OrderNum", "customer_id"]
+    assert folded_other is other
+
+
+def test_reflection_key_mirrors_the_databricks_dialect_not_a_bare_lower() -> None:
+    # Reserved words and quote-requiring names keep their case — a bare isupper() fold
+    # would break them.
+    assert _reflection_key("ORDER_NUMBER") == "order_number"
+    assert _reflection_key("ORDER") == "ORDER"
+    assert _reflection_key("ORDER DATE") == "ORDER DATE"
+    assert _reflection_key("OrderNum") == "OrderNum"
 
 
 def test_index_column_clash_runs_without_the_index_request(

@@ -32,6 +32,7 @@ from backend.app.datasources.sampling import (
 from backend.app.datasources.sql import (
     LazyEngine,
     core_table,
+    fold_reflection_keyed_columns,
     is_sql_identifier,
     qualified_sql_name,
 )
@@ -136,8 +137,39 @@ SQL_PUSHDOWN_EXPECTATION_TYPES: frozenset[str] = frozenset(
         "expect_column_value_lengths_to_be_between",
         "expect_column_values_to_match_regex",
         "expect_table_row_count_to_be_between",
+        "expect_column_values_to_be_null",
+        "expect_column_values_to_not_be_in_set",
+        "expect_column_value_lengths_to_equal",
+        "expect_column_values_to_not_match_regex",
+        "expect_column_values_to_match_regex_list",
+        "expect_column_values_to_not_match_regex_list",
+        "expect_column_pair_values_to_be_equal",
+        "expect_column_pair_values_to_be_in_set",
+        "expect_column_pair_values_a_to_be_greater_than_b",
+        "expect_multicolumn_sum_to_equal",
+        "expect_select_column_values_to_be_unique_within_record",
+        "expect_column_distinct_values_to_be_in_set",
+        "expect_column_distinct_values_to_contain_set",
+        "expect_compound_columns_to_be_unique",
     }
 )
+
+# This metric indexes REFLECTED columns, whose keys the Databricks dialect rewrites via its
+# own `normalize_name` — fold authored names to match, or an all-caps spelling KeyErrors.
+_REFLECTION_KEYED_TYPES = frozenset({"expect_compound_columns_to_be_unique"})
+
+
+def _reflection_key(name: str) -> str:
+    from databricks.sqlalchemy.base import DatabricksDialect
+
+    return DatabricksDialect().normalize_name(name) or name
+
+
+def _fold_reflection_keyed_columns(checks: list[CheckSpec]) -> list[CheckSpec]:
+    return fold_reflection_keyed_columns(
+        checks, reflection_keyed_types=_REFLECTION_KEYED_TYPES, normalize_name=_reflection_key
+    )
+
 
 #: How far a Bernoulli ``TABLESAMPLE`` is over-drawn before the ``LIMIT`` trims it (#595).
 _SAMPLE_OVERSHOOT = 1.2
@@ -413,6 +445,7 @@ class UnityCatalogCheckRunner:
         """Evaluate the SQL-batch group (custom SQL #1179, pushdown types #1532)
         on one Databricks-SQL batch.
         """
+        checks = _fold_reflection_keyed_columns(checks)
         if all(is_custom_sql(spec.expectation_type) for spec in checks):
             index_columns = None
         problem = self._sql_target_problem(table=table, schema=schema)
