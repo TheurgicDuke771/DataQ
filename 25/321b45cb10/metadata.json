@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "25321b45cb10",
+  "strategy": "manual-commit",
+  "branch": "docs/roadmap-webhook-issue-refs",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "context/post-v1-roadmap.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/25/321b45cb10/0/metadata.json",
+      "transcript": "/25/321b45cb10/0/full.jsonl",
+      "compact_transcript": "/25/321b45cb10/0/transcript.jsonl",
+      "content_hash": "/25/321b45cb10/0/content_hash.txt",
+      "prompt": "/25/321b45cb10/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 129901,
+    "cache_read_tokens": 3462699,
+    "output_tokens": 16202,
+    "api_call_count": 28
+  }
+}
