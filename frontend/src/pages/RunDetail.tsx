@@ -45,8 +45,10 @@ import { PageError } from '../components/feedback/PageError';
 
 /** The four severity tiers that count as "evaluated" (ADR 0005) — skip/error don't. */
 const SEVERITY_STATUSES = new Set<ResultStatus>(['pass', 'warn', 'fail', 'critical']);
-/** Tiers a result must breach for an incident to exist at all (`incident_service.FAILING_TIERS`). */
-const FAILING_TIERS = new Set<ResultStatus>(['fail', 'critical']);
+/** Tiers a result must breach for an incident to exist at all (`db.models.FAILING_TIERS`) — warn
+ *  included, not just fail/critical (`incident_service._sync_incidents_for_run` opens/attaches on
+ *  any of the three). */
+const FAILING_TIERS = new Set<ResultStatus>(['warn', 'fail', 'critical']);
 /** An incident is "open" for linkage purposes while active (mirrors `INCIDENT_ACTIVE_STATUSES`). */
 const ACTIVE_INCIDENT_STATUSES = new Set(['open', 'acknowledged']);
 
@@ -73,8 +75,10 @@ export function RunDetail() {
       getSuite(run.suite_id).catch(() => null),
       listChecks(run.suite_id).catch(() => [] as Check[]),
       // Incident linkage (#1634): reuses the existing `/incidents` list read — no new endpoint.
-      // Null asset (targetless suite, or an older/operationally-failed run) has nothing to link.
-      run.asset_id
+      // Null asset (targetless suite, or an older/operationally-failed run) has nothing to link;
+      // likewise a run with no breaching (warn/fail/critical) result has nothing an incident tag
+      // could ever attach to, so skip the read entirely rather than fetch and discard it.
+      run.asset_id && run.results.some((r) => FAILING_TIERS.has(r.status))
         ? listIncidents({ asset_id: run.asset_id, suite_id: run.suite_id }).catch(
             () => [] as Incident[],
           )

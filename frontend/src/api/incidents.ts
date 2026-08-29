@@ -42,6 +42,8 @@ export interface EvidenceCheckLayer {
   kind: string;
 }
 
+/** An asset reference as the evidence card carries it — the `asset` layer and each entry in
+ *  `downstream_blast_radius` share this exact shape. */
 export interface EvidenceAssetLayer {
   id: string;
   namespace: string;
@@ -80,13 +82,6 @@ export interface EvidenceUpstreamPipelineRun {
   delay_seconds_vs_history: number | null;
 }
 
-export interface EvidenceBlastRadiusAsset {
-  id: string;
-  namespace: string;
-  name: string;
-  env: string;
-}
-
 export interface IncidentEvidence {
   generated_at: string;
   check: EvidenceCheckLayer | null;
@@ -95,7 +90,7 @@ export interface IncidentEvidence {
   metric_trend: EvidenceTrendPoint[] | null;
   sibling_checks: EvidenceSiblingCheck[] | null;
   upstream_pipeline_run: EvidenceUpstreamPipelineRun | null;
-  downstream_blast_radius: EvidenceBlastRadiusAsset[] | null;
+  downstream_blast_radius: EvidenceAssetLayer[] | null;
   /** Always `null` today — a live datasource profile diff of both batches is
    *  not yet implemented (see the backend module docstring). */
   profile_diff: unknown | null;

@@ -1,9 +1,20 @@
 import { render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { IncidentDetail, IncidentEvidence } from '../../src/api/incidents';
 import { getIncident } from '../../src/api/incidents';
 import { IncidentEvidenceDrawer } from '../../src/components/assets/IncidentEvidenceDrawer';
+
+// The drawer's asset refs use AssetLink, which navigates via react-router — every render needs a
+// Router ancestor, same as any other test that renders it (RunDetail.test.tsx, IncidentsPanel).
+function renderDrawer(incidentId: string | null, onClose = vi.fn()) {
+  return render(
+    <MemoryRouter>
+      <IncidentEvidenceDrawer incidentId={incidentId} onClose={onClose} />
+    </MemoryRouter>,
+  );
+}
 
 vi.mock('../../src/api/incidents', () => ({
   getIncident: vi.fn(),
@@ -78,18 +89,21 @@ afterEach(() => vi.clearAllMocks());
 
 describe('IncidentEvidenceDrawer', () => {
   it('renders nothing fetched when incidentId is null (drawer closed)', () => {
-    render(<IncidentEvidenceDrawer incidentId={null} onClose={vi.fn()} />);
+    renderDrawer(null);
     expect(mockGetIncident).not.toHaveBeenCalled();
     expect(screen.queryByText('Incident evidence')).not.toBeInTheDocument();
   });
 
   it('renders every populated layer of a full evidence card', async () => {
     mockGetIncident.mockResolvedValue(detail(fullEvidence()));
-    render(<IncidentEvidenceDrawer incidentId="inc-1" onClose={vi.fn()} />);
+    renderDrawer('inc-1');
 
     expect(await screen.findByText('order_id not null')).toBeInTheDocument();
     expect(screen.getByText('expect_column_values_to_not_be_null')).toBeInTheDocument();
-    expect(screen.getByText('snowflake://acct.ORDERS (prod)')).toBeInTheDocument();
+    // The asset ref (AssetRef) splits namespace/name and env across nested elements — assert by
+    // substring, like the blast-radius assertion below — plus its navigable AssetLink.
+    expect(screen.getAllByText(/snowflake:\/\/acct\.ORDERS/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Asset').length).toBeGreaterThan(0);
     // Failing result.
     expect(screen.getAllByText('fail').length).toBeGreaterThan(0);
     // Metric trend — both rows render.
@@ -119,7 +133,7 @@ describe('IncidentEvidenceDrawer', () => {
         profile_diff: null,
       }),
     );
-    render(<IncidentEvidenceDrawer incidentId="inc-1" onClose={vi.fn()} />);
+    renderDrawer('inc-1');
 
     await screen.findByText('Captured', { exact: false });
     // One "Not available" per null layer: check&asset, failing result, metric trend, siblings,
@@ -140,7 +154,7 @@ describe('IncidentEvidenceDrawer', () => {
         downstream_blast_radius: [],
       }),
     );
-    render(<IncidentEvidenceDrawer incidentId="inc-1" onClose={vi.fn()} />);
+    renderDrawer('inc-1');
 
     expect(
       await screen.findByText('No prior readings recorded for this check.'),
@@ -159,7 +173,7 @@ describe('IncidentEvidenceDrawer', () => {
         upstream_pipeline_run: { ...pipeline, delay_seconds_vs_history: null },
       }),
     );
-    render(<IncidentEvidenceDrawer incidentId="inc-1" onClose={vi.fn()} />);
+    renderDrawer('inc-1');
 
     expect(
       await screen.findByText(/Not available — no completed prior run to compare against/),
@@ -168,7 +182,7 @@ describe('IncidentEvidenceDrawer', () => {
 
   it('shows an empty-card state when the incident has no evidence recorded at all', async () => {
     mockGetIncident.mockResolvedValue(detail(null));
-    render(<IncidentEvidenceDrawer incidentId="inc-1" onClose={vi.fn()} />);
+    renderDrawer('inc-1');
 
     expect(
       await screen.findByText('No evidence card recorded for this incident.'),
@@ -177,18 +191,22 @@ describe('IncidentEvidenceDrawer', () => {
 
   it('surfaces a load error', async () => {
     mockGetIncident.mockRejectedValue(new Error('boom'));
-    render(<IncidentEvidenceDrawer incidentId="inc-1" onClose={vi.fn()} />);
+    renderDrawer('inc-1');
 
     expect(await screen.findByText('Failed to load incident evidence')).toBeInTheDocument();
   });
 
   it('refetches when the incident id changes while the drawer stays open', async () => {
     mockGetIncident.mockImplementation(() => Promise.resolve(detail(fullEvidence())));
-    const { rerender } = render(<IncidentEvidenceDrawer incidentId="inc-1" onClose={vi.fn()} />);
+    const { rerender } = renderDrawer('inc-1');
     await screen.findByText('order_id not null');
     expect(mockGetIncident).toHaveBeenCalledWith('inc-1');
 
-    rerender(<IncidentEvidenceDrawer incidentId="inc-2" onClose={vi.fn()} />);
+    rerender(
+      <MemoryRouter>
+        <IncidentEvidenceDrawer incidentId="inc-2" onClose={vi.fn()} />
+      </MemoryRouter>,
+    );
     await within(screen.getByRole('dialog')).findByText('order_id not null');
     expect(mockGetIncident).toHaveBeenCalledWith('inc-2');
   });

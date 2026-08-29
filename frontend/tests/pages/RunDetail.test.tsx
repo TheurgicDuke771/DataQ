@@ -1263,8 +1263,25 @@ describe('RunDetail — incident linkage (#1634)', () => {
     expect(region.queryByText('Incident')).not.toBeInTheDocument();
   });
 
-  it('does not tag a passing/warn row even when the check has an open incident from a prior run', async () => {
+  it('tags a warn row too — warn is a breaching tier that opens/attaches an incident (db.models.FAILING_TIERS)', async () => {
     mockGetRun.mockResolvedValue({ ...runDetail, asset_id: 'asset-9' }); // base fixture: status 'warn'
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    mockListIncidents.mockResolvedValue([activeIncident()]);
+
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    expect(region.getByText('Incident')).toBeInTheDocument();
+  });
+
+  it('does not tag a passing row even when the check has an open incident from a prior run', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      asset_id: 'asset-9',
+      results: [{ ...runDetail.results[0], status: 'pass' }],
+    });
     mockGetSuite.mockResolvedValue(suite);
     mockListChecks.mockResolvedValue([check]);
     mockListIncidents.mockResolvedValue([activeIncident()]);

@@ -1,10 +1,9 @@
-import { Alert, Descriptions, Drawer, Empty, Flex, Spin, Table, Tag, Typography } from 'antd';
+import { Descriptions, Drawer, Empty, Flex, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { ReactNode } from 'react';
 
 import {
   type EvidenceAssetLayer,
-  type EvidenceBlastRadiusAsset,
   type EvidenceCheckLayer,
   type EvidenceFailingResultLayer,
   type EvidenceSiblingCheck,
@@ -14,7 +13,14 @@ import {
 } from '../../api/incidents';
 import type { ResultStatus } from '../../api/runs';
 import { useAsyncData } from '../../hooks/useAsyncData';
-import { formatScalar, formatTimestamp, RESULT_STATUS_COLORS } from '../results/resultsFormat';
+import { AsyncBody } from '../AsyncBody';
+import {
+  formatDurationMs,
+  formatScalar,
+  formatTimestamp,
+  RESULT_STATUS_COLORS,
+} from '../results/resultsFormat';
+import { AssetLink } from './AssetLink';
 
 /**
  * The layer-1 evidence card (`services/incident_evidence.py`, ADR 0034 decision 4; #1634 —
@@ -59,40 +65,38 @@ function NotAvailable({ reason }: { reason?: string }) {
 
 function EvidenceBody({ incidentId }: { incidentId: string }) {
   const { state } = useAsyncData(() => getIncident(incidentId));
-
-  if (state.status === 'loading') return <Spin description="Loading evidence…" />;
-  if (state.status === 'error') {
-    return (
-      <Alert
-        type="error"
-        showIcon
-        title="Failed to load incident evidence"
-        description={state.error}
-      />
-    );
-  }
-  const evidence = state.data.evidence;
-  if (!evidence) {
-    return (
-      <Empty
-        image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description="No evidence card recorded for this incident."
-      />
-    );
-  }
   return (
-    <Flex vertical gap={20}>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        Captured {formatTimestamp(evidence.generated_at)}
-      </Typography.Text>
-      <CheckAssetSection check={evidence.check} asset={evidence.asset} />
-      <FailingResultSection result={evidence.failing_result} />
-      <MetricTrendSection trend={evidence.metric_trend} />
-      <SiblingChecksSection siblings={evidence.sibling_checks} />
-      <UpstreamPipelineSection pipeline={evidence.upstream_pipeline_run} />
-      <BlastRadiusSection assets={evidence.downstream_blast_radius} />
-      <ProfileDiffSection diff={evidence.profile_diff} />
-    </Flex>
+    <AsyncBody
+      state={state}
+      loadingText="Loading evidence…"
+      errorTitle="Failed to load incident evidence"
+    >
+      {(detail) => {
+        const evidence = detail.evidence;
+        if (!evidence) {
+          return (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="No evidence card recorded for this incident."
+            />
+          );
+        }
+        return (
+          <Flex vertical gap={20}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              Captured {formatTimestamp(evidence.generated_at)}
+            </Typography.Text>
+            <CheckAssetSection check={evidence.check} asset={evidence.asset} />
+            <FailingResultSection result={evidence.failing_result} />
+            <MetricTrendSection trend={evidence.metric_trend} />
+            <SiblingChecksSection siblings={evidence.sibling_checks} />
+            <UpstreamPipelineSection pipeline={evidence.upstream_pipeline_run} />
+            <BlastRadiusSection assets={evidence.downstream_blast_radius} />
+            <ProfileDiffSection diff={evidence.profile_diff} />
+          </Flex>
+        );
+      }}
+    </AsyncBody>
   );
 }
 
@@ -107,6 +111,29 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** The `<Descriptions>` shell shared by every layer that renders as a label/value grid — one label
+ *  width so it can't drift per-section the way 140-vs-160 already had. */
+function EvidenceDescriptions({ children }: { children: ReactNode }) {
+  return (
+    <Descriptions size="small" column={1} bordered styles={{ label: { width: 160 } }}>
+      {children}
+    </Descriptions>
+  );
+}
+
+/** An asset reference — identifying text plus a navigable link, everywhere the card carries one. */
+function AssetRef({ asset }: { asset: EvidenceAssetLayer }) {
+  return (
+    <Flex align="center" gap={8}>
+      <Typography.Text>
+        {asset.namespace}.{asset.name}{' '}
+        <Typography.Text type="secondary">({asset.env})</Typography.Text>
+      </Typography.Text>
+      <AssetLink assetId={asset.id} />
+    </Flex>
+  );
+}
+
 function CheckAssetSection({
   check,
   asset,
@@ -114,26 +141,24 @@ function CheckAssetSection({
   check: EvidenceCheckLayer | null;
   asset: EvidenceAssetLayer | null;
 }) {
-  if (!check && !asset)
-    return (
-      <Section title="Check & asset">
-        <NotAvailable />
-      </Section>
-    );
   return (
     <Section title="Check & asset">
-      <Descriptions size="small" column={1} bordered styles={{ label: { width: 140 } }}>
-        <Descriptions.Item label="Check">
-          {check ? (check.name ?? check.id) : <NotAvailable />}
-        </Descriptions.Item>
-        <Descriptions.Item label="Expectation">
-          {check?.expectation_type ?? <NotAvailable />}
-        </Descriptions.Item>
-        <Descriptions.Item label="Kind">{check?.kind ?? <NotAvailable />}</Descriptions.Item>
-        <Descriptions.Item label="Asset">
-          {asset ? `${asset.namespace}.${asset.name} (${asset.env})` : <NotAvailable />}
-        </Descriptions.Item>
-      </Descriptions>
+      {!check && !asset ? (
+        <NotAvailable />
+      ) : (
+        <EvidenceDescriptions>
+          <Descriptions.Item label="Check">
+            {check ? (check.name ?? check.id) : <NotAvailable />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Expectation">
+            {check?.expectation_type ?? <NotAvailable />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Kind">{check?.kind ?? <NotAvailable />}</Descriptions.Item>
+          <Descriptions.Item label="Asset">
+            {asset ? <AssetRef asset={asset} /> : <NotAvailable />}
+          </Descriptions.Item>
+        </EvidenceDescriptions>
+      )}
     </Section>
   );
 }
@@ -142,20 +167,18 @@ function FailingResultSection({ result }: { result: EvidenceFailingResultLayer |
   return (
     <Section title="Failing result">
       {result ? (
-        <Descriptions size="small" column={1} bordered styles={{ label: { width: 140 } }}>
+        <EvidenceDescriptions>
           <Descriptions.Item label="Status">
             <Tag color={statusColor(result.status)}>{result.status}</Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="Metric">
-            {result.metric_value === null ? '—' : result.metric_value}
-          </Descriptions.Item>
+          <Descriptions.Item label="Metric">{formatScalar(result.metric_value)}</Descriptions.Item>
           <Descriptions.Item label="Observed">
             {formatScalar(result.observed_value)}
           </Descriptions.Item>
           <Descriptions.Item label="Expected">
             {formatScalar(result.expected_value)}
           </Descriptions.Item>
-        </Descriptions>
+        </EvidenceDescriptions>
       ) : (
         <NotAvailable />
       )}
@@ -174,7 +197,7 @@ function MetricTrendSection({ trend }: { trend: EvidenceTrendPoint[] | null }) {
     {
       title: 'Metric',
       dataIndex: 'metric_value',
-      render: (v: number | null) => (v === null ? '—' : v),
+      render: (v: number | null) => formatScalar(v),
     },
   ];
   return (
@@ -201,7 +224,7 @@ function MetricTrendSection({ trend }: { trend: EvidenceTrendPoint[] | null }) {
 
 function SiblingChecksSection({ siblings }: { siblings: EvidenceSiblingCheck[] | null }) {
   const columns: ColumnsType<EvidenceSiblingCheck> = [
-    { title: 'Check', dataIndex: 'check_name', render: (n: string | null) => n ?? '—' },
+    { title: 'Check', dataIndex: 'check_name', render: (n: string | null) => formatScalar(n) },
     {
       title: 'Status',
       dataIndex: 'status',
@@ -232,7 +255,7 @@ function UpstreamPipelineSection({ pipeline }: { pipeline: EvidenceUpstreamPipel
   return (
     <Section title="Upstream pipeline run">
       {pipeline ? (
-        <Descriptions size="small" column={1} bordered styles={{ label: { width: 160 } }}>
+        <EvidenceDescriptions>
           <Descriptions.Item label="Provider">{pipeline.provider}</Descriptions.Item>
           <Descriptions.Item label="Pipeline / DAG">
             {pipeline.pipeline_or_dag_id}
@@ -246,7 +269,9 @@ function UpstreamPipelineSection({ pipeline }: { pipeline: EvidenceUpstreamPipel
             {formatTimestamp(pipeline.finished_at)}
           </Descriptions.Item>
           <Descriptions.Item label="Duration">
-            {pipeline.duration_seconds === null ? '—' : `${Math.round(pipeline.duration_seconds)}s`}
+            {pipeline.duration_seconds === null
+              ? '—'
+              : formatDurationMs(pipeline.duration_seconds * 1000)}
           </Descriptions.Item>
           <Descriptions.Item label="Delay vs. history">
             {pipeline.delay_seconds_vs_history === null ? (
@@ -255,7 +280,7 @@ function UpstreamPipelineSection({ pipeline }: { pipeline: EvidenceUpstreamPipel
               `${pipeline.delay_seconds_vs_history >= 0 ? '+' : ''}${Math.round(pipeline.delay_seconds_vs_history)}s`
             )}
           </Descriptions.Item>
-        </Descriptions>
+        </EvidenceDescriptions>
       ) : (
         <NotAvailable reason="not triggered by a monitored pipeline, or the pipeline run couldn't be resolved" />
       )}
@@ -263,7 +288,7 @@ function UpstreamPipelineSection({ pipeline }: { pipeline: EvidenceUpstreamPipel
   );
 }
 
-function BlastRadiusSection({ assets }: { assets: EvidenceBlastRadiusAsset[] | null }) {
+function BlastRadiusSection({ assets }: { assets: EvidenceAssetLayer[] | null }) {
   return (
     <Section title="Downstream blast radius">
       {assets === null ? (
@@ -273,9 +298,7 @@ function BlastRadiusSection({ assets }: { assets: EvidenceBlastRadiusAsset[] | n
       ) : (
         <Flex vertical gap={4}>
           {assets.map((a) => (
-            <Typography.Text key={a.id}>
-              {a.namespace}.{a.name} <Typography.Text type="secondary">({a.env})</Typography.Text>
-            </Typography.Text>
+            <AssetRef key={a.id} asset={a} />
           ))}
         </Flex>
       )}
