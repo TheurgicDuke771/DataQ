@@ -69,7 +69,7 @@ Azure and AWS are both live deployment targets behind the app's seams (ADR 0010/
 **Where do failed-row samples go?** Stored with the result, **PII-redacted**, and purged
 after a retention window — never written to logs.
 
-**Can an AI assistant use DataQ?** Yes — 46 MCP tools at `/mcp` (Claude Desktop / Claude.ai
+**Can an AI assistant use DataQ?** Yes — 47 MCP tools at `/mcp` (Claude Desktop / Claude.ai
 / Copilot / Cursor), OIDC-authenticated (Azure AD or Cognito) or via a PAT. See [AI assistants (MCP setup)](mcp-setup.md).
 
 **An asset shows no lineage — is that right?** Maybe not. "No lineage recorded" can mean an

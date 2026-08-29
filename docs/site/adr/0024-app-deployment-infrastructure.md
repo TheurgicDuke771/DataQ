@@ -208,7 +208,7 @@ rendered diff would not have settled it.
 - Done while there is exactly one stack pair, before the AWS/GCP work adds two more.
 
 **Negative / watch**
-- **The swap was convention, not enforcement — until later closed that.** As written, this
+- **The swap was convention, not enforcement — until a later change closed that.** As written, this
   amendment left the config Terraform-parseable so the change stayed reversible, and named
   state encryption as the separate one-way door.
   > **Update (2026-07-27):** that door is now closed. `versions.tf`

@@ -27,20 +27,29 @@ from pathlib import Path
 
 SITE = Path("docs/site")
 
-# Not `#35;`-style: that's Mermaid's HTML-entity escape for a literal `#` in
-# sequence diagrams (35 = ASCII code for '#'), not an issue/PR reference.
-ISSUE_OR_PR_SHORTHAND = re.compile(r"#[0-9]{2,5}\b(?!;)")
+# `#35;` alone (no lookahead: not `#(?!35;)`) is Mermaid's HTML-entity escape for
+# a literal `#` in sequence diagrams (35 = ASCII code for '#'), used bare in
+# architecture.md's own gotcha note about the convention — not an issue/PR
+# reference by itself. `#35;NNN` (the escape immediately followed by digits) IS
+# this repo's documented convention for citing an issue *inside* that escape, so
+# it's matched separately below rather than excluded outright.
+ISSUE_OR_PR_SHORTHAND = re.compile(r"#(?!35;)[0-9]{2,5}\b")
+MERMAID_ESCAPED_SHORTHAND = re.compile(r"#35;[0-9]{2,5}\b")
 ISSUE_OR_PR_LINK = re.compile(r"github\.com/[^)\s]*?/(?:issues|pull)/[0-9]+")
 
+# A doc name optionally followed by a `#fragment` before the closing paren, so
+# `deploy/README.md#pre-deploy-checklist` is still caught. `adr/README.md` is
+# excluded: that's the published ADR index (docs_dir covers all of docs/site/),
+# not the unpublished root README this rule targets.
 UNPUBLISHED_DOC_LINK = re.compile(
     r"\]\([^)]*\b("
-    r"README\.md"
+    r"(?<!adr/)README\.md"
     r"|CONTRIBUTING\.md"
     r"|CLAUDE\.md"
-    r"|docs/progress[^)]*\.md"
-    r"|docs/retro[^)]*\.md"
+    r"|docs/progress[^)#]*\.md"
+    r"|docs/retro[^)#]*\.md"
     r"|docs/ops-log\.md"
-    r")\)"
+    r")(#[^)]*)?\)"
 )
 
 
@@ -55,6 +64,7 @@ def main() -> int:
         for lineno, line in enumerate(text.splitlines(), start=1):
             for pattern, label in (
                 (ISSUE_OR_PR_SHORTHAND, "issue/PR shorthand"),
+                (MERMAID_ESCAPED_SHORTHAND, "issue/PR shorthand (Mermaid-escaped)"),
                 (ISSUE_OR_PR_LINK, "issue/PR link"),
                 (UNPUBLISHED_DOC_LINK, "link to an unpublished internal doc"),
             ):

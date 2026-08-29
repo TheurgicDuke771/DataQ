@@ -40,7 +40,7 @@ dev mode mounts kv-v2 at secret/, listens on :8200
 ```
 
 - **A missing secret and a soft-deleted secret both return 404** — so a status-code check covers both, and no body inspection is needed to tell them apart.
-- **A dead token returns 403 and a sealed vault returns 503** — neither is a missing secret. Collapsing them into "secret not found" would reproduce the exact failure this project has now hit twice: once, where two dead Snowflake PATs produced no visible state anywhere and had to be root-caused from worker logs, and more generally besides. A credential store that reports "your credential is missing" when the truth is "I cannot reach the vault" is an invisible-degradation machine.
+- **A dead token returns 403 and a sealed vault returns 503** — neither is a missing secret. Collapsing them into "secret not found" would reproduce a failure this project has already hit: two dead Snowflake PATs produced no visible state anywhere and had to be root-caused from worker logs, an instance of the broader class where an outage is invisible because a caller only ever branches on the exception type. A credential store that reports "your credential is missing" when the truth is "I cannot reach the vault" is an invisible-degradation machine.
 
 ## Decision
 

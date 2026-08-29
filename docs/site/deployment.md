@@ -60,9 +60,8 @@ Use an immutable image tag per release; push-on-merge is intentionally off.
 
 ## 3. Verify
 
-Run the **pre-deploy** and **post-deploy smoke** checklists in
-[`deploy/README.md`](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/README.md#pre-deploy-checklist)
-around every deploy. In short:
+Run the **pre-deploy** and **post-deploy smoke** checklists in the repository's
+`deploy/README.md` around every deploy. In short:
 
 - **Before:** CI green on the SHA, docs up to date, migrations safe, secrets/config in place.
 - **After:** `/healthz` → 200; a user can **sign in**; the **UI renders** (key pages, desktop
