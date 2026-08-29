@@ -5,6 +5,20 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
+### Added
+
+- **Bring-your-own LLM provider (admin-configured, off by default).** A workspace admin can
+  now point DataQ at an LLM — the Anthropic API, Azure OpenAI, AWS Bedrock, or any
+  OpenAI-compatible endpoint including a self-hosted local server (Ollama / vLLM / TGI) —
+  under **Admin → LLM**, with a live *Test* probe before enabling. This is the foundation
+  for the upcoming authoring assists (natural-language → SQL check generation, curated
+  check suggestions, failure root-cause narratives); nothing calls the model until one of
+  those features is used. The credential is write-only into the configured secret store and
+  never returned by any API; every model call is recorded (requester, timing, token counts)
+  and surfaced honestly in the deployment-posture disclosure. With no provider configured
+  the product is unchanged. Changing the provider or endpoint URL requires re-supplying the
+  credential, so a stored key can never be redirected to a new destination.
+
 ### Changed
 
 - **The two distinct-value set relations no longer accept severity thresholds.**

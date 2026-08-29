@@ -7,6 +7,7 @@ import {
   type Incident,
   type IncidentDetail,
   acknowledgeIncident,
+  getIncident,
   listIncidents,
   resolveIncident,
 } from '../../src/api/incidents';
@@ -16,10 +17,12 @@ vi.mock('../../src/api/incidents', () => ({
   listIncidents: vi.fn(),
   acknowledgeIncident: vi.fn(),
   resolveIncident: vi.fn(),
+  getIncident: vi.fn(),
 }));
 const mockList = vi.mocked(listIncidents);
 const mockAck = vi.mocked(acknowledgeIncident);
 const mockResolve = vi.mocked(resolveIncident);
+const mockGetIncident = vi.mocked(getIncident);
 
 function incident(over: Partial<Incident> = {}): Incident {
   return {
@@ -50,7 +53,7 @@ function detail(over: Partial<IncidentDetail> = {}): IncidentDetail {
     prior_incident_id: null,
     acknowledge_note: null,
     resolution_note: null,
-    evidence: {},
+    evidence: null,
     ...over,
   };
 }
@@ -185,5 +188,39 @@ describe('IncidentsPanel', () => {
     mockList.mockRejectedValue(new Error('boom'));
     renderPanel({ s1: 'owner' });
     expect(await screen.findByText('Failed to load incidents')).toBeInTheDocument();
+  });
+
+  // ── evidence drawer (#1634) ─────────────────────────────────────────
+
+  it('opens the evidence drawer for an incident, available to a view-only share too', async () => {
+    mockList.mockResolvedValue([incident()]);
+    mockGetIncident.mockResolvedValue(
+      detail({
+        evidence: {
+          generated_at: '2026-08-20T10:00:00Z',
+          check: {
+            id: 'c1',
+            name: 'orders not null',
+            expectation_type: 'expect_column_values_to_not_be_null',
+            kind: 'expectation',
+          },
+          asset: null,
+          failing_result: null,
+          metric_trend: null,
+          sibling_checks: null,
+          upstream_pipeline_run: null,
+          downstream_blast_radius: null,
+          profile_diff: null,
+        },
+      }),
+    );
+    // View-only share (no edit) — reading evidence must not need the acting permission.
+    renderPanel({ s1: 'view' });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'View' }));
+    expect(await screen.findByText('Incident evidence')).toBeInTheDocument();
+    expect(mockGetIncident).toHaveBeenCalledWith('inc-1');
+    // The Check & asset section resolves — proves the drawer is wired to the real id.
+    await screen.findByText('expect_column_values_to_not_be_null');
   });
 });

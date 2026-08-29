@@ -41,6 +41,7 @@ from backend.app.services import (
     connection_service,
     cron,
     incident_service,
+    llm_service,
     orchestration_service,
     otp_service,
     profile_service,
@@ -939,5 +940,19 @@ def refresh_credential_expiry() -> int:
         session.rollback()
         log.warning("credential_expiry_refresh_failed", exc_info=True)
         return 0
+    finally:
+        session.close()
+
+
+@celery_app.task(name="llm_invoke")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def llm_invoke(invocation_id: str) -> str:
+    """Execute one queued LLM round-trip (ADR 0042, #1511). All failure handling
+    lives in `execute_invocation`, which always lands the row terminal.
+    """
+    session = get_session()
+    try:
+        return llm_service.execute_invocation(
+            session, uuid.UUID(invocation_id), secret_store=get_secret_store()
+        )
     finally:
         session.close()

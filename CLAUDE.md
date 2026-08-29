@@ -217,7 +217,7 @@ curl http://localhost:8000/api/v1/runs/<run_id>
 
 ## 9. Key design decisions (ADR index)
 
-The full decision index — one line per ADR with status, 0001–0040 to date — lives at **[docs/site/adr/README.md](docs/site/adr/README.md)** and is the **single source of truth** (this section used to duplicate it as a table and the two drifted; it no longer does). Read the index before coding and open the individual ADR whenever a decision bears on your change. The day-to-day operating rules those decisions distill into are already captured in §4–§6, §10 and §11 of this file.
+The full decision index — one line per ADR with status — lives at **[docs/site/adr/README.md](docs/site/adr/README.md)** and is the **single source of truth** (this section used to duplicate it as a table and the two drifted; it no longer does). Read the index before coding and open the individual ADR whenever a decision bears on your change. The day-to-day operating rules those decisions distill into are already captured in §4–§6, §10 and §11 of this file.
 
 ---
 

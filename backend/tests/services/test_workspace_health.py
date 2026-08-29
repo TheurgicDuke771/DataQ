@@ -12,6 +12,7 @@ from sqlalchemy import select
 from backend.app.alerting.base import AlertUndeliverableError, PollStalenessReport
 from backend.app.core.config import get_settings
 from backend.app.db.models import (
+    ENVS,
     Connection,
     Share,
     Suite,
@@ -694,3 +695,48 @@ class TestNearMissWriteReadRoundTrip:
 
         assert db_session.scalars(select(WorkspaceHealth.key)).all() == []
         assert svc.list_current_env_near_misses(db_session, user_id=owner.id) == []
+
+    def test_full_env_matrix_write_read_agreement(self, db_session: Any) -> None:
+        """#1247 coupling guard: every `ENVS` pair, not just one — both directions.
+
+        The single-pair test above only exercises (run_env=qa, binding_env=dev); a
+        predicate that drifted between the write side's candidate query and the
+        read side's `near_miss_partner_envs` call on a DIFFERENT pair could still
+        slip past it. This drives the real write path once per possible run_env
+        with an enabled binding at every OTHER env — PLUS one same-env binding,
+        which must never surface as a near-miss — and asserts the read side
+        decodes exactly the mismatched set, no more and no less. Without the
+        same-env binding, an OVER-inclusion drift (e.g. `near_miss_partner_envs`
+        returning all of `ENVS`, or the write side's `.in_()` filter dropped) would
+        pass this test vacuously, since nothing here ever exercises the excluded
+        case.
+        """
+        owner = _user(db_session)
+        expected: set[tuple[str, str, str, str]] = set()
+        forbidden: set[tuple[str, str, str, str]] = set()
+        for run_env in ENVS:
+            suite = _suite(db_session, owner)
+            pipeline = f"flow_{run_env}"
+            connection = _orch_connection(db_session, conn_type="airflow", env=run_env)
+            for binding_env in ENVS:
+                _binding(db_session, suite, provider="airflow", pipeline=pipeline, env=binding_env)
+                if binding_env == run_env:
+                    forbidden.add(("airflow", pipeline, run_env, binding_env))
+                else:
+                    expected.add(("airflow", pipeline, run_env, binding_env))
+            orchestration_service._record_env_near_misses(
+                db_session,
+                provider="airflow",
+                connection=connection,
+                update=RunUpdate(
+                    provider_run_id=f"r-{run_env}",
+                    pipeline_or_dag_id=pipeline,
+                    resource_name="airflow-host",
+                    status="succeeded",
+                ),
+            )
+
+        records = svc.list_current_env_near_misses(db_session, user_id=owner.id)
+        actual = {(r.provider, r.pipeline_or_dag_id, r.run_env, r.binding_env) for r in records}
+        assert actual == expected
+        assert actual.isdisjoint(forbidden)

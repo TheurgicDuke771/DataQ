@@ -15,6 +15,7 @@ log = get_logger(__name__)
 
 _RUN_SUITE_TASK = "run_suite"
 _AUTO_CLASSIFY_TASK = "auto_classify_columns"
+_LLM_INVOKE_TASK = "llm_invoke"
 
 
 def new_queued_run(suite: Suite, *, triggered_by: str) -> Run:
@@ -33,6 +34,13 @@ def dispatch_auto_classify(suite_id: uuid.UUID) -> None:
         celery_app.send_task(_AUTO_CLASSIFY_TASK, args=[str(suite_id)])
     except Exception:
         log.warning("auto_classify_dispatch_failed", suite_id=str(suite_id), exc_info=True)
+
+
+def dispatch_llm_invocation(invocation_id: uuid.UUID) -> None:
+    """Publish the ``llm_invoke`` task (ADR 0042). Raises on broker failure — the
+    caller owns marking the invocation row failed (nothing here can commit it).
+    """
+    celery_app.send_task(_LLM_INVOKE_TASK, args=[str(invocation_id)])
 
 
 def dispatch_run(run_id: uuid.UUID) -> str:
