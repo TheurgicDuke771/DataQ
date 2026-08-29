@@ -184,6 +184,9 @@ class Settings(BaseSettings):
     rate_limit_llm_per_minute: int = (
         10  # per-principal LLM mutations (ADR 0042) — each one is an outbound model call
     )
+    rate_limit_llm_ip_per_minute: int = (
+        30  # per-IP ceiling across all llm buckets — the rotated-token backstop
+    )
     rate_limit_ip_per_minute: int = (
         1200  # per-IP ceiling across all bearer buckets (rotated-token backstop)
     )

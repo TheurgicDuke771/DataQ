@@ -16,12 +16,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.core.secrets import SecretStore
+from backend.app.core.secrets import (
+    SecretNotFoundError,
+    SecretStore,
+    SecretStoreUnavailableError,
+)
 from backend.app.db.models import (
     LLM_PROVIDERS,
     LLM_STRUCTURED_OUTPUT_MODES,
@@ -196,7 +200,22 @@ def test_settings(
             and row.api_key_secret_ref is not None
             and (draft.provider, draft.base_url) == (row.provider, row.base_url)
         ):
-            api_key = secret_store.get(row.api_key_secret_ref)
+            # A probe must report, not 500 — and an outage stays distinct from a
+            # missing secret (the ADR 0039 rule).
+            try:
+                api_key = secret_store.get(row.api_key_secret_ref)
+            except SecretNotFoundError:
+                return {
+                    "ok": False,
+                    "error_code": "llm_credential_missing",
+                    "error": "the stored API key no longer exists — re-supply it",
+                }
+            except SecretStoreUnavailableError:
+                return {
+                    "ok": False,
+                    "error_code": "secret_store_unavailable",
+                    "error": "the secret store is unreachable — the stored key could not be read",
+                }
     started = time.monotonic()
     try:
         provider = _provider_from(
@@ -247,19 +266,39 @@ def create_invocation(
     return invocation
 
 
+def _scrub_nul(value: Any) -> Any:
+    """Strip NUL from model output — Postgres rejects it in text AND JSONB, and
+    the model is external input none of the request-side screens cover.
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, dict):
+        return {_scrub_nul(k): _scrub_nul(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_scrub_nul(item) for item in value]
+    return value
+
+
 def execute_invocation(
     session: Session, invocation_id: uuid.UUID, *, secret_store: SecretStore
 ) -> str:
     """Worker-side body: build the kind's prompt, call the provider, persist the
-    outcome. Always lands the row in a terminal state — a crash mid-call must
-    not leave `running` forever (the caller commits either way).
+    outcome. Always lands the row in a terminal state, including when the model's
+    own output is unstorable — a row must never strand in `running`.
     """
-    invocation = session.get(LlmInvocation, invocation_id)
-    if invocation is None or invocation.status not in ("pending", "running"):
-        return "skipped"
-    invocation.status = "running"
-    invocation.started_at = datetime.now(UTC)
+    # Conditional claim: a duplicate delivery (broker redelivery, double
+    # dispatch) finds no `pending` row and no-ops instead of paying twice.
+    claim = session.execute(
+        update(LlmInvocation)
+        .where(LlmInvocation.id == invocation_id, LlmInvocation.status == "pending")
+        .values(status="running", started_at=datetime.now(UTC))
+    )
+    claimed = getattr(claim, "rowcount", 0)
     session.commit()
+    if claimed == 0:
+        return "skipped"
+    invocation = session.get(LlmInvocation, invocation_id)
+    assert invocation is not None  # just claimed it  # nosec B101
     started = time.monotonic()
     try:
         builder = KIND_BUILDERS.get(invocation.kind)
@@ -272,23 +311,41 @@ def execute_invocation(
         provider = build_provider(session, secret_store)
         if schema is not None:
             result: LLMResult = provider.complete_structured(prompt, schema=schema, system=system)
-            invocation.response = result.parsed
+            invocation.response = _scrub_nul(result.parsed)
         else:
             result = provider.complete(prompt, system=system)
-            invocation.response = {"text": result.text}
+            invocation.response = {"text": _scrub_nul(result.text)}
         invocation.status = "succeeded"
         invocation.input_tokens = result.input_tokens
         invocation.output_tokens = result.output_tokens
     except DataQError as exc:
         invocation.status = "failed"
-        invocation.error = f"{exc.code}: {exc.message}"[:1024]
+        invocation.error = str(_scrub_nul(f"{exc.code}: {exc.message}"))[:1024]
     except Exception as exc:  # a driver-boundary surprise must still terminate the row
         invocation.status = "failed"
         invocation.error = f"internal: {exc.__class__.__name__}"[:1024]
         log.exception("llm_invocation_crashed", invocation_id=str(invocation_id))
     invocation.duration_ms = int((time.monotonic() - started) * 1000)
     invocation.finished_at = datetime.now(UTC)
-    session.commit()
+    try:
+        session.commit()
+    except Exception:
+        # Unstorable payload (the scrub is belt, this is braces): drop the
+        # payload, keep the terminal state — `running` forever is the one
+        # unacceptable outcome.
+        log.exception("llm_invocation_persist_failed", invocation_id=str(invocation_id))
+        session.rollback()
+        session.execute(
+            update(LlmInvocation)
+            .where(LlmInvocation.id == invocation_id)
+            .values(
+                status="failed",
+                error="internal: result could not be stored",
+                finished_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+        return "failed"
     log.info(
         "llm_invocation_finished",
         invocation_id=str(invocation_id),

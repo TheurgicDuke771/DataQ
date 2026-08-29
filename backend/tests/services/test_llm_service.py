@@ -313,3 +313,132 @@ def test_invocation_kind_and_status_check_constraints(db_session: Any, admin: Us
     with pytest.raises(IntegrityError):
         db_session.commit()
     db_session.rollback()
+
+
+def test_duplicate_delivery_is_a_noop(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    db_session.commit()
+    provider = _FakeProvider()
+    monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: provider)
+    monkeypatch.setitem(llm_service.KIND_BUILDERS, "ping", lambda _s, _inv: ("say ok", None, None))
+    assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == (
+        "succeeded"
+    )
+    # Redelivery of the same task id: the pending→running claim finds nothing.
+    assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == (
+        "skipped"
+    )
+    assert len(provider.calls) == 1  # paid exactly once
+
+    stuck = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    stuck.status = "running"
+    db_session.commit()
+    assert llm_service.execute_invocation(db_session, stuck.id, secret_store=store) == "skipped"
+
+
+def test_nul_in_model_output_is_scrubbed_and_lands_terminal(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    db_session.commit()
+
+    class _NulProvider(_FakeProvider):
+        def complete(self, prompt: str, **_kw: Any) -> LLMResult:
+            return LLMResult(text="ok\x00bad", input_tokens=1, output_tokens=1)
+
+    monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: _NulProvider())
+    monkeypatch.setitem(llm_service.KIND_BUILDERS, "ping", lambda _s, _inv: ("p", None, None))
+    assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == (
+        "succeeded"
+    )
+    db_session.refresh(invocation)
+    assert invocation.response == {"text": "okbad"}
+
+
+def test_unstorable_persist_still_lands_failed_not_running(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    db_session.commit()
+    monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: _FakeProvider())
+    monkeypatch.setitem(llm_service.KIND_BUILDERS, "ping", lambda _s, _inv: ("p", None, None))
+    # Defeat the scrub to prove the braces hold when the belt fails.
+    monkeypatch.setattr(llm_service, "_scrub_nul", lambda v: v)
+
+    class _RawNulProvider(_FakeProvider):
+        def complete(self, prompt: str, **_kw: Any) -> LLMResult:
+            return LLMResult(text="bad\x00", input_tokens=1, output_tokens=1)
+
+    monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: _RawNulProvider())
+    assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == "failed"
+    db_session.expire_all()
+    row = db_session.get(LlmInvocation, invocation.id)
+    assert row.status == "failed"
+    assert row.error == "internal: result could not be stored"
+
+
+def test_test_settings_reports_secret_store_states_distinctly(db_session: Any, admin: User) -> None:
+    from backend.app.core.secrets import SecretStoreUnavailableError
+
+    store = FakeSecretStore()
+    llm_service.save_settings(
+        db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=store
+    )
+    store.data.clear()  # the ref now dangles
+    missing = llm_service.test_settings(db_session, draft=_draft(), secret_store=store)
+    assert missing == {
+        "ok": False,
+        "error_code": "llm_credential_missing",
+        "error": "the stored API key no longer exists — re-supply it",
+    }
+    sealed = llm_service.test_settings(
+        db_session,
+        draft=_draft(),
+        secret_store=FakeSecretStore(raise_on_get=SecretStoreUnavailableError("sealed")),
+    )
+    assert sealed["error_code"] == "secret_store_unavailable"
+
+
+def test_suite_delete_keeps_the_invocation_record(db_session: Any, admin: User) -> None:
+    import uuid as _uuid
+
+    from backend.app.db.models import Connection, Suite
+
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    connection = Connection(
+        id=_uuid.uuid4(),
+        name=f"c-{_uuid.uuid4().hex[:6]}",
+        type="snowflake",
+        env="dev",
+        config={},
+        created_by=admin.id,
+    )
+    db_session.add(connection)
+    db_session.flush()
+    suite = Suite(
+        id=_uuid.uuid4(),
+        name=f"s-{_uuid.uuid4().hex[:6]}",
+        connection_id=connection.id,
+        created_by=admin.id,
+    )
+    db_session.add(suite)
+    db_session.flush()
+    invocation = llm_service.create_invocation(
+        db_session, kind="ping", requested_by=admin, suite_id=suite.id
+    )
+    db_session.commit()
+    db_session.delete(suite)
+    db_session.commit()
+    db_session.expire_all()
+    row = db_session.get(LlmInvocation, invocation.id)
+    assert row is not None  # the cost/audit record outlives the suite
+    assert row.suite_id is None

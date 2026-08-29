@@ -38,8 +38,10 @@ _WEBHOOK_PREFIX: Final = "/api/v1/orchestration/events/"
 # Matched on path PREFIX before the bearer branch, so a bearer-carrying request cannot dodge the
 # strict cap.
 _AUTH_PREFIX: Final = "/api/v1/auth/"
-# LLM feature mutations (ADR 0042) — orders of magnitude costlier than any other request class.
+# LLM feature mutations (ADR 0042) — orders of magnitude costlier than any other request
+# class. The admin live-probe is the one endpoint OUTSIDE /llm that also pays for a model call.
 _LLM_PREFIX: Final = "/api/v1/llm"
+_LLM_EXTRA_PATHS: Final = frozenset({"/api/v1/admin/llm/test"})
 _MUTATING_METHODS: Final = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 # Known providers get their OWN per-IP webhook bucket (#785).
@@ -250,7 +252,7 @@ def _resolve_policy(
         return "webhook", settings.rate_limit_webhook_per_minute, f"{prefix}ip:{ip}"
     if path.startswith(_AUTH_PREFIX):
         return "auth", settings.rate_limit_auth_per_minute, f"ip:{ip}"
-    if path.startswith(_LLM_PREFIX) and method in _MUTATING_METHODS:
+    if (path.startswith(_LLM_PREFIX) or path in _LLM_EXTRA_PATHS) and method in _MUTATING_METHODS:
         if bearer is not None:
             digest = hashlib.sha256(bearer.encode()).hexdigest()[:32]
             return "llm", settings.rate_limit_llm_per_minute, f"tok:{digest}"
@@ -310,6 +312,10 @@ async def rate_limit_middleware(
         keys.append(f"rl:default:ipall:{ip}:{window}")
     elif cls == "webhook":
         keys.append(f"rl:webhook:ipall:{ip}:{window}")
+    elif cls == "llm":
+        # Rotated-bearer backstop (#785 class): fresh tokens mint fresh primary
+        # buckets, but every model call from one IP shares this ceiling.
+        keys.append(f"rl:llm:ipall:{ip}:{window}")
     counts = await _active_store().incr_windows(keys)
 
     if counts is None:
@@ -325,6 +331,8 @@ async def rate_limit_middleware(
         exceeded_limit = settings.rate_limit_ip_per_minute
     elif cls == "webhook" and counts[1] > settings.rate_limit_webhook_ip_per_minute:
         exceeded_limit = settings.rate_limit_webhook_ip_per_minute
+    elif cls == "llm" and counts[1] > settings.rate_limit_llm_ip_per_minute:
+        exceeded_limit = settings.rate_limit_llm_ip_per_minute
 
     if exceeded_limit is not None:
         retry_after = max(1, (window + 1) * WINDOW_SECONDS - now)

@@ -144,6 +144,8 @@ def test_prompt_json_repairs_once_then_fails() -> None:
     assert result.parsed == {"sql": "SELECT 2"}
     assert len(calls) == 2
     assert "not valid against the schema" in calls[1]
+    # The cost record must carry BOTH paid rounds, not just the repair.
+    assert (result.input_tokens, result.output_tokens) == (20, 10)
 
     def always_bad(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_chat_response("still not json"))

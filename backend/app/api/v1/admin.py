@@ -470,17 +470,31 @@ def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
                 "above, which is inbound."
             ),
         )
+    if row is not None:
+        return ExternalTransfer(
+            name="llm_intelligence",
+            enabled=False,
+            detail=(
+                f"The OUTBOUND direction — DataQ calling a model on its own behalf — "
+                f"is CONFIGURED (a {row.provider} endpoint and stored credential "
+                "exist) but disabled, so the feature endpoints refuse. The admin "
+                "test probe can still transmit a fixed test prompt to that "
+                "endpoint. Re-enabling is one admin toggle; delete the config to "
+                "remove the stored credential. Distinct from mcp_ai_clients "
+                "above, which is inbound."
+            ),
+        )
     return ExternalTransfer(
         name="llm_intelligence",
         enabled=False,
         detail=(
             "The OUTBOUND direction — DataQ calling a model on its own behalf — "
-            "is built (ADR 0042) but not configured or not enabled: no admin has "
-            "added a provider, so nothing leaves. When enabled it is a Ch. V "
-            "transfer by construction (schema-only context, PII-redacted, "
-            "local-endpoint option). Listed while disabled on purpose: an "
-            "auditor should see it was considered, not infer its absence. "
-            "Distinct from mcp_ai_clients above, which is inbound."
+            "is built (ADR 0042) but not configured: no provider, no stored "
+            "credential, nothing leaves. When enabled it is a Ch. V transfer by "
+            "construction (schema-only context, PII-redacted, local-endpoint "
+            "option). Listed while absent on purpose: an auditor should see it "
+            "was considered, not infer its absence. Distinct from "
+            "mcp_ai_clients above, which is inbound."
         ),
     )
 

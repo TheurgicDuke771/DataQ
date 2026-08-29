@@ -41,16 +41,21 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "provider IN ('anthropic', 'openai_compatible')",
-            name="ck_llm_settings_llm_provider_valid",
+            name="llm_provider_valid",
         ),
         sa.CheckConstraint(
             "structured_output IN ('native', 'prompt_json')",
-            name="ck_llm_settings_llm_structured_output_valid",
+            name="llm_structured_output_valid",
         ),
     )
     op.create_table(
         "llm_invocations",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
+        sa.Column(
+            "id",
+            UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("kind", sa.String(32), nullable=False),
         sa.Column("status", sa.String(16), nullable=False, server_default=sa.text("'pending'")),
         sa.Column(
@@ -62,7 +67,7 @@ def upgrade() -> None:
         sa.Column(
             "suite_id",
             UUID(as_uuid=True),
-            sa.ForeignKey("suites.id", ondelete="CASCADE"),
+            sa.ForeignKey("suites.id", ondelete="SET NULL"),
             nullable=True,
         ),
         sa.Column("request", JSONB(none_as_null=True), nullable=True),
@@ -82,11 +87,11 @@ def upgrade() -> None:
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
             "kind IN ('ping', 'sql_generation', 'check_suggestion', 'rca_narrative')",
-            name="ck_llm_invocations_llm_invocation_kind_valid",
+            name="llm_invocation_kind_valid",
         ),
         sa.CheckConstraint(
             "status IN ('pending', 'running', 'succeeded', 'failed')",
-            name="ck_llm_invocations_llm_invocation_status_valid",
+            name="llm_invocation_status_valid",
         ),
     )
     op.create_index("ix_llm_invocations_requested_by", "llm_invocations", ["requested_by_user_id"])

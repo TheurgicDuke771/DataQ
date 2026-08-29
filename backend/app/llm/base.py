@@ -16,9 +16,6 @@ import jsonschema
 
 from backend.app.core.errors import DataQError
 
-LLM_PROVIDERS = ("anthropic", "openai_compatible")
-STRUCTURED_OUTPUT_MODES = ("native", "prompt_json")
-
 DEFAULT_TIMEOUT_SECONDS = 120.0
 DEFAULT_MAX_TOKENS = 4096
 

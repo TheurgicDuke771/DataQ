@@ -625,6 +625,21 @@ def test_llm_mutation_without_bearer_keys_by_ip() -> None:
     assert key == "ip:9.9.9.9"
 
 
+def test_admin_llm_probe_resolves_llm_class() -> None:
+    # The one endpoint outside /llm that pays for a model call per request.
+    s = _settings()
+    cls, limit, _key = _resolve_policy("/api/v1/admin/llm/test", "POST", "tok", "9.9.9.9", s)
+    assert cls == "llm"
+    assert limit == s.rate_limit_llm_per_minute
+
+
+def test_admin_llm_config_routes_stay_default_class() -> None:
+    s = _settings()
+    for path, method in (("/api/v1/admin/llm", "PUT"), ("/api/v1/admin/llm", "GET")):
+        cls, _limit, _key = _resolve_policy(path, method, "tok", "9.9.9.9", s)
+        assert cls == "default", (path, method)
+
+
 def test_llm_read_polling_stays_default_class() -> None:
     # GET polling must NOT spend the expensive llm budget — a UI polling every
     # 2s would exhaust it while the generation it waits on is still running.

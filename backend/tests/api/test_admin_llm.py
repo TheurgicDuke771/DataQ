@@ -67,7 +67,8 @@ def test_put_then_get_round_trip_never_returns_the_key(
 
 
 def test_put_destination_move_without_key_is_422(client: TestClient) -> None:
-    assert client.put("/api/v1/admin/llm", json=_BODY).status_code == 200
+    seeded = client.put("/api/v1/admin/llm", json=_BODY)
+    assert seeded.status_code == 200
     moved = {**_BODY, "base_url": "http://evil.example/v1"}
     moved.pop("api_key")
     resp = client.put("/api/v1/admin/llm", json=moved)
@@ -84,9 +85,10 @@ def test_non_admin_is_403_on_all_admin_llm_routes(
     client: TestClient, as_role: Callable[..., tuple[Any, dict[str, str]]]
 ) -> None:
     _, headers = as_role("member")
-    assert client.get("/api/v1/admin/llm", headers=headers).status_code == 403
-    assert client.put("/api/v1/admin/llm", json=_BODY, headers=headers).status_code == 403
-    assert client.post("/api/v1/admin/llm/test", json=_BODY, headers=headers).status_code == 403
+    got = client.get("/api/v1/admin/llm", headers=headers)
+    put = client.put("/api/v1/admin/llm", json=_BODY, headers=headers)
+    probe = client.post("/api/v1/admin/llm/test", json=_BODY, headers=headers)
+    assert (got.status_code, put.status_code, probe.status_code) == (403, 403, 403)
 
 
 def test_llm_test_endpoint_reports_without_persisting(
@@ -109,7 +111,8 @@ def test_posture_llm_row_flips_with_config(client: TestClient) -> None:
 
     before = _llm_row(client.get("/api/v1/admin/deployment").json())
     assert before["enabled"] is False
-    assert client.put("/api/v1/admin/llm", json=_BODY).status_code == 200
+    saved = client.put("/api/v1/admin/llm", json=_BODY)
+    assert saved.status_code == 200
     after = _llm_row(client.get("/api/v1/admin/deployment").json())
     assert after["enabled"] is True
     assert "qwen2.5:3b" in after["detail"]
@@ -137,8 +140,10 @@ def test_invocation_visible_to_requester_and_admin_404_others(
     _, admin_headers = as_role("admin")
     invocation = _invocation(db_session, requester)
     url = f"/api/v1/llm/invocations/{invocation.id}"
-    assert client.get(url, headers=requester_headers).status_code == 200
-    assert client.get(url, headers=admin_headers).status_code == 200
-    resp = client.get(url, headers=other_headers)
-    assert resp.status_code == 404  # no-leak: someone else's invocation reads as absent
-    assert client.get(f"/api/v1/llm/invocations/{uuid.uuid4()}").status_code == 404
+    as_requester = client.get(url, headers=requester_headers)
+    as_admin = client.get(url, headers=admin_headers)
+    as_other = client.get(url, headers=other_headers)
+    missing = client.get(f"/api/v1/llm/invocations/{uuid.uuid4()}")
+    assert (as_requester.status_code, as_admin.status_code) == (200, 200)
+    # no-leak: someone else's invocation reads exactly like an absent one
+    assert (as_other.status_code, missing.status_code) == (404, 404)

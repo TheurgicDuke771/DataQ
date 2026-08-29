@@ -1136,8 +1136,10 @@ class LlmInvocation(Base):
     requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
+    #: SET NULL, not CASCADE: this is the cost/audit record — it outlives the suite
+    #: it was scoped to, exactly as it outlives its requester.
     suite_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE")
+        UUID(as_uuid=True), ForeignKey("suites.id", ondelete="SET NULL")
     )
     #: What the caller asked for (kind-shaped, pre-prompt); never warehouse values.
     request: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))

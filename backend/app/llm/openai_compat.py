@@ -22,6 +22,12 @@ from backend.app.llm.base import (
 _CONNECT_TIMEOUT_SECONDS = 10.0
 
 
+def _sum_tokens(first: int | None, second: int | None) -> int | None:
+    if first is None and second is None:
+        return None
+    return (first or 0) + (second or 0)
+
+
 class OpenAICompatProvider:
     def __init__(
         self,
@@ -170,10 +176,12 @@ class OpenAICompatProvider:
             )
             parsed = base.extract_json_object(second.text)
             base.validate_against_schema(parsed, schema)
+            # Token counts SUM both rounds — this feeds the cost record, and the
+            # repair path spent two paid calls, not one.
             return LLMResult(
                 text=second.text,
-                input_tokens=second.input_tokens,
-                output_tokens=second.output_tokens,
+                input_tokens=_sum_tokens(first.input_tokens, second.input_tokens),
+                output_tokens=_sum_tokens(first.output_tokens, second.output_tokens),
                 parsed=parsed,
                 raw=second.raw,
             )
