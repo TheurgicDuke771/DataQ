@@ -1,0 +1,44 @@
+<task-notification>
+<task-id>bbdlgdqdf</task-id>
+<summary>Monitor event: "CI checks on PR #1629 after mypy env-mismatch fix"</summary>
+<event>Backend — dependency audit (pip-audit): pass
+Backend — type check: pass
+CodeQL: skipping
+Frontend — lint &amp; format: pass
+Secret scanning (betterleaks): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bbdlgdqdf</task-id>
+<summary>Monitor event: "CI checks on PR #1629 after mypy env-mismatch fix"</summary>
+<event>CodeQL analysis (javascript-typescript): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bbdlgdqdf</task-id>
+<summary>Monitor event: "CI checks on PR #1629 after mypy env-mismatch fix"</summary>
+<event>CodeQL analysis (python): pass
+CodeQL: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bbdlgdqdf</task-id>
+<summary>Monitor event: "CI checks on PR #1629 after mypy env-mismatch fix"</summary>
+<event>Frontend — browser E2E (Playwright): pass
+Frontend — tests: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bbdlgdqdf</task-id>
+<summary>Monitor event: "CI checks on PR #1629 after mypy env-mismatch fix"</summary>
+<event>Backend — tests: pass
+ALL_CHECKS_DONE (14 checks)</event>
+</task-notification>
