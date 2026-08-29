@@ -1,0 +1,85 @@
+<task-notification>
+<task-id>a4370a96cd845f77c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f7b4214f-811c-4f5f-98db-888712ba4c18/tasks/a4370a96cd845f77c.output</output-file>
+<status>completed</status>
+<summary>Agent "(resumed)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review findings — PR #1629
+
+Phase 0–2 complete: fetched the diff (`git diff main...pr-1629`, ~265 lines across `backend/app/datasources/{snowflake,sql,unity_catalog}.py`, its test file, and `docs/ops-log.md`), ran line-by-line/removed-behavior/cross-file/reuse/simplification/efficiency/altitude/conventions angles (partly via two background agents, partly directly — traced into the installed `great_expectations` package source to confirm GX metric-provider behavior on Databricks), and verified the one surviving candidate against the code with a dedicated verifier pass (**CONFIRMED**). `--comment` was honored: the finding below was posted as an inline PR comment (`https://github.com/TheurgicDuke771/DataQ/pull/1629#discussion_r3885596711`).
+
+```json
+[
+  {
+    "file": "backend/app/datasources/unity_catalog.py",
+    "line": 465,
+    "summary": "The SQL-pushdown index-column clash workaround only checks the `column` kwarg, so 6 of the 14 newly-pushed-down expectation types (which key on `column_A`/`column_B` or `column_list`) are never routed into the clash-avoidance path.",
+    "failure_scenario": "A suite sets `identifier_column = \"order_id\"` and authors `expect_compound_columns_to_be_unique(column_list=[\"order_id\", \"line_number\"])` (or any `column_pair_*` check whose `column_A`/`column_B` names the identifier column). These types now default to the Databricks-SQL pushdown batch (previously they ran on the pandas frame, where this never applied). `_run_sql_checks` builds `clash_set` from `spec.kwargs.get(\"column\", \"\")` only, missing `column_list`/`column_A`/`column_B`, so the check runs WITH the index locator request and Databricks' arrow layer raises \"Can't unify schema with duplicate field names\" — the exact bug this clash code exists to dodge (per its own comment two lines above). The check comes back `errored` for an otherwise-valid check; `gx_runner.run_expectations`'s all-errored fallback doesn't rescue it since only this one check fails while siblings succeed. Confirmed no test (`test_index_column_clash_runs_without_the_index_request`, `test_index_column_clash_is_case_insensitive`) covers the `column_list`/`column_A`/`column_B` case."
+  }
+]
+```
+
+Notes on angles that came back clean (worth recording since recall bias means I chased them hard):
+- Investigated whether `_REFLECTION_KEYED_TYPES = {"expect_compound_columns_to_be_unique"}` is too narrow — i.e., whether other newly-pushed `column_list`-keyed types (`expect_multicolumn_sum_to_equal`, `expect_select_column_values_to_be_unique_within_record`) also need the reflection-casing fold. Traced into GX's `multicolumn_function_partial`/`multicolumn_condition_partial` and `get_dbms_compatible_metric_domain_kwargs`: only `compound_columns_unique`'s SqlAlchemy provider does raw `.c[name]` dict-indexing into a reflected `Table`; the other two operate positionally/via `sa.column()` objects that don't need the fold. Verified-benign, not included as a finding.
+- Checked for stale call sites of the renamed/relocated `fold_reflection_keyed_columns` helper, other places `SQL_PUSHDOWN_EXPECTATION_TYPES`/`_REFLECTION_KEYED_TYPES` needed updating, typos in the 14 newly-listed type strings against `expectation_allowlist.py`, and a potential `base.py`↔`sql.py` circular import from the refactor — all clean.</result>
+<usage><subagent_tokens>202776</subagent_tokens><tool_uses>29</tool_uses><duration_ms>150225</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa4c006a49358b81d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f7b4214f-811c-4f5f-98db-888712ba4c18/tasks/aa4c006a49358b81d.output</output-file>
+<status>completed</status>
+<summary>Agent "Broad angle sweep on PR 1629 diff" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## PR #1629 Review — DataQ UC SQL-pushdown expansion + shared `fold_reflection_keyed_columns`
+
+Verified: pulled `pr-1629`, read full `unity_catalog.py`/`sql.py`/`snowflake.py`/`base.py`, ran `backend/tests/datasources/test_unity_catalog.py` on the branch (93 passed), and traced GX's actual metric-provider code (`multicolumn_function_partial.py`, `compound_columns_unique.py`, `util.py`) to check the reflection-fold reasoning rather than take the docstrings on faith. Cleaned up the worktree afterward.
+
+### Angle 1 — Line-by-line correctness
+- **`backend/app/datasources/unity_catalog.py:448`** — `checks = _fold_reflection_keyed_columns(checks)` was inserted *before* the `try:` at line 457, i.e. outside the `except Exception` block (515-519) that exists specifically to turn a SQL-batch-setup failure into a per-check `errored` `SuiteOutcome` instead of an unhandled crash. `run_checks` (328-380) has no try/except of its own around `_run_sql_checks`, so if the fold call ever raises, the exception propagates past `run_checks` entirely — discarding the dataframe-group results already computed in `by_position` for a mixed suite, turning a partial success into a total run failure. In practice `_reflection_key`'s only real crash risk (non-`str` input to `DatabricksDialect().normalize_name`, e.g. `int`) is already guarded by `isinstance(c, str)` in `fold_reflection_keyed_columns`, and `normalize_name` was empirically robust on real strings (empty, unicode, quotes, 300-char) — so likelihood is low today, but the isolation contract the rest of the method establishes is broken by this one line, and it's calling into third-party dialect internals whose behavior isn't guaranteed across `databricks-sqlalchemy` versions.
+- No other off-by-one/wrong-condition/wrong-variable defects found in the touched hunks; `checks[i]`/`by_position` indexing, `clash_set`/`keep` list-comp indices, and `SuiteOutcome` assembly all remain correctly aligned after the fold (fold is a 1:1, order-preserving map — verified by reading `fold_reflection_keyed_columns` in `sql.py:102-125`).
+
+### Angle 2 — Removed-behavior audit
+- Snowflake's inline `_fold_reflection_keyed_columns` body was moved verbatim into the shared `fold_reflection_keyed_columns(checks, reflection_keyed_types=..., normalize_name=...)` — compared field-by-field, the new version is behavior-identical (same guard, same `{**spec.kwargs, ...}` copy, same fall-through for non-matching specs, same non-mutation of the input `CheckSpec`/its dict). Confirmed by the new `test_fold_reflection_keyed_columns_leaves_mixed_case_and_other_types_alone` test asserting `folded_other is other` (object-identity preserved for pass-through specs, matching the old code's `folded.append(spec)` behavior).
+- The rewritten `test_pushdown_allowlist_partitions_the_catalog` preserves both prior overlap invariants (`SQL_PUSHDOWN ∩ DATAFRAME_ONLY == ∅`, `SQL_PUSHDOWN ∩ frame_only == ∅`) and correctly accounts for the newly-pushed-down `expect_column_pair_values_to_be_in_set` (an `ALLOWLIST_ONLY_TYPES` member, absent from the catalog fixture) via the new `routed - ALLOWLIST_ONLY_TYPES` subtraction. No invariant lost.
+
+### Angle 3 — Cross-file tracer
+- Grepped all callers of `fold_reflection_keyed_columns`, `_fold_reflection_keyed_columns` (both files), and `SQL_PUSHDOWN_EXPECTATION_TYPES` — only the expected sites (`snowflake.py:219`, `unity_catalog.py:448`, the two test files, `uc_sql_pushdown`/`run_checks`). No stale caller of an old signature, no circular import (`sql.py` importing `CheckSpec` from `base.py` is safe — `base.py` has zero intra-`datasources` imports).
+
+### Angle 4 — Reuse
+- **Minor DRY debt**: the *outer* fold loop is now shared, but the per-dialect trio (`_REFLECTION_KEYED_TYPES = frozenset({...})`, `_reflection_key()` importing a dialect class and calling `.normalize_name(name) or name`, and the one-line `_fold_reflection_keyed_columns` wrapper) is still duplicated near-verbatim in both `snowflake.py:125-143` and `unity_catalog.py:157-171`. A `make_reflection_folder(dialect_cls, types)` factory in `sql.py` would collapse both to one line each. Low value today (only 2 call sites), but ADR 0036 says a third connection-anchored engine is coming, so this pattern will likely be copy-pasted a third time.
+- No other module needed/missed the shared helper (grep confirms `iceberg.py`/`flatfile.py` have no analogous reflection-case issue, consistent with them not going through SQLAlchemy table reflection the same way).
+
+### Angle 5 — Simplification
+- Nothing beyond angle 4's dedup opportunity. The shared function's signature (`reflection_keyed_types`, `normalize_name` as injected callback) is appropriately generic — no unnecessary abstraction.
+
+### Angle 6 — Efficiency (directly investigated as asked)
+- `_reflection_key` is called **once per `str` column, per matching check**, inside the list comprehension in `fold_reflection_keyed_columns` (not once per fold-run, not once per check-list) — so `DatabricksDialect()` gets constructed len(`column_list`) times per `expect_compound_columns_to_be_unique` check. Benchmarked directly: **~1.2 microseconds per `DatabricksDialect()` construction** (1000 instances in 1.26ms). Even a suite with dozens of compound-unique checks over wide column lists would add single-digit milliseconds at most — **verified negligible, not a real cost**, despite looking wasteful on read. (Note: this pattern is pre-existing for Snowflake, not introduced by this PR — the PR just replicates it for UC.)
+
+### Angle 7 — Altitude
+- **`_REFLECTION_KEYED_TYPES` is scoped to only `expect_compound_columns_to_be_unique`**, but two *other* newly-pushed-down types — `expect_multicolumn_sum_to_equal` and `expect_select_column_values_to_be_unique_within_record` — also take a `column_list` kwarg with the exact same shape. I traced GX's actual provider code to check whether they need the same fold: both route through the generic `multicolumn_function_partial`/`multicolumn_condition_partial` machinery, which calls `get_dbms_compatible_metric_domain_kwargs` (in `great_expectations/expectations/metrics/util.py`) to case-normalize `column_list` against the real reflected columns *before* building `sa.column(...)` references — and, unlike `expect_compound_columns_to_be_unique`'s bespoke `_sqlalchemy_function`, they never do a raw `.c[name]` dict lookup against a reflected `Table`/`Select.c` collection (the actual KeyError site for #1616). So on the current GX version (1.17.2, matching `environment.yml`'s pin) these two likely do **not** need `_REFLECTION_KEYED_TYPES` membership. This is a defensible narrow scoping, not obviously a bug — but it's exactly the kind of bandaid the PR's own docs warn about re-discovering: nothing records *why* these two lookalike types were excluded, so a future contributor (or the #1624 conversion of the remaining legacy frame types) has to redo this GX-internals trace from scratch to confirm it's still safe. Worth a one-line comment next to `_REFLECTION_KEYED_TYPES` explaining the distinction (bespoke `.c[name]` join vs. generic `sa.column()` build), and/or a live-Databricks regression test with an all-caps `column_list` against `expect_multicolumn_sum_to_equal` to close the loop the same way #1616 did for compound-unique.
+
+### Angle 8 — Conventions (CLAUDE.md)
+- No version-pin violations (no new deps), no credentials, no migration involved, no ADF/Airflow-as-datasource violation. The two changes (extract shared helper + expand pushdown set) are causally coupled (the extraction exists *because* `expect_compound_columns_to_be_unique` — which needs the fold — is one of the 14 newly-pushed types), so this reads as one functionality, not a "batch unrelated changes" violation.
+
+---
+
+### Flat list — strongest candidates
+
+1. **`backend/app/datasources/unity_catalog.py:448`** — `_fold_reflection_keyed_columns(checks)` runs *before* the method's `try:` (line 457), outside the exception boundary that exists to convert SQL-batch-setup failures into isolated per-check `errored` outcomes. *Failure scenario:* any exception from the fold step (third-party dialect quirk, future `databricks-sqlalchemy` behavior change) propagates uncaught through `run_checks`, discarding already-computed dataframe-group results for the whole suite instead of failing just the SQL group.
+
+2. **`backend/app/datasources/unity_catalog.py:159` / `snowflake.py:131`** (Altitude) — `_REFLECTION_KEYED_TYPES` includes only `expect_compound_columns_to_be_unique`, but `expect_multicolumn_sum_to_equal` and `expect_select_column_values_to_be_unique_within_record` (both newly pushed down, both take `column_list`) are not covered and the scoping rationale isn't recorded anywhere in code. *Cost:* my trace of GX's provider code suggests these two are safe (they don't do the `.c[name]` reflected-dict lookup that causes #1616), but nothing stops the next engineer from having to re-derive that from scratch, and it wasn't live-verified with a mismatched-case `column_list` the way compound-unique was for #1616.
+
+3. **`backend/app/datasources/unity_catalog.py:162-165` / `snowflake.py:134-137`** (Reuse) — the per-dialect trio (`_REFLECTION_KEYED_TYPES`, `_reflection_key`, the wrapper) is duplicated near-identically across both files; only the inner fold-loop was shared. *Cost:* a third connection-anchored engine (ADR 0036 — DMF/DQX/Dataplex) needing the same pattern means a third copy-paste instead of one factory call.
+
+4. **`fold_reflection_keyed_columns` → `_reflection_key`** (Efficiency, angle 6) — `DatabricksDialect()`/`SnowflakeDialect()` is constructed once per column string rather than hoisted once per fold-run. *Verified benign*: ~1.2µs/construction, negligible even at scale — reporting this as a checked-and-cleared item rather than a real cost, since the task specifically asked for the investigation.
+
+5. **Test coverage gap** (Angle 2/pr-test-analyzer territory) — no test exercises `_run_sql_checks` actually invoking `_fold_reflection_keyed_columns` end-to-end (only the pure function is unit-tested in isolation). This mirrors the pre-existing Snowflake test pattern, so it's low-priority, but it means finding #1 above (fold outside the try/except) has no regression test that would catch it if `_reflection_key` ever does raise.
+
+No other correctness bugs, removed-behavior regressions, or reuse misses were found beyond what's listed above and the already-known column/column_A/column_B/column_list clash-detection gap you're separately verifying.</result>
+<usage><subagent_tokens>175831</subagent_tokens><tool_uses>35</tool_uses><duration_ms>486897</duration_ms></usage>
+</task-notification>

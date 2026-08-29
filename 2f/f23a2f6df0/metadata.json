@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "2ff23a2f6df0",
+  "strategy": "manual-commit",
+  "branch": "feature/1624-uc-pushdown-batch",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/datasources/unity_catalog.py",
+    "backend/tests/datasources/test_unity_catalog.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2f/f23a2f6df0/0/metadata.json",
+      "transcript": "/2f/f23a2f6df0/0/full.jsonl",
+      "compact_transcript": "/2f/f23a2f6df0/0/transcript.jsonl",
+      "content_hash": "/2f/f23a2f6df0/0/content_hash.txt",
+      "prompt": "/2f/f23a2f6df0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 70,
+    "cache_creation_tokens": 40438,
+    "cache_read_tokens": 12187448,
+    "output_tokens": 16949,
+    "api_call_count": 35
+  }
+}
