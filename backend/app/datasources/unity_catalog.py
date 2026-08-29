@@ -165,7 +165,8 @@ _REFLECTION_KEYED_TYPES = frozenset({"expect_compound_columns_to_be_unique"})
 def _reflection_key(name: str) -> str:
     from databricks.sqlalchemy.base import DatabricksDialect
 
-    return DatabricksDialect().normalize_name(name) or name
+    dialect: Any = DatabricksDialect()
+    return dialect.normalize_name(name) or name
 
 
 def _fold_reflection_keyed_columns(checks: list[CheckSpec]) -> list[CheckSpec]:
