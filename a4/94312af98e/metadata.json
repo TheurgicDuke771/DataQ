@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "a494312af98e",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0042-llm-provider-seam",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/a4/94312af98e/0/metadata.json",
+      "transcript": "/a4/94312af98e/0/full.jsonl",
+      "compact_transcript": "/a4/94312af98e/0/transcript.jsonl",
+      "content_hash": "/a4/94312af98e/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 20272,
+    "cache_read_tokens": 1238336,
+    "output_tokens": 10730,
+    "api_call_count": 6
+  }
+}
