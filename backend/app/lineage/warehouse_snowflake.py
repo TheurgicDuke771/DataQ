@@ -284,16 +284,14 @@ class SnowflakeLineageProvider:
             except Exception as exc:
                 # #1228: this used to raise WarehouseLineageUnavailableError here, discarding a
                 # SUCCESSFUL GET_LINEAGE traversal — `top.edges`.
-                reason = _feature_unsupported_reason(exc)
+                # #1264/#1307: name OBJECT_DEPENDENCIES's own grant directly at classification
+                # time (not by `==`-matching the classifier's generic reason afterwards, which
+                # silently stops substituting the moment that generic text is ever enriched).
+                reason = _feature_unsupported_reason(
+                    exc, not_authorized_label="OBJECT_DEPENDENCIES"
+                )
                 if reason is not None:
-                    # #1264: substitute the floor-specific message when the shared classifier
-                    # returned the generic GET_LINEAGE-grant wording.
-                    message = (
-                        _NOT_AUTHORIZED_OBJECT_DEPENDENCIES_MSG
-                        if reason == _NOT_AUTHORIZED_MSG
-                        else reason
-                    )
-                    skipped.append(f"object_dependencies: {message}")
+                    skipped.append(f"object_dependencies: {reason}")
                 else:
                     skipped.append(
                         f"object_dependencies: could not read floor ({type(exc).__name__})"
@@ -338,16 +336,13 @@ class SnowflakeLineageProvider:
             dml = self._from_access_history(conn, namespace, database)
         except _FeatureUnsupportedError as exc:
             # Carry the REAL reason (edition gate vs missing grant, #902) — the same
-            # honesty rule the tier-1 skip already follows. #1309: substitute the
-            # access_history-specific wording when the shared classifier returned the
-            # generic GET_LINEAGE-grant message (same shape as #1264/#1305 for
-            # object_dependencies) — GET_LINEAGE may have already failed for an
-            # unrelated reason by the time this tier is even reached.
-            reason = (
-                _NOT_AUTHORIZED_ACCESS_HISTORY_MSG if str(exc) == _NOT_AUTHORIZED_MSG else str(exc)
-            )
+            # honesty rule the tier-1 skip already follows. #1309/#1307: `exc` is already
+            # labelled ACCESS_HISTORY's own grant by `_from_access_history` at raise time
+            # (not `==`-matched against the generic GET_LINEAGE wording here) — GET_LINEAGE
+            # may have already failed for an unrelated reason by the time this tier is
+            # even reached.
             skipped.append(
-                f"access_history: {reason}{_TRANSIENT_SKIP_SUFFIX if exc.transient else ''}"
+                f"access_history: {exc}{_TRANSIENT_SKIP_SUFFIX if exc.transient else ''}"
             )
             partial = partial or exc.transient
         if not dml and not any(s.startswith("access_history") for s in skipped):
@@ -541,7 +536,9 @@ class SnowflakeLineageProvider:
                 {"db": database, "lookback": _ACCESS_HISTORY_LOOKBACK_DAYS},
             ).all()
         except Exception as exc:
-            _reraise_confirmed_or_transient(exc, "call failed")
+            _reraise_confirmed_or_transient(
+                exc, "call failed", not_authorized_label="ACCESS_HISTORY"
+            )
         raw = _EdgeSet()
         # The bo x om cross-join repeats each statement's columns blob once per base object, and
         # repeated statements repeat it again.
@@ -785,27 +782,32 @@ def _sqlstate(exc: BaseException) -> str | None:
 _UNSUPPORTED_EDITION_MSG = "unsupported on this edition"
 
 
-_NOT_AUTHORIZED_MSG = "not authorized (role lacks the ACCOUNT_USAGE / GET_LINEAGE grant)"
+def _not_authorized_msg(grant_label: str) -> str:
+    """The not-authorized wording naming the ACCOUNT_USAGE view a role needs — a shared
+    template rather than a set of hand-duplicated per-tier constants (#1307).
+    """
+    return f"not authorized (role lacks the ACCOUNT_USAGE / {grant_label} grant)"
 
 
-# #1264: the floor-after-a-successful-traversal branch in `fetch_edges` reaches
-# `_feature_unsupported_reason` only when GET_LINEAGE just succeeded.
-_NOT_AUTHORIZED_OBJECT_DEPENDENCIES_MSG = (
-    "not authorized (role lacks the ACCOUNT_USAGE / OBJECT_DEPENDENCIES grant)"
-)
-
-# #1309: same substitution, for the ACCESS_HISTORY tier — it is reached only after
-# GET_LINEAGE has already failed/skipped for its own, possibly unrelated, reason.
-_NOT_AUTHORIZED_ACCESS_HISTORY_MSG = (
-    "not authorized (role lacks the ACCOUNT_USAGE / ACCESS_HISTORY grant)"
-)
+# The default tier name — GET_LINEAGE is the ladder's top tier, so a caller that
+# classifies without a ``not_authorized_label`` (its own preflight probe) gets this.
+_NOT_AUTHORIZED_MSG = _not_authorized_msg("GET_LINEAGE")
 
 
-def _feature_unsupported_reason(exc: BaseException) -> str | None:
+def _feature_unsupported_reason(
+    exc: BaseException, *, not_authorized_label: str | None = None
+) -> str | None:
     """The stable, operator-legible reason if ``exc`` is a CONFIRMED capability or
     authorization denial — Snowflake's edition-gate 0A000 (matched by SQLSTATE, the
     reliable signal, OR the documented message text belt-and-braces) or the
     does-not-exist/not-authorized blur — else ``None``.
+
+    ``not_authorized_label`` names the ACCOUNT_USAGE view/grant (e.g.
+    ``"OBJECT_DEPENDENCIES"``) a not-authorized denial should be worded against instead
+    of the GET_LINEAGE default — passed in by the caller at classification time, so a
+    tier-specific denial is never detected by `==`-matching this function's own return
+    value against the generic wording (#1264/#1307: that comparison silently stops
+    substituting the moment the generic wording is ever enriched).
     """
     if _sqlstate(exc) == _FEATURE_UNSUPPORTED_SQLSTATE or "Unsupported feature" in str(exc):
         # The edition gate → a stable, operator-legible reason (NOT the raw connector
@@ -814,23 +816,31 @@ def _feature_unsupported_reason(exc: BaseException) -> str | None:
     # Snowflake deliberately blurs missing-object and missing-grant into one message
     # (002003 "does not exist or not authorized"), so that text IS the structured signal.
     if "does not exist or not authorized" in str(exc):
-        return _NOT_AUTHORIZED_MSG
+        return (
+            _not_authorized_msg(not_authorized_label)
+            if not_authorized_label
+            else _NOT_AUTHORIZED_MSG
+        )
     return None
 
 
-def _reraise_if_feature_unsupported(exc: BaseException) -> None:
+def _reraise_if_feature_unsupported(
+    exc: BaseException, *, not_authorized_label: str | None = None
+) -> None:
     """Raise :class:`_FeatureUnsupportedError` if ``exc`` is a confirmed capability or
     authorization denial (:func:`_feature_unsupported_reason`), so the ladder descends.
     """
-    reason = _feature_unsupported_reason(exc)
+    reason = _feature_unsupported_reason(exc, not_authorized_label=not_authorized_label)
     if reason is not None:
         raise _FeatureUnsupportedError(reason) from exc
 
 
-def _reraise_confirmed_or_transient(exc: BaseException, label: str) -> NoReturn:
+def _reraise_confirmed_or_transient(
+    exc: BaseException, label: str, *, not_authorized_label: str | None = None
+) -> NoReturn:
     """Classify ``exc`` and raise accordingly — never return (#1109/#1228 — review
     finding on #1263: the same three-line pattern had drifted into three call
     sites with no shared definition).
     """
-    _reraise_if_feature_unsupported(exc)
+    _reraise_if_feature_unsupported(exc, not_authorized_label=not_authorized_label)
     raise _FeatureUnsupportedError(f"{label} ({type(exc).__name__})", transient=True) from exc

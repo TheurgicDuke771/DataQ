@@ -483,6 +483,45 @@ def test_a_confirmed_floor_denial_after_a_successful_traversal_stays_prunable() 
     assert "GET_LINEAGE grant" not in result.degraded_reason
 
 
+def test_object_dependencies_denial_names_its_tier_even_if_the_classifier_is_enriched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1307: before this, the substitution above detected "this is the generic
+    not-authorized denial" by `==`-comparing `_feature_unsupported_reason`'s return
+    value to the `_NOT_AUTHORIZED_MSG` literal. Simulate that classifier being enriched
+    (e.g. to append the denied object's name, exactly the change the issue names) —
+    the OBJECT_DEPENDENCIES branch must still produce its OWN tier's wording rather
+    than silently falling back to the (now non-`==`-matching) generic GET_LINEAGE text.
+    """
+
+    def _enriched_reason(
+        exc: BaseException, *, not_authorized_label: str | None = None
+    ) -> str | None:
+        if not_authorized_label is not None:
+            return warehouse_snowflake._not_authorized_msg(not_authorized_label)
+        if "does not exist or not authorized" in str(exc):
+            # A future classifier could plausibly append detail like this — no longer
+            # `==`-equal to the bare `_NOT_AUTHORIZED_MSG` literal a caller might expect.
+            return f"{warehouse_snowflake._NOT_AUTHORIZED_MSG} (object unspecified)"
+        return None
+
+    monkeypatch.setattr(warehouse_snowflake, "_feature_unsupported_reason", _enriched_reason)
+
+    conn = _GetLineageConn(
+        {
+            ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
+                "gl_down_orders_header"
+            )
+        },
+        raises={"OBJECT_DEPENDENCIES": _not_authorized_error()},
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.degraded_reason is not None
+    assert "OBJECT_DEPENDENCIES" in result.degraded_reason
+    assert "GET_LINEAGE grant" not in result.degraded_reason
+
+
 def test_a_confirmed_floor_denial_stays_non_prunable_if_the_traversal_was_already_partial() -> None:
     """Review finding on #1263 (caught live, reproduced independently by multiple review passes):
     the fix above folded in the floor's OWN classification but dropped `partial` — the flag
@@ -589,6 +628,43 @@ def test_access_history_not_authorized_names_its_own_tier() -> None:
     must not make ACCESS_HISTORY's own — separate — not-authorized denial read as
     "the GET_LINEAGE grant is missing". Each tier's message must name itself.
     """
+    conn = _FakeConn(
+        results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
+        raises={
+            "GET_LINEAGE": _feature_unsupported_error(),  # edition-gated, NOT a grant issue
+            "ACCESS_HISTORY": _not_authorized_error(),
+        },
+    )
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    assert result.degraded_reason is not None
+    assert "access_history" in result.degraded_reason
+    assert "ACCESS_HISTORY grant" in result.degraded_reason
+    assert "GET_LINEAGE grant" not in result.degraded_reason
+
+
+def test_access_history_denial_names_its_own_tier_even_if_the_classifier_is_enriched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1307/#1309: the same `==`-against-a-literal anti-pattern the OBJECT_DEPENDENCIES
+    regression test above proves resilient to was, before this fix, also present here.
+    Simulate the shared classifier being enriched — the ACCESS_HISTORY label must still
+    land because it is threaded into `_from_access_history`'s own raise at
+    classification time, not recovered afterwards by string-matching the already-raised
+    error.
+    """
+
+    def _enriched_reason(
+        exc: BaseException, *, not_authorized_label: str | None = None
+    ) -> str | None:
+        if not_authorized_label is not None:
+            return warehouse_snowflake._not_authorized_msg(not_authorized_label)
+        if "does not exist or not authorized" in str(exc):
+            return f"{warehouse_snowflake._NOT_AUTHORIZED_MSG} (object unspecified)"
+        return None
+
+    monkeypatch.setattr(warehouse_snowflake, "_feature_unsupported_reason", _enriched_reason)
+
     conn = _FakeConn(
         results={"OBJECT_DEPENDENCIES": _object_dependencies_rows()},
         raises={
