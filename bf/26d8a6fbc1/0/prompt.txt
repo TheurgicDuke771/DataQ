@@ -1,0 +1,66 @@
+<task-notification>
+<task-id>bdo0hq3lw</task-id>
+<summary>Monitor event: "CI checks on docs PR #1630"</summary>
+<event>Backend — SAST (Bandit): pass
+Backend — dependency audit (pip-audit): pass
+Backend — lint &amp; format: pass
+Backend — type check: pass
+Frontend — dependency audit (pnpm audit): pass
+Frontend — lint &amp; format: pass
+GitGuardian Security Checks: pass
+Secret scanning (betterleaks): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bdo0hq3lw</task-id>
+<summary>Monitor event: "CI checks on docs PR #1630"</summary>
+<event>CodeQL analysis (javascript-typescript): pass
+CodeQL: skipping</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bdo0hq3lw</task-id>
+<summary>Monitor event: "CI checks on docs PR #1630"</summary>
+<event>CodeQL: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bdo0hq3lw</task-id>
+<summary>Monitor event: "CI checks on docs PR #1630"</summary>
+<event>CodeQL analysis (python): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bdo0hq3lw</task-id>
+<summary>Monitor event: "CI checks on docs PR #1630"</summary>
+<event>Frontend — browser E2E (Playwright): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bdo0hq3lw</task-id>
+<summary>Monitor event: "CI checks on docs PR #1630"</summary>
+<event>Frontend — tests: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bdo0hq3lw</task-id>
+<summary>Monitor event: "CI checks on docs PR #1630"</summary>
+<event>Backend — tests: pass
+ALL_CHECKS_DONE (14 checks)</event>
+</task-notification>
+
+---
+
+What is the current code to comment ratio per module [frontend, backend, Infra]
