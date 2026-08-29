@@ -1,0 +1,72 @@
+Hey, 
+Is our docs [the public ones present in github pages] exposed to MCP?
+
+---
+
+The time MCP server need the documentations?
+
+---
+
+Does the MCP server need the tools documentations exposed to it? Or can it fetch regardless?
+Like if user want to know what are best practises while creating a suit/check
+
+---
+
+What do you suggest?
+
+---
+
+Do a bit more reseatch on web, and check how other tools/SaaS handles this kind of situation. And tell me what are my options.
+
+---
+
+If we go with option a, do we need to register each page separately?
+
+---
+
+If we go with the template, and user asked what is the best practice while creating a suit or check. Will it fetch the best practices page ten out of ten times?
+
+---
+
+Say, for example, a user asks what are the compliance mechanism dataq can support. And we are going with option b. Can the MCP server answer the question?
+
+---
+
+So what do you suggest?
+
+---
+
+Does the list_doc need to be exposed to user or can it be a private method?
+
+---
+
+But if we are listing the pages in list_doc, Instead of fetching it dynamically, it will create a drift. Correct? how we are going to handle this?
+
+---
+
+Okay. If we are to implement this, what changes are required?
+
+---
+
+is exposing ADR best practice. or it should be internal to the tool?
+
+---
+
+Good plan the execution, file the issues. Keep ADR out of it.
+
+---
+
+keep it under week 4 milestone
+
+---
+
+Why the issue id, PR numbers are mentioned in the public facing docs?
+Keep the reference limited to the published document only. 
+Never mention issue ID, PR number. 
+Try to avoid un-published document[internal docs, README files] and ADR as much as possible. 
+Scan the entire published documents and see where we need to make the changes. 
+File an issue to scrap those details, and update the working instruction, not to mention these details in the public facing documents going forward.
+
+---
+
+ADR to ADR should be fine but try to remove ADR to PR as much as possible [as these are record of decision, not how it is implemented/shipped]
