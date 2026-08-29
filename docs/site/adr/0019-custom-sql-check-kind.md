@@ -1,6 +1,6 @@
 # ADR 0019 — Custom-SQL checks ride `kind='expectation'` via GX `UnexpectedRowsExpectation`
 
-- **Status:** Accepted — **amended 2026-08-08** (see the amendment section below: the Unity Catalog half of the gating decision had never worked and needed a runner branch, [#1179](https://github.com/TheurgicDuke771/DataQ/issues/1179))
+- **Status:** Accepted — **amended 2026-08-08** (see the amendment section below: the Unity Catalog half of the gating decision had never worked and needed a runner branch)
 - **Date:** 2026-06-14
 - **Deciders:** @TheurgicDuke771
 - **Related:** ADR [0003](0003-gx-only-for-v1.md) (GX-only v1), [0012](0012-monitor-kind-seam.md) (the `check.kind` seam — and why custom-SQL is *not* a new kind), [0016](0016-severity-derivation-semantics.md) (binary fallback when there's no bandable metric), [0010](0010-provider-agnostic-infrastructure-seams.md) (least-privilege connection roles)
@@ -42,9 +42,9 @@ What v1 **does** add — guardrails, because this is the first path that execute
 - App-layer read-only parsing can be fooled by exotic SQL; we accept that and lean on the least-privilege role. We do **not** claim the parser is a security boundary.
 - `{batch}` is a GX-owned placeholder; the editor/docs must teach it, and a query that forgets it (a bare table name) runs against whatever the author typed, not the suite's run target — a correctness footgun the dry-run preview helps surface.
 
-## Amendment — 2026-08-08 ([#1179](https://github.com/TheurgicDuke771/DataQ/issues/1179)): the Unity Catalog half needed a runner branch after all
+## Amendment — 2026-08-08: the Unity Catalog half needed a runner branch after all
 
-Status: **Accepted.** The decision above stands for Snowflake exactly as written. Two of its claims were wrong for Unity Catalog, and stayed wrong from this ADR's date until #1179 — every UC custom-SQL check errored, in a run *and* in a dry-run, for the whole of that period. Nobody noticed because no test paired the two: the round-trip test (`test_custom_sql_gx.py`) stands Postgres in "for the warehouse (which has no live connect in CI)", and every UC runner test used ordinary expectations, which work fine on a DataFrame.
+Status: **Accepted.** The decision above stands for Snowflake exactly as written. Two of its claims were wrong for Unity Catalog, and stayed wrong from this ADR's date until fixed — every UC custom-SQL check errored, in a run *and* in a dry-run, for the whole of that period. Nobody noticed because no test paired the two: the round-trip test (`test_custom_sql_gx.py`) stands Postgres in "for the warehouse (which has no live connect in CI)", and every UC runner test used ordinary expectations, which work fine on a DataFrame.
 
 **What was wrong.**
 
@@ -54,17 +54,17 @@ Status: **Accepted.** The decision above stands for Snowflake exactly as written
 
 **What changed.** `UnityCatalogCheckRunner.run_checks` now partitions: custom-SQL checks run against a GX **Databricks-SQL** batch over the same table; every other expectation keeps the DataFrame batch; outcomes merge back in submission order. Deliberately GX's own SQL datasource rather than a hand-rolled COUNT/LIMIT, so the semantics are identical to the Snowflake path *by construction* — and so no new SQL-string interpolation is introduced, leaving the guardrails in §Decision 1–3 inherited unchanged rather than re-implemented.
 
-**What did not change.** The persisted shape (`kind='expectation'`, `expectation_type='unexpected_rows_expectation'`, `config={"unexpected_rows_query": …}`), the guardrail module and every authoring path that calls it, `gx_runner`, and §Decision 4's binary pass/fail for a no-threshold check (count-based severity for a check WITH thresholds landed separately — see the 2026-08-08 amendment below, [#1202](https://github.com/TheurgicDuke771/DataQ/issues/1202)).
+**What did not change.** The persisted shape (`kind='expectation'`, `expectation_type='unexpected_rows_expectation'`, `config={"unexpected_rows_query": …}`), the guardrail module and every authoring path that calls it, `gx_runner`, and §Decision 4's binary pass/fail for a no-threshold check (count-based severity for a check WITH thresholds landed separately — see the 2026-08-08 amendment below).
 
 **One new constraint, UC only.** GX's `DatabricksDsn` requires `catalog` *and* `schema` on the connection URL, and an unqualified name would resolve against the session default — a wrong table read rather than an error. So a UC suite target with **no schema** makes its custom-SQL checks error (its other checks are unaffected). Snowflake is unchanged: its schema comes from the connection config.
 
-**The lesson, which is the reason this amendment exists rather than a silent fix:** the original validation section below records a de-risk run "against the dev Postgres" and calls it confirmation of the decision. It confirmed the decision for *a* SQL backend. The gating list it justified named two datasources, and only one of them had ever been executed. That is the #953 shape — a capability declared from reasoning about a connection rather than from running the code path. See `docs/feature-matrix.md` footnote ᶜ for the live numbers that now back the UC tick.
+**The lesson, which is the reason this amendment exists rather than a silent fix:** the original validation section below records a de-risk run "against the dev Postgres" and calls it confirmation of the decision. It confirmed the decision for *a* SQL backend. The gating list it justified named two datasources, and only one of them had ever been executed — a capability declared from reasoning about a connection rather than from running the code path, a pattern that has recurred in this project. See `docs/feature-matrix.md` footnote ᶜ for the live numbers that now back the UC tick.
 
-## Amendment — 2026-08-08 ([#1202](https://github.com/TheurgicDuke771/DataQ/issues/1202)): count-based severity landed
+## Amendment — 2026-08-08: count-based severity landed
 
 Status: **Accepted.** §Decision 4's binary pass/fail is unchanged for a check with no thresholds configured (still exactly ADR 0005's binary fallback) — this only fills in the deferred half: `metric_value` is now populated for `unexpected_rows_expectation`, additively in `severity.extract_metric`, exactly as §Consequences predicted ("no schema change").
 
-**The bandable quantity is the raw unexpected row COUNT, not a percentage of the batch.** A percentage was the other option on the table (row count isn't comparable across differently-sized tables in the abstract), but it was rejected for two reasons: it would need a second aggregate query issued by the runner for the batch's total row count, which `severity.py` — deliberately pure, no DB/GX access — cannot issue itself and which this ADR's "additive... no schema change" framing never anticipated; and, more fundamentally, the cross-table comparability a percentage buys isn't needed by either consumer. Both the severity thresholds and the anomaly baseline (#593) evaluate a check's metric against *that same check's own history* on the same query/table — never against a different check's metric — so a raw count trends and baselines exactly as a percentage would, at zero extra query cost.
+**The bandable quantity is the raw unexpected row COUNT, not a percentage of the batch.** A percentage was the other option on the table (row count isn't comparable across differently-sized tables in the abstract), but it was rejected for two reasons: it would need a second aggregate query issued by the runner for the batch's total row count, which `severity.py` — deliberately pure, no DB/GX access — cannot issue itself and which this ADR's "additive... no schema change" framing never anticipated; and, more fundamentally, the cross-table comparability a percentage buys isn't needed by either consumer. Both the severity thresholds and the anomaly baseline evaluate a check's metric against *that same check's own history* on the same query/table — never against a different check's metric — so a raw count trends and baselines exactly as a percentage would, at zero extra query cost.
 
 **No schema change, no backfill.** The `results.metric_value` column already existed (Week-3 threshold migration). Existing result rows keep `metric_value = NULL` — nothing backfills a value GX never measured for them.
 

@@ -22,11 +22,11 @@
   seam), [0013](0013-marketplace-distribution-and-anti-lock-in.md) (BYOL distribution), [0018](0018-results-surface-and-grafana-deferral.md)
   (in-app surface → same-origin SPA), [0021](0021-demo-test-data-environment-strategy.md) (the harness
   infra is out-of-repo and separate), [0023](0023-container-image-registry-ghcr.md) (GHCR registry).
-  Realizes the Week-7 deploy and supersedes the #379 scaffolding's ACR assumption.
+  Realizes the Week-7 deploy and supersedes the earlier deploy scaffolding's ACR assumption.
 
 ## Context
 
-Week 7 is "go to cloud." The #379 scaffolding documented a topology but had **no infra-as-code** for the
+Week 7 is "go to cloud." The earlier deploy scaffolding documented a topology but had **no infra-as-code** for the
 app's own resources, and still assumed ACR (superseded by ADR 0023). Separately, the demo/datasource
 infra already lives in an **out-of-repo** Terraform harness (ADR 0021) in the shared `dataq-rg`. We had
 to decide: where the app's production IaC lives, how it stays isolated from the harness, and the
@@ -149,10 +149,9 @@ there is **no legal exposure and nothing was out of compliance.** This amendment
 *coherence*: the deploy toolchain was the one place a BUSL binary still touched a project
 that is explicit about not shipping one.
 
-The practical trigger is [#505](https://github.com/TheurgicDuke771/DataQ/issues/505)
-(AWS + GCP deploy IaC, post-v1). Converting one Azure stack is a contained change;
-converting three, after they are written against a second CLI, is not. This is the
-cheapest this decision will ever be.
+The practical trigger is the planned AWS + GCP deploy IaC (post-v1). Converting one
+Azure stack is a contained change; converting three, after they are written against a
+second CLI, is not. This is the cheapest this decision will ever be.
 
 ### Decision
 
@@ -164,7 +163,7 @@ together.**
   `*.tf` stay. `terraform {}` is OpenTofu's own block name and `.tf` its own format; they
   are not Terraform leftovers. Renaming would churn every doc link, the `.gitignore`
   path-independent globs, the compliance-register evidence links, and the
-  `aws/`/`gcp/` sibling convention #505 will follow, for zero functional gain.
+  `aws/`/`gcp/` sibling convention the future stacks will follow, for zero functional gain.
 - **State carries over untouched.** Local backend, state format version 4, gitignored. No
   migration step, no re-import, no `state mv`.
 - **Providers resolve from `registry.opentofu.org`.** `tofu init` rewrites
@@ -206,13 +205,13 @@ rendered diff would not have settled it.
 - Unlocks OpenTofu **state encryption** — a real gain here, since the local state holds the
   generated Postgres password and secret values in plaintext on one machine. Tracked as a
   deliberate follow-up, not folded into this change.
-- Done while there is exactly one stack pair, before #505 adds two more.
+- Done while there is exactly one stack pair, before the AWS/GCP work adds two more.
 
 **Negative / watch**
-- **The swap was convention, not enforcement — until #1087 closed that.** As written, this
+- **The swap was convention, not enforcement — until later closed that.** As written, this
   amendment left the config Terraform-parseable so the change stayed reversible, and named
   state encryption as the separate one-way door.
-  > **Update (2026-07-27, #1093, closes #1087):** that door is now closed. `versions.tf`
+  > **Update (2026-07-27):** that door is now closed. `versions.tf`
   > carries an `encryption {}` block (AES-GCM + PBKDF2 over state *and* plan files), which
   > Terraform cannot parse — so **the stack can no longer be run with `terraform`, and the
   > OpenTofu migration is now structural rather than conventional.** The passphrase lives
@@ -233,13 +232,13 @@ rendered diff would not have settled it.
 ### Alternatives considered
 
 - **Stay on Terraform.** Zero work, zero risk, and *no compliance problem to fix* — the
-  honest null option. Rejected on coherence plus the #505 timing argument, not on
+  honest null option. Rejected on coherence plus the AWS/GCP timing argument, not on
   necessity.
 - **A new ADR (0040) instead of amending in place.** The index convention pairs an
   amendment with a *new* ADR, but that convention exists for decisions large enough to
   stand alone. This changes one tool in one decision and would read as an orphan record;
   amending 0024 keeps the rationale where a reader of the deploy ADR will actually find
-  it. Precedent: ADR 0038 §5, amended in place by #952.
+  it. Precedent: ADR 0038 §5, amended in place.
 - **Rename `deploy/terraform/` → `deploy/opentofu/`.** Rejected — see Decision above.
 - **Fold state encryption into the same change.** Rejected: it mixes a
   provably-zero-diff swap with a state-rewriting change and burns the rollback path.

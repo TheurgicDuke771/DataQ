@@ -85,5 +85,5 @@ They do NOT appear in the connection editor's "pick a datasource" list or the ch
 
 - `pipeline_runs` and `trigger_bindings` schema lands in Week 1/2.
 - `OrchestrationProvider` interface lands in Week 2 alongside both implementations.
-- The single-orchestrator-per-`(provider, env)` assumption (above) was surfaced in [PR #41](https://github.com/TheurgicDuke771/DataQ/pull/41) review and tracked in [#72](https://github.com/TheurgicDuke771/DataQ/issues/72); the `(type, env)` uniqueness guard is a Week 2 connection-CRUD requirement.
+- The single-orchestrator-per-`(provider, env)` assumption (above) was surfaced in review; the `(type, env)` uniqueness guard is a Week 2 connection-CRUD requirement.
 - Future: ADR 0006 (ADF webhook auth) and ADR 0007 (Airflow callback model) will detail the provider-specific event channels.

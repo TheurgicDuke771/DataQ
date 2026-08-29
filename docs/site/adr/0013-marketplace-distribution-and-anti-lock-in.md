@@ -11,8 +11,10 @@
 > "billed outside the meter", the Consequences' "revenue is licensed outside the
 > meter", the Alternatives' "approximate with BYOL licensing"). The distribution
 > model (customer-deployed BYOL), the phasing, and the anti-lock-in guardrails
-> below are unchanged; §5's remaining commercial/legal items carry per-item
-> dispositions in issue #732.
+> below are unchanged; §5's remaining commercial/legal items carry recorded
+> per-item keep/defer/drop dispositions (listing terms/EULA kept; DPA and
+> tax/banking not needed while there is no hosted/paid tier — recorded, not
+> dropped; SOC 2 / pen test remain an enterprise-buyer ask independent of price).
 
 ## Context
 

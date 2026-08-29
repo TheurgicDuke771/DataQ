@@ -3,8 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-11
 - **Deciders:** @TheurgicDuke771
-- **Related:** ADR [0028](0028-cloud-neutral-image-runtime-config-generic-oidc.md) / [0013](0013-marketplace-distribution-and-anti-lock-in.md) (portable, cloud-neutral posture — the limiter must ride the app image, not an Azure edge), [0026](0026-auth-api-keys-and-principal-seam.md) (PATs — the authenticated `tok:` bucket), [0032](0032-email-otp-signin.md) (email OTP — this limiter is its named hard prereq, #738), [0008](0008-mcp-server.md) (the `/mcp` mount this must also cover)
-- **Issue:** [#725](https://github.com/TheurgicDuke771/DataQ/issues/725)
+- **Related:** ADR [0028](0028-cloud-neutral-image-runtime-config-generic-oidc.md) / [0013](0013-marketplace-distribution-and-anti-lock-in.md) (portable, cloud-neutral posture — the limiter must ride the app image, not an Azure edge), [0026](0026-auth-api-keys-and-principal-seam.md) (PATs — the authenticated `tok:` bucket), [0032](0032-email-otp-signin.md) (email OTP — this limiter is its named hard prereq), [0008](0008-mcp-server.md) (the `/mcp` mount this must also cover)
 
 ## Context
 
@@ -13,7 +12,7 @@ receivers, and the mounted FastMCP app at `/mcp` — is unthrottled. A single
 client (a misconfigured poller, a credential-stuffing script against the token
 endpoints, a runaway MCP loop) can saturate the API worker pool and the Postgres
 connection budget. This is a standing gap, and it is a **named hard prerequisite
-for ADR 0032's email OTP sign-in** (#738): passwordless OTP mints and verifies
+for ADR 0032's email OTP sign-in**: passwordless OTP mints and verifies
 codes over unauthenticated HTTP, which must not be brute-forceable.
 
 The deployment is cloud-neutral by policy (ADR 0028 / 0013) and headed for a
@@ -49,7 +48,7 @@ on the parent FastAPI app as the **innermost** user middleware.
 - **Fail-open.** Any store error returns `None` → the request is allowed, logged
   once per window (`rate_limit_store_unavailable`). A Redis outage must degrade
   to "no limiting", never to a hard-down API.
-- **A breaker for a slow-but-alive Redis (#784).** The socket timeouts
+- **A breaker for a slow-but-alive Redis.** The socket timeouts
   (`socket_timeout=0.2` / `socket_connect_timeout=0.5`) bound the penalty when
   Redis is *down*, and fail-open then kicks in fast. They do nothing when it is
   *up and degraded* — a GC pause, a noisy neighbour: this is the innermost
@@ -72,7 +71,7 @@ on the parent FastAPI app as the **innermost** user middleware.
   (`rate_limit_store_breaker_open` / `_closed`) — a brownout that would otherwise
   read as "the API got slow" becomes a named event.
 
-  Since #1135 the breaker MECHANISM lives in `core.circuit_breaker` and is shared
+  The breaker MECHANISM lives in `core.circuit_breaker` and is shared
   with the OTP per-email counter store (ADR 0032, another fixed-window counter on
   the same Redis), so there is one implementation to reason about rather than two
   that drift. The **state stays per store**: a shared breaker would let an OTP
@@ -83,12 +82,12 @@ on the parent FastAPI app as the **innermost** user middleware.
 
   | Class | Matches | Key | Default |
   |---|---|---|---|
-  | `webhook` | `/api/v1/orchestration/events/*` | per provider **+** client-IP (**even with a bearer** — machine path), **plus** a per-IP `ipall` ceiling. The known provider segment (adf/airflow/dbt, from the shared `ORCHESTRATION_PROVIDERS` vocabulary) is folded into the key so one noisy orchestrator can't crowd out another's callbacks from the same egress IP (#785); an *unknown* segment shares one bare-IP bucket, so a path scanner can't mint fresh buckets by rotating the segment; and the `rl:webhook:ipall:{ip}` ceiling (`RATE_LIMIT_WEBHOOK_IP_PER_MINUTE`) bounds the **aggregate** one IP can spend across provider buckets — without it, per-provider folding would quietly multiply the per-IP webhook budget by (providers + 1). Ops note: provider-folded keys match `rl:webhook:*:ip:*` in a Redis SCAN, not the pre-#785 `rl:webhook:ip:*` — and since #789 the ip component is the **folded network** (`ip:2.57.171.0/24`), so an exact-address lookup (`MATCH *ip:203.0.113.7*`) returns nothing even at /32 (`ip:203.0.113.7/32`); SCAN with the folded form | 120 (per provider bucket) / 240 (`ipall`) |
+  | `webhook` | `/api/v1/orchestration/events/*` | per provider **+** client-IP (**even with a bearer** — machine path), **plus** a per-IP `ipall` ceiling. The known provider segment (adf/airflow/dbt, from the shared `ORCHESTRATION_PROVIDERS` vocabulary) is folded into the key so one noisy orchestrator can't crowd out another's callbacks from the same egress IP; an *unknown* segment shares one bare-IP bucket, so a path scanner can't mint fresh buckets by rotating the segment; and the `rl:webhook:ipall:{ip}` ceiling (`RATE_LIMIT_WEBHOOK_IP_PER_MINUTE`) bounds the **aggregate** one IP can spend across provider buckets — without it, per-provider folding would quietly multiply the per-IP webhook budget by (providers + 1). Ops note: provider-folded keys match `rl:webhook:*:ip:*` in a Redis SCAN, not the earlier bare `rl:webhook:ip:*` — and the ip component is the **folded network** (`ip:2.57.171.0/24`), so an exact-address lookup (`MATCH *ip:203.0.113.7*`) returns nothing even at /32 (`ip:203.0.113.7/32`); SCAN with the folded form | 120 (per provider bucket) / 240 (`ipall`) |
   | `auth` | `/api/v1/auth/*` | per client-IP (**even with a bearer** — matched before the bearer branch, like `webhook`, so a token can't dodge it) | 10 |
   | `default` | any request with a bearer | per `sha256(token)[:32]` **plus** a per-IP `ipall` ceiling | 300 (token) / 1200 (`ipall`) |
   | `unauth` | everything else | per client-IP | 120 |
 
-  "Per client-IP" throughout this table means per client-IP **prefix** since #789 — see the threat-model section below.
+  "Per client-IP" throughout this table means per client-IP **prefix** — see the threat-model section below.
 
 
   The raw token is never a key input — only its hash — so it is never logged or
@@ -107,13 +106,13 @@ on the parent FastAPI app as the **innermost** user middleware.
     exceed, the 429 reports the token limit). The `webhook`/`unauth`/`auth`
     classes stay single-key — each is already IP-capped on its own bucket, and
     dropping the bearer only demotes an attacker to the lower `unauth` per-IP cap.
-    **The `auth` class (per-IP half) shipped with #1127** — the class table's
+    **The `auth` class (per-IP half) shipped separately** — the class table's
     former "extension point" row for ADR 0032's OTP surface. It covers only what
     the middleware CAN see (path + IP): the per-email counters ADR 0032 §8 also
     calls for are a separate, service-level layer keyed on the normalized email
     from the parsed request body, which a `BaseHTTPMiddleware` dispatch cannot
     read without draining/replaying the receive channel on the hot path — that
-    half lands in the OTP service itself, with or before #734. **`/mcp` shares
+    half lands in the OTP service itself, with or before the backend slice. **`/mcp` shares
     the `default` class** — it is a bearer-authenticated surface like the REST
     API, so per-token buckets apply uniformly; no separate policy needed.
 - **Headers on the 429 only:** `Retry-After`, `X-RateLimit-Limit`,
@@ -124,13 +123,13 @@ on the parent FastAPI app as the **innermost** user middleware.
   zone directive has no in-repo home today (the nginx conf is generated), and it
   can't do principal-aware limits. Left as a documented future layer.
 
-### Threat model — per-IP means per address prefix (#789)
+### Threat model — per-IP means per address prefix
 
 Every per-IP bucket (unauth, webhook, and both `ipall` ceilings) keys on an
 address **prefix** — IPv4 `/24`, IPv6 `/64` by default
 (`RATE_LIMIT_IPV4_PREFIX` / `RATE_LIMIT_IPV6_PREFIX`) — not the full address.
 Keying per `/32` dilutes the cap against a **rotating NAT/proxy pool**: the
-post-#725 deploy verification observed a 200-request burst from one machine land
+post-deploy verification observed a 200-request burst from one machine land
 on 11 distinct source IPs inside a single `2.57.171.0/24` pool (13–26 requests
 each, none near the 120 cap). The same mechanics serve a deliberately
 distributed low-rate attacker. Folding onto the allocation prefix makes the pool
@@ -166,7 +165,7 @@ post-deploy.
 ## Consequences
 
 **Positive** — every surface (REST + webhooks + `/mcp`) is throttled by one
-portable seam; the OTP prereq (#738) is unblocked; no new dependency, no license
+portable seam; the OTP prereq is unblocked; no new dependency, no license
 review; fail-open means a Redis blip never takes the API down.
 
 **Accepted residual risks** —
@@ -182,11 +181,10 @@ review; fail-open means a Redis blip never takes the API down.
 - **Fail-open disables limiting during a Redis outage** — a deliberate
   availability-over-enforcement trade, logged once per window.
 
-**Follow-ups (filed from the #783 review round):** [#784](https://github.com/TheurgicDuke771/DataQ/issues/784)
-(a circuit breaker for a slow-but-alive Redis, so a laggy store isn't paid per
-request). [#785](https://github.com/TheurgicDuke771/DataQ/issues/785) (key the
+**Follow-ups (filed from the review round):** a circuit breaker for a slow-but-alive Redis,
+so a laggy store isn't paid per request — **done**, described above. Keying the
 webhook bucket per-provider-path, not bare per-IP, so one noisy orchestrator
-can't throttle another) — **done**, folded into the class table above.
+can't throttle another — **done**, folded into the class table above.
 
 ## Alternatives considered
 

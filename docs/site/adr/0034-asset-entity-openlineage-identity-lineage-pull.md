@@ -4,7 +4,7 @@
 - **Date:** 2026-07-10
 - **Deciders:** @TheurgicDuke771
 - **Related:** ADR [0012](0012-monitor-kind-seam.md) (`metric_value` feeds the metrics facet), [0027](0027-suite-permission-model-workspace-admin.md) / [0033](0033-workspace-roles-rbac.md) (asset authz derives from the suite ladder; asset-metadata mutation is an Admin capability row), [0029](0029-dbt-orchestration-provider.md) (the artifact reader the manifest parser extends), [0031](0031-oss-byol-distribution-licensing.md) (rules out the OpenMetadata SDK)
-- **Issue:** [#596](https://github.com/TheurgicDuke771/DataQ/issues/596) (gap G-d design). The full design note is kept with the maintainers rather than published.
+- **Note:** gap G-d design. The full design note is kept with the maintainers rather than published.
 
 ## Context
 
@@ -17,7 +17,7 @@ Gap G-d: DataQ has runs and alerts but no answer to "what broke downstream, who 
 3. **Lineage is emitted and pulled, never authored.** Three slices, in order:
    - **Emit OpenLineage** from `run_service` via `openlineage-python` (Apache-2.0): START/COMPLETE/FAIL RunEvents with the target asset as input dataset carrying `DataQualityAssertionsDatasetFacet` (+ metrics facet for `metric_value` kinds). Dark by default (console transport, `OPENLINEAGE_DISABLED` honored); one emitter feeds Marquez/DataHub/Kafka with zero per-catalog code.
    - **Parse dbt `manifest.json`** (fetched by the ADR-0029 3-scheme artifact reader) into a **`lineage_edges` cache** (`upstream_asset_id`, `downstream_asset_id`, `source`, `last_seen`) — a refreshed cache of external truth, not a graph we construct. Minimal stable field subset only (`parent_map`/`child_map` + node identity; never `compiled_code`/`raw_code`), version-gated on `metadata.dbt_schema_version` (v12, stable dbt-core 1.8→1.11), ephemeral models collapsed, stream-parsed. This is the zero-infra blast-radius floor.
-   - **A `LineageProvider` seam** (mirrors `OrchestrationProvider`) for catalog pull, **Marquez as the reference impl** (purpose-built `GET /lineage` API, Apache-2.0, 2 containers on an opt-in compose profile; stalled release tagging accepted as low-risk for a dev-time reference consumer). Built in #762. The seam's graph carries a **node kind** per node (`dataset`/`job`; `bi_report`/`dashboard` reserved), so pulled downstream nodes are not assumed to be tables — a BI/dashboard node round-trips when a capable catalog (Purview/DataHub) lands. Pulled edges are **connection-less**: unlike a dbt refresh, a catalog pull has no orchestration connection, so #762 relaxed `lineage_edges.connection_id` to **nullable** (additive migration) and added a partial unique index `(upstream, downstream, source) WHERE connection_id IS NULL` as their dedup + prune scope — dbt edges (non-NULL `connection_id`, full unique constraint) are never touched.
+   - **A `LineageProvider` seam** (mirrors `OrchestrationProvider`) for catalog pull, **Marquez as the reference impl** (purpose-built `GET /lineage` API, Apache-2.0, 2 containers on an opt-in compose profile; stalled release tagging accepted as low-risk for a dev-time reference consumer). The seam's graph carries a **node kind** per node (`dataset`/`job`; `bi_report`/`dashboard` reserved), so pulled downstream nodes are not assumed to be tables — a BI/dashboard node round-trips when a capable catalog (Purview/DataHub) lands. Pulled edges are **connection-less**: unlike a dbt refresh, a catalog pull has no orchestration connection, this relaxed `lineage_edges.connection_id` to **nullable** (additive migration) and added a partial unique index `(upstream, downstream, source) WHERE connection_id IS NULL` as its dedup + prune scope — dbt edges (non-NULL `connection_id`, full unique constraint) are never touched.
 4. **Incident objects anchor to assets**: at most one open incident per `(asset_id, check_id)`, lifecycle `open → acknowledged → resolved`, occurrences instead of duplicates, auto-resolve-on-pass (per-suite configurable), reopen = a **new** incident linked to the prior one (a resolved row is never mutated back to open), the Theme-2 deterministic evidence card as payload, delivered on the existing `ResultPublisher` seam (no new delivery path), routed to the suite owner today / asset owner later. Alerts remain per-result notifications that reference the open incident.
 5. **Asset/incident visibility is derived from suite grants, never separately granted** — visible iff the caller can `view` ≥1 composing suite, aggregation filtered to their grants, 404-no-leak preserved. Asset-metadata mutation (owner, description) starts workspace-Admin-only per the 0033 matrix pattern.
 
@@ -38,7 +38,7 @@ Gap G-d: DataQ has runs and alerts but no answer to "what broke downstream, who 
 
 ---
 
-## Amendment (2026-07-13, #823) — the byte-for-byte join premise was **half wrong**
+## Amendment (2026-07-13) — the byte-for-byte join premise was **half wrong**
 
 Decision 2 above claims our identifiers "match `openlineage-dbt`/Spark emissions
 byte-for-byte, making future emission/pull interop a join instead of a mapping layer."
@@ -100,8 +100,8 @@ namespace half genuinely joins, and it is what makes DataQ a good OL citizen), b
 "interop is a join, not a mapping layer" is withdrawn — cross-producer name reconciliation
 is a permanent, if small, cost.
 
-> **Second amendment (2026-07-18, [ADR 0037](0037-workspace-visible-asset-identity.md), #923):**
-> decision 5 and the #845/#846 amendment below are **superseded**. Asset *identity* and
+> **Second amendment (2026-07-18, [ADR 0037](0037-workspace-visible-asset-identity.md)):**
+> decision 5 and the amendment below are **superseded**. Asset *identity* and
 > lineage topology (including column-level pairs) are now visible to every workspace
 > member; aggregate rollups are **workspace-true** (computed over all composing suites,
 > identical for every viewer); the grant boundary moves to suite-derived detail
@@ -111,7 +111,7 @@ is a permanent, if small, cost.
 > (anonymous nodes, redacted browse rows, count-only column boxes) is removed. The
 > amendment below is kept for the historical record of why the derived model failed.
 
-## Amendment (2026-07-13, #845/#846) — decision 5's boundary was drawn in the wrong place
+## Amendment (2026-07-13) — decision 5's boundary was drawn in the wrong place
 
 Decision 5 says asset visibility derives from suite grants, and that an asset outside
 those grants is **404-no-leak**. Two things were wrong in practice, both found in
@@ -128,13 +128,13 @@ The fix is **redaction, not omission**: an inaccessible neighbour is returned as
 anonymous node (id + depth; no identity, `is_monitored` forced false), drawn but not
 clickable, alongside a count — *"1 connected asset is outside your access."* Dropping it
 instead would have asserted "nothing consumes this table", which is false. We do not fix
-a leak by shipping a lie (the #828/#823 lesson). Redaction happens **server-side**: a
+a leak by shipping a lie — a lesson this project has hit before. Redaction happens **server-side**: a
 name hidden in CSS has still crossed the wire.
 
 **2. "No suites" was treated as "outside your grants". It isn't.** Redaction protects a
 *grant* — and an asset nobody has granted is protected by nothing. A suite-less asset (a
 raw source table, an unmonitored mart, an asset whose last suite was deleted, its runs and
-results cascading with it per #540) has no runs, no results, no samples behind it. The only
+results cascading with it too) has no runs, no results, no samples behind it. The only
 thing being withheld was its **name**, whose existence the lineage graph reveals anyway.
 
 That withholding bought no security and cost real correctness:

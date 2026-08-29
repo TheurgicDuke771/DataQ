@@ -3,11 +3,11 @@
 - **Status:** Accepted
 - **Date:** 2026-07-05
 - **Deciders:** solo-dev
-- **Related:** [0004](0004-orchestration-abstraction.md) (orchestration seam), [0007](0007-airflow-callback-model.md) (the sibling callback model this mirrors), [0011](0011-extensibility-seams-for-deferred-integrations.md) (second-impl-deferred seams), [0010](0010-provider-agnostic-infrastructure-seams.md)/[0013](0013-marketplace-distribution-and-anti-lock-in.md) (anti-lock-in). Issue #611 (split from #609).
+- **Related:** [0004](0004-orchestration-abstraction.md) (orchestration seam), [0007](0007-airflow-callback-model.md) (the sibling callback model this mirrors), [0011](0011-extensibility-seams-for-deferred-integrations.md) (second-impl-deferred seams), [0010](0010-provider-agnostic-infrastructure-seams.md)/[0013](0013-marketplace-distribution-and-anti-lock-in.md) (anti-lock-in).
 
 ## Context
 
-ADR 0004 established one `OrchestrationProvider` seam with ADF as the reference impl and Airflow as the second. dbt is a **third** orchestration layer — a genuine second-generation test of the seam (not dbt clubbed under the already-proven Airflow provider). The harness dbt project (#609) produces the runs to observe.
+ADR 0004 established one `OrchestrationProvider` seam with ADF as the reference impl and Airflow as the second. dbt is a **third** orchestration layer — a genuine second-generation test of the seam (not dbt clubbed under the already-proven Airflow provider). The harness dbt project produces the runs to observe.
 
 The problem: **dbt Core has no runs API.** dbt Cloud's free tier has no API/scheduler; dbt-on-Snowflake observes via Snowflake (dies with the trial); Databricks dbt tasks observe via the Jobs API. Binding to any of those couples DataQ to a host. What *every* dbt deployment produces, wherever it runs, is **artifacts** (`run_results.json`, `manifest.json`) and the ability to run a command after a build. So the provider must bind to that universal surface — neutrality by construction (ADR 0010/0013).
 
@@ -46,7 +46,7 @@ Three host-neutral schemes behind one reader seam (reusing DataQ's existing ADLS
 
 ### Trigger dedup index
 
-The partial unique index `uq_runs_suite_triggered_by` (#308) and its Python predicate mirror `_ORCH_TRIGGER_PREDICATE` currently cover `adf:%`/`airflow:%`. A migration **widens** both to add `dbt:%`. Backward-compatible (widening a partial index adds coverage; existing rows unaffected; no dbt markers exist yet). Reviewed by the migration-safety agent.
+The partial unique index `uq_runs_suite_triggered_by` and its Python predicate mirror `_ORCH_TRIGGER_PREDICATE` currently cover `adf:%`/`airflow:%`. A migration **widens** both to add `dbt:%`. Backward-compatible (widening a partial index adds coverage; existing rows unaffected; no dbt markers exist yet). Reviewed by the migration-safety agent.
 
 ### Replay / freshness
 
@@ -66,5 +66,5 @@ Not enforced in v1, per ADR 0007 — the `(provider, invocation_id)` idempotency
 
 ## Related
 
-- Issue #611; depends on #609 (the dbt project producing runs).
+- Depends on the dbt project producing runs (the harness build).
 - Sibling ADRs 0006 (ADF webhook), 0007 (Airflow callback).

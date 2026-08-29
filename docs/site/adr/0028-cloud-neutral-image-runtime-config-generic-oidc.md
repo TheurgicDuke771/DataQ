@@ -5,8 +5,6 @@
 - **Deciders:** @TheurgicDuke771
 - **Amends:** ADR [0024](0024-app-deployment-infrastructure.md) (frontend hosting moves Static Web App → a Container App running the nginx image)
 - **Related:** ADR [0010](0010-provider-agnostic-infrastructure-seams.md) (provider-agnostic seams — Azure is one impl), [0013](0013-marketplace-distribution-and-anti-lock-in.md) (BYOL / anti-lock-in), [0023](0023-container-image-registry-ghcr.md) (GHCR), [0025](0025-production-image-pip-slim.md) (slim image), [0008](0008-mcp-server.md) (MCP token validation), [0026](0026-auth-api-keys-and-principal-seam.md) (DataQ-issued credentials — the backend identity seam)
-- **Issue:** [#504](https://github.com/TheurgicDuke771/DataQ/issues/504); post-v1 AWS/GCP IaC → [#505](https://github.com/TheurgicDuke771/DataQ/issues/505). Follows the prebuilt-image work in [#472](https://github.com/TheurgicDuke771/DataQ/issues/472).
-
 > **Amendment (2026-07-09, [ADR 0032](0032-email-otp-signin.md)):** the runtime auth
 > contract gains a third mode — `DATAQ_AUTH_MODE` becomes `bypass | otp | oidc` —
 > and the SPA gains an HttpOnly-cookie session credential (`dq_sess_`) beside the
@@ -15,7 +13,7 @@
 
 ## Context
 
-The prebuilt-image distribution (#472) shipped, but exposed three coupling/complexity
+The prebuilt-image distribution shipped, but exposed three coupling/complexity
 smells:
 
 1. **Two frontend images.** Vite inlines `VITE_*` at **build** time, so auth config is
@@ -37,7 +35,7 @@ generic seams.**
 
 1. **Runtime frontend config injection.** The nginx frontend image serves `/config.js`
    (`window.__DATAQ_CONFIG__ = { auth: { … } }`) rendered from env at container start via
-   the **existing** envsubst-on-templates step (added for `DATAQ_API_UPSTREAM` in #472 — no
+   the **existing** envsubst-on-templates step (added for `DATAQ_API_UPSTREAM` — no
    new moving part). A blocking classic `<script src="/config.js">` in `index.html` runs
    before the deferred module bundle, so `src/auth/config.ts` reads a **synchronous**
    global (falling back to `import.meta.env` for `pnpm dev`). Its consumers are unchanged.
@@ -64,7 +62,7 @@ generic seams.**
    (`api://<api-client-id>/user_impersonation`) + **silent renew**. If clean → **retire
    MSAL** (one client for Azure, OIDC, Cognito, Identity Platform, Keycloak, local). If
    Azure needs quirks → fall back to a two-impl seam (MSAL-for-Azure + OIDC-for-others).
-   The #168 `InteractionRequiredAuthError` → interactive fallback is reworked in the OIDC
+   The prior `InteractionRequiredAuthError` → interactive fallback is reworked in the OIDC
    client's silent-renew-error terms.
 
 5. **Deployed-app cutover (amends ADR 0024).** Runtime `/config.js` is served by the nginx
@@ -72,7 +70,7 @@ generic seams.**
    injection). So the frontend moves **SWA → a Container App** (`dataq-app-frontend`),
    **keeping Key Vault, App Insights / Log Analytics, the shared Postgres + `dataq` DB, and
    Redis as-is**. The deployed app runs `DATAQ_AUTH_MODE=oidc` against the real tenant.
-   AWS/GCP deploy IaC is **post-v1** (#505).
+   AWS/GCP deploy IaC is **post-v1**.
 
    **As implemented (Terraform):** a *targeted* apply, not a literal teardown — Terraform
    destroys only the SWA (`azurerm_static_web_app` + its `null_resource` linked-backend) and
@@ -117,14 +115,14 @@ generic seams.**
   backend enforcement).
 - The deployed frontend changes hosting (SWA → Container App), a one-time cutover with
   preserved data/secret/observability layers.
-- The generic contract makes AWS/GCP (#505) a drop-in — no future image change.
+- The generic contract makes AWS/GCP a drop-in — no future image change.
 
 ## Alternatives considered
 
-- **Keep two images (status quo from #472).** Rejected: ships an auth-disabled image on a
+- **Keep two images (the earlier status quo).** Rejected: ships an auth-disabled image on a
   public registry, `:latest` unusable as-pulled, and the docs carry permanent caveats.
-- **Relax `config.ts` to allow bypass in a production build.** Rejected earlier (the #472
-  two-tag decision) and still: it weakens a guard without solving the cloud-neutrality or
+- **Relax `config.ts` to allow bypass in a production build.** Rejected earlier (the two-tag
+  decision) and still: it weakens a guard without solving the cloud-neutrality or
   MSAL coupling. Runtime config + fail-closed bypass is stronger and more general.
 - **Build-time config (rebuild per environment).** Rejected: defeats "one generic image";
   every self-hoster would rebuild.
@@ -132,7 +130,7 @@ generic seams.**
   front: validating one generic client against Azure first is what decides whether the
   second impl is even needed — one stack is simpler if Azure passes.
 - **AWS/GCP IaC now.** Rejected for v1: a second *deploy impl* with no second target is
-  over-engineering; the seam (this ADR) keeps the door open at ~zero cost (#505).
+  over-engineering; the seam (this ADR) keeps the door open at ~zero cost.
 
 ## Related
 
