@@ -1,0 +1,120 @@
+<task-notification>
+<task-id>addac4aa5f77d41a6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/de085e30-746a-472d-b2c4-efe1c9d6ccf4/tasks/addac4aa5f77d41a6.output</output-file>
+<status>completed</status>
+<summary>Agent "Scrub PR refs from ADR docs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+I edited all 28 files in scope under `docs/site/adr/` (28 files modified per `git status`), stripping GitHub issue/PR references while leaving ADR-to-ADR references (`ADR NNNN`, `ADR-NNNN`, markdown links to sibling `NNNN-*.md` files) untouched.
+
+**Files changed:** all 28 listed in scope:
+- `0004-orchestration-abstraction.md`
+- `0008-mcp-server.md`
+- `0012-monitor-kind-seam.md`
+- `0013-marketplace-distribution-and-anti-lock-in.md`
+- `0017-python-313-runtime-upgrade.md`
+- `0019-custom-sql-check-kind.md`
+- `0020-history-and-audit-strategy.md`
+- `0021-demo-test-data-environment-strategy.md`
+- `0022-week6-prototype-adoption-and-chart-library.md`
+- `0023-container-image-registry-ghcr.md`
+- `0024-app-deployment-infrastructure.md`
+- `0026-auth-api-keys-and-principal-seam.md`
+- `0027-suite-permission-model-workspace-admin.md`
+- `0028-cloud-neutral-image-runtime-config-generic-oidc.md`
+- `0029-dbt-orchestration-provider.md`
+- `0030-iceberg-native-read-path.md`
+- `0031-oss-byol-distribution-licensing.md`
+- `0032-email-otp-signin.md`
+- `0033-workspace-roles-rbac.md`
+- `0034-asset-entity-openlineage-identity-lineage-pull.md`
+- `0035-request-rate-limiting.md`
+- `0036-connection-anchored-check-engines.md`
+- `0037-workspace-visible-asset-identity.md`
+- `0038-dq-dimension-classification.md`
+- `0039-openbao-self-hosted-secret-backend.md`
+- `0040-warehouse-inventory-sync-table-enumeration-seam.md`
+- `0041-history-audit-strategy.md` (by far the densest — dozens of references, many repeated like `#310`/`#431`/`G1`/`G2`)
+- `README.md` (the ADR index table)
+
+**Approximate count stripped:** roughly 220–240 individual GitHub issue/PR references across the batch (bare `#NNNN`, `[#NNNN](.../issues/NNNN)`, `[#NNNN](.../pull/NNNN)`, "PR for #NNNN", "issue [#NNNN]" style citations). `0041` alone accounted for ~50, `0039`/`0035`/`0037`/`0008` each had 15–30.
+
+**Verification performed:** ran a regex sweep (`#[0-9]{2,5}\b` excluding "ADR ####"/"ADR-####" matches, plus `github.com/.../issues/` and `.../pull/` link patterns) across all 28 files — zero remaining matches. Also spot-checked every leftover `()` sequence in the diffed files to rule out edit-induced markdown breakage; all were legitimate code references (`.to_arrow()`, `record()`, `get_asgi_app()`, etc.), not artifacts of the stripping.
+
+**Ambiguous cases resolved (worth double-checking):**
+1. Kept a repo blob link that isn't an issue/PR: `[`backend/app/core/secrets.py`](https://github.com/.../blob/main/backend/app/core/secrets.py)` in `0039` — it's a source-file link, not an issue/PR reference, so left untouched.
+2. Kept a blob link in `0008`'s Tier-1 amendment (`context/post-v1-roadmap.md` linked via `blob/main/...`) for the same reason.
+3. Several docs use recurring *named-incident shorthand* like "the #828 class", "the #953 rule", "the #124/#952 shape" as informal pattern labels reused across many ADRs. I treated these as GitHub references per the task's own guidance ("closes #37" style usage) and reworded them into plain prose (e.g. "a known confident-wrong-answer failure mode", "a pattern that has recurred in this project", "gap G1"/"gap G2" where the issue was actually a named compliance gap letter rather than just a ticket number) rather than dropping the sentence — since the surrounding rationale was substantive, not merely a pointer.
+4. Where an issue number was the *sole* content of a clause (e.g. "(#732)", "(#505)", "Tracked in #310.", "— #465"), I deleted the clause/sentence outright rather than leaving a placeholder, per instructions.
+5. Gap letters (G1, G2, G-d, G-e, etc.) were treated as **not** GitHub issue numbers — they're the maintainers' internal compliance-gap lettering scheme, distinct from `#NNNN` issue references — and were preserved as-is throughout (including in `0041` where they're heavily used).
+
+No commits were made — changes are staged only in the working tree on branch `docs/scrub-issue-pr-refs-1627` per instructions, ready for your review.</result>
+<usage><subagent_tokens>320991</subagent_tokens><tool_uses>124</tool_uses><duration_ms>777537</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac285e86ead2e8886</task-id>
+<tool-use-id>toolu_01LwrBhVybYLq2LUQkVrFnnm</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/de085e30-746a-472d-b2c4-efe1c9d6ccf4/tasks/ac285e86ead2e8886.output</output-file>
+<status>completed</status>
+<summary>Agent "Scrub issue/PR refs from non-ADR docs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+I scrubbed all 22 files in scope on the current worktree (branch `docs/scrub-issue-pr-refs-1627`, uncommitted, staged only as working-tree edits per your instructions). I did not touch anything under `docs/site/adr/` (a separate agent is already working there — I can see its edits in `git status` but made none of them myself).
+
+**Files changed:** all 22 in the assigned list.
+
+**References stripped:** roughly 170 occurrences (~93 distinct ticket numbers) across bare `#NNNN`, `(#NNNN)`, `([#NNNN](.../issues/NNNN))`, and — in `docs/site/architecture.md` — six Mermaid-escaped `#35;NNN` refs inside sequence diagrams (that file's HTML-entity-escape gotcha means a literal `#NNN` renders fine unescaped in flowcharts/ER/state diagrams but needs `#35;` in sequence diagrams; I stripped the underlying ticket numbers either way). `perf-baseline.md` had by far the most (its whole structure is a measurement log keyed to issue numbers like `#587`/`#595`/`#1532`); I replaced recurring ticket-labeled campaigns with plain descriptive phrases ("the original baseline campaign", "the scale-aware execution work", "this pushdown change") so the narrative still reads coherently without the tracking numbers.
+
+Two anchor-link side effects from removing ticket numbers out of headings, both fixed: `orchestration.md`'s `### Lineage from the warehouse — the WarehouseLineageProvider seam (#858)` and `### Lineage from a catalog — the LineageProvider seam (ADR 0034, #762)` headings lost their `-858`/`-762` slug suffixes when the ticket numbers came out, so I updated the two matching anchor links in `feature-matrix.md` to the new slugs.
+
+**ADR links removed (Task 2), 3 total:**
+1. `docs/site/architecture.md` — a link to **ADR 0009 (flat monorepo layout)** attached to a sentence about local-dev secret resolution (`EnvSecretStore`). This wasn't just "not direct enough" — ADR 0009 has no mention of secrets at all (I grepped it to confirm), so the link looks like a genuine mismatch in the original doc, not just a borderline "see also." Unlinked and dropped the parenthetical.
+2. `docs/site/getting-started.md` — a link to **ADR 0039 (OpenBao)** used only as an analogy ("the same reasoning that moved the default secret store off the plaintext one") in a paragraph actually about the `otp`/`bypass` auth-mode default — not the ADR this section is explaining. Kept the text, dropped the link.
+3. `docs/site/api-keys.md` — a link to **ADR 0033 (workspace roles/RBAC)** in a sentence about PAT permission inheritance; the page's real subject is API keys and ADR 0026 is already cited as the direct decision, so 0033 read as background rather than the answer. Kept ADR 0026's link, unlinked 0033's mention.
+
+All other ADR links across the 11 files that have them (`api-keys.md`, `architecture.md`, `datasources-checks.md`, `deployment-parity.md`, `deployment.md`, `feature-matrix.md`, `getting-started.md`, `mcp-setup.md`, `orchestration.md`, `security.md`, `troubleshooting.md` — 30 links remain) were direct explanations of the decision the surrounding text describes, so I kept them.
+
+**Ambiguous cases I left in place — please double-check:**
+- `docs/site/runbook-faq.md` (lineage FAQ entry): the text still says "the two are indistinguishable in the UI today" for a broken-vs-empty lineage graph, but both `orchestration.md` and `notifications.md` (in this same scrub) describe that as *already fixed* with connection badges/lineage-panel warnings/alerts. This looks like stale content unrelated to rule 41 — I only removed the `#828` pointer and left the substantive (possibly outdated) claim alone since fixing it is outside my mandate.
+- `docs/site/compliance/dpa-baa-templates.md` (Data-subject rights clause): the original text gated "targeted subject erasure/export" on `#432 shipping`. Other files in this same compliance set (`docs/site/compliance/data-subject-rights-runbook.md`) describe that erasure endpoint as already built and working. I preserved the template's original conditional/hedged phrasing ("once that capability is available in the deployment... until then...") rather than asserting either shipped or not-shipped state, since I can't be sure which is authoritative for a legal-review document — worth a human check against actual deployment status before this ships to counsel.
+- `docs/site/architecture.md` — the top-of-file note explaining the Mermaid `#35;` HTML-entity-escape gotcha still says things like "a bare `#NNN` issue ref" and "`#35;NNN`" — I left this alone since `NNN` is a placeholder, not a real ticket number, so it isn't a rule-41 violation, but flagging it since it's the one place `#`-shaped text remains in scope.
+- `docs/site/recommended-usage.md` and `docs/site/tutorial.md` — not in my file list, so I did not touch them, but per your Task 2 note I checked: both contain one ADR 0033 link each (`recommended-usage.md:115`, `tutorial.md:22`). I didn't evaluate or edit these since they're outside the explicit "Do not touch anything outside the file list" boundary — flagging so you can route them to whoever owns that scope.
+
+**Verification performed:**
+- `grep -nEo '#[0-9]{2,5}\b'` across all 22 files: zero real references remain (only the two `#35` Mermaid-syntax-example false positives noted above).
+- `grep -nE 'github\.com/.../issues|pull/[0-9]+'` across all 22 files: zero matches.
+- Checked for broken markdown links (empty `[]()`, unmatched `](` ) — none found.
+- Confirmed the two heading-anchor renames in `orchestration.md` and updated their only referencing links in `feature-matrix.md`.
+- Confirmed via `git diff --stat` that only the 22 assigned files were touched by me (the ADR files and `docs/site/adr/README.md` showing as modified in `git status` are the other agent's work, not mine).
+
+Relevant paths (all absolute):
+- `/Users/arijit/Coding/Python/DataQ/docs/site/api-keys.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/architecture.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/changelog.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/compliance/breach-notification-runbook.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/compliance/data-subject-rights-runbook.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/compliance/dpa-baa-templates.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/compliance/dpia-input-sheet.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/compliance/sub-processors.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/datasources-checks.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/deployment-parity.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/deployment.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/feature-matrix.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/getting-started.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/mcp-setup.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/notifications.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/observability.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/orchestration.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/perf-baseline.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/rest-api.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/runbook-faq.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/security.md`
+- `/Users/arijit/Coding/Python/DataQ/docs/site/troubleshooting.md`</result>
+<usage><subagent_tokens>276631</subagent_tokens><tool_uses>238</tool_uses><duration_ms>1085616</duration_ms></usage>
+</task-notification>
