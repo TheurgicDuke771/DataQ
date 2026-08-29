@@ -32,6 +32,7 @@ from backend.app.datasources.sampling import (
 from backend.app.datasources.sql import (
     LazyEngine,
     core_table,
+    fold_reflection_keyed_columns,
     is_sql_identifier,
     qualified_sql_name,
 )
@@ -136,8 +137,60 @@ SQL_PUSHDOWN_EXPECTATION_TYPES: frozenset[str] = frozenset(
         "expect_column_value_lengths_to_be_between",
         "expect_column_values_to_match_regex",
         "expect_table_row_count_to_be_between",
+        "expect_column_values_to_be_null",
+        "expect_column_values_to_not_be_in_set",
+        "expect_column_value_lengths_to_equal",
+        "expect_column_values_to_not_match_regex",
+        "expect_column_values_to_match_regex_list",
+        "expect_column_values_to_not_match_regex_list",
+        "expect_column_pair_values_to_be_equal",
+        "expect_column_pair_values_to_be_in_set",
+        "expect_column_pair_values_a_to_be_greater_than_b",
+        "expect_multicolumn_sum_to_equal",
+        "expect_select_column_values_to_be_unique_within_record",
+        "expect_column_distinct_values_to_be_in_set",
+        "expect_column_distinct_values_to_contain_set",
+        "expect_compound_columns_to_be_unique",
     }
 )
+
+# This metric indexes REFLECTED columns, whose keys the Databricks dialect rewrites via its
+# own `normalize_name` — fold authored names to match, or an all-caps spelling KeyErrors.
+# Other column_list-keyed types (multicolumn_sum_to_equal, select_column_values_to_be_
+# unique_within_record) build plain column references instead and don't need this — live-
+# verified with an all-caps column_list on both.
+_REFLECTION_KEYED_TYPES = frozenset({"expect_compound_columns_to_be_unique"})
+
+
+def _reflection_key(name: str) -> str:
+    from databricks.sqlalchemy.base import DatabricksDialect
+
+    dialect: Any = DatabricksDialect()
+    return dialect.normalize_name(name) or name
+
+
+def _fold_reflection_keyed_columns(checks: list[CheckSpec]) -> list[CheckSpec]:
+    return fold_reflection_keyed_columns(
+        checks, reflection_keyed_types=_REFLECTION_KEYED_TYPES, normalize_name=_reflection_key
+    )
+
+
+def _spec_columns(spec: CheckSpec) -> set[str]:
+    """The lowercased column name(s) a check's row locator would select — covers every
+    kwarg shape in the catalog (`column`, `column_A`/`column_B`, `column_list`)."""
+    names: set[str] = set()
+    single = spec.kwargs.get("column")
+    if isinstance(single, str):
+        names.add(single.lower())
+    for key in ("column_A", "column_B"):
+        value = spec.kwargs.get(key)
+        if isinstance(value, str):
+            names.add(value.lower())
+    column_list = spec.kwargs.get("column_list")
+    if isinstance(column_list, list):
+        names.update(c.lower() for c in column_list if isinstance(c, str))
+    return names
+
 
 #: How far a Bernoulli ``TABLESAMPLE`` is over-drawn before the ``LIMIT`` trims it (#595).
 _SAMPLE_OVERSHOOT = 1.2
@@ -422,6 +475,7 @@ class UnityCatalogCheckRunner:
         context = gx.get_context(mode="ephemeral")
         datasource: Any = None
         try:
+            checks = _fold_reflection_keyed_columns(checks)
             datasource, batch_definition = self._sql_batch_definition(
                 context, table=table, schema=schema
             )
@@ -429,11 +483,7 @@ class UnityCatalogCheckRunner:
             # locator query would select the column twice and Databricks' arrow layer refuses
             # ("Can't unify schema with duplicate field names" — live-found, #1532).
             index_lower = {c.lower() for c in index_columns or ()}
-            clash_set = {
-                i
-                for i, spec in enumerate(checks)
-                if str(spec.kwargs.get("column", "")).lower() in index_lower
-            }
+            clash_set = {i for i, spec in enumerate(checks) if _spec_columns(spec) & index_lower}
             if not clash_set:
                 return run_expectations(
                     context,

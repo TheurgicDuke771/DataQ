@@ -8,6 +8,8 @@ import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Final
 
+from backend.app.datasources.base import CheckSpec
+
 if TYPE_CHECKING:
     from sqlalchemy.engine.interfaces import Dialect
     from sqlalchemy.sql import TableClause
@@ -95,6 +97,32 @@ def qualified_sql_name(
         if part is not None and not is_sql_identifier(part):
             raise ValueError(f"invalid {label} identifier: {part!r}")
     return ".".join(_quote_namespace_part(part, dialect) for part, _ in parts if part is not None)
+
+
+def fold_reflection_keyed_columns(
+    checks: list[CheckSpec],
+    *,
+    reflection_keyed_types: frozenset[str],
+    normalize_name: Callable[[str], str],
+) -> list[CheckSpec]:
+    """Fold `column_list` on checks whose GX metric indexes reflected columns, using the
+    dialect's own reflection-name rewrite so an authored spelling matches the reflected key.
+    """
+    folded = []
+    for spec in checks:
+        column_list = spec.kwargs.get("column_list")
+        if spec.expectation_type in reflection_keyed_types and isinstance(column_list, list):
+            spec = CheckSpec(
+                expectation_type=spec.expectation_type,
+                kwargs={
+                    **spec.kwargs,
+                    "column_list": [
+                        normalize_name(c) if isinstance(c, str) else c for c in column_list
+                    ],
+                },
+            )
+        folded.append(spec)
+    return folded
 
 
 class LazyEngine:

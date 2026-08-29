@@ -25,7 +25,7 @@ from backend.app.datasources.gx_runner import (
 )
 from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
 from backend.app.datasources.snowflake_dmf import DMF_ENGINE, evaluate_dmf_check
-from backend.app.datasources.sql import LazyEngine
+from backend.app.datasources.sql import LazyEngine, fold_reflection_keyed_columns
 
 __all__ = [
     "SnowflakeCheckRunner",
@@ -138,21 +138,9 @@ def _reflection_key(name: str) -> str:
 
 
 def _fold_reflection_keyed_columns(checks: list[CheckSpec]) -> list[CheckSpec]:
-    folded = []
-    for spec in checks:
-        column_list = spec.kwargs.get("column_list")
-        if spec.expectation_type in _REFLECTION_KEYED_TYPES and isinstance(column_list, list):
-            spec = CheckSpec(
-                expectation_type=spec.expectation_type,
-                kwargs={
-                    **spec.kwargs,
-                    "column_list": [
-                        _reflection_key(c) if isinstance(c, str) else c for c in column_list
-                    ],
-                },
-            )
-        folded.append(spec)
-    return folded
+    return fold_reflection_keyed_columns(
+        checks, reflection_keyed_types=_REFLECTION_KEYED_TYPES, normalize_name=_reflection_key
+    )
 
 
 class SnowflakeCheckRunner:
