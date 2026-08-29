@@ -16,6 +16,7 @@ import {
   listAdminUsers,
   listAuditEvents,
 } from '../../src/api/admin';
+import { getLlmConfig, type LlmConfig } from '../../src/api/llm';
 import type { MeResponse } from '../../src/api/me';
 import { MeContext } from '../../src/auth/meContext';
 import type { AsyncState } from '../../src/hooks/useAsyncData';
@@ -33,11 +34,29 @@ vi.mock('../../src/api/admin', () => ({
   WORKSPACE_ROLES: ['admin', 'member', 'viewer'],
 }));
 
+vi.mock('../../src/api/llm', () => ({
+  getLlmConfig: vi.fn(),
+  updateLlmConfig: vi.fn(),
+  testLlmConfig: vi.fn(),
+}));
+
 const mockSuites = vi.mocked(listAdminSuites);
 const mockUsers = vi.mocked(listAdminUsers);
 const mockAccess = vi.mocked(listAdminAccess);
 const mockAuditEvents = vi.mocked(listAuditEvents);
 const mockDeploymentPosture = vi.mocked(getDeploymentPosture);
+const mockLlmConfig = vi.mocked(getLlmConfig);
+
+const LLM_CONFIG: LlmConfig = {
+  configured: false,
+  provider: null,
+  base_url: null,
+  model: null,
+  structured_output: null,
+  enabled: false,
+  has_credential: false,
+  updated_at: null,
+};
 
 const adminMe: AsyncState<MeResponse> = {
   status: 'ok',
@@ -167,14 +186,17 @@ beforeEach(() => {
   mockAccess.mockResolvedValue(ACCESS);
   mockAuditEvents.mockResolvedValue(AUDIT_PAGE_1);
   mockDeploymentPosture.mockResolvedValue(DEPLOYMENT_POSTURE);
+  mockLlmConfig.mockResolvedValue(LLM_CONFIG);
 });
 afterEach(() => vi.clearAllMocks());
 
 describe('Admin', () => {
-  it('shows the Forbidden page for a non-admin and fetches nothing', () => {
+  it('shows the Forbidden page for a non-admin and fetches nothing, incl. the LLM panel', () => {
     renderAdmin({ ...adminMe, data: { ...adminMe.data, is_workspace_admin: false } });
     expect(screen.getByText('403 — Forbidden')).toBeInTheDocument();
     expect(mockSuites).not.toHaveBeenCalled();
+    expect(mockLlmConfig).not.toHaveBeenCalled();
+    expect(screen.queryByText('LLM provider')).not.toBeInTheDocument();
   });
 
   it('renders KPI cards + all suites + members + access in one view (no tabs)', async () => {
@@ -191,6 +213,9 @@ describe('Admin', () => {
     expect(screen.getByText('bob@x.io')).toBeInTheDocument(); // members
     expect(screen.getByText('owner')).toBeInTheDocument(); // access permission tag
     expect(screen.getByText('edit')).toBeInTheDocument();
+    // The LLM provider panel (#1511) renders for an admin.
+    expect(await screen.findByText('LLM provider')).toBeInTheDocument();
+    expect(mockLlmConfig).toHaveBeenCalled();
   });
 
   it('surfaces a load error for a failed dataset', async () => {

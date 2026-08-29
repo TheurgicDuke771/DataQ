@@ -30,6 +30,7 @@ import {
   listAuditEvents,
 } from '../api/admin';
 import { useMe } from '../auth/useMe';
+import { LlmSettingsPanel } from '../components/admin/LlmSettingsPanel';
 import { RoleEditor } from '../components/admin/RoleEditor';
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { PageError } from '../components/feedback/PageError';
@@ -136,6 +137,8 @@ function AdminOverview() {
       <AuditLogSection />
 
       <DeploymentPostureSection />
+
+      <LlmSettingsPanel />
     </Page>
   );
 }
