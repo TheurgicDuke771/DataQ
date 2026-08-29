@@ -10,9 +10,10 @@ Opt-in, never a CI required check:
     DATAQ_LLM_LIVE=1 DATAQ_LLM_LIVE_BASE_URL=http://localhost:11434/v1 \
         pytest backend/tests/e2e/test_llm_live.py --no-cov
 
-`DATAQ_LLM_LIVE_MODEL` overrides the model (default qwen2.5:3b). The warehouse
-is NOT part of this lane's scope — column listing is stubbed; the LLM boundary
-is what is live.
+`DATAQ_LLM_LIVE_MODEL` overrides the model (default qwen2.5:3b). The two
+sqlgen end-to-end cases additionally need the local test Postgres
+(`docker-compose up postgres`) or they skip. The warehouse is NOT part of this
+lane's scope — column listing is stubbed; the LLM boundary is what is live.
 """
 
 from __future__ import annotations
@@ -45,7 +46,10 @@ MODEL = os.environ.get("DATAQ_LLM_LIVE_MODEL", "qwen2.5:3b")
 _SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {"answer": {"type": "string"}, "confidence": {"type": "number"}},
-    "required": ["answer"],
+    # Strict-mode structured outputs (OpenAI/Azure) reject schemas whose
+    # `required` omits a declared property — keep the lane schema strict-valid
+    # everywhere, like the production SQLGEN_SCHEMA.
+    "required": ["answer", "confidence"],
     "additionalProperties": False,
 }
 
@@ -156,3 +160,4 @@ def test_sqlgen_end_to_end_through_the_real_worker_body(
     assert invocation.context_fingerprint
     assert invocation.duration_ms is not None and invocation.duration_ms > 0
     assert invocation.input_tokens is not None and invocation.input_tokens > 0
+    assert invocation.output_tokens is not None and invocation.output_tokens > 0
