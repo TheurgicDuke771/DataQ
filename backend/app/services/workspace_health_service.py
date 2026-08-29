@@ -158,6 +158,19 @@ def _ensure_row(session: Session) -> None:
 # structlog line said so.
 
 
+def near_miss_partner_envs(known_env: str) -> list[str]:
+    """The `ENVS` values that pair with `known_env` to form a near-miss (#1247).
+
+    This is the ONE definition of tuple eligibility: the write side
+    (`orchestration_service._record_env_near_misses`) calls it with the run's actual
+    env to find which binding envs mismatch it, and `list_current_env_near_misses`
+    below calls it with a binding's configured env to find which run envs would. A
+    single function means the two sides cannot independently drift on "which envs
+    count as a mismatch" the way two hand-written loops could.
+    """
+    return [env for env in ENVS if env != known_env]
+
+
 def _near_miss_key(
     *, provider: str, pipeline_or_dag_id: str, run_env: str, binding_env: str
 ) -> str:
@@ -248,9 +261,7 @@ def list_current_env_near_misses(
     # key -> the tuple it was derived from, so a hit can be decoded back.
     candidates: dict[str, tuple[str, str, str, str]] = {}
     for provider, pipeline_or_dag_id, binding_env in enabled_bindings:
-        for run_env in ENVS:
-            if run_env == binding_env:
-                continue  # not a mismatch — the binding's own env
+        for run_env in near_miss_partner_envs(binding_env):
             key = _near_miss_key(
                 provider=provider,
                 pipeline_or_dag_id=pipeline_or_dag_id,

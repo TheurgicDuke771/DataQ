@@ -205,7 +205,9 @@ def _record_env_near_misses(
                     TriggerBinding.provider == provider,
                     TriggerBinding.pipeline_or_dag_id == update.pipeline_or_dag_id,
                     TriggerBinding.enabled.is_(True),
-                    TriggerBinding.env != connection.env,
+                    TriggerBinding.env.in_(
+                        workspace_health_service.near_miss_partner_envs(connection.env)
+                    ),
                 )
             )
         )
