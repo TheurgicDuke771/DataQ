@@ -214,7 +214,9 @@ def test_execute_invocation_success_path(
     db_session.commit()
     provider = _FakeProvider()
     monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: provider)
-    monkeypatch.setitem(llm_service.KIND_BUILDERS, "ping", lambda _s, _inv: ("say ok", None, None))
+    monkeypatch.setitem(
+        llm_service.KIND_BUILDERS, "ping", lambda _s, _inv, _st: ("say ok", None, None)
+    )
     status = llm_service.execute_invocation(db_session, invocation.id, secret_store=store)
     assert status == "succeeded"
     db_session.refresh(invocation)
@@ -238,8 +240,11 @@ def test_execute_invocation_structured_kind(
     monkeypatch.setitem(
         llm_service.KIND_BUILDERS,
         "check_suggestion",
-        lambda _s, _inv: ("gen", "sys", {"type": "object"}),
+        lambda _s, _inv, _st: ("gen", "sys", {"type": "object"}),
     )
+    # Pin the no-validator branch: if check_suggestion later registers a real
+    # validator, this generic-lifecycle test must not silently start using it.
+    monkeypatch.delitem(llm_service.KIND_VALIDATORS, "check_suggestion", raising=False)
     assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == (
         "succeeded"
     )
@@ -255,7 +260,9 @@ def test_execute_invocation_outage_lands_failed_with_error_code(
     invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
     db_session.commit()
     monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: _FakeProvider(fail=True))
-    monkeypatch.setitem(llm_service.KIND_BUILDERS, "ping", lambda _s, _inv: ("say ok", None, None))
+    monkeypatch.setitem(
+        llm_service.KIND_BUILDERS, "ping", lambda _s, _inv, _st: ("say ok", None, None)
+    )
     assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == "failed"
     db_session.refresh(invocation)
     assert invocation.error is not None
@@ -270,7 +277,9 @@ def test_execute_invocation_unregistered_kind_fails_terminal(db_session: Any, ad
     assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == "failed"
     db_session.refresh(invocation)
     assert invocation.error is not None
-    assert "no builder registered" in invocation.error
+    # A wiring bug is `internal:` — never a provider fault (the class name only;
+    # the log line carries the detail).
+    assert invocation.error == "internal: RuntimeError"
 
 
 def test_execute_invocation_skips_terminal_rows(db_session: Any, admin: User) -> None:
@@ -324,7 +333,9 @@ def test_duplicate_delivery_is_a_noop(
     db_session.commit()
     provider = _FakeProvider()
     monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: provider)
-    monkeypatch.setitem(llm_service.KIND_BUILDERS, "ping", lambda _s, _inv: ("say ok", None, None))
+    monkeypatch.setitem(
+        llm_service.KIND_BUILDERS, "ping", lambda _s, _inv, _st: ("say ok", None, None)
+    )
     assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == (
         "succeeded"
     )
@@ -353,7 +364,7 @@ def test_nul_in_model_output_is_scrubbed_and_lands_terminal(
             return LLMResult(text="ok\x00bad", input_tokens=1, output_tokens=1)
 
     monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: _NulProvider())
-    monkeypatch.setitem(llm_service.KIND_BUILDERS, "ping", lambda _s, _inv: ("p", None, None))
+    monkeypatch.setitem(llm_service.KIND_BUILDERS, "ping", lambda _s, _inv, _st: ("p", None, None))
     assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == (
         "succeeded"
     )
@@ -369,7 +380,7 @@ def test_unstorable_persist_still_lands_failed_not_running(
     invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
     db_session.commit()
     monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: _FakeProvider())
-    monkeypatch.setitem(llm_service.KIND_BUILDERS, "ping", lambda _s, _inv: ("p", None, None))
+    monkeypatch.setitem(llm_service.KIND_BUILDERS, "ping", lambda _s, _inv, _st: ("p", None, None))
     # Defeat the scrub to prove the braces hold when the belt fails.
     monkeypatch.setattr(llm_service, "_scrub_nul", lambda v: v)
 

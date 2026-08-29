@@ -10,6 +10,7 @@ from backend.app.llm.base import (
     LLMOutputInvalidError,
     LLMProvider,
     LLMProviderError,
+    LLMRequestInvalidError,
     LLMResult,
     LLMUnavailableError,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "LLMOutputInvalidError",
     "LLMProvider",
     "LLMProviderError",
+    "LLMRequestInvalidError",
     "LLMResult",
     "LLMUnavailableError",
 ]

@@ -36,6 +36,7 @@ from backend.app.db.models import (
 from backend.app.llm.anthropic_provider import AnthropicProvider
 from backend.app.llm.base import (
     LLMNotConfiguredError,
+    LLMOutputInvalidError,
     LLMProvider,
     LLMProviderError,
     LLMResult,
@@ -240,10 +241,12 @@ def test_settings(
 
 # ── Invocation lifecycle ─────────────────────────────────────────────────────
 
-#: kind → builder(session, invocation) -> (prompt, system, schema|None).
-#: Feature modules (SQL-gen, suggestions, RCA) register here at import time.
+#: kind → builder(session, invocation, secret_store) -> (prompt, system, schema|None).
+#: Feature modules register in `services/llm_kinds.py` — the one import both the
+#: worker and the API load, so a kind cannot be enqueueable but unexecutable.
 KIND_BUILDERS: dict[
-    str, Callable[[Session, LlmInvocation], tuple[str, str | None, dict[str, Any] | None]]
+    str,
+    Callable[[Session, LlmInvocation, SecretStore], tuple[str, str | None, dict[str, Any] | None]],
 ] = {}
 
 #: kind → validator(session, invocation, parsed_payload) -> stored payload.
@@ -307,25 +310,33 @@ def execute_invocation(
     try:
         builder = KIND_BUILDERS.get(invocation.kind)
         if builder is None:
-            raise LLMProviderError(f"no builder registered for kind {invocation.kind!r}")
-        prompt, system, schema = builder(session, invocation)
+            # A wiring bug, not a provider fault — surfaces as `internal:`.
+            raise RuntimeError(f"no builder registered for kind {invocation.kind!r}")
+        prompt, system, schema = builder(session, invocation, secret_store)
         invocation.context_fingerprint = hashlib.sha256(
             (prompt + (system or "")).encode()
         ).hexdigest()
         provider = build_provider(session, secret_store)
         if schema is not None:
             result: LLMResult = provider.complete_structured(prompt, schema=schema, system=system)
-            payload: dict[str, Any] = result.parsed or {}
+            if result.parsed is None:
+                raise LLMOutputInvalidError("provider returned no structured output")
+            payload: dict[str, Any] = _scrub_nul(result.parsed)
         else:
             result = provider.complete(prompt, system=system)
-            payload = {"text": result.text}
+            payload = {"text": _scrub_nul(result.text)}
+        # Paid tokens are recorded whether or not the OUTPUT gate below refuses —
+        # the row is the cost record, and a refused generation still billed.
+        invocation.input_tokens = result.input_tokens
+        invocation.output_tokens = result.output_tokens
+        # The gate sees the exact bytes that will be stored (scrub BEFORE
+        # validate): a NUL inside a keyword must not split tokens for the
+        # validator and re-join in the stored copy.
         validator = KIND_VALIDATORS.get(invocation.kind)
         if validator is not None:
             payload = validator(session, invocation, payload)
         invocation.response = _scrub_nul(payload)
         invocation.status = "succeeded"
-        invocation.input_tokens = result.input_tokens
-        invocation.output_tokens = result.output_tokens
     except DataQError as exc:
         invocation.status = "failed"
         invocation.error = str(_scrub_nul(f"{exc.code}: {exc.message}"))[:1024]

@@ -46,6 +46,17 @@ class LLMOutputInvalidError(DataQError):
     code = "llm_output_invalid"
 
 
+class LLMRequestInvalidError(DataQError):
+    """The request's own context is unusable (targetless suite, non-SQL
+    connection, suite deleted) — the model was never called. Deliberately not
+    `LLMOutputInvalidError`: blaming the model for a context defect sends the
+    user to the wrong fix.
+    """
+
+    status_code = 422
+    code = "llm_request_invalid"
+
+
 @dataclass(frozen=True)
 class LLMResult:
     text: str

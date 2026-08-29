@@ -41,8 +41,8 @@ from backend.app.services import (
     connection_service,
     cron,
     incident_service,
+    llm_kinds,  # noqa: F401 — registers every LLM feature kind in the worker
     llm_service,
-    llm_sqlgen,  # noqa: F401 — registers the sql_generation kind
     orchestration_service,
     otp_service,
     profile_service,

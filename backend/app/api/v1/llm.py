@@ -5,24 +5,31 @@ not here. Rate-limited under the `llm` class by path prefix.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field, field_validator
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.core.auth import get_current_user
 from backend.app.core.errors import DataQError
+from backend.app.core.logging import get_logger
 from backend.app.core.roles import is_workspace_admin
-from backend.app.db.models import Connection, Suite, User
+from backend.app.db.models import Connection, LlmInvocation, User
 from backend.app.db.session import get_db
-from backend.app.services import llm_service, llm_sqlgen
-from backend.app.services.custom_sql import SQL_QUERYABLE_TYPES
+from backend.app.services import (
+    llm_kinds,  # noqa: F401 — registers every kind in this process
+    llm_service,
+    llm_sqlgen,
+)
 from backend.app.services.run_dispatch import dispatch_llm_invocation
 from backend.app.services.suite_authz import require_permission
+
+log = get_logger(__name__)
 
 router = APIRouter(prefix="/llm", tags=["llm"])
 
@@ -48,11 +55,6 @@ class LlmInvocationNotFoundError(DataQError):
     code = "llm_invocation_not_found"
 
 
-class LlmTargetNotSqlError(DataQError):
-    status_code = 422
-    code = "llm_target_not_sql"
-
-
 class LlmDispatchFailedError(DataQError):
     status_code = 503
     code = "llm_dispatch_failed"
@@ -60,8 +62,17 @@ class LlmDispatchFailedError(DataQError):
 
 class SqlGenerationRequest(ApiRequestModel):
     suite_id: UUID
-    description: str
+    #: Refused over-length, never silently truncated — a clipped rule generates
+    #: SQL that quietly omits conditions the user wrote.
+    description: str = Field(min_length=1, max_length=llm_sqlgen.MAX_DESCRIPTION_CHARS)
     include_profile: bool = False
+
+    @field_validator("description")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("description must not be blank")
+        return value
 
 
 class LlmInvocationQueued(ApiModel):
@@ -82,26 +93,19 @@ def generate_sql(
 ) -> LlmInvocationQueued:
     """Queues a worker-side generation; poll `GET /llm/invocations/{id}`. The
     model's SQL passes the same ADR 0019 validator a human's would before it is
-    stored, and the editor dry-runs it before save.
+    ever stored; add the result to a check like any custom SQL (dry-run in the
+    editor before save applies there unchanged).
     """
-    require_permission(db, payload.suite_id, current_user.id, minimum="edit")
-    suite = db.get(Suite, payload.suite_id)
-    assert suite is not None  # require_permission resolved it  # nosec B101
+    suite = require_permission(db, payload.suite_id, current_user.id, minimum="edit")
     connection = db.get(Connection, suite.connection_id)
-    if connection is None or connection.type not in SQL_QUERYABLE_TYPES:
-        raise LlmTargetNotSqlError(
-            "custom SQL requires a SQL datasource",
-            detail={"supported": sorted(SQL_QUERYABLE_TYPES)},
-        )
-    if not (payload.description or "").strip():
-        raise LlmTargetNotSqlError("description is required", code="llm_description_required")
+    llm_sqlgen.check_generation_preconditions(suite, connection)
     invocation = llm_service.create_invocation(
         db,
         kind=llm_sqlgen.SQLGEN_KIND,
         requested_by=current_user,
         suite_id=suite.id,
         request={
-            "description": payload.description[: llm_sqlgen.MAX_DESCRIPTION_CHARS],
+            "description": payload.description,
             "include_profile": payload.include_profile,
         },
     )
@@ -109,8 +113,20 @@ def generate_sql(
     try:
         dispatch_llm_invocation(invocation.id)
     except Exception as exc:
-        invocation.status = "failed"
-        invocation.error = "the task broker was unreachable — the generation was not started"
+        log.exception("llm_dispatch_failed", invocation_id=str(invocation.id))
+        # Conditional, like the worker's claim: send_task can raise after the
+        # message was effectively published, and a claimed row must not be
+        # clobbered back to failed.
+        db.rollback()
+        db.execute(
+            update(LlmInvocation)
+            .where(LlmInvocation.id == invocation.id, LlmInvocation.status == "pending")
+            .values(
+                status="failed",
+                error="the task broker was unreachable — the generation was not started",
+                finished_at=datetime.now(UTC),
+            )
+        )
         db.commit()
         raise LlmDispatchFailedError("could not dispatch the generation to the worker") from exc
     return LlmInvocationQueued(invocation_id=invocation.id)
