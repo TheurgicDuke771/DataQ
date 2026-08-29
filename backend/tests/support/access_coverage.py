@@ -25,6 +25,9 @@ AUDITED: Final[dict[str, str]] = {
     "api/v1/checks.py::dry_run_check": "check.dryrun",
     "api/v1/suites.py::profile_columns": "column.profile",
     "mcp/server.py::profile_column": "column.profile",
+    # Worker-side prompt assembly for LLM SQL-gen (ADR 0042): reads the profiler
+    # at the EGRESS rung (always masked) and records who sent what where.
+    "services/llm_sqlgen.py::_schema_context": "column.profile",
     "mcp/server.py::dryrun_check": "check.dryrun",
 }
 

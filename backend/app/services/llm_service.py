@@ -246,6 +246,10 @@ KIND_BUILDERS: dict[
     str, Callable[[Session, LlmInvocation], tuple[str, str | None, dict[str, Any] | None]]
 ] = {}
 
+#: kind → validator(session, invocation, parsed_payload) -> stored payload.
+#: The per-kind OUTPUT gate (e.g. the ADR 0019 SQL validator); raises DataQError to fail the row.
+KIND_VALIDATORS: dict[str, Callable[[Session, LlmInvocation, dict[str, Any]], dict[str, Any]]] = {}
+
 
 def create_invocation(
     session: Session,
@@ -311,10 +315,14 @@ def execute_invocation(
         provider = build_provider(session, secret_store)
         if schema is not None:
             result: LLMResult = provider.complete_structured(prompt, schema=schema, system=system)
-            invocation.response = _scrub_nul(result.parsed)
+            payload: dict[str, Any] = result.parsed or {}
         else:
             result = provider.complete(prompt, system=system)
-            invocation.response = {"text": _scrub_nul(result.text)}
+            payload = {"text": result.text}
+        validator = KIND_VALIDATORS.get(invocation.kind)
+        if validator is not None:
+            payload = validator(session, invocation, payload)
+        invocation.response = _scrub_nul(payload)
         invocation.status = "succeeded"
         invocation.input_tokens = result.input_tokens
         invocation.output_tokens = result.output_tokens

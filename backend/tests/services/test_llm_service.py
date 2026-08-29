@@ -231,13 +231,13 @@ def test_execute_invocation_structured_kind(
     store = FakeSecretStore()
     _enable(db_session, admin, store)
     invocation = llm_service.create_invocation(
-        db_session, kind="sql_generation", requested_by=admin
+        db_session, kind="check_suggestion", requested_by=admin
     )
     db_session.commit()
     monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: _FakeProvider())
     monkeypatch.setitem(
         llm_service.KIND_BUILDERS,
-        "sql_generation",
+        "check_suggestion",
         lambda _s, _inv: ("gen", "sys", {"type": "object"}),
     )
     assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == (

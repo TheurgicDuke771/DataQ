@@ -7,6 +7,16 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Generate a custom-SQL check from a plain-English rule.** With an LLM provider
+  configured, suite editors can describe a rule ("order timestamps must never be in the
+  future") and DataQ drafts the violation query — dialect-aware for Snowflake and
+  Databricks, grounded in the table's actual columns and optional masked profile
+  statistics (never sample rows). The model's SQL is trusted no more than a human's:
+  it passes the same read-only single-statement validator before it is ever stored, and
+  the editor's dry-run runs it against the datasource before save. Generation runs
+  asynchronously with per-request rate limits, and every generation is recorded with
+  requester, duration and token counts.
+
 - **Bring-your-own LLM provider (admin-configured, off by default).** A workspace admin can
   now point DataQ at an LLM — the Anthropic API, Azure OpenAI, AWS Bedrock, or any
   OpenAI-compatible endpoint including a self-hosted local server (Ollama / vLLM / TGI) —

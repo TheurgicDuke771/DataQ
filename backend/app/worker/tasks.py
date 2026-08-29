@@ -42,6 +42,7 @@ from backend.app.services import (
     cron,
     incident_service,
     llm_service,
+    llm_sqlgen,  # noqa: F401 — registers the sql_generation kind
     orchestration_service,
     otp_service,
     profile_service,

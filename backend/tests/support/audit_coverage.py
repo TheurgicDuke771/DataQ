@@ -79,6 +79,10 @@ EXEMPT: Final[dict[tuple[str, str], str]] = {
     ("POST", "/api/v1/admin/llm/test"): (
         "live-probes an unsaved LLM config draft — structurally cannot persist (ADR 0042)"
     ),
+    ("POST", "/api/v1/llm/sql_generation"): (
+        "an operational LLM invocation, not configuration — the llm_invocations row "
+        "IS the durable record (requester, timing, tokens; ADR 0042)"
+    ),
     ("POST", "/api/v1/connections/{connection_id}/test"): (
         "an outbound reachability probe; changes no configuration"
     ),
