@@ -1,0 +1,55 @@
+<task-notification>
+<task-id>addac4aa5f77d41a6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/de085e30-746a-472d-b2c4-efe1c9d6ccf4/tasks/addac4aa5f77d41a6.output</output-file>
+<status>completed</status>
+<summary>Agent "Scrub PR refs from ADR docs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+I edited all 28 files in scope under `docs/site/adr/` (28 files modified per `git status`), stripping GitHub issue/PR references while leaving ADR-to-ADR references (`ADR NNNN`, `ADR-NNNN`, markdown links to sibling `NNNN-*.md` files) untouched.
+
+**Files changed:** all 28 listed in scope:
+- `0004-orchestration-abstraction.md`
+- `0008-mcp-server.md`
+- `0012-monitor-kind-seam.md`
+- `0013-marketplace-distribution-and-anti-lock-in.md`
+- `0017-python-313-runtime-upgrade.md`
+- `0019-custom-sql-check-kind.md`
+- `0020-history-and-audit-strategy.md`
+- `0021-demo-test-data-environment-strategy.md`
+- `0022-week6-prototype-adoption-and-chart-library.md`
+- `0023-container-image-registry-ghcr.md`
+- `0024-app-deployment-infrastructure.md`
+- `0026-auth-api-keys-and-principal-seam.md`
+- `0027-suite-permission-model-workspace-admin.md`
+- `0028-cloud-neutral-image-runtime-config-generic-oidc.md`
+- `0029-dbt-orchestration-provider.md`
+- `0030-iceberg-native-read-path.md`
+- `0031-oss-byol-distribution-licensing.md`
+- `0032-email-otp-signin.md`
+- `0033-workspace-roles-rbac.md`
+- `0034-asset-entity-openlineage-identity-lineage-pull.md`
+- `0035-request-rate-limiting.md`
+- `0036-connection-anchored-check-engines.md`
+- `0037-workspace-visible-asset-identity.md`
+- `0038-dq-dimension-classification.md`
+- `0039-openbao-self-hosted-secret-backend.md`
+- `0040-warehouse-inventory-sync-table-enumeration-seam.md`
+- `0041-history-audit-strategy.md` (by far the densest — dozens of references, many repeated like `#310`/`#431`/`G1`/`G2`)
+- `README.md` (the ADR index table)
+
+**Approximate count stripped:** roughly 220–240 individual GitHub issue/PR references across the batch (bare `#NNNN`, `[#NNNN](.../issues/NNNN)`, `[#NNNN](.../pull/NNNN)`, "PR for #NNNN", "issue [#NNNN]" style citations). `0041` alone accounted for ~50, `0039`/`0035`/`0037`/`0008` each had 15–30.
+
+**Verification performed:** ran a regex sweep (`#[0-9]{2,5}\b` excluding "ADR ####"/"ADR-####" matches, plus `github.com/.../issues/` and `.../pull/` link patterns) across all 28 files — zero remaining matches. Also spot-checked every leftover `()` sequence in the diffed files to rule out edit-induced markdown breakage; all were legitimate code references (`.to_arrow()`, `record()`, `get_asgi_app()`, etc.), not artifacts of the stripping.
+
+**Ambiguous cases resolved (worth double-checking):**
+1. Kept a repo blob link that isn't an issue/PR: `[`backend/app/core/secrets.py`](https://github.com/.../blob/main/backend/app/core/secrets.py)` in `0039` — it's a source-file link, not an issue/PR reference, so left untouched.
+2. Kept a blob link in `0008`'s Tier-1 amendment (`context/post-v1-roadmap.md` linked via `blob/main/...`) for the same reason.
+3. Several docs use recurring *named-incident shorthand* like "the #828 class", "the #953 rule", "the #124/#952 shape" as informal pattern labels reused across many ADRs. I treated these as GitHub references per the task's own guidance ("closes #37" style usage) and reworded them into plain prose (e.g. "a known confident-wrong-answer failure mode", "a pattern that has recurred in this project", "gap G1"/"gap G2" where the issue was actually a named compliance gap letter rather than just a ticket number) rather than dropping the sentence — since the surrounding rationale was substantive, not merely a pointer.
+4. Where an issue number was the *sole* content of a clause (e.g. "(#732)", "(#505)", "Tracked in #310.", "— #465"), I deleted the clause/sentence outright rather than leaving a placeholder, per instructions.
+5. Gap letters (G1, G2, G-d, G-e, etc.) were treated as **not** GitHub issue numbers — they're the maintainers' internal compliance-gap lettering scheme, distinct from `#NNNN` issue references — and were preserved as-is throughout (including in `0041` where they're heavily used).
+
+No commits were made — changes are staged only in the working tree on branch `docs/scrub-issue-pr-refs-1627` per instructions, ready for your review.</result>
+<usage><subagent_tokens>320991</subagent_tokens><tool_uses>124</tool_uses><duration_ms>777537</duration_ms></usage>
+</task-notification>

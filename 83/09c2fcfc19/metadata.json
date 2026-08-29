@@ -1,0 +1,60 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "8309c2fcfc19",
+  "strategy": "manual-commit",
+  "branch": "docs/scrub-issue-pr-refs-1627",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/site/adr/0004-orchestration-abstraction.md",
+    "docs/site/adr/0008-mcp-server.md",
+    "docs/site/adr/0012-monitor-kind-seam.md",
+    "docs/site/adr/0013-marketplace-distribution-and-anti-lock-in.md",
+    "docs/site/adr/0017-python-313-runtime-upgrade.md",
+    "docs/site/adr/0019-custom-sql-check-kind.md",
+    "docs/site/adr/0020-history-and-audit-strategy.md",
+    "docs/site/adr/0021-demo-test-data-environment-strategy.md",
+    "docs/site/adr/0022-week6-prototype-adoption-and-chart-library.md",
+    "docs/site/adr/0023-container-image-registry-ghcr.md",
+    "docs/site/adr/0024-app-deployment-infrastructure.md",
+    "docs/site/adr/0026-auth-api-keys-and-principal-seam.md",
+    "docs/site/adr/0027-suite-permission-model-workspace-admin.md",
+    "docs/site/adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md",
+    "docs/site/adr/0029-dbt-orchestration-provider.md",
+    "docs/site/adr/0030-iceberg-native-read-path.md",
+    "docs/site/adr/0031-oss-byol-distribution-licensing.md",
+    "docs/site/adr/0032-email-otp-signin.md",
+    "docs/site/adr/0033-workspace-roles-rbac.md",
+    "docs/site/adr/0034-asset-entity-openlineage-identity-lineage-pull.md",
+    "docs/site/adr/0035-request-rate-limiting.md",
+    "docs/site/adr/0036-connection-anchored-check-engines.md",
+    "docs/site/adr/0037-workspace-visible-asset-identity.md",
+    "docs/site/adr/0038-dq-dimension-classification.md",
+    "docs/site/adr/0039-openbao-self-hosted-secret-backend.md",
+    "docs/site/adr/0040-warehouse-inventory-sync-table-enumeration-seam.md",
+    "docs/site/adr/0041-history-audit-strategy.md",
+    "docs/site/adr/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/83/09c2fcfc19/0/metadata.json",
+      "transcript": "/83/09c2fcfc19/0/full.jsonl",
+      "compact_transcript": "/83/09c2fcfc19/0/transcript.jsonl",
+      "content_hash": "/83/09c2fcfc19/0/content_hash.txt",
+      "prompt": "/83/09c2fcfc19/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 106,
+    "cache_creation_tokens": 78503,
+    "cache_read_tokens": 8914584,
+    "output_tokens": 32419,
+    "api_call_count": 53,
+    "subagent_tokens": {
+      "input_tokens": 616,
+      "cache_creation_tokens": 539214,
+      "cache_read_tokens": 51049098,
+      "output_tokens": 17225,
+      "api_call_count": 308
+    }
+  }
+}
