@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "be66e911e87f",
+  "strategy": "manual-commit",
+  "branch": "feature/1624-uc-pushdown-batch",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/be/66e911e87f/0/metadata.json",
+      "transcript": "/be/66e911e87f/0/full.jsonl",
+      "compact_transcript": "/be/66e911e87f/0/transcript.jsonl",
+      "content_hash": "/be/66e911e87f/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 10512,
+    "cache_read_tokens": 3695302,
+    "output_tokens": 4410,
+    "api_call_count": 10
+  }
+}
