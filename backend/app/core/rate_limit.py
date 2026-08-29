@@ -38,6 +38,9 @@ _WEBHOOK_PREFIX: Final = "/api/v1/orchestration/events/"
 # Matched on path PREFIX before the bearer branch, so a bearer-carrying request cannot dodge the
 # strict cap.
 _AUTH_PREFIX: Final = "/api/v1/auth/"
+# LLM feature mutations (ADR 0042) — orders of magnitude costlier than any other request class.
+_LLM_PREFIX: Final = "/api/v1/llm"
+_MUTATING_METHODS: Final = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 # Known providers get their OWN per-IP webhook bucket (#785).
 _WEBHOOK_PROVIDERS: Final = frozenset(ORCHESTRATION_PROVIDERS)
@@ -238,7 +241,7 @@ def _bucket_ip(ip: str, settings: Settings) -> str:
 
 
 def _resolve_policy(
-    path: str, bearer: str | None, ip: str, settings: Settings
+    path: str, method: str, bearer: str | None, ip: str, settings: Settings
 ) -> tuple[str, int, str]:
     """Resolve (class, per-minute limit, bucket key) for a request."""
     if path.startswith(_WEBHOOK_PREFIX):
@@ -247,6 +250,11 @@ def _resolve_policy(
         return "webhook", settings.rate_limit_webhook_per_minute, f"{prefix}ip:{ip}"
     if path.startswith(_AUTH_PREFIX):
         return "auth", settings.rate_limit_auth_per_minute, f"ip:{ip}"
+    if path.startswith(_LLM_PREFIX) and method in _MUTATING_METHODS:
+        if bearer is not None:
+            digest = hashlib.sha256(bearer.encode()).hexdigest()[:32]
+            return "llm", settings.rate_limit_llm_per_minute, f"tok:{digest}"
+        return "llm", settings.rate_limit_llm_per_minute, f"ip:{ip}"
     if bearer is not None:
         digest = hashlib.sha256(bearer.encode()).hexdigest()[:32]
         return "default", settings.rate_limit_authenticated_per_minute, f"tok:{digest}"
@@ -290,7 +298,7 @@ async def rate_limit_middleware(
     # Every per-IP key site uses the PREFIX bucket (#789); the raw client
     # address is never a key input past this point.
     ip = _bucket_ip(_client_ip(request, settings.rate_limit_xff_trusted_hops), settings)
-    cls, limit, key = _resolve_policy(path, bearer, ip, settings)
+    cls, limit, key = _resolve_policy(path, request.method, bearer, ip, settings)
 
     now = int(_now())
     window = now // WINDOW_SECONDS

@@ -39,7 +39,9 @@ def _make_request(
 
 def test_webhook_prefix_wins_even_with_bearer() -> None:
     s = _settings()
-    cls, limit, key = _resolve_policy("/api/v1/orchestration/events/adf", "sometoken", "9.9.9.9", s)
+    cls, limit, key = _resolve_policy(
+        "/api/v1/orchestration/events/adf", "GET", "sometoken", "9.9.9.9", s
+    )
     assert cls == "webhook"
     assert limit == s.rate_limit_webhook_per_minute
     assert key == "adf:ip:9.9.9.9"  # per-IP even though a bearer was present
@@ -50,14 +52,14 @@ def test_webhook_key_folds_known_provider(provider: str) -> None:
     # Each provider gets its own per-IP bucket (#785), so a burst on one can't crowd out another's
     # callbacks from the same egress IP.
     _, _, key = _resolve_policy(
-        f"/api/v1/orchestration/events/{provider}", None, "9.9.9.9", _settings()
+        f"/api/v1/orchestration/events/{provider}", "POST", None, "9.9.9.9", _settings()
     )
     assert key == f"{provider}:ip:9.9.9.9"
 
 
 def test_webhook_key_trailing_path_still_folds_provider() -> None:
     _, _, key = _resolve_policy(
-        "/api/v1/orchestration/events/adf/extra", None, "9.9.9.9", _settings()
+        "/api/v1/orchestration/events/adf/extra", "GET", None, "9.9.9.9", _settings()
     )
     assert key == "adf:ip:9.9.9.9"
 
@@ -67,7 +69,7 @@ def test_webhook_unknown_segment_shares_bare_ip_bucket(segment: str) -> None:
     # NB: ASGI hands the middleware the percent-DECODED path, so an encoded probe like `adf%00`
     # arrives here as the raw "adf\x00" — test that layer.
     _, _, key = _resolve_policy(
-        f"/api/v1/orchestration/events/{segment}", None, "9.9.9.9", _settings()
+        f"/api/v1/orchestration/events/{segment}", "POST", None, "9.9.9.9", _settings()
     )
     assert key == "ip:9.9.9.9"
 
@@ -81,7 +83,7 @@ def test_webhook_providers_match_orchestration_registry() -> None:
 
 def test_auth_prefix_resolves_to_auth_class() -> None:
     s = _settings()
-    cls, limit, key = _resolve_policy("/api/v1/auth/otp/request", None, "9.9.9.9", s)
+    cls, limit, key = _resolve_policy("/api/v1/auth/otp/request", "GET", None, "9.9.9.9", s)
     assert cls == "auth"
     assert limit == s.rate_limit_auth_per_minute
     assert key == "ip:9.9.9.9"
@@ -91,7 +93,7 @@ def test_auth_prefix_wins_even_with_bearer() -> None:
     # #1127: a bearer-carrying request must NOT dodge the strict auth cap — the
     # prefix is matched before the bearer branch, exactly like `webhook`.
     s = _settings()
-    cls, limit, key = _resolve_policy("/api/v1/auth/otp/request", "sometoken", "9.9.9.9", s)
+    cls, limit, key = _resolve_policy("/api/v1/auth/otp/request", "GET", "sometoken", "9.9.9.9", s)
     assert cls == "auth"
     assert limit == s.rate_limit_auth_per_minute
     assert key == "ip:9.9.9.9"
@@ -99,7 +101,7 @@ def test_auth_prefix_wins_even_with_bearer() -> None:
 
 def test_non_auth_path_with_bearer_still_resolves_default() -> None:
     s = _settings()
-    cls, limit, _key = _resolve_policy("/api/v1/suites", "sometoken", "9.9.9.9", s)
+    cls, limit, _key = _resolve_policy("/api/v1/suites", "GET", "sometoken", "9.9.9.9", s)
     assert cls == "default"
     assert limit == s.rate_limit_authenticated_per_minute
 
@@ -107,14 +109,16 @@ def test_non_auth_path_with_bearer_still_resolves_default() -> None:
 def test_orchestration_events_path_still_resolves_webhook() -> None:
     # Sanity check that the new auth prefix didn't shadow the webhook prefix.
     s = _settings()
-    cls, limit, _key = _resolve_policy("/api/v1/orchestration/events/adf", None, "9.9.9.9", s)
+    cls, limit, _key = _resolve_policy(
+        "/api/v1/orchestration/events/adf", "GET", None, "9.9.9.9", s
+    )
     assert cls == "webhook"
     assert limit == s.rate_limit_webhook_per_minute
 
 
 def test_bearer_keys_by_sha256_prefix() -> None:
     s = _settings()
-    cls, limit, key = _resolve_policy("/api/v1/suites", "sometoken", "9.9.9.9", s)
+    cls, limit, key = _resolve_policy("/api/v1/suites", "GET", "sometoken", "9.9.9.9", s)
     assert cls == "default"
     assert limit == s.rate_limit_authenticated_per_minute
     assert key.startswith("tok:")
@@ -125,13 +129,15 @@ def test_bearer_keys_by_sha256_prefix() -> None:
 
 
 def test_raw_token_never_in_key() -> None:
-    _, _, key = _resolve_policy("/api/v1/suites", "super-secret-token", "9.9.9.9", _settings())
+    _, _, key = _resolve_policy(
+        "/api/v1/suites", "GET", "super-secret-token", "9.9.9.9", _settings()
+    )
     assert "super-secret-token" not in key
 
 
 def test_no_bearer_keys_by_ip() -> None:
     s = _settings()
-    cls, limit, key = _resolve_policy("/api/v1/suites", None, "9.9.9.9", s)
+    cls, limit, key = _resolve_policy("/api/v1/suites", "GET", None, "9.9.9.9", s)
     assert cls == "unauth"
     assert limit == s.rate_limit_unauthenticated_per_minute
     assert key == "ip:9.9.9.9"
@@ -599,3 +605,30 @@ async def test_a_straggling_success_cannot_close_an_open_breaker(
     before = sick.calls
     await _hit(store, 5)
     assert sick.calls == before  # still gated
+
+
+# ───────────────────────── llm class (ADR 0042) ─────────────────────────
+
+
+def test_llm_mutation_resolves_llm_class_keyed_per_token() -> None:
+    s = _settings()
+    cls, limit, key = _resolve_policy("/api/v1/llm/sql_generation", "POST", "tok", "9.9.9.9", s)
+    assert cls == "llm"
+    assert limit == s.rate_limit_llm_per_minute
+    assert key.startswith("tok:")
+
+
+def test_llm_mutation_without_bearer_keys_by_ip() -> None:
+    s = _settings()
+    cls, _limit, key = _resolve_policy("/api/v1/llm/sql_generation", "POST", None, "9.9.9.9", s)
+    assert cls == "llm"
+    assert key == "ip:9.9.9.9"
+
+
+def test_llm_read_polling_stays_default_class() -> None:
+    # GET polling must NOT spend the expensive llm budget — a UI polling every
+    # 2s would exhaust it while the generation it waits on is still running.
+    s = _settings()
+    cls, limit, _key = _resolve_policy("/api/v1/llm/invocations/abc", "GET", "tok", "9.9.9.9", s)
+    assert cls == "default"
+    assert limit == s.rate_limit_authenticated_per_minute

@@ -64,6 +64,9 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     # ── Data-subject-rights erasure (G2 / #432) — a real mutation over regulated
     # data, so it belongs in AUDITED like any other admin write.
     ("POST", "/api/v1/admin/data-subject-requests/erase"): "data_subject_request.erase",
+    # ── The outbound-LLM provider config (ADR 0042) — what model the workspace's
+    # data-adjacent context is sent to is among the highest-value config events.
+    ("PUT", "/api/v1/admin/llm"): "llm_setting.update",
 }
 
 #: Routes that must NOT record a config event, each with the reason.
@@ -72,6 +75,9 @@ EXEMPT: Final[dict[tuple[str, str], str]] = {
     #    and return; there is no configuration afterwards that differs from before.
     ("POST", "/api/v1/connections/test"): (
         "tests an unsaved draft — structurally cannot persist (#1116)"
+    ),
+    ("POST", "/api/v1/admin/llm/test"): (
+        "live-probes an unsaved LLM config draft — structurally cannot persist (ADR 0042)"
     ),
     ("POST", "/api/v1/connections/{connection_id}/test"): (
         "an outbound reachability probe; changes no configuration"

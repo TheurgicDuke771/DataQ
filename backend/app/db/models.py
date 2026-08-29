@@ -1078,6 +1078,81 @@ class AuditChainCheckpoint(Base):
     anchored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
+# ── Outbound-LLM seam (ADR 0042, #1511) ──────────────────────────────────────
+LLM_PROVIDERS = ("anthropic", "openai_compatible")
+LLM_STRUCTURED_OUTPUT_MODES = ("native", "prompt_json")
+LLM_INVOCATION_KINDS = ("ping", "sql_generation", "check_suggestion", "rca_narrative")
+LLM_INVOCATION_STATUSES = ("pending", "running", "succeeded", "failed")
+
+
+class LlmSetting(Base):
+    """The workspace's single outbound-LLM provider config (ADR 0042). One row;
+    no row (or `enabled=false`) means every LLM feature is absent. The API key
+    is NEVER stored here — only the SecretStore ref.
+    """
+
+    __tablename__ = "llm_settings"
+    __table_args__ = (
+        _in_check("provider", LLM_PROVIDERS, "llm_provider_valid"),
+        _in_check("structured_output", LLM_STRUCTURED_OUTPUT_MODES, "llm_structured_output_valid"),
+    )
+
+    #: Always 1 — singleton, the `AuditChainState` idiom.
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    #: Required for `openai_compatible`; optional first-party override for `anthropic`.
+    base_url: Mapped[str | None] = mapped_column(String(512))
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    #: NULL = credential-less endpoint (a local server) — allowed for `openai_compatible` only.
+    api_key_secret_ref: Mapped[str | None] = mapped_column(String(256))
+    structured_output: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'native'")
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class LlmInvocation(Base):
+    """One outbound LLM round-trip (ADR 0042): the polling target for the UI AND
+    the audit/cost record the G4 posture disclosure rests on. Prompts carry
+    schema + masked aggregates only — never sample rows — so the row is safe to
+    retain like other operational history.
+    """
+
+    __tablename__ = "llm_invocations"
+    __table_args__ = (
+        _in_check("kind", LLM_INVOCATION_KINDS, "llm_invocation_kind_valid"),
+        _in_check("status", LLM_INVOCATION_STATUSES, "llm_invocation_status_valid"),
+        Index("ix_llm_invocations_requested_by", "requested_by_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'pending'")
+    )
+    #: SET NULL: the record outlives its requester (G2 erasure, the #1319 rule).
+    requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    suite_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE")
+    )
+    #: What the caller asked for (kind-shaped, pre-prompt); never warehouse values.
+    request: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    #: sha256 of the assembled prompt — proves WHAT context shape left, without storing it twice.
+    context_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    response: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    error: Mapped[str | None] = mapped_column(String(1024))
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = _created_at()
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 __all__ = [
     "Asset",
     "AuditChainCheckpoint",
@@ -1088,6 +1163,8 @@ __all__ = [
     "Connection",
     "Incident",
     "LineageEdge",
+    "LlmInvocation",
+    "LlmSetting",
     "PipelineRun",
     "Result",
     "Run",

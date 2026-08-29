@@ -1,0 +1,315 @@
+"""LLM settings + invocation lifecycle (ADR 0042)."""
+
+from __future__ import annotations
+
+import uuid
+from typing import Any
+
+import pytest
+
+from backend.app.db.models import LlmInvocation, User
+from backend.app.llm.base import LLMNotConfiguredError, LLMResult, LLMUnavailableError
+from backend.app.services import llm_service
+from backend.tests.support.fake_secret_store import FakeSecretStore
+
+
+@pytest.fixture
+def admin(db_session: Any) -> User:
+    user = User(
+        id=uuid.uuid4(),
+        aad_object_id=None,
+        email=f"llm-admin-{uuid.uuid4().hex[:8]}@example.com",
+        role="admin",
+    )
+    db_session.add(user)
+    db_session.commit()
+    return user
+
+
+def _draft(**overrides: Any) -> llm_service.LlmSettingsDraft:
+    defaults: dict[str, Any] = {
+        "provider": "openai_compatible",
+        "model": "qwen2.5:3b",
+        "base_url": "http://ollama.local/v1",
+        "api_key": None,
+        "structured_output": "prompt_json",
+        "enabled": True,
+    }
+    defaults.update(overrides)
+    return llm_service.LlmSettingsDraft(**defaults)
+
+
+class _FakeProvider:
+    model = "fake"
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls: list[str] = []
+
+    def complete(self, prompt: str, **_kw: Any) -> LLMResult:
+        self.calls.append(prompt)
+        if self.fail:
+            raise LLMUnavailableError("down")
+        return LLMResult(text="ok", input_tokens=3, output_tokens=1)
+
+    def complete_structured(self, prompt: str, *, schema: dict[str, Any], **_kw: Any) -> LLMResult:
+        self.calls.append(prompt)
+        if self.fail:
+            raise LLMUnavailableError("down")
+        return LLMResult(text="", parsed={"sql": "SELECT 1"}, input_tokens=3, output_tokens=1)
+
+
+# ── settings ─────────────────────────────────────────────────────────────────
+
+
+def test_save_mints_secret_ref_and_never_stores_the_key(db_session: Any, admin: User) -> None:
+    store = FakeSecretStore()
+    row = llm_service.save_settings(
+        db_session, draft=_draft(api_key="sk-live-1"), actor=admin, secret_store=store
+    )
+    assert row.api_key_secret_ref is not None
+    assert row.api_key_secret_ref.startswith("llm-provider-")
+    assert store.data[row.api_key_secret_ref] == "sk-live-1"
+    row_columns = {k: v for k, v in row.__dict__.items() if not k.startswith("_")}
+    assert "sk-live-1" not in str(row_columns)
+
+
+def test_save_audits_the_change(db_session: Any, admin: User) -> None:
+    from backend.app.db.models import AuditEvent
+
+    llm_service.save_settings(
+        db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=FakeSecretStore()
+    )
+    db_session.commit()
+    event = db_session.query(AuditEvent).filter(AuditEvent.action == "llm_setting.update").one()
+    assert event.after["provider"] == "openai_compatible"
+    assert "sk-1" not in str(event.after)
+
+
+def test_destination_move_without_key_is_refused(db_session: Any, admin: User) -> None:
+    store = FakeSecretStore()
+    llm_service.save_settings(
+        db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=store
+    )
+    with pytest.raises(llm_service.LLMConfigInvalidError):
+        llm_service.save_settings(
+            db_session,
+            draft=_draft(base_url="http://evil.example/v1"),
+            actor=admin,
+            secret_store=store,
+        )
+    with pytest.raises(llm_service.LLMConfigInvalidError):
+        llm_service.save_settings(
+            db_session,
+            draft=_draft(provider="anthropic", base_url=None),
+            actor=admin,
+            secret_store=store,
+        )
+    # Same destination, no key → allowed (e.g. toggling enabled or model).
+    row = llm_service.save_settings(
+        db_session, draft=_draft(model="other-model"), actor=admin, secret_store=store
+    )
+    assert row.model == "other-model"
+    # Re-supplying the key WITH the move → allowed, same ref overwritten.
+    row = llm_service.save_settings(
+        db_session,
+        draft=_draft(base_url="http://new.example/v1", api_key="sk-2"),
+        actor=admin,
+        secret_store=store,
+    )
+    assert row.api_key_secret_ref is not None
+    assert store.data[row.api_key_secret_ref] == "sk-2"
+
+
+def test_empty_api_key_is_refused(db_session: Any, admin: User) -> None:
+    with pytest.raises(llm_service.LLMConfigInvalidError):
+        llm_service.save_settings(
+            db_session, draft=_draft(api_key=""), actor=admin, secret_store=FakeSecretStore()
+        )
+
+
+def test_anthropic_requires_key_and_openai_compat_requires_base_url(
+    db_session: Any, admin: User
+) -> None:
+    with pytest.raises(llm_service.LLMConfigInvalidError):
+        llm_service.save_settings(
+            db_session,
+            draft=_draft(provider="anthropic", base_url=None, api_key=None),
+            actor=admin,
+            secret_store=FakeSecretStore(),
+        )
+    with pytest.raises(llm_service.LLMConfigInvalidError):
+        llm_service._validate_draft(_draft(base_url=None))
+
+
+def test_build_provider_unconfigured_and_disabled_raise_not_configured(
+    db_session: Any, admin: User
+) -> None:
+    with pytest.raises(LLMNotConfiguredError):
+        llm_service.build_provider(db_session, FakeSecretStore())
+    llm_service.save_settings(
+        db_session,
+        draft=_draft(api_key="sk-1", enabled=False),
+        actor=admin,
+        secret_store=FakeSecretStore({"x": "y"}),
+    )
+    with pytest.raises(LLMNotConfiguredError):
+        llm_service.build_provider(db_session, FakeSecretStore())
+
+
+def test_test_settings_uses_stored_key_only_for_same_destination(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = FakeSecretStore()
+    llm_service.save_settings(
+        db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=store
+    )
+    seen_keys: list[str | None] = []
+
+    def _fake_provider_from(**kwargs: Any) -> _FakeProvider:
+        seen_keys.append(kwargs["api_key"])
+        return _FakeProvider()
+
+    monkeypatch.setattr(llm_service, "_provider_from", _fake_provider_from)
+    same = llm_service.test_settings(db_session, draft=_draft(), secret_store=store)
+    assert same["ok"] is True
+    moved = llm_service.test_settings(
+        db_session, draft=_draft(base_url="http://other.example/v1"), secret_store=store
+    )
+    assert moved["ok"] is True
+    assert seen_keys == ["sk-1", None]  # the stored key never follows a moved destination
+
+
+def test_test_settings_reports_outage_as_outage(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _FakeProvider(fail=True))
+    out = llm_service.test_settings(db_session, draft=_draft(), secret_store=FakeSecretStore())
+    assert out["ok"] is False
+    assert out["error_code"] == "llm_provider_unavailable"
+
+
+# ── invocation lifecycle ─────────────────────────────────────────────────────
+
+
+def _enable(db_session: Any, admin: User, store: FakeSecretStore) -> None:
+    llm_service.save_settings(
+        db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=store
+    )
+
+
+def test_create_invocation_requires_configured_enabled_provider(
+    db_session: Any, admin: User
+) -> None:
+    with pytest.raises(LLMNotConfiguredError):
+        llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+
+
+def test_execute_invocation_success_path(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    db_session.commit()
+    provider = _FakeProvider()
+    monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: provider)
+    monkeypatch.setitem(llm_service.KIND_BUILDERS, "ping", lambda _s, _inv: ("say ok", None, None))
+    status = llm_service.execute_invocation(db_session, invocation.id, secret_store=store)
+    assert status == "succeeded"
+    db_session.refresh(invocation)
+    assert invocation.response == {"text": "ok"}
+    assert invocation.context_fingerprint is not None
+    assert invocation.duration_ms is not None
+    assert invocation.finished_at is not None
+    assert (invocation.input_tokens, invocation.output_tokens) == (3, 1)
+
+
+def test_execute_invocation_structured_kind(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    invocation = llm_service.create_invocation(
+        db_session, kind="sql_generation", requested_by=admin
+    )
+    db_session.commit()
+    monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: _FakeProvider())
+    monkeypatch.setitem(
+        llm_service.KIND_BUILDERS,
+        "sql_generation",
+        lambda _s, _inv: ("gen", "sys", {"type": "object"}),
+    )
+    assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == (
+        "succeeded"
+    )
+    db_session.refresh(invocation)
+    assert invocation.response == {"sql": "SELECT 1"}
+
+
+def test_execute_invocation_outage_lands_failed_with_error_code(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    db_session.commit()
+    monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: _FakeProvider(fail=True))
+    monkeypatch.setitem(llm_service.KIND_BUILDERS, "ping", lambda _s, _inv: ("say ok", None, None))
+    assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == "failed"
+    db_session.refresh(invocation)
+    assert invocation.error is not None
+    assert invocation.error.startswith("llm_provider_unavailable:")
+
+
+def test_execute_invocation_unregistered_kind_fails_terminal(db_session: Any, admin: User) -> None:
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    invocation = llm_service.create_invocation(db_session, kind="rca_narrative", requested_by=admin)
+    db_session.commit()
+    assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == "failed"
+    db_session.refresh(invocation)
+    assert invocation.error is not None
+    assert "no builder registered" in invocation.error
+
+
+def test_execute_invocation_skips_terminal_rows(db_session: Any, admin: User) -> None:
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    invocation.status = "succeeded"
+    db_session.commit()
+    assert (
+        llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == "skipped"
+    )
+    assert llm_service.execute_invocation(db_session, uuid.uuid4(), secret_store=store) == "skipped"
+
+
+def test_visibility_requester_or_admin_only(db_session: Any, admin: User) -> None:
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    other = User(id=uuid.uuid4(), aad_object_id=None, email="other@example.com", role="member")
+    db_session.add(other)
+    invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    db_session.commit()
+    assert (
+        llm_service.get_visible_invocation(db_session, invocation.id, user=admin, is_admin=False)
+        is not None
+    )
+    assert (
+        llm_service.get_visible_invocation(db_session, invocation.id, user=other, is_admin=False)
+        is None
+    )
+    assert (
+        llm_service.get_visible_invocation(db_session, invocation.id, user=other, is_admin=True)
+        is not None
+    )
+
+
+def test_invocation_kind_and_status_check_constraints(db_session: Any, admin: User) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    db_session.add(LlmInvocation(kind="not-a-kind", requested_by_user_id=admin.id))
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
