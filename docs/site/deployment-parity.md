@@ -51,9 +51,8 @@ closure is pointing an external Airflow's callbacks at the AWS public URL.
 The **edge rate-limiting row now runs the other way**: AWS has a WAF ceiling in front of the
 application and Azure has nothing equivalent. The in-app limiter (identical on both) fails
 open when its Redis store is unwell, so on Azure a flood that also stresses Redis meets no
-limiter at all. Front Door + WAF is the analogous Azure change and is not done —
-[#1388](https://github.com/TheurgicDuke771/DataQ/issues/1388). Neither deployment autoscales:
-`desired_count = 1` / `max_replicas = 3`.
+limiter at all. Front Door + WAF is the analogous Azure change and has not been made. Neither
+deployment autoscales: `desired_count = 1` / `max_replicas = 3`.
 
 ## Deploying: Azure vs AWS
 

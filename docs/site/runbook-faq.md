@@ -15,7 +15,7 @@
   `/api/v1/me` 401 (auth enforced), SPA + deep links load.
 - Docs site published (this site) and linked from the README.
 
-Full deploy steps + verification: **[deploy/README.md](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/README.md)**.
+Full deploy steps + verification: the repository's **`deploy/README.md`**.
 
 ## Live smoke (deployed stack + harness data)
 
@@ -28,8 +28,7 @@ Automated, opt-in (never CI):
    (12 checks).
 2. **Browser-level:** `E2E_LIVE_BASE_URL=https://<frontend-host> pnpm e2e` in
    `frontend/` — a headed one-time OIDC sign-in, then read-only specs (dashboard KPIs,
-   live suite + checks, run-detail). See
-   [frontend/e2e/README.md](https://github.com/TheurgicDuke771/DataQ/blob/main/frontend/e2e/README.md).
+   live suite + checks, run-detail). See the repository's `frontend/e2e/README.md`.
 
 Manual checklist (the mutating tail):
 
@@ -46,7 +45,7 @@ Manual checklist (the mutating tail):
 ## Known limitations
 
 - **GX-only** check engine — platform-native engines are connection-anchored per ADR 0036
-  (Snowflake DMF is the first planned native engine, #895; Databricks DQX and Dataplex are
+  (Snowflake DMF is the first planned native engine; Databricks DQX and Dataplex are
   trigger-gated); batch-oriented (not streaming).
 - **Single tenant**, suite-level access sharing **plus a stored workspace role** — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. `WORKSPACE_ADMIN_EMAILS` is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.
 - Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
@@ -73,12 +72,12 @@ after a retention window — never written to logs.
 **Can an AI assistant use DataQ?** Yes — 46 MCP tools at `/mcp` (Claude Desktop / Claude.ai
 / Copilot / Cursor), OIDC-authenticated (Azure AD or Cognito) or via a PAT. See [AI assistants (MCP setup)](mcp-setup.md).
 
-**An asset shows no lineage — is that right?** Maybe not. "No lineage recorded" is what you
-see both when an asset genuinely has no upstreams **and** when DataQ has been unable to read
-your dbt artifacts — the two are indistinguishable in the UI today. Test the dbt connection
-first: its secret is the artifacts-store read credential, and when it expires the poll fails
-silently while your dbt builds keep succeeding. Note that fixing the credential alone will
-**not** backfill — the poll's 15-minute lookback means every build produced during the outage
-is already stranded, so you must re-run the dbt build to get a fresh artifact into the window.
-Full detail in [Orchestration → When lineage is empty](orchestration.md#when-lineage-is-empty-check-the-poll-before-you-check-the-graph)
-and [#828](https://github.com/TheurgicDuke771/DataQ/issues/828).
+**An asset shows no lineage — is that right?** Maybe not. "No lineage recorded" can mean an
+asset genuinely has no upstreams, or that DataQ has been unable to read your dbt artifacts —
+check the connections list badge and the lineage panel warning before trusting an empty graph.
+Test the dbt connection first: its secret is the artifacts-store read credential, and when it
+expires the poll fails while your dbt builds keep succeeding. Note that fixing the credential
+alone will **not** backfill — the poll's 15-minute lookback means every build produced during
+the outage is already stranded, so you must re-run the dbt build to get a fresh artifact into
+the window.
+Full detail in [Orchestration → When lineage is empty](orchestration.md#when-lineage-is-empty-check-the-poll-before-you-check-the-graph).

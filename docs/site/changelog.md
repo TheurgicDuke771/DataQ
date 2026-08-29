@@ -7,7 +7,7 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Changed
 
-- **The two distinct-value set relations no longer accept severity thresholds** (#1607).
+- **The two distinct-value set relations no longer accept severity thresholds.**
   *Column distinct values in set* / *…contain set* compare a value SET — their results carry
   no unexpected-% for the warn/fail/critical bands to read (verified on a live Snowflake run),
   so a stored threshold could never fire. The editor now hides the threshold inputs for them
@@ -19,7 +19,7 @@ the per-PR history lives in the repo's commit log and pull requests.
 ### Added
 
 - **Nine more GX expectations, and a server-side allowlist of the types DataQ will
-  author** (#1510). New in the editor: *Column values null*, *Column values not in set*,
+  author.** New in the editor: *Column values null*, *Column values not in set*,
   *Column value lengths equal*, *Column values do not match regex*, *Column values match a
   list of regexes* / *match none of a list of regexes*, *Column A equals column B*, *Values
   unique within each row*, and *Column values are valid JSON*. Each one was executed
@@ -50,7 +50,7 @@ the per-PR history lives in the repo's commit log and pull requests.
   *pairs*, which the editor's comma-separated list field cannot express.
 
 - **Seven more GX expectations in the check editor, and an optional tolerance on the
-  ones already there** (#1509). The tolerance (`mostly`) is a fraction — `0.95` passes a
+  ones already there.** The tolerance (`mostly`) is a fraction — `0.95` passes a
   check when at least 95% of rows conform. It moves GX's own success line only: severity
   thresholds still band the full unexpected-%, so a threshold below the tolerance can warn
   on a run the check passed.
@@ -69,15 +69,15 @@ the per-PR history lives in the repo's commit log and pull requests.
   Aggregate statistics (`expect_column_mean_to_be_between` and its siblings) are
   deliberately **not** part of this: they report a scalar rather than an unexpected-%, and
   are two-sided, which is the monitor-kind `metric_value` shape rather than the GX-banded
-  one. Tracked separately as #1602.
+  one.
 
 ### Changed
 
-- **BREAKING — the REST API now rejects an unknown field in any request body**
-  (#1505). Every request model previously inherited `ApiModel`'s default
-  `extra='ignore'` — the same gap `Settings` closed for env config back in
-  #209 — so a misspelled field (`warn_treshold`) or an invented one
-  (`target_override`, the shape a #1412 QA probe found) validated cleanly and
+- **BREAKING — the REST API now rejects an unknown field in any request body.**
+  Every request model previously inherited `ApiModel`'s default
+  `extra='ignore'` — the same gap `Settings` previously closed for env config —
+  so a misspelled field (`warn_treshold`) or an invented one
+  (`target_override`) validated cleanly and
   silently did nothing. It now 422s naming the field. If an API or PAT/MCP
   client sends extra keys in a request body — a stale client built against an
   older/different schema, a copy-pasted payload with leftover fields — those
@@ -85,11 +85,11 @@ the per-PR history lives in the repo's commit log and pull requests.
   unaffected; only what you *send* is stricter.
 
 - **MCP `list_runs`/`list_incidents` gained `since_hours`/`until_hours` time
-  filters** (#1442): both were count-capped only, so "what failed today" was
+  filters:** both were count-capped only, so "what failed today" was
   answered with "the 20 most recent runs" — correct on a quiet workspace,
   wrong on a busy one. The offsets are relative to now ("N hours ago"), not
   clock times, so a caller doesn't need to know the server's current time.
-  `list_incidents` also now states its auto-resolve blind spot (#1445): an
+  `list_incidents` also now states its auto-resolve blind spot: an
   incident auto-resolves on the first passing result, so a failure that has
   since recovered won't appear under `status="open"` even inside a matching
   time window — `list_runs`/`get_check_history` answer "what failed during
@@ -100,28 +100,28 @@ the per-PR history lives in the repo's commit log and pull requests.
   Incidents panel, which renders in received order) now list most-recently-
   *active* first rather than most-recently-*opened*.
 
-- **MCP `get_adf_pipeline_status` renamed to `get_pipeline_status`** (#1443):
+- **MCP `get_adf_pipeline_status` renamed to `get_pipeline_status`:**
   the old name predates dbt/Airflow support and was never ADF-only. The old
   name stays registered as a deprecated alias with identical behavior, so a
   client with it pinned keeps working; new integrations should use
   `get_pipeline_status`.
 
 - **MCP `list_connections`/`test_connection` error-classification docstrings
-  now cross-reference each other** (#1446): the two could read as
+  now cross-reference each other:** the two could read as
   contradictory — one claims a "classified" reason, the other says failures
   are "deliberately unclassified" — without stating that they're different
   things (a stored reason from the last real run/poll vs. a live probe with
   no reason at all).
 
 - **MCP `create_check` gained the honesty fields the rest of the surface
-  already has** (#1448): `config` is schema-validated only, never against the
+  already has:** `config` is schema-validated only, never against the
   datasource; the `volume` monitor kind counts the true dataset size on every
   datasource (including ADLS/S3/Iceberg), unlike a sampled expectation check;
   `dimension: null` means unclassified, not a save failure; creating a check
   doesn't run it.
 
-- **Unity Catalog checks now execute on the Databricks SQL Warehouse by default**
-  (#1532): the built-in catalog expectations join custom SQL on one GX
+- **Unity Catalog checks now execute on the Databricks SQL Warehouse by default:**
+  the built-in catalog expectations join custom SQL on one GX
   Databricks-SQL batch, so the warehouse evaluates them and worker memory stays
   flat regardless of table size (the Snowflake execution shape). Suites with a
   declared sample, `expect_column_values_to_be_of_type`, and unrecognised types
@@ -198,10 +198,7 @@ stretch week landed the RBAC, MCP-expansion, security-audit and compliance track
   including requests made with their existing API tokens, which authenticate as their user.
   There is no token to revoke.
 
-- **Security hardening across both reference deployments** —
-  ([#1386](https://github.com/TheurgicDuke771/DataQ/issues/1386),
-  [#1387](https://github.com/TheurgicDuke771/DataQ/issues/1387),
-  [#1388](https://github.com/TheurgicDuke771/DataQ/issues/1388)):
+- **Security hardening across both reference deployments:**
   - **Who may hold an account is now an explicit decision.** DataQ provisions a user on first
     successful OIDC sign-in, so the identity provider's registration policy was in effect the
     product's access policy. The AWS reference pool is now admin-create-only, and a new
@@ -225,8 +222,8 @@ stretch week landed the RBAC, MCP-expansion, security-audit and compliance track
 - **dbt as a third orchestration provider** — observe dbt builds and trigger suites on
   success, via a post-build HMAC callback + a `run_results.json` artifact poll (ADR 0029).
 - **Apache Iceberg as a fifth datasource** — native `pyiceberg` read (v2 baseline; ADR
-  0030, #716/#722), with natively-computed freshness/volume monitors, a column profiler +
-  column listing, and dry-run preview (#721).
+  0030), with natively-computed freshness/volume monitors, a column profiler +
+  column listing, and dry-run preview.
 - **Freshness & volume monitors** — the first auto-monitor kinds (is the data stale? did the
   load land whole?) on SQL datasources plus Iceberg.
 - **Vendor-neutral observability** — OpenTelemetry logs + traces, exportable to Application
@@ -259,8 +256,7 @@ stretch week landed the RBAC, MCP-expansion, security-audit and compliance track
   their health and lineage; see what is broken right now and the evidence behind it,
   acknowledge and resolve it, list a target's columns before authoring, and diagnose
   orchestration triggers that are silently never firing) — each reusing the same
-  authorization its REST counterpart applies (ADR 0008 amendments,
-  #529 / #1424). The 46 split three ways: 23
+  authorization its REST counterpart applies (ADR 0008 amendments). The 46 split three ways: 23
   read-only; 18 that change state, gated on `edit` access to the suite they act on; and
   5 that persist nothing but open a live datasource connection with stored credentials
   (`profile_column`, `list_columns`, `dryrun_check`, `suggest_column_policy`,
@@ -325,7 +321,7 @@ stretch week landed the RBAC, MCP-expansion, security-audit and compliance track
   (ADR 0035), with separate per-token / per-IP / per-webhook-provider classes.
 - **S3-compatible endpoints** — the `s3` datasource and the `dbt` orchestration provider
   both accept an optional `endpoint_url` (+ addressing style), unlocking MinIO / Ceph / R2
-  / Wasabi / Backblaze alongside AWS S3 (#1063).
+  / Wasabi / Backblaze alongside AWS S3.
 - **Warehouse inventory sync** — an opt-in per-connection sweep (ADR 0040) that enumerates
   every table in a database, so a table with no suite/run/lineage edge shows up as
   visible-and-unmonitored instead of invisible.

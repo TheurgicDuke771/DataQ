@@ -1,8 +1,8 @@
 # Production deployment
 
 How to stand DataQ up in production. This is the operator's overview; the exhaustive
-provisioning runbook, the OpenTofu stack, and the complete env-var reference live in
-[`deploy/README.md`](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/README.md) and
+provisioning runbook, the OpenTofu stack, and the complete env-var reference live in the
+repository's `deploy/README.md` and
 [`deploy/terraform/azure/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/azure).
 **Azure is the primary reference target; AWS is a second, live-verified reference stack**
 ([`deploy/terraform/aws/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/aws) —
@@ -115,8 +115,7 @@ Browser ──HTTPS──► CloudFront (public surface, origin secret verified 
 - **Deploy:** a parallel **Deploy (AWS)** workflow (`deploy-aws.yml`) — GitHub OIDC role
   login, immutable `aws-<sha>` tags, migrate run-task gated on exit 0, then ECS service
   rolls and a CloudFront smoke.
-- **Gotchas** (full list in the
-  [AWS README](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/terraform/aws/README.md)):
+- **Gotchas** (full list in the repository's `deploy/terraform/aws/README.md`):
   a `rediss://` broker URL needs `ssl_cert_reqs` (the app now defaults it to `required`);
   task definitions are under `ignore_changes`, so env/sidecar edits need a targeted
   `tofu apply -replace`; CloudFront sends an **origin secret header** that nginx enforces,
@@ -128,7 +127,7 @@ Azure is **one implementation behind each seam, never the architecture** (ADR
 [0010](https://github.com/TheurgicDuke771/DataQ/blob/main/docs/site/adr/0010-provider-agnostic-infrastructure-seams.md)).
 Every seam has a working non-Azure implementation, so a fresh clone runs the
 whole product — API, worker, scheduler, UI, checks — with **zero Azure
-configuration** (#591):
+configuration**:
 
 | Seam | Cloud implementation | Local / non-cloud implementation |
 |---|---|---|
@@ -170,5 +169,4 @@ any kind.
   README's operational notes.
 
 For the full runbook — one-time provisioning, the complete env-var reference, SSO setup, and
-the checklists — see
-[`deploy/README.md`](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/README.md).
+the checklists — see the repository's `deploy/README.md`.

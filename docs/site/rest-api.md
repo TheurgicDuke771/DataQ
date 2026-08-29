@@ -27,7 +27,7 @@ A PAT acts **as its owning user** — every call is scoped by the same two axes 
 grants. Both resolve per request, so a role change or a revoked share applies to keys you
 already hold, on their very next call. Unauthenticated requests get `401`; an authenticated
 call your role doesn't permit gets `403`. (The interactive Swagger/OpenAPI docs are disabled
-in production, #170 — this page is the reference.)
+in production — this page is the reference.)
 
 ## Conventions
 
@@ -38,7 +38,7 @@ in production, #170 — this page is the reference.)
   Named codes worth knowing: `rate_limited` (see below), and `credential_redirect` on
   `PATCH /connections/{id}` — see [Connections](#connections).
 - **Rate limiting (ADR 0035):** every surface is throttled per minute — authenticated
-  requests per API key, unauthenticated per client-IP **prefix** (IPv4 /24, IPv6 /64 by default — machines on one allocation share a budget; ADR 0035 #789). Over the limit returns `429` with
+  requests per API key, unauthenticated per client-IP **prefix** (IPv4 /24, IPv6 /64 by default — machines on one allocation share a budget). Over the limit returns `429` with
   `code: "rate_limited"`, `detail.retry_after_seconds` (1–60), and a matching `Retry-After`
   header (plus `X-RateLimit-Limit` / `X-RateLimit-Remaining`). Back off for that many seconds.
 - **IDs** are UUIDs. Timestamps are ISO-8601 UTC.

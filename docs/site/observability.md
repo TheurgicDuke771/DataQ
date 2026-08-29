@@ -33,10 +33,10 @@
 | A check reports `error`, not `fail` | Its evaluation threw (cast failure, missing column, SQL error) — an operational problem with the check/target, not a data breach. Fix the check config or the schema drift. |
 | Scheduled run didn't happen at 9:00 | Check the schedule's **timezone** (9:00 in which zone?), whether it's **paused**, and whether the platform was down over the tick — missed ticks are [not backfilled](scheduling.md). |
 | No alert for a red run | See the [notifications troubleshooting table](notifications.md#troubleshooting) — threshold, dedup, and snooze all gate delivery. |
-| Freshness/volume check missing in the editor | Freshness and volume now run on **every** datasource including ADLS Gen2 / S3 flat files ([#520](https://github.com/TheurgicDuke771/DataQ/pull/940)) — on a flat file, omitting the timestamp column measures the file's **arrival time** instead. Only **custom SQL** is Snowflake/UC-only. |
+| Freshness/volume check missing in the editor | Freshness and volume now run on **every** datasource including ADLS Gen2 / S3 flat files — on a flat file, omitting the timestamp column measures the file's **arrival time** instead. Only **custom SQL** is Snowflake/UC-only. |
 
 ## Operating notes
 
 After a shared-Postgres delete/recreate, **restart dependent Container Apps** (the DB host
-is a start-time secret snapshot). Full deploy + ops runbook:
-[`deploy/README.md`](https://github.com/TheurgicDuke771/DataQ/blob/main/deploy/README.md).
+is a start-time secret snapshot). Full deploy + ops runbook: the repository's
+`deploy/README.md`.

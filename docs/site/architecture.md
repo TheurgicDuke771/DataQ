@@ -87,7 +87,7 @@ erDiagram
         string oidc_issuer "issuer that vouched for aad_object_id (provider-neutral OIDC)"
         string email UK "unique on lower(email) — the cross-authenticator identity key"
         string display_name
-        bool display_name_override "user-set name survives IdP re-sync (#1139)"
+        bool display_name_override "user-set name survives IdP re-sync"
         string role "admin | member | viewer — CHECK-constrained, ADR 0033"
         timestamptz last_seen_at
     }
@@ -124,8 +124,8 @@ erDiagram
         jsonb config "non-secret datasource config"
         string secret_ref "SecretStore key, never the credential"
         uuid created_by FK
-        timestamptz last_polled_at "orchestration poll health (#839): + last_poll_error, consecutive_poll_failures, health_alerted_at"
-        timestamptz credential_expires_at "readable credential lifetime (#954): + credential_expiry_checked_at — NULL = unknown, never 'does not expire'"
+        timestamptz last_polled_at "orchestration poll health: + last_poll_error, consecutive_poll_failures, health_alerted_at"
+        timestamptz credential_expires_at "readable credential lifetime: + credential_expiry_checked_at — NULL = unknown, never 'does not expire'"
         timestamptz lineage_last_refresh_at "lineage pull state (ADR 0034): + lineage_watermark, lineage_last_tier, lineage_degraded_reason, lineage_last_error"
         timestamptz inventory_sync_last_attempted_at "inventory sync state (ADR 0040): + inventory_sync_last_error, _failing_since, _last_table_count, _zero_since"
     }
@@ -145,9 +145,9 @@ erDiagram
         string name "OpenLineage dataset name — (namespace,name) unique"
         string env "metadata, not identity"
         uuid connection_id FK "provenance hint (SET NULL)"
-        uuid owner_user_id FK "incident-routing hop (SET NULL — routing use is #1515)"
+        uuid owner_user_id FK "incident-routing hop (SET NULL — reserved for future routing use)"
         string description "workspace-Admin-set (ADR 0034 §4)"
-        jsonb column_tags "warehouse governance classifications, cached per read (G3 #433)"
+        jsonb column_tags "warehouse governance classifications, cached per read"
         timestamptz column_tags_refreshed_at "'never looked' vs 'looked, found none'"
         timestamptz first_seen
         timestamptz last_seen
@@ -212,7 +212,7 @@ erDiagram
     audit_events {
         uuid id PK
         timestamptz occurred_at
-        string action_class "config (ADR 0041 ph1) / access (G1 #431 ph2)"
+        string action_class "config (ADR 0041 phase 1) / access (phase 2)"
         string action "check.update / share.grant / connection.reauth / …"
         string entity_type
         uuid entity_id "NO FK — the audit row must outlive the entity"
@@ -222,7 +222,7 @@ erDiagram
         jsonb before
         jsonb after
         string request_id
-        string prev_hash "hash chain (ADR 0041 §9 / #1460)"
+        string prev_hash "hash chain (ADR 0041 §9)"
         string row_hash "NULL = written before the chain shipped, not backfilled"
     }
     audit_chain_state {
@@ -263,7 +263,7 @@ erDiagram
         jsonb expected_value
         jsonb sample_failures "redacted failing rows"
         timestamptz sample_failures_purged_at
-        jsonb sampling "scale-aware read strategy + counts (#595) — NULL = full read"
+        jsonb sampling "scale-aware read strategy + counts — NULL = full read"
     }
     shares {
         uuid id PK
@@ -308,13 +308,13 @@ erDiagram
         bool enabled
         string alert_on "fail / warn / always"
         string webhook_secret_ref "per-suite Teams webhook, SecretStore key"
-        string slack_webhook_secret_ref "per-suite Slack webhook ref (#633; NULL → workspace webhook)"
+        string slack_webhook_secret_ref "per-suite Slack webhook ref (NULL → workspace webhook)"
         string email_recipients "comma-separated addresses (not secret; NULL → workspace EMAIL_TO)"
         bool auto_resolve_incidents "auto-resolve on pass (default true, ADR 0034)"
     }
     workspace_health {
-        string key PK "signal name, e.g. orchestration_poll_staleness (#1052)"
-        timestamptz alerted_at "delivered-first flag - set only after a publish succeeded (#843)"
+        string key PK "signal name, e.g. orchestration_poll_staleness"
+        timestamptz alerted_at "delivered-first flag - set only after a publish succeeded"
     }
     incidents {
         uuid id PK
@@ -363,7 +363,7 @@ erDiagram
     suites ||--o{ schedules : "scheduled by (CASCADE)"
     suites ||--o| suite_notifications : "alert config (CASCADE)"
 
-    checks ||--o| monitor_baselines : "diff reference, #592 (CASCADE)"
+    checks ||--o| monitor_baselines : "diff reference (CASCADE)"
     users |o--o{ monitor_baselines : "captured_by (SET NULL)"
     checks ||--o{ check_versions : "config history (CASCADE)"
     checks ||--o{ results : "evaluated as (CASCADE)"
@@ -410,17 +410,17 @@ sequenceDiagram
     Trig->>API: trigger suite run
     API->>PG: INSERT runs (status=queued, triggered_by marker)
     API->>BR: send_task run_suite(run_id)
-    Note over API,BR: broker down → run marked terminal failed,<br/>never left stuck queued (#35;227)
+    Note over API,BR: broker down → run marked terminal failed,<br/>never left stuck queued
     API->>PG: store celery_task_id (enables cancel/revoke)
 
     BR->>W: deliver task
     W->>PG: load run — already cancelled? stop (cooperative cancel)
-    W->>PG: load suite + connection + checks, resolve target (#35;215)
+    W->>PG: load suite + connection + checks, resolve target
     W->>KV: get connection credential (secret_ref)
     W->>W: build CheckRunner by connection.type (registry, ADR 0011)
     Note over W,KV: any setup failure → run terminal failed
     W->>DS: materialize flat-file batch path
-    Note over W,DS: batch absent → every check skip,<br/>run still succeeds (#35;122)
+    Note over W,DS: batch absent → every check skip,<br/>run still succeeds
     W->>PG: UPDATE runs SET status=running
     W->>DS: execute by check.kind (ADR 0012) —<br/>expectation → GX validate · freshness/volume → monitor SQL
     DS-->>W: one CheckOutcome per check
@@ -455,14 +455,14 @@ sequenceDiagram
     API->>API: authenticate — ADF constant-time token query param (ADR 0006)<br/>· Airflow HMAC-SHA256 over raw body (ADR 0007)
     API->>API: OrchestrationProvider.parse → RunUpdate or AlertPing
 
-    alt AlertPing — run-anonymous Azure Monitor alert (#35;492)
+    alt AlertPing — run-anonymous Azure Monitor alert
         API->>BR: enqueue targeted poll-now (provider + resource)
         API-->>ORC: 200 (body status = reconciling)
     else RunUpdate
         API->>PG: upsert pipeline_runs ON (provider, provider_run_id)
         alt status = succeeded
             API->>PG: match enabled trigger_bindings (provider, pipeline_or_dag_id, env)
-            API->>PG: INSERT runs, triggered_by = provider:pipeline:run_id<br/>ON CONFLICT DO NOTHING (dedup index, #35;308)
+            API->>PG: INSERT runs, triggered_by = provider:pipeline:run_id<br/>ON CONFLICT DO NOTHING (dedup index)
             API->>BR: dispatch run_suite per triggered run
         else status = failed
             API->>API: alert the user only — failures never trigger suites
@@ -470,7 +470,7 @@ sequenceDiagram
         API-->>ORC: 200 (body status = recorded)
     end
 
-    Note over W,PG: polling fallback (#35;171) — a 10-min beat sweeps every orchestrator connection<br/>via the provider REST API (list_recent_runs, 15-min lookback) into the SAME<br/>upsert + trigger path — a 30-min gap-recovery sweep (1-hour window) covers downtime
+    Note over W,PG: polling fallback — a 10-min beat sweeps every orchestrator connection<br/>via the provider REST API (list_recent_runs, 15-min lookback) into the SAME<br/>upsert + trigger path — a 30-min gap-recovery sweep (1-hour window) covers downtime
 ```
 
 Key sources: [`api/v1/orchestration.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/api/v1/orchestration.py), [`services/orchestration_service.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/services/orchestration_service.py), [`worker/tasks.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/worker/tasks.py) (`poll_orchestration_runs`, `recover_orchestration_gaps`).
@@ -486,10 +486,10 @@ stateDiagram-v2
     [*] --> queued : created (manual · schedule · trigger)
     queued --> running : worker picks up
     queued --> cancelled : user cancel
-    queued --> failed : dispatch/setup failure · reaper (#309)
+    queued --> failed : dispatch/setup failure · reaper
     running --> succeeded : execution completed
     running --> cancelled : user cancel
-    running --> failed : adapter raised · reaper (#309)
+    running --> failed : adapter raised · reaper
     succeeded --> [*]
     failed --> [*]
     cancelled --> [*]
@@ -497,18 +497,18 @@ stateDiagram-v2
 
 - **`succeeded` means executed** — checks may still have failed; the data-quality outcome lives in `results.status`.
 - **Cancel works on any non-terminal run:** the API sets `cancelled` and best-effort revokes the Celery task; the worker also honours the status cooperatively (start-check before executing).
-- **The reaper (#309)** drives runs orphaned in `queued`/`running` past a threshold (task never published, or the worker died mid-run) to terminal `failed`.
+- **The reaper** drives runs orphaned in `queued`/`running` past a threshold (task never published, or the worker died mid-run) to terminal `failed`.
 
 ### Result status derivation
 
-`results.status` has two orthogonal families: the four **severity tiers** (ADR [0005](adr/0005-severity-tier-weights.md)) and the two **operational statuses** (#122). Only the tiers carry health-score weight (0.5 / 1.0 / 2.0 for warn / fail / critical); `skip`/`error` **must be excluded from the health-score denominator**.
+`results.status` has two orthogonal families: the four **severity tiers** (ADR [0005](adr/0005-severity-tier-weights.md)) and the two **operational statuses**. Only the tiers carry health-score weight (0.5 / 1.0 / 2.0 for warn / fail / critical); `skip`/`error` **must be excluded from the health-score denominator**.
 
 ```mermaid
 flowchart TD
     O["CheckOutcome (from the runner)"] --> E{"runner could evaluate it?"}
-    E -- "no — evaluation raised" --> ERR["error — operational (#122)<br/>no tier · no metric · error message in observed_value"]
+    E -- "no — evaluation raised" --> ERR["error — operational<br/>no tier · no metric · error message in observed_value"]
     E -- yes --> S{"flat-file batch landed?<br/>(decided before execution)"}
-    S -- no --> SKIP["skip — operational (#122)<br/>not evaluated at all"]
+    S -- no --> SKIP["skip — operational<br/>not evaluated at all"]
     S -- yes --> M{"thresholds set AND a<br/>bandable metric_value exists?"}
     M -- "no — binary fallback (ADR 0005)" --> BIN{"GX success?"}
     BIN -- yes --> PASS[pass]
@@ -588,7 +588,7 @@ flowchart LR
 
 Boundary notes:
 
-- **Defense in depth, not perimeter trust:** the API validates every request's bearer JWT itself (`fastapi-azure-auth` for REST, `JWTVerifier` for MCP — same tenant/audience/scope) even though it is only reachable through the frontend proxy. Platform-level auth (SWA EasyAuth) is explicitly disabled (#511).
+- **Defense in depth, not perimeter trust:** the API validates every request's bearer JWT itself (`fastapi-azure-auth` for REST, `JWTVerifier` for MCP — same tenant/audience/scope) even though it is only reachable through the frontend proxy. Platform-level auth (SWA EasyAuth) is explicitly disabled.
 - **The only endpoints that bypass user JWT auth** are the two orchestration webhook receivers (each with its own secret scheme, above) and the health probe. Webhook secrets live in Key Vault and are compared constant-time; they are never logged.
 - **Nothing secret is baked into images or served to the browser.** The frontend's runtime `DATAQ_AUTH_*` config is non-secret OIDC metadata (ADR 0028); all real secrets resolve at use-time from Key Vault via user-assigned managed identity.
 - **MCP is fail-closed:** without resolvable auth config the `/mcp` mount does not come up at all (ADR 0008).
@@ -598,6 +598,6 @@ Boundary notes:
 - **The frontend (Container App on Azure, ECS Fargate task on AWS) is the sole public surface** (ADR [0028](adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md) §5). It's one generic nginx image whose auth is injected at **runtime** (`DATAQ_AUTH_*` → generic OIDC, validated against Azure AD or AWS Cognito — no MSAL, nothing cloud-specific baked in), and it reverse-proxies `/api` + `/mcp` + `/healthz` same-origin to the **internal-ingress** API. The API is not reachable directly from the internet; external orchestrator webhooks land on the frontend and are proxied through.
 - **Orchestration providers (ADF · Airflow · dbt) are not datasources.** They live in `pipeline_runs`, not `runs`. Trigger bindings map `(provider, pipeline_id, env) → suite_id`.
 - **Scheduled/triggered suite runs are Celery-only.** FastAPI never enqueues GX itself for a full suite run; it dispatches a task. **Exception — synchronous preview paths:** the check dry-run (`POST /suites/{id}/checks/dryrun`) and the column profiler (`POST /suites/{id}/profile`) run a single GX check / a profiling query against the datasource **synchronously in a threadpool** (persisting nothing) — interactive authoring aids, not scheduled runs.
-- **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS. Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see [ADR 0009](adr/0009-flat-monorepo-layout.md) layout note and `backend/app/core/secrets.py`). No credentials are ever hardcoded.
-- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 46 FastMCP tools (23 read-only, 18 that change state, 5 live-probe tools gated like writes — ADR 0008 + the #529/#1424 tier amendments) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **any** of the three sign-in modes (SSO, email OTP, dev-bypass) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential ([#1151](https://github.com/TheurgicDuke771/DataQ/issues/1151)). See [ADR 0008](adr/0008-mcp-server.md) / [ADR 0032](adr/0032-email-otp-signin.md).
+- **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS. Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see `backend/app/core/secrets.py`). No credentials are ever hardcoded.
+- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 46 FastMCP tools (23 read-only, 18 that change state, 5 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **any** of the three sign-in modes (SSO, email OTP, dev-bypass) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](adr/0008-mcp-server.md) / [ADR 0032](adr/0032-email-otp-signin.md).
 - **Interactive API docs are off in production.** `/docs`, `/redoc`, and `/openapi.json` are disabled when `ENVIRONMENT=prod` (the prod-docs gate); available in dev/staging.

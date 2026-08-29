@@ -103,4 +103,4 @@ Adapt §1–§4 with your own values; the DataQ-side mechanics are identical.
 - **Controller notification decision + basis:** ______
 - **Follow-up issues filed:** ______
 
-Last reviewed: 2026-08-21 (G6, [#1452](https://github.com/TheurgicDuke771/DataQ/issues/1452)).
+Last reviewed: 2026-08-21.

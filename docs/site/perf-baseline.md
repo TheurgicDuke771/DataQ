@@ -1,12 +1,11 @@
 # Performance baseline — all datasources
 
 > Captured **2026-07-10** against live warehouses; **Unity Catalog's rows updated
-> 2026-08-22** after [#1532](https://github.com/TheurgicDuke771/DataQ/issues/1532)
-> moved its audited ordinary expectations (and, unconditionally since #1179,
-> custom SQL) onto SQL pushdown — both now tested to 200M rows with flat worker
-> memory, matching Snowflake's regime (see the dedicated section below). It
-> measures, per datasource, where DataQ's run path stops scaling and *how it
-> fails* when it does.
+> 2026-08-22** after Unity Catalog's audited ordinary expectations (and,
+> unconditionally, custom SQL) moved onto SQL pushdown — both now tested to 200M rows
+> with flat worker memory, matching Snowflake's regime (see the dedicated section
+> below). It measures, per datasource, where DataQ's run path stops scaling and *how
+> it fails* when it does.
 
 ## TL;DR
 
@@ -15,9 +14,9 @@
 | **Snowflake** | SQL pushdown | **200M rows** (50M / 100M / 200M all green) | none found — worker memory flat | n/a |
 | **Flat file CSV** (ADLS) | full load into worker pandas | 2M rows (~121 MB CSV) | **2M → 5M** | prefork child SIGKILL |
 | **Flat file Parquet** (ADLS) | full load into worker pandas | 5M rows (~131 MB parquet) | **5M → 10M** | 5M+: child SIGKILL; 10M killed the whole container |
-| **Unity Catalog** — audited ordinary expectations | **SQL pushdown** (`UC_SQL_PUSHDOWN=true`, default since #1532) | **200M rows** (50M/100M/200M all green, worker memory flat) | none found — matches the Snowflake regime | n/a |
-| **Unity Catalog** — custom SQL (`unexpected_rows_expectation`) | **SQL batch**, unconditional (#1179 — no pandas metric provider exists) | **200M rows** (worker memory flat, run alongside the pushdown checks above) | none found | n/a |
-| **Unity Catalog** — unaudited types / sampled suites | frame load (`read_sql_table`) | 1M rows | **1M → 2M** (#595 guardrail now refuses 2M cleanly instead of OOM) | child SIGKILL past the size cap |
+| **Unity Catalog** — audited ordinary expectations | **SQL pushdown** (`UC_SQL_PUSHDOWN=true`, the default) | **200M rows** (50M/100M/200M all green, worker memory flat) | none found — matches the Snowflake regime | n/a |
+| **Unity Catalog** — custom SQL (`unexpected_rows_expectation`) | **SQL batch**, unconditional (no pandas metric provider exists) | **200M rows** (worker memory flat, run alongside the pushdown checks above) | none found | n/a |
+| **Unity Catalog** — unaudited types / sampled suites | frame load (`read_sql_table`) | 1M rows | **1M → 2M** (the scan-cap guardrail now refuses 2M cleanly instead of OOM) | child SIGKILL past the size cap |
 | **Apache Iceberg** (native, ADR 0030) | full snapshot via `pyiceberg` → Arrow | 2M rows | **2M → 5M** | worker replica OOM-killed + recreated |
 | **AWS S3** | same code as ADLS (`flatfile.py` is shared) | not run live (no S3 credentials remain) | expect ≡ ADLS | ≡ ADLS |
 
@@ -28,9 +27,9 @@ Two sentences of conclusion:
    never moves off its ~930 MiB baseline; every full-load runner dies between
    1M and 10M rows depending on format.
 2. **Past the ceiling, today's failure is silent** — the OOM-killed run sits in
-   `running` for up to 60 minutes until the stuck-run reaper (#309) fails it,
-   with no memory-attributed reason ([#755](https://github.com/TheurgicDuke771/DataQ/issues/755)).
-   #595's size-probe + hard-cap ("refuse with `error`, don't OOM") is the fix.
+   `running` for up to 60 minutes until the stuck-run reaper fails it,
+   with no memory-attributed reason. A size-probe + hard-cap ("refuse with
+   `error`, don't OOM"), described below, is the fix.
 
 ## Environment & method
 
@@ -41,7 +40,7 @@ Two sentences of conclusion:
 | Iceberg leg | run against the deployed stack (the native catalog wasn't reachable from the local rig) — wall via REST, worker memory via the platform metric |
 | Worker memory sampling | `docker stats` at 1 Hz (local); 1-min max metric (prod) |
 | Checks per rung | 5 expectations (not-null ×2, between ×2, unique ×1) + volume & freshness monitors where the type supports them (SQL/UC/Iceberg — flat files reject monitor kinds by design) |
-| Data shape | 6-col order-lines (`line_id`, `order_id`, `sku_id`, `qty`, `unit_price`, `line_ts`) — same shape as #587 |
+| Data shape | 6-col order-lines (`line_id`, `order_id`, `sku_id`, `qty`, `unit_price`, `line_ts`) — same shape as the original baseline campaign |
 
 Data generation (all regenerable in seconds — nothing needs to be archived):
 
@@ -58,7 +57,7 @@ The whole campaign — including generating 350M+ Snowflake rows — burned
 
 | Rung | Wall (trigger → terminal) | Checks | Worker memory |
 |---|---|---|---|
-| 1.2M (#587, W1) | 12.2 s | 6 + volume, pass | < 50 MB delta |
+| 1.2M (original baseline, Week 1) | 12.2 s | 6 + volume, pass | < 50 MB delta |
 | **50M** | **12.1 s** (repeat: 12.1 s) | 7/7 pass | baseline 923 → peak 926 MiB |
 | **100M** | **16.2 s** | 7/7 pass | flat (≤ +2 MiB) |
 | **200M** | **16.2 s** | 7/7 pass | flat (≤ +2 MiB) |
@@ -67,15 +66,16 @@ Column profiler, 4 columns (`COUNT/nulls/distinct/min/max/top-10`):
 
 | Table | Cold | Warm repeat |
 |---|---|---|
-| 1.2M (#587) | 2.6 s | — |
+| 1.2M (original baseline) | 2.6 s | — |
 | 50M | 15.7 s | 2.9 s |
 | 200M | 24.6 s | 2.5 s |
 
 (The warm numbers are the Snowflake result cache doing the work — the app adds
 ~2.5s of fixed overhead.)
 
-Wall time is dominated by GX orchestration + connection setup exactly as #587
-predicted: ~167× more rows (1.2M → 200M) bought ~4s of extra wall. Cost scales
+Wall time is dominated by GX orchestration + connection setup exactly as the
+original baseline predicted: ~167× more rows (1.2M → 200M) bought ~4s of extra
+wall. Cost scales
 with the *warehouse*, not the worker — the 2 Gi replica never noticed 200M rows.
 
 ## Full-load runners — ramp to failure
@@ -115,26 +115,24 @@ Reading the table:
 ## Known limitations at the ceiling
 
 Two performance characteristics of the full-load path, both tracked for the
-scale-aware execution work ([#595](https://github.com/TheurgicDuke771/DataQ/issues/595)):
+scale-aware execution work described below:
 
 1. **An out-of-memory run is not reported promptly.** When a full-load run
    exceeds worker memory the worker process is killed; the run currently stays
    `running` until the stuck-run reaper fails it (default threshold 60 min),
-   with no memory-attributed reason. Tracked in
-   [#755](https://github.com/TheurgicDuke771/DataQ/issues/755) — the fix maps the
-   worker loss straight to a run `error`, ahead of the #595 size-cap guardrail.
+   with no memory-attributed reason. The fix maps the
+   worker loss straight to a run `error`, ahead of the size-cap guardrail below.
 2. **The effective ceiling degrades with worker uptime.** The prefork worker's
    memory baseline creeps run-over-run (measured start-of-run: 956 → 1188 → 1666
    MiB across three flat-file runs) because children don't release pandas
    allocations — so a file that passes on a freshly-started worker can OOM on a
    long-lived one. Recycling children per N runs removes the creep (folded into
-   #755).
+   the same fix).
 
-Two non-performance defects were also found and filed while measuring
-([#753](https://github.com/TheurgicDuke771/DataQ/issues/753),
-[#754](https://github.com/TheurgicDuke771/DataQ/issues/754)); see the tracker.
+Two non-performance defects were also found and filed while measuring; see the
+tracker.
 
-## What this means for #595
+## What this means for the scale-aware execution work
 
 - The guardrail should be a **size probe + configurable hard cap** *before*
   materialising (refuse with a clean `error`), plus immediate `WorkerLostError`
@@ -145,15 +143,16 @@ Two non-performance defects were also found and filed while measuring
   too), then CSV (worst expansion factor; per-file batching already exists in the
   flat-file runner seam), then Iceberg (snapshot scan → `row_filter`/limit
   pushdown in pyiceberg).
-- Per-run overhead floor is unchanged from #587 (~10s Snowflake, ~4s flat-file,
-  ~6s Iceberg-on-prod), so sampled runs will be *fast*, not just safe.
+- Per-run overhead floor is unchanged from the original baseline (~10s Snowflake,
+  ~4s flat-file, ~6s Iceberg-on-prod), so sampled runs will be *fast*, not just
+  safe.
 
 ---
 
-## v1.1 — scale-aware execution ([#595](https://github.com/TheurgicDuke771/DataQ/issues/595))
+## v1.1 — scale-aware execution
 
 > Captured **2026-08-13** while building the sampling + guardrail work. This
-> section answers the issue's last acceptance criterion ("volume test vs the #587
+> section answers the last acceptance criterion ("volume test vs the original
 > Snowflake baseline documented") and records the evidence the shipped defaults
 > were chosen from.
 
@@ -170,8 +169,8 @@ execute for real and only the network is stood in for. Peak memory is the child
 process's own `ru_maxrss`.
 
 **What this does not measure:** egress, warehouse behaviour, or the Unity Catalog
-leg — `TABLESAMPLE (x PERCENT)` is a Databricks-side fact and, per the #953 rule,
-only a live run counts as evidence for it. The UC numbers below are therefore
+leg — `TABLESAMPLE (x PERCENT)` is a Databricks-side fact, and only a live run
+counts as evidence for it. The UC numbers below are therefore
 absent rather than estimated.
 
 The **floor** — interpreter + GX + pyarrow, measured on the refused case, which
@@ -195,7 +194,7 @@ Reading the table:
 
 1. **Without the cap, a 249 MB CSV needs 2.2 GiB.** That is over the deployed 2 GiB
    worker on its own, before the ~0.9 GiB baseline it already carries — i.e. the
-   #755 SIGKILL, reproduced.
+   same SIGKILL measured above, reproduced.
 2. **With the cap, it is refused in 0.00 s** with a message naming the file, both
    numbers and the knob — instead of a dead child and a run stuck `running` for
    60 minutes with no memory-attributed reason.
@@ -233,7 +232,7 @@ the child, so 1.5M sits between them. It is a **row** cap rather than a byte one
 because a warehouse `COUNT(*)` is exact and free, where a CSV's row count would
 cost the very scan being avoided.
 
-### Comparison with the #587 Snowflake baseline
+### Comparison with the original Snowflake baseline
 
 The point of the comparison is that these are still two different regimes, and
 sampling narrows the gap without closing it:
@@ -253,27 +252,24 @@ that would stamp "sampled" on a result that was not.
 
 - **Unity Catalog needs a live run.** The pushdown SQL is DataQ's own
   construction and is unit-pinned, but `TABLESAMPLE (x PERCENT) REPEATABLE (seed)`
-  behaviour is a Databricks fact — #953's rule says only a live run is evidence.
-- **Iceberg has neither a cap nor sampling**
-  ([#1328](https://github.com/TheurgicDuke771/DataQ/issues/1328)). It is the third
-  runner that materialises a whole dataset, so #755 stays open there. The probe is
+  behaviour is a Databricks fact — only a live run is evidence.
+- **Iceberg has neither a cap nor sampling.** It is the third
+  runner that materialises a whole dataset, so the out-of-memory-reporting gap
+  stays open there. The probe is
   cheap (`scan().count()` is snapshot metadata); what it needs first is its **own
   measurement** — Iceberg passed at 2M rows where UC died, so inheriting
   `RUN_MAX_SCAN_ROWS`'s 1.5M would refuse a rung measured to work.
-- **Comparison sources cannot sample**
-  ([#1331](https://github.com/TheurgicDuke771/DataQ/issues/1331)) — refused at save
+- **Comparison sources cannot sample** — refused at save
   time rather than ignored. It needs *coherent* key-set sampling: two independent
   draws from two 5M-row sides would share almost no keys and report everything as
   a mismatch, which is worse than refusing.
 - **Column projection for flat-file monitors.** A column-freshness monitor still
   reads every column to compute one `MAX`. Parquet could project a single column
   off its footer, which would remove most of the remaining monitor-path memory.
-- **Efficiency and reuse batches**
-  ([#1329](https://github.com/TheurgicDuke771/DataQ/issues/1329),
-  [#1330](https://github.com/TheurgicDuke771/DataQ/issues/1330)) — the sampled CSV
+- **Efficiency and reuse.** The sampled CSV
   `random` path reads the object twice, and the count and take construct their CSV
   streams separately (consistent today by coincidence, not construction).
-- **Incremental / delta-only validation** stays out of scope by design (#595):
+- **Incremental / delta-only validation** stays out of scope by design:
   sampling bounds *how much* is read, not *which part is new*. Note for whoever
   builds it — a watermark belongs on the run target beside `sampling`, and its
   result record should be the same shape as `sampling`, so the run-detail surface
@@ -281,7 +277,7 @@ that would stamp "sampled" on a result that was not.
 
 ---
 
-## v1.2 — UC SQL pushdown for ordinary expectations ([#1532](https://github.com/TheurgicDuke771/DataQ/issues/1532)/[#1533](https://github.com/TheurgicDuke771/DataQ/pull/1533))
+## v1.2 — UC SQL pushdown for ordinary expectations
 
 > Captured **2026-08-22**, live against the harness Databricks workspace. This
 > closes the one gap the v1.1 section above left open ("Unity Catalog needs a
@@ -307,14 +303,14 @@ pushdown suite** (not-null ×2, between ×2, unique ×1 — all in the audited
 allowlist) at every rung, plus **one custom-SQL check**
 (`unexpected_rows_expectation`, `SELECT * FROM {batch} WHERE qty < 1 OR qty > 20`)
 added to the 100M/200M suites to confirm its own ceiling, since it is a distinct
-code path (SQL-batch, unconditional — #1179) that the 1M/2M/50M rungs did not
+code path (SQL-batch, unconditional) that the 1M/2M/50M rungs did not
 separately exercise.
 
 ### Results
 
 | Rows | Checks | Pushdown | Outcome | Wall | Worker peak | Δ over idle baseline |
 |---|---|---|---|---|---|---|
-| 1M | 5 pushdown | **off** (frame load, pre-#1532 behavior) | 5/5 pass | 11.1 s | **1,588 MiB** (1.551 GiB) | +824 MiB (over 764 MiB) |
+| 1M | 5 pushdown | **off** (frame load, the earlier default behavior) | 5/5 pass | 11.1 s | **1,588 MiB** (1.551 GiB) | +824 MiB (over 764 MiB) |
 | 1M | 5 pushdown | **on** (default) | 5/5 pass | 17.7 s | **935 MiB** | +15 MiB (over 920 MiB) |
 | 2M | 5 pushdown | **off** | **refused** — scan-cap guardrail | 1.7 s | 791 MiB | +0 |
 | 2M | 5 pushdown | **on** (default) | 5/5 pass | 16.6 s | **942 MiB** | +22 MiB (over 920 MiB) |
@@ -335,14 +331,15 @@ Snowflake ramp above.
    worker memory stays flat (935 → 968 MiB) all the way to 200M — a 200×
    increase in row count for a ~35 MiB memory delta, the same "cost scales with
    the warehouse, not the worker" shape Snowflake showed at the same scale.
-   **Custom SQL was never the frame-load path to begin with** (#1179 made it
-   SQL-batch-only before #1532 existed) — it was previously miscategorized in
+   **Custom SQL was never the frame-load path to begin with** (it was made
+   SQL-batch-only before this pushdown change existed) — it was previously
+   miscategorized in
    this doc's TL;DR alongside the frame-load fallback; the two are now split
    into separate rows, and the 100M/200M runs confirm custom SQL scales exactly
    like the audited pushdown types.
 2. **Memory drops ~55×** on the identical 1M table when isolating the flag:
    824 MiB delta (frame) vs 15 MiB delta (pushdown). This is the offload the
-   #1532 rationale predicted — the warehouse's own compute (Photon/Spark under
+   pushdown rationale predicted — the warehouse's own compute (Photon/Spark under
    the SQL layer) does the scan; the worker only receives pass/fail scalars.
 3. **Wall time went the other way at 1M** — pushdown was ~7s *slower* (17.7s vs
    11.1s) — and this is a warehouse-warmth artifact, not a pushdown cost: the
@@ -353,10 +350,10 @@ Snowflake ramp above.
    37.1 s at 200M) is in the same range, consistent with the Snowflake finding
    that wall time is dominated by fixed orchestration + connection overhead, not
    row count, once the warehouse is warm.
-4. **The #595 guardrail now catches the no-pushdown case cleanly.** With
+4. **The scan-cap guardrail now catches the no-pushdown case cleanly.** With
    `UC_SQL_PUSHDOWN=false`, the 2M table hit `RUN_MAX_SCAN_ROWS` (1.5M) and was
    **refused in 1.7 s** with a message naming the table, the count, and the cap
-   — the "refuse, don't OOM" behavior #595 shipped for flat files now also
+   — the same "refuse, don't OOM" behavior shipped for flat files now also
    covers UC's frame-load fallback path, which didn't exist yet when the v1.1
    section's raw 2M-OOM was measured.
 5. **200M was not a ceiling, just where this campaign stopped** — no failure
