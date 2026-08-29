@@ -57,6 +57,40 @@
       "api_call_count": 308
     }
   },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Mniv3HAPSSa4fDwaxXy4ip",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "47523fc0246e",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 794,
+        "end": 795,
+        "entry_ids": [
+          "b61df294-e33a-4332-9439-75d0c53a5f7d"
+        ],
+        "tool_use_id": "toolu_01Mniv3HAPSSa4fDwaxXy4ip"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Mniv3HAPSSa4fDwaxXy4ip"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
   "session_metrics": {
     "turn_count": 17
   },
