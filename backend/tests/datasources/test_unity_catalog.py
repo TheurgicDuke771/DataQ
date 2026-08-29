@@ -1712,6 +1712,31 @@ def test_reflection_key_mirrors_the_databricks_dialect_not_a_bare_lower() -> Non
     assert _reflection_key("OrderNum") == "OrderNum"
 
 
+def test_a_folding_failure_errors_the_sql_group_not_the_whole_run(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fold runs inside the SQL group's own try/except, so a failure there is an
+    isolated `errored` outcome, not an unhandled crash that discards a mixed suite's
+    already-computed frame-group results."""
+    from backend.app.datasources import unity_catalog as uc_module
+
+    monkeypatch.setattr(
+        uc_module,
+        "_fold_reflection_keyed_columns",
+        lambda checks: (_ for _ in ()).throw(RuntimeError("dialect quirk")),
+    )
+    _pushdown_on(monkeypatch)
+    runner = _uc_runner()
+    _orders_sql_seam(runner, tmp_path, monkeypatch, rows=[(1, 10)])
+    outcome = runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    assert outcome.success is False
+    assert outcome.checks[0].errored is True
+
+
 def test_index_column_clash_runs_without_the_index_request(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1782,6 +1807,70 @@ def test_index_column_clash_is_case_insensitive(
         table="orders",
         schema="sales",
         checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "ID"})],
+        index_columns=["id"],
+    )
+    assert seen == [None]
+
+
+def test_index_column_clash_is_detected_via_column_a_and_column_b(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pair check keyed on column_A/column_B, not `column`, still drops the
+    index request when either side is the index column."""
+    from backend.app.datasources import unity_catalog as uc_module
+    from backend.app.datasources.gx_runner import run_expectations as real
+
+    seen: list[Any] = []
+
+    def _spy(*args: Any, **kwargs: Any) -> Any:
+        seen.append(kwargs.get("index_columns"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(uc_module, "run_expectations", _spy)
+    _pushdown_on(monkeypatch)
+    runner = _uc_runner()
+    _orders_sql_seam(runner, tmp_path, monkeypatch, rows=[(1, 10)])
+    runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[
+            CheckSpec(
+                "expect_column_pair_values_a_to_be_greater_than_b",
+                {"column_A": "amt", "column_B": "id"},
+            )
+        ],
+        index_columns=["id"],
+    )
+    assert seen == [None]
+
+
+def test_index_column_clash_is_detected_via_column_list(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A check keyed on column_list, not `column`, still drops the index request
+    when any listed column is the index column."""
+    from backend.app.datasources import unity_catalog as uc_module
+    from backend.app.datasources.gx_runner import run_expectations as real
+
+    seen: list[Any] = []
+
+    def _spy(*args: Any, **kwargs: Any) -> Any:
+        seen.append(kwargs.get("index_columns"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(uc_module, "run_expectations", _spy)
+    _pushdown_on(monkeypatch)
+    runner = _uc_runner()
+    _orders_sql_seam(runner, tmp_path, monkeypatch, rows=[(1, 10)])
+    runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[
+            CheckSpec(
+                "expect_select_column_values_to_be_unique_within_record",
+                {"column_list": ["id", "amt"]},
+            )
+        ],
         index_columns=["id"],
     )
     assert seen == [None]
