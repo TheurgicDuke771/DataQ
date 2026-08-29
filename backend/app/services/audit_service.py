@@ -209,6 +209,17 @@ _SUITE_NOTIFICATION_FIELDS: Final[tuple[str, ...]] = (
 
 _SHARE_FIELDS: Final[tuple[str, ...]] = ("id", "suite_id", "user_id", "permission")
 
+# Ref pointer only, never the key value — see `_CONNECTION_FIELDS` (ADR 0042).
+_LLM_SETTING_FIELDS: Final[tuple[str, ...]] = (
+    "id",
+    "provider",
+    "base_url",
+    "model",
+    "structured_output",
+    "enabled",
+    "api_key_secret_ref",
+)
+
 # `token_hash` is absent and must stay absent. ADR 0041 §2.5: an api_key event
 # records the mint/revoke, **never the token or its hash**.
 _API_KEY_FIELDS: Final[tuple[str, ...]] = ("id", "user_id", "name", "revoked_at", "expires_at")
@@ -252,6 +263,7 @@ _SERIALIZERS: Final[dict[str, tuple[str, ...]]] = {
     "user": _USER_FIELDS,
     "asset": _ASSET_FIELDS,
     "incident": _INCIDENT_FIELDS,
+    "llm_setting": _LLM_SETTING_FIELDS,
 }
 
 

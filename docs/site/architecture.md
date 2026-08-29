@@ -316,6 +316,27 @@ erDiagram
         string key PK "signal name, e.g. orchestration_poll_staleness"
         timestamptz alerted_at "delivered-first flag - set only after a publish succeeded"
     }
+    llm_settings {
+        int id PK "always 1 - singleton provider config (ADR 0042)"
+        string provider "anthropic / openai_compatible"
+        string base_url "required for openai_compatible; the credential's destination"
+        string model
+        string api_key_secret_ref "SecretStore ref - the key itself is never stored"
+        string structured_output "native / prompt_json"
+        bool enabled "default false - no row or disabled means no LLM features"
+    }
+    llm_invocations {
+        uuid id PK
+        string kind "ping / sql_generation / check_suggestion / rca_narrative"
+        string status "pending / running / succeeded / failed"
+        uuid requested_by_user_id FK "SET NULL - record outlives requester"
+        uuid suite_id FK "CASCADE"
+        jsonb request "caller ask - never warehouse values"
+        string context_fingerprint "sha256 of the assembled prompt"
+        jsonb response
+        string error
+        int input_tokens "+ output_tokens, duration_ms - the cost record"
+    }
     incidents {
         uuid id PK
         uuid asset_id FK "CASCADE (ADR 0034)"
@@ -342,6 +363,8 @@ erDiagram
     users |o--o{ connection_versions : "changed_by (SET NULL)"
     users |o--o{ check_versions : "changed_by (SET NULL)"
     users |o--o{ audit_events : "actor_user_id (SET NULL)"
+    users |o--o{ llm_invocations : "requested_by (SET NULL)"
+    suites |o--o{ llm_invocations : "context scope (CASCADE)"
 
     connections ||--o{ connection_versions : "config history (CASCADE)"
     connections ||--o{ suites : "datasource for"

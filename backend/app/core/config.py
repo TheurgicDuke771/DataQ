@@ -181,6 +181,12 @@ class Settings(BaseSettings):
         10  # per-IP bucket for /api/v1/auth/* (#1127), checked before the bearer
         # branch so a token can't dodge it; per-email counters are service-level.
     )
+    rate_limit_llm_per_minute: int = (
+        10  # per-principal LLM mutations (ADR 0042) — each one is an outbound model call
+    )
+    rate_limit_llm_ip_per_minute: int = (
+        30  # per-IP ceiling across all llm buckets — the rotated-token backstop
+    )
     rate_limit_ip_per_minute: int = (
         1200  # per-IP ceiling across all bearer buckets (rotated-token backstop)
     )

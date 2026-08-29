@@ -26,6 +26,7 @@ from backend.app.services import (
     audit_read_service,
     audit_service,
     data_subject_requests,
+    llm_service,
 )
 from backend.app.services.otp_mailer import OtpMailer
 
@@ -179,6 +180,112 @@ def test_auth_email(
     mailer = OtpMailer(secret_store)
     mailer.send_preflight(to=current_user.email)
     return AuthEmailTestResponse(to=current_user.email)
+
+
+# ──────────────────── outbound-LLM provider config (ADR 0042, #1511) ────────────────────
+
+
+class LlmSettingsRead(ApiModel):
+    configured: bool
+    provider: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    structured_output: str | None = None
+    enabled: bool = False
+    #: Whether a credential is stored — the value itself is never returned.
+    has_credential: bool = False
+    updated_at: datetime | None = None
+
+
+class LlmSettingsUpdate(ApiRequestModel):
+    provider: Literal["anthropic", "openai_compatible"]
+    model: str
+    base_url: str | None = None
+    #: Write-only; omit to keep the stored credential (refused if the destination moved).
+    api_key: str | None = None
+    structured_output: Literal["native", "prompt_json"] = "native"
+    enabled: bool = True
+
+
+class LlmTestResponse(ApiModel):
+    ok: bool
+    model: str | None = None
+    latency_ms: int | None = None
+    reply_chars: int | None = None
+    error_code: str | None = None
+    error: str | None = None
+
+
+def _llm_settings_read(row: Any) -> LlmSettingsRead:
+    if row is None:
+        return LlmSettingsRead(configured=False)
+    return LlmSettingsRead(
+        configured=True,
+        provider=row.provider,
+        base_url=row.base_url,
+        model=row.model,
+        structured_output=row.structured_output,
+        enabled=row.enabled,
+        has_credential=row.api_key_secret_ref is not None,
+        updated_at=row.updated_at,
+    )
+
+
+@router.get("/llm", response_model=LlmSettingsRead, summary="Outbound-LLM provider config (admin)")
+def get_llm_settings(db: Annotated[Session, Depends(get_db)]) -> LlmSettingsRead:
+    return _llm_settings_read(llm_service.get_settings_row(db))
+
+
+@router.put(
+    "/llm", response_model=LlmSettingsRead, summary="Save the outbound-LLM provider (admin)"
+)
+def put_llm_settings(
+    payload: LlmSettingsUpdate,
+    current_user: Annotated[User, Depends(require_workspace_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+) -> LlmSettingsRead:
+    row = llm_service.save_settings(
+        db,
+        draft=llm_service.LlmSettingsDraft(
+            provider=payload.provider,
+            model=payload.model,
+            base_url=payload.base_url,
+            api_key=payload.api_key,
+            structured_output=payload.structured_output,
+            enabled=payload.enabled,
+        ),
+        actor=current_user,
+        secret_store=secret_store,
+    )
+    db.commit()
+    return _llm_settings_read(row)
+
+
+@router.post(
+    "/llm/test",
+    response_model=LlmTestResponse,
+    summary="Live-probe an LLM config draft — nothing persisted (admin)",
+)
+def test_llm_settings(
+    payload: LlmSettingsUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+) -> LlmTestResponse:
+    return LlmTestResponse(
+        **llm_service.test_settings(
+            db,
+            draft=llm_service.LlmSettingsDraft(
+                provider=payload.provider,
+                model=payload.model,
+                base_url=payload.base_url,
+                api_key=payload.api_key,
+                structured_output=payload.structured_output,
+                enabled=payload.enabled,
+            ),
+            secret_store=secret_store,
+        )
+    )
 
 
 # ───────────────────────── audit log (ADR 0041, #1318) ─────────────────────────
@@ -346,6 +453,52 @@ class DeploymentPostureRead(ApiModel):
     external_transfers: list[ExternalTransfer]
 
 
+def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
+    """The outbound-LLM posture row (ADR 0042): honest in BOTH states."""
+    row = llm_service.get_settings_row(db)
+    if row is not None and row.enabled:
+        return ExternalTransfer(
+            name="llm_intelligence",
+            enabled=True,
+            detail=(
+                f"The OUTBOUND direction — DataQ calling a model on its own behalf. "
+                f"Configured to a {row.provider} endpoint (model {row.model}), by an "
+                "admin, with the customer's own credential (ADR 0042). Prompt "
+                "context is schema plus masked aggregate profiler statistics — "
+                "never sample rows; every call is recorded in llm_invocations "
+                "with requester and token counts. Distinct from mcp_ai_clients "
+                "above, which is inbound."
+            ),
+        )
+    if row is not None:
+        return ExternalTransfer(
+            name="llm_intelligence",
+            enabled=False,
+            detail=(
+                f"The OUTBOUND direction — DataQ calling a model on its own behalf — "
+                f"is CONFIGURED (a {row.provider} endpoint and stored credential "
+                "exist) but disabled, so the feature endpoints refuse. The admin "
+                "test probe can still transmit a fixed test prompt to that "
+                "endpoint. Re-enabling is one admin toggle; delete the config to "
+                "remove the stored credential. Distinct from mcp_ai_clients "
+                "above, which is inbound."
+            ),
+        )
+    return ExternalTransfer(
+        name="llm_intelligence",
+        enabled=False,
+        detail=(
+            "The OUTBOUND direction — DataQ calling a model on its own behalf — "
+            "is built (ADR 0042) but not configured: no provider, no stored "
+            "credential, nothing leaves. When enabled it is a Ch. V transfer by "
+            "construction (schema-only context, PII-redacted, local-endpoint "
+            "option). Listed while absent on purpose: an auditor should see it "
+            "was considered, not infer its absence. Distinct from "
+            "mcp_ai_clients above, which is inbound."
+        ),
+    )
+
+
 @router.get(
     "/deployment",
     response_model=DeploymentPostureRead,
@@ -401,20 +554,7 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
                 "LLM entries here."
             ),
         ),
-        ExternalTransfer(
-            name="llm_intelligence",
-            enabled=False,
-            detail=(
-                "The OUTBOUND direction — DataQ calling a model on its own behalf — "
-                "and it is not built. When it lands it is a Ch. V transfer by "
-                "construction; its design posture (schema-only context, "
-                "PII-redacted, local-endpoint option) is in "
-                "docs/post-v1-dq-intelligence-notes.md. Listed while disabled on "
-                "purpose: an auditor should see it was considered, not infer its "
-                "absence. Distinct from mcp_ai_clients above, which is inbound "
-                "and live."
-            ),
-        ),
+        _llm_intelligence_transfer(db),
         ExternalTransfer(
             name="signin_email",
             enabled=bool(settings.auth_email_smtp_host),

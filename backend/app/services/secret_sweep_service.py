@@ -14,7 +14,7 @@ from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretInfo, SecretStore
 from backend.app.core.timeutil import as_utc
-from backend.app.db.models import Connection, SuiteNotification
+from backend.app.db.models import Connection, LlmSetting, SuiteNotification
 
 log = get_logger(__name__)
 
@@ -50,6 +50,8 @@ _OWNER_COLUMNS = (
     SuiteNotification.webhook_secret_ref,
     # Easy to miss: Teams and Slack are SEPARATE refs on the same row (#633).
     SuiteNotification.slack_webhook_secret_ref,
+    # The workspace LLM credential (ADR 0042) — a purge here kills the provider.
+    LlmSetting.api_key_secret_ref,
 )
 
 # JSONB-held refs, which no column-level scan can see.
