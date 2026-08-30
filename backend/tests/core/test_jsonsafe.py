@@ -138,6 +138,15 @@ def test_nested_bytes_list_is_sanitized() -> None:
     assert cleaned == {"partial_unexpected_list": ["00", "01"]}
 
 
+def test_bytearray_becomes_hex() -> None:
+    # Some DBAPI drivers hand back bytearray rather than bytes for a BINARY
+    # column — core/artifacts.py and lineage/dbt_manifest.py already treat the
+    # two as a pair, so sanitize_json must too (#1719 review).
+    cleaned = sanitize_json({"min_value": bytearray(b"\x01\x02")})
+    assert cleaned == {"min_value": "0102"}
+    json.dumps(cleaned, allow_nan=False)
+
+
 def test_timestamps_and_dates_become_isoformat() -> None:
     import datetime
 

@@ -4,7 +4,6 @@ access-event recording, and the ADR 0019 output gate.
 
 from __future__ import annotations
 
-import uuid
 from typing import Any
 
 import pytest
@@ -15,20 +14,12 @@ from backend.app.services import llm_service, llm_sqlgen
 from backend.app.services import profile_service as profile_service_module
 from backend.app.services.profile_service import ColumnProfile, ProfileResult
 from backend.tests.support.fake_secret_store import FakeSecretStore
-from backend.tests.support.llm_helpers import enable_llm, make_sql_suite
+from backend.tests.support.llm_helpers import admin_user, enable_llm, make_sql_suite
 
 
 @pytest.fixture
 def admin(db_session: Any) -> User:
-    user = User(
-        id=uuid.uuid4(),
-        aad_object_id=None,
-        email=f"sqlgen-{uuid.uuid4().hex[:8]}@example.com",
-        role="admin",
-    )
-    db_session.add(user)
-    db_session.commit()
-    return user
+    return admin_user(db_session, prefix="sqlgen")
 
 
 @pytest.fixture

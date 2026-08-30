@@ -19,6 +19,7 @@ from backend.app.core.secrets import SecretStore, SecretStoreUnavailableError
 from backend.app.db.models import Connection, Suite
 from backend.app.llm.base import LLMRequestInvalidError
 from backend.app.services import profile_service, run_service
+from backend.app.services.custom_sql import SQL_QUERYABLE_TYPES
 from backend.app.services.live_probe import (
     Destination,
     applicable_tags,
@@ -31,6 +32,11 @@ from backend.app.services.profile_service import ColumnProfile
 log = get_logger(__name__)
 
 
+def _clean(value: Any) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
 def target_identity(suite: Suite) -> dict[str, Any]:
     target = suite.target or {}
     return {
@@ -39,6 +45,42 @@ def target_identity(suite: Suite) -> dict[str, Any]:
         "catalog": target.get("catalog"),
         "namespace": target.get("namespace"),
     }
+
+
+def qualified_target(suite: Suite) -> str:
+    target = suite.target or {}
+    parts = (
+        _clean(target.get("catalog")),
+        _clean(target.get("schema")),
+        _clean(target.get("table")),
+    )
+    return ".".join(p for p in parts if p)
+
+
+def check_sql_target_preconditions(
+    suite: Suite,
+    connection: Connection | None,
+    *,
+    datasource_message: str,
+    no_target_message: str,
+) -> None:
+    """Refuses (`LLMRequestInvalidError`) unless `suite` targets a SQL-queryable
+    connection with a real table (+ catalog for Unity Catalog). Shared by every
+    SQL-scoped LLM feature kind's route (a synchronous 422) and its builder (the
+    TOCTOU re-check), so a precondition cannot be added at one altitude — or one
+    feature kind — and missed at the others.
+    """
+    if connection is None or connection.type not in SQL_QUERYABLE_TYPES:
+        raise LLMRequestInvalidError(
+            datasource_message, detail={"supported": sorted(SQL_QUERYABLE_TYPES)}
+        )
+    target = suite.target or {}
+    if _clean(target.get("table")) is None:
+        raise LLMRequestInvalidError(no_target_message)
+    # The run path requires a catalog for Unity Catalog; drifting from it would
+    # generate/profile against a name the actual run would refuse.
+    if connection.type == "unity_catalog" and _clean(target.get("catalog")) is None:
+        raise LLMRequestInvalidError("a Unity Catalog target requires a catalog")
 
 
 def list_columns_for_prompt(

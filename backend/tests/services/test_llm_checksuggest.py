@@ -4,7 +4,6 @@ data discipline, access-event recording, and the human-authoring-path gate.
 
 from __future__ import annotations
 
-import uuid
 from typing import Any
 
 import pytest
@@ -15,20 +14,12 @@ from backend.app.services import llm_checksuggest, llm_service
 from backend.app.services import profile_service as profile_service_module
 from backend.app.services.profile_service import ColumnProfile, ProfileResult
 from backend.tests.support.fake_secret_store import FakeSecretStore
-from backend.tests.support.llm_helpers import enable_llm, make_sql_suite
+from backend.tests.support.llm_helpers import admin_user, enable_llm, make_sql_suite
 
 
 @pytest.fixture
 def admin(db_session: Any) -> User:
-    user = User(
-        id=uuid.uuid4(),
-        aad_object_id=None,
-        email=f"checksuggest-{uuid.uuid4().hex[:8]}@example.com",
-        role="admin",
-    )
-    db_session.add(user)
-    db_session.commit()
-    return user
+    return admin_user(db_session, prefix="checksuggest")
 
 
 def _invocation(db_session: Any, suite: Suite, admin: User) -> LlmInvocation:
@@ -320,12 +311,16 @@ def test_output_gate_caps_at_max_suggestions(db_session: Any, admin: User) -> No
     """
     suite = make_sql_suite(db_session, admin)
     invocation = _invocation(db_session, suite, admin)
+    overflow = 5
     many = [
         _suggestion(config={"column": f"COL_{i}"})
-        for i in range(llm_checksuggest.MAX_SUGGESTIONS + 5)
+        for i in range(llm_checksuggest.MAX_SUGGESTIONS + overflow)
     ]
     out = llm_checksuggest.validate_output(db_session, invocation, {"suggestions": many})
     assert len(out["suggestions"]) == llm_checksuggest.MAX_SUGGESTIONS
+    # Every excess suggestion is reported, not silently dropped (#1719 review).
+    assert len(out["rejected"]) == overflow
+    assert all(r["reason"] == "suggestion limit reached" for r in out["rejected"])
 
 
 def test_output_gate_refuses_when_the_suite_is_gone(db_session: Any, admin: User) -> None:

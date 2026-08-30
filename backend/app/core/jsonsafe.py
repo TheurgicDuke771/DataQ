@@ -28,10 +28,12 @@ def sanitize_json(value: Any) -> Any:
     if isinstance(value, decimal.Decimal):
         value = float(value)
     # Warehouse BINARY/VARBINARY columns (e.g. a profiled column's MIN/MAX) surface as
-    # raw bytes — hex-encode rather than leaving something JSON can't serialize at all
-    # (the flat-file profiler's own `_to_native` has an equivalent str() catch-all;
-    # this is the SQL path's analogous case, #1719 review).
-    if isinstance(value, bytes):
+    # raw bytes (or bytearray, depending on the DBAPI driver — core/artifacts.py and
+    # lineage/dbt_manifest.py already treat the two as a pair) — hex-encode rather than
+    # leaving something JSON can't serialize at all (the flat-file profiler's own
+    # `_to_native` has an equivalent str() catch-all; this is the SQL path's analogous
+    # case, #1719 review).
+    if isinstance(value, (bytes, bytearray)):
         return value.hex()
     if isinstance(value, float):
         return value if math.isfinite(value) else None

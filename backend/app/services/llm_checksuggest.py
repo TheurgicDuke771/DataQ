@@ -33,7 +33,6 @@ from backend.app.datasources.expectation_allowlist import (
 from backend.app.db.models import Connection, LlmInvocation, Suite
 from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError
 from backend.app.services import check_dimension, check_service, llm_prompt_context, llm_service
-from backend.app.services.custom_sql import SQL_QUERYABLE_TYPES
 
 log = get_logger(__name__)
 
@@ -126,16 +125,12 @@ def check_generation_preconditions(suite: Suite, connection: Connection | None) 
     re-check) so a precondition cannot be added at one altitude and missed at
     the other. Raises `LLMRequestInvalidError` — never the model's error class.
     """
-    if connection is None or connection.type not in SQL_QUERYABLE_TYPES:
-        raise LLMRequestInvalidError(
-            "check suggestions require a SQL datasource",
-            detail={"supported": sorted(SQL_QUERYABLE_TYPES)},
-        )
-    target = suite.target or {}
-    if not str(target.get("table") or "").strip():
-        raise LLMRequestInvalidError("the suite has no table target to profile")
-    if connection.type == "unity_catalog" and not str(target.get("catalog") or "").strip():
-        raise LLMRequestInvalidError("a Unity Catalog target requires a catalog")
+    llm_prompt_context.check_sql_target_preconditions(
+        suite,
+        connection,
+        datasource_message="check suggestions require a SQL datasource",
+        no_target_message="the suite has no table target to profile",
+    )
 
 
 def _profile_prompt(
@@ -195,10 +190,7 @@ def build_prompt(
     profile_text, columns = _profile_prompt(
         session, suite, connection, secret_store=secret_store, actor=actor
     )
-    target = suite.target or {}
-    qualified = ".".join(
-        p for p in (target.get("catalog"), target.get("schema"), target.get("table")) if p
-    )
+    qualified = llm_prompt_context.qualified_target(suite)
     prompt = f"Table: {qualified}\nColumns: {', '.join(columns)}\n\nProfile:\n{profile_text}"
     return prompt, _SYSTEM, CHECKSUGGEST_SCHEMA
 
@@ -261,7 +253,17 @@ def validate_output(
     accepted: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
-    for raw in raw_suggestions[:MAX_SUGGESTIONS]:
+    for raw in raw_suggestions:
+        # The schema caps the array at MAX_SUGGESTIONS, but not every provider
+        # enforces its own schema server-side — an over-long response is
+        # reported, not silently sliced off (every input item lands in exactly
+        # one of accepted/rejected).
+        if len(accepted) >= MAX_SUGGESTIONS:
+            expectation_type = raw.get("expectation_type") if isinstance(raw, dict) else None
+            rejected.append(
+                {"expectation_type": expectation_type, "reason": "suggestion limit reached"}
+            )
+            continue
         if not isinstance(raw, dict):
             rejected.append({"expectation_type": None, "reason": "suggestion was not an object"})
             continue

@@ -59,38 +59,17 @@ _SYSTEM = (
 )
 
 
-def _clean(value: Any) -> str | None:
-    text = str(value).strip() if value is not None else ""
-    return text or None
-
-
 def check_generation_preconditions(suite: Suite, connection: Connection | None) -> None:
     """Shared by the route (a synchronous 422) and `build_prompt` (the TOCTOU
     re-check) so a precondition cannot be added at one altitude and missed at
     the other. Raises `LLMRequestInvalidError` — never the model's error class.
     """
-    if connection is None or connection.type not in SQL_QUERYABLE_TYPES:
-        raise LLMRequestInvalidError(
-            "custom SQL requires a SQL datasource",
-            detail={"supported": sorted(SQL_QUERYABLE_TYPES)},
-        )
-    target = suite.target or {}
-    if _clean(target.get("table")) is None:
-        raise LLMRequestInvalidError("the suite has no table target to generate SQL against")
-    # The run path (`_unity_catalog_target`) requires a catalog; drifting from it
-    # would generate SQL against a name the actual run would refuse.
-    if connection.type == "unity_catalog" and _clean(target.get("catalog")) is None:
-        raise LLMRequestInvalidError("a Unity Catalog target requires a catalog")
-
-
-def _qualified_target(suite: Suite) -> str:
-    target = suite.target or {}
-    parts = (
-        _clean(target.get("catalog")),
-        _clean(target.get("schema")),
-        _clean(target.get("table")),
+    llm_prompt_context.check_sql_target_preconditions(
+        suite,
+        connection,
+        datasource_message="custom SQL requires a SQL datasource",
+        no_target_message="the suite has no table target to generate SQL against",
     )
-    return ".".join(p for p in parts if p)
 
 
 def _schema_context(
@@ -174,7 +153,7 @@ def build_prompt(
         )
     prompt = (
         f"Dialect: {_DIALECT_BY_TYPE[connection.type]}\n"
-        f"Table: {_qualified_target(suite)}\n"
+        f"Table: {llm_prompt_context.qualified_target(suite)}\n"
         f"{context}\n\n"
         f"Rule to check: {description}"
     )
