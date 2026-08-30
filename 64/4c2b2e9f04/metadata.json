@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "644c2b2e9f04",
+  "strategy": "manual-commit",
+  "branch": "docs/roadmap-1710-column-lineage",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "context/roadmap-v1.2-v1.3.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/64/4c2b2e9f04/0/metadata.json",
+      "transcript": "/64/4c2b2e9f04/0/full.jsonl",
+      "compact_transcript": "/64/4c2b2e9f04/0/transcript.jsonl",
+      "content_hash": "/64/4c2b2e9f04/0/content_hash.txt",
+      "prompt": "/64/4c2b2e9f04/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 332,
+    "cache_creation_tokens": 1247940,
+    "cache_read_tokens": 42988504,
+    "output_tokens": 156376,
+    "api_call_count": 168
+  }
+}
