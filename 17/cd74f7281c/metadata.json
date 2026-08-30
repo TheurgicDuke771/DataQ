@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "17cd74f7281c",
+  "strategy": "manual-commit",
+  "branch": "feature/1513-llm-check-suggestions",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/jsonsafe.py",
+    "backend/tests/core/test_jsonsafe.py",
+    "backend/tests/services/test_profile_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/17/cd74f7281c/0/metadata.json",
+      "transcript": "/17/cd74f7281c/0/full.jsonl",
+      "compact_transcript": "/17/cd74f7281c/0/transcript.jsonl",
+      "content_hash": "/17/cd74f7281c/0/content_hash.txt",
+      "prompt": "/17/cd74f7281c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 122,
+    "cache_creation_tokens": 109111,
+    "cache_read_tokens": 28519726,
+    "output_tokens": 45826,
+    "api_call_count": 61
+  }
+}
