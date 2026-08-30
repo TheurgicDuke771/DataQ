@@ -61,6 +61,12 @@ monitored" — the #1 gap in both our own G-a and the external review.
 - The scorecard metric: **% of assets continuously monitored without a human
   authoring a check**, on the dashboard, with the false-positive companion rate.
 - Anomaly promotion: from opt-in check kind to per-asset system (rides #1661).
+- [#1710](https://github.com/TheurgicDuke771/DataQ/issues/1710) column-level
+  lineage pull — the declared enhancer slot: suggestion placement/dedup +
+  classification propagation. NOT a gate for #1513/#1660 (decision + full
+  reasoning on the issue, 2026-08-30); a pull, never a build (ADR 0034 —
+  ACCESS_HISTORY columns / UC `system.access.column_lineage`). The #1660 W8
+  spike designs the suggestion engine with this slot declared.
 
 ### Track 2 — External evidence (not a feature; the priority anyway)
 
