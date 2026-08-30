@@ -13,7 +13,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select, update
@@ -307,13 +307,18 @@ def execute_invocation(
     invocation = session.get(LlmInvocation, invocation_id)
     assert invocation is not None  # just claimed it  # nosec B101
     started = time.monotonic()
+    # Accumulated locally, not written onto the tracked ORM object: the terminal
+    # write below is an explicit status-guarded UPDATE (the reap-race fix, #1716
+    # review), and a dirty ORM object would autoflush its own unguarded UPDATE
+    # first and reintroduce exactly that race.
+    terminal: dict[str, Any] = {}
     try:
         builder = KIND_BUILDERS.get(invocation.kind)
         if builder is None:
             # A wiring bug, not a provider fault — surfaces as `internal:`.
             raise RuntimeError(f"no builder registered for kind {invocation.kind!r}")
         prompt, system, schema = builder(session, invocation, secret_store)
-        invocation.context_fingerprint = hashlib.sha256(
+        terminal["context_fingerprint"] = hashlib.sha256(
             (prompt + (system or "")).encode()
         ).hexdigest()
         provider = build_provider(session, secret_store)
@@ -327,26 +332,39 @@ def execute_invocation(
             payload = {"text": _scrub_nul(result.text)}
         # Paid tokens are recorded whether or not the OUTPUT gate below refuses —
         # the row is the cost record, and a refused generation still billed.
-        invocation.input_tokens = result.input_tokens
-        invocation.output_tokens = result.output_tokens
+        terminal["input_tokens"] = result.input_tokens
+        terminal["output_tokens"] = result.output_tokens
         # The gate sees the exact bytes that will be stored (scrub BEFORE
         # validate): a NUL inside a keyword must not split tokens for the
         # validator and re-join in the stored copy.
         validator = KIND_VALIDATORS.get(invocation.kind)
         if validator is not None:
             payload = validator(session, invocation, payload)
-        invocation.response = _scrub_nul(payload)
-        invocation.status = "succeeded"
+        terminal["response"] = _scrub_nul(payload)
+        terminal["status"] = "succeeded"
     except DataQError as exc:
-        invocation.status = "failed"
-        invocation.error = str(_scrub_nul(f"{exc.code}: {exc.message}"))[:1024]
+        terminal["status"] = "failed"
+        terminal["error"] = str(_scrub_nul(f"{exc.code}: {exc.message}"))[:1024]
     except Exception as exc:  # a driver-boundary surprise must still terminate the row
-        invocation.status = "failed"
-        invocation.error = f"internal: {exc.__class__.__name__}"[:1024]
+        terminal["status"] = "failed"
+        terminal["error"] = f"internal: {exc.__class__.__name__}"[:1024]
         log.exception("llm_invocation_crashed", invocation_id=str(invocation_id))
-    invocation.duration_ms = int((time.monotonic() - started) * 1000)
-    invocation.finished_at = datetime.now(UTC)
+    terminal["duration_ms"] = int((time.monotonic() - started) * 1000)
+    terminal["finished_at"] = datetime.now(UTC)
+
+    def _persist(values: dict[str, Any]) -> int:
+        # Guarded like the claim above: a row the reaper already closed out
+        # (#1644) must not be resurrected by a worker that was merely slow, not
+        # dead.
+        outcome = session.execute(
+            update(LlmInvocation)
+            .where(LlmInvocation.id == invocation_id, LlmInvocation.status == "running")
+            .values(**values)
+        )
+        return getattr(outcome, "rowcount", 0)
+
     try:
+        affected = _persist(terminal)
         session.commit()
     except Exception:
         # Unstorable payload (the scrub is belt, this is braces): drop the
@@ -354,25 +372,45 @@ def execute_invocation(
         # unacceptable outcome.
         log.exception("llm_invocation_persist_failed", invocation_id=str(invocation_id))
         session.rollback()
-        session.execute(
-            update(LlmInvocation)
-            .where(LlmInvocation.id == invocation_id)
-            .values(
-                status="failed",
-                error="internal: result could not be stored",
-                finished_at=datetime.now(UTC),
-            )
+        affected = _persist(
+            {
+                "status": "failed",
+                "error": "internal: result could not be stored",
+                "finished_at": datetime.now(UTC),
+            }
         )
         session.commit()
+        if affected == 0:
+            log.warning(
+                "llm_invocation_result_superseded",
+                invocation_id=str(invocation_id),
+                attempted_status=terminal.get("status"),
+                input_tokens=terminal.get("input_tokens"),
+                output_tokens=terminal.get("output_tokens"),
+            )
+            return "superseded"
         return "failed"
+    if affected == 0:
+        # Reaped out from under this worker while it was still working: the row
+        # itself must not be resurrected, but a genuinely succeeded call still
+        # billed — the tokens are recorded here since there is nowhere left to
+        # persist them (the row the cost record lives on is already closed).
+        log.warning(
+            "llm_invocation_result_superseded",
+            invocation_id=str(invocation_id),
+            attempted_status=terminal["status"],
+            input_tokens=terminal.get("input_tokens"),
+            output_tokens=terminal.get("output_tokens"),
+        )
+        return "superseded"
     log.info(
         "llm_invocation_finished",
         invocation_id=str(invocation_id),
         kind=invocation.kind,
-        status=invocation.status,
-        duration_ms=invocation.duration_ms,
+        status=terminal["status"],
+        duration_ms=terminal["duration_ms"],
     )
-    return invocation.status
+    return str(terminal["status"])
 
 
 def get_visible_invocation(
@@ -384,6 +422,62 @@ def get_visible_invocation(
     if not is_admin and invocation.requested_by_user_id != user.id:
         return None
     return invocation
+
+
+_PENDING_REAP_REASON = (
+    "reaped: stuck in pending — the dispatch was likely lost before a worker claimed it"
+)
+_RUNNING_REAP_REASON = "reaped: the worker never finished — likely killed mid-call"
+
+
+def reap_stuck_invocations(
+    session: Session,
+    *,
+    pending_threshold_minutes: int,
+    running_threshold_minutes: int,
+    now: datetime | None = None,
+) -> list[LlmInvocation]:
+    """Fail `llm_invocations` stranded past their status's threshold (#1644).
+
+    `execute_invocation`'s terminal-state guarantee only covers an in-process
+    exception; a row can strand in `pending` (API died before `send_task`, or the
+    broker dropped the message) or `running` (worker SIGKILL/OOM mid-provider-call).
+    """
+    # Conditional UPDATE (same idiom as execute_invocation's claim): the WHERE-status
+    # guard is re-checked by Postgres at UPDATE time, so a row a worker legitimately
+    # finished between our SELECT and our COMMIT can never be clobbered back to
+    # `failed` — a plain select-then-mutate-then-commit would race it (#1716 review).
+    moment = now or datetime.now(UTC)
+    reaped_ids: list[uuid.UUID] = []
+    if pending_threshold_minutes > 0:
+        cutoff = moment - timedelta(minutes=pending_threshold_minutes)
+        result = session.execute(
+            update(LlmInvocation)
+            .where(LlmInvocation.status == "pending", LlmInvocation.created_at < cutoff)
+            .values(status="failed", error=_PENDING_REAP_REASON, finished_at=moment)
+            .returning(LlmInvocation.id)
+        )
+        reaped_ids.extend(result.scalars().all())
+    if running_threshold_minutes > 0:
+        cutoff = moment - timedelta(minutes=running_threshold_minutes)
+        result = session.execute(
+            update(LlmInvocation)
+            .where(LlmInvocation.status == "running", LlmInvocation.started_at < cutoff)
+            .values(status="failed", error=_RUNNING_REAP_REASON, finished_at=moment)
+            .returning(LlmInvocation.id)
+        )
+        reaped_ids.extend(result.scalars().all())
+    if not reaped_ids:
+        return []
+    session.commit()
+    log.warning(
+        "llm_invocations_reaped",
+        count=len(reaped_ids),
+        pending_threshold_minutes=pending_threshold_minutes,
+        running_threshold_minutes=running_threshold_minutes,
+        invocation_ids=[str(i) for i in reaped_ids],
+    )
+    return list(session.scalars(select(LlmInvocation).where(LlmInvocation.id.in_(reaped_ids))))
 
 
 def list_recent_invocations(session: Session, *, limit: int = 50) -> list[LlmInvocation]:

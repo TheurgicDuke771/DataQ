@@ -785,6 +785,27 @@ def reap_stuck_runs() -> int:
         session.close()
 
 
+# ─────────────────────── llm_invocations reaper (#1644) ────────────────────
+
+
+@celery_app.task(name="reap_stuck_llm_invocations")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def reap_stuck_llm_invocations() -> int:
+    """Fail `llm_invocations` stranded in `pending`/`running` (#1644).
+    No alert — see `llm_service.reap_stuck_invocations`. Returns the count reaped.
+    """
+    session = get_session()
+    try:
+        settings = get_settings()
+        reaped = llm_service.reap_stuck_invocations(
+            session,
+            pending_threshold_minutes=settings.llm_invocation_pending_threshold_minutes,
+            running_threshold_minutes=settings.llm_invocation_running_threshold_minutes,
+        )
+        return len(reaped)
+    finally:
+        session.close()
+
+
 # ──────────────────────── orphan-asset sweep (#770) ──────────────────────────
 
 
