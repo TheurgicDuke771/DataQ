@@ -116,6 +116,12 @@ class Settings(BaseSettings):
 
     # Stuck-run reaper (#309).
     stuck_run_threshold_minutes: int = 60
+
+    # llm_invocations reaper (#1644): pending covers a lost dispatch (API died before
+    # send_task, or the broker dropped the message); running covers a worker
+    # SIGKILL/OOM mid-provider-call — margin sits above the 120s provider timeout.
+    llm_invocation_pending_threshold_minutes: int = 15
+    llm_invocation_running_threshold_minutes: int = 10
     # Recycle a prefork child past this RSS (KiB) so a large materialisation can't ratchet the
     # worker baseline (#755). 0 disables.
     worker_max_memory_per_child_kb: int = 1_500_000

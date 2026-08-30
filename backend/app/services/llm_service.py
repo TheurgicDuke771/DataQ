@@ -13,7 +13,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select, update
@@ -384,6 +384,60 @@ def get_visible_invocation(
     if not is_admin and invocation.requested_by_user_id != user.id:
         return None
     return invocation
+
+
+_PENDING_REAP_REASON = (
+    "reaped: stuck in pending — the dispatch was likely lost before a worker claimed it"
+)
+_RUNNING_REAP_REASON = "reaped: the worker never finished — likely killed mid-call"
+
+
+def reap_stuck_invocations(
+    session: Session,
+    *,
+    pending_threshold_minutes: int,
+    running_threshold_minutes: int,
+    now: datetime | None = None,
+) -> list[LlmInvocation]:
+    """Fail `llm_invocations` stranded past their status's threshold (#1644).
+
+    `execute_invocation`'s terminal-state guarantee only covers an in-process
+    exception; a row can strand in `pending` (API died before `send_task`, or the
+    broker dropped the message) or `running` (worker SIGKILL/OOM mid-provider-call).
+    """
+    moment = now or datetime.now(UTC)
+    stuck: list[tuple[LlmInvocation, str]] = []
+    if pending_threshold_minutes > 0:
+        cutoff = moment - timedelta(minutes=pending_threshold_minutes)
+        pending_rows = session.scalars(
+            select(LlmInvocation).where(
+                LlmInvocation.status == "pending", LlmInvocation.created_at < cutoff
+            )
+        )
+        stuck.extend((row, _PENDING_REAP_REASON) for row in pending_rows)
+    if running_threshold_minutes > 0:
+        cutoff = moment - timedelta(minutes=running_threshold_minutes)
+        running_rows = session.scalars(
+            select(LlmInvocation).where(
+                LlmInvocation.status == "running", LlmInvocation.started_at < cutoff
+            )
+        )
+        stuck.extend((row, _RUNNING_REAP_REASON) for row in running_rows)
+    for invocation, reason in stuck:
+        invocation.status = "failed"
+        invocation.error = reason
+        invocation.finished_at = moment
+    reaped = [invocation for invocation, _reason in stuck]
+    if reaped:
+        session.commit()
+        log.warning(
+            "llm_invocations_reaped",
+            count=len(reaped),
+            pending_threshold_minutes=pending_threshold_minutes,
+            running_threshold_minutes=running_threshold_minutes,
+            invocation_ids=[str(i.id) for i in reaped],
+        )
+    return reaped
 
 
 def list_recent_invocations(session: Session, *, limit: int = 50) -> list[LlmInvocation]:
