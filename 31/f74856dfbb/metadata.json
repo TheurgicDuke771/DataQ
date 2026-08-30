@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "31f74856dfbb",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1644-llm-invocations-reaper",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "backend/app/services/llm_service.py",
+    "backend/app/worker/celery_app.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/services/test_llm_reaper.py",
+    "backend/tests/worker/test_llm_reaper_task.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/31/f74856dfbb/0/metadata.json",
+      "transcript": "/31/f74856dfbb/0/full.jsonl",
+      "compact_transcript": "/31/f74856dfbb/0/transcript.jsonl",
+      "content_hash": "/31/f74856dfbb/0/content_hash.txt",
+      "prompt": "/31/f74856dfbb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 96,
+    "cache_creation_tokens": 146281,
+    "cache_read_tokens": 7137734,
+    "output_tokens": 23123,
+    "api_call_count": 48
+  }
+}

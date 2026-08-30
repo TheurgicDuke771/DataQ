@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "31f74856dfbb",
+  "session_id": "73687eb1-c819-42a7-ab35-5fc0e83d0623",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-30T17:18:07.387618Z",
+  "branch": "fix/issue-1644-llm-invocations-reaper",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "backend/app/services/llm_service.py",
+    "backend/app/worker/celery_app.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/services/test_llm_reaper.py",
+    "backend/tests/worker/test_llm_reaper_task.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "85d918cb0bdf",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 96,
+    "cache_creation_tokens": 146281,
+    "cache_read_tokens": 7137734,
+    "output_tokens": 23123,
+    "api_call_count": 48
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-30T17:18:07.367557Z",
+    "agent_lines": 229,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 229,
+    "total_lines_changed": 230,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}

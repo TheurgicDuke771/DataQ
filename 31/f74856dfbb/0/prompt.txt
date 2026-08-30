@@ -1,0 +1,8 @@
+Hey, 
+Check the pending Items from week 4 
+research and plan the details. 
+Check filled issues, create additional if required. 
+rank them based on priority and dependencies. 
+Create a TODO list, start the execution. 
+
+note: keep the comments at minimum [~ 0.2 prose to code ratio]
