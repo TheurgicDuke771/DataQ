@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "3450cdde1b4f",
+  "strategy": "manual-commit",
+  "branch": "chore/scrub-adr-issue-pr-refs-from-ui",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    "CONTRIBUTING.md",
+    "scripts/check-frontend-no-ticket-refs.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/34/50cdde1b4f/0/metadata.json",
+      "transcript": "/34/50cdde1b4f/0/full.jsonl",
+      "compact_transcript": "/34/50cdde1b4f/0/transcript.jsonl",
+      "content_hash": "/34/50cdde1b4f/0/content_hash.txt",
+      "prompt": "/34/50cdde1b4f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 39852,
+    "cache_read_tokens": 4017946,
+    "output_tokens": 19847,
+    "api_call_count": 20
+  }
+}

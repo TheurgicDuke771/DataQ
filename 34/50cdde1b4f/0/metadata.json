@@ -1,0 +1,88 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "3450cdde1b4f",
+  "session_id": "d2770658-7c8b-431b-991f-06fadb7bbb70",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-30T16:08:57.825729Z",
+  "branch": "chore/scrub-adr-issue-pr-refs-from-ui",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    "CONTRIBUTING.md",
+    "scripts/check-frontend-no-ticket-refs.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "24cc7fa41d6c",
+  "checkpoint_transcript_start": 340,
+  "transcript_lines_at_start": 340,
+  "compact_transcript_start": 56,
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 39852,
+    "cache_read_tokens": 4017946,
+    "output_tokens": 19847,
+    "api_call_count": 20
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_015tuG7Q797aYkBXDBrrMcFf",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "24cc7fa41d6c",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 363,
+        "end": 364,
+        "entry_ids": [
+          "57f7723b-a743-428e-ba1b-b0be18fec6a0"
+        ],
+        "tool_use_id": "toolu_015tuG7Q797aYkBXDBrrMcFf"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_015tuG7Q797aYkBXDBrrMcFf"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-30T16:08:57.790972Z",
+    "agent_lines": 68,
+    "agent_removed": 26,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 68,
+    "total_lines_changed": 94,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+yes PR + code-review
+
+---
+
+<task-notification>
+<task-id>abf9fb204eeb9456f</task-id>
+<tool-use-id>toolu_01YN8NJtGzfbwdSGswNHXfYf</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d2770658-7c8b-431b-991f-06fadb7bbb70/tasks/abf9fb204eeb9456f.output</output-file>
+<status>completed</status>
+<summary>Agent "Cleanup/altitude/conventions pass on PR 1712" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review: PR #1712 (`chore/scrub-adr-issue-pr-refs-from-ui`)
+
+### Angle 1 — Reuse
+**Nothing to flag.** `check-frontend-no-ticket-refs.py` shares the `_tracked_files()`/`_scannable()`/`scan()`/`main()` shape and `PRAGMA` idiom with `scripts/check-identifiers.py`, but there is no shared/importable module anywhere in `scripts/` that either script is bypassing (confirmed via grep — `check-identifiers.py` and the new script are the *only* two files defining `_tracked_files`/`_scannable`/`PRAGMA`, and neither imports from a common location). This is the established per-file convention in this directory, not new duplication introduced by this PR.
+
+### Angle 2 — Simplification
+1. **file:** `scripts/check-frontend-no-ticket-refs.py`
+   **line:** 149, 154
+   **summary:** `spans_end = 0` (line 149) is assigned and never read before `del spans_end` (line 154) removes it — confirmed dead, no-op code.
+   **failure_scenario:** Not a functional bug, but it's leftover debug/refactor cruft in the exact function (`scan()`) whose per-line comment-tracking logic is the trickiest part of this file to follow — a future maintainer will waste time assuming `spans_end` is used somewhere (e.g. to track a comment-span end offset, which the name implies) and searching for its consumer before realizing it does nothing. The five lines reduce cleanly to just the `last_open`/`last_close`/`if` block with no behavior change.
+
+### Angle 3 — Efficiency
+**Nothing to flag.** `_tracked_files()` makes exactly one `git ls-files` subprocess call, only as a fallback when no filenames are passed on argv. The new hook entry in `.pre-commit-config.yaml` (unlike `check-docs-publication`/`check-docs-references`, which set `pass_filenames: false` because they need a whole-tree view) omits `pass_filenames: false`, so pre-commit passes only the changed `frontend/src/**/*.tsx?` files as argv — matching `check-identifiers.py`'s incremental-scan behavior. `scan()` is called exactly once from `main()`. No redundant I/O or repeated work introduced.
+
+### Angle 4 — Conventions
+2. **file:** `.pre-commit-config.yaml` (new hook, lines 84–89); governing rule in `CONTRIBUTING.md`
+   **line:** `.pre-commit-config.yaml:84-89` (new `check-frontend-no-ticket-refs` hook)
+   **summary:** Every other pre-commit-backed check script in `scripts/` has a matching numbered rule in `CONTRIBUTING.md` documenting its policy — `check-identifiers.py` → rule **15a** ("`scripts/check-identifiers.py`, pre-commit AND CI..."), `check-docs-publication.py` → rule **15b**, `check-docs-references.py` → rule **41** ("Published docs ... never cite issue IDs or PR numbers"). This PR adds a fourth sibling hook (`check-frontend-no-ticket-refs.py`) with the same shape and purpose (blocking ticket refs from a rendered surface) but the diff touches no doc file — `git diff main...pr-1712 -- CONTRIBUTING.md CLAUDE.md docs/site/` is empty.
+   **failure_scenario:** CONTRIBUTING.md rule **1b** states: *"Update docs in the same PR if the change is user-facing or architectural — CLAUDE.md, the relevant ADR, CONTRIBUTING.md, or user docs, whichever applies."* Adding a new permanent CI/pre-commit gate that changes what contributors are and aren't allowed to write in frontend source is exactly the class of change rules 15a/15b/41 exist to record — a contributor who reads CONTRIBUTING.md's commit-discipline section (which enumerates every other check script by name) will not learn this fourth gate exists, why the `frontend-ui-ok:` pragma is spelled that way, or that it's scoped to non-test `.tsx?` files, until they trip the hook themselves. The convention this same PR relies on (three prior rule numbers, one per script) is the standard it doesn't follow for its own addition.
+
+**Files referenced:**
+- `/Users/arijit/Coding/Python/DataQ/scripts/check-frontend-no-ticket-refs.py` (new file, lines 149/154)
+- `/Users/arijit/Coding/Python/DataQ/.pre-commit-config.yaml` (lines 84–89)
+- `/Users/arijit/Coding/Python/DataQ/CONTRIBUTING.md` (rule 1b at line 12; sibling precedents at rules 15a/15b lines 83–100 and rule 41 at line 158)</result>
+<usage><subagent_tokens>123261</subagent_tokens><tool_uses>20</tool_uses><duration_ms>122896</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2deadb13c380b86d</task-id>
+<tool-use-id>toolu_01Te7VZoZb8vZYw8uXSCkUDF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d2770658-7c8b-431b-991f-06fadb7bbb70/tasks/a2deadb13c380b86d.output</output-file>
+<status>completed</status>
+<summary>Agent "Fresh line-by-line + cross-file bug hunt" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Clean (all scratch files were already removed). Here are my findings.
+
+**Task 1 (line-by-line diff scan of the 8 text edits):** All eight are clean. Every removed `(ADR NNNN)` / `(#NNNN)` parenthetical leaves correct punctuation and spacing behind (checked concatenated template strings in `connectionFormSpec.ts` and the JSX template literal in `TriggersPanel.tsx` char-by-char), and I grepped all frontend tests for the old exact strings — none assert on them, so no test breakage. No bugs found here.
+
+**Task 2 (cross-file tracer):** Found real, reproduced false positives in the new script. I verified each by actually running `scripts/check-frontend-no-ticket-refs.py` against synthetic files in the PR's own worktree.
+
+1. **file**: `scripts/check-frontend-no-ticket-refs.py`, **line**: 48 (`TICKET_PATTERN`) + 74 (`_looks_like_hex_color`)
+   **summary**: Unquoted CSS hex colors inside a template-literal CSS block (the exact pattern already used by `frontend/src/auth/LoginPage.tsx`'s `LOGIN_CSS` backtick string) are misdetected as issue/PR references.
+   **failure_scenario**: A future edit adds a rule like `` `.foo { color: #333; }` `` to a `LOGIN_CSS`-style template literal. `_looks_like_hex_color` only recognizes a hex color when a quote/backtick character sits immediately before `#` and immediately after the digits — true for `'#333'` but false for unquoted CSS `color: #333;` (surrounding chars are a space and a semicolon). Reproduced live: scanning a file containing `` `.foo { color: #333; border: 1px solid #999; }` `` reports both `#333` and `#999` as "issue/PR reference" and exits 1, blocking the commit.
+
+2. **file**: `scripts/check-frontend-no-ticket-refs.py`, **line**: 108–163 (`scan()`, whole-file string scanning with no distinction between rendered and non-rendered code)
+   **summary**: The script's stated scope (per its own module docstring: "a string a Tag/Tooltip/Alert/form-field renders on screen") is narrower than what it actually scans — it flags any non-comment string/template literal, including `console.warn`/`console.error` debug messages and `data-testid`/`id` attribute values that a real user never sees.
+   **failure_scenario**: `console.warn('Skipping stale near-miss row (#1186), see backend for details')` or `&lt;div data-testid="adr-0038-panel"&gt;` — neither renders to an end user, but both are flagged identically to real UI text (reproduced live, both trip the hook and exit 1). A developer adding a debug log or a ticket-referencing test id for traceability gets blocked for a reason the tool's own rationale doesn't apply to.
+
+3. **file**: `scripts/check-frontend-no-ticket-refs.py`, **line**: 48 (`TICKET_PATTERN`)
+   **summary**: `#NNN`–`#NNNNN` is also the natural way to write an ordinary domain reference number (batch/run/order/row id), which DataQ's own domain (runs, batches, results) makes very plausible in future UI copy, and the regex has no way to distinguish it from a GitHub issue/PR number.
+   **failure_scenario**: Static UI text `&lt;span&gt;Batch #4521 processed successfully&lt;/span&gt;` — ordinary product copy, no GitHub reference intended — is flagged as `[issue/PR reference] '#4521'` and blocks the commit (reproduced live). Any future "Run #1024 skipped 3 checks"-style copy hits the same wall and needs a `frontend-ui-ok:` pragma just to state a business fact.
+
+4. **file**: `.pre-commit-config.yaml` line 87 (`exclude:`) vs `scripts/check-frontend-no-ticket-refs.py` line 42 (`SKIP_PREFIXES`) — lower confidence
+   **summary**: The two "which files are in scope" definitions diverge on directory-based test exclusion: the YAML `exclude` regex only recognizes the `.test.tsx`/`.spec.tsx` filename-suffix convention, while the script additionally hard-codes `frontend/src/test/` and `frontend/src/tests/` as skip-prefixes with no YAML-side counterpart.
+   **failure_scenario**: Currently dormant — no such directories exist in the repo today (confirmed via `find`), so it's a latent divergence rather than an active bug. If the frontend later adopts a `frontend/src/__tests__/` or a shared `frontend/src/test-utils/` directory (common React conventions, and NOT covered by either the YAML exclude or `SKIP_PREFIXES` as spelled), files there would pass through both filters and get scanned — likely harmless for genuinely non-UI test helper files, but shows the two definitions were never reconciled into one source of truth, which is exactly the drift the task asked to check for.
+
+I did not re-flag the CI-backstop question or the `stripped.startswith("*")` JSDoc logic, per your exclusions. I did not pad the list with weaker candidates (e.g., a theoretical `ADR` prose collision) since I couldn't construct one as realistic as the four above — `\bADR[- ]?\d{2,4}\b`'s leading word-boundary requirement rules out the common English-word collisions I tried (ADDRESS, QUADRANT, GUARD, ADAPTER, etc.).</result>
+<usage><subagent_tokens>143362</subagent_tokens><tool_uses>19</tool_uses><duration_ms>393858</duration_ms></usage>
+</task-notification>
