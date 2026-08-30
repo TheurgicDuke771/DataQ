@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "8b5f932cd4e2",
+  "strategy": "manual-commit",
+  "branch": "docs/v13-roadmap-and-stories",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "context/roadmap-v1.2-v1.3.md",
+    "docs/stories.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8b/5f932cd4e2/0/metadata.json",
+      "transcript": "/8b/5f932cd4e2/0/full.jsonl",
+      "compact_transcript": "/8b/5f932cd4e2/0/transcript.jsonl",
+      "content_hash": "/8b/5f932cd4e2/0/content_hash.txt",
+      "prompt": "/8b/5f932cd4e2/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 18205,
+    "cache_read_tokens": 3502793,
+    "output_tokens": 17449,
+    "api_call_count": 10
+  }
+}
