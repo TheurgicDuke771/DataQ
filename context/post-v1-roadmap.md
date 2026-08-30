@@ -158,8 +158,7 @@ push-narrative-into-the-alert version is the premium ergonomics, not a gate.
 
 This is the **incident-narrative half of gap G-d** done LLM-natively, and it compounds with
 Theme 1 (anomaly baselines sharpen the dossier) and Theme 5 (the card enriches the alert
-payload). No issues filed yet — file the two layers as separate issues when picked up (layer 1
-has no LLM dependency and can ship alone).
+payload). **Both layers now filed/shipped (v1.2 W3/W4):** layer 1 = the deterministic evidence card (shipped W3, PR #1634; contract published via #1654; enrichment #1635); layer 2 = the LLM narrative, filed as #1633 on the ADR 0042 `LLMProvider` seam; the alert-side delivery is #1647.
 
 ---
 
@@ -174,10 +173,10 @@ trusted-team tool; the market leaders lead with checks→results→trends→aler
 | [#411](https://github.com/TheurgicDuke771/DataQ/issues/411) | Workspace-admin: workspace-wide view on Dashboard + Results (both are owned-or-shared scoped today) |
 | [#412](https://github.com/TheurgicDuke771/DataQ/issues/412) | Admin page is read-only — allow workspace-admin write actions (manage shares / suites) |
 | [#461](https://github.com/TheurgicDuke771/DataQ/issues/461) | **DataQ-issued API keys / service tokens** (REST + MCP) — see below |
-| _(no issue yet)_ | **Data-asset-centric view** — the biggest IA gap (added 2026-07-04): the UI is suite-centric but users think table-centric ("is `orders` healthy?"). A dataset page aggregating every check, result, freshness state, and trend across all suites targeting that table/file pattern. The natural UI anchor for Theme 14's lineage/governance pull and the Theme-2 RCA blast radius; category leaders are asset-first for this reason. **Phase 2 of the Asset-first IA capture below** — build the asset entity first. |
-| _(no issue yet)_ | **Global search / command palette (⌘K)** — jump to any suite/check/connection/run by name. The list APIs exist; disproportionate daily-use payoff for a small build. |
-| _(no issue yet)_ | **First-run onboarding + empty-state pass** — guided connect → suite → check → run path and designed empty states. Low value for the current solo deployment, first-touch-critical for any marketplace/BYOL evaluator (ADR 0013); cheap to retrofit now vs. embarrassing at listing time. |
-| _(no issue yet)_ | **Bulk operations on checks** — multi-select enable/disable/severity/snooze; one-at-a-time editing doesn't survive 50-check suites. |
+| ~~shipped~~ [#760](https://github.com/TheurgicDuke771/DataQ/issues/760) | **Data-asset-centric view** — the biggest IA gap (added 2026-07-04): the UI is suite-centric but users think table-centric ("is `orders` healthy?"). A dataset page aggregating every check, result, freshness state, and trend across all suites targeting that table/file pattern. The natural UI anchor for Theme 14's lineage/governance pull and the Theme-2 RCA blast radius; category leaders are asset-first for this reason. **Phase 2 of the Asset-first IA capture below** — build the asset entity first. *Shipped: asset entity #757, asset view #760 (PR #772), nav inversion #773 (PR #782); ADR 0034/0037.* |
+| [#1667](https://github.com/TheurgicDuke771/DataQ/issues/1667) | **Global search / command palette (⌘K)** — jump to any suite/check/connection/run by name. The list APIs exist; disproportionate daily-use payoff for a small build. |
+| [#1668](https://github.com/TheurgicDuke771/DataQ/issues/1668) | **First-run onboarding + empty-state pass** — guided connect → suite → check → run path and designed empty states. Low value for the current solo deployment, first-touch-critical for any marketplace/BYOL evaluator (ADR 0013); cheap to retrofit now vs. embarrassing at listing time. |
+| [#1669](https://github.com/TheurgicDuke771/DataQ/issues/1669) | **Bulk operations on checks** — multi-select enable/disable/severity/snooze; one-at-a-time editing doesn't survive 50-check suites. |
 
 **DataQ-issued API keys / service tokens (#461, ADR [0026](../docs/site/adr/0026-auth-api-keys-and-principal-seam.md) proposed).** Auth today is Azure-AD-only (delegated/SSO) for both REST and `/mcp` — the deepest remaining vendor lock-in (the `get_current_user` seam has one real impl; `users.aad_object_id` is Azure-shaped) and it blocks BYOL-on-AWS/GCP (ADR 0013) and headless/programmatic access (a long-lived scoped key beats a ~60-min refreshing token for CI / always-on MCP clients). The fix is a **second authenticator behind the same `get_current_user` seam** so the **REST API and MCP accept it identically** — never MCP-only — which also finally *exercises* the seam (ADR 0010). Phase it: **user-scoped PATs first** (inherit the owner's per-suite grants → zero new authz; optional read-only down-scope), defer standalone **service-account principals** (they force generalizing `aad_object_id` → a generic principal with pluggable identity bindings + non-user suite sharing). Credential bar: hashed-at-rest + show-once + prefix + expiry + revocation + audit, in a new `api_keys` table (not the retrievable-secret SecretStore), with key lifecycle tied to the owner so it can't outlive a deactivated account.
 
@@ -208,8 +207,7 @@ Target: **WCAG 2.1 AA**, phased so it's cheap early instead of a retrofit crisis
    Theme 12), i18n/locale externalization (defer until a non-English prospect exists — but stop
    hard-coding user-facing strings in new code *now*, which costs nothing).
 
-No issues filed yet — file items 1–4 as separate issues when picked up; item 1 can land
-independently as a Theme-10-style CI ratchet.
+Filed 2026-08-29 as [#1670](https://github.com/TheurgicDuke771/DataQ/issues/1670) (axe CI ratchet — can land independently) / [#1671](https://github.com/TheurgicDuke771/DataQ/issues/1671) (non-color severity cues) / [#1672](https://github.com/TheurgicDuke771/DataQ/issues/1672) (keyboard & focus) / [#1673](https://github.com/TheurgicDuke771/DataQ/issues/1673) (screen-reader semantics + chart alternatives).
 
 ### Asset-first IA (design-captured 2026-07-04 — the lineage-era navigation model)
 
@@ -282,17 +280,17 @@ controller/processor split). These closed the gaps for a credible v2.x "processo
 
 Builds on **G3/#433** (authoritative warehouse-tag classification) and **absorbs the
 classification remainder** left open when #415 closed with #417's column-aware redaction —
-the new pieces, no issues filed yet:
+the new pieces, filed 2026-08-29:
 
-- **Profiler-side PII auto-detection** as an additional classification *source*: the profiler
+- [#1674](https://github.com/TheurgicDuke771/DataQ/issues/1674) — **Profiler-side PII auto-detection** as an additional classification *source*: the profiler
   already visits every column; lightweight format/regex detectors (no LLM) persist a per-column
   classification tag, and redaction reads **tags** instead of name heuristics. Classification
   sources compose: warehouse tags (#433) > governance-catalog pull (Theme 14) > profiler
   heuristics, most-authoritative wins.
-- **`pii_drift` monitor kind** — "a column that looks like email addresses just appeared in a
+- [#1675](https://github.com/TheurgicDuke771/DataQ/issues/1675) — **`pii_drift` monitor kind** — "a column that looks like email addresses just appeared in a
   table not classified as containing PII." Rides the ADR 0012 seam next to Theme 1's
   `schema_drift`; the alert privacy teams actually fear, and one mainstream DQ tools don't fire.
-- **Zero-sample "privacy mode"** — a deployment-level switch where failing-row samples are
+- [#1676](https://github.com/TheurgicDuke771/DataQ/issues/1676) — **Zero-sample "privacy mode"** — a deployment-level switch where failing-row samples are
   never persisted (aggregates + `metric_value` + unexpected-counts only). Mostly a write-path
   gate; turns the existing redaction stack into a tiered posture: full → column-aware
   redacted (#417) → zero-sample. The first question HIPAA-tier / EU deployments ask.
@@ -353,16 +351,16 @@ Rides the harness's parameterizable volume (ADR 0021; the harness README — `HA
 | [#351](https://github.com/TheurgicDuke771/DataQ/issues/351) | Test Connection button on the New/Edit connection page (draft-connection test endpoint) |
 | [#244](https://github.com/TheurgicDuke771/DataQ/issues/244) | Suite-on-suite triggering (run a suite when another suite completes) |
 | [#466](https://github.com/TheurgicDuke771/DataQ/issues/466) | Interactive datasource browsing — container browser (ADLS/S3) + 3-level catalog→schema→table picker (UC); from the W1–6 not-started triage (run/check paths shipped via explicit targets; browsing superseded & deferred) |
-| _(no issue yet)_ | JSON flat-file support — `FlatFileCheckRunner`/profiler/run-target accept `json` alongside `csv`/`parquet` (the W2 file-asset config task listed JSON; v1 shipped CSV/Parquet only) |
-| _(no issue yet)_ | **Generic PostgreSQL adapter** — `ConnectionAdapter` + thin `CheckRunner` on the shared `gx_runner` (same shape as the Snowflake path; GX supports Postgres natively via SQLAlchemy). One **engine-generic** adapter (never an Azure-branded one — ADR 0010/0013) covers Azure Database for PostgreSQL, **Azure HorizonDB** (fully PG-compatible — standard connection strings/drivers; *Preview* as of 2026-07, so support it as "it's Postgres" and don't advertise a named integration until GA), and AWS RDS / GCP Cloud SQL / self-hosted for free. Dogfoodable against the app's own Postgres, so integration tests need no new harness infra. This is the G-f "generic-RDBMS cheap first win". |
-| _(no issue yet)_ | **Generic MSSQL / T-SQL adapter** — one adapter covers **Microsoft Fabric** (Warehouse + Lakehouse SQL analytics endpoint + Fabric SQL database — all standard SQL Server TDS endpoints, port 1433, ODBC 18+ / pyodbc; GX supports mssql via SQLAlchemy), **Azure SQL Database**, Synapse dedicated pools — and, engine-generic like the PG row (ADR 0010/0013), any standard SQL Server endpoint (on-prem, AWS RDS for SQL Server). The one real design cost: Fabric endpoints want **Entra ID auth** (user or service principal; SQL auth unsupported on some Fabric items) → the adapter needs a client-credentials token flow — same KV-held secret model already used for ADF. Bonus: anything mirrored into Fabric (Cosmos DB, HorizonDB, …) becomes checkable through its mirror's SQL analytics endpoint with zero extra adapter code. |
-| _(no issue yet)_ | **OneLake flat-file spike** — OneLake speaks the ADLS Gen2 DFS API (`onelake.dfs.fabric.microsoft.com`); verify the existing ADLS flat-file adapter reaches Fabric lake files with just an endpoint override + Entra auth before promising it. Spike first, then a small extension — not a new adapter. |
+| [#1677](https://github.com/TheurgicDuke771/DataQ/issues/1677) | JSON flat-file support — `FlatFileCheckRunner`/profiler/run-target accept `json` alongside `csv`/`parquet` (the W2 file-asset config task listed JSON; v1 shipped CSV/Parquet only) |
+| [#1678](https://github.com/TheurgicDuke771/DataQ/issues/1678) | **Generic PostgreSQL adapter** — `ConnectionAdapter` + thin `CheckRunner` on the shared `gx_runner` (same shape as the Snowflake path; GX supports Postgres natively via SQLAlchemy). One **engine-generic** adapter (never an Azure-branded one — ADR 0010/0013) covers Azure Database for PostgreSQL, **Azure HorizonDB** (fully PG-compatible — standard connection strings/drivers; *Preview* as of 2026-07, so support it as "it's Postgres" and don't advertise a named integration until GA), and AWS RDS / GCP Cloud SQL / self-hosted for free. Dogfoodable against the app's own Postgres, so integration tests need no new harness infra. This is the G-f "generic-RDBMS cheap first win". |
+| [#1679](https://github.com/TheurgicDuke771/DataQ/issues/1679) | **Generic MSSQL / T-SQL adapter** — one adapter covers **Microsoft Fabric** (Warehouse + Lakehouse SQL analytics endpoint + Fabric SQL database — all standard SQL Server TDS endpoints, port 1433, ODBC 18+ / pyodbc; GX supports mssql via SQLAlchemy), **Azure SQL Database**, Synapse dedicated pools — and, engine-generic like the PG row (ADR 0010/0013), any standard SQL Server endpoint (on-prem, AWS RDS for SQL Server). The one real design cost: Fabric endpoints want **Entra ID auth** (user or service principal; SQL auth unsupported on some Fabric items) → the adapter needs a client-credentials token flow — same KV-held secret model already used for ADF. Bonus: anything mirrored into Fabric (Cosmos DB, HorizonDB, …) becomes checkable through its mirror's SQL analytics endpoint with zero extra adapter code. |
+| [#1680](https://github.com/TheurgicDuke771/DataQ/issues/1680) | **OneLake flat-file spike** — OneLake speaks the ADLS Gen2 DFS API (`onelake.dfs.fabric.microsoft.com`); verify the existing ADLS flat-file adapter reaches Fabric lake files with just an endpoint override + Entra auth before promising it. Spike first, then a small extension — not a new adapter. |
 | ~~shipped~~ [#1063](https://github.com/TheurgicDuke771/DataQ/issues/1063) | **S3-compatible `endpoint_url` override** on the existing S3 adapter — one config field unlocks MinIO, Cloudflare R2, and on-prem object stores (ADR 0010/0013 vendor-neutral; same shape as the OneLake spike). *Shipped 2026-07-27 (#1063/#1065, live-proven against MinIO); the dbt provider got the same override.* |
-| _(no issue yet)_ | **Google BigQuery adapter** — the single biggest warehouse omission: Snowflake/Databricks/BigQuery is the modern top-three and DataQ covers two. GX supports it via `sqlalchemy-bigquery`; same shape as the Snowflake path (dialect + connection-spec + service-account-key auth in the SecretStore). |
-| _(no issue yet)_ | **Amazon Redshift adapter** — the AWS warehouse; pairs with the existing S3 adapter (AWS shops almost always run both). `sqlalchemy-redshift` is Postgres-dialect-adjacent → a near-sibling of the generic PG adapter. |
-| _(no issue yet)_ | **Google Cloud Storage flat-file adapter** — completes the object-store trio next to ADLS Gen2 + S3 (`gcsfs`; the `FlatFileCheckRunner` + batch resolution already do the hard part). With BigQuery + Redshift this yields the ADR 0013 BYOL claim: **warehouse + object store covered on all three clouds**. |
-| _(no issue yet)_ | **MySQL / MariaDB adapter** — the other half of the open-source OLTP world; a dialect swap on the engine-generic SQLAlchemy runner once the PG adapter proves the pattern. Enormous installed base, near-zero marginal cost. |
-| _(no issue yet)_ | **Trino adapter (+ Amazon Athena)** — the G-f multiplier: one SQLAlchemy dialect inherits the user's entire Trino/Starburst connector ecosystem (Hive, Iceberg, Cassandra, Mongo, Kafka-topics-as-tables — anything their cluster federates) with no per-store adapters on our side; **Athena** rides the same dialect family for serverless AWS. The cheapest answer to "4 datasources vs the 30–50 a category product ships". |
+| [#1681](https://github.com/TheurgicDuke771/DataQ/issues/1681) | **Google BigQuery adapter** — the single biggest warehouse omission: Snowflake/Databricks/BigQuery is the modern top-three and DataQ covers two. GX supports it via `sqlalchemy-bigquery`; same shape as the Snowflake path (dialect + connection-spec + service-account-key auth in the SecretStore). |
+| [#1682](https://github.com/TheurgicDuke771/DataQ/issues/1682) | **Amazon Redshift adapter** — the AWS warehouse; pairs with the existing S3 adapter (AWS shops almost always run both). `sqlalchemy-redshift` is Postgres-dialect-adjacent → a near-sibling of the generic PG adapter. |
+| [#1683](https://github.com/TheurgicDuke771/DataQ/issues/1683) | **Google Cloud Storage flat-file adapter** — completes the object-store trio next to ADLS Gen2 + S3 (`gcsfs`; the `FlatFileCheckRunner` + batch resolution already do the hard part). With BigQuery + Redshift this yields the ADR 0013 BYOL claim: **warehouse + object store covered on all three clouds**. |
+| [#1684](https://github.com/TheurgicDuke771/DataQ/issues/1684) | **MySQL / MariaDB adapter** — the other half of the open-source OLTP world; a dialect swap on the engine-generic SQLAlchemy runner once the PG adapter proves the pattern. Enormous installed base, near-zero marginal cost. |
+| [#1685](https://github.com/TheurgicDuke771/DataQ/issues/1685) | **Trino adapter (+ Amazon Athena)** — the G-f multiplier: one SQLAlchemy dialect inherits the user's entire Trino/Starburst connector ecosystem (Hive, Iceberg, Cassandra, Mongo, Kafka-topics-as-tables — anything their cluster federates) with no per-store adapters on our side; **Athena** rides the same dialect family for serverless AWS. The cheapest answer to "4 datasources vs the 30–50 a category product ships". |
 
 **Recommended order** (decided 2026-07-03, extended 2026-07-04; sits alongside — not competing
 with — the Theme-1 opening sequence; different layer of the stack): PG adapter → MSSQL/Fabric
@@ -395,8 +393,8 @@ on raw object storage** — Iceberg is already tracked as [#286](https://github.
 | [#349](https://github.com/TheurgicDuke771/DataQ/issues/349) | Results: dedupe the runs fetch across tabs + share the date-window presets with Dashboard |
 | [#424](https://github.com/TheurgicDuke771/DataQ/issues/424) | Run-detail sample header says 'values redacted' even when non-PII values surface (#417 follow-up) |
 | ~~shipped~~ [#594](https://github.com/TheurgicDuke771/DataQ/issues/594) | **Per-check metric trend view** (added 2026-07-04) — a "this check over time" chart of `metric_value` with the warn/fail/critical threshold bands drawn on it. The payoff view the ADR 0016/0012 scalar-metric design was built for; one recharts component + an existing-data query. *Shipped v1.1 W5 (#1121), incl. a seasonality-aware anomaly-baseline panel.* |
-| _(no issue yet)_ | **Run comparison (diff two runs)** — per-check status deltas, metric deltas, new/removed checks between any two runs of a suite ("what changed between yesterday's pass and today's fail"). Pairs with Theme 2's RCA evidence card; valuable standalone. |
-| _(no issue yet)_ | **In-app notification center** — alerts are outbound-only (Teams/Slack/email) today; a bell/feed surface with read-ack state + deep links to runs gives alerts an in-app home, and becomes the UI surface for incident state when Theme 14's ITSM tier-2 lands. |
+| [#1686](https://github.com/TheurgicDuke771/DataQ/issues/1686) | **Run comparison (diff two runs)** — per-check status deltas, metric deltas, new/removed checks between any two runs of a suite ("what changed between yesterday's pass and today's fail"). Pairs with Theme 2's RCA evidence card; valuable standalone. |
+| [#1687](https://github.com/TheurgicDuke771/DataQ/issues/1687) | **In-app notification center** — alerts are outbound-only (Teams/Slack/email) today; a bell/feed surface with read-ack state + deep links to runs gives alerts an in-app home, and becomes the UI surface for incident state when Theme 14's ITSM tier-2 lands. |
 
 ---
 
@@ -426,8 +424,8 @@ Captured in ADRs / progress.md, not yet broken into backlog issues:
 |---|---|---|
 | **DQX engine** for UC streaming/DLT | ADR [0003](../docs/site/adr/0003-gx-only-for-v1.md) | v1.1 — same `UnityCatalogCheckRunner` interface; UI `engine: gx \| dqx` toggle |
 | **Reconciliation two-connection model** | ADR [0014](../docs/site/adr/0014-reconciliation-comparison-check-kind.md) → ADR [0015](../docs/site/adr/0015-two-connection-comparison-check-model.md) (decided 2026-07-11) | `comparison` monitor kind unblocked — build in v1.1 W3 |
-| **HashiCorp Vault** `SecretStore` spike | harness README (was HARNESS_TODO §5) | validates the ADR 0010/0013 seam (Key Vault = one impl) |
-| **Performance/scale harness** | ADR 0021 / harness README | the script behind #327/#323 above |
+| ~~shipped~~ **HashiCorp Vault** `SecretStore` spike | ADR [0039](../docs/site/adr/0039-openbao-self-hosted-secret-backend.md) | superseded & shipped 2026-07-27: the KV-v2 HTTP `SecretStore` serves OpenBao/Vault (#1056/#1061) |
+| **Performance/scale harness** | ADR 0021 / harness README | the script behind #327/#323 above — now tracked as [#1393](https://github.com/TheurgicDuke771/DataQ/issues/1393) (scale baseline + regression budget) |
 | **Dark mode / marketing page** | — | prototype deferrals → **Theme 12** below |
 
 ---
@@ -520,7 +518,7 @@ conversational interface); `_probe` (demo-only); `/me` + `/users/search` (low va
 
 Meet users in the tools they already run — incident/ITSM, test management, data governance,
 GitOps — and keep every integration behind a seam with **open standards first** (ADR 0010/0013:
-no tool becomes architecture; each vendor is one impl). All design-captured, no issues filed yet.
+no tool becomes architecture; each vendor is one impl). Filed 2026-08-29: checks-as-code = [#1688](https://github.com/TheurgicDuke771/DataQ/issues/1688); test-management publishing = [#1689](https://github.com/TheurgicDuke771/DataQ/issues/1689); catalog push/pull = [#1690](https://github.com/TheurgicDuke771/DataQ/issues/1690); ITSM tier 1 = #1662/#1663 (Theme 5); tier 2 stays deliberately unfiled — demand-gated on tier 1.
 
 ### Checks-as-code: `dataq.yaml` + a CI gate
 
@@ -581,7 +579,7 @@ Completes the last half-open ADR 0010 seam (tracked issues previously unmapped i
 | # | Title |
 |---|---|
 | [#524](https://github.com/TheurgicDuke771/DataQ/issues/524) | Migrate the log pipeline opencensus → OTel (opencensus is EOL; spans already OTel-native via #525) |
-| _(no issue yet)_ | **Generic OTLP exporter endpoint** (`OTEL_EXPORTER_OTLP_ENDPOINT`) — App Insights becomes one backend among any OTLP consumer (Grafana/Tempo, Datadog, Jaeger); the observability twin of the `DATAQ_AUTH_*` generic-OIDC cutover (ADR 0028), and a BYOL/marketplace prerequisite in spirit (ADR 0013) |
+| ~~shipped~~ #589 | **Generic OTLP exporter endpoint** (`OTEL_EXPORTER_OTLP_ENDPOINT`) — App Insights becomes one backend among any OTLP consumer (Grafana/Tempo, Datadog, Jaeger); the observability twin of the `DATAQ_AUTH_*` generic-OIDC cutover (ADR 0028), and a BYOL/marketplace prerequisite in spirit (ADR 0013). *Shipped: vendor-neutral `core/otel.py` (#589) — `otel_exporter_otlp_endpoint` drives generic OTLP HTTP trace+log exporters; live-proven via the AWS ADOT sidecars (2026-08-16).* |
 | [#505](https://github.com/TheurgicDuke771/DataQ/issues/505) | AWS + GCP deploy IaC behind the provider-agnostic seams (ADR 0028 follow-up) |
 
 ---
@@ -589,6 +587,6 @@ Completes the last half-open ADR 0010 seam (tracked issues previously unmapped i
 ## How this maps to GitHub
 
 - **Status** lives on GitHub — un-scheduled issues sit on the `v1.1 Backlog` milestone; scheduled ones move to a `v1.1 Week N` milestone (see `docs/progress.md` §Cycle plan). This doc mirrors the backlog by theme.
-- When you pick up a theme, **file the design-only items** (Themes 2, 3, 4, 5, 8, 9, 11, 14 carry them) as issues on that milestone first.
+- Design-only items: **all filed as of 2026-08-29** (the sweep that closed every "_(no issue yet)_" marker — #1662/#1663, #1667–#1690). The only deliberately-unfiled item is Theme 14's ITSM tier 2 (demand-gated on tier 1 #1663). New design captures get a row here AND an issue at capture time — don't reopen the marker pattern.
 - New post-v1 work: open the issue, milestone it `v1.1 Backlog` (or the target week if already scheduled), and add a row to the
   matching theme here. Keep the detailed *design* in the three linked docs, not in this index.
