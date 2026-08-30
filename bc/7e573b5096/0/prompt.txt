@@ -1,0 +1,2 @@
+you can distribute some of the issues among week 4 to week 8, as required and remaining can stay backlog. 
+Also do we have check as code option today [i.e. - user can directly write a YAML/JSON file and DataQ will accept it as a check or suit, similar to montecarlo?] if not file an issue for that too.

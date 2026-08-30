@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "bc7e573b5096",
+  "strategy": "manual-commit",
+  "branch": "docs/w4-w8-distribution",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bc/7e573b5096/0/metadata.json",
+      "transcript": "/bc/7e573b5096/0/full.jsonl",
+      "compact_transcript": "/bc/7e573b5096/0/transcript.jsonl",
+      "content_hash": "/bc/7e573b5096/0/content_hash.txt",
+      "prompt": "/bc/7e573b5096/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 20142,
+    "cache_read_tokens": 2487400,
+    "output_tokens": 8445,
+    "api_call_count": 11
+  }
+}
