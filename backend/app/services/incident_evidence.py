@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
@@ -168,14 +168,32 @@ def _upstream_pipeline_layer(session: Session, *, run: Run) -> dict[str, Any] | 
     """The orchestration pipeline run that triggered this suite run, + its delay
     vs. that pipeline's own history.
     """
-    parsed = _parse_orchestration_marker(run.triggered_by)
-    if parsed is None:
+    marker = run.triggered_by
+    if not marker:
         return None
-    provider, _pipeline, provider_run_id = parsed
+    provider, sep, _rest = marker.partition(":")
+    if not sep or provider not in ("adf", "airflow", "dbt"):
+        return None
+    # Reconstruct-and-compare, not parse-and-split: `provider_run_id` (e.g. an
+    # Airflow DAG run's default `run_id`, "manual__2026-08-08T01:30:00+00:00")
+    # can itself contain colons, so there is no reliable place to cut the
+    # "<provider>:<pipeline_or_dag_id>:<provider_run_id>" marker to recover it
+    # (a trailing `rpartition(":")` used to truncate it to a few characters,
+    # #1713). `orchestration_service._trigger_suites` builds the marker as
+    # `f"{provider}:{pipeline_or_dag_id}:{provider_run_id}"` — inverting that by
+    # equality against the stored PipelineRun columns is correct regardless of
+    # how many colons either part contains.
     pipeline_run = session.scalars(
         select(PipelineRun).where(
             PipelineRun.provider == provider,
-            PipelineRun.provider_run_id == provider_run_id,
+            func.concat(
+                PipelineRun.provider,
+                ":",
+                PipelineRun.pipeline_or_dag_id,
+                ":",
+                PipelineRun.provider_run_id,
+            )
+            == marker,
         )
     ).first()
     if pipeline_run is None:
@@ -190,19 +208,6 @@ def _upstream_pipeline_layer(session: Session, *, run: Run) -> dict[str, Any] | 
         "duration_seconds": _duration_seconds(pipeline_run),
         "delay_seconds_vs_history": _delay_vs_history(session, pipeline_run),
     }
-
-
-def _parse_orchestration_marker(marker: str | None) -> tuple[str, str, str] | None:
-    """``<provider>:<pipeline_or_dag_id>:<provider_run_id>`` → its parts, or ``None``."""
-    if not marker:
-        return None
-    provider, sep, rest = marker.partition(":")
-    if not sep or provider not in ("adf", "airflow", "dbt"):
-        return None
-    pipeline, sep2, provider_run_id = rest.rpartition(":")
-    if not sep2 or not pipeline or not provider_run_id:
-        return None
-    return provider, pipeline, provider_run_id
 
 
 def _duration_seconds(pipeline_run: PipelineRun) -> float | None:
