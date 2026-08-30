@@ -1,0 +1,33 @@
+<task-notification>
+<task-id>a9f3586f8f536e6ee</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/a9f3586f8f536e6ee.output</output-file>
+<status>completed</status>
+<summary>Agent "Line-by-line + removed-behavior scan of llm reaper diff" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Review findings — `#1644` stuck-row reaper + `execute_invocation` terminal-write refactor
+
+**Scope covered:** full read of `execute_invocation` (llm_service.py:289-403), `reap_stuck_invocations` (llm_service.py:423-470), `reap_stuck_llm_invocations` (tasks.py:788-802), `celery_app.py` beat schedule, `config.py` new settings, plus the diff's own new tests (all 30 pass locally). Traced every `terminal[...]` write/read for KeyError paths — none found; `terminal["status"]` is unconditionally set by the try or one of the two excepts before any read of it. Verified column names used in `.values(**values)` all match `LlmInvocation`'s mapped attributes. Verified the claim/persist/reap guards can't double-process or leave a row stranded in `running`.
+
+Candidate findings:
+
+```json
+[
+  {
+    "file": "backend/app/services/llm_service.py",
+    "line": "333-336, 387-395 (and the mirrored branch at 375-385)",
+    "summary": "When the running-threshold reaper wins the race against a worker that was merely slow (not dead), the worker's genuinely-successful result — including `input_tokens`/`output_tokens` that the code's own comment says 'a refused generation still billed' and must always be recorded — is silently discarded. Nothing in the DB row or the 'llm_invocation_result_superseded' log carries the token counts or response.",
+    "failure_scenario": "A provider call legitimately takes &gt;10 min (default `llm_invocation_running_threshold_minutes`) under load/retry, e.g. a large structured-output SQL-gen call. The 5-min beat tick reaps the row to status=failed at minute ~10-15. The worker's `provider.complete_structured` then returns success with real billed `input_tokens`/`output_tokens`; `_persist(terminal)` matches 0 rows (status no longer 'running'), and `execute_invocation` returns 'superseded' with the tokens never persisted anywhere. This is exercised and accepted by the new test `test_result_does_not_resurrect_a_row_the_reaper_already_closed_out` (comment: 'the worker's own (wasted) result never landed'), so it is a known, deliberate tradeoff — flagging because it directly contradicts the adjacent cost-record invariant comment and there is no compensating cost-accounting path."
+  },
+  {
+    "file": "backend/app/services/llm_service.py",
+    "line": "383-385 vs 390-394",
+    "summary": "The two 'superseded' log call sites are inconsistent: the exception/fallback-path warning (line 384) omits `attempted_status`, while the main-path warning (line 390-394) includes it. Both represent the same event ('a terminal write lost the race to the reaper') but one gives an operator strictly less diagnostic context than the other.",
+    "failure_scenario": "An unstorable-payload row (e.g. NUL/encoding issue triggers the `except Exception` at line 369) is ALSO reaped mid-flight. The resulting log line has no `attempted_status`, making it harder to tell from logs alone whether the original outcome would have been success or failure — purely a debuggability gap, not a data-loss bug beyond finding 1."
+  }
+]
+```
+
+No crash-level bugs, inverted conditions, off-by-one thresholds, wrong-variable copy/paste, or KeyError paths were found. The `terminal` dict / status-guarded UPDATE refactor faithfully reproduces every field the old ORM-attribute-mutation path used to set (`context_fingerprint`, `input_tokens`, `output_tokens`, `response`, `status`, `error`, `duration_ms`, `finished_at`), and the fallback-path field set (`status`/`error`/`finished_at` only, no `duration_ms`) is unchanged from the pre-diff code (verified via `git show main:...`), so that's not a regression introduced here. The reaper's two UPDATE blocks (pending/`created_at` vs running/`started_at`) are correctly not swapped, threshold comparisons (`&lt; cutoff`) have no off-by-one, and the new tests empirically confirm the guard-conditioned UPDATE actually carries a `WHERE status = ...` clause on the wire.</result>
+<usage><subagent_tokens>148814</subagent_tokens><tool_uses>19</tool_uses><duration_ms>358978</duration_ms></usage>
+</task-notification>
