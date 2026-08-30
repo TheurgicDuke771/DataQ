@@ -258,6 +258,8 @@ The full decision index — one line per ADR with status — lives at **[docs/si
 | Artifact | Location |
 |---|---|
 | Product roadmap (100 tasks, 8 weeks) | [context/DataQ_platform_roadmap.md](context/DataQ_platform_roadmap.md) |
+| Forward roadmap (v1.2 thesis + proposed v1.3) | [context/roadmap-v1.2-v1.3.md](context/roadmap-v1.2-v1.3.md) |
+| Story ledger (curated narrative wins — internal) | [docs/stories.md](docs/stories.md) |
 | System architecture diagram | [docs/site/architecture.md](docs/site/architecture.md) |
 | Architecture Decision Records | [docs/site/adr/](docs/site/adr/) |
 | Working agreements (full 40-rule list) | [CONTRIBUTING.md](CONTRIBUTING.md) |
