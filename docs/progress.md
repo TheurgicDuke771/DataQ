@@ -137,7 +137,7 @@ Accepted. — **MET** (2026-08-29: default-off end-to-end — no `llm_settings` 
 
 | Status | Task | Theme |
 |---|---|---|
-| ⬜ | [#1513](https://github.com/TheurgicDuke771/DataQ/issues/1513) LLM curated check suggestions — profiler-driven, catalog-constrained structured output | intelligence |
+| ✅ | [#1513](https://github.com/TheurgicDuke771/DataQ/issues/1513) LLM curated check suggestions — profiler-driven, catalog-constrained structured output ([PR #1719](https://github.com/TheurgicDuke771/DataQ/pull/1719)): `POST /llm/check_suggestions`, second kind on the seam; structured output constrained to a single-column-only vetted expectation vocabulary, every suggestion re-validated through the same gate a human's `create_check` reaches (bad ones dropped, not surfaced). Scope: SQL-queryable connections only, same as #1512. The review/apply UI ships next (#1512's own frontend is also still unbuilt) | intelligence |
 | ✅ | [#432](https://github.com/TheurgicDuke771/DataQ/issues/432) Compliance G2: data-subject-rights machinery (erase / access / portability) — design agreed with user, [PR #1586](https://github.com/TheurgicDuke771/DataQ/pull/1586) merged | compliance |
 | ✅ | [#1267](https://github.com/TheurgicDuke771/DataQ/issues/1267) `unparsed_value` scalar cell has no retention sweep (adjacent to #1253) — [PR #1585](https://github.com/TheurgicDuke771/DataQ/pull/1585) merged | compliance |
 | ✅ | [#1477](https://github.com/TheurgicDuke771/DataQ/issues/1477) Audit retention sweep: a zero-row run is unobservable | compliance |
