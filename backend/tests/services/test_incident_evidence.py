@@ -294,6 +294,58 @@ def test_upstream_pipeline_layer_resolves_airflow_default_run_id(
     assert up["provider_run_id"] == run_id
 
 
+def test_upstream_pipeline_layer_fails_closed_on_ambiguous_marker(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """dbt's `pipeline_or_dag_id` (job_name) is free-form webhook input with no
+    colon restriction (backend/app/orchestration/dbt.py), so two DISTINCT
+    PipelineRun rows can reconstruct to the identical marker string when a
+    colon lands on a different side of the pipeline/run-id boundary:
+    ("nightly:etl", "run-1") and ("nightly", "etl:run-1") both concat to
+    "dbt:nightly:etl:run-1". Neither row is unambiguously "the" match — the
+    layer must return None (evidence unavailable) rather than silently
+    attributing the incident to whichever row Postgres happens to return
+    first.
+    """
+    conn_id = world["conn"].id
+    now = datetime.now(UTC)
+    db_session.add_all(
+        [
+            PipelineRun(
+                provider="dbt",
+                connection_id=conn_id,
+                provider_run_id="run-1",
+                pipeline_or_dag_id="nightly:etl",
+                env="dev",
+                status="succeeded",
+                started_at=now - timedelta(minutes=5),
+                finished_at=now - timedelta(minutes=4),
+                created_at=now - timedelta(minutes=5),
+            ),
+            PipelineRun(
+                provider="dbt",
+                connection_id=conn_id,
+                provider_run_id="etl:run-1",
+                pipeline_or_dag_id="nightly",
+                env="dev",
+                status="succeeded",
+                started_at=now - timedelta(minutes=5),
+                finished_at=now - timedelta(minutes=4),
+                created_at=now - timedelta(minutes=5),
+            ),
+        ]
+    )
+    db_session.commit()
+    run = _run(db_session, world["suite"], triggered_by="dbt:nightly:etl:run-1")
+    result = Result(run_id=run.id, check_id=world["check"].id, status="fail")
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    assert card["upstream_pipeline_run"] is None
+
+
 def test_upstream_pipeline_none_for_manual_run(db_session: Any, world: dict[str, Any]) -> None:
     run = _run(db_session, world["suite"], triggered_by="manual")
     result = Result(run_id=run.id, check_id=world["check"].id, status="fail")

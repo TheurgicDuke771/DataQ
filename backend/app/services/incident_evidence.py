@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Asset, Check, PipelineRun, Result, Run
+from backend.app.db.models import ORCHESTRATION_PROVIDERS, Asset, Check, PipelineRun, Result, Run
 from backend.app.lineage.edges import downstream_assets
 
 log = get_logger(__name__)
@@ -172,7 +172,7 @@ def _upstream_pipeline_layer(session: Session, *, run: Run) -> dict[str, Any] | 
     if not marker:
         return None
     provider, sep, _rest = marker.partition(":")
-    if not sep or provider not in ("adf", "airflow", "dbt"):
+    if not sep or provider not in ORCHESTRATION_PROVIDERS:
         return None
     # Reconstruct-and-compare, not parse-and-split: `provider_run_id` (e.g. an
     # Airflow DAG run's default `run_id`, "manual__2026-08-08T01:30:00+00:00")
@@ -180,10 +180,16 @@ def _upstream_pipeline_layer(session: Session, *, run: Run) -> dict[str, Any] | 
     # "<provider>:<pipeline_or_dag_id>:<provider_run_id>" marker to recover it
     # (a trailing `rpartition(":")` used to truncate it to a few characters,
     # #1713). `orchestration_service._trigger_suites` builds the marker as
-    # `f"{provider}:{pipeline_or_dag_id}:{provider_run_id}"` — inverting that by
-    # equality against the stored PipelineRun columns is correct regardless of
-    # how many colons either part contains.
-    pipeline_run = session.scalars(
+    # `f"{provider}:{pipeline_or_dag_id}:{provider_run_id}"`, so inverting it by
+    # equality against the stored PipelineRun columns recovers the SAME row the
+    # marker was built from. It does NOT prove that row is the only one that
+    # could produce this string: dbt's `pipeline_or_dag_id` (job_name) is
+    # free-form webhook input with no colon restriction, so two distinct rows
+    # can reconstruct to an identical marker if a colon lands differently
+    # across their pipeline/run-id boundary. `.all()` + the count check below
+    # catches that rather than letting `.first()` silently attribute the
+    # incident's evidence to whichever row Postgres happens to return first.
+    candidates = session.scalars(
         select(PipelineRun).where(
             PipelineRun.provider == provider,
             func.concat(
@@ -195,9 +201,17 @@ def _upstream_pipeline_layer(session: Session, *, run: Run) -> dict[str, Any] | 
             )
             == marker,
         )
-    ).first()
-    if pipeline_run is None:
+    ).all()
+    if len(candidates) != 1:
+        if candidates:
+            log.warning(
+                "upstream_pipeline_marker_ambiguous",
+                marker=marker,
+                provider=provider,
+                candidate_count=len(candidates),
+            )
         return None
+    pipeline_run = candidates[0]
     return {
         "provider": pipeline_run.provider,
         "pipeline_or_dag_id": pipeline_run.pipeline_or_dag_id,
