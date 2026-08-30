@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "5a78c427012f",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/tests/db/test_migration_parity.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5a/78c427012f/0/metadata.json",
+      "transcript": "/5a/78c427012f/0/full.jsonl",
+      "compact_transcript": "/5a/78c427012f/0/transcript.jsonl",
+      "content_hash": "/5a/78c427012f/0/content_hash.txt",
+      "prompt": "/5a/78c427012f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 826,
+    "cache_creation_tokens": 1306540,
+    "cache_read_tokens": 166182295,
+    "output_tokens": 230414,
+    "api_call_count": 416
+  }
+}
