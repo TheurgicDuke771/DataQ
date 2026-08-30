@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "17a072a2be68",
+  "strategy": "manual-commit",
+  "branch": "feature/1648-cadence-aware-suggestions",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/services/llm_checksuggest.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/17/a072a2be68/0/metadata.json",
+      "transcript": "/17/a072a2be68/0/full.jsonl",
+      "compact_transcript": "/17/a072a2be68/0/transcript.jsonl",
+      "content_hash": "/17/a072a2be68/0/content_hash.txt",
+      "prompt": "/17/a072a2be68/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1012,
+    "cache_creation_tokens": 1487285,
+    "cache_read_tokens": 241890800,
+    "output_tokens": 311161,
+    "api_call_count": 506
+  }
+}
