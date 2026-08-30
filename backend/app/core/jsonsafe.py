@@ -27,6 +27,12 @@ def sanitize_json(value: Any) -> Any:
     # finite check below, so a Decimal NaN/Infinity is nulled the same as a float one.
     if isinstance(value, decimal.Decimal):
         value = float(value)
+    # Warehouse BINARY/VARBINARY columns (e.g. a profiled column's MIN/MAX) surface as
+    # raw bytes — hex-encode rather than leaving something JSON can't serialize at all
+    # (the flat-file profiler's own `_to_native` has an equivalent str() catch-all;
+    # this is the SQL path's analogous case, #1719 review).
+    if isinstance(value, bytes):
+        return value.hex()
     if isinstance(value, float):
         return value if math.isfinite(value) else None
     if isinstance(value, dict):

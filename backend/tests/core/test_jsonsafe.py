@@ -124,6 +124,20 @@ def test_nested_decimal_list_is_sanitized() -> None:
     json.dumps(cleaned, allow_nan=False)
 
 
+def test_bytes_become_hex() -> None:
+    # A Snowflake/Databricks BINARY/VARBINARY column's MIN/MAX (e.g. the LLM
+    # check-suggestion prompt's profile stats, #1719 review) surfaces as raw
+    # bytes — json.dumps has no native form for it at all.
+    cleaned = sanitize_json({"min_value": b"\x01\x02\x8f", "max_value": b"\xff\x00"})
+    assert cleaned == {"min_value": "01028f", "max_value": "ff00"}
+    json.dumps(cleaned, allow_nan=False)  # round-trips cleanly
+
+
+def test_nested_bytes_list_is_sanitized() -> None:
+    cleaned = sanitize_json({"partial_unexpected_list": [b"\x00", b"\x01"]})
+    assert cleaned == {"partial_unexpected_list": ["00", "01"]}
+
+
 def test_timestamps_and_dates_become_isoformat() -> None:
     import datetime
 
