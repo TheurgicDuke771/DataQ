@@ -1,0 +1,57 @@
+<task-notification>
+<task-id>ae70c8f00df9394ce</task-id>
+<tool-use-id>toolu_018Ad4ambmroEGc1nDM4WUU5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/ae70c8f00df9394ce.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle: reuse/simplification/efficiency/altitude" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have enough to compile the final report.
+
+## Findings
+
+**1. REUSE — `check_generation_preconditions` reimplements `llm_sqlgen.check_generation_preconditions` almost verbatim**
+File: `backend/app/services/llm_checksuggest.py:136-150` (vs `backend/app/services/llm_sqlgen.py:74-90`)
+Same three checks (connection type in `SQL_QUERYABLE_TYPES`, non-empty `target.table`, UC requires `target.catalog`), same docstring claim ("shared by the route... and build_prompt... so a precondition cannot be added at one altitude and missed at the other") copy-pasted into a second file — but the sharing the docstring describes is now *within* each file, not *between* them. Concrete cost: the two implementations already diverged in emptiness-check idiom (`_clean()` vs inline `str(...).strip()`) and in error text; any future precondition (a third check type has already been proposed via `SQL_QUERYABLE_TYPES` reuse) must be hand-added to both functions or they silently drift — which is exactly the failure mode the docstring itself warns about, one level up.
+
+**2. REUSE — the whole "list columns → record access → profile → apply G3 tags/mask → record access" pipeline is duplicated wholesale**
+File: `backend/app/services/llm_checksuggest.py:162-249` (`_profile_prompt`) vs `backend/app/services/llm_sqlgen.py:113-212` (`_schema_context` + `_profile_context`)
+The `record_probe_access(action="column.list", ...)` call, then the `applicable_tags(run_service.asset_column_tags(...), probed_other_target=False)` → `sensitive_profile_columns(...)` → `mask_profile_columns(...)` → `record_probe_access(action="column.profile", ...)` sequence is byte-for-byte identical between the two files except the `detail={"consumer": ...}` string. Concrete cost: this is the G3 governance-floor application (warehouse tags + column policy → masking) — the single most security-sensitive block in both files — hand-copied rather than factored into one helper (e.g. in `live_probe.py`, which already centralizes the masking primitives it calls). A future fix to how tags are merged with policy, or to when `probed_other_target` should be `True`, has to be applied in two places to take effect everywhere; this PR got the copy right, but nothing enforces that the next one will.
+
+**3. REUSE — `_target_identity` duplicated with a silently different dict**
+File: `backend/app/services/llm_checksuggest.py:153-159` vs `backend/app/services/llm_sqlgen.py:103-110`
+Both build `{"table":..., "schema":..., "catalog":...}` from `suite.target`, but sqlgen's version also includes `"namespace"` (used for Iceberg-shaped targets elsewhere in `profile_service`) and checksuggest's does not. Concrete cost: two copies of the same target-unpacking helper, one silently narrower than the other — a reader can't tell from checksuggest.py alone whether `namespace` was deliberately scoped out (SQL_QUERYABLE_TYPES excludes Iceberg, so it's currently harmless) or just forgotten, because there's no comment recording the decision and no shared function whose signature would force the question.
+
+**4. ALTITUDE — `_OUT_OF_SCOPE_TYPES` is a second hand-maintained list bolted beside `expectation_allowlist.py`'s own capability mechanism**
+File: `backend/app/services/llm_checksuggest.py:60-72` vs `backend/app/datasources/expectation_allowlist.py:24-38`
+`expectation_allowlist.py` already established the right mechanism for exactly this kind of per-type fact: `ExpectationCapability` (`dataframe_only`, `bandable`) with derived frozensets (`DATAFRAME_ONLY_EXPECTATION_TYPES`, `UNBANDED_EXPECTATION_TYPES`), and its own docstring says "the record exists so the next per-type fact... lands here instead of in a fifth set." `llm_checksuggest.py` instead hardcodes a *sixth* set (`_OUT_OF_SCOPE_TYPES`, six literal type names + `ALLOWLIST_ONLY_TYPES`) with an import-time `&lt;=` subset assertion. Concrete cost: the assertion only catches over-inclusion (a name not in `ALLOWED_EXPECTATION_TYPES`), never omission — if a future table-level or cross-column expectation type is added to `ALLOWED_EXPECTATIONS` in `expectation_allowlist.py`, nothing forces `_OUT_OF_SCOPE_TYPES` to be updated, so it would silently become suggestible despite having no per-column profile signal to ground it (the exact failure the module docstring says it exists to prevent). A `single_column: bool` field on `ExpectationCapability` would make this derivable and exhaustive by construction instead of by two files staying in sync.
+
+**5. REUSE (minor) — the route-level dispatch shape is duplicated between `generate_sql` and `suggest_checks`**
+File: `backend/app/api/v1/llm.py:124-139` vs `144-171`
+Both routes repeat the same four-step sequence verbatim in structure: `if &lt;KIND&gt; not in REGISTERED_KINDS: raise LlmDispatchFailedError(...)` → `require_permission(..., minimum="edit")` → `db.get(Connection, suite.connection_id)` → `&lt;module&gt;.check_generation_preconditions(suite, connection)` → `create_invocation(...)`. `_queue_invocation` was correctly extracted for the dispatch tail, but the wiring-guard + permission + precondition prologue was not; concrete cost is smaller than #1-3 (it's ~6 lines, and the per-kind `request={...}` payload genuinely differs), but a third kind will make the copy-pasted "not in REGISTERED_KINDS" guard a 3x-repeated idiom that a small `_load_suite_for_kind(db, kind, suite_id, user_id, precondition_fn)` helper would collapse.
+
+One angle came back clean and is worth noting since the task called it out explicitly: **EFFICIENCY** — `_profile_prompt` does call `profile_service.list_columns` then `profile_service.profile_connection` as two separate warehouse round-trips, but this is the identical accepted pattern already paid for in `llm_sqlgen.py`'s `include_profile=True` path (both dispatch through `resolve_profiler`/`list_table_columns` then a second `profile_table` query; `profile_connection` requires `columns` as an argument, so the first call isn't redundant, it's a real dependency). No new inefficiency here — it's the sibling's existing cost, not a regression.</result>
+<usage><subagent_tokens>135261</subagent_tokens><tool_uses>11</tool_uses><duration_ms>110032</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a823c39e6dbe4e6f1</task-id>
+<tool-use-id>toolu_015cy1DEHQpc1c9R4Jr9Axh3</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/a823c39e6dbe4e6f1.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle: CLAUDE.md conventions check" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+Reviewed `git diff main...HEAD` (2 commits: `bc3c371c` feat, `62e4545d` docs) against `/Users/arijit/Coding/Python/DataQ/CLAUDE.md` (the only applicable CLAUDE.md — no `backend/`-scoped CLAUDE.md or CLAUDE.local.md exists). Checked: migrations (none present), credentials in tracked files (none — `"secret@x.com"` in `test_llm_checksuggest.py` is fake PII test data for the masking test, not a credential), GX `kind`/`engine` orthogonality (respected — `kind="expectation"` is hardcoded, `engine` is untouched), Azure lock-in / orchestration abstraction (not touched by this diff), commit discipline (one functionality per commit, tests + changelog included, `Fixes #1513` present).
+
+One citable violation:
+
+- **File:** `docs/progress.md`, line 140
+- **Summary:** Commit `bc3c371c` closes issue #1513 (commit trailer: `Fixes #1513`), but the tracker row for #1513 is left unticked (`⬜`) instead of flipped to done (`✅`), and commit `62e4545d` (the only commit in this diff that touches `docs/progress.md`) updates only the #1644 row, not #1513's.
+- **Rule violated (`CLAUDE.md`, line 363):** `"Per-PR task ticks go in `docs/progress.md` (PR-template checkbox)."` — reinforced by the §12 table entry describing `docs/progress.md` as `"the live post-v1 tracker, updated per PR"`.
+
+No other violations found — returning this single finding rather than forcing additional ones (the "keep it code not prose" convention the task asked me to check is documented only in the user's memory file, not in `CLAUDE.md` itself, so it is not citable here).</result>
+<usage><subagent_tokens>149867</subagent_tokens><tool_uses>19</tool_uses><duration_ms>112158</duration_ms></usage>
+</task-notification>

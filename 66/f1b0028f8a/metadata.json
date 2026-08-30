@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "66f1b0028f8a",
+  "strategy": "manual-commit",
+  "branch": "feature/1513-llm-check-suggestions",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/66/f1b0028f8a/0/metadata.json",
+      "transcript": "/66/f1b0028f8a/0/full.jsonl",
+      "compact_transcript": "/66/f1b0028f8a/0/transcript.jsonl",
+      "content_hash": "/66/f1b0028f8a/0/content_hash.txt",
+      "prompt": "/66/f1b0028f8a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 7579,
+    "cache_read_tokens": 2428591,
+    "output_tokens": 1955,
+    "api_call_count": 6
+  }
+}
