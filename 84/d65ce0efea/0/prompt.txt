@@ -1,0 +1,92 @@
+You assume a persona of senior QA, your job is is to test the DataQ application. 
+you need to scan every nook and corner of the codebase, use live local and production instances to check if every coded/published/documented/advertised features are working as expected. 
+It has to be you to find the bugs, discover the gaps before it come from the user. you should validate every assumptions [even if it is small], launch a subagent to adversarially review the codebase for correctness and simplicity, then write up the assumptions and design decisions you made and why. 
+you are to file the bugs/gaps you find with the evidence [and suggestion if any]. 
+Nothing should go past you and sit in the production for user to find. 
+
+note: you can utilise the existing skills and agents.
+
+---
+
+For the bugs filed, do you provide all the required details and reproduction steps?
+
+---
+
+Just today we founf and fixed #1714, did you find anything similar in your scan?
+
+---
+
+good, You sure you left no stone untouched. Right?
+
+---
+
+What is the aws url
+
+---
+
+hat is the admin user name?
+
+---
+
+can you check in cognito what is the user names
+
+---
+
+can you mint the PAT for these users
+
+---
+
+go ahead set fresh passwords
+
+---
+
+give me the commands, I'll run it
+
+---
+
+I'm getting - 
+
+{
+    "error": {
+        "code": "http_error",
+        "message": "Not Found",
+        "detail": {}
+    }
+}
+
+---
+
+still, getting error - 
+
+aws: [ERROR]: An error occurred (InvalidParameterException) when calling the AdminInitiateAuth operation: Auth flow not enabled for this client
+== viewer PAT:
+{
+    "error": {
+        "code": "unauthenticated",
+        "message": "Not authenticated: a valid Azure AD token or DataQ API key is required.",
+        "detail": {}
+    }
+}
+
+---
+
+same error [except the aws:error line]
+
+---
+
+same again [do I need to restart shell?]
+
+---
+
+```
+bash-3.2$ cat /tmp/pat.json
+{"id":"22de0f47-fd72-4767-bfa4-161d3227ace6","name":"qa-admin","key_prefix":"dq_live_ybpE","created_at":"2026-08-30T21:54:42.821252Z","expires_at":"2026-11-28T21:54:42.825691Z","revoked_at":null,"last_used_at":nulbash-3.2$ 
+```
+
+---
+
+PAT is minted for all 3 - `/Users/arijit/Downloads/temp.txt`
+
+---
+
+Yeah. update the ops-log.

@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "84d65ce0efea",
+  "strategy": "manual-commit",
+  "branch": "docs/ops-log-aws-pat-mint",
+  "checkpoints_count": 15,
+  "files_touched": [
+    "docs/ops-log.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/84/d65ce0efea/0/metadata.json",
+      "transcript": "/84/d65ce0efea/0/full.jsonl",
+      "compact_transcript": "/84/d65ce0efea/0/transcript.jsonl",
+      "content_hash": "/84/d65ce0efea/0/content_hash.txt",
+      "prompt": "/84/d65ce0efea/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 268,
+    "cache_creation_tokens": 607903,
+    "cache_read_tokens": 24925675,
+    "output_tokens": 97790,
+    "api_call_count": 134
+  }
+}

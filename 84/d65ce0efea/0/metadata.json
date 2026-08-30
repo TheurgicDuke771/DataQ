@@ -1,0 +1,84 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "84d65ce0efea",
+  "session_id": "722a8312-23e9-48d4-80f9-354b91846865",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-30T22:04:18.589762Z",
+  "branch": "docs/ops-log-aws-pat-mint",
+  "checkpoints_count": 15,
+  "files_touched": [
+    "docs/ops-log.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5",
+  "turn_id": "2d8dee6c66d6",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 268,
+    "cache_creation_tokens": 607903,
+    "cache_read_tokens": 24925675,
+    "output_tokens": 97790,
+    "api_call_count": 134
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01YJA7reJ63bxmPqm3LBGroY",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "update-config"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "2d8dee6c66d6",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 800,
+        "end": 801,
+        "entry_ids": [
+          "62f9e5a3-48ad-4f65-a7ba-41ee336792b0"
+        ],
+        "tool_use_id": "toolu_01YJA7reJ63bxmPqm3LBGroY"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01YJA7reJ63bxmPqm3LBGroY"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: update-config",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 15
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-30T22:04:18.543792Z",
+    "agent_lines": 7,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 7,
+    "total_lines_changed": 7,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}
