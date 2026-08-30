@@ -236,6 +236,9 @@ jobs:
       - name: Published docs don't cite tickets or link internal docs
         run: python scripts/check-docs-references.py
 
+      - name: Frontend UI text doesn't cite ADR/issue/PR numbers
+        run: python scripts/check-frontend-no-ticket-refs.py
+
   # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend-lint:
     name: Frontend — lint & format

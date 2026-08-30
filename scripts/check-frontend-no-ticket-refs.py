@@ -13,6 +13,29 @@ banning of "#123" would make every honest code comment illegal. So this script
 tracks comment state per line (single-line `//`, block `/* ... */`, which is also
 how a JSX comment is written) and only flags a match sitting in actual code — a
 string literal, template literal, or JSX text — which is what a browser can render.
+The comment tracker is purely state-machine-driven (block-open/close spans a line
+boundary correctly); it deliberately does NOT also special-case lines starting with
+`*`, because that would silently skip real code that happens to start with an
+asterisk after leading whitespace.
+
+## The enclosing-parens requirement
+
+Every real reference this script was written to catch — every ADR/issue/PR mention
+found across this entire codebase, comments included — is written wrapped in `(...)`
+(`"a coverage gap (ADR 0038)"`, `"(#754/#826)"`). A bare `#NNN` with no parens is far
+more likely to be ordinary product copy — a batch, run, row or order number DataQ's
+own domain produces plenty of ("Batch #4521 processed") — than a dropped ticket
+reference, and an unquoted CSS hex color inside a template-literal style block
+(`color: #333;`) is never parenthesized either. So a match only counts when it sits
+inside an enclosing, unclosed `(` ... `)` pair on the same line; this is a stricter,
+evidence-based version of the plain digit-boundary check the earlier draft used
+(which false-flagged CSS hex colors and non-ADR numeric UI copy) and needs no
+separate hex-color special case.
+
+`console.*` calls and `data-testid` attribute values are also out of scope: neither
+reaches the browser's rendered output (a devtools warning and a test hook,
+respectively, not something a user reads), so a ticket reference there — however
+questionable a practice — isn't the defect this hook exists to catch.
 
 This is a heuristic, not a parser: a `//` inside a string literal (e.g. a URL) is
 treated as a comment starting early, which trades a rare false negative for never
@@ -23,7 +46,8 @@ Deliberate exceptions take an inline `frontend-ui-ok:` pragma **with a reason**,
 the line or the one above it.
 
 Usage: `check-frontend-no-ticket-refs.py [files...]` — no args means every tracked
-file under frontend/src.
+file under frontend/src. This same invocation (no args) is also what re-runs the
+check as a CI backstop, independent of whether pre-commit ran locally.
 """
 
 from __future__ import annotations
@@ -39,12 +63,20 @@ SCAN_PREFIX = "frontend/src/"
 SCAN_SUFFIXES = (".ts", ".tsx")
 # Tests render nothing to a real user.
 SKIP_SUFFIXES = (".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")
-SKIP_PREFIXES = ("frontend/src/test/", "frontend/src/tests/")
+
+# Lines whose string content never reaches a browser's rendered output.
+NON_RENDERED_MARKERS = (
+    "console.log(",
+    "console.warn(",
+    "console.error(",
+    "console.debug(",
+    "console.info(",
+    "data-testid=",
+)
 
 ADR_PATTERN = re.compile(r"\bADR[- ]?\d{2,4}\b", re.IGNORECASE)
 # Issue/PR shorthand ("#1186"). A trailing hex-digit or another digit means it's
-# not a bare decimal ticket number — bail before the boundary, so `#818cf8` or an
-# 8-digit hex color never reach here at all.
+# not a bare decimal ticket number — bail before the boundary.
 TICKET_PATTERN = re.compile(r"#\d{3,5}(?![0-9a-fA-F])")
 
 
@@ -62,8 +94,6 @@ def _tracked_files() -> list[str]:
 def _scannable(path: str) -> bool:
     if not path.startswith(SCAN_PREFIX):
         return False
-    if path.startswith(SKIP_PREFIXES):
-        return False
     if not path.endswith(SCAN_SUFFIXES):
         return False
     if path.endswith(SKIP_SUFFIXES):
@@ -71,12 +101,18 @@ def _scannable(path: str) -> bool:
     return True
 
 
-def _looks_like_hex_color(text: str, start: int, end: int) -> bool:
-    """`'#818cf8'` / `'#123456'` sitting inside a quoted string literal."""
-    before = text[max(0, start - 1) : start]
-    after_end = min(len(text), end + 1)
-    after = text[end:after_end]
-    return before in ("'", '"', "`") and after in ("'", '"', "`")
+def _enclosed_in_parens(text: str, start: int, end: int) -> bool:
+    """True when `text[start:end]` sits inside an unclosed `(` ... `)` pair —
+    see the module docstring for why this is the scope-narrowing rule."""
+    before = text[:start]
+    last_open = before.rfind("(")
+    if last_open == -1 or ")" in before[last_open:]:
+        return False
+    after = text[end:]
+    first_close = after.find(")")
+    if first_close == -1 or "(" in after[:first_close]:
+        return False
+    return True
 
 
 def _code_spans(line: str) -> list[str]:
@@ -118,40 +154,32 @@ def scan(paths: list[str]) -> list[tuple[str, int, str, str]]:
         except (UnicodeDecodeError, OSError):
             continue
         in_block_comment = False
-        for i, line in enumerate(lines, 1):
-            if PRAGMA in line or (i >= 2 and PRAGMA in lines[i - 2]):
+        for i, raw_line in enumerate(lines, 1):
+            if PRAGMA in raw_line or (i >= 2 and PRAGMA in lines[i - 2]):
                 continue
-            stripped = line.lstrip()
+            if any(marker in raw_line for marker in NON_RENDERED_MARKERS):
+                continue
+            line = raw_line
             if in_block_comment:
                 close = line.find("*/")
                 if close == -1:
                     continue  # whole line still inside the block comment
                 line = line[close + 2 :]
                 in_block_comment = False
-            # A `*` continuation line inside a JSDoc/JS-style block comment that
-            # this scanner didn't see open (e.g. mid-multi-line JSX comment) —
-            # already handled by in_block_comment above; this covers the common
-            # `* prose` styling pre-commit sees line-by-line.
-            if stripped.startswith("*") and not stripped.startswith("*/"):
-                continue
             for span in _code_spans(line):
                 for pattern, label in (
                     (ADR_PATTERN, "ADR reference"),
                     (TICKET_PATTERN, "issue/PR reference"),
                 ):
                     for m in pattern.finditer(span):
-                        if label == "issue/PR reference" and _looks_like_hex_color(
-                            span, m.start(), m.end()
-                        ):
+                        if not _enclosed_in_parens(span, m.start(), m.end()):
                             continue
                         findings.append((path, i, label, m.group(0)))
             # Did this line open a block comment that stays open past it?
-            spans_end = 0
             last_open = line.rfind("/*")
             last_close = line.rfind("*/")
             if last_open != -1 and (last_close == -1 or last_close < last_open):
                 in_block_comment = True
-            del spans_end
     return findings
 
 

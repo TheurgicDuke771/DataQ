@@ -98,6 +98,17 @@ All checks run on every PR and must pass before merge.
     ADRs); internal = keep it out of `docs/site/`. The hook pins `docs_dir` and refuses a
     reintroduced `exclude_docs` — the old model published every `.md` under `docs/` by default, and
     two internal documents reached the public site exactly that way.
+15c. **Frontend UI text never cites an ADR/issue/PR number** (`scripts/check-frontend-no-ticket-refs.py`,
+    pre-commit AND CI — same both-layers rule as 15/15a). Rule 41 already keeps ticket references out
+    of the public docs site for the same reason: a number that only resolves against this repo's
+    issue tracker is meaningless to someone without access to it, and that context belongs in the PR
+    description and commit, not in a Tooltip/Alert/label/form-field string a user reads. The hook
+    scopes to `frontend/src/**/*.tsx?` (tests excluded), skips comments (`//`, `/** JSDoc */`,
+    `{/* JSX */}` — those are exactly what CONTRIBUTING wants) and `console.*`/`data-testid` lines
+    (never rendered), and only flags a match enclosed in `(...)` — the convention every real
+    reference in this codebase already follows, which is also what keeps an unquoted CSS hex color
+    or an ordinary "Batch #4521"-style UI number from tripping it. A deliberate exception takes
+    `frontend-ui-ok: <reason>` on the line or the one above.
 16. **SAST:** Bandit (Python) + CodeQL (GitHub Actions) on every PR. **Suppression hygiene (#806):** a suppression comment carries its test id and *nothing else* — put the justification on its own line above, and never spell `# nosec`/`# noqa` inside prose. Bandit parses everything after its token as a test-id list (so an inline explanation emits one warning per word, and merely *mentioning* the token in a nearby comment does the same); Ruff rejects the same shape as a malformed directive. **Judge a suppression by the gate's exit code, never by its warnings:** `bandit -c pyproject.toml -r backend/app/` (the CI command) must exit 0 with "No issues identified". A `nosec encountered … but no failed test` warning does **not** mean the suppression is dead — on a multi-line node bandit emits one per covered line that had no finding, so it is unavoidable noise around a load-bearing marker. Removing one on that evidence breaks the build; confirm against the exit code first.
 17. **Dependency vulnerability scanning:** Dependabot alerts + auto-PRs for security updates, plus a synchronous CI gate (`pip-audit` backend, `pnpm audit` frontend). Python deps are pinned in `backend/requirements*.txt` (single source of truth; `environment.yml` and CI install from there).
 
