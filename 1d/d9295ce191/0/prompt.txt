@@ -1,0 +1,8 @@
+Hey, I just saw - In the UI there are few places ADR number mentioned. 
+I don't think that is needed. What will the user do with which ADR number this issue/feature is identified. 
+Can you scrub those details from UI? All the ADR, PR, Issue ID. scan the full front end codebase first.
+Also, I had a hook that in future, those should not appear in the UI.
+
+---
+
+Your sure there are no more issue ID, PR, or ADR number present in the visible UI?

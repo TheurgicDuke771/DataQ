@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "1dd9295ce191",
+  "strategy": "manual-commit",
+  "branch": "chore/scrub-adr-issue-pr-refs-from-ui",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".pre-commit-config.yaml",
+    "frontend/src/components/checks/checkBadges.tsx",
+    "frontend/src/components/checks/expectationCatalog.ts",
+    "frontend/src/components/connections/connectionFormSpec.ts",
+    "frontend/src/components/suites/TriggersPanel.tsx",
+    "frontend/src/pages/Settings.tsx",
+    "scripts/check-frontend-no-ticket-refs.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1d/d9295ce191/0/metadata.json",
+      "transcript": "/1d/d9295ce191/0/full.jsonl",
+      "compact_transcript": "/1d/d9295ce191/0/transcript.jsonl",
+      "content_hash": "/1d/d9295ce191/0/content_hash.txt",
+      "prompt": "/1d/d9295ce191/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 102,
+    "cache_creation_tokens": 150052,
+    "cache_read_tokens": 7688353,
+    "output_tokens": 31468,
+    "api_call_count": 51
+  }
+}
