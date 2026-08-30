@@ -20,6 +20,7 @@ from backend.app.db.models import (
     Asset,
     Check,
     Connection,
+    PipelineRun,
     Result,
     Run,
     Schedule,
@@ -2351,4 +2352,81 @@ def test_import_refuses_an_expectation_outside_the_allowlist(
     )
     assert resp.status_code == 422
     assert "not in DataQ's vetted set" in resp.json()["error"]["message"]
+
+
+# ─────────────────────────── GET /suites/{id}/cadence (#1648) ──────────────
+
+
+def _succeeded_run(
+    db_session: Any, conn: Connection, *, hours_ago: float, env: str = "dev"
+) -> None:
+    started = datetime.now(UTC) - timedelta(hours=hours_ago)
+    db_session.add(
+        PipelineRun(
+            provider="airflow",
+            connection_id=conn.id,
+            provider_run_id=f"run-{uuid.uuid4().hex[:8]}",
+            pipeline_or_dag_id="load_orders",
+            env=env,
+            status="succeeded",
+            started_at=started,
+            finished_at=started + timedelta(minutes=2),
+            created_at=started,
+        )
+    )
+
+
+def test_cadence_with_no_binding(client: TestClient, db_session: Any) -> None:
+    owner, _b, _e, sid = _owner_b_e_suite(db_session)
+    _as(owner)
+    resp = client.get(f"/api/v1/suites/{sid}/cadence")
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "bound": False,
+        "provider": None,
+        "pipeline_or_dag_id": None,
+        "env": None,
+        "sample_count": 0,
+        "insufficient_history": True,
+        "median_gap_hours": None,
+        "max_gap_hours": None,
+        "suggested_fail_threshold_hours": None,
+    }
+
+
+def test_cadence_with_a_bound_pipeline_and_regular_history(
+    client: TestClient, db_session: Any
+) -> None:
+    owner, _b, _e, sid = _owner_b_e_suite(db_session)
+    orch_conn = _orchestration_connection(db_session, "airflow")
+    db_session.add(
+        TriggerBinding(
+            provider="airflow", pipeline_or_dag_id="load_orders", env="dev", suite_id=uuid.UUID(sid)
+        )
+    )
+    for hours_ago in (12, 8, 4, 0):
+        _succeeded_run(db_session, orch_conn, hours_ago=hours_ago)
+    db_session.commit()
+    _as(owner)
+
+    resp = client.get(f"/api/v1/suites/{sid}/cadence")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["bound"] is True
+    assert body["provider"] == "airflow"
+    assert body["pipeline_or_dag_id"] == "load_orders"
+    assert body["insufficient_history"] is False
+    assert body["sample_count"] == 4
+    assert body["median_gap_hours"] == 4.0
+    assert body["max_gap_hours"] == 4.0
+    assert body["suggested_fail_threshold_hours"] == 5.0
+
+
+def test_cadence_requires_edit_access(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _share(client, owner, sid, b, "view")
+    _as(b)
+    resp = client.get(f"/api/v1/suites/{sid}/cadence")
+    assert resp.status_code == 403
     assert not db_session.scalars(select(Suite).where(Suite.name == "imported")).all()

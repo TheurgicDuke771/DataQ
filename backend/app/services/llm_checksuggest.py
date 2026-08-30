@@ -23,7 +23,6 @@ import uuid
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
@@ -33,7 +32,7 @@ from backend.app.datasources.expectation_allowlist import (
     ALLOWLIST_ONLY_TYPES,
 )
 from backend.app.datasources.monitors import FRESHNESS, monitor_expectation_type
-from backend.app.db.models import Connection, LlmInvocation, Suite, TriggerBinding
+from backend.app.db.models import Connection, LlmInvocation, Suite
 from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError
 from backend.app.services import (
     check_dimension,
@@ -213,20 +212,12 @@ def _profile_prompt(
     return "\n".join(lines), columns
 
 
-def _enabled_binding(session: Session, suite: Suite) -> TriggerBinding | None:
-    return session.scalars(
-        select(TriggerBinding).where(
-            TriggerBinding.suite_id == suite.id, TriggerBinding.enabled.is_(True)
-        )
-    ).first()
-
-
 def _cadence_context(session: Session, suite: Suite) -> tuple[str, bool]:
     """Pipeline cadence for the suite's bound trigger, if any. Returns (prompt
     text, whether a freshness suggestion is grounded enough to offer) — never
     asserts a threshold over too little history (#1648).
     """
-    binding = _enabled_binding(session, suite)
+    binding = orchestration_service.get_enabled_binding(session, suite.id)
     if binding is None:
         return "", False
     cadence = orchestration_service.compute_pipeline_cadence(
@@ -305,10 +296,18 @@ def _validate_freshness_suggestion(
     if not isinstance(config, dict):
         return None, "config must be an object"
     threshold_raw = raw.get("fail_threshold_hours")
-    try:
-        fail_threshold = Decimal(str(threshold_raw)) if threshold_raw is not None else None
-    except InvalidOperation:
-        return None, "fail_threshold_hours must be a number"
+    fail_threshold: Decimal | None = None
+    if threshold_raw is not None:
+        try:
+            fail_threshold = Decimal(str(threshold_raw))
+        except InvalidOperation:
+            return None, "fail_threshold_hours must be a number"
+        # str(float("nan"|"inf")) both parse into a Decimal without raising —
+        # NaN then crashes the ordering comparison below (uncaught InvalidOperation,
+        # sinking the whole batch) and Infinity passes as "positive" while
+        # describing a check that can never fail.
+        if not fail_threshold.is_finite():
+            return None, "fail_threshold_hours must be a finite number"
     try:
         check_service.validate_threshold_ordering(
             warn_threshold=None, fail_threshold=fail_threshold, critical_threshold=None

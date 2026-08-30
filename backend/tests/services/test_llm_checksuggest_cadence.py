@@ -43,11 +43,16 @@ def _invocation(db_session: Any, suite: Suite, admin: User) -> LlmInvocation:
 
 
 def _binding(
-    db_session: Any, suite: Suite, *, env: str = "dev", enabled: bool = True
+    db_session: Any,
+    suite: Suite,
+    *,
+    pipeline: str = "load_orders",
+    env: str = "dev",
+    enabled: bool = True,
 ) -> TriggerBinding:
     binding = TriggerBinding(
         provider="airflow",
-        pipeline_or_dag_id="load_orders",
+        pipeline_or_dag_id=pipeline,
         env=env,
         suite_id=suite.id,
         enabled=enabled,
@@ -58,7 +63,12 @@ def _binding(
 
 
 def _succeeded_run(
-    db_session: Any, conn: Connection, *, hours_ago: float, env: str = "dev"
+    db_session: Any,
+    conn: Connection,
+    *,
+    hours_ago: float,
+    env: str = "dev",
+    pipeline: str = "load_orders",
 ) -> None:
     started = NOW - timedelta(hours=hours_ago)
     db_session.add(
@@ -66,7 +76,7 @@ def _succeeded_run(
             provider="airflow",
             connection_id=conn.id,
             provider_run_id=f"run-{uuid.uuid4().hex[:8]}",
-            pipeline_or_dag_id="load_orders",
+            pipeline_or_dag_id=pipeline,
             env=env,
             status="succeeded",
             started_at=started,
@@ -185,6 +195,37 @@ def test_binding_with_regular_cadence_offers_freshness_and_states_the_gap(
     assert system is not None and llm_checksuggest.FRESHNESS_EXPECTATION_TYPE in system
 
 
+def test_two_enabled_bindings_still_ground_a_single_suggestion(
+    db_session: Any, admin: User, monkeypatch: Any
+) -> None:
+    """A suite can legitimately have more than one enabled binding — build_prompt
+    must pick exactly one and not error. (The determinism guarantee itself —
+    that the pick doesn't vary run to run — is proven structurally in
+    test_pipeline_cadence.py, by inspecting the query's ORDER BY: repeated
+    calls against unchanged data return a stable physical order regardless of
+    whether one is present, so observing outcomes here can't catch its
+    absence.)
+    """
+    suite = make_sql_suite(db_session, admin)
+    orch_conn = _orchestration_connection(db_session, admin)
+    _binding(db_session, suite, pipeline="load_orders_v1")
+    for hours_ago in (12, 8, 4, 0):
+        _succeeded_run(db_session, orch_conn, hours_ago=hours_ago, pipeline="load_orders_v1")
+    _binding(db_session, suite, pipeline="load_orders_v2")
+    for hours_ago in (2, 1, 0):
+        _succeeded_run(db_session, orch_conn, hours_ago=hours_ago, pipeline="load_orders_v2")
+    db_session.commit()
+    _mock_profile(monkeypatch)
+    invocation = _invocation(db_session, suite, admin)
+
+    prompt, _system, _schema = llm_checksuggest.build_prompt(
+        db_session, invocation, FakeSecretStore()
+    )
+
+    assert "Pipeline cadence" in prompt
+    assert ("load_orders_v1" in prompt) != ("load_orders_v2" in prompt)  # exactly one
+
+
 def test_a_disabled_binding_is_not_used(db_session: Any, admin: User, monkeypatch: Any) -> None:
     suite = make_sql_suite(db_session, admin)
     orch_conn = _orchestration_connection(db_session, admin)
@@ -288,6 +329,35 @@ def test_output_gate_rejects_a_negative_freshness_threshold(db_session: Any, adm
 
     assert len(out["suggestions"]) == 1
     assert len(out["rejected"]) == 1
+
+
+@pytest.mark.parametrize("non_finite", [float("nan"), float("inf"), float("-inf")])
+def test_output_gate_rejects_a_non_finite_freshness_threshold(
+    db_session: Any, admin: User, non_finite: float
+) -> None:
+    """`Decimal(str(x))` parses NaN/Infinity without raising — NaN then crashes
+    the ordering comparison (an uncaught decimal.InvalidOperation, sinking the
+    whole batch) and +Infinity would pass as a "positive" threshold describing
+    a check that can never fail.
+    """
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+    good = {
+        "expectation_type": "expect_column_values_to_not_be_null",
+        "name": "n",
+        "rationale": "r",
+        "config": {"column": "EMAIL"},
+    }
+
+    out = llm_checksuggest.validate_output(
+        db_session,
+        invocation,
+        {"suggestions": [good, _freshness_suggestion(fail_threshold_hours=non_finite)]},
+    )
+
+    assert len(out["suggestions"]) == 1
+    assert len(out["rejected"]) == 1
+    assert "finite" in out["rejected"][0]["reason"]
 
 
 # ── coverage_warnings: deterministic, independent of what the model returns ──

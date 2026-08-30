@@ -7,7 +7,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from backend.app.db.models import Connection, PipelineRun, User
-from backend.app.services.orchestration_service import PipelineCadence, compute_pipeline_cadence
+from backend.app.services.orchestration_service import (
+    PipelineCadence,
+    compute_pipeline_cadence,
+    get_enabled_binding,
+)
 
 NOW = datetime(2026, 6, 29, 12, 0, tzinfo=UTC)
 
@@ -148,3 +152,29 @@ def test_no_history_at_all(db_session: Any) -> None:
     )
     assert cadence.insufficient_history is True
     assert cadence.sample_count == 0
+
+
+def test_get_enabled_binding_query_is_ordered(db_session: Any) -> None:
+    """A suite can have more than one enabled binding — proven structurally,
+    by inspecting the compiled SQL for an ORDER BY, not by observing outcomes:
+    repeated calls against unchanged data return a stable physical row order
+    regardless of whether one is present, so empirical repetition cannot
+    catch its absence (#1648 review — the original query had none).
+    """
+    from sqlalchemy import event
+
+    statements: list[str] = []
+
+    def _capture(_conn: Any, _cursor: Any, statement: str, *_a: Any) -> None:
+        if statement.strip().upper().startswith("SELECT") and "trigger_bindings" in statement:
+            statements.append(statement)
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", _capture)
+    try:
+        get_enabled_binding(db_session, uuid.uuid4())  # no matching row needed — SQL shape only
+    finally:
+        event.remove(engine, "before_cursor_execute", _capture)
+
+    assert statements, "no SELECT against trigger_bindings was captured"
+    assert "ORDER BY" in statements[0].upper()

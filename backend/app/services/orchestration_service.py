@@ -567,6 +567,25 @@ _CADENCE_MIN_RUNS = 3
 _CADENCE_HISTORY_LIMIT = 10
 
 
+def get_enabled_binding(session: Session, suite_id: uuid.UUID) -> TriggerBinding | None:
+    """A suite's most recently created enabled binding, or `None`. A suite can
+    legitimately have more than one (two pipelines both triggering it) — this
+    is for the single-binding consumers (a cadence hint, the LLM suggestion
+    prompt), which need a stable, deterministic pick rather than whichever row
+    Postgres happens to return on a given call. `id` breaks a `created_at`
+    tie — `now()` is transaction-start time, not per-statement, so two
+    bindings created in the same request-scoped transaction DO tie, and `id`
+    is a random UUID rather than a time-ordered one, so the tiebreak is
+    stable-but-arbitrary, not truly "most recent" (the same shape
+    `pipeline_run_order_by` already accepts for the same reason).
+    """
+    return session.scalars(
+        select(TriggerBinding)
+        .where(TriggerBinding.suite_id == suite_id, TriggerBinding.enabled.is_(True))
+        .order_by(TriggerBinding.created_at.desc(), TriggerBinding.id.desc())
+    ).first()
+
+
 @dataclass(frozen=True)
 class PipelineCadence:
     """How often a bound pipeline actually produces data, from its own run
