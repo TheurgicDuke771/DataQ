@@ -771,7 +771,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     kind: 'comparison',
     label: 'Records reconciliation',
     description:
-      'Diff this suite’s dataset (the target under test) against a baseline on another connection, joined on key columns — matched / mismatched / additional-per-side ROW buckets (ADR 0015).',
+      'Diff this suite’s dataset (the target under test) against a baseline on another connection, joined on key columns — matched / mismatched / additional-per-side ROW buckets.',
     category: 'Comparison',
     // Authored via the dedicated side-by-side form (ComparisonCheckForm), not
     // the generic field list.
@@ -787,7 +787,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     kind: 'comparison',
     label: 'Column-level reconciliation',
     description:
-      'Same key-joined diff, counted per VALUE: each column reports its own matched / mismatched / additional-per-side counts (#799 — FDC column grain). Pick this when you need to know WHICH columns drift, not just which rows.',
+      'Same key-joined diff, counted per VALUE: each column reports its own matched / mismatched / additional-per-side counts. Pick this when you need to know WHICH columns drift, not just which rows.',
     category: 'Comparison',
     fields: [],
     thresholds: {

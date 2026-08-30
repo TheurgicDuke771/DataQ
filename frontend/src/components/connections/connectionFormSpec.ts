@@ -78,7 +78,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         label: 'Inventory sync',
         type: 'toggle',
         optional: true,
-        extra: 'Daily sync of every table in this database into the asset view (ADR 0040).',
+        extra: 'Daily sync of every table in this database into the asset view.',
       },
     ],
     auth: [
@@ -136,7 +136,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         type: 'toggle',
         optional: true,
         extra:
-          'Daily sync of every table this workspace exposes into the asset view (ADR 0040). ' +
+          'Daily sync of every table this workspace exposes into the asset view. ' +
           'Needs SELECT on system.information_schema for this PAT.',
       },
     ],
@@ -188,7 +188,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
       label: 'Catalog DB password',
       extra:
         'The SQL/hive catalog’s own database password (distinct from the storage ' +
-        'credential above) — never persisted in the catalog URI (#754/#826).',
+        'credential above) — never persisted in the catalog URI.',
       showWhen: (config) => config?.catalog_type === 'sql' || config?.catalog_type === 'hive',
     },
     // `catalog_uri` steers BOTH credentials — see the backend adapter's comment.

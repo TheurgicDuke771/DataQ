@@ -81,6 +81,12 @@ repos:
         language: system
         pass_filenames: false
         files: ^(docs/site/.*\.md|scripts/check-docs-references\.py)$
+      - id: check-frontend-no-ticket-refs
+        name: Frontend UI text doesn't cite ADR/issue/PR numbers
+        entry: python scripts/check-frontend-no-ticket-refs.py
+        language: system
+        files: ^frontend/src/.*\.tsx?$
+        exclude: \.(test|spec)\.tsx?$
 
   # ── Secret scanning ─────────────────────────────────────────────────────────
   - repo: https://github.com/betterleaks/betterleaks
