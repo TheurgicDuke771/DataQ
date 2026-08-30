@@ -1,5 +1,6 @@
 """Column-profiler unit tests — pure, no DB / no warehouse."""
 
+import json
 import math
 from collections.abc import Mapping
 from typing import Any
@@ -535,6 +536,30 @@ def test_assemble_sanitizes_nan_min_max() -> None:
     assert not isinstance(profile.columns[0].min_value, float) or not math.isnan(
         profile.columns[0].min_value
     )
+
+
+def test_assemble_sanitizes_binary_min_max_and_top_values() -> None:
+    """A Snowflake/Databricks BINARY column's MIN/MAX/top-value returns raw
+    `bytes` — not JSON-serializable, and the #1719 review found the LLM
+    check-suggestion prompt would have embedded a Python bytes-repr straight
+    into model context if this weren't sanitized at the source.
+    """
+    aggregate = {
+        "row_count": 2,
+        "nulls_0": 0,
+        "distinct_0": 2,
+        "min_0": b"\x01\x02",
+        "max_0": b"\xff\x00",
+    }
+    top_values: dict[str, list[Mapping[str, Any]]] = {"c": [{"value": b"\x01\x02", "freq": 1}]}
+    profile = assemble_profile(
+        table="t", schema="s", columns=["c"], aggregate=aggregate, top_values=top_values
+    )
+    col = profile.columns[0]
+    assert col.min_value == "0102"
+    assert col.max_value == "ff00"
+    assert col.top_values == [{"value": "0102", "count": 1}]
+    json.dumps({"min": col.min_value, "max": col.max_value}, allow_nan=False)
 
 
 # ── infer_file_format ──

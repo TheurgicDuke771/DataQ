@@ -25,11 +25,12 @@ AUDITED: Final[dict[str, str]] = {
     "api/v1/checks.py::dry_run_check": "check.dryrun",
     "api/v1/suites.py::profile_columns": "column.profile",
     "mcp/server.py::profile_column": "column.profile",
-    # Worker-side prompt enrichment for LLM SQL-gen (ADR 0042): EGRESS rung,
-    # always masked, warehouse-tag floor applied. Its sibling `_schema_context`
-    # calls no redactor (name-only egress) so it cannot appear here — its
-    # column.list event is pinned by test_llm_sqlgen instead.
-    "services/llm_sqlgen.py::_profile_context": "column.profile",
+    # Worker-side prompt enrichment for every LLM feature kind (ADR 0042):
+    # EGRESS rung, always masked, warehouse-tag floor applied. Both #1512
+    # (sql-gen) and #1513 (check suggestions) call through this ONE shared
+    # helper rather than each redacting independently (#1719 review) — pinned
+    # by test_llm_sqlgen AND test_llm_checksuggest.
+    "services/llm_prompt_context.py::masked_profile_for_prompt": "column.profile",
     "mcp/server.py::dryrun_check": "check.dryrun",
 }
 

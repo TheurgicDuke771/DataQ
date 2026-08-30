@@ -10,6 +10,18 @@ from backend.app.services import llm_service
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
+def admin_user(db_session: Any, *, prefix: str) -> User:
+    user = User(
+        id=uuid.uuid4(),
+        aad_object_id=None,
+        email=f"{prefix}-{uuid.uuid4().hex[:8]}@example.com",
+        role="admin",
+    )
+    db_session.add(user)
+    db_session.commit()
+    return user
+
+
 def enable_llm(
     db_session: Any, actor: User, store: FakeSecretStore | None = None
 ) -> FakeSecretStore:
