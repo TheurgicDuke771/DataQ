@@ -1,0 +1,24 @@
+Also we need to talsk about ADMIN UI [current one is just a place holder, it is a read-only page doesn't have anything to do for admin]. 
+With all these feature added since the admin ui introducion and all the new features we have planned, how do you imagine the admin pannel will looks like 
+It is suppose to be the most powerful UI page, yet it is a read-only page now, we need to change that
+
+---
+
+Also, can an admin add a new member in dataq?
+
+---
+
+okay, let's fix it [Azure AD / Cognito user must exist - this should remain pre-requisite, we are not touching Idp]
+
+---
+
+okay, can you generate an mockup of how the proposed admin ui will looks like now
+
+---
+
+The notification channels. What is the situation currently? 
+My thought is admin has to add it first centrally, and then per suit/check user will add a notification channel, drop down from what admin already added. Is it correct?
+
+---
+
+Great, Let's file all the issue related to the admin UI and then create an umbrella issue on top of that.
