@@ -83,6 +83,39 @@ def test_does_not_reap_terminal_rows(db_session: Any) -> None:
         assert row.status == status
 
 
+def test_reap_updates_are_conditioned_on_status_at_the_sql_level(db_session: Any) -> None:
+    """#1716 review: a plain select-then-mutate-then-commit races a row a worker
+    legitimately finishes in between (ORM autoflush emits `WHERE id = :id` only, no
+    re-check) — proven by clobbering the row in that scenario. The fix must issue
+    the UPDATE itself with a `status =` guard, re-checked by Postgres at UPDATE
+    time, so this asserts the guard is actually on the wire rather than relying on
+    a timing-dependent thread interleaving to (maybe) reproduce it.
+    """
+    from sqlalchemy import event
+
+    _invocation(db_session, status="pending", created_min_ago=20)
+    statements: list[str] = []
+
+    def _capture(_conn: Any, _cursor: Any, statement: str, *_a: Any) -> None:
+        if statement.strip().upper().startswith("UPDATE") and "llm_invocations" in statement:
+            statements.append(statement)
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", _capture)
+    try:
+        _reap(db_session)
+    finally:
+        event.remove(engine, "before_cursor_execute", _capture)
+
+    assert statements, "the reap call issued no UPDATE — nothing was exercised"
+    for statement in statements:
+        where_clause = statement.upper().split("WHERE", 1)[1]
+        assert "STATUS" in where_clause, (
+            f"UPDATE has no status guard in its WHERE clause, only: {where_clause!r} "
+            "— a concurrently-finished row can be clobbered back to `failed`"
+        )
+
+
 def test_disabled_when_threshold_non_positive(db_session: Any) -> None:
     pending = _invocation(db_session, status="pending", created_min_ago=999)
     running = _invocation(db_session, status="running", created_min_ago=999, started_min_ago=998)

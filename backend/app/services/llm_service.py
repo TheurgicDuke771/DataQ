@@ -405,39 +405,41 @@ def reap_stuck_invocations(
     exception; a row can strand in `pending` (API died before `send_task`, or the
     broker dropped the message) or `running` (worker SIGKILL/OOM mid-provider-call).
     """
+    # Conditional UPDATE (same idiom as execute_invocation's claim): the WHERE-status
+    # guard is re-checked by Postgres at UPDATE time, so a row a worker legitimately
+    # finished between our SELECT and our COMMIT can never be clobbered back to
+    # `failed` — a plain select-then-mutate-then-commit would race it (#1716 review).
     moment = now or datetime.now(UTC)
-    stuck: list[tuple[LlmInvocation, str]] = []
+    reaped_ids: list[uuid.UUID] = []
     if pending_threshold_minutes > 0:
         cutoff = moment - timedelta(minutes=pending_threshold_minutes)
-        pending_rows = session.scalars(
-            select(LlmInvocation).where(
-                LlmInvocation.status == "pending", LlmInvocation.created_at < cutoff
-            )
+        result = session.execute(
+            update(LlmInvocation)
+            .where(LlmInvocation.status == "pending", LlmInvocation.created_at < cutoff)
+            .values(status="failed", error=_PENDING_REAP_REASON, finished_at=moment)
+            .returning(LlmInvocation.id)
         )
-        stuck.extend((row, _PENDING_REAP_REASON) for row in pending_rows)
+        reaped_ids.extend(result.scalars().all())
     if running_threshold_minutes > 0:
         cutoff = moment - timedelta(minutes=running_threshold_minutes)
-        running_rows = session.scalars(
-            select(LlmInvocation).where(
-                LlmInvocation.status == "running", LlmInvocation.started_at < cutoff
-            )
+        result = session.execute(
+            update(LlmInvocation)
+            .where(LlmInvocation.status == "running", LlmInvocation.started_at < cutoff)
+            .values(status="failed", error=_RUNNING_REAP_REASON, finished_at=moment)
+            .returning(LlmInvocation.id)
         )
-        stuck.extend((row, _RUNNING_REAP_REASON) for row in running_rows)
-    for invocation, reason in stuck:
-        invocation.status = "failed"
-        invocation.error = reason
-        invocation.finished_at = moment
-    reaped = [invocation for invocation, _reason in stuck]
-    if reaped:
-        session.commit()
-        log.warning(
-            "llm_invocations_reaped",
-            count=len(reaped),
-            pending_threshold_minutes=pending_threshold_minutes,
-            running_threshold_minutes=running_threshold_minutes,
-            invocation_ids=[str(i.id) for i in reaped],
-        )
-    return reaped
+        reaped_ids.extend(result.scalars().all())
+    if not reaped_ids:
+        return []
+    session.commit()
+    log.warning(
+        "llm_invocations_reaped",
+        count=len(reaped_ids),
+        pending_threshold_minutes=pending_threshold_minutes,
+        running_threshold_minutes=running_threshold_minutes,
+        invocation_ids=[str(i) for i in reaped_ids],
+    )
+    return list(session.scalars(select(LlmInvocation).where(LlmInvocation.id.in_(reaped_ids))))
 
 
 def list_recent_invocations(session: Session, *, limit: int = 50) -> list[LlmInvocation]:
