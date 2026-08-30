@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "92053fc253fe",
+  "strategy": "manual-commit",
+  "branch": "feature/1648-cadence-aware-suggestions",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/92/053fc253fe/0/metadata.json",
+      "transcript": "/92/053fc253fe/0/full.jsonl",
+      "compact_transcript": "/92/053fc253fe/0/transcript.jsonl",
+      "content_hash": "/92/053fc253fe/0/content_hash.txt",
+      "prompt": "/92/053fc253fe/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1186,
+    "cache_creation_tokens": 1567419,
+    "cache_read_tokens": 317752774,
+    "output_tokens": 352827,
+    "api_call_count": 593
+  }
+}
