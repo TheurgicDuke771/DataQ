@@ -307,13 +307,18 @@ def execute_invocation(
     invocation = session.get(LlmInvocation, invocation_id)
     assert invocation is not None  # just claimed it  # nosec B101
     started = time.monotonic()
+    # Accumulated locally, not written onto the tracked ORM object: the terminal
+    # write below is an explicit status-guarded UPDATE (the reap-race fix, #1716
+    # review), and a dirty ORM object would autoflush its own unguarded UPDATE
+    # first and reintroduce exactly that race.
+    terminal: dict[str, Any] = {}
     try:
         builder = KIND_BUILDERS.get(invocation.kind)
         if builder is None:
             # A wiring bug, not a provider fault — surfaces as `internal:`.
             raise RuntimeError(f"no builder registered for kind {invocation.kind!r}")
         prompt, system, schema = builder(session, invocation, secret_store)
-        invocation.context_fingerprint = hashlib.sha256(
+        terminal["context_fingerprint"] = hashlib.sha256(
             (prompt + (system or "")).encode()
         ).hexdigest()
         provider = build_provider(session, secret_store)
@@ -327,26 +332,39 @@ def execute_invocation(
             payload = {"text": _scrub_nul(result.text)}
         # Paid tokens are recorded whether or not the OUTPUT gate below refuses —
         # the row is the cost record, and a refused generation still billed.
-        invocation.input_tokens = result.input_tokens
-        invocation.output_tokens = result.output_tokens
+        terminal["input_tokens"] = result.input_tokens
+        terminal["output_tokens"] = result.output_tokens
         # The gate sees the exact bytes that will be stored (scrub BEFORE
         # validate): a NUL inside a keyword must not split tokens for the
         # validator and re-join in the stored copy.
         validator = KIND_VALIDATORS.get(invocation.kind)
         if validator is not None:
             payload = validator(session, invocation, payload)
-        invocation.response = _scrub_nul(payload)
-        invocation.status = "succeeded"
+        terminal["response"] = _scrub_nul(payload)
+        terminal["status"] = "succeeded"
     except DataQError as exc:
-        invocation.status = "failed"
-        invocation.error = str(_scrub_nul(f"{exc.code}: {exc.message}"))[:1024]
+        terminal["status"] = "failed"
+        terminal["error"] = str(_scrub_nul(f"{exc.code}: {exc.message}"))[:1024]
     except Exception as exc:  # a driver-boundary surprise must still terminate the row
-        invocation.status = "failed"
-        invocation.error = f"internal: {exc.__class__.__name__}"[:1024]
+        terminal["status"] = "failed"
+        terminal["error"] = f"internal: {exc.__class__.__name__}"[:1024]
         log.exception("llm_invocation_crashed", invocation_id=str(invocation_id))
-    invocation.duration_ms = int((time.monotonic() - started) * 1000)
-    invocation.finished_at = datetime.now(UTC)
+    terminal["duration_ms"] = int((time.monotonic() - started) * 1000)
+    terminal["finished_at"] = datetime.now(UTC)
+
+    def _persist(values: dict[str, Any]) -> int:
+        # Guarded like the claim above: a row the reaper already closed out
+        # (#1644) must not be resurrected by a worker that was merely slow, not
+        # dead.
+        outcome = session.execute(
+            update(LlmInvocation)
+            .where(LlmInvocation.id == invocation_id, LlmInvocation.status == "running")
+            .values(**values)
+        )
+        return getattr(outcome, "rowcount", 0)
+
     try:
+        affected = _persist(terminal)
         session.commit()
     except Exception:
         # Unstorable payload (the scrub is belt, this is braces): drop the
@@ -354,25 +372,35 @@ def execute_invocation(
         # unacceptable outcome.
         log.exception("llm_invocation_persist_failed", invocation_id=str(invocation_id))
         session.rollback()
-        session.execute(
-            update(LlmInvocation)
-            .where(LlmInvocation.id == invocation_id)
-            .values(
-                status="failed",
-                error="internal: result could not be stored",
-                finished_at=datetime.now(UTC),
-            )
+        affected = _persist(
+            {
+                "status": "failed",
+                "error": "internal: result could not be stored",
+                "finished_at": datetime.now(UTC),
+            }
         )
         session.commit()
+        if affected == 0:
+            log.warning("llm_invocation_result_superseded", invocation_id=str(invocation_id))
+            return "superseded"
         return "failed"
+    if affected == 0:
+        # Reaped out from under this worker while it was still working: the
+        # result must not overwrite the row the reaper already closed out.
+        log.warning(
+            "llm_invocation_result_superseded",
+            invocation_id=str(invocation_id),
+            attempted_status=terminal["status"],
+        )
+        return "superseded"
     log.info(
         "llm_invocation_finished",
         invocation_id=str(invocation_id),
         kind=invocation.kind,
-        status=invocation.status,
-        duration_ms=invocation.duration_ms,
+        status=terminal["status"],
+        duration_ms=terminal["duration_ms"],
     )
-    return invocation.status
+    return str(terminal["status"])
 
 
 def get_visible_invocation(

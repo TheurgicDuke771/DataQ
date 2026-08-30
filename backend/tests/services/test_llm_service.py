@@ -6,6 +6,7 @@ import uuid
 from typing import Any
 
 import pytest
+from sqlalchemy import update
 
 from backend.app.db.models import LlmInvocation, User
 from backend.app.llm.base import LLMNotConfiguredError, LLMResult, LLMUnavailableError
@@ -394,6 +395,43 @@ def test_unstorable_persist_still_lands_failed_not_running(
     row = db_session.get(LlmInvocation, invocation.id)
     assert row.status == "failed"
     assert row.error == "internal: result could not be stored"
+
+
+def test_result_does_not_resurrect_a_row_the_reaper_already_closed_out(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1716 review: a worker that is merely slow (not dead) must not overwrite a
+    row the #1644 reaper already failed out from under it.
+    """
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    db_session.commit()
+    monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: _FakeProvider())
+
+    reap_reason = "reaped: the worker never finished — likely killed mid-call"
+
+    def _builder_that_races_the_reaper(_s: Any, inv: Any, _st: Any) -> tuple[str, None, None]:
+        # Stand-in for the #1644 beat reaper closing this row out mid-flight,
+        # strictly between this worker's claim and its own terminal write.
+        db_session.execute(
+            update(LlmInvocation)
+            .where(LlmInvocation.id == inv.id)
+            .values(status="failed", error=reap_reason)
+        )
+        db_session.commit()
+        return "say ok", None, None
+
+    monkeypatch.setitem(llm_service.KIND_BUILDERS, "ping", _builder_that_races_the_reaper)
+
+    assert (
+        llm_service.execute_invocation(db_session, invocation.id, secret_store=store)
+        == "superseded"
+    )
+    db_session.refresh(invocation)
+    assert invocation.status == "failed"
+    assert invocation.error == reap_reason
+    assert invocation.response is None  # the worker's own (wasted) result never landed
 
 
 def test_test_settings_reports_secret_store_states_distinctly(db_session: Any, admin: User) -> None:
