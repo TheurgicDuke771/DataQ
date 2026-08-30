@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "e5c29f489dfd",
+  "strategy": "manual-commit",
+  "branch": "feature/1513-llm-check-suggestions",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/llm.py",
+    "backend/app/services/llm_checksuggest.py",
+    "backend/app/services/llm_kinds.py",
+    "backend/tests/api/test_llm_checksuggest_route.py",
+    "backend/tests/services/test_llm_checksuggest.py",
+    "backend/tests/support/access_coverage.py",
+    "backend/tests/support/audit_coverage.py",
+    "docs/site/changelog.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e5/c29f489dfd/0/metadata.json",
+      "transcript": "/e5/c29f489dfd/0/full.jsonl",
+      "compact_transcript": "/e5/c29f489dfd/0/transcript.jsonl",
+      "content_hash": "/e5/c29f489dfd/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 142,
+    "cache_creation_tokens": 120304,
+    "cache_read_tokens": 24841457,
+    "output_tokens": 56765,
+    "api_call_count": 71
+  }
+}
