@@ -1,0 +1,31 @@
+<task-notification>
+<task-id>ae20140718c6fdcf0</task-id>
+<tool-use-id>toolu_01Eyk3qm6eZEdE229PwweTfJ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/ae20140718c6fdcf0.output</output-file>
+<status>completed</status>
+<summary>Agent "Cross-file caller/callee trace for llm reaper diff" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>That confirms the race regression test is real and mutation-plausible. All five investigation items are now traced. Final report:
+
+**Findings**
+
+1. `file`: backend/app/core/config.py:119-123 (`.env.app.example`, not modified in this PR)
+   `summary`: New Settings fields `llm_invocation_pending_threshold_minutes` / `llm_invocation_running_threshold_minutes` are not added to `.env.app.example`, breaking the established convention — the analogous `stuck_run_threshold_minutes` and `asset_orphan_retention_days` are both documented there (`STUCK_RUN_THRESHOLD_MINUTES=60` at line 423, `ASSET_ORPHAN_RETENTION_DAYS=30` at line 446).
+   `failure_scenario`: An operator following `.env.app.example` as the source of truth for tunable ops knobs won't discover these two exist, and won't be able to override the reap thresholds without reading `config.py` source. Not a functional bug, but a real precedent gap this PR should have followed.
+
+2. `file`: backend/app/db/models.py (`LlmInvocation.__table_args__`, unmodified by this PR)
+   `summary`: No index backs the reaper's two new queries (`WHERE status='pending' AND created_at &lt; cutoff`, `WHERE status='running' AND started_at &lt; cutoff`); `llm_invocations` only has `ix_llm_invocations_requested_by`. The directly analogous `runs` table carries `Index("ix_runs_status", "status")` specifically for `reap_stuck_runs`.
+   `failure_scenario`: Every 5-minute beat tick does two sequential scans of `llm_invocations`. Currently low-volume/low-risk, but it's the same missing-index class the `runs` table already had to fix, and it will degrade as invocation volume grows (SQL generation/RCA/check-suggestion features are all still ramping per the roadmap). Worth a follow-up issue/migration (`ix_llm_invocations_status` or a composite `(status, created_at)`/`(status, started_at)`).
+
+3. `file`: n/a (verified, no defect)
+   `summary`: Only caller of `execute_invocation` is `tasks.py:976`'s `llm_invoke` Celery task, whose return value is never consumed (`dispatch_llm_invocation` in `run_dispatch.py` uses fire-and-forget `send_task`, never `.get()`). No caller pattern-matches on the return string set, so the new `"superseded"` value is safe.
+
+4. `file`: n/a (verified, no defect)
+   `summary`: `reap_stuck_invocations` only ever writes `status="failed"` to the DB (never `"superseded"` — that string is purely `execute_invocation`'s in-process return value, never persisted). `LlmInvocation.status` stays within the DB check constraint `LLM_INVOCATION_STATUSES = ("pending","running","succeeded","failed")` at all times, so `llm.py`'s `LlmInvocationRead.status: str` (the only reader) and the frontend (which has no invocation-polling code yet — only `frontend/src/api/llm.ts`'s unrelated admin-config panel) never observe an unexpected value. No cross-file break.
+
+5. `file`: n/a (verified, no defect)
+   `summary`: `_in_check("status", LLM_INVOCATION_STATUSES, "llm_invocation_status_valid")` includes `"failed"`, so the reaper's writes satisfy the constraint.
+
+No blocking correctness bugs found in the four changed files themselves — the reap-race guard (`_persist`'s conditional `WHERE status='running'` UPDATE) is correctly designed and has a dedicated, non-trivial regression test (`test_result_does_not_resurrect_a_row_the_reaper_already_closed_out`, `backend/tests/services/test_llm_service.py:400-431`) that actually exercises the race by mutating the row mid-builder-call. The two real gaps are #1 (missing `.env.app.example` wiring) and #2 (missing status index) — both process/precedent gaps consistent with this repo's own convention (per CLAUDE.md, "every finding ends fixed or filed"), not bugs in the shipped logic.</result>
+<usage><subagent_tokens>120493</subagent_tokens><tool_uses>21</tool_uses><duration_ms>108739</duration_ms></usage>
+</task-notification>

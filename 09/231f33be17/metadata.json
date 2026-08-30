@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "09231f33be17",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1644-llm-invocations-reaper",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".env.app.example"
+  ],
+  "sessions": [
+    {
+      "metadata": "/09/231f33be17/0/metadata.json",
+      "transcript": "/09/231f33be17/0/full.jsonl",
+      "compact_transcript": "/09/231f33be17/0/transcript.jsonl",
+      "content_hash": "/09/231f33be17/0/content_hash.txt",
+      "prompt": "/09/231f33be17/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 4546,
+    "cache_read_tokens": 1013992,
+    "output_tokens": 1690,
+    "api_call_count": 4
+  }
+}
