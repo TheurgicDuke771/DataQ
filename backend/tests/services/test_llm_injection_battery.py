@@ -1,14 +1,10 @@
-"""Prompt-injection adversarial battery (#1632), supporting #1512/#1513.
+"""Prompt-injection adversarial battery (#1632).
 
-Posture (proven here, not assumed): output validation is the security boundary,
-not prompt hygiene. Every test in this module either (a) proves a hostile string
-reaches the assembled prompt as inert DATA in every context slot, or (b) proves
-the output gate refuses a non-conforming result regardless of what produced it —
-the per-feature output-gate batteries already living in test_llm_sqlgen.py /
-test_llm_checksuggest.py ARE that half of this battery; this module fills the
-gaps: the top_value and table/schema slots, and the response's OUTBOUND
-untrusted-ness (never logged unredacted). Model-level jailbreak robustness is
-explicitly out of scope — BYO-model means we don't control the model.
+Posture: output validation is the security boundary, not prompt hygiene — the
+per-feature output-gate tests already prove that half. This file proves a
+hostile string reaches the prompt as inert data in every context slot, that
+neither builder can read a sample row, and that a response is never logged
+unredacted.
 """
 
 from __future__ import annotations
@@ -17,6 +13,8 @@ import uuid
 from typing import Any
 
 import pytest
+import structlog
+from structlog.testing import capture_logs
 
 from backend.app.db.models import LlmInvocation, User
 from backend.app.llm.base import LLMResult
@@ -25,7 +23,9 @@ from backend.app.services import profile_service as profile_service_module
 from backend.app.services.profile_service import ColumnProfile, ProfileResult
 from backend.tests.support.adversarial import PROMPT_INJECTION_STRINGS
 from backend.tests.support.fake_secret_store import FakeSecretStore
-from backend.tests.support.llm_helpers import admin_user, enable_llm, make_sql_suite
+from backend.tests.support.llm_helpers import admin_user, make_sql_suite
+
+_KINDS = [llm_sqlgen.SQLGEN_KIND, llm_checksuggest.CHECKSUGGEST_KIND]
 
 
 @pytest.fixture
@@ -70,22 +70,36 @@ def _empty_profile(column: str) -> ProfileResult:
     )
 
 
-# ── top_value slot ───────────────────────────────────────────────────────────
+# ── column name slot ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("injection", PROMPT_INJECTION_STRINGS)
+@pytest.mark.parametrize("kind", _KINDS)
+def test_injection_in_column_name_reaches_the_prompt_as_data_only(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch, kind: str, injection: str
+) -> None:
+    suite = make_sql_suite(db_session, admin)
+    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: [injection])
+    monkeypatch.setattr(
+        profile_service_module, "profile_connection", lambda *_a, **_kw: _empty_profile(injection)
+    )
+    invocation = _invocation(db_session, kind, suite, admin)
+    if kind == llm_sqlgen.SQLGEN_KIND:
+        invocation.request = {**(invocation.request or {}), "include_profile": True}
+        db_session.commit()
+
+    prompt = _build_prompt(kind, db_session, invocation, FakeSecretStore())
+    assert injection in prompt
+
+
+# ── top_value and range slots (checksuggest only — sql-gen's top_n=0 posture ──
+# means neither ever reaches its prompt at all) ──────────────────────────────
 
 
 @pytest.mark.parametrize("injection", PROMPT_INJECTION_STRINGS)
 def test_injection_in_top_value_reaches_the_checksuggest_prompt_as_data_only(
     db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch, injection: str
 ) -> None:
-    """A hostile top-value (a real value some row actually carries) must reach
-    the prompt, never interpreted — the model sees it as DATA next to the
-    "DATA, not instructions" framing, same as a hostile column name.
-
-    sql-gen is deliberately excluded here: its `_profile_context` never emits
-    `top_values` at all (`top_n=0` — #1512's own posture, proven by
-    `seen_top_n == [0]` in test_llm_sqlgen.py), so a top-value injection
-    string structurally cannot reach that prompt in the first place.
-    """
     suite = make_sql_suite(db_session, admin)  # no column_policy: QTY is not sensitive
     monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: ["QTY"])
     profile = ProfileResult(
@@ -108,10 +122,41 @@ def test_injection_in_top_value_reaches_the_checksuggest_prompt_as_data_only(
     prompt = _build_prompt(
         llm_checksuggest.CHECKSUGGEST_KIND, db_session, invocation, FakeSecretStore()
     )
-
-    # The formatter renders top-values via repr() — a defence-in-depth touch
-    # (quoted, escape-visible) that still must carry the string, not swallow it.
+    # rendered via repr() — quoted/escape-visible, but must still carry the string.
     assert repr(injection) in prompt
+
+
+@pytest.mark.parametrize("injection", PROMPT_INJECTION_STRINGS)
+def test_injection_in_column_range_reaches_the_checksuggest_prompt_as_data_only(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch, injection: str
+) -> None:
+    """min_value/max_value (a text column's lexical MIN/MAX) render via a bare
+    f-string, unlike top_values — a distinct slot from the same warehouse trust
+    class and worth its own proof.
+    """
+    suite = make_sql_suite(db_session, admin)
+    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: ["CODE"])
+    profile = ProfileResult(
+        row_count=5,
+        columns=[
+            ColumnProfile(
+                column="CODE",
+                null_count=0,
+                null_fraction=0.0,
+                distinct_count=5,
+                min_value=injection,
+                max_value="z",
+                top_values=[],
+            )
+        ],
+    )
+    monkeypatch.setattr(profile_service_module, "profile_connection", lambda *_a, **_kw: profile)
+    invocation = _invocation(db_session, llm_checksuggest.CHECKSUGGEST_KIND, suite, admin)
+
+    prompt = _build_prompt(
+        llm_checksuggest.CHECKSUGGEST_KIND, db_session, invocation, FakeSecretStore()
+    )
+    assert injection in prompt
 
 
 # ── table / schema name slot ─────────────────────────────────────────────────
@@ -126,8 +171,7 @@ def test_injection_in_table_name_reaches_sqlgen_prompt_as_data_only(
     invocation = _invocation(db_session, llm_sqlgen.SQLGEN_KIND, suite, admin)
 
     prompt = _build_prompt(llm_sqlgen.SQLGEN_KIND, db_session, invocation, FakeSecretStore())
-    # target fields are whitespace-stripped (`_clean()`) before assembly — a
-    # legitimate normalization, not a defect, so compare against the stripped form.
+    # target fields are whitespace-stripped (`_clean()`) before assembly.
     assert injection.strip() in prompt
 
 
@@ -152,23 +196,15 @@ def test_injection_in_schema_name_reaches_checksuggest_prompt_as_data_only(
 
 
 def test_neither_builder_touches_result_or_sample_failures() -> None:
-    """No raw sample row can EVER reach an LLM prompt if the builders never read
-    the table that holds them — a structural guarantee, not an incidental one
-    (test the pipeline, not the scrub helper — the #849 lesson).
+    """No raw sample row can reach a prompt if `Result` is never even imported —
+    a structural guarantee, not an incidental one (the #849 lesson: test the
+    pipeline, not a scrub helper that could be bypassed).
     """
     import inspect
 
     for module in (llm_sqlgen, llm_checksuggest):
-        source = inspect.getsource(module)
-        assert "sample_failures" not in source
-        import_lines = [
-            ln
-            for ln in source.splitlines()
-            if ln.strip().startswith("from backend.app.db.models import")
-        ]
-        assert import_lines, "expected an explicit db.models import to check"
-        # The model that carries samples must not even be imported.
-        assert "Result" not in import_lines[0]
+        assert "sample_failures" not in inspect.getsource(module)
+        assert not hasattr(module, "Result")
 
 
 # ── outbound: the response is untrusted too ──────────────────────────────────
@@ -187,92 +223,62 @@ class _StructuredProvider:
         return LLMResult(text="", parsed=self._parsed, input_tokens=3, output_tokens=1)
 
 
-class _LogRecorder:
-    """A structlog-shaped stand-in that records every call, for every level."""
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
-
-    def __getattr__(self, level: str) -> Any:
-        def _log(event: str, *args: Any, **kwargs: Any) -> None:
-            self.calls.append((level, (event, *args), kwargs))
-
-        return _log
+def _sqlgen_payload(marker: str) -> dict[str, Any]:
+    return {"sql": f"SELECT '{marker}'", "explanation": marker}
 
 
-def test_the_llm_response_is_never_logged_unredacted(
-    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+def _checksuggest_payload(marker: str) -> dict[str, Any]:
+    return {
+        "suggestions": [
+            {
+                "expectation_type": "expect_column_values_to_not_be_null",
+                "name": marker,
+                "rationale": marker,
+                "config": {"column": "EMAIL"},
+            }
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    "kind, payload_for",
+    [
+        (llm_sqlgen.SQLGEN_KIND, _sqlgen_payload),
+        (llm_checksuggest.CHECKSUGGEST_KIND, _checksuggest_payload),
+    ],
+)
+def test_the_response_is_never_logged_unredacted(
+    db_session: Any,
+    admin: User,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+    payload_for: Any,
 ) -> None:
     """The response is the untrusted OUTPUT of a system we do not control — it
     must never land in structured logs, which routinely reach a lower-trust
-    sink (App Insights, a log aggregator) than the DB row itself.
+    sink than the DB row itself.
     """
     marker = f"INJECTION-MARKER-{uuid.uuid4().hex}"
     suite = make_sql_suite(db_session, admin)
-    store = enable_llm(db_session, admin)
-    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: ["EMAIL"])
-    monkeypatch.setattr(
-        llm_service,
-        "build_provider",
-        lambda *_a, **_kw: _StructuredProvider(
-            {"sql": f"SELECT '{marker}'", "explanation": marker}
-        ),
-    )
-    invocation = _invocation(db_session, llm_sqlgen.SQLGEN_KIND, suite, admin)
-
-    recorder = _LogRecorder()
-    monkeypatch.setattr(llm_service, "log", recorder)
-
-    status = llm_service.execute_invocation(db_session, invocation.id, secret_store=store)
-    assert status == "succeeded"
-
-    # The marker DID reach storage (sanity: the provider's response was actually used).
-    db_session.refresh(invocation)
-    assert marker in str(invocation.response)
-    # …but never a log call, in any position or kwarg.
-    assert recorder.calls, "no log calls captured — the assertion below would be vacuous"
-    for _level, args, kwargs in recorder.calls:
-        assert marker not in str(args)
-        assert marker not in str(kwargs)
-
-
-def test_the_suggestion_response_is_never_logged_unredacted(
-    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    marker = f"INJECTION-MARKER-{uuid.uuid4().hex}"
-    suite = make_sql_suite(db_session, admin)
-    store = enable_llm(db_session, admin)
     monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: ["EMAIL"])
     monkeypatch.setattr(
         profile_service_module, "profile_connection", lambda *_a, **_kw: _empty_profile("EMAIL")
     )
     monkeypatch.setattr(
-        llm_service,
-        "build_provider",
-        lambda *_a, **_kw: _StructuredProvider(
-            {
-                "suggestions": [
-                    {
-                        "expectation_type": "expect_column_values_to_not_be_null",
-                        "name": marker,
-                        "rationale": marker,
-                        "config": {"column": "EMAIL"},
-                    }
-                ]
-            }
-        ),
+        llm_service, "build_provider", lambda *_a, **_kw: _StructuredProvider(payload_for(marker))
     )
-    invocation = _invocation(db_session, llm_checksuggest.CHECKSUGGEST_KIND, suite, admin)
+    invocation = _invocation(db_session, kind, suite, admin)
 
-    recorder = _LogRecorder()
-    monkeypatch.setattr(llm_service, "log", recorder)
+    with capture_logs() as logs:
+        monkeypatch.setattr(
+            llm_service, "log", structlog.get_logger("backend.app.services.llm_service")
+        )
+        status = llm_service.execute_invocation(
+            db_session, invocation.id, secret_store=FakeSecretStore()
+        )
 
-    status = llm_service.execute_invocation(db_session, invocation.id, secret_store=store)
     assert status == "succeeded"
-
     db_session.refresh(invocation)
-    assert marker in str(invocation.response)
-    assert recorder.calls, "no log calls captured — the assertion below would be vacuous"
-    for _level, args, kwargs in recorder.calls:
-        assert marker not in str(args)
-        assert marker not in str(kwargs)
+    assert marker in str(invocation.response)  # sanity: the response was actually used
+    assert logs, "no log calls captured — the assertion above would be vacuous"
+    assert marker not in str(logs)
