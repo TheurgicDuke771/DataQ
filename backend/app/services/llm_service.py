@@ -381,16 +381,26 @@ def execute_invocation(
         )
         session.commit()
         if affected == 0:
-            log.warning("llm_invocation_result_superseded", invocation_id=str(invocation_id))
+            log.warning(
+                "llm_invocation_result_superseded",
+                invocation_id=str(invocation_id),
+                attempted_status=terminal.get("status"),
+                input_tokens=terminal.get("input_tokens"),
+                output_tokens=terminal.get("output_tokens"),
+            )
             return "superseded"
         return "failed"
     if affected == 0:
-        # Reaped out from under this worker while it was still working: the
-        # result must not overwrite the row the reaper already closed out.
+        # Reaped out from under this worker while it was still working: the row
+        # itself must not be resurrected, but a genuinely succeeded call still
+        # billed — the tokens are recorded here since there is nowhere left to
+        # persist them (the row the cost record lives on is already closed).
         log.warning(
             "llm_invocation_result_superseded",
             invocation_id=str(invocation_id),
             attempted_status=terminal["status"],
+            input_tokens=terminal.get("input_tokens"),
+            output_tokens=terminal.get("output_tokens"),
         )
         return "superseded"
     log.info(
