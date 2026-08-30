@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "abf4ecd7a051",
+  "strategy": "manual-commit",
+  "branch": "docs/roadmap-file-remaining-issues",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ab/f4ecd7a051/0/metadata.json",
+      "transcript": "/ab/f4ecd7a051/0/full.jsonl",
+      "compact_transcript": "/ab/f4ecd7a051/0/transcript.jsonl",
+      "content_hash": "/ab/f4ecd7a051/0/content_hash.txt",
+      "prompt": "/ab/f4ecd7a051/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 52993,
+    "cache_read_tokens": 3178700,
+    "output_tokens": 18726,
+    "api_call_count": 16
+  }
+}
