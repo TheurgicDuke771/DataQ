@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "404ef12d0fd1",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1713-incident-evidence-airflow-run-id-colon",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "backend/app/services/incident_evidence.py",
+    "backend/tests/services/test_incident_evidence.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/40/4ef12d0fd1/0/metadata.json",
+      "transcript": "/40/4ef12d0fd1/0/full.jsonl",
+      "compact_transcript": "/40/4ef12d0fd1/0/transcript.jsonl",
+      "content_hash": "/40/4ef12d0fd1/0/content_hash.txt",
+      "prompt": "/40/4ef12d0fd1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 96,
+    "cache_creation_tokens": 55672,
+    "cache_read_tokens": 12281655,
+    "output_tokens": 24972,
+    "api_call_count": 48
+  }
+}

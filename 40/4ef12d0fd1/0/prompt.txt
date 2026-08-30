@@ -1,0 +1,28 @@
+<task-notification>
+<task-id>b9bweqtv1</task-id>
+<tool-use-id>toolu_01QShVmVUVVZJ9xD5LrpuXGD</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/d2770658-7c8b-431b-991f-06fadb7bbb70/tasks/b9bweqtv1.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR checks until they complete" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Go ahead.
+
+---
+
+Did have any option to add tag anywhere in DataQ?
+
+---
+
+do we have any issue filed for this?
+
+---
+
+For a Iincident details - upstream pipeline run is not available, even though it is present in result screen. [see screenshots]
+Is it expected?
+
+---
+
+file the bug, then start working on it
