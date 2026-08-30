@@ -323,6 +323,25 @@ def test_output_gate_caps_at_max_suggestions(db_session: Any, admin: User) -> No
     assert all(r["reason"] == "suggestion limit reached" for r in out["rejected"])
 
 
+def test_output_gate_reports_the_real_defect_on_a_malformed_item_past_the_cap(
+    db_session: Any, admin: User
+) -> None:
+    """#1719 review: the shape check must run before the cap check, or a
+    malformed item past MAX_SUGGESTIONS reports the wrong reason.
+    """
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+    good = [
+        _suggestion(config={"column": f"COL_{i}"}) for i in range(llm_checksuggest.MAX_SUGGESTIONS)
+    ]
+    malformed_past_cap = "not-an-object"
+    out = llm_checksuggest.validate_output(
+        db_session, invocation, {"suggestions": [*good, malformed_past_cap]}
+    )
+    assert len(out["suggestions"]) == llm_checksuggest.MAX_SUGGESTIONS
+    assert out["rejected"] == [{"expectation_type": None, "reason": "suggestion was not an object"}]
+
+
 def test_output_gate_refuses_when_the_suite_is_gone(db_session: Any, admin: User) -> None:
     """#1719 review: falling back to a blank connection_type would silently
     no-op reject_dataframe_only_expectation instead of refusing.

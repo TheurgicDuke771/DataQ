@@ -254,18 +254,21 @@ def validate_output(
     rejected: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for raw in raw_suggestions:
+        if not isinstance(raw, dict):
+            rejected.append({"expectation_type": None, "reason": "suggestion was not an object"})
+            continue
         # The schema caps the array at MAX_SUGGESTIONS, but not every provider
         # enforces its own schema server-side — an over-long response is
         # reported, not silently sliced off (every input item lands in exactly
-        # one of accepted/rejected).
+        # one of accepted/rejected). Checked after the shape check so a
+        # malformed item past the cap still reports its real defect.
         if len(accepted) >= MAX_SUGGESTIONS:
-            expectation_type = raw.get("expectation_type") if isinstance(raw, dict) else None
             rejected.append(
-                {"expectation_type": expectation_type, "reason": "suggestion limit reached"}
+                {
+                    "expectation_type": raw.get("expectation_type"),
+                    "reason": "suggestion limit reached",
+                }
             )
-            continue
-        if not isinstance(raw, dict):
-            rejected.append({"expectation_type": None, "reason": "suggestion was not an object"})
             continue
         ok, reason = _validate_one(connection_type, raw)
         if ok is None:
