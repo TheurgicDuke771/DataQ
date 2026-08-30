@@ -1,0 +1,35 @@
+Also on the complience part do we need SOC 2?
+
+---
+
+Swith to main, sync with remote, make sure all the content from the local branches are landed in main. 
+then prune al the un-necessary remore/local branches.
+
+---
+
+update the GitHub project `DataQ Roadmap` with current state of repo
+
+---
+
+but total issue are 483 closed + 106 open
+
+---
+
+There are few closed issue/PR without milestone - https://github.com/TheurgicDuke771/DataQ/issues?q=is%3Aissue%20state%3Aclosed%20no%3Amilestone 
+can you check and adjust them
+
+---
+
+1234 & 1487 are still w/o milestone
+
+---
+
+Do we need a column level lineage for LLM to suggest check proactively?
+
+---
+
+Do we need a column level lineage for LLM to suggest check proactively?
+
+---
+
+Okay file the issue with all the deails and reasoning.
