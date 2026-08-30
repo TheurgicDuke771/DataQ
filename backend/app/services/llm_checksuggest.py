@@ -18,34 +18,22 @@ suggestion — the whole invocation only fails when nothing survives.
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
-from backend.app.core.secrets import SecretStore, SecretStoreUnavailableError
+from backend.app.core.secrets import SecretStore
 from backend.app.datasources.expectation_allowlist import (
     ALLOWED_EXPECTATION_TYPES,
     ALLOWLIST_ONLY_TYPES,
 )
 from backend.app.db.models import Connection, LlmInvocation, Suite
 from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError
-from backend.app.services import (
-    check_dimension,
-    check_service,
-    llm_service,
-    profile_service,
-    run_service,
-)
+from backend.app.services import check_dimension, check_service, llm_prompt_context, llm_service
 from backend.app.services.custom_sql import SQL_QUERYABLE_TYPES
-from backend.app.services.live_probe import (
-    Destination,
-    applicable_tags,
-    mask_profile_columns,
-    record_probe_access,
-    sensitive_profile_columns,
-)
 
 log = get_logger(__name__)
 
@@ -150,15 +138,6 @@ def check_generation_preconditions(suite: Suite, connection: Connection | None) 
         raise LLMRequestInvalidError("a Unity Catalog target requires a catalog")
 
 
-def _target_identity(suite: Suite) -> dict[str, Any]:
-    target = suite.target or {}
-    return {
-        "table": target.get("table"),
-        "schema": target.get("schema"),
-        "catalog": target.get("catalog"),
-    }
-
-
 def _profile_prompt(
     session: Session,
     suite: Suite,
@@ -168,74 +147,29 @@ def _profile_prompt(
     actor: uuid.UUID | None,
 ) -> tuple[str, list[str]]:
     """Column names + masked profile stats. Refuses (rather than degrades) on
-    failure: a suggestion grounded in nothing is a confident wrong answer.
+    failure: a suggestion grounded in nothing is a confident wrong answer —
+    unlike #1512, the profile here is never optional, so no degrade path.
     """
-    try:
-        columns = profile_service.list_columns(
-            connection, secret_store=secret_store, **_target_identity(suite)
-        )
-    except SecretStoreUnavailableError:
-        raise
-    except Exception as exc:
-        log.warning(
-            "llm_checksuggest_columns_unavailable",
-            suite_id=str(suite.id),
-            error=exc.__class__.__name__,
-        )
-        raise LLMRequestInvalidError(
-            "the table's columns could not be read — check the connection credential "
-            "and the suite's run target"
-        ) from exc
-    record_probe_access(
+    columns = llm_prompt_context.list_columns_for_prompt(
         session,
-        action="column.list",
-        suite_id=suite.id,
+        suite,
+        connection,
+        secret_store=secret_store,
         actor=actor,
-        destination=Destination.EGRESS,
-        masked=False,
-        values_in_scope=False,
-        columns=columns,
-        detail={"consumer": "llm_check_suggestion"},
+        consumer="llm_check_suggestion",
     )
-    try:
-        profile = profile_service.profile_connection(
-            connection,
-            columns=columns,
-            top_n=_TOP_N,
-            secret_store=secret_store,
-            **_target_identity(suite),
-        )
-    except SecretStoreUnavailableError:
-        raise
-    except Exception as exc:
-        log.warning(
-            "llm_checksuggest_profile_unavailable",
-            suite_id=str(suite.id),
-            error=exc.__class__.__name__,
-        )
-        raise LLMRequestInvalidError(
-            "the table could not be profiled — check the connection credential "
-            "and the suite's run target"
-        ) from exc
-    # The G3 governance floor: warehouse tags join the suite's own policy.
-    tags = applicable_tags(run_service.asset_column_tags(session, suite), probed_other_target=False)
-    sensitive = sensitive_profile_columns(
-        profile.columns, policy=suite.column_policy, tags=tags, destination=Destination.EGRESS
-    )
-    masked = mask_profile_columns(profile.columns, sensitive=sensitive)
-    record_probe_access(
+    profile = llm_prompt_context.masked_profile_for_prompt(
         session,
-        action="column.profile",
-        suite_id=suite.id,
+        suite,
+        connection,
+        columns,
+        top_n=_TOP_N,
+        secret_store=secret_store,
         actor=actor,
-        destination=Destination.EGRESS,
-        masked=True,
-        columns=columns,
-        sensitive_columns=sensitive,
-        detail={"consumer": "llm_check_suggestion"},
+        consumer="llm_check_suggestion",
     )
     lines = [f"Row count: {profile.row_count}"]
-    for col in masked:
+    for col in profile.columns:
         stats = [f"nulls={col.null_fraction:.1%}"]
         if col.distinct_count is not None:
             stats.append(f"distinct={col.distinct_count}")
@@ -311,22 +245,41 @@ def validate_output(
     suggests nothing runnable is a hard failure, not an empty success.
     """
     suite = session.get(Suite, invocation.suite_id) if invocation.suite_id else None
-    connection = session.get(Connection, suite.connection_id) if suite is not None else None
-    connection_type = connection.type if connection is not None else ""
+    if suite is None:
+        # Never fall back to a blank connection_type: reject_dataframe_only_expectation("",
+        # ...) silently no-ops on an unknown type instead of refusing (#1719 review) — the
+        # context vanishing is not the model's fault, same as build_prompt's own suite-gone
+        # case, so this is request-invalid, not a validation failure of the model's output.
+        raise LLMRequestInvalidError("the suite this suggestion run was scoped to no longer exists")
+    connection = session.get(Connection, suite.connection_id)
+    if connection is None:
+        raise LLMRequestInvalidError("the suite's connection no longer exists")
+    connection_type = connection.type
     raw_suggestions = payload.get("suggestions")
     if not isinstance(raw_suggestions, list):
         raise LLMOutputInvalidError("provider did not return a suggestions list")
     accepted: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
     for raw in raw_suggestions[:MAX_SUGGESTIONS]:
         if not isinstance(raw, dict):
             rejected.append({"expectation_type": None, "reason": "suggestion was not an object"})
             continue
         ok, reason = _validate_one(connection_type, raw)
-        if ok is not None:
-            accepted.append(ok)
-        else:
+        if ok is None:
             rejected.append({"expectation_type": raw.get("expectation_type"), "reason": reason})
+            continue
+        # The model can propose the same rule twice (a retry, or reasoning about
+        # the same signal from two angles) — one accepted copy, not a duplicate
+        # presented to the reviewer as two independently-validated suggestions.
+        identity = (ok["expectation_type"], json.dumps(ok["config"], sort_keys=True, default=str))
+        if identity in seen:
+            rejected.append(
+                {"expectation_type": ok["expectation_type"], "reason": "duplicate suggestion"}
+            )
+            continue
+        seen.add(identity)
+        accepted.append(ok)
     if not accepted:
         raise LLMOutputInvalidError("no suggested check passed validation")
     return {"suggestions": accepted, "rejected": rejected}

@@ -238,8 +238,9 @@ def _suggestion(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-def test_output_gate_accepts_a_valid_suggestion(db_session: Any) -> None:
-    invocation = LlmInvocation(kind=llm_checksuggest.CHECKSUGGEST_KIND)
+def test_output_gate_accepts_a_valid_suggestion(db_session: Any, admin: User) -> None:
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
     out = llm_checksuggest.validate_output(db_session, invocation, {"suggestions": [_suggestion()]})
     assert len(out["suggestions"]) == 1
     accepted = out["suggestions"][0]
@@ -248,9 +249,12 @@ def test_output_gate_accepts_a_valid_suggestion(db_session: Any) -> None:
     assert out["rejected"] == []
 
 
-def test_output_gate_drops_one_bad_suggestion_and_keeps_the_rest(db_session: Any) -> None:
+def test_output_gate_drops_one_bad_suggestion_and_keeps_the_rest(
+    db_session: Any, admin: User
+) -> None:
     """Partial success: one bad suggestion in a batch must not sink the good ones."""
-    invocation = LlmInvocation(kind=llm_checksuggest.CHECKSUGGEST_KIND)
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
     good = _suggestion()
     missing_column = _suggestion(config={})  # GX construction fails: `column` is required
     out = llm_checksuggest.validate_output(
@@ -262,11 +266,12 @@ def test_output_gate_drops_one_bad_suggestion_and_keeps_the_rest(db_session: Any
     assert out["rejected"][0]["reason"]
 
 
-def test_output_gate_rejects_out_of_scope_expectation_type(db_session: Any) -> None:
+def test_output_gate_rejects_out_of_scope_expectation_type(db_session: Any, admin: User) -> None:
     """Table-level/cross-column types are outside the offered vocabulary — a
     model that ignores the schema enum must still be refused at validation.
     """
-    invocation = LlmInvocation(kind=llm_checksuggest.CHECKSUGGEST_KIND)
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
     out_of_scope = _suggestion(
         expectation_type="expect_table_row_count_to_be_between",
         config={"min_value": 1, "max_value": 100},
@@ -279,25 +284,61 @@ def test_output_gate_rejects_out_of_scope_expectation_type(db_session: Any) -> N
     assert "not in the offered vocabulary" in out["rejected"][0]["reason"]
 
 
-def test_output_gate_fails_when_nothing_survives(db_session: Any) -> None:
-    invocation = LlmInvocation(kind=llm_checksuggest.CHECKSUGGEST_KIND)
+def test_output_gate_drops_a_duplicate_suggestion(db_session: Any, admin: User) -> None:
+    """The model can propose the same rule twice — kept once, not surfaced twice
+    as independently-validated suggestions.
+    """
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+    out = llm_checksuggest.validate_output(
+        db_session, invocation, {"suggestions": [_suggestion(), _suggestion()]}
+    )
+    assert len(out["suggestions"]) == 1
+    assert len(out["rejected"]) == 1
+    assert out["rejected"][0]["reason"] == "duplicate suggestion"
+
+
+def test_output_gate_fails_when_nothing_survives(db_session: Any, admin: User) -> None:
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
     with pytest.raises(LLMOutputInvalidError):
         llm_checksuggest.validate_output(
             db_session, invocation, {"suggestions": [_suggestion(config={})]}
         )
 
 
-def test_output_gate_rejects_non_list_suggestions(db_session: Any) -> None:
-    invocation = LlmInvocation(kind=llm_checksuggest.CHECKSUGGEST_KIND)
+def test_output_gate_rejects_non_list_suggestions(db_session: Any, admin: User) -> None:
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
     with pytest.raises(LLMOutputInvalidError):
         llm_checksuggest.validate_output(db_session, invocation, {"suggestions": "not-a-list"})
 
 
-def test_output_gate_caps_at_max_suggestions(db_session: Any) -> None:
-    invocation = LlmInvocation(kind=llm_checksuggest.CHECKSUGGEST_KIND)
-    many = [_suggestion() for _ in range(llm_checksuggest.MAX_SUGGESTIONS + 5)]
+def test_output_gate_caps_at_max_suggestions(db_session: Any, admin: User) -> None:
+    """Each capped-in suggestion targets a distinct column — MAX_SUGGESTIONS
+    caps volume, not the (separately-tested) duplicate gate.
+    """
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+    many = [
+        _suggestion(config={"column": f"COL_{i}"})
+        for i in range(llm_checksuggest.MAX_SUGGESTIONS + 5)
+    ]
     out = llm_checksuggest.validate_output(db_session, invocation, {"suggestions": many})
     assert len(out["suggestions"]) == llm_checksuggest.MAX_SUGGESTIONS
+
+
+def test_output_gate_refuses_when_the_suite_is_gone(db_session: Any, admin: User) -> None:
+    """#1719 review: falling back to a blank connection_type would silently
+    no-op reject_dataframe_only_expectation instead of refusing.
+    """
+    invocation = LlmInvocation(
+        kind=llm_checksuggest.CHECKSUGGEST_KIND, requested_by_user_id=admin.id
+    )
+    db_session.add(invocation)
+    db_session.commit()
+    with pytest.raises(LLMRequestInvalidError):
+        llm_checksuggest.validate_output(db_session, invocation, {"suggestions": [_suggestion()]})
 
 
 # ── end-to-end through execute_invocation ────────────────────────────────────
