@@ -250,6 +250,102 @@ def test_upstream_pipeline_layer_with_delay(db_session: Any, world: dict[str, An
     assert up["delay_seconds_vs_history"] == pytest.approx(540, abs=2)  # 600 - 60
 
 
+def test_upstream_pipeline_layer_resolves_airflow_default_run_id(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """#1713: Airflow's own default `run_id` (no custom id supplied) is a
+    colon-bearing timestamp like `manual__2026-08-08T01:30:00+00:00` — the
+    marker "<provider>:<pipeline_or_dag_id>:<provider_run_id>" then has MORE
+    than two colons, and a naive split on the first/last one truncates
+    `provider_run_id` to a few characters, so the real `PipelineRun` row
+    (written with the correct, full run id) never matches.
+    """
+    conn_id = world["conn"].id
+    now = datetime.now(UTC)
+    run_id = "manual__2026-08-08T01:30:00+00:00"
+    db_session.add(
+        PipelineRun(
+            provider="airflow",
+            connection_id=conn_id,
+            provider_run_id=run_id,
+            pipeline_or_dag_id="flow_a_snowflake_load",
+            env="dev",
+            status="succeeded",
+            started_at=now - timedelta(minutes=5),
+            finished_at=now - timedelta(minutes=4),
+            created_at=now - timedelta(minutes=5),
+        )
+    )
+    db_session.commit()
+    run = _run(
+        db_session,
+        world["suite"],
+        triggered_by=f"airflow:flow_a_snowflake_load:{run_id}",
+    )
+    result = Result(run_id=run.id, check_id=world["check"].id, status="fail")
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    up = card["upstream_pipeline_run"]
+    assert up is not None
+    assert up["pipeline_or_dag_id"] == "flow_a_snowflake_load"
+    assert up["provider_run_id"] == run_id
+
+
+def test_upstream_pipeline_layer_fails_closed_on_ambiguous_marker(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """dbt's `pipeline_or_dag_id` (job_name) is free-form webhook input with no
+    colon restriction (backend/app/orchestration/dbt.py), so two DISTINCT
+    PipelineRun rows can reconstruct to the identical marker string when a
+    colon lands on a different side of the pipeline/run-id boundary:
+    ("nightly:etl", "run-1") and ("nightly", "etl:run-1") both concat to
+    "dbt:nightly:etl:run-1". Neither row is unambiguously "the" match — the
+    layer must return None (evidence unavailable) rather than silently
+    attributing the incident to whichever row Postgres happens to return
+    first.
+    """
+    conn_id = world["conn"].id
+    now = datetime.now(UTC)
+    db_session.add_all(
+        [
+            PipelineRun(
+                provider="dbt",
+                connection_id=conn_id,
+                provider_run_id="run-1",
+                pipeline_or_dag_id="nightly:etl",
+                env="dev",
+                status="succeeded",
+                started_at=now - timedelta(minutes=5),
+                finished_at=now - timedelta(minutes=4),
+                created_at=now - timedelta(minutes=5),
+            ),
+            PipelineRun(
+                provider="dbt",
+                connection_id=conn_id,
+                provider_run_id="etl:run-1",
+                pipeline_or_dag_id="nightly",
+                env="dev",
+                status="succeeded",
+                started_at=now - timedelta(minutes=5),
+                finished_at=now - timedelta(minutes=4),
+                created_at=now - timedelta(minutes=5),
+            ),
+        ]
+    )
+    db_session.commit()
+    run = _run(db_session, world["suite"], triggered_by="dbt:nightly:etl:run-1")
+    result = Result(run_id=run.id, check_id=world["check"].id, status="fail")
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    assert card["upstream_pipeline_run"] is None
+
+
 def test_upstream_pipeline_none_for_manual_run(db_session: Any, world: dict[str, Any]) -> None:
     run = _run(db_session, world["suite"], triggered_by="manual")
     result = Result(run_id=run.id, check_id=world["check"].id, status="fail")
