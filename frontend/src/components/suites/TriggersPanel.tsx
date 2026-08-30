@@ -239,7 +239,7 @@ function TriggerRow({
             key={nearMiss.run_env}
             // The claim is past-tense and dated, not an unqualified present-tense assertion: the
             // row only proves the mismatch was OBSERVED.
-            title={`Last observed ${formatTimestamp(nearMiss.updated_at)}: a run landed in "${envLabel(nearMiss.run_env as ConnectionEnv)}", not "${envLabel(nearMiss.binding_env as ConnectionEnv)}" — this binding did not fire, and won't for such runs until the envs match (#1186).`}
+            title={`Last observed ${formatTimestamp(nearMiss.updated_at)}: a run landed in "${envLabel(nearMiss.run_env as ConnectionEnv)}", not "${envLabel(nearMiss.binding_env as ConnectionEnv)}" — this binding did not fire, and won't for such runs until the envs match.`}
           >
             <Tag
               color="warning"

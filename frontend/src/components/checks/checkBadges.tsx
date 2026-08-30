@@ -63,7 +63,7 @@ export function EngineTag({ engine }: { engine?: string }) {
 export function DimensionTag({ dimension }: { dimension?: string | null }) {
   if (!dimension) {
     return (
-      <Tooltip title="No DQ dimension set — a coverage gap (ADR 0038), not an error.">
+      <Tooltip title="No DQ dimension set — a coverage gap, not an error.">
         <Tag>Unclassified</Tag>
       </Tooltip>
     );

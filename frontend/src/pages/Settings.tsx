@@ -215,7 +215,7 @@ function WebhookRow({ webhook }: { webhook: AdminWebhook }) {
         {secretBearing ? (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             Paste into Azure Monitor → Action Group → Webhook. Live delivery also needs the
-            Common-Alert-Schema payload mapping (#492).
+            Common-Alert-Schema payload mapping.
           </Typography.Text>
         ) : (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
