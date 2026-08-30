@@ -21,7 +21,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import Connection, LlmInvocation, User
 from backend.app.db.session import get_db
-from backend.app.services import llm_service, llm_sqlgen
+from backend.app.services import llm_checksuggest, llm_service, llm_sqlgen
 from backend.app.services.llm_kinds import REGISTERED_KINDS
 from backend.app.services.run_dispatch import dispatch_llm_invocation
 from backend.app.services.suite_authz import require_permission
@@ -77,6 +77,34 @@ class LlmInvocationQueued(ApiModel):
     status: str = "pending"
 
 
+class CheckSuggestionRequest(ApiRequestModel):
+    suite_id: UUID
+
+
+def _queue_invocation(db: Session, invocation: LlmInvocation) -> LlmInvocationQueued:
+    db.commit()
+    try:
+        dispatch_llm_invocation(invocation.id)
+    except Exception as exc:
+        log.exception("llm_dispatch_failed", invocation_id=str(invocation.id))
+        # Conditional, like the worker's claim: send_task can raise after the
+        # message was effectively published, and a claimed row must not be
+        # clobbered back to failed.
+        db.rollback()
+        db.execute(
+            update(LlmInvocation)
+            .where(LlmInvocation.id == invocation.id, LlmInvocation.status == "pending")
+            .values(
+                status="failed",
+                error="the task broker was unreachable — the generation was not started",
+                finished_at=datetime.now(UTC),
+            )
+        )
+        db.commit()
+        raise LlmDispatchFailedError("could not dispatch the generation to the worker") from exc
+    return LlmInvocationQueued(invocation_id=invocation.id)
+
+
 @router.post(
     "/sql_generation",
     response_model=LlmInvocationQueued,
@@ -108,27 +136,40 @@ def generate_sql(
             "include_profile": payload.include_profile,
         },
     )
-    db.commit()
-    try:
-        dispatch_llm_invocation(invocation.id)
-    except Exception as exc:
-        log.exception("llm_dispatch_failed", invocation_id=str(invocation.id))
-        # Conditional, like the worker's claim: send_task can raise after the
-        # message was effectively published, and a claimed row must not be
-        # clobbered back to failed.
-        db.rollback()
-        db.execute(
-            update(LlmInvocation)
-            .where(LlmInvocation.id == invocation.id, LlmInvocation.status == "pending")
-            .values(
-                status="failed",
-                error="the task broker was unreachable — the generation was not started",
-                finished_at=datetime.now(UTC),
-            )
-        )
-        db.commit()
-        raise LlmDispatchFailedError("could not dispatch the generation to the worker") from exc
-    return LlmInvocationQueued(invocation_id=invocation.id)
+    return _queue_invocation(db, invocation)
+
+
+@router.post(
+    "/check_suggestions",
+    response_model=LlmInvocationQueued,
+    status_code=202,
+    summary="Suggest checks for a suite from its column profile (suite edit)",
+)
+def suggest_checks(
+    payload: CheckSuggestionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> LlmInvocationQueued:
+    """Queues a worker-side generation; poll `GET /llm/invocations/{id}`. Every
+    suggested check passes the same validator a human's `create_check` call
+    would before it is ever stored — one that fails is dropped, not surfaced;
+    see the invocation's `rejected` field for what didn't make it and why.
+    """
+    if (
+        llm_checksuggest.CHECKSUGGEST_KIND not in REGISTERED_KINDS
+    ):  # pragma: no cover - wiring guard
+        raise LlmDispatchFailedError("check_suggestion is not registered in this process")
+    suite = require_permission(db, payload.suite_id, current_user.id, minimum="edit")
+    connection = db.get(Connection, suite.connection_id)
+    llm_checksuggest.check_generation_preconditions(suite, connection)
+    invocation = llm_service.create_invocation(
+        db,
+        kind=llm_checksuggest.CHECKSUGGEST_KIND,
+        requested_by=current_user,
+        suite_id=suite.id,
+        request={},
+    )
+    return _queue_invocation(db, invocation)
 
 
 @router.get(

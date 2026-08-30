@@ -30,6 +30,11 @@ AUDITED: Final[dict[str, str]] = {
     # calls no redactor (name-only egress) so it cannot appear here — its
     # column.list event is pinned by test_llm_sqlgen instead.
     "services/llm_sqlgen.py::_profile_context": "column.profile",
+    # Worker-side prompt enrichment for LLM check suggestions (ADR 0042, #1513):
+    # one function does both the column.list AND column.profile calls (the
+    # profile is never optional here, unlike sql-gen's split _schema_context/
+    # _profile_context) — pinned by test_llm_checksuggest.
+    "services/llm_checksuggest.py::_profile_prompt": "column.profile",
     "mcp/server.py::dryrun_check": "check.dryrun",
 }
 

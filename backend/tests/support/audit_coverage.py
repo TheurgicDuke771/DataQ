@@ -83,6 +83,10 @@ EXEMPT: Final[dict[tuple[str, str], str]] = {
         "an operational LLM invocation, not configuration — the llm_invocations row "
         "IS the durable record (requester, timing, tokens; ADR 0042)"
     ),
+    ("POST", "/api/v1/llm/check_suggestions"): (
+        "an operational LLM invocation, not configuration — the llm_invocations row "
+        "IS the durable record (requester, timing, tokens; ADR 0042, #1513)"
+    ),
     ("POST", "/api/v1/connections/{connection_id}/test"): (
         "an outbound reachability probe; changes no configuration"
     ),

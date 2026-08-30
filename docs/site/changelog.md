@@ -19,6 +19,17 @@ the per-PR history lives in the repo's commit log and pull requests.
   generation is recorded with requester, duration and token counts. The
   in-editor "Generate with AI" surface ships next.
 
+- **Suggest checks for a suite from its column profile (API).** With an LLM
+  provider configured, `POST /api/v1/llm/check_suggestions` proposes a curated
+  batch of checks for a Snowflake or Databricks suite, grounded in real column
+  statistics (null rate, distinct count, masked distributions) rather than a
+  generic template. Every suggestion is drawn from DataQ's exact vetted
+  expectation vocabulary and passes the same validator a hand-authored check
+  would before it is ever returned — one that fails validation is dropped, not
+  surfaced. A suggestion run that produces nothing runnable is a failure, not
+  an empty success. Applying a suggestion goes through the ordinary check-create
+  path unchanged. The review surface ships next.
+
 - **Bring-your-own LLM provider (admin-configured, off by default).** A workspace admin can
   now point DataQ at an LLM — the Anthropic API, Azure OpenAI, AWS Bedrock, or any
   OpenAI-compatible endpoint including a self-hosted local server (Ollama / vLLM / TGI) —
