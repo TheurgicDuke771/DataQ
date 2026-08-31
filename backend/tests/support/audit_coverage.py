@@ -39,6 +39,18 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     # ── Notifications, schedules, trigger bindings.
     ("PUT", "/api/v1/suites/{suite_id}/notifications"): "suite_notification.update",
     ("DELETE", "/api/v1/suites/{suite_id}/notifications"): "suite_notification.delete",
+    # ── Reusable notification channels (#1514).
+    ("POST", "/api/v1/notification-channels"): "notification_channel.create",
+    ("PATCH", "/api/v1/notification-channels/{channel_id}"): "notification_channel.update",
+    ("DELETE", "/api/v1/notification-channels/{channel_id}"): "notification_channel.delete",
+    (
+        "PUT",
+        "/api/v1/suites/{suite_id}/notification-channels/{channel_id}",
+    ): "suite_notification_channel.link",
+    (
+        "DELETE",
+        "/api/v1/suites/{suite_id}/notification-channels/{channel_id}",
+    ): "suite_notification_channel.unlink",
     ("POST", "/api/v1/schedules"): "schedule.create",
     ("PATCH", "/api/v1/schedules/{schedule_id}"): "schedule.update",
     ("DELETE", "/api/v1/schedules/{schedule_id}"): "schedule.delete",

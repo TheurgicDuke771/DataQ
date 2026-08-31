@@ -207,6 +207,17 @@ _SUITE_NOTIFICATION_FIELDS: Final[tuple[str, ...]] = (
     "slack_webhook_secret_ref",
 )
 
+# Pointer only, never the webhook value — same rule as `_CONNECTION_FIELDS` (#1514).
+_NOTIFICATION_CHANNEL_FIELDS: Final[tuple[str, ...]] = (
+    "id",
+    "name",
+    "type",
+    "webhook_secret_ref",
+    "email_recipients",
+)
+
+_SUITE_NOTIFICATION_CHANNEL_FIELDS: Final[tuple[str, ...]] = ("suite_id", "channel_id")
+
 _SHARE_FIELDS: Final[tuple[str, ...]] = ("id", "suite_id", "user_id", "permission")
 
 # Ref pointer only, never the key value — see `_CONNECTION_FIELDS` (ADR 0042).
@@ -258,6 +269,8 @@ _SERIALIZERS: Final[dict[str, tuple[str, ...]]] = {
     "schedule": _SCHEDULE_FIELDS,
     "trigger_binding": _TRIGGER_BINDING_FIELDS,
     "suite_notification": _SUITE_NOTIFICATION_FIELDS,
+    "notification_channel": _NOTIFICATION_CHANNEL_FIELDS,
+    "suite_notification_channel": _SUITE_NOTIFICATION_CHANNEL_FIELDS,
     "share": _SHARE_FIELDS,
     "api_key": _API_KEY_FIELDS,
     "user": _USER_FIELDS,

@@ -20,11 +20,13 @@ from backend.app.db.models import (
     Asset,
     Check,
     Connection,
+    NotificationChannel,
     PipelineRun,
     Result,
     Run,
     Schedule,
     Suite,
+    SuiteNotificationChannel,
     TriggerBinding,
     User,
 )
@@ -459,6 +461,7 @@ def test_deletion_impact_is_zero_for_a_bare_suite(client: TestClient, db_session
         "results": 0,
         "trigger_bindings": 0,
         "schedules": 0,
+        "notification_channel_links": 0,
     }
 
 
@@ -502,6 +505,10 @@ def test_deletion_impact_counts_every_dependent_kind(client: TestClient, db_sess
             ),
         ]
     )
+    channel = NotificationChannel(name="c", type="email", email_recipients="a@x.io")
+    db_session.add(channel)
+    db_session.flush()
+    db_session.add(SuiteNotificationChannel(suite_id=suite_id, channel_id=channel.id))
     db_session.commit()
 
     resp = client.get(f"/api/v1/suites/{sid}/deletion_impact")
@@ -512,6 +519,7 @@ def test_deletion_impact_counts_every_dependent_kind(client: TestClient, db_sess
         "results": 3,
         "trigger_bindings": 1,
         "schedules": 2,
+        "notification_channel_links": 1,
     }
 
 

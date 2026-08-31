@@ -22,7 +22,14 @@ from backend.app.alerting.composite import CompositePublisher
 from backend.app.alerting.email import EmailPublisher, render_subject
 from backend.app.alerting.routing import route_for
 from backend.app.alerting.slack import SlackPublisher, render_slack_message
-from backend.app.db.models import Connection, Suite, SuiteNotification, User
+from backend.app.db.models import (
+    Connection,
+    NotificationChannel,
+    Suite,
+    SuiteNotification,
+    SuiteNotificationChannel,
+    User,
+)
 from backend.app.services import notification_service as svc
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
@@ -304,6 +311,54 @@ def test_email_text_body_clean_run_has_no_failing_section() -> None:
 # ── publish paths (W8 coverage audit) ────────────────────────────────────────
 
 
+def _bare_suite(db: Any) -> Any:
+    """A real suite row with no notification config at all — the default
+    enabled/warn policy applies, so a channel link is the only thing that decides
+    whether anything sends.
+    """
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:6]}@x.io")
+    db.add(owner)
+    db.flush()
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "a"},
+        secret_ref="kv",
+        created_by=owner.id,
+    )
+    db.add(conn)
+    db.flush()
+    suite = Suite(
+        name="Orders QA", connection_id=conn.id, created_by=owner.id, target={"table": "T"}
+    )
+    db.add(suite)
+    db.commit()
+    return suite
+
+
+def _link_channel(
+    db: Any,
+    suite: Any,
+    *,
+    type: str,
+    secret_ref: str | None = None,
+    email_recipients: str | None = None,
+) -> None:
+    channel = NotificationChannel(
+        id=uuid.uuid4(),
+        name="c",
+        type=type,
+        webhook_secret_ref=secret_ref,
+        email_recipients=email_recipients,
+        created_by=None,
+    )
+    db.add(channel)
+    db.flush()
+    db.add(SuiteNotificationChannel(suite_id=suite.id, channel_id=channel.id))
+    db.commit()
+
+
 def _disabled_config_suite(db: Any) -> Any:
     """A real suite row with alerting disabled — the gate is exercised DB-backed
     (the test_teams.py pattern), not against a hand-encoded config stand-in.
@@ -425,7 +480,9 @@ def test_email_publish_noop_when_password_secret_missing(
 
 class _CapturePost:
     """httpx.post stand-in returning a REAL httpx.Response, so raise_for_status
-    is the genuine article (a 4xx/5xx really raises to the composite).
+    is the genuine article — a 4xx/5xx genuinely raises `HTTPStatusError` inside
+    `publish()`. Since #1514, that raise is caught and isolated per-destination
+    there, not left to propagate to `CompositePublisher`.
     """
 
     def __init__(self, *, status_code: int = 200) -> None:
@@ -457,14 +514,36 @@ def test_slack_publish_happy_path_posts_payload(
     assert "1/3 checks failed" in str(payload["text"])
 
 
-def test_slack_publish_raises_on_webhook_http_error(
+def test_slack_publish_isolates_a_webhook_http_error(
     db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A 5xx from the webhook surfaces to the composite (which isolates it)."""
+    """A 5xx from one destination is logged, not raised (#1514): a suite can now
+    fan out to several Slack destinations (the workspace/suite webhook plus any
+    linked channels), and one failing must never block delivery to — or abort the
+    whole publish() call over — the others. The attempt itself still happens.
+    """
+    post = _CapturePost(status_code=500)
+    monkeypatch.setattr("backend.app.alerting.slack.httpx.post", post)
+    store = FakeSecretStore({"wh": "https://hooks.slack.com/services/T00/B00/xyz"})
+    _slack_publisher(store).publish(db_session, _report(worst="fail"))
+    assert len(post.calls) == 1
+
+
+def test_slack_every_destination_failing_still_logs_the_aggregate_event(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """publish() itself never raises anymore (#1514's isolation), so
+    CompositePublisher's try/except can no longer observe a Slack failure —
+    this aggregate warning is what replaces that signal.
+    """
+    from structlog.testing import capture_logs
+
     monkeypatch.setattr("backend.app.alerting.slack.httpx.post", _CapturePost(status_code=500))
     store = FakeSecretStore({"wh": "https://hooks.slack.com/services/T00/B00/xyz"})
-    with pytest.raises(httpx.HTTPStatusError):
+    with capture_logs() as logs:
         _slack_publisher(store).publish(db_session, _report(worst="fail"))
+    events = [e["event"] for e in logs]
+    assert "channel_publish_failed" in events
 
 
 def test_slack_publish_blocks_non_allowlisted_webhook_host(
@@ -513,6 +592,46 @@ def test_slack_publish_noop_when_suite_disabled_alerting(
         db_session, report
     )
     assert post.calls == []
+
+
+# ── reusable channels (#1514) ────────────────────────────────────────────────
+
+
+def test_slack_publish_delivers_to_a_linked_channel_alone(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A linked Slack channel is a destination on its own — no workspace webhook
+    needs to be configured for it to fire.
+    """
+    suite = _bare_suite(db_session)
+    channel_url = "https://hooks.slack.com/services/T00/CHAN/xyz"
+    _link_channel(db_session, suite, type="slack", secret_ref="ch-slack")
+    post = _CapturePost()
+    monkeypatch.setattr("backend.app.alerting.slack.httpx.post", post)
+    report = dataclasses.replace(_report(worst="fail"), suite_id=suite.id)
+    SlackPublisher(
+        secret_store=FakeSecretStore({"ch-slack": channel_url}),
+        webhook_secret_name=None,
+        allowed_hosts=("hooks.slack.com",),
+    ).publish(db_session, report)
+    assert [url for url, _payload in post.calls] == [channel_url]
+
+
+def test_email_publish_unions_channel_recipients_with_the_workspace_set(
+    db_session: Any, fake_smtp: list[_FakeSmtp]
+) -> None:
+    """A linked email channel's recipients are ADDED to, not a replacement for,
+    the resolved set — one message, every intended reader.
+    """
+    suite = _bare_suite(db_session)
+    _link_channel(db_session, suite, type="email", email_recipients="c@x.io")
+    report = dataclasses.replace(_report(worst="fail"), suite_id=suite.id)
+    _email_publisher(FakeSecretStore({"smtp-pass": "not-a-real-password"})).publish(
+        db_session, report
+    )
+    (sent,) = fake_smtp
+    # `_email_publisher`'s fixed workspace recipients, plus the linked channel's.
+    assert set(sent.message["To"].split(", ")) == {"a@example.com", "b@example.com", "c@x.io"}
 
 
 # ── per-suite override (#633) ────────────────────────────────────────────────

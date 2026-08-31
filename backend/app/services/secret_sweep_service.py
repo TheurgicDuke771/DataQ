@@ -14,12 +14,12 @@ from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretInfo, SecretStore
 from backend.app.core.timeutil import as_utc
-from backend.app.db.models import Connection, LlmSetting, SuiteNotification
+from backend.app.db.models import Connection, LlmSetting, NotificationChannel, SuiteNotification
 
 log = get_logger(__name__)
 
 # Only names DataQ mints are ever candidates.
-_DATAQ_PREFIXES: tuple[str, ...] = ("conn-", "suite-notif-")
+_DATAQ_PREFIXES: tuple[str, ...] = ("conn-", "suite-notif-", "channel-")
 
 # The convention `connection_service._extra_secrets` follows when resolving extra credentials out of
 # `Connection.config`: ANY key ending in this suffix names a SecretStore entry.
@@ -52,6 +52,9 @@ _OWNER_COLUMNS = (
     SuiteNotification.slack_webhook_secret_ref,
     # The workspace LLM credential (ADR 0042) — a purge here kills the provider.
     LlmSetting.api_key_secret_ref,
+    # Reusable channels (#1514) — the exact "two refs, one row" trap above, but at
+    # the table level: this is a THIRD place a webhook secret_ref column lives.
+    NotificationChannel.webhook_secret_ref,
 )
 
 # JSONB-held refs, which no column-level scan can see.

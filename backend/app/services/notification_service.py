@@ -126,7 +126,7 @@ def get_config(session: Session, suite_id: uuid.UUID) -> SuiteNotification | Non
     ).first()
 
 
-def _apply_secret_webhook(
+def apply_secret_webhook(
     value: str | None,
     current_ref: str | None,
     *,
@@ -134,7 +134,11 @@ def _apply_secret_webhook(
     config_id: uuid.UUID,
     secret_store: SecretStore,
 ) -> tuple[str | None, str | None]:
-    """Apply a tri-state webhook change to a secret-backed ref column."""
+    """Apply a tri-state webhook change to a secret-backed ref column: ``None`` =
+    unchanged, ``""`` = clear, a value = set/rotate (in place — the ref itself is
+    stable once minted, only the value at it changes). Shared with any other
+    module minting its own `ref_prefix`-scoped webhook refs (`channel_service`).
+    """
     if value is None:
         return current_ref, None
     if value == "":
@@ -199,14 +203,14 @@ def upsert_config(
 
     # Teams + Slack webhooks — secret-backed, tri-state; cleared refs are soft-deleted
     # after commit (#372) so a rolled-back commit can't orphan a live ref.
-    config.webhook_secret_ref, cleared_teams = _apply_secret_webhook(
+    config.webhook_secret_ref, cleared_teams = apply_secret_webhook(
         webhook,
         config.webhook_secret_ref,
         ref_prefix="suite-notif",
         config_id=config.id,
         secret_store=secret_store,
     )
-    config.slack_webhook_secret_ref, cleared_slack = _apply_secret_webhook(
+    config.slack_webhook_secret_ref, cleared_slack = apply_secret_webhook(
         slack_webhook,
         config.slack_webhook_secret_ref,
         ref_prefix="suite-notif-slack",

@@ -238,6 +238,7 @@ class SuiteDeletionImpactRead(ApiModel):
     results: int
     trigger_bindings: int
     schedules: int
+    notification_channel_links: int
 
 
 @router.get(

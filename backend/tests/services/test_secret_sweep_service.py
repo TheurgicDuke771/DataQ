@@ -10,7 +10,14 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
 from backend.app.core.secrets import SecretInfo
-from backend.app.db.models import Base, Connection, Suite, SuiteNotification, User
+from backend.app.db.models import (
+    Base,
+    Connection,
+    NotificationChannel,
+    Suite,
+    SuiteNotification,
+    User,
+)
 from backend.app.services import secret_sweep_service
 from backend.app.services.secret_sweep_service import (
     _OWNER_COLUMNS,
@@ -157,6 +164,31 @@ def test_slack_webhook_ref_is_registered(db_session: Session) -> None:
             SecretInfo("suite-notif-teams-1", OLD),
             SecretInfo("suite-notif-slack-1", OLD),
         ],
+        grace=GRACE,
+        now=NOW,
+    )
+    assert orphans == []
+
+
+def test_channel_webhook_ref_is_registered(db_session: Session) -> None:
+    """A reusable channel's webhook ref (#1514) is a THIRD place a webhook
+    secret_ref column lives, beside `SuiteNotification`'s Teams/Slack pair —
+    the exact "easy to miss" shape #633 already burned once.
+    """
+    user = _user(db_session)
+    db_session.add(
+        NotificationChannel(
+            id=uuid.uuid4(),
+            name="Platform Teams",
+            type="teams",
+            webhook_secret_ref="channel-1",
+            created_by=user.id,
+        )
+    )
+    db_session.flush()
+    orphans, _, _ = find_orphan_secrets(
+        db_session,
+        secrets=[SecretInfo("channel-1", OLD)],
         grace=GRACE,
         now=NOW,
     )

@@ -51,6 +51,17 @@ the per-PR history lives in the repo's commit log and pull requests.
   design-rationale, not this question's audience); an unrecognized page returns the current
   valid list. See [AI assistants (MCP setup)](mcp-setup.md).
 
+- **Reusable notification channels (API).** A Teams, Slack, or email destination can now be
+  defined once by a workspace admin and referenced from any number of suites, instead of
+  pasting the same webhook into every suite's settings — rotating a compromised or expiring
+  webhook is then one edit, not N. A suite may keep its existing per-suite webhook, link
+  channels, or both; an alert fans out to every configured destination, deduplicated when two
+  happen to resolve to the same URL, with one failing destination never blocking delivery to
+  the others. Channel management is admin-gated (the webhook is a credential); linking a
+  channel to a suite follows that suite's own view/edit access. The webhook URL itself is
+  never returned by the API, only whether one is set. The admin UI for managing channels
+  ships next.
+
 ### Changed
 
 - **The two distinct-value set relations no longer accept severity thresholds.**

@@ -84,6 +84,23 @@ request. Otherwise it returns `422` with `code: "credential_redirect"` and
 `detail.required` naming what to send. A stored credential is never forwarded to a
 destination the caller changed.
 
+### Notification channels
+
+A reusable Teams/Slack/email destination, defined once and referenced from any number of
+suites — the destination only; per-suite `alert_on`/enabled stays on
+`/suites/{id}/notifications` above.
+
+| Method | Path | What |
+|---|---|---|
+| GET / POST | `/notification-channels` | List / create a channel. |
+| GET / PATCH / DELETE | `/notification-channels/{id}` | Read / update / delete (refused with `409 channel_in_use` while any suite still references it). |
+| GET | `/suites/{id}/notification-channels` | List a suite's linked channels. |
+| PUT / DELETE | `/suites/{id}/notification-channels/{channel_id}` | Link / unlink a channel (linking is idempotent — relinking is a no-op, not a conflict). |
+
+**Roles.** Same split as connections: create/update/delete are **Admin-only** (a webhook URL is
+a credential); list/read are open to any authenticated user (`has_webhook` only, never the
+URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
+
 ### Suites & checks
 
 | Method | Path | What |
