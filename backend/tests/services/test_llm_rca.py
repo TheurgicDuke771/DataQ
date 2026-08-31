@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -480,3 +481,116 @@ def test_render_evidence_omits_the_note_when_under_the_cap() -> None:
     evidence = {"sibling_checks": [{"check_name": "only_one", "status": "pass"}]}
     prompt = llm_rca._render_evidence(evidence, [], [])
     assert "more not shown" not in prompt
+
+
+# ── latest_narrative_for_incident (#1647) ───────────────────────────────────
+
+
+def test_latest_narrative_for_incident_none_when_never_generated(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    assert llm_rca.latest_narrative_for_incident(db_session, world["incident"].id) is None
+
+
+def test_latest_narrative_for_incident_returns_the_succeeded_response(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    invocation = _invocation(db_session, world["incident"], world["owner"])
+    invocation.status = "succeeded"
+    invocation.response = {"summary": "grounded narrative", "ranked_hypotheses": []}
+    db_session.commit()
+
+    result = llm_rca.latest_narrative_for_incident(db_session, world["incident"].id)
+    assert result == {"summary": "grounded narrative", "ranked_hypotheses": []}
+
+
+def test_latest_narrative_for_incident_ignores_a_newer_failed_retry(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """Same shape as the running-invocation case: a failed retry must not
+    shadow a still-valid older narrative just for being newer.
+    """
+    older = _invocation(db_session, world["incident"], world["owner"])
+    older.status = "succeeded"
+    older.response = {"summary": "the valid older narrative", "ranked_hypotheses": []}
+    older.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+    db_session.commit()
+
+    newer = _invocation(db_session, world["incident"], world["owner"])
+    newer.status = "failed"
+    newer.response = None
+    newer.error = "internal: boom"
+    newer.created_at = datetime(2026, 1, 2, tzinfo=UTC)
+    db_session.commit()
+
+    result = llm_rca.latest_narrative_for_incident(db_session, world["incident"].id)
+    assert result is not None
+    assert result["summary"] == "the valid older narrative"
+
+
+def test_latest_narrative_for_incident_ignores_a_newer_still_running_invocation(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """The dangerous case, not a solo pending row (which has `response=None`
+    regardless of any status filter): an OLDER succeeded narrative exists, and
+    someone has just re-triggered a NEWER one that hasn't finished yet. The
+    ordering must not let the in-flight row's absent response shadow the
+    still-valid older one.
+    """
+    older = _invocation(db_session, world["incident"], world["owner"])
+    older.status = "succeeded"
+    older.response = {"summary": "the valid older narrative", "ranked_hypotheses": []}
+    older.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+    db_session.commit()
+
+    newer = _invocation(db_session, world["incident"], world["owner"])
+    newer.status = "running"
+    newer.response = None
+    newer.created_at = datetime(2026, 1, 2, tzinfo=UTC)
+    db_session.commit()
+
+    result = llm_rca.latest_narrative_for_incident(db_session, world["incident"].id)
+    assert result is not None
+    assert result["summary"] == "the valid older narrative"
+
+
+def test_latest_narrative_for_incident_is_scoped_to_the_right_incident(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    other_check = _check(db_session, world["suite"], name="other_check")
+    other_incident = _breach(db_session, world["suite"], other_check)
+    other_invocation = _invocation(db_session, other_incident, world["owner"])
+    other_invocation.status = "succeeded"
+    other_invocation.response = {
+        "summary": "belongs to a different incident",
+        "ranked_hypotheses": [],
+    }
+    db_session.commit()
+
+    assert llm_rca.latest_narrative_for_incident(db_session, world["incident"].id) is None
+    result = llm_rca.latest_narrative_for_incident(db_session, other_incident.id)
+    assert result is not None
+    assert result["summary"] == "belongs to a different incident"
+
+
+def test_latest_narrative_for_incident_returns_the_most_recent(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """Explicit `created_at`s: a test transaction's `now()` is transaction-start
+    time, not per-statement, so two commits within it can share one timestamp.
+    """
+    older = _invocation(db_session, world["incident"], world["owner"])
+    older.status = "succeeded"
+    older.response = {"summary": "stale narrative", "ranked_hypotheses": []}
+    older.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+    db_session.commit()
+
+    newer = _invocation(db_session, world["incident"], world["owner"])
+    newer.status = "succeeded"
+    newer.response = {"summary": "fresh narrative", "ranked_hypotheses": []}
+    newer.created_at = datetime(2026, 1, 2, tzinfo=UTC)
+    db_session.commit()
+
+    result = llm_rca.latest_narrative_for_incident(db_session, world["incident"].id)
+    assert result is not None
+    assert result["summary"] == "fresh narrative"

@@ -28,7 +28,7 @@ from backend.app.db.models import (
     User,
     worst_severity,
 )
-from backend.app.services import incident_service, run_service
+from backend.app.services import incident_service, llm_rca, run_service
 
 
 def _run_url(run_id: uuid.UUID) -> str | None:
@@ -178,6 +178,7 @@ def _incident_cards(
                 occurrence_count=incident.occurrence_count,
                 is_new=incident.created_at == incident.last_seen_at,
                 evidence=incident_service.evidence_for_alert(incident),
+                narrative=llm_rca.latest_narrative_for_incident(session, incident.id),
             )
         )
     return cards

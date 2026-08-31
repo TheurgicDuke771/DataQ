@@ -9,14 +9,16 @@ import json
 import uuid
 from typing import Any
 
+from sqlalchemy import select
+
 from backend.app.alerting import builder, render
 from backend.app.alerting.base import CheckReport, IncidentCard, RunReport
 from backend.app.alerting.card import render_teams_message
 from backend.app.alerting.email import render_html_body, render_text_body
 from backend.app.alerting.routing import route_for
 from backend.app.alerting.slack import render_slack_message
-from backend.app.db.models import Check, Connection, Result, Run, User
-from backend.app.services import incident_service, suite_service
+from backend.app.db.models import Check, Connection, Incident, LlmInvocation, Result, Run, User
+from backend.app.services import incident_service, llm_rca, suite_service
 
 _SF_CONFIG = {"account": "ab12345.eu-west-1", "database": "ANALYTICS", "schema": "PUBLIC"}
 
@@ -73,6 +75,7 @@ def test_report_carries_incident_card(db_session: Any) -> None:
     assert card.is_new is True  # this run opened it
     assert card.evidence is not None
     assert card.incident_id is not None
+    assert card.narrative is None  # #1647: nobody has asked "why" yet — the common case
 
 
 def test_report_card_marks_recurring_occurrence(db_session: Any) -> None:
@@ -159,6 +162,40 @@ def test_incident_card_evidence_withholds_a_cross_suite_sibling(db_session: Any)
     assert card.evidence["same_asset_siblings_restricted_count"] == 1
 
 
+def test_incident_card_carries_a_succeeded_rca_narrative(db_session: Any) -> None:
+    """#1647: an alert on a RECURRING incident carries whatever narrative was
+    already generated for it — RCA itself is never triggered by alert
+    delivery, only reused (#1633's own cost-visibility rule).
+    """
+    run = _seed(db_session, status="fail")
+    incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+    incident = db_session.scalars(select(Incident).where(Incident.suite_id == run.suite_id)).one()
+    invocation = LlmInvocation(
+        kind=llm_rca.RCA_KIND,
+        suite_id=run.suite_id,
+        request={"incident_id": str(incident.id)},
+        status="succeeded",
+        response={
+            "summary": "A volume drop upstream.",
+            "ranked_hypotheses": [
+                {
+                    "cause": "The source table lost rows.",
+                    "confidence": "high",
+                    "evidence_refs": ["metric_trend"],
+                }
+            ],
+        },
+    )
+    db_session.add(invocation)
+    db_session.commit()
+
+    report = builder.build_run_report(db_session, run)
+    card = report.incidents[0]
+    assert card.narrative is not None
+    assert card.narrative["summary"] == "A volume drop upstream."
+    assert "AI summary" in render.incident_line(card)
+
+
 # ── fix batch (PR #775 review): the channels actually render the incidents ────
 
 
@@ -201,10 +238,13 @@ def _report_with_incidents(cards: list[IncidentCard]) -> RunReport:
 
 
 def test_render_incident_line_new_and_recurring() -> None:
+    """#1647: the base reference is unchanged, now followed by the deterministic
+    evidence-summary clause (`test_evidence_summary_clause*` covers its content).
+    """
     new_line = render.incident_line(_card(is_new=True, occurrence_count=1))
-    assert new_line == "Incident 12345678 (not-null id) — fail, new"
+    assert new_line.startswith("Incident 12345678 (not-null id) — fail, new · ")
     recurring = render.incident_line(_card(is_new=False, occurrence_count=4))
-    assert recurring == "Incident 12345678 (not-null id) — fail, occurrence 4"
+    assert recurring.startswith("Incident 12345678 (not-null id) — fail, occurrence 4 · ")
 
 
 def test_slack_payload_carries_incident_line() -> None:

@@ -22,6 +22,7 @@ import json
 import uuid
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
@@ -397,3 +398,27 @@ def validate_output(
 
 llm_service.KIND_BUILDERS[RCA_KIND] = build_prompt
 llm_service.KIND_VALIDATORS[RCA_KIND] = validate_output
+
+
+# ── read surface for alert delivery (#1647) ─────────────────────────────────
+
+
+def latest_narrative_for_incident(
+    session: Session, incident_id: uuid.UUID
+) -> dict[str, Any] | None:
+    """The most recent SUCCEEDED narrative response for this incident, or
+    `None` if nobody has ever generated one. RCA is on-demand only (#1633) —
+    a freshly-opened incident almost always has none, and that's the common
+    case, not a degraded one; alert delivery treats it as "nothing to append"
+    rather than "unavailable".
+    """
+    invocation = session.scalars(
+        select(LlmInvocation)
+        .where(
+            LlmInvocation.kind == RCA_KIND,
+            LlmInvocation.status == "succeeded",
+            LlmInvocation.request["incident_id"].astext == str(incident_id),
+        )
+        .order_by(LlmInvocation.created_at.desc())
+    ).first()
+    return invocation.response if invocation is not None else None

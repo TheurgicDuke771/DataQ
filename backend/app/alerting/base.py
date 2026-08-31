@@ -86,6 +86,10 @@ class IncidentCard:
     occurrence_count: int
     is_new: bool
     evidence: dict[str, Any] | None
+    #: The most recent SUCCEEDED `rca_narrative` response for this incident (#1633),
+    #: or `None` when nobody has ever generated one — RCA is on-demand, never
+    #: automatic, so this is the common case, not a degraded one (#1647).
+    narrative: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
