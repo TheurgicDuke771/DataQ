@@ -118,10 +118,22 @@ class Settings(BaseSettings):
     stuck_run_threshold_minutes: int = 60
 
     # llm_invocations reaper (#1644): pending covers a lost dispatch (API died before
-    # send_task, or the broker dropped the message); running covers a worker
-    # SIGKILL/OOM mid-provider-call — margin sits above the 120s provider timeout.
-    llm_invocation_pending_threshold_minutes: int = 15
-    llm_invocation_running_threshold_minutes: int = 10
+    # send_task, or the broker dropped the message). No dedicated Celery queue exists
+    # yet for `llm_invoke` (#1726/#1777) — it shares the one default queue with
+    # `run_suite`, so a message can sit queued-but-intact behind a backlog of long
+    # runs (this deployment class has 1M-200M-row UC suites) well past a tight
+    # threshold; 15m was measured against dispatch-loss alone and false-killed a
+    # merely-queued request. Running covers a worker SIGKILL/OOM mid-provider-call —
+    # 10m was margin above ONLY the 120s provider timeout, but `execute_invocation`
+    # marks `running` before the kind builder runs, and the check-suggestion builder
+    # does live warehouse work (list_columns + a full profile) inside that window; a
+    # cold/suspended warehouse resume plus a wide table's profile plus the provider's
+    # own worst case (120s timeout x up to 2 attempts, `max_retries=1`) can plausibly
+    # cross 10m for a healthy call (#1726). Both are still heuristics, not proof of
+    # death — see `_PENDING_REAP_REASON`/`_RUNNING_REAP_REASON` in `llm_service.py`,
+    # which admit the ambiguity rather than assert a cause neither reap can verify.
+    llm_invocation_pending_threshold_minutes: int = 30
+    llm_invocation_running_threshold_minutes: int = 20
     # Recycle a prefork child past this RSS (KiB) so a large materialisation can't ratchet the
     # worker baseline (#755). 0 disables.
     worker_max_memory_per_child_kb: int = 1_500_000

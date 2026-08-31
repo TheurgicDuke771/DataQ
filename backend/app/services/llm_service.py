@@ -425,9 +425,15 @@ def get_visible_invocation(
 
 
 _PENDING_REAP_REASON = (
-    "reaped: stuck in pending — the dispatch was likely lost before a worker claimed it"
+    "reaped: stuck in pending past the threshold — the dispatch may have been lost"
+    " before a worker claimed it, or the task is still queued behind other work in"
+    " the shared worker queue (#1726/#1777: no dedicated queue exists yet)"
 )
-_RUNNING_REAP_REASON = "reaped: the worker never finished — likely killed mid-call"
+_RUNNING_REAP_REASON = (
+    "reaped: stuck in running past the threshold — the worker may have been killed"
+    " mid-call, or the provider/warehouse call is simply taking longer than usual"
+    " (a cold warehouse resume or a wide-table profile can extend this, #1726)"
+)
 
 
 def reap_stuck_invocations(
