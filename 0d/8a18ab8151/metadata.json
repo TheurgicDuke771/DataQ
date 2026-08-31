@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "0d8a18ab8151",
+  "strategy": "manual-commit",
+  "branch": "feature/1650-mcp-honesty-docs-page",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0d/8a18ab8151/0/metadata.json",
+      "transcript": "/0d/8a18ab8151/0/full.jsonl",
+      "compact_transcript": "/0d/8a18ab8151/0/transcript.jsonl",
+      "content_hash": "/0d/8a18ab8151/0/content_hash.txt",
+      "prompt": "/0d/8a18ab8151/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3102,
+    "cache_creation_tokens": 4352034,
+    "cache_read_tokens": 804724619,
+    "output_tokens": 777244,
+    "api_call_count": 1554
+  }
+}
