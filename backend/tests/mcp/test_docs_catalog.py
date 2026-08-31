@@ -12,6 +12,7 @@ def test_list_pages_finds_the_top_level_pages() -> None:
         "getting-started",
         "mcp-setup",
         "mcp-honesty",
+        "evidence-card",
     ):
         assert slug in pages
 
