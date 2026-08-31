@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "fb73f68fdaa7",
+  "strategy": "manual-commit",
+  "branch": "feature/1663-webhook-payload-templates",
+  "checkpoints_count": 7,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/fb/73f68fdaa7/0/metadata.json",
+      "transcript": "/fb/73f68fdaa7/0/full.jsonl",
+      "compact_transcript": "/fb/73f68fdaa7/0/transcript.jsonl",
+      "content_hash": "/fb/73f68fdaa7/0/content_hash.txt",
+      "prompt": "/fb/73f68fdaa7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 5680,
+    "cache_creation_tokens": 5635880,
+    "cache_read_tokens": 1458224145,
+    "output_tokens": 1230007,
+    "api_call_count": 2850
+  }
+}
