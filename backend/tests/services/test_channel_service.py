@@ -57,7 +57,7 @@ def _suite(db: Any) -> Suite:
 
 def test_create_channel_mints_and_stores_a_secret_ref(db_session: Any) -> None:
     store = FakeSecretStore()
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session, name="Platform Teams", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
     assert channel.webhook_secret_ref is not None
@@ -65,7 +65,7 @@ def test_create_channel_mints_and_stores_a_secret_ref(db_session: Any) -> None:
 
 
 def test_create_email_channel_stores_recipients_inline_not_as_a_secret(db_session: Any) -> None:
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session,
         name="Data team",
         type="email",
@@ -105,7 +105,7 @@ def test_create_teams_channel_rejects_an_email_recipients_field(db_session: Any)
 
 def test_update_channel_rejects_a_mismatched_field(db_session: Any) -> None:
     store = FakeSecretStore()
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session, name="x", type="email", email_recipients="a@x.io", secret_store=store
     )
     with pytest.raises(ChannelFieldMismatchError):
@@ -157,14 +157,14 @@ def test_update_channel_rotates_the_webhook_value_in_place(db_session: Any) -> N
     this same ref picks up the new webhook with no per-suite edit at all.
     """
     store = FakeSecretStore()
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
     ref = channel.webhook_secret_ref
     assert ref is not None
 
     new_url = "https://contoso.webhook.office.com/rotated"
-    updated = svc.update_channel(
+    updated, _ = svc.update_channel(
         db_session, channel.id, webhook=new_url, secret_store=store, actor_id=None
     )
     assert updated.webhook_secret_ref == ref
@@ -173,7 +173,7 @@ def test_update_channel_rotates_the_webhook_value_in_place(db_session: Any) -> N
 
 def test_update_channel_webhook_none_leaves_it_unchanged(db_session: Any) -> None:
     store = FakeSecretStore()
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
     ref_before = channel.webhook_secret_ref
@@ -185,7 +185,7 @@ def test_update_channel_webhook_none_leaves_it_unchanged(db_session: Any) -> Non
 
 def test_update_channel_webhook_empty_string_clears_it(db_session: Any) -> None:
     store = FakeSecretStore()
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
     ref = channel.webhook_secret_ref
@@ -199,7 +199,7 @@ def test_update_channel_webhook_empty_string_clears_it(db_session: Any) -> None:
 
 def test_delete_channel_removes_its_secret(db_session: Any) -> None:
     store = FakeSecretStore()
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
     ref = channel.webhook_secret_ref
@@ -212,7 +212,7 @@ def test_delete_channel_removes_its_secret(db_session: Any) -> None:
 
 def test_delete_channel_refuses_while_linked(db_session: Any) -> None:
     store = FakeSecretStore()
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
     suite = _suite(db_session)
@@ -227,7 +227,7 @@ def test_delete_channel_refuses_while_linked(db_session: Any) -> None:
 
 def test_link_suite_is_idempotent(db_session: Any) -> None:
     store = FakeSecretStore()
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
     suite = _suite(db_session)
@@ -252,7 +252,7 @@ def test_link_suite_recovers_from_a_concurrent_link_race(
     service.upsert_config was already fixed for (#384).
     """
     store = FakeSecretStore()
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
     suite = _suite(db_session)
@@ -293,7 +293,7 @@ def test_delete_channel_recovers_from_a_concurrent_link_race(
     IntegrityError.
     """
     store = FakeSecretStore()
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
     suite = _suite(db_session)
@@ -323,7 +323,7 @@ def test_delete_channel_recovers_from_a_concurrent_link_race(
 
 def test_unlink_suite_removes_the_link_and_unblocks_delete(db_session: Any) -> None:
     store = FakeSecretStore()
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
     suite = _suite(db_session)
@@ -335,7 +335,7 @@ def test_unlink_suite_removes_the_link_and_unblocks_delete(db_session: Any) -> N
 
 def test_unlink_suite_not_linked_returns_false(db_session: Any) -> None:
     store = FakeSecretStore()
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
     suite = _suite(db_session)
@@ -347,10 +347,10 @@ def test_resolve_channel_webhooks_dedupes_across_channels(db_session: Any) -> No
     the alerting layer's own dedup against the legacy field relies on this.
     """
     store = FakeSecretStore()
-    a = svc.create_channel(
+    a, _ = svc.create_channel(
         db_session, name="A", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
-    b = svc.create_channel(
+    b, _ = svc.create_channel(
         db_session, name="B", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
     suite = _suite(db_session)
@@ -364,10 +364,10 @@ def test_resolve_channel_webhooks_dedupes_across_channels(db_session: Any) -> No
 
 def test_resolve_channel_webhooks_filters_by_type(db_session: Any) -> None:
     store = FakeSecretStore()
-    teams = svc.create_channel(
+    teams, _ = svc.create_channel(
         db_session, name="T", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
-    slack = svc.create_channel(
+    slack, _ = svc.create_channel(
         db_session, name="S", type="slack", webhook=_SLACK_URL, secret_store=store
     )
     suite = _suite(db_session)
@@ -386,7 +386,7 @@ def test_resolve_channel_webhooks_skips_a_missing_secret(db_session: Any) -> Non
     whose secret has gone missing is skipped, not a crash.
     """
     store = FakeSecretStore()
-    channel = svc.create_channel(
+    channel, _ = svc.create_channel(
         db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
     )
     suite = _suite(db_session)
@@ -401,10 +401,10 @@ def test_resolve_channel_webhooks_skips_a_missing_secret(db_session: Any) -> Non
 
 def test_resolve_channel_email_recipients_unions_and_dedupes(db_session: Any) -> None:
     store = FakeSecretStore()
-    a = svc.create_channel(
+    a, _ = svc.create_channel(
         db_session, name="A", type="email", email_recipients="x@a.io,y@a.io", secret_store=store
     )
-    b = svc.create_channel(
+    b, _ = svc.create_channel(
         db_session, name="B", type="email", email_recipients="y@a.io,z@a.io", secret_store=store
     )
     suite = _suite(db_session)
@@ -415,3 +415,158 @@ def test_resolve_channel_email_recipients_unions_and_dedupes(db_session: Any) ->
         "y@a.io",
         "z@a.io",
     )
+
+
+# ── generic webhook channels (#1662) ─────────────────────────────────────────
+# 8.8.8.8 is a stable, unambiguously public IP literal — SSRF-guard-safe and
+# DNS-free, matching the notification_service SSRF-guard test convention.
+_WEBHOOK_URL = "https://8.8.8.8/hook"
+_UNSAFE_URL = "https://127.0.0.1/hook"
+
+
+def test_create_webhook_channel_mints_and_returns_the_hmac_secret_once(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel, secret = svc.create_channel(
+        db_session, name="Ops", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
+    )
+    assert channel.webhook_url == _WEBHOOK_URL
+    assert channel.hmac_secret_ref is not None
+    assert secret is not None
+    assert store.get(channel.hmac_secret_ref) == secret
+
+
+def test_create_webhook_channel_without_a_url_mints_no_secret(db_session: Any) -> None:
+    """A channel shell with no URL yet has nothing to sign for — matches the
+    teams/slack pattern where a webhook is optional at create time.
+    """
+    channel, secret = svc.create_channel(
+        db_session, name="Ops", type="webhook", secret_store=FakeSecretStore()
+    )
+    assert channel.webhook_url is None
+    assert channel.hmac_secret_ref is None
+    assert secret is None
+
+
+def test_create_webhook_channel_rejects_an_unsafe_url(db_session: Any) -> None:
+    with pytest.raises(InvalidWebhookError):
+        svc.create_channel(
+            db_session,
+            name="Ops",
+            type="webhook",
+            webhook_url=_UNSAFE_URL,
+            secret_store=FakeSecretStore(),
+        )
+
+
+def test_create_channel_rejects_a_webhook_url_field_on_the_wrong_type(db_session: Any) -> None:
+    with pytest.raises(ChannelFieldMismatchError):
+        svc.create_channel(
+            db_session,
+            name="x",
+            type="teams",
+            webhook_url=_WEBHOOK_URL,
+            secret_store=FakeSecretStore(),
+        )
+
+
+def test_update_webhook_channel_setting_the_url_mints_a_secret_on_first_set(
+    db_session: Any,
+) -> None:
+    store = FakeSecretStore()
+    channel, minted = svc.create_channel(db_session, name="Ops", type="webhook", secret_store=store)
+    assert minted is None
+    channel, secret = svc.update_channel(
+        db_session, channel.id, webhook_url=_WEBHOOK_URL, secret_store=store
+    )
+    assert channel.webhook_url == _WEBHOOK_URL
+    assert channel.hmac_secret_ref is not None
+    assert secret is not None
+    assert store.get(channel.hmac_secret_ref) == secret
+
+
+def test_update_webhook_channel_regenerate_rotates_the_secret_in_place(db_session: Any) -> None:
+    """Same acceptance shape as the webhook-URL rotation test: the ref stays
+    stable, only the value at it changes — every suite resolving the channel
+    picks up the new key with no per-suite edit.
+    """
+    store = FakeSecretStore()
+    channel, first_secret = svc.create_channel(
+        db_session, name="Ops", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
+    )
+    ref = channel.hmac_secret_ref
+    assert ref is not None
+
+    channel, second_secret = svc.update_channel(
+        db_session, channel.id, regenerate_hmac_secret=True, secret_store=store
+    )
+    assert channel.hmac_secret_ref == ref
+    assert second_secret is not None
+    assert second_secret != first_secret
+    assert store.get(ref) == second_secret
+
+
+def test_update_webhook_channel_url_alone_does_not_regenerate_the_secret(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel, first_secret = svc.create_channel(
+        db_session, name="Ops", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
+    )
+    ref = channel.hmac_secret_ref
+    assert ref is not None
+
+    new_url = "https://1.1.1.1/hook"
+    channel, secret = svc.update_channel(
+        db_session, channel.id, webhook_url=new_url, secret_store=store
+    )
+    assert channel.webhook_url == new_url
+    assert channel.hmac_secret_ref == ref
+    assert secret is None  # not re-minted — the existing key still works
+    assert store.get(ref) == first_secret
+
+
+def test_delete_webhook_channel_removes_the_hmac_secret(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session, name="Ops", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
+    )
+    ref = channel.hmac_secret_ref
+    assert ref is not None
+    svc.delete_channel(db_session, channel.id, secret_store=store)
+    with pytest.raises(SecretNotFoundError):
+        store.get(ref)
+
+
+def test_resolve_webhook_channels_returns_url_and_secret(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel, secret = svc.create_channel(
+        db_session, name="Ops", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
+    )
+    suite = _suite(db_session)
+    svc.link_suite(db_session, suite.id, channel.id)
+    assert svc.resolve_webhook_channels(db_session, suite.id, secret_store=store) == [
+        (_WEBHOOK_URL, secret)
+    ]
+
+
+def test_resolve_webhook_channels_skips_an_unconfigured_channel(db_session: Any) -> None:
+    """A webhook channel with no URL yet (or no secret yet) is not a
+    destination — resolving it must not crash or return a half-formed pair.
+    """
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session, name="Ops", type="webhook", secret_store=store
+    )
+    suite = _suite(db_session)
+    svc.link_suite(db_session, suite.id, channel.id)
+    assert svc.resolve_webhook_channels(db_session, suite.id, secret_store=store) == []
+
+
+def test_resolve_webhook_channels_skips_a_missing_secret(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session, name="Ops", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
+    )
+    suite = _suite(db_session)
+    svc.link_suite(db_session, suite.id, channel.id)
+    assert channel.hmac_secret_ref is not None
+    store.delete(channel.hmac_secret_ref)
+    assert svc.resolve_webhook_channels(db_session, suite.id, secret_store=store) == []

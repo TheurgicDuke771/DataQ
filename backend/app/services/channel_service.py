@@ -7,6 +7,7 @@ auto-resolve) stays on `SuiteNotification` — a channel is only ever a destinat
 
 from __future__ import annotations
 
+import secrets
 import uuid
 from typing import Any
 
@@ -64,7 +65,13 @@ def _validate_type(type_: str) -> None:
         )
 
 
-def _validate_destination(type_: str, *, webhook: str | None, email_recipients: str | None) -> None:
+def _validate_destination(
+    type_: str,
+    *,
+    webhook: str | None,
+    email_recipients: str | None,
+    webhook_url: str | None = None,
+) -> None:
     """Same validators the per-suite fields already use — one allowlist, one rule
     set — plus a type/field match check: ``None`` means "not supplied" and is
     always fine, but a caller who explicitly names a field the type doesn't use
@@ -79,12 +86,18 @@ def _validate_destination(type_: str, *, webhook: str | None, email_recipients: 
         raise ChannelFieldMismatchError(
             f"'email_recipients' does not apply to a {type_!r} channel", detail={"type": type_}
         )
+    if webhook_url is not None and type_ != "webhook":
+        raise ChannelFieldMismatchError(
+            f"'webhook_url' does not apply to a {type_!r} channel", detail={"type": type_}
+        )
     if type_ == "teams" and webhook:
         notification_service.assert_allowed_webhook(webhook)
     elif type_ == "slack" and webhook:
         notification_service.assert_allowed_slack_webhook(webhook)
     elif type_ == "email" and email_recipients:
         notification_service.assert_valid_recipients(email_recipients)
+    elif type_ == "webhook" and webhook_url:
+        notification_service.assert_safe_generic_webhook_url(webhook_url)
 
 
 def get_channel(session: Session, channel_id: uuid.UUID) -> NotificationChannel:
@@ -105,11 +118,19 @@ def create_channel(
     type: str,
     webhook: str | None = None,
     email_recipients: str | None = None,
+    webhook_url: str | None = None,
     secret_store: SecretStore,
     actor_id: uuid.UUID | None = None,
-) -> NotificationChannel:
+) -> tuple[NotificationChannel, str | None]:
+    """Returns ``(channel, hmac_secret)`` — the second element is the freshly
+    minted HMAC signing key in plaintext, populated only when a ``webhook``-type
+    channel's URL was set on this call (DataQ generates it; it is never taken
+    from the caller and never retrievable again after this response).
+    """
     _validate_type(type)
-    _validate_destination(type, webhook=webhook, email_recipients=email_recipients)
+    _validate_destination(
+        type, webhook=webhook, email_recipients=email_recipients, webhook_url=webhook_url
+    )
 
     channel = NotificationChannel(name=name, type=type, created_by=actor_id)
     session.add(channel)
@@ -123,6 +144,17 @@ def create_channel(
         )[0]
     if type == "email" and email_recipients:
         channel.email_recipients = email_recipients
+    hmac_secret: str | None = None
+    if type == "webhook" and webhook_url:
+        channel.webhook_url = webhook_url
+        hmac_secret = secrets.token_urlsafe(32)
+        channel.hmac_secret_ref = notification_service.apply_secret_webhook(
+            hmac_secret,
+            None,
+            ref_prefix="channel-hmac",
+            config_id=channel.id,
+            secret_store=secret_store,
+        )[0]
 
     audit_service.record_entity_change(
         session,
@@ -134,7 +166,7 @@ def create_channel(
     )
     session.commit()
     session.refresh(channel)
-    return channel
+    return channel, hmac_secret
 
 
 def update_channel(
@@ -144,16 +176,26 @@ def update_channel(
     name: str | None = None,
     webhook: str | None = None,
     email_recipients: str | None = None,
+    webhook_url: str | None = None,
+    regenerate_hmac_secret: bool = False,
     secret_store: SecretStore,
     actor_id: uuid.UUID | None = None,
-) -> NotificationChannel:
-    """``webhook``/``email_recipients`` are tri-state, same convention as
-    `notification_service.upsert_config`: ``None`` = unchanged, ``""`` = clear,
-    a value = set/rotate. Rotating a channel referenced by N suites is the point —
-    this is the one place that value changes.
+) -> tuple[NotificationChannel, str | None]:
+    """``webhook``/``email_recipients``/``webhook_url`` are tri-state, same
+    convention as `notification_service.upsert_config`: ``None`` = unchanged,
+    ``""`` = clear, a value = set/rotate. Rotating a channel referenced by N
+    suites is the point — this is the one place that value changes.
+
+    Returns ``(channel, hmac_secret)`` — the second element is the newly minted
+    plaintext HMAC key, populated when ``regenerate_hmac_secret`` is set, or
+    when a ``webhook``-type channel's URL is being set for the first time
+    (mints the signing key it never had). ``None`` otherwise — the existing key
+    is never re-shown.
     """
     channel = get_channel(session, channel_id)
-    _validate_destination(channel.type, webhook=webhook, email_recipients=email_recipients)
+    _validate_destination(
+        channel.type, webhook=webhook, email_recipients=email_recipients, webhook_url=webhook_url
+    )
     audit_before = audit_service.snapshot("notification_channel", channel)
 
     if name is not None:
@@ -171,6 +213,25 @@ def update_channel(
     if channel.type == "email" and email_recipients is not None:
         channel.email_recipients = email_recipients or None
 
+    hmac_secret: str | None = None
+    if channel.type == "webhook":
+        if webhook_url is not None:
+            channel.webhook_url = webhook_url or None
+        mint = regenerate_hmac_secret or (
+            channel.webhook_url is not None and channel.hmac_secret_ref is None
+        )
+        if mint:
+            hmac_secret = secrets.token_urlsafe(32)
+            channel.hmac_secret_ref, cleared_hmac = notification_service.apply_secret_webhook(
+                hmac_secret,
+                channel.hmac_secret_ref,
+                ref_prefix="channel-hmac",
+                config_id=channel.id,
+                secret_store=secret_store,
+            )
+            if cleared_hmac:
+                secret_store.delete(cleared_hmac)
+
     audit_service.record_entity_change(
         session,
         action="notification_channel.update",
@@ -183,7 +244,7 @@ def update_channel(
     session.refresh(channel)
     if cleared_secret:
         secret_store.delete(cleared_secret)
-    return channel
+    return channel, hmac_secret
 
 
 def _linked_suites_detail(session: Session, channel_id: uuid.UUID) -> dict[str, Any] | None:
@@ -216,6 +277,7 @@ def delete_channel(
             detail=linked,
         )
     secret_ref = channel.webhook_secret_ref
+    hmac_ref = channel.hmac_secret_ref
     audit_before = audit_service.snapshot("notification_channel", channel)
     try:
         # SAVEPOINT: a link committed between the check above and this delete trips
@@ -241,6 +303,8 @@ def delete_channel(
     session.commit()
     if secret_ref:
         secret_store.delete(secret_ref)
+    if hmac_ref:
+        secret_store.delete(hmac_ref)
 
 
 def list_channels_for_suite(session: Session, suite_id: uuid.UUID) -> list[NotificationChannel]:
@@ -280,6 +344,28 @@ def resolve_channel_webhooks(
         if url not in urls:
             urls.append(url)
     return urls
+
+
+def resolve_webhook_channels(
+    session: Session, suite_id: uuid.UUID, *, secret_store: SecretStore
+) -> list[tuple[str, str]]:
+    """Every ``(url, hmac_secret)`` pair for the suite's linked ``webhook``
+    channels — a channel missing either half (never configured, or its secret
+    has gone missing) is skipped and logged, same fail-soft posture as
+    :func:`resolve_channel_webhooks`. The signing key never leaves the process
+    except as an HMAC digest.
+    """
+    destinations: list[tuple[str, str]] = []
+    for channel in list_channels_for_suite(session, suite_id):
+        if channel.type != "webhook" or not channel.webhook_url or not channel.hmac_secret_ref:
+            continue
+        try:
+            hmac_secret = secret_store.get(channel.hmac_secret_ref)
+        except SecretNotFoundError:
+            log.warning("notification_channel_hmac_unresolved", channel_id=str(channel.id))
+            continue
+        destinations.append((channel.webhook_url, hmac_secret))
+    return destinations
 
 
 def resolve_channel_email_recipients(session: Session, suite_id: uuid.UUID) -> tuple[str, ...]:

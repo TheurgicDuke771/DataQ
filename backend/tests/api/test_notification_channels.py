@@ -266,3 +266,87 @@ def test_outsider_gets_404_on_suite_scoped_channel_routes(
         headers=outsider_headers,
     )
     assert resp.status_code == 404
+
+
+# ── generic webhook channels (#1662) ─────────────────────────────────────────
+# 8.8.8.8 — a stable, unambiguously public IP literal, SSRF-guard-safe and
+# DNS-free (matches the notification_service/channel_service SSRF test convention).
+_WEBHOOK_URL = "https://8.8.8.8/hook"
+
+
+def test_create_webhook_channel_returns_the_hmac_secret_exactly_once(
+    client: TestClient, as_role: Any
+) -> None:
+    _admin, headers = as_role("admin")
+    resp = client.post(
+        "/api/v1/notification-channels",
+        json={"name": "Ops", "type": "webhook", "webhook_url": _WEBHOOK_URL},
+        headers=headers,
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["webhook_url"] == _WEBHOOK_URL
+    assert body["has_hmac_secret"] is True
+    assert body["hmac_secret"] is not None
+
+    # Never re-shown on a subsequent read.
+    got = client.get(f"/api/v1/notification-channels/{body['id']}", headers=headers)
+    assert got.status_code == 200
+    assert got.json()["hmac_secret"] is None
+    assert got.json()["has_hmac_secret"] is True
+
+
+def test_create_webhook_channel_rejects_an_internal_url(client: TestClient, as_role: Any) -> None:
+    _admin, headers = as_role("admin")
+    resp = client.post(
+        "/api/v1/notification-channels",
+        json={"name": "Ops", "type": "webhook", "webhook_url": "https://127.0.0.1/hook"},
+        headers=headers,
+    )
+    assert resp.status_code == 422
+
+
+def test_webhook_url_on_the_wrong_type_is_a_field_mismatch(
+    client: TestClient, as_role: Any
+) -> None:
+    _admin, headers = as_role("admin")
+    resp = client.post(
+        "/api/v1/notification-channels",
+        json=_channel_payload(webhook_url=_WEBHOOK_URL),  # channel type here is teams
+        headers=headers,
+    )
+    assert resp.status_code == 422
+
+
+def test_regenerate_hmac_secret_rotates_and_returns_the_new_key_once(
+    client: TestClient, as_role: Any
+) -> None:
+    _admin, headers = as_role("admin")
+    created = client.post(
+        "/api/v1/notification-channels",
+        json={"name": "Ops", "type": "webhook", "webhook_url": _WEBHOOK_URL},
+        headers=headers,
+    ).json()
+    first_secret = created["hmac_secret"]
+
+    resp = client.patch(
+        f"/api/v1/notification-channels/{created['id']}",
+        json={"regenerate_hmac_secret": True},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["hmac_secret"] is not None
+    assert body["hmac_secret"] != first_secret
+    assert body["has_hmac_secret"] is True
+
+
+def test_delete_webhook_channel_is_admin_only(client: TestClient, as_role: Any) -> None:
+    _admin, admin_headers = as_role("admin")
+    created = client.post(
+        "/api/v1/notification-channels",
+        json={"name": "Ops", "type": "webhook", "webhook_url": _WEBHOOK_URL},
+        headers=admin_headers,
+    ).json()
+    resp = client.delete(f"/api/v1/notification-channels/{created['id']}", headers=admin_headers)
+    assert resp.status_code == 204
