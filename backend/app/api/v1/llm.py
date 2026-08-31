@@ -207,6 +207,12 @@ def suggest_checks(
     suggested check passes the same validator a human's `create_check` call
     would before it is ever stored — one that fails is dropped, not surfaced;
     see the invocation's `rejected` field for what didn't make it and why.
+
+    If EVERY suggestion is rejected, the invocation fails instead — there is no
+    empty-but-successful outcome for "nothing runnable came back" — and
+    `rejected` never gets written (`response` stays null on a failed
+    invocation). The rejection reasons are folded into `error` instead, so
+    they're still readable there rather than lost.
     """
     if (
         llm_checksuggest.CHECKSUGGEST_KIND not in REGISTERED_KINDS

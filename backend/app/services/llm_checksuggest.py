@@ -50,6 +50,17 @@ CHECKSUGGEST_KIND = "check_suggestion"
 MAX_SUGGESTIONS = 8
 _TOP_N = 5
 
+# Bounds for the all-rejected error message (#1780 review): a per-item cap (matching
+# check_service.py's own _ERROR_ECHO_MAX_CHARS convention for echoed untrusted values)
+# plus a total-message cap comfortably under execute_invocation's 1024-char persisted-
+# error truncation — without the total cap, up to MAX_SUGGESTIONS reasons joined
+# together could still exceed 1024 chars even with each one individually bounded, and
+# `execute_invocation`'s downstream [:1024] would then silently drop the "(+N more)"
+# suffix and some reasons with no indication anything was cut — the exact defect #1727
+# exists to fix, recreated one layer down.
+_REASON_ECHO_MAX_CHARS = 120
+_REASONS_CLAUSE_MAX_CHARS = 700
+
 # Table-level / cross-column types have no per-column profile signal to ground
 # a suggestion in; the allowlist-only type's paired-list config has no natural
 # schema expression either (the same reason the check editor doesn't offer it).
@@ -349,7 +360,13 @@ def _validate_one(
         not isinstance(expectation_type, str)
         or expectation_type not in SUGGESTIBLE_EXPECTATION_TYPES
     ):
-        return None, f"expectation_type {expectation_type!r} is not in the offered vocabulary"
+        # Capped like check_service.py's own echoed-value convention
+        # (_ERROR_ECHO_MAX_CHARS): this reason is untrusted provider output, not
+        # a value we generated, and it now feeds the all-rejected error message
+        # `validate_output` assembles (#1780 review) — an uncapped value here
+        # could alone crowd out every other suggestion's reason.
+        echoed = repr(expectation_type)[:_REASON_ECHO_MAX_CHARS]
+        return None, f"expectation_type {echoed} is not in the offered vocabulary"
     if not isinstance(config, dict):
         return None, "config must be an object"
     try:
@@ -369,6 +386,36 @@ def _validate_one(
         "config": config,
         "dimension": dimension,
     }, None
+
+
+def _format_rejection_reasons(rejected: list[dict[str, Any]]) -> str:
+    """Bounded summary of why every suggestion was rejected, safe to embed in
+    the all-rejected error message. Each reason is capped individually AND the
+    assembled clause is capped as a whole — a per-item cap alone still lets
+    MAX_SUGGESTIONS reasons joined together exceed the downstream 1024-char
+    persisted-error limit, silently losing the omitted-count suffix (#1780).
+    """
+    shown = rejected[:MAX_SUGGESTIONS]
+    parts = []
+    for r in shown:
+        etype = r.get("expectation_type")
+        # `str(etype)`, not `etype or "unknown"`: expectation_type is untrusted
+        # provider output and is not guaranteed to be a string (could be an
+        # int/list/dict/bool from a non-compliant provider) — slicing a non-str
+        # would crash. Only an absent/None key means "unknown"; a present but
+        # falsy value (e.g. "" or 0) is a real, if malformed, value and must
+        # display as itself, not be conflated with "missing" (#1780 review).
+        etype_display = "unknown" if etype is None else str(etype)
+        parts.append(
+            f"{etype_display[:_REASON_ECHO_MAX_CHARS]}: {str(r['reason'])[:_REASON_ECHO_MAX_CHARS]}"
+        )
+    omitted = len(rejected) - len(shown)
+    joined = "; ".join(parts)
+    if len(joined) > _REASONS_CLAUSE_MAX_CHARS:
+        joined = joined[:_REASONS_CLAUSE_MAX_CHARS].rstrip() + "…"
+        omitted = max(omitted, 1)
+    suffix = f" (+{omitted} more)" if omitted else ""
+    return f"{joined}{suffix}"
 
 
 def validate_output(
@@ -428,7 +475,24 @@ def validate_output(
         seen.add(identity)
         accepted.append(ok)
     if not accepted:
-        raise LLMOutputInvalidError("no suggested check passed validation")
+        # The full `rejected` list (with per-suggestion reasons) is about to go
+        # out of scope — this is the ONLY path where that would happen silently.
+        # `execute_invocation`'s DataQError branch stores just the message
+        # (`response` stays NULL), so a total-rejection run must fold the
+        # reasons into the message itself or the API docstring's promise
+        # ("see the invocation's `rejected` field for what didn't make it and
+        # why") is false for exactly the case where it matters most (#1727).
+        # Capped at MAX_SUGGESTIONS reasons: the schema bounds a compliant
+        # provider's output, but not every provider enforces its own schema
+        # server-side, so `rejected` itself is not guaranteed bounded.
+        if rejected:
+            raise LLMOutputInvalidError(
+                f"no suggested check passed validation — {len(rejected)} rejected: "
+                f"{_format_rejection_reasons(rejected)}"
+            )
+        raise LLMOutputInvalidError(
+            "no suggested check passed validation — the provider returned no suggestions"
+        )
     # Deterministic, computed here rather than trusted from the model — a
     # coverage gap is a fact about this suite's binding config, not something
     # the model can be relied on to have noticed or mentioned (#1648).
