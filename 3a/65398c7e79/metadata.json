@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "3a65398c7e79",
+  "strategy": "manual-commit",
+  "branch": "feature/1647-alert-explains-itself",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/3a/65398c7e79/0/metadata.json",
+      "transcript": "/3a/65398c7e79/0/full.jsonl",
+      "compact_transcript": "/3a/65398c7e79/0/transcript.jsonl",
+      "content_hash": "/3a/65398c7e79/0/content_hash.txt",
+      "prompt": "/3a/65398c7e79/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2288,
+    "cache_creation_tokens": 2913270,
+    "cache_read_tokens": 567746120,
+    "output_tokens": 614000,
+    "api_call_count": 1147
+  }
+}
