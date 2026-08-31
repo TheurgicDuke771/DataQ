@@ -79,6 +79,7 @@ nav:
       - Feature matrix: feature-matrix.md
       - REST API: rest-api.md
       - MCP tool design (honesty & disclosure): mcp-honesty.md
+      - Incident evidence card: evidence-card.md
       - Architecture: architecture.md
       - Security & data handling: security.md
       - Compliance:
