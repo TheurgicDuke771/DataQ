@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "14e123feb192",
+  "strategy": "manual-commit",
+  "branch": "feature/1514-reusable-notification-channels",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/14/e123feb192/0/metadata.json",
+      "transcript": "/14/e123feb192/0/full.jsonl",
+      "compact_transcript": "/14/e123feb192/0/transcript.jsonl",
+      "content_hash": "/14/e123feb192/0/content_hash.txt",
+      "prompt": "/14/e123feb192/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4594,
+    "cache_creation_tokens": 5006572,
+    "cache_read_tokens": 1250948456,
+    "output_tokens": 1019800,
+    "api_call_count": 2300
+  }
+}
