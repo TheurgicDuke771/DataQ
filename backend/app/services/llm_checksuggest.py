@@ -428,7 +428,30 @@ def validate_output(
         seen.add(identity)
         accepted.append(ok)
     if not accepted:
-        raise LLMOutputInvalidError("no suggested check passed validation")
+        # The full `rejected` list (with per-suggestion reasons) is about to go
+        # out of scope — this is the ONLY path where that would happen silently.
+        # `execute_invocation`'s DataQError branch stores just the message
+        # (`response` stays NULL), so a total-rejection run must fold the
+        # reasons into the message itself or the API docstring's promise
+        # ("see the invocation's `rejected` field for what didn't make it and
+        # why") is false for exactly the case where it matters most (#1727).
+        # Capped at MAX_SUGGESTIONS reasons: the schema bounds a compliant
+        # provider's output, but not every provider enforces its own schema
+        # server-side, so `rejected` itself is not guaranteed bounded.
+        if rejected:
+            shown = rejected[:MAX_SUGGESTIONS]
+            reasons = "; ".join(
+                f"{r.get('expectation_type') or 'unknown'}: {r['reason']}" for r in shown
+            )
+            omitted = len(rejected) - len(shown)
+            suffix = f" (+{omitted} more)" if omitted else ""
+            raise LLMOutputInvalidError(
+                f"no suggested check passed validation — {len(rejected)} rejected: "
+                f"{reasons}{suffix}"
+            )
+        raise LLMOutputInvalidError(
+            "no suggested check passed validation — the provider returned no suggestions"
+        )
     # Deterministic, computed here rather than trusted from the model — a
     # coverage gap is a fact about this suite's binding config, not something
     # the model can be relied on to have noticed or mentioned (#1648).

@@ -290,12 +290,53 @@ def test_output_gate_drops_a_duplicate_suggestion(db_session: Any, admin: User) 
 
 
 def test_output_gate_fails_when_nothing_survives(db_session: Any, admin: User) -> None:
+    """#1727: when every suggestion is rejected, `rejected` never reaches a
+    caller — `execute_invocation`'s DataQError branch stores only the error
+    string and leaves `response` null — so the reasons must be readable IN that
+    string, not silently discarded with the local `rejected` list.
+    """
     suite = make_sql_suite(db_session, admin)
     invocation = _invocation(db_session, suite, admin)
-    with pytest.raises(LLMOutputInvalidError):
+    with pytest.raises(LLMOutputInvalidError) as exc_info:
         llm_checksuggest.validate_output(
             db_session, invocation, {"suggestions": [_suggestion(config={})]}
         )
+    assert "1 rejected" in str(exc_info.value)
+    assert "expect_column_values_to_not_be_null" in str(exc_info.value)
+
+
+def test_output_gate_all_rejected_error_truncates_at_max_suggestions(
+    db_session: Any, admin: User
+) -> None:
+    """`rejected` is not guaranteed bounded (a non-compliant provider can ignore
+    the schema's own maxItems) — the error must still cap what it echoes back
+    rather than grow without limit.
+    """
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+    overflow = 3
+    many = [
+        _suggestion(config={}, name=f"bad {i}")
+        for i in range(llm_checksuggest.MAX_SUGGESTIONS + overflow)
+    ]
+    with pytest.raises(LLMOutputInvalidError) as exc_info:
+        llm_checksuggest.validate_output(db_session, invocation, {"suggestions": many})
+    message = str(exc_info.value)
+    assert f"{llm_checksuggest.MAX_SUGGESTIONS + overflow} rejected" in message
+    assert f"+{overflow} more" in message
+
+
+def test_output_gate_empty_suggestions_list_names_the_provider_as_the_cause(
+    db_session: Any, admin: User
+) -> None:
+    """Distinct from the all-rejected case above: nothing to report a REASON
+    for, so the message says so instead of a misleading "0 rejected".
+    """
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+    with pytest.raises(LLMOutputInvalidError) as exc_info:
+        llm_checksuggest.validate_output(db_session, invocation, {"suggestions": []})
+    assert "provider returned no suggestions" in str(exc_info.value)
 
 
 def test_output_gate_rejects_non_list_suggestions(db_session: Any, admin: User) -> None:
