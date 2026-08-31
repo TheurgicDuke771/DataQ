@@ -30,6 +30,7 @@ from backend.app.db.models import Incident, LlmInvocation
 from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError
 from backend.app.services import check_service, incident_service, llm_service
 from backend.app.services.check_service import CheckNotFoundError
+from backend.app.services.incident_evidence import MONITOR_KINDS
 
 log = get_logger(__name__)
 
@@ -59,7 +60,6 @@ _EVIDENCE_REFS = frozenset(
     }
 )
 
-_MONITOR_KINDS = frozenset({"freshness", "volume", "schema_drift", "anomaly"})
 
 RCA_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -175,7 +175,7 @@ def _blind_spots(evidence: dict[str, Any], *, history_unavailable: bool) -> list
     kind = check.get("kind") if check else None
     if check is None:
         spots.append("the check itself could not be identified (likely deleted)")
-    elif kind in _MONITOR_KINDS and evidence.get("kind_detail") is None:
+    elif kind in MONITOR_KINDS and evidence.get("kind_detail") is None:
         spots.append(f"kind_detail is missing for this {kind} check (see the check note above)")
     kind_detail = evidence.get("kind_detail")
     if isinstance(kind_detail, dict) and kind_detail.get("insufficient_history"):
@@ -200,25 +200,54 @@ def _blind_spots(evidence: dict[str, Any], *, history_unavailable: bool) -> list
     return spots
 
 
+#: In-memory-only cache key for `_evidence_context`'s result — a plain, unmapped attribute on the
+#: `LlmInvocation` instance, never persisted or queried (see the function's own docstring).
+_EVIDENCE_CONTEXT_ATTR = "_rca_evidence_context"
+
+
 def _evidence_context(
     session: Session, invocation: LlmInvocation, incident: Incident
 ) -> tuple[dict[str, Any], list[Any], list[str]]:
     """The (redacted evidence, check history, blind spots) triple both
     `build_prompt` and `validate_output` need — kept as one function so the
     two can never independently drift on how they redact or compute either.
+
+    Cached on `invocation` for the lifetime of one `execute_invocation` call:
+    `build_prompt` computes it once, and `validate_output`'s later call (after
+    the LLM round-trip, which can take seconds) reuses that SAME snapshot
+    instead of re-querying. Without this, a concurrent run landing on the same
+    check mid-flight could grow `check_history` or change a suite grant
+    between the two calls, and the persisted `blind_spots` would then silently
+    describe evidence the model never actually reasoned over.
     """
+    cached = getattr(invocation, _EVIDENCE_CONTEXT_ATTR, None)
+    if cached is not None:
+        return cached  # type: ignore[no-any-return]
     requester_id = _requester_id(invocation)
     evidence = incident_service.evidence_for_caller(session, incident, user_id=requester_id) or {}
     history = _check_history(session, incident)
     blind_spots = _blind_spots(
         evidence, history_unavailable=not history and evidence.get("check") is not None
     )
-    return evidence, history, blind_spots
+    context = (evidence, history, blind_spots)
+    setattr(invocation, _EVIDENCE_CONTEXT_ATTR, context)
+    return context
+
+
+#: `sibling_checks` and `downstream_blast_radius` carry no upstream cap of their own (unlike
+#: `metric_trend`/`check_history`/`same_asset_siblings`) — a suite with hundreds of checks, or a
+#: widely-fanned-out asset, would otherwise blow up prompt size/cost on exactly the incidents this
+#: narrative is most valuable for.
+_MAX_RENDERED_ITEMS = 20
 
 
 def _render_evidence(evidence: dict[str, Any], history: list[Any], blind_spots: list[str]) -> str:
     def _json(value: Any) -> str:
         return json.dumps(value, default=str)
+
+    def _capped_json(items: list[Any]) -> tuple[str, int]:
+        """(rendered JSON of the first `_MAX_RENDERED_ITEMS`, how many were left out)."""
+        return _json(items[:_MAX_RENDERED_ITEMS]), max(0, len(items) - _MAX_RENDERED_ITEMS)
 
     check = evidence.get("check") or {}
     asset = evidence.get("asset") or {}
@@ -261,7 +290,9 @@ def _render_evidence(evidence: dict[str, Any], history: list[Any], blind_spots: 
 
     siblings = evidence.get("sibling_checks") or []
     if siblings:
-        lines.append(f"sibling_checks (other checks, SAME run): {_json(siblings)}")
+        rendered, omitted = _capped_json(siblings)
+        suffix = f" ({omitted} more not shown)" if omitted else ""
+        lines.append(f"sibling_checks (other checks, SAME run): {rendered}{suffix}")
 
     cross_suite = evidence.get("same_asset_siblings") or []
     if cross_suite:
@@ -275,7 +306,9 @@ def _render_evidence(evidence: dict[str, Any], history: list[Any], blind_spots: 
 
     blast = evidence.get("downstream_blast_radius") or []
     if blast:
-        lines.append(f"downstream_blast_radius: {_json(blast)}")
+        rendered, omitted = _capped_json(blast)
+        suffix = f" ({omitted} more not shown)" if omitted else ""
+        lines.append(f"downstream_blast_radius: {rendered}{suffix}")
 
     if blind_spots:
         lines.append(
@@ -332,8 +365,12 @@ def validate_output(
     raw_hypotheses = payload.get("ranked_hypotheses")
     if not isinstance(raw_hypotheses, list):
         raise LLMOutputInvalidError("provider did not return a ranked_hypotheses list")
-    hypotheses = [
-        h for h in (_valid_hypothesis(raw) for raw in raw_hypotheses[:_MAX_HYPOTHESES]) if h
+    # Filter the FULL list before capping — not every provider enforces its own schema's
+    # `maxItems` server-side (the `llm_checksuggest` precedent), so slicing first could drop a
+    # valid, evidence-grounded hypothesis past position `_MAX_HYPOTHESES` in favor of keeping
+    # earlier malformed ones.
+    hypotheses = [h for h in (_valid_hypothesis(raw) for raw in raw_hypotheses) if h][
+        :_MAX_HYPOTHESES
     ]
     if not hypotheses:
         raise LLMOutputInvalidError("no ranked hypothesis cited valid evidence")

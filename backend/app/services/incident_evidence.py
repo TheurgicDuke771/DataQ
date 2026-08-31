@@ -31,6 +31,10 @@ _SAME_ASSET_SIBLING_LIMIT = 20
 # values (vs. the scalar `unexpected_count`/`unexpected_percent` aggregates).
 _SAMPLE_LIST_KEYS = frozenset({"partial_unexpected_list", "unexpected_index_list"})
 
+#: The `check.kind` values `_kind_detail_layer` dispatches on — the single source of truth other
+#: modules (e.g. `llm_rca`) import rather than re-spelling this set independently (#1633 review).
+MONITOR_KINDS = frozenset({"freshness", "volume", "schema_drift", "anomaly"})
+
 
 def _layer(name: str, fn: Callable[[], Any]) -> Any:
     """Run one evidence layer best-effort: any failure logs a structured warning
@@ -139,11 +143,12 @@ def _strip_sample_lists(observed: dict[str, Any] | None) -> dict[str, Any] | Non
 
 def _kind_detail_layer(check: Check | None, result: Result) -> dict[str, Any] | None:
     """The monitor-kind-shaped fields lifted out of the raw ``observed_value``
-    JSONB (#1635), so a consumer doesn't need to know three different shapes to
-    answer "how stale" / "how anomalous" / "what changed". ``None`` for
-    ``expectation``/``comparison`` checks, where ``failing_result.observed_value``
-    already **is** the shape — and whenever ``observed_value`` isn't the dict a
-    monitor-kind check always produces (an operational error, most often).
+    JSONB (#1635), so a consumer doesn't need to know ``MONITOR_KINDS``' four
+    different shapes to answer "how stale" / "how anomalous" / "what changed".
+    ``None`` for ``expectation``/``comparison`` checks, where
+    ``failing_result.observed_value`` already **is** the shape — and whenever
+    ``observed_value`` isn't the dict a monitor-kind check always produces (an
+    operational error, most often).
     """
     if check is None or not isinstance(result.observed_value, dict):
         return None

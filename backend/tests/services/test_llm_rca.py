@@ -377,3 +377,106 @@ def test_validate_output_refuses_when_the_incident_is_gone(
     db_session.commit()
     with pytest.raises(LLMRequestInvalidError):
         llm_rca.validate_output(db_session, invocation, _valid_payload())
+
+
+def test_validate_output_keeps_a_valid_hypothesis_past_the_cap_over_earlier_invalid_ones(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """The whole list is filtered BEFORE capping to `_MAX_HYPOTHESES` — slicing
+    first could discard a valid, grounded hypothesis in favor of keeping
+    earlier malformed ones (not every provider enforces its own schema's
+    `maxItems` server-side, the `llm_checksuggest` precedent).
+    """
+    invocation = _invocation(db_session, world["incident"], world["owner"])
+    invalid = [
+        {"cause": "no refs", "confidence": "low", "evidence_refs": []}
+        for _ in range(llm_rca._MAX_HYPOTHESES)
+    ]
+    valid_one = {
+        "cause": "the one that survives",
+        "confidence": "high",
+        "evidence_refs": ["failing_result"],
+    }
+    payload = _valid_payload(ranked_hypotheses=[*invalid, valid_one])
+    result = llm_rca.validate_output(db_session, invocation, payload)
+    assert [h["cause"] for h in result["ranked_hypotheses"]] == ["the one that survives"]
+
+
+# ── evidence_context caching (#1633 review) ─────────────────────────────────
+
+
+def test_evidence_context_is_computed_once_across_build_and_validate(
+    db_session: Any, world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`build_prompt` and `validate_output` share one snapshot per invocation —
+    a concurrent run landing between the two (the LLM round-trip can take
+    seconds) must not make the persisted `blind_spots` describe evidence the
+    model never actually saw.
+    """
+    invocation = _invocation(db_session, world["incident"], world["owner"])
+    calls = {"n": 0}
+    real_check_history = llm_rca._check_history
+
+    def _counting_check_history(session: Any, incident: Any) -> list[Any]:
+        calls["n"] += 1
+        return real_check_history(session, incident)
+
+    monkeypatch.setattr(llm_rca, "_check_history", _counting_check_history)
+
+    llm_rca.build_prompt(db_session, invocation, FakeSecretStore())
+    llm_rca.validate_output(db_session, invocation, _valid_payload())
+    assert calls["n"] == 1
+
+
+def test_evidence_context_cache_is_per_invocation_not_global(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """The cache lives on the invocation object, not shared module state — a
+    second, unrelated invocation must recompute its own context.
+    """
+    first = _invocation(db_session, world["incident"], world["owner"])
+    llm_rca.build_prompt(db_session, first, FakeSecretStore())
+    assert getattr(first, llm_rca._EVIDENCE_CONTEXT_ATTR) is not None
+
+    second = _invocation(db_session, world["incident"], world["owner"])
+    assert getattr(second, llm_rca._EVIDENCE_CONTEXT_ATTR, None) is None
+
+
+# ── shared constants (#1633 review) ─────────────────────────────────────────
+
+
+def test_monitor_kinds_is_the_shared_incident_evidence_constant() -> None:
+    """A locally-duplicated copy would silently drift from
+    `incident_evidence._kind_detail_layer`'s own dispatch if a new monitor
+    kind were ever added there without also updating a second copy here.
+    """
+    from backend.app.services import incident_evidence
+
+    assert getattr(llm_rca, "MONITOR_KINDS") is incident_evidence.MONITOR_KINDS  # noqa: B009
+
+
+# ── prompt size caps (#1633 review) ─────────────────────────────────────────
+
+
+def test_render_evidence_caps_sibling_checks_and_notes_the_omission() -> None:
+    siblings = [{"check_name": f"check_{i}", "status": "pass"} for i in range(30)]
+    evidence = {"sibling_checks": siblings}
+    prompt = llm_rca._render_evidence(evidence, [], [])
+    assert "check_0" in prompt
+    assert f"check_{llm_rca._MAX_RENDERED_ITEMS}" not in prompt  # first omitted entry
+    assert "10 more not shown" in prompt
+
+
+def test_render_evidence_caps_downstream_blast_radius_and_notes_the_omission() -> None:
+    blast = [{"name": f"asset_{i}"} for i in range(25)]
+    evidence = {"downstream_blast_radius": blast}
+    prompt = llm_rca._render_evidence(evidence, [], [])
+    assert "asset_0" in prompt
+    assert f"asset_{llm_rca._MAX_RENDERED_ITEMS}" not in prompt
+    assert "5 more not shown" in prompt
+
+
+def test_render_evidence_omits_the_note_when_under_the_cap() -> None:
+    evidence = {"sibling_checks": [{"check_name": "only_one", "status": "pass"}]}
+    prompt = llm_rca._render_evidence(evidence, [], [])
+    assert "more not shown" not in prompt
