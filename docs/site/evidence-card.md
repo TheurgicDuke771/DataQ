@@ -80,10 +80,13 @@ prevent:
 ## The provenance rule a narrative inherits
 
 When a narrative is generated over this card, every claim it makes must cite which of a closed,
-fixed set of layer names it rests on — the same layers documented above, plus a longer per-check
-result history fetched alongside the card (not one of the card's own fields, since the card
-itself keeps only the last 10 points). A hypothesis that cannot point to a real layer is refused
-before it can ever reach a reader. The generation step also computes, deterministically and
+fixed set of layer names it rests on: `failing_result`, `kind_detail`, `metric_trend`,
+`sibling_checks`, `same_asset_siblings`, `upstream_pipeline_run`, `downstream_blast_radius`, and
+`check_history` — a longer per-check result history fetched alongside the card, not one of the
+card's own fields, since the card itself keeps only the last 10 points. `check`, `asset`, and the
+always-null `profile_diff` are identifying context, not evidence a hypothesis can be pinned to,
+so they are deliberately outside this set. A hypothesis that cannot point to a real layer in it
+is refused before it can ever reach a reader. The generation step also computes, deterministically and
 without ever asking the model, what the snapshot could not see — a withheld cross-suite sibling
 count, an unresolved upstream pipeline, no recorded downstream lineage — because a model cannot
 be trusted to notice or disclose a gap it was never shown existed in the first place.
