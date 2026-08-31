@@ -59,10 +59,10 @@ other subjects — intact.
 | Lawful-basis notes | DataQ is a **processor** (BYOL, ADR 0013); the deploying controller holds lawful basis for the warehouse data it monitors. Workspace accounts: legitimate interest / contract (employee tooling). |
 | Data subjects | Whoever appears in monitored tables (controller-determined); workspace users (employees/contractors of the controller). |
 | Special categories | Only if the controller points checks at such columns. Mitigations: column policy + warehouse-native tag floor (G3) + fail-closed mode for suites that must never show values. |
-| Cross-border transfers | Enumerated, not derived — see the [sub-processor disclosure](sub-processors.md) and the residency posture. The outbound-LLM vector is **not built**; MCP clients are the token-holder's choice. |
+| Cross-border transfers | Enumerated, not derived — see the [sub-processor disclosure](sub-processors.md) and the residency posture. The outbound-LLM vector is **built, off by default** — live only once an admin configures a provider and credential, sending schema plus masked aggregate profiler statistics, never sample rows; MCP clients are the token-holder's choice. |
 | Access ("who saw it") | G1 read events: data reads on REST **and** MCP are recorded and admin-queryable. |
 | Erasure ("how is it removed") | Retention purge (30-day default) + entity cascade, **and** on-demand targeted erasure by `(column, value)` — the [data-subject-rights runbook](data-subject-rights-runbook.md). |
 | Security of processing | See [Security & data handling](../security.md): secrets in a dedicated store, TLS, rate limiting, security headers, single public surface, non-root containers, least-privilege DB role. |
 
-Last reviewed: 2026-08-24 (originally 2026-08-21).
+Last reviewed: 2026-08-31 (originally 2026-08-21).
 This sheet shares its inventory with the [data-subject-rights runbook](data-subject-rights-runbook.md) — update both together (one artifact, not two).

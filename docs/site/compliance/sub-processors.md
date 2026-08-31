@@ -35,7 +35,7 @@ a third-party endpoint.
 | 6 | **Secret store** — Azure Key Vault, AWS Secrets Manager, OpenBao/Vault | Warehouse credentials (write on connection create, read at run time) | No customer data — but the credentials unlock the systems that hold it | Always (one of the four backends) |
 | 7 | **Telemetry** — Azure Application Insights, AWS X-Ray/CloudWatch, any OTLP sink | Traces + structured logs, **PII-redacted at the logger** | Operational metadata; request ids, not warehouse values | When an exporter is configured |
 | 8 | **MCP AI clients** — whatever model provider stands behind a client holding a valid PAT | Run results, redacted failing samples, check configuration, via the 46 `/mcp` tools | Potentially, in redacted samples — the model provider and its jurisdiction are **chosen by the token holder** | When PATs are issued and `/mcp` is reachable |
-| 9 | **Outbound LLM intelligence** — DataQ calling a model on its own behalf | **Not built.** Listed while absent, deliberately: when it lands it is a GDPR Ch. V transfer by construction | Design intent: schema-only context, PII-redacted, local-endpoint option | Never (post-v1 feature, off by default when built) |
+| 9 | **Outbound LLM intelligence** — DataQ calling a model on its own behalf | Schema plus masked aggregate profiler statistics — **never sample rows**; every call recorded with requester and token counts | Potentially, in schema/statistics — the model provider and its jurisdiction are chosen by the admin who configures it | **Live, off by default** — an admin must configure a provider + credential before any call leaves |
 | 10 | **Lineage provider** — Marquez / OpenLineage-compatible catalog | Pull of lineage graph metadata | No — table/job names, not row data | When `LINEAGE_PROVIDER` is configured |
 
 Cloud-platform services that *host* a deployment (the managed Postgres, Redis,
@@ -55,4 +55,4 @@ maintained as code review discipline, not a calendar:
 3. The **LLM row flips from "not built"** in the PR that ships the intelligence
    feature — that PR is the Ch. V trigger the DPIA sheet also names.
 
-Last reviewed: 2026-08-21.
+Last reviewed: 2026-08-31 (originally 2026-08-21).

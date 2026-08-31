@@ -546,9 +546,11 @@ considered:
   holder and are outside DataQ's knowledge. This is the more consequential of the
   two LLM entries, and an earlier draft listed only the other one.
 - **LLM intelligence** — the *outbound* direction, DataQ calling a model on its
-  own behalf: **not built.** When it lands it is a Ch. V transfer by construction;
-  its intended posture (schema-only context, PII-redacted, local-endpoint option)
-  is recorded in the maintainers' design notes.
+  own behalf: **built, off by default** until an admin configures a provider and
+  credential. When enabled it is a Ch. V transfer by construction: prompt context
+  is schema plus masked aggregate profiler statistics — **never sample rows** —
+  sent to the admin's own chosen model-provider endpoint, and every call is
+  recorded with requester and token counts.
 - **Sign-in email** — email-OTP codes to user addresses via the configured SMTP
   relay: account identifiers rather than warehouse content, relay operator-chosen.
 - **Secret store** — warehouse credentials in Key Vault / Secrets Manager /
