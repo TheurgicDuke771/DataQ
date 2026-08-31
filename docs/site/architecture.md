@@ -312,6 +312,18 @@ erDiagram
         string email_recipients "comma-separated addresses (not secret; NULL → workspace EMAIL_TO)"
         bool auto_resolve_incidents "auto-resolve on pass (default true, ADR 0034)"
     }
+    notification_channels {
+        uuid id PK
+        string name "admin-chosen label"
+        string type "teams / slack / email"
+        string webhook_secret_ref "teams/slack - SecretStore key"
+        string email_recipients "email type - comma-separated addresses, not secret"
+        uuid created_by FK "SET NULL"
+    }
+    suite_notification_channels {
+        uuid suite_id PK,FK "CASCADE"
+        uuid channel_id PK,FK "RESTRICT - unlink before deleting a live channel"
+    }
     workspace_health {
         string key PK "signal name, e.g. orchestration_poll_staleness"
         timestamptz alerted_at "delivered-first flag - set only after a publish succeeded"
@@ -385,6 +397,9 @@ erDiagram
     suites ||--o{ trigger_bindings : "triggered by (CASCADE)"
     suites ||--o{ schedules : "scheduled by (CASCADE)"
     suites ||--o| suite_notifications : "alert config (CASCADE)"
+    suites ||--o{ suite_notification_channels : "linked channels (CASCADE)"
+    notification_channels ||--o{ suite_notification_channels : "referenced by (RESTRICT)"
+    users |o--o{ notification_channels : "created_by (SET NULL)"
 
     checks ||--o| monitor_baselines : "diff reference (CASCADE)"
     users |o--o{ monitor_baselines : "captured_by (SET NULL)"

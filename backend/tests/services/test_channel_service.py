@@ -1,0 +1,299 @@
+"""Tests for channel_service — reusable notification channels (#1514)."""
+
+from __future__ import annotations
+
+import uuid
+from typing import Any
+
+import pytest
+
+from backend.app.core.secrets import SecretNotFoundError
+from backend.app.db.models import Connection, NotificationChannel, Suite, User
+from backend.app.services import channel_service as svc
+from backend.app.services.channel_service import (
+    ChannelInUseError,
+    ChannelNotFoundError,
+    ChannelTypeInvalidError,
+)
+from backend.app.services.notification_service import InvalidRecipientsError, InvalidWebhookError
+from backend.tests.support.fake_secret_store import FakeSecretStore
+
+_TEAMS_URL = "https://contoso.webhook.office.com/x"
+_SLACK_URL = "https://hooks.slack.com/services/T00/B00/xyz"
+
+
+def _user(db: Any) -> User:
+    user = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:8]}@x.io")
+    db.add(user)
+    db.flush()
+    return user
+
+
+def _suite(db: Any) -> Suite:
+    owner = _user(db)
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "a"},
+        secret_ref="kv",
+        created_by=owner.id,
+    )
+    db.add(conn)
+    db.flush()
+    suite = Suite(name="s", connection_id=conn.id, created_by=owner.id, target={"table": "T"})
+    db.add(suite)
+    db.commit()
+    return suite
+
+
+def test_create_channel_mints_and_stores_a_secret_ref(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel = svc.create_channel(
+        db_session, name="Platform Teams", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    assert channel.webhook_secret_ref is not None
+    assert store.get(channel.webhook_secret_ref) == _TEAMS_URL
+
+
+def test_create_email_channel_stores_recipients_inline_not_as_a_secret(db_session: Any) -> None:
+    channel = svc.create_channel(
+        db_session,
+        name="Data team",
+        type="email",
+        email_recipients="a@x.io,b@x.io",
+        secret_store=FakeSecretStore(),
+    )
+    assert channel.email_recipients == "a@x.io,b@x.io"
+    assert channel.webhook_secret_ref is None
+
+
+def test_create_channel_rejects_an_invalid_type(db_session: Any) -> None:
+    with pytest.raises(ChannelTypeInvalidError):
+        svc.create_channel(db_session, name="x", type="pagerduty", secret_store=FakeSecretStore())
+
+
+def test_create_teams_channel_rejects_a_non_allowlisted_webhook(db_session: Any) -> None:
+    with pytest.raises(InvalidWebhookError):
+        svc.create_channel(
+            db_session,
+            name="x",
+            type="teams",
+            webhook="https://evil.example.com/hook",
+            secret_store=FakeSecretStore(),
+        )
+
+
+def test_create_email_channel_rejects_malformed_recipients(db_session: Any) -> None:
+    with pytest.raises(InvalidRecipientsError):
+        svc.create_channel(
+            db_session,
+            name="x",
+            type="email",
+            email_recipients="not-an-email",
+            secret_store=FakeSecretStore(),
+        )
+
+
+def test_get_channel_not_found(db_session: Any) -> None:
+    with pytest.raises(ChannelNotFoundError):
+        svc.get_channel(db_session, uuid.uuid4())
+
+
+def test_list_channels_sorted_by_name(db_session: Any) -> None:
+    store = FakeSecretStore()
+    svc.create_channel(
+        db_session, name="Zeta", type="email", email_recipients="a@x.io", secret_store=store
+    )
+    svc.create_channel(
+        db_session, name="Alpha", type="email", email_recipients="a@x.io", secret_store=store
+    )
+    names = [c.name for c in svc.list_channels(db_session)]
+    assert names == ["Alpha", "Zeta"]
+
+
+def test_update_channel_rotates_the_webhook_value_in_place(db_session: Any) -> None:
+    """Rotation is the acceptance test (#1514): the ref itself stays stable — only
+    the value at that ref changes — which is exactly why every suite resolving
+    this same ref picks up the new webhook with no per-suite edit at all.
+    """
+    store = FakeSecretStore()
+    channel = svc.create_channel(
+        db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    ref = channel.webhook_secret_ref
+    assert ref is not None
+
+    new_url = "https://contoso.webhook.office.com/rotated"
+    updated = svc.update_channel(
+        db_session, channel.id, webhook=new_url, secret_store=store, actor_id=None
+    )
+    assert updated.webhook_secret_ref == ref
+    assert store.get(ref) == new_url
+
+
+def test_update_channel_webhook_none_leaves_it_unchanged(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel = svc.create_channel(
+        db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    ref_before = channel.webhook_secret_ref
+    svc.update_channel(db_session, channel.id, name="renamed", secret_store=store)
+    db_session.refresh(channel)
+    assert channel.webhook_secret_ref == ref_before
+    assert channel.name == "renamed"
+
+
+def test_update_channel_webhook_empty_string_clears_it(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel = svc.create_channel(
+        db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    ref = channel.webhook_secret_ref
+    assert ref is not None
+    svc.update_channel(db_session, channel.id, webhook="", secret_store=store)
+    db_session.refresh(channel)
+    assert channel.webhook_secret_ref is None
+    with pytest.raises(SecretNotFoundError):
+        store.get(ref)
+
+
+def test_delete_channel_removes_its_secret(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel = svc.create_channel(
+        db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    ref = channel.webhook_secret_ref
+    assert ref is not None
+    svc.delete_channel(db_session, channel.id, secret_store=store)
+    assert db_session.get(NotificationChannel, channel.id) is None
+    with pytest.raises(SecretNotFoundError):
+        store.get(ref)
+
+
+def test_delete_channel_refuses_while_linked(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel = svc.create_channel(
+        db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    suite = _suite(db_session)
+    svc.link_suite(db_session, suite.id, channel.id)
+    with pytest.raises(ChannelInUseError) as exc:
+        svc.delete_channel(db_session, channel.id, secret_store=store)
+    assert exc.value.detail["total"] == 1
+    assert exc.value.detail["suites"][0]["id"] == str(suite.id)
+    # The channel must still exist — a refused delete is not a partial delete.
+    assert db_session.get(NotificationChannel, channel.id) is not None
+
+
+def test_link_suite_is_idempotent(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel = svc.create_channel(
+        db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    suite = _suite(db_session)
+    svc.link_suite(db_session, suite.id, channel.id)
+    svc.link_suite(db_session, suite.id, channel.id)  # second call is a no-op, not a conflict
+    assert [c.id for c in svc.list_channels_for_suite(db_session, suite.id)] == [channel.id]
+
+
+def test_link_suite_to_a_missing_channel_404s(db_session: Any) -> None:
+    suite = _suite(db_session)
+    with pytest.raises(ChannelNotFoundError):
+        svc.link_suite(db_session, suite.id, uuid.uuid4())
+
+
+def test_unlink_suite_removes_the_link_and_unblocks_delete(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel = svc.create_channel(
+        db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    suite = _suite(db_session)
+    svc.link_suite(db_session, suite.id, channel.id)
+    assert svc.unlink_suite(db_session, suite.id, channel.id) is True
+    assert svc.list_channels_for_suite(db_session, suite.id) == []
+    svc.delete_channel(db_session, channel.id, secret_store=store)  # no longer refused
+
+
+def test_unlink_suite_not_linked_returns_false(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel = svc.create_channel(
+        db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    suite = _suite(db_session)
+    assert svc.unlink_suite(db_session, suite.id, channel.id) is False
+
+
+def test_resolve_channel_webhooks_dedupes_across_channels(db_session: Any) -> None:
+    """Two channels that happen to point at the same webhook resolve to one URL —
+    the alerting layer's own dedup against the legacy field relies on this.
+    """
+    store = FakeSecretStore()
+    a = svc.create_channel(
+        db_session, name="A", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    b = svc.create_channel(
+        db_session, name="B", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    suite = _suite(db_session)
+    svc.link_suite(db_session, suite.id, a.id)
+    svc.link_suite(db_session, suite.id, b.id)
+    urls = svc.resolve_channel_webhooks(
+        db_session, suite.id, channel_type="teams", secret_store=store
+    )
+    assert urls == [_TEAMS_URL]
+
+
+def test_resolve_channel_webhooks_filters_by_type(db_session: Any) -> None:
+    store = FakeSecretStore()
+    teams = svc.create_channel(
+        db_session, name="T", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    slack = svc.create_channel(
+        db_session, name="S", type="slack", webhook=_SLACK_URL, secret_store=store
+    )
+    suite = _suite(db_session)
+    svc.link_suite(db_session, suite.id, teams.id)
+    svc.link_suite(db_session, suite.id, slack.id)
+    assert svc.resolve_channel_webhooks(
+        db_session, suite.id, channel_type="teams", secret_store=store
+    ) == [_TEAMS_URL]
+    assert svc.resolve_channel_webhooks(
+        db_session, suite.id, channel_type="slack", secret_store=store
+    ) == [_SLACK_URL]
+
+
+def test_resolve_channel_webhooks_skips_a_missing_secret(db_session: Any) -> None:
+    """Fail-soft, same posture as the per-suite/workspace resolvers: a channel
+    whose secret has gone missing is skipped, not a crash.
+    """
+    store = FakeSecretStore()
+    channel = svc.create_channel(
+        db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    suite = _suite(db_session)
+    svc.link_suite(db_session, suite.id, channel.id)
+    assert channel.webhook_secret_ref is not None
+    store.delete(channel.webhook_secret_ref)  # simulate the secret vanishing
+    assert (
+        svc.resolve_channel_webhooks(db_session, suite.id, channel_type="teams", secret_store=store)
+        == []
+    )
+
+
+def test_resolve_channel_email_recipients_unions_and_dedupes(db_session: Any) -> None:
+    store = FakeSecretStore()
+    a = svc.create_channel(
+        db_session, name="A", type="email", email_recipients="x@a.io,y@a.io", secret_store=store
+    )
+    b = svc.create_channel(
+        db_session, name="B", type="email", email_recipients="y@a.io,z@a.io", secret_store=store
+    )
+    suite = _suite(db_session)
+    svc.link_suite(db_session, suite.id, a.id)
+    svc.link_suite(db_session, suite.id, b.id)
+    assert svc.resolve_channel_email_recipients(db_session, suite.id) == (
+        "x@a.io",
+        "y@a.io",
+        "z@a.io",
+    )

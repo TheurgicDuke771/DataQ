@@ -87,6 +87,9 @@ WORKSPACE_ROLES = (ADMIN_ROLE, DEFAULT_WORKSPACE_ROLE, VIEWER_ROLE)
 ENVS = ("dev", "qa", "uat", "prod")
 # Per-suite alert threshold: 'fail' = fail/critical only, 'warn' = warn+, 'always' = all.
 ALERT_ON_POLICIES = ("fail", "warn", "always")
+# Reusable notification channels (#1514) — a destination, not a routing policy (that stays on
+# SuiteNotification).
+NOTIFICATION_CHANNEL_TYPES = ("teams", "slack", "email")
 
 # Incident lifecycle (ADR 0034 decision 4, #761): open → acknowledged → resolved; a resolved row
 # never reopens (a new incident links via `prior_incident_id`).
@@ -819,6 +822,59 @@ class SuiteNotification(Base):
     )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
+
+
+class NotificationChannel(Base):
+    """A reusable alert destination (#1514): define a Teams/Slack/email channel once,
+    reference it from many suites via `SuiteNotificationChannel`. Deliberately holds
+    no routing policy of its own — `alert_on`/severity/enabled stay on
+    `SuiteNotification`, so a channel is only ever a destination.
+    """
+
+    __tablename__ = "notification_channels"
+    __table_args__ = (
+        _in_check("type", NOTIFICATION_CHANNEL_TYPES, "notification_channel_type_valid"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    type: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Teams/Slack — URL is token-bearing, so only the SecretStore ref is stored.
+    webhook_secret_ref: Mapped[str | None] = mapped_column(String(256))
+    # Email — comma-separated addresses, not a secret, stored inline.
+    email_recipients: Mapped[str | None] = mapped_column(String(1024))
+    # Provenance, not lifecycle ownership — SET NULL; RESTRICT would make a user
+    # un-erasable (GDPR Art 17, #432/#1319), same rationale as every other created_by here.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class SuiteNotificationChannel(Base):
+    """A suite's reference to a reusable channel (#1514) — the many-to-many join.
+    Deleting the suite unlinks it silently (cascade). Deleting the channel is
+    application-gated on having no links left (mirrors `Connection` delete guard 1);
+    `channel_id` is RESTRICT as the DB-level backstop for that guard, same pairing
+    as the comparison-source FK on `Check` (ADR 0015).
+    """
+
+    __tablename__ = "suite_notification_channels"
+    __table_args__ = (
+        # The dependent-suites lookup on channel delete/rotate scans by channel_id.
+        Index("ix_suite_notification_channels_channel_id", "channel_id"),
+    )
+
+    suite_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), primary_key=True
+    )
+    channel_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("notification_channels.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    created_at: Mapped[datetime] = _created_at()
 
 
 class LineageEdge(Base):

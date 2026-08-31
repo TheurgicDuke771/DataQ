@@ -18,7 +18,7 @@ from backend.app.alerting.base import (
 from backend.app.alerting.routing import route_for
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretNotFoundError, SecretStore
-from backend.app.services import notification_service
+from backend.app.services import channel_service, notification_service
 
 log = get_logger(__name__)
 
@@ -252,11 +252,15 @@ class EmailPublisher:
         route = route_for(report, policy)
         if not route.should_send:
             return
-        recipients = notification_service.resolve_email_recipients(
+        primary = notification_service.resolve_email_recipients(
             config, workspace_recipients=self._recipients
         )
+        channel_recipients = channel_service.resolve_channel_email_recipients(
+            session, report.suite_id
+        )
+        recipients = tuple(dict.fromkeys([*primary, *channel_recipients]))
         if not recipients:
-            return  # no per-suite override and no workspace EMAIL_TO → no-op
+            return  # no per-suite override, no linked email channel, no workspace EMAIL_TO
         try:
             password = self._secret_store.get(self._password_secret_name)
         except SecretNotFoundError:

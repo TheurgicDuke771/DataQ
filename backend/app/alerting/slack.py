@@ -17,7 +17,7 @@ from backend.app.alerting.base import (
 from backend.app.alerting.routing import CRITICAL, Route, route_for
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.services import notification_service
+from backend.app.services import channel_service, notification_service
 
 log = get_logger(__name__)
 
@@ -184,28 +184,36 @@ class SlackPublisher:
         route = route_for(report, policy)
         if not route.should_send:
             return
-        webhook = notification_service.resolve_slack_webhook(
+        primary = notification_service.resolve_slack_webhook(
             config,
             secret_store=self._secret_store,
             workspace_secret_name=self._webhook_secret_name,
         )
-        if not webhook:
-            return
-        if not self._webhook_allowed(webhook):
-            log.warning("slack_webhook_not_allowed", run_id=str(report.run_id))
-            return
-        response = httpx.post(
-            webhook, json=render_slack_message(report, route), timeout=self._timeout
+        channel_webhooks = channel_service.resolve_channel_webhooks(
+            session, report.suite_id, channel_type="slack", secret_store=self._secret_store
         )
-        response.raise_for_status()
-        log.info(
-            "slack_alert_sent",
-            run_id=str(report.run_id),
-            suite=report.suite_name,
-            worst_severity=report.worst_severity,
-            urgency=route.urgency,
-            failed_checks=report.failed_checks,
-        )
+        webhooks = list(dict.fromkeys(w for w in [primary, *channel_webhooks] if w))
+        if not webhooks:
+            return
+        payload = render_slack_message(report, route)
+        for webhook in webhooks:
+            if not self._webhook_allowed(webhook):
+                log.warning("slack_webhook_not_allowed", run_id=str(report.run_id))
+                continue
+            try:
+                response = httpx.post(webhook, json=payload, timeout=self._timeout)
+                response.raise_for_status()
+            except Exception:
+                log.exception("slack_destination_send_failed", run_id=str(report.run_id))
+                continue
+            log.info(
+                "slack_alert_sent",
+                run_id=str(report.run_id),
+                suite=report.suite_name,
+                worst_severity=report.worst_severity,
+                urgency=route.urgency,
+                failed_checks=report.failed_checks,
+            )
 
     def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:
         """Post a connection poll-health edge to the **workspace** Slack webhook (#837)."""
