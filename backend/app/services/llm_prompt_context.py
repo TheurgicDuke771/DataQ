@@ -47,14 +47,16 @@ def target_identity(suite: Suite) -> dict[str, Any]:
     }
 
 
+def qualify(catalog: str | None, schema: str | None, table: str | None) -> str:
+    """A dotted `catalog.schema.table` identifier, skipping any part that's `None`."""
+    return ".".join(p for p in (catalog, schema, table) if p)
+
+
 def qualified_target(suite: Suite) -> str:
     target = suite.target or {}
-    parts = (
-        _clean(target.get("catalog")),
-        _clean(target.get("schema")),
-        _clean(target.get("table")),
+    return qualify(
+        _clean(target.get("catalog")), _clean(target.get("schema")), _clean(target.get("table"))
     )
-    return ".".join(p for p in parts if p)
 
 
 def check_sql_target_preconditions(
@@ -135,7 +137,7 @@ def list_columns_for_target(
         masked=False,
         values_in_scope=False,
         columns=columns,
-        detail={"consumer": consumer, "table": table},
+        detail={"consumer": consumer, "table": table, "schema": schema, "catalog": catalog},
     )
     return columns
 
@@ -167,6 +169,18 @@ class MaskedProfile:
     columns: list[ColumnProfile]
 
 
+def _policy_for_target(
+    policy: dict[str, Any] | None, *, probed_other_target: bool
+) -> dict[str, Any] | None:
+    """`suite.column_policy`, narrowed for a probe against a target that ISN'T
+    the suite's own — see `masked_profile_for_target`'s docstring for why
+    `identifier_column` (but not `pii_columns`) is dropped.
+    """
+    if not probed_other_target or not policy or "identifier_column" not in policy:
+        return policy
+    return {k: v for k, v in policy.items() if k != "identifier_column"}
+
+
 def masked_profile_for_target(
     session: Session,
     suite: Suite,
@@ -194,7 +208,15 @@ def masked_profile_for_target(
     and `applicable_tags` narrows them to only the values that are sensitive
     on ANY asset — an unrelated table's column sharing a name with a
     known-sensitive one must not be waved through as "confirmed non-PII"
-    just because the tag lookup targeted a different table entirely.
+    just because the tag lookup targeted a different table entirely. The
+    suite's `column_policy` gets the SAME narrowing (#1649 review):
+    `identifier_column` is a per-asset "this is the safe shown identifier"
+    clearance that means nothing on an unrelated table — nearly every table
+    has a column literally named `id`, and a bare name match there must not
+    silently satisfy the G3 fail-closed floor for a column never actually
+    reviewed in THAT table's context. `pii_columns` is kept: masking an
+    unrelated table's column because its name matches a known-PII name is
+    the conservative (fail-SAFE) direction, unlike a clearance.
     """
     try:
         profile = profile_service.profile_connection(
@@ -224,8 +246,9 @@ def masked_profile_for_target(
     tags = applicable_tags(
         run_service.asset_column_tags(session, suite), probed_other_target=probed_other_target
     )
+    policy = _policy_for_target(suite.column_policy, probed_other_target=probed_other_target)
     sensitive = sensitive_profile_columns(
-        profile.columns, policy=suite.column_policy, tags=tags, destination=Destination.EGRESS
+        profile.columns, policy=policy, tags=tags, destination=Destination.EGRESS
     )
     masked = mask_profile_columns(profile.columns, sensitive=sensitive)
     record_probe_access(
@@ -237,7 +260,7 @@ def masked_profile_for_target(
         masked=True,
         columns=columns,
         sensitive_columns=sensitive,
-        detail={"consumer": consumer, "table": table},
+        detail={"consumer": consumer, "table": table, "schema": schema, "catalog": catalog},
     )
     return MaskedProfile(row_count=profile.row_count, columns=masked)
 

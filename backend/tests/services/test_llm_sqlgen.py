@@ -413,6 +413,27 @@ def test_additional_table_profile_is_masked_and_recorded_as_a_different_target(
     assert tables_seen == {"ORDERS", "TRAFFIC"}
 
 
+def test_additional_table_audit_event_carries_its_own_schema_not_just_the_table_name(
+    db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two same-named tables in different schemas are distinct (the dedup fix
+    above) — the audit trail must be able to tell them apart too, not just
+    record `table`, or a reader can't distinguish which physical table a
+    `column.list`/`column.profile` event actually touched.
+    """
+    suite = make_sql_suite(db_session, admin)  # RETAIL.ORDERS
+    monkeypatch.setattr(
+        profile_service_module, "list_columns", _by_table_columns({"ORDERS": ["ID"]})
+    )
+    invocation = _invocation(
+        db_session, suite, admin, additional_tables=[{"table": "ORDERS", "schema": "ARCHIVE"}]
+    )
+    llm_sqlgen.build_prompt(db_session, invocation, store)
+    events = _access_events(db_session, suite, "column.list")
+    by_schema = {(e.after or {}).get("schema"): e for e in events}
+    assert set(by_schema) == {"RETAIL", "ARCHIVE"}
+
+
 def test_additional_table_profile_is_probed_as_a_different_target_not_the_suites_own(
     db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -463,6 +484,75 @@ def test_additional_table_profile_is_probed_as_a_different_target_not_the_suites
     assert seen == [False, True]  # primary table first, then the additional one
 
 
+def test_policy_for_target_strips_identifier_column_for_a_different_target() -> None:
+    """The G3 fail-closed floor's IDENTIFIER clearance is per-asset — a bare
+    name match on an unrelated table must not silently satisfy it (#1649
+    review). `pii_columns` is kept: masking an unrelated table's column
+    because its name matches a known-PII name is the conservative (fail-SAFE)
+    direction, unlike a clearance.
+    """
+    policy = {"identifier_column": "ID", "pii_columns": ["SSN"], "require_classification": True}
+    narrowed = llm_prompt_context._policy_for_target(policy, probed_other_target=True)
+    assert narrowed is not None
+    assert "identifier_column" not in narrowed
+    assert narrowed["pii_columns"] == ["SSN"]
+    assert narrowed["require_classification"] is True
+
+
+def test_policy_for_target_is_unchanged_for_the_suites_own_target() -> None:
+    policy = {"identifier_column": "ID"}
+    assert llm_prompt_context._policy_for_target(policy, probed_other_target=False) == policy
+
+
+def test_policy_for_target_handles_a_null_policy() -> None:
+    assert llm_prompt_context._policy_for_target(None, probed_other_target=True) is None
+
+
+def test_additional_table_identifier_column_clearance_does_not_transfer(
+    db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A suite's `identifier_column: "ID"` clears ITS OWN `ID` column in
+    fail-closed mode — it must NOT also clear an unrelated `ID` column on an
+    additional table just because the name matches (#1649 review).
+    """
+    suite = make_sql_suite(
+        db_session,
+        admin,
+        column_policy={"identifier_column": "ID", "require_classification": True},
+    )
+    monkeypatch.setattr(
+        profile_service_module,
+        "list_columns",
+        _by_table_columns({"ORDERS": ["ID"], "TRAFFIC": ["ID"]}),
+    )
+    monkeypatch.setattr(
+        profile_service_module,
+        "profile_connection",
+        lambda *_a, **_kw: ProfileResult(
+            row_count=1,
+            columns=[
+                ColumnProfile(
+                    column="ID",
+                    null_count=0,
+                    null_fraction=0.0,
+                    distinct_count=1,
+                    min_value=1,
+                    max_value=1,
+                    top_values=[],
+                )
+            ],
+        ),
+    )
+    invocation = _invocation(
+        db_session, suite, admin, include_profile=True, additional_tables=[{"table": "TRAFFIC"}]
+    )
+    llm_sqlgen.build_prompt(db_session, invocation, store)
+    profile_events = _access_events(db_session, suite, "column.profile")
+    by_table = {(e.after or {}).get("table"): (e.after or {}) for e in profile_events}
+    assert "ID" not in by_table["ORDERS"].get("sensitive_columns", [])  # primary: named-cleared
+    assert "ID" in by_table["TRAFFIC"].get("sensitive_columns", [])  # additional: NOT cleared
+
+
 def test_additional_tables_over_the_cap_is_refused(
     db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -497,6 +587,42 @@ def test_additional_table_matching_the_primary_table_is_refused(
     suite = make_sql_suite(db_session, admin)  # table="ORDERS"
     monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: ["X"])
     invocation = _invocation(db_session, suite, admin, additional_tables=[{"table": "orders"}])
+    with pytest.raises(LLMRequestInvalidError):
+        llm_sqlgen.build_prompt(db_session, invocation, store)
+
+
+def test_same_named_table_in_a_different_schema_is_not_a_duplicate(
+    db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dedup is schema/catalog-aware, not bare-table-name: `RETAIL.ORDERS` (the
+    primary) and `ARCHIVE.ORDERS` (an additional table) are genuinely distinct
+    tables, e.g. for a reconciliation-style rule.
+    """
+    suite = make_sql_suite(db_session, admin)  # RETAIL.ORDERS
+    monkeypatch.setattr(
+        profile_service_module,
+        "list_columns",
+        _by_table_columns({"ORDERS": ["ID"]}),
+    )
+    invocation = _invocation(
+        db_session, suite, admin, additional_tables=[{"table": "ORDERS", "schema": "ARCHIVE"}]
+    )
+    prompt, _, _ = llm_sqlgen.build_prompt(db_session, invocation, store)
+    assert "Additional table: ARCHIVE.ORDERS" in prompt
+
+
+def test_same_table_defaulted_and_explicit_schema_still_dedups(
+    db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The OTHER direction: an additional-table entry that spells out the
+    primary's own schema explicitly is still the SAME table as one that
+    omits it and gets it by default — both must collide with the primary.
+    """
+    suite = make_sql_suite(db_session, admin)  # RETAIL.ORDERS
+    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: ["X"])
+    invocation = _invocation(
+        db_session, suite, admin, additional_tables=[{"table": "ORDERS", "schema": "RETAIL"}]
+    )
     with pytest.raises(LLMRequestInvalidError):
         llm_sqlgen.build_prompt(db_session, invocation, store)
 

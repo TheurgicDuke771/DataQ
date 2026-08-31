@@ -65,7 +65,9 @@ _SYSTEM = (
 _MULTI_TABLE_SYSTEM_ADDENDUM = (
     " More than one table is given below (#1649) — they are all on the SAME "
     "connection, so a JOIN across them is fine when the rule needs one; still "
-    "never invent a table, a column, or a join key not shown."
+    "never invent a table, a column, or a join key not shown. Two tables can "
+    "have a column with the same name that means different things — always "
+    "qualify a column with its table when more than one table has that name."
 )
 
 
@@ -155,20 +157,43 @@ def _clean_or_none(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-def _parse_additional_tables(raw: Any, *, primary_table: str | None) -> list[dict[str, str | None]]:
-    """Validates `request["additional_tables"]` — never silently drops or
-    truncates a malformed entry (the #570 clean-input rule): the whole
-    request is refused instead of generating from a partial table list.
+def validate_additional_tables(
+    raw: Any,
+    *,
+    primary_table: str | None,
+    primary_schema: str | None,
+    primary_catalog: str | None,
+) -> list[dict[str, str | None]]:
+    """Validates `additional_tables` — never silently drops or truncates a
+    malformed entry (the #570 clean-input rule): the whole request is refused
+    instead of generating from a partial table list. Shared by the route (a
+    synchronous 422) and `build_prompt` (the TOCTOU re-check on raw JSONB it
+    cannot trust), the same two-altitude pattern `check_generation_preconditions`
+    already uses.
+
+    An omitted `schema`/`catalog` on an entry defaults to the PRIMARY table's
+    own — the common case (a related table alongside it) — and dedup runs on
+    that fully-resolved identity, not the bare table name: two tables named
+    `orders` in different schemas/catalogs are genuinely different tables, and
+    two spellings of the SAME table (one explicit, one defaulted) still count
+    as one.
     """
     if raw is None:
         return []
     if not isinstance(raw, list):
         raise LLMRequestInvalidError("additional_tables must be a list")
+    # Deliberate TOCTOU re-check: the API layer already enforces this cap via
+    # Pydantic's `max_length`, but `build_prompt` re-validates raw JSONB it
+    # cannot trust came from that route at all.
     if len(raw) > MAX_ADDITIONAL_TABLES:
         raise LLMRequestInvalidError(
             f"additional_tables accepts at most {MAX_ADDITIONAL_TABLES} tables"
         )
-    seen = {_norm_table(primary_table)} if primary_table else set()
+    seen: set[str] = set()
+    if primary_table:
+        seen.add(
+            _norm_table(llm_prompt_context.qualify(primary_catalog, primary_schema, primary_table))
+        )
     parsed: list[dict[str, str | None]] = []
     for entry in raw:
         if not isinstance(entry, dict):
@@ -176,17 +201,14 @@ def _parse_additional_tables(raw: Any, *, primary_table: str | None) -> list[dic
         table = entry.get("table")
         if not isinstance(table, str) or not table.strip():
             raise LLMRequestInvalidError("each additional_tables entry needs a non-blank table")
-        key = _norm_table(table)
+        table = table.strip()
+        schema = _clean_or_none(entry.get("schema")) or primary_schema
+        catalog = _clean_or_none(entry.get("catalog")) or primary_catalog
+        key = _norm_table(llm_prompt_context.qualify(catalog, schema, table))
         if key in seen:
             raise LLMRequestInvalidError(f"duplicate table in additional_tables: {table!r}")
         seen.add(key)
-        parsed.append(
-            {
-                "table": table.strip(),
-                "schema": _clean_or_none(entry.get("schema")),
-                "catalog": _clean_or_none(entry.get("catalog")),
-            }
-        )
+        parsed.append({"table": table, "schema": schema, "catalog": catalog})
     return parsed
 
 
@@ -201,16 +223,15 @@ def _additional_table_context(
     actor: uuid.UUID | None,
 ) -> str:
     """One additional same-connection table's block: column listing, plus an
-    optional profile. `schema`/`catalog` default to the suite's OWN target's
-    values when the caller omits them — the common case (a related table in
-    the same schema/catalog). Cross-connection is structurally impossible:
-    this always resolves against `connection`, the suite's own — there is no
+    optional profile. `ref`'s `schema`/`catalog` are already fully resolved by
+    `validate_additional_tables` (defaulted from the primary target when the
+    caller omitted them). Cross-connection is structurally impossible: this
+    always resolves against `connection`, the suite's own — there is no
     connection reference in the request shape to attempt one with.
     """
-    primary = llm_prompt_context.target_identity(suite)
     table = ref["table"]
-    schema = ref["schema"] or primary.get("schema")
-    catalog = ref["catalog"] or primary.get("catalog")
+    schema = ref["schema"]
+    catalog = ref["catalog"]
     columns = llm_prompt_context.list_columns_for_target(
         session,
         suite,
@@ -222,7 +243,7 @@ def _additional_table_context(
         actor=actor,
         consumer="llm_sql_generation",
     )
-    qualified = ".".join(p for p in (catalog, schema, table) if p)
+    qualified = llm_prompt_context.qualify(catalog, schema, table)
     block = f"Additional table: {qualified}\nColumns:\n" + "\n".join(f"- {c}" for c in columns)
     if not include_profile:
         return block
@@ -266,6 +287,16 @@ def build_prompt(
     assert connection is not None  # preconditions refused None  # nosec B101
     actor = invocation.requested_by_user_id
     include_profile = bool(request.get("include_profile"))
+    primary = llm_prompt_context.target_identity(suite)
+    # Validated BEFORE any live warehouse call: a malformed additional_tables entry
+    # is a purely local, cheap error and shouldn't cost the primary table's own
+    # column-list (+ optional profile) round trip first.
+    additional = validate_additional_tables(
+        request.get("additional_tables"),
+        primary_table=primary.get("table"),
+        primary_schema=primary.get("schema"),
+        primary_catalog=primary.get("catalog"),
+    )
     context, columns = _schema_context(
         session, suite, connection, secret_store=secret_store, actor=actor
     )
@@ -273,10 +304,6 @@ def build_prompt(
         context += _profile_context(
             session, suite, connection, columns, secret_store=secret_store, actor=actor
         )
-    additional = _parse_additional_tables(
-        request.get("additional_tables"),
-        primary_table=suite.target.get("table") if suite.target else None,
-    )
     for ref in additional:
         context += "\n\n" + _additional_table_context(
             session,

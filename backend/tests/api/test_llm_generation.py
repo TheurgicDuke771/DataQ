@@ -249,6 +249,30 @@ def test_generation_additional_table_blank_name_is_a_synchronous_422(
     assert dispatched == []
 
 
+def test_generation_duplicate_additional_table_is_a_synchronous_422(
+    client: TestClient,
+    db_session: Any,
+    store: FakeSecretStore,
+    dispatched: list[str],
+    as_role: Callable[..., tuple[Any, dict[str, str]]],
+) -> None:
+    """The dedup check (#1649 review) is shared by the route and the worker's
+    TOCTOU re-check, same as every other precondition in this file — a bad
+    additional_tables list must not queue and only fail later.
+    """
+    owner, headers = as_role("member")
+    enable_llm(db_session, owner, store)
+    suite = make_sql_suite(db_session, owner)
+    resp = client.post(
+        "/api/v1/llm/sql_generation",
+        json=_body(suite, additional_tables=[{"table": "TRAFFIC"}, {"table": "traffic"}]),
+        headers=headers,
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "llm_request_invalid"
+    assert dispatched == []
+
+
 def test_additional_table_ref_has_no_connection_field() -> None:
     """Cross-connection joins are refused structurally, not at runtime: the
     request shape itself carries no way to name a different connection.

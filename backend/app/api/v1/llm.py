@@ -24,6 +24,7 @@ from backend.app.db.session import get_db
 from backend.app.services import (
     incident_service,
     llm_checksuggest,
+    llm_prompt_context,
     llm_rca,
     llm_service,
     llm_sqlgen,
@@ -80,9 +81,10 @@ class AdditionalTableRef(ApiRequestModel):
     @field_validator("table")
     @classmethod
     def _not_blank(cls, value: str) -> str:
-        if not value.strip():
+        stripped = value.strip()
+        if not stripped:
             raise ValueError("table must not be blank")
-        return value
+        return stripped
 
 
 class SqlGenerationRequest(ApiRequestModel):
@@ -166,6 +168,16 @@ def generate_sql(
     suite = require_permission(db, payload.suite_id, current_user.id, minimum="edit")
     connection = db.get(Connection, suite.connection_id)
     llm_sqlgen.check_generation_preconditions(suite, connection)
+    primary = llm_prompt_context.target_identity(suite)
+    additional_tables = llm_sqlgen.validate_additional_tables(
+        [
+            {"table": t.table, "schema": t.schema_, "catalog": t.catalog}
+            for t in payload.additional_tables
+        ],
+        primary_table=primary.get("table"),
+        primary_schema=primary.get("schema"),
+        primary_catalog=primary.get("catalog"),
+    )
     invocation = llm_service.create_invocation(
         db,
         kind=llm_sqlgen.SQLGEN_KIND,
@@ -174,10 +186,7 @@ def generate_sql(
         request={
             "description": payload.description,
             "include_profile": payload.include_profile,
-            "additional_tables": [
-                {"table": t.table, "schema": t.schema_, "catalog": t.catalog}
-                for t in payload.additional_tables
-            ],
+            "additional_tables": additional_tables,
         },
     )
     return _queue_invocation(db, invocation)
