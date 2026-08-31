@@ -1,0 +1,67 @@
+<task-notification>
+<task-id>b236e5s36</task-id>
+<tool-use-id>toolu_018QLoZBo3sFuoFfv35XgCyu</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/b236e5s36.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch CI on the trivial docs PR" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>abd9782bd3114d487</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/abd9782bd3114d487.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle B: removed-behavior auditor" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Findings (Angle B — removed/overclaimed behavior audit):
+
+```json
+[
+  {
+    "file": "docs/progress.md",
+    "line": 146,
+    "summary": "Doc claims the battery proves a hostile 'column' name reaches the prompt as inert data, but no test in the new file actually injects into the column-name slot.",
+    "failure_scenario": "test_llm_injection_battery.py only injects into top_value, table, and schema slots (lines 76-148); the 'column' claim rests solely on a comparison in a docstring comment ('same as a hostile column name', line 82), never on an actual assertion where list_columns()/ColumnProfile.column is set to an injection string and checked against the assembled prompt (llm_checksuggest.py:176 embeds `col.column` directly). A reader of progress.md would wrongly believe column-name injection is regression-tested; a future change to how column names are rendered into the prompt could break that guarantee with no test catching it."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 146,
+    "summary": "'(mutation-verified — all three checks fail against a deliberately reintroduced leak)' is asserted with no corresponding evidence anywhere in the diff.",
+    "failure_scenario": "Nothing in test_llm_injection_battery.py, adversarial.py, or the PR's own files records a mutation-verification pass (no note of which fix was reverted, no script, no 'three checks' enumerated anywhere in the test file). A reader trusts these tests were proven to actually catch a reintroduced leak by reverting the protection and watching them fail; if that step was never actually performed, an ineffective or tautological test could be presented as a proven regression guard."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 146,
+    "summary": "'(never bypasses the output gate)' is credited to this PR's new file, but the module's own docstring says that half of the guarantee is established by PRE-EXISTING test batteries, not new work here.",
+    "failure_scenario": "test_llm_injection_battery.py:3-11 explicitly states 'the per-feature output-gate batteries already living in test_llm_sqlgen.py / test_llm_checksuggest.py ARE that half of this battery; this module fills the gaps' — i.e. the output-gate proof is old coverage, merely referenced. progress.md's phrasing makes it look like #1632's new work established the full injection-defense story (input AND output sides) end-to-end, overstating what this diff actually adds."
+  },
+  {
+    "file": "backend/tests/services/test_llm_injection_battery.py",
+    "line": 161,
+    "summary": "The 'structural guarantee' that neither builder can ever read sample rows is enforced only by a single-line-import text heuristic that a routine Black reformat would silently defeat.",
+    "failure_scenario": "`import_lines` keeps only lines literally starting with 'from backend.app.db.models import' (line 167), then asserts `\"Result\" not in import_lines[0]` (line 171). If llm_sqlgen.py or llm_checksuggest.py ever adds `Result` to that import and Black wraps it to a parenthesized multi-line form (as it does once a line exceeds its length limit), `Result` would sit on a continuation line the assertion never inspects — `import_lines[0]` would just be `'from backend.app.db.models import ('`, so `\"Result\" not in import_lines[0]` stays True and the test keeps passing even though the forbidden model is now imported. The 'structural guarantee' silently stops being enforced exactly when it matters most."
+  }
+]
+```
+
+Supporting detail: `backend/app/services/llm_checksuggest.py:176` (`lines.append(f"- {col.column}: ...")`) confirms column names genuinely do reach the prompt the same way top-values do, so the missing column-slot test (finding 1) is a real coverage gap, not a non-issue — the mechanism it would need to exercise already exists in the code, it's just untested.</result>
+<usage><subagent_tokens>112674</subagent_tokens><tool_uses>8</tool_uses><duration_ms>105707</duration_ms></usage>
+</task-notification>
+
+---
+
+got any review?
+
+---
+
+continue...
+
+---
+
+Continue
+
+---
+
+Continue

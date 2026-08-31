@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "6385332a2311",
+  "strategy": "manual-commit",
+  "branch": "feature/1635-evidence-card-enrichment",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/63/85332a2311/0/metadata.json",
+      "transcript": "/63/85332a2311/0/full.jsonl",
+      "compact_transcript": "/63/85332a2311/0/transcript.jsonl",
+      "content_hash": "/63/85332a2311/0/content_hash.txt",
+      "prompt": "/63/85332a2311/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1456,
+    "cache_creation_tokens": 2457228,
+    "cache_read_tokens": 352093519,
+    "output_tokens": 414386,
+    "api_call_count": 730
+  }
+}
