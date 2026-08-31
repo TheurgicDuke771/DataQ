@@ -313,6 +313,18 @@ def test_render_templated_payload_interpolates_within_a_longer_string() -> None:
     assert rendered == {"text": "2 checks failed in Orders QA"}
 
 
+def test_render_templated_payload_interpolates_a_non_string_as_valid_json() -> None:
+    """A placeholder embedded inside a longer string (not an exact match) must
+    still produce embeddable JSON when the resolved value is a dict/list —
+    str() would render Python repr (single quotes), corrupting the field for
+    any JSON-aware receiver.
+    """
+    payload = {"checks": [{"check_name": "not-null id"}]}
+    rendered = render_templated_payload(payload, {"text": "failing: {{checks}}"})
+    assert rendered == {"text": 'failing: [{"check_name": "not-null id"}]'}
+    assert json.loads(rendered["text"].removeprefix("failing: ")) == [{"check_name": "not-null id"}]
+
+
 def test_render_templated_payload_resolves_a_dot_path_into_a_list() -> None:
     payload = {"checks": [{"check_name": "not-null id"}, {"check_name": "unique sku"}]}
     rendered = render_templated_payload(payload, {"first": "{{checks.0.check_name}}"})

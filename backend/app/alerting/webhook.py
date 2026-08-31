@@ -134,7 +134,14 @@ def _render_template_value(node: Any, payload: dict[str, Any]) -> Any:
 
         def _interpolate(match: re.Match[str]) -> str:
             resolved = _resolve_path(payload, match.group(1))
-            return "" if resolved is _MISSING else str(resolved)
+            if resolved is _MISSING:
+                return ""
+            # A resolved string embeds as-is; anything else (a number, bool,
+            # or a nested object/list — e.g. `{{checks}}` inside a longer
+            # string) must go through json.dumps, not str(), or a dict/list
+            # renders as Python repr (single quotes) — invalid JSON — inside
+            # what's meant to be a JSON string value.
+            return resolved if isinstance(resolved, str) else json.dumps(resolved)
 
         return _PLACEHOLDER.sub(_interpolate, node)
     if isinstance(node, dict):
@@ -190,6 +197,9 @@ class WebhookPublisher:
         if not destinations:
             return
         base_payload = render_webhook_payload(report)
+        # Computed once — reused verbatim for every destination with no
+        # template of its own, the common case (templates are opt-in).
+        base_body = json.dumps(base_payload, sort_keys=True).encode("utf-8")
         delivered = 0
         # destinations is already deduped by URL (channel_service.resolve_webhook_channels).
         for dest in destinations:
@@ -200,12 +210,11 @@ class WebhookPublisher:
             if not notification_service.is_safe_generic_webhook_url(dest.url):
                 log.warning("webhook_destination_not_allowed", run_id=str(report.run_id))
                 continue
-            payload = (
-                render_templated_payload(base_payload, dest.payload_template)
-                if dest.payload_template is not None
-                else base_payload
-            )
-            body = json.dumps(payload, sort_keys=True).encode("utf-8")
+            if dest.payload_template is not None:
+                payload = render_templated_payload(base_payload, dest.payload_template)
+                body = json.dumps(payload, sort_keys=True).encode("utf-8")
+            else:
+                body = base_body
             headers = {
                 "Content-Type": "application/json",
                 _SIGNATURE_HEADER: _sign(body, dest.hmac_secret),

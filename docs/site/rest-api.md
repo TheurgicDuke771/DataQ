@@ -108,6 +108,16 @@ that isn't. `auth_header_value` is write-only, same as every other channel crede
 both unset keeps the channel sending the plain generic payload with no extra header — the
 pre-template behavior, unchanged.
 
+`payload_template` is stored as plain JSON, not a SecretStore-backed credential — but a template
+commonly has nowhere else to put a receiver's static routing/integration key than as a literal
+value in the JSON, so `GET`/`LIST` only ever include it for a workspace **Admin** caller; every
+other authenticated user gets `has_payload_template` (a presence-only boolean) instead, the same
+shape already used for genuine secrets. Put any real credential in `auth_header_value` instead —
+it's encrypted at rest and never echoed back to anyone. Changing `webhook_url` on a channel that
+already has a stored auth header requires re-supplying `auth_header_value` in the same request
+(`422 channel_credential_redirect` otherwise) — silently repointing the destination must never
+carry a stored credential to a URL the caller didn't just prove they still control.
+
 | Method | Path | What |
 |---|---|---|
 | GET / POST | `/notification-channels` | List / create a channel. |

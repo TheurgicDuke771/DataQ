@@ -18,6 +18,7 @@ from backend.app.db.models import (
 )
 from backend.app.services import channel_service as svc
 from backend.app.services.channel_service import (
+    ChannelCredentialRedirectError,
     ChannelFieldMismatchError,
     ChannelInUseError,
     ChannelNotFoundError,
@@ -847,3 +848,167 @@ def test_resolve_webhook_channels_omits_auth_header_when_its_secret_is_missing(
     assert dest.auth_header_name is None
     assert dest.auth_header_value is None
     assert dest.hmac_secret == secret  # the HMAC key is unaffected
+
+
+# ── auth-header pairing + credential-redirect (#1663 review) ────────────────
+
+
+def test_create_channel_rejects_an_auth_header_value_with_no_name(db_session: Any) -> None:
+    """A value with no visible name is a secret that can never be sent
+    (resolve_webhook_channels requires BOTH) — must be rejected outright, not
+    silently minted as an orphan.
+    """
+    with pytest.raises(InvalidAuthHeaderError):
+        svc.create_channel(
+            db_session,
+            name="Ops",
+            type="webhook",
+            webhook_url=_WEBHOOK_URL,
+            auth_header_value="sk-abc",
+            secret_store=FakeSecretStore(),
+        )
+
+
+def test_create_channel_allows_an_auth_header_name_with_no_value(db_session: Any) -> None:
+    """The other direction is fine — an inert, incrementally-configured state
+    (matches the existing webhook_url-then-secret shell precedent).
+    """
+    channel, _secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        auth_header_name="X-Api-Key",
+        secret_store=FakeSecretStore(),
+    )
+    assert channel.auth_header_name == "X-Api-Key"
+    assert channel.auth_header_secret_ref is None
+
+
+def test_update_channel_rejects_setting_a_value_on_a_channel_with_no_name(
+    db_session: Any,
+) -> None:
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session, name="Ops", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
+    )
+    with pytest.raises(InvalidAuthHeaderError):
+        svc.update_channel(db_session, channel.id, auth_header_value="sk-abc", secret_store=store)
+
+
+def test_update_channel_rejects_clearing_the_name_while_setting_a_value(
+    db_session: Any,
+) -> None:
+    """Clearing auth_header_name="" and setting auth_header_value in the SAME
+    call is the same trap from the other direction — the EFFECTIVE post-call
+    name is what must be checked, not just whether a name was supplied at all.
+    """
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        auth_header_name="X-Api-Key",
+        auth_header_value="old",
+        secret_store=store,
+    )
+    with pytest.raises(InvalidAuthHeaderError):
+        svc.update_channel(
+            db_session,
+            channel.id,
+            auth_header_name="",
+            auth_header_value="new",
+            secret_store=store,
+        )
+
+
+def test_update_channel_clearing_the_name_also_deletes_the_orphaned_secret(
+    db_session: Any,
+) -> None:
+    """The actual bug this review caught: clearing just the name used to leave
+    the secret alive in the store with nothing pointing at it by name again.
+    """
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        auth_header_name="X-Api-Key",
+        auth_header_value="sk-abc",
+        secret_store=store,
+    )
+    ref = channel.auth_header_secret_ref
+    assert ref is not None
+
+    channel, _secret = svc.update_channel(
+        db_session, channel.id, auth_header_name="", secret_store=store
+    )
+    assert channel.auth_header_name is None
+    assert channel.auth_header_secret_ref is None
+    with pytest.raises(SecretNotFoundError):
+        store.get(ref)
+
+
+def test_update_channel_rejects_a_url_change_without_resupplying_the_auth_header(
+    db_session: Any,
+) -> None:
+    """The #1401 credential-redirect class: webhook_url and auth_header_value
+    are independent fields, so silently repointing the URL would send a
+    stored credential to wherever it now points with no proof the caller
+    still knows the value.
+    """
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        auth_header_name="X-Api-Key",
+        auth_header_value="sk-abc",
+        secret_store=store,
+    )
+    with pytest.raises(ChannelCredentialRedirectError):
+        svc.update_channel(
+            db_session, channel.id, webhook_url="https://1.1.1.1/new-hook", secret_store=store
+        )
+
+
+def test_update_channel_allows_a_url_change_when_the_auth_header_is_resupplied(
+    db_session: Any,
+) -> None:
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        auth_header_name="X-Api-Key",
+        auth_header_value="sk-abc",
+        secret_store=store,
+    )
+    new_url = "https://1.1.1.1/new-hook"
+    channel, _secret = svc.update_channel(
+        db_session,
+        channel.id,
+        webhook_url=new_url,
+        auth_header_value="sk-abc-resupplied",
+        secret_store=store,
+    )
+    assert channel.webhook_url == new_url
+
+
+def test_update_channel_allows_a_url_change_with_no_stored_auth_header(db_session: Any) -> None:
+    """The guard must not block the ordinary, common case — a channel that
+    never had an auth header configured at all.
+    """
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session, name="Ops", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
+    )
+    new_url = "https://1.1.1.1/new-hook"
+    channel, _secret = svc.update_channel(
+        db_session, channel.id, webhook_url=new_url, secret_store=store
+    )
+    assert channel.webhook_url == new_url

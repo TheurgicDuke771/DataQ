@@ -430,3 +430,92 @@ def test_update_channel_clears_the_payload_template_via_rest(
     )
     assert resp.status_code == 200
     assert resp.json()["payload_template"] is None
+
+
+# ── payload_template credential-exposure fix (#1663 review) ─────────────────
+
+
+@pytest.mark.parametrize("role", ("member", "viewer"))
+def test_payload_template_is_hidden_from_non_admin_readers(
+    client: TestClient, as_role: Any, role: str
+) -> None:
+    """The template may embed a receiver's literal routing/integration key
+    (the PR's own PagerDuty worked example does exactly this) — a non-admin
+    must never read it back, only know one is set.
+    """
+    _admin, admin_headers = as_role("admin")
+    created = client.post(
+        "/api/v1/notification-channels",
+        json={
+            "name": "PagerDuty",
+            "type": "webhook",
+            "webhook_url": _WEBHOOK_URL,
+            "payload_template": _TEMPLATE,
+        },
+        headers=admin_headers,
+    ).json()
+    _, headers = as_role(role)
+
+    listed = client.get("/api/v1/notification-channels", headers=headers)
+    row = next(c for c in listed.json() if c["id"] == created["id"])
+    assert row["payload_template"] is None
+    assert row["has_payload_template"] is True
+
+    got = client.get(f"/api/v1/notification-channels/{created['id']}", headers=headers)
+    assert got.json()["payload_template"] is None
+    assert got.json()["has_payload_template"] is True
+
+
+def test_payload_template_is_visible_to_admin_readers(client: TestClient, as_role: Any) -> None:
+    _admin, headers = as_role("admin")
+    created = client.post(
+        "/api/v1/notification-channels",
+        json={
+            "name": "PagerDuty",
+            "type": "webhook",
+            "webhook_url": _WEBHOOK_URL,
+            "payload_template": _TEMPLATE,
+        },
+        headers=headers,
+    ).json()
+
+    listed = client.get("/api/v1/notification-channels", headers=headers)
+    row = next(c for c in listed.json() if c["id"] == created["id"])
+    assert row["payload_template"] == _TEMPLATE
+
+    got = client.get(f"/api/v1/notification-channels/{created['id']}", headers=headers)
+    assert got.json()["payload_template"] == _TEMPLATE
+
+
+def test_payload_template_is_hidden_from_a_non_admin_suite_scoped_read(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
+    admin, admin_headers = as_role("admin")
+    created = client.post(
+        "/api/v1/notification-channels",
+        json={
+            "name": "PagerDuty",
+            "type": "webhook",
+            "webhook_url": _WEBHOOK_URL,
+            "payload_template": _TEMPLATE,
+        },
+        headers=admin_headers,
+    ).json()
+    suite = _suite(db_session, admin)
+    link = client.put(
+        f"/api/v1/suites/{suite.id}/notification-channels/{created['id']}", headers=admin_headers
+    )
+    assert link.status_code == 204
+
+    member, member_headers = as_role("member")
+    grant = client.post(
+        f"/api/v1/suites/{suite.id}/shares",
+        json={"user_id": str(member.id), "permission": "view"},
+        headers=admin_headers,
+    )
+    assert grant.status_code == 201
+    resp = client.get(f"/api/v1/suites/{suite.id}/notification-channels", headers=member_headers)
+    assert resp.status_code == 200
+    row = next(c for c in resp.json() if c["id"] == created["id"])
+    assert row["payload_template"] is None
+    assert row["has_payload_template"] is True
