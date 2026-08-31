@@ -351,3 +351,48 @@ The opening summary paragraph (already-committed part of this branch, unchanged 
 - `/Users/arijit/Coding/Python/DataQ/backend/alembic/versions/c4e5a6b7d8f9_add_incidents.py` (FK `ondelete="CASCADE"` on `check_id`)</result>
 <usage><subagent_tokens>124448</subagent_tokens><tool_uses>42</tool_uses><duration_ms>350354</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a6a053907e225cf63</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/a6a053907e225cf63.output</output-file>
+<status>completed</status>
+<summary>Agent "Final verify get_incident docstring accuracy" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good — these tests directly cover the exact claims (`test_same_asset_siblings_excludes_an_operationally_failed_run`, `test_kind_detail_*` for all four kinds). This corroborates the code trace. My audit is complete.
+
+## Findings
+
+**(a) Claim 2 — `kind_detail` null-semantics rewrite: VERIFIED TRUE.**
+
+Traced the full chain:
+- `db/models.py:51` — `FAILING_TIERS = ("warn", "fail", "critical")`, built from `SEVERITY_RANK` which excludes `"pass"`; `RESULT_OPERATIONAL_STATUSES = ("skip", "error")` is disjoint from it.
+- `incident_service.py:88-113` (`_sync_incidents_for_run`) — the **only** call site of `open_or_attach_incident`, gated by `if result.status in FAILING_TIERS:`.
+- `incident_service.py:130-186` (`open_or_attach_incident`) — `evidence = build_evidence(...)` is computed once per call and assigned unconditionally on **both** the "opened" and "attached" branches (lines 142, 159, 185), always from that same FAILING_TIERS-gated `result`.
+- `incident_evidence.py:140-179` (`_kind_detail_layer`) — returns `None` only if `check is None` or `not isinstance(result.observed_value, dict)`.
+- `severity.py:46-67` (`resolve_status`) — `outcome.errored` → `status = "error"` unconditionally, before threshold banding ever runs, so a result can never be simultaneously in `FAILING_TIERS` and `errored`.
+- `run_service.py:64-95` (`_build_result`) — the `errored` branch (different `observed_value` shape) and the non-errored branch (`observed = sanitize_json(outcome.observed_value)`) are mutually exclusive with the status derivation above.
+- `datasources/monitors.py` — all four monitor-kind outcome builders (`_freshness_outcome` line 218-224, `_volume_outcome` 241-247, `_schema_drift_outcome` 271-288, `_anomaly_outcome` 421-427) set `observed_value` to a dict on every non-errored, non-skipped path — the only paths that can produce `warn`/`fail`/`critical`.
+- `_incident_payload` in `server.py:3028-3046` confirms `check_name` (`check.get("name")`) is read from the **identical** `evidence["check"]` object that `kind_detail` is computed alongside in the same `build_evidence` call — so "the same rare thing a null `check_name` means" isn't just analogous, it's the literal same `if check is None` branch, evaluated in the same function call.
+- Confirmed by existing tests: `test_same_asset_siblings_excludes_an_operationally_failed_run`, and `test_kind_detail_*` for all four kinds plus `test_kind_detail_is_none_for_an_ordinary_expectation`.
+
+Net: for `freshness`/`volume`/`schema_drift`/`anomaly`, `kind_detail` can only be null when `check` was already `None` at evidence-build time (deleted check) — never from an operational error or skip. The rewritten prose and the rewritten bullet are both accurate and match each other.
+
+**(b) Claim 1 — cross-suite framing: not undersold.** `_same_asset_siblings_layer` (`incident_evidence.py:218-286`) genuinely queries across all suites on `Run.asset_id == asset.id` with no suite filter (windowed 7 days, capped 20, `succeeded`-only). "A cross-suite sample" is accurate on both halves — still explicitly cross-suite, and honestly capped/sampled. The later paragraph ("in ANY suite," "recent sample, not a complete inventory") reinforces rather than contradicts the opening line.
+
+**(c) Internal consistency: no contradictions, no new false claims.**
+- The `kind_detail` paragraph (3197-3204) and the later bullet restatement (3244-3248) say the same thing in both directions ("below"/"above" cross-references point at the correct location in each case).
+- The `check_name`/`asset_name`/`latest_severity` explanation (3231-3235, "usually a deleted check") is the antecedent both `kind_detail` mentions correctly reference.
+- New `same_asset_siblings` caveats (succeeded-only, 20-cap) verified against `_SAME_ASSET_SIBLING_WINDOW`/`_SAME_ASSET_SIBLING_LIMIT` (`incident_evidence.py:27-28`) and `AGGREGATABLE_RUN_STATUSES = frozenset({"succeeded"})` (`rollup.py:77`) — both numerically and semantically exact.
+- The "same 'floor, not complete' caveat `downstream_blast_radius` carries below" cross-reference is accurate — that section (3224-3229) does use the same framing and does appear below.
+- The "operationally failed run" claim is airtight because `run.status = "failed"` is set only on an unhandled exception in `execute_run` (`run_service.py:352-365`), and `_discard_results_if_any`/`discard_run_results` (`run_service.py:276-284`) deletes every result row for that run regardless of publish state — so such a sibling genuinely has no `Result` row to be found by the join at all, matching "silently absent."
+
+One purely cosmetic nit, not a defect: "non-null whenever the card carries one at all" (line 3199-3200) is slightly circular in isolation, but the very next clause in the same sentence unambiguously resolves it ("`evidence` is only ever captured from a genuinely warned/failed/critical occurrence..."). No LLM reading the full docstring would be misled by it, so I'm not flagging it as a finding — only noting it in case you want tighter phrasing.
+
+**Verdict: Pass — no findings survive.** Claim 1 and claim 2 are both verified true against the code (not just the prior reviewer's summary), and the docstring is internally consistent post-edit with no new false or contradictory claims introduced.
+
+Files reviewed: `/Users/arijit/Coding/Python/DataQ/backend/app/mcp/server.py` (lines 3176-3266, uncommitted diff), `/Users/arijit/Coding/Python/DataQ/backend/app/services/incident_service.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/services/incident_evidence.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/services/severity.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/services/run_service.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/datasources/monitors.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/services/rollup.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/db/models.py`, `/Users/arijit/Coding/Python/DataQ/backend/tests/services/test_incident_evidence.py`.</result>
+<usage><subagent_tokens>127204</subagent_tokens><tool_uses>36</tool_uses><duration_ms>238578</duration_ms></usage>
+</task-notification>
