@@ -63,24 +63,12 @@ def build_connection_health_report(
     )
 
 
-def _resolve_asset(session: Session, run: Run, suite: Suite | None) -> Asset | None:
-    asset_id = getattr(run, "asset_id", None) or getattr(suite, "asset_id", None)
-    return session.get(Asset, asset_id) if asset_id is not None else None
-
-
-def _asset_column_tags(session: Session, run: Run, suite: Suite | None) -> dict[str, str] | None:
-    """The warehouse column classifications that applied to what this run read."""
-    asset = _resolve_asset(session, run, suite)
-    return asset.column_tags if asset is not None else None
-
-
-def _resolve_owner(session: Session, run: Run, suite: Suite | None) -> User | None:
+def _resolve_owner(session: Session, asset: Asset | None, suite: Suite | None) -> User | None:
     """The recipient an incident/alert's 'Owner' attribution routes to (#1515):
     the asset's own owner when one is set, else the suite's creator — the asset
     owner is who is actually responsible for the data, and a suite is only ever
     one of possibly several ways it gets monitored.
     """
-    asset = _resolve_asset(session, run, suite)
     if asset is not None and asset.owner_user_id is not None:
         return session.get(User, asset.owner_user_id)
     return session.get(User, suite.created_by) if suite is not None else None
@@ -105,11 +93,12 @@ def build_run_report(session: Session, run: Run) -> RunReport:
     """Build the redacted, GX-agnostic report for a terminal ``run``."""
     suite = session.get(Suite, run.suite_id)
     connection = session.get(Connection, suite.connection_id) if suite is not None else None
-    owner = _resolve_owner(session, run, suite)
+    asset = run_service.resolve_asset(session, suite, run)
+    owner = _resolve_owner(session, asset, suite)
     checks = {c.id: c for c in session.scalars(select(Check).where(Check.suite_id == run.suite_id))}
     # The warehouse's own column classifications (G3, #433) — the same governance floor the REST and
     # MCP read paths apply.
-    tags = _asset_column_tags(session, run, suite)
+    tags = asset.column_tags if asset is not None else None
     results: list[Result] = run_service.list_results(session, run.id)
 
     counts: dict[str, int] = {}
