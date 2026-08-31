@@ -98,6 +98,16 @@ both when the channel is saved and again before every send). DataQ generates the
 it is returned in the response body **exactly once**, at creation (or at rotation via
 `regenerate_hmac_secret: true` on `PATCH`), and is never retrievable again after that.
 
+A `webhook` channel may also carry an optional `payload_template` — a JSON object reshaping the
+generic alert body for a specific receiver (a PagerDuty Events-API shape, an Opsgenie/ServiceNow/
+Jira payload) — and an optional `auth_header_name` + `auth_header_value` pair, an extra header
+some receivers want beside the signature. A template's `{{field.path}}` placeholders resolve by
+key lookup only against the same fields the generic payload already carries; there is no
+expression language, so a template can rename or select what's there but never reach a field
+that isn't. `auth_header_value` is write-only, same as every other channel credential. Leaving
+both unset keeps the channel sending the plain generic payload with no extra header — the
+pre-template behavior, unchanged.
+
 | Method | Path | What |
 |---|---|---|
 | GET / POST | `/notification-channels` | List / create a channel. |

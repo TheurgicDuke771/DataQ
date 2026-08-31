@@ -350,3 +350,83 @@ def test_delete_webhook_channel_is_admin_only(client: TestClient, as_role: Any) 
     ).json()
     resp = client.delete(f"/api/v1/notification-channels/{created['id']}", headers=admin_headers)
     assert resp.status_code == 204
+
+
+# ── payload template + auth header (#1663) ───────────────────────────────────
+
+_TEMPLATE = {"routing_key": "static", "payload": {"summary": "{{suite_name}}"}}
+
+
+def test_create_webhook_channel_with_a_payload_template_and_auth_header(
+    client: TestClient, as_role: Any
+) -> None:
+    _admin, headers = as_role("admin")
+    resp = client.post(
+        "/api/v1/notification-channels",
+        json={
+            "name": "PagerDuty",
+            "type": "webhook",
+            "webhook_url": _WEBHOOK_URL,
+            "payload_template": _TEMPLATE,
+            "auth_header_name": "X-Api-Key",
+            "auth_header_value": "sk-abc123",
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["payload_template"] == _TEMPLATE
+    assert body["auth_header_name"] == "X-Api-Key"
+    assert body["has_auth_header"] is True
+    assert "auth_header_value" not in body  # write-only, never echoed
+
+
+def test_create_channel_rejects_a_reserved_auth_header(client: TestClient, as_role: Any) -> None:
+    _admin, headers = as_role("admin")
+    resp = client.post(
+        "/api/v1/notification-channels",
+        json={
+            "name": "Ops",
+            "type": "webhook",
+            "webhook_url": _WEBHOOK_URL,
+            "auth_header_name": "Content-Type",
+            "auth_header_value": "x",
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 422
+
+
+def test_create_channel_rejects_a_payload_template_on_teams(
+    client: TestClient, as_role: Any
+) -> None:
+    _admin, headers = as_role("admin")
+    resp = client.post(
+        "/api/v1/notification-channels",
+        json=_channel_payload(payload_template=_TEMPLATE),  # channel type here is teams
+        headers=headers,
+    )
+    assert resp.status_code == 422
+
+
+def test_update_channel_clears_the_payload_template_via_rest(
+    client: TestClient, as_role: Any
+) -> None:
+    _admin, headers = as_role("admin")
+    created = client.post(
+        "/api/v1/notification-channels",
+        json={
+            "name": "Ops",
+            "type": "webhook",
+            "webhook_url": _WEBHOOK_URL,
+            "payload_template": _TEMPLATE,
+        },
+        headers=headers,
+    ).json()
+    resp = client.patch(
+        f"/api/v1/notification-channels/{created['id']}",
+        json={"clear_payload_template": True},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["payload_template"] is None

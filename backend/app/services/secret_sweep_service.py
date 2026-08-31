@@ -59,6 +59,10 @@ _OWNER_COLUMNS = (
     # same row; `webhook_url` beside it is NOT a secret (it's the destination, not
     # the credential) and deliberately does not belong in this registry.
     NotificationChannel.hmac_secret_ref,
+    # The optional per-destination auth header value (#1663) — a FIFTH ref column
+    # on the same row. `payload_template`/`auth_header_name` beside it are NOT
+    # secrets (a user-authored template and a plain header name).
+    NotificationChannel.auth_header_secret_ref,
 )
 
 # JSONB-held refs, which no column-level scan can see.

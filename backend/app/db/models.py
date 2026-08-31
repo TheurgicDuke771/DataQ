@@ -851,6 +851,16 @@ class NotificationChannel(Base):
     # stored via the SecretStore like every other channel credential — never accepted from
     # the caller, only shown once (at mint/rotate) in the API response, never again.
     hmac_secret_ref: Mapped[str | None] = mapped_column(String(256))
+    # Generic webhook only (#1663): a user-authored template reshaping the generic
+    # payload for a specific receiver (PagerDuty/Opsgenie/ServiceNow/Jira). Not a
+    # secret — safe to read back for the admin UI to edit. `None` = the unmodified
+    # generic payload (pre-#1663 behavior, unchanged).
+    payload_template: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # An optional extra auth header some receivers need beside the HMAC signature
+    # (e.g. ServiceNow Basic/Bearer auth). The header NAME is not a secret; the
+    # VALUE is — same webhook_secret_ref-style SecretStore pointer.
+    auth_header_name: Mapped[str | None] = mapped_column(String(128))
+    auth_header_secret_ref: Mapped[str | None] = mapped_column(String(256))
     # Provenance, not lifecycle ownership — SET NULL; RESTRICT would make a user
     # un-erasable (GDPR Art 17, #432/#1319), same rationale as every other created_by here.
     created_by: Mapped[uuid.UUID | None] = mapped_column(

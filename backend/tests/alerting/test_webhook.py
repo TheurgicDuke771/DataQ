@@ -1,4 +1,6 @@
-"""Tests for the WebhookPublisher — generic HMAC-signed outbound webhook (#1662)."""
+"""Tests for the WebhookPublisher — generic HMAC-signed outbound webhook (#1662)
+and its per-destination payload templates + auth header (#1663).
+"""
 
 from __future__ import annotations
 
@@ -12,7 +14,11 @@ import httpx
 import pytest
 
 from backend.app.alerting.base import CheckReport, RunReport
-from backend.app.alerting.webhook import WebhookPublisher, render_webhook_payload
+from backend.app.alerting.webhook import (
+    WebhookPublisher,
+    render_templated_payload,
+    render_webhook_payload,
+)
 from backend.app.db.models import (
     Connection,
     NotificationChannel,
@@ -93,7 +99,14 @@ def _publisher(secrets: dict[str, str]) -> WebhookPublisher:
 
 
 def _link_channel(
-    db: Any, suite: Suite, *, webhook_url: str | None, hmac_secret_ref: str | None
+    db: Any,
+    suite: Suite,
+    *,
+    webhook_url: str | None,
+    hmac_secret_ref: str | None,
+    payload_template: dict[str, Any] | None = None,
+    auth_header_name: str | None = None,
+    auth_header_secret_ref: str | None = None,
 ) -> None:
     channel = NotificationChannel(
         id=uuid.uuid4(),
@@ -101,6 +114,9 @@ def _link_channel(
         type="webhook",
         webhook_url=webhook_url,
         hmac_secret_ref=hmac_secret_ref,
+        payload_template=payload_template,
+        auth_header_name=auth_header_name,
+        auth_header_secret_ref=auth_header_secret_ref,
         created_by=None,
     )
     db.add(channel)
@@ -269,3 +285,165 @@ def test_render_webhook_payload_includes_owner_and_incidents(db_session: Any) ->
     assert payload["incidents"] == []
     assert payload["counts"] == {"fail": 1}
     assert payload["failed_checks"] == 1
+
+
+# ── render_templated_payload (#1663) — pure function, key-lookup only ───────
+
+
+def test_render_templated_payload_substitutes_an_exact_value_placeholder_preserving_type() -> None:
+    # A whole-string placeholder substitutes the RAW value, not a stringified
+    # copy — so a template can produce a real JSON number/bool, not just text.
+    payload = {"failed_checks": 3, "success": False, "worst_severity": None}
+    rendered = render_templated_payload(
+        payload,
+        {
+            "count": "{{failed_checks}}",
+            "ok": "{{success}}",
+            "severity": "{{worst_severity}}",
+        },
+    )
+    assert rendered == {"count": 3, "ok": False, "severity": None}
+
+
+def test_render_templated_payload_interpolates_within_a_longer_string() -> None:
+    payload = {"suite_name": "Orders QA", "failed_checks": 2}
+    rendered = render_templated_payload(
+        payload, {"text": "{{ failed_checks }} checks failed in {{suite_name}}"}
+    )
+    assert rendered == {"text": "2 checks failed in Orders QA"}
+
+
+def test_render_templated_payload_resolves_a_dot_path_into_a_list() -> None:
+    payload = {"checks": [{"check_name": "not-null id"}, {"check_name": "unique sku"}]}
+    rendered = render_templated_payload(payload, {"first": "{{checks.0.check_name}}"})
+    assert rendered == {"first": "not-null id"}
+
+
+def test_render_templated_payload_missing_path_is_null_or_empty_never_a_crash() -> None:
+    payload = {"suite_name": "Orders QA"}
+    rendered = render_templated_payload(
+        payload,
+        {
+            "exact": "{{incidents.0.check_name}}",
+            "interpolated": "prefix-{{incidents.0.check_name}}-suffix",
+        },
+    )
+    assert rendered == {"exact": None, "interpolated": "prefix--suffix"}
+
+
+def test_render_templated_payload_nests_and_preserves_literals() -> None:
+    payload = {"suite_name": "Orders QA"}
+    rendered = render_templated_payload(
+        payload,
+        {
+            "routing_key": "static-literal-key",
+            "payload": {"summary": "{{suite_name}}", "severity": "critical", "count": 5},
+            "tags": ["dataq", "{{suite_name}}"],
+        },
+    )
+    assert rendered == {
+        "routing_key": "static-literal-key",
+        "payload": {"summary": "Orders QA", "severity": "critical", "count": 5},
+        "tags": ["dataq", "Orders QA"],
+    }
+
+
+def test_render_templated_payload_cannot_execute_arbitrary_syntax() -> None:
+    """A placeholder is a plain \\w.-only dot-path — anything with parens,
+    quotes, or other non-word characters simply never matches the pattern and
+    passes through as a literal string, proving there is no expression
+    language for a template to escape into (#1118/#1401 class).
+    """
+    payload = {"suite_name": "Orders QA"}
+    rendered = render_templated_payload(payload, {"x": "{{__import__('os').listdir('.')}}"})
+    assert rendered == {"x": "{{__import__('os').listdir('.')}}"}
+
+
+# ── WebhookPublisher + templates/auth header, end to end (#1663) ────────────
+
+
+def test_publish_renders_the_channel_template_when_set(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = _suite(db_session)
+    _link_channel(
+        db_session,
+        suite,
+        webhook_url=_URL_A,
+        hmac_secret_ref="hmac-1",
+        payload_template={
+            "routing_key": "static-key",
+            "event_action": "trigger",
+            "payload": {"summary": "{{suite_name}}: {{failed_checks}} failed"},
+        },
+    )
+    post = _CapturePost()
+    monkeypatch.setattr(httpx, "post", post)
+    _publisher({"hmac-1": "s"}).publish(db_session, _report(suite, worst="fail"))
+
+    assert len(post.calls) == 1
+    _url, body, _headers = post.calls[0]
+    assert json.loads(body) == {
+        "routing_key": "static-key",
+        "event_action": "trigger",
+        "payload": {"summary": "Orders QA: 1 failed"},
+    }
+
+
+def test_publish_uses_the_generic_payload_when_no_template_is_set(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = _suite(db_session)
+    _link_channel(db_session, suite, webhook_url=_URL_A, hmac_secret_ref="hmac-1")
+    post = _CapturePost()
+    monkeypatch.setattr(httpx, "post", post)
+    report = _report(suite, worst="fail")
+    _publisher({"hmac-1": "s"}).publish(db_session, report)
+
+    _url, body, _headers = post.calls[0]
+    assert json.loads(body)["event"] == "run.completed"
+    assert json.loads(body)["run_id"] == str(report.run_id)
+
+
+def test_publish_adds_the_configured_auth_header(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = _suite(db_session)
+    _link_channel(
+        db_session,
+        suite,
+        webhook_url=_URL_A,
+        hmac_secret_ref="hmac-1",
+        auth_header_name="X-Api-Key",
+        auth_header_secret_ref="auth-1",
+    )
+    post = _CapturePost()
+    monkeypatch.setattr(httpx, "post", post)
+    _publisher({"hmac-1": "s", "auth-1": "sk-abc123"}).publish(
+        db_session, _report(suite, worst="fail")
+    )
+    _url, _body, headers = post.calls[0]
+    assert headers["X-Api-Key"] == "sk-abc123"
+
+
+def test_publish_omits_the_auth_header_when_its_secret_is_unresolvable(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The auth header is optional/extra beside the HMAC signature — a missing
+    header secret must not block delivery, just drop that one header.
+    """
+    suite = _suite(db_session)
+    _link_channel(
+        db_session,
+        suite,
+        webhook_url=_URL_A,
+        hmac_secret_ref="hmac-1",
+        auth_header_name="X-Api-Key",
+        auth_header_secret_ref="auth-1",  # not present in the secret store below
+    )
+    post = _CapturePost()
+    monkeypatch.setattr(httpx, "post", post)
+    _publisher({"hmac-1": "s"}).publish(db_session, _report(suite, worst="fail"))
+    assert len(post.calls) == 1
+    _url, _body, headers = post.calls[0]
+    assert "X-Api-Key" not in headers

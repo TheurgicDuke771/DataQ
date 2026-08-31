@@ -22,8 +22,14 @@ from backend.app.services.channel_service import (
     ChannelInUseError,
     ChannelNotFoundError,
     ChannelTypeInvalidError,
+    WebhookDestination,
 )
-from backend.app.services.notification_service import InvalidRecipientsError, InvalidWebhookError
+from backend.app.services.notification_service import (
+    InvalidAuthHeaderError,
+    InvalidPayloadTemplateError,
+    InvalidRecipientsError,
+    InvalidWebhookError,
+)
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
 _TEAMS_URL = "https://contoso.webhook.office.com/x"
@@ -540,10 +546,17 @@ def test_resolve_webhook_channels_returns_url_and_secret(db_session: Any) -> Non
     channel, secret = svc.create_channel(
         db_session, name="Ops", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
     )
+    assert secret is not None
     suite = _suite(db_session)
     svc.link_suite(db_session, suite.id, channel.id)
     assert svc.resolve_webhook_channels(db_session, suite.id, secret_store=store) == [
-        (_WEBHOOK_URL, secret)
+        WebhookDestination(
+            url=_WEBHOOK_URL,
+            hmac_secret=secret,
+            payload_template=None,
+            auth_header_name=None,
+            auth_header_value=None,
+        )
     ]
 
 
@@ -581,6 +594,7 @@ def test_resolve_webhook_channels_dedupes_by_url(db_session: Any) -> None:
     a, secret_a = svc.create_channel(
         db_session, name="A", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
     )
+    assert secret_a is not None
     b, _secret_b = svc.create_channel(
         db_session, name="B", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
     )
@@ -590,5 +604,246 @@ def test_resolve_webhook_channels_dedupes_by_url(db_session: Any) -> None:
     # "A" sorts before "B" (list_channels_for_suite orders by name), so its
     # secret is the one that survives the dedup.
     assert svc.resolve_webhook_channels(db_session, suite.id, secret_store=store) == [
-        (_WEBHOOK_URL, secret_a)
+        WebhookDestination(
+            url=_WEBHOOK_URL,
+            hmac_secret=secret_a,
+            payload_template=None,
+            auth_header_name=None,
+            auth_header_value=None,
+        )
     ]
+
+
+# ── payload template + auth header (#1663) ───────────────────────────────────
+
+_TEMPLATE = {"routing_key": "static", "payload": {"summary": "{{suite_name}}"}}
+
+
+def test_create_webhook_channel_stores_the_payload_template(db_session: Any) -> None:
+    channel, _secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        payload_template=_TEMPLATE,
+        secret_store=FakeSecretStore(),
+    )
+    assert channel.payload_template == _TEMPLATE
+
+
+def test_create_channel_rejects_a_non_object_payload_template(db_session: Any) -> None:
+    with pytest.raises(InvalidPayloadTemplateError):
+        svc.create_channel(
+            db_session,
+            name="Ops",
+            type="webhook",
+            webhook_url=_WEBHOOK_URL,
+            payload_template=["not", "an", "object"],  # type: ignore[arg-type]
+            secret_store=FakeSecretStore(),
+        )
+
+
+def test_create_channel_rejects_a_payload_template_on_the_wrong_type(db_session: Any) -> None:
+    with pytest.raises(ChannelFieldMismatchError):
+        svc.create_channel(
+            db_session,
+            name="x",
+            type="teams",
+            payload_template=_TEMPLATE,
+            secret_store=FakeSecretStore(),
+        )
+
+
+def test_create_webhook_channel_stores_the_auth_header(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        auth_header_name="X-Api-Key",
+        auth_header_value="sk-abc123",
+        secret_store=store,
+    )
+    assert channel.auth_header_name == "X-Api-Key"
+    assert channel.auth_header_secret_ref is not None
+    assert store.get(channel.auth_header_secret_ref) == "sk-abc123"
+
+
+def test_create_channel_rejects_a_reserved_auth_header_name(db_session: Any) -> None:
+    with pytest.raises(InvalidAuthHeaderError):
+        svc.create_channel(
+            db_session,
+            name="Ops",
+            type="webhook",
+            webhook_url=_WEBHOOK_URL,
+            auth_header_name="Content-Type",
+            auth_header_value="x",
+            secret_store=FakeSecretStore(),
+        )
+
+
+def test_create_channel_rejects_a_malformed_auth_header_name(db_session: Any) -> None:
+    with pytest.raises(InvalidAuthHeaderError):
+        svc.create_channel(
+            db_session,
+            name="Ops",
+            type="webhook",
+            webhook_url=_WEBHOOK_URL,
+            auth_header_name="Bad Header Name",
+            auth_header_value="x",
+            secret_store=FakeSecretStore(),
+        )
+
+
+def test_update_channel_sets_the_payload_template(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session, name="Ops", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
+    )
+    channel, _secret = svc.update_channel(
+        db_session, channel.id, payload_template=_TEMPLATE, secret_store=store
+    )
+    assert channel.payload_template == _TEMPLATE
+
+
+def test_update_channel_clears_the_payload_template(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        payload_template=_TEMPLATE,
+        secret_store=store,
+    )
+    channel, _secret = svc.update_channel(
+        db_session, channel.id, clear_payload_template=True, secret_store=store
+    )
+    assert channel.payload_template is None
+
+
+def test_update_channel_rotates_the_auth_header_value_in_place(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        auth_header_name="X-Api-Key",
+        auth_header_value="old-key",
+        secret_store=store,
+    )
+    ref = channel.auth_header_secret_ref
+    assert ref is not None
+
+    channel, _secret = svc.update_channel(
+        db_session, channel.id, auth_header_value="new-key", secret_store=store
+    )
+    assert channel.auth_header_secret_ref == ref
+    assert store.get(ref) == "new-key"
+
+
+def test_update_channel_clears_the_auth_header_value(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        auth_header_name="X-Api-Key",
+        auth_header_value="k",
+        secret_store=store,
+    )
+    ref = channel.auth_header_secret_ref
+    assert ref is not None
+    channel, _secret = svc.update_channel(
+        db_session, channel.id, auth_header_value="", secret_store=store
+    )
+    assert channel.auth_header_secret_ref is None
+    with pytest.raises(SecretNotFoundError):
+        store.get(ref)
+
+
+def test_update_channel_clears_the_auth_header_name(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        auth_header_name="X-Api-Key",
+        auth_header_value="k",
+        secret_store=store,
+    )
+    channel, _secret = svc.update_channel(
+        db_session, channel.id, auth_header_name="", secret_store=store
+    )
+    assert channel.auth_header_name is None
+
+
+def test_delete_webhook_channel_removes_the_auth_header_secret(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel, _secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        auth_header_name="X-Api-Key",
+        auth_header_value="k",
+        secret_store=store,
+    )
+    ref = channel.auth_header_secret_ref
+    assert ref is not None
+    svc.delete_channel(db_session, channel.id, secret_store=store)
+    with pytest.raises(SecretNotFoundError):
+        store.get(ref)
+
+
+def test_resolve_webhook_channels_includes_template_and_auth_header(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel, secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        payload_template=_TEMPLATE,
+        auth_header_name="X-Api-Key",
+        auth_header_value="sk-abc",
+        secret_store=store,
+    )
+    assert secret is not None
+    suite = _suite(db_session)
+    svc.link_suite(db_session, suite.id, channel.id)
+    assert svc.resolve_webhook_channels(db_session, suite.id, secret_store=store) == [
+        WebhookDestination(
+            url=_WEBHOOK_URL,
+            hmac_secret=secret,
+            payload_template=_TEMPLATE,
+            auth_header_name="X-Api-Key",
+            auth_header_value="sk-abc",
+        )
+    ]
+
+
+def test_resolve_webhook_channels_omits_auth_header_when_its_secret_is_missing(
+    db_session: Any,
+) -> None:
+    store = FakeSecretStore()
+    channel, secret = svc.create_channel(
+        db_session,
+        name="Ops",
+        type="webhook",
+        webhook_url=_WEBHOOK_URL,
+        auth_header_name="X-Api-Key",
+        auth_header_value="sk-abc",
+        secret_store=store,
+    )
+    suite = _suite(db_session)
+    svc.link_suite(db_session, suite.id, channel.id)
+    assert channel.auth_header_secret_ref is not None
+    store.delete(channel.auth_header_secret_ref)
+    dest = svc.resolve_webhook_channels(db_session, suite.id, secret_store=store)[0]
+    assert dest.auth_header_name is None
+    assert dest.auth_header_value is None
+    assert dest.hmac_secret == secret  # the HMAC key is unaffected

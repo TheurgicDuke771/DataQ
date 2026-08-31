@@ -7,7 +7,7 @@ from a list), mutations are `AdminUser`-only (a webhook URL is a credential).
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, status
 from pydantic import Field
@@ -42,6 +42,10 @@ class ChannelRead(ApiModel):
     #: Populated ONLY by create/rotate, in the response of that one call — the
     #: plaintext HMAC signing key, shown exactly once. Never set by a read.
     hmac_secret: str | None = None
+    #: Admin-authored JSON shape — not a secret, safe to read back for editing.
+    payload_template: dict[str, Any] | None = None
+    auth_header_name: str | None = None
+    has_auth_header: bool = False
 
     @classmethod
     def from_model(
@@ -56,6 +60,9 @@ class ChannelRead(ApiModel):
             webhook_url=channel.webhook_url,
             has_hmac_secret=channel.hmac_secret_ref is not None,
             hmac_secret=hmac_secret,
+            payload_template=channel.payload_template,
+            auth_header_name=channel.auth_header_name,
+            has_auth_header=channel.auth_header_secret_ref is not None,
         )
 
 
@@ -67,6 +74,18 @@ class ChannelCreate(ApiRequestModel):
     webhook_url: str | None = Field(
         default=None, description="Generic webhook destination URL (https, non-internal)"
     )
+    payload_template: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Reshapes the generic webhook payload for a specific receiver "
+            "(PagerDuty/Opsgenie/ServiceNow/Jira). {{field.path}} placeholders "
+            "resolve against the generic payload by key lookup only."
+        ),
+    )
+    auth_header_name: str | None = Field(
+        default=None, description="An extra header some receivers need beside the HMAC signature"
+    )
+    auth_header_value: str | None = Field(default=None, description="The header value; write-only")
 
 
 class ChannelUpdate(ApiRequestModel):
@@ -79,6 +98,18 @@ class ChannelUpdate(ApiRequestModel):
     regenerate_hmac_secret: bool = Field(
         default=False, description="Mint a new HMAC signing key, invalidating the old one"
     )
+    payload_template: dict[str, Any] | None = Field(
+        default=None, description="Set/replace the payload template"
+    )
+    clear_payload_template: bool = Field(
+        default=False,
+        description="Remove the template (an empty object is a legitimate template, so clearing "
+        "needs its own flag rather than overloading an empty payload_template)",
+    )
+    auth_header_name: str | None = Field(
+        default=None, description="Set the auth header name; empty string clears it"
+    )
+    auth_header_value: str | None = None
 
 
 @router.get("/notification-channels", response_model=list[ChannelRead], summary="List channels")
@@ -119,6 +150,9 @@ def create_channel(
         webhook=payload.webhook,
         email_recipients=payload.email_recipients,
         webhook_url=payload.webhook_url,
+        payload_template=payload.payload_template,
+        auth_header_name=payload.auth_header_name,
+        auth_header_value=payload.auth_header_value,
         secret_store=secret_store,
         actor_id=current_user.id,
     )
@@ -142,6 +176,10 @@ def update_channel(
         webhook=payload.webhook,
         email_recipients=payload.email_recipients,
         webhook_url=payload.webhook_url,
+        payload_template=payload.payload_template,
+        clear_payload_template=payload.clear_payload_template,
+        auth_header_name=payload.auth_header_name,
+        auth_header_value=payload.auth_header_value,
         regenerate_hmac_secret=payload.regenerate_hmac_secret,
         secret_store=secret_store,
         actor_id=current_user.id,

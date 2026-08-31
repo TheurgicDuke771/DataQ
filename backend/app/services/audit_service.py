@@ -207,9 +207,11 @@ _SUITE_NOTIFICATION_FIELDS: Final[tuple[str, ...]] = (
     "slack_webhook_secret_ref",
 )
 
-# Pointer only, never the webhook/HMAC value — same rule as `_CONNECTION_FIELDS` (#1514).
-# `webhook_url` is the exception: for a generic webhook it's the destination, not the
-# credential (the HMAC signature is), so recording it is not a secret leak (#1662).
+# Pointer only, never the webhook/HMAC/auth-header value — same rule as
+# `_CONNECTION_FIELDS` (#1514). `webhook_url`/`payload_template`/`auth_header_name`
+# are the exceptions: for a generic webhook the URL is the destination (not the
+# credential — the HMAC signature is), the template is admin-authored JSON shape,
+# and the header name is plain text, none of them secrets (#1662/#1663).
 _NOTIFICATION_CHANNEL_FIELDS: Final[tuple[str, ...]] = (
     "id",
     "name",
@@ -218,6 +220,9 @@ _NOTIFICATION_CHANNEL_FIELDS: Final[tuple[str, ...]] = (
     "email_recipients",
     "webhook_url",
     "hmac_secret_ref",
+    "payload_template",
+    "auth_header_name",
+    "auth_header_secret_ref",
 )
 
 _SUITE_NOTIFICATION_CHANNEL_FIELDS: Final[tuple[str, ...]] = ("suite_id", "channel_id")

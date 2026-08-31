@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 from typing import Any
 
 import httpx
@@ -95,6 +96,68 @@ def _sign(body: bytes, secret: str) -> str:
     return hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
 
+_MISSING = object()
+_PLACEHOLDER = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
+
+
+def _resolve_path(payload: dict[str, Any], path: str) -> Any:
+    """Resolve a dot-path (list indices are numeric segments) against the
+    already-redacted generic payload — a pure key/index lookup, nothing else,
+    so a path can only ever reach a field the payload already exposes.
+    """
+    current: Any = payload
+    for segment in path.split("."):
+        if isinstance(current, dict):
+            if segment not in current:
+                return _MISSING
+            current = current[segment]
+        elif isinstance(current, list):
+            if not segment.isdigit() or not (0 <= int(segment) < len(current)):
+                return _MISSING
+            current = current[int(segment)]
+        else:
+            return _MISSING
+    return current
+
+
+def _render_template_value(node: Any, payload: dict[str, Any]) -> Any:
+    if isinstance(node, str):
+        stripped = node.strip()
+        exact = _PLACEHOLDER.fullmatch(stripped)
+        if exact:
+            # The whole string IS one placeholder — substitute the raw
+            # resolved value (preserving its type: a number/bool/object/None,
+            # not a stringified copy), so a template can produce e.g. a JSON
+            # number or nested object field, not just text.
+            resolved = _resolve_path(payload, exact.group(1))
+            return None if resolved is _MISSING else resolved
+
+        def _interpolate(match: re.Match[str]) -> str:
+            resolved = _resolve_path(payload, match.group(1))
+            return "" if resolved is _MISSING else str(resolved)
+
+        return _PLACEHOLDER.sub(_interpolate, node)
+    if isinstance(node, dict):
+        return {key: _render_template_value(value, payload) for key, value in node.items()}
+    if isinstance(node, list):
+        return [_render_template_value(item, payload) for item in node]
+    return node  # int/float/bool/None literals pass through unchanged
+
+
+def render_templated_payload(payload: dict[str, Any], template: dict[str, Any]) -> dict[str, Any]:
+    """Render a channel's custom payload template (#1663) against the already-
+    redacted generic-webhook payload. A placeholder (``{{field.path}}``)
+    resolves by KEY LOOKUP ONLY — there is no expression language, no code
+    execution — so a template can rename/reshape/select the fields
+    ``render_webhook_payload`` already exposes, and never reach anything it
+    doesn't (the #1118/#1401 "no new exfiltration primitive" class). An
+    unresolvable path degrades to ``null``/empty-string rather than raising —
+    a template referencing a field this particular run doesn't have (e.g. no
+    incidents) must not break delivery.
+    """
+    return {key: _render_template_value(value, payload) for key, value in template.items()}
+
+
 class WebhookPublisher:
     """Posts a run's report as an HMAC-signed JSON body to every suite-linked
     ``webhook`` channel (#1514's channel model, #1662).
@@ -126,25 +189,32 @@ class WebhookPublisher:
         )
         if not destinations:
             return
-        payload = render_webhook_payload(report)
-        body = json.dumps(payload, sort_keys=True).encode("utf-8")
+        base_payload = render_webhook_payload(report)
         delivered = 0
         # destinations is already deduped by URL (channel_service.resolve_webhook_channels).
-        for url, hmac_secret in destinations:
+        for dest in destinations:
             # Re-checked at send time (not just at channel-config time): a
             # DNS-rebinding-style SSRF defends against the resolved address
             # changing after validation, same posture as Teams/Slack's
             # send-time host re-check.
-            if not notification_service.is_safe_generic_webhook_url(url):
+            if not notification_service.is_safe_generic_webhook_url(dest.url):
                 log.warning("webhook_destination_not_allowed", run_id=str(report.run_id))
                 continue
-            signature = _sign(body, hmac_secret)
+            payload = (
+                render_templated_payload(base_payload, dest.payload_template)
+                if dest.payload_template is not None
+                else base_payload
+            )
+            body = json.dumps(payload, sort_keys=True).encode("utf-8")
+            headers = {
+                "Content-Type": "application/json",
+                _SIGNATURE_HEADER: _sign(body, dest.hmac_secret),
+            }
+            if dest.auth_header_name and dest.auth_header_value:
+                headers[dest.auth_header_name] = dest.auth_header_value
             try:
                 response = httpx.post(
-                    url,
-                    content=body,
-                    headers={"Content-Type": "application/json", _SIGNATURE_HEADER: signature},
-                    timeout=self._timeout,
+                    dest.url, content=body, headers=headers, timeout=self._timeout
                 )
                 response.raise_for_status()
             except Exception:
