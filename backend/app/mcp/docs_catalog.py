@@ -10,6 +10,7 @@ time instead of silently drifting.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Final
 
@@ -33,8 +34,15 @@ class DocNotFoundError(Exception):
     """Raised by `read_page` for a `page` outside the curated allowlist."""
 
 
+@lru_cache(maxsize=1)
 def _scan() -> dict[str, Path]:
     """The curated pages that actually exist on disk, slug -> absolute path.
+
+    Cached for the life of the process: `get_doc`'s advertised JSON-schema
+    `enum` is built once, at import time, from this same function, so caching
+    it is what keeps that enum and `read_page`'s validation from being able to
+    diverge — every deployed image is immutable (docs/site is baked in at
+    build time), so there is nothing on disk to re-scan for anyway.
 
     A page named in `_TOP_LEVEL_PAGES` that has been renamed or deleted is
     simply absent here rather than raised — `read_page` reports it as

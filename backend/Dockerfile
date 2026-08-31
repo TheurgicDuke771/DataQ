@@ -41,9 +41,9 @@ COPY --from=builder /opt/venv /opt/venv
 COPY pyproject.toml ./
 COPY backend ./backend
 
-# The curated docs/site pages `mcp/docs_catalog.py` serves via the `get_doc` MCP
-# tool (#1626) — everything else in docs/site (ADRs, architecture.md) stays out
-# of the image; the catalog's own allowlist decides what's actually reachable.
+# docs/site backs the `get_doc` MCP tool (#1626) — the whole published (public,
+# GH-Pages-built) tree copies in for one source of truth, ~1.8MB; the curated
+# allowlist actually served lives ONLY in `mcp/docs_catalog.py`, not here.
 COPY docs/site ./docs/site
 
 # Run as a dedicated non-root user (#1408): a future RCE through the parser/interpreter surface
