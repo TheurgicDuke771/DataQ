@@ -18,14 +18,15 @@ from typing import Final
 _REPO_ROOT: Final = Path(__file__).resolve().parents[3]
 _DOCS_SITE: Final = _REPO_ROOT / "docs" / "site"
 
-#: The curated allowlist (issue #1626): five top-level pages plus every
-#: compliance runbook/template. Relative to `docs/site/`, slash-separated.
+#: The curated allowlist (issue #1626): top-level pages plus every compliance
+#: runbook/template. Relative to `docs/site/`, slash-separated.
 _TOP_LEVEL_PAGES: Final = (
     "best-practices.md",
     "feature-matrix.md",
     "security.md",
     "getting-started.md",
     "mcp-setup.md",
+    "mcp-honesty.md",
 )
 _COMPLIANCE_DIR: Final = "compliance"
 

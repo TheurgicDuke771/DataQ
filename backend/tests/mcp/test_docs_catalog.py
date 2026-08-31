@@ -3,9 +3,16 @@
 from backend.app.mcp import docs_catalog
 
 
-def test_list_pages_finds_the_five_top_level_pages() -> None:
+def test_list_pages_finds_the_top_level_pages() -> None:
     pages = docs_catalog.list_pages()
-    for slug in ("best-practices", "feature-matrix", "security", "getting-started", "mcp-setup"):
+    for slug in (
+        "best-practices",
+        "feature-matrix",
+        "security",
+        "getting-started",
+        "mcp-setup",
+        "mcp-honesty",
+    ):
         assert slug in pages
 
 

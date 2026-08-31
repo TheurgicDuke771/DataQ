@@ -56,21 +56,29 @@ is not. `truncated`, `results_final`, and `redacted_columns` are three examples 
 graduated from a caveat sentence into a field of their own once it became clear a model was
 expected to act differently depending on the answer.
 
-## Safety annotations, derived from one registry
+## Safety annotations
 
-Every tool carries exactly one of three annotations, and all three are derived from the same
-per-tool authorization registry that also enforces access control — so the documentation and
-the enforcement cannot silently drift apart the way a hand-maintained description of "which
-tools are safe" would.
+Every tool carries one of three annotations describing what class of consequence a call can
+have. The underlying access requirement each label summarizes — a suite-level grant, a
+workspace-role floor, or neither — is enforced by the tool's own code, and for every
+state-changing or live-probe tool a test suite that runs on every change actually calls it as
+an unauthorized principal and asserts it is refused, rather than trusting a comment describing
+what the tool is supposed to require.
 
-- **Read-only.** No state changes, nothing spent. The majority of the surface.
-- **State-changing.** Creates, updates, deletes, or triggers something — gated on edit-level
-  access to the resource it acts on.
+- **Read-only.** No state changes, nothing spent, no resource-level grant to check — enforced
+  structurally instead: a read-only tool that took a suite argument and gated on it would belong
+  in the next category, so the same test suite asserts none of them do. The majority of the
+  surface.
+- **State-changing.** Creates, updates, deletes, or triggers something. Most are gated on
+  edit-level access to the suite (or other resource) the call acts on; a few that create a
+  resource with nothing yet to gate on — importing a suite, testing a not-yet-saved
+  connection — are instead gated on holding at least the Member workspace role.
 - **Live-probe.** Persists nothing in DataQ's own storage, but opens a live connection to a
   remote system using a stored credential — a real cost and a real side effect on that remote
-  system even though nothing is saved here. These are gated exactly like state-changing tools,
-  not like reads, because "nothing was written to our database" is not the same guarantee as
-  "nothing happened."
+  system even though nothing is saved here. These carry the same access requirement a
+  state-changing tool on the same resource would, not a separate tier of their own: "nothing was
+  written to our database" is not the same guarantee as "nothing happened," so the annotation
+  exists to flag that distinction explicitly rather than leave it implied.
 
 No tool requires the highest workspace-admin privilege tier. Every admin-only capability in
 DataQ's authorization model is a datasource connection mutation (create, update, delete,
