@@ -463,11 +463,14 @@ def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
             detail=(
                 f"The OUTBOUND direction — DataQ calling a model on its own behalf. "
                 f"Configured to a {row.provider} endpoint (model {row.model}), by an "
-                "admin, with the customer's own credential (ADR 0042). Prompt "
-                "context is schema plus masked aggregate profiler statistics — "
-                "never sample rows; every call is recorded in llm_invocations "
-                "with requester and token counts. Distinct from mcp_ai_clients "
-                "above, which is inbound."
+                "admin, with the customer's own credential (ADR 0042). SQL-generation "
+                "and check-suggestion prompts are schema plus masked aggregate "
+                "profiler statistics; root-cause-analysis narratives additionally "
+                "send the triggering check's own observed/expected values, not yet "
+                "routed through that same mask. Never raw sample rows. Every feature "
+                "invocation is recorded in llm_invocations with requester and token "
+                "counts — the admin connection-test probe is a live call and is not. "
+                "Distinct from mcp_ai_clients above, which is inbound."
             ),
         )
     if row is not None:
@@ -491,8 +494,11 @@ def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
             "The OUTBOUND direction — DataQ calling a model on its own behalf — "
             "is built (ADR 0042) but not configured: no provider, no stored "
             "credential, nothing leaves. When enabled it is a Ch. V transfer by "
-            "construction (schema-only context, PII-redacted, local-endpoint "
-            "option). Listed while absent on purpose: an auditor should see it "
+            "construction (schema plus masked profiler statistics for SQL "
+            "generation and check suggestions; RCA narratives also send the "
+            "triggering check's own observed/expected values, not yet masked; "
+            "never raw sample rows; local-endpoint option). Listed while absent "
+            "on purpose: an auditor should see it "
             "was considered, not infer its absence. Distinct from "
             "mcp_ai_clients above, which is inbound."
         ),
