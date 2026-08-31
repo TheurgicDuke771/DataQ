@@ -180,6 +180,57 @@ def test_owner_detail_has_evidence(client: TestClient, world: dict[str, Any]) ->
     assert body["check_name"] is not None
 
 
+def test_detail_redacts_a_same_asset_sibling_from_a_suite_the_caller_cannot_view(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """#1635: `same_asset_siblings` is workspace-true at write time; the read
+    surface must withhold a sibling suite the caller has no grant on.
+    """
+    db = client_db(client)
+    other_owner = _user(db, "other-owner@example.com")
+    other_conn = _connection(db, other_owner)
+    other_suite = _suite(db, other_owner, other_conn, table="ORDERS")
+    assert other_suite.asset_id == world["suite"].asset_id  # same table ⇒ same asset
+    other_check = Check(
+        suite_id=other_suite.id,
+        name="orders_volume_ok",
+        kind="expectation",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "id"},
+    )
+    db.add(other_check)
+    db.flush()
+    other_run = Run(suite_id=other_suite.id, status="succeeded", asset_id=other_suite.asset_id)
+    db.add(other_run)
+    db.flush()
+    db.add(Result(run_id=other_run.id, check_id=other_check.id, status="fail"))
+    db.commit()
+
+    # Re-breach the world incident's own check so its evidence re-snapshots + picks up the sibling.
+    run = Run(suite_id=world["suite"].id, status="succeeded", asset_id=world["suite"].asset_id)
+    db.add(run)
+    db.flush()
+    db.add(
+        Result(run_id=run.id, check_id=world["incident"].check_id, status="fail", metric_value=0.5)
+    )
+    db.commit()
+    incident_service.sync_incidents_for_run(db, run_id=run.id)
+
+    _as(world["owner"])  # owner of world["suite"] only — no grant on other_suite
+    resp = client.get(f"/api/v1/incidents/{world['incident'].id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["evidence"]["same_asset_siblings"] == []
+    assert body["evidence"]["same_asset_siblings_restricted_count"] == 1
+
+    _share(db, other_suite, world["owner"], "view")
+    resp = client.get(f"/api/v1/incidents/{world['incident'].id}")
+    body = resp.json()
+    assert len(body["evidence"]["same_asset_siblings"]) == 1
+    assert body["evidence"]["same_asset_siblings"][0]["suite_id"] == str(other_suite.id)
+    assert body["evidence"]["same_asset_siblings_restricted_count"] == 0
+
+
 def test_no_share_detail_404_no_leak(client: TestClient, world: dict[str, Any]) -> None:
     outsider = _user(client_db(client), "outsider2@example.com")
     _as(outsider)

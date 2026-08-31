@@ -114,7 +114,7 @@ def _to_summary(incident: Incident) -> IncidentRead:
     return IncidentRead(**_summary_fields(incident))
 
 
-def _to_detail(incident: Incident) -> IncidentDetailRead:
+def _to_detail(incident: Incident, evidence: dict[str, Any] | None) -> IncidentDetailRead:
     return IncidentDetailRead(
         **_summary_fields(incident),
         acknowledged_by=incident.acknowledged_by,
@@ -122,7 +122,7 @@ def _to_detail(incident: Incident) -> IncidentDetailRead:
         prior_incident_id=incident.prior_incident_id,
         acknowledge_note=incident.acknowledge_note,
         resolution_note=incident.resolution_note,
-        evidence=incident.evidence,
+        evidence=evidence,
     )
 
 
@@ -195,7 +195,8 @@ def get_incident(
     incident = incident_service.load_visible_incident(
         db, incident_id, user_id=current_user.id, for_action=False
     )
-    return _to_detail(incident)
+    evidence = incident_service.evidence_for_caller(db, incident, user_id=current_user.id)
+    return _to_detail(incident, evidence)
 
 
 @router.post(
@@ -215,7 +216,8 @@ def acknowledge_incident(
     incident = incident_service.acknowledge_incident(
         db, incident, user_id=current_user.id, note=payload.note
     )
-    return _to_detail(incident)
+    evidence = incident_service.evidence_for_caller(db, incident, user_id=current_user.id)
+    return _to_detail(incident, evidence)
 
 
 @router.post(
@@ -235,4 +237,5 @@ def resolve_incident(
     incident = incident_service.resolve_incident(
         db, incident, user_id=current_user.id, note=payload.note
     )
-    return _to_detail(incident)
+    evidence = incident_service.evidence_for_caller(db, incident, user_id=current_user.id)
+    return _to_detail(incident, evidence)

@@ -69,6 +69,20 @@ def _check(db: Any, suite: Any, name: str = "orders_not_null") -> Check:
     return c
 
 
+def _monitor_check(db: Any, suite: Any, kind: str, name: str | None = None) -> Check:
+    c = Check(
+        suite_id=suite.id,
+        name=name or f"{kind}_monitor",
+        kind=kind,
+        expectation_type=f"monitor:{kind}",
+        config={"column": "id"} if kind == "freshness" else {},
+        fail_threshold=1,
+    )
+    db.add(c)
+    db.flush()
+    return c
+
+
 @pytest.fixture
 def world(db_session: Any) -> dict[str, Any]:
     owner = _user(db_session)
@@ -453,3 +467,331 @@ def test_observed_value_sample_list_keys_stripped(db_session: Any, world: dict[s
     import json
 
     assert secret not in json.dumps(card)
+
+
+# ── kind-aware detail (#1635) ──────────────────────────────────────────────────
+
+
+def test_kind_detail_is_none_for_an_ordinary_expectation(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    run = _run(db_session, world["suite"])
+    result = Result(
+        run_id=run.id,
+        check_id=world["check"].id,
+        status="fail",
+        observed_value={"observed_value": 3},
+    )
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    assert card["kind_detail"] is None
+
+
+def test_kind_detail_freshness(db_session: Any, world: dict[str, Any]) -> None:
+    check = _monitor_check(db_session, world["suite"], "freshness")
+    run = _run(db_session, world["suite"])
+    result = Result(
+        run_id=run.id,
+        check_id=check.id,
+        status="fail",
+        observed_value={"max_timestamp": "2026-08-01T00:00:00+00:00", "age_hours": 400.5},
+    )
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(db_session, run=run, result=result, check=check, asset=world["asset"])
+    assert card["kind_detail"] == {
+        "age_hours": 400.5,
+        "max_timestamp": "2026-08-01T00:00:00+00:00",
+    }
+
+
+def test_kind_detail_volume(db_session: Any, world: dict[str, Any]) -> None:
+    check = _monitor_check(db_session, world["suite"], "volume")
+    run = _run(db_session, world["suite"])
+    result = Result(
+        run_id=run.id,
+        check_id=check.id,
+        status="fail",
+        observed_value={"row_count": 40, "deviation_pct": -60.0},
+    )
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(db_session, run=run, result=result, check=check, asset=world["asset"])
+    assert card["kind_detail"] == {"row_count": 40, "deviation_pct": -60.0}
+
+
+def test_kind_detail_schema_drift_with_changes(db_session: Any, world: dict[str, Any]) -> None:
+    check = _monitor_check(db_session, world["suite"], "schema_drift")
+    run = _run(db_session, world["suite"])
+    result = Result(
+        run_id=run.id,
+        check_id=check.id,
+        status="fail",
+        observed_value={
+            "added": ["new_col"],
+            "removed": ["old_col"],
+            "type_changed": [{"column": "amount", "from": "INTEGER", "to": "TEXT"}],
+        },
+    )
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(db_session, run=run, result=result, check=check, asset=world["asset"])
+    assert card["kind_detail"] == {
+        "added": ["new_col"],
+        "removed": ["old_col"],
+        "type_changed": [{"column": "amount", "from": "INTEGER", "to": "TEXT"}],
+        "baseline_captured": False,
+    }
+
+
+def test_kind_detail_schema_drift_first_baseline_is_not_read_as_no_drift(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """A first-ever baseline capture has no `added`/`removed`/`type_changed` keys
+    at all — `.get(..., [])` would read identically to "compared, found nothing",
+    so `baseline_captured` must survive into the card (#828 class).
+    """
+    check = _monitor_check(db_session, world["suite"], "schema_drift")
+    run = _run(db_session, world["suite"])
+    result = Result(
+        run_id=run.id,
+        check_id=check.id,
+        status="pass",
+        observed_value={"baseline_captured": True, "columns_checked": 12},
+    )
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(db_session, run=run, result=result, check=check, asset=world["asset"])
+    assert card["kind_detail"] == {
+        "added": [],
+        "removed": [],
+        "type_changed": [],
+        "baseline_captured": True,
+    }
+
+
+def test_kind_detail_anomaly(db_session: Any, world: dict[str, Any]) -> None:
+    check = _monitor_check(db_session, world["suite"], "anomaly")
+    run = _run(db_session, world["suite"])
+    result = Result(
+        run_id=run.id,
+        check_id=check.id,
+        status="fail",
+        observed_value={
+            "target_metric": "row_count",
+            "value": 900.0,
+            "z_score": 4.2,
+            "mean": 500.0,
+            "stddev": 95.2,
+            "deviation": 400.0,
+            "degenerate_stddev": False,
+        },
+    )
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(db_session, run=run, result=result, check=check, asset=world["asset"])
+    assert card["kind_detail"] == {
+        "z_score": 4.2,
+        "mean": 500.0,
+        "stddev": 95.2,
+        "insufficient_history": False,
+    }
+
+
+def test_kind_detail_anomaly_insufficient_history(db_session: Any, world: dict[str, Any]) -> None:
+    check = _monitor_check(db_session, world["suite"], "anomaly")
+    run = _run(db_session, world["suite"])
+    result = Result(
+        run_id=run.id,
+        check_id=check.id,
+        status="pass",
+        observed_value={
+            "target_metric": "row_count",
+            "value": 900.0,
+            "points": 1,
+            "insufficient_history": True,
+            "reason": "insufficient_history",
+        },
+    )
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(db_session, run=run, result=result, check=check, asset=world["asset"])
+    assert card["kind_detail"] == {
+        "z_score": None,
+        "mean": None,
+        "stddev": None,
+        "insufficient_history": True,
+    }
+
+
+# ── cross-suite same-asset siblings (#1635) ────────────────────────────────────
+
+
+def test_same_asset_siblings_sees_a_check_in_a_different_suite(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    other_suite = _suite(db_session, world["owner"], world["conn"], table="ORDERS")
+    other_check = _check(db_session, other_suite, name="orders_volume_ok")
+    assert other_suite.asset_id == world["suite"].asset_id  # same table ⇒ same asset
+
+    other_run = Run(
+        suite_id=other_suite.id,
+        status="succeeded",
+        asset_id=other_suite.asset_id,
+    )
+    db_session.add(other_run)
+    db_session.flush()
+    db_session.add(Result(run_id=other_run.id, check_id=other_check.id, status="fail"))
+    db_session.commit()
+
+    run = _run(db_session, world["suite"])
+    result = Result(run_id=run.id, check_id=world["check"].id, status="fail")
+    db_session.add(result)
+    db_session.commit()
+
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    siblings = card["same_asset_siblings"]
+    assert len(siblings) == 1
+    assert siblings[0]["check_name"] == "orders_volume_ok"
+    assert siblings[0]["suite_id"] == str(other_suite.id)
+    assert siblings[0]["status"] == "fail"
+
+
+def test_same_asset_siblings_excludes_the_failing_check_itself(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    run = _run(db_session, world["suite"])
+    result = Result(run_id=run.id, check_id=world["check"].id, status="fail")
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    assert card["same_asset_siblings"] == []
+
+
+def test_same_asset_siblings_only_the_latest_result_per_check(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    other_suite = _suite(db_session, world["owner"], world["conn"], table="ORDERS")
+    other_check = _check(db_session, other_suite, name="orders_volume_ok")
+    base = datetime.now(UTC) - timedelta(hours=1)
+    for i, status in enumerate(("fail", "warn", "pass")):
+        r = Run(suite_id=other_suite.id, status="succeeded", asset_id=other_suite.asset_id)
+        db_session.add(r)
+        db_session.flush()
+        db_session.add(
+            Result(
+                run_id=r.id,
+                check_id=other_check.id,
+                status=status,
+                created_at=base + timedelta(minutes=i),
+            )
+        )
+        db_session.commit()
+
+    run = _run(db_session, world["suite"])
+    result = Result(run_id=run.id, check_id=world["check"].id, status="fail")
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    siblings = card["same_asset_siblings"]
+    assert len(siblings) == 1
+    assert siblings[0]["status"] == "pass"  # the latest of the three, not the first
+
+
+def test_same_asset_siblings_excludes_a_different_asset(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    other_suite = _suite(db_session, world["owner"], world["conn"], table="PAYMENTS")
+    other_check = _check(db_session, other_suite, name="payments_not_null")
+    assert other_suite.asset_id != world["suite"].asset_id
+    other_run = Run(suite_id=other_suite.id, status="succeeded", asset_id=other_suite.asset_id)
+    db_session.add(other_run)
+    db_session.flush()
+    db_session.add(Result(run_id=other_run.id, check_id=other_check.id, status="fail"))
+    db_session.commit()
+
+    run = _run(db_session, world["suite"])
+    result = Result(run_id=run.id, check_id=world["check"].id, status="fail")
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    assert card["same_asset_siblings"] == []
+
+
+def test_same_asset_siblings_excludes_an_operationally_failed_run(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """Only `succeeded` runs count (mirrors `rollup.AGGREGATABLE_RUN_STATUSES`) —
+    a `failed` run's results are an operational failure, not a complete account.
+    """
+    other_suite = _suite(db_session, world["owner"], world["conn"], table="ORDERS")
+    other_check = _check(db_session, other_suite, name="orders_volume_ok")
+    other_run = Run(suite_id=other_suite.id, status="failed", asset_id=other_suite.asset_id)
+    db_session.add(other_run)
+    db_session.flush()
+    db_session.add(Result(run_id=other_run.id, check_id=other_check.id, status="fail"))
+    db_session.commit()
+
+    run = _run(db_session, world["suite"])
+    result = Result(run_id=run.id, check_id=world["check"].id, status="fail")
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    assert card["same_asset_siblings"] == []
+
+
+def test_same_asset_siblings_excludes_a_stale_result_outside_the_window(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    other_suite = _suite(db_session, world["owner"], world["conn"], table="ORDERS")
+    other_check = _check(db_session, other_suite, name="orders_volume_ok")
+    stale_run = Run(
+        suite_id=other_suite.id,
+        status="succeeded",
+        asset_id=other_suite.asset_id,
+        created_at=datetime.now(UTC) - timedelta(days=30),
+    )
+    db_session.add(stale_run)
+    db_session.flush()
+    db_session.add(
+        Result(
+            run_id=stale_run.id,
+            check_id=other_check.id,
+            status="fail",
+            created_at=datetime.now(UTC) - timedelta(days=30),
+        )
+    )
+    db_session.commit()
+
+    run = _run(db_session, world["suite"])
+    result = Result(run_id=run.id, check_id=world["check"].id, status="fail")
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    assert card["same_asset_siblings"] == []
+
+
+def test_same_asset_siblings_empty_for_unresolved_asset(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    run = _run(db_session, world["suite"])
+    result = Result(run_id=run.id, check_id=world["check"].id, status="fail")
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(db_session, run=run, result=result, check=world["check"], asset=None)
+    assert card["same_asset_siblings"] == []

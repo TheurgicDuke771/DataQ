@@ -26,7 +26,11 @@ from backend.app.db.models import (
 from backend.app.services import audit_service, suite_service
 from backend.app.services.incident_evidence import build_evidence
 from backend.app.services.run_service import list_results
-from backend.app.services.suite_authz import SuiteForbiddenError, effective_permission
+from backend.app.services.suite_authz import (
+    SuiteForbiddenError,
+    effective_permission,
+    effective_permissions,
+)
 
 log = get_logger(__name__)
 
@@ -369,6 +373,40 @@ def load_visible_incident(
 def get_incident(session: Session, incident_id: uuid.UUID) -> Incident | None:
     """Fetch an incident by id (no authz — the API layer gates on its suite)."""
     return session.get(Incident, incident_id)
+
+
+def evidence_for_caller(
+    session: Session, incident: Incident, *, user_id: uuid.UUID
+) -> dict[str, Any] | None:
+    """The incident's stored evidence card, with the ``same_asset_siblings``
+    layer (#1635) trimmed to entries whose suite this caller can view.
+
+    That layer is built **workspace-true** (ADR 0037), the same way the asset
+    rollup is — it has no caller in scope, since it's assembled once at sync
+    time. Holding `view` on THIS incident's suite is not a grant on a sibling's
+    suite just because both target the same asset, so the itemized rows are
+    filtered here, at read time — mirroring how ``get_asset`` names only the
+    caller's own suites and folds the rest into a count. A suite that no longer
+    exists reads the same as one the caller cannot see; both collapse into the
+    restricted count rather than being distinguished.
+    """
+    evidence = incident.evidence
+    if not isinstance(evidence, dict):
+        return evidence
+    siblings = evidence.get("same_asset_siblings")
+    if not isinstance(siblings, list) or not siblings:
+        return evidence
+    suite_ids = {s["suite_id"] for s in siblings if isinstance(s, dict) and "suite_id" in s}
+    suites = session.scalars(
+        select(Suite).where(Suite.id.in_(uuid.UUID(sid) for sid in suite_ids))
+    ).all()
+    levels = effective_permissions(session, suites, user_id)
+    visible = [s for s in siblings if levels.get(uuid.UUID(s["suite_id"])) is not None]
+    return {
+        **evidence,
+        "same_asset_siblings": visible,
+        "same_asset_siblings_restricted_count": len(siblings) - len(visible),
+    }
 
 
 def _incident_filters(

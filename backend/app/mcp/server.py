@@ -3180,13 +3180,32 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     Use this for 'why did the orders freshness incident open?' or 'what else was
     failing at the time?'. Returns the incident's lifecycle state plus the
     `evidence` snapshot captured when it last breached: the failing check and its
-    observed value, the asset, the recent metric trend, the sibling checks in the
-    same run, the upstream pipeline run, and the downstream blast radius.
+    observed value, a kind-shaped detail view of it, the asset, the recent metric
+    trend, the sibling checks in the same run, the latest state of every OTHER
+    check on the SAME asset across ALL suites, the upstream pipeline run, and the
+    downstream blast radius.
 
     The evidence card is a **snapshot taken at the last occurrence**, not a live
     read — describe it as "when this last failed", not "right now". It carries no
     failing sample rows by design, so it cannot show which specific records were
     bad; use the run results for that.
+
+    ``kind_detail`` names the fields specific to the failing check's monitor kind
+    (`age_hours` for freshness, `deviation_pct` for volume, `added`/`removed`/
+    `type_changed` for schema_drift, `z_score`/`insufficient_history` for
+    anomaly) instead of making you parse `failing_result.observed_value`'s three
+    different JSONB shapes yourself. It is null for an ordinary GX expectation or
+    a comparison check, where `observed_value` already IS the shape.
+
+    ``same_asset_siblings`` is the cross-suite signal `sibling_checks` cannot
+    see: the latest result of every other check that targets this SAME asset, in
+    ANY suite, from the last 7 days — e.g. a volume check on `orders` in a
+    different suite dropping 40% right before this freshness check breached.
+    Entries whose suite you cannot view are withheld and folded into
+    `same_asset_siblings_restricted_count` instead of being named — an empty
+    list plus a nonzero restricted count means there WAS cross-suite context,
+    just not one you're permitted to see; don't report "no other checks touch
+    this asset" without checking that count.
 
     ``downstream_blast_radius`` is ``[]`` for three reasons that look
     identical: the failing asset was never resolved, the asset is a genuine
@@ -3208,8 +3227,11 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     - `upstream_pipeline_run` is null for every manually-triggered or scheduled
       run — most runs. It means "no orchestration pipeline triggered this", which
       is normal, not a missing pipeline or a DataQ failure.
-    - `metric_trend` and `sibling_checks` are `[]` when there is nothing to show,
-      so a null there really is a layer that could not be built.
+    - `kind_detail` is null for an `expectation`/`comparison` check — expected,
+      not a missing layer.
+    - `metric_trend`, `sibling_checks` and `same_asset_siblings` are `[]` when
+      there is nothing to show, so a null there really is a layer that could not
+      be built.
     - `profile_diff` is always null — not implemented, not a failed attempt.
 
     Requires view access to the incident's suite; an incident on a suite the
@@ -3222,7 +3244,7 @@ def get_incident(incident_id: str) -> dict[str, Any]:
         )
         return {
             **_incident_payload(incident),
-            "evidence": incident.evidence,
+            "evidence": incident_service.evidence_for_caller(session, incident, user_id=user.id),
         }
 
 
