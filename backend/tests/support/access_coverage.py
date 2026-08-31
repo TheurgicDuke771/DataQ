@@ -29,8 +29,10 @@ AUDITED: Final[dict[str, str]] = {
     # EGRESS rung, always masked, warehouse-tag floor applied. Both #1512
     # (sql-gen) and #1513 (check suggestions) call through this ONE shared
     # helper rather than each redacting independently (#1719 review) — pinned
-    # by test_llm_sqlgen AND test_llm_checksuggest.
-    "services/llm_prompt_context.py::masked_profile_for_prompt": "column.profile",
+    # by test_llm_sqlgen AND test_llm_checksuggest. `masked_profile_for_prompt`
+    # (the suite's own target) is now a thin wrapper around this general
+    # primitive, which #1649's additional-table profiling also calls directly.
+    "services/llm_prompt_context.py::masked_profile_for_target": "column.profile",
     "mcp/server.py::dryrun_check": "check.dryrun",
 }
 

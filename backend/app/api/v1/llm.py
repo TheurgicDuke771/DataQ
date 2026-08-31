@@ -24,6 +24,7 @@ from backend.app.db.session import get_db
 from backend.app.services import (
     incident_service,
     llm_checksuggest,
+    llm_prompt_context,
     llm_rca,
     llm_service,
     llm_sqlgen,
@@ -63,12 +64,40 @@ class LlmDispatchFailedError(DataQError):
     code = "llm_dispatch_failed"
 
 
+class AdditionalTableRef(ApiRequestModel):
+    """A join-relevant related table on the SUITE'S OWN connection (#1649).
+    There is deliberately no connection reference here: cross-connection
+    joins are out of scope (a federated engine is a different ADR) and the
+    `comparison` kind (ADR 0015) is the reconciliation shape for that —
+    refusing it is structural, not an error path to hit.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    table: str = Field(min_length=1, max_length=255)
+    schema_: str | None = Field(default=None, alias="schema", max_length=255)
+    catalog: str | None = Field(default=None, max_length=255)
+
+    @field_validator("table")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("table must not be blank")
+        return stripped
+
+
 class SqlGenerationRequest(ApiRequestModel):
     suite_id: UUID
     #: Refused over-length, never silently truncated — a clipped rule generates
     #: SQL that quietly omits conditions the user wrote.
     description: str = Field(min_length=1, max_length=llm_sqlgen.MAX_DESCRIPTION_CHARS)
     include_profile: bool = False
+    #: Extra tables (SAME connection) for a cross-table rule, e.g. "sales" +
+    #: "traffic" — bounded, see `llm_sqlgen.MAX_ADDITIONAL_TABLES`.
+    additional_tables: list[AdditionalTableRef] = Field(
+        default_factory=list, max_length=llm_sqlgen.MAX_ADDITIONAL_TABLES
+    )
 
     @field_validator("description")
     @classmethod
@@ -129,13 +158,26 @@ def generate_sql(
     """Queues a worker-side generation; poll `GET /llm/invocations/{id}`. The
     model's SQL passes the same ADR 0019 validator a human's would before it is
     ever stored; add the result to a check like any custom SQL (dry-run in the
-    editor before save applies there unchanged).
+    editor before save applies there unchanged). `additional_tables` (#1649)
+    joins in up to `llm_sqlgen.MAX_ADDITIONAL_TABLES` more tables on this SAME
+    connection for a cross-table rule — cross-connection is refused
+    structurally (there is no connection reference to give one).
     """
     if llm_sqlgen.SQLGEN_KIND not in REGISTERED_KINDS:  # pragma: no cover - wiring guard
         raise LlmDispatchFailedError("sql_generation is not registered in this process")
     suite = require_permission(db, payload.suite_id, current_user.id, minimum="edit")
     connection = db.get(Connection, suite.connection_id)
     llm_sqlgen.check_generation_preconditions(suite, connection)
+    primary = llm_prompt_context.target_identity(suite)
+    additional_tables = llm_sqlgen.validate_additional_tables(
+        [
+            {"table": t.table, "schema": t.schema_, "catalog": t.catalog}
+            for t in payload.additional_tables
+        ],
+        primary_table=primary.get("table"),
+        primary_schema=primary.get("schema"),
+        primary_catalog=primary.get("catalog"),
+    )
     invocation = llm_service.create_invocation(
         db,
         kind=llm_sqlgen.SQLGEN_KIND,
@@ -144,6 +186,7 @@ def generate_sql(
         request={
             "description": payload.description,
             "include_profile": payload.include_profile,
+            "additional_tables": additional_tables,
         },
     )
     return _queue_invocation(db, invocation)
