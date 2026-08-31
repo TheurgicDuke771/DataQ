@@ -8,6 +8,7 @@ GATES: dict[str, str] = {
     # `get_asset` are here by ADR 0037's explicit decision.
     "get_adf_pipeline_status": "read",  # deprecated alias for get_pipeline_status (#1443)
     "get_asset": "read",
+    "get_doc": "read",  # curated docs/site pages, workspace-agnostic (#1626)
     "get_health_score": "read",
     "get_pipeline_status": "read",
     "get_suite_performance": "read",

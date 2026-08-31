@@ -42,6 +42,15 @@ the per-PR history lives in the repo's commit log and pull requests.
   the product is unchanged. Changing the provider or endpoint URL requires re-supplying the
   credential, so a stored key can never be redirected to a new destination.
 
+- **MCP `get_doc` — the published docs, reachable from a conversation (48 tools total).**
+  A curated set of user-facing pages (best practices, the feature matrix, security, getting
+  started, MCP setup, and the five compliance runbooks/templates) is now readable through the
+  MCP surface, verbatim and unsummarized — so "what are DataQ's best practices for authoring a
+  check?" or "what compliance mechanisms does DataQ support?" answers from the maintained docs
+  rather than training data. Deliberately excludes ADRs and `architecture.md` (contributor
+  design-rationale, not this question's audience); an unrecognized page returns the current
+  valid list. See [AI assistants (MCP setup)](mcp-setup.md).
+
 ### Changed
 
 - **The two distinct-value set relations no longer accept severity thresholds.**

@@ -4162,3 +4162,44 @@ def test_profile_column_honours_a_clearance_on_the_suites_own_target(
     # The clearance survived defaulting, so the cleared column keeps its values.
     assert out["redacted_columns"] == []
     assert out["columns"][0]["min_value"] == "EMEA"
+
+
+def test_get_doc_returns_the_page_verbatim(db_session: Any, monkeypatch: Any) -> None:
+    """No suite scoping — any authenticated user reads the same content (#1626)."""
+    from backend.app.mcp import docs_catalog
+
+    user = _user(db_session)
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_doc("best-practices")
+    assert out["page"] == "best-practices"
+    assert out["content"] == docs_catalog.read_page("best-practices")
+
+
+def test_get_doc_unknown_page_is_a_clean_tool_error(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError) as exc:
+        server.get_doc("architecture")
+    message = str(exc.value)
+    assert "architecture" in message
+    assert "best-practices" in message  # restates the current valid pages
+
+
+def test_get_doc_still_requires_authentication(db_session: Any, monkeypatch: Any) -> None:
+    """`read` still runs through `_ctx()` — an unauthenticated caller is denied
+    the same way as every other tool, even though there is no suite to gate on.
+    """
+    from backend.app.mcp.auth import McpAuthError
+
+    monkeypatch.setattr(server, "get_session", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+
+    def _deny(_session: Any) -> Any:
+        raise McpAuthError("no credentials")
+
+    monkeypatch.setattr(server, "resolve_current_user", _deny)
+
+    with pytest.raises(ToolError):
+        server.get_doc("best-practices")

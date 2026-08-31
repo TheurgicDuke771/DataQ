@@ -52,6 +52,7 @@ from backend.app.db.models import (
     User,
 )
 from backend.app.db.session import get_session
+from backend.app.mcp import docs_catalog
 from backend.app.mcp.auth import (
     McpAuthError,
     build_auth_provider,
@@ -3398,6 +3399,39 @@ def get_near_misses(suite_id: str | None = None) -> dict[str, Any]:
                 for r in rows
             ],
         }
+
+
+@mcp.tool
+def get_doc(
+    page: Annotated[str, Field(json_schema_extra={"enum": docs_catalog.list_pages()})],
+) -> dict[str, Any]:
+    """Read a published DataQ user-facing doc page, verbatim.
+
+    Use this for questions about how DataQ works or what it supports, e.g.
+    'what are best practices for authoring a check?' or 'what compliance
+    mechanisms does DataQ have?' — answer from the returned ``content``, not
+    from general knowledge, since these pages are the maintained source of
+    truth. Content is returned exactly as published, with **no summarization**;
+    a long page may need several turns to read in full if you need everything
+    in it.
+
+    ``page`` is one of a small curated set — the enum below is the complete,
+    current list; there is no broader catalog to page through. It deliberately
+    excludes architecture/ADR docs (contributor-facing design rationale, not
+    what this question is usually about) and every other unpublished internal
+    doc — this tool has no path to anything outside the pages listed. An
+    unrecognized ``page`` raises an error restating the current valid list, so
+    retry from that rather than guessing a slug.
+
+    Not scoped to any suite: these pages are public and workspace-agnostic, so
+    every authenticated caller sees the same content.
+    """
+    with _ctx():
+        try:
+            content = docs_catalog.read_page(page)
+        except docs_catalog.DocNotFoundError as exc:
+            raise ToolError(str(exc)) from exc
+        return {"page": page, "content": content}
 
 
 @mcp.tool
