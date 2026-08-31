@@ -116,9 +116,11 @@ def create_channel(
     session.flush()  # mint channel.id before it's used in the secret ref below
 
     if type in ("teams", "slack") and webhook:
-        channel.webhook_secret_ref, _cleared = notification_service.apply_secret_webhook(
+        # A create has no prior ref to clear, so the tri-state helper's second
+        # return value is always None here — only the minted ref is kept.
+        channel.webhook_secret_ref = notification_service.apply_secret_webhook(
             webhook, None, ref_prefix="channel", config_id=channel.id, secret_store=secret_store
-        )
+        )[0]
     if type == "email" and email_recipients:
         channel.email_recipients = email_recipients
 
