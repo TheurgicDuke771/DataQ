@@ -15,11 +15,13 @@ from backend.app.db.models import (
     Check,
     Connection,
     Incident,
+    NotificationChannel,
     PipelineRun,
     Result,
     Run,
     Share,
     Suite,
+    SuiteNotificationChannel,
     User,
 )
 from backend.app.mcp import server
@@ -1675,6 +1677,8 @@ def test_get_notification_config_defaults_when_unconfigured(
     assert out["alert_on"] == "warn"
     assert out["has_webhook"] is False
     assert out["webhook_source"] is None
+    assert out["webhook_channel_linked"] is False
+    assert out["has_generic_webhooks"] is False
 
 
 def test_get_notification_config_reports_webhook_presence_never_the_url(
@@ -1957,7 +1961,7 @@ def test_get_notification_config_does_not_claim_email_without_an_smtp_transport(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """Recipients alone deliver nothing: `EmailPublisher.publish` no-ops unless the
-    workspace SMTP username, password secret AND sender are all configured. A
+    workspace SMTP username AND password secret are both configured. A
     deployment that named recipients but never wired a mailer would otherwise be
     told email alerting is on.
     """
@@ -1968,6 +1972,208 @@ def test_get_notification_config_does_not_claim_email_without_an_smtp_transport(
     monkeypatch.setenv("EMAIL_TO", "oncall@acme.io")
     monkeypatch.delenv("EMAIL_USERNAME", raising=False)
     monkeypatch.delenv("EMAIL_PASSWORD_SECRET_NAME", raising=False)
+    get_settings.cache_clear()
+    _as(monkeypatch, db_session, user)
+    try:
+        out = server.get_notification_config(str(suite.id))
+    finally:
+        get_settings.cache_clear()
+
+    assert out["has_email_recipients"] is False
+    assert out["email_recipients_source"] is None
+
+
+def test_get_notification_config_credits_email_when_from_is_unset(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`email_from` is NOT part of the SMTP-ready gate (#1724): `EmailPublisher`
+    falls back to `email_username` as the sender when it's unset
+    (`alerting/email.py`'s `self._sender = sender or username`), so a
+    deployment relying on that documented fallback is actively delivering —
+    reporting `has_email_recipients: False` here would be the exact "who gets
+    told when orders fails → nobody" false answer this tool exists to prevent.
+    """
+    from backend.app.core.config import get_settings
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    monkeypatch.setenv("EMAIL_TO", "oncall@acme.io")
+    monkeypatch.setenv("EMAIL_USERNAME", "dataq@acme.io")
+    monkeypatch.setenv("EMAIL_PASSWORD_SECRET_NAME", "smtp-password")
+    monkeypatch.delenv("EMAIL_FROM", raising=False)
+    get_settings.cache_clear()
+    _as(monkeypatch, db_session, user)
+    try:
+        out = server.get_notification_config(str(suite.id))
+    finally:
+        get_settings.cache_clear()
+
+    assert out["has_email_recipients"] is True
+    assert out["email_recipients_source"] == "workspace"
+
+
+def _link_channel(db_session: Any, suite: Suite, *, type: str, **fields: Any) -> None:
+    channel = NotificationChannel(id=uuid.uuid4(), name="c", type=type, created_by=None, **fields)
+    db_session.add(channel)
+    db_session.flush()
+    db_session.add(SuiteNotificationChannel(suite_id=suite.id, channel_id=channel.id))
+    db_session.commit()
+
+
+def test_get_notification_config_credits_a_linked_teams_channel(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A suite-linked reusable channel (#1514) is a THIRD alert-delivery source
+    beside the suite override and the workspace default — `TeamsPublisher.publish`
+    fans out to it exactly as it does the other two. Missing it here would repeat
+    this tool's own "nobody" false-negative for a suite that relies solely on a
+    linked channel.
+    """
+    from backend.app.core.config import get_settings
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _link_channel(db_session, suite, type="teams", webhook_secret_ref="channel-hook-ref")
+    monkeypatch.delenv("TEAMS_WEBHOOK_SECRET_NAME", raising=False)
+    get_settings.cache_clear()
+    _as(monkeypatch, db_session, user)
+    try:
+        out = server.get_notification_config(str(suite.id))
+    finally:
+        get_settings.cache_clear()
+
+    assert out["has_webhook"] is True
+    assert out["webhook_source"] == "channel"
+    assert out["webhook_channel_linked"] is True
+
+
+def test_get_notification_config_reports_additive_delivery_source_plus_channel(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`TeamsPublisher.publish` merges the suite/workspace destination with every
+    linked channel — it does not pick one. A suite with BOTH its own override AND
+    a linked channel delivers to both, so `webhook_channel_linked` must stay
+    `True` even when `webhook_source` already reads `"suite"`; collapsing it to a
+    single source would hide that a second destination is also live.
+    """
+    from backend.app.db.models import SuiteNotification
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    db_session.add(SuiteNotification(suite_id=suite.id, webhook_secret_ref="suite-hook-ref"))
+    _link_channel(db_session, suite, type="teams", webhook_secret_ref="channel-hook-ref")
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_notification_config(str(suite.id))
+
+    assert out["has_webhook"] is True
+    assert out["webhook_source"] == "suite"
+    assert out["webhook_channel_linked"] is True
+
+
+def test_get_notification_config_credits_a_linked_generic_webhook(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The generic HMAC-signed webhook (#1662) is a distinct fourth channel
+    *type* with no suite/workspace fallback of its own — unlike Teams/Slack/
+    email it never routes through `webhook_source`, so a suite relying solely on
+    one would be invisible everywhere else in this response.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _link_channel(
+        db_session,
+        suite,
+        type="webhook",
+        webhook_url="https://receiver.example/hook",
+        hmac_secret_ref="channel-hmac-ref",
+    )
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_notification_config(str(suite.id))
+
+    assert out["has_generic_webhooks"] is True
+    # Must never be conflated with the Teams webhook field.
+    assert out["has_webhook"] is False
+
+
+def test_get_notification_config_generic_webhook_needs_both_url_and_hmac_secret(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Matches `resolve_webhook_channels`' own delivery gate — a channel missing
+    either half never actually sends, so reporting it as present would overclaim.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _link_channel(db_session, suite, type="webhook", webhook_url="https://receiver.example/hook")
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_notification_config(str(suite.id))
+
+    assert out["has_generic_webhooks"] is False
+
+
+def test_get_notification_config_credits_a_linked_slack_channel(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    from backend.app.core.config import get_settings
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _link_channel(db_session, suite, type="slack", webhook_secret_ref="channel-slack-ref")
+    monkeypatch.delenv("SLACK_WEBHOOK_SECRET_NAME", raising=False)
+    get_settings.cache_clear()
+    _as(monkeypatch, db_session, user)
+    try:
+        out = server.get_notification_config(str(suite.id))
+    finally:
+        get_settings.cache_clear()
+
+    assert out["has_slack_webhook"] is True
+    assert out["slack_webhook_source"] == "channel"
+    assert out["slack_webhook_channel_linked"] is True
+
+
+def test_get_notification_config_credits_a_linked_email_channel(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The SMTP-ready gate still applies — a linked email channel supplies
+    recipients, not the transport, exactly like the workspace `EMAIL_TO`.
+    """
+    from backend.app.core.config import get_settings
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _link_channel(db_session, suite, type="email", email_recipients="oncall@acme.io")
+    monkeypatch.setenv("EMAIL_USERNAME", "dataq@acme.io")
+    monkeypatch.setenv("EMAIL_PASSWORD_SECRET_NAME", "smtp-password")
+    monkeypatch.delenv("EMAIL_TO", raising=False)
+    get_settings.cache_clear()
+    _as(monkeypatch, db_session, user)
+    try:
+        out = server.get_notification_config(str(suite.id))
+    finally:
+        get_settings.cache_clear()
+
+    assert out["has_email_recipients"] is True
+    assert out["email_recipients_source"] == "channel"
+    assert out["email_recipients_channel_linked"] is True
+
+
+def test_get_notification_config_a_linked_email_channel_still_needs_smtp(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A linked channel supplies recipients only — it must not bypass the SMTP-
+    transport gate any more than the workspace `EMAIL_TO` does.
+    """
+    from backend.app.core.config import get_settings
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _link_channel(db_session, suite, type="email", email_recipients="oncall@acme.io")
+    monkeypatch.delenv("EMAIL_USERNAME", raising=False)
+    monkeypatch.delenv("EMAIL_PASSWORD_SECRET_NAME", raising=False)
+    monkeypatch.delenv("EMAIL_TO", raising=False)
     get_settings.cache_clear()
     _as(monkeypatch, db_session, user)
     try:
