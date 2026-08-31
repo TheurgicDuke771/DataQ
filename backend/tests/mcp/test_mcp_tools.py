@@ -15,11 +15,13 @@ from backend.app.db.models import (
     Check,
     Connection,
     Incident,
+    NotificationChannel,
     PipelineRun,
     Result,
     Run,
     Share,
     Suite,
+    SuiteNotificationChannel,
     User,
 )
 from backend.app.mcp import server
@@ -2006,6 +2008,110 @@ def test_get_notification_config_credits_email_when_from_is_unset(
 
     assert out["has_email_recipients"] is True
     assert out["email_recipients_source"] == "workspace"
+
+
+def _link_channel(db_session: Any, suite: Suite, *, type: str, **fields: Any) -> None:
+    channel = NotificationChannel(id=uuid.uuid4(), name="c", type=type, created_by=None, **fields)
+    db_session.add(channel)
+    db_session.flush()
+    db_session.add(SuiteNotificationChannel(suite_id=suite.id, channel_id=channel.id))
+    db_session.commit()
+
+
+def test_get_notification_config_credits_a_linked_teams_channel(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A suite-linked reusable channel (#1514) is a THIRD alert-delivery source
+    beside the suite override and the workspace default — `TeamsPublisher.publish`
+    fans out to it exactly as it does the other two. Missing it here would repeat
+    this tool's own "nobody" false-negative for a suite that relies solely on a
+    linked channel.
+    """
+    from backend.app.core.config import get_settings
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _link_channel(db_session, suite, type="teams", webhook_secret_ref="channel-hook-ref")
+    monkeypatch.delenv("TEAMS_WEBHOOK_SECRET_NAME", raising=False)
+    get_settings.cache_clear()
+    _as(monkeypatch, db_session, user)
+    try:
+        out = server.get_notification_config(str(suite.id))
+    finally:
+        get_settings.cache_clear()
+
+    assert out["has_webhook"] is True
+    assert out["webhook_source"] == "channel"
+
+
+def test_get_notification_config_credits_a_linked_slack_channel(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    from backend.app.core.config import get_settings
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _link_channel(db_session, suite, type="slack", webhook_secret_ref="channel-slack-ref")
+    monkeypatch.delenv("SLACK_WEBHOOK_SECRET_NAME", raising=False)
+    get_settings.cache_clear()
+    _as(monkeypatch, db_session, user)
+    try:
+        out = server.get_notification_config(str(suite.id))
+    finally:
+        get_settings.cache_clear()
+
+    assert out["has_slack_webhook"] is True
+    assert out["slack_webhook_source"] == "channel"
+
+
+def test_get_notification_config_credits_a_linked_email_channel(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The SMTP-ready gate still applies — a linked email channel supplies
+    recipients, not the transport, exactly like the workspace `EMAIL_TO`.
+    """
+    from backend.app.core.config import get_settings
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _link_channel(db_session, suite, type="email", email_recipients="oncall@acme.io")
+    monkeypatch.setenv("EMAIL_USERNAME", "dataq@acme.io")
+    monkeypatch.setenv("EMAIL_PASSWORD_SECRET_NAME", "smtp-password")
+    monkeypatch.delenv("EMAIL_TO", raising=False)
+    get_settings.cache_clear()
+    _as(monkeypatch, db_session, user)
+    try:
+        out = server.get_notification_config(str(suite.id))
+    finally:
+        get_settings.cache_clear()
+
+    assert out["has_email_recipients"] is True
+    assert out["email_recipients_source"] == "channel"
+
+
+def test_get_notification_config_a_linked_email_channel_still_needs_smtp(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A linked channel supplies recipients only — it must not bypass the SMTP-
+    transport gate any more than the workspace `EMAIL_TO` does.
+    """
+    from backend.app.core.config import get_settings
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _link_channel(db_session, suite, type="email", email_recipients="oncall@acme.io")
+    monkeypatch.delenv("EMAIL_USERNAME", raising=False)
+    monkeypatch.delenv("EMAIL_PASSWORD_SECRET_NAME", raising=False)
+    monkeypatch.delenv("EMAIL_TO", raising=False)
+    get_settings.cache_clear()
+    _as(monkeypatch, db_session, user)
+    try:
+        out = server.get_notification_config(str(suite.id))
+    finally:
+        get_settings.cache_clear()
+
+    assert out["has_email_recipients"] is False
+    assert out["email_recipients_source"] is None
 
 
 def test_list_trigger_bindings_rejects_an_unknown_env(db_session: Any, monkeypatch: Any) -> None:

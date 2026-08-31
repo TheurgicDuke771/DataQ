@@ -63,6 +63,7 @@ from backend.app.mcp.auth import (
 from backend.app.services import (
     asset_view_service,
     audit_service,
+    channel_service,
     check_service,
     connection_service,
     dashboard_service,
@@ -1430,12 +1431,16 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
     (``configured``), whether alerting is enabled, which result severities alert
     (``alert_on``), and — per channel — whether a Teams webhook, a Slack webhook
     and email recipients are in effect, each with whether that comes from the
-    suite's **own** override or from the **workspace** default.
+    suite's **own** override, the **workspace** default, or a linked reusable
+    **channel**.
 
     Read the ``*_source`` fields, not just the booleans, when the question is
     "who gets told": a suite with no override of its own still alerts through the
     workspace channels, so per-suite configuration being absent never means
-    nobody is notified.
+    nobody is notified. A ``*_source`` of ``"channel"`` means a reusable
+    notification channel is linked to this suite — a third source beside the
+    suite override and the workspace default. No MCP tool currently lists or
+    identifies which channel that is; this tool can only report that one exists.
 
     Webhook **URLs are never returned** — only whether one is set. A webhook URL
     is a bearer credential: anyone holding it can post into that channel, so it
@@ -1468,18 +1473,39 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
         # `resolve_slack_webhook` / `resolve_email_recipients` use, and the secret
         # store is never read here: whether a reference is CONFIGURED is the
         # question, and resolving it would fetch the credential itself.
-        def _channel(suite_value: Any, workspace_value: Any) -> tuple[bool, str | None]:
+        #
+        # A THIRD source, beside the suite override and the workspace default: a
+        # reusable channel (#1514) linked to this suite. `EmailPublisher.publish`
+        # and its Teams/Slack siblings all merge channel-resolved destinations in
+        # alongside the legacy suite/workspace ones — reporting only the first two
+        # would repeat this tool's own "nobody" false-negative for a suite that
+        # relies solely on a linked channel with no suite override and no
+        # workspace default configured.
+        linked_channels = channel_service.list_channels_for_suite(session, sid)
+        has_teams_channel = any(c.type == "teams" and c.webhook_secret_ref for c in linked_channels)
+        has_slack_channel = any(c.type == "slack" and c.webhook_secret_ref for c in linked_channels)
+        has_email_channel = any(c.type == "email" and c.email_recipients for c in linked_channels)
+
+        def _channel(
+            suite_value: Any, workspace_value: Any, *, channel_configured: bool = False
+        ) -> tuple[bool, str | None]:
             if suite_value:
                 return True, "suite"
             if workspace_value:
                 return True, "workspace"
+            if channel_configured:
+                return True, "channel"
             return False, None
 
         has_webhook, webhook_source = _channel(
-            config.webhook_secret_ref if config else None, settings.teams_webhook_secret_name
+            config.webhook_secret_ref if config else None,
+            settings.teams_webhook_secret_name,
+            channel_configured=has_teams_channel,
         )
         has_slack, slack_source = _channel(
-            config.slack_webhook_secret_ref if config else None, settings.slack_webhook_secret_name
+            config.slack_webhook_secret_ref if config else None,
+            settings.slack_webhook_secret_name,
+            channel_configured=has_slack_channel,
         )
         # Recipients alone do not mean email is delivered: `EmailPublisher.publish`
         # no-ops unless the workspace SMTP transport (username + password secret)
@@ -1493,7 +1519,11 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
         # actively delivering, not disabled (#1724).
         smtp_ready = bool(settings.email_username and settings.email_password_secret_name)
         has_email, email_source = (
-            _channel(config.email_recipients if config else None, settings.email_to)
+            _channel(
+                config.email_recipients if config else None,
+                settings.email_to,
+                channel_configured=has_email_channel,
+            )
             if smtp_ready
             else (False, None)
         )
