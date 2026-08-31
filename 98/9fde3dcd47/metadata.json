@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "989fde3dcd47",
+  "strategy": "manual-commit",
+  "branch": "feature/1635-evidence-card-enrichment",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/alerting/builder.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/incident_service.py",
+    "backend/tests/alerting/test_incident_payload.py",
+    "backend/tests/services/test_incident_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/98/9fde3dcd47/0/metadata.json",
+      "transcript": "/98/9fde3dcd47/0/full.jsonl",
+      "compact_transcript": "/98/9fde3dcd47/0/transcript.jsonl",
+      "content_hash": "/98/9fde3dcd47/0/content_hash.txt",
+      "prompt": "/98/9fde3dcd47/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1560,
+    "cache_creation_tokens": 2526935,
+    "cache_read_tokens": 367862721,
+    "output_tokens": 441688,
+    "api_call_count": 783
+  }
+}
