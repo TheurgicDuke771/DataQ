@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import secrets
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
@@ -57,6 +58,21 @@ class ChannelFieldMismatchError(DataQError):
     code = "channel_field_mismatch"
 
 
+class ChannelCredentialRedirectError(DataQError):
+    """Raised when a channel's ``webhook_url`` is changing while it already has
+    a stored auth-header credential that isn't being re-supplied in the same
+    request — the #1401 credential-redirect class (closed for `Connection` by
+    ``connection_service._reject_uncredentialed_redirect``), which applies here
+    too: `webhook_url` (destination) and `auth_header_value` (credential) are
+    two independent fields, so silently changing the destination would send a
+    stored credential to wherever the URL now points, with no proof the caller
+    still knows the value (#1663 review).
+    """
+
+    status_code = 422
+    code = "channel_credential_redirect"
+
+
 def _validate_type(type_: str) -> None:
     if type_ not in NOTIFICATION_CHANNEL_TYPES:
         raise ChannelTypeInvalidError(
@@ -71,17 +87,29 @@ def _validate_destination(
     webhook: str | None,
     email_recipients: str | None,
     webhook_url: str | None = None,
+    payload_template: dict[str, Any] | None = None,
+    auth_header_name: str | None = None,
+    auth_header_value: str | None = None,
+    existing_auth_header_name: str | None = None,
 ) -> None:
     """Same validators the per-suite fields already use — one allowlist, one rule
     set — plus a type/field match check: ``None`` means "not supplied" and is
     always fine, but a caller who explicitly names a field the type doesn't use
     (``webhook`` on ``email``, ``email_recipients`` on ``teams``/``slack``) gets
     a 422, not a silently-dropped write.
+
+    ``existing_auth_header_name`` is the channel's CURRENT name (``None`` on a
+    create, where there is no prior state) — used only to compute the
+    EFFECTIVE post-call name for the pairing check below, not validated on its
+    own account.
     """
-    field_types: dict[str, tuple[str | None, tuple[str, ...]]] = {
+    field_types: dict[str, tuple[object | None, tuple[str, ...]]] = {
         "webhook": (webhook, ("teams", "slack")),
         "email_recipients": (email_recipients, ("email",)),
         "webhook_url": (webhook_url, ("webhook",)),
+        "payload_template": (payload_template, ("webhook",)),
+        "auth_header_name": (auth_header_name, ("webhook",)),
+        "auth_header_value": (auth_header_value, ("webhook",)),
     }
     for field, (value, allowed_types) in field_types.items():
         if value is not None and type_ not in allowed_types:
@@ -96,27 +124,76 @@ def _validate_destination(
         notification_service.assert_valid_recipients(email_recipients)
     elif type_ == "webhook" and webhook_url:
         notification_service.assert_safe_generic_webhook_url(webhook_url)
+    if type_ == "webhook" and payload_template is not None:
+        notification_service.assert_valid_payload_template(payload_template)
+    if type_ == "webhook" and auth_header_name:
+        notification_service.assert_valid_auth_header_name(auth_header_name)
+    if type_ == "webhook" and auth_header_value:
+        # A value with no name is a secret that can never be sent (resolve_
+        # webhook_channels requires BOTH) — an orphaned SecretStore entry
+        # `has_auth_header: true` would then misreport as configured (#1663
+        # review). Checks the EFFECTIVE name so setting a value while
+        # SIMULTANEOUSLY clearing the name (auth_header_name="") is caught
+        # too, not just "no name supplied at all".
+        effective_name = (
+            auth_header_name if auth_header_name is not None else existing_auth_header_name
+        )
+        if not effective_name:
+            raise notification_service.InvalidAuthHeaderError(
+                "auth_header_value requires auth_header_name to be set in the same request"
+            )
 
 
-def _mint_hmac_secret(
-    channel: NotificationChannel, secret_store: SecretStore, *, previous_ref: str | None = None
-) -> str:
-    """Generate a fresh HMAC signing key and store it — rotating in place when
-    ``previous_ref`` names an existing ref (the old value there is replaced,
-    then explicitly purged), the same tri-state rotation contract every other
-    webhook secret on this table uses via `apply_secret_webhook`.
+@dataclass(frozen=True)
+class WebhookDestination:
+    """One resolved generic-webhook send target — everything `WebhookPublisher`
+    needs to build and sign a request, already pulled out of the SecretStore.
     """
-    hmac_secret = secrets.token_urlsafe(32)
-    channel.hmac_secret_ref, cleared = notification_service.apply_secret_webhook(
-        hmac_secret,
-        previous_ref,
-        ref_prefix="channel-hmac",
+
+    url: str
+    hmac_secret: str
+    payload_template: dict[str, Any] | None
+    auth_header_name: str | None
+    auth_header_value: str | None
+
+
+def _mint_channel_secret(
+    channel: NotificationChannel,
+    secret_store: SecretStore,
+    *,
+    value: str,
+    ref_attr: str,
+    ref_prefix: str,
+) -> str:
+    """Store ``value`` at whichever ref column ``ref_attr`` names — rotating in
+    place when the channel already has a ref there (the old value is
+    replaced, then explicitly purged), the tri-state rotation contract every
+    secret-bearing channel field shares via `apply_secret_webhook`. Shared by
+    every channel secret (HMAC key, auth-header value) so a bug in the
+    rotate-and-purge sequence is fixed once, not once per field.
+    """
+    new_ref, cleared = notification_service.apply_secret_webhook(
+        value,
+        getattr(channel, ref_attr),
+        ref_prefix=ref_prefix,
         config_id=channel.id,
         secret_store=secret_store,
     )
+    setattr(channel, ref_attr, new_ref)
     if cleared:
         secret_store.delete(cleared)
-    return hmac_secret
+    return value
+
+
+def _mint_hmac_secret(channel: NotificationChannel, secret_store: SecretStore) -> str:
+    """Generate a fresh HMAC signing key and store it."""
+    return _mint_channel_secret(
+        channel,
+        secret_store,
+        value=secrets.token_urlsafe(32),
+        ref_attr="hmac_secret_ref",
+        ref_prefix="channel-hmac",
+    )
 
 
 def get_channel(session: Session, channel_id: uuid.UUID) -> NotificationChannel:
@@ -138,6 +215,9 @@ def create_channel(
     webhook: str | None = None,
     email_recipients: str | None = None,
     webhook_url: str | None = None,
+    payload_template: dict[str, Any] | None = None,
+    auth_header_name: str | None = None,
+    auth_header_value: str | None = None,
     secret_store: SecretStore,
     actor_id: uuid.UUID | None = None,
 ) -> tuple[NotificationChannel, str | None]:
@@ -148,7 +228,13 @@ def create_channel(
     """
     _validate_type(type)
     _validate_destination(
-        type, webhook=webhook, email_recipients=email_recipients, webhook_url=webhook_url
+        type,
+        webhook=webhook,
+        email_recipients=email_recipients,
+        webhook_url=webhook_url,
+        payload_template=payload_template,
+        auth_header_name=auth_header_name,
+        auth_header_value=auth_header_value,
     )
 
     channel = NotificationChannel(name=name, type=type, created_by=actor_id)
@@ -164,9 +250,22 @@ def create_channel(
     if type == "email" and email_recipients:
         channel.email_recipients = email_recipients
     hmac_secret: str | None = None
-    if type == "webhook" and webhook_url:
-        channel.webhook_url = webhook_url
-        hmac_secret = _mint_hmac_secret(channel, secret_store)
+    if type == "webhook":
+        if webhook_url:
+            channel.webhook_url = webhook_url
+            hmac_secret = _mint_hmac_secret(channel, secret_store)
+        if payload_template is not None:
+            channel.payload_template = payload_template
+        if auth_header_name:
+            channel.auth_header_name = auth_header_name
+        if auth_header_value:
+            _mint_channel_secret(
+                channel,
+                secret_store,
+                value=auth_header_value,
+                ref_attr="auth_header_secret_ref",
+                ref_prefix="channel-auth",
+            )
 
     audit_service.record_entity_change(
         session,
@@ -189,14 +288,23 @@ def update_channel(
     webhook: str | None = None,
     email_recipients: str | None = None,
     webhook_url: str | None = None,
+    payload_template: dict[str, Any] | None = None,
+    clear_payload_template: bool = False,
+    auth_header_name: str | None = None,
+    auth_header_value: str | None = None,
     regenerate_hmac_secret: bool = False,
     secret_store: SecretStore,
     actor_id: uuid.UUID | None = None,
 ) -> tuple[NotificationChannel, str | None]:
-    """``webhook``/``email_recipients``/``webhook_url`` are tri-state, same
-    convention as `notification_service.upsert_config`: ``None`` = unchanged,
-    ``""`` = clear, a value = set/rotate. Rotating a channel referenced by N
-    suites is the point — this is the one place that value changes.
+    """``webhook``/``email_recipients``/``webhook_url``/``auth_header_value``
+    are tri-state, same convention as `notification_service.upsert_config`:
+    ``None`` = unchanged, ``""`` = clear, a value = set/rotate. Rotating a
+    channel referenced by N suites is the point — this is the one place that
+    value changes. ``payload_template`` can't use the same "" = clear
+    convention (an empty object is a legitimate template value, distinct from
+    "no template"), so clearing it is the explicit ``clear_payload_template``
+    flag instead. ``auth_header_name`` is plain text, not tri-state — passing
+    ``""`` clears it (there's no rotate-in-place concept for a header name).
 
     Returns ``(channel, hmac_secret)`` — the second element is the newly minted
     plaintext HMAC key, populated when ``regenerate_hmac_secret`` is set, or
@@ -206,8 +314,31 @@ def update_channel(
     """
     channel = get_channel(session, channel_id)
     _validate_destination(
-        channel.type, webhook=webhook, email_recipients=email_recipients, webhook_url=webhook_url
+        channel.type,
+        webhook=webhook,
+        email_recipients=email_recipients,
+        webhook_url=webhook_url,
+        payload_template=payload_template,
+        auth_header_name=auth_header_name,
+        auth_header_value=auth_header_value,
+        existing_auth_header_name=channel.auth_header_name,
     )
+    if (
+        channel.type == "webhook"
+        and webhook_url
+        and webhook_url != channel.webhook_url
+        and channel.auth_header_secret_ref is not None
+        and auth_header_value is None
+    ):
+        # The #1401 credential-redirect class: webhook_url (destination) and
+        # auth_header_value (credential) are independent fields, so silently
+        # repointing the URL would send a stored credential to wherever it
+        # now points with no proof the caller still knows the value.
+        raise ChannelCredentialRedirectError(
+            "changing webhook_url on a channel with a stored auth header requires "
+            "re-supplying auth_header_value in the same request",
+            detail={"field": "auth_header_value"},
+        )
     audit_before = audit_service.snapshot("notification_channel", channel)
 
     if name is not None:
@@ -226,6 +357,7 @@ def update_channel(
         channel.email_recipients = email_recipients or None
 
     hmac_secret: str | None = None
+    cleared_auth_header: str | None = None
     if channel.type == "webhook":
         if webhook_url is not None:
             channel.webhook_url = webhook_url or None
@@ -234,9 +366,36 @@ def update_channel(
         # first-ever mint when a URL is set on a channel with no key yet.
         first_time_mint = channel.webhook_url is not None and channel.hmac_secret_ref is None
         if regenerate_hmac_secret or first_time_mint:
-            hmac_secret = _mint_hmac_secret(
-                channel, secret_store, previous_ref=channel.hmac_secret_ref
-            )
+            hmac_secret = _mint_hmac_secret(channel, secret_store)
+        if payload_template is not None:
+            channel.payload_template = payload_template
+        elif clear_payload_template:
+            channel.payload_template = None
+        if auth_header_name is not None:
+            if auth_header_name == "":
+                # Clearing the name orphans any secret ref it gated (a value
+                # with no visible name can never be sent again, and the
+                # sweep can't find it by name either) — tear down both
+                # halves of the pair together (#1663 review).
+                channel.auth_header_name = None
+                if channel.auth_header_secret_ref:
+                    cleared_auth_header = channel.auth_header_secret_ref
+                    channel.auth_header_secret_ref = None
+            else:
+                channel.auth_header_name = auth_header_name
+        if auth_header_value is not None:
+            if auth_header_value == "":
+                if channel.auth_header_secret_ref:
+                    cleared_auth_header = channel.auth_header_secret_ref
+                channel.auth_header_secret_ref = None
+            else:
+                _mint_channel_secret(
+                    channel,
+                    secret_store,
+                    value=auth_header_value,
+                    ref_attr="auth_header_secret_ref",
+                    ref_prefix="channel-auth",
+                )
 
     audit_service.record_entity_change(
         session,
@@ -250,6 +409,8 @@ def update_channel(
     session.refresh(channel)
     if cleared_secret:
         secret_store.delete(cleared_secret)
+    if cleared_auth_header:
+        secret_store.delete(cleared_auth_header)
     return channel, hmac_secret
 
 
@@ -284,6 +445,7 @@ def delete_channel(
         )
     secret_ref = channel.webhook_secret_ref
     hmac_ref = channel.hmac_secret_ref
+    auth_header_ref = channel.auth_header_secret_ref
     audit_before = audit_service.snapshot("notification_channel", channel)
     try:
         # SAVEPOINT: a link committed between the check above and this delete trips
@@ -311,6 +473,8 @@ def delete_channel(
         secret_store.delete(secret_ref)
     if hmac_ref:
         secret_store.delete(hmac_ref)
+    if auth_header_ref:
+        secret_store.delete(auth_header_ref)
 
 
 def list_channels_for_suite(session: Session, suite_id: uuid.UUID) -> list[NotificationChannel]:
@@ -354,16 +518,21 @@ def resolve_channel_webhooks(
 
 def resolve_webhook_channels(
     session: Session, suite_id: uuid.UUID, *, secret_store: SecretStore
-) -> list[tuple[str, str]]:
-    """Every distinct ``(url, hmac_secret)`` pair for the suite's linked
-    ``webhook`` channels — a channel missing either half (never configured, or
-    its secret has gone missing) is skipped and logged, same fail-soft posture
-    as :func:`resolve_channel_webhooks`, which this also matches by deduping
-    on URL (two channels that happen to point at the same destination deliver
-    once, not twice). The signing key never leaves the process except as an
-    HMAC digest.
+) -> list[WebhookDestination]:
+    """Every distinct :class:`WebhookDestination` for the suite's linked
+    ``webhook`` channels — a channel missing the URL or the HMAC signing key
+    (never configured, or the secret has gone missing) is skipped and logged,
+    same fail-soft posture as :func:`resolve_channel_webhooks`, which this also
+    matches by deduping on URL (two channels that happen to point at the same
+    destination deliver once, not twice). The signing key never leaves the
+    process except as an HMAC digest.
+
+    An unresolvable AUTH HEADER secret is a softer failure than a missing HMAC
+    key: the header is an extra, optional layer some receivers want beside the
+    signature, not the thing securing the request, so the destination still
+    delivers — just without that header — rather than being dropped entirely.
     """
-    destinations: list[tuple[str, str]] = []
+    destinations: list[WebhookDestination] = []
     seen_urls: set[str] = set()
     for channel in list_channels_for_suite(session, suite_id):
         if channel.type != "webhook" or not channel.webhook_url or not channel.hmac_secret_ref:
@@ -375,8 +544,24 @@ def resolve_webhook_channels(
         except SecretNotFoundError:
             log.warning("notification_channel_hmac_unresolved", channel_id=str(channel.id))
             continue
+        auth_header_value: str | None = None
+        if channel.auth_header_name and channel.auth_header_secret_ref:
+            try:
+                auth_header_value = secret_store.get(channel.auth_header_secret_ref)
+            except SecretNotFoundError:
+                log.warning(
+                    "notification_channel_auth_header_unresolved", channel_id=str(channel.id)
+                )
         seen_urls.add(channel.webhook_url)
-        destinations.append((channel.webhook_url, hmac_secret))
+        destinations.append(
+            WebhookDestination(
+                url=channel.webhook_url,
+                hmac_secret=hmac_secret,
+                payload_template=channel.payload_template,
+                auth_header_name=channel.auth_header_name if auth_header_value else None,
+                auth_header_value=auth_header_value,
+            )
+        )
     return destinations
 
 

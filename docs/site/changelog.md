@@ -69,6 +69,18 @@ the per-PR history lives in the repo's commit log and pull requests.
   it exactly once, at creation or rotation; the destination URL must be HTTPS and must not
   point at a private, loopback, or internal address.
 
+- **A webhook channel can reshape its own payload and add an extra auth header.** An optional
+  template lets a webhook channel produce the exact JSON shape a receiver expects (a PagerDuty
+  Events-API body, an Opsgenie/ServiceNow/Jira payload) using `{{field}}` placeholders that
+  pull from the same data every alert already carries — a template can rename or reshape what's
+  there, never reach anything new. Left unset, the channel keeps sending the plain generic
+  payload, unchanged. A channel can also carry one extra header (e.g. an API key some receivers
+  want beside the signature); the value is write-only, same as every other channel credential.
+  Because a template commonly has nowhere else to put a receiver's static integration key than
+  as a literal in the JSON, the template itself is only ever shown to a workspace admin — every
+  other user sees just whether one is set. Changing a channel's destination URL while it has a
+  stored auth header now requires re-supplying that header's value in the same request.
+
 - **Alerts now credit the asset owner, not just the suite creator.** When a table has an
   assigned owner, the "Owner" shown on a run alert (Teams card, Slack message, email) is that
   person — the one actually responsible for the data — rather than whoever happened to author

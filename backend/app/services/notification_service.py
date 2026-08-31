@@ -47,6 +47,22 @@ class InvalidRecipientsError(DataQError):
     code = "recipients_invalid"
 
 
+class InvalidPayloadTemplateError(DataQError):
+    """Raised when a webhook channel's payload template isn't a JSON object (#1663)."""
+
+    status_code = 422
+    code = "payload_template_invalid"
+
+
+class InvalidAuthHeaderError(DataQError):
+    """Raised when a webhook channel's auth header name isn't a plain HTTP token,
+    or names a header DataQ already sets itself (#1663).
+    """
+
+    status_code = 422
+    code = "auth_header_invalid"
+
+
 def _hosts_from(raw: str) -> tuple[str, ...]:
     return tuple(host.strip().lower() for host in raw.split(",") if host.strip())
 
@@ -385,3 +401,38 @@ def resolve_email_recipients(
     if config is not None and config.email_recipients:
         return tuple(parse_recipients(config.email_recipients))
     return workspace_recipients
+
+
+# ── generic-webhook payload templates + auth header (#1663) ─────────────────
+
+# DataQ sets these itself on every webhook send — a template's own auth header
+# must not collide with (and silently override) either one.
+_RESERVED_HEADER_NAMES = frozenset({"content-type", "x-dataq-signature"})
+# A plain HTTP header-field token (RFC 7230 §3.2.6, restricted to the common
+# ASCII subset actually used in practice): this is also what rules out a
+# CR/LF-injected header name, since neither character is in the allowed set.
+_HEADER_NAME_RE = re.compile(r"[A-Za-z0-9-]{1,128}")
+
+
+def assert_valid_payload_template(template: object) -> None:
+    """Raise ``InvalidPayloadTemplateError`` unless ``template`` is a JSON
+    object. Nothing deeper is validated here: rendering (``alerting.webhook.
+    render_templated_payload``) resolves placeholders by key lookup only
+    against the already-redacted generic payload — there is no expression
+    language, so no template shape can reach a field the payload doesn't
+    already expose (#1118/#1401 class).
+    """
+    if not isinstance(template, dict):
+        raise InvalidPayloadTemplateError("payload_template must be a JSON object")
+
+
+def assert_valid_auth_header_name(name: str) -> None:
+    """Raise ``InvalidAuthHeaderError`` unless ``name`` is a plain HTTP header
+    token that isn't one DataQ already sets on every webhook send.
+    """
+    if not _HEADER_NAME_RE.fullmatch(name):
+        raise InvalidAuthHeaderError(
+            "auth header name must contain only letters, digits, and hyphens"
+        )
+    if name.lower() in _RESERVED_HEADER_NAMES:
+        raise InvalidAuthHeaderError(f"{name!r} is set by DataQ itself and cannot be overridden")
