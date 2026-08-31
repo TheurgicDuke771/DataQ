@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "70d49465b4fa",
+  "strategy": "manual-commit",
+  "branch": "feature/1654-evidence-card-docs-page",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/70/d49465b4fa/0/metadata.json",
+      "transcript": "/70/d49465b4fa/0/full.jsonl",
+      "compact_transcript": "/70/d49465b4fa/0/transcript.jsonl",
+      "content_hash": "/70/d49465b4fa/0/content_hash.txt",
+      "prompt": "/70/d49465b4fa/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3330,
+    "cache_creation_tokens": 4455687,
+    "cache_read_tokens": 846919318,
+    "output_tokens": 810033,
+    "api_call_count": 1668
+  }
+}
