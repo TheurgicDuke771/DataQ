@@ -126,7 +126,9 @@ A REST caller wrote their own query and a UI user reads the screen — the row
 count, the timestamps, the "running" badge, the filter they chose. An AI client
 has neither, so several tools return **fields whose whole job is to say what the
 answer does not cover**. A well-behaved client should branch on these rather
-than summarising the payload as-is.
+than summarising the payload as-is. This is one instance of a discipline applied
+across the whole surface — see [MCP tool design: honesty & disclosure](mcp-honesty.md)
+for the full set of rules and why they exist.
 
 | Field | Appears on | What it prevents |
 |---|---|---|
