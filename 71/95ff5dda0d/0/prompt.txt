@@ -1,0 +1,558 @@
+<task-notification>
+<task-id>b236e5s36</task-id>
+<tool-use-id>toolu_018QLoZBo3sFuoFfv35XgCyu</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/b236e5s36.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch CI on the trivial docs PR" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>abd9782bd3114d487</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/abd9782bd3114d487.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle B: removed-behavior auditor" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Findings (Angle B — removed/overclaimed behavior audit):
+
+```json
+[
+  {
+    "file": "docs/progress.md",
+    "line": 146,
+    "summary": "Doc claims the battery proves a hostile 'column' name reaches the prompt as inert data, but no test in the new file actually injects into the column-name slot.",
+    "failure_scenario": "test_llm_injection_battery.py only injects into top_value, table, and schema slots (lines 76-148); the 'column' claim rests solely on a comparison in a docstring comment ('same as a hostile column name', line 82), never on an actual assertion where list_columns()/ColumnProfile.column is set to an injection string and checked against the assembled prompt (llm_checksuggest.py:176 embeds `col.column` directly). A reader of progress.md would wrongly believe column-name injection is regression-tested; a future change to how column names are rendered into the prompt could break that guarantee with no test catching it."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 146,
+    "summary": "'(mutation-verified — all three checks fail against a deliberately reintroduced leak)' is asserted with no corresponding evidence anywhere in the diff.",
+    "failure_scenario": "Nothing in test_llm_injection_battery.py, adversarial.py, or the PR's own files records a mutation-verification pass (no note of which fix was reverted, no script, no 'three checks' enumerated anywhere in the test file). A reader trusts these tests were proven to actually catch a reintroduced leak by reverting the protection and watching them fail; if that step was never actually performed, an ineffective or tautological test could be presented as a proven regression guard."
+  },
+  {
+    "file": "docs/progress.md",
+    "line": 146,
+    "summary": "'(never bypasses the output gate)' is credited to this PR's new file, but the module's own docstring says that half of the guarantee is established by PRE-EXISTING test batteries, not new work here.",
+    "failure_scenario": "test_llm_injection_battery.py:3-11 explicitly states 'the per-feature output-gate batteries already living in test_llm_sqlgen.py / test_llm_checksuggest.py ARE that half of this battery; this module fills the gaps' — i.e. the output-gate proof is old coverage, merely referenced. progress.md's phrasing makes it look like #1632's new work established the full injection-defense story (input AND output sides) end-to-end, overstating what this diff actually adds."
+  },
+  {
+    "file": "backend/tests/services/test_llm_injection_battery.py",
+    "line": 161,
+    "summary": "The 'structural guarantee' that neither builder can ever read sample rows is enforced only by a single-line-import text heuristic that a routine Black reformat would silently defeat.",
+    "failure_scenario": "`import_lines` keeps only lines literally starting with 'from backend.app.db.models import' (line 167), then asserts `\"Result\" not in import_lines[0]` (line 171). If llm_sqlgen.py or llm_checksuggest.py ever adds `Result` to that import and Black wraps it to a parenthesized multi-line form (as it does once a line exceeds its length limit), `Result` would sit on a continuation line the assertion never inspects — `import_lines[0]` would just be `'from backend.app.db.models import ('`, so `\"Result\" not in import_lines[0]` stays True and the test keeps passing even though the forbidden model is now imported. The 'structural guarantee' silently stops being enforced exactly when it matters most."
+  }
+]
+```
+
+Supporting detail: `backend/app/services/llm_checksuggest.py:176` (`lines.append(f"- {col.column}: ...")`) confirms column names genuinely do reach the prompt the same way top-values do, so the missing column-slot test (finding 1) is a real coverage gap, not a non-issue — the mechanism it would need to exercise already exists in the code, it's just untested.</result>
+<usage><subagent_tokens>112674</subagent_tokens><tool_uses>8</tool_uses><duration_ms>105707</duration_ms></usage>
+</task-notification>
+
+---
+
+got any review?
+
+---
+
+continue...
+
+---
+
+Continue
+
+---
+
+Continue
+
+---
+
+<task-notification>
+<task-id>aa194157a20f2492e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/aa194157a20f2492e.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle: reuse/simplification/efficiency/altitude" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on the diff and full-file review, here are the cleanup candidates, prioritized by impact:
+
+**1. Altitude — redaction can be silently bypassed by two sibling read paths that still touch raw `incident.evidence`**
+- File: `backend/app/api/v1/incidents.py:92-93` and `backend/app/mcp/server.py:3028-3029`
+- Summary: `evidence_for_caller` (incident_service.py:378-409) is the one place that redacts `same_asset_siblings` to the caller's visible suites. But `_summary_fields` (incidents.py) and `_incident_payload` (mcp/server.py) both still do `ev = incident.evidence` directly and pull sub-keys (`check`, `asset`, `failing_result`) out of the *unredacted* dict — safe today only because those specific keys happen not to be suite-identifying. Nothing in the code shape enforces that only `evidence_for_caller`'s output may reach a response; the raw `Incident.evidence` column is still a plain public attribute.
+- failure_scenario: The natural next feature (e.g., a `latest_sibling_status` summary column, or a list-view sibling badge) will be written against `incident.evidence` the same way `_summary_fields`/`_incident_payload` already are, since that's the precedent in both files — silently leaking a suite the caller has no grant on, in the one class of surface (list/summary rows) that has no code review precedent flagging it as sensitive. A private accessor (e.g. `_visible_evidence`/property) or renaming the raw column to signal "sync-only, do not read directly" would make this mistake harder to make.
+
+**2. Reuse — monitor-kind field names are hardcoded independently in 4 places with no shared source of truth**
+- File: `backend/app/services/incident_evidence.py:151-178` vs. `backend/app/datasources/monitors.py:215-245`, `backend/app/services/schema_drift.py:75-77,245`, `backend/app/services/anomaly.py:185-193`, and the `mcp/server.py` docstring (~3195-3198)
+- Summary: `_kind_detail_layer` re-spells the exact JSONB keys (`age_hours`, `max_timestamp`, `row_count`, `deviation_pct`, `added`/`removed`/`type_changed`/`baseline_captured`, `z_score`/`mean`/`stddev`/`insufficient_history`) that the four monitor-kind producers independently write into `observed_value`, and the MCP docstring spells them a third time in prose.
+- failure_scenario: There is no shared constant/TypedDict tying producer and consumer together, so a future rename of one of these keys in `monitors.py`/`schema_drift.py`/`anomaly.py` (a plausible edit, since those modules are not aware `incident_evidence.py` depends on their exact key spelling) silently degrades `kind_detail` to `None`-valued fields with no test failure to catch it — the same "one source of truth" problem CLAUDE.md's own `_incident_filters` docstring explicitly calls out fixing elsewhere in this file.
+
+**3. Simplification — the two comprehensions in `evidence_for_caller` apply inconsistent defensiveness on the same list**
+- File: `backend/app/services/incident_service.py:399` vs. `404`
+- Summary: `suite_ids = {s["suite_id"] for s in siblings if isinstance(s, dict) and "suite_id" in s}` defensively guards against a malformed sibling entry, but `visible = [s for s in siblings if levels.get(uuid.UUID(s["suite_id"])) is not None]` re-iterates the same `siblings` list with no such guard, indexing `s["suite_id"]` unconditionally.
+- failure_scenario: Every other layer in `incident_evidence.py` is explicitly built to degrade fail-soft on malformed/partial data (`_layer()`'s try/except-to-`None` wrapper exists precisely because evidence is best-effort JSONB). This one filter breaks that pattern — a single non-dict or key-missing entry that the first line correctly tolerates will raise on the second line, turning a "degrade to fewer visible siblings" case into a request-level exception on every read of that incident (`get`/`ack`/`resolve`, both REST and MCP). Computing `{id(s): uuid.UUID(s["suite_id"]) for s in siblings if isinstance(s, dict) and "suite_id" in s}` once and reusing it for both the query and the filter removes the duplication and the asymmetry together.
+
+**4. Efficiency — the incident's own suite is refetched via a fresh query even though it was already loaded moments earlier in the same request**
+- File: `backend/app/services/incident_service.py:400-402` vs. `362` (`load_visible_incident`)
+- Summary: `load_visible_incident` (called by every one of `get_incident`/`acknowledge_incident`/`resolve_incident` in `incidents.py`) already does `session.get(Suite, incident.suite_id)` to authorize the request. `evidence_for_caller` then runs `select(Suite).where(Suite.id.in_(uuid.UUID(sid) for sid in suite_ids))` — and since `same_asset_siblings` frequently includes a check from the incident's *own* suite (it only excludes by `check_id`, not `suite_id`), that suite is refetched via a brand-new `SELECT` rather than reused from the identity map.
+- failure_scenario: One avoidable round trip on every incident-detail/ack/resolve call that has cross-suite siblings (an increasingly common case as #1635 is exactly designed to surface same-suite-and-cross-suite siblings together) — small but free to eliminate by excluding `incident.suite_id` from the query and merging it back in with the already-known permission level.
+
+**5. Simplification — `_kind_detail_layer`'s four branches are a natural dispatch-dict candidate**
+- File: `backend/app/services/incident_evidence.py:140-179`
+- Summary: The four `if check.kind == "X": return {...}` blocks each do the identical shape (`{field: observed.get(field[, default])}` extraction), differing only in which keys/defaults apply.
+- failure_scenario: Not urgent — the branches are short and the schema_drift one carries a load-bearing comment about `.get(..., [])` vs. absence that would need to travel with any dispatch-dict rewrite. But as `check.kind` grows (the seam already reserves `comparison`, and ADR 0012 lists more), each new kind currently means another cut-and-paste `if` block; a `dict[str, tuple[str, ...]]` of field-default pairs, or a small per-kind lambda table, keeps the growth linear-in-data rather than linear-in-code.
+
+**6. Reuse — the "latest result per check" query hand-rolls a DISTINCT ON idiom that `rollup.py` already established for a sibling shape**
+- File: `backend/app/services/incident_evidence.py:243-260` vs. `backend/app/services/rollup.py:80-89` (`latest_runs_per_suite_stmt`)
+- Summary: `_same_asset_siblings_layer` builds its own `.order_by(Result.check_id, Result.created_at.desc(), Result.id.desc()).distinct(Result.check_id)` subquery — the identical "latest row per group key" idiom `rollup.latest_runs_per_suite_stmt` already codified for `Run`/`suite_id`, just re-parameterized for `Result`/`check_id`.
+- failure_scenario: Low cost today (one instance is fine), but it is the second hand-rolled occurrence of the same DISTINCT ON shape in the incident/rollup code paths; a third (e.g. "latest result per asset" or "latest pipeline run per pipeline") would make three independent copies of a pattern that's already proven reusable — worth generalizing into a small helper (e.g. `rollup.latest_per_group_stmt(model, group_col, order_col)`) before, not after, a third copy appears.</result>
+<usage><subagent_tokens>146689</subagent_tokens><tool_uses>21</tool_uses><duration_ms>363260</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a97afce8496dc600b</task-id>
+<tool-use-id>toolu_018KMRz2cxSx93aKjfjTXoHu</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/a97afce8496dc600b.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle B: removed-behavior auditor" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+I traced all four call sites the diff touches, then walked the four explicit checklist items. Most of the diff is internally consistent (`_to_detail` has exactly 3 call sites, all updated; `now` is computed once and reused for both `generated_at` and the sibling window; `evidence_for_caller` preserves the `dict | None` shape for non-dict/None evidence; no test assertions were deleted — the diff against `backend/tests/` is purely additive, confirmed via `git diff ... | grep '^-[^-]'` returning nothing). Two concrete gaps remain, both surfaced by exhaustively grepping every other `.evidence` read site (question 4):
+
+```json
+[
+  {
+    "file": "backend/app/alerting/builder.py",
+    "line": 180,
+    "summary": "_incident_cards() still reads raw incident.evidence (unfiltered) into IncidentCard.evidence, bypassing the new incident_service.evidence_for_caller() redaction the PR added to all four REST/MCP incident-read endpoints.",
+    "failure_scenario": "A run breaches a check with an active incident whose evidence.same_asset_siblings names a check in Suite B that the alert recipients of Suite A (this run's suite) have no grant on. IncidentCard.evidence carries that unredacted same_asset_siblings list all the way through the alerting pipeline (builder -&gt; composite -&gt; publishers). Today no renderer (teams.py/slack.py/email.py/card.py/render.py — all grepped, none reference `.evidence`) actually prints the field, so it isn't rendered into a notification yet, but the object is structurally positioned to leak the exact cross-suite data this PR redacts everywhere else the moment a future publisher (a richer Teams card, a webhook/JSON dump, or a log line serializing the dataclass) reads `card.evidence`. No test in backend/tests/alerting/test_builder.py references IncidentCard.evidence or asserts any redaction, confirming this path was not covered by the PR's review."
+  },
+  {
+    "file": "backend/app/services/incident_service.py",
+    "line": 404,
+    "summary": "evidence_for_caller()'s `visible` comprehension does `s[\"suite_id\"]` unguarded, one line after a comprehension (line 399) that guards the identical access with `isinstance(s, dict) and \"suite_id\" in s`.",
+    "failure_scenario": "If any entry in evidence['same_asset_siblings'] is not a dict, or is a dict missing 'suite_id' (e.g. evidence written by a future schema revision that changes the sibling shape, or hand-edited/corrupted JSONB), line 399's suite_ids set silently skips it, but line 404's `levels.get(uuid.UUID(s[\"suite_id\"]))` raises TypeError/KeyError on that same entry, crashing get_incident/acknowledge_incident/resolve_incident (REST) and get_incident (MCP) for that incident. Low likelihood today since _same_asset_siblings_layer always emits suite_id for every entry it builds and pre-PR incidents never populate this key at all (early-return at line 397 catches those) — but the asymmetric guarding is a real inconsistency in new code, not defensive against its own stated corruption case ('a suite that no longer exists' is handled by the SELECT returning fewer rows, but a malformed sibling dict is not handled at all)."
+  }
+]
+```
+
+**Checked and confirmed clean (not findings):**
+- `_to_detail` — only 3 call sites total in the repo (all in `incidents.py`, all updated to 2 args); no test or other module calls it.
+- `_utc_now_iso()` deletion — `now.isoformat()` on `datetime.now(UTC)` is byte-identical output to the old helper; `now` is captured once in `build_evidence` and passed into `_same_asset_siblings_layer(..., now=now)`, so `generated_at` and the sibling window share the exact same instant.
+- `evidence_for_caller` return shape — returns `incident.evidence` verbatim when it isn't a dict or has no `same_asset_siblings` list, matching the prior unconditional `incident.evidence` read for every other case.
+- `_summary_fields`/`_incident_payload` (both REST `_to_summary` and MCP `list_incidents`/`ack_incident`/`resolve_incident`) only ever pull `check.name`, `asset.namespace`, `asset.name`, `failing_result.status` out of raw `incident.evidence` — never `same_asset_siblings` — so the list/summary paths were never exposed to the cross-suite leak and don't need `evidence_for_caller`.
+- `audit_service.snapshot("incident", ...)` explicitly excludes `evidence` from its allow-list (`_INCIDENT_FIELDS`, with a comment noting it's deliberate) — the audit-log leak path named in the task's hypothesis doesn't exist.
+- The `same_asset_siblings_restricted_count` key being present-with-0-vs-absent (rather than always present) is intentional and directly tested (`test_incident_service.py:735` asserts `"same_asset_siblings_restricted_count" not in evidence` for the genuinely-empty case) — not a regression.</result>
+<usage><subagent_tokens>134932</subagent_tokens><tool_uses>36</tool_uses><duration_ms>428964</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac0423e37030c942f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/ac0423e37030c942f.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle A: line-by-line diff scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have exact line numbers. Let me finalize the report.
+
+## Findings
+
+**1. `evidence_for_caller` — asymmetric guard between the two comprehensions causes KeyError/TypeError on a malformed `same_asset_siblings` entry**
+File: `backend/app/services/incident_service.py`, lines 399 vs 404.
+The `suite_ids` set comprehension (line 399) guards every item with `isinstance(s, dict) and "suite_id" in s` before touching `s["suite_id"]`. The `visible` list comprehension (line 404) — `[s for s in siblings if levels.get(uuid.UUID(s["suite_id"])) is not None]` — has no such guard and indexes `s["suite_id"]` unconditionally.
+Failure scenario: any `same_asset_siblings` entry that is not a dict, or is a dict missing `"suite_id"` (e.g. a future/legacy evidence shape, a partially-written JSONB blob, or a manually patched row), passes the `siblings` non-empty check at line 397 but is skipped only by the set comprehension at 399 — then line 404 raises `KeyError` (dict without the key) or `TypeError: string indices must be integers` (non-dict item, e.g. a string), crashing `GET /api/v1/incidents/{id}`, `POST .../acknowledge`, `POST .../resolve`, and the MCP `get_incident` tool with an unhandled 500 instead of degrading gracefully like every other evidence layer in this file does.
+
+**2. `evidence_for_caller` — `same_asset_siblings_restricted_count` is silently absent (not 0) when the raw layer is genuinely empty**
+File: `backend/app/services/incident_service.py`, line 397 (`if not isinstance(siblings, list) or not siblings: return evidence`) vs line 408.
+When `_same_asset_siblings_layer` found zero cross-suite siblings at all, `evidence["same_asset_siblings"]` is stored as `[]`. At read time this hits the `not siblings` branch and returns `evidence` unchanged — no `same_asset_siblings_restricted_count` key is added at all. But when siblings existed and were *all* filtered out by the caller's grants, the response carries `"same_asset_siblings": []` **and** `"same_asset_siblings_restricted_count": N`. Both cases render identically as `"same_asset_siblings": []` to a consumer, but only one of them carries the count key. The MCP docstring added in this same PR (`backend/app/mcp/server.py`, the `same_asset_siblings_restricted_count` paragraph) tells the caller "don't report 'no other checks touch this asset' without checking that count" — but the count is only present as a field some of the time, so a consumer that does `evidence.get("same_asset_siblings_restricted_count")` without a default gets `None` in the "genuinely nothing" case, indistinguishable from the "all restricted" case unless it separately defaults to 0. This is the same class of API-shape inconsistency this codebase's own history repeatedly flags (fields that read the same for two different real states).
+
+**3. `evidence_for_caller` — unguarded `uuid.UUID(sid)` conversions can raise uncaught `ValueError`**
+File: `backend/app/services/incident_service.py`, lines 401 and 404.
+Both `uuid.UUID(sid) for sid in suite_ids` (line 401, inside `.in_()`) and `uuid.UUID(s["suite_id"])` (line 404) assume every `suite_id` string in the stored evidence is a syntactically valid UUID. The line-399 guard only checks that the key exists, not that its value is a well-formed UUID string. Failure scenario: any stored `same_asset_siblings` entry whose `suite_id` value is present but not a valid UUID (corrupted JSONB, a future schema change, or a hand-edited row) raises `ValueError: badly formed hexadecimal UUID string`, again crashing all four call sites (REST get/ack/resolve, MCP get_incident) with no graceful degradation — unlike every layer inside `build_evidence`, which is wrapped in `_layer`'s broad `except Exception`.
+
+**4. Unaddressed by this PR but relevant to its "redaction" premise: `alerting/builder.py:180` still carries raw `incident.evidence` (including the new unfiltered `same_asset_siblings` cross-suite layer) onto `IncidentCard.evidence`**
+File: `backend/app/alerting/builder.py`, line 180 (not touched by this PR).
+This is not currently an active leak — I verified `card.evidence` is never read by `render.py`, `slack.py`, `email.py`, or `card.py` (grep confirms no renderer touches `.evidence`), so no notification currently surfaces the raw cross-suite data. But it is a redaction gap sitting right next to the feature this PR is otherwise closing: if a future change starts rendering `card.evidence` into an alert body (e.g. to enrich Teams/Slack cards with the new `kind_detail`/`same_asset_siblings` context, which seems like a natural next step given the evidence card was just extended), it would carry unredacted cross-suite `same_asset_siblings` entries — including suite_ids/check names from suites the alert's recipients may have no grant on — straight into an external channel with no `evidence_for_caller` filtering. Flagging as a should-fix-or-file item since it's the one other `.evidence` read path in `backend/app` besides the ones this PR updated.
+
+**Not a bug (ruled out after tracing):** I initially suspected `_kind_detail_layer` (`incident_evidence.py`) could return a dict of nulls (e.g. `{"age_hours": None, "max_timestamp": None}`) instead of `None` when a freshness/anomaly check errors on an unparseable timestamp cell (`monitors.py`'s `_as_aware_datetime` → `MonitorConfigError(unparsed_value=...)` → `run_service._build_result` stores `observed_value={"error":..., "unparsed_value":..., "column":...}`, which is a dict, so `isinstance(observed_value, dict)` passes and the shape-specific keys read as `None`). Traced it through and confirmed this is **not reachable**: `build_evidence`/`_kind_detail_layer` is only ever called from `incident_service.open_or_attach_incident`, which is only invoked when `result.status in FAILING_TIERS` (`warn`/`fail`/`critical`); `severity.resolve_status` forces `status="error"` whenever `outcome.errored` is True, so an errored result never reaches `build_evidence`. Verified-benign, recorded here rather than left silent per this repo's "every finding ends fixed or filed" convention (CLAUDE.md §11).</result>
+<usage><subagent_tokens>172954</subagent_tokens><tool_uses>48</tool_uses><duration_ms>626560</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aed3cc0f4a5b18696</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/aed3cc0f4a5b18696.output</output-file>
+<status>completed</status>
+<summary>Agent "MCP honesty review of get_incident docstring diff" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Scope confirmed
+
+`backend/app/mcp/server.py`'s `get_incident` tool (line 3176) is materially changed on `feature/1635-evidence-card-enrichment` vs `origin/main`, along with `backend/app/services/incident_evidence.py` (`_kind_detail_layer`, `_same_asset_siblings_layer`) and `backend/app/services/incident_service.py` (`evidence_for_caller`, new). MCP tool surface is in scope.
+
+**Important housekeeping note before the findings:** the working tree currently carries *uncommitted* changes on top of the sole commit (`acf94427`) that make up this branch. Those uncommitted edits already fix three of the defects below (docstring "three"→"four" JSONB shapes, the `same_asset_siblings_restricted_count` absent-when-empty bug, and malformed-sibling-entry robustness) plus add a fourth fix (`evidence_for_alert`) to a file (`backend/app/alerting/builder.py`) that is **not part of this branch's committed diff at all**. I'm auditing the diff as it stands in git history (`origin/main...feature/1635-evidence-card-enrichment`, commit `acf94427`) per instructions, since that's what a `gh pr diff` would show, but flagging clearly where an uncommitted fix already exists so the author doesn't duplicate work — and flagging one thing the uncommitted fixes still leave open.
+
+## Part A — silent honesty gaps (🔴)
+
+**1. `get_incident` docstring miscounts `kind_detail`'s own shapes — false, not thin.**
+Committed docstring (`server.py` line ~3196, via `git show acf94427`): *"instead of making you parse `failing_result.observed_value`'s **three** different JSONB shapes yourself."* `_kind_detail_layer` in `incident_evidence.py` dispatches four kinds — `freshness`, `volume`, `schema_drift`, `anomaly` — not three. A model relaying "there are three shapes" is relaying a specific, checkable, wrong count. **Already fixed, uncommitted** ("four different JSONB shapes").
+
+**2. `same_asset_siblings_restricted_count` is present or absent for the identical visible state (`same_asset_siblings: []`), and the docstring tells the reader to rely on the missing case.**
+Committed `evidence_for_caller`:
+```python
+siblings = evidence.get("same_asset_siblings")
+if not isinstance(siblings, list) or not siblings:
+    return evidence
+```
+When siblings are genuinely empty (nothing on the asset at all — the *common* case), the `or not siblings` branch fires and `same_asset_siblings_restricted_count` is never added to the returned dict at all. When siblings exist but are *all* filtered by grant, the key IS added, at the count. So the same on-the-wire state (`same_asset_siblings: []`) sometimes carries the count key and sometimes doesn't — and the docstring's own instruction is *"don't report 'no other checks touch this asset' without checking that count"* — i.e., it tells the model to depend on a field that, in the majority real-world case (nothing to redact), simply isn't there. `backend/tests/services/test_incident_service.py::test_evidence_for_caller_leaves_evidence_untouched_when_no_siblings` in the committed diff explicitly asserts the key is absent, confirming this was the shipped behavior, not an oversight I'm inferring. This is exactly the null/zero-semantics class named in the brief — one visible value, two silently different underlying meanings, only one of them checkable. **Already fixed, uncommitted** (count now added whenever the layer is a list, even `[]`, at `0`).
+
+**3. `kind_detail: null` conflates three causes and the docstring asserts only the benign one — a false, not merely thin, claim.**
+`_kind_detail_layer`:
+```python
+if check is None or not isinstance(result.observed_value, dict):
+    return None
+...
+return None  # unrecognized/expectation/comparison kind
+```
+`null` here means: (a) an ordinary `expectation`/`comparison` check — benign, the documented case; (b) `check is None` — **the check has been deleted since the breach**; or (c) `result.observed_value` isn't a dict — most plausibly an operational-error result, i.e. exactly the "this check didn't run cleanly" signal an incident investigation most wants. The docstring states flatly: *"`kind_detail` is null for an `expectation`/`comparison` check — expected, not a missing layer"* — placed in the same enumerated list that, two lines up, correctly warns the reader that `check_name`/`asset_name`/`latest_severity` going null usually means *"a deleted check"* and is **not** benign. The same PR's own docstring already knows this exact `check is None` cause is meaningful elsewhere on the same card, and drops it for `kind_detail`. A model seeing `kind_detail: null` on an incident whose stored `check.kind` (via `check_name`/history) is `anomaly` would, per this docstring, conclude "nothing to see here" when it may instead be looking at a deleted check or a malformed capture. **Not addressed by the uncommitted fixes** — still open in the current working tree.
+
+**4. `same_asset_siblings` is silently capped at 20 with no truncation signal, right beside a field in the same docstring that gets one.**
+`_SAME_ASSET_SIBLING_LIMIT = 20` (`.limit(_SAME_ASSET_SIBLING_LIMIT)` in `_same_asset_siblings_layer`), with no `truncated` field, no `oldest`/`newest` marker, and no docstring caveat at all. Contrast with `downstream_blast_radius` two paragraphs later in the *same* docstring: *"It is also depth-capped, so a non-empty list is a floor rather than a complete inventory."* The PR established the "disclose the cap" pattern in this exact docstring for one field and didn't carry it to the new one sitting right above it — on a busy asset (&gt;20 same-asset checks across suites, plausible on a shared table like `orders`) the returned list silently reads as complete when it isn't. **Not addressed by the uncommitted fixes.**
+
+**5. Adjacent blindness: operationally-failed sibling runs are invisible, and nothing says so anywhere the model can read.**
+`_same_asset_siblings_layer` filters `Run.status.in_(AGGREGATABLE_RUN_STATUSES)` = `{"succeeded"}` only. A sibling check whose run *errored* (e.g. a connection credential expired on a different suite touching the same asset — a highly plausible root-cause signal for "what else was happening to this asset") is excluded with zero trace — not `[]` with a note, not a count, nothing. The rationale is a code comment ("a `failed` run's results are an operational failure, not a complete account") that never reaches the docstring. Given the tool's own stated use case is root-cause investigation ("e.g., a volume check on `orders` in a different suite dropping 40% right before this freshness check breached"), an operationally-broken sibling is arguably *more* diagnostic than a passing one, and the docstring gives the reader no way to know this category was excluded at all.
+
+## Part A — beyond strict MCP scope but directly caused by this PR (flagging per "every finding ends fixed or filed")
+
+**6. The alert/notification path relays the new cross-suite `same_asset_siblings` layer completely unredacted — a real cross-suite data leak, not just a docstring gap.**
+The committed diff (`git diff origin/main...feature/1635-evidence-card-enrichment --stat`) touches only `api/v1/incidents.py`, `mcp/server.py`, `incident_evidence.py`, `incident_service.py`, plus tests — **`backend/app/alerting/builder.py` is untouched**. That file's `_incident_cards` still does `evidence=incident.evidence` — the raw, workspace-true stored card, including the new `same_asset_siblings` entries (check names, kinds, suite IDs from *any* suite in the workspace) — and forwards it straight into outbound Teams/Slack/email alert payloads with **no per-recipient suite-grant filtering**, unlike `get_incident`'s `evidence_for_caller`. Before this PR, `incident.evidence` carried no cross-suite content, so this was harmless; after it, a suite's notification recipients now receive another suite's check names/results as a side effect of sharing an asset. This is exactly the "adding a capability silently invalidates a sibling" shape, just landing on a non-docstring consumer instead of a docstring. **This is already fixed, uncommitted**, via a new `evidence_service.evidence_for_alert` restricting to same-suite entries — but that fix (and its regression test in `backend/tests/alerting/test_incident_payload.py`) is not committed to this branch, so as the PR stands today the leak is live. This should be committed in the same PR before merge, not left as a follow-up — it is a security-relevant regression, not a docstring nit.
+
+## Part A — stale neighbour docstrings
+
+None found. `grep -n '"in the app"|this tool cannot|needs .* recreated|is the only way|no way to|cannot be (undone|reverted|changed)'` over `server.py` returns hits unrelated to incident evidence/cross-suite visibility (schedules, column-policy, PII un-set language). `get_asset`'s existing `restricted_suite_count` convention is followed consistently, not contradicted, by the new `same_asset_siblings_restricted_count` naming.
+
+## Part A — inert parameters
+
+None. `get_incident` still takes only `incident_id`; no new parameter was added by this diff.
+
+## Part A — serialization risk
+
+None found. `_same_asset_siblings_layer` routes `Result.metric_value` through the pre-existing `_num()` helper (`Decimal → float`) and `Result.created_at` through `_iso()` (`datetime.isoformat()`), matching the established pattern rather than reintroducing the #1273-class `Decimal`/bare-`datetime` crash.
+
+## Part B — generic MCP-quality observations (advisory)
+
+- **Tool-selection honesty:** unaffected — the opening sentence of `get_incident` ("Get one incident with its evidence card — why it opened and what else broke") is unchanged by this diff and still self-disambiguates against `list_incidents`/`get_near_misses`.
+- **Safety annotations:** standing gap, not new to this PR — `readOnlyHint`/`destructiveHint`/`idempotentHint` remain absent repo-wide; noting once per the standing recommendation, not blocking.
+- **Confidence/derived-value framing:** `kind_detail`'s `z_score`/`mean`/`stddev` are pass-through extractions of an already-computed anomaly metric, not a new derived computation introduced by this PR — no new framing gap.
+- **Unit/format ambiguity:** `age_hours`, `deviation_pct` both unit-suffixed correctly; `_SAME_ASSET_SIBLING_WINDOW`/`_SAME_ASSET_SIBLING_LIMIT` are internal constants, not exposed parameters, so no ambiguity reaches the caller.
+- **Silent input coercion / error-path actionability:** not applicable — no new parameters, no new `ToolError` raised by this diff.
+
+## Verdict
+
+`Block — 5 silent honesty gaps (Part A) plus 1 PR-caused cross-suite data leak outside strict MCP scope that must land in the same PR. This is the #1444/#1449 shape (a confident, specific, wrong claim — "three shapes", "not a missing layer" — plus a field whose presence the docstring depends on but the code omits in the common case).`
+
+Concretely, before merge:
+1. Fix the `kind_detail` null-semantics bullet in `backend/app/mcp/server.py` (~line 3231) to disclose the deleted-check and malformed-`observed_value` causes, not just the benign one — parallel the existing `check_name`/`asset_name` caveat two paragraphs above it.
+2. Either add a `truncated`-style signal for `same_asset_siblings` (mirroring `downstream_blast_radius`'s "floor, not inventory" disclosure) or raise the docstring's cap caveat to data.
+3. Commit the already-drafted `same_asset_siblings_restricted_count` fix in `incident_service.py` (present whenever the layer is a list, not only when nonempty) and its "three"→"four" docstring correction in `server.py` — both are sitting uncommitted in the working tree and are correct as drafted.
+4. Commit the already-drafted `evidence_for_alert` change to `backend/app/alerting/builder.py` (and its test in `backend/tests/alerting/test_incident_payload.py`) — this is the one finding here that's a live data-exposure bug, not a wording problem, and it isn't part of this branch's history yet.
+5. Consider whether excluding operationally-failed sibling runs deserves at least a one-line docstring mention, given the tool's stated root-cause-investigation purpose.
+
+Relevant files: `/Users/arijit/Coding/Python/DataQ/backend/app/mcp/server.py` (get_incident, ~3176–3249), `/Users/arijit/Coding/Python/DataQ/backend/app/services/incident_evidence.py` (`_kind_detail_layer`, `_same_asset_siblings_layer`), `/Users/arijit/Coding/Python/DataQ/backend/app/services/incident_service.py` (`evidence_for_caller`, and the uncommitted `evidence_for_alert`), `/Users/arijit/Coding/Python/DataQ/backend/app/alerting/builder.py` (`_incident_cards`), `/Users/arijit/Coding/Python/DataQ/backend/tests/services/test_incident_service.py`, `/Users/arijit/Coding/Python/DataQ/backend/tests/alerting/test_incident_payload.py`.</result>
+<usage><subagent_tokens>108569</subagent_tokens><tool_uses>16</tool_uses><duration_ms>310893</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae021e34006b51d16</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/ae021e34006b51d16.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify get_incident docstring fixes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings — `get_incident` docstring re-review (`backend/app/mcp/server.py`, uncommitted diff)
+
+I read the current docstring fresh (lines 3176–3256) and cross-checked every claim against `backend/app/services/incident_evidence.py` (`_kind_detail_layer`, `_same_asset_siblings_layer`), `backend/app/services/incident_service.py` (`evidence_for_caller`), `backend/app/services/run_service.py` (`_build_result`, `skip_run`), `backend/app/services/severity.py` (`resolve_status`), and the FK/cascade definitions on `Check`/`Result`/`Incident` in `backend/app/db/models.py`.
+
+### 🔴 Part A — silent/false honesty gap #1 (new — introduced by this edit)
+
+**Tool:** `get_incident` · **Field:** `evidence.kind_detail` · **Criterion:** False docstrings (criterion 7)
+
+The new sentence claims:
+
+&gt; "...or when `observed_value` isn't the dict shape a monitor-kind check always produces, which most often means that occurrence was an operational error rather than a clean pass or fail."
+
+This is backwards against the actual code. `_kind_detail_layer`'s guard is:
+```python
+if check is None or not isinstance(result.observed_value, dict):
+    return None
+```
+But `_build_result` in `run_service.py` sets, for an errored outcome:
+```python
+observed = {"error": error_message} if error_message else None
+```
+and every `errored=True` construction site I checked (`monitors.py`, `unity_catalog.py`, `snowflake_dmf.py`, `anomaly.py`, `schema_drift.py`, `comparison_run.py`) always supplies a non-empty `error_message`. So an operational error's `observed_value` is **`{"error": "..."}` — a `dict`**, not a non-dict. `skip_run` is the same shape: `observed_value={"reason": reason}`, also a dict.
+
+That means the `isinstance(..., dict)` check *passes* for the overwhelmingly common operational-error/skip case, and `_kind_detail_layer` falls through into the `check.kind` branch, returning a **non-null** dict of defaults — e.g. for `schema_drift`:
+```python
+{"added": [], "removed": [], "type_changed": [], "baseline_captured": False}
+```
+which is byte-for-byte indistinguishable from "we compared schemas and found no drift" (or, via `baseline_captured=False`, "this is the very first baseline"). For `freshness`/`volume`/`anomaly` the same mechanism yields `{"age_hours": None, "max_timestamp": None}` / `{"row_count": None, "deviation_pct": None}` / `{"z_score": None, "mean": None, "stddev": None, "insufficient_history": False}`.
+
+**The wrong answer an LLM would confidently give:** told "null `kind_detail` most often means an operational error," a model sees a **non-null** `kind_detail` on a `schema_drift` incident and reasonably concludes "the schema was compared and nothing changed" — when the check actually errored and never compared anything. The docstring's own new causal claim, if trusted, actively points a reader away from the real blind spot: the *non-null* default-valued `kind_detail` is the dangerous case, not the null one. The `not isinstance(..., dict)` branch is realistically only reachable via `check is None` or the rare empty-`error_message` edge case — not "most often operational error."
+
+**Recommendation:** either fix `_kind_detail_layer` to also return `None` when `result.status in ("error", "skip")` (or when `observed_value` contains an `"error"`/`"reason"` key), or rewrite the docstring to disclose the real behavior: *"kind_detail is non-null-but-all-defaults, not null, when the occurrence was an operational error or skip — check `failing_result.status` first."*
+
+### 🔴 Part A — honesty gap #2 (new — the "check deleted" causal claim, imported into `kind_detail`)
+
+**Tool:** `get_incident` · **Field:** `evidence.kind_detail` (new text) / `evidence.check_name` (pre-existing text it cross-references) · **Criterion:** False docstrings
+
+The new text says `kind_detail` is null "when the check has since been deleted (same cause as a null `check_name` below)." Tracing this: `Result.check_id` and `Incident.check_id` are both `ondelete="CASCADE"` to `checks.id` (confirmed in `models.py` and the `c4e5a6b7d8f9_add_incidents.py` migration), and `delete_check` is a bare `session.delete(check); session.commit()` with no incident preservation step. So the moment a check is deleted, **the Incident row referencing it is cascade-deleted in the same commit** — there is no state where `get_incident` can return an existing incident whose `check` layer is null *because* the check was deleted; the incident itself would already be gone (404, not a null field). The `check is None` branch in `_check_layer`/`_kind_detail_layer` looks reachable only through the synthetic unit test that passes `check=None` directly (`test_card_degrades_with_none_check_and_asset`), not through any live production path — a genuine race would also violate `Incident.check_id`'s `NOT NULL` FK at insert time and cause `sync_incidents_for_run`'s try/except to roll back and log `incident_sync_failed`, never producing an incident at all.
+
+This is lower-confidence than finding #1 (it's a structural/absence argument, not a one-line code contradiction), but it's well-supported: the new sentence propagates what looks like an already-inaccurate pre-existing explanation (the `check_name`/`asset_name`/`latest_severity` paragraph) into a second field, compounding rather than fixing it. Worth a quick confirmation against `tests/support/mcp_gates` or a live DB probe before merge — if `check is None` truly never fires in production, both the pre-existing and the new sentence should be corrected to state the real (likely purely defensive/theoretical) reason, or dropped.
+
+### 🟡 Part A — self-contradiction within the docstring (buried caveat vs. an overclaiming summary)
+
+**Field:** `evidence.same_asset_siblings` · **Criterion:** self-consistency (task item c) / Truncation
+
+The opening summary paragraph (already-committed part of this branch, unchanged by today's edit) says the card returns "the latest state of **every OTHER check** on the SAME asset **across ALL suites**." The two new caveats you just added directly contradict "every": the list is capped at 20 most-recently-updated checks, windowed to 7 days, counts only `succeeded` sibling runs (silently dropping operationally-failed siblings), and is further redacted per-caller. Today's edit is accurate on its own terms, but it now sits under a summary sentence that overclaims completeness ("every... all") — a model skimming just the opening line (per the Part B tool-selection check) would form the wrong prior before ever reaching the caveats. Recommend softening the opening line (e.g. "a cross-suite sample of other checks on the SAME asset" instead of "every OTHER check... across ALL suites") so the top-line claim doesn't need the later paragraph to walk it back.
+
+### Verified accurate (no finding)
+
+- `AGGREGATABLE_RUN_STATUSES = frozenset({"succeeded"})` — the "only `succeeded` counts" claim is correct.
+- `_SAME_ASSET_SIBLING_LIMIT = 20`, ordered by `latest_per_check.c.created_at.desc()` — "capped at the 20 most recently-updated checks" is an accurate paraphrase of the query.
+- `evidence_for_caller`'s `same_asset_siblings_restricted_count = len(siblings) - len(visible)`, always present alongside a non-`None` list including `0` — matches the docstring's null-vs-empty-vs-zero explanation exactly.
+- The `evidence_for_caller` line-3264 change (`incident.evidence` → `incident_service.evidence_for_caller(...)`) is consistent with everything the docstring says about per-caller redaction.
+- No other tool in `server.py` references `kind_detail`, `same_asset_siblings`, or `downstream_blast_radius`, so there's no stale-neighbour docstring elsewhere in the file to falsify.
+
+### Part B (advisory, not confirmed as wrong-answer-producing)
+
+- None beyond the standing cross-cutting note already on record (no `readOnlyHint`/`destructiveHint` annotations anywhere in `server.py` — not specific to this diff).
+
+## Verdict
+
+`Block — 2 silent honesty gaps (Part A).` The `kind_detail`/operational-error claim (finding #1) is high-confidence and actively misdirects a reader away from the real blind spot (a non-null, default-valued `kind_detail` on an errored/skipped monitor-kind check reading as a clean comparison). The "check deleted" causal claim (finding #2) is lower-confidence but well-supported by the CASCADE chain and should be verified before merge. The `same_asset_siblings` self-contradiction (🟡) is a smaller, non-blocking wording fix.
+
+**Files referenced:**
+- `/Users/arijit/Coding/Python/DataQ/backend/app/mcp/server.py` (lines 3176–3266, `get_incident`)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/services/incident_evidence.py` (`_kind_detail_layer` ~L140-179, `_same_asset_siblings_layer` ~L218-280)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/services/incident_service.py` (`evidence_for_caller` ~L397-434, `open_or_attach_incident`/`_sync_incidents_for_run` ~L88-150)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/services/run_service.py` (`_build_result` ~L64-95, `skip_run` ~L403-414)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/services/severity.py` (`resolve_status` ~L46-66)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/db/models.py` (`Result` ~L615-653, `Incident` ~L876-916)
+- `/Users/arijit/Coding/Python/DataQ/backend/app/services/check_service.py` (`delete_check` ~L1059-1079)
+- `/Users/arijit/Coding/Python/DataQ/backend/alembic/versions/c4e5a6b7d8f9_add_incidents.py` (FK `ondelete="CASCADE"` on `check_id`)</result>
+<usage><subagent_tokens>124448</subagent_tokens><tool_uses>42</tool_uses><duration_ms>350354</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6a053907e225cf63</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/a6a053907e225cf63.output</output-file>
+<status>completed</status>
+<summary>Agent "Final verify get_incident docstring accuracy" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good — these tests directly cover the exact claims (`test_same_asset_siblings_excludes_an_operationally_failed_run`, `test_kind_detail_*` for all four kinds). This corroborates the code trace. My audit is complete.
+
+## Findings
+
+**(a) Claim 2 — `kind_detail` null-semantics rewrite: VERIFIED TRUE.**
+
+Traced the full chain:
+- `db/models.py:51` — `FAILING_TIERS = ("warn", "fail", "critical")`, built from `SEVERITY_RANK` which excludes `"pass"`; `RESULT_OPERATIONAL_STATUSES = ("skip", "error")` is disjoint from it.
+- `incident_service.py:88-113` (`_sync_incidents_for_run`) — the **only** call site of `open_or_attach_incident`, gated by `if result.status in FAILING_TIERS:`.
+- `incident_service.py:130-186` (`open_or_attach_incident`) — `evidence = build_evidence(...)` is computed once per call and assigned unconditionally on **both** the "opened" and "attached" branches (lines 142, 159, 185), always from that same FAILING_TIERS-gated `result`.
+- `incident_evidence.py:140-179` (`_kind_detail_layer`) — returns `None` only if `check is None` or `not isinstance(result.observed_value, dict)`.
+- `severity.py:46-67` (`resolve_status`) — `outcome.errored` → `status = "error"` unconditionally, before threshold banding ever runs, so a result can never be simultaneously in `FAILING_TIERS` and `errored`.
+- `run_service.py:64-95` (`_build_result`) — the `errored` branch (different `observed_value` shape) and the non-errored branch (`observed = sanitize_json(outcome.observed_value)`) are mutually exclusive with the status derivation above.
+- `datasources/monitors.py` — all four monitor-kind outcome builders (`_freshness_outcome` line 218-224, `_volume_outcome` 241-247, `_schema_drift_outcome` 271-288, `_anomaly_outcome` 421-427) set `observed_value` to a dict on every non-errored, non-skipped path — the only paths that can produce `warn`/`fail`/`critical`.
+- `_incident_payload` in `server.py:3028-3046` confirms `check_name` (`check.get("name")`) is read from the **identical** `evidence["check"]` object that `kind_detail` is computed alongside in the same `build_evidence` call — so "the same rare thing a null `check_name` means" isn't just analogous, it's the literal same `if check is None` branch, evaluated in the same function call.
+- Confirmed by existing tests: `test_same_asset_siblings_excludes_an_operationally_failed_run`, and `test_kind_detail_*` for all four kinds plus `test_kind_detail_is_none_for_an_ordinary_expectation`.
+
+Net: for `freshness`/`volume`/`schema_drift`/`anomaly`, `kind_detail` can only be null when `check` was already `None` at evidence-build time (deleted check) — never from an operational error or skip. The rewritten prose and the rewritten bullet are both accurate and match each other.
+
+**(b) Claim 1 — cross-suite framing: not undersold.** `_same_asset_siblings_layer` (`incident_evidence.py:218-286`) genuinely queries across all suites on `Run.asset_id == asset.id` with no suite filter (windowed 7 days, capped 20, `succeeded`-only). "A cross-suite sample" is accurate on both halves — still explicitly cross-suite, and honestly capped/sampled. The later paragraph ("in ANY suite," "recent sample, not a complete inventory") reinforces rather than contradicts the opening line.
+
+**(c) Internal consistency: no contradictions, no new false claims.**
+- The `kind_detail` paragraph (3197-3204) and the later bullet restatement (3244-3248) say the same thing in both directions ("below"/"above" cross-references point at the correct location in each case).
+- The `check_name`/`asset_name`/`latest_severity` explanation (3231-3235, "usually a deleted check") is the antecedent both `kind_detail` mentions correctly reference.
+- New `same_asset_siblings` caveats (succeeded-only, 20-cap) verified against `_SAME_ASSET_SIBLING_WINDOW`/`_SAME_ASSET_SIBLING_LIMIT` (`incident_evidence.py:27-28`) and `AGGREGATABLE_RUN_STATUSES = frozenset({"succeeded"})` (`rollup.py:77`) — both numerically and semantically exact.
+- The "same 'floor, not complete' caveat `downstream_blast_radius` carries below" cross-reference is accurate — that section (3224-3229) does use the same framing and does appear below.
+- The "operationally failed run" claim is airtight because `run.status = "failed"` is set only on an unhandled exception in `execute_run` (`run_service.py:352-365`), and `_discard_results_if_any`/`discard_run_results` (`run_service.py:276-284`) deletes every result row for that run regardless of publish state — so such a sibling genuinely has no `Result` row to be found by the join at all, matching "silently absent."
+
+One purely cosmetic nit, not a defect: "non-null whenever the card carries one at all" (line 3199-3200) is slightly circular in isolation, but the very next clause in the same sentence unambiguously resolves it ("`evidence` is only ever captured from a genuinely warned/failed/critical occurrence..."). No LLM reading the full docstring would be misled by it, so I'm not flagging it as a finding — only noting it in case you want tighter phrasing.
+
+**Verdict: Pass — no findings survive.** Claim 1 and claim 2 are both verified true against the code (not just the prior reviewer's summary), and the docstring is internally consistent post-edit with no new false or contradictory claims introduced.
+
+Files reviewed: `/Users/arijit/Coding/Python/DataQ/backend/app/mcp/server.py` (lines 3176-3266, uncommitted diff), `/Users/arijit/Coding/Python/DataQ/backend/app/services/incident_service.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/services/incident_evidence.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/services/severity.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/services/run_service.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/datasources/monitors.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/services/rollup.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/db/models.py`, `/Users/arijit/Coding/Python/DataQ/backend/tests/services/test_incident_evidence.py`.</result>
+<usage><subagent_tokens>127204</subagent_tokens><tool_uses>36</tool_uses><duration_ms>238578</duration_ms></usage>
+</task-notification>
+
+---
+
+Check `gh pr checks 1739` for PR #1739 (#1635 evidence-card enrichment, feature/1635-evidence-card-enrichment). Once all required checks are green, merge (squash, delete branch), verify #1635 closes via `gh issue view 1635 --json state`, clean up the local branch, and move to the next item in the W4 priority queue: #1633 (LLM root-cause narrative — Layer 2 on the evidence card, which can now build on this PR's kind_detail/same_asset_siblings fields). If any check fails, investigate and fix.
+
+---
+
+Check `gh pr checks 1739` for PR #1739 (#1635). Backend — tests and Frontend — browser E2E were still pending as of last check, everything else green. Once all required checks are green, merge (squash, delete branch), verify #1635 closes via `gh issue view 1635 --json state`, clean up the local branch, and move to #1633 (LLM RCA narrative — Layer 2 on the evidence card) in the W4 priority queue. If any check fails, investigate and fix.
+
+---
+
+Check `gh pr checks 1741` for PR #1741 (#1633 LLM RCA narrative, feature/1633-rca-narrative). Once all required checks are green, merge (squash, delete branch), verify #1633 closes via `gh issue view 1633 --json state`, clean up the local branch, and report the updated W4 status: 6 of 11 items now done (#1644, #1513, #1632, #1648, #1635, #1633), remaining: #1647, #1649, #1626, #1650, #1654. Ask the user whether to continue to the next item (#1647, the alert-that-explains-itself) or pause, since this is a natural checkpoint after finishing the two evidence-card-driven features (#1635 and #1633) together. If any check fails, investigate and fix.
+
+---
+
+Check `gh pr checks 1741` for PR #1741 (#1633). Once all required checks are green, merge (squash, delete branch), verify #1633 closes via `gh issue view 1633 --json state`, clean up the local branch, and report the updated W4 status: 6 of 11 items now done (#1644, #1513, #1632, #1648, #1635, #1633), remaining: #1647, #1649, #1626, #1650, #1654. Ask the user whether to continue to the next item (#1647, the alert-that-explains-itself) or pause, since this is a natural checkpoint after finishing the two evidence-card-driven features (#1635 and #1633) together. If any check fails, investigate and fix.
+
+---
+
+Continue
+
+---
+
+Check `gh pr checks 1742` for PR #1742 (#1647 the alert that explains itself, feature/1647-alert-explains-itself). Once all required checks are green, merge (squash, delete branch), verify #1647 closes via `gh issue view 1647 --json state`, clean up the local branch, and report the updated W4 status: 7 of 11 items now done (#1644, #1513, #1632, #1648, #1635, #1633, #1647), remaining: #1649 (multi-table SQL-gen), #1626 (MCP get_doc tool), #1650 (docs: MCP honesty discipline), #1654 (docs: evidence-card contract). Ask whether to continue to #1649 next or pause. If any check fails, investigate and fix.
+
+---
+
+Check `gh pr checks 1742` for PR #1742 (#1647). Once all required checks are green, merge (squash, delete branch), verify #1647 closes via `gh issue view 1647 --json state`, clean up the local branch, and report the updated W4 status: 7 of 11 items now done (#1644, #1513, #1632, #1648, #1635, #1633, #1647), remaining: #1649 (multi-table SQL-gen), #1626 (MCP get_doc tool), #1650 (docs: MCP honesty discipline), #1654 (docs: evidence-card contract). Ask whether to continue to #1649 next or pause. If any check fails, investigate and fix.
+
+---
+
+continue
+
+---
+
+<task-notification>
+<task-id>ad32e677d309f37cf</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/ad32e677d309f37cf.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle conventions: CLAUDE.md compliance check" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I sent the full findings back to the requesting agent (`a3968f7cd0d4217a3`): no clear, quotable CLAUDE.md violations were found in the #1649 multi-table SQL-generation diff. I checked commit discipline (single commit, matches convention), migrations (none, additive-only), the JSONB-metrics rule (not applicable), logger-level PII redaction (table names added to log/audit fields are caller-supplied identifiers, not PII, and don't bypass the centralized redactor), the silent-bug-fix rule (pre-merge fixes to the PR's own tests are covered by commit-discipline rule 5, not deferred findings), and docs-update discipline (progress.md updated in the same commit). Also spot-checked input-truncation, orchestration-abstraction, credentials, and license concerns — all clean.</result>
+<usage><subagent_tokens>125431</subagent_tokens><tool_uses>5</tool_uses><duration_ms>155225</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac9d45a31a68f5287</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/ac9d45a31a68f5287.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle C+reuse+simplification+efficiency+altitude+conventions" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># PR Review Findings — #1649 additional_tables cross-table support
+
+## ANGLE ALTITUDE (the headline finding)
+
+**F1 — `suite.column_policy` (declared for the suite's OWN asset) is applied wholesale, by bare column-NAME match, to a genuinely different table — and unlike the warehouse-tag path, nothing narrows it for `probed_other_target`.**
+- Files: `backend/app/services/llm_prompt_context.py:224-229` (`masked_profile_for_target`), `backend/app/services/run_service.py:747-760` (`_policy_pii`, `_policy_identifier`), `backend/app/services/live_probe.py:53-65` (`applicable_tags`), `:90-111` (`sensitive_profile_columns`/`_may_show_incidental`).
+- The PR correctly threads `probed_other_target` through `applicable_tags()` so warehouse **tags** looked up for the suite's own asset are narrowed to only sensitive values when profiling an additional table (docstring at `llm_prompt_context.py:191-197` explicitly reasons about this). But `sensitive_profile_columns` → `_may_show_incidental`/`_known_sensitive` also consult `suite.column_policy` directly via `_policy_pii`/`_policy_identifier`, and those two helpers match by **bare `.strip().lower()` column name only** — they take no `probed_other_target` parameter and get no equivalent narrowing.
+- Failure scenario: suite's `column_policy = {"identifier_column": "id"}` is declared meaning "on MY table, `id` is the safe-to-show identifier." An additional table (e.g. `refunds`) also has a column literally named `id`, semantically unrelated. `_policy_identifier("id", policy)` returns `True` purely on name coincidence. In fail-closed mode (`_policy_requires_classification`), that "clearance" (`cleared = _tag_non_sensitive(...) or _policy_identifier(...)`) is exactly what's supposed to require an explicit, per-asset review — a name coincidence with a *different* table's column silently satisfies it, loosening the G3 fail-closed floor for a column that was never reviewed in that table's context.
+- Confirmed untested: `backend/tests/services/test_llm_sqlgen.py` (`test_additional_table_profile_is_masked_and_recorded_as_a_different_target`, `test_additional_table_profile_is_probed_as_a_different_target_not_the_suites_own`) use disjoint column names per table (`EMAIL` on `ORDERS`, `SESSION_ID` on `TRAFFIC`) — no test exercises a name collision between the primary and additional table, so this gap has no regression coverage either.
+- This reads as infrastructure built for one target (`suite.column_policy`, single-asset semantics) bolted onto a multi-table feature without the same defensive generalization its sibling (tags) received.
+
+## ANGLE EFFICIENCY
+
+**F2 — `build_prompt` burns 1–2 live warehouse round trips for the PRIMARY table before validating `additional_tables`, which can raise on a purely local, cheap error.**
+- File: `backend/app/services/llm_sqlgen.py:269-279`.
+- Order is: `_schema_context` (always a live column-list call) → optionally `_profile_context` (a live profile call) → **then** `_parse_additional_tables(request.get("additional_tables"), ...)`, which can raise `LLMRequestInvalidError` for a duplicate table name, non-list payload, or a &gt;MAX_ADDITIONAL_TABLES list.
+- Pydantic (`AdditionalTableRef`, `llm.py:66-98`) only catches shape/length at the API layer; it has no duplicate-detection validator. A request with `additional_tables=[{"table":"orders"},{"table":"ORDERS"}]` (or one colliding with the primary table) passes the synchronous 202-accepted route, gets queued, and only fails in the worker **after** `build_prompt` has already done the primary table's live column-list (+ optional profile) call. Moving `_parse_additional_tables` to the top of `build_prompt` (before `_schema_context`) would make this a pure, cheap fail-fast.
+
+**F3 — the additional-table loop is fully serial with no batching, up to 8 live round trips for 4 tables.**
+- File: `backend/app/services/llm_sqlgen.py:280-289` (loop) → `_additional_table_context` (`:193-253`) does one `list_columns_for_target` call and, if `include_profile`, one more `masked_profile_for_target` call — both synchronous warehouse round trips.
+- With `MAX_ADDITIONAL_TABLES = 4` and `include_profile=True`, that's up to 4×2 = 8 serial warehouse calls in addition to the primary table's own 2, all sequential in one worker task. This is the same N+1-shaped cost the codebase already fixed once for the column profiler's top-values pass (#327, `docs/progress.md`) — worth at least flagging for batching/concurrency, since these targets are independent reads on the same connection.
+
+## ANGLE REUSE
+
+**F4 — `_clean_or_none` (`llm_sqlgen.py:154-155`) reimplements `llm_prompt_context._clean` (`llm_prompt_context.py:35-37`), which is already reachable via the `llm_prompt_context` import `llm_sqlgen.py` already has.**
+- `_clean`: `str(value).strip() if value is not None else ""` → `text or None` (coerces non-strings too).
+- `_clean_or_none`: `value.strip() if isinstance(value, str) and value.strip() else None` (silently drops non-strings to `None` instead of stringifying them).
+- Same purpose, subtly different edge-case behavior, defined twice in the same feature area with no shared helper. Should reuse (or extend) `llm_prompt_context._clean` rather than adding a second, stricter variant.
+
+**F5 — the qualified-name join in `_additional_table_context` reimplements `llm_prompt_context.qualified_target`'s logic.**
+- `llm_sqlgen.py:225`: `qualified = ".".join(p for p in (catalog, schema, table) if p)`.
+- `llm_prompt_context.py:50-57` (`qualified_target`): identical `catalog, schema, table` join order/filter, just sourced from `suite.target` instead of a `ref` dict. A small shared `qualify(catalog, schema, table)` helper (called by both) would remove the duplicated ordering logic — getting the join order wrong in one of the two copies later would silently produce e.g. `schema.catalog.table`.
+
+**F6 — `build_prompt`'s primary-table lookup re-implements the None-safe `suite.target` access `target_identity` already encapsulates.**
+- `llm_sqlgen.py:277-278`: `primary_table=suite.target.get("table") if suite.target else None`.
+- `llm_prompt_context.target_identity(suite)["table"]` (`llm_prompt_context.py:40-47`) already does exactly this (and `_additional_table_context` calls `target_identity` two lines earlier in the same module, `llm_sqlgen.py:210`). Minor, but it's the third slightly-different way this module accesses `suite.target.get(...)` safely.
+
+**F7 (minor) — `_norm_table`'s `.strip().lower()` idiom duplicates the identical inline normalization already used twice in `run_service._policy_pii`/`_policy_identifier` (`run_service.py:747-760`).**
+- No shared "normalize identifier for case-insensitive comparison" helper exists anywhere in the codebase; this PR adds a third inline copy of the same two-call idiom rather than extracting one. Low severity, but worth noting since F1 above shows this exact name-matching logic is also where the real bug lives.
+
+## ANGLE SIMPLIFICATION
+
+**F8 — `_parse_additional_tables` returns a loosely-typed `list[dict[str, str | None]]` instead of a small typed structure.**
+- `llm_sqlgen.py:158-190`, consumed via string-keyed lookups (`ref["table"]`, `ref["schema"]`, `ref["catalog"]`) in `_additional_table_context` (`:211-213`). A typo in one of those literal keys would not be caught by mypy (dict access, not attribute access) — a `NamedTuple`/small dataclass (or just reusing `AdditionalTableRef`'s field names) would make the shape checkable and self-documenting, consistent with the rest of this typed codebase.
+
+**F9 (minor) — `_parse_additional_tables`'s `len(raw) &gt; MAX_ADDITIONAL_TABLES` check duplicates the Pydantic `max_length` constraint already enforced at the API boundary (`llm.py:96-98`).**
+- This is defensible as the same deliberate TOCTOU-recheck pattern the file already documents for `check_generation_preconditions` (worker re-validates what the route already validated), so it's not wrong — just worth confirming it's intentional rather than incidental duplication, since unlike `check_generation_preconditions` there's no comment here explicitly framing it as a TOCTOU guard.
+
+## ANGLE C — cross-file tracer
+
+**F10 — audit-event `detail` shape widened for the suite's-own-target path; confirmed non-breaking today but worth flagging as a contract change.**
+- `llm_prompt_context.py:138` and `:240`: `record_probe_access(..., detail={"consumer": consumer, "table": table})` — previously (pre-diff) this was just `{"consumer": consumer}` for `list_columns_for_prompt`/`masked_profile_for_prompt`'s own-target calls (since they now delegate through `list_columns_for_target`/`masked_profile_for_target`, which always adds `"table"`).
+- Traced all consumers of `record_probe_access`'s `detail`/`after` field (`api/v1/checks.py`, `api/v1/suites.py`, `mcp/server.py`, and the two `test_llm_*` files) — all read via `.get("consumer")`/`.get("table")`, none assert the `detail` dict by strict equality, so nothing breaks. Also verified `llm_checksuggest.py` (`list_columns_for_prompt`/`masked_profile_for_prompt` calls at `:183`, `:191`) is unaffected since both wrapper functions kept their exact pre-diff signatures. And the `access_coverage.py` rename (`masked_profile_for_prompt` → `masked_profile_for_target`) is correctly aligned with the AST-based redactor-scan in `test_access_coverage.py` — `masked_profile_for_target` still directly calls `mask_profile_columns` (the tracked redactor), so the coverage guard's `_redactor_callers()` scan still finds it. No action needed here, just recorded as a verified-benign check per the "every finding ends fixed or filed, or verified-benign with evidence" rule.</result>
+<usage><subagent_tokens>151517</subagent_tokens><tool_uses>22</tool_uses><duration_ms>237305</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a05c6a7fe513a1aa1</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/a05c6a7fe513a1aa1.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle A+B: line-by-line and removed-behavior scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Angle A — line-by-line diff scan
+
+**1. `backend/app/services/llm_sqlgen.py:212-213`** — silent schema substitution when an additional-table schema is omitted.
+`schema = ref["schema"] or primary.get("schema")` collapses two different intents ("not specified, use the connection's own default schema" vs. "not specified, use the suite's own schema") into one behavior — always the suite's own schema. Because `_clean_or_none` (line 155) already turns `""` into `None` upstream, there is no way for a caller to say "resolve this additional table via the connection's default schema, not my primary target's schema." Failure scenario: suite's primary target is `RETAIL.ORDERS` (explicit schema `RETAIL`); the connection's *default* schema (used elsewhere when schema is unspecified) is `PUBLIC`. A user adds `{"table": "LOOKUP_CODES"}` expecting the normal default-schema resolution, but the code silently substitutes `RETAIL.LOOKUP_CODES`. If a *different*, unrelated `LOOKUP_CODES` table happens to also exist in `RETAIL`, the model is silently handed the wrong table's columns/stats and generates a join against the wrong physical table with no error at all.
+
+**2. `backend/app/services/llm_sqlgen.py:150-151` + `171-182`** — case-insensitive `_norm_table` dedup can misclassify genuinely distinct tables as duplicates on a warehouse where quoted identifiers are case-sensitive (Snowflake/Databricks both support this). Failure scenario: connection has two distinct quoted tables `"Orders"` and `"ORDERS"` in different contexts; requesting both as additional tables (or one matching the primary by case only) raises `LLMRequestInvalidError("duplicate table...")` for two tables that are not actually the same object, refusing an otherwise legitimate request.
+
+**3. `backend/app/services/llm_sqlgen.py:65-69` (`_MULTI_TABLE_SYSTEM_ADDENDUM`) + `225-226`/`291-296`** — no column-name-collision signal is given to the model when the primary and an additional table share a column name (e.g. both have `ID` or `CREATED_AT`). The prompt lists `Columns:` for each table independently with no table-qualifying hint, and the addendum only warns against inventing tables/columns/join-keys, not against ambiguous unqualified references. Failure scenario: primary `ORDERS.ID` and additional `TRAFFIC.ID` (unrelated column, same name) — the model emits `SELECT ... WHERE ID = ...` in a joined query, which is genuinely ambiguous SQL and will error or bind to the wrong table's column depending on dialect resolution rules, discovered only when the generated SQL is dry-run/executed.
+
+**4. `backend/app/api/v1/llm.py` (`generate_sql`, lines 151-183) vs. `backend/app/services/llm_sqlgen.py:158-190`** — the synchronous route never calls `_parse_additional_tables`, so duplicate-table detection (and the primary/duplicate collision check) is not enforced at request time, only inside the async worker's `build_prompt`. Failure scenario: POST `/llm/sql_generation` with `additional_tables: [{"table":"TRAFFIC"},{"table":"traffic"}]` returns `202` and queues the invocation; only later does the worker fail it with `llm_request_invalid: duplicate table...`, unlike the max-cap and blank-name cases which do 422 synchronously (confirmed by the test suite only having sync-422 tests for those two, not for duplicates).
+
+**5. `backend/app/api/v1/llm.py:80-85`** — `AdditionalTableRef._not_blank` validates `value.strip()` is truthy but returns the original unstripped `value`, not the stripped one. Failure scenario: client sends `{"table": "  TRAFFIC  "}`; it passes validation and is stored verbatim (with padding) in `invocation.request["additional_tables"]` at line 178 of `llm.py`. The worker-side `_parse_additional_tables` happens to re-strip it (line 185), so today it's masked, but any other future reader of the persisted `invocation.request` (UI display, an MCP tool, a retry path) that doesn't independently re-strip will see/use the padded name.
+
+## Angle B — removed-behavior / invariant auditor
+
+**1. `backend/app/services/llm_sqlgen.py:171-182` — dedup ignores schema/catalog entirely.** This is a genuine new correctness gap, not a pre-existing limitation (the feature itself is new in this PR). `seen` is keyed purely on `_norm_table(table)`. Failure scenario: primary target `RETAIL.ORDERS`; user wants to add `ARCHIVE.ORDERS` (a real, differently-scoped table with the same name, e.g. for a reconciliation-style rule) as an additional table — this is refused with "duplicate table in additional_tables" even though it's a distinct, legitimate table. Same problem between two additional tables in different schemas sharing a name.
+
+**2. `backend/app/services/llm_prompt_context.py:224-229` + `backend/app/services/run_service.py:807-808`** — `probed_other_target` only narrows the **warehouse tags** (via `applicable_tags`), not the suite's own `column_policy` (`identifier_column`). `_policy_identifier` matches purely by column *name*, with no notion of which table it's being applied to, and is consulted regardless of `probed_other_target`. Failure scenario: suite's `column_policy.identifier_column = "ID"` (a safe, non-PII row-locator on the suite's own `ORDERS` table). An additional table has an unrelated column also literally named `ID` that happens to hold sensitive data whose values don't trip the value-based `is_sensitive` heuristic (e.g. looks like a normal numeric ID). `_may_show_incidental` exempts it from masking purely because of the name match, even though the docstring's stated protection ("an unrelated table's column sharing a name with a known-sensitive one must not be waved through") explicitly describes exactly this class of bug — but the fix covers only the tags half, not the policy half.
+
+**3. `backend/app/api/v1/llm.py` `generate_sql` vs. `backend/app/services/llm_sqlgen.py::check_generation_preconditions`/`_parse_additional_tables`** — the file's own stated design invariant ("Shared by the route (a synchronous 422) and `build_prompt` (the TOCTOU re-check), so a precondition cannot be added at one altitude — or one feature kind — and missed at the others," `llm_prompt_context.py:67-71`) is violated for this new field: `additional_tables` structural validation (dedup, non-list, non-object entries) exists only in `_parse_additional_tables`, called only from `build_prompt`, never from the route. This is the same finding as Angle A #4, viewed as a broken precondition-sharing invariant rather than a UX delay.
+
+**4. `backend/app/services/llm_prompt_context.py:138, 240`** — `record_probe_access`'s `detail` only carries `table`, never `schema`/`catalog`, for both the primary and additional-table probes. Because of finding B1 (schema-blind dedup), the audit trail cannot currently disambiguate two same-named tables in different schemas even though the underlying dedup bug, if fixed, would make that scenario reachable — the audit record would then be unable to tell which physical table an EGRESS `column.profile`/`column.list` event actually touched.
+
+**5. `backend/app/services/llm_sqlgen.py:158-190`** — the "structural, not an error path to hit" claim on cross-connection joins (`llm.py:66-72`) is enforced only by the Pydantic `AdditionalTableRef` schema (no `connection_id` field, `extra="forbid"`) at the REST boundary. The worker-side `_parse_additional_tables`, which is the TOCTOU-style re-check meant to be the second door, does not itself assert the entry has no connection-like key — it simply reads `table`/`schema`/`catalog` and ignores anything else. Any other code path that constructs `invocation.request["additional_tables"]` directly (bypassing the Pydantic model — e.g. a future replay/retry/MCP entry point) would have its "structural" guarantee silently rely on nobody adding such a field, rather than on an enforced check at the layer that's supposed to not trust the caller.
+
+**6. Verified-benign (not a bug, noted for completeness):** the `list_columns_for_prompt`/`masked_profile_for_prompt` → `list_columns_for_target`/`masked_profile_for_target` wrapper refactor is behaviorally identical to the pre-PR code for the suite's own target — same `target_identity(suite)` kwargs, same `probed_other_target=False`. No regression found there despite it being the area flagged for scrutiny.</result>
+<usage><subagent_tokens>164341</subagent_tokens><tool_uses>17</tool_uses><duration_ms>435376</duration_ms></usage>
+</task-notification>
+
+---
+
+Check `gh pr checks 1744` for PR #1744 (#1649 multi-table SQL generation, feature/1649-multi-table-sqlgen). Once all required checks are green, merge (squash, delete branch), verify #1649 closes via `gh issue view 1649 --json state`, clean up the local branch, and report the updated W4 status: 8 of 11 items done (#1644, #1513, #1632, #1648, #1635, #1633, #1647, #1649), remaining: #1626 (MCP get_doc tool), #1650 (docs: publish MCP honesty discipline), #1654 (docs: publish evidence-card contract) — the last three are all fairly quick/self-contained. Ask whether to continue through them or pause. If any check fails, investigate and fix.
+
+---
+
+Check `gh pr checks 1744` for PR #1744 (#1649). Once all required checks are green, merge (squash, delete branch), verify #1649 closes via `gh issue view 1649 --json state`, clean up the local branch, and report the updated W4 status: 8 of 11 items done, remaining #1626/#1650/#1654. Ask whether to continue through them or pause. If any check fails, investigate and fix.
+
+---
+
+Continue
