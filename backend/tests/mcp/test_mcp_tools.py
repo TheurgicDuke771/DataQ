@@ -1677,6 +1677,8 @@ def test_get_notification_config_defaults_when_unconfigured(
     assert out["alert_on"] == "warn"
     assert out["has_webhook"] is False
     assert out["webhook_source"] is None
+    assert out["webhook_channel_linked"] is False
+    assert out["has_generic_webhooks"] is False
 
 
 def test_get_notification_config_reports_webhook_presence_never_the_url(
@@ -2042,6 +2044,73 @@ def test_get_notification_config_credits_a_linked_teams_channel(
 
     assert out["has_webhook"] is True
     assert out["webhook_source"] == "channel"
+    assert out["webhook_channel_linked"] is True
+
+
+def test_get_notification_config_reports_additive_delivery_source_plus_channel(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`TeamsPublisher.publish` merges the suite/workspace destination with every
+    linked channel — it does not pick one. A suite with BOTH its own override AND
+    a linked channel delivers to both, so `webhook_channel_linked` must stay
+    `True` even when `webhook_source` already reads `"suite"`; collapsing it to a
+    single source would hide that a second destination is also live.
+    """
+    from backend.app.db.models import SuiteNotification
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    db_session.add(SuiteNotification(suite_id=suite.id, webhook_secret_ref="suite-hook-ref"))
+    _link_channel(db_session, suite, type="teams", webhook_secret_ref="channel-hook-ref")
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_notification_config(str(suite.id))
+
+    assert out["has_webhook"] is True
+    assert out["webhook_source"] == "suite"
+    assert out["webhook_channel_linked"] is True
+
+
+def test_get_notification_config_credits_a_linked_generic_webhook(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The generic HMAC-signed webhook (#1662) is a distinct fourth channel
+    *type* with no suite/workspace fallback of its own — unlike Teams/Slack/
+    email it never routes through `webhook_source`, so a suite relying solely on
+    one would be invisible everywhere else in this response.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _link_channel(
+        db_session,
+        suite,
+        type="webhook",
+        webhook_url="https://receiver.example/hook",
+        hmac_secret_ref="channel-hmac-ref",
+    )
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_notification_config(str(suite.id))
+
+    assert out["has_generic_webhooks"] is True
+    # Must never be conflated with the Teams webhook field.
+    assert out["has_webhook"] is False
+
+
+def test_get_notification_config_generic_webhook_needs_both_url_and_hmac_secret(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Matches `resolve_webhook_channels`' own delivery gate — a channel missing
+    either half never actually sends, so reporting it as present would overclaim.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _link_channel(db_session, suite, type="webhook", webhook_url="https://receiver.example/hook")
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_notification_config(str(suite.id))
+
+    assert out["has_generic_webhooks"] is False
 
 
 def test_get_notification_config_credits_a_linked_slack_channel(
@@ -2062,6 +2131,7 @@ def test_get_notification_config_credits_a_linked_slack_channel(
 
     assert out["has_slack_webhook"] is True
     assert out["slack_webhook_source"] == "channel"
+    assert out["slack_webhook_channel_linked"] is True
 
 
 def test_get_notification_config_credits_a_linked_email_channel(
@@ -2087,6 +2157,7 @@ def test_get_notification_config_credits_a_linked_email_channel(
 
     assert out["has_email_recipients"] is True
     assert out["email_recipients_source"] == "channel"
+    assert out["email_recipients_channel_linked"] is True
 
 
 def test_get_notification_config_a_linked_email_channel_still_needs_smtp(

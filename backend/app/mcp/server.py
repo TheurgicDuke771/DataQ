@@ -1432,14 +1432,22 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
     (``alert_on``), and — per channel — whether a Teams webhook, a Slack webhook
     and email recipients are in effect, each with whether that comes from the
     suite's **own** override, the **workspace** default, or a linked reusable
-    **channel**.
+    **channel**, plus whether the suite additionally has its own **generic
+    HMAC-signed webhook(s)** (``has_generic_webhooks`` — PagerDuty/Opsgenie/
+    ServiceNow/Jira-style; #1662) linked, which is a distinct channel *type* from
+    the Teams webhook ``has_webhook`` reports and has no suite/workspace
+    fallback of its own — it exists only via a linked channel.
 
     Read the ``*_source`` fields, not just the booleans, when the question is
     "who gets told": a suite with no override of its own still alerts through the
     workspace channels, so per-suite configuration being absent never means
-    nobody is notified. A ``*_source`` of ``"channel"`` means a reusable
-    notification channel is linked to this suite — a third source beside the
-    suite override and the workspace default. No MCP tool currently lists or
+    nobody is notified. A ``*_source`` of ``"channel"`` means a linked channel is
+    that destination's ONLY active source. But delivery is **additive, not
+    either/or**: Teams/Slack/email each merge the suite-or-workspace
+    destination with every linked channel of the same type, so
+    ``*_channel_linked`` is reported **independently** of ``*_source`` — when
+    it's ``true`` alongside a ``*_source`` of ``"suite"`` or ``"workspace"``,
+    alerts go to **both** destinations, not one. No MCP tool currently lists or
     identifies which channel that is; this tool can only report that one exists.
 
     Webhook **URLs are never returned** — only whether one is set. A webhook URL
@@ -1485,10 +1493,26 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
         has_teams_channel = any(c.type == "teams" and c.webhook_secret_ref for c in linked_channels)
         has_slack_channel = any(c.type == "slack" and c.webhook_secret_ref for c in linked_channels)
         has_email_channel = any(c.type == "email" and c.email_recipients for c in linked_channels)
+        # The fourth channel type (#1662) — has no suite/workspace fallback of its
+        # own, so it never routes through `_channel()`; a suite relying solely on
+        # one would otherwise be invisible to every field below. Presence-only,
+        # matching `resolve_webhook_channels`' own gate — the HMAC secret is never
+        # resolved here.
+        has_generic_webhooks = any(
+            c.type == "webhook" and c.webhook_url and c.hmac_secret_ref for c in linked_channels
+        )
 
         def _channel(
             suite_value: Any, workspace_value: Any, *, channel_configured: bool = False
         ) -> tuple[bool, str | None]:
+            # `channel_configured` is reported by the caller as a SEPARATE
+            # `*_channel_linked` field, independently of the source picked here —
+            # Teams/Slack/email each deliver to the union of the suite-or-workspace
+            # destination AND every linked channel (`teams.py`/`slack.py`/
+            # `email.py` all merge `primary` with `channel_service.resolve_*`), so
+            # collapsing a channel into this single-source pick would hide that a
+            # suite/workspace override and a channel can both be actively
+            # delivering at once.
             if suite_value:
                 return True, "suite"
             if workspace_value:
@@ -1535,10 +1559,19 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
             "alert_on": config.alert_on if config else notification_service.DEFAULT_ALERT_ON,
             "has_webhook": has_webhook,
             "webhook_source": webhook_source,
+            # Independent of webhook_source: true whenever a linked Teams channel
+            # is ALSO delivering, so `source: "suite"` + `channel_linked: true`
+            # means both destinations receive the alert, not one or the other.
+            "webhook_channel_linked": has_teams_channel,
             "has_slack_webhook": has_slack,
             "slack_webhook_source": slack_source,
+            "slack_webhook_channel_linked": has_slack_channel,
             "has_email_recipients": has_email,
             "email_recipients_source": email_source,
+            "email_recipients_channel_linked": has_email_channel,
+            # A distinct fourth channel type (#1662) with no suite/workspace
+            # fallback — see docstring. Never conflate with has_webhook (Teams).
+            "has_generic_webhooks": has_generic_webhooks,
             # The per-suite override only. Workspace recipients are deployment
             # config, not this suite's setting, so they are reported as a source
             # rather than enumerated here.
