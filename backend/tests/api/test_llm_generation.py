@@ -185,6 +185,82 @@ def test_broker_failure_lands_the_row_failed_and_503s(
     assert rows[0].finished_at is not None
 
 
+def test_generation_stores_additional_tables_on_the_invocation(
+    client: TestClient,
+    db_session: Any,
+    store: FakeSecretStore,
+    dispatched: list[str],
+    as_role: Callable[..., tuple[Any, dict[str, str]]],
+) -> None:
+    owner, headers = as_role("member")
+    enable_llm(db_session, owner, store)
+    suite = make_sql_suite(db_session, owner)
+    resp = client.post(
+        "/api/v1/llm/sql_generation",
+        json=_body(suite, additional_tables=[{"table": "TRAFFIC", "schema": "ANALYTICS"}]),
+        headers=headers,
+    )
+    assert resp.status_code == 202, resp.text
+    row = db_session.query(LlmInvocation).filter(LlmInvocation.suite_id == suite.id).one()
+    assert row.request is not None
+    assert row.request["additional_tables"] == [
+        {"table": "TRAFFIC", "schema": "ANALYTICS", "catalog": None}
+    ]
+
+
+def test_generation_additional_tables_over_the_cap_is_a_synchronous_422(
+    client: TestClient,
+    db_session: Any,
+    store: FakeSecretStore,
+    dispatched: list[str],
+    as_role: Callable[..., tuple[Any, dict[str, str]]],
+) -> None:
+    owner, headers = as_role("member")
+    enable_llm(db_session, owner, store)
+    suite = make_sql_suite(db_session, owner)
+    from backend.app.services import llm_sqlgen
+
+    too_many = [{"table": f"T{i}"} for i in range(llm_sqlgen.MAX_ADDITIONAL_TABLES + 1)]
+    resp = client.post(
+        "/api/v1/llm/sql_generation",
+        json=_body(suite, additional_tables=too_many),
+        headers=headers,
+    )
+    assert resp.status_code == 422
+    assert dispatched == []
+
+
+def test_generation_additional_table_blank_name_is_a_synchronous_422(
+    client: TestClient,
+    db_session: Any,
+    store: FakeSecretStore,
+    dispatched: list[str],
+    as_role: Callable[..., tuple[Any, dict[str, str]]],
+) -> None:
+    owner, headers = as_role("member")
+    enable_llm(db_session, owner, store)
+    suite = make_sql_suite(db_session, owner)
+    resp = client.post(
+        "/api/v1/llm/sql_generation",
+        json=_body(suite, additional_tables=[{"table": "   "}]),
+        headers=headers,
+    )
+    assert resp.status_code == 422
+    assert dispatched == []
+
+
+def test_additional_table_ref_has_no_connection_field() -> None:
+    """Cross-connection joins are refused structurally, not at runtime: the
+    request shape itself carries no way to name a different connection.
+    """
+    from backend.app.api.v1.llm import AdditionalTableRef
+
+    fields = AdditionalTableRef.model_fields
+    assert "connection_id" not in fields
+    assert "connection" not in fields
+    assert set(fields) == {"table", "schema_", "catalog"}
+
+
 def test_dispatch_failure_never_clobbers_a_claimed_row(
     client: TestClient,
     db_session: Any,
