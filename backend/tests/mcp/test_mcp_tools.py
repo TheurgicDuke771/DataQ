@@ -1957,7 +1957,7 @@ def test_get_notification_config_does_not_claim_email_without_an_smtp_transport(
     db_session: Any, monkeypatch: Any
 ) -> None:
     """Recipients alone deliver nothing: `EmailPublisher.publish` no-ops unless the
-    workspace SMTP username, password secret AND sender are all configured. A
+    workspace SMTP username AND password secret are both configured. A
     deployment that named recipients but never wired a mailer would otherwise be
     told email alerting is on.
     """
@@ -1977,6 +1977,35 @@ def test_get_notification_config_does_not_claim_email_without_an_smtp_transport(
 
     assert out["has_email_recipients"] is False
     assert out["email_recipients_source"] is None
+
+
+def test_get_notification_config_credits_email_when_from_is_unset(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`email_from` is NOT part of the SMTP-ready gate (#1724): `EmailPublisher`
+    falls back to `email_username` as the sender when it's unset
+    (`alerting/email.py`'s `self._sender = sender or username`), so a
+    deployment relying on that documented fallback is actively delivering —
+    reporting `has_email_recipients: False` here would be the exact "who gets
+    told when orders fails → nobody" false answer this tool exists to prevent.
+    """
+    from backend.app.core.config import get_settings
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    monkeypatch.setenv("EMAIL_TO", "oncall@acme.io")
+    monkeypatch.setenv("EMAIL_USERNAME", "dataq@acme.io")
+    monkeypatch.setenv("EMAIL_PASSWORD_SECRET_NAME", "smtp-password")
+    monkeypatch.delenv("EMAIL_FROM", raising=False)
+    get_settings.cache_clear()
+    _as(monkeypatch, db_session, user)
+    try:
+        out = server.get_notification_config(str(suite.id))
+    finally:
+        get_settings.cache_clear()
+
+    assert out["has_email_recipients"] is True
+    assert out["email_recipients_source"] == "workspace"
 
 
 def test_list_trigger_bindings_rejects_an_unknown_env(db_session: Any, monkeypatch: Any) -> None:

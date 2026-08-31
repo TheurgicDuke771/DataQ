@@ -1482,14 +1482,16 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
             config.slack_webhook_secret_ref if config else None, settings.slack_webhook_secret_name
         )
         # Recipients alone do not mean email is delivered: `EmailPublisher.publish`
-        # no-ops unless the workspace SMTP transport (username + password secret +
-        # sender) is configured, and that gate applies to a per-suite recipient
-        # list exactly as it does to `EMAIL_TO`. Reporting recipients as "email is
-        # on" would overclaim on any deployment that names recipients but never
-        # wired a mailer.
-        smtp_ready = bool(
-            settings.email_username and settings.email_password_secret_name and settings.email_from
-        )
+        # no-ops unless the workspace SMTP transport (username + password secret)
+        # is configured, and that gate applies to a per-suite recipient list
+        # exactly as it does to `EMAIL_TO`. Reporting recipients as "email is on"
+        # would overclaim on any deployment that names recipients but never wired
+        # a mailer. `email_from` is deliberately NOT part of this gate —
+        # `EmailPublisher` falls back to `email_username` as the sender when it's
+        # unset (matches `alerting/email.py`'s `self._sender = sender or
+        # username`), so a deployment that never set an explicit sender is still
+        # actively delivering, not disabled (#1724).
+        smtp_ready = bool(settings.email_username and settings.email_password_secret_name)
         has_email, email_source = (
             _channel(config.email_recipients if config else None, settings.email_to)
             if smtp_ready
