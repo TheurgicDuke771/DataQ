@@ -19,7 +19,13 @@ from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.datasources.sampling import MAX_SAMPLE_ROWS
 from backend.app.db.models import Connection, Suite, User
 from backend.app.db.session import get_db
-from backend.app.services import live_probe, run_dispatch, run_service, run_target
+from backend.app.services import (
+    live_probe,
+    orchestration_service,
+    run_dispatch,
+    run_service,
+    run_target,
+)
 from backend.app.services import profile_service as profile
 from backend.app.services import suite_io_service as suite_io
 from backend.app.services import suite_service as svc
@@ -549,6 +555,57 @@ def profile_columns(
             # would make the masking above inert while looking correct.
             for c in columns
         ],
+    )
+
+
+class SuiteCadenceRead(ApiModel):
+    """A suite's bound-pipeline cadence (#1648) — the deterministic freshness-
+    threshold hint the LLM suggestion prompt also uses when one is configured,
+    but computed here without any LLM at all.
+    """
+
+    bound: bool
+    provider: str | None = None
+    pipeline_or_dag_id: str | None = None
+    env: str | None = None
+    sample_count: int = 0
+    insufficient_history: bool = True
+    median_gap_hours: float | None = None
+    max_gap_hours: float | None = None
+    suggested_fail_threshold_hours: float | None = None
+
+
+@router.get(
+    "/suites/{suite_id}/cadence",
+    response_model=SuiteCadenceRead,
+    summary="A suite's bound-pipeline cadence — a freshness-threshold hint, no LLM required",
+)
+def get_suite_cadence(
+    suite_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> SuiteCadenceRead:
+    # Authoring aid → 'edit', same as profile/dry-run.
+    require_permission(db, suite_id, current_user.id, minimum="edit")
+    binding = orchestration_service.get_enabled_binding(db, suite_id)
+    if binding is None:
+        return SuiteCadenceRead(bound=False)
+    cadence = orchestration_service.compute_pipeline_cadence(
+        db,
+        provider=binding.provider,
+        pipeline_or_dag_id=binding.pipeline_or_dag_id,
+        env=binding.env,
+    )
+    return SuiteCadenceRead(
+        bound=True,
+        provider=binding.provider,
+        pipeline_or_dag_id=binding.pipeline_or_dag_id,
+        env=binding.env,
+        sample_count=cadence.sample_count,
+        insufficient_history=cadence.insufficient_history,
+        median_gap_hours=cadence.median_gap_hours,
+        max_gap_hours=cadence.max_gap_hours,
+        suggested_fail_threshold_hours=cadence.suggested_fail_threshold_hours,
     )
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -556,6 +557,82 @@ def list_env_near_misses(
     """
     return workspace_health_service.list_current_env_near_misses(
         session, user_id=user_id, include_all=include_all, suite_id=suite_id
+    )
+
+
+# ─────────────────────── pipeline cadence (#1648) ──────────────────────────
+
+#: Below this many succeeded runs, a median/max gap is noise, not a signal.
+_CADENCE_MIN_RUNS = 3
+_CADENCE_HISTORY_LIMIT = 10
+
+
+def get_enabled_binding(session: Session, suite_id: uuid.UUID) -> TriggerBinding | None:
+    """A suite's most recently created enabled binding, or `None`. A suite can
+    legitimately have more than one (two pipelines both triggering it) — this
+    is for the single-binding consumers (a cadence hint, the LLM suggestion
+    prompt), which need a stable, deterministic pick rather than whichever row
+    Postgres happens to return on a given call. `id` breaks a `created_at`
+    tie — `now()` is transaction-start time, not per-statement, so two
+    bindings created in the same request-scoped transaction DO tie, and `id`
+    is a random UUID rather than a time-ordered one, so the tiebreak is
+    stable-but-arbitrary, not truly "most recent" (the same shape
+    `pipeline_run_order_by` already accepts for the same reason).
+    """
+    return session.scalars(
+        select(TriggerBinding)
+        .where(TriggerBinding.suite_id == suite_id, TriggerBinding.enabled.is_(True))
+        .order_by(TriggerBinding.created_at.desc(), TriggerBinding.id.desc())
+    ).first()
+
+
+@dataclass(frozen=True)
+class PipelineCadence:
+    """How often a bound pipeline actually produces data, from its own run
+    history — the grounding for a freshness check's threshold, never asserted
+    over too little history (#1648).
+    """
+
+    sample_count: int
+    insufficient_history: bool
+    median_gap_hours: float | None = None
+    max_gap_hours: float | None = None
+    #: A deterministic default threshold, for when no LLM is configured — the
+    #: largest observed gap plus margin, not the median: a threshold tighter
+    #: than the slowest still-healthy cycle would false-positive on it.
+    suggested_fail_threshold_hours: float | None = None
+
+
+def compute_pipeline_cadence(
+    session: Session, *, provider: str, pipeline_or_dag_id: str, env: str
+) -> PipelineCadence:
+    rows = session.execute(
+        select(func.coalesce(PipelineRun.started_at, PipelineRun.created_at))
+        .where(
+            PipelineRun.provider == provider,
+            PipelineRun.pipeline_or_dag_id == pipeline_or_dag_id,
+            PipelineRun.env == env,
+            PipelineRun.status == "succeeded",
+        )
+        .order_by(func.coalesce(PipelineRun.started_at, PipelineRun.created_at).desc())
+        .limit(_CADENCE_HISTORY_LIMIT)
+    ).all()
+    timestamps = sorted(r[0] for r in rows)
+    if len(timestamps) < _CADENCE_MIN_RUNS:
+        return PipelineCadence(sample_count=len(timestamps), insufficient_history=True)
+    gaps_hours = sorted(
+        (later - earlier).total_seconds() / 3600
+        for earlier, later in itertools.pairwise(timestamps)
+    )
+    mid = len(gaps_hours) // 2
+    median = gaps_hours[mid] if len(gaps_hours) % 2 else (gaps_hours[mid - 1] + gaps_hours[mid]) / 2
+    max_gap = gaps_hours[-1]
+    return PipelineCadence(
+        sample_count=len(timestamps),
+        insufficient_history=False,
+        median_gap_hours=round(median, 2),
+        max_gap_hours=round(max_gap, 2),
+        suggested_fail_threshold_hours=round(max_gap * 1.25, 1),
     )
 
 
