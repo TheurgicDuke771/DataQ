@@ -86,9 +86,17 @@ destination the caller changed.
 
 ### Notification channels
 
-A reusable Teams/Slack/email destination, defined once and referenced from any number of
-suites — the destination only; per-suite `alert_on`/enabled stays on
+A reusable Teams/Slack/email/generic-webhook destination, defined once and referenced from any
+number of suites — the destination only; per-suite `alert_on`/enabled stays on
 `/suites/{id}/notifications` above.
+
+A `webhook` channel posts an HMAC-SHA256-signed JSON body (header `X-DataQ-Signature`) to an
+admin-supplied `webhook_url` — the vendor-neutral way to reach PagerDuty, Opsgenie, ServiceNow,
+Jira, or a self-hosted receiver with no per-vendor code. The destination URL must be `https` and
+must not resolve to a private, loopback, or otherwise internal address (an SSRF guard, checked
+both when the channel is saved and again before every send). DataQ generates the signing key —
+it is returned in the response body **exactly once**, at creation (or at rotation via
+`regenerate_hmac_secret: true` on `PATCH`), and is never retrievable again after that.
 
 | Method | Path | What |
 |---|---|---|

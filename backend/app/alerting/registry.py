@@ -9,6 +9,7 @@ from backend.app.alerting.composite import CompositePublisher
 from backend.app.alerting.email import EmailPublisher
 from backend.app.alerting.slack import SlackPublisher
 from backend.app.alerting.teams import TeamsPublisher
+from backend.app.alerting.webhook import WebhookPublisher
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import get_secret_store
@@ -25,10 +26,10 @@ def _split_csv(raw: str) -> tuple[str, ...]:
 
 
 def _build_publisher() -> AlertPublisher:
-    """A composite over every channel (Teams · Slack · email). Each child resolves
-    its secret + per-suite policy per run (so rotation is picked up) and stays a
-    quiet no-op until configured; the registry only wires the store + names, never
-    reads a secret.
+    """A composite over every channel (Teams · Slack · email · generic webhook).
+    Each child resolves its secret + per-suite policy per run (so rotation is
+    picked up) and stays a quiet no-op until configured; the registry only
+    wires the store + names, never reads a secret.
     """
     settings = get_settings()
     store = get_secret_store()
@@ -52,6 +53,9 @@ def _build_publisher() -> AlertPublisher:
                 sender=settings.email_from,
                 recipients=_split_csv(settings.email_to),
             ),
+            # No workspace-level config — a generic webhook only ever exists as
+            # a suite-linked channel (#1514/#1662), never a single default.
+            WebhookPublisher(secret_store=store),
         ]
     )
 

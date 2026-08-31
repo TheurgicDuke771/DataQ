@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
+import socket
 import uuid
 from urllib.parse import urlparse
 
@@ -90,6 +92,56 @@ def assert_allowed_slack_webhook(url: str) -> None:
         raise InvalidWebhookError(
             "Slack webhook must be an https URL on an allowed host",
             detail={"allowed_hosts": list(allowed_slack_hosts())},
+        )
+
+
+def _is_private_or_reserved(ip_str: str) -> bool:
+    ip = ipaddress.ip_address(ip_str)
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def is_safe_generic_webhook_url(url: str) -> bool:
+    """True iff ``url`` is https with a hostname that resolves to no private,
+    loopback, link-local, reserved, multicast, or unspecified address.
+
+    A generic outbound webhook (#1662) has no fixed vendor allowlist — PagerDuty,
+    Opsgenie, ServiceNow, Jira, and a self-hosted receiver are all legitimate
+    destinations — so unlike the Teams/Slack allowlist above, this guards the
+    DESTINATION RANGE instead: it blocks a channel from being pointed at a cloud
+    metadata endpoint (169.254.169.254), localhost, or an internal network,
+    which an admin-controlled arbitrary URL would otherwise permit outright.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return False
+    hostname = parsed.hostname
+    try:
+        # A literal IP in the URL — check directly, no DNS involved.
+        return not _is_private_or_reserved(hostname)
+    except ValueError:
+        pass  # not a literal IP — resolve it below
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except OSError:
+        return False
+    # Every resolved address must be safe — a hostname resolving to even one
+    # private/internal address is a DNS-rebinding-style SSRF vector.
+    return all(not _is_private_or_reserved(str(info[4][0])) for info in infos)
+
+
+def assert_safe_generic_webhook_url(url: str) -> None:
+    """Raise ``InvalidWebhookError`` unless ``url`` passes the generic-webhook SSRF guard."""
+    if not is_safe_generic_webhook_url(url):
+        raise InvalidWebhookError(
+            "webhook must be an https URL that does not resolve to a private, "
+            "loopback, or otherwise internal network address"
         )
 
 

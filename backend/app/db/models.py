@@ -89,7 +89,7 @@ ENVS = ("dev", "qa", "uat", "prod")
 ALERT_ON_POLICIES = ("fail", "warn", "always")
 # Reusable notification channels (#1514) — a destination, not a routing policy (that stays on
 # SuiteNotification).
-NOTIFICATION_CHANNEL_TYPES = ("teams", "slack", "email")
+NOTIFICATION_CHANNEL_TYPES = ("teams", "slack", "email", "webhook")
 
 # Incident lifecycle (ADR 0034 decision 4, #761): open → acknowledged → resolved; a resolved row
 # never reopens (a new incident links via `prior_incident_id`).
@@ -843,6 +843,14 @@ class NotificationChannel(Base):
     webhook_secret_ref: Mapped[str | None] = mapped_column(String(256))
     # Email — comma-separated addresses, not a secret, stored inline.
     email_recipients: Mapped[str | None] = mapped_column(String(1024))
+    # Generic webhook (#1662): the destination URL is NOT the credential here (the HMAC
+    # signature is), so it is stored in plaintext for admin visibility/audit — unlike
+    # webhook_secret_ref above, where knowing the Teams/Slack URL alone is enough to post.
+    webhook_url: Mapped[str | None] = mapped_column(String(2048))
+    # The HMAC-SHA256 signing key DataQ generated for this channel (secrets.token_urlsafe),
+    # stored via the SecretStore like every other channel credential — never accepted from
+    # the caller, only shown once (at mint/rotate) in the API response, never again.
+    hmac_secret_ref: Mapped[str | None] = mapped_column(String(256))
     # Provenance, not lifecycle ownership — SET NULL; RESTRICT would make a user
     # un-erasable (GDPR Art 17, #432/#1319), same rationale as every other created_by here.
     created_by: Mapped[uuid.UUID | None] = mapped_column(

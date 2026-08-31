@@ -55,6 +55,10 @@ _OWNER_COLUMNS = (
     # Reusable channels (#1514) — the exact "two refs, one row" trap above, but at
     # the table level: this is a THIRD place a webhook secret_ref column lives.
     NotificationChannel.webhook_secret_ref,
+    # The generic webhook's HMAC signing key (#1662) — a FOURTH ref column on the
+    # same row; `webhook_url` beside it is NOT a secret (it's the destination, not
+    # the credential) and deliberately does not belong in this registry.
+    NotificationChannel.hmac_secret_ref,
 )
 
 # JSONB-held refs, which no column-level scan can see.

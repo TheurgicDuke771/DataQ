@@ -25,8 +25,11 @@ router = APIRouter(tags=["notification-channels"])
 
 
 class ChannelRead(ApiModel):
-    """A channel's shape as any authenticated caller may see it — the webhook URL
-    is a secret and never returned, only whether one is set.
+    """A channel's shape as any authenticated caller may see it. The Teams/Slack
+    webhook and the generic webhook's HMAC signing key are credentials and
+    never returned, only whether one is set — `webhook_url` is the exception:
+    for a generic webhook it is the destination, not the credential (the HMAC
+    signature is), so it is safe to echo back for admin visibility.
     """
 
     id: uuid.UUID
@@ -34,23 +37,36 @@ class ChannelRead(ApiModel):
     type: str
     has_webhook: bool
     email_recipients: str | None
+    webhook_url: str | None = None
+    has_hmac_secret: bool = False
+    #: Populated ONLY by create/rotate, in the response of that one call — the
+    #: plaintext HMAC signing key, shown exactly once. Never set by a read.
+    hmac_secret: str | None = None
 
     @classmethod
-    def from_model(cls, channel: NotificationChannel) -> ChannelRead:
+    def from_model(
+        cls, channel: NotificationChannel, *, hmac_secret: str | None = None
+    ) -> ChannelRead:
         return cls(
             id=channel.id,
             name=channel.name,
             type=channel.type,
             has_webhook=channel.webhook_secret_ref is not None,
             email_recipients=channel.email_recipients,
+            webhook_url=channel.webhook_url,
+            has_hmac_secret=channel.hmac_secret_ref is not None,
+            hmac_secret=hmac_secret,
         )
 
 
 class ChannelCreate(ApiRequestModel):
     name: str = Field(min_length=1, max_length=128)
-    type: Literal["teams", "slack", "email"]
+    type: Literal["teams", "slack", "email", "webhook"]
     webhook: str | None = Field(default=None, description="Teams/Slack webhook URL; write-only")
     email_recipients: str | None = Field(default=None, description="Comma-separated addresses")
+    webhook_url: str | None = Field(
+        default=None, description="Generic webhook destination URL (https, non-internal)"
+    )
 
 
 class ChannelUpdate(ApiRequestModel):
@@ -59,6 +75,10 @@ class ChannelUpdate(ApiRequestModel):
     # value = set/rotate.
     webhook: str | None = None
     email_recipients: str | None = None
+    webhook_url: str | None = None
+    regenerate_hmac_secret: bool = Field(
+        default=False, description="Mint a new HMAC signing key, invalidating the old one"
+    )
 
 
 @router.get("/notification-channels", response_model=list[ChannelRead], summary="List channels")
@@ -92,16 +112,17 @@ def create_channel(
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> ChannelRead:
-    channel = svc.create_channel(
+    channel, hmac_secret = svc.create_channel(
         db,
         name=payload.name,
         type=payload.type,
         webhook=payload.webhook,
         email_recipients=payload.email_recipients,
+        webhook_url=payload.webhook_url,
         secret_store=secret_store,
         actor_id=current_user.id,
     )
-    return ChannelRead.from_model(channel)
+    return ChannelRead.from_model(channel, hmac_secret=hmac_secret)
 
 
 @router.patch(
@@ -114,16 +135,18 @@ def update_channel(
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> ChannelRead:
-    channel = svc.update_channel(
+    channel, hmac_secret = svc.update_channel(
         db,
         channel_id,
         name=payload.name,
         webhook=payload.webhook,
         email_recipients=payload.email_recipients,
+        webhook_url=payload.webhook_url,
+        regenerate_hmac_secret=payload.regenerate_hmac_secret,
         secret_store=secret_store,
         actor_id=current_user.id,
     )
-    return ChannelRead.from_model(channel)
+    return ChannelRead.from_model(channel, hmac_secret=hmac_secret)
 
 
 @router.delete(

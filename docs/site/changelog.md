@@ -62,6 +62,13 @@ the per-PR history lives in the repo's commit log and pull requests.
   never returned by the API, only whether one is set. The admin UI for managing channels
   ships next.
 
+- **A fourth channel type: a signed, generic outbound webhook.** Beside Teams/Slack/email, a
+  channel can now be a plain HTTPS endpoint that receives an HMAC-SHA256-signed JSON body on
+  every alert — a vendor-neutral way to wire up PagerDuty, Opsgenie, ServiceNow, Jira, or a
+  self-hosted receiver with no bespoke integration. DataQ generates the signing key and shows
+  it exactly once, at creation or rotation; the destination URL must be HTTPS and must not
+  point at a private, loopback, or internal address.
+
 - **Alerts now credit the asset owner, not just the suite creator.** When a table has an
   assigned owner, the "Owner" shown on a run alert (Teams card, Slack message, email) is that
   person — the one actually responsible for the data — rather than whoever happened to author

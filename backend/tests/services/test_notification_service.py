@@ -496,3 +496,69 @@ def test_delete_config_removes_slack_secret_too(db_session: Any) -> None:
     assert svc.delete_config(db_session, suite.id, secret_store=store) is True
     # #372: both orphaned webhook secrets removed.
     assert teams_ref not in store.data and slack_ref not in store.data
+
+
+# ── generic-webhook SSRF guard (#1662) ───────────────────────────────────────
+# IP literals throughout (never a real hostname) so these stay fast and
+# network-free: `ipaddress.ip_address` parses a literal directly, no DNS.
+
+
+def test_generic_webhook_accepts_a_public_https_ip() -> None:
+    assert svc.is_safe_generic_webhook_url("https://8.8.8.8/hook") is True
+
+
+def test_generic_webhook_rejects_http() -> None:
+    assert svc.is_safe_generic_webhook_url("http://8.8.8.8/hook") is False
+
+
+def test_generic_webhook_rejects_loopback() -> None:
+    assert svc.is_safe_generic_webhook_url("https://127.0.0.1/hook") is False
+
+
+def test_generic_webhook_rejects_the_cloud_metadata_address() -> None:
+    # 169.254.169.254 — the canonical SSRF target across every major cloud.
+    assert svc.is_safe_generic_webhook_url("https://169.254.169.254/latest/meta-data") is False
+
+
+def test_generic_webhook_rejects_private_ranges() -> None:
+    for host in ("10.0.0.5", "172.16.0.5", "192.168.1.5"):
+        assert svc.is_safe_generic_webhook_url(f"https://{host}/hook") is False
+
+
+def test_generic_webhook_rejects_ipv6_loopback() -> None:
+    assert svc.is_safe_generic_webhook_url("https://[::1]/hook") is False
+
+
+def test_generic_webhook_rejects_a_url_with_no_hostname() -> None:
+    assert svc.is_safe_generic_webhook_url("https:///hook") is False
+
+
+def test_generic_webhook_rejects_a_hostname_that_resolves_private(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The DNS-rebinding case: a hostname (not a literal IP) that resolves to a
+    private address must be rejected too — the guard is on the DESTINATION,
+    not on the URL's surface text.
+    """
+    import socket
+
+    def fake_getaddrinfo(host: str, port: Any, *a: Any, **kw: Any) -> list[Any]:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.1.2.3", 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    assert svc.is_safe_generic_webhook_url("https://internal.example.corp/hook") is False
+
+
+def test_generic_webhook_rejects_an_unresolvable_hostname(monkeypatch: pytest.MonkeyPatch) -> None:
+    import socket
+
+    def fake_getaddrinfo(host: str, port: Any, *a: Any, **kw: Any) -> list[Any]:
+        raise OSError("name resolution failed")
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    assert svc.is_safe_generic_webhook_url("https://nowhere.example.invalid/hook") is False
+
+
+def test_assert_safe_generic_webhook_url_raises_on_a_bad_target() -> None:
+    with pytest.raises(InvalidWebhookError):
+        svc.assert_safe_generic_webhook_url("https://127.0.0.1/hook")
