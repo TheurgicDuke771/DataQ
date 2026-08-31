@@ -73,3 +73,29 @@ def test_blank_valued_template_keys_are_parseable_types() -> None:
         "Blank-valued template keys whose type cannot parse an empty string. "
         "Comment the key out instead of shipping it blank: " + "; ".join(offenders)
     )
+
+
+def test_env_app_template_llm_reaper_thresholds_match_the_code_default() -> None:
+    """#1726 review: unlike most keys the template ships blank, the LLM reaper
+    thresholds ship ACTIVE — `setup.sh` copies the template verbatim, so a fresh
+    stack loads whatever value is written here, not `Settings`' own default. The
+    two drifted once already (the code default was raised to fix a false-kill bug;
+    the template kept the old, tight values, silently reintroducing it for every
+    new environment). Either side changing alone must fail this test.
+    """
+    templated = Settings(
+        _env_file=str(_REPO_ROOT / ".env.app.example"),
+        database_url="postgresql+psycopg2://u:p@localhost:5432/dataq",
+        openbao_token="dev-root-token",
+        openbao_addr="http://localhost:8200",
+        openbao_mount="secret",
+    )
+    code_default = Settings()
+    assert (
+        templated.llm_invocation_pending_threshold_minutes
+        == code_default.llm_invocation_pending_threshold_minutes
+    )
+    assert (
+        templated.llm_invocation_running_threshold_minutes
+        == code_default.llm_invocation_running_threshold_minutes
+    )

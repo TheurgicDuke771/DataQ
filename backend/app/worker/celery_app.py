@@ -95,7 +95,7 @@ def create_celery_app() -> Celery:
             # llm_invocations reaper (#1644): mirrors reap-stuck-runs.
             "reap-stuck-llm-invocations": {
                 "task": "reap_stuck_llm_invocations",
-                "schedule": 300.0,  # 5 minutes — the running threshold is tighter (10 min)
+                "schedule": 300.0,  # 5 minutes — the running threshold is tighter (20 min, #1726)
             },
             # Orphan-asset sweep (#770, ADR 0034): daily low-urgency accretion cleanup.
             "sweep-orphan-assets": {
