@@ -268,3 +268,20 @@ def test_a_failing_channel_does_not_block_delivery_to_another(
     # Both were attempted — the bad one failing did not stop the loop before
     # reaching the good one (order isn't guaranteed, so check membership).
     assert set(calls) == {bad_url, good_url}
+
+
+def test_every_destination_failing_still_logs_the_aggregate_event(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """publish() itself never raises anymore (#1514's isolation), so
+    CompositePublisher's try/except can no longer observe a Teams failure —
+    this aggregate warning is what replaces that signal.
+    """
+    from structlog.testing import capture_logs
+
+    suite = _suite(db_session)
+    monkeypatch.setattr(httpx, "post", _CapturePost(status_code=500))
+    with capture_logs() as logs:
+        _publisher({_WS_NAME: _WS_URL}).publish(db_session, _report(suite, worst="fail"))
+    events = [e["event"] for e in logs]
+    assert "channel_publish_failed" in events

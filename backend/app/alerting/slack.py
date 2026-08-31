@@ -196,6 +196,7 @@ class SlackPublisher:
         if not webhooks:
             return
         payload = render_slack_message(report, route)
+        delivered = 0
         for webhook in webhooks:
             if not self._webhook_allowed(webhook):
                 log.warning("slack_webhook_not_allowed", run_id=str(report.run_id))
@@ -206,6 +207,7 @@ class SlackPublisher:
             except Exception:
                 log.exception("slack_destination_send_failed", run_id=str(report.run_id))
                 continue
+            delivered += 1
             log.info(
                 "slack_alert_sent",
                 run_id=str(report.run_id),
@@ -213,6 +215,13 @@ class SlackPublisher:
                 worst_severity=report.worst_severity,
                 urgency=route.urgency,
                 failed_checks=report.failed_checks,
+            )
+        if delivered == 0:
+            # Every destination failed/was blocked — restores the aggregate
+            # signal CompositePublisher's own try/except used to see when this
+            # method simply raised (pre-#1514).
+            log.warning(
+                "channel_publish_failed", channel="SlackPublisher", run_id=str(report.run_id)
             )
 
     def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:

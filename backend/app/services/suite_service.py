@@ -23,6 +23,7 @@ from backend.app.db.models import (
     Schedule,
     Share,
     Suite,
+    SuiteNotificationChannel,
     TriggerBinding,
 )
 from backend.app.services import audit_service, run_target
@@ -282,6 +283,10 @@ def deletion_impact(session: Session, suite_id: uuid.UUID) -> dict[str, int]:
             session, select(TriggerBinding).where(TriggerBinding.suite_id == suite_id)
         ),
         "schedules": _count(session, select(Schedule).where(Schedule.suite_id == suite_id)),
+        "notification_channel_links": _count(
+            session,
+            select(SuiteNotificationChannel).where(SuiteNotificationChannel.suite_id == suite_id),
+        ),
     }
 
 

@@ -6,11 +6,19 @@ import uuid
 from typing import Any
 
 import pytest
+from sqlalchemy import insert
 
 from backend.app.core.secrets import SecretNotFoundError
-from backend.app.db.models import Connection, NotificationChannel, Suite, User
+from backend.app.db.models import (
+    Connection,
+    NotificationChannel,
+    Suite,
+    SuiteNotificationChannel,
+    User,
+)
 from backend.app.services import channel_service as svc
 from backend.app.services.channel_service import (
+    ChannelFieldMismatchError,
     ChannelInUseError,
     ChannelNotFoundError,
     ChannelTypeInvalidError,
@@ -71,6 +79,37 @@ def test_create_email_channel_stores_recipients_inline_not_as_a_secret(db_sessio
 def test_create_channel_rejects_an_invalid_type(db_session: Any) -> None:
     with pytest.raises(ChannelTypeInvalidError):
         svc.create_channel(db_session, name="x", type="pagerduty", secret_store=FakeSecretStore())
+
+
+def test_create_email_channel_rejects_a_webhook_field(db_session: Any) -> None:
+    """A field that doesn't apply to the type is a 422, not a silent no-op —
+    without this, POST {type: email, webhook: ...} returns 201 with has_webhook:
+    false and the caller has no idea their webhook was ignored.
+    """
+    with pytest.raises(ChannelFieldMismatchError):
+        svc.create_channel(
+            db_session, name="x", type="email", webhook=_TEAMS_URL, secret_store=FakeSecretStore()
+        )
+
+
+def test_create_teams_channel_rejects_an_email_recipients_field(db_session: Any) -> None:
+    with pytest.raises(ChannelFieldMismatchError):
+        svc.create_channel(
+            db_session,
+            name="x",
+            type="teams",
+            email_recipients="a@x.io",
+            secret_store=FakeSecretStore(),
+        )
+
+
+def test_update_channel_rejects_a_mismatched_field(db_session: Any) -> None:
+    store = FakeSecretStore()
+    channel = svc.create_channel(
+        db_session, name="x", type="email", email_recipients="a@x.io", secret_store=store
+    )
+    with pytest.raises(ChannelFieldMismatchError):
+        svc.update_channel(db_session, channel.id, webhook=_TEAMS_URL, secret_store=store)
 
 
 def test_create_teams_channel_rejects_a_non_allowlisted_webhook(db_session: Any) -> None:
@@ -201,6 +240,85 @@ def test_link_suite_to_a_missing_channel_404s(db_session: Any) -> None:
     suite = _suite(db_session)
     with pytest.raises(ChannelNotFoundError):
         svc.link_suite(db_session, suite.id, uuid.uuid4())
+
+
+def test_link_suite_recovers_from_a_concurrent_link_race(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two overlapping link requests for the same (suite, channel) pair both pass
+    the existing-is-None check before either commits; the loser's insert must hit
+    the composite-PK conflict and come back as the idempotent no-op the caller
+    asked for, not an unhandled IntegrityError — same race class notification_
+    service.upsert_config was already fixed for (#384).
+    """
+    store = FakeSecretStore()
+    channel = svc.create_channel(
+        db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    suite = _suite(db_session)
+    # The "concurrent winner" row, inserted via Core so it never touches the ORM
+    # identity map — session.get() below must go all the way to a real DB read
+    # (which the monkeypatch then forces to lie once), and link_suite's own
+    # session.add()+flush() must reach a genuine Postgres constraint violation
+    # rather than an ORM-side identity conflict on a duplicate Python object.
+    db_session.execute(
+        insert(SuiteNotificationChannel).values(suite_id=suite.id, channel_id=channel.id)
+    )
+
+    # link_suite calls session.get() twice for two DIFFERENT models
+    # (get_channel's existence check, then its own existing-link check) — the
+    # lie must target only the SECOND kind's first call, not just "call #1
+    # overall", or it swallows the unrelated get_channel() lookup instead.
+    real_get = db_session.get
+    lied_once = {"done": False}
+
+    def stale_then_real(model: Any, pk: Any, *a: Any, **kw: Any) -> Any:
+        if model is SuiteNotificationChannel and not lied_once["done"]:
+            lied_once["done"] = True
+            return None  # the stale read that drove our own insert attempt
+        return real_get(model, pk, *a, **kw)
+
+    monkeypatch.setattr(db_session, "get", stale_then_real)
+
+    svc.link_suite(db_session, suite.id, channel.id)  # must not raise
+    assert [c.id for c in svc.list_channels_for_suite(db_session, suite.id)] == [channel.id]
+
+
+def test_delete_channel_recovers_from_a_concurrent_link_race(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The linked-suites pre-check runs clean (no links yet); a link then commits
+    before the delete itself does. The RESTRICT FK must turn that into the same
+    clean 409 the pre-check gives for the non-concurrent case, not an unhandled
+    IntegrityError.
+    """
+    store = FakeSecretStore()
+    channel = svc.create_channel(
+        db_session, name="x", type="teams", webhook=_TEAMS_URL, secret_store=store
+    )
+    suite = _suite(db_session)
+    real_detail = svc._linked_suites_detail
+    lied_once = {"done": False}
+
+    def stale_then_real(session: Any, channel_id: Any) -> Any:
+        if not lied_once["done"]:
+            lied_once["done"] = True
+            return None  # the pre-check's stale "no links" read
+        return real_detail(session, channel_id)
+
+    monkeypatch.setattr(svc, "_linked_suites_detail", stale_then_real)
+
+    # The "concurrent winner": committed after the (mocked) stale pre-check ran.
+    db_session.execute(
+        insert(SuiteNotificationChannel).values(suite_id=suite.id, channel_id=channel.id)
+    )
+
+    with pytest.raises(ChannelInUseError) as exc:
+        svc.delete_channel(db_session, channel.id, secret_store=store)
+    assert exc.value.detail["total"] == 1
+    # Refused, not partially applied — the channel and its link both survive.
+    assert db_session.get(NotificationChannel, channel.id) is not None
+    assert [c.id for c in svc.list_channels_for_suite(db_session, suite.id)] == [channel.id]
 
 
 def test_unlink_suite_removes_the_link_and_unblocks_delete(db_session: Any) -> None:

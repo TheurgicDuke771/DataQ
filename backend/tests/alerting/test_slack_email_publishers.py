@@ -480,7 +480,9 @@ def test_email_publish_noop_when_password_secret_missing(
 
 class _CapturePost:
     """httpx.post stand-in returning a REAL httpx.Response, so raise_for_status
-    is the genuine article (a 4xx/5xx really raises to the composite).
+    is the genuine article — a 4xx/5xx genuinely raises `HTTPStatusError` inside
+    `publish()`. Since #1514, that raise is caught and isolated per-destination
+    there, not left to propagate to `CompositePublisher`.
     """
 
     def __init__(self, *, status_code: int = 200) -> None:
@@ -525,6 +527,23 @@ def test_slack_publish_isolates_a_webhook_http_error(
     store = FakeSecretStore({"wh": "https://hooks.slack.com/services/T00/B00/xyz"})
     _slack_publisher(store).publish(db_session, _report(worst="fail"))
     assert len(post.calls) == 1
+
+
+def test_slack_every_destination_failing_still_logs_the_aggregate_event(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """publish() itself never raises anymore (#1514's isolation), so
+    CompositePublisher's try/except can no longer observe a Slack failure —
+    this aggregate warning is what replaces that signal.
+    """
+    from structlog.testing import capture_logs
+
+    monkeypatch.setattr("backend.app.alerting.slack.httpx.post", _CapturePost(status_code=500))
+    store = FakeSecretStore({"wh": "https://hooks.slack.com/services/T00/B00/xyz"})
+    with capture_logs() as logs:
+        _slack_publisher(store).publish(db_session, _report(worst="fail"))
+    events = [e["event"] for e in logs]
+    assert "channel_publish_failed" in events
 
 
 def test_slack_publish_blocks_non_allowlisted_webhook_host(

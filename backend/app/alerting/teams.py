@@ -61,6 +61,7 @@ class TeamsPublisher:
         if not webhooks:
             return
         payload = render_teams_message(report, route)
+        delivered = 0
         for webhook in webhooks:
             if not _webhook_allowed(webhook):
                 log.warning("teams_webhook_host_not_allowed", run_id=str(report.run_id))
@@ -72,6 +73,7 @@ class TeamsPublisher:
                 # One bad destination must not block delivery to the others.
                 log.exception("teams_destination_send_failed", run_id=str(report.run_id))
                 continue
+            delivered += 1
             log.info(
                 "teams_alert_sent",
                 run_id=str(report.run_id),
@@ -79,6 +81,15 @@ class TeamsPublisher:
                 worst_severity=report.worst_severity,
                 urgency=route.urgency,
                 failed_checks=report.failed_checks,
+            )
+        if delivered == 0:
+            # Every destination failed/was blocked — the aggregate signal
+            # CompositePublisher's own try/except used to see when this method
+            # simply raised (pre-#1514); restored here since fan-out means a
+            # per-destination failure alone must never propagate and abort the
+            # other channel types' delivery.
+            log.warning(
+                "channel_publish_failed", channel="TeamsPublisher", run_id=str(report.run_id)
             )
 
     def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:

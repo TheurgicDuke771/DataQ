@@ -11,6 +11,7 @@ import uuid
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
@@ -44,6 +45,17 @@ class ChannelInUseError(DataQError):
     code = "channel_in_use"
 
 
+class ChannelFieldMismatchError(DataQError):
+    """Raised when a destination field is supplied for the wrong channel type —
+    e.g. a ``webhook`` on an ``email`` channel. Rejected outright rather than
+    silently ignored: a caller who names the wrong field for the type should get
+    a 422 naming the mismatch, not a 201/200 that quietly did nothing with it.
+    """
+
+    status_code = 422
+    code = "channel_field_mismatch"
+
+
 def _validate_type(type_: str) -> None:
     if type_ not in NOTIFICATION_CHANNEL_TYPES:
         raise ChannelTypeInvalidError(
@@ -53,29 +65,26 @@ def _validate_type(type_: str) -> None:
 
 
 def _validate_destination(type_: str, *, webhook: str | None, email_recipients: str | None) -> None:
-    """Same validators the per-suite fields already use — one allowlist, one rule set."""
+    """Same validators the per-suite fields already use — one allowlist, one rule
+    set — plus a type/field match check: ``None`` means "not supplied" and is
+    always fine, but a caller who explicitly names a field the type doesn't use
+    (``webhook`` on ``email``, ``email_recipients`` on ``teams``/``slack``) gets
+    a 422, not a silently-dropped write.
+    """
+    if webhook is not None and type_ not in ("teams", "slack"):
+        raise ChannelFieldMismatchError(
+            f"'webhook' does not apply to a {type_!r} channel", detail={"type": type_}
+        )
+    if email_recipients is not None and type_ != "email":
+        raise ChannelFieldMismatchError(
+            f"'email_recipients' does not apply to a {type_!r} channel", detail={"type": type_}
+        )
     if type_ == "teams" and webhook:
         notification_service.assert_allowed_webhook(webhook)
     elif type_ == "slack" and webhook:
         notification_service.assert_allowed_slack_webhook(webhook)
     elif type_ == "email" and email_recipients:
         notification_service.assert_valid_recipients(email_recipients)
-
-
-def _apply_secret_webhook(
-    value: str | None, current_ref: str | None, *, channel_id: uuid.UUID, secret_store: SecretStore
-) -> tuple[str | None, str | None]:
-    """Apply a tri-state webhook change to the channel's secret-backed ref — same
-    convention as `notification_service`'s per-suite fields: ``None`` = unchanged,
-    ``""`` = clear, a value = set/rotate. Returns ``(new_ref, ref_to_delete)``.
-    """
-    if value is None:
-        return current_ref, None
-    if value == "":
-        return None, current_ref
-    ref = current_ref or f"channel-{channel_id}-{uuid.uuid4().hex[:12]}"
-    secret_store.set(ref, value)
-    return ref, None
 
 
 def get_channel(session: Session, channel_id: uuid.UUID) -> NotificationChannel:
@@ -107,9 +116,9 @@ def create_channel(
     session.flush()  # mint channel.id before it's used in the secret ref below
 
     if type in ("teams", "slack") and webhook:
-        ref = f"channel-{channel.id}-{uuid.uuid4().hex[:12]}"
-        secret_store.set(ref, webhook)
-        channel.webhook_secret_ref = ref
+        channel.webhook_secret_ref, _cleared = notification_service.apply_secret_webhook(
+            webhook, None, ref_prefix="channel", config_id=channel.id, secret_store=secret_store
+        )
     if type == "email" and email_recipients:
         channel.email_recipients = email_recipients
 
@@ -150,8 +159,12 @@ def update_channel(
 
     cleared_secret: str | None = None
     if channel.type in ("teams", "slack") and webhook is not None:
-        channel.webhook_secret_ref, cleared_secret = _apply_secret_webhook(
-            webhook, channel.webhook_secret_ref, channel_id=channel.id, secret_store=secret_store
+        channel.webhook_secret_ref, cleared_secret = notification_service.apply_secret_webhook(
+            webhook,
+            channel.webhook_secret_ref,
+            ref_prefix="channel",
+            config_id=channel.id,
+            secret_store=secret_store,
         )
     if channel.type == "email" and email_recipients is not None:
         channel.email_recipients = email_recipients or None
@@ -202,7 +215,19 @@ def delete_channel(
         )
     secret_ref = channel.webhook_secret_ref
     audit_before = audit_service.snapshot("notification_channel", channel)
-    session.delete(channel)
+    try:
+        # SAVEPOINT: a link committed between the check above and this delete trips
+        # the ON DELETE RESTRICT FK — caught here and reported as the same clean 409
+        # the pre-check gives, not an unhandled IntegrityError (500).
+        with session.begin_nested():
+            session.delete(channel)
+            session.flush()
+    except IntegrityError:
+        linked = _linked_suites_detail(session, channel_id) or {"total": 0, "suites": []}
+        raise ChannelInUseError(
+            f"{linked['total']} suite(s) still reference this channel — unlink them first",
+            detail=linked,
+        ) from None
     audit_service.record_entity_change(
         session,
         action="notification_channel.delete",
@@ -282,7 +307,17 @@ def link_suite(
     if existing is not None:
         return
     link = SuiteNotificationChannel(suite_id=suite_id, channel_id=channel_id)
-    session.add(link)
+    try:
+        # SAVEPOINT so a concurrent first-linker winning the composite-PK race rolls
+        # back just this insert, not the whole transaction — same shape as
+        # notification_service.upsert_config's fix for the identical race (#384).
+        with session.begin_nested():
+            session.add(link)
+            session.flush()
+    except IntegrityError:
+        # Someone else linked this exact pair between our check and our insert —
+        # the no-op state the caller asked for either way.
+        return
     audit_service.record_entity_change(
         session,
         action="suite_notification_channel.link",
