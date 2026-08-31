@@ -271,9 +271,14 @@ def test_execute_invocation_outage_lands_failed_with_error_code(
 
 
 def test_execute_invocation_unregistered_kind_fails_terminal(db_session: Any, admin: User) -> None:
+    """`ping` is reserved DB vocabulary with no production builder — the other
+    tests in this file that need one register it temporarily via
+    `monkeypatch.setitem`; here it stays unregistered on purpose (#1633: all
+    THREE feature kinds now have builders, so this is the one kind left).
+    """
     store = FakeSecretStore()
     _enable(db_session, admin, store)
-    invocation = llm_service.create_invocation(db_session, kind="rca_narrative", requested_by=admin)
+    invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
     db_session.commit()
     assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == "failed"
     db_session.refresh(invocation)

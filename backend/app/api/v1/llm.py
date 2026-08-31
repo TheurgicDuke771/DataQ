@@ -21,7 +21,13 @@ from backend.app.core.logging import get_logger
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import Connection, LlmInvocation, User
 from backend.app.db.session import get_db
-from backend.app.services import llm_checksuggest, llm_service, llm_sqlgen
+from backend.app.services import (
+    incident_service,
+    llm_checksuggest,
+    llm_rca,
+    llm_service,
+    llm_sqlgen,
+)
 from backend.app.services.llm_kinds import REGISTERED_KINDS
 from backend.app.services.run_dispatch import dispatch_llm_invocation
 from backend.app.services.suite_authz import require_permission
@@ -79,6 +85,10 @@ class LlmInvocationQueued(ApiModel):
 
 class CheckSuggestionRequest(ApiRequestModel):
     suite_id: UUID
+
+
+class RcaNarrativeRequest(ApiRequestModel):
+    incident_id: UUID
 
 
 def _queue_invocation(db: Session, invocation: LlmInvocation) -> LlmInvocationQueued:
@@ -168,6 +178,38 @@ def suggest_checks(
         requested_by=current_user,
         suite_id=suite.id,
         request={},
+    )
+    return _queue_invocation(db, invocation)
+
+
+@router.post(
+    "/rca_narrative",
+    response_model=LlmInvocationQueued,
+    status_code=202,
+    summary="Explain a failed check — LLM root-cause narrative on an incident's evidence card",
+)
+def generate_rca_narrative(
+    payload: RcaNarrativeRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> LlmInvocationQueued:
+    """Queues a worker-side narrative over an incident's already-captured
+    evidence card + a longer per-check history; poll `GET /llm/invocations/{id}`.
+    Read-only — nothing is saved to the suite — so it's gated the same as
+    reading the incident itself (`view`), not `edit`.
+    """
+    if llm_rca.RCA_KIND not in REGISTERED_KINDS:  # pragma: no cover - wiring guard
+        raise LlmDispatchFailedError("rca_narrative is not registered in this process")
+    incident = incident_service.load_visible_incident(
+        db, payload.incident_id, user_id=current_user.id, for_action=False
+    )
+    llm_rca.check_generation_preconditions(incident)
+    invocation = llm_service.create_invocation(
+        db,
+        kind=llm_rca.RCA_KIND,
+        requested_by=current_user,
+        suite_id=incident.suite_id,
+        request={"incident_id": str(incident.id)},
     )
     return _queue_invocation(db, invocation)
 
