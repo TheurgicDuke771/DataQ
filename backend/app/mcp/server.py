@@ -3193,7 +3193,7 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     ``kind_detail`` names the fields specific to the failing check's monitor kind
     (`age_hours` for freshness, `deviation_pct` for volume, `added`/`removed`/
     `type_changed` for schema_drift, `z_score`/`insufficient_history` for
-    anomaly) instead of making you parse `failing_result.observed_value`'s three
+    anomaly) instead of making you parse `failing_result.observed_value`'s four
     different JSONB shapes yourself. It is null for an ordinary GX expectation or
     a comparison check, where `observed_value` already IS the shape.
 
@@ -3202,10 +3202,11 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     ANY suite, from the last 7 days — e.g. a volume check on `orders` in a
     different suite dropping 40% right before this freshness check breached.
     Entries whose suite you cannot view are withheld and folded into
-    `same_asset_siblings_restricted_count` instead of being named — an empty
-    list plus a nonzero restricted count means there WAS cross-suite context,
-    just not one you're permitted to see; don't report "no other checks touch
-    this asset" without checking that count.
+    `same_asset_siblings_restricted_count` instead of being named.
+    `same_asset_siblings_restricted_count` is present (`0` or higher) whenever
+    `same_asset_siblings` itself is present — a `0` means nothing was withheld,
+    not that the field is missing — so don't report "no other checks touch this
+    asset" from an empty list without also checking that count is `0`.
 
     ``downstream_blast_radius`` is ``[]`` for three reasons that look
     identical: the failing asset was never resolved, the asset is a genuine

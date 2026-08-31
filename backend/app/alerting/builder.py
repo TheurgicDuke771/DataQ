@@ -177,7 +177,7 @@ def _incident_cards(
                 status=result.status,
                 occurrence_count=incident.occurrence_count,
                 is_new=incident.created_at == incident.last_seen_at,
-                evidence=incident.evidence,
+                evidence=incident_service.evidence_for_alert(incident),
             )
         )
     return cards
