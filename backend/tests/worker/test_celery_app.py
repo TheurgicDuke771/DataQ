@@ -73,6 +73,26 @@ def test_beat_schedule_registers_poll_and_gap_recovery() -> None:
     assert schedule["recover-orchestration-gaps"]["schedule"] == 1800.0
 
 
+def test_beat_schedule_registers_stuck_run_reaper() -> None:
+    """The stuck-run reaper (#309) — the whole-schedule iterators below only
+    inspect entries that EXIST, so a dropped/renamed entry key passes CI
+    silently (#1730): this is the exact #405-class compensator built to catch
+    a worker dying silently, so its own beat entry disappearing must not.
+    """
+    schedule = create_celery_app().conf.beat_schedule
+    assert schedule["reap-stuck-runs"]["task"] == "reap_stuck_runs"
+    assert schedule["reap-stuck-runs"]["schedule"] == 600.0
+
+
+def test_beat_schedule_registers_llm_invocation_reaper() -> None:
+    """The llm_invocations reaper (#1644), same #1730 rationale as its
+    stuck-run sibling above — and the two share no other dedicated test.
+    """
+    schedule = create_celery_app().conf.beat_schedule
+    assert schedule["reap-stuck-llm-invocations"]["task"] == "reap_stuck_llm_invocations"
+    assert schedule["reap-stuck-llm-invocations"]["schedule"] == 300.0
+
+
 def test_beat_schedule_registers_orphan_asset_sweep() -> None:
     """The orphan-asset sweep (#770) is wired daily, same cadence as the
     sample-failures retention sweep — guards against a dropped entry silently
