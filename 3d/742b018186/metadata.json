@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "3d742b018186",
+  "strategy": "manual-commit",
+  "branch": "fix/1724-mcp-email-smtp-gate",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/mcp/server.py",
+    "backend/tests/mcp/test_mcp_tools.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3d/742b018186/0/metadata.json",
+      "transcript": "/3d/742b018186/0/full.jsonl",
+      "compact_transcript": "/3d/742b018186/0/transcript.jsonl",
+      "content_hash": "/3d/742b018186/0/content_hash.txt",
+      "prompt": "/3d/742b018186/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6282,
+    "cache_creation_tokens": 6068651,
+    "cache_read_tokens": 1682870955,
+    "output_tokens": 1374559,
+    "api_call_count": 3151
+  }
+}
