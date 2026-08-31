@@ -27,6 +27,7 @@ _TOP_LEVEL_PAGES: Final = (
     "getting-started.md",
     "mcp-setup.md",
     "mcp-honesty.md",
+    "evidence-card.md",
 )
 _COMPLIANCE_DIR: Final = "compliance"
 
