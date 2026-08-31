@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "b58a128b3e0b",
+  "strategy": "manual-commit",
+  "branch": "feature/1633-rca-narrative",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/b5/8a128b3e0b/0/metadata.json",
+      "transcript": "/b5/8a128b3e0b/0/full.jsonl",
+      "compact_transcript": "/b5/8a128b3e0b/0/transcript.jsonl",
+      "content_hash": "/b5/8a128b3e0b/0/content_hash.txt",
+      "prompt": "/b5/8a128b3e0b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1898,
+    "cache_creation_tokens": 2726767,
+    "cache_read_tokens": 443777950,
+    "output_tokens": 523567,
+    "api_call_count": 952
+  }
+}
