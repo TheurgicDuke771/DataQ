@@ -1,0 +1,72 @@
+<task-notification>
+<task-id>b49b3lwg7</task-id>
+<summary>Monitor event: "CI status for PR #1782"</summary>
+<event>Backend — SAST (Bandit): pass
+Backend — lint &amp; format: pass
+Frontend — dependency audit (pnpm audit): pass
+GitGuardian Security Checks: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>byhzj5973</task-id>
+<summary>Monitor event: "CI status for PR #1780"</summary>
+<event>Frontend — browser E2E (Playwright): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b49b3lwg7</task-id>
+<summary>Monitor event: "CI status for PR #1782"</summary>
+<event>Backend — dependency audit (pip-audit): pass
+Backend — type check: pass
+Frontend — lint &amp; format: pass
+Secret scanning (betterleaks): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b49b3lwg7</task-id>
+<summary>Monitor event: "CI status for PR #1782"</summary>
+<event>CodeQL analysis (javascript-typescript): pass
+CodeQL: skipping</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b49b3lwg7</task-id>
+<summary>Monitor event: "CI status for PR #1782"</summary>
+<event>CodeQL analysis (python): pass
+CodeQL: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>byhzj5973</task-id>
+<summary>Monitor event: "CI status for PR #1780"</summary>
+<event>Backend — tests: pass
+ALL CHECKS TERMINAL (14 checks)</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b49b3lwg7</task-id>
+<summary>Monitor event: "CI status for PR #1782"</summary>
+<event>Frontend — browser E2E (Playwright): pass
+Frontend — tests: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b49b3lwg7</task-id>
+<summary>Monitor event: "CI status for PR #1782"</summary>
+<event>Backend — tests: pass
+ALL CHECKS TERMINAL (14 checks)</event>
+</task-notification>

@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "97e7f1b1a7e4",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-w4-close-snapshot",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/97/e7f1b1a7e4/0/metadata.json",
+      "transcript": "/97/e7f1b1a7e4/0/full.jsonl",
+      "compact_transcript": "/97/e7f1b1a7e4/0/transcript.jsonl",
+      "content_hash": "/97/e7f1b1a7e4/0/content_hash.txt",
+      "prompt": "/97/e7f1b1a7e4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 12450,
+    "cache_read_tokens": 8380199,
+    "output_tokens": 5188,
+    "api_call_count": 19
+  }
+}
