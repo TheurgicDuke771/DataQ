@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "a685f23a2719",
+  "strategy": "manual-commit",
+  "branch": "feature/1515-asset-owner-alert-routing",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/a6/85f23a2719/0/metadata.json",
+      "transcript": "/a6/85f23a2719/0/full.jsonl",
+      "compact_transcript": "/a6/85f23a2719/0/transcript.jsonl",
+      "content_hash": "/a6/85f23a2719/0/content_hash.txt",
+      "prompt": "/a6/85f23a2719/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4952,
+    "cache_creation_tokens": 5244172,
+    "cache_read_tokens": 1288116211,
+    "output_tokens": 1061807,
+    "api_call_count": 2479
+  }
+}
