@@ -23,10 +23,15 @@ htmlcov
 .env.*
 !.env.example
 
-# Docs / context not needed at runtime
+# Docs / context not needed at runtime — except the curated docs/site pages
+# `mcp/docs_catalog.py` serves via the `get_doc` MCP tool (#1626). Re-including
+# a path whose ancestor is excluded needs every level of the chain negated.
 docs
 context
 *.md
+!docs
+!docs/site
+!docs/site/**
 
 # OS cruft
 .DS_Store

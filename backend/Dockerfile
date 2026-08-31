@@ -41,6 +41,11 @@ COPY --from=builder /opt/venv /opt/venv
 COPY pyproject.toml ./
 COPY backend ./backend
 
+# docs/site backs the `get_doc` MCP tool (#1626) — the whole published (public,
+# GH-Pages-built) tree copies in for one source of truth, ~1.8MB; the curated
+# allowlist actually served lives ONLY in `mcp/docs_catalog.py`, not here.
+COPY docs/site ./docs/site
+
 # Run as a dedicated non-root user (#1408): a future RCE through the parser/interpreter surface
 # (custom SQL, flat-file content) lands in a privilege-constrained process instead of uid 0.
 # /workspace and /opt/venv deliberately STAY root-owned and read-only to this user — the app writes

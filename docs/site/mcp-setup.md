@@ -22,7 +22,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/00
     [0032](adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 47 tools and per-suite permissions. Two rejections are deliberate in that
+    all 48 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -80,20 +80,21 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 47 tools
+## The 48 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
-identically. The 47 split three ways, not two (one of the 24 reads, `get_adf_pipeline_status`,
-is a deprecated alias kept only for backward compatibility — see below):
+identically. The 48 split three ways, not two (one of the 25 reads, `get_adf_pipeline_status`,
+is a deprecated alias kept only for backward compatibility — see below); the counts here are
+derived from `tests/support/mcp_gates.GATES`, not hand-typed, so they can't drift the way an
+earlier pass of this page did.
 
-- **24 read-only** — `export_suite`, `get_adf_pipeline_status` (deprecated, use
-  `get_pipeline_status`), `get_asset`, `get_check`,
-  `get_check_history`, `get_column_policy`, `get_health_score`, `get_incident`,
-  `get_near_misses`, `get_notification_config`, `get_pipeline_status`, `get_run_results`,
-  `get_run_status`, `get_suite_performance`, `get_suite_results`, `list_assets`,
-  `list_check_versions`, `list_checks`, `list_connections`, `list_incidents`, `list_runs`,
-  `list_schedules`, `list_suites`, `list_trigger_bindings`.
+- **25 read-only** — `export_suite`, `get_adf_pipeline_status` (deprecated, use
+  `get_pipeline_status`), `get_asset`, `get_check`, `get_check_history`, `get_column_policy`,
+  `get_doc`, `get_health_score`, `get_incident`, `get_near_misses`, `get_notification_config`,
+  `get_pipeline_status`, `get_run_results`, `get_run_status`, `get_suite_performance`,
+  `get_suite_results`, `list_assets`, `list_check_versions`, `list_checks`, `list_connections`,
+  `list_incidents`, `list_runs`, `list_schedules`, `list_suites`, `list_trigger_bindings`.
 - **18 that change state** — `create_check`, `update_check`, `delete_check`, `snooze_check`,
   `restore_check_version`, `trigger_suite_run`, `cancel_run`, `update_suite`, `set_column_policy`,
   `create_schedule`, `update_schedule`, `delete_schedule`, `create_trigger_binding`,
