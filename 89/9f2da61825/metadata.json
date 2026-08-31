@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "899f2da61825",
+  "strategy": "manual-commit",
+  "branch": "fix/1726-llm-reaper-thresholds",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".env.app.example",
+    "backend/app/worker/celery_app.py",
+    "backend/tests/core/test_config.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/89/9f2da61825/0/metadata.json",
+      "transcript": "/89/9f2da61825/0/full.jsonl",
+      "compact_transcript": "/89/9f2da61825/0/transcript.jsonl",
+      "content_hash": "/89/9f2da61825/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 27085,
+    "cache_read_tokens": 5998612,
+    "output_tokens": 8203,
+    "api_call_count": 22
+  }
+}
