@@ -62,6 +62,12 @@ the per-PR history lives in the repo's commit log and pull requests.
   never returned by the API, only whether one is set. The admin UI for managing channels
   ships next.
 
+- **Alerts now credit the asset owner, not just the suite creator.** When a table has an
+  assigned owner, the "Owner" shown on a run alert (Teams card, Slack message, email) is that
+  person — the one actually responsible for the data — rather than whoever happened to author
+  the monitoring suite. A table with no assigned owner is unaffected: the suite creator still
+  shows, exactly as before.
+
 ### Changed
 
 - **The two distinct-value set relations no longer accept severity thresholds.**
