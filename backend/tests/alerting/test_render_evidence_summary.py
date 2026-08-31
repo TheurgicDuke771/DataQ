@@ -161,6 +161,23 @@ def test_narrative_clause_a_causeless_top_hypothesis_falls_back_to_summary_only(
     assert render.narrative_clause(narrative) == "AI summary: Looks like a volume drop."
 
 
+def test_narrative_clause_is_capped_well_under_slacks_block_limit() -> None:
+    """A stored summary/cause can each run to hundreds of characters; up to 10
+    incident lines get joined into ONE Slack section with a hard 3000-char
+    limit (slack.py's `_MAX_CHECK_LINES`) — an oversized clause would fail
+    the WHOLE alert delivery, not just truncate one incident's detail.
+    """
+    narrative = {
+        "summary": "S" * 2000,  # llm_rca._SUMMARY_MAX_CHARS
+        "ranked_hypotheses": [
+            {"cause": "C" * 500, "confidence": "high", "evidence_refs": ["metric_trend"]}
+        ],
+    }
+    clause = render.narrative_clause(narrative)
+    assert len(clause) == render._MAX_NARRATIVE_CLAUSE_CHARS
+    assert clause.endswith("…")
+
+
 # ── incident_line composition (uses the real IncidentCard dataclass) ────────
 
 

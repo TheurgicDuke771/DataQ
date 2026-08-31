@@ -163,6 +163,15 @@ def evidence_summary_clause(evidence: dict[str, Any] | None) -> str:
     return "; ".join(parts)
 
 
+#: A stored narrative's `summary`/`cause` can each run to hundreds of characters
+#: (`llm_rca._SUMMARY_MAX_CHARS`/`_CAUSE_MAX_CHARS`), and up to `_MAX_CHECK_LINES`
+#: (10, `slack.py`) incident lines get joined into ONE Slack Block Kit section,
+#: which has a hard 3000-character limit — an oversized clause would fail the
+#: whole alert delivery, not just truncate one incident's detail. Capped well
+#: under a tenth of that budget per clause.
+_MAX_NARRATIVE_CLAUSE_CHARS = 220
+
+
 def narrative_clause(narrative: dict[str, Any] | None) -> str:
     """The RCA narrative's (#1633) one-line takeaway, tagged with which
     evidence layer(s) its top-ranked hypothesis rests on. `""` when no
@@ -177,14 +186,22 @@ def narrative_clause(narrative: dict[str, Any] | None) -> str:
     hypotheses = narrative.get("ranked_hypotheses")
     top = hypotheses[0] if isinstance(hypotheses, list) and hypotheses else None
     if not isinstance(top, dict):
-        return f"AI summary: {summary.strip()}"
-    cause = top.get("cause")
-    confidence = top.get("confidence", "?")
-    refs = top.get("evidence_refs")
-    ref_text = f" (via {', '.join(refs)})" if isinstance(refs, list) and refs else ""
-    if not isinstance(cause, str) or not cause.strip():
-        return f"AI summary: {summary.strip()}"
-    return f"AI summary: {summary.strip()} — top cause ({confidence}): {cause.strip()}{ref_text}"
+        text = f"AI summary: {summary.strip()}"
+    else:
+        cause = top.get("cause")
+        confidence = top.get("confidence", "?")
+        refs = top.get("evidence_refs")
+        ref_text = f" (via {', '.join(refs)})" if isinstance(refs, list) and refs else ""
+        if not isinstance(cause, str) or not cause.strip():
+            text = f"AI summary: {summary.strip()}"
+        else:
+            text = (
+                f"AI summary: {summary.strip()} — top cause ({confidence}): "
+                f"{cause.strip()}{ref_text}"
+            )
+    if len(text) <= _MAX_NARRATIVE_CLAUSE_CHARS:
+        return text
+    return text[: _MAX_NARRATIVE_CLAUSE_CHARS - 1] + "…"
 
 
 def incident_line(card: IncidentCard) -> str:

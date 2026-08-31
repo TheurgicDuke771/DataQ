@@ -594,3 +594,83 @@ def test_latest_narrative_for_incident_returns_the_most_recent(
     result = llm_rca.latest_narrative_for_incident(db_session, world["incident"].id)
     assert result is not None
     assert result["summary"] == "fresh narrative"
+
+
+def test_latest_narrative_for_incident_order_by_has_an_id_tiebreak(db_session: Any) -> None:
+    """Structural, not outcome-based: two rows with an identical `created_at`
+    return a STABLE physical order regardless of whether a tiebreak column is
+    present (the #1648 lesson — repeated queries against unchanged data don't
+    expose a missing ORDER BY term empirically), so this can only be proven by
+    inspecting the compiled SQL.
+    """
+    from sqlalchemy import event
+
+    statements: list[str] = []
+
+    def _capture(_conn: Any, _cursor: Any, statement: str, *_a: Any) -> None:
+        if statement.strip().upper().startswith("SELECT") and "llm_invocations" in statement:
+            statements.append(statement)
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", _capture)
+    try:
+        llm_rca.latest_narrative_for_incident(db_session, uuid.uuid4())  # no row needed
+    finally:
+        event.remove(engine, "before_cursor_execute", _capture)
+
+    assert statements, "no SELECT against llm_invocations was captured"
+    order_by = statements[0].upper().split("ORDER BY", 1)[1]
+    assert "CREATED_AT" in order_by
+    assert "ID" in order_by
+
+
+# ── latest_narrative_for_alert (#1647 review — cross-suite leak) ────────────
+
+
+def test_latest_narrative_for_alert_returns_the_narrative_with_no_cross_suite_siblings(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    invocation = _invocation(db_session, world["incident"], world["owner"])
+    invocation.status = "succeeded"
+    invocation.response = {"summary": "safe to surface", "ranked_hypotheses": []}
+    db_session.commit()
+
+    result = llm_rca.latest_narrative_for_alert(db_session, world["incident"])
+    assert result is not None
+    assert result["summary"] == "safe to surface"
+
+
+def test_latest_narrative_for_alert_refuses_when_the_card_has_cross_suite_siblings(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """A narrative is free text generated from the REQUESTER's own grant-scoped
+    view — it can legitimately name a cross-suite sibling's check. Alert
+    recipients are a suite-scoped audience with no grant to redact prose
+    against, so the whole narrative is withheld rather than risk a leak.
+    """
+    other_owner = _user(db_session, "other-owner-alert@example.com")
+    other_conn = _connection(db_session, other_owner)
+    other_suite = _suite(db_session, other_owner, other_conn, table="ORDERS")
+    assert other_suite.asset_id == world["suite"].asset_id
+    other_check = _check(db_session, other_suite, name="orders_volume_ok")
+    other_run = Run(suite_id=other_suite.id, status="succeeded", asset_id=other_suite.asset_id)
+    db_session.add(other_run)
+    db_session.flush()
+    db_session.add(Result(run_id=other_run.id, check_id=other_check.id, status="fail"))
+    db_session.commit()
+
+    incident = _breach(db_session, world["suite"], world["check"])
+    assert incident.evidence is not None
+    assert incident.evidence["same_asset_siblings"]  # non-empty — the gate condition
+
+    invocation = _invocation(db_session, incident, world["owner"])
+    invocation.status = "succeeded"
+    invocation.response = {
+        "summary": "mentions orders_volume_ok from the other suite",
+        "ranked_hypotheses": [],
+    }
+    db_session.commit()
+
+    assert llm_rca.latest_narrative_for_alert(db_session, incident) is None
+    # The unfiltered lookup still finds it — proving the gate, not the query, withheld it.
+    assert llm_rca.latest_narrative_for_incident(db_session, incident.id) is not None

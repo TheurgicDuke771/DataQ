@@ -178,7 +178,7 @@ def _incident_cards(
                 occurrence_count=incident.occurrence_count,
                 is_new=incident.created_at == incident.last_seen_at,
                 evidence=incident_service.evidence_for_alert(incident),
-                narrative=llm_rca.latest_narrative_for_incident(session, incident.id),
+                narrative=llm_rca.latest_narrative_for_alert(session, incident),
             )
         )
     return cards
