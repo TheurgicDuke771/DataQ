@@ -22,6 +22,7 @@ import json
 import uuid
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
@@ -397,3 +398,54 @@ def validate_output(
 
 llm_service.KIND_BUILDERS[RCA_KIND] = build_prompt
 llm_service.KIND_VALIDATORS[RCA_KIND] = validate_output
+
+
+# ── read surface for alert delivery (#1647) ─────────────────────────────────
+
+
+def latest_narrative_for_incident(
+    session: Session, incident_id: uuid.UUID
+) -> dict[str, Any] | None:
+    """The most recent SUCCEEDED narrative response for this incident, or
+    `None` if nobody has ever generated one. RCA is on-demand only (#1633) —
+    a freshly-opened incident almost always has none, and that's the common
+    case, not a degraded one; alert delivery treats it as "nothing to append"
+    rather than "unavailable".
+
+    `id` breaks a `created_at` tie (two requests for the same incident landing
+    in the same transaction share a timestamp — see `test_llm_rca.py`'s own
+    comment on this) the same way #1648's `get_enabled_binding` does; the
+    tiebreak is stable-but-arbitrary, not truly "most recent".
+    """
+    invocation = session.scalars(
+        select(LlmInvocation)
+        .where(
+            LlmInvocation.kind == RCA_KIND,
+            LlmInvocation.status == "succeeded",
+            LlmInvocation.request["incident_id"].astext == str(incident_id),
+        )
+        .order_by(LlmInvocation.created_at.desc(), LlmInvocation.id.desc())
+    ).first()
+    return invocation.response if invocation is not None else None
+
+
+def latest_narrative_for_alert(session: Session, incident: Incident) -> dict[str, Any] | None:
+    """`latest_narrative_for_incident`, gated for alert delivery: refused
+    outright when the incident's own (workspace-true) evidence shows ANY
+    same-asset sibling on another suite.
+
+    A narrative is free text generated from the REQUESTER's own grant-scoped
+    view (`build_prompt` calls `evidence_for_caller`) — it can legitimately
+    describe a cross-suite sibling's check name or status if the requester
+    could see it. Unlike the structured `evidence` field, which
+    `evidence_for_alert` (#1635) can filter key-by-key for a suite-scoped
+    audience, there is no way to safely strip a cross-suite mention out of a
+    model's sentence after the fact. Fail closed: skip the whole narrative
+    rather than risk a leak, even though most narratives carry nothing
+    sensitive — the ones generated on an asset with real cross-suite
+    siblings are exactly the ones most likely to.
+    """
+    evidence = incident.evidence if isinstance(incident.evidence, dict) else {}
+    if evidence.get("same_asset_siblings"):
+        return None
+    return latest_narrative_for_incident(session, incident.id)

@@ -96,12 +96,130 @@ def check_detail(check: CheckReport) -> str:
     return " · ".join(parts)
 
 
+def _upstream_pipeline_clause(pipeline: Any) -> str:
+    """Not "unknown": a manually-triggered or scheduled run has no upstream
+    pipeline by design (the majority of runs) — that is a normal, understood
+    state, not a gap. Only a layer that failed to build is genuinely unknown.
+    """
+    if pipeline is None:
+        return "not pipeline-triggered (manual or scheduled run)"
+    if not isinstance(pipeline, dict):
+        return "upstream pipeline: unavailable"
+    provider = pipeline.get("provider", "?")
+    status = pipeline.get("status", "unknown")
+    delay = pipeline.get("delay_seconds_vs_history")
+    if not isinstance(delay, int | float):
+        return f"upstream {provider} run {status}"
+    sign = "+" if delay >= 0 else ""
+    return f"upstream {provider} run {status} ({sign}{delay:.0f}s vs history)"
+
+
+def _sibling_failures_clause(siblings: Any) -> str:
+    """`sibling_checks` always resolves to a list (possibly empty) unless the
+    layer itself raised — so `None` here is a genuine "could not be built",
+    distinct from a genuinely solo check in its run.
+    """
+    if siblings is None:
+        return "same-run siblings: unavailable"
+    if not isinstance(siblings, list):
+        return "same-run siblings: unavailable"
+    if not siblings:
+        return "no other checks in this run"
+    failing = [s for s in siblings if isinstance(s, dict) and s.get("status") not in (None, "pass")]
+    if not failing:
+        return f"{len(siblings)} other check(s) in this run, all passing"
+    return f"{len(failing)}/{len(siblings)} other check(s) in this run also failing"
+
+
+def _blast_radius_clause(blast: Any) -> str:
+    """An empty list here does NOT mean "nothing downstream is affected" — it
+    can equally mean the asset was never resolved or this workspace has no
+    lineage recorded at all (the #828 class); never claim the all-clear.
+    """
+    if blast is None:
+        return "downstream impact: unavailable"
+    if not isinstance(blast, list):
+        return "downstream impact: unavailable"
+    if not blast:
+        return "no downstream lineage recorded"
+    return f"{len(blast)} downstream asset(s) potentially affected"
+
+
+def evidence_summary_clause(evidence: dict[str, Any] | None) -> str:
+    """The deterministic "why" clause appended to `incident_line` (#1647) —
+    built purely from the evidence card's own layers, no LLM involved (works
+    with none configured, per ADR 0042's default-off rule). Each piece states
+    its own absence explicitly rather than being silently dropped, so a
+    reader never mistakes "nothing to show" for "nothing happened" — the same
+    discipline the MCP `get_incident` docstring already applies to this card.
+    """
+    if not isinstance(evidence, dict):
+        return "evidence: unavailable"
+    parts = [
+        _upstream_pipeline_clause(evidence.get("upstream_pipeline_run")),
+        _sibling_failures_clause(evidence.get("sibling_checks")),
+        _blast_radius_clause(evidence.get("downstream_blast_radius")),
+    ]
+    return "; ".join(parts)
+
+
+#: A stored narrative's `summary`/`cause` can each run to hundreds of characters
+#: (`llm_rca._SUMMARY_MAX_CHARS`/`_CAUSE_MAX_CHARS`), and up to `_MAX_CHECK_LINES`
+#: (10, `slack.py`) incident lines get joined into ONE Slack Block Kit section,
+#: which has a hard 3000-character limit — an oversized clause would fail the
+#: whole alert delivery, not just truncate one incident's detail. Capped well
+#: under a tenth of that budget per clause.
+_MAX_NARRATIVE_CLAUSE_CHARS = 220
+
+
+def narrative_clause(narrative: dict[str, Any] | None) -> str:
+    """The RCA narrative's (#1633) one-line takeaway, tagged with which
+    evidence layer(s) its top-ranked hypothesis rests on. `""` when no
+    narrative has ever been generated for this incident — RCA is strictly
+    on-demand, so this is the common case, not a missing one.
+    """
+    if not isinstance(narrative, dict):
+        return ""
+    summary = narrative.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        return ""
+    hypotheses = narrative.get("ranked_hypotheses")
+    top = hypotheses[0] if isinstance(hypotheses, list) and hypotheses else None
+    if not isinstance(top, dict):
+        text = f"AI summary: {summary.strip()}"
+    else:
+        cause = top.get("cause")
+        confidence = top.get("confidence", "?")
+        refs = top.get("evidence_refs")
+        ref_text = f" (via {', '.join(refs)})" if isinstance(refs, list) and refs else ""
+        if not isinstance(cause, str) or not cause.strip():
+            text = f"AI summary: {summary.strip()}"
+        else:
+            text = (
+                f"AI summary: {summary.strip()} — top cause ({confidence}): "
+                f"{cause.strip()}{ref_text}"
+            )
+    if len(text) <= _MAX_NARRATIVE_CLAUSE_CHARS:
+        return text
+    return text[: _MAX_NARRATIVE_CLAUSE_CHARS - 1] + "…"
+
+
 def incident_line(card: IncidentCard) -> str:
-    """A minimal one-line incident reference for an alert (ADR 0034 #761) —
-    ``"Incident 1a2b3c4d (not-null id) — open, new"`` / ``"…, occurrence 3"``.
+    """A one-line incident reference for an alert (ADR 0034 #761), plus the
+    deterministic evidence summary (#1647) and, when one exists, the RCA
+    narrative's takeaway (#1633) —
+    ``"Incident 1a2b3c4d (not-null id) — open, new · no other checks in this
+    run; ..."``.
     """
     marker = "new" if card.is_new else f"occurrence {card.occurrence_count}"
-    return f"Incident {card.incident_id.hex[:8]} ({card.check_name}) — {card.status}, {marker}"
+    line = f"Incident {card.incident_id.hex[:8]} ({card.check_name}) — {card.status}, {marker}"
+    summary = evidence_summary_clause(card.evidence)
+    if summary:
+        line = f"{line} · {summary}"
+    narrative = narrative_clause(card.narrative)
+    if narrative:
+        line = f"{line} · {narrative}"
+    return line
 
 
 def triggered_source(triggered_by: str | None) -> str:
