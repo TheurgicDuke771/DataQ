@@ -570,3 +570,25 @@ def test_resolve_webhook_channels_skips_a_missing_secret(db_session: Any) -> Non
     assert channel.hmac_secret_ref is not None
     store.delete(channel.hmac_secret_ref)
     assert svc.resolve_webhook_channels(db_session, suite.id, secret_store=store) == []
+
+
+def test_resolve_webhook_channels_dedupes_by_url(db_session: Any) -> None:
+    """Two channels that happen to point at the same URL resolve to one pair —
+    matches resolve_channel_webhooks's existing dedup contract, so the caller
+    (WebhookPublisher) doesn't need to dedup again itself.
+    """
+    store = FakeSecretStore()
+    a, secret_a = svc.create_channel(
+        db_session, name="A", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
+    )
+    b, _secret_b = svc.create_channel(
+        db_session, name="B", type="webhook", webhook_url=_WEBHOOK_URL, secret_store=store
+    )
+    suite = _suite(db_session)
+    svc.link_suite(db_session, suite.id, a.id)
+    svc.link_suite(db_session, suite.id, b.id)
+    # "A" sorts before "B" (list_channels_for_suite orders by name), so its
+    # secret is the one that survives the dedup.
+    assert svc.resolve_webhook_channels(db_session, suite.id, secret_store=store) == [
+        (_WEBHOOK_URL, secret_a)
+    ]

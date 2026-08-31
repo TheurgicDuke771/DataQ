@@ -129,11 +129,8 @@ class WebhookPublisher:
         payload = render_webhook_payload(report)
         body = json.dumps(payload, sort_keys=True).encode("utf-8")
         delivered = 0
-        seen: set[str] = set()
+        # destinations is already deduped by URL (channel_service.resolve_webhook_channels).
         for url, hmac_secret in destinations:
-            if url in seen:
-                continue
-            seen.add(url)
             # Re-checked at send time (not just at channel-config time): a
             # DNS-rebinding-style SSRF defends against the resolved address
             # changing after validation, same posture as Teams/Slack's
