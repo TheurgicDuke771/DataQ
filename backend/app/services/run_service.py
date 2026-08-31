@@ -957,12 +957,20 @@ def _redact_comparison_row(
     return out
 
 
+def resolve_asset(session: Session, suite: Any, run: Any = None) -> Asset | None:
+    """The asset a run/suite targets — the run's own asset when set (the target it
+    actually ran against), else the suite's configured asset. The one canonical
+    precedence rule; callers needing more than just the column tags (e.g. the
+    asset's owner) should use this rather than re-deriving it (#1419/#1479's
+    "third spelling of the governance floor" shape).
+    """
+    asset_id = getattr(run, "asset_id", None) or getattr(suite, "asset_id", None)
+    return session.get(Asset, asset_id) if asset_id is not None else None
+
+
 def asset_column_tags(session: Session, suite: Any, run: Any = None) -> dict[str, str] | None:
     """The warehouse's own column classifications for a suite's asset (G3)."""
-    asset_id = getattr(run, "asset_id", None) or getattr(suite, "asset_id", None)
-    if asset_id is None:
-        return None
-    asset = session.get(Asset, asset_id)
+    asset = resolve_asset(session, suite, run)
     return asset.column_tags if asset is not None else None
 
 

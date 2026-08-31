@@ -10,7 +10,7 @@ import pytest
 
 from backend.app.alerting import builder
 from backend.app.alerting.base import CheckReport, RunReport
-from backend.app.db.models import Check, Connection, Result, Run, Suite, User
+from backend.app.db.models import Asset, Check, Connection, Result, Run, Suite, User
 
 # ── pure: DTO derived properties ─────────────────────────────────────────────
 
@@ -224,6 +224,83 @@ def test_build_report_populates_run_metadata(
     assert report.duration_seconds == 12.0
     # Owner falls back to the email when the User has no display_name (#661).
     assert report.owner == owner.email
+
+
+def test_build_report_owner_prefers_the_asset_owner_when_set(db_session: Any) -> None:
+    # #1515: the asset owner is who is actually responsible for the data — the
+    # suite creator is only ever one of possibly several ways it gets monitored.
+    creator = User(aad_object_id=uuid.uuid4().hex, email="creator@x.io")
+    asset_owner = User(aad_object_id=uuid.uuid4().hex, email="owner@x.io")
+    db_session.add_all([creator, asset_owner])
+    db_session.flush()
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "a"},
+        secret_ref="kv",
+        created_by=creator.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    asset = Asset(namespace="snowflake", name="RETAIL.ORDERS", owner_user_id=asset_owner.id)
+    db_session.add(asset)
+    db_session.flush()
+    suite = Suite(
+        name="S",
+        connection_id=conn.id,
+        created_by=creator.id,
+        target={"table": "T"},
+        asset_id=asset.id,
+    )
+    db_session.add(suite)
+    db_session.flush()
+    run = Run(suite_id=suite.id, status="succeeded", finished_at=datetime.now(UTC))
+    db_session.add(run)
+    db_session.commit()
+
+    report = builder.build_run_report(db_session, run)
+
+    assert report.owner == asset_owner.email
+
+
+def test_build_report_owner_falls_back_to_suite_creator_when_asset_has_no_owner(
+    db_session: Any,
+) -> None:
+    creator = User(aad_object_id=uuid.uuid4().hex, email="creator@x.io")
+    db_session.add(creator)
+    db_session.flush()
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "a"},
+        secret_ref="kv",
+        created_by=creator.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    # The asset exists (so the resolver has a row to look at) but has never been
+    # assigned an owner — must fall through to the suite creator, not None.
+    asset = Asset(namespace="snowflake", name="RETAIL.PAYMENTS", owner_user_id=None)
+    db_session.add(asset)
+    db_session.flush()
+    suite = Suite(
+        name="S",
+        connection_id=conn.id,
+        created_by=creator.id,
+        target={"table": "T"},
+        asset_id=asset.id,
+    )
+    db_session.add(suite)
+    db_session.flush()
+    run = Run(suite_id=suite.id, status="succeeded", finished_at=datetime.now(UTC))
+    db_session.add(run)
+    db_session.commit()
+
+    report = builder.build_run_report(db_session, run)
+
+    assert report.owner == creator.email
 
 
 def test_build_report_run_url_none_without_base_url(
