@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "fb385a8929b2",
+  "strategy": "manual-commit",
+  "branch": "feature/1515-asset-owner-alert-routing",
+  "checkpoints_count": 7,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/fb/385a8929b2/0/metadata.json",
+      "transcript": "/fb/385a8929b2/0/full.jsonl",
+      "compact_transcript": "/fb/385a8929b2/0/transcript.jsonl",
+      "content_hash": "/fb/385a8929b2/0/content_hash.txt",
+      "prompt": "/fb/385a8929b2/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4900,
+    "cache_creation_tokens": 5222408,
+    "cache_read_tokens": 1281291189,
+    "output_tokens": 1052732,
+    "api_call_count": 2453
+  }
+}
