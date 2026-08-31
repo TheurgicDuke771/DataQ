@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "c71231858e2c",
+  "strategy": "manual-commit",
+  "branch": "feature/1649-multi-table-sqlgen",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/c7/1231858e2c/0/metadata.json",
+      "transcript": "/c7/1231858e2c/0/full.jsonl",
+      "compact_transcript": "/c7/1231858e2c/0/transcript.jsonl",
+      "content_hash": "/c7/1231858e2c/0/content_hash.txt",
+      "prompt": "/c7/1231858e2c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2704,
+    "cache_creation_tokens": 3834353,
+    "cache_read_tokens": 741540734,
+    "output_tokens": 710840,
+    "api_call_count": 1355
+  }
+}
