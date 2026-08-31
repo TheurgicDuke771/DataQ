@@ -286,7 +286,8 @@ def build_prompt(
         f"Profile:\n{profile_text}{cadence_text}{coverage_text}"
     )
     system = _SYSTEM + (_FRESHNESS_SYSTEM_ADDENDUM if include_freshness else "")
-    return prompt, system, _build_schema(include_freshness=include_freshness)
+    schema = _build_schema(include_freshness=True) if include_freshness else CHECKSUGGEST_SCHEMA
+    return prompt, system, schema
 
 
 def _validate_freshness_suggestion(
