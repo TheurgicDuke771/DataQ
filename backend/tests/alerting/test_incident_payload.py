@@ -107,6 +107,58 @@ def test_clean_run_has_no_incident_cards(db_session: Any) -> None:
     assert report.incidents == []
 
 
+def test_incident_card_evidence_withholds_a_cross_suite_sibling(db_session: Any) -> None:
+    """#1635 review: `same_asset_siblings` can name another suite's check — an
+    alert channel is configured per suite, not per viewer, so (unlike
+    `evidence_for_caller`, which redacts by the reader's own grants) there is no
+    principal a cross-suite entry is safe to show. Only same-suite siblings may
+    reach the outbound card.
+    """
+    from backend.app.db.models import Run, Suite
+
+    run = _seed(db_session, status="fail")
+    incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+    suite = db_session.get(Suite, run.suite_id)
+
+    other_suite = suite_service.create_suite(
+        db_session,
+        name="Orders — other team",
+        description=None,
+        connection_id=suite.connection_id,
+        created_by=suite.created_by,
+        target={"table": "ORDERS"},
+    )
+    assert other_suite.asset_id == suite.asset_id
+    other_check = Check(
+        suite_id=other_suite.id,
+        name="orders_volume_ok",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "id"},
+    )
+    db_session.add(other_check)
+    db_session.flush()
+    other_run = Run(suite_id=other_suite.id, status="succeeded", asset_id=other_suite.asset_id)
+    db_session.add(other_run)
+    db_session.flush()
+    db_session.add(Result(run_id=other_run.id, check_id=other_check.id, status="fail"))
+    db_session.commit()
+
+    # Re-breach the original incident's check so its card re-snapshots and picks up the sibling.
+    check = suite.checks[0]
+    run2 = Run(suite_id=suite.id, status="succeeded", asset_id=suite.asset_id)
+    db_session.add(run2)
+    db_session.flush()
+    db_session.add(Result(run_id=run2.id, check_id=check.id, status="fail"))
+    db_session.commit()
+    incident_service.sync_incidents_for_run(db_session, run_id=run2.id)
+
+    report = builder.build_run_report(db_session, run2)
+    card = report.incidents[0]
+    assert card.evidence is not None
+    assert card.evidence["same_asset_siblings"] == []
+    assert card.evidence["same_asset_siblings_restricted_count"] == 1
+
+
 # ── fix batch (PR #775 review): the channels actually render the incidents ────
 
 

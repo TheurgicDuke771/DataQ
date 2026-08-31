@@ -17,6 +17,7 @@ from backend.app.db.models import (
     Incident,
     Result,
     Run,
+    Share,
     SuiteNotification,
     User,
 )
@@ -666,3 +667,107 @@ def test_cancelled_run_opens_nothing(db_session: Any, world: dict[str, Any]) -> 
     )
     incident_service.sync_incidents_for_run(db_session, run_id=run.id)
     assert db_session.scalars(select(Incident)).all() == []
+
+
+# ── evidence_for_caller (#1635) ─────────────────────────────────────────────────
+
+
+def test_evidence_for_caller_withholds_a_sibling_suite_the_caller_cannot_view(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    other_owner = _user(db_session, email="other-owner@example.com")
+    other_conn = _connection(db_session, other_owner)
+    other_suite = _suite(db_session, other_owner, other_conn, table="ORDERS")
+    assert other_suite.asset_id == world["suite"].asset_id  # same table ⇒ same asset
+    other_check = _check(db_session, other_suite, name="orders_volume_ok")
+    _run_with_result(db_session, other_suite, other_check, status="fail")
+
+    run = _run_with_result(db_session, world["suite"], world["check"], status="fail", metric=0.4)
+    incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+    incident = _active(db_session, world["suite"].asset_id, world["check"].id)[0]
+    assert incident.evidence is not None
+    # The stored card is workspace-true: the sibling is captured with no caller in scope.
+    assert len(incident.evidence["same_asset_siblings"]) == 1
+
+    caller = _user(db_session, email="caller@example.com")  # no share on other_suite
+    evidence = incident_service.evidence_for_caller(db_session, incident, user_id=caller.id)
+    assert evidence is not None
+    assert evidence["same_asset_siblings"] == []
+    assert evidence["same_asset_siblings_restricted_count"] == 1
+
+
+def test_evidence_for_caller_shows_a_sibling_suite_the_caller_can_view(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    other_owner = _user(db_session, email="other-owner2@example.com")
+    other_conn = _connection(db_session, other_owner)
+    other_suite = _suite(db_session, other_owner, other_conn, table="ORDERS")
+    other_check = _check(db_session, other_suite, name="orders_volume_ok")
+    _run_with_result(db_session, other_suite, other_check, status="fail")
+
+    run = _run_with_result(db_session, world["suite"], world["check"], status="fail", metric=0.4)
+    incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+    incident = _active(db_session, world["suite"].asset_id, world["check"].id)[0]
+
+    caller = _user(db_session, email="viewer@example.com")
+    db_session.add(Share(suite_id=other_suite.id, user_id=caller.id, permission="view"))
+    db_session.commit()
+
+    evidence = incident_service.evidence_for_caller(db_session, incident, user_id=caller.id)
+    assert evidence is not None
+    assert len(evidence["same_asset_siblings"]) == 1
+    assert evidence["same_asset_siblings"][0]["suite_id"] == str(other_suite.id)
+    assert evidence["same_asset_siblings_restricted_count"] == 0
+
+
+def test_evidence_for_caller_adds_a_zero_restricted_count_when_there_are_no_siblings(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """A genuinely empty `same_asset_siblings` still gets the count field, at
+    `0` — present whenever the layer itself is (a list, not `None`), so a
+    consumer never has to special-case its absence for the common case (#1635
+    review: the count used to be omitted here, indistinguishable from the
+    "all restricted" case unless a caller defaulted the lookup itself).
+    """
+    run = _run_with_result(db_session, world["suite"], world["check"], status="fail", metric=0.4)
+    incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+    incident = _active(db_session, world["suite"].asset_id, world["check"].id)[0]
+    assert incident.evidence is not None
+    assert incident.evidence["same_asset_siblings"] == []
+    assert (
+        "same_asset_siblings_restricted_count" not in incident.evidence
+    )  # raw card: not added yet
+
+    evidence = incident_service.evidence_for_caller(db_session, incident, user_id=world["owner"].id)
+    assert evidence is not None
+    assert evidence["same_asset_siblings"] == []
+    assert evidence["same_asset_siblings_restricted_count"] == 0
+
+
+def test_evidence_for_caller_withholds_a_malformed_sibling_entry_without_crashing(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """A `same_asset_siblings` entry with no `suite_id`, a non-UUID `suite_id`,
+    or that isn't even a dict must degrade like every other evidence layer —
+    withheld, not a 500 (#1635 review: the caller-side filter used to index
+    `suite_id` unconditionally after a guard that only covered the query half).
+    """
+    run = _run_with_result(db_session, world["suite"], world["check"], status="fail", metric=0.4)
+    incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+    incident = _active(db_session, world["suite"].asset_id, world["check"].id)[0]
+    assert incident.evidence is not None
+    incident.evidence = {
+        **incident.evidence,
+        "same_asset_siblings": [
+            {"check_name": "no suite_id at all", "status": "fail"},
+            {"check_name": "not a real uuid", "suite_id": "not-a-uuid", "status": "fail"},
+            "not even a dict",
+        ],
+    }
+    db_session.add(incident)
+    db_session.commit()
+
+    evidence = incident_service.evidence_for_caller(db_session, incident, user_id=world["owner"].id)
+    assert evidence is not None
+    assert evidence["same_asset_siblings"] == []
+    assert evidence["same_asset_siblings_restricted_count"] == 3

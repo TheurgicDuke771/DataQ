@@ -26,7 +26,11 @@ from backend.app.db.models import (
 from backend.app.services import audit_service, suite_service
 from backend.app.services.incident_evidence import build_evidence
 from backend.app.services.run_service import list_results
-from backend.app.services.suite_authz import SuiteForbiddenError, effective_permission
+from backend.app.services.suite_authz import (
+    SuiteForbiddenError,
+    effective_permission,
+    effective_permissions,
+)
 
 log = get_logger(__name__)
 
@@ -369,6 +373,91 @@ def load_visible_incident(
 def get_incident(session: Session, incident_id: uuid.UUID) -> Incident | None:
     """Fetch an incident by id (no authz — the API layer gates on its suite)."""
     return session.get(Incident, incident_id)
+
+
+def _parse_sibling_suite_ids(
+    siblings: list[Any],
+) -> list[tuple[Any, uuid.UUID | None]]:
+    """Pair each ``same_asset_siblings`` entry with its parsed ``suite_id``, or
+    ``None`` for anything malformed (not a dict, no ``suite_id``, or not a valid
+    UUID string) — a single fail-closed pass so a bad entry is withheld rather
+    than crashing the two comprehensions that used to walk this list separately
+    with different guards (#1635 review).
+    """
+    parsed: list[tuple[Any, uuid.UUID | None]] = []
+    for entry in siblings:
+        suite_id = entry.get("suite_id") if isinstance(entry, dict) else None
+        try:
+            parsed.append((entry, uuid.UUID(suite_id) if isinstance(suite_id, str) else None))
+        except ValueError:
+            parsed.append((entry, None))
+    return parsed
+
+
+def evidence_for_caller(
+    session: Session, incident: Incident, *, user_id: uuid.UUID
+) -> dict[str, Any] | None:
+    """The incident's stored evidence card, with the ``same_asset_siblings``
+    layer (#1635) trimmed to entries whose suite this caller can view.
+
+    That layer is built **workspace-true** (ADR 0037), the same way the asset
+    rollup is — it has no caller in scope, since it's assembled once at sync
+    time. Holding `view` on THIS incident's suite is not a grant on a sibling's
+    suite just because both target the same asset, so the itemized rows are
+    filtered here, at read time — mirroring how ``get_asset`` names only the
+    caller's own suites and folds the rest into a count. A suite that no longer
+    exists reads the same as one the caller cannot see, and so does a malformed
+    entry; all three collapse into the restricted count rather than being
+    distinguished or raising.
+
+    ``same_asset_siblings_restricted_count`` is present (possibly ``0``)
+    whenever the ``same_asset_siblings`` layer was built at all — i.e. whenever
+    it isn't ``None`` — the same null-vs-empty-list convention every other list
+    layer on this card already uses; it is absent only alongside a ``None``
+    layer, never alongside an empty one.
+    """
+    evidence = incident.evidence
+    if not isinstance(evidence, dict):
+        return evidence
+    siblings = evidence.get("same_asset_siblings")
+    if not isinstance(siblings, list):
+        return evidence
+    parsed = _parse_sibling_suite_ids(siblings)
+    suite_ids = {sid for _entry, sid in parsed if sid is not None}
+    suites = session.scalars(select(Suite).where(Suite.id.in_(suite_ids))).all()
+    levels = effective_permissions(session, suites, user_id)
+    visible = [entry for entry, sid in parsed if sid is not None and levels.get(sid) is not None]
+    return {
+        **evidence,
+        "same_asset_siblings": visible,
+        "same_asset_siblings_restricted_count": len(siblings) - len(visible),
+    }
+
+
+def evidence_for_alert(incident: Incident) -> dict[str, Any] | None:
+    """The incident's evidence card for outbound alert delivery (#1635 review) —
+    ``same_asset_siblings`` restricted to entries in the incident's OWN suite.
+
+    An alert channel has no per-user grant to redact against the way
+    ``evidence_for_caller`` does — it's configured per suite (``SuiteNotification``),
+    not per viewer — so a cross-suite sibling has no principal it's safe to name.
+    The incident's own suite is different: it's exactly what that channel's
+    configured recipients already administer, so same-suite entries are kept.
+    """
+    evidence = incident.evidence
+    if not isinstance(evidence, dict):
+        return evidence
+    siblings = evidence.get("same_asset_siblings")
+    if not isinstance(siblings, list):
+        return evidence
+    own_suite = incident.suite_id
+    parsed = _parse_sibling_suite_ids(siblings)
+    same_suite = [entry for entry, sid in parsed if sid == own_suite]
+    return {
+        **evidence,
+        "same_asset_siblings": same_suite,
+        "same_asset_siblings_restricted_count": len(siblings) - len(same_suite),
+    }
 
 
 def _incident_filters(

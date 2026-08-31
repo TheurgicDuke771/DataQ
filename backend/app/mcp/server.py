@@ -3180,13 +3180,46 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     Use this for 'why did the orders freshness incident open?' or 'what else was
     failing at the time?'. Returns the incident's lifecycle state plus the
     `evidence` snapshot captured when it last breached: the failing check and its
-    observed value, the asset, the recent metric trend, the sibling checks in the
-    same run, the upstream pipeline run, and the downstream blast radius.
+    observed value, a kind-shaped detail view of it, the asset, the recent metric
+    trend, the sibling checks in the same run, a cross-suite sample of other
+    checks on the SAME asset, the upstream pipeline run, and the downstream
+    blast radius.
 
     The evidence card is a **snapshot taken at the last occurrence**, not a live
     read — describe it as "when this last failed", not "right now". It carries no
     failing sample rows by design, so it cannot show which specific records were
     bad; use the run results for that.
+
+    ``kind_detail`` names the fields specific to the failing check's monitor kind
+    (`age_hours` for freshness, `deviation_pct` for volume, `added`/`removed`/
+    `type_changed` for schema_drift, `z_score`/`insufficient_history` for
+    anomaly) instead of making you parse `failing_result.observed_value`'s four
+    different JSONB shapes yourself. It is null for an ordinary GX expectation or
+    a comparison check — the common case, where `observed_value` already IS the
+    shape. For a `freshness`/`volume`/`schema_drift`/`anomaly` check it is
+    non-null whenever the card carries one at all: `evidence` is only ever
+    captured from a genuinely warned/failed/critical occurrence of that check
+    (never an operationally-errored or skipped one), so a null `kind_detail`
+    there means the same rare thing a null `check_name` below does, not that
+    the check ran cleanly.
+
+    ``same_asset_siblings`` is the cross-suite signal `sibling_checks` cannot
+    see: the latest result of every other check that targets this SAME asset, in
+    ANY suite, from the last 7 days — e.g. a volume check on `orders` in a
+    different suite dropping 40% right before this freshness check breached.
+    Only a sibling's **cleanly-completed** (`succeeded`) run counts; a sibling
+    check whose own run failed operationally (e.g. a dead credential on that
+    OTHER suite) is silently absent rather than shown as failing — itself a
+    plausible root cause this card gives you no way to see. The list is also
+    capped at the 20 most recently-updated checks, so on an asset shared by many
+    suites it is a recent sample, not a complete inventory — the same "floor,
+    not complete" caveat `downstream_blast_radius` carries below. Entries whose
+    suite you cannot view are withheld and folded into
+    `same_asset_siblings_restricted_count` instead of being named.
+    `same_asset_siblings_restricted_count` is present (`0` or higher) whenever
+    `same_asset_siblings` itself is present — a `0` means nothing was withheld,
+    not that the field is missing — so don't report "no other checks touch this
+    asset" from an empty list without also checking that count is `0`.
 
     ``downstream_blast_radius`` is ``[]`` for three reasons that look
     identical: the failing asset was never resolved, the asset is a genuine
@@ -3208,8 +3241,14 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     - `upstream_pipeline_run` is null for every manually-triggered or scheduled
       run — most runs. It means "no orchestration pipeline triggered this", which
       is normal, not a missing pipeline or a DataQ failure.
-    - `metric_trend` and `sibling_checks` are `[]` when there is nothing to show,
-      so a null there really is a layer that could not be built.
+    - `kind_detail` null is benign for an `expectation`/`comparison` check, but
+      NOT for a `freshness`/`volume`/`schema_drift`/`anomaly` one — every card
+      is captured from a genuinely warned/failed/critical occurrence of its
+      check (an operational error or skip never reaches this card), so there a
+      null means the same rare thing a null `check_name` above means.
+    - `metric_trend`, `sibling_checks` and `same_asset_siblings` are `[]` when
+      there is nothing to show, so a null there really is a layer that could not
+      be built.
     - `profile_diff` is always null — not implemented, not a failed attempt.
 
     Requires view access to the incident's suite; an incident on a suite the
@@ -3222,7 +3261,7 @@ def get_incident(incident_id: str) -> dict[str, Any]:
         )
         return {
             **_incident_payload(incident),
-            "evidence": incident.evidence,
+            "evidence": incident_service.evidence_for_caller(session, incident, user_id=user.id),
         }
 
 

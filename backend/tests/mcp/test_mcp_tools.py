@@ -18,6 +18,7 @@ from backend.app.db.models import (
     PipelineRun,
     Result,
     Run,
+    Share,
     Suite,
     User,
 )
@@ -3570,6 +3571,49 @@ def test_get_incident_returns_the_evidence_card(db_session: Any, monkeypatch: An
     assert out["asset_name"] == "orders"
     assert out["latest_severity"] == "fail"
     assert out["evidence"]["profile_diff"] is None
+
+
+def test_get_incident_redacts_a_same_asset_sibling_from_an_invisible_suite(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """#1635: `same_asset_siblings` is stored workspace-true (no caller in
+    scope at build time); the read surface must withhold a sibling suite the
+    caller has no grant on, not just the incident's own suite.
+    """
+    owner = _user(db_session)
+    suite = _suite(db_session, owner)
+    other_suite = _suite(db_session, owner)  # the sibling result lives here
+    asset = _asset(db_session)
+    check = Check(suite_id=suite.id, name="c", expectation_type="expect_x", config={})
+    db_session.add(check)
+    db_session.commit()
+    incident = _incident(
+        db_session,
+        asset=asset,
+        check=check,
+        suite=suite,
+        evidence={
+            "same_asset_siblings": [
+                {
+                    "check_id": str(uuid.uuid4()),
+                    "check_name": "orders_volume_ok",
+                    "kind": "volume",
+                    "suite_id": str(other_suite.id),
+                    "status": "fail",
+                    "metric_value": -60.0,
+                    "created_at": None,
+                }
+            ]
+        },
+    )
+    caller = _user(db_session, email="caller@acme.io")
+    db_session.add(Share(suite_id=suite.id, user_id=caller.id, permission="view"))
+    db_session.commit()
+    _as(monkeypatch, db_session, caller)
+
+    out = server.get_incident(str(incident.id))
+    assert out["evidence"]["same_asset_siblings"] == []
+    assert out["evidence"]["same_asset_siblings_restricted_count"] == 1
 
 
 def test_list_incidents_rejects_an_unknown_asset_id(db_session: Any, monkeypatch: Any) -> None:

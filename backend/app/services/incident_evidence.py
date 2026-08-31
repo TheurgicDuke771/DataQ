@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.logging import get_logger
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Asset, Check, PipelineRun, Result, Run
 from backend.app.lineage.edges import downstream_assets
+from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES
 
 log = get_logger(__name__)
 
@@ -21,6 +22,10 @@ log = get_logger(__name__)
 # pipeline runs the delay-vs-history baseline averages over.
 _TREND_LIMIT = 10
 _PIPELINE_HISTORY_LIMIT = 10
+# Cross-suite same-asset siblings (#1635): how far back a sibling's latest result
+# still counts as live context, and how many distinct checks the layer carries.
+_SAME_ASSET_SIBLING_WINDOW = timedelta(days=7)
+_SAME_ASSET_SIBLING_LIMIT = 20
 
 # The list-valued, sample-row-bearing keys of `gx_runner._SAMPLE_KEYS` — the two that carry raw cell
 # values (vs. the scalar `unexpected_count`/`unexpected_percent` aggregates).
@@ -57,17 +62,25 @@ def build_evidence(
     asset: Asset | None,
 ) -> dict[str, Any]:
     """Assemble the layer-1 evidence card for a breaching ``result`` on ``run``."""
+    now = datetime.now(UTC)
     return {
-        "generated_at": _utc_now_iso(),
+        "generated_at": now.isoformat(),
         "check": _layer("check", lambda: _check_layer(check)),
         "asset": _layer("asset", lambda: _asset_layer(asset)),
         "failing_result": _layer("failing_result", lambda: _failing_result_layer(result)),
+        "kind_detail": _layer("kind_detail", lambda: _kind_detail_layer(check, result)),
         "metric_trend": _layer(
             "metric_trend", lambda: _metric_trend_layer(session, check_id=result.check_id)
         ),
         "sibling_checks": _layer(
             "sibling_checks",
             lambda: _sibling_checks_layer(session, run=run, exclude_check_id=result.check_id),
+        ),
+        "same_asset_siblings": _layer(
+            "same_asset_siblings",
+            lambda: _same_asset_siblings_layer(
+                session, asset=asset, exclude_check_id=result.check_id, now=now
+            ),
         ),
         "upstream_pipeline_run": _layer(
             "upstream_pipeline_run", lambda: _upstream_pipeline_layer(session, run=run)
@@ -79,10 +92,6 @@ def build_evidence(
         # cheap. Documented null placeholder (see module docstring).
         "profile_diff": None,
     }
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def _check_layer(check: Check | None) -> dict[str, Any] | None:
@@ -128,6 +137,48 @@ def _strip_sample_lists(observed: dict[str, Any] | None) -> dict[str, Any] | Non
     return {key: val for key, val in observed.items() if key not in _SAMPLE_LIST_KEYS}
 
 
+def _kind_detail_layer(check: Check | None, result: Result) -> dict[str, Any] | None:
+    """The monitor-kind-shaped fields lifted out of the raw ``observed_value``
+    JSONB (#1635), so a consumer doesn't need to know three different shapes to
+    answer "how stale" / "how anomalous" / "what changed". ``None`` for
+    ``expectation``/``comparison`` checks, where ``failing_result.observed_value``
+    already **is** the shape — and whenever ``observed_value`` isn't the dict a
+    monitor-kind check always produces (an operational error, most often).
+    """
+    if check is None or not isinstance(result.observed_value, dict):
+        return None
+    observed = result.observed_value
+    if check.kind == "freshness":
+        return {
+            "age_hours": observed.get("age_hours"),
+            "max_timestamp": observed.get("max_timestamp"),
+        }
+    if check.kind == "volume":
+        return {
+            "row_count": observed.get("row_count"),
+            "deviation_pct": observed.get("deviation_pct"),
+        }
+    if check.kind == "schema_drift":
+        # `added`/`removed`/`type_changed` are absent (not empty) on the run that
+        # captures the very first baseline — `.get(..., [])` would otherwise read
+        # identically to "compared, nothing changed" (the #828 empty-reads-as-
+        # clean class), so `baseline_captured` is carried alongside them.
+        return {
+            "added": observed.get("added", []),
+            "removed": observed.get("removed", []),
+            "type_changed": observed.get("type_changed", []),
+            "baseline_captured": observed.get("baseline_captured", False),
+        }
+    if check.kind == "anomaly":
+        return {
+            "z_score": observed.get("z_score"),
+            "mean": observed.get("mean"),
+            "stddev": observed.get("stddev"),
+            "insufficient_history": observed.get("insufficient_history", False),
+        }
+    return None
+
+
 def _metric_trend_layer(session: Session, *, check_id: uuid.UUID) -> list[dict[str, Any]]:
     """The last ``_TREND_LIMIT`` readings for the check (newest first) — the
     ``metric_value`` trend that distinguishes a sudden break from a slow drift.
@@ -162,6 +213,77 @@ def _sibling_checks_layer(
         .order_by(Check.name)
     ).all()
     return [{"check_name": name, "status": status} for name, status in rows]
+
+
+def _same_asset_siblings_layer(
+    session: Session, *, asset: Asset | None, exclude_check_id: uuid.UUID, now: datetime
+) -> list[dict[str, Any]]:
+    """The latest known outcome of every OTHER check targeting this asset, across
+    ALL suites — not just this run's (#1635). ``_sibling_checks_layer`` above only
+    sees this one run's own suite; a volume/schema-drift break on the SAME asset
+    from a DIFFERENT suite ("the table also dropped 40% of its rows this
+    morning") is the most common real root-cause signal and was invisible to it.
+
+    Window-bounded to ``_SAME_ASSET_SIBLING_WINDOW`` so a check that hasn't run
+    in months doesn't read as live context, and capped at
+    ``_SAME_ASSET_SIBLING_LIMIT``. Only ``succeeded`` runs count — a `failed`
+    run's results are an operational failure, not a complete account (mirrors
+    ``rollup.AGGREGATABLE_RUN_STATUSES``).
+
+    **Workspace-true** (ADR 0037), like the asset rollup: every suite's latest
+    result on this asset is captured here regardless of the incident's own
+    caller, because this layer is built once at sync time with no caller in
+    scope. The read surface (``incident_service.evidence_for_caller``) redacts
+    the entries a specific caller has no suite grant for before the card ever
+    reaches a response — this function does not gate anything.
+    """
+    if asset is None:
+        return []
+    window_start = now - _SAME_ASSET_SIBLING_WINDOW
+    latest_per_check = (
+        select(
+            Result.check_id,
+            Result.status,
+            Result.metric_value,
+            Result.created_at,
+        )
+        .join(Run, Run.id == Result.run_id)
+        .where(
+            Run.asset_id == asset.id,
+            Run.status.in_(AGGREGATABLE_RUN_STATUSES),
+            Result.check_id != exclude_check_id,
+            Result.created_at >= window_start,
+        )
+        .order_by(Result.check_id, Result.created_at.desc(), Result.id.desc())
+        .distinct(Result.check_id)
+        .subquery()
+    )
+    rows = session.execute(
+        select(
+            latest_per_check.c.check_id,
+            Check.name,
+            Check.kind,
+            Check.suite_id,
+            latest_per_check.c.status,
+            latest_per_check.c.metric_value,
+            latest_per_check.c.created_at,
+        )
+        .join(Check, Check.id == latest_per_check.c.check_id)
+        .order_by(latest_per_check.c.created_at.desc())
+        .limit(_SAME_ASSET_SIBLING_LIMIT)
+    ).all()
+    return [
+        {
+            "check_id": str(check_id),
+            "check_name": name,
+            "kind": kind,
+            "suite_id": str(suite_id),
+            "status": status,
+            "metric_value": _num(metric_value),
+            "created_at": _iso(created_at),
+        }
+        for check_id, name, kind, suite_id, status, metric_value, created_at in rows
+    ]
 
 
 def _upstream_pipeline_layer(session: Session, *, run: Run) -> dict[str, Any] | None:
