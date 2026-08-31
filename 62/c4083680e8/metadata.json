@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "62c4083680e8",
+  "strategy": "manual-commit",
+  "branch": "docs/1725-llm-transfer-vector-live",
+  "checkpoints_count": 12,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/62/c4083680e8/0/metadata.json",
+      "transcript": "/62/c4083680e8/0/full.jsonl",
+      "compact_transcript": "/62/c4083680e8/0/transcript.jsonl",
+      "content_hash": "/62/c4083680e8/0/content_hash.txt",
+      "prompt": "/62/c4083680e8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6010,
+    "cache_creation_tokens": 5828120,
+    "cache_read_tokens": 1587973696,
+    "output_tokens": 1308166,
+    "api_call_count": 3015
+  }
+}
