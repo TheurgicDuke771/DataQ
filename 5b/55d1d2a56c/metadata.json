@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "5b55d1d2a56c",
+  "strategy": "manual-commit",
+  "branch": "fix/1726-llm-reaper-thresholds",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "backend/app/services/llm_service.py",
+    "backend/tests/services/test_llm_reaper.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5b/55d1d2a56c/0/metadata.json",
+      "transcript": "/5b/55d1d2a56c/0/full.jsonl",
+      "compact_transcript": "/5b/55d1d2a56c/0/transcript.jsonl",
+      "content_hash": "/5b/55d1d2a56c/0/content_hash.txt",
+      "prompt": "/5b/55d1d2a56c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6448,
+    "cache_creation_tokens": 6156354,
+    "cache_read_tokens": 1700779165,
+    "output_tokens": 1406776,
+    "api_call_count": 3234,
+    "subagent_tokens": {
+      "input_tokens": 156,
+      "cache_creation_tokens": 379369,
+      "cache_read_tokens": 5969927,
+      "output_tokens": 3809,
+      "api_call_count": 78
+    }
+  }
+}
