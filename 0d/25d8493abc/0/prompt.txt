@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>byhzj5973</task-id>
+<summary>Monitor event: "CI status for PR #1780"</summary>
+<event>Frontend — dependency audit (pnpm audit): pass
+GitGuardian Security Checks: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>byhzj5973</task-id>
+<summary>Monitor event: "CI status for PR #1780"</summary>
+<event>CodeQL analysis (python): pass
+CodeQL: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>byhzj5973</task-id>
+<summary>Monitor event: "CI status for PR #1780"</summary>
+<event>Frontend — tests: pass</event>
+</task-notification>
