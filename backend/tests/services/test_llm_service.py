@@ -246,6 +246,81 @@ def test_test_settings_records_no_invocation_when_the_provider_is_never_reached(
     assert db_session.query(LlmInvocation).filter_by(kind="ping").count() == 0
 
 
+def test_test_settings_records_no_invocation_when_provider_construction_itself_fails(
+    db_session: Any, admin: User
+) -> None:
+    """#1784 review: `_provider_from` can raise `LLMConfigInvalidError` (e.g.
+    "anthropic requires an api_key") purely from validating the draft's
+    SHAPE — before any network attempt. Same rule as the secret-store early
+    returns above: recording a row would misrepresent a call that never
+    happened, even though `LLMConfigInvalidError` used to be caught right
+    alongside the two genuine-round-trip error types.
+    """
+    draft = _draft(provider="anthropic", api_key=None, base_url=None)
+    out = llm_service.test_settings(
+        db_session, draft=draft, secret_store=FakeSecretStore(), actor=admin
+    )
+    assert out["ok"] is False
+    assert out["error_code"] == "llm_config_invalid"
+    assert db_session.query(LlmInvocation).filter_by(kind="ping").count() == 0
+
+
+def test_test_settings_records_a_failed_invocation_for_an_unclassified_provider_crash(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1784 review: unlike the two declared provider-error types, a raw crash
+    from `provider.complete()` (an SDK bug, a malformed response shape) is NOT
+    caught by a narrow except — matching `execute_invocation`'s own catch-all
+    posture ("a driver-boundary surprise must still terminate the row"). The
+    network attempt genuinely happened, so — unlike the config-shape case
+    above — this must still be recorded, or a real, billed outbound call
+    leaves zero trace.
+    """
+
+    class _CrashingProvider:
+        model = "fake"
+
+        def complete(self, *_a: Any, **_kw: Any) -> LLMResult:
+            raise AttributeError("unexpected response shape")
+
+    monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _CrashingProvider())
+    out = llm_service.test_settings(
+        db_session, draft=_draft(), secret_store=FakeSecretStore(), actor=admin
+    )
+    assert out["ok"] is False
+    assert out["error_code"] == "internal_error"
+    # The raw exception text is never echoed back — only the class name, matching
+    # execute_invocation's own posture for an unclassified crash.
+    assert "unexpected response shape" not in out["error"]
+    (invocation,) = db_session.query(LlmInvocation).filter_by(kind="ping").all()
+    assert invocation.status == "failed"
+    assert invocation.error is not None and "AttributeError" in invocation.error
+
+
+def test_test_settings_scrubs_nul_from_the_stored_error(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Matches `execute_invocation`'s own `_scrub_nul` convention on this exact
+    field — a provider that ever echoes a NUL byte into an error message must
+    not crash the Postgres insert (the #1273 class).
+    """
+
+    class _NulProvider:
+        model = "fake"
+
+        def complete(self, *_a: Any, **_kw: Any) -> LLMResult:
+            raise LLMUnavailableError("bad\x00byte")
+
+    monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _NulProvider())
+    out = llm_service.test_settings(
+        db_session, draft=_draft(), secret_store=FakeSecretStore(), actor=admin
+    )
+    assert out["ok"] is False
+    (invocation,) = db_session.query(LlmInvocation).filter_by(kind="ping").all()
+    assert invocation.error is not None
+    assert "\x00" not in invocation.error
+
+
 # ── invocation lifecycle ─────────────────────────────────────────────────────
 
 
