@@ -323,17 +323,6 @@ Confirm the change is *ready and green* before you push it to prod:
 - [ ] **Config + secrets are in place** — the required GitHub env/vars and Key Vault secrets
   (see the [prerequisites](#before-you-deploy-production-prerequisites) above), especially any
   new key this release reads.
-- [ ] **`#1789`'s worker `-Q celery,llm` command change is applied on BOTH clouds before or in
-  the same window as this image roll.** The Deploy workflows only roll the image — neither
-  re-applies Terraform — so deploying this SHA through the routine path alone rolls the API
-  (which starts routing `llm_invoke` onto the new `"llm"` queue immediately) while the worker
-  keeps running its old command and never consumes it: every LLM check-suggestion/RCA request
-  queues with **zero consumers** until the 30-min pending reaper fails it, not merely delayed
-  behind `run_suite` as before. Before rolling the image: `tofu apply` on Azure; on AWS,
-  `tofu apply -replace=aws_ecs_task_definition.worker` + `aws ecs update-service ... --force-new-deployment`
-  (see "Operational notes" below). Confirm after: the worker logs/`celery -A ... inspect
-  active_queues` show `llm` alongside `celery` on both clouds. One-time item — remove after
-  this SHA ships.
 
 ### Post-deploy smoke checklist
 

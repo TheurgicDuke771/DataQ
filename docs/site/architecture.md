@@ -77,7 +77,7 @@ The flow reads left → right: **inputs** (Clients, Orchestration) drive the **D
 
 ## Data model (ER diagram)
 
-> Source of truth: [`backend/app/db/models.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/db/models.py) (22 tables). Update this diagram in the same PR as any model/migration change.
+> Source of truth: [`backend/app/db/models.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/db/models.py) (28 tables). Update this diagram in the same PR as any model/migration change.
 
 ```mermaid
 erDiagram
@@ -589,6 +589,7 @@ flowchart LR
         DS["Datasources — Snowflake · ADLS · S3 · Unity Catalog · Iceberg"]
         AL["Teams / Slack webhooks · SMTP"]
         OAPI["ADF / Airflow REST APIs (polling)"]
+        LLM["LLM provider — Anthropic / OpenAI-compat<br/>(off by default; masked profiler stats or a<br/>redacted observed_value only — never raw samples)"]
     end
 
     B -- "OIDC auth-code + PKCE" --> IDP
@@ -609,6 +610,7 @@ flowchart LR
     WK -- "GX checks / monitor SQL" --> DS
     WK -- "run-outcome alerts" --> AL
     WK -- "10-min poll fallback" --> OAPI
+    WK -- "sql_generation / check_suggestion / rca_narrative,<br/>via the dedicated llm Celery queue" --> LLM
 
     classDef hub fill:#E6F1FB,stroke:#185FA5,color:#0C449C
     classDef ext fill:#F1EFE8,stroke:#5F5E5A,color:#444441
@@ -617,7 +619,7 @@ flowchart LR
     class FE,API,WK hub
     class B,AI,WH,IDP ext
     class KV,PG,RD,APPI sec
-    class DS,AL,OAPI out
+    class DS,AL,OAPI,LLM out
     style internet fill:#F7F6F2,stroke:#5F5E5A
     style aca fill:#F4F9FE,stroke:#185FA5
     style backing fill:#FDF7EC,stroke:#854F0B
@@ -636,6 +638,8 @@ Boundary notes:
 - **The frontend (Container App on Azure, ECS Fargate task on AWS) is the sole public surface** (ADR [0028](adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md) §5). It's one generic nginx image whose auth is injected at **runtime** (`DATAQ_AUTH_*` → generic OIDC, validated against Azure AD or AWS Cognito — no MSAL, nothing cloud-specific baked in), and it reverse-proxies `/api` + `/mcp` + `/healthz` same-origin to the **internal-ingress** API. The API is not reachable directly from the internet; external orchestrator webhooks land on the frontend and are proxied through.
 - **Orchestration providers (ADF · Airflow · dbt) are not datasources.** They live in `pipeline_runs`, not `runs`. Trigger bindings map `(provider, pipeline_id, env) → suite_id`.
 - **Scheduled/triggered suite runs are Celery-only.** FastAPI never enqueues GX itself for a full suite run; it dispatches a task. **Exception — synchronous preview paths:** the check dry-run (`POST /suites/{id}/checks/dryrun`) and the column profiler (`POST /suites/{id}/profile`) run a single GX check / a profiling query against the datasource **synchronously in a threadpool** (persisting nothing) — interactive authoring aids, not scheduled runs.
+- **The worker consumes two Celery queues.** `run_suite` and the periodic beat tasks stay on the default `celery` queue; the three LLM intelligence tasks (`sql_generation` · `check_suggestion` · `rca_narrative`) route to a dedicated `llm` queue, so a backlog of long-running suite runs never starves an LLM request behind it. Both queues are consumed by the same worker process (`-Q celery,llm`) — this is queue separation for fair scheduling, not a second worker deployment.
+- **The outbound LLM intelligence layer is live, off by default.** An admin must configure a provider (Anthropic or an OpenAI-compatible endpoint) and credential before any call leaves the deployment. SQL generation and check suggestions send masked aggregate profiler statistics only; RCA narratives additionally send the triggering check's own `observed_value`, routed through the same column-policy/warehouse-tag redaction floor every other results surface applies, plus its `expected_value` (a check-authored threshold, never masked). Raw sample rows are never sent on any path. See [Security & data handling](security.md).
 - **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS. Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see `backend/app/core/secrets.py`). No credentials are ever hardcoded.
-- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 47 FastMCP tools (24 read-only, 18 that change state, 5 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **any** of the three sign-in modes (SSO, email OTP, dev-bypass) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](adr/0008-mcp-server.md) / [ADR 0032](adr/0032-email-otp-signin.md).
+- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 48 FastMCP tools (25 read-only, 18 that change state, 5 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **any** of the three sign-in modes (SSO, email OTP, dev-bypass) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](adr/0008-mcp-server.md) / [ADR 0032](adr/0032-email-otp-signin.md).
 - **Interactive API docs are off in production.** `/docs`, `/redoc`, and `/openapi.json` are disabled when `ENVIRONMENT=prod` (the prod-docs gate); available in dev/staging.

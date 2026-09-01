@@ -30,6 +30,7 @@ it but is not its system of record.
 | `results.sample_failures` | Up to a bounded number of failing rows per check result, as column→value maps | `SAMPLE_FAILURES_RETENTION_DAYS` (default **30**); daily purge sets the column NULL and stamps `sample_failures_purged_at` — the row and its `metric_value` trend survive, the personal data does not | Column-aware **redaction ladder** on every read surface (REST, MCP, alert delivery), driven by the per-suite column policy, the governance floor from warehouse-native PII tags (G3, `services/column_tags.py`), and fail-closed mode (`require_classification`) |
 | `results.observed_value` (list-shaped) | A set-oriented expectation's full observed distinct-value list can reproduce column values | Same purge as `sample_failures` | Same redaction ladder |
 | `results.observed_value` (scalar `unparsed_value` cell) | A single unparseable cell value captured for diagnosis | `SAMPLE_FAILURES_RETENTION_DAYS`, same purge as the two rows above | Redaction ladder applies on read |
+| `incidents.evidence` (`failing_result.observed_value`) | A stored snapshot of the same kind of literal cell value as the `results.observed_value` rows above, captured once when an incident opens or gets a fresh occurrence | **Not covered by the retention purge** — the snapshot persists for the life of the incident row, independent of the `SAMPLE_FAILURES_RETENTION_DAYS` clock | Redacted through the same column-policy/warehouse-tag floor, but **at write time only** (once, when the card is built) — a policy change afterward does not retroactively re-mask an already-stored card, unlike the read-time redaction the rows above get on every read |
 | Dry-run / live-probe responses | Real values shown to the check author; **nothing persisted** | Not stored (structurally cannot persist) | Fail-closed suites mask even here; REST dry-run values are shown unredacted by design, a recorded decision |
 
 **Erasure status — state it honestly in your DPIA:** deletion happens on the
@@ -39,7 +40,10 @@ Admin-only capability that identifies a subject by a `(column, value)` pair (the
 same key the controller's own warehouse row uses; DataQ has no people-table) and
 surgically removes only the matching row/cell from `sample_failures` /
 `observed_value`, leaving the rest of a result's captured sample — other rows,
-other subjects — intact.
+other subjects — intact. **This on-demand erasure does not reach `incidents.evidence`**
+(the row above) — an incident's stored snapshot survives an on-demand erasure of
+the same value from `results`, and only entity cascade (deleting the covering
+suite/check/asset) removes it.
 
 ## Class 2 — workspace account data
 
@@ -64,5 +68,5 @@ other subjects — intact.
 | Erasure ("how is it removed") | Retention purge (30-day default) + entity cascade, **and** on-demand targeted erasure by `(column, value)` — the [data-subject-rights runbook](data-subject-rights-runbook.md). |
 | Security of processing | See [Security & data handling](../security.md): secrets in a dedicated store, TLS, rate limiting, security headers, single public surface, non-root containers, least-privilege DB role. |
 
-Last reviewed: 2026-08-31 (originally 2026-08-21).
+Last reviewed: 2026-09-01 (originally 2026-08-21).
 This sheet shares its inventory with the [data-subject-rights runbook](data-subject-rights-runbook.md) — update both together (one artifact, not two).
