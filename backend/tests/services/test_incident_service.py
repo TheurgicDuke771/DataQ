@@ -771,3 +771,114 @@ def test_evidence_for_caller_withholds_a_malformed_sibling_entry_without_crashin
     assert evidence is not None
     assert evidence["same_asset_siblings"] == []
     assert evidence["same_asset_siblings_restricted_count"] == 3
+
+
+# ── stale-evidence redaction backfill (#1772) ──────────────────────────────────
+
+
+def test_redact_stale_evidence_masks_a_pre_fix_unredacted_snapshot(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """`Incident.evidence` is written once and never recomputed, so an incident
+    opened before the build-time G3 fix landed keeps serving its original raw
+    `observed_value` until this one-time backfill corrects it in place."""
+    suite = world["suite"]
+    suite.column_policy = {"pii_columns": ["EMAIL"]}
+    db_session.add(suite)
+    check = _check(db_session, suite, name="orders_email_not_null")
+    check.config = {"column": "EMAIL"}
+    db_session.add(check)
+    db_session.commit()
+
+    incident = Incident(
+        asset_id=suite.asset_id,
+        check_id=check.id,
+        suite_id=suite.id,
+        status="open",
+        evidence={
+            "failing_result": {
+                "status": "fail",
+                "metric_value": None,
+                "observed_value": {"observed_value": "victim@example.com"},
+                "expected_value": None,
+            }
+        },
+    )
+    db_session.add(incident)
+    db_session.commit()
+
+    updated = incident_service.redact_stale_evidence(db_session)
+
+    assert updated == 1
+    db_session.refresh(incident)
+    assert incident.evidence is not None
+    masked = incident.evidence["failing_result"]["observed_value"]
+    assert masked["observed_value"] == "<redacted>"
+
+
+def test_redact_stale_evidence_leaves_a_non_sensitive_snapshot_unchanged(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """Proves the backfill doesn't over-redact: a snapshot with no PII exposure
+    is left byte-identical, and reports zero updates."""
+    suite = world["suite"]
+    check = world["check"]  # config={"column": "id"} — not sensitive by name or policy
+    incident = Incident(
+        asset_id=suite.asset_id,
+        check_id=check.id,
+        suite_id=suite.id,
+        status="open",
+        evidence={
+            "failing_result": {
+                "status": "fail",
+                "metric_value": 0.4,
+                "observed_value": {"observed_value": 42},
+                "expected_value": None,
+            }
+        },
+    )
+    db_session.add(incident)
+    db_session.commit()
+
+    updated = incident_service.redact_stale_evidence(db_session)
+
+    assert updated == 0
+    db_session.refresh(incident)
+    assert incident.evidence is not None
+    assert incident.evidence["failing_result"]["observed_value"] == {"observed_value": 42}
+
+
+def test_redact_stale_evidence_is_idempotent(db_session: Any, world: dict[str, Any]) -> None:
+    """Re-running the backfill after it has already masked a snapshot is a no-op —
+    the second pass must report zero updates, not re-redact an already-redacted
+    value into something else."""
+    suite = world["suite"]
+    suite.column_policy = {"pii_columns": ["EMAIL"]}
+    db_session.add(suite)
+    check = _check(db_session, suite, name="orders_email_not_null")
+    check.config = {"column": "EMAIL"}
+    db_session.add(check)
+    db_session.commit()
+
+    incident = Incident(
+        asset_id=suite.asset_id,
+        check_id=check.id,
+        suite_id=suite.id,
+        status="open",
+        evidence={
+            "failing_result": {
+                "status": "fail",
+                "metric_value": None,
+                "observed_value": {"observed_value": "victim@example.com"},
+                "expected_value": None,
+            }
+        },
+    )
+    db_session.add(incident)
+    db_session.commit()
+
+    first = incident_service.redact_stale_evidence(db_session)
+    second = incident_service.redact_stale_evidence(db_session)
+
+    assert first == 1
+    assert second == 0

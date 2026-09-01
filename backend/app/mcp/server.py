@@ -3251,6 +3251,14 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     checks on the SAME asset, the upstream pipeline run, and the downstream
     blast radius.
 
+    `failing_result.observed_value` is routed through the same column-policy/
+    warehouse-tag masking floor `get_run_results` applies to that field. But
+    NO tool discloses whether a given `observed_value` was actually masked —
+    `get_run_results`'s own `redaction`/`redacted_columns` fields describe
+    `sample_failures` only, not `observed_value`, so they cannot answer this
+    either. A masked value reads identically to a genuinely short one; the
+    only way to tell is checking the column's policy/tags directly.
+
     The evidence card is a **snapshot taken at the last occurrence**, not a live
     read — describe it as "when this last failed", not "right now". It carries no
     failing sample rows by design, so it cannot show which specific records were

@@ -550,7 +550,9 @@ considered:
   credential, sent to that admin-chosen endpoint. SQL-generation and
   check-suggestion prompts are schema plus masked aggregate profiler statistics;
   root-cause-analysis narratives additionally send the triggering check's own
-  observed/expected values, not yet routed through that same mask. **Never raw
+  observed value — routed through the same column-policy/warehouse-tag floor
+  every other results surface applies — and its expected value (a
+  check-authored threshold, not warehouse data, so never masked). **Never raw
   sample rows**, on either path. Every call — feature invocation or admin test
   probe alike — is recorded with requester and token counts.
 - **Sign-in email** — email-OTP codes to user addresses via the configured SMTP

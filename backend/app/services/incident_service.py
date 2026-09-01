@@ -23,7 +23,7 @@ from backend.app.db.models import (
     Suite,
     SuiteNotification,
 )
-from backend.app.services import audit_service, suite_service
+from backend.app.services import audit_service, run_service, suite_service
 from backend.app.services.incident_evidence import build_evidence
 from backend.app.services.run_service import list_results
 from backend.app.services.suite_authz import (
@@ -122,6 +122,76 @@ def _sync_incidents_for_run(session: Session, *, run_id: uuid.UUID) -> None:
             attached=attached,
             auto_resolved=resolved,
         )
+
+
+def redact_stale_evidence(session: Session) -> int:
+    """One-time backfill (#1772): re-derive ``evidence.failing_result.observed_value``
+    for every incident whose evidence was stored before the build-time G3 fix landed.
+
+    `Incident.evidence` is written once per occurrence — a new failing result on an
+    ACTIVE incident overwrites it (see `open_or_attach_incident` below), but an
+    incident that stays open (or gets acked/resolved) with no further failure keeps
+    its ORIGINAL snapshot forever. Before this fix, that snapshot's `observed_value`
+    was never masked, so any incident opened pre-fix serves the raw value through
+    `get_incident` (REST/MCP) and the RCA prompt indefinitely unless corrected here.
+
+    Uses the check's CURRENT `config.column` as the best available `tested_column`
+    (the original `Result` row isn't retained on `Incident`, so the point-in-time
+    resolution `historical_check_context` gives on a live run isn't available for a
+    stored snapshot — a check's tested column changing after the fact is rare and
+    this backfill runs once). Idempotent: re-running it after itself is a no-op,
+    since redacting an already-redacted value returns the same value.
+
+    Returns the number of incidents actually rewritten.
+    """
+    incidents = list(session.scalars(select(Incident).where(Incident.evidence.is_not(None))))
+    if not incidents:
+        return 0
+
+    checks = {
+        c.id: c
+        for c in session.scalars(select(Check).where(Check.id.in_({i.check_id for i in incidents})))
+    }
+    suites = {
+        s.id: s
+        for s in session.scalars(select(Suite).where(Suite.id.in_({i.suite_id for i in incidents})))
+    }
+    assets = {
+        a.id: a
+        for a in session.scalars(select(Asset).where(Asset.id.in_({i.asset_id for i in incidents})))
+    }
+
+    updated = 0
+    for incident in incidents:
+        evidence = incident.evidence
+        if not evidence:
+            continue
+        failing = evidence.get("failing_result")
+        if not isinstance(failing, dict) or "observed_value" not in failing:
+            continue
+        observed = failing["observed_value"]
+        check = checks.get(incident.check_id)
+        suite = suites.get(incident.suite_id)
+        asset = assets.get(incident.asset_id)
+        tested_column = check.config.get("column") if check and check.config else None
+        redacted = run_service.redact_observed_value(
+            observed,
+            tested_column=tested_column,
+            policy=suite.column_policy if suite is not None else None,
+            tags=asset.column_tags if asset is not None else None,
+        )
+        if redacted == observed:
+            continue
+        incident.evidence = {
+            **evidence,
+            "failing_result": {**failing, "observed_value": redacted},
+        }
+        updated += 1
+
+    if updated:
+        session.commit()
+        log.info("incident_evidence_redaction_backfill", updated=updated)
+    return updated
 
 
 # ── lifecycle primitives ──────────────────────────────────────────────────────

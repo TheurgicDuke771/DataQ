@@ -42,6 +42,19 @@ EXEMPT: Final[dict[str, str]] = {
     "alerting/builder.py::build_run_report": (
         "the alert-delivery write path, not a principal's read — no actor to attribute"
     ),
+    # Same shape as build_run_report above: redacts ONCE at incident-open/attach
+    # time, before the card is stored on Incident.evidence (#1772). The later
+    # reads (get_incident REST/MCP, the RCA narrative prompt) consume that
+    # already-redacted stored snapshot — they never call a redactor themselves.
+    "services/incident_evidence.py::_failing_result_layer": (
+        "the incident-sync write path, not a principal's read — no actor to attribute"
+    ),
+    # A one-time ops backfill (#1772) correcting pre-fix stored snapshots — an
+    # operator-run maintenance pass over ALL incidents, not a principal reading
+    # any one of them.
+    "services/incident_service.py::redact_stale_evidence": (
+        "a one-time ops backfill rewriting stored snapshots, not a principal's read"
+    ),
 }
 
 # NOTE — one entry was REMOVED from EXEMPT rather than edited, and the reason is worth keeping.
