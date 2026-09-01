@@ -49,6 +49,12 @@ EXEMPT: Final[dict[str, str]] = {
     "services/incident_evidence.py::_failing_result_layer": (
         "the incident-sync write path, not a principal's read — no actor to attribute"
     ),
+    # A one-time ops backfill (#1772) correcting pre-fix stored snapshots — an
+    # operator-run maintenance pass over ALL incidents, not a principal reading
+    # any one of them.
+    "services/incident_service.py::redact_stale_evidence": (
+        "a one-time ops backfill rewriting stored snapshots, not a principal's read"
+    ),
 }
 
 # NOTE — one entry was REMOVED from EXEMPT rather than edited, and the reason is worth keeping.

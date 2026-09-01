@@ -477,8 +477,9 @@ def test_failing_result_observed_value_redacted_for_a_pii_column(
     metadata. This card is the ONLY place that ever computes `failing_result`
     (workspace-true, stored once) — `get_incident` (REST/MCP) and the RCA
     narrative prompt both only ever read this stored copy, so the G3 floor has
-    to run HERE. Column policy + a scalar observed_value, the shape
-    `expect_column_min_to_be_between`-style checks actually produce.
+    to run HERE. Column policy + a scalar `observed_value` — the SHAPE a
+    `expect_column_min_to_be_between`-style check produces (redaction doesn't
+    branch on `expectation_type`, so the exact type doesn't need setting here).
     """
     suite = world["suite"]
     suite.column_policy = {"pii_columns": ["EMAIL"]}
