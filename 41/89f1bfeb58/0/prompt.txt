@@ -1,0 +1,1 @@
+Hey, there are some open dependabot PR and CodeQL issue, can you triage them

@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "4189f1bfeb58",
+  "strategy": "manual-commit",
+  "branch": "dependabot/pip/ruff-0.16.5",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".pre-commit-config.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/41/89f1bfeb58/0/metadata.json",
+      "transcript": "/41/89f1bfeb58/0/full.jsonl",
+      "compact_transcript": "/41/89f1bfeb58/0/transcript.jsonl",
+      "content_hash": "/41/89f1bfeb58/0/content_hash.txt",
+      "prompt": "/41/89f1bfeb58/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 472,
+    "cache_creation_tokens": 103009,
+    "cache_read_tokens": 558395,
+    "output_tokens": 12336,
+    "api_call_count": 6
+  }
+}
