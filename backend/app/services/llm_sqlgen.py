@@ -334,7 +334,12 @@ def validate_output(
     try:
         validate_query(payload.get("sql"))
     except CustomSqlInvalidError as exc:
-        raise LLMOutputInvalidError(f"generated SQL failed validation: {exc.message}") from exc
+        # exc.detail carries the ADR 0019 gate's own structured reason (e.g.
+        # {"forbidden": [...]});  #1786 review — forward it so a failed
+        # invocation's `response` gets it too, matching checksuggest/rca.
+        raise LLMOutputInvalidError(
+            f"generated SQL failed validation: {exc.message}", detail=exc.detail
+        ) from exc
     return {"sql": payload["sql"], "explanation": str(payload.get("explanation", ""))}
 
 

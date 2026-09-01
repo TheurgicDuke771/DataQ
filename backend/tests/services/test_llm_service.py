@@ -436,6 +436,37 @@ def test_execute_invocation_persists_dataq_error_detail_into_response(
     assert invocation.response == {"rejected": ["reason one", "reason two"], "rejected_count": 2}
 
 
+def test_execute_invocation_drops_an_oversized_dataq_error_detail(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1786 review: unlike `error` (sliced to 1024 chars), a structured
+    `detail` dict has no single string to cap — a validator whose `detail`
+    echoes unbounded/untrusted content (e.g. a suggestion field a
+    non-compliant provider inflated) must not persist verbatim.
+    """
+    from backend.app.core.errors import DataQError
+
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    db_session.commit()
+    monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: _FakeProvider())
+    monkeypatch.setitem(
+        llm_service.KIND_BUILDERS, "ping", lambda _s, _inv, _st: ("say ok", None, None)
+    )
+
+    def _validator(_session: Any, _invocation: Any, _payload: Any) -> Any:
+        raise DataQError(
+            "nothing survived validation",
+            detail={"rejected": ["x" * 10_000]},
+        )
+
+    monkeypatch.setitem(llm_service.KIND_VALIDATORS, "ping", _validator)
+    assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == "failed"
+    db_session.refresh(invocation)
+    assert invocation.response == {"truncated": True}
+
+
 def test_execute_invocation_leaves_response_null_when_dataq_error_has_no_detail(
     db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:

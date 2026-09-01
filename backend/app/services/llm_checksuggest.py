@@ -475,26 +475,26 @@ def validate_output(
         seen.add(identity)
         accepted.append(ok)
     if not accepted:
-        # The full `rejected` list (with per-suggestion reasons) is about to go
-        # out of scope — this is the ONLY path where that would happen silently.
-        # Raised below with BOTH the reasons folded into the message (a caller
-        # reading only `error` still gets them, #1727) AND the structured list
-        # as `detail`, which `execute_invocation`'s DataQError branch now
-        # persists into `response` even on a failed invocation (#1781) — the
-        # API docstring's promise ("see the invocation's `rejected` field for
-        # what didn't make it and why") holds for the all-rejected case either
-        # way now. Capped at MAX_SUGGESTIONS reasons: the schema bounds a
-        # compliant provider's output, but not every provider enforces its own
-        # schema server-side, so `rejected` itself is not guaranteed bounded.
+        # The full `rejected` list is about to go out of scope — raised below
+        # with the reasons folded into the message (#1727) AND as structured
+        # `detail`, which `execute_invocation` persists into `response` even on
+        # a failed invocation (#1781). `rejected` itself is not guaranteed
+        # bounded (not every provider enforces the schema's own item cap
+        # server-side), hence the slice in both places.
         if rejected:
+            shown = rejected[:MAX_SUGGESTIONS]
             raise LLMOutputInvalidError(
                 f"no suggested check passed validation — {len(rejected)} rejected: "
                 f"{_format_rejection_reasons(rejected)}",
-                # #1781: the structured list too, not just the char-capped string
-                # above — `execute_invocation` now persists this into `response`
-                # even on a failed invocation, so a caller can read every
-                # rejection reason without re-parsing the summary sentence.
-                detail={"rejected": rejected[:MAX_SUGGESTIONS], "rejected_count": len(rejected)},
+                # `truncated`: `rejected` can be sliced without `rejected_count`
+                # changing to match — a caller reading only this structured
+                # object (not the message string's own "(+N more)") needs its
+                # own signal that the list isn't exhaustive (#1786 review).
+                detail={
+                    "rejected": shown,
+                    "rejected_count": len(rejected),
+                    "truncated": len(shown) < len(rejected),
+                },
             )
         raise LLMOutputInvalidError(
             "no suggested check passed validation — the provider returned no suggestions"

@@ -43,6 +43,14 @@ _MAX_HISTORY_POINTS = 180
 _SUMMARY_MAX_CHARS = 2000
 _CAUSE_MAX_CHARS = 500
 _NEXT_CHECK_MAX_CHARS = 300
+#: Per-item and total caps on the all-rejected message (mirrors
+#: llm_checksuggest's _REASON_ECHO_MAX_CHARS/_REASONS_CLAUSE_MAX_CHARS): every
+#: reason here is a short fixed constant today, but the total cap stops a
+#: future echoed value from silently losing execute_invocation's "(+N more)"
+#: suffix past its 1024-char persisted-error truncation (the #1727/#1780
+#: class, #1786 review).
+_REASON_MAX_CHARS = 200
+_REASONS_CLAUSE_MAX_CHARS = 700
 
 _CONFIDENCE_LEVELS = frozenset({"low", "medium", "high"})
 
@@ -382,17 +390,24 @@ def validate_output(
         # #1781: every rejection reason, not just the fact that all were
         # rejected — matches the #1727/#1780 checksuggest precedent, folded
         # into the message AND (via `detail`) into the failed invocation's
-        # `response`. Capped like checksuggest's own display cap.
+        # `response`.
         rejected = [reason for _h, reason in validated if reason is not None]
         if rejected:
             shown = rejected[:_MAX_HYPOTHESES]
-            reasons = "; ".join(r[:200] for r in shown)
+            reasons = "; ".join(r[:_REASON_MAX_CHARS] for r in shown)
             omitted = len(rejected) - len(shown)
+            if len(reasons) > _REASONS_CLAUSE_MAX_CHARS:
+                reasons = reasons[:_REASONS_CLAUSE_MAX_CHARS].rstrip() + "…"
+                omitted = max(omitted, 1)
             suffix = f" (+{omitted} more)" if omitted else ""
             raise LLMOutputInvalidError(
                 f"no ranked hypothesis cited valid evidence — {len(rejected)} rejected: "
                 f"{reasons}{suffix}",
-                detail={"rejected": shown, "rejected_count": len(rejected)},
+                detail={
+                    "rejected": shown,
+                    "rejected_count": len(rejected),
+                    "truncated": len(shown) < len(rejected),
+                },
             )
         raise LLMOutputInvalidError(
             "no ranked hypothesis cited valid evidence — the provider returned no hypotheses"

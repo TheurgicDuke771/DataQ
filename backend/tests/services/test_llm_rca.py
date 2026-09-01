@@ -365,6 +365,28 @@ def test_validate_output_all_rejected_names_the_reasons(
     assert "hypothesis was not an object" in str(exc)
     assert exc.detail["rejected_count"] == 3
     assert len(exc.detail["rejected"]) == 3
+    assert exc.detail["truncated"] is False  # 3 rejected, all 3 shown — nothing cut
+
+
+def test_validate_output_all_rejected_flags_truncation_past_max_hypotheses(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """`rejected` is not bounded by `_MAX_HYPOTHESES` the way the accepted list
+    is — a non-compliant provider can send more raw hypotheses than the
+    schema's own maxItems allows.
+    """
+    invocation = _invocation(db_session, world["incident"], world["owner"])
+    overflow = 2
+    payload = _valid_payload(
+        ranked_hypotheses=["not even an object"] * (llm_rca._MAX_HYPOTHESES + overflow)
+    )
+    with pytest.raises(LLMOutputInvalidError) as exc_info:
+        llm_rca.validate_output(db_session, invocation, payload)
+    exc = exc_info.value
+    assert exc.detail["rejected_count"] == llm_rca._MAX_HYPOTHESES + overflow
+    assert len(exc.detail["rejected"]) == llm_rca._MAX_HYPOTHESES
+    assert exc.detail["truncated"] is True
+    assert f"+{overflow} more" in str(exc)
 
 
 def test_validate_output_a_good_hypothesis_survives_a_bad_sibling(

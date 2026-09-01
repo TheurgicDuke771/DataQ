@@ -273,7 +273,10 @@ def test_end_to_end_execute_applies_the_output_gate(
     )
     assert llm_service.execute_invocation(db_session, bad.id, secret_store=store) == "failed"
     db_session.refresh(bad)
-    assert bad.response is None  # refused SQL is never stored as a result
+    # No SQL survived to be stored as a RESULT — but #1786 forwards the ADR
+    # 0019 gate's own structured reason (CustomSqlInvalidError.detail) into
+    # response, matching checksuggest/rca's failed-invocation shape.
+    assert bad.response == {"query_key": "unexpected_rows_query", "first_keyword": "drop"}
     assert bad.error is not None and bad.error.startswith("llm_output_invalid:")
     # A refused generation still billed — the cost record must say so.
     assert bad.input_tokens == 5
@@ -297,7 +300,7 @@ def test_nul_split_keyword_is_scrubbed_before_the_gate(
     )
     assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == "failed"
     db_session.refresh(invocation)
-    assert invocation.response is None
+    assert invocation.response == {"query_key": "unexpected_rows_query", "forbidden": ["into"]}
     assert invocation.error is not None and invocation.error.startswith("llm_output_invalid:")
 
 

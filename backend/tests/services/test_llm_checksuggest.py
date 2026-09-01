@@ -339,6 +339,23 @@ def test_output_gate_all_rejected_error_truncates_at_max_suggestions(
     message = str(exc_info.value)
     assert f"{llm_checksuggest.MAX_SUGGESTIONS + overflow} rejected" in message
     assert f"+{overflow} more" in message
+    # #1786 review: `detail["rejected"]` is sliced the same way — a caller
+    # reading only the structured `response` (not this message string's own
+    # "(+N more)" text) needs its own signal the list isn't exhaustive.
+    assert exc_info.value.detail["truncated"] is True
+    assert len(exc_info.value.detail["rejected"]) == llm_checksuggest.MAX_SUGGESTIONS
+
+
+def test_output_gate_all_rejected_error_reports_untruncated_when_bounded(
+    db_session: Any, admin: User
+) -> None:
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+    with pytest.raises(LLMOutputInvalidError) as exc_info:
+        llm_checksuggest.validate_output(
+            db_session, invocation, {"suggestions": [_suggestion(config={})]}
+        )
+    assert exc_info.value.detail["truncated"] is False
 
 
 def test_output_gate_all_rejected_message_stays_well_under_the_persisted_error_cap(
