@@ -172,22 +172,153 @@ def test_test_settings_uses_stored_key_only_for_same_destination(
         return _FakeProvider()
 
     monkeypatch.setattr(llm_service, "_provider_from", _fake_provider_from)
-    same = llm_service.test_settings(db_session, draft=_draft(), secret_store=store)
+    same = llm_service.test_settings(db_session, draft=_draft(), secret_store=store, actor=admin)
     assert same["ok"] is True
     moved = llm_service.test_settings(
-        db_session, draft=_draft(base_url="http://other.example/v1"), secret_store=store
+        db_session,
+        draft=_draft(base_url="http://other.example/v1"),
+        secret_store=store,
+        actor=admin,
     )
     assert moved["ok"] is True
     assert seen_keys == ["sk-1", None]  # the stored key never follows a moved destination
 
 
 def test_test_settings_reports_outage_as_outage(
-    db_session: Any, monkeypatch: pytest.MonkeyPatch
+    db_session: Any, admin: User, monkeypatch: Any
 ) -> None:
     monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _FakeProvider(fail=True))
-    out = llm_service.test_settings(db_session, draft=_draft(), secret_store=FakeSecretStore())
+    out = llm_service.test_settings(
+        db_session, draft=_draft(), secret_store=FakeSecretStore(), actor=admin
+    )
     assert out["ok"] is False
     assert out["error_code"] == "llm_provider_unavailable"
+
+
+def test_test_settings_records_an_invocation_row_on_success(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1773: this IS a genuine outbound round-trip — the compliance claim
+    "every call is recorded with requester and token counts" was false without
+    this, since `test_settings` never landed an `LlmInvocation` row at all.
+    """
+    monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _FakeProvider())
+    out = llm_service.test_settings(
+        db_session, draft=_draft(), secret_store=FakeSecretStore(), actor=admin
+    )
+    assert out["ok"] is True
+    (invocation,) = db_session.query(LlmInvocation).filter_by(kind="ping").all()
+    assert invocation.status == "succeeded"
+    assert invocation.requested_by_user_id == admin.id
+    assert invocation.input_tokens == 3
+    assert invocation.output_tokens == 1
+    assert invocation.finished_at is not None
+
+
+def test_test_settings_records_an_invocation_row_on_failure(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _FakeProvider(fail=True))
+    out = llm_service.test_settings(
+        db_session, draft=_draft(), secret_store=FakeSecretStore(), actor=admin
+    )
+    assert out["ok"] is False
+    (invocation,) = db_session.query(LlmInvocation).filter_by(kind="ping").all()
+    assert invocation.status == "failed"
+    assert invocation.requested_by_user_id == admin.id
+    assert invocation.error is not None and "down" in invocation.error
+
+
+def test_test_settings_records_no_invocation_when_the_provider_is_never_reached(
+    db_session: Any, admin: User
+) -> None:
+    """The credential-missing / secret-store-unavailable early returns never
+    call the provider — recording a row for those would misrepresent a call
+    that never happened.
+    """
+    store = FakeSecretStore()
+    llm_service.save_settings(
+        db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=store
+    )
+    store.data.clear()  # the ref now dangles
+    out = llm_service.test_settings(db_session, draft=_draft(), secret_store=store, actor=admin)
+    assert out["error_code"] == "llm_credential_missing"
+    assert db_session.query(LlmInvocation).filter_by(kind="ping").count() == 0
+
+
+def test_test_settings_records_no_invocation_when_provider_construction_itself_fails(
+    db_session: Any, admin: User
+) -> None:
+    """#1784 review: `_provider_from` can raise `LLMConfigInvalidError` (e.g.
+    "anthropic requires an api_key") purely from validating the draft's
+    SHAPE — before any network attempt. Same rule as the secret-store early
+    returns above: recording a row would misrepresent a call that never
+    happened, even though `LLMConfigInvalidError` used to be caught right
+    alongside the two genuine-round-trip error types.
+    """
+    draft = _draft(provider="anthropic", api_key=None, base_url=None)
+    out = llm_service.test_settings(
+        db_session, draft=draft, secret_store=FakeSecretStore(), actor=admin
+    )
+    assert out["ok"] is False
+    assert out["error_code"] == "llm_config_invalid"
+    assert db_session.query(LlmInvocation).filter_by(kind="ping").count() == 0
+
+
+def test_test_settings_records_a_failed_invocation_for_an_unclassified_provider_crash(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1784 review: unlike the two declared provider-error types, a raw crash
+    from `provider.complete()` (an SDK bug, a malformed response shape) is NOT
+    caught by a narrow except — matching `execute_invocation`'s own catch-all
+    posture ("a driver-boundary surprise must still terminate the row"). The
+    network attempt genuinely happened, so — unlike the config-shape case
+    above — this must still be recorded, or a real, billed outbound call
+    leaves zero trace.
+    """
+
+    class _CrashingProvider:
+        model = "fake"
+
+        def complete(self, *_a: Any, **_kw: Any) -> LLMResult:
+            raise AttributeError("unexpected response shape")
+
+    monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _CrashingProvider())
+    out = llm_service.test_settings(
+        db_session, draft=_draft(), secret_store=FakeSecretStore(), actor=admin
+    )
+    assert out["ok"] is False
+    assert out["error_code"] == "internal_error"
+    # The raw exception text is never echoed back — only the class name, matching
+    # execute_invocation's own posture for an unclassified crash.
+    assert "unexpected response shape" not in out["error"]
+    (invocation,) = db_session.query(LlmInvocation).filter_by(kind="ping").all()
+    assert invocation.status == "failed"
+    assert invocation.error is not None and "AttributeError" in invocation.error
+
+
+def test_test_settings_scrubs_nul_from_the_stored_error(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Matches `execute_invocation`'s own `_scrub_nul` convention on this exact
+    field — a provider that ever echoes a NUL byte into an error message must
+    not crash the Postgres insert (the #1273 class).
+    """
+
+    class _NulProvider:
+        model = "fake"
+
+        def complete(self, *_a: Any, **_kw: Any) -> LLMResult:
+            raise LLMUnavailableError("bad\x00byte")
+
+    monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _NulProvider())
+    out = llm_service.test_settings(
+        db_session, draft=_draft(), secret_store=FakeSecretStore(), actor=admin
+    )
+    assert out["ok"] is False
+    (invocation,) = db_session.query(LlmInvocation).filter_by(kind="ping").all()
+    assert invocation.error is not None
+    assert "\x00" not in invocation.error
 
 
 # ── invocation lifecycle ─────────────────────────────────────────────────────
@@ -447,7 +578,7 @@ def test_test_settings_reports_secret_store_states_distinctly(db_session: Any, a
         db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=store
     )
     store.data.clear()  # the ref now dangles
-    missing = llm_service.test_settings(db_session, draft=_draft(), secret_store=store)
+    missing = llm_service.test_settings(db_session, draft=_draft(), secret_store=store, actor=admin)
     assert missing == {
         "ok": False,
         "error_code": "llm_credential_missing",
@@ -457,6 +588,7 @@ def test_test_settings_reports_secret_store_states_distinctly(db_session: Any, a
         db_session,
         draft=_draft(),
         secret_store=FakeSecretStore(raise_on_get=SecretStoreUnavailableError("sealed")),
+        actor=admin,
     )
     assert sealed["error_code"] == "secret_store_unavailable"
 

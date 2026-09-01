@@ -265,10 +265,11 @@ def put_llm_settings(
 @router.post(
     "/llm/test",
     response_model=LlmTestResponse,
-    summary="Live-probe an LLM config draft — nothing persisted (admin)",
+    summary="Live-probe an LLM config draft — draft isn't saved, the call is audited (admin)",
 )
 def test_llm_settings(
     payload: LlmSettingsUpdate,
+    current_user: Annotated[User, Depends(require_workspace_admin)],
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> LlmTestResponse:
@@ -284,6 +285,7 @@ def test_llm_settings(
                 enabled=payload.enabled,
             ),
             secret_store=secret_store,
+            actor=current_user,
         )
     )
 
@@ -467,10 +469,10 @@ def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
                 "and check-suggestion prompts are schema plus masked aggregate "
                 "profiler statistics; root-cause-analysis narratives additionally "
                 "send the triggering check's own observed/expected values, not yet "
-                "routed through that same mask. Never raw sample rows. Every feature "
-                "invocation is recorded in llm_invocations with requester and token "
-                "counts — the admin connection-test probe is a live call and is not. "
-                "Distinct from mcp_ai_clients above, which is inbound."
+                "routed through that same mask. Never raw sample rows. Every call — "
+                "feature invocation or admin test probe alike — is recorded in "
+                "llm_invocations with requester and token counts. Distinct from "
+                "mcp_ai_clients above, which is inbound."
             ),
         )
     if row is not None:
@@ -482,7 +484,8 @@ def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
                 f"is CONFIGURED (a {row.provider} endpoint and stored credential "
                 "exist) but disabled, so the feature endpoints refuse. The admin "
                 "test probe can still transmit a fixed test prompt to that "
-                "endpoint. Re-enabling is one admin toggle; delete the config to "
+                "endpoint — recorded in llm_invocations like any other call. "
+                "Re-enabling is one admin toggle; delete the config to "
                 "remove the stored credential. Distinct from mcp_ai_clients "
                 "above, which is inbound."
             ),
@@ -493,7 +496,11 @@ def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
         detail=(
             "The OUTBOUND direction — DataQ calling a model on its own behalf — "
             "is built (ADR 0042) but not configured: no provider, no stored "
-            "credential, nothing leaves. When enabled it is a Ch. V transfer by "
+            "credential, nothing leaves on the feature endpoints' behalf. The "
+            "admin test probe is independent of this row, though — it can still "
+            "send a hand-entered draft's fixed test prompt to a real endpoint "
+            "before anything is ever saved, recorded like any other call. When "
+            "enabled it is a Ch. V transfer by "
             "construction (schema plus masked profiler statistics for SQL "
             "generation and check suggestions; RCA narratives also send the "
             "triggering check's own observed/expected values, not yet masked; "

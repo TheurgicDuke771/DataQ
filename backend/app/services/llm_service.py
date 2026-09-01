@@ -3,7 +3,12 @@
 The config is a singleton row; the credential lives in the SecretStore under a
 minted ref. The invocation table is both the UI's polling target and the G4
 audit/cost record. Feature prompt-builders register in `KIND_BUILDERS` from
-their own modules — the seam knows kinds only as strings.
+their own modules — the seam knows kinds only as strings. One kind,
+`"ping"` (`test_settings`, the admin config live-probe), is deliberately
+outside that seam: synchronous rather than dispatched, so it never touches
+`KIND_BUILDERS`/`execute_invocation` and lands its own row directly, with a
+thinner (but individually justified — see its own docstring/comments)
+version of the same lifecycle.
 """
 
 from __future__ import annotations
@@ -186,11 +191,12 @@ def _provider_from(
 
 
 def test_settings(
-    session: Session, *, draft: LlmSettingsDraft, secret_store: SecretStore
+    session: Session, *, draft: LlmSettingsDraft, secret_store: SecretStore, actor: User
 ) -> dict[str, Any]:
-    """Live reachability probe of a DRAFT config (nothing persisted). A draft
-    without a key falls back to the stored credential only when the destination
-    matches the stored row — the same rule `save_settings` enforces.
+    """Live reachability probe of a DRAFT config (nothing persisted, except the
+    `LlmInvocation` audit row below). A draft without a key falls back to the
+    stored credential only when the destination matches the stored row — the
+    same rule `save_settings` enforces.
     """
     _validate_draft(draft)
     api_key = draft.api_key
@@ -202,7 +208,10 @@ def test_settings(
             and (draft.provider, draft.base_url) == (row.provider, row.base_url)
         ):
             # A probe must report, not 500 — and an outage stays distinct from a
-            # missing secret (the ADR 0039 rule).
+            # missing secret (the ADR 0039 rule). Neither path below reaches the
+            # provider, so — unlike the round-trip further down — nothing is
+            # recorded here: an invocation row would misrepresent a call that
+            # never happened.
             try:
                 api_key = secret_store.get(row.api_key_secret_ref)
             except SecretNotFoundError:
@@ -217,7 +226,6 @@ def test_settings(
                     "error_code": "secret_store_unavailable",
                     "error": "the secret store is unreachable — the stored key could not be read",
                 }
-    started = time.monotonic()
     try:
         provider = _provider_from(
             provider=draft.provider,
@@ -226,17 +234,69 @@ def test_settings(
             structured_output=draft.structured_output,
             api_key=api_key,
         )
+    except LLMConfigInvalidError as exc:
+        # Pure config-shape validation (e.g. "anthropic requires an api_key") —
+        # raised before any network attempt, same as the two secret-store
+        # branches above: an invocation row here would misrepresent a call
+        # that never happened (#1784 review).
+        return {"ok": False, "error_code": exc.code, "error": exc.message}
+    # #1773: this IS a genuine outbound round-trip (a fixed, non-data test
+    # prompt, but a real call against the admin's chosen — possibly draft,
+    # possibly not-yet-`enabled` — endpoint), so it gets the same audit row
+    # every feature invocation does; the "every call is recorded" compliance
+    # claim (`admin.py`'s `_llm_intelligence_transfer`) was false without it.
+    # `kind="ping"` — reserved in `LLM_INVOCATION_KINDS` for exactly this,
+    # never dispatched through `execute_invocation`/`KIND_BUILDERS` since this
+    # call is synchronous, not queued. Landed in ONE insert once terminal
+    # (mirroring `execute_invocation`'s own `terminal` dict, #1784 review) —
+    # there is no concurrent claimant to guard against here, so an interim
+    # committed "running" row would buy nothing: nobody polls it, and it
+    # would not even survive a mid-call process crash any better than skipping
+    # it, since a bare `flush()` (no commit) is not durable either.
+    started_at = datetime.now(UTC)
+    started = time.monotonic()
+    terminal: dict[str, Any]
+    response: dict[str, Any]
+    try:
         result = provider.complete(
             "Reply with the single word: ok", max_tokens=16, timeout=_TEST_TIMEOUT_SECONDS
         )
-    except (LLMUnavailableError, LLMProviderError, LLMConfigInvalidError) as exc:
-        return {"ok": False, "error_code": exc.code, "error": exc.message}
-    return {
-        "ok": True,
-        "model": draft.model,
-        "latency_ms": int((time.monotonic() - started) * 1000),
-        "reply_chars": len(result.text),
-    }
+    except (LLMUnavailableError, LLMProviderError) as exc:
+        terminal = {
+            "status": "failed",
+            "error": str(_scrub_nul(f"{exc.code}: {exc.message}"))[:1024],
+        }
+        response = {"ok": False, "error_code": exc.code, "error": exc.message}
+    except Exception as exc:  # a driver-boundary surprise must still terminate the row (#1784
+        # review, matching execute_invocation's own posture) — the network attempt WAS made, so
+        # this is squarely the "genuine round-trip" case, unlike the LLMConfigInvalidError above.
+        error_code = "internal_error"
+        error_message = f"internal: {exc.__class__.__name__}"
+        terminal = {"status": "failed", "error": error_message[:1024]}
+        response = {"ok": False, "error_code": error_code, "error": error_message}
+        log.exception("llm_test_probe_crashed")
+    else:
+        terminal = {
+            "status": "succeeded",
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+        }
+        response = {"ok": True, "model": draft.model, "reply_chars": len(result.text)}
+    duration_ms = int((time.monotonic() - started) * 1000)
+    session.add(
+        LlmInvocation(
+            kind="ping",
+            requested_by_user_id=actor.id,
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+            duration_ms=duration_ms,
+            **terminal,
+        )
+    )
+    session.commit()
+    if response["ok"]:
+        response["latency_ms"] = duration_ms
+    return response
 
 
 # ── Invocation lifecycle ─────────────────────────────────────────────────────

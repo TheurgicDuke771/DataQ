@@ -551,9 +551,8 @@ considered:
   check-suggestion prompts are schema plus masked aggregate profiler statistics;
   root-cause-analysis narratives additionally send the triggering check's own
   observed/expected values, not yet routed through that same mask. **Never raw
-  sample rows**, on either path. Every feature invocation is recorded with
-  requester and token counts — the admin connection-test probe is a live call
-  and is not.
+  sample rows**, on either path. Every call — feature invocation or admin test
+  probe alike — is recorded with requester and token counts.
 - **Sign-in email** — email-OTP codes to user addresses via the configured SMTP
   relay: account identifiers rather than warehouse content, relay operator-chosen.
 - **Secret store** — warehouse credentials in Key Vault / Secrets Manager /

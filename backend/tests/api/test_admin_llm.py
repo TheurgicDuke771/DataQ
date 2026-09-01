@@ -97,12 +97,45 @@ def test_llm_test_endpoint_reports_without_persisting(
     monkeypatch.setattr(
         llm_service,
         "test_settings",
-        lambda _db, *, draft, secret_store: {"ok": True, "model": draft.model, "latency_ms": 5},
+        lambda _db, *, draft, secret_store, actor: {
+            "ok": True,
+            "model": draft.model,
+            "latency_ms": 5,
+        },
     )
     resp = client.post("/api/v1/admin/llm/test", json=_BODY)
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
     assert llm_service.get_settings_row(db_session) is None
+
+
+def test_llm_test_endpoint_records_an_invocation_row_through_the_real_route(
+    client: TestClient,
+    db_session: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    as_role: Callable[..., tuple[Any, dict[str, str]]],
+) -> None:
+    """#1773: exercised through the real HTTP route (only the provider call
+    itself is stubbed), not just the service function directly — proves the
+    route actually passes `current_user` through to `test_settings`.
+    """
+    from backend.app.db.models import LlmInvocation
+    from backend.app.llm.base import LLMResult
+
+    admin, headers = as_role("admin")
+
+    class _FakeProvider:
+        model = "fake"
+
+        def complete(self, *_a: Any, **_kw: Any) -> LLMResult:
+            return LLMResult(text="ok", input_tokens=3, output_tokens=1)
+
+    monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _FakeProvider())
+    resp = client.post("/api/v1/admin/llm/test", json=_BODY, headers=headers)
+    assert resp.status_code == 200, resp.text
+    (invocation,) = db_session.query(LlmInvocation).filter_by(kind="ping").all()
+    assert invocation.status == "succeeded"
+    assert invocation.requested_by_user_id == admin.id
 
 
 def test_posture_llm_row_flips_with_config(client: TestClient) -> None:
