@@ -1,9 +1,11 @@
 """LLM root-cause narrative — Layer 2 on the evidence card (ADR 0042, #1633).
 
-Layer 1 (`incident_evidence.build_evidence`) is deterministic and already
-strips sample rows; this module's only job is to turn that snapshot — plus a
-longer per-check history — into a narrative, never to go back to a live
-datasource or read anything the card itself doesn't already carry.
+Layer 1 (`incident_evidence.build_evidence`) is deterministic, already strips
+sample rows, and (#1772) routes `failing_result.observed_value` through the
+same column-policy/warehouse-tag masking floor every other results surface
+applies — this module's only job is to turn that snapshot — plus a longer
+per-check history — into a narrative, never to go back to a live datasource
+or read anything the card itself doesn't already carry.
 
 Trust boundary: the prompt gets exactly the incident's stored evidence, run
 through the SAME per-caller redaction the read API applies

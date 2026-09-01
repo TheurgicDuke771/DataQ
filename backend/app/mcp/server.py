@@ -3251,6 +3251,12 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     checks on the SAME asset, the upstream pipeline run, and the downstream
     blast radius.
 
+    `failing_result.observed_value` is routed through the same column-policy/
+    warehouse-tag masking floor `get_run_results` applies — unlike that tool,
+    this one carries no separate `redaction` state field, so a masked value
+    reads identically to a genuinely short one; when in doubt, check the
+    column's policy or pull the run's own results for the redaction state.
+
     The evidence card is a **snapshot taken at the last occurrence**, not a live
     read — describe it as "when this last failed", not "right now". It carries no
     failing sample rows by design, so it cannot show which specific records were

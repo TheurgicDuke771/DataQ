@@ -469,6 +469,68 @@ def test_observed_value_sample_list_keys_stripped(db_session: Any, world: dict[s
     assert secret not in json.dumps(card)
 
 
+def test_failing_result_observed_value_redacted_for_a_pii_column(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """#1772: an expectation-kind check's `observed_value` can carry a LITERAL
+    warehouse cell value (min/max/mean-style rules) — real target data, not GX
+    metadata. This card is the ONLY place that ever computes `failing_result`
+    (workspace-true, stored once) — `get_incident` (REST/MCP) and the RCA
+    narrative prompt both only ever read this stored copy, so the G3 floor has
+    to run HERE. Column policy + a scalar observed_value, the shape
+    `expect_column_min_to_be_between`-style checks actually produce.
+    """
+    suite = world["suite"]
+    suite.column_policy = {"pii_columns": ["EMAIL"]}
+    db_session.add(suite)
+    check = _check(db_session, suite, name="email_min_length")
+    check.config = {"column": "EMAIL"}
+    db_session.add(check)
+    db_session.commit()
+    run = _run(db_session, suite)
+    secret = "victim@example.com"
+    result = Result(
+        run_id=run.id,
+        check_id=check.id,
+        status="fail",
+        observed_value={"observed_value": secret},
+    )
+    db_session.add(result)
+    db_session.commit()
+
+    card = build_evidence(db_session, run=run, result=result, check=check, asset=world["asset"])
+
+    observed = card["failing_result"]["observed_value"]
+    assert observed is not None
+    assert observed["observed_value"] == "<redacted>"
+    import json
+
+    assert secret not in json.dumps(card)
+
+
+def test_failing_result_observed_value_shown_for_a_non_sensitive_column(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """The redaction floor must not over-redact — a check on an ordinary column
+    with no PII policy/tag keeps its real observed_value (unchanged pre-#1772
+    behavior for the common case).
+    """
+    run = _run(db_session, world["suite"])
+    result = Result(
+        run_id=run.id,
+        check_id=world["check"].id,
+        status="fail",
+        observed_value={"observed_value": 42},
+    )
+    db_session.add(result)
+    db_session.commit()
+
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    assert card["failing_result"]["observed_value"] == {"observed_value": 42}
+
+
 # ── kind-aware detail (#1635) ──────────────────────────────────────────────────
 
 

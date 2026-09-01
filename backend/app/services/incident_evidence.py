@@ -12,8 +12,17 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
-from backend.app.db.models import ORCHESTRATION_PROVIDERS, Asset, Check, PipelineRun, Result, Run
+from backend.app.db.models import (
+    ORCHESTRATION_PROVIDERS,
+    Asset,
+    Check,
+    PipelineRun,
+    Result,
+    Run,
+    Suite,
+)
 from backend.app.lineage.edges import downstream_assets
+from backend.app.services import run_service
 from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES
 
 log = get_logger(__name__)
@@ -71,7 +80,12 @@ def build_evidence(
         "generated_at": now.isoformat(),
         "check": _layer("check", lambda: _check_layer(check)),
         "asset": _layer("asset", lambda: _asset_layer(asset)),
-        "failing_result": _layer("failing_result", lambda: _failing_result_layer(result)),
+        "failing_result": _layer(
+            "failing_result",
+            lambda: _failing_result_layer(
+                session, run=run, result=result, check=check, asset=asset
+            ),
+        ),
         "kind_detail": _layer("kind_detail", lambda: _kind_detail_layer(check, result)),
         "metric_trend": _layer(
             "metric_trend", lambda: _metric_trend_layer(session, check_id=result.check_id)
@@ -120,14 +134,41 @@ def _asset_layer(asset: Asset | None) -> dict[str, Any] | None:
     }
 
 
-def _failing_result_layer(result: Result) -> dict[str, Any]:
+def _failing_result_layer(
+    session: Session, *, run: Run, result: Result, check: Check | None, asset: Asset | None
+) -> dict[str, Any]:
     """The breaching result — status + metric + GX aggregates. **No sample rows.**
     ``sample_failures`` is never read.
+
+    ``observed_value`` can itself carry a literal warehouse cell value (or a
+    list of them) for an expectation-kind check's min/max/mean-style rules —
+    real target data, not just GX metadata. This card is built ONCE here and
+    stored on the `Incident` row (workspace-true, like `same_asset_siblings`
+    below) — it is the ONLY place that ever computes it, so the G3 governance
+    floor (`run_service.redact_observed_value`, the same column-aware ladder
+    every other results surface applies) has to run HERE or nowhere: neither
+    `get_incident` (REST/MCP) nor the RCA narrative prompt (#1633) re-derive
+    this card from the raw `Result` row, they only ever read this stored copy
+    (#1772 — found via `rca_narrative`, but the same unmasked value was
+    already reaching every `get_incident` caller with suite view access).
     """
+    observed = _strip_sample_lists(result.observed_value)
+    if check is not None:
+        tested_column, _expectation_type = run_service.historical_check_context(
+            session, [result], {check.id: check}
+        ).get(result.id, (None, None))
+        suite = session.get(Suite, run.suite_id)
+        tags = asset.column_tags if asset is not None else None
+        observed = run_service.redact_observed_value(
+            observed,
+            tested_column=tested_column,
+            policy=suite.column_policy if suite is not None else None,
+            tags=tags,
+        )
     return {
         "status": result.status,
         "metric_value": _num(result.metric_value),
-        "observed_value": _strip_sample_lists(result.observed_value),
+        "observed_value": observed,
         "expected_value": result.expected_value,
     }
 
