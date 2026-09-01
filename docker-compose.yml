@@ -200,8 +200,9 @@ services:
     restart: unless-stopped
     # -B runs celery-beat embedded in the worker (the #171 orchestration polling schedule) — dev
     # AND prod alike (containerapps.tf runs the same `worker -B`; there is no separate beat process
-    # anywhere, #1091).
-    command: celery -A backend.app.worker.celery_app worker -B --loglevel=INFO
+    # anywhere, #1091). -Q celery,llm (#1777): llm_invoke has its own queue now — a worker not
+    # listening to it here would silently never process an LLM dispatch.
+    command: celery -A backend.app.worker.celery_app worker -B -Q celery,llm --loglevel=INFO
     env_file:
       - path: .env.app
         required: false

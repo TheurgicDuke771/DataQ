@@ -208,10 +208,13 @@ resource "aws_ecs_task_definition" "worker" {
 
   container_definitions = jsonencode([
     {
-      name        = "worker"
-      image       = local.backend_image
-      essential   = true
-      command     = ["celery", "-A", "backend.app.worker.celery_app", "worker", "-B", "--loglevel=INFO"]
+      name      = "worker"
+      image     = local.backend_image
+      essential = true
+      # -Q celery,llm (#1777): llm_invoke has its own queue now. A command-array change like
+      # this needs an explicit `tofu apply -replace` on this task def, not just an image roll —
+      # container_definitions is under ignore_changes (see the rollout gotcha in the AWS README).
+      command     = ["celery", "-A", "backend.app.worker.celery_app", "worker", "-B", "-Q", "celery,llm", "--loglevel=INFO"]
       environment = local.worker_env
       secrets     = local.boot_secrets
       logConfiguration = {

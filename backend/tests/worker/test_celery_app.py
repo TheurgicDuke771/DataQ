@@ -12,6 +12,8 @@ from celery.schedules import crontab
 from backend.app.core.logging import request_id_var
 from backend.app.worker import celery_app
 from backend.app.worker.celery_app import (
+    LLM_INVOKE_TASK_NAME,
+    LLM_QUEUE_NAME,
     REQUEST_ID_HEADER,
     _clear_request_id,
     _inject_request_id,
@@ -48,6 +50,17 @@ def test_create_celery_app_uses_redis_url_and_json() -> None:
     assert app.conf.accept_content == ["json"]
     # task_track_started lets the run read-back distinguish queued from running.
     assert app.conf.task_track_started is True
+
+
+def test_llm_invoke_routes_to_its_own_queue() -> None:
+    """#1777: llm_invoke shares no queue with run_suite — a backlog of long
+    suite runs must not be able to leave an LLM dispatch queued-but-intact
+    past the reaper's pending threshold. Guards against a dropped/renamed
+    task_routes entry silently reintroducing the shared-queue false-kill
+    (#1726 Part A).
+    """
+    app = create_celery_app()
+    assert app.conf.task_routes == {LLM_INVOKE_TASK_NAME: {"queue": LLM_QUEUE_NAME}}
 
 
 def test_beat_schedule_file_lives_in_the_temp_dir_not_the_cwd() -> None:

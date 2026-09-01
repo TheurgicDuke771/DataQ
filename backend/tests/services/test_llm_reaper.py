@@ -164,7 +164,7 @@ def test_reap_reasons_admit_ambiguity_rather_than_assert_a_cause_neither_can_ver
     assert pending_error is not None
     assert running_error is not None
     assert "may have been lost" in pending_error
-    assert "queued behind other work" in pending_error
+    assert "nothing is currently consuming" in pending_error
     assert "was lost" not in pending_error  # no unqualified claim
     assert "may have been killed" in running_error
     assert "never finished" not in running_error  # no unqualified claim

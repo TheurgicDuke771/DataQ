@@ -55,7 +55,7 @@ from backend.app.services import (
 )
 from backend.app.services.failure_classifier import classify_failure_reason
 from backend.app.worker import beat_watchdog
-from backend.app.worker.celery_app import celery_app
+from backend.app.worker.celery_app import LLM_INVOKE_TASK_NAME, celery_app
 
 # Poll lookback exceeds the 10-min beat interval so runs can't slip the gap (#171).
 _POLL_LOOKBACK = timedelta(minutes=15)
@@ -966,7 +966,7 @@ def refresh_credential_expiry() -> int:
         session.close()
 
 
-@celery_app.task(name="llm_invoke")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+@celery_app.task(name=LLM_INVOKE_TASK_NAME)  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def llm_invoke(invocation_id: str) -> str:
     """Execute one queued LLM round-trip (ADR 0042, #1511). All failure handling
     lives in `execute_invocation`, which always lands the row terminal.

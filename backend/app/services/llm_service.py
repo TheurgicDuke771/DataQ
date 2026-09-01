@@ -503,8 +503,9 @@ def get_visible_invocation(
 
 _PENDING_REAP_REASON = (
     "reaped: stuck in pending past the threshold — the dispatch may have been lost"
-    " before a worker claimed it, or the task is still queued behind other work in"
-    " the shared worker queue (#1726/#1777: no dedicated queue exists yet)"
+    " before a worker claimed it, or nothing is currently consuming the worker's"
+    " llm queue (a deploy in progress, or the worker's own backlog), so the"
+    " message sat unclaimed rather than lost (#1726/#1777)"
 )
 _RUNNING_REAP_REASON = (
     "reaped: stuck in running past the threshold — the worker may have been killed"
